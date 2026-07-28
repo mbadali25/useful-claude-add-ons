@@ -119,7 +119,17 @@ export_claude_path() {
 }
 run_step "Export Claude Code CLI path" export_claude_path
 
-# --- 4. Team plugin/marketplace bootstrap -----------------------------------
+# --- 4. Register this repo's own marketplace --------------------------------
+add_own_marketplace() {
+  if ! command -v claude >/dev/null 2>&1; then
+    warn "claude not found on PATH in this shell - run 'source ~/.bashrc' and re-run this script to add the marketplace."
+    return 1
+  fi
+  claude plugin marketplace add mbadali25/useful-claude-add-ons
+}
+run_step "Add this repo as a Claude Code marketplace" add_own_marketplace
+
+# --- 5. Team plugin/marketplace bootstrap -----------------------------------
 if [ "$SKIP_BOOTSTRAP" -eq 1 ]; then
   step "Skipping plugin/marketplace bootstrap (--skip-bootstrap)"
 else
@@ -135,7 +145,6 @@ else
     "claude plugin install excalidraw-generator@excalidraw-generator"
     "claude plugin marketplace add obra/superpowers-marketplace"
     "claude plugin install superpowers@claude-plugins-official"
-    "claude plugin marketplace add mbadali25/useful-claude-add-ons"
   )
   for cmd in "${bootstrap_commands[@]}"; do
     run_step "$cmd" bash -c "$cmd"

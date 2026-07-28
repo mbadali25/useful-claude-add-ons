@@ -74,6 +74,12 @@ foreach ($pkg in $chocoPackages) {
 # --- 3. Claude Code CLI ------------------------------------------------------
 Invoke-Step "Install Claude Code CLI" {
     Update-SessionPath
+    $existing = Get-Command claude -ErrorAction SilentlyContinue
+    if ($existing) {
+        $version = try { (claude --version) } catch { 'version unknown' }
+        Write-Ok "claude already installed at $($existing.Source) ($version)"
+        return
+    }
     if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
         throw "npm not found on PATH after installing nodejs - open a new shell and re-run this script."
     }
@@ -105,6 +111,13 @@ Invoke-Step "Export Claude Code CLI path to PATH" {
     }
 }
 
+Invoke-Step "Add this repo as a Claude Code marketplace" {
+    if (-not (Get-Command claude -ErrorAction SilentlyContinue)) {
+        throw "claude not found on PATH in this session - open a new shell and re-run this script to add the marketplace."
+    }
+    claude plugin marketplace add mbadali25/useful-claude-add-ons
+}
+
 # --- 4. Team plugin/marketplace bootstrap -----------------------------------
 if ($SkipBootstrap) {
     Write-Step "Skipping plugin/marketplace bootstrap (-SkipBootstrap)"
@@ -120,8 +133,7 @@ if ($SkipBootstrap) {
         'claude plugin marketplace add lexiaoyao20/excalidraw-generator',
         'claude plugin install excalidraw-generator@excalidraw-generator',
         'claude plugin marketplace add obra/superpowers-marketplace',
-        'claude plugin install superpowers@claude-plugins-official',
-        'claude plugin marketplace add mbadali25/useful-claude-add-ons'
+        'claude plugin install superpowers@claude-plugins-official'
     )
     foreach ($cmd in $bootstrapCommands) {
         Invoke-Step $cmd {

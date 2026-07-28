@@ -19,6 +19,37 @@ cd useful-claude-add-ons
 
 Full walkthrough, verification steps, and troubleshooting: [`INSTALLATION.md`](INSTALLATION.md).
 
+## Add the marketplace & install skills
+
+This repo is itself a Claude Code plugin marketplace ([`.claude-plugin/marketplace.json`](.claude-plugin/marketplace.json)) — every skill under [`skills/`](skills/) is an installable plugin. Once you have the `claude` CLI on `PATH` (see above), add the marketplace:
+
+```bash
+claude plugin marketplace add mbadali25/useful-claude-add-ons
+```
+
+Then install whichever skills you need — plugin names match the skill folder names in the [overview table](#overview) below:
+
+```bash
+claude plugin install aws-opensearch@useful-claude-add-ons
+claude plugin install bitbucket@useful-claude-add-ons
+claude plugin install cloudflare@useful-claude-add-ons
+# ...repeat for any other skill you want.
+```
+
+Both commands also work as slash commands inside an interactive session: `/plugin marketplace add mbadali25/useful-claude-add-ons` and `/plugin install <skill-name>@useful-claude-add-ons`.
+
+Manage it later with:
+
+```bash
+claude plugin marketplace list                                # marketplaces you've added
+claude plugin marketplace update useful-claude-add-ons        # pull the latest marketplace.json
+claude plugin list                                             # installed plugins
+claude plugin uninstall aws-opensearch@useful-claude-add-ons   # remove a skill
+claude plugin marketplace remove useful-claude-add-ons        # stop tracking this marketplace
+```
+
+Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for the lightweight path (clone the repo, point your own `.claude/skills/` at the folders you want). Full details, including the other marketplaces the team's install scripts wire up (Superpowers, `frontend-design`, `excalidraw-generator`), are in [`MARKETPLACE.md`](MARKETPLACE.md).
+
 ## Documentation
 
 | Doc | What's in it |
