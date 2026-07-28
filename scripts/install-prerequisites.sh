@@ -20,6 +20,17 @@ step()   { printf '\n\033[36m==> %s\033[0m\n' "$1"; }
 ok()     { printf '    \033[32mOK:\033[0m %s\n' "$1"; }
 warn()   { printf '    \033[33mWARN:\033[0m %s\n' "$1"; }
 
+ask_yes_no() {
+  local prompt="$1" default="${2:-N}" reply suffix="[y/N]"
+  [ "$default" = "Y" ] && suffix="[Y/n]"
+  read -r -p "$prompt $suffix " reply
+  reply="${reply:-$default}"
+  case "$reply" in
+    [Yy]*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 run_step() {
   local name="$1"; shift
   step "$name"
@@ -168,7 +179,43 @@ else
   done
 fi
 
-# --- 7. Awesome Claude Code Subagents ----------------------------------------
+# --- 7. Optional MCP servers -------------------------------------------------
+install_aws_mcp() {
+  if ! command -v uv >/dev/null 2>&1 && ! command -v uvx >/dev/null 2>&1; then
+    if command -v pip3 >/dev/null 2>&1; then
+      pip3 install --user uv
+    elif command -v pip >/dev/null 2>&1; then
+      pip install --user uv
+    else
+      warn "pip not found - install python3-pip first, then re-run to install uv."
+      return 1
+    fi
+    export PATH="$HOME/.local/bin:$PATH"
+  fi
+  if ! command -v claude >/dev/null 2>&1; then
+    warn "claude not found on PATH in this shell - run 'source ~/.bashrc' and re-run this script."
+    return 1
+  fi
+  claude mcp add aws-api -- uvx awslabs.aws-api-mcp-server@latest
+  ok "Added aws-api MCP server. Make sure AWS credentials are configured (aws configure)."
+}
+if ask_yes_no "Install the AWS MCP server (awslabs.aws-api-mcp-server) and register it with Claude Code?"; then
+  run_step "Install AWS MCP server" install_aws_mcp
+fi
+
+install_azure_mcp() {
+  if ! command -v claude >/dev/null 2>&1; then
+    warn "claude not found on PATH in this shell - run 'source ~/.bashrc' and re-run this script."
+    return 1
+  fi
+  claude mcp add azure -- npx -y @azure/mcp@latest server start
+  ok "Added azure MCP server. Make sure you have run 'az login' before using it."
+}
+if ask_yes_no "Install the Azure MCP server (@azure/mcp) and register it with Claude Code?"; then
+  run_step "Install Azure MCP server" install_azure_mcp
+fi
+
+# --- 8. Awesome Claude Code Subagents ----------------------------------------
 install_awesome_subagents() {
   local repo_root="$HOME/repos"
   local repo_dir="$repo_root/awesome-claude-code-subagents"

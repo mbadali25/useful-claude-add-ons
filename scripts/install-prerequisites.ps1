@@ -24,6 +24,14 @@ function Write-Step { param([string]$Message) Write-Host "`n==> $Message" -Foreg
 function Write-Ok   { param([string]$Message) Write-Host "    OK: $Message" -ForegroundColor Green }
 function Write-Warn2 { param([string]$Message) Write-Host "    WARN: $Message" -ForegroundColor Yellow }
 
+function Read-YesNo {
+    param([string]$Prompt, [string]$Default = 'N')
+    $suffix = if ($Default -eq 'Y') { '[Y/n]' } else { '[y/N]' }
+    $answer = Read-Host "$Prompt $suffix"
+    if ([string]::IsNullOrWhiteSpace($answer)) { $answer = $Default }
+    return $answer -match '^(?i)y(es)?$'
+}
+
 function Test-Admin {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
     $principal = New-Object Security.Principal.WindowsPrincipal($identity)
@@ -171,7 +179,35 @@ if ($SkipBootstrap) {
     }
 }
 
-# --- 6. Awesome Claude Code Subagents ----------------------------------------
+# --- 6. Optional MCP servers -------------------------------------------------
+if (Read-YesNo "Install the AWS MCP server (awslabs.aws-api-mcp-server) and register it with Claude Code?") {
+    Invoke-Step "Install AWS MCP server" {
+        if (-not (Get-Command uv -ErrorAction SilentlyContinue) -and -not (Get-Command uvx -ErrorAction SilentlyContinue)) {
+            if (-not (Get-Command pip -ErrorAction SilentlyContinue)) {
+                throw "pip not found - install Python first (choco install python), then re-run to install uv."
+            }
+            pip install --user uv
+            Update-SessionPath
+        }
+        if (-not (Get-Command claude -ErrorAction SilentlyContinue)) {
+            throw "claude not found on PATH in this session - open a new shell and re-run this script."
+        }
+        claude mcp add aws-api -- uvx awslabs.aws-api-mcp-server@latest
+        Write-Ok "Added aws-api MCP server. Make sure AWS credentials are configured (aws configure)."
+    }
+}
+
+if (Read-YesNo "Install the Azure MCP server (@azure/mcp) and register it with Claude Code?") {
+    Invoke-Step "Install Azure MCP server" {
+        if (-not (Get-Command claude -ErrorAction SilentlyContinue)) {
+            throw "claude not found on PATH in this session - open a new shell and re-run this script."
+        }
+        claude mcp add azure -- npx -y '@azure/mcp@latest' server start
+        Write-Ok "Added azure MCP server. Make sure you have run 'az login' before using it."
+    }
+}
+
+# --- 7. Awesome Claude Code Subagents ----------------------------------------
 Invoke-Step "Clone and install awesome-claude-code-subagents" {
     $bash = Get-Command bash -ErrorAction SilentlyContinue
     if (-not $bash) {
