@@ -129,7 +129,24 @@ add_own_marketplace() {
 }
 run_step "Add this repo as a Claude Code marketplace" add_own_marketplace
 
-# --- 5. Team plugin/marketplace bootstrap -----------------------------------
+# --- 5. Install all plugins from this repo's marketplace --------------------
+own_plugins=(
+  "aws-opensearch"
+  "bitbucket"
+  "checkpoint-email"
+  "cloudflare"
+  "drata"
+  "i-have-adhd"
+  "intune-graph"
+  "mermaid-svg-bitbucket"
+  "sophos-central"
+  "wazuh-onprem"
+)
+for plugin in "${own_plugins[@]}"; do
+  run_step "claude plugin install ${plugin}@useful-claude-add-ons" claude plugin install "${plugin}@useful-claude-add-ons"
+done
+
+# --- 6. Team plugin/marketplace bootstrap -----------------------------------
 if [ "$SKIP_BOOTSTRAP" -eq 1 ]; then
   step "Skipping plugin/marketplace bootstrap (--skip-bootstrap)"
 else

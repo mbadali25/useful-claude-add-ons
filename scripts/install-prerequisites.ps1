@@ -4,8 +4,12 @@ Bootstraps a Windows machine for this repo's skills: Chocolatey, git/awscli/node
 the Claude Code CLI itself (with its path exported to the user PATH), and the team's
 standard Claude Code plugin marketplaces. Idempotent - safe to re-run.
 
-Run from an elevated (Administrator) PowerShell prompt:
+Run from an elevated (Administrator) PowerShell prompt for the full setup:
     .\scripts\install-prerequisites.ps1
+
+If run from a non-elevated prompt, Chocolatey and the Chocolatey packages
+(git/awscli/nodejs/python) are skipped - only the Claude Code CLI check,
+marketplace registration, and plugin bootstrap steps run.
 #>
 
 [CmdletBinding()]
@@ -45,29 +49,35 @@ function Invoke-Step {
     }
 }
 
-if (-not (Test-Admin)) {
-    throw "Run this script from an elevated (Administrator) PowerShell prompt - Chocolatey and system-wide PATH changes require it."
+$script:IsElevated = Test-Admin
+
+if (-not $script:IsElevated) {
+    Write-Step "Not running as Administrator"
+    Write-Warn2 "Skipping Chocolatey and Chocolatey packages (git/awscli/nodejs/python)."
+    Write-Warn2 "Re-run from an elevated prompt to install those. Continuing with Claude Code CLI, marketplaces, and plugins."
 }
 
 # --- 1. Chocolatey ---------------------------------------------------------
-Invoke-Step "Install Chocolatey package manager" {
-    if (Get-Command choco -ErrorAction SilentlyContinue) {
-        Write-Ok "Chocolatey already installed ($(choco --version))"
-        return
-    }
-    Set-ExecutionPolicy Bypass -Scope Process -Force
-    [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
-    Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
-    Update-SessionPath
-    Write-Ok "Chocolatey installed"
-}
-
-# --- 2. Chocolatey packages -------------------------------------------------
-$chocoPackages = @('git', 'awscli', 'nodejs', 'python')
-foreach ($pkg in $chocoPackages) {
-    Invoke-Step "choco install $pkg" {
-        choco install $pkg -y --no-progress
+if ($script:IsElevated) {
+    Invoke-Step "Install Chocolatey package manager" {
+        if (Get-Command choco -ErrorAction SilentlyContinue) {
+            Write-Ok "Chocolatey already installed ($(choco --version))"
+            return
+        }
+        Set-ExecutionPolicy Bypass -Scope Process -Force
+        [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+        Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
         Update-SessionPath
+        Write-Ok "Chocolatey installed"
+    }
+
+    # --- 2. Chocolatey packages -----------------------------------------------
+    $chocoPackages = @('git', 'awscli', 'nodejs', 'python')
+    foreach ($pkg in $chocoPackages) {
+        Invoke-Step "choco install $pkg" {
+            choco install $pkg -y --no-progress
+            Update-SessionPath
+        }
     }
 }
 
@@ -118,7 +128,26 @@ Invoke-Step "Add this repo as a Claude Code marketplace" {
     claude plugin marketplace add mbadali25/useful-claude-add-ons
 }
 
-# --- 4. Team plugin/marketplace bootstrap -----------------------------------
+# --- 4. Install all plugins from this repo's marketplace --------------------
+$ownPlugins = @(
+    'aws-opensearch',
+    'bitbucket',
+    'checkpoint-email',
+    'cloudflare',
+    'drata',
+    'i-have-adhd',
+    'intune-graph',
+    'mermaid-svg-bitbucket',
+    'sophos-central',
+    'wazuh-onprem'
+)
+foreach ($plugin in $ownPlugins) {
+    Invoke-Step "claude plugin install $plugin@useful-claude-add-ons" {
+        claude plugin install "$plugin@useful-claude-add-ons"
+    }
+}
+
+# --- 5. Team plugin/marketplace bootstrap -----------------------------------
 if ($SkipBootstrap) {
     Write-Step "Skipping plugin/marketplace bootstrap (-SkipBootstrap)"
 } else {
