@@ -1,0 +1,70 @@
+# Mermaid -> SVG steps for bitbucket-pipelines.yml
+#
+# Two strategies. Pick ONE. Definitions go under `definitions: steps:` and are
+# referenced from `pipelines:`.
+#
+# A) verify-diagrams (RECOMMENDED)
+#    Fails the PR build if a committed SVG is stale. Devs run the script
+#    locally and commit. No push credentials in CI, no commit loops, and the
+#    diff shows up in review where a human can look at it. --check is a hash
+#    comparison, so it needs neither Node nor Chromium: ~5 seconds.
+#
+# B) render-diagrams
+#    Renders and commits back to the branch. Convenient, but the pipeline needs
+#    write access and you must guard against triggering itself.
+
+definitions:
+  steps:
+    # ----- A) verify only ------------------------------------------------- #
+    - step: &verify-diagrams
+        name: Verify Mermaid SVGs are current
+        image: python:3.11-slim
+        script:
+          - python scripts/render_mermaid.py . --check
+
+    # ----- B) render and commit ------------------------------------------- #
+    - step: &render-diagrams
+        name: Render Mermaid diagrams
+        image: node:20-bookworm-slim
+        caches:
+          - node
+        script:
+          # mermaid-cli drives headless Chromium; the slim image lacks its libs.
+          - apt-get update && apt-get install -y --no-install-recommends
+              python3 chromium fonts-liberation ca-certificates
+          - export PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+          - export PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+          - npm install -g @mermaid-js/mermaid-cli
+          - python3 scripts/render_mermaid.py .
+          - |
+            if [ -n "$(git status --porcelain)" ]; then
+              git config user.email "pipelines@example.com"
+              git config user.name  "Bitbucket Pipelines"
+              git add -A '*.svg' '*.mmd' '*.md' .mermaid-svg.json
+              # [skip ci] is essential: without it this commit retriggers the
+              # pipeline, which renders nothing, but still burns a build minute
+              # every time. With a non-deterministic renderer it would loop.
+              git commit -m "docs: re-render mermaid diagrams [skip ci]"
+              git push origin HEAD:"$BITBUCKET_BRANCH"
+            else
+              echo "Diagrams already current."
+            fi
+
+pipelines:
+  pull-requests:
+    '**':
+      - step: *verify-diagrams
+
+  branches:
+    main:
+      - step: *verify-diagrams
+      # - step: *render-diagrams   # swap in if you want strategy B
+
+# Notes for strategy B:
+#   - Grant write access: Repository settings > Access keys (add an SSH key
+#     with write permission), or use an HTTPS app password in a secured
+#     repository variable. Pipelines' default clone token is read-only.
+#   - fonts-liberation matters. Chromium in a slim image has no fonts at all,
+#     and mermaid measures text to lay out nodes: no fonts means every label is
+#     mis-sized and boxes overlap. Liberation's metrics match Arial/Helvetica,
+#     which is what assets/mermaid-config.json asks for.
