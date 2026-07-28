@@ -2,6 +2,26 @@
 
 An internal repository of [Claude Code](https://docs.claude.com/en/docs/claude-code) Skills, and eventually plugins, built for easy distribution to the team. It also doubles as a Claude Code **plugin marketplace** ([`.claude-plugin/marketplace.json`](.claude-plugin/marketplace.json)) — see [`MARKETPLACE.md`](MARKETPLACE.md) to add it and install skills directly.
 
+## Quick Install
+
+One-line bootstrap — no `git clone` needed. Pulls the prerequisite installer straight from GitHub and runs it. Review the script before running on a machine you don't fully control — see [`SECURITY.md`](SECURITY.md)'s install-script trust boundary.
+
+**Windows** (elevated PowerShell):
+
+```powershell
+irm 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/8a87893d9818b777e33f41fe2921853acbc7a62b/scripts/install-prerequisites.ps1' | iex
+```
+
+**Linux**:
+
+```bash
+curl -fsSL 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/8a87893d9818b777e33f41fe2921853acbc7a62b/scripts/install-prerequisites.sh' | bash
+```
+
+Both links are pinned to a specific commit SHA rather than `main`, so the exact script you're running is fixed and auditable — it can't silently change between when you review it and when you run it. **Update the SHA above whenever `scripts/install-prerequisites.*` changes**: after merging to `main`, run `git rev-parse HEAD` and swap it into both URLs.
+
+Prefer to clone and run locally instead? See [Get started](#get-started) below.
+
 ## Get started
 
 New machine? Run the prerequisite installer for your OS, then install the skills you need:
