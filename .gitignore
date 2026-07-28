@@ -1,3 +1,44 @@
+# --- Secrets / credentials --------------------------------------------------
+# Never commit real tokens, keys, or tenant data - see SECURITY.md.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.pfx
+*credentials*.json
+*credentials*.yaml
+*credentials*.yml
+!**/references/*credentials*
+.aws/
+
+# --- Node.js -----------------------------------------------------------------
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.npm/
+.pnpm-store/
+.yarn/cache/
+
+# --- Claude Code local state ---------------------------------------------
+.claude/settings.local.json
+.mcp.local.json
+
+# --- OS ------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# --- Editors / IDEs -----------------------------------------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

@@ -1,0 +1,71 @@
+{
+  "name": "useful-claude-add-ons",
+  "owner": {
+    "name": "Matthew Badali",
+    "email": "badalim@anewbiz.net",
+    "url": "https://github.com/mbadali25/useful-claude-add-ons"
+  },
+  "description": "Internal marketplace of Claude Code skills for the team - APIs, security tooling, and productivity add-ons.",
+  "plugins": [
+    {
+      "name": "aws-opensearch",
+      "source": "./skills/aws-opensearch",
+      "description": "Diagnose and remediate Amazon OpenSearch Service managed domains over SigV4, with dry-run guards on destructive calls.",
+      "version": "1.0.0"
+    },
+    {
+      "name": "bitbucket",
+      "source": "./skills/bitbucket",
+      "description": "Git over HTTPS with Atlassian API tokens plus the Bitbucket Cloud REST API - PRs, pipelines, comments, branches.",
+      "version": "1.0.0"
+    },
+    {
+      "name": "checkpoint-email",
+      "source": "./skills/checkpoint-email",
+      "description": "Check Point Email Security (Harmony Email & Collaboration / Avanan) - search, triage, and remediate with dry-run gates.",
+      "version": "1.0.0"
+    },
+    {
+      "name": "cloudflare",
+      "source": "./skills/cloudflare",
+      "description": "Cloudflare v4 API - DNS, zones, cache, WAF, page rules, SSL/TLS, Workers/KV/R2, Zero Trust, analytics.",
+      "version": "1.0.0"
+    },
+    {
+      "name": "drata",
+      "source": "./skills/drata",
+      "description": "Drata Public API - controls, monitoring tests, evidence, personnel, policies, frameworks, risks across US/EU/APAC.",
+      "version": "1.0.0"
+    },
+    {
+      "name": "i-have-adhd",
+      "source": "./skills/i-have-adhd",
+      "description": "ADHD-friendly output shaping - leads with next action, numbers steps, suppresses tangents. Manual invoke via /i-have-adhd.",
+      "version": "1.0.0"
+    },
+    {
+      "name": "intune-graph",
+      "source": "./skills/intune-graph",
+      "description": "Microsoft Intune via Microsoft Graph - device troubleshooting, compliance/config profiles, app deployment, report exports.",
+      "version": "1.0.0"
+    },
+    {
+      "name": "mermaid-svg-bitbucket",
+      "source": "./skills/mermaid-svg-bitbucket",
+      "description": "Pre-render Mermaid diagrams to committed SVG so they display correctly in Bitbucket Cloud.",
+      "version": "1.0.0"
+    },
+    {
+      "name": "sophos-central",
+      "source": "./skills/sophos-central",
+      "description": "Sophos Central API - endpoint management, alert triage, SIEM export, XDR/Live Discover, firewall management.",
+      "version": "1.0.0"
+    },
+    {
+      "name": "wazuh-onprem",
+      "source": "./skills/wazuh-onprem",
+      "description": "Self-hosted Wazuh across Server API, Indexer API, Dashboard saved-objects API, and ossec.conf over SSH.",
+      "version": "1.0.0"
+    }
+  ]
+}
