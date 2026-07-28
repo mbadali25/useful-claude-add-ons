@@ -168,6 +168,21 @@ else
   done
 fi
 
+# --- 7. Awesome Claude Code Subagents ----------------------------------------
+install_awesome_subagents() {
+  local repo_root="$HOME/repos"
+  local repo_dir="$repo_root/awesome-claude-code-subagents"
+  mkdir -p "$repo_root"
+  if [ -d "$repo_dir/.git" ]; then
+    ok "Repository already cloned at $repo_dir - pulling latest"
+    git -C "$repo_dir" pull --ff-only
+  else
+    git clone https://github.com/VoltAgent/awesome-claude-code-subagents.git "$repo_dir"
+  fi
+  (cd "$repo_dir" && bash install-agents.sh)
+}
+run_step "Clone and install awesome-claude-code-subagents" install_awesome_subagents
+
 # --- Summary -----------------------------------------------------------------
 echo ""
 if [ ${#FAILED_STEPS[@]} -eq 0 ]; then

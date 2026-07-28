@@ -171,6 +171,31 @@ if ($SkipBootstrap) {
     }
 }
 
+# --- 6. Awesome Claude Code Subagents ----------------------------------------
+Invoke-Step "Clone and install awesome-claude-code-subagents" {
+    $bash = Get-Command bash -ErrorAction SilentlyContinue
+    if (-not $bash) {
+        throw "bash (Git Bash) not found on PATH - install Git for Windows and re-run, or run this step manually."
+    }
+    $repoRoot = 'C:\repos'
+    if (-not (Test-Path $repoRoot)) {
+        New-Item -ItemType Directory -Path $repoRoot -Force | Out-Null
+    }
+    $repoDir = Join-Path $repoRoot 'awesome-claude-code-subagents'
+    if (Test-Path (Join-Path $repoDir '.git')) {
+        Write-Ok "Repository already cloned at $repoDir - pulling latest"
+        git -C $repoDir pull --ff-only
+    } else {
+        git clone https://github.com/VoltAgent/awesome-claude-code-subagents.git $repoDir
+    }
+    Push-Location $repoDir
+    try {
+        & $bash.Source install-agents.sh
+    } finally {
+        Pop-Location
+    }
+}
+
 # --- Summary -----------------------------------------------------------------
 Write-Host ""
 if ($script:FailedSteps.Count -eq 0) {
