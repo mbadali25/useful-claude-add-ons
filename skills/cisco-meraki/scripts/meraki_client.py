@@ -72,6 +72,42 @@ def parse_link_next(link_header):
     return None
 
 
+# MX/MS/MR only. MV cameras, MT sensors, and SM are out of this skill's scope.
+IN_SCOPE_PRODUCT_TYPES = ("appliance", "switch", "wireless")
+
+
+def product_type_for(network, requested=None):
+    """Resolve the productType the event-log endpoint requires.
+
+    Combined networks need it explicitly; omitting it returns a 404 that reads
+    like the network does not exist, which is the single most confusing error
+    in this API.
+    """
+    available = list(network.get("productTypes") or [])
+    if requested:
+        if requested not in available:
+            raise MerakiError(
+                0, [f"Network {network.get('id')} has no '{requested}' product "
+                    f"type. Available: {', '.join(available) or '(none)'}"])
+        if requested not in IN_SCOPE_PRODUCT_TYPES:
+            raise MerakiError(
+                0, [f"Product type '{requested}' is outside this skill's scope "
+                    f"(MX/MS/MR only)."])
+        return requested
+
+    usable = [p for p in available if p in IN_SCOPE_PRODUCT_TYPES]
+    if not usable:
+        raise MerakiError(
+            0, [f"Network {network.get('id')} has no in-scope product types. "
+                f"Found: {', '.join(available) or '(none)'}"])
+    if len(usable) > 1:
+        raise MerakiError(
+            0, [f"Network {network.get('id')} is a combined network "
+                f"({', '.join(usable)}). The event log requires one "
+                f"productType -- pass --product-type with one of these."])
+    return usable[0]
+
+
 class MerakiClient:
     def __init__(self, http, cache_dir=CACHE_DIR):
         self.http = http
@@ -159,6 +195,47 @@ class MerakiClient:
         org_id = self.resolve_org()
         return self.get_all(f"/organizations/{org_id}/inventory/devices")
 
+    # ---- log surfaces ----------------------------------------------------
+
+    def events(self, network_id, product_type=None, timespan=None, per_page=None):
+        net = self.network(network_id)
+        resolved = product_type_for(net, product_type)
+        path = f"/networks/{network_id}/events"
+        validate_timespan(path, timespan)
+        params = {"productType": resolved, "timespan": timespan,
+                  "perPage": per_page}
+        return self.get(path, params)
+
+    def config_changes(self, timespan=None):
+        org_id = self.resolve_org()
+        path = f"/organizations/{org_id}/configurationChanges"
+        validate_timespan(path, timespan)
+        return self.get_all(path, {"timespan": timespan})
+
+    def security_events(self, network_id=None, timespan=None):
+        if network_id:
+            net = self.network(network_id)
+            if "appliance" not in (net.get("productTypes") or []):
+                raise MerakiError(
+                    0, [f"Network {network_id} has no MX appliance, so it has no "
+                        f"security events."])
+            path = f"/networks/{network_id}/appliance/security/events"
+        else:
+            org_id = self.resolve_org()
+            path = f"/organizations/{org_id}/appliance/security/events"
+        validate_timespan(path, timespan)
+        return self.get_all(path, {"timespan": timespan})
+
+    def air_marshal(self, network_id, timespan=None):
+        net = self.network(network_id)
+        if "wireless" not in (net.get("productTypes") or []):
+            raise MerakiError(
+                0, [f"Network {network_id} has no wireless product type, so "
+                    f"Air Marshal is unavailable."])
+        path = f"/networks/{network_id}/wireless/airMarshal"
+        validate_timespan(path, timespan)
+        return self.get_all(path, {"timespan": timespan})
+
     # ---- generic reads ---------------------------------------------------
 
     def get(self, path, params=None):
@@ -213,6 +290,23 @@ def build_parser():
         p.add_argument("path")
         p.add_argument("--params", default=None,
                        help="URL-encoded query string, e.g. 'timespan=3600'")
+    events = sub.add_parser("events")
+    events.add_argument("--network", required=True)
+    events.add_argument("--product-type", default=None,
+                        choices=list(IN_SCOPE_PRODUCT_TYPES))
+    events.add_argument("--timespan", type=int, default=None)
+    events.add_argument("--per-page", type=int, default=None)
+
+    changes = sub.add_parser("changes")
+    changes.add_argument("--timespan", type=int, default=None)
+
+    secev = sub.add_parser("security-events")
+    secev.add_argument("--network", default=None)
+    secev.add_argument("--timespan", type=int, default=None)
+
+    marshal = sub.add_parser("air-marshal")
+    marshal.add_argument("--network", required=True)
+    marshal.add_argument("--timespan", type=int, default=None)
     return parser
 
 
@@ -228,6 +322,15 @@ def main(argv=None):
             _emit(client.device_statuses())
         elif args.command == "inventory":
             _emit(client.inventory())
+        elif args.command == "events":
+            _emit(client.events(args.network, args.product_type,
+                                args.timespan, args.per_page))
+        elif args.command == "changes":
+            _emit(client.config_changes(args.timespan))
+        elif args.command == "security-events":
+            _emit(client.security_events(args.network, args.timespan))
+        elif args.command == "air-marshal":
+            _emit(client.air_marshal(args.network, args.timespan))
         else:
             params = dict(urllib.parse.parse_qsl(args.params)) if args.params else None
             fn = client.get if args.command == "get" else client.get_all
