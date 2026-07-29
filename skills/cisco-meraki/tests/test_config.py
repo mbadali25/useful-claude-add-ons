@@ -173,8 +173,22 @@ class TestApply(unittest.TestCase):
     def test_hard_blocked_path_never_reaches_the_network(self):
         tool, calls = self._tool([])
         with self.assertRaises(HardBlocked):
-            tool.apply("/networks/N1", {}, confirm=lambda text: True)
+            tool.apply("/administered/identities/me/api/keys/abc123", {},
+                       confirm=lambda text: True)
         self.assertEqual(calls, [])
+
+    def test_network_attribute_update_is_not_hard_blocked(self):
+        """PUT /networks/{id} edits attributes (name, timezone, tags) -- a
+        reversible change a snapshot can restore, so it is deliberately NOT
+        hard-blocked. Only DELETE /networks/{id} is, because destroying a
+        network cannot be undone from a snapshot.
+        """
+        # PUT should not raise -- not raising is the expected behavior
+        check_hard_block("PUT", "/networks/N1")
+
+        # DELETE should raise HardBlocked
+        with self.assertRaises(HardBlocked):
+            check_hard_block("DELETE", "/networks/N1")
 
     def test_reorder_is_applied_because_it_is_a_real_change(self):
         allow = rule("allow", "10.0.0.0/8", comment="permit")
