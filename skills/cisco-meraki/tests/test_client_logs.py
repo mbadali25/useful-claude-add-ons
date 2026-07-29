@@ -38,6 +38,12 @@ class TestProductTypeFor(unittest.TestCase):
             product_type_for(net, "camera")
         self.assertIn("scope", str(ctx.exception).lower())
 
+    def test_network_with_only_out_of_scope_types_cannot_infer(self):
+        net = {"id": "N1", "productTypes": ["camera", "sensor"]}
+        with self.assertRaises(MerakiError) as ctx:
+            product_type_for(net)
+        self.assertIn("in-scope", str(ctx.exception).lower())
+
 
 class TestEvents(unittest.TestCase):
     def setUp(self):
@@ -85,9 +91,14 @@ class TestOtherLogSurfaces(unittest.TestCase):
         self.assertIn("/organizations/111/configurationChanges", calls[-1][1])
 
     def test_config_changes_accepts_a_full_year(self):
-        http, _ = http_with([ok([{"id": "111"}]), ok([])])
+        http, calls = http_with([ok([{"id": "111"}]), ok([])])
         client = MerakiClient(http, cache_dir=self.tmp)
-        client.config_changes(timespan=31536000)  # must not raise
+
+        result = client.config_changes(timespan=31536000)
+
+        self.assertEqual(result, [])
+        self.assertEqual(len(calls), 2)   # bootstrap + the changes call itself
+        self.assertIn("timespan=31536000", calls[-1][1])
 
     def test_security_events_defaults_to_org_wide(self):
         http, calls = http_with([ok([{"id": "111"}]), ok([])])
