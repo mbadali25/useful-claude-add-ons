@@ -24,6 +24,7 @@ import json
 import os
 import re
 import sys
+import time
 
 from meraki_diff import (
     diff_rules,
@@ -34,6 +35,11 @@ from meraki_diff import (
 from meraki_http import MerakiError, MerakiHTTP
 
 SNAPSHOT_DIR = ".meraki-snapshots"
+
+# Client-side caps so a too-large batch fails locally with a clear message
+# rather than as an opaque server rejection. Verify against the live API.
+MAX_BATCH_ACTIONS = 100
+MAX_PENDING_BATCHES = 5
 
 
 class HardBlocked(MerakiError):
@@ -183,6 +189,87 @@ class ConfigTool:
         path = saved["path"]
         return self.apply(path, saved["payload"], confirm)
 
+    # ---- action batches --------------------------------------------------
+
+    def resolve_org(self):
+        if getattr(self, "_org_id", None):
+            return self._org_id
+        orgs, _ = self.http.request("GET", "/organizations")
+        if not orgs:
+            raise MerakiError(0, ["This API key can see no organizations."])
+        if len(orgs) > 1:
+            listed = ", ".join(f"{o.get('name')} ({o.get('id')})" for o in orgs)
+            raise MerakiError(
+                0, [f"This skill is scoped to a single organization but the key "
+                    f"sees {len(orgs)}: {listed}."])
+        self._org_id = str(orgs[0]["id"])
+        return self._org_id
+
+    def batch_stage(self, actions, org_id=None):
+        """Stage a batch with confirmed:false so Meraki validates the whole
+        payload server-side before anything commits. The returned batch's own
+        error list is the dry-run result."""
+        if not actions:
+            raise MerakiError(0, ["No actions supplied; nothing to stage."])
+        if len(actions) > MAX_BATCH_ACTIONS:
+            raise MerakiError(
+                0, [f"{len(actions)} actions exceeds the {MAX_BATCH_ACTIONS}-"
+                    f"action limit per batch. Split into multiple batches."])
+
+        org = org_id or self.resolve_org()
+        pending = self._pending_batches(org)
+        if len(pending) >= MAX_PENDING_BATCHES:
+            raise MerakiError(
+                0, [f"{len(pending)} batches are already pending, at the "
+                    f"{MAX_PENDING_BATCHES}-batch limit. Commit or delete one "
+                    f"in Dashboard before staging another."])
+
+        for item in actions:
+            resource = item.get("resource")
+            if not resource:
+                raise MerakiError(
+                    0, [f"Action is missing 'resource': {item}"])
+            operation = (item.get("operation") or "").lower()
+            method = {"create": "POST", "update": "PUT",
+                      "destroy": "DELETE"}.get(operation, "PUT")
+            check_hard_block(method, resource)
+
+        body = {"confirmed": False, "synchronous": False, "actions": actions}
+        batch, _ = self.http.request(
+            "POST", f"/organizations/{org}/actionBatches", body=body)
+        return batch
+
+    def _pending_batches(self, org_id):
+        batches, _ = self.http.request(
+            "GET", f"/organizations/{org_id}/actionBatches",
+            params={"status": "pending"})
+        return batches or []
+
+    def batch_commit(self, batch_id, org_id=None, timeout=120.0,
+                     poll_interval=2.0):
+        org = org_id or self.resolve_org()
+        path = f"/organizations/{org}/actionBatches/{batch_id}"
+        self.http.request("PUT", path, body={"confirmed": True})
+
+        deadline = time.monotonic() + float(timeout)
+        while True:
+            batch, _ = self.http.request("GET", path)
+            status = (batch or {}).get("status") or {}
+            if status.get("failed"):
+                errors = status.get("errors") or ["(no detail returned)"]
+                raise MerakiError(
+                    0, [f"Action batch {batch_id} failed: "
+                        f"{'; '.join(str(e) for e in errors)}"])
+            if status.get("completed"):
+                return batch
+            if time.monotonic() >= deadline:
+                raise MerakiError(
+                    0, [f"Action batch {batch_id} did not complete within "
+                        f"{timeout}s. It may still be running -- poll "
+                        f"{path} to check."])
+            if poll_interval:
+                time.sleep(poll_interval)
+
 
 def _confirm_interactively(rendered):
     sys.stderr.write("\nProposed change:\n" + rendered + "\n\n")
@@ -218,6 +305,14 @@ def build_parser():
     rb = sub.add_parser("rollback")
     rb.add_argument("snapshot")
     rb.add_argument("--yes", action="store_true")
+
+    stage = sub.add_parser("batch-stage")
+    stage.add_argument("actions", help="JSON file holding a list of actions")
+
+    commit = sub.add_parser("batch-commit")
+    commit.add_argument("batch_id")
+    commit.add_argument("--timeout", type=float, default=120.0)
+
     return parser
 
 
@@ -240,6 +335,14 @@ def main(argv=None):
             confirm = _auto_confirm if args.yes else _confirm_interactively
             result = tool.rollback(args.snapshot, confirm)
             json.dump(redact_secrets(result), sys.stdout, indent=2, default=str)
+            sys.stdout.write("\n")
+        elif args.command == "batch-stage":
+            batch = tool.batch_stage(_load_json_file(args.actions))
+            json.dump(batch, sys.stdout, indent=2, default=str)
+            sys.stdout.write("\n")
+        elif args.command == "batch-commit":
+            batch = tool.batch_commit(args.batch_id, timeout=args.timeout)
+            json.dump(batch, sys.stdout, indent=2, default=str)
             sys.stdout.write("\n")
     except MerakiError as exc:
         sys.exit(str(exc))
