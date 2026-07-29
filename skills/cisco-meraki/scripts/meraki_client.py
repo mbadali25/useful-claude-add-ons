@@ -205,7 +205,10 @@ def build_parser():
     parser = argparse.ArgumentParser(description="Meraki Dashboard API read client")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("orgs")
-    sub.add_parser("networks")
+    networks_parser = sub.add_parser("networks")
+    networks_parser.add_argument("--refresh", action="store_true",
+                                  help="Bypass the cache and re-fetch networks "
+                                       "from the Dashboard API.")
     sub.add_parser("status")
     sub.add_parser("inventory")
     for name in ("get", "get-all"):
@@ -223,7 +226,7 @@ def main(argv=None):
         if args.command == "orgs":
             _emit(client.get("/organizations"))
         elif args.command == "networks":
-            _emit(client.networks())
+            _emit(client.networks(force=args.refresh))
         elif args.command == "status":
             _emit(client.device_statuses())
         elif args.command == "inventory":
