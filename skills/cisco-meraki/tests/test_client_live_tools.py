@@ -191,6 +191,54 @@ class TestRunLiveTool(unittest.TestCase):
         device_calls = [c for c in calls if c[1].endswith("/devices")]
         self.assertEqual(len(device_calls), 2)
 
+    def test_convention_key_wins_over_ambiguous_response(self):
+        # The tool-name convention (toolId) should be found and used even if
+        # other *Id keys are present in the response. The response carries
+        # both the convention key and an unrelated id, but only the
+        # convention matches.
+        client, calls = self._client([
+            ok({"cableTestId": "job-convention", "networkId": "N1",
+                "status": "new"}),
+            ok({"cableTestId": "job-convention", "status": "complete",
+                "results": []}),
+        ])
+        result = client.run_live_tool(
+            "cableTest", "Q2XX-1111-1111", {"ports": ["1"]},
+            poll_interval=0, timeout=30,
+        )
+        self.assertEqual(result["status"], "complete")
+        # Verify that the correct job id was polled: check the GET URL
+        poll_call = calls[3]
+        self.assertEqual(poll_call[0], "GET")
+        self.assertIn("job-convention", poll_call[1])
+
+    def test_stray_resource_id_not_mistaken_for_job_id(self):
+        # When the response carries only a resource id like networkId and no
+        # job-id-shaped keys, the fallback must not mistake networkId for a
+        # job id. It should raise an error about no recognizable job id.
+        client, _ = self._client([
+            ok({"networkId": "N1", "status": "new"}),
+        ])
+        with self.assertRaises(MerakiError) as ctx:
+            client.run_live_tool("ping", "Q2XX-1111-1111",
+                                 poll_interval=0, timeout=30)
+        self.assertIn("no recognizable job id", str(ctx.exception))
+
+    def test_ambiguous_id_candidates_raise_not_guess(self):
+        # When the fallback scan finds multiple unrecognized *Id keys and
+        # cannot determine which is the job id, it must raise an error
+        # naming the ambiguous candidates rather than guessing.
+        client, _ = self._client([
+            ok({"fooId": "a", "barId": "b", "status": "new"}),
+        ])
+        with self.assertRaises(MerakiError) as ctx:
+            client.run_live_tool("ping", "Q2XX-1111-1111",
+                                 poll_interval=0, timeout=30)
+        exc_str = str(ctx.exception)
+        self.assertIn("multiple candidate", exc_str)
+        self.assertIn("fooId", exc_str)
+        self.assertIn("barId", exc_str)
+
 
 if __name__ == "__main__":
     unittest.main()

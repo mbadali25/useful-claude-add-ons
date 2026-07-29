@@ -130,6 +130,12 @@ TERMINAL_STATUSES = ("complete", "failed")
 _JOB_ID_KEYS = ("pingId", "pingDeviceId", "cableTestId", "throughputTestId",
                 "arpTableId", "macTableId", "wakeOnLanId", "id")
 
+# Keys that end in "Id" but identify a resource, not a live-tool job. The
+# fallback scan must never mistake one of these for a job id.
+_NOT_JOB_ID_KEYS = frozenset({
+    "networkId", "organizationId", "deviceId", "clientId", "serialId",
+})
+
 
 def check_tool_supported(tool, model):
     if tool not in LIVE_TOOLS:
@@ -326,20 +332,39 @@ class MerakiClient:
         created, _ = self.http.request("POST", base, body=body or {})
         job_id = None
         if isinstance(created, dict):
-            for key in _JOB_ID_KEYS:
-                if created.get(key):
-                    job_id = created[key]
-                    break
+            # Try convention first: {tool}Id
+            job_id = created.get(f"{tool}Id")
+
+            # Then try the known-key table
             if not job_id:
-                # Safety net: the known-key table is necessarily incomplete
-                # (Meraki adds live tools over time) -- fall back to any
-                # *Id-shaped key rather than silently handing back the
-                # unpolled creation payload (typically status: "new") as if
-                # it were a finished result.
-                for key, value in created.items():
-                    if key.endswith("Id") and value:
-                        job_id = value
+                for key in _JOB_ID_KEYS:
+                    if created.get(key):
+                        job_id = created[key]
                         break
+
+            # Then scan for unknown *Id keys, excluding resource identifiers
+            if not job_id:
+                # Meraki names a job id after its tool, and the known-key table
+                # covers all current tools. This fallback is for future tools
+                # Meraki adds -- scan for *Id keys that aren't resource
+                # identifiers, then refuse to guess if more than one is found.
+                candidates = {}
+                for key, value in created.items():
+                    if (key.endswith("Id") and value and
+                            key not in _NOT_JOB_ID_KEYS):
+                        candidates[key] = value
+
+                if len(candidates) > 1:
+                    # Ambiguous: refuse to guess which is the job id.
+                    listed = ", ".join(sorted(candidates.keys()))
+                    raise MerakiError(
+                        0, [f"Live tool '{tool}' on {serial} returned multiple "
+                            f"candidate job id keys; cannot determine which to "
+                            f"poll. Candidates: {listed}"])
+                elif len(candidates) == 1:
+                    key = next(iter(candidates.keys()))
+                    job_id = candidates[key]
+
         if not job_id:
             present = (", ".join(sorted(created)) if isinstance(created, dict)
                        else "(non-dict response)")
