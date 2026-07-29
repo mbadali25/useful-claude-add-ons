@@ -122,14 +122,17 @@ class MerakiClient:
         self._save_cache(self._org_id, cache)
         return self._org_id
 
-    def networks(self):
-        if self._networks is not None:
+    def networks(self, force=False):
+        if not force and self._networks is not None:
             return self._networks
         org_id = self.resolve_org()
-        cache = self._load_cache(org_id)
-        if cache.get("networks"):
-            self._networks = cache["networks"]
-            return self._networks
+        if not force:
+            cache = self._load_cache(org_id)
+            if cache.get("networks"):
+                self._networks = cache["networks"]
+                return self._networks
+        else:
+            cache = self._load_cache(org_id)
         nets, _ = self.http.request("GET", f"/organizations/{org_id}/networks")
         self._networks = nets or []
         cache["networks"] = self._networks
@@ -138,6 +141,13 @@ class MerakiClient:
 
     def network(self, network_id):
         for net in self.networks():
+            if str(net.get("id")) == str(network_id):
+                return net
+        # Stale cache: a network created after this cache was written would
+        # otherwise look like a false "not in this org" -- refetch once and
+        # look again before concluding it's genuinely absent. No recursion:
+        # a genuinely missing ID costs exactly one refetch, never a loop.
+        for net in self.networks(force=True):
             if str(net.get("id")) == str(network_id):
                 return net
         known = ", ".join(str(n.get("id")) for n in self.networks()) or "(none)"
