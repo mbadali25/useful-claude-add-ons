@@ -126,13 +126,10 @@ class MerakiClient:
         if not force and self._networks is not None:
             return self._networks
         org_id = self.resolve_org()
-        if not force:
-            cache = self._load_cache(org_id)
-            if cache.get("networks"):
-                self._networks = cache["networks"]
-                return self._networks
-        else:
-            cache = self._load_cache(org_id)
+        cache = self._load_cache(org_id)
+        if not force and cache.get("networks"):
+            self._networks = cache["networks"]
+            return self._networks
         nets, _ = self.http.request("GET", f"/organizations/{org_id}/networks")
         self._networks = nets or []
         cache["networks"] = self._networks

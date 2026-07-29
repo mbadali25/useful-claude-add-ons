@@ -115,10 +115,60 @@ class TestNetworkLookup(unittest.TestCase):
         self.assertIn("switch", net["productTypes"])
 
     def test_unknown_network_raises(self):
-        http, _ = http_with([ok([{"id": "111"}]), ok([{"id": "N1"}])])
+        # Two networks calls: the initial fetch, then the one guaranteed
+        # refetch-on-miss before the client concludes the network is
+        # genuinely absent.
+        http, _ = http_with([ok([{"id": "111"}]), ok([{"id": "N1"}]),
+                             ok([{"id": "N1"}])])
         client = MerakiClient(http, cache_dir=self.tmp)
         with self.assertRaises(MerakiError):
             client.network("N-nope")
+
+    def test_stale_cache_miss_refetches_and_succeeds(self):
+        # Seed the on-disk cache so it only knows about N1, then look up N2,
+        # which the (simulated) live API now returns. The lookup must not
+        # raise a false "not in this org" from stale local state -- it should
+        # refetch once and find it.
+        http, calls = http_with([
+            ok([{"id": "111"}]),
+            ok([{"id": "N2", "name": "Branch"}]),
+        ])
+        client = MerakiClient(http, cache_dir=self.tmp)
+        client.resolve_org()
+        client._save_cache("111", {"networks": [{"id": "N1", "name": "HQ"}]})
+        client._networks = None
+
+        net = client.network("N2")
+
+        self.assertEqual(net["name"], "Branch")
+        networks_calls = [c for c in calls if c[1].endswith("/networks")]
+        self.assertEqual(len(networks_calls), 1)
+
+    def test_genuinely_absent_network_raises_and_refetches_exactly_once(self):
+        http, calls = http_with([
+            ok([{"id": "111"}]),
+            ok([{"id": "N1"}]),
+            ok([{"id": "N1"}]),
+        ])
+        client = MerakiClient(http, cache_dir=self.tmp)
+        with self.assertRaises(MerakiError):
+            client.network("N-nope")
+
+        networks_calls = [c for c in calls if c[1].endswith("/networks")]
+        self.assertEqual(len(networks_calls), 2)
+
+    def test_force_bypasses_populated_cache(self):
+        http, calls = http_with([
+            ok([{"id": "111"}]),
+            ok([{"id": "N1"}]),
+            ok([{"id": "N1"}]),
+        ])
+        client = MerakiClient(http, cache_dir=self.tmp)
+        client.networks()
+        client.networks(force=True)
+
+        networks_calls = [c for c in calls if c[1].endswith("/networks")]
+        self.assertEqual(len(networks_calls), 2)
 
 
 class TestPagination(unittest.TestCase):
