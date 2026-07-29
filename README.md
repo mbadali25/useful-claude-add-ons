@@ -9,7 +9,7 @@ One-line bootstrap — no `git clone` needed. Pulls the prerequisite installer s
 **Windows** (elevated PowerShell):
 
 ```powershell
-irm 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/d7f19e428cce7a276fe9f60204421720b3de8e73/scripts/install-prerequisites.ps1' | iex
+irm 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/f86e1daaf4d5db5cbe7131c67aacef0bd132a340/scripts/install-prerequisites.ps1' | iex
 ```
 
 **Linux**:
