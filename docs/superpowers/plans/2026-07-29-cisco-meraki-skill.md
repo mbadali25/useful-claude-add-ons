@@ -36,6 +36,7 @@ The spec's section 3 listed two scripts. This plan ships four. The spec's archit
 | `skills/cisco-meraki/scripts/meraki_diff.py` | Semantic diff, implicit-default-rule strip/re-derive, secret redaction |
 | `skills/cisco-meraki/scripts/meraki_config.py` | Write CLI: snapshot, apply, rollback, action batches, hard-block enforcement |
 | `skills/cisco-meraki/tests/context.py` | Puts `scripts/` on `sys.path` for tests |
+| `skills/cisco-meraki/tests/helpers.py` | Shared test fixtures: `ok()`, `http_with()`, `rule()`, `DEFAULT_RULE` |
 | `skills/cisco-meraki/tests/test_*.py` | One test module per script module |
 | `skills/cisco-meraki/references/*.md` | 8 deep-dive docs, read on demand |
 
@@ -46,11 +47,21 @@ The spec's section 3 listed two scripts. This plan ships four. The spec's archit
 **Files:**
 - Create: `skills/cisco-meraki/scripts/meraki_http.py`
 - Create: `skills/cisco-meraki/tests/context.py`
+- Create: `skills/cisco-meraki/tests/helpers.py`
 - Test: `skills/cisco-meraki/tests/test_http.py`
 
 **Interfaces:**
 - Consumes: nothing (first task)
-- Produces:
+- Produces (from `tests/helpers.py`, used by every later test module — do not
+  redefine these per module):
+  - `TEST_API_KEY = "test-key-abc123def456"` — multi-character on purpose, so
+    leak assertions can search for it without false positives
+  - `ok(payload, headers=None) -> tuple[int, dict, bytes]`
+  - `http_with(responses) -> tuple[MerakiHTTP, list[tuple[str, str, bytes | None]]]`
+    — `calls` always records `(method, url, body)`
+  - `rule(policy, dest, comment="r") -> dict`
+  - `DEFAULT_RULE: dict` — Meraki's implicit trailing allow-any rule
+- Produces (from `scripts/meraki_http.py`):
   - `MerakiError(Exception)` with attributes `status: int`, `messages: list[str]`, `request_id: str | None`
   - `RateLimitError(MerakiError)`
   - `redact(text: str, api_key: str | None) -> str`
@@ -76,6 +87,76 @@ if SCRIPTS not in sys.path:
     sys.path.insert(0, SCRIPTS)
 ```
 
+- [ ] **Step 1b: Create the shared test helpers**
+
+Every later test module imports these. Do not redefine them per module.
+
+Create `skills/cisco-meraki/tests/helpers.py`:
+
+```python
+"""Shared fixtures for the Meraki skill's tests.
+
+http_with() fakes the injectable _send seam on MerakiHTTP, so no test ever
+opens a socket. `calls` always records (method, url, body) -- tests that don't
+care about the body simply ignore the third element.
+"""
+import json
+
+import context  # noqa: F401  -- puts scripts/ on sys.path
+
+from meraki_http import MerakiHTTP
+
+# Multi-character on purpose: a single-letter key makes "did this leak?"
+# assertions produce false positives against ordinary JSON.
+TEST_API_KEY = "test-key-abc123def456"
+
+
+def ok(payload, headers=None):
+    """A 200 response carrying JSON."""
+    return (200, headers or {}, json.dumps(payload).encode())
+
+
+def http_with(responses):
+    """MerakiHTTP wired to a scripted response queue.
+
+    Returns (http, calls) where calls accumulates (method, url, body).
+    """
+    queue = list(responses)
+    calls = []
+
+    def send(method, url, headers, body):
+        calls.append((method, url, body))
+        return queue.pop(0)
+
+    return MerakiHTTP(api_key=TEST_API_KEY, _send=send), calls
+
+
+def rule(policy, dest, comment="r"):
+    """An MX L3 firewall rule."""
+    return {
+        "comment": comment,
+        "policy": policy,
+        "protocol": "any",
+        "srcCidr": "Any",
+        "srcPort": "Any",
+        "destCidr": dest,
+        "destPort": "Any",
+        "syslogEnabled": False,
+    }
+
+
+# Meraki's implicit trailing rule: GET returns it, PUT rejects it.
+DEFAULT_RULE = {
+    "comment": "Default rule",
+    "policy": "allow",
+    "protocol": "Any",
+    "srcCidr": "Any",
+    "srcPort": "Any",
+    "destCidr": "Any",
+    "destPort": "Any",
+}
+```
+
 - [ ] **Step 2: Write the failing tests**
 
 Create `skills/cisco-meraki/tests/test_http.py`:
@@ -86,6 +167,7 @@ import urllib.request
 
 import context  # noqa: F401  -- puts scripts/ on sys.path
 
+from helpers import TEST_API_KEY
 from meraki_http import (
     DEFAULT_BASE_URL,
     MerakiError,
@@ -122,7 +204,7 @@ class TestRedirectHandler(unittest.TestCase):
         req = urllib.request.Request(
             "https://api.meraki.com/api/v1/organizations/1/actionBatches",
             data=b'{"confirmed": false}',
-            headers={"Authorization": "Bearer secret-key"},
+            headers={"Authorization": f"Bearer {TEST_API_KEY}"},
             method="POST",
         )
 
@@ -133,14 +215,15 @@ class TestRedirectHandler(unittest.TestCase):
 
         self.assertEqual(new.get_method(), "POST")
         self.assertEqual(new.data, b'{"confirmed": false}')
-        self.assertEqual(new.get_header("Authorization"), "Bearer secret-key")
+        self.assertEqual(new.get_header("Authorization"),
+                         f"Bearer {TEST_API_KEY}")
         self.assertEqual(new.host, "n123.meraki.com")
 
 
 class TestRequest(unittest.TestCase):
     def test_sends_bearer_header_and_parses_json(self):
         send = FakeSend([(200, {}, b'[{"id": "42"}]')])
-        http = MerakiHTTP(api_key="secret-key", _send=send)
+        http = MerakiHTTP(api_key=TEST_API_KEY, _send=send)
 
         data, headers = http.request("GET", "/organizations")
 
@@ -148,12 +231,13 @@ class TestRequest(unittest.TestCase):
         method, url, sent_headers, body = send.calls[0]
         self.assertEqual(method, "GET")
         self.assertEqual(url, DEFAULT_BASE_URL + "/organizations")
-        self.assertEqual(sent_headers["Authorization"], "Bearer secret-key")
+        self.assertEqual(sent_headers["Authorization"],
+                         f"Bearer {TEST_API_KEY}")
         self.assertIsNone(body)
 
     def test_encodes_query_params(self):
         send = FakeSend([(200, {}, b"[]")])
-        http = MerakiHTTP(api_key="k", _send=send)
+        http = MerakiHTTP(api_key=TEST_API_KEY, _send=send)
 
         http.request("GET", "/networks/N1/events", params={"perPage": 5,
                                                            "productType": "switch"})
@@ -168,7 +252,7 @@ class TestRequest(unittest.TestCase):
             (200, {}, b'{"ok": true}'),
         ])
         sleep = RecordingSleep()
-        http = MerakiHTTP(api_key="k", sleep=sleep, _send=send)
+        http = MerakiHTTP(api_key=TEST_API_KEY, sleep=sleep, _send=send)
 
         data, _ = http.request("GET", "/organizations")
 
@@ -178,8 +262,8 @@ class TestRequest(unittest.TestCase):
 
     def test_raises_rate_limit_error_after_max_retries(self):
         send = FakeSend([(429, {"Retry-After": "1"}, b'{"errors": ["slow down"]}')] * 4)
-        http = MerakiHTTP(api_key="k", sleep=RecordingSleep(), max_retries=3,
-                          _send=send)
+        http = MerakiHTTP(api_key=TEST_API_KEY, sleep=RecordingSleep(),
+                          max_retries=3, _send=send)
 
         with self.assertRaises(RateLimitError):
             http.request("GET", "/organizations")
@@ -189,7 +273,7 @@ class TestRequest(unittest.TestCase):
             (404, {"X-Request-Id": "abc-123"},
              b'{"errors": ["Network not found"]}'),
         ])
-        http = MerakiHTTP(api_key="k", _send=send)
+        http = MerakiHTTP(api_key=TEST_API_KEY, _send=send)
 
         with self.assertRaises(MerakiError) as ctx:
             http.request("GET", "/networks/nope/events")
@@ -384,9 +468,14 @@ Expected: PASS — 9 tests
 - [ ] **Step 6: Commit**
 
 ```bash
-git add skills/cisco-meraki/scripts/meraki_http.py skills/cisco-meraki/tests/context.py skills/cisco-meraki/tests/test_http.py
+git add skills/cisco-meraki/scripts/meraki_http.py skills/cisco-meraki/tests/context.py skills/cisco-meraki/tests/helpers.py skills/cisco-meraki/tests/test_http.py
 git commit -m "feat(meraki): transport layer with method-preserving redirects and 429 backoff"
 ```
+
+Note: `test_http.py` keeps its own `FakeSend` class rather than using
+`helpers.http_with`. That is deliberate, not duplication — `http_with`
+*constructs* a `MerakiHTTP`, which is the object under test here, and these
+tests need to inspect the request **headers** that `http_with` discards.
 
 ---
 
@@ -418,7 +507,6 @@ git commit -m "feat(meraki): transport layer with method-preserving redirects an
 Create `skills/cisco-meraki/tests/test_client_bootstrap.py`:
 
 ```python
-import json
 import os
 import shutil
 import tempfile
@@ -426,29 +514,14 @@ import unittest
 
 import context  # noqa: F401
 
-from meraki_http import MerakiError, MerakiHTTP
+from helpers import TEST_API_KEY, http_with, ok
+from meraki_http import MerakiError
 from meraki_client import (
     MerakiClient,
     max_timespan_for,
     parse_link_next,
     validate_timespan,
 )
-
-
-def http_with(responses):
-    """responses: list of (status, headers, body_bytes)."""
-    queue = list(responses)
-    calls = []
-
-    def send(method, url, headers, body):
-        calls.append((method, url))
-        return queue.pop(0)
-
-    return MerakiHTTP(api_key="k", _send=send), calls
-
-
-def ok(payload, headers=None):
-    return (200, headers or {}, json.dumps(payload).encode())
 
 
 class TestParseLinkNext(unittest.TestCase):
@@ -520,11 +593,16 @@ class TestOrgResolution(unittest.TestCase):
         http, _ = http_with([ok([{"id": "111", "name": "Acme"}])])
         client = MerakiClient(http, cache_dir=self.tmp)
         client.resolve_org()
+
+        written = os.listdir(self.tmp)
+        self.assertTrue(written, "expected a cache file to be written")
         blob = ""
-        for name in os.listdir(self.tmp):
+        for name in written:
             with open(os.path.join(self.tmp, name), encoding="utf-8") as fh:
                 blob += fh.read()
-        self.assertNotIn("k", blob.replace("networks", "").replace("Acme", ""))
+
+        self.assertIn("111", blob)              # the cache really has content
+        self.assertNotIn(TEST_API_KEY, blob)    # but never the key
 
 
 class TestNetworkLookup(unittest.TestCase):
@@ -872,30 +950,15 @@ git commit -m "feat(meraki): bootstrap, org/network cache, and Link-header pagin
 Create `skills/cisco-meraki/tests/test_client_logs.py`:
 
 ```python
-import json
 import shutil
 import tempfile
 import unittest
 
 import context  # noqa: F401
 
-from meraki_http import MerakiError, MerakiHTTP
+from helpers import http_with, ok
+from meraki_http import MerakiError
 from meraki_client import MerakiClient, product_type_for
-
-
-def http_with(responses):
-    queue = list(responses)
-    calls = []
-
-    def send(method, url, headers, body):
-        calls.append((method, url))
-        return queue.pop(0)
-
-    return MerakiHTTP(api_key="k", _send=send), calls
-
-
-def ok(payload, headers=None):
-    return (200, headers or {}, json.dumps(payload).encode())
 
 
 class TestProductTypeFor(unittest.TestCase):
@@ -1182,30 +1245,15 @@ git commit -m "feat(meraki): event log, config change log, security events, Air 
 Create `skills/cisco-meraki/tests/test_client_live_tools.py`:
 
 ```python
-import json
 import shutil
 import tempfile
 import unittest
 
 import context  # noqa: F401
 
-from meraki_http import MerakiError, MerakiHTTP
+from helpers import http_with, ok
+from meraki_http import MerakiError
 from meraki_client import LIVE_TOOLS, MerakiClient, check_tool_supported
-
-
-def ok(payload, headers=None):
-    return (200, headers or {}, json.dumps(payload).encode())
-
-
-def http_with(responses):
-    queue = list(responses)
-    calls = []
-
-    def send(method, url, headers, body):
-        calls.append((method, url, body))
-        return queue.pop(0)
-
-    return MerakiHTTP(api_key="k", _send=send), calls
 
 
 class TestToolSupport(unittest.TestCase):
@@ -1465,6 +1513,7 @@ import unittest
 
 import context  # noqa: F401
 
+from helpers import DEFAULT_RULE, rule
 from meraki_diff import (
     diff_rules,
     is_default_l3_rule,
@@ -1473,30 +1522,6 @@ from meraki_diff import (
     rule_key,
     strip_default_rule,
 )
-
-
-def rule(policy, dest, comment="r"):
-    return {
-        "comment": comment,
-        "policy": policy,
-        "protocol": "any",
-        "srcCidr": "Any",
-        "srcPort": "Any",
-        "destCidr": dest,
-        "destPort": "Any",
-        "syslogEnabled": False,
-    }
-
-
-DEFAULT_RULE = {
-    "comment": "Default rule",
-    "policy": "allow",
-    "protocol": "Any",
-    "srcCidr": "Any",
-    "srcPort": "Any",
-    "destCidr": "Any",
-    "destPort": "Any",
-}
 
 
 class TestDefaultRule(unittest.TestCase):
@@ -1815,42 +1840,14 @@ import unittest
 
 import context  # noqa: F401
 
-from meraki_http import MerakiError, MerakiHTTP
+from helpers import DEFAULT_RULE, http_with, ok, rule
+from meraki_http import MerakiError
 from meraki_config import (
     ConfigTool,
     HardBlocked,
     check_hard_block,
     extract_rules,
 )
-
-
-def ok(payload, headers=None):
-    return (200, headers or {}, json.dumps(payload).encode())
-
-
-def http_with(responses):
-    queue = list(responses)
-    calls = []
-
-    def send(method, url, headers, body):
-        calls.append((method, url, body))
-        return queue.pop(0)
-
-    return MerakiHTTP(api_key="k", _send=send), calls
-
-
-def rule(policy, dest, comment="r"):
-    return {
-        "comment": comment, "policy": policy, "protocol": "any",
-        "srcCidr": "Any", "srcPort": "Any", "destCidr": dest,
-        "destPort": "Any", "syslogEnabled": False,
-    }
-
-
-DEFAULT_RULE = {
-    "comment": "Default rule", "policy": "allow", "protocol": "Any",
-    "srcCidr": "Any", "srcPort": "Any", "destCidr": "Any", "destPort": "Any",
-}
 
 FW_PATH = "/networks/N1/appliance/firewall/l3FirewallRules"
 
@@ -2359,28 +2356,14 @@ import unittest
 
 import context  # noqa: F401
 
-from meraki_http import MerakiError, MerakiHTTP
+from helpers import http_with, ok
+from meraki_http import MerakiError
 from meraki_config import (
     MAX_BATCH_ACTIONS,
     MAX_PENDING_BATCHES,
     ConfigTool,
     HardBlocked,
 )
-
-
-def ok(payload, headers=None):
-    return (200, headers or {}, json.dumps(payload).encode())
-
-
-def http_with(responses):
-    queue = list(responses)
-    calls = []
-
-    def send(method, url, headers, body):
-        calls.append((method, url, body))
-        return queue.pop(0)
-
-    return MerakiHTTP(api_key="k", _send=send), calls
 
 
 def action(resource="/networks/N1/appliance/vlans/10", operation="update"):
