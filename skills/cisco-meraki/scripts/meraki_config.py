@@ -216,14 +216,8 @@ class ConfigTool:
                 0, [f"{len(actions)} actions exceeds the {MAX_BATCH_ACTIONS}-"
                     f"action limit per batch. Split into multiple batches."])
 
-        org = org_id or self.resolve_org()
-        pending = self._pending_batches(org)
-        if len(pending) >= MAX_PENDING_BATCHES:
-            raise MerakiError(
-                0, [f"{len(pending)} batches are already pending, at the "
-                    f"{MAX_PENDING_BATCHES}-batch limit. Commit or delete one "
-                    f"in Dashboard before staging another."])
-
+        # All network-free validation runs first so a hard-blocked action is
+        # refused without contacting the API.
         for item in actions:
             resource = item.get("resource")
             if not resource:
@@ -233,6 +227,14 @@ class ConfigTool:
             method = {"create": "POST", "update": "PUT",
                       "destroy": "DELETE"}.get(operation, "PUT")
             check_hard_block(method, resource)
+
+        org = org_id or self.resolve_org()
+        pending = self._pending_batches(org)
+        if len(pending) >= MAX_PENDING_BATCHES:
+            raise MerakiError(
+                0, [f"{len(pending)} batches are already pending, at the "
+                    f"{MAX_PENDING_BATCHES}-batch limit. Commit or delete one "
+                    f"in Dashboard before staging another."])
 
         body = {"confirmed": False, "synchronous": False, "actions": actions}
         batch, _ = self.http.request(

@@ -72,7 +72,7 @@ class TestBatchStage(unittest.TestCase):
         bad = [action(resource="/networks/N1", operation="destroy")]
         with self.assertRaises(HardBlocked):
             tool.batch_stage(bad)
-        self.assertEqual(len(calls), 2)  # no POST attempted
+        self.assertEqual(calls, [])  # no HTTP call at all
 
     def test_action_missing_a_resource_is_rejected(self):
         tool, _ = self._tool([ok([{"id": "111"}]), ok([])])
