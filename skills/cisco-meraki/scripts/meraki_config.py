@@ -125,6 +125,7 @@ class ConfigTool:
     # ---- diff ------------------------------------------------------------
 
     def diff(self, path, proposed):
+        check_hard_block("GET", path)
         current, _ = self.http.request("GET", path)
         return self._diff_payloads(current, proposed)
 
@@ -158,7 +159,17 @@ class ConfigTool:
                     f"Snapshot kept at {snapshot_path}"])
 
         body = _repack(proposed, strip_default_rule(extract_rules(proposed)))
-        result, _ = self.http.request("PUT", path, body=body)
+        try:
+            result, _ = self.http.request("PUT", path, body=body)
+        except MerakiError as exc:
+            raise MerakiError(
+                exc.status,
+                [f"Write to {path} failed: {exc}. Live config may be "
+                 f"unchanged -- verify before retrying. Snapshot kept at "
+                 f"{snapshot_path}; restore with:\n"
+                 f"  python meraki_config.py rollback {snapshot_path}"],
+                exc.request_id,
+            ) from exc
         return {"path": path, "snapshot": snapshot_path,
                 "changes": len(lines), "result": result}
 

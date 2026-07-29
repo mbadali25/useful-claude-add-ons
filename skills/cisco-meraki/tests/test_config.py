@@ -201,6 +201,53 @@ class TestApply(unittest.TestCase):
 
         self.assertEqual(calls[1][0], "PUT")
 
+    def test_bare_list_proposed_sends_a_list_body_not_an_envelope(self):
+        current = [rule("deny", "10.0.0.0/8"), DEFAULT_RULE]
+        proposed = [rule("deny", "10.0.0.0/8"),
+                    rule("allow", "192.168.0.0/16")]
+        tool, calls = self._tool([ok(current), ok({})])
+
+        tool.apply(FW_PATH, proposed, confirm=lambda text: True)
+
+        sent = json.loads(calls[1][2].decode())
+        self.assertIsInstance(sent, list)
+        self.assertEqual(len(sent), 2)
+
+    def test_scalar_dict_proposed_sends_that_object_as_the_put_body(self):
+        current = {"name": "Old HQ", "timezone": "America/New_York"}
+        proposed = {"name": "HQ", "timezone": "America/Chicago"}
+        tool, calls = self._tool([ok(current), ok({})])
+
+        tool.apply("/networks/N1", proposed, confirm=lambda text: True)
+
+        sent = json.loads(calls[1][2].decode())
+        self.assertEqual(sent, proposed)
+
+    def test_put_failure_still_reports_the_snapshot_path(self):
+        current = {"rules": [rule("deny", "10.0.0.0/8"), DEFAULT_RULE]}
+        proposed = {"rules": [rule("deny", "10.0.0.0/8"),
+                              rule("allow", "192.168.0.0/16")]}
+        failing_put = (400, {}, json.dumps({"errors": ["Bad rule"]}).encode())
+        tool, calls = self._tool([ok(current), failing_put])
+
+        with self.assertRaises(MerakiError) as ctx:
+            tool.apply(FW_PATH, proposed, confirm=lambda text: True)
+
+        message = str(ctx.exception)
+        self.assertIn("Bad rule", message)
+        self.assertIn(self.tmp, message)
+        self.assertIn("rollback", message.lower())
+        self.assertEqual([c[0] for c in calls], ["GET", "PUT"])
+
+    def test_diff_hard_blocked_path_never_reaches_the_network(self):
+        http, calls = http_with([])
+        tool = ConfigTool(http, snapshot_dir=self.tmp, now=lambda: "t")
+
+        with self.assertRaises(HardBlocked):
+            tool.diff("/administered/identities/me/api/keys/abc123", {})
+
+        self.assertEqual(calls, [])
+
 
 class TestRollback(unittest.TestCase):
     def setUp(self):
