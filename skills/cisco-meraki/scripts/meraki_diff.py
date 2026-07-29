@@ -104,11 +104,38 @@ def diff_rules(current, proposed):
          reported as a "changed" in-place edit instead of an add+remove.
       4. Anything still unclaimed is a genuine "removed" or "added".
 
-    Position IS semantics for Meraki firewall/ACL rules -- they evaluate in
-    order, so moving a deny above a permit changes behavior even though set
-    membership is unchanged. That is why this function never degrades to a
-    membership-only comparison; every branch above is designed to keep a
-    reorder visible no matter what else changed alongside it.
+    WHAT IS GUARANTEED:
+      - A pure reorder (no adds, removes, or edits) is always reported with
+        "moved" operations.
+      - A reorder is still reported when it co-occurs with unrelated additions,
+        removals, or in-place edits to *other* rules.
+      - The diff is never empty when the two lists differ (every change is
+        reported, though it may not explicitly say "moved" for reordered rules).
+
+    KNOWN LIMITATION:
+      When a reorder co-occurs with an in-place edit to one of the *reordered*
+      rules themselves, the move detection link breaks and the "moved" label
+      may be lost. This is because move detection links a removal to an addition
+      by exact content equality: if you change any field of a moved rule, it no
+      longer matches its pre-edit counterpart by rule_key, so the link breaks.
+      The changed rule is still reported with correct position and full content,
+      but the unedited counterpart -- sitting inside a difflib "equal" opcode
+      which does not track index shifts -- may not appear in the output at all.
+
+      This is fixable via fuzzy matching of edited rules to their pre-edit
+      selves by partial similarity, but fuzzy matching is deliberately not
+      implemented. If a future change makes that fix, update this docstring
+      and the test that documents this limitation together.
+
+      Example of the limitation:
+        allow       = rule("allow", "10.0.0.0/8", comment="permit")
+        deny        = rule("deny",  "10.0.0.0/8", comment="block")
+        deny_edited = rule("deny",  "10.0.0.0/8", comment="block-edited")
+
+        diff_rules([allow, deny], [deny_edited, allow])
+        # actual: [('added', 1, deny_edited), ('removed', 2, deny)]
+        # no 'moved' appears, and `allow` -- which now evaluates SECOND
+        # instead of first -- does not appear in the output at all.
     """
     cur = list(current or [])
     prop = list(proposed or [])

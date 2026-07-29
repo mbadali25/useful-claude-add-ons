@@ -140,6 +140,38 @@ class TestDiffRules(unittest.TestCase):
         self.assertEqual(ops, ["removed"])
         self.assertNotIn("moved", ops)
 
+    def test_known_limitation_swap_with_edited_rule_loses_move_label(self):
+        """Documents an accepted limitation, not desired behavior.
+
+        Move detection links a removal to an addition by exact content
+        equality, so editing one of two swapped rules breaks the link: the
+        edit is reported with correct positions and content, but the swap
+        loses its 'moved' label and the unedited counterpart is not
+        reported at all. Fixing it needs fuzzy matching of an edited rule
+        to its pre-edit self, which is deliberately not implemented.
+
+        If a future change makes this test fail, that is likely an
+        IMPROVEMENT -- update diff_rules' docstring and this test together
+        rather than reverting the change.
+        """
+        allow       = rule("allow", "10.0.0.0/8", comment="permit")
+        deny        = rule("deny",  "10.0.0.0/8", comment="block")
+        deny_edited = rule("deny",  "10.0.0.0/8", comment="block-edited")
+
+        lines = diff_rules([allow, deny], [deny_edited, allow])
+
+        # The diff is non-empty (so the confirm gate a human sees is never
+        # silently blank), but there is no 'moved' op.
+        self.assertNotEqual(lines, [])
+        ops = [op for op, _, _ in lines]
+        self.assertNotIn("moved", ops)
+
+        # The observed output: the edited rule appears as an addition,
+        # the original appears as a removal. The unedited 'allow' rule
+        # (which changed position but not content) does not appear.
+        self.assertEqual(len(lines), 2)
+        self.assertEqual([(op, pos) for op, pos, _ in lines], [("added", 1), ("removed", 2)])
+
 
 class TestRenderDiff(unittest.TestCase):
     def test_renders_signed_prefixes_and_positions(self):
