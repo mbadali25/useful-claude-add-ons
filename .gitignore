@@ -257,3 +257,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Superpowers subagent-driven-development scratch (progress ledger, task
+# briefs, review packages) - workflow state, not project content
+.superpowers/
