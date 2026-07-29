@@ -38,12 +38,91 @@ function Test-Admin {
     return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 }
 
-function Update-SessionPath {
-    # Chocolatey/npm installs update the registry PATH but not this running process.
-    # Rebuild $env:Path from Machine + User so later steps in this same script can find new binaries.
-    $machine = [Environment]::GetEnvironmentVariable('Path', 'Machine')
-    $user = [Environment]::GetEnvironmentVariable('Path', 'User')
-    $env:Path = "$machine;$user"
+function Sync-SessionEnvironment {
+    # Chocolatey/npm installers write to the registry environment but never touch this
+    # running process. git is the worst offender: it adds its own PATH entries *and*
+    # GIT_INSTALL_ROOT, both of which later steps (git clone, Git Bash) depend on.
+    # Refresh the whole environment, not just PATH, so those steps don't fail.
+    # Prefer Chocolatey's own refreshenv implementation when it's available.
+    $chocoProfile = if ($env:ChocolateyInstall) {
+        Join-Path $env:ChocolateyInstall 'helpers\chocolateyProfile.psm1'
+    } else { $null }
+
+    if ($chocoProfile -and (Test-Path $chocoProfile)) {
+        try {
+            Import-Module $chocoProfile -DisableNameChecking -Force -ErrorAction Stop
+            Update-SessionEnvironment
+            return
+        } catch {
+            Write-Warn2 "Chocolatey refreshenv unavailable ($($_.Exception.Message)) - falling back to a manual refresh."
+        }
+    }
+
+    # Manual fallback: replay Machine then User scope onto the process, leaving the
+    # vars that are process-owned by nature alone.
+    $preserve = @('USERNAME', 'COMPUTERNAME', 'PROCESSOR_ARCHITECTURE', 'PSModulePath', 'Path')
+    foreach ($scope in 'Machine', 'User') {
+        $vars = [Environment]::GetEnvironmentVariables($scope)
+        foreach ($name in $vars.Keys) {
+            if ($preserve -contains $name) { continue }
+            [Environment]::SetEnvironmentVariable($name, $vars[$name], 'Process')
+        }
+    }
+    $machinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+    $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+    $env:Path = (@($machinePath, $userPath) | Where-Object { $_ }) -join ';'
+}
+
+function Resolve-GitRoot {
+    # Find Git for Windows' install root so we can wire up bash. Try, in order:
+    # the var Chocolatey's git package sets, the location of git.exe on PATH, then
+    # the usual install locations. A candidate only counts if bin\bash.exe is under it.
+    if ($env:GIT_INSTALL_ROOT -and (Test-Path (Join-Path $env:GIT_INSTALL_ROOT 'bin\bash.exe'))) {
+        return $env:GIT_INSTALL_ROOT
+    }
+    $gitCmd = Get-Command git.exe -ErrorAction SilentlyContinue
+    if ($gitCmd) {
+        # git.exe lives in <root>\cmd or <root>\bin
+        $candidate = Split-Path (Split-Path $gitCmd.Source -Parent) -Parent
+        if (Test-Path (Join-Path $candidate 'bin\bash.exe')) { return $candidate }
+    }
+    foreach ($candidate in @("$env:ProgramFiles\Git", "${env:ProgramFiles(x86)}\Git", "$env:LOCALAPPDATA\Programs\Git")) {
+        if ($candidate -and (Test-Path (Join-Path $candidate 'bin\bash.exe'))) { return $candidate }
+    }
+    return $null
+}
+
+function Register-GitBash {
+    # Make 'bash' resolvable in this session and in future ones. Two separate things:
+    #   <root>\bin\bash.exe  - the real shell; this is what scripts must be run with,
+    #                          because git-bash.exe is a GUI launcher that opens its own
+    #                          window, detaches, and returns before the script finishes.
+    #   <root>\git-bash.exe  - the interactive launcher; recorded as GIT_BASH for anything
+    #                          that wants to pop a terminal.
+    # Returns the path to the real bash.exe, or $null if Git isn't installed.
+    $gitRoot = Resolve-GitRoot
+    if (-not $gitRoot) { return $null }
+
+    $bashExe = Join-Path $gitRoot 'bin\bash.exe'
+    if (-not (Test-Path $bashExe)) { return $null }
+    $binDir = Join-Path $gitRoot 'bin'
+
+    $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+    if ($userPath -notlike "*$binDir*") {
+        $newPath = if ([string]::IsNullOrEmpty($userPath)) { $binDir } else { "$userPath;$binDir" }
+        [Environment]::SetEnvironmentVariable('Path', $newPath, 'User')
+        Write-Ok "Added '$binDir' to the User PATH so 'bash' resolves (persists across sessions)."
+    }
+
+    [Environment]::SetEnvironmentVariable('GIT_INSTALL_ROOT', $gitRoot, 'User')
+    $gitBashLauncher = Join-Path $gitRoot 'git-bash.exe'
+    if (Test-Path $gitBashLauncher) {
+        [Environment]::SetEnvironmentVariable('GIT_BASH', $gitBashLauncher, 'User')
+    }
+
+    # Pick up the PATH/GIT_* entries just written, so 'bash' works below without a new shell.
+    Sync-SessionEnvironment
+    return $bashExe
 }
 
 function Invoke-Step {
@@ -75,23 +154,32 @@ if ($script:IsElevated) {
         Set-ExecutionPolicy Bypass -Scope Process -Force
         [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
         Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
-        Update-SessionPath
+        Sync-SessionEnvironment
         Write-Ok "Chocolatey installed"
     }
 
     # --- 2. Chocolatey packages -----------------------------------------------
     $chocoPackages = @('git', 'awscli', 'nodejs', 'python')
+    $packageProbe = @{ git = 'git'; awscli = 'aws'; nodejs = 'npm'; python = 'python' }
     foreach ($pkg in $chocoPackages) {
         Invoke-Step "choco install $pkg" {
             choco install $pkg -y --no-progress
-            Update-SessionPath
+            # Refresh before the next package so this session picks up the new PATH
+            # entries and vars - git especially, since later steps shell out to it.
+            Sync-SessionEnvironment
+            $probe = $packageProbe[$pkg]
+            if ($probe -and -not (Get-Command $probe -ErrorAction SilentlyContinue)) {
+                Write-Warn2 "$pkg installed but '$probe' is still not resolvable in this session - you may need a new shell."
+            } else {
+                Write-Ok "$pkg installed ('$probe' resolved)"
+            }
         }
     }
 }
 
 # --- 3. Claude Code CLI ------------------------------------------------------
 Invoke-Step "Install Claude Code CLI" {
-    Update-SessionPath
+    Sync-SessionEnvironment
     $existing = Get-Command claude -ErrorAction SilentlyContinue
     if ($existing) {
         $version = try { (claude --version) } catch { 'version unknown' }
@@ -102,7 +190,7 @@ Invoke-Step "Install Claude Code CLI" {
         throw "npm not found on PATH after installing nodejs - open a new shell and re-run this script."
     }
     npm install -g @anthropic-ai/claude-code
-    Update-SessionPath
+    Sync-SessionEnvironment
 }
 
 Invoke-Step "Export Claude Code CLI path to PATH" {
@@ -119,7 +207,7 @@ Invoke-Step "Export Claude Code CLI path to PATH" {
         Write-Ok "'$npmPrefix' is already on the User PATH."
     }
     [Environment]::SetEnvironmentVariable('CLAUDE_CODE_HOME', $npmPrefix, 'User')
-    Update-SessionPath
+    Sync-SessionEnvironment
 
     $claudeCmd = Get-Command claude -ErrorAction SilentlyContinue
     if ($claudeCmd) {
@@ -170,7 +258,7 @@ if ($SkipBootstrap) {
         'claude plugin marketplace add lexiaoyao20/excalidraw-generator',
         'claude plugin install excalidraw-generator@excalidraw-generator',
         'claude plugin marketplace add obra/superpowers-marketplace',
-        'claude plugin install superpowers@claude-plugins-official'
+        'claude plugin install superpowers@superpowers-marketplace'
     )
     foreach ($cmd in $bootstrapCommands) {
         Invoke-Step $cmd {
@@ -187,7 +275,7 @@ if (Read-YesNo "Install the AWS MCP server (awslabs.aws-api-mcp-server) and regi
                 throw "pip not found - install Python first (choco install python), then re-run to install uv."
             }
             pip install --user uv
-            Update-SessionPath
+            Sync-SessionEnvironment
         }
         if (-not (Get-Command claude -ErrorAction SilentlyContinue)) {
             throw "claude not found on PATH in this session - open a new shell and re-run this script."
@@ -209,9 +297,19 @@ if (Read-YesNo "Install the Azure MCP server (@azure/mcp) and register it with C
 
 # --- 7. Awesome Claude Code Subagents ----------------------------------------
 Invoke-Step "Clone and install awesome-claude-code-subagents" {
-    $bash = Get-Command bash -ErrorAction SilentlyContinue
-    if (-not $bash) {
-        throw "bash (Git Bash) not found on PATH - install Git for Windows and re-run, or run this step manually."
+    # Map 'bash' to Git Bash and refresh the environment before using it - a fresh
+    # git install puts bash.exe on the registry PATH, not on this process's PATH.
+    $bashExe = Register-GitBash
+    if (-not $bashExe) {
+        $onPath = Get-Command bash -ErrorAction SilentlyContinue
+        if ($onPath) {
+            $bashExe = $onPath.Source
+            Write-Warn2 "Git for Windows not located; falling back to 'bash' on PATH ($bashExe)."
+        } else {
+            throw "bash (Git Bash) not found - install Git for Windows (choco install git) and re-run, or run this step manually."
+        }
+    } else {
+        Write-Ok "Using Git Bash at $bashExe"
     }
     $repoRoot = 'C:\repos'
     if (-not (Test-Path $repoRoot)) {
@@ -226,7 +324,7 @@ Invoke-Step "Clone and install awesome-claude-code-subagents" {
     }
     Push-Location $repoDir
     try {
-        & $bash.Source install-agents.sh
+        & $bashExe install-agents.sh
     } finally {
         Pop-Location
     }
