@@ -93,7 +93,15 @@ class TestRunLiveTool(unittest.TestCase):
         self.assertEqual(len(calls), 2)  # bootstrap only
 
     def test_unknown_serial_raises(self):
-        client, _ = self._client([])
+        # A genuinely absent serial now costs one extra
+        # /organizations/{id}/devices call: device() misses on the cached
+        # list and refetches once (force=True) before concluding the serial
+        # really isn't in this org. That refetch consumes one more queued
+        # device-list response than before the refetch-once fix landed.
+        client, _ = self._client([
+            ok([{"serial": "Q2XX-1111-1111", "model": "MS225-48LP",
+                 "name": "sw1"}]),
+        ])
         with self.assertRaises(MerakiError):
             client.run_live_tool("ping", "Q2XX-9999-9999")
 
@@ -106,6 +114,82 @@ class TestRunLiveTool(unittest.TestCase):
             client.run_live_tool("cableTest", "Q2XX-1111-1111", {"ports": ["1"]},
                                  poll_interval=0, timeout=0)
         self.assertIn("timed out", str(ctx.exception).lower())
+
+    def test_unlisted_job_id_key_still_polls(self):
+        # "somethingElseId" is not in _JOB_ID_KEYS at all. The *Id-scanning
+        # fallback must still find it and poll to completion.
+        client, calls = self._client([
+            ok({"somethingElseId": "job-9", "status": "new"}),
+            ok({"somethingElseId": "job-9", "status": "complete",
+                "results": []}),
+        ])
+        result = client.run_live_tool(
+            "ping", "Q2XX-1111-1111", poll_interval=0, timeout=30,
+        )
+        self.assertEqual(result["status"], "complete")
+        self.assertEqual(calls[2][0], "POST")
+        self.assertEqual(calls[3][0], "GET")
+        self.assertEqual(len(calls), 4)
+
+    def test_no_usable_job_id_raises(self):
+        # No key at all is *Id-shaped (or truthy). Old behavior returned this
+        # payload unpolled, as if "status": "new" were a finished result.
+        client, _ = self._client([
+            ok({"status": "new"}),
+        ])
+        with self.assertRaises(MerakiError) as ctx:
+            client.run_live_tool("ping", "Q2XX-1111-1111",
+                                 poll_interval=0, timeout=30)
+        self.assertIn("ping", str(ctx.exception))
+
+    def test_ping_device_extracts_ping_device_id(self):
+        client, _ = self._client([
+            ok({"pingDeviceId": "job-42", "status": "new"}),
+            ok({"pingDeviceId": "job-42", "status": "complete",
+                "results": {"latencies": []}}),
+        ])
+        result = client.run_live_tool(
+            "pingDevice", "Q2XX-1111-1111", poll_interval=0, timeout=30,
+        )
+        self.assertEqual(result["status"], "complete")
+
+    def test_stale_device_cache_refetches_and_succeeds(self):
+        # First device list is missing the target serial; the second
+        # (post-refetch) list has it. device() must refetch once and find it.
+        first_devices = ok([{"serial": "Q2XX-1111-1111",
+                             "model": "MS225-48LP", "name": "sw1"}])
+        second_devices = ok([
+            {"serial": "Q2XX-1111-1111", "model": "MS225-48LP", "name": "sw1"},
+            {"serial": "Q2XX-2222-2222", "model": "MS225-48LP", "name": "sw2"},
+        ])
+        http, calls = http_with([
+            ok([{"id": "111"}]),
+            first_devices,
+            second_devices,
+            ok({"cableTestId": "job-1", "status": "new"}),
+            ok({"cableTestId": "job-1", "status": "complete", "results": []}),
+        ])
+        client = MerakiClient(http, cache_dir=self.tmp)
+        result = client.run_live_tool(
+            "cableTest", "Q2XX-2222-2222", {"ports": ["1"]},
+            poll_interval=0, timeout=30,
+        )
+        self.assertEqual(result["status"], "complete")
+        device_calls = [c for c in calls if c[1].endswith("/devices")]
+        self.assertEqual(len(device_calls), 2)
+
+    def test_absent_serial_raises_and_refetches_exactly_once(self):
+        # A serial that is truly not in this org: device() misses on the
+        # cached list, refetches once (force=True), misses again, and raises
+        # -- proving there is no unbounded refetch loop.
+        client, calls = self._client([
+            ok([{"serial": "Q2XX-1111-1111", "model": "MS225-48LP",
+                 "name": "sw1"}]),
+        ])
+        with self.assertRaises(MerakiError):
+            client.run_live_tool("ping", "Q2XX-9999-9999")
+        device_calls = [c for c in calls if c[1].endswith("/devices")]
+        self.assertEqual(len(device_calls), 2)
 
 
 if __name__ == "__main__":

@@ -124,9 +124,11 @@ LIVE_TOOLS = {
 
 TERMINAL_STATUSES = ("complete", "failed")
 
-# Response key holding the job id, per tool.
-_JOB_ID_KEYS = ("pingId", "cableTestId", "throughputTestId", "arpTableId",
-                "macTableId", "wakeOnLanId", "id")
+# Response key holding the job id, per tool. This is the primary,
+# cheap-to-check path; run_live_tool() also has a *Id-scanning fallback for
+# keys this table doesn't yet know about (Meraki adds tools/keys over time).
+_JOB_ID_KEYS = ("pingId", "pingDeviceId", "cableTestId", "throughputTestId",
+                "arpTableId", "macTableId", "wakeOnLanId", "id")
 
 
 def check_tool_supported(tool, model):
@@ -148,6 +150,7 @@ class MerakiClient:
         self.cache_dir = cache_dir
         self._org_id = None
         self._networks = None
+        self._devices = None
 
     # ---- cache -----------------------------------------------------------
 
@@ -272,48 +275,93 @@ class MerakiClient:
 
     # ---- live tools (ephemeral jobs; no persistent config change) --------
 
-    def device(self, serial):
+    def devices(self, force=False):
+        if not force and self._devices is not None:
+            return self._devices
         org_id = self.resolve_org()
         cache = self._load_cache(org_id)
-        devices = cache.get("devices")
-        if not devices:
-            devices = self.get_all(f"/organizations/{org_id}/devices")
-            cache["devices"] = devices
-            self._save_cache(org_id, cache)
-        for dev in devices:
+        if not force and cache.get("devices"):
+            self._devices = cache["devices"]
+            return self._devices
+        devs = self.get_all(f"/organizations/{org_id}/devices")
+        self._devices = devs or []
+        cache["devices"] = self._devices
+        self._save_cache(org_id, cache)
+        return self._devices
+
+    def device(self, serial):
+        for dev in self.devices():
             if str(dev.get("serial")) == str(serial):
                 return dev
-        raise MerakiError(0, [f"Serial {serial} is not in this org's device list."])
+        # Stale cache: a device added after this cache was written would
+        # otherwise look like a false "not in this org" -- refetch once and
+        # look again before concluding it's genuinely absent. No recursion:
+        # a genuinely missing serial costs exactly one refetch, never a loop.
+        for dev in self.devices(force=True):
+            if str(dev.get("serial")) == str(serial):
+                return dev
+        known = ", ".join(str(d.get("serial")) for d in self.devices()) or "(none)"
+        raise MerakiError(0, [f"Serial {serial} is not in this org's device "
+                              f"list. Known serials: {known}"])
 
     def run_live_tool(self, tool, serial, body=None, timeout=60.0,
                       poll_interval=2.0):
+        """Create a live-tool job on `serial` and poll it to completion.
+
+        `timeout` bounds only the polling loop's own waiting: it guarantees
+        at least one poll happens, and clamps each subsequent sleep so the
+        loop never sleeps past the deadline. It does NOT bound the wall
+        clock of the whole call. Each individual GET/POST this method issues
+        is separately subject to the transport's own socket timeout (60s in
+        meraki_http.py) plus its 429 retry-and-backoff policy, and neither is
+        coordinated with `timeout` -- so a caller passing timeout=5 can still
+        see this call take noticeably longer than 5s if a single request is
+        slow or rate-limited. The timeout error names the job id so it can
+        still be polled by hand once the underlying request returns.
+        """
         dev = self.device(serial)
         check_tool_supported(tool, dev.get("model", ""))
 
         base = f"/devices/{serial}/liveTools/{tool}"
         created, _ = self.http.request("POST", base, body=body or {})
         job_id = None
-        for key in _JOB_ID_KEYS:
-            if isinstance(created, dict) and created.get(key):
-                job_id = created[key]
-                break
+        if isinstance(created, dict):
+            for key in _JOB_ID_KEYS:
+                if created.get(key):
+                    job_id = created[key]
+                    break
+            if not job_id:
+                # Safety net: the known-key table is necessarily incomplete
+                # (Meraki adds live tools over time) -- fall back to any
+                # *Id-shaped key rather than silently handing back the
+                # unpolled creation payload (typically status: "new") as if
+                # it were a finished result.
+                for key, value in created.items():
+                    if key.endswith("Id") and value:
+                        job_id = value
+                        break
         if not job_id:
-            return created
+            present = (", ".join(sorted(created)) if isinstance(created, dict)
+                       else "(non-dict response)")
+            raise MerakiError(
+                0, [f"Live tool '{tool}' on {serial} returned no recognizable "
+                    f"job id, so it cannot be polled. Keys present in the "
+                    f"creation response: {present or '(none)'}"])
 
         deadline = time.monotonic() + float(timeout)
-        latest = created
         while True:
             latest, _ = self.http.request("GET", f"{base}/{job_id}")
             status = (latest or {}).get("status")
             if status in TERMINAL_STATUSES:
                 return latest
-            if time.monotonic() >= deadline:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
                 raise MerakiError(
                     0, [f"Live tool '{tool}' on {serial} timed out after "
                         f"{timeout}s; last status was '{status}'. "
                         f"Job id {job_id} can still be polled manually."])
             if poll_interval:
-                time.sleep(poll_interval)
+                time.sleep(min(poll_interval, remaining))
 
     # ---- generic reads ---------------------------------------------------
 
