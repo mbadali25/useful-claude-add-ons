@@ -24,6 +24,7 @@ import argparse
 import json
 import os
 import sys
+import time
 import urllib.parse
 
 from meraki_http import MerakiError, MerakiHTTP
@@ -106,6 +107,39 @@ def product_type_for(network, requested=None):
                 f"({', '.join(usable)}). The event log requires one "
                 f"productType -- pass --product-type with one of these."])
     return usable[0]
+
+
+# Live-tool availability is platform-bound. Checking the model up front turns a
+# bare 400 into an actionable refusal. Verify this table against the live API
+# during implementation -- Meraki adds tools over time.
+LIVE_TOOLS = {
+    "ping": ("MX", "MS", "MR", "MG", "Z", "C9"),
+    "pingDevice": ("MX", "MS", "MR", "MG", "Z", "C9"),
+    "cableTest": ("MS", "C9"),
+    "throughputTest": ("MX", "MR", "Z"),
+    "arpTable": ("MX", "MS", "C9"),
+    "macTable": ("MS", "C9"),
+    "wakeOnLan": ("MX", "MS", "C9"),
+}
+
+TERMINAL_STATUSES = ("complete", "failed")
+
+# Response key holding the job id, per tool.
+_JOB_ID_KEYS = ("pingId", "cableTestId", "throughputTestId", "arpTableId",
+                "macTableId", "wakeOnLanId", "id")
+
+
+def check_tool_supported(tool, model):
+    if tool not in LIVE_TOOLS:
+        raise MerakiError(
+            0, [f"Unknown live tool '{tool}'. Available: "
+                f"{', '.join(sorted(LIVE_TOOLS))}"])
+    prefixes = LIVE_TOOLS[tool]
+    upper = (model or "").upper()
+    if not any(upper.startswith(p) for p in prefixes):
+        raise MerakiError(
+            0, [f"Live tool '{tool}' is not available on {model}. "
+                f"Supported platforms: {', '.join(prefixes)}"])
 
 
 class MerakiClient:
@@ -236,6 +270,51 @@ class MerakiClient:
         validate_timespan(path, timespan)
         return self.get_all(path, {"timespan": timespan})
 
+    # ---- live tools (ephemeral jobs; no persistent config change) --------
+
+    def device(self, serial):
+        org_id = self.resolve_org()
+        cache = self._load_cache(org_id)
+        devices = cache.get("devices")
+        if not devices:
+            devices = self.get_all(f"/organizations/{org_id}/devices")
+            cache["devices"] = devices
+            self._save_cache(org_id, cache)
+        for dev in devices:
+            if str(dev.get("serial")) == str(serial):
+                return dev
+        raise MerakiError(0, [f"Serial {serial} is not in this org's device list."])
+
+    def run_live_tool(self, tool, serial, body=None, timeout=60.0,
+                      poll_interval=2.0):
+        dev = self.device(serial)
+        check_tool_supported(tool, dev.get("model", ""))
+
+        base = f"/devices/{serial}/liveTools/{tool}"
+        created, _ = self.http.request("POST", base, body=body or {})
+        job_id = None
+        for key in _JOB_ID_KEYS:
+            if isinstance(created, dict) and created.get(key):
+                job_id = created[key]
+                break
+        if not job_id:
+            return created
+
+        deadline = time.monotonic() + float(timeout)
+        latest = created
+        while True:
+            latest, _ = self.http.request("GET", f"{base}/{job_id}")
+            status = (latest or {}).get("status")
+            if status in TERMINAL_STATUSES:
+                return latest
+            if time.monotonic() >= deadline:
+                raise MerakiError(
+                    0, [f"Live tool '{tool}' on {serial} timed out after "
+                        f"{timeout}s; last status was '{status}'. "
+                        f"Job id {job_id} can still be polled manually."])
+            if poll_interval:
+                time.sleep(poll_interval)
+
     # ---- generic reads ---------------------------------------------------
 
     def get(self, path, params=None):
@@ -307,6 +386,13 @@ def build_parser():
     marshal = sub.add_parser("air-marshal")
     marshal.add_argument("--network", required=True)
     marshal.add_argument("--timespan", type=int, default=None)
+
+    live = sub.add_parser("live")
+    live.add_argument("tool", choices=sorted(LIVE_TOOLS))
+    live.add_argument("serial")
+    live.add_argument("--json", dest="body", default=None,
+                     help='Tool body, e.g. \'{"target": "8.8.8.8"}\'')
+    live.add_argument("--timeout", type=float, default=60.0)
     return parser
 
 
@@ -331,6 +417,10 @@ def main(argv=None):
             _emit(client.security_events(args.network, args.timespan))
         elif args.command == "air-marshal":
             _emit(client.air_marshal(args.network, args.timespan))
+        elif args.command == "live":
+            body = json.loads(args.body) if args.body else None
+            _emit(client.run_live_tool(args.tool, args.serial, body,
+                                       timeout=args.timeout))
         else:
             params = dict(urllib.parse.parse_qsl(args.params)) if args.params else None
             fn = client.get if args.command == "get" else client.get_all
