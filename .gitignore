@@ -261,3 +261,7 @@ __marimo__/
 # Superpowers subagent-driven-development scratch (progress ledger, task
 # briefs, review packages) - workflow state, not project content
 .superpowers/
+
+# Cisco Meraki skill — config snapshots and bootstrap cache (may contain
+# network config and shared secrets; never commit)
+.meraki-snapshots/
