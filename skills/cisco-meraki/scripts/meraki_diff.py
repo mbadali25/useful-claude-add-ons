@@ -20,6 +20,8 @@ production config:
 
 import copy
 import json
+from collections import defaultdict
+from difflib import SequenceMatcher
 
 SECRET_KEYS = frozenset({
     "psk", "secret", "sharedsecret", "passphrase", "password",
@@ -74,6 +76,39 @@ def diff_rules(current, proposed):
     Returns a list of (op, position, rule) where op is one of
     "added" / "removed" / "moved" / "changed" and position is 1-based.
     Empty list means genuinely no change.
+
+    Built on difflib.SequenceMatcher over the rule_key sequences so that a
+    reorder is detected as a reorder even when it co-occurs with an add, a
+    remove, or an in-place edit in the same call -- the previous version only
+    recognized a reorder in isolation (identical set membership, identical
+    length) and silently dropped it the moment anything else changed too.
+
+    Approach:
+      1. Walk SequenceMatcher's opcodes over cur_keys/prop_keys.
+         - "equal" spans contribute nothing.
+         - "delete" spans are candidate removals (position in current).
+         - "insert" spans are candidate additions (position in proposed).
+         - "replace" spans are decomposed the same way: the removed side
+           feeds the removal candidates, the inserted side feeds the
+           addition candidates. When a replace span has equal length on
+           both sides we *also* remember the same-offset (removal,
+           addition) pairing as a candidate in-place edit, since that is
+           the common case of a single field changing without a reorder.
+      2. Match candidate removals against candidate additions by rule_key,
+         by count (not just set membership) -- a rule_key shared between
+         the two pools is a moved rule, not an add-plus-remove. Duplicate
+         rule_keys are handled the same way: two removals and one addition
+         of the same key yield one move and one leftover removal.
+      3. Whatever a same-offset replace pairing left unclaimed by a move
+         (i.e. neither side turned out to be part of a bigger reorder) is
+         reported as a "changed" in-place edit instead of an add+remove.
+      4. Anything still unclaimed is a genuine "removed" or "added".
+
+    Position IS semantics for Meraki firewall/ACL rules -- they evaluate in
+    order, so moving a deny above a permit changes behavior even though set
+    membership is unchanged. That is why this function never degrades to a
+    membership-only comparison; every branch above is designed to keep a
+    reorder visible no matter what else changed alongside it.
     """
     cur = list(current or [])
     prop = list(proposed or [])
@@ -83,36 +118,78 @@ def diff_rules(current, proposed):
     if cur_keys == prop_keys:
         return []
 
-    cur_set = set(cur_keys)
-    prop_set = set(prop_keys)
+    removals = []  # [{"pos": 1-based index in current, "rule": ..., "key": ...}]
+    additions = []  # [{"pos": 1-based index in proposed, "rule": ..., "key": ...}]
+    # (removal_index, addition_index) pairs from same-offset, equal-length
+    # replace spans -- candidate in-place edits, used only as a fallback
+    # once move-matching has had first claim on both pools.
+    equal_pairs = []
 
-    # Same membership, different order: a pure reorder. Report every position
-    # that shifted -- this is the case a set-based diff would silently miss.
-    if cur_set == prop_set and len(cur_keys) == len(prop_keys):
-        return [
-            ("moved", i + 1, prop[i])
-            for i, (c, p) in enumerate(zip(cur_keys, prop_keys))
-            if c != p
-        ]
-
-    lines = []
-    # Positions present in both lists but holding different rules: an in-place
-    # edit rather than an add plus a remove.
-    for i in range(min(len(cur_keys), len(prop_keys))):
-        if cur_keys[i] == prop_keys[i]:
+    opcodes = SequenceMatcher(None, cur_keys, prop_keys).get_opcodes()
+    for tag, i1, i2, j1, j2 in opcodes:
+        if tag == "equal":
             continue
-        if prop_keys[i] not in cur_set and cur_keys[i] not in prop_set:
-            lines.append(("changed", i + 1, prop[i]))
+        if tag == "delete":
+            for i in range(i1, i2):
+                removals.append({"pos": i + 1, "rule": cur[i], "key": cur_keys[i]})
+        elif tag == "insert":
+            for j in range(j1, j2):
+                additions.append({"pos": j + 1, "rule": prop[j], "key": prop_keys[j]})
+        elif tag == "replace":
+            if (i2 - i1) == (j2 - j1):
+                for i, j in zip(range(i1, i2), range(j1, j2)):
+                    r_idx = len(removals)
+                    removals.append({"pos": i + 1, "rule": cur[i], "key": cur_keys[i]})
+                    a_idx = len(additions)
+                    additions.append({"pos": j + 1, "rule": prop[j], "key": prop_keys[j]})
+                    equal_pairs.append((r_idx, a_idx))
+            else:
+                for i in range(i1, i2):
+                    removals.append({"pos": i + 1, "rule": cur[i], "key": cur_keys[i]})
+                for j in range(j1, j2):
+                    additions.append({"pos": j + 1, "rule": prop[j], "key": prop_keys[j]})
 
-    changed_positions = {pos for _, pos, _ in lines}
+    removals_by_key = defaultdict(list)
+    for idx, r in enumerate(removals):
+        removals_by_key[r["key"]].append(idx)
+    additions_by_key = defaultdict(list)
+    for idx, a in enumerate(additions):
+        additions_by_key[a["key"]].append(idx)
 
-    for i, key in enumerate(prop_keys):
-        if key not in cur_set and (i + 1) not in changed_positions:
-            lines.append(("added", i + 1, prop[i]))
-    for i, key in enumerate(cur_keys):
-        if key not in prop_set and (i + 1) not in changed_positions:
-            lines.append(("removed", i + 1, cur[i]))
+    consumed_removals = set()
+    consumed_additions = set()
+    moved_lines = []
+    for key, r_indices in removals_by_key.items():
+        a_indices = additions_by_key.get(key)
+        if not a_indices:
+            continue
+        for r_idx, a_idx in zip(r_indices, a_indices):
+            consumed_removals.add(r_idx)
+            consumed_additions.add(a_idx)
+            addition = additions[a_idx]
+            moved_lines.append(("moved", addition["pos"], addition["rule"]))
 
+    changed_lines = []
+    for r_idx, a_idx in equal_pairs:
+        if r_idx in consumed_removals or a_idx in consumed_additions:
+            continue
+        consumed_removals.add(r_idx)
+        consumed_additions.add(a_idx)
+        addition = additions[a_idx]
+        changed_lines.append(("changed", addition["pos"], addition["rule"]))
+
+    removed_lines = [
+        ("removed", r["pos"], r["rule"])
+        for idx, r in enumerate(removals)
+        if idx not in consumed_removals
+    ]
+    added_lines = [
+        ("added", a["pos"], a["rule"])
+        for idx, a in enumerate(additions)
+        if idx not in consumed_additions
+    ]
+
+    lines = moved_lines + changed_lines + removed_lines + added_lines
     lines.sort(key=lambda item: (item[1], item[0]))
     return lines
 

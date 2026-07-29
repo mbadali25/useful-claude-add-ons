@@ -84,6 +84,62 @@ class TestDiffRules(unittest.TestCase):
         b = {"destCidr": "Any", "policy": "deny"}
         self.assertEqual(rule_key(a), rule_key(b))
 
+    def test_reorder_co_occurring_with_addition_still_reports_the_move(self):
+        """Regression: a swap must remain visible even when an unrelated
+        rule is added in the same call. The old implementation only
+        detected 'moved' from an early-return branch guarded on identical
+        set membership and length, so this exact case -- swap plus an
+        addition -- reported only the addition and hid the swap entirely."""
+        allow = rule("allow", "10.0.0.0/8", comment="permit")
+        deny = rule("deny", "10.0.0.0/8", comment="block")
+        new_rule = rule("allow", "8.8.8.8/32", comment="new")
+        current = [allow, deny]
+        proposed = [deny, allow, new_rule]
+        lines = diff_rules(current, proposed)
+        ops = [op for op, _, _ in lines]
+        self.assertIn("moved", ops)
+        self.assertIn("added", ops)
+
+    def test_reorder_co_occurring_with_removal_reports_both(self):
+        a = rule("allow", "1.1.1.1/32", comment="a")
+        b = rule("deny", "2.2.2.2/32", comment="b")
+        c = rule("allow", "3.3.3.3/32", comment="c")
+        current = [a, b, c]
+        proposed = [b, a]
+        lines = diff_rules(current, proposed)
+        ops = [op for op, _, _ in lines]
+        self.assertIn("moved", ops)
+        self.assertIn("removed", ops)
+
+    def test_in_place_edit_and_separate_insertion_are_independent(self):
+        edited = rule("allow", "10.0.0.0/8", comment="edit-me")
+        kept = rule("deny", "192.168.0.0/16", comment="keep")
+        current = [edited, kept]
+        proposed = [
+            rule("deny", "10.0.0.0/8", comment="edit-me"),
+            kept,
+            rule("allow", "8.8.8.8/32", comment="new"),
+        ]
+        lines = diff_rules(current, proposed)
+        changed = [(op, pos) for op, pos, _ in lines if op == "changed"]
+        added = [(op, pos) for op, pos, _ in lines if op == "added"]
+        self.assertEqual(changed, [("changed", 1)])
+        self.assertEqual(added, [("added", 3)])
+
+    def test_middle_removal_shifts_tail_without_spurious_changes(self):
+        r1 = rule("allow", "1.1.1.1/32", comment="one")
+        r2 = rule("deny", "2.2.2.2/32", comment="two")
+        r3 = rule("allow", "3.3.3.3/32", comment="three")
+        lines = diff_rules([r1, r2, r3], [r1, r3])
+        self.assertEqual([(op, pos) for op, pos, _ in lines], [("removed", 2)])
+
+    def test_duplicate_rules_removal_is_not_mistaken_for_a_move(self):
+        dup = rule("deny", "10.0.0.0/8", comment="dup")
+        lines = diff_rules([dup, dup], [dup])
+        ops = [op for op, _, _ in lines]
+        self.assertEqual(ops, ["removed"])
+        self.assertNotIn("moved", ops)
+
 
 class TestRenderDiff(unittest.TestCase):
     def test_renders_signed_prefixes_and_positions(self):
