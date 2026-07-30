@@ -4,7 +4,17 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- `skills/cisco-meraki` — Cisco Meraki Dashboard API v1 skill for a single
+  organization, covering MX/MS/MR. Reads inventory, device status, the network
+  event log, the org configuration change log, MX security/IDS events, and Air
+  Marshal; runs live diagnostics (ping, cable test, throughput, ARP/MAC table,
+  wake-on-LAN); and makes configuration changes behind a snapshot → diff →
+  confirm gate with single-command rollback. Bulk changes route through staged
+  Action Batches so Meraki validates the payload server-side before commit.
+  Stdlib-only Python, no pip install. Includes the repo's first unit test suite
+  (`python -m unittest discover -s skills/cisco-meraki/tests -p "test_*.py"`).
 
 ## [2026-07-28]
 
