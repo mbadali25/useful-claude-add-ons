@@ -272,6 +272,19 @@ function Test-PluginInstalled {
     return (Get-ClaudePlugins).ContainsKey($Name)
 }
 
+function Get-ClaudeSkillsDir {
+    # Some things (the 'skills' CLI) install as plain user-level skills rather than as
+    # Claude Code plugins, so they never show up in 'claude plugin list' - detection for
+    # those is a filesystem check against the user-level skills directory.
+    $root = if ($env:CLAUDE_CONFIG_DIR) { $env:CLAUDE_CONFIG_DIR } else { Join-Path $env:USERPROFILE '.claude' }
+    return (Join-Path $root 'skills')
+}
+
+function Test-UserSkillInstalled {
+    param([string]$Name)
+    return (Test-Path (Join-Path (Join-Path (Get-ClaudeSkillsDir) $Name) 'SKILL.md'))
+}
+
 # --- Install wrappers (detect, then act) -------------------------------------
 
 function Add-ClaudeMarketplace {
@@ -478,6 +491,7 @@ if ($SkipBootstrap) {
         'repo-docs',
         'shipstation',
         'sophos-central',
+        'terraform-docs-readme',
         'wazuh-onprem',
         'web-testing-playwright',
         'work-log-reporter'
@@ -512,7 +526,33 @@ if ($SkipBootstrap) {
     }
 
     Invoke-Step "Skill: find-skills (vercel-labs/skills)" {
+        # find-skills is installed by the 'skills' CLI as a user-level skill, not as a
+        # Claude Code plugin, so it is detected on disk rather than via 'claude plugin list'.
+        $findSkillsDir = Join-Path (Get-ClaudeSkillsDir) 'find-skills'
+        $present = Test-UserSkillInstalled 'find-skills'
+        if ($present -and $NoUpdate) {
+            Write-Skip "find-skills already installed at $findSkillsDir (-NoUpdate set)"
+            return
+        }
+        $prompt = if ($present) {
+            "find-skills is already installed at $findSkillsDir. Re-run its installer to pick up updates?"
+        } else {
+            "Install the find-skills skill (vercel-labs/skills)?"
+        }
+        if (-not (Read-YesNo $prompt 'Y')) {
+            Write-Skip "find-skills"
+            return
+        }
         npx -y skills add vercel-labs/skills --skill find-skills --agent claude-code
+        if (-not (Test-UserSkillInstalled 'find-skills')) {
+            throw "the installer finished but '$findSkillsDir\SKILL.md' was not created - see the output above."
+        }
+        if ($present) {
+            Write-Ok "find-skills re-installed (now current)"
+        } else {
+            $script:Summary.Installed++
+            Write-Ok "installed find-skills to $findSkillsDir"
+        }
     }
 
     # --- 6. ClaudePluginHub --------------------------------------------------

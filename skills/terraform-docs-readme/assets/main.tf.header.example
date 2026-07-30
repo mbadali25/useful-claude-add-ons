@@ -1,0 +1,46 @@
+/**
+* # Example Module Name
+*
+* One or two sentences describing what this module deploys and why it exists.
+*
+* ## Data Flow
+*
+* ```mermaid
+* flowchart TB
+*   user["End User / Browser"]
+*   dns["DNS<br/>app.example.com"]
+*   cdn["CDN Distribution"]
+*   site["S3 Bucket<br/>static site"]
+*   api["API Gateway REST"]
+*   fn["Lambda Function"]
+*   db[("DynamoDB Tables")]
+*   logs[("CloudWatch Logs")]
+*
+*   user --> dns --> cdn
+*   cdn --> site
+*   cdn --> api --> fn
+*   fn --> db
+*   fn --> logs
+* ```
+*
+* ## Account Inventory
+*
+* | Environment | Account Name | Account Number | Bucket |
+* |---|---|---|---|
+* | dev  | Example Org (dev)  | 000000000000 | example-dev-bucket  |
+* | prod | Example Org (prod) | 111111111111 | example-prod-bucket |
+*
+* ## DNS Names
+*
+* | Environment | DNS / Certificate Name |
+* |---|---|
+* | dev        | dev-app.example.com |
+* | all others | app.example.com     |
+*
+* ## Components Created
+*
+* | Area | Resources |
+* |---|---|
+* | Static site &amp; API | Static-site bucket, CDN distribution + origin access control, API Gateway REST API + stage, Lambda function, certificate, DNS records |
+* | Security &amp; data  | KMS key + alias, IAM roles/policies, user pool + app client, DynamoDB tables, CloudWatch log groups |
+*/

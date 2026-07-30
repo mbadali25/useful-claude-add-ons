@@ -39,7 +39,7 @@ cd useful-claude-add-ons
 
 Both scripts are idempotent and **detect before they install** — an already-present Chocolatey package, marketplace, or plugin is reported and skipped rather than reinstalled. Re-running is cheap and safe. Each run ends with an `Installed / Updated / Already present` summary.
 
-They prompt before the optional pieces (claude-mem, GSD, the VoltAgent subagent collection, the ClaudePluginHub set, and the AWS/Azure MCP servers), so you can take only what you want.
+They prompt before the optional pieces (the `find-skills` skill, claude-mem, GSD, the VoltAgent subagent collection, the ClaudePluginHub set, and the AWS/Azure MCP servers), so you can take only what you want. Where something is already present, the prompt says so and offers a refresh instead of a fresh install.
 
 | Switch (Windows / Linux) | Effect |
 |---|---|
@@ -121,6 +121,7 @@ See [`Skill-Authoring-Standard.md`](Skill-Authoring-Standard.md) for how a skill
 | [`repo-docs`](skills/repo-docs) | Docs | Generates and refreshes a whole documentation set for a codebase — `CLAUDE.md`, root and per-directory READMEs, API/function reference, architecture doc, `TODO.md`, `SECURITY.md`, `CHANGELOG.md`, handoff notes — re-runnable without clobbering human edits. | Automatic |
 | [`shipstation`](skills/shipstation) | E-commerce / Logistics | ShipStation across its three APIs (V2, legacy V1, ShipEngine) — shipments, labels, rates, carriers, warehouses, inventory, products, orders, tracking, batches, manifests. | Automatic |
 | [`sophos-central`](skills/sophos-central) | Security | Sophos Central API — endpoint management (isolate, scan, tamper protection), alert triage, SIEM export, XDR/Live Discover, firewall management. | Automatic |
+| [`terraform-docs-readme`](skills/terraform-docs-readme) | IaC / Docs | Regenerates a Terraform module's `README.md` with `terraform-docs` — wires up `.terraform-docs.yml`, the `main.tf` header block, `footer.md`, and the `BEGIN_TF_DOCS`/`END_TF_DOCS` injection markers, and diagnoses why a variable, header, or footer isn't showing up. | Automatic |
 | [`wazuh-onprem`](skills/wazuh-onprem) | Security / SIEM | Self-hosted Wazuh across all four surfaces — Server API, Indexer API, Dashboard saved-objects API, and `ossec.conf` over SSH. | Automatic |
 | [`web-testing-playwright`](skills/web-testing-playwright) | Testing / QA | Drives a real browser with Playwright — screenshots at multiple viewports, console errors, failed network requests, form and login flows — plus browser setup for Windows and Linux. | Automatic |
 | [`work-log-reporter`](skills/work-log-reporter) | Productivity | Keeps a committed per-session `work-log/` of what was done and what was touched, then generates a formatted email report with a PDF attachment and sends it over SMTP. | Automatic |

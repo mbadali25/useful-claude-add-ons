@@ -86,6 +86,12 @@
       "version": "1.0.0"
     },
     {
+      "name": "terraform-docs-readme",
+      "source": "./skills/terraform-docs-readme",
+      "description": "Regenerate a Terraform module's README.md with terraform-docs - .terraform-docs.yml, main.tf header block, footer.md, and the BEGIN_TF_DOCS/END_TF_DOCS injection markers.",
+      "version": "1.0.0"
+    },
+    {
       "name": "wazuh-onprem",
       "source": "./skills/wazuh-onprem",
       "description": "Self-hosted Wazuh across Server API, Indexer API, Dashboard saved-objects API, and ossec.conf over SSH.",

@@ -55,7 +55,7 @@ Both scripts, unless skipped, run this exact sequence (documented in full in [`M
 claude plugin marketplace add obra/superpowers-marketplace
 claude plugin install superpowers@superpowers-marketplace
 
-npx -y skills add vercel-labs/skills --skill find-skills --agent claude-code
+npx -y skills add vercel-labs/skills --skill find-skills --agent claude-code   # prompted
 npx @opengsd/gsd-core@latest
 npx claude-mem install
 
@@ -69,6 +69,8 @@ claude plugin install superpowers@claude-plugins-official
 claude plugin marketplace add mbadali25/useful-claude-add-ons
 ```
 
+`find-skills` is asked about before it runs (default **Yes**). It installs through the `skills` CLI as a plain user-level skill rather than as a Claude Code plugin, so it never shows up in `claude plugin list` — the scripts detect it on disk at `~/.claude/skills/find-skills/SKILL.md` (or `$CLAUDE_CONFIG_DIR/skills/...`). If it's already there, the prompt changes to offer a re-install for updates instead, and `-NoUpdate` / `--no-update` skips it outright.
+
 The last line adds this repo's own skills as an installable marketplace — unlike the team bootstrap list above, the scripts **do** auto-install every individual skill from it (see below), since it's this repo's own catalog.
 
 ### What the own-marketplace step installs
@@ -79,16 +81,25 @@ Immediately after adding `mbadali25/useful-claude-add-ons` as a marketplace, bot
 claude plugin install aws-opensearch@useful-claude-add-ons
 claude plugin install bitbucket@useful-claude-add-ons
 claude plugin install checkpoint-email@useful-claude-add-ons
+claude plugin install cisco-meraki@useful-claude-add-ons
 claude plugin install cloudflare@useful-claude-add-ons
 claude plugin install drata@useful-claude-add-ons
 claude plugin install i-have-adhd@useful-claude-add-ons
+claude plugin install infra-work-ticketing@useful-claude-add-ons
 claude plugin install intune-graph@useful-claude-add-ons
 claude plugin install mermaid-svg-bitbucket@useful-claude-add-ons
+claude plugin install repo-docs@useful-claude-add-ons
+claude plugin install shipstation@useful-claude-add-ons
 claude plugin install sophos-central@useful-claude-add-ons
+claude plugin install terraform-docs-readme@useful-claude-add-ons
 claude plugin install wazuh-onprem@useful-claude-add-ons
+claude plugin install web-testing-playwright@useful-claude-add-ons
+claude plugin install work-log-reporter@useful-claude-add-ons
 ```
 
-If a new skill is added to the marketplace, add its `claude plugin install` line to both scripts (and to this list) to keep them in sync.
+An already-installed plugin is detected and skipped (or updated, unless `-NoUpdate` / `--no-update` is passed) rather than reinstalled.
+
+If a new skill is added to the marketplace, add its name to the `ownPlugins` / `own_plugins` list in **both** scripts and to this list to keep all four sources — `marketplace.json`, `skills/`, and the two scripts — in sync.
 
 ### Optional: MCP servers
 
