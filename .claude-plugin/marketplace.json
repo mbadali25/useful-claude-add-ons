@@ -26,6 +26,12 @@
       "version": "1.0.0"
     },
     {
+      "name": "cisco-meraki",
+      "source": "./skills/cisco-meraki",
+      "description": "Cisco Meraki Dashboard API v1 - inventory, status, event and config-change logs, live diagnostics, and MX/MS/MR config changes with snapshot/diff/confirm and rollback.",
+      "version": "1.0.0"
+    },
+    {
       "name": "cloudflare",
       "source": "./skills/cloudflare",
       "description": "Cloudflare v4 API - DNS, zones, cache, WAF, page rules, SSL/TLS, Workers/KV/R2, Zero Trust, analytics.",
