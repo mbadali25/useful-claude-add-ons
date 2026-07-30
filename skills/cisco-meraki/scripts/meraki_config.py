@@ -107,6 +107,7 @@ class ConfigTool:
         self.http = http
         self.snapshot_dir = snapshot_dir
         self.now = now or _default_now
+        self._org_id = None
 
     # ---- snapshot --------------------------------------------------------
 
@@ -192,7 +193,7 @@ class ConfigTool:
     # ---- action batches --------------------------------------------------
 
     def resolve_org(self):
-        if getattr(self, "_org_id", None):
+        if self._org_id:
             return self._org_id
         orgs, _ = self.http.request("GET", "/organizations")
         if not orgs:
@@ -218,14 +219,25 @@ class ConfigTool:
 
         # All network-free validation runs first so a hard-blocked action is
         # refused without contacting the API.
+        valid_operations = {"create": "POST", "update": "PUT",
+                            "destroy": "DELETE"}
         for item in actions:
             resource = item.get("resource")
             if not resource:
                 raise MerakiError(
                     0, [f"Action is missing 'resource': {item}"])
+            if not isinstance(resource, str):
+                raise MerakiError(
+                    0, [f"Action 'resource' must be a string, got "
+                        f"{type(resource).__name__}: {item}"])
             operation = (item.get("operation") or "").lower()
-            method = {"create": "POST", "update": "PUT",
-                      "destroy": "DELETE"}.get(operation, "PUT")
+            if operation not in valid_operations:
+                raise MerakiError(
+                    0, [f"Action has invalid operation "
+                        f"{item.get('operation')!r} for resource "
+                        f"{resource!r}. Must be one of: "
+                        f"{', '.join(sorted(valid_operations))}."])
+            method = valid_operations[operation]
             check_hard_block(method, resource)
 
         org = org_id or self.resolve_org()
@@ -340,11 +352,11 @@ def main(argv=None):
             sys.stdout.write("\n")
         elif args.command == "batch-stage":
             batch = tool.batch_stage(_load_json_file(args.actions))
-            json.dump(batch, sys.stdout, indent=2, default=str)
+            json.dump(redact_secrets(batch), sys.stdout, indent=2, default=str)
             sys.stdout.write("\n")
         elif args.command == "batch-commit":
             batch = tool.batch_commit(args.batch_id, timeout=args.timeout)
-            json.dump(batch, sys.stdout, indent=2, default=str)
+            json.dump(redact_secrets(batch), sys.stdout, indent=2, default=str)
             sys.stdout.write("\n")
     except MerakiError as exc:
         sys.exit(str(exc))
