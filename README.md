@@ -9,13 +9,13 @@ One-line bootstrap — no `git clone` needed. Pulls the prerequisite installer s
 **Windows** (elevated PowerShell):
 
 ```powershell
-irm 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/f86e1daaf4d5db5cbe7131c67aacef0bd132a340/scripts/install-prerequisites.ps1' | iex
+irm 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/f080fa9c12a67cca69d7af03d3d149ae51636322/scripts/install-prerequisites.ps1' | iex
 ```
 
 **Linux**:
 
 ```bash
-curl -fsSL 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/d7f19e428cce7a276fe9f60204421720b3de8e73/scripts/install-prerequisites.sh' | bash
+curl -fsSL 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/f080fa9c12a67cca69d7af03d3d149ae51636322/scripts/install-prerequisites.sh' | bash
 ```
 
 Both links are pinned to a specific commit SHA rather than `main`, so the exact script you're running is fixed and auditable — it can't silently change between when you review it and when you run it. **Update the SHA above whenever `scripts/install-prerequisites.*` changes**: after merging to `main`, run `git rev-parse HEAD` and swap it into both URLs.
@@ -36,6 +36,19 @@ cd useful-claude-add-ons
 # Linux
 ./scripts/install-prerequisites.sh
 ```
+
+Both scripts are idempotent and **detect before they install** — an already-present Chocolatey package, marketplace, or plugin is reported and skipped rather than reinstalled. Re-running is cheap and safe. Each run ends with an `Installed / Updated / Already present` summary.
+
+They prompt before the optional pieces (claude-mem, GSD, the VoltAgent subagent collection, the ClaudePluginHub set, and the AWS/Azure MCP servers), so you can take only what you want.
+
+| Switch (Windows / Linux) | Effect |
+|---|---|
+| `-NonInteractive` / `--non-interactive` | Accept the default answer for every prompt — for unattended or CI runs. |
+| `-NoUpdate` / `--no-update` | Report already-installed plugins but never update them. |
+| `-SkipBootstrap` / `--skip-bootstrap` | Skip all marketplace, plugin, and optional bootstrap steps. |
+| `-PluginHubScope` / `--scope` | Scope for ClaudePluginHub installs: `user` (default here), `project`, or `local`. |
+
+> On Windows, run from an **elevated** prompt for the full setup. Without elevation the script skips Chocolatey and its packages (git/awscli/nodejs/python) and does only the Claude Code CLI, marketplace, and plugin steps.
 
 Full walkthrough, verification steps, and troubleshooting: [`INSTALLATION.md`](INSTALLATION.md).
 
