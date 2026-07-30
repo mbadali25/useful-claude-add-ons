@@ -1,0 +1,50 @@
+{
+  "provider": "zoho_sdp",
+  "redact_secrets": true,
+
+  "zoho_sdp": {
+    "base_url": "https://ithelpdesk.solomoninsight.com",
+    "portal": "REPLACE_WITH_PORTAL_NAME_FROM_YOUR_URL",
+    "accounts_url": "https://accounts.zoho.com",
+    "client_id": "",
+    "client_secret": "",
+    "refresh_token": "",
+    "defaults": {
+      "request_type": "Incident",
+      "mode": "Web Form",
+      "priority": "Medium",
+      "urgency": "",
+      "impact": "",
+      "category": "",
+      "subcategory": "",
+      "group": "",
+      "site": "",
+      "template": "",
+      "requester_email": "",
+      "technician_email": "you@solomoninsight.com",
+      "assign_self": true
+    }
+  },
+
+  "jira": {
+    "site_url": "https://solomondevteam.atlassian.net",
+    "auth_method": "api_token",
+    "email": "you@solomoninsight.com",
+    "api_token": "",
+    "oauth": {
+      "client_id": "",
+      "client_secret": "",
+      "refresh_token": "",
+      "cloud_id": "",
+      "redirect_uri": "http://localhost:8723/callback"
+    },
+    "defaults": {
+      "project_key": "REPLACE_WITH_PROJECT_KEY",
+      "issue_type": "Task",
+      "priority": "",
+      "labels": ["infrastructure"],
+      "components": [],
+      "assign_self": true
+    }
+  }
+}

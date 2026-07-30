@@ -26,6 +26,12 @@
       "version": "1.0.0"
     },
     {
+      "name": "cisco-meraki",
+      "source": "./skills/cisco-meraki",
+      "description": "Cisco Meraki Dashboard API v1 - inventory, status, event and config-change logs, live diagnostics, and MX/MS/MR config changes with snapshot/diff/confirm and rollback.",
+      "version": "1.0.0"
+    },
+    {
       "name": "cloudflare",
       "source": "./skills/cloudflare",
       "description": "Cloudflare v4 API - DNS, zones, cache, WAF, page rules, SSL/TLS, Workers/KV/R2, Zero Trust, analytics.",
@@ -44,6 +50,12 @@
       "version": "1.0.0"
     },
     {
+      "name": "infra-work-ticketing",
+      "source": "./skills/infra-work-ticketing",
+      "description": "Infrastructure work ticketing for Zoho ServiceDesk Plus Cloud and Jira Cloud - confirm a ticket exists, log work notes as the work happens, or open a ticket.",
+      "version": "1.0.0"
+    },
+    {
       "name": "intune-graph",
       "source": "./skills/intune-graph",
       "description": "Microsoft Intune via Microsoft Graph - device troubleshooting, compliance/config profiles, app deployment, report exports.",
@@ -56,6 +68,18 @@
       "version": "1.0.0"
     },
     {
+      "name": "repo-docs",
+      "source": "./skills/repo-docs",
+      "description": "Generate and refresh a full documentation set for a codebase - CLAUDE.md, READMEs, API reference, architecture doc, TODO/SECURITY/CHANGELOG, and handoff notes.",
+      "version": "1.0.0"
+    },
+    {
+      "name": "shipstation",
+      "source": "./skills/shipstation",
+      "description": "ShipStation across V2, legacy V1, and ShipEngine - shipments, labels, rates, carriers, warehouses, inventory, products, orders, tracking, batches, manifests.",
+      "version": "1.0.0"
+    },
+    {
       "name": "sophos-central",
       "source": "./skills/sophos-central",
       "description": "Sophos Central API - endpoint management, alert triage, SIEM export, XDR/Live Discover, firewall management.",
@@ -65,6 +89,18 @@
       "name": "wazuh-onprem",
       "source": "./skills/wazuh-onprem",
       "description": "Self-hosted Wazuh across Server API, Indexer API, Dashboard saved-objects API, and ossec.conf over SSH.",
+      "version": "1.0.0"
+    },
+    {
+      "name": "web-testing-playwright",
+      "source": "./skills/web-testing-playwright",
+      "description": "Drive a real browser with Playwright - screenshots across viewports, console errors, failed requests, form and login flows, plus Windows/Linux browser setup.",
+      "version": "1.0.0"
+    },
+    {
+      "name": "work-log-reporter",
+      "source": "./skills/work-log-reporter",
+      "description": "Per-session work log in a committed work-log/ directory, plus a formatted email report with a PDF attachment sent over SMTP.",
       "version": "1.0.0"
     }
   ]
