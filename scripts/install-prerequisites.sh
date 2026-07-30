@@ -156,6 +156,13 @@ plugin_version() {
 
 plugin_installed() { plugin_version "$1" >/dev/null 2>&1; }
 
+# --- Detection: user-level skills --------------------------------------------
+# Some things (the 'skills' CLI) install as plain user-level skills rather than as
+# Claude Code plugins, so they never appear in 'claude plugin list' - detection for
+# those is a filesystem check against the user-level skills directory.
+claude_skills_dir() { printf '%s/skills' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"; }
+user_skill_installed() { [ -f "$(claude_skills_dir)/$1/SKILL.md" ]; }
+
 # --- Install wrappers (detect, then act) -------------------------------------
 add_marketplace() {
   local source="$1" name="${2:-}" probe
@@ -383,6 +390,7 @@ else
     "repo-docs"
     "shipstation"
     "sophos-central"
+    "terraform-docs-readme"
     "wazuh-onprem"
     "web-testing-playwright"
     "work-log-reporter"
@@ -408,8 +416,36 @@ else
     run_step "Plugin: $spec" install_plugin "$spec"
   done
 
-  run_step "Skill: find-skills (vercel-labs/skills)" \
-    npx -y skills add vercel-labs/skills --skill find-skills --agent claude-code
+  install_find_skills() {
+    local dir present=0 prompt
+    dir="$(claude_skills_dir)/find-skills"
+    user_skill_installed "find-skills" && present=1
+    if [ "$present" -eq 1 ] && [ "$NO_UPDATE" -eq 1 ]; then
+      skip "find-skills already installed at $dir (--no-update set)"
+      return 0
+    fi
+    if [ "$present" -eq 1 ]; then
+      prompt="find-skills is already installed at $dir. Re-run its installer to pick up updates?"
+    else
+      prompt="Install the find-skills skill (vercel-labs/skills)?"
+    fi
+    if ! ask_yes_no "$prompt" "Y"; then
+      skip "find-skills"
+      return 0
+    fi
+    npx -y skills add vercel-labs/skills --skill find-skills --agent claude-code || return 1
+    if ! user_skill_installed "find-skills"; then
+      warn "the installer finished but '$dir/SKILL.md' was not created - see the output above."
+      return 1
+    fi
+    if [ "$present" -eq 1 ]; then
+      ok "find-skills re-installed (now current)"
+    else
+      COUNT_INSTALLED=$((COUNT_INSTALLED+1))
+      ok "installed find-skills to $dir"
+    fi
+  }
+  run_step "Skill: find-skills (vercel-labs/skills)" install_find_skills
 
   # --- 6. ClaudePluginHub ----------------------------------------------------
   if ask_yes_no "Install the ClaudePluginHub marketplaces and plugins?" "Y"; then

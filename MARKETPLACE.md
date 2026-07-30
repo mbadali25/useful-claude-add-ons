@@ -71,6 +71,7 @@ claude plugin marketplace add obra/superpowers-marketplace
 claude plugin install superpowers@superpowers-marketplace
 
 # find-skills - lets Claude discover and install skills from the community index on demand
+# (the install scripts prompt before running this one, and detect it on disk first)
 npx -y skills add vercel-labs/skills --skill find-skills --agent claude-code
 
 # GSD (Get Stuff Done) - structured project/phase workflow tooling
