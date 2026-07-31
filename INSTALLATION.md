@@ -4,7 +4,9 @@ Two things live in this repo: **prerequisite tooling** (git, Node.js, Python, AW
 
 ## 1. Install prerequisites
 
-One script per OS. Both are idempotent (safe to re-run) and, by default, also bootstrap the team's standard Claude Code plugin marketplaces (see step 3 and [`MARKETPLACE.md`](MARKETPLACE.md)), install every skill in this repo's own marketplace, optionally register the AWS/Azure MCP servers, and clone+run the [awesome-claude-code-subagents](https://github.com/VoltAgent/awesome-claude-code-subagents) installer as a final step.
+One script per OS. Both are idempotent (safe to re-run) and, by default, also bootstrap the team's standard Claude Code plugin marketplaces (see step 3 and [`MARKETPLACE.md`](MARKETPLACE.md)), install every skill in this repo's own marketplace, install the [awesome-claude-code-subagents](https://github.com/VoltAgent/awesome-claude-code-subagents) collection, and optionally register the AWS/Azure MCP servers.
+
+> **Native plugin commands only.** Marketplaces and plugins are installed with `claude plugin marketplace add` and `claude plugin install`. The previous `npx -y claudepluginhub <repo>` wrapper is gone: it synthesized a *local directory* marketplace per repo (registered under a generated name like `cpd-aiskillstore-marketplace-user`), which the scripts' own detection couldn't match — so those plugins were reinstalled on every run — and it was a frequent source of Windows failures. The VoltAgent subagents no longer need a `git clone` + Git Bash either; the repo publishes itself as a marketplace.
 
 ### Windows
 
@@ -22,8 +24,8 @@ What it does, in order:
 2. Installs the Claude Code CLI (`npm install -g @anthropic-ai/claude-code`) and adds the npm global bin directory to your **User** `PATH` environment variable (persists across sessions), plus sets a `CLAUDE_CODE_HOME` user env var pointing at the npm prefix.
 3. Adds this repo (`mbadali25/useful-claude-add-ons`) as a Claude Code marketplace, then installs every skill listed in it (see [What the own-marketplace step installs](#what-the-own-marketplace-step-installs) below).
 4. Runs the team's plugin/marketplace bootstrap commands (skip with `-SkipBootstrap`).
-5. Prompts (`y`/`N`) to register the AWS MCP server and, separately, the Azure MCP server with Claude Code — see [Optional: MCP servers](#optional-mcp-servers).
-6. Clones (or pulls, if already cloned) `VoltAgent/awesome-claude-code-subagents` into `C:\repos\awesome-claude-code-subagents` and runs its interactive `install-agents.sh` via Git Bash — see [Optional: awesome-claude-code-subagents](#optional-awesome-claude-code-subagents).
+5. Prompts (`Y`/`n`) to add `VoltAgent/awesome-claude-code-subagents` as a marketplace and install its ten category plugins — see [Optional: awesome-claude-code-subagents](#optional-awesome-claude-code-subagents).
+6. Prompts (`y`/`N`) to register the AWS MCP server and, separately, the Azure MCP server with Claude Code — see [Optional: MCP servers](#optional-mcp-servers).
 
 If `claude` isn't recognized immediately after the script finishes, open a new PowerShell window — the `PATH` change is written to the registry but doesn't retroactively apply to whichever shell you're still in from before Node.js/npm existed.
 
@@ -42,8 +44,8 @@ Runs as your current user, escalating to `sudo` (or `root` directly if already r
 3. Appends a `PATH` export for the npm global bin directory to `~/.bashrc` and `~/.zshrc` (only if not already present) and exports it in the current shell too.
 4. Adds this repo (`mbadali25/useful-claude-add-ons`) as a Claude Code marketplace, then installs every skill listed in it (see [What the own-marketplace step installs](#what-the-own-marketplace-step-installs) below).
 5. Runs the team's plugin/marketplace bootstrap commands (skip with `--skip-bootstrap`).
-6. Prompts (`y`/`N`) to register the AWS MCP server and, separately, the Azure MCP server with Claude Code — see [Optional: MCP servers](#optional-mcp-servers).
-7. Clones (or pulls, if already cloned) `VoltAgent/awesome-claude-code-subagents` into `~/repos/awesome-claude-code-subagents` and runs its interactive `install-agents.sh` — see [Optional: awesome-claude-code-subagents](#optional-awesome-claude-code-subagents).
+6. Prompts (`Y`/`n`) to add `VoltAgent/awesome-claude-code-subagents` as a marketplace and install its ten category plugins — see [Optional: awesome-claude-code-subagents](#optional-awesome-claude-code-subagents).
+7. Prompts (`y`/`N`) to register the AWS MCP server and, separately, the Azure MCP server with Claude Code — see [Optional: MCP servers](#optional-mcp-servers).
 
 Run `source ~/.bashrc` (or open a new shell) afterward to pick up the `PATH` change in shells you already had open.
 
@@ -52,26 +54,47 @@ Run `source ~/.bashrc` (or open a new shell) afterward to pick up the `PATH` cha
 Both scripts, unless skipped, run this exact sequence (documented in full in [`MARKETPLACE.md`](MARKETPLACE.md) section 3):
 
 ```
+claude plugin marketplace add mbadali25/useful-claude-add-ons
+
 claude plugin marketplace add obra/superpowers-marketplace
 claude plugin install superpowers@superpowers-marketplace
-
-npx -y skills add vercel-labs/skills --skill find-skills --agent claude-code   # prompted
-npx @opengsd/gsd-core@latest
-npx claude-mem install
-
 claude plugin marketplace add anthropics/claude-code
 claude plugin install frontend-design@claude-code-plugins
 claude plugin marketplace add lexiaoyao20/excalidraw-generator
 claude plugin install excalidraw-generator@excalidraw-generator
-claude plugin marketplace add obra/superpowers-marketplace
-claude plugin install superpowers@claude-plugins-official
 
-claude plugin marketplace add mbadali25/useful-claude-add-ons
+npx -y skills add vercel-labs/skills --skill find-skills --agent claude-code   # prompted
+
+# Community set, prompted (default Yes). Source repo -> marketplace name is not
+# mechanical: fcakyon/claude-codex-settings publishes itself as 'claude-settings'.
+claude plugin marketplace add anthropics/claude-plugins-official
+claude plugin marketplace add vercel-labs/agent-browser
+claude plugin marketplace add fcakyon/claude-codex-settings
+claude plugin marketplace add hugohe3/ppt-master
+claude plugin install adhd-output-style@claude-settings
+claude plugin install azure-tools@claude-settings
+claude plugin install anthropic-office-skills@claude-settings
+claude plugin install agent-browser@agent-browser
+claude plugin install ppt-master@ppt-master
+
+# claude-mem, prompted (default Yes)
+claude plugin marketplace add thedotmack/claude-mem
+claude plugin install claude-mem@thedotmack
+
+npx -y @opengsd/gsd-core@latest   # prompted
 ```
+
+Every install passes `--scope` (`user` by default; change it with `-InstallScope` / `--scope`).
+
+Three things are *not* Claude Code plugins and so can't go through `claude plugin install`:
+
+- **`find-skills`** — a user-level skill installed by the `skills` CLI (see below).
+- **GSD** — an npm-distributed installer with no marketplace of its own.
+- **`xlsx` / `mcp-integration`** — these were previously pulled from `aiskillstore/marketplace`, which is the [Skill Store](https://skillstore.io) content repo, **not** a Claude Code marketplace (it has no `.claude-plugin/marketplace.json`). They're no longer installed by the scripts. `anthropic-office-skills@claude-settings` covers the spreadsheet/document ground; if you specifically want the Skill Store versions, install them yourself with `npx skillstore add aiskillstore/xlsx` / `npx skillstore add aiskillstore/mcp-integration`.
 
 `find-skills` is asked about before it runs (default **Yes**). It installs through the `skills` CLI as a plain user-level skill rather than as a Claude Code plugin, so it never shows up in `claude plugin list` — the scripts detect it on disk at `~/.claude/skills/find-skills/SKILL.md` (or `$CLAUDE_CONFIG_DIR/skills/...`). If it's already there, the prompt changes to offer a re-install for updates instead, and `-NoUpdate` / `--no-update` skips it outright.
 
-The last line adds this repo's own skills as an installable marketplace — unlike the team bootstrap list above, the scripts **do** auto-install every individual skill from it (see below), since it's this repo's own catalog.
+The first line adds this repo's own skills as an installable marketplace — unlike the external marketplaces above, the scripts **do** auto-install every individual skill from it (see below), since it's this repo's own catalog.
 
 ### What the own-marketplace step installs
 
@@ -82,6 +105,7 @@ claude plugin install aws-opensearch@useful-claude-add-ons
 claude plugin install bitbucket@useful-claude-add-ons
 claude plugin install checkpoint-email@useful-claude-add-ons
 claude plugin install cisco-meraki@useful-claude-add-ons
+claude plugin install claude-code-defaults@useful-claude-add-ons
 claude plugin install cloudflare@useful-claude-add-ons
 claude plugin install drata@useful-claude-add-ons
 claude plugin install i-have-adhd@useful-claude-add-ons
@@ -112,7 +136,26 @@ Either can be added later by hand with the same `claude mcp add` command, or rem
 
 ### Optional: awesome-claude-code-subagents
 
-As the final step, both scripts clone (or `git pull` if already present) [`VoltAgent/awesome-claude-code-subagents`](https://github.com/VoltAgent/awesome-claude-code-subagents) — to `C:\repos\awesome-claude-code-subagents` on Windows, `~/repos/awesome-claude-code-subagents` on Linux — and run its **interactive** `install-agents.sh`, which lets you browse categories and pick which subagents to install. On Windows this runs through Git Bash (`bash install-agents.sh`), since PowerShell can't execute a `.sh` file directly.
+Both scripts ask once (default **Yes**), then install [`VoltAgent/awesome-claude-code-subagents`](https://github.com/VoltAgent/awesome-claude-code-subagents) **as plugins**. The repo publishes itself as a marketplace named `voltagent-subagents`, with its 154 subagents grouped into ten category plugins:
+
+```bash
+claude plugin marketplace add VoltAgent/awesome-claude-code-subagents
+
+claude plugin install voltagent-core-dev@voltagent-subagents    # core development
+claude plugin install voltagent-lang@voltagent-subagents        # language specialists
+claude plugin install voltagent-infra@voltagent-subagents       # infrastructure & DevOps
+claude plugin install voltagent-qa-sec@voltagent-subagents      # quality & security
+claude plugin install voltagent-data-ai@voltagent-subagents     # data & AI
+claude plugin install voltagent-dev-exp@voltagent-subagents     # developer experience
+claude plugin install voltagent-domains@voltagent-subagents     # specialized domains
+claude plugin install voltagent-biz@voltagent-subagents         # business & product
+claude plugin install voltagent-meta@voltagent-subagents        # meta & orchestration
+claude plugin install voltagent-research@voltagent-subagents    # research & analysis
+```
+
+The scripts install all ten (matching what the old installer's "everything" path produced). Want fewer? Answer **n** to the prompt and run only the category lines you want — or `claude plugin uninstall voltagent-<category>@voltagent-subagents` afterwards.
+
+This replaces the previous `git clone` + interactive `install-agents.sh` step. That step needed Git Bash on Windows (PowerShell can't execute a `.sh` directly) and therefore **failed outright on a non-elevated run**, where Chocolatey — and so `git` — had been skipped. There's no longer a checkout under `C:\repos` / `~/repos` to maintain; if you have one from an earlier run, it's now unused and safe to delete.
 
 Before running either script on a machine you don't fully control, read [`SECURITY.md`](SECURITY.md)'s "Install-script trust boundary" section — these steps run third-party code from Chocolatey, npm, PyPI (`uv`), and GitHub-hosted marketplaces/repositories.
 
@@ -141,7 +184,7 @@ claude plugin list
 claude mcp list      # confirm aws-api / azure if you opted in
 ```
 
-If you opted into the awesome-claude-code-subagents step, its clone lives at `C:\repos\awesome-claude-code-subagents` (Windows) or `~/repos/awesome-claude-code-subagents` (Linux) — re-run `install-agents.sh` from there any time to add or remove subagents.
+If you opted into the awesome-claude-code-subagents step, `claude plugin list` should show ten `voltagent-*` plugins, and `claude plugin marketplace list` should show `voltagent-subagents`.
 
 ## 4. Updating later
 
@@ -162,6 +205,7 @@ Or just re-run the OS install script — it's idempotent and will skip anything 
 | Chocolatey install script blocked | PowerShell execution policy | The script sets `Bypass` for its own process only — no machine-wide policy change needed; re-run from an elevated prompt if it still fails |
 | `claude plugin marketplace add mbadali25/useful-claude-add-ons` fails | Repo is private and you're not authenticated to GitHub, or the CLI can't reach GitHub | Confirm `git ls-remote git@github.com:mbadali25/useful-claude-add-ons.git` works from the same machine first |
 | Windows script skips Chocolatey/git/awscli/nodejs/python entirely | Not run from an elevated prompt | Expected behavior, not an error — re-run from an elevated PowerShell prompt if you need those installed; everything else (Claude Code CLI, marketplaces, skills, MCP prompts, subagents) still runs |
+| `claude plugin install <name>@<marketplace>` fails with an unknown-plugin error | The marketplace name doesn't match the `name` field in that repo's own `.claude-plugin/marketplace.json` — it is **not** derived from the repo name (`fcakyon/claude-codex-settings` publishes itself as `claude-settings`) | Run `claude plugin marketplace list` to see the registered name, then install with that name |
 | `claude mcp add aws-api -- uvx ...` fails with `uvx: command not found` | `uv` wasn't found or failed to install via `pip install --user uv` | Install [`uv`](https://docs.astral.sh/uv/getting-started/installation/) manually, ensure it's on `PATH`, then re-run the script (it's idempotent) or run the `claude mcp add` command yourself |
 | AWS/Azure MCP server registered but tools fail when Claude tries to use them | No AWS credentials / no Azure login | Run `aws configure` (AWS) or `az login` (Azure) — `claude mcp add` only registers the server, it doesn't authenticate it |
-| `bash (Git Bash) not found on PATH` during the awesome-claude-code-subagents step (Windows) | Git wasn't installed (script run non-elevated and Chocolatey was skipped) | Install [Git for Windows](https://git-scm.com/download/win) yourself, or re-run the script elevated so it installs `git` via Chocolatey, then re-run |
+| Older run left a `cpd-*-user` marketplace (e.g. `cpd-aiskillstore-marketplace-user`) in `claude plugin marketplace list` | Registered by the old `npx claudepluginhub` wrapper as a local directory marketplace | Harmless, but no longer used or refreshed — remove it with `claude plugin marketplace remove cpd-<name>-user` |

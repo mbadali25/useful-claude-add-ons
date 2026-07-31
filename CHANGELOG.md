@@ -6,6 +6,29 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
+- `skills/claude-code-defaults` — configures how Claude Code itself behaves by
+  default. Separates instructions (`CLAUDE.md`, `.claude/rules/`, loaded into
+  context) from enforcement (`settings.json`, permission `allow`/`ask`/`deny`,
+  hooks, applied by the client), and routes a request to the right file at the
+  right scope — user, project, local, or managed. Inventories existing config
+  and merges rather than clobbering, backs up before editing, validates the JSON,
+  and verifies via `/status`, `/context`, and `/doctor`. Four reference files
+  (permissions, CLAUDE.md, settings keys, copy-paste templates for solo/shared/
+  locked-down/fleet). Refuses to hand out `bypassPermissions` as a default.
+  Registered in `.claude-plugin/marketplace.json` and both install scripts —
+  18 skills total.
+
+- `scripts/install-prerequisites.ps1` / `.sh` — the VoltAgent
+  [`awesome-claude-code-subagents`](https://github.com/VoltAgent/awesome-claude-code-subagents)
+  collection is now installed as plugins from its own marketplace
+  (`voltagent-subagents`), all ten category plugins: `voltagent-core-dev`,
+  `-lang`, `-infra`, `-qa-sec`, `-data-ai`, `-dev-exp`, `-domains`, `-biz`,
+  `-meta`, `-research`.
+
+- `scripts/install-prerequisites.ps1` — `-InstallScope` (aliased to the old
+  `-PluginHubScope`) now applies `--scope` to *every* marketplace and plugin
+  install, not just the community set. Same for `--scope` on the Linux script.
+
 - `skills/terraform-docs-readme` — regenerates a Terraform module's `README.md`
   with `terraform-docs`. Covers first-time setup (`.terraform-docs.yml`, the
   `main.tf` narrative header block, `footer.md`, the `BEGIN_TF_DOCS`/`END_TF_DOCS`
@@ -26,6 +49,42 @@ All notable changes to this repository are documented here. Format follows [Keep
   (`python -m unittest discover -s skills/cisco-meraki/tests -p "test_*.py"`).
 
 ### Changed
+
+- `scripts/install-prerequisites.ps1` / `.sh` — **all marketplace and plugin
+  installs now use the native `claude plugin marketplace add` and `claude plugin
+  install` commands.** The `npx -y claudepluginhub <repo>` wrapper is gone, along
+  with the `Invoke-PluginHub` / `pluginhub` helpers that called it. The wrapper
+  registered each repo as a *local directory* marketplace under a generated name
+  (`cpd-<repo>-user`) that the scripts' own detection could not match, so those
+  plugins were reinstalled on every run, and it was a recurring source of Windows
+  failures. Marketplace names are now taken from each repo's own
+  `.claude-plugin/marketplace.json` — notably `fcakyon/claude-codex-settings`
+  publishes itself as `claude-settings`, which the old name-or-repo detection
+  never matched either.
+- `scripts/install-prerequisites.ps1` / `.sh` — claude-mem installs through its
+  marketplace (`claude plugin marketplace add thedotmack/claude-mem` +
+  `claude plugin install claude-mem@thedotmack`) instead of
+  `npx claude-mem install`. Upstream documents both paths. `find-skills` and GSD
+  still use `npx`: neither publishes a Claude Code marketplace.
+- `MARKETPLACE.md` / `INSTALLATION.md` — bootstrap command lists rewritten to
+  match, with the repo-name-vs-marketplace-name trap called out explicitly, and
+  a troubleshooting row for leftover `cpd-*-user` marketplaces.
+
+### Removed
+
+- `scripts/install-prerequisites.ps1` — the `Resolve-GitRoot` and
+  `Register-GitBash` helpers, plus the `C:\repos\awesome-claude-code-subagents`
+  clone and its `bash install-agents.sh` invocation. Its Linux counterpart
+  (`~/repos/...` clone) is gone too. That step needed Git Bash on Windows and so
+  failed outright on a non-elevated run, where Chocolatey — and therefore `git` —
+  had already been skipped. An existing checkout from an earlier run is now
+  unused and safe to delete.
+- `aiskillstore/marketplace` and its `xlsx` / `mcp-integration` entries. That
+  repo is the Skill Store content repo, not a Claude Code marketplace (no
+  `.claude-plugin/marketplace.json`), so there is no native
+  `claude plugin install` for it. `anthropic-office-skills@claude-settings`
+  replaces `xlsx`; either skill can still be installed by hand with
+  `npx skillstore add aiskillstore/<skill>`.
 
 - `scripts/install-prerequisites.ps1` / `.sh` — the `find-skills`
   (`vercel-labs/skills`) step is now prompted rather than unconditional, and is
