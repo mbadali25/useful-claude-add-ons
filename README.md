@@ -39,14 +39,16 @@ cd useful-claude-add-ons
 
 Both scripts are idempotent and **detect before they install** — an already-present Chocolatey package, marketplace, or plugin is reported and skipped rather than reinstalled. Re-running is cheap and safe. Each run ends with an `Installed / Updated / Already present` summary.
 
-They prompt before the optional pieces (the `find-skills` skill, claude-mem, GSD, the VoltAgent subagent collection, the ClaudePluginHub set, and the AWS/Azure MCP servers), so you can take only what you want. Where something is already present, the prompt says so and offers a refresh instead of a fresh install.
+They prompt before the optional pieces (the `find-skills` skill, claude-mem, GSD, the VoltAgent subagent collection, the community marketplace set, and the AWS/Azure MCP servers), so you can take only what you want. Where something is already present, the prompt says so and offers a refresh instead of a fresh install.
+
+Everything that can be a plugin **is** installed as one, using the CLI's own `claude plugin marketplace add` / `claude plugin install` — there's no `npx claudepluginhub` wrapper and no `git clone` + shell-script step any more. That removes the Windows failure modes those introduced (the wrapper needed a writable per-repo checkout, and the VoltAgent installer needed Git Bash to run a `.sh`).
 
 | Switch (Windows / Linux) | Effect |
 |---|---|
 | `-NonInteractive` / `--non-interactive` | Accept the default answer for every prompt — for unattended or CI runs. |
 | `-NoUpdate` / `--no-update` | Report already-installed plugins but never update them. |
 | `-SkipBootstrap` / `--skip-bootstrap` | Skip all marketplace, plugin, and optional bootstrap steps. |
-| `-PluginHubScope` / `--scope` | Scope for ClaudePluginHub installs: `user` (default here), `project`, or `local`. |
+| `-InstallScope` / `--scope` | Scope for every marketplace and plugin install: `user` (default), `project`, or `local`. Windows still accepts the old `-PluginHubScope` name as an alias. |
 
 > On Windows, run from an **elevated** prompt for the full setup. Without elevation the script skips Chocolatey and its packages (git/awscli/nodejs/python) and does only the Claude Code CLI, marketplace, and plugin steps.
 
@@ -81,7 +83,7 @@ claude plugin uninstall aws-opensearch@useful-claude-add-ons   # remove a skill
 claude plugin marketplace remove useful-claude-add-ons        # stop tracking this marketplace
 ```
 
-Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for the lightweight path (clone the repo, point your own `.claude/skills/` at the folders you want). Full details, including the other marketplaces the team's install scripts wire up (Superpowers, `frontend-design`, `excalidraw-generator`), are in [`MARKETPLACE.md`](MARKETPLACE.md).
+Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for the lightweight path (clone the repo, point your own `.claude/skills/` at the folders you want). Full details, including the other marketplaces the team's install scripts wire up (Superpowers, `frontend-design`, `excalidraw-generator`, the VoltAgent subagents, and the community set), are in [`MARKETPLACE.md`](MARKETPLACE.md).
 
 ## Documentation
 
@@ -112,6 +114,7 @@ See [`Skill-Authoring-Standard.md`](Skill-Authoring-Standard.md) for how a skill
 | [`bitbucket`](skills/bitbucket) | SCM / DevOps | Git over HTTPS with Atlassian API tokens plus the Bitbucket Cloud REST API — PRs, pipelines, comments, branches. | Automatic |
 | [`checkpoint-email`](skills/checkpoint-email) | Security | Check Point Email Security (Harmony Email & Collaboration / Avanan) — search entities, triage phishing/malware/DLP/BEC, remediate with a dry-run gate. | Automatic |
 | [`cisco-meraki`](skills/cisco-meraki) | Cloud / Networking | Cisco Meraki Dashboard API v1 for a single org — inventory and device status, event and config-change logs, security/IDS events, Air Marshal, live diagnostics, and MX/MS/MR config changes gated behind snapshot → diff → confirm with rollback. | Automatic |
+| [`claude-code-defaults`](skills/claude-code-defaults) | Claude Code / Config | Configures how Claude Code itself behaves by default — `CLAUDE.md` instructions vs `settings.json` enforcement, permission allow/deny/ask rules and modes, hooks, default model, and which scope (user, project, local, managed) each belongs in. Inventories existing config and merges rather than clobbering. | Automatic |
 | [`cloudflare`](skills/cloudflare) | Cloud / Networking | Cloudflare v4 API — DNS, zones, cache purge, WAF/rulesets, page rules, SSL/TLS, Workers/KV/R2, Zero Trust, analytics. | Automatic |
 | [`drata`](skills/drata) | Compliance | Drata Public API — controls, monitoring tests, evidence, personnel, policies, frameworks, risks, vendors, assets across US/EU/APAC regions. | Automatic |
 | [`i-have-adhd`](skills/i-have-adhd) | Productivity | Reshapes Claude's output for ADHD-friendly reading — leads with the next action, numbers steps, suppresses tangents. Persists for the session once invoked. | Manual — `/i-have-adhd` |

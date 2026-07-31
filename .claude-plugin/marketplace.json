@@ -32,6 +32,12 @@
       "version": "1.0.0"
     },
     {
+      "name": "claude-code-defaults",
+      "source": "./skills/claude-code-defaults",
+      "description": "Configure how Claude Code behaves by default - CLAUDE.md instructions, settings.json, permission allow/deny/ask rules and modes, hooks, default model, and which scope (user/project/local/managed) each belongs in.",
+      "version": "1.0.0"
+    },
+    {
       "name": "cloudflare",
       "source": "./skills/cloudflare",
       "description": "Cloudflare v4 API - DNS, zones, cache, WAF, page rules, SSL/TLS, Workers/KV/R2, Zero Trust, analytics.",

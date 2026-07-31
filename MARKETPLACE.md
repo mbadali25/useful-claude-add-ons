@@ -70,16 +70,6 @@ The prerequisite install scripts also wire up these external marketplaces and th
 claude plugin marketplace add obra/superpowers-marketplace
 claude plugin install superpowers@superpowers-marketplace
 
-# find-skills - lets Claude discover and install skills from the community index on demand
-# (the install scripts prompt before running this one, and detect it on disk first)
-npx -y skills add vercel-labs/skills --skill find-skills --agent claude-code
-
-# GSD (Get Stuff Done) - structured project/phase workflow tooling
-npx @opengsd/gsd-core@latest
-
-# claude-mem - persistent cross-session memory
-npx claude-mem install
-
 # Anthropic's official plugin marketplace - frontend-design skill
 claude plugin marketplace add anthropics/claude-code
 claude plugin install frontend-design@claude-code-plugins
@@ -88,14 +78,50 @@ claude plugin install frontend-design@claude-code-plugins
 claude plugin marketplace add lexiaoyao20/excalidraw-generator
 claude plugin install excalidraw-generator@excalidraw-generator
 
-# Superpowers again, via Anthropic's official marketplace mirror
-claude plugin marketplace add obra/superpowers-marketplace
-claude plugin install superpowers@claude-plugins-official
+# VoltAgent awesome-claude-code-subagents - 154 subagents in ten category plugins
+# (prompted, default Yes; the repo's marketplace name is 'voltagent-subagents')
+claude plugin marketplace add VoltAgent/awesome-claude-code-subagents
+claude plugin install voltagent-core-dev@voltagent-subagents
+claude plugin install voltagent-lang@voltagent-subagents
+claude plugin install voltagent-infra@voltagent-subagents
+claude plugin install voltagent-qa-sec@voltagent-subagents
+claude plugin install voltagent-data-ai@voltagent-subagents
+claude plugin install voltagent-dev-exp@voltagent-subagents
+claude plugin install voltagent-domains@voltagent-subagents
+claude plugin install voltagent-biz@voltagent-subagents
+claude plugin install voltagent-meta@voltagent-subagents
+claude plugin install voltagent-research@voltagent-subagents
+
+# Community set from claudepluginhub.com (prompted, default Yes)
+claude plugin marketplace add anthropics/claude-plugins-official
+claude plugin marketplace add vercel-labs/agent-browser
+claude plugin marketplace add fcakyon/claude-codex-settings   # registers as 'claude-settings'
+claude plugin marketplace add hugohe3/ppt-master
+claude plugin install adhd-output-style@claude-settings
+claude plugin install azure-tools@claude-settings
+claude plugin install anthropic-office-skills@claude-settings
+claude plugin install agent-browser@agent-browser
+claude plugin install ppt-master@ppt-master
+
+# claude-mem - persistent cross-session memory (prompted, default Yes)
+claude plugin marketplace add thedotmack/claude-mem
+claude plugin install claude-mem@thedotmack
+
+# find-skills - lets Claude discover and install skills from the community index on demand.
+# Not a plugin: the 'skills' CLI drops it in ~/.claude/skills/, so there's no marketplace to
+# add. The install scripts prompt before running this, and detect it on disk first.
+npx -y skills add vercel-labs/skills --skill find-skills --agent claude-code
+
+# GSD (Get Stuff Done) - structured project/phase workflow tooling. npm-distributed
+# installer, no marketplace of its own (prompted, default Yes).
+npx -y @opengsd/gsd-core@latest
 ```
 
-> The last block installs `superpowers` a second time, from a differently-named marketplace target (`claude-plugins-official` instead of `superpowers-marketplace`). That's carried over verbatim from the team's baseline setup — if you only want it once, either line is sufficient; keeping both is harmless (`claude plugin install` no-ops if the plugin is already installed from an equivalent source).
+> **A marketplace's name is not its repo name.** `claude plugin install` matches on the `name` field inside that repo's `.claude-plugin/marketplace.json` — `fcakyon/claude-codex-settings` registers as `claude-settings`, and `VoltAgent/awesome-claude-code-subagents` as `voltagent-subagents`. After adding a new marketplace, confirm the name with `claude plugin marketplace list` before writing any `plugin@marketplace` spec against it.
 
-These run automatically as part of the prerequisite install scripts (section 4 of [`INSTALLATION.md`](INSTALLATION.md)). Run them by hand only if you're patching an existing machine that already has the CLI.
+> **No `npx claudepluginhub`.** The scripts used to shell out to that wrapper for the community set. It registered each repo as a *local directory* marketplace under a generated name (`cpd-<repo>-user`), which the scripts' detection couldn't match — so those plugins reinstalled on every run — and it was a recurring source of Windows failures. Two of its entries, `xlsx` and `mcp-integration`, came from `aiskillstore/marketplace`, which is the [Skill Store](https://skillstore.io) content repo rather than a Claude Code marketplace; they're dropped in favor of `anthropic-office-skills@claude-settings`, or install them directly with `npx skillstore add aiskillstore/<skill>`.
+
+These run automatically as part of the prerequisite install scripts (section 1 of [`INSTALLATION.md`](INSTALLATION.md)). Run them by hand only if you're patching an existing machine that already has the CLI. Every install honors `--scope` (`user` unless you pass `-InstallScope` / `--scope`).
 
 ## 4. Publishing a new or updated skill to this marketplace
 

@@ -9,7 +9,12 @@ Everything is detected before it is installed:
                             command already resolves, e.g. git installed outside choco)
   * Marketplaces          - skipped when already registered (matched by name or repo)
   * Plugins               - skipped when already installed; optionally updated
-  * ClaudePluginHub items - same detection, since they register through Claude Code
+
+Marketplaces and plugins are installed with the native 'claude plugin marketplace add'
+and 'claude plugin install' commands - no 'npx claudepluginhub' wrapper. The wrapper
+synthesized a local directory-backed marketplace per repo, which failed on Windows and
+produced marketplace names ('cpd-<repo>-user') that this script's detection could not
+match, so already-installed plugins were reinstalled on every run.
 
 Run from an elevated (Administrator) PowerShell prompt for the full setup:
     .\scripts\install-prerequisites.ps1
@@ -22,6 +27,8 @@ Common switches:
     -NonInteractive     accept the default answer for every prompt (CI/unattended)
     -NoUpdate           never update an already-installed plugin, only report it
     -SkipBootstrap      skip all marketplace/plugin/optional bootstrap steps
+    -InstallScope       scope for marketplace/plugin installs: user (default), project, local
+                        (accepts -PluginHubScope as an alias for backward compatibility)
 #>
 
 [CmdletBinding()]
@@ -29,8 +36,9 @@ param(
     [switch]$SkipBootstrap,   # skip marketplace/plugin/optional bootstrap entirely
     [switch]$NonInteractive,  # take the default for every prompt
     [switch]$NoUpdate,        # don't update already-installed plugins
+    [Alias('PluginHubScope')]
     [ValidateSet('user', 'project', 'local')]
-    [string]$PluginHubScope = 'user'  # claudepluginhub defaults to 'project'; we want machine-wide
+    [string]$InstallScope = 'user'  # machine-wide by default, not per-project
 )
 
 $ErrorActionPreference = 'Stop'
@@ -93,58 +101,6 @@ function Sync-SessionEnvironment {
     $machinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine')
     $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
     $env:Path = (@($machinePath, $userPath) | Where-Object { $_ }) -join ';'
-}
-
-function Resolve-GitRoot {
-    # Find Git for Windows' install root so we can wire up bash. Try, in order:
-    # the var Chocolatey's git package sets, the location of git.exe on PATH, then
-    # the usual install locations. A candidate only counts if bin\bash.exe is under it.
-    if ($env:GIT_INSTALL_ROOT -and (Test-Path (Join-Path $env:GIT_INSTALL_ROOT 'bin\bash.exe'))) {
-        return $env:GIT_INSTALL_ROOT
-    }
-    $gitCmd = Get-Command git.exe -ErrorAction SilentlyContinue
-    if ($gitCmd) {
-        # git.exe lives in <root>\cmd or <root>\bin
-        $candidate = Split-Path (Split-Path $gitCmd.Source -Parent) -Parent
-        if (Test-Path (Join-Path $candidate 'bin\bash.exe')) { return $candidate }
-    }
-    foreach ($candidate in @("$env:ProgramFiles\Git", "${env:ProgramFiles(x86)}\Git", "$env:LOCALAPPDATA\Programs\Git")) {
-        if ($candidate -and (Test-Path (Join-Path $candidate 'bin\bash.exe'))) { return $candidate }
-    }
-    return $null
-}
-
-function Register-GitBash {
-    # Make 'bash' resolvable in this session and in future ones. Two separate things:
-    #   <root>\bin\bash.exe  - the real shell; this is what scripts must be run with,
-    #                          because git-bash.exe is a GUI launcher that opens its own
-    #                          window, detaches, and returns before the script finishes.
-    #   <root>\git-bash.exe  - the interactive launcher; recorded as GIT_BASH for anything
-    #                          that wants to pop a terminal.
-    # Returns the path to the real bash.exe, or $null if Git isn't installed.
-    $gitRoot = Resolve-GitRoot
-    if (-not $gitRoot) { return $null }
-
-    $bashExe = Join-Path $gitRoot 'bin\bash.exe'
-    if (-not (Test-Path $bashExe)) { return $null }
-    $binDir = Join-Path $gitRoot 'bin'
-
-    $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
-    if ($userPath -notlike "*$binDir*") {
-        $newPath = if ([string]::IsNullOrEmpty($userPath)) { $binDir } else { "$userPath;$binDir" }
-        [Environment]::SetEnvironmentVariable('Path', $newPath, 'User')
-        Write-Ok "Added '$binDir' to the User PATH so 'bash' resolves (persists across sessions)."
-    }
-
-    [Environment]::SetEnvironmentVariable('GIT_INSTALL_ROOT', $gitRoot, 'User')
-    $gitBashLauncher = Join-Path $gitRoot 'git-bash.exe'
-    if (Test-Path $gitBashLauncher) {
-        [Environment]::SetEnvironmentVariable('GIT_BASH', $gitBashLauncher, 'User')
-    }
-
-    # Pick up the PATH/GIT_* entries just written, so 'bash' works below without a new shell.
-    Sync-SessionEnvironment
-    return $bashExe
 }
 
 function Invoke-Step {
@@ -267,11 +223,6 @@ function Get-ClaudePlugins {
     return $map
 }
 
-function Test-PluginInstalled {
-    param([string]$Name)
-    return (Get-ClaudePlugins).ContainsKey($Name)
-}
-
 function Get-ClaudeSkillsDir {
     # Some things (the 'skills' CLI) install as plain user-level skills rather than as
     # Claude Code plugins, so they never show up in 'claude plugin list' - detection for
@@ -301,7 +252,7 @@ function Add-ClaudeMarketplace {
         }
         return
     }
-    claude plugin marketplace add $Source
+    claude plugin marketplace add $Source --scope $InstallScope
     Get-ClaudeMarketplaces -Refresh | Out-Null
     $script:Summary.Installed++
     Write-Ok "added marketplace '$Source'"
@@ -329,49 +280,10 @@ function Install-ClaudePlugin {
         }
         return
     }
-    claude plugin install $Spec
+    claude plugin install $Spec --scope $InstallScope
     Get-ClaudePlugins -Refresh | Out-Null
     $script:Summary.Installed++
     Write-Ok "installed plugin '$Spec'"
-}
-
-function Invoke-PluginHub {
-    # claudepluginhub registers through Claude Code, so the same marketplace/plugin
-    # detection applies. Its default scope is 'project'; we pass an explicit scope so
-    # a machine bootstrap lands where the rest of this script puts things.
-    param([string]$Repo, [string]$Plugin)
-    if ($Plugin) {
-        if (Test-PluginInstalled $Plugin) {
-            $existing = (Get-ClaudePlugins)[$Plugin]
-            if ($NoUpdate) {
-                Write-Skip "plugin '$Plugin' already installed ($($existing.Id))"
-                return
-            }
-            $before = $existing.Version
-            claude plugin update $Plugin | Out-Null
-            $after = (Get-ClaudePlugins -Refresh)[$Plugin].Version
-            if ($after -ne $before) {
-                $script:Summary.Updated++
-                Write-Ok "plugin '$Plugin' updated $before -> $after"
-            } else {
-                Write-Skip "plugin '$Plugin' already current (version $after)"
-            }
-            return
-        }
-        npx -y claudepluginhub $Repo --plugin $Plugin --yes --scope $PluginHubScope
-        Get-ClaudePlugins -Refresh | Out-Null
-        $script:Summary.Installed++
-        Write-Ok "installed '$Plugin' from $Repo"
-    } else {
-        if (Test-MarketplaceInstalled $Repo) {
-            Write-Skip "marketplace '$Repo' already registered"
-            return
-        }
-        npx -y claudepluginhub $Repo --yes --scope $PluginHubScope
-        Get-ClaudeMarketplaces -Refresh | Out-Null
-        $script:Summary.Installed++
-        Write-Ok "registered '$Repo'"
-    }
 }
 
 $script:IsElevated = Test-Admin
@@ -482,6 +394,7 @@ if ($SkipBootstrap) {
         'bitbucket',
         'checkpoint-email',
         'cisco-meraki',
+        'claude-code-defaults',
         'cloudflare',
         'drata',
         'i-have-adhd',
@@ -555,48 +468,48 @@ if ($SkipBootstrap) {
         }
     }
 
-    # --- 6. ClaudePluginHub --------------------------------------------------
-    if (Read-YesNo "Install the ClaudePluginHub marketplaces and plugins?" 'Y') {
-        $hubMarketplaces = @(
-            'anthropics/claude-plugins-official',
-            'obra/superpowers-marketplace',
-            'aiskillstore/marketplace',
-            'vercel-labs/agent-browser',
-            'fcakyon/claude-codex-settings'
+    # --- 6. Community marketplaces (from claudepluginhub.com) ----------------
+    # Installed with native 'claude plugin' commands. Source repo -> marketplace name
+    # is *not* mechanical: fcakyon/claude-codex-settings publishes itself as
+    # 'claude-settings'. Each Name below is the "name" field in that repo's own
+    # .claude-plugin/marketplace.json, which is what 'plugin@marketplace' must match.
+    if (Read-YesNo "Install the community marketplaces and plugins (claudepluginhub.com)?" 'Y') {
+        $communityMarketplaces = @(
+            @{ Source = 'anthropics/claude-plugins-official'; Name = 'claude-plugins-official' },
+            @{ Source = 'vercel-labs/agent-browser';          Name = 'agent-browser' },
+            @{ Source = 'fcakyon/claude-codex-settings';      Name = 'claude-settings' },
+            @{ Source = 'hugohe3/ppt-master';                 Name = 'ppt-master' }
         )
-        foreach ($repo in $hubMarketplaces) {
-            Invoke-Step "ClaudePluginHub: $repo" { Invoke-PluginHub -Repo $repo }
-        }
-
-        $hubPlugins = @(
-            @{ Repo = 'fcakyon/claude-codex-settings'; Plugin = 'adhd-output-style' },
-            @{ Repo = 'fcakyon/claude-codex-settings'; Plugin = 'agent-browser' },
-            @{ Repo = 'fcakyon/claude-codex-settings'; Plugin = 'azure-tools' },
-            @{ Repo = 'hugohe3/ppt-master';            Plugin = 'ppt-master' },
-            @{ Repo = 'aiskillstore/marketplace';      Plugin = 'xlsx' },
-            @{ Repo = 'aiskillstore/marketplace';      Plugin = 'mcp-integration' }
-        )
-        foreach ($hp in $hubPlugins) {
-            Invoke-Step "ClaudePluginHub: $($hp.Plugin) from $($hp.Repo)" {
-                Invoke-PluginHub -Repo $hp.Repo -Plugin $hp.Plugin
+        foreach ($mp in $communityMarketplaces) {
+            Invoke-Step "Marketplace: $($mp.Source)" {
+                Add-ClaudeMarketplace -Source $mp.Source -Name $mp.Name
             }
         }
+
+        $communityPlugins = @(
+            'adhd-output-style@claude-settings',
+            'azure-tools@claude-settings',
+            'anthropic-office-skills@claude-settings',
+            'agent-browser@agent-browser',
+            'ppt-master@ppt-master'
+        )
+        foreach ($spec in $communityPlugins) {
+            Invoke-Step "Plugin: $spec" { Install-ClaudePlugin $spec }
+        }
     } else {
-        Write-Skip "ClaudePluginHub marketplaces and plugins"
+        Write-Skip "community marketplaces and plugins"
     }
 
     # --- 7. Optional tooling -------------------------------------------------
     if (Read-YesNo "Install claude-mem (persistent cross-session memory)?" 'Y') {
-        Invoke-Step "Install claude-mem" {
-            if ((Test-MarketplaceInstalled 'thedotmack') -or (Test-PluginInstalled 'claude-mem')) {
-                Write-Skip "claude-mem already present (marketplace 'thedotmack' or plugin 'claude-mem')"
-                if (-not $NoUpdate) { npx -y claude-mem install }
-                return
-            }
-            npx -y claude-mem install
-            Get-ClaudeMarketplaces -Refresh | Out-Null
-            Get-ClaudePlugins -Refresh | Out-Null
-            $script:Summary.Installed++
+        # claude-mem supports the plugin-marketplace path as a first-class alternative to
+        # its 'npx claude-mem install' bootstrapper (see its README) - the plugin's own
+        # hooks handle worker/dependency setup on first run.
+        Invoke-Step "Marketplace: thedotmack/claude-mem" {
+            Add-ClaudeMarketplace -Source 'thedotmack/claude-mem' -Name 'thedotmack'
+        }
+        Invoke-Step "Plugin: claude-mem@thedotmack" {
+            Install-ClaudePlugin 'claude-mem@thedotmack'
         }
     } else {
         Write-Skip "claude-mem"
@@ -620,42 +533,30 @@ if ($SkipBootstrap) {
     }
 
     if (Read-YesNo "Install the VoltAgent awesome-claude-code-subagents collection?" 'Y') {
-        Invoke-Step "Clone and install awesome-claude-code-subagents" {
-            # Map 'bash' to Git Bash and refresh the environment before using it - a fresh
-            # git install puts bash.exe on the registry PATH, not on this process's PATH.
-            $bashExe = Register-GitBash
-            if (-not $bashExe) {
-                $onPath = Get-Command bash -ErrorAction SilentlyContinue
-                if ($onPath) {
-                    $bashExe = $onPath.Source
-                    Write-Warn2 "Git for Windows not located; falling back to 'bash' on PATH ($bashExe)."
-                } else {
-                    throw "bash (Git Bash) not found - install Git for Windows (choco install git) and re-run, or run this step manually."
-                }
-            } else {
-                Write-Ok "Using Git Bash at $bashExe"
-            }
-            $repoRoot = 'C:\repos'
-            if (-not (Test-Path $repoRoot)) {
-                New-Item -ItemType Directory -Path $repoRoot -Force | Out-Null
-            }
-            $repoDir = Join-Path $repoRoot 'awesome-claude-code-subagents'
-            if (Test-Path (Join-Path $repoDir '.git')) {
-                if ($NoUpdate) {
-                    Write-Skip "already cloned at $repoDir (-NoUpdate set)"
-                } else {
-                    Write-Ok "Repository already cloned at $repoDir - pulling latest"
-                    git -C $repoDir pull --ff-only
-                }
-            } else {
-                git clone https://github.com/VoltAgent/awesome-claude-code-subagents.git $repoDir
-                $script:Summary.Installed++
-            }
-            Push-Location $repoDir
-            try {
-                & $bashExe install-agents.sh
-            } finally {
-                Pop-Location
+        # The repo publishes itself as the 'voltagent-subagents' marketplace, with its
+        # 154 subagents split across ten category plugins. Installing them as plugins
+        # replaces the old 'git clone + bash install-agents.sh' path, which needed Git
+        # Bash on Windows (and failed outright when the script ran non-elevated, since
+        # Chocolatey - and therefore git - was skipped).
+        Invoke-Step "Marketplace: VoltAgent/awesome-claude-code-subagents" {
+            Add-ClaudeMarketplace -Source 'VoltAgent/awesome-claude-code-subagents' -Name 'voltagent-subagents'
+        }
+
+        $voltAgentPlugins = @(
+            'voltagent-core-dev',
+            'voltagent-lang',
+            'voltagent-infra',
+            'voltagent-qa-sec',
+            'voltagent-data-ai',
+            'voltagent-dev-exp',
+            'voltagent-domains',
+            'voltagent-biz',
+            'voltagent-meta',
+            'voltagent-research'
+        )
+        foreach ($plugin in $voltAgentPlugins) {
+            Invoke-Step "Plugin: $plugin@voltagent-subagents" {
+                Install-ClaudePlugin "$plugin@voltagent-subagents"
             }
         }
     } else {

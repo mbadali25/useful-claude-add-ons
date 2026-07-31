@@ -7,27 +7,32 @@
 #   * OS packages         - only the ones whose command is actually missing get installed
 #   * Marketplaces        - skipped when already registered (matched by name or repo)
 #   * Plugins             - skipped when already installed; optionally updated
-#   * ClaudePluginHub     - same detection, since it registers through Claude Code
+#
+# Marketplaces and plugins are installed with the native 'claude plugin marketplace add'
+# and 'claude plugin install' commands - no 'npx claudepluginhub' wrapper. The wrapper
+# synthesized a local directory-backed marketplace per repo, producing marketplace names
+# ('cpd-<repo>-user') that this script's detection could not match, so already-installed
+# plugins were reinstalled on every run.
 #
 # Usage: ./scripts/install-prerequisites.sh [options]
 #   --skip-bootstrap    skip all marketplace/plugin/optional bootstrap steps
 #   --non-interactive   take the default answer for every prompt (CI/unattended)
 #   --no-update         never update an already-installed plugin, only report it
-#   --scope <scope>     scope for claudepluginhub installs: user|project|local (default: user)
+#   --scope <scope>     scope for marketplace/plugin installs: user|project|local (default: user)
 
 set -uo pipefail
 
 SKIP_BOOTSTRAP=0
 NON_INTERACTIVE=0
 NO_UPDATE=0
-PLUGINHUB_SCOPE="user"   # claudepluginhub defaults to 'project'; a machine bootstrap wants user
+INSTALL_SCOPE="user"   # machine-wide by default, not per-project
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --skip-bootstrap)  SKIP_BOOTSTRAP=1 ;;
     --non-interactive) NON_INTERACTIVE=1 ;;
     --no-update)       NO_UPDATE=1 ;;
-    --scope)           PLUGINHUB_SCOPE="${2:-user}"; shift ;;
+    --scope)           INSTALL_SCOPE="${2:-user}"; shift ;;
     *) echo "Unknown option: $1" >&2 ;;
   esac
   shift
@@ -154,8 +159,6 @@ plugin_version() {
   return 1
 }
 
-plugin_installed() { plugin_version "$1" >/dev/null 2>&1; }
-
 # --- Detection: user-level skills --------------------------------------------
 # Some things (the 'skills' CLI) install as plain user-level skills rather than as
 # Claude Code plugins, so they never appear in 'claude plugin list' - detection for
@@ -175,7 +178,7 @@ add_marketplace() {
     fi
     return 0
   fi
-  claude plugin marketplace add "$source" || return 1
+  claude plugin marketplace add "$source" --scope "$INSTALL_SCOPE" || return 1
   load_marketplaces
   COUNT_INSTALLED=$((COUNT_INSTALLED+1))
   ok "added marketplace '$source'"
@@ -202,47 +205,10 @@ install_plugin() {
     fi
     return 0
   fi
-  claude plugin install "$spec" || return 1
+  claude plugin install "$spec" --scope "$INSTALL_SCOPE" || return 1
   load_plugins
   COUNT_INSTALLED=$((COUNT_INSTALLED+1))
   ok "installed plugin '$spec'"
-}
-
-pluginhub() {
-  # claudepluginhub registers through Claude Code, so the same detection applies.
-  # Its default scope is 'project'; pass an explicit scope for a machine bootstrap.
-  local repo="$1" plugin="${2:-}" before after
-  if [ -n "$plugin" ]; then
-    if before="$(plugin_version "$plugin")"; then
-      if [ "$NO_UPDATE" -eq 1 ]; then
-        skip "plugin '$plugin' already installed (version $before)"
-        return 0
-      fi
-      claude plugin update "$plugin" >/dev/null 2>&1
-      load_plugins
-      after="$(plugin_version "$plugin" || echo "$before")"
-      if [ "$after" != "$before" ]; then
-        COUNT_UPDATED=$((COUNT_UPDATED+1))
-        ok "plugin '$plugin' updated $before -> $after"
-      else
-        skip "plugin '$plugin' already current (version $after)"
-      fi
-      return 0
-    fi
-    npx -y claudepluginhub "$repo" --plugin "$plugin" --yes --scope "$PLUGINHUB_SCOPE" || return 1
-    load_plugins
-    COUNT_INSTALLED=$((COUNT_INSTALLED+1))
-    ok "installed '$plugin' from $repo"
-  else
-    if marketplace_installed "$repo"; then
-      skip "marketplace '$repo' already registered"
-      return 0
-    fi
-    npx -y claudepluginhub "$repo" --yes --scope "$PLUGINHUB_SCOPE" || return 1
-    load_marketplaces
-    COUNT_INSTALLED=$((COUNT_INSTALLED+1))
-    ok "registered '$repo'"
-  fi
 }
 
 # --- 1. OS packages: only what's actually missing ----------------------------
@@ -381,6 +347,7 @@ else
     "bitbucket"
     "checkpoint-email"
     "cisco-meraki"
+    "claude-code-defaults"
     "cloudflare"
     "drata"
     "i-have-adhd"
@@ -447,50 +414,44 @@ else
   }
   run_step "Skill: find-skills (vercel-labs/skills)" install_find_skills
 
-  # --- 6. ClaudePluginHub ----------------------------------------------------
-  if ask_yes_no "Install the ClaudePluginHub marketplaces and plugins?" "Y"; then
-    hub_marketplaces=(
-      "anthropics/claude-plugins-official"
-      "obra/superpowers-marketplace"
-      "aiskillstore/marketplace"
-      "vercel-labs/agent-browser"
-      "fcakyon/claude-codex-settings"
+  # --- 6. Community marketplaces (from claudepluginhub.com) ------------------
+  # Installed with native 'claude plugin' commands. Source repo -> marketplace name is
+  # *not* mechanical: fcakyon/claude-codex-settings publishes itself as 'claude-settings'.
+  # The second field below is the "name" in that repo's own .claude-plugin/marketplace.json,
+  # which is what 'plugin@marketplace' has to match.
+  if ask_yes_no "Install the community marketplaces and plugins (claudepluginhub.com)?" "Y"; then
+    # "source|marketplace-name" pairs
+    community_marketplaces=(
+      "anthropics/claude-plugins-official|claude-plugins-official"
+      "vercel-labs/agent-browser|agent-browser"
+      "fcakyon/claude-codex-settings|claude-settings"
+      "hugohe3/ppt-master|ppt-master"
     )
-    for repo in "${hub_marketplaces[@]}"; do
-      run_step "ClaudePluginHub: $repo" pluginhub "$repo"
+    for entry in "${community_marketplaces[@]}"; do
+      run_step "Marketplace: ${entry%%|*}" add_marketplace "${entry%%|*}" "${entry#*|}"
     done
 
-    # "repo|plugin" pairs
-    hub_plugins=(
-      "fcakyon/claude-codex-settings|adhd-output-style"
-      "fcakyon/claude-codex-settings|agent-browser"
-      "fcakyon/claude-codex-settings|azure-tools"
-      "hugohe3/ppt-master|ppt-master"
-      "aiskillstore/marketplace|xlsx"
-      "aiskillstore/marketplace|mcp-integration"
+    community_plugins=(
+      "adhd-output-style@claude-settings"
+      "azure-tools@claude-settings"
+      "anthropic-office-skills@claude-settings"
+      "agent-browser@agent-browser"
+      "ppt-master@ppt-master"
     )
-    for entry in "${hub_plugins[@]}"; do
-      run_step "ClaudePluginHub: ${entry#*|} from ${entry%%|*}" \
-        pluginhub "${entry%%|*}" "${entry#*|}"
+    for spec in "${community_plugins[@]}"; do
+      run_step "Plugin: $spec" install_plugin "$spec"
     done
   else
-    skip "ClaudePluginHub marketplaces and plugins"
+    skip "community marketplaces and plugins"
   fi
 
   # --- 7. Optional tooling ---------------------------------------------------
-  install_claude_mem() {
-    if marketplace_installed "thedotmack" || plugin_installed "claude-mem"; then
-      skip "claude-mem already present (marketplace 'thedotmack' or plugin 'claude-mem')"
-      [ "$NO_UPDATE" -eq 1 ] && return 0
-      npx -y claude-mem install
-      return $?
-    fi
-    npx -y claude-mem install || return 1
-    load_marketplaces; load_plugins
-    COUNT_INSTALLED=$((COUNT_INSTALLED+1))
-  }
+  # claude-mem supports the plugin-marketplace path as a first-class alternative to its
+  # 'npx claude-mem install' bootstrapper (see its README) - the plugin's own hooks handle
+  # worker/dependency setup on first run.
   if ask_yes_no "Install claude-mem (persistent cross-session memory)?" "Y"; then
-    run_step "Install claude-mem" install_claude_mem
+    run_step "Marketplace: thedotmack/claude-mem" add_marketplace "thedotmack/claude-mem" "thedotmack"
+    run_step "Plugin: claude-mem@thedotmack" install_plugin "claude-mem@thedotmack"
   else
     skip "claude-mem"
   fi
@@ -513,25 +474,29 @@ else
     skip "GSD"
   fi
 
-  install_awesome_subagents() {
-    local repo_root="$HOME/repos"
-    local repo_dir="$repo_root/awesome-claude-code-subagents"
-    mkdir -p "$repo_root"
-    if [ -d "$repo_dir/.git" ]; then
-      if [ "$NO_UPDATE" -eq 1 ]; then
-        skip "already cloned at $repo_dir (--no-update set)"
-      else
-        ok "Repository already cloned at $repo_dir - pulling latest"
-        git -C "$repo_dir" pull --ff-only
-      fi
-    else
-      git clone https://github.com/VoltAgent/awesome-claude-code-subagents.git "$repo_dir" || return 1
-      COUNT_INSTALLED=$((COUNT_INSTALLED+1))
-    fi
-    (cd "$repo_dir" && bash install-agents.sh)
-  }
+  # The repo publishes itself as the 'voltagent-subagents' marketplace, with its 154
+  # subagents split across ten category plugins. Installing them as plugins replaces the
+  # old 'git clone + bash install-agents.sh' path, which needed an interactive TTY and a
+  # writable ~/repos checkout.
   if ask_yes_no "Install the VoltAgent awesome-claude-code-subagents collection?" "Y"; then
-    run_step "Clone and install awesome-claude-code-subagents" install_awesome_subagents
+    run_step "Marketplace: VoltAgent/awesome-claude-code-subagents" \
+      add_marketplace "VoltAgent/awesome-claude-code-subagents" "voltagent-subagents"
+
+    voltagent_plugins=(
+      "voltagent-core-dev"
+      "voltagent-lang"
+      "voltagent-infra"
+      "voltagent-qa-sec"
+      "voltagent-data-ai"
+      "voltagent-dev-exp"
+      "voltagent-domains"
+      "voltagent-biz"
+      "voltagent-meta"
+      "voltagent-research"
+    )
+    for plugin in "${voltagent_plugins[@]}"; do
+      run_step "Plugin: ${plugin}@voltagent-subagents" install_plugin "${plugin}@voltagent-subagents"
+    done
   else
     skip "VoltAgent awesome-claude-code-subagents"
   fi
