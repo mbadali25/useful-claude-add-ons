@@ -44,6 +44,8 @@ COMMON_REPORTS = {
 }
 
 
+# `filter` shadows the builtin deliberately: it mirrors OData's $filter.
+# pylint: disable-next=redefined-builtin
 def run_export(g, report, fmt="csv", filter=None, select=None, localization=None,
                out_dir=".", timeout=900, poll=10):
     body = {"reportName": report, "format": fmt}

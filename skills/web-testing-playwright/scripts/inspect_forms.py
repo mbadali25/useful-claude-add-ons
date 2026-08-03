@@ -169,7 +169,7 @@ def suggest_locator(f):
 
 def fill_snippet(f):
     """How you'd actually drive this control."""
-    loc = suggest_locator(f).split("  #")[0]
+    loc = suggest_locator(f).split("  #", maxsplit=1)[0]
     t = f["type"]
     if t in ("checkbox", "radio"):
         return f"{loc}.check()"
@@ -253,7 +253,7 @@ def main():
         browser.close()
 
     if args.out:
-        with open(args.out, "w") as fh:
+        with open(args.out, "w", encoding="utf-8") as fh:
             json.dump(data, fh, indent=2)
     if args.json:
         print(json.dumps(data, indent=2))

@@ -3,7 +3,8 @@ import unittest
 import unittest.mock
 import urllib.request
 
-import context  # noqa: F401  -- puts scripts/ on sys.path
+# `context` puts scripts/ on sys.path as an import side effect.
+import context  # noqa: F401  # pylint: disable=unused-import
 
 from helpers import TEST_API_KEY
 from meraki_http import (
@@ -63,7 +64,7 @@ class TestRequest(unittest.TestCase):
         send = FakeSend([(200, {}, b'[{"id": "42"}]')])
         http = MerakiHTTP(api_key=TEST_API_KEY, _send=send)
 
-        data, headers = http.request("GET", "/organizations")
+        data, _headers = http.request("GET", "/organizations")
 
         self.assertEqual(data, [{"id": "42"}])
         method, url, sent_headers, body = send.calls[0]

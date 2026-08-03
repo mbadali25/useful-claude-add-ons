@@ -361,7 +361,7 @@ class MerakiClient:
                         0, [f"Live tool '{tool}' on {serial} returned multiple "
                             f"candidate job id keys; cannot determine which to "
                             f"poll. Candidates: {listed}"])
-                elif len(candidates) == 1:
+                if len(candidates) == 1:
                     key = next(iter(candidates.keys()))
                     job_id = candidates[key]
 

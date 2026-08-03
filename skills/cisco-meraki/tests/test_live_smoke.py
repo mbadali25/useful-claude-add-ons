@@ -5,7 +5,7 @@ Never writes. Never asserts on tenant-specific values.
 import os
 import unittest
 
-import context  # noqa: F401
+import context  # noqa: F401  # pylint: disable=unused-import
 
 from meraki_client import MerakiClient
 from meraki_http import MerakiHTTP

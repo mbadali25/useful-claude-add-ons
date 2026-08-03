@@ -113,7 +113,8 @@ class WazuhClient:
         # Dashboard (OpenSearch Dashboards) — saved-objects import/export lives here,
         # NOT on the Indexer. Port 443 by default. Credentials are a Dashboard *login*
         # (a UI user with saved-objects permission), distinct from the Indexer user.
-        self.dashboard_url = (dashboard_url or os.environ.get("WAZUH_DASHBOARD_URL", "https://localhost:443")).rstrip("/")
+        self.dashboard_url = (dashboard_url or os.environ.get(
+            "WAZUH_DASHBOARD_URL", "https://localhost:443")).rstrip("/")
         self.dashboard_user = dashboard_user or os.environ.get("WAZUH_DASHBOARD_USER")
         self.dashboard_password = dashboard_password or os.environ.get("WAZUH_DASHBOARD_PASSWORD")
         # Multi-tenant deployments scope saved objects per tenant; default to the
@@ -180,8 +181,9 @@ class WazuhClient:
 
         try:
             data = resp.json()
-        except ValueError:
-            raise WazuhAPIError(f"Non-JSON response ({resp.status_code}): {resp.text[:300]}")
+        except ValueError as exc:
+            raise WazuhAPIError(
+                f"Non-JSON response ({resp.status_code}): {resp.text[:300]}") from exc
 
         if resp.status_code >= 400:
             raise WazuhAPIError(
@@ -484,7 +486,7 @@ def main():
             _print(c.recent_alerts(args.index, min_level=args.level, since=args.since,
                                    agent_name=args.agent, size=args.size))
         elif args.cmd == "raw-search":
-            with open(args.body) as f:
+            with open(args.body, encoding="utf-8") as f:
                 body = json.load(f)
             _print(c.indexer_search(args.index, body))
         elif args.cmd == "indices":
@@ -498,7 +500,7 @@ def main():
                     sys.exit("ERROR: --id requires exactly one --type")
                 objects = [{"type": args.types[0], "id": i} for i in args.ids]
             ndjson = c.dashboard_export(types=args.types, objects=objects)
-            with open(args.out, "w") as f:
+            with open(args.out, "w", encoding="utf-8") as f:
                 f.write(ndjson)
             n = sum(1 for line in ndjson.splitlines() if line.strip())
             print(f"Wrote {n} saved object(s) to {args.out}", file=sys.stderr)

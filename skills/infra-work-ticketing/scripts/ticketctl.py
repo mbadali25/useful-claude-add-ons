@@ -870,7 +870,7 @@ class Jira:
     AUTH_URL = "https://auth.atlassian.com/authorize"
     TOKEN_URL = "https://auth.atlassian.com/oauth/token"
     RESOURCES_URL = "https://api.atlassian.com/oauth/token/accessible-resources"
-    SCOPES = ("read:jira-work write:jira-work read:jira-user offline_access")
+    SCOPES = "read:jira-work write:jira-work read:jira-user offline_access"
 
     def __init__(self, cfg):
         self.cfg = cfg

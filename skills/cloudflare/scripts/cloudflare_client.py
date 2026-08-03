@@ -20,8 +20,10 @@ CLI examples:
   python cloudflare_client.py account-id "My Org"
   python cloudflare_client.py get     /zones/{zid}/dns_records --params type=A name=www.example.com
   python cloudflare_client.py get-all /zones/{zid}/dns_records
-  python cloudflare_client.py post    /zones/{zid}/dns_records --json '{"type":"A","name":"www","content":"1.2.3.4","ttl":300,"proxied":true}'
-  python cloudflare_client.py put      /zones/{zid}/dns_records/{rid} --json '{"type":"A","name":"www","content":"5.6.7.8","proxied":true}' --dry-run
+  python cloudflare_client.py post    /zones/{zid}/dns_records \
+      --json '{"type":"A","name":"www","content":"1.2.3.4","ttl":300,"proxied":true}'
+  python cloudflare_client.py put     /zones/{zid}/dns_records/{rid} \
+      --json '{"type":"A","name":"www","content":"5.6.7.8","proxied":true}' --dry-run
   python cloudflare_client.py delete   /zones/{zid}/dns_records/{rid}
 
 Library use:
@@ -35,7 +37,6 @@ Library use:
 import argparse
 import json
 import os
-import sys
 import time
 import urllib.error
 import urllib.parse
@@ -107,7 +108,7 @@ class CloudflareClient:
                 status = e.code
                 raw = e.read()
             except urllib.error.URLError as e:
-                raise CloudflareError(f"{method} {path}: network error: {e.reason}")
+                raise CloudflareError(f"{method} {path}: network error: {e.reason}") from e
 
             # 429: no Retry-After from Cloudflare -> exponential backoff.
             if status == 429 and attempt < retries:
@@ -169,8 +170,7 @@ class CloudflareClient:
                 params["page"] = page
             body = self.get(path, params=params)
             result = body.get("result") or []
-            for item in result:
-                yield item
+            yield from result
             info = body.get("result_info") or {}
             if cursor_mode:
                 after = (info.get("cursors") or {}).get("after")
@@ -264,6 +264,7 @@ def main():
         out = c.delete(args.path, params=_parse_params(args.params), dry_run=args.dry_run)
     else:
         ap.error(f"unknown command {args.cmd}")
+        return
 
     print(json.dumps(out, indent=2) if not isinstance(out, str) else out)
 

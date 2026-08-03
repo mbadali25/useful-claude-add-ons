@@ -142,7 +142,7 @@ def main() -> int:
     else:
         try:
             out = subprocess.run(
-                [exe, "--version"], capture_output=True, text=True, timeout=30
+                [exe, "--version"], capture_output=True, text=True, timeout=30, check=False
             ).stdout
             installed = parse_version(out)
             record("PASS", "terraform-docs", f"{fmt(installed) if installed else out.strip()} ({exe})")

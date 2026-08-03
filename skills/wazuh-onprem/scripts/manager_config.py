@@ -77,7 +77,7 @@ def run_remote(host, user, key, port, remote_cmd, check=True):
     """Run a command on the manager over SSH. remote_cmd is a shell string
     (built carefully by callers — no untrusted interpolation)."""
     full = _ssh_base(host, user, key, port) + [remote_cmd]
-    result = subprocess.run(full, capture_output=True, text=True)
+    result = subprocess.run(full, capture_output=True, text=True, check=False)
     if check and result.returncode != 0:
         raise RuntimeError(
             f"SSH command failed ({result.returncode}): {remote_cmd}\n"
@@ -88,14 +88,14 @@ def run_remote(host, user, key, port, remote_cmd, check=True):
 
 def scp_down(host, user, key, port, remote_path, local_path):
     full = _scp_base(key, port) + [f"{user}@{host}:{remote_path}", local_path]
-    result = subprocess.run(full, capture_output=True, text=True)
+    result = subprocess.run(full, capture_output=True, text=True, check=False)
     if result.returncode != 0:
         raise RuntimeError(f"scp download failed: {result.stderr}")
 
 
 def scp_up(host, user, key, port, local_path, remote_path):
     full = _scp_base(key, port) + [local_path, f"{user}@{host}:{remote_path}"]
-    result = subprocess.run(full, capture_output=True, text=True)
+    result = subprocess.run(full, capture_output=True, text=True, check=False)
     if result.returncode != 0:
         raise RuntimeError(f"scp upload failed: {result.stderr}")
 
@@ -136,9 +136,9 @@ def cmd_diff(args):
     host, user, key, port, conf_path = cfg()
     tmp_current = "/tmp/_wazuh_current_ossec.conf"
     scp_down(host, user, key, port, conf_path, tmp_current)
-    with open(tmp_current) as f:
+    with open(tmp_current, encoding="utf-8") as f:
         current = f.read()
-    with open(args.block) as f:
+    with open(args.block, encoding="utf-8") as f:
         block = f.read()
     candidate = insert_block(current, block, anchor=args.anchor)
     diff = difflib.unified_diff(
@@ -161,15 +161,15 @@ def cmd_apply(args):
     print("2/6 Fetching current config", file=sys.stderr)
     tmp_current = "/tmp/_wazuh_current_ossec.conf"
     scp_down(host, user, key, port, conf_path, tmp_current)
-    with open(tmp_current) as f:
+    with open(tmp_current, encoding="utf-8") as f:
         current = f.read()
 
     print("3/6 Building candidate config", file=sys.stderr)
-    with open(args.block) as f:
+    with open(args.block, encoding="utf-8") as f:
         block = f.read()
     candidate = insert_block(current, block, anchor=args.anchor)
     tmp_candidate = "/tmp/_wazuh_candidate_ossec.conf"
-    with open(tmp_candidate, "w") as f:
+    with open(tmp_candidate, "w", encoding="utf-8") as f:
         f.write(candidate)
 
     print("4/6 Uploading candidate and checking XML well-formedness", file=sys.stderr)
@@ -194,7 +194,9 @@ def cmd_apply(args):
     print("6/6 Config test passed.", file=sys.stderr)
     if args.restart:
         print("Restarting wazuh-manager as requested...", file=sys.stderr)
-        run_remote(host, user, key, port, "sudo systemctl restart wazuh-manager || sudo /var/ossec/bin/wazuh-control restart")
+        run_remote(host, user, key, port,
+                   "sudo systemctl restart wazuh-manager"
+                   " || sudo /var/ossec/bin/wazuh-control restart")
         print("Restarted.", file=sys.stderr)
     else:
         print(

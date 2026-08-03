@@ -64,13 +64,13 @@ def make_redactor(*secrets):
     string, and error banners sometimes echo the username back. Neither should
     ever reach stdout, a log file, or a screenshot filename.
     """
-    from urllib.parse import quote, quote_plus
+    from urllib.parse import quote
 
     variants = set()
     for s in secrets:
         if not s:
             continue
-        variants.update({s, quote(s), quote_plus(s), quote(s, safe="")})
+        variants.update({s, quote(s), quote_plus_safe(s), quote(s, safe="")})
     variants = sorted(variants, key=len, reverse=True)
 
     def redact(text):

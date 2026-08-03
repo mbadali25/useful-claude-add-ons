@@ -197,7 +197,7 @@ def render_email_html(sessions: list[dict], cfg: dict, *,
     eyebrow = f"{project} · {env}" if env else project
 
     cards = "".join(
-        _session_card(s, last=(i == len(sessions) - 1))
+        _session_card(s, last=i == len(sessions) - 1)
         for i, s in enumerate(sessions)
     ) or (
         f'<div style="font-family:{FONT};font-size:14px;color:{MUTED};">'
@@ -350,7 +350,6 @@ def render_pdf(sessions: list[dict], cfg: dict, out_path: Path, *,
     base = getSampleStyleSheet()
     ink = colors.HexColor(INK)
     muted = colors.HexColor(MUTED)
-    accent = colors.HexColor(ACCENT)
     rule = colors.HexColor(BORDER)
 
     styles = {

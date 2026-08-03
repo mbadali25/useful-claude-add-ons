@@ -57,7 +57,7 @@ def _env(name, required=False):
 
 def _load_cache(key):
     try:
-        with open(CACHE_PATH) as f:
+        with open(CACHE_PATH, encoding="utf-8") as f:
             blob = json.load(f)
     except (OSError, ValueError):
         return None
@@ -72,12 +72,12 @@ def _load_cache(key):
 
 def _save_cache(key, token, expires_in):
     try:
-        with open(CACHE_PATH) as f:
+        with open(CACHE_PATH, encoding="utf-8") as f:
             blob = json.load(f)
     except (OSError, ValueError):
         blob = {}
     blob[key] = {"access_token": token, "expires_at": time.time() + int(expires_in)}
-    with open(CACHE_PATH, "w") as f:
+    with open(CACHE_PATH, "w", encoding="utf-8") as f:
         json.dump(blob, f)
     os.chmod(CACHE_PATH, stat.S_IRUSR | stat.S_IWUSR)  # 0600 — it's a bearer token
 
@@ -163,10 +163,10 @@ def _azure_cli():
     try:
         out = subprocess.run(
             ["az", "account", "get-access-token", "--resource", "https://graph.microsoft.com", "-o", "json"],
-            capture_output=True, text=True, timeout=60,
+            capture_output=True, text=True, timeout=60, check=False,
         )
-    except FileNotFoundError:
-        raise AuthError("azure_cli mode needs the `az` CLI on PATH.")
+    except FileNotFoundError as exc:
+        raise AuthError("azure_cli mode needs the `az` CLI on PATH.") from exc
     if out.returncode != 0:
         raise AuthError(f"az get-access-token failed — run `az login` first.\n{out.stderr[:400]}")
     tok = json.loads(out.stdout)

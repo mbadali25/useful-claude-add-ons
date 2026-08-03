@@ -28,7 +28,6 @@ Library use:
 import argparse
 import json
 import os
-import sys
 import time
 
 import requests
@@ -179,8 +178,7 @@ class SophosClient:
         while True:
             body = self.get(path, params=params)
             items = body.get("items", [])
-            for item in items:
-                yield item
+            yield from items
             pages = body.get("pages", {})
             next_key = pages.get("nextKey")
             if next_key:
@@ -199,8 +197,7 @@ class SophosClient:
             params["from_date"] = int(time.time()) - since_seconds
         while True:
             body = self.get(f"/siem/v1/{kind}", params=params)
-            for item in body.get("items", []):
-                yield item
+            yield from body.get("items", [])
             if not body.get("has_more"):
                 return
             params = {"limit": 1000, "cursor": body["next_cursor"]}
