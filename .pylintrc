@@ -16,7 +16,30 @@
 # CI deliberately does not install them -- there's nothing to pin, and each
 # skill's docs cover its own setup. Without this, E0401 fires on code paths
 # that are correct by design.
-ignored-modules=vsdx,playwright,requests,boto3,botocore,yaml,cairosvg
+#
+# This is the complete set of third-party imports in the repo. Regenerate it
+# after adding a skill that takes a new dependency -- if you only test where
+# the package happens to be installed, the gap shows up as a CI-only failure:
+#
+#   python - <<'PY'
+#   import ast, subprocess, sys, pathlib
+#   files = subprocess.run(["git","ls-files","*.py"], capture_output=True,
+#                          text=True).stdout.split()
+#   local = {pathlib.Path(f).stem for f in files}
+#   mods = set()
+#   for f in files:
+#       for n in ast.walk(ast.parse(open(f, encoding="utf-8").read())):
+#           if isinstance(n, ast.Import):
+#               mods |= {a.name.split(".")[0] for a in n.names}
+#           elif isinstance(n, ast.ImportFrom) and n.level == 0 and n.module:
+#               mods.add(n.module.split(".")[0])
+#   print(sorted(mods - set(sys.stdlib_module_names) - local))
+#   PY
+#
+# Both the bare name and the `.*` glob are listed so submodule imports
+# (reportlab.platypus, urllib3.exceptions) are covered too.
+ignored-modules=botocore,botocore.*,playwright,playwright.*,reportlab,reportlab.*,
+                requests,requests.*,urllib3,urllib3.*,vsdx,vsdx.*,yaml,yaml.*
 
 [FORMAT]
 # 100 is tight for scripts that embed XML/SQL/URL literals which can't wrap.
