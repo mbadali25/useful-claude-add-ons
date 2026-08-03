@@ -6,6 +6,19 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
+- `skills/visio-diagrams` — creates, edits, and verifies Microsoft Visio `.vsdx`
+  files. Two paths from one spec: a stdlib-only writer (`vsdx_writer.py` +
+  `diagram_from_spec.py`) that generates a native `.vsdx` plus an SVG preview
+  with no Visio install and no third-party packages, so it runs in CI and on
+  air-gapped boxes; and PowerShell COM automation (`New-VisioDiagram.ps1`) for
+  real stencil masters, themes, containers, and swimlanes. Also covers reading
+  and retitling an existing `.vsdx` via the `vsdx` package (the template + data
+  pattern that preserves corporate stencils). Leads by challenging whether Visio
+  is the right output at all, and refuses to call a file verified when
+  `verify_vsdx.py` could only check OPC structure. Two reference files (`.vsdx`
+  OOXML format and symptom → cause table, COM automation). Registered in
+  `.claude-plugin/marketplace.json` and both install scripts — 19 skills total.
+
 - `skills/claude-code-defaults` — configures how Claude Code itself behaves by
   default. Separates instructions (`CLAUDE.md`, `.claude/rules/`, loaded into
   context) from enforcement (`settings.json`, permission `allow`/`ask`/`deny`,

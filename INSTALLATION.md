@@ -116,6 +116,7 @@ claude plugin install repo-docs@useful-claude-add-ons
 claude plugin install shipstation@useful-claude-add-ons
 claude plugin install sophos-central@useful-claude-add-ons
 claude plugin install terraform-docs-readme@useful-claude-add-ons
+claude plugin install visio-diagrams@useful-claude-add-ons
 claude plugin install wazuh-onprem@useful-claude-add-ons
 claude plugin install web-testing-playwright@useful-claude-add-ons
 claude plugin install work-log-reporter@useful-claude-add-ons

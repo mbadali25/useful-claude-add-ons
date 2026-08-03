@@ -358,6 +358,7 @@ else
     "shipstation"
     "sophos-central"
     "terraform-docs-readme"
+    "visio-diagrams"
     "wazuh-onprem"
     "web-testing-playwright"
     "work-log-reporter"

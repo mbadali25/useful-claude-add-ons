@@ -98,6 +98,12 @@
       "version": "1.0.0"
     },
     {
+      "name": "visio-diagrams",
+      "source": "./skills/visio-diagrams",
+      "description": "Create, edit, and verify Microsoft Visio .vsdx diagrams - stdlib-only generator from a YAML/JSON spec with no Visio install needed, plus COM automation for real stencil masters.",
+      "version": "1.0.0"
+    },
+    {
       "name": "wazuh-onprem",
       "source": "./skills/wazuh-onprem",
       "description": "Self-hosted Wazuh across Server API, Indexer API, Dashboard saved-objects API, and ossec.conf over SSH.",
