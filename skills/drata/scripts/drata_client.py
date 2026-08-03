@@ -127,9 +127,9 @@ class DrataClient:
                 body = json.loads(resp.read().decode())
         except urllib.error.HTTPError as e:
             detail = e.read().decode(errors="replace")[:600]
-            raise SystemExit(f"OAuth token request -> {e.code}: {detail}")
+            raise SystemExit(f"OAuth token request -> {e.code}: {detail}") from e
         except urllib.error.URLError as e:
-            raise SystemExit(f"OAuth token request failed: {e.reason}")
+            raise SystemExit(f"OAuth token request failed: {e.reason}") from e
         self._token = body["access_token"]
         self._token_expiry = time.time() + int(body.get("expires_in", 3600))
         return self._token
@@ -167,9 +167,9 @@ class DrataClient:
                     time.sleep(wait)
                     continue
                 detail = e.read().decode(errors="replace")[:600]
-                raise SystemExit(f"{method} {url} -> {e.code}: {detail}")
+                raise SystemExit(f"{method} {url} -> {e.code}: {detail}") from e
             except urllib.error.URLError as e:
-                raise SystemExit(f"{method} {url} failed: {e.reason}")
+                raise SystemExit(f"{method} {url} failed: {e.reason}") from e
             if status == 204 or not content:
                 return {"status": status}
             return json.loads(content.decode())
@@ -216,8 +216,7 @@ class DrataClient:
             body = self.get(path, params=params)
             data = body.get("data", body if isinstance(body, list) else [])
             if isinstance(data, list):
-                for item in data:
-                    yield item
+                yield from data
             else:
                 yield data
                 return

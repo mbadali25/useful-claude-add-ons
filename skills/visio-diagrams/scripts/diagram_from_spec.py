@@ -35,6 +35,8 @@ from collections import defaultdict, deque
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
+# sys.path is set up immediately above, so these cannot move to the top.
+# pylint: disable=wrong-import-position
 from vsdx_writer import VisioDocument, GEOMETRY, ROUND_KINDS  # noqa: E402
 
 
@@ -168,7 +170,8 @@ def svg_preview(page, path):
     """Flip Y (Visio origin is bottom-left, SVG is top-left) and draw at 72dpi."""
     S = 72.0
     W, H = page.width * S, page.height * S
-    fy = lambda y: (page.height - y) * S  # noqa: E731
+    def fy(y):
+        return (page.height - y) * S
     arrows = {c.color for c in page.connectors if c.arrow}
     defs = "".join(
         f'<marker id="a{i}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" '

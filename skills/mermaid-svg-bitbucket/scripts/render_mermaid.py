@@ -29,7 +29,6 @@ import re
 import shutil
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 # Bump when render settings change in a way that should invalidate every SVG.
@@ -194,7 +193,7 @@ def render(mmd_path: Path, svg_path: Path, config: Path, puppeteer: Path | None,
     if puppeteer and puppeteer.exists():
         cmd += ["--puppeteerConfigFile", str(puppeteer)]
 
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+    proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
     if proc.returncode != 0 or not svg_path.exists():
         detail = (proc.stderr or proc.stdout or "").strip()
         raise RuntimeError(f"mmdc failed for {mmd_path}:\n{detail}")

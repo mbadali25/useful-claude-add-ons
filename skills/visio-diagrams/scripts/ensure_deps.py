@@ -39,7 +39,7 @@ def pip_install(pkgs: list[str]) -> bool:
     base = [sys.executable, "-m", "pip", "install", "--quiet", *pkgs]
     for args in (base, base + ["--break-system-packages"]):
         try:
-            r = subprocess.run(args, capture_output=True, text=True, timeout=180)
+            r = subprocess.run(args, capture_output=True, text=True, timeout=180, check=False)
         except (subprocess.TimeoutExpired, OSError) as e:
             print(f"  pip failed to run: {e}", file=sys.stderr)
             return False
@@ -83,7 +83,7 @@ def main() -> int:
         return 0
 
     print(f"Installing: {', '.join(missing)}")
-    ok = pip_install(missing)
+    pip_install(missing)
 
     still = [p for p in missing if not installed(p)]
     for p in [p for p in missing if p not in still]:

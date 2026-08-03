@@ -1,0 +1,74 @@
+# Pylint configuration for useful-claude-add-ons.
+#
+# This repo is not a Python package. It's ~19 independent Claude Code skills,
+# each shipping standalone helper scripts that Claude runs directly. Default
+# pylint assumes a library with installed dependencies, so a few of its checks
+# fight the design rather than finding bugs. Those are disabled below, each with
+# the reason. Everything else -- including every E-class check -- stays on.
+#
+# Run locally exactly as CI does:
+#   pip install 'pylint~=4.0'
+#   pylint $(git ls-files '*.py')
+
+[MAIN]
+# Optional third-party deps. Skill scripts import these lazily and degrade
+# gracefully when they're absent (see e.g. visio-diagrams' ensure_deps.py), so
+# CI deliberately does not install them -- there's nothing to pin, and each
+# skill's docs cover its own setup. Without this, E0401 fires on code paths
+# that are correct by design.
+ignored-modules=vsdx,playwright,requests,boto3,botocore,yaml,cairosvg
+
+[FORMAT]
+# 100 is tight for scripts that embed XML/SQL/URL literals which can't wrap.
+max-line-length=120
+
+# ticketctl.py is one file on purpose -- a skill script has to be runnable on
+# its own, so it can't import sibling modules that may not be copied with it.
+max-module-lines=2000
+
+[MESSAGES CONTROL]
+disable=
+    # --- Docstrings -------------------------------------------------------
+    # Skills document themselves in SKILL.md and references/, which is what
+    # Claude actually reads. Requiring a docstring on every argparse handler
+    # would add ~400 lines of noise that duplicates the skill docs.
+    missing-module-docstring,
+    missing-class-docstring,
+    missing-function-docstring,
+
+    # --- Design metrics ---------------------------------------------------
+    # These measure shape, not correctness. A single-file API client with one
+    # argparse dispatcher legitimately has many short methods and a long main().
+    too-many-arguments,
+    too-many-positional-arguments,
+    too-many-locals,
+    too-many-statements,
+    too-many-branches,
+    too-many-return-statements,
+    too-many-instance-attributes,
+    too-many-public-methods,
+    too-few-public-methods,
+    too-many-nested-blocks,
+
+    # Each skill is deliberately self-contained and copy-pasteable -- shared
+    # auth/retry scaffolding across skills is the point, not duplication to
+    # factor out. Cross-file R0801 flags exactly that on-purpose overlap.
+    duplicate-code,
+
+    # --- Idioms this codebase uses on purpose -----------------------------
+    # Optional deps are imported at the call site so a missing package
+    # degrades one subcommand instead of failing the whole script at import.
+    import-outside-toplevel,
+    # argparse handlers share one (client, args) signature for uniform
+    # dispatch; some don't need args.
+    unused-argument,
+    # CLI entry points catch broadly on purpose, to print a clean message
+    # instead of a traceback.
+    broad-exception-caught,
+    # Tests reach into internals to assert on them.
+    protected-access,
+
+    # --- Pure style -------------------------------------------------------
+    # Short-lived script locals (fh, k, v, ns) read fine.
+    invalid-name,
+    multiple-statements,

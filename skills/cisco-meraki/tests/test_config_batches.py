@@ -3,7 +3,7 @@ import shutil
 import tempfile
 import unittest
 
-import context  # noqa: F401
+import context  # noqa: F401  # pylint: disable=unused-import
 
 from helpers import http_with, ok
 from meraki_diff import redact_secrets
@@ -47,7 +47,7 @@ class TestBatchStage(unittest.TestCase):
         self.assertIs(json.loads(body.decode())["confirmed"], False)
 
     def test_rejects_more_than_the_action_cap(self):
-        tool, calls = self._tool([ok([{"id": "111"}]), ok([])])
+        tool, _calls = self._tool([ok([{"id": "111"}]), ok([])])
         too_many = [action()] * (MAX_BATCH_ACTIONS + 1)
         with self.assertRaises(MerakiError) as ctx:
             tool.batch_stage(too_many)

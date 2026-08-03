@@ -135,7 +135,7 @@ def _pretty(obj):
 
 def _load_body(args):
     if getattr(args, "body", None):
-        with open(args.body) as fh:
+        with open(args.body, encoding="utf-8") as fh:
             return fh.read()
     if getattr(args, "query", None):
         return args.query
@@ -266,7 +266,8 @@ def cmd_allocation(c, args):
     # Explain why shards are unassigned (top reason for yellow/red legacy clusters)
     resp = c.request("GET", "/_cluster/allocation/explain")
     payload = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else resp.text
-    if resp.status_code == 400 and isinstance(payload, dict) and "unable to find any unassigned shards" in json.dumps(payload):
+    if (resp.status_code == 400 and isinstance(payload, dict)
+            and "unable to find any unassigned shards" in json.dumps(payload)):
         print("No unassigned shards to explain - allocation looks healthy.")
         return
     print(_pretty(payload))
@@ -328,7 +329,8 @@ def cmd_snapshot_restore(c, args):
     body = {}
     if args.indices:
         body = {"indices": args.indices}
-    if not _confirm_or_dry(args, f"RESTORE snapshot {args.name} from repo {args.repo}", body or "all indices in snapshot"):
+    if not _confirm_or_dry(args, f"RESTORE snapshot {args.name} from repo {args.repo}",
+                           body or "all indices in snapshot"):
         return
     print(_pretty(c.json_request("POST", f"/_snapshot/{args.repo}/{args.name}/_restore",
                                  body=json.dumps(body) if body else None)))
@@ -399,7 +401,7 @@ def cmd_dashboards_export(c, args):
         _fail(resp.status_code, _safe_json(resp))
     counts = _summarize_ndjson(resp.text)
     if args.out:
-        with open(args.out, "w") as fh:
+        with open(args.out, "w", encoding="utf-8") as fh:
             fh.write(resp.text)
         print(f"Exported {sum(counts.values())} objects -> {args.out}")
         print("By type: " + (", ".join(f"{k}={v}" for k, v in counts.items()) or "(none)"))
@@ -408,7 +410,7 @@ def cmd_dashboards_export(c, args):
 
 
 def cmd_dashboards_import(c, args):
-    with open(args.body) as fh:
+    with open(args.body, encoding="utf-8") as fh:
         ndjson = fh.read()
     counts = _summarize_ndjson(ndjson)
     preview = {"file": args.body, "objects": sum(counts.values()), "by_type": counts,
@@ -453,7 +455,7 @@ def cmd_saved_object_delete(c, args):
 
 def cmd_put_settings(c, args):
     if args.body:
-        with open(args.body) as fh:
+        with open(args.body, encoding="utf-8") as fh:
             body = json.loads(fh.read())
     elif args.set:
         body = _kv_to_settings(args.set)
@@ -465,7 +467,7 @@ def cmd_put_settings(c, args):
 
 
 def cmd_aliases(c, args):
-    with open(args.body) as fh:
+    with open(args.body, encoding="utf-8") as fh:
         body = fh.read()
     if not _confirm_or_dry(args, "POST /_aliases (atomic alias actions)", json.loads(body)):
         return
@@ -481,7 +483,7 @@ def _count_matches(c, index, query_body):
 
 
 def cmd_update_by_query(c, args):
-    with open(args.body) as fh:
+    with open(args.body, encoding="utf-8") as fh:
         body = json.loads(fh.read())
     matched = _count_matches(c, args.index, body)
     preview = {"index": args.index, "matches": matched,
@@ -496,7 +498,7 @@ def cmd_update_by_query(c, args):
 
 
 def cmd_delete_by_query(c, args):
-    with open(args.body) as fh:
+    with open(args.body, encoding="utf-8") as fh:
         body = json.loads(fh.read())
     matched = _count_matches(c, args.index, body)
     if not _confirm_or_dry(args, f"DELETE-BY-QUERY on {args.index} - will DELETE {matched} docs (unrecoverable)",

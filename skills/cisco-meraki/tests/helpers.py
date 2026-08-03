@@ -6,7 +6,8 @@ care about the body simply ignore the third element.
 """
 import json
 
-import context  # noqa: F401  -- puts scripts/ on sys.path
+# `context` puts scripts/ on sys.path as an import side effect.
+import context  # noqa: F401  # pylint: disable=unused-import
 
 from meraki_http import MerakiHTTP
 

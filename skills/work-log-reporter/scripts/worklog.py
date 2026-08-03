@@ -22,6 +22,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+# sys.path is set up immediately above, so these cannot move to the top.
+# pylint: disable=wrong-import-position
 import render  # noqa: E402
 from mailer import build_message, recipients, send as smtp_send  # noqa: E402
 from wlconfig import (  # noqa: E402
@@ -371,7 +373,9 @@ def cmd_status(args) -> int:
     reporting = cfg["reporting"]
     print(f"Project         {cfg['project'].get('name') or '(unset)'}")
     print(f"SMTP            {smtp['server']}:{smtp['port']} ({smtp['security']})")
-    print(f"Auth            {'on as ' + (auth.get('username') or '?') if auth.get('enabled') else 'off (internal relay)'}")
+    auth_label = ("on as " + (auth.get("username") or "?") if auth.get("enabled")
+                  else "off (internal relay)")
+    print(f"Auth            {auth_label}")
     if auth.get("enabled"):
         import os
         var = auth.get("password_env", "WORKLOG_SMTP_PASSWORD")

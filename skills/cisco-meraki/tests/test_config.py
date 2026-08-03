@@ -4,7 +4,7 @@ import shutil
 import tempfile
 import unittest
 
-import context  # noqa: F401
+import context  # noqa: F401  # pylint: disable=unused-import
 
 from helpers import DEFAULT_RULE, http_with, ok, rule
 from meraki_http import MerakiError

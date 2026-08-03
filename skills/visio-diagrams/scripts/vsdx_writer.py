@@ -268,8 +268,10 @@ class VisioDocument:
             '<Override PartName="/visio/pages/pages.xml" ContentType="application/vnd.ms-visio.pages+xml"/>'
             f'{ov}'
             '<Override PartName="/visio/windows.xml" ContentType="application/vnd.ms-visio.windows+xml"/>'
-            '<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>'
-            '<Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>'
+            '<Override PartName="/docProps/core.xml" ContentType='
+            '"application/vnd.openxmlformats-package.core-properties+xml"/>'
+            '<Override PartName="/docProps/app.xml" ContentType='
+            '"application/vnd.openxmlformats-officedocument.extended-properties+xml"/>'
             '</Types>'
         )
 
@@ -278,8 +280,12 @@ class VisioDocument:
             '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
             '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
             f'<Relationship Id="rId1" Type="{VREL}/document" Target="visio/document.xml"/>'
-            '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>'
-            '<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/>'
+            '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org'
+            '/package/2006/relationships/metadata/core-properties"'
+            ' Target="docProps/core.xml"/>'
+            '<Relationship Id="rId3" Type="http://schemas.openxmlformats.org'
+            '/officeDocument/2006/relationships/extended-properties"'
+            ' Target="docProps/app.xml"/>'
             '</Relationships>'
         )
 

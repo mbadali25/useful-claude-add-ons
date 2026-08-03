@@ -39,7 +39,8 @@ def ensure_vsdx() -> bool:
     base = [sys.executable, "-m", "pip", "install", "--quiet", "vsdx"]
     for args in (base, base + ["--break-system-packages"]):
         try:
-            if subprocess.run(args, capture_output=True, text=True, timeout=180).returncode == 0:
+            if subprocess.run(args, capture_output=True, text=True,
+                             timeout=180, check=False).returncode == 0:
                 break
         except (subprocess.TimeoutExpired, OSError):
             break

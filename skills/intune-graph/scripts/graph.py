@@ -96,6 +96,8 @@ class GraphClient:
             return r.json()
         raise GraphError("Exhausted retries.")
 
+    # `filter` shadows the builtin deliberately: it mirrors OData's $filter.
+# pylint: disable-next=redefined-builtin
     def get_all(self, path, filter=None, select=None, expand=None, top=None, max_items=None):
         """GET a collection, following @odata.nextLink. Returns a list."""
         params = {}

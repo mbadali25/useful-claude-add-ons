@@ -25,6 +25,7 @@ def run(cmd):
     try:
         proc = subprocess.run(
             cmd,
+            check=False,
             capture_output=True,
             text=True,
             timeout=TIMEOUT,
@@ -68,7 +69,7 @@ def installed_browsers():
 
 def python_playwright():
     try:
-        import playwright  # noqa: F401
+        import playwright  # noqa: F401  # pylint: disable=unused-import
     except Exception:
         return None
     out = run([sys.executable, "-m", "playwright", "--version"])
@@ -108,7 +109,7 @@ def collect():
         rel = Path("/proc/version")
         if rel.exists():
             try:
-                info["wsl"] = "microsoft" in rel.read_text().lower()
+                info["wsl"] = "microsoft" in rel.read_text(encoding="utf-8").lower()
             except OSError:
                 pass
         info["display"] = os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")
@@ -157,7 +158,7 @@ def recommendations(info):
         else:
             base = "python -m playwright install chromium   (after installing the package)"
         if system == "Linux":
-            base += "\n      then: sudo " + base.split("   ")[0] + "-deps chromium"
+            base += "\n      then: sudo " + base.split("   ", maxsplit=1)[0] + "-deps chromium"
         recs.append(
             ("Browser binaries", "~150-400 MB download per browser", base)
         )
@@ -173,8 +174,6 @@ def recommendations(info):
 
 def render(info):
     lines = []
-    ok = lambda b: "yes" if b else "NO"  # noqa: E731
-
     wsl = " (WSL)" if info["wsl"] else ""
     lines.append(f"OS            : {info['os']} {info['os_release']} [{info['arch']}]{wsl}")
     lines.append(f"Python        : {info['python']}  ({info['python_exe']})")
