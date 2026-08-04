@@ -60,7 +60,8 @@ Both open with a **menu of everything they can install**, so you pick once up fr
 | 15 | MCP server — Playwright (`@playwright/mcp`) | |
 | 16 | MCP server — Firecrawl (needs `FIRECRAWL_API_KEY`) | |
 | 17 | MCP server — Chrome DevTools (`chrome-devtools-mcp`) | |
-| 18 | Headroom — pipx + `headroom-ai[all]` + mode setup + `doctor` | |
+| 18 | MCP server — Glyphs font editor (macOS + Glyphs.app) | |
+| 19 | Headroom — pipx + `headroom-ai[all]` + mode setup + `doctor` | |
 
 Menu numbers are identical on Windows and Linux, and an already-registered MCP server, marketplace, or plugin is reported and skipped rather than re-added. Numbers can shift as items are added, so scripted runs should prefer the stable keys (`--select chrome-mcp,headroom`) over positions.
 
@@ -68,7 +69,8 @@ Three items need a word of explanation:
 
 - **claude-mem** (9) appends `"CLAUDE_MEM_WORKER_PORT": "37790"` after the `CLAUDE_MEM_PROVIDER` line in `~/.claude/settings.json`, backing the file up first and restoring it if the result doesn't parse — without the port the worker silently binds somewhere else.
 - **Perplexity** (14) and **Firecrawl** (16) need API keys. If `PERPLEXITY_API_KEY` / `FIRECRAWL_API_KEY` are already exported the script uses them silently; otherwise it asks once, up front, alongside the menu. Press Enter to skip that server rather than register one that can't authenticate. Under `--non-interactive` / `--all` an unset key skips the server with a warning.
-- **Headroom** (18) installs pipx, puts it on `PATH`, installs `headroom-ai[all]`, then asks which mode you want (`deploy`, `wrap`, `proxy`, `library`, or skip) and finishes with `headroom doctor`. Only `deploy` runs during the install; `wrap` and `proxy` block in the foreground, so the script prints those commands for you to run yourself.
+- **Glyphs** (18) is the odd one out: it launches nothing. The server lives inside the Glyphs `.glyphsPlugin` bundle and is started from **Edit → Glyphs MCP Server** in the app, so the script only registers the endpoint it listens on (`http://127.0.0.1:9680/mcp/`, HTTP transport). The plugin is **macOS-only** — macOS 13+ with Glyphs 3 or 4 — so on Windows and Linux this resolves only if you forward the port from a Mac that's running it. The script probes the port first and warns when nothing is listening, but registers it either way.
+- **Headroom** (19) installs pipx, puts it on `PATH`, installs `headroom-ai[all]`, then asks which mode you want (`deploy`, `wrap`, `proxy`, `library`, or skip) and finishes with `headroom doctor`. Only `deploy` runs during the install; `wrap` and `proxy` block in the foreground, so the script prints those commands for you to run yourself.
 
 Everything that can be a plugin **is** installed as one, using the CLI's own `claude plugin marketplace add` / `claude plugin install` — there's no `npx claudepluginhub` wrapper and no `git clone` + shell-script step any more. That removes the Windows failure modes those introduced (the wrapper needed a writable per-repo checkout, and the VoltAgent installer needed Git Bash to run a `.sh`).
 
