@@ -184,6 +184,49 @@ plugin_version() {
   return 1
 }
 
+# --- Detection: MCP servers ---------------------------------------------------
+MCP_CACHE=""
+load_mcp_servers() {
+  # 'claude mcp list' prints one 'name: command args' line per server. There is no
+  # --json flag for it, so the name is taken off the front of each line.
+  MCP_CACHE=""
+  claude_available || return 0
+  MCP_CACHE="$(claude mcp list 2>/dev/null | sed -n 's/^[[:space:]]*\([A-Za-z0-9_.-][A-Za-z0-9_.-]*\)[[:space:]]*:.*/\1/p')"
+  return 0
+}
+
+mcp_server_registered() {
+  local want="$1" name
+  [ -z "$MCP_CACHE" ] && return 1
+  while read -r name; do
+    [ "$name" = "$want" ] && return 0
+  done <<< "$MCP_CACHE"
+  return 1
+}
+
+add_mcp_server() {
+  # add_mcp_server <name> <env-spec> <command...>
+  # <env-spec> is "KEY=value" or "-" for none. Detect-then-act, same contract as
+  # add_marketplace. The command goes after '--' so claude does not parse it.
+  local name="$1" env_spec="$2"; shift 2
+  if ! have claude; then
+    warn "claude not found on PATH in this shell - run 'source ~/.bashrc' and re-run this script."
+    return 1
+  fi
+  if mcp_server_registered "$name"; then
+    skip "MCP server '$name' already registered"
+    return 0
+  fi
+  if [ "$env_spec" = "-" ]; then
+    claude mcp add "$name" -- "$@" || return 1
+  else
+    claude mcp add "$name" --env "$env_spec" -- "$@" || return 1
+  fi
+  load_mcp_servers
+  COUNT_INSTALLED=$((COUNT_INSTALLED+1))
+  ok "added MCP server '$name'"
+}
+
 # --- Detection: user-level skills --------------------------------------------
 # Some things (the 'skills' CLI, task-observer) install as plain user-level skills
 # rather than as Claude Code plugins, so they never appear in 'claude plugin list' -
@@ -244,9 +287,10 @@ install_plugin() {
 MENU_KEYS=(
   "prereqs" "cli" "own-skills" "team" "find-skills" "community"
   "claude-code-setup" "task-observer" "claude-mem" "gsd" "voltagent"
-  "aws-mcp" "azure-mcp" "headroom"
+  "aws-mcp" "azure-mcp" "perplexity-mcp" "playwright-mcp" "firecrawl-mcp"
+  "chrome-mcp" "headroom"
 )
-MENU_DEFAULT=(1 1 1 1 1 1 1 1 1 1 1 0 0 0)
+MENU_DEFAULT=(1 1 1 1 1 1 1 1 1 1 1 0 0 0 0 0 0 0)
 MENU_NAME=(
   "Prerequisites: git, nodejs, npm, python3, pip3 (needs root or sudo)"
   "Claude Code CLI (@anthropic-ai/claude-code) + PATH export"
@@ -259,8 +303,12 @@ MENU_NAME=(
   "claude-mem memory plugin + CLAUDE_MEM_WORKER_PORT in settings.json"
   "GSD (@opengsd/gsd-core)"
   "VoltAgent subagents (10 plugins, 154 agents)"
-  "AWS MCP server (awslabs.aws-api-mcp-server)"
-  "Azure MCP server (@azure/mcp)"
+  "MCP server: AWS (awslabs.aws-api-mcp-server)"
+  "MCP server: Azure (@azure/mcp)"
+  "MCP server: Perplexity (needs PERPLEXITY_API_KEY)"
+  "MCP server: Playwright (@playwright/mcp)"
+  "MCP server: Firecrawl (needs FIRECRAWL_API_KEY)"
+  "MCP server: Chrome DevTools (chrome-devtools-mcp)"
   "Headroom: pipx + headroom-ai[all] + mode setup + doctor"
 )
 
@@ -384,6 +432,40 @@ show_selection() {
   done
 }
 
+PERPLEXITY_KEY=""
+FIRECRAWL_KEY=""
+read_mcp_api_key() {
+  # read_mcp_api_key <VAR_NAME> <label> <signup-url>  -> prints the key on stdout.
+  # An already-exported variable wins, so CI and anyone who keeps keys in their profile
+  # is never prompted. Prints nothing when there is no key and no way to ask, which
+  # makes the caller skip that server rather than register a broken one.
+  local var="$1" label="$2" url="$3" existing answer
+  existing="$(printenv "$var" 2>/dev/null || true)"
+  if [ -n "$existing" ]; then
+    printf '\033[90m  Using %s from the environment for %s.\033[0m\n' "$var" "$label" >&2
+    printf '%s' "$existing"
+    return 0
+  fi
+  if [ "$NON_INTERACTIVE" -eq 1 ] || [ "$SELECT_ALL" -eq 1 ] || [ -n "$SELECT_SPEC" ]; then
+    warn "$var is not set - $label will be skipped. Export it and re-run." >&2
+    return 0
+  fi
+  printf '\n\033[36m  %s needs an API key.\033[0m\n' "$label" >&2
+  printf '\033[90m  Get one at %s, or press Enter to skip this server.\033[0m\n' "$url" >&2
+  read -r -p "  $var " answer
+  printf '%s' "${answer:-}"
+}
+
+read_mcp_api_keys() {
+  # Collected up front with the menu so the install run itself stays unattended.
+  if is_selected "perplexity-mcp"; then
+    PERPLEXITY_KEY="$(read_mcp_api_key PERPLEXITY_API_KEY 'Perplexity MCP' 'https://www.perplexity.ai/account/api/keys')"
+  fi
+  if is_selected "firecrawl-mcp"; then
+    FIRECRAWL_KEY="$(read_mcp_api_key FIRECRAWL_API_KEY 'Firecrawl MCP' 'https://www.firecrawl.dev/app/api-keys')"
+  fi
+}
+
 select_headroom_mode() {
   # Asked up front, alongside the menu, so the install run itself stays unattended.
   local answer
@@ -497,6 +579,8 @@ if [ "$(selection_count)" -eq 0 ]; then
   printf '\n\033[33mNothing to do.\033[0m\n'
   exit 0
 fi
+
+read_mcp_api_keys
 
 HEADROOM_MODE_CHOICE="skip"
 if is_selected "headroom"; then
@@ -867,6 +951,49 @@ install_azure_mcp() {
 }
 if is_selected "azure-mcp"; then
   run_step "Install Azure MCP server" install_azure_mcp
+fi
+
+load_mcp_servers
+
+install_perplexity_mcp() {
+  if [ -z "$PERPLEXITY_KEY" ]; then
+    skip "Perplexity MCP (no PERPLEXITY_API_KEY supplied)"
+    return 0
+  fi
+  add_mcp_server "perplexity" "PERPLEXITY_API_KEY=$PERPLEXITY_KEY" npx -y @perplexity-ai/mcp-server
+}
+if is_selected "perplexity-mcp"; then
+  run_step "Install Perplexity MCP server" install_perplexity_mcp
+fi
+
+install_playwright_mcp() {
+  add_mcp_server "playwright" "-" npx @playwright/mcp@latest || return 1
+  ok "Playwright downloads its browsers on first use; 'npx playwright install' does it ahead of time."
+}
+if is_selected "playwright-mcp"; then
+  run_step "Install Playwright MCP server" install_playwright_mcp
+fi
+
+install_firecrawl_mcp() {
+  if [ -z "$FIRECRAWL_KEY" ]; then
+    skip "Firecrawl MCP (no FIRECRAWL_API_KEY supplied)"
+    return 0
+  fi
+  add_mcp_server "firecrawl" "FIRECRAWL_API_KEY=$FIRECRAWL_KEY" npx -y firecrawl-mcp
+}
+if is_selected "firecrawl-mcp"; then
+  run_step "Install Firecrawl MCP server" install_firecrawl_mcp
+fi
+
+install_chrome_mcp() {
+  # Drives a real Chrome over the DevTools protocol, so a stable Chrome has to be
+  # installed. Usage statistics are on by default upstream; --no-usage-statistics turns
+  # them off and is passed here rather than left to the user to discover.
+  add_mcp_server "chrome-devtools" "-" npx chrome-devtools-mcp@latest --no-usage-statistics || return 1
+  ok "Needs a stable Chrome installed. Drop --no-usage-statistics from the config to opt back in to upstream telemetry."
+}
+if is_selected "chrome-mcp"; then
+  run_step "Install Chrome DevTools MCP server" install_chrome_mcp
 fi
 
 # --- 14. Headroom ------------------------------------------------------------

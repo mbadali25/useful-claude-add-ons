@@ -54,13 +54,21 @@ Both open with a **menu of everything they can install**, so you pick once up fr
 | 9 | claude-mem — also sets `CLAUDE_MEM_WORKER_PORT` in `settings.json` | x |
 | 10 | GSD (`@opengsd/gsd-core`) | x |
 | 11 | VoltAgent subagents (10 plugins, 154 agents) | x |
-| 12 | AWS MCP server | |
-| 13 | Azure MCP server | |
-| 14 | Headroom — pipx + `headroom-ai[all]` + mode setup + `doctor` | |
+| 12 | MCP server — AWS (`awslabs.aws-api-mcp-server`) | |
+| 13 | MCP server — Azure (`@azure/mcp`) | |
+| 14 | MCP server — Perplexity (needs `PERPLEXITY_API_KEY`) | |
+| 15 | MCP server — Playwright (`@playwright/mcp`) | |
+| 16 | MCP server — Firecrawl (needs `FIRECRAWL_API_KEY`) | |
+| 17 | MCP server — Chrome DevTools (`chrome-devtools-mcp`) | |
+| 18 | Headroom — pipx + `headroom-ai[all]` + mode setup + `doctor` | |
 
-Menu numbers are identical on Windows and Linux. Where something is already present it is reported and skipped, or refreshed, rather than reinstalled.
+Menu numbers are identical on Windows and Linux, and an already-registered MCP server, marketplace, or plugin is reported and skipped rather than re-added. Numbers can shift as items are added, so scripted runs should prefer the stable keys (`--select chrome-mcp,headroom`) over positions.
 
-Two items need a word of explanation. **claude-mem** (9) appends `"CLAUDE_MEM_WORKER_PORT": "37790"` after the `CLAUDE_MEM_PROVIDER` line in `~/.claude/settings.json`, backing the file up first and restoring it if the result doesn't parse — without the port the worker silently binds somewhere else. **Headroom** (14) installs pipx, puts it on `PATH`, installs `headroom-ai[all]`, then asks which mode you want (`deploy`, `wrap`, `proxy`, `library`, or skip) and finishes with `headroom doctor`. Only `deploy` runs during the install; `wrap` and `proxy` block in the foreground, so the script prints those commands for you to run yourself.
+Three items need a word of explanation:
+
+- **claude-mem** (9) appends `"CLAUDE_MEM_WORKER_PORT": "37790"` after the `CLAUDE_MEM_PROVIDER` line in `~/.claude/settings.json`, backing the file up first and restoring it if the result doesn't parse — without the port the worker silently binds somewhere else.
+- **Perplexity** (14) and **Firecrawl** (16) need API keys. If `PERPLEXITY_API_KEY` / `FIRECRAWL_API_KEY` are already exported the script uses them silently; otherwise it asks once, up front, alongside the menu. Press Enter to skip that server rather than register one that can't authenticate. Under `--non-interactive` / `--all` an unset key skips the server with a warning.
+- **Headroom** (18) installs pipx, puts it on `PATH`, installs `headroom-ai[all]`, then asks which mode you want (`deploy`, `wrap`, `proxy`, `library`, or skip) and finishes with `headroom doctor`. Only `deploy` runs during the install; `wrap` and `proxy` block in the foreground, so the script prints those commands for you to run yourself.
 
 Everything that can be a plugin **is** installed as one, using the CLI's own `claude plugin marketplace add` / `claude plugin install` — there's no `npx claudepluginhub` wrapper and no `git clone` + shell-script step any more. That removes the Windows failure modes those introduced (the wrapper needed a writable per-repo checkout, and the VoltAgent installer needed Git Bash to run a `.sh`).
 
