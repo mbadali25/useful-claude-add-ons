@@ -46,14 +46,32 @@ param(
     [switch]$NoUpdate,        # don't update already-installed plugins
     [switch]$All,             # select every menu item, no menu
     [string]$Select,          # explicit selection, no menu: '1,3,7-9' or 'headroom,gsd'
-    [ValidateSet('deploy', 'wrap', 'proxy', 'library', 'skip')]
+    # '' has to be a legal value. Under 'irm ... | iex' this param block is not a
+    # parameter block at all - it is inline code in the caller's scope, so every
+    # attribute is applied to a plain *variable*. $HeadroomMode has no default, so it
+    # is '', and a ValidateSet without '' rejects it before the script even starts:
+    # "The attribute cannot be added because variable HeadroomMode with value  would
+    # no longer be valid." Params with a valid default (like $InstallScope) are fine.
+    [ValidateSet('', 'deploy', 'wrap', 'proxy', 'library', 'skip')]
     [string]$HeadroomMode,    # answer the Headroom mode prompt up front
     [Alias('PluginHubScope')]
     [ValidateSet('user', 'project', 'local')]
     [string]$InstallScope = 'user'  # machine-wide by default, not per-project
 )
 
+# Under 'irm ... | iex' this runs in the caller's scope, so both of the following are
+# the caller's session, not a private script scope: remember the old preference and put
+# it back at the end rather than leaving every later command in that shell on 'Stop'.
+$script:PreviousErrorActionPreference = $ErrorActionPreference
 $ErrorActionPreference = 'Stop'
+
+# #Requires is only honoured for script *files*. The advertised one-liner pipes this
+# text through Invoke-Expression, where the directive is an inert comment, so the
+# version gate has to be a real statement or a PS 3/4 host would fail somewhere deep in.
+if ($PSVersionTable.PSVersion -lt [Version]'5.1') {
+    throw "PowerShell 5.1 or newer is required (this host is $($PSVersionTable.PSVersion))."
+}
+
 $script:FailedSteps = @()
 $script:Summary = [ordered]@{ Installed = 0; Updated = 0; Skipped = 0 }
 
@@ -288,7 +306,7 @@ function Add-McpServer {
     if ($Url) {
         $addArgs = @('mcp', 'add', '--scope', $InstallScope, '--transport', 'http', $Name, $Url)
     } else {
-        $addArgs = @('mcp', 'add', $Name)
+        $addArgs = @('mcp', 'add', '--scope', $InstallScope, $Name)
         if ($EnvVars) {
             foreach ($k in $EnvVars.Keys) { $addArgs += @('--env', "$k=$($EnvVars[$k])") }
         }
@@ -332,6 +350,9 @@ function Add-ClaudeMarketplace {
         return
     }
     claude plugin marketplace add $Source --scope $InstallScope
+    # $ErrorActionPreference = 'Stop' does not apply to native commands, so a failed
+    # 'claude' invocation has to be caught on its exit code or it is reported as OK.
+    if ($LASTEXITCODE -ne 0) { throw "'claude plugin marketplace add $Source' failed - see the output above." }
     Get-ClaudeMarketplaces -Refresh | Out-Null
     $script:Summary.Installed++
     Write-Ok "added marketplace '$Source'"
@@ -350,6 +371,13 @@ function Install-ClaudePlugin {
         }
         $before = $existing.Version
         claude plugin update $name | Out-Null
+        # A failed *update* is not fatal - the plugin is already installed and usable,
+        # and 'claude plugin update' legitimately fails when the marketplace it came
+        # from has moved on. Report it and carry on; a failed *install* still throws.
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warn2 "'claude plugin update $name' failed - keeping the installed version."
+            return
+        }
         $after = (Get-ClaudePlugins -Refresh)[$name].Version
         if ($after -ne $before) {
             $script:Summary.Updated++
@@ -360,6 +388,7 @@ function Install-ClaudePlugin {
         return
     }
     claude plugin install $Spec --scope $InstallScope
+    if ($LASTEXITCODE -ne 0) { throw "'claude plugin install $Spec' failed - see the output above." }
     Get-ClaudePlugins -Refresh | Out-Null
     $script:Summary.Installed++
     Write-Ok "installed plugin '$Spec'"
@@ -388,6 +417,7 @@ $script:Catalog = @(
     [pscustomobject]@{ Key = 'firecrawl-mcp';     Default = $false; Name = 'MCP server: Firecrawl (needs FIRECRAWL_API_KEY)' }
     [pscustomobject]@{ Key = 'chrome-mcp';        Default = $false; Name = 'MCP server: Chrome DevTools (chrome-devtools-mcp)' }
     [pscustomobject]@{ Key = 'glyph-mcp';         Default = $false; Name = 'MCP server: Glyphs font editor (needs macOS + Glyphs.app running)' }
+    [pscustomobject]@{ Key = 'omniroute';         Default = $false; Name = 'OmniRoute AI gateway (npm) + its MCP server, optional guided setup' }
     [pscustomobject]@{ Key = 'headroom';          Default = $false; Name = 'Headroom: pipx + headroom-ai[all] + mode setup + doctor' }
 )
 
@@ -514,6 +544,19 @@ function Read-McpApiKeys {
     if (Test-Selected 'firecrawl-mcp') {
         $script:ApiKeys['FIRECRAWL_API_KEY'] = Read-McpApiKey 'FIRECRAWL_API_KEY' 'Firecrawl MCP' 'https://www.firecrawl.dev/app/api-keys'
     }
+}
+
+$script:OmniRouteGuided = $false
+function Select-OmniRouteSetup {
+    # Asked up front with the menu. The wizard itself is interactive and runs at the
+    # end, which is the one place a prompt during the install is unavoidable.
+    if (-not (Test-Selected 'omniroute')) { return $false }
+    if ($NonInteractive -or $All -or $Select) { return $false }
+    Write-Host ""
+    Write-Host "  OmniRoute ships a first-run wizard ('omniroute setup') that connects a" -ForegroundColor Cyan
+    Write-Host "  provider and mints an API key. It is interactive and runs at the end." -ForegroundColor DarkGray
+    $answer = "$(Read-Host '  Walk through OmniRoute setup after installing? [y/N]')".Trim()
+    return ($answer -match '^(?i)y(es)?$')
 }
 
 function Select-HeadroomMode {
@@ -665,10 +708,14 @@ Show-Selection
 $chosenCount = @($script:Catalog | Where-Object { Test-Selected $_.Key }).Count
 if ($chosenCount -eq 0) {
     Write-Host "`nNothing to do." -ForegroundColor Yellow
+    # Every exit path has to hand the caller's shell back (see the note at the top);
+    # this early return would otherwise leave an iex'd session on 'Stop'.
+    $ErrorActionPreference = $script:PreviousErrorActionPreference
     return
 }
 
 Read-McpApiKeys
+$script:OmniRouteGuided = Select-OmniRouteSetup
 $script:HeadroomModeChoice = if (Test-Selected 'headroom') { Select-HeadroomMode } else { 'skip' }
 
 if ((Test-Selected 'prereqs') -and -not $script:IsElevated) {
@@ -1009,8 +1056,8 @@ if (Test-Selected 'aws-mcp') {
         if (-not (Test-ClaudeAvailable)) {
             throw "claude not found on PATH in this session - open a new shell and re-run this script."
         }
-        claude mcp add aws-api -- uvx awslabs.aws-api-mcp-server@latest
-        Write-Ok "Added aws-api MCP server. Make sure AWS credentials are configured (aws configure)."
+        Add-McpServer -Name 'aws-api' -CommandArgs @('uvx', 'awslabs.aws-api-mcp-server@latest') `
+            -Note "Make sure AWS credentials are configured (aws configure)."
     }
 }
 
@@ -1019,8 +1066,8 @@ if (Test-Selected 'azure-mcp') {
         if (-not (Test-ClaudeAvailable)) {
             throw "claude not found on PATH in this session - open a new shell and re-run this script."
         }
-        claude mcp add azure -- npx -y '@azure/mcp@latest' server start
-        Write-Ok "Added azure MCP server. Make sure you have run 'az login' before using it."
+        Add-McpServer -Name 'azure' -CommandArgs @('npx', '-y', '@azure/mcp@latest', 'server', 'start') `
+            -Note "Make sure you have run 'az login' before using it."
     }
 }
 
@@ -1085,7 +1132,66 @@ if (Test-Selected 'glyph-mcp') {
     }
 }
 
-# --- 14. Headroom ------------------------------------------------------------
+# --- 19. OmniRoute -----------------------------------------------------------
+if (Test-Selected 'omniroute') {
+    Invoke-Step "Install OmniRoute (npm i -g omniroute)" {
+        if (Get-Command omniroute -ErrorAction SilentlyContinue) {
+            $ver = try { (omniroute --version) } catch { 'version unknown' }
+            Write-Skip "omniroute already installed ($ver)"
+            return
+        }
+        if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
+            throw "npm not found on PATH - select the prerequisites item (or install Node.js) and re-run."
+        }
+        npm install -g omniroute
+        if ($LASTEXITCODE -ne 0) {
+            # The package builds better-sqlite3 and @swc/core natively; upstream
+            # documents this escape hatch for machines without a toolchain.
+            Write-Warn2 "npm install failed - retrying with OMNIROUTE_SKIP_POSTINSTALL=1 (skips the native build)."
+            $env:OMNIROUTE_SKIP_POSTINSTALL = '1'
+            npm install -g omniroute
+            Remove-Item Env:\OMNIROUTE_SKIP_POSTINSTALL -ErrorAction SilentlyContinue
+            if ($LASTEXITCODE -ne 0) { throw "'npm install -g omniroute' failed - see the output above." }
+        }
+        Sync-SessionEnvironment
+        $script:Summary.Installed++
+        Write-Ok "omniroute installed"
+    }
+
+    if ($script:OmniRouteGuided) {
+        Invoke-Step "OmniRoute guided setup" {
+            if (-not (Get-Command omniroute -ErrorAction SilentlyContinue)) {
+                throw "omniroute is not on PATH - open a new shell and run 'omniroute setup'."
+            }
+            Write-Host "    Starting the OmniRoute wizard. Answer its prompts, then come back here." -ForegroundColor DarkGray
+            omniroute setup
+            Write-Ok "wizard finished"
+        }
+    }
+
+    Invoke-Step "Register the OmniRoute MCP server" {
+        # OmniRoute is a local gateway: the MCP endpoint only answers while it is
+        # running ('omniroute' starts it, dashboard on :20128). Registering ahead of
+        # time is fine and is the usual order, so a closed port is a warning not a stop.
+        if (-not (Test-TcpPort -HostName '127.0.0.1' -Port 20128)) {
+            Write-Warn2 "nothing is listening on 127.0.0.1:20128 - registering anyway. Start the gateway with 'omniroute' and the server becomes reachable."
+        }
+        Add-McpServer -Name 'omniroute' -Url 'http://localhost:20128/api/mcp/stream'
+    }
+
+    Invoke-Step "OmniRoute next steps" {
+        Write-Host "    1. Start the gateway:      omniroute" -ForegroundColor Gray
+        Write-Host "    2. Open the dashboard:     http://localhost:20128" -ForegroundColor Gray
+        Write-Host "    3. Dashboard > Providers - connect a provider (keyless ones work immediately)" -ForegroundColor Gray
+        Write-Host "    4. Dashboard > Endpoints - copy your API key" -ForegroundColor Gray
+        Write-Host "    5. Point any OpenAI-compatible tool at:" -ForegroundColor Gray
+        Write-Host "         Base URL  http://localhost:20128/v1" -ForegroundColor Gray
+        Write-Host "         Model     auto" -ForegroundColor Gray
+        Write-Host "    Diagnostics: omniroute doctor    TUI chat: omniroute chat" -ForegroundColor Gray
+    }
+}
+
+# --- 20. Headroom ------------------------------------------------------------
 if (Test-Selected 'headroom') {
     Invoke-Step "Install pipx (required for headroom)" {
         if (Get-Command pipx -ErrorAction SilentlyContinue) {
@@ -1174,3 +1280,6 @@ if ($script:FailedSteps.Count -eq 0) {
     $script:FailedSteps | ForEach-Object { Write-Host "  - $_" -ForegroundColor Yellow }
     Write-Host "Re-run this script after resolving the above; earlier successful steps are safe to repeat." -ForegroundColor Yellow
 }
+
+# Hand the caller's shell back the way we found it (see the note at the top).
+$ErrorActionPreference = $script:PreviousErrorActionPreference
