@@ -253,12 +253,28 @@ function Test-McpServerRegistered {
     return ((Get-ClaudeMcpServers) -contains $Name)
 }
 
+function Test-TcpPort {
+    param([string]$HostName = '127.0.0.1', [int]$Port, [int]$TimeoutMs = 500)
+    try {
+        $client = New-Object System.Net.Sockets.TcpClient
+        $async = $client.BeginConnect($HostName, $Port, $null, $null)
+        $reached = $async.AsyncWaitHandle.WaitOne($TimeoutMs) -and $client.Connected
+        $client.Close()
+        return $reached
+    } catch {
+        return $false
+    }
+}
+
 function Add-McpServer {
     # Detect-then-act, same contract as Add-ClaudeMarketplace. $CommandArgs is the
     # server's own command line, passed after '--' so claude does not try to parse it.
+    # Pass -Url instead for a server that is already listening over HTTP, where there
+    # is no command to launch and claude takes the endpoint as a positional argument.
     param(
         [string]$Name,
         [string[]]$CommandArgs,
+        [string]$Url,
         [hashtable]$EnvVars,
         [string]$Note
     )
@@ -269,12 +285,16 @@ function Add-McpServer {
         Write-Skip "MCP server '$Name' already registered"
         return
     }
-    $addArgs = @('mcp', 'add', $Name)
-    if ($EnvVars) {
-        foreach ($k in $EnvVars.Keys) { $addArgs += @('--env', "$k=$($EnvVars[$k])") }
+    if ($Url) {
+        $addArgs = @('mcp', 'add', '--scope', $InstallScope, '--transport', 'http', $Name, $Url)
+    } else {
+        $addArgs = @('mcp', 'add', $Name)
+        if ($EnvVars) {
+            foreach ($k in $EnvVars.Keys) { $addArgs += @('--env', "$k=$($EnvVars[$k])") }
+        }
+        $addArgs += '--'
+        $addArgs += $CommandArgs
     }
-    $addArgs += '--'
-    $addArgs += $CommandArgs
     & claude @addArgs
     if ($LASTEXITCODE -ne 0) { throw "'claude mcp add $Name' failed - see the output above." }
     Get-ClaudeMcpServers -Refresh | Out-Null
@@ -367,6 +387,7 @@ $script:Catalog = @(
     [pscustomobject]@{ Key = 'playwright-mcp';    Default = $false; Name = 'MCP server: Playwright (@playwright/mcp)' }
     [pscustomobject]@{ Key = 'firecrawl-mcp';     Default = $false; Name = 'MCP server: Firecrawl (needs FIRECRAWL_API_KEY)' }
     [pscustomobject]@{ Key = 'chrome-mcp';        Default = $false; Name = 'MCP server: Chrome DevTools (chrome-devtools-mcp)' }
+    [pscustomobject]@{ Key = 'glyph-mcp';         Default = $false; Name = 'MCP server: Glyphs font editor (needs macOS + Glyphs.app running)' }
     [pscustomobject]@{ Key = 'headroom';          Default = $false; Name = 'Headroom: pipx + headroom-ai[all] + mode setup + doctor' }
 )
 
@@ -1045,6 +1066,22 @@ if (Test-Selected 'chrome-mcp') {
         Add-McpServer -Name 'chrome-devtools' `
             -CommandArgs @('npx', 'chrome-devtools-mcp@latest', '--no-usage-statistics') `
             -Note "Needs a stable Chrome installed. Drop --no-usage-statistics from the config to opt back in to upstream telemetry."
+    }
+}
+
+if (Test-Selected 'glyph-mcp') {
+    Invoke-Step "Install Glyphs MCP server" {
+        # Unlike the others this launches nothing: the server lives inside the Glyphs
+        # .glyphsPlugin bundle and is started from Edit > Glyphs MCP Server inside the
+        # app, so all that is registered here is the endpoint it listens on. The plugin
+        # is macOS-only (macOS 13+, Glyphs 3 or 4), so on Windows and Linux this only
+        # resolves when the port is forwarded from a Mac that is running it.
+        $glyphsUrl = 'http://127.0.0.1:9680/mcp/'
+        if (-not (Test-TcpPort -HostName '127.0.0.1' -Port 9680)) {
+            Write-Warn2 "nothing is listening on 127.0.0.1:9680 - registering anyway, but the server stays unreachable until Glyphs.app is running with Edit > Glyphs MCP Server started (or the port is forwarded from a Mac)."
+        }
+        Add-McpServer -Name 'glyphs-mcp' -Url $glyphsUrl `
+            -Note "Verify with: curl -H 'Accept: application/json' $glyphsUrl"
     }
 }
 

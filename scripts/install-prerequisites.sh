@@ -204,6 +204,33 @@ mcp_server_registered() {
   return 1
 }
 
+tcp_port_open() {
+  # bash's /dev/tcp pseudo-device, so no netcat dependency.
+  local host="${1:-127.0.0.1}" port="$2"
+  (exec 3<>"/dev/tcp/$host/$port") >/dev/null 2>&1 || return 1
+  exec 3<&- 3>&-
+  return 0
+}
+
+add_mcp_http_server() {
+  # add_mcp_http_server <name> <url>
+  # For a server that is already listening over HTTP: there is no command to launch,
+  # and claude takes the endpoint as a positional argument rather than after '--'.
+  local name="$1" url="$2"
+  if ! have claude; then
+    warn "claude not found on PATH in this shell - run 'source ~/.bashrc' and re-run this script."
+    return 1
+  fi
+  if mcp_server_registered "$name"; then
+    skip "MCP server '$name' already registered"
+    return 0
+  fi
+  claude mcp add --scope "$INSTALL_SCOPE" --transport http "$name" "$url" || return 1
+  load_mcp_servers
+  COUNT_INSTALLED=$((COUNT_INSTALLED+1))
+  ok "added MCP server '$name' -> $url"
+}
+
 add_mcp_server() {
   # add_mcp_server <name> <env-spec> <command...>
   # <env-spec> is "KEY=value" or "-" for none. Detect-then-act, same contract as
@@ -288,9 +315,9 @@ MENU_KEYS=(
   "prereqs" "cli" "own-skills" "team" "find-skills" "community"
   "claude-code-setup" "task-observer" "claude-mem" "gsd" "voltagent"
   "aws-mcp" "azure-mcp" "perplexity-mcp" "playwright-mcp" "firecrawl-mcp"
-  "chrome-mcp" "headroom"
+  "chrome-mcp" "glyph-mcp" "headroom"
 )
-MENU_DEFAULT=(1 1 1 1 1 1 1 1 1 1 1 0 0 0 0 0 0 0)
+MENU_DEFAULT=(1 1 1 1 1 1 1 1 1 1 1 0 0 0 0 0 0 0 0)
 MENU_NAME=(
   "Prerequisites: git, nodejs, npm, python3, pip3 (needs root or sudo)"
   "Claude Code CLI (@anthropic-ai/claude-code) + PATH export"
@@ -309,6 +336,7 @@ MENU_NAME=(
   "MCP server: Playwright (@playwright/mcp)"
   "MCP server: Firecrawl (needs FIRECRAWL_API_KEY)"
   "MCP server: Chrome DevTools (chrome-devtools-mcp)"
+  "MCP server: Glyphs font editor (needs macOS + Glyphs.app running)"
   "Headroom: pipx + headroom-ai[all] + mode setup + doctor"
 )
 
@@ -994,6 +1022,23 @@ install_chrome_mcp() {
 }
 if is_selected "chrome-mcp"; then
   run_step "Install Chrome DevTools MCP server" install_chrome_mcp
+fi
+
+install_glyph_mcp() {
+  # Unlike the others this launches nothing: the server lives inside the Glyphs
+  # .glyphsPlugin bundle and is started from Edit > Glyphs MCP Server inside the app,
+  # so all that is registered here is the endpoint it listens on. The plugin is
+  # macOS-only (macOS 13+, Glyphs 3 or 4), so on Linux this only resolves when the
+  # port is forwarded from a Mac that is running it.
+  local url="http://127.0.0.1:9680/mcp/"
+  if ! tcp_port_open 127.0.0.1 9680; then
+    warn "nothing is listening on 127.0.0.1:9680 - registering anyway, but the server stays unreachable until Glyphs.app is running with Edit > Glyphs MCP Server started (or the port is forwarded from a Mac)."
+  fi
+  add_mcp_http_server "glyphs-mcp" "$url" || return 1
+  ok "Verify with: curl -H 'Accept: application/json' $url"
+}
+if is_selected "glyph-mcp"; then
+  run_step "Install Glyphs MCP server" install_glyph_mcp
 fi
 
 # --- 14. Headroom ------------------------------------------------------------
