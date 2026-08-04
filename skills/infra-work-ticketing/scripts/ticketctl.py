@@ -1578,6 +1578,20 @@ def cmd_jira_token(args):
 def cmd_redact_check(args):
     text = read_body(args)
     clean, hits = redact_text(text)
+
+    # --emit puts the scrubbed body on stdout and NOTHING else, so it can be
+    # piped or redirected. This is the path for writing through a client that
+    # has no scrubber of its own -- the MCP server, for one. --show is for a
+    # human reading the diff and interleaves headings that would corrupt a
+    # redirected file.
+    if args.emit:
+        if hits:
+            eprint("Found and masked: " + ", ".join(hits))
+        sys.stdout.write(clean)
+        if not clean.endswith("\n"):
+            sys.stdout.write("\n")
+        return 1 if hits and args.strict else 0
+
     if hits:
         print("Found and masked: " + ", ".join(hits))
     else:
@@ -1715,7 +1729,9 @@ def build_parser():
 
     s = sub.add_parser("redact-check", help="preview the secret scrubber on some text")
     add_body_args(s)
-    s.add_argument("--show", action="store_true", help="print the scrubbed text")
+    s.add_argument("--show", action="store_true", help="print the scrubbed text after a summary")
+    s.add_argument("--emit", action="store_true",
+                   help="print ONLY the scrubbed text to stdout, findings to stderr; for piping")
     s.add_argument("--strict", action="store_true", help="exit non-zero if anything was found")
     s.set_defaults(func=cmd_redact_check)
 

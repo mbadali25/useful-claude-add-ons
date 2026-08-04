@@ -198,6 +198,7 @@ mentioning to the user so it isn't a surprise.
 | `invalid_client` on token refresh | Wrong `accounts_url` for your data centre, or client id/secret mismatch |
 | `invalid_code` on `zoho-token` | The grant code expired or was already used. Generate a fresh one |
 | 401 after months of working | Refresh token was revoked, or the scope list changed. Regenerate from step 4 |
+| **`doctor` passes and `get`/`search` work, but `create`/`note` return a 401 HTML page** | The refresh token was granted **read-only** scopes. `doctor` only exercises a read, so it reports "All good" against a token that cannot write — the failure surfaces on the first `POST /requests` as an HTML `HTTP Status 401 – Unauthorized` body rather than JSON. Regenerate from step 4 with `SDPOnDemand.requests.ALL` (not `.READ`), then `zoho-token`, then `retry` to replay whatever was queued. Observed 2026-08-04 |
 | `field: request_type` style errors | A `defaults` value doesn't match a name configured in your instance |
 | Note posts but nobody is emailed | Notes only email when `--email` or `--notify-technician` is passed |
 | Works for you, 403 for a colleague | Their account lacks technician rights on that request's site or group |
