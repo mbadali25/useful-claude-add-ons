@@ -228,6 +228,61 @@ function Get-ClaudePlugins {
     return $map
 }
 
+$script:McpCache = $null
+function Get-ClaudeMcpServers {
+    # 'claude mcp list' prints one 'name: command args' line per server. There is no
+    # --json flag for it, so the name is taken off the front of each line.
+    param([switch]$Refresh)
+    if ($null -ne $script:McpCache -and -not $Refresh) { return $script:McpCache }
+    $names = @()
+    if (Test-ClaudeAvailable) {
+        try {
+            foreach ($line in (claude mcp list 2>$null)) {
+                if ("$line" -match '^\s*([A-Za-z0-9_.-]+)\s*:') { $names += $Matches[1] }
+            }
+        } catch {
+            Write-Warn2 "Could not read the MCP server list: $($_.Exception.Message)"
+        }
+    }
+    $script:McpCache = $names
+    return $names
+}
+
+function Test-McpServerRegistered {
+    param([string]$Name)
+    return ((Get-ClaudeMcpServers) -contains $Name)
+}
+
+function Add-McpServer {
+    # Detect-then-act, same contract as Add-ClaudeMarketplace. $CommandArgs is the
+    # server's own command line, passed after '--' so claude does not try to parse it.
+    param(
+        [string]$Name,
+        [string[]]$CommandArgs,
+        [hashtable]$EnvVars,
+        [string]$Note
+    )
+    if (-not (Test-ClaudeAvailable)) {
+        throw "claude not found on PATH in this session - open a new shell and re-run this script."
+    }
+    if (Test-McpServerRegistered $Name) {
+        Write-Skip "MCP server '$Name' already registered"
+        return
+    }
+    $addArgs = @('mcp', 'add', $Name)
+    if ($EnvVars) {
+        foreach ($k in $EnvVars.Keys) { $addArgs += @('--env', "$k=$($EnvVars[$k])") }
+    }
+    $addArgs += '--'
+    $addArgs += $CommandArgs
+    & claude @addArgs
+    if ($LASTEXITCODE -ne 0) { throw "'claude mcp add $Name' failed - see the output above." }
+    Get-ClaudeMcpServers -Refresh | Out-Null
+    $script:Summary.Installed++
+    Write-Ok "added MCP server '$Name'"
+    if ($Note) { Write-Ok $Note }
+}
+
 function Get-ClaudeSkillsDir {
     # Some things (the 'skills' CLI, task-observer) install as plain user-level skills
     # rather than as Claude Code plugins, so they never show up in 'claude plugin list' -
@@ -306,8 +361,12 @@ $script:Catalog = @(
     [pscustomobject]@{ Key = 'claude-mem';        Default = $true;  Name = 'claude-mem memory plugin + CLAUDE_MEM_WORKER_PORT in settings.json' }
     [pscustomobject]@{ Key = 'gsd';               Default = $true;  Name = 'GSD (@opengsd/gsd-core)' }
     [pscustomobject]@{ Key = 'voltagent';         Default = $true;  Name = 'VoltAgent subagents (10 plugins, 154 agents)' }
-    [pscustomobject]@{ Key = 'aws-mcp';           Default = $false; Name = 'AWS MCP server (awslabs.aws-api-mcp-server)' }
-    [pscustomobject]@{ Key = 'azure-mcp';         Default = $false; Name = 'Azure MCP server (@azure/mcp)' }
+    [pscustomobject]@{ Key = 'aws-mcp';           Default = $false; Name = 'MCP server: AWS (awslabs.aws-api-mcp-server)' }
+    [pscustomobject]@{ Key = 'azure-mcp';         Default = $false; Name = 'MCP server: Azure (@azure/mcp)' }
+    [pscustomobject]@{ Key = 'perplexity-mcp';    Default = $false; Name = 'MCP server: Perplexity (needs PERPLEXITY_API_KEY)' }
+    [pscustomobject]@{ Key = 'playwright-mcp';    Default = $false; Name = 'MCP server: Playwright (@playwright/mcp)' }
+    [pscustomobject]@{ Key = 'firecrawl-mcp';     Default = $false; Name = 'MCP server: Firecrawl (needs FIRECRAWL_API_KEY)' }
+    [pscustomobject]@{ Key = 'chrome-mcp';        Default = $false; Name = 'MCP server: Chrome DevTools (chrome-devtools-mcp)' }
     [pscustomobject]@{ Key = 'headroom';          Default = $false; Name = 'Headroom: pipx + headroom-ai[all] + mode setup + doctor' }
 )
 
@@ -401,6 +460,39 @@ function Show-Selection {
     }
     Write-Host "  Will install ($($chosen.Count) item(s)):" -ForegroundColor Cyan
     foreach ($item in $chosen) { Write-Host "    - $($item.Name)" }
+}
+
+$script:ApiKeys = @{}
+function Read-McpApiKey {
+    # An already-exported variable wins, so CI and anyone who keeps keys in their
+    # profile is never prompted. Returns $null when there is no key and no way to ask,
+    # which makes the caller skip that server rather than register a broken one.
+    param([string]$VarName, [string]$Label, [string]$SignupUrl)
+    $existing = [Environment]::GetEnvironmentVariable($VarName)
+    if ($existing) {
+        Write-Host "  Using $VarName from the environment for $Label." -ForegroundColor DarkGray
+        return $existing
+    }
+    if ($NonInteractive -or $All -or $Select) {
+        Write-Warn2 "$VarName is not set - $Label will be skipped. Export it and re-run."
+        return $null
+    }
+    Write-Host ""
+    Write-Host "  $Label needs an API key." -ForegroundColor Cyan
+    Write-Host "  Get one at $SignupUrl, or press Enter to skip this server." -ForegroundColor DarkGray
+    $answer = "$(Read-Host "  $VarName")".Trim()
+    if (-not $answer) { return $null }
+    return $answer
+}
+
+function Read-McpApiKeys {
+    # Collected up front with the menu so the install run itself stays unattended.
+    if (Test-Selected 'perplexity-mcp') {
+        $script:ApiKeys['PERPLEXITY_API_KEY'] = Read-McpApiKey 'PERPLEXITY_API_KEY' 'Perplexity MCP' 'https://www.perplexity.ai/account/api/keys'
+    }
+    if (Test-Selected 'firecrawl-mcp') {
+        $script:ApiKeys['FIRECRAWL_API_KEY'] = Read-McpApiKey 'FIRECRAWL_API_KEY' 'Firecrawl MCP' 'https://www.firecrawl.dev/app/api-keys'
+    }
 }
 
 function Select-HeadroomMode {
@@ -555,6 +647,7 @@ if ($chosenCount -eq 0) {
     return
 }
 
+Read-McpApiKeys
 $script:HeadroomModeChoice = if (Test-Selected 'headroom') { Select-HeadroomMode } else { 'skip' }
 
 if ((Test-Selected 'prereqs') -and -not $script:IsElevated) {
@@ -907,6 +1000,51 @@ if (Test-Selected 'azure-mcp') {
         }
         claude mcp add azure -- npx -y '@azure/mcp@latest' server start
         Write-Ok "Added azure MCP server. Make sure you have run 'az login' before using it."
+    }
+}
+
+if (Test-Selected 'perplexity-mcp') {
+    Invoke-Step "Install Perplexity MCP server" {
+        $key = $script:ApiKeys['PERPLEXITY_API_KEY']
+        if (-not $key) {
+            Write-Skip "Perplexity MCP (no PERPLEXITY_API_KEY supplied)"
+            return
+        }
+        Add-McpServer -Name 'perplexity' `
+            -CommandArgs @('npx', '-y', '@perplexity-ai/mcp-server') `
+            -EnvVars @{ PERPLEXITY_API_KEY = $key }
+    }
+}
+
+if (Test-Selected 'playwright-mcp') {
+    Invoke-Step "Install Playwright MCP server" {
+        Add-McpServer -Name 'playwright' `
+            -CommandArgs @('npx', '@playwright/mcp@latest') `
+            -Note "Playwright downloads its browsers on first use; 'npx playwright install' does it ahead of time."
+    }
+}
+
+if (Test-Selected 'firecrawl-mcp') {
+    Invoke-Step "Install Firecrawl MCP server" {
+        $key = $script:ApiKeys['FIRECRAWL_API_KEY']
+        if (-not $key) {
+            Write-Skip "Firecrawl MCP (no FIRECRAWL_API_KEY supplied)"
+            return
+        }
+        Add-McpServer -Name 'firecrawl' `
+            -CommandArgs @('npx', '-y', 'firecrawl-mcp') `
+            -EnvVars @{ FIRECRAWL_API_KEY = $key }
+    }
+}
+
+if (Test-Selected 'chrome-mcp') {
+    Invoke-Step "Install Chrome DevTools MCP server" {
+        # Drives a real Chrome over the DevTools protocol, so a stable Chrome has to be
+        # installed. Usage statistics are on by default upstream; --no-usage-statistics
+        # turns them off and is passed here rather than left to the user to discover.
+        Add-McpServer -Name 'chrome-devtools' `
+            -CommandArgs @('npx', 'chrome-devtools-mcp@latest', '--no-usage-statistics') `
+            -Note "Needs a stable Chrome installed. Drop --no-usage-statistics from the config to opt back in to upstream telemetry."
     }
 }
 
