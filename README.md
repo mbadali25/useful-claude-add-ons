@@ -39,18 +39,42 @@ cd useful-claude-add-ons
 
 Both scripts are idempotent and **detect before they install** — an already-present Chocolatey package, marketplace, or plugin is reported and skipped rather than reinstalled. Re-running is cheap and safe. Each run ends with an `Installed / Updated / Already present` summary.
 
-They prompt before the optional pieces (the `find-skills` skill, claude-mem, GSD, the VoltAgent subagent collection, the community marketplace set, and the AWS/Azure MCP servers), so you can take only what you want. Where something is already present, the prompt says so and offers a refresh instead of a fresh install.
+Both open with a **menu of everything they can install**, so you pick once up front and the rest of the run is unattended. `[x]` marks the default set; answer `A` for all, `D` (or Enter) for the defaults, `N` for none, or give numbers like `1,3,7-9`. Item keys work too, so `--select headroom,claude-mem` saves counting rows.
+
+|  # | Item | Default |
+|---:|---|:---:|
+| 1 | Prerequisites — Chocolatey / `apt` etc. + git, node, python | x |
+| 2 | Claude Code CLI + PATH export | x |
+| 3 | This repo's marketplace + its 19 skills | x |
+| 4 | Team plugins — superpowers, frontend-design, excalidraw-generator | x |
+| 5 | `find-skills` skill | x |
+| 6 | Community marketplaces + plugins | x |
+| 7 | `claude-code-setup` plugin | x |
+| 8 | `task-observer` skill | x |
+| 9 | claude-mem — also sets `CLAUDE_MEM_WORKER_PORT` in `settings.json` | x |
+| 10 | GSD (`@opengsd/gsd-core`) | x |
+| 11 | VoltAgent subagents (10 plugins, 154 agents) | x |
+| 12 | AWS MCP server | |
+| 13 | Azure MCP server | |
+| 14 | Headroom — pipx + `headroom-ai[all]` + mode setup + `doctor` | |
+
+Menu numbers are identical on Windows and Linux. Where something is already present it is reported and skipped, or refreshed, rather than reinstalled.
+
+Two items need a word of explanation. **claude-mem** (9) appends `"CLAUDE_MEM_WORKER_PORT": "37790"` after the `CLAUDE_MEM_PROVIDER` line in `~/.claude/settings.json`, backing the file up first and restoring it if the result doesn't parse — without the port the worker silently binds somewhere else. **Headroom** (14) installs pipx, puts it on `PATH`, installs `headroom-ai[all]`, then asks which mode you want (`deploy`, `wrap`, `proxy`, `library`, or skip) and finishes with `headroom doctor`. Only `deploy` runs during the install; `wrap` and `proxy` block in the foreground, so the script prints those commands for you to run yourself.
 
 Everything that can be a plugin **is** installed as one, using the CLI's own `claude plugin marketplace add` / `claude plugin install` — there's no `npx claudepluginhub` wrapper and no `git clone` + shell-script step any more. That removes the Windows failure modes those introduced (the wrapper needed a writable per-repo checkout, and the VoltAgent installer needed Git Bash to run a `.sh`).
 
 | Switch (Windows / Linux) | Effect |
 |---|---|
-| `-NonInteractive` / `--non-interactive` | Accept the default answer for every prompt — for unattended or CI runs. |
+| `-All` / `--all` | Select every menu item, no prompt. |
+| `-Select '1,3,7-9'` / `--select 1,3,7-9` | Select these menu items, no prompt. Item keys work too: `--select headroom,claude-mem`. |
+| `-NonInteractive` / `--non-interactive` | Select the default set, no prompt — for unattended or CI runs. |
+| `-HeadroomMode` / `--headroom-mode` | Answer the Headroom mode question up front: `deploy`, `wrap`, `proxy`, `library`, or `skip`. |
 | `-NoUpdate` / `--no-update` | Report already-installed plugins but never update them. |
-| `-SkipBootstrap` / `--skip-bootstrap` | Skip all marketplace, plugin, and optional bootstrap steps. |
+| `-SkipBootstrap` / `--skip-bootstrap` | Narrow whatever you selected down to the prerequisites and the Claude Code CLI. |
 | `-InstallScope` / `--scope` | Scope for every marketplace and plugin install: `user` (default), `project`, or `local`. Windows still accepts the old `-PluginHubScope` name as an alias. |
 
-> On Windows, run from an **elevated** prompt for the full setup. Without elevation the script skips Chocolatey and its packages (git/awscli/nodejs/python) and does only the Claude Code CLI, marketplace, and plugin steps.
+> On Windows, run from an **elevated** prompt for the full setup. Without elevation the script skips menu item 1 (Chocolatey and its packages: git/awscli/nodejs/python) and runs everything else you selected.
 
 Full walkthrough, verification steps, and troubleshooting: [`INSTALLATION.md`](INSTALLATION.md).
 

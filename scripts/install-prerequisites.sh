@@ -3,7 +3,12 @@
 # Code CLI itself (with its path exported for future shells), and the team's standard
 # Claude Code plugin marketplaces. Idempotent - safe to re-run.
 #
-# Everything is detected before it is installed:
+# Everything is chosen from a menu up front, then installed unattended. The menu replaced
+# a linear run of ~15 yes/no prompts, which meant you had to sit through the whole script
+# to decline three things near the end. Every interactive answer (menu selection, Headroom
+# mode) is collected before the first install starts.
+#
+# Everything is also detected before it is installed:
 #   * OS packages         - only the ones whose command is actually missing get installed
 #   * Marketplaces        - skipped when already registered (matched by name or repo)
 #   * Plugins             - skipped when already installed; optionally updated
@@ -15,16 +20,23 @@
 # plugins were reinstalled on every run.
 #
 # Usage: ./scripts/install-prerequisites.sh [options]
-#   --skip-bootstrap    skip all marketplace/plugin/optional bootstrap steps
-#   --non-interactive   take the default answer for every prompt (CI/unattended)
-#   --no-update         never update an already-installed plugin, only report it
-#   --scope <scope>     scope for marketplace/plugin installs: user|project|local (default: user)
+#   --all                 select every menu item, no prompt
+#   --select 1,3,7-9      select these menu items, no prompt (keys work too:
+#                         --select headroom,claude-mem)
+#   --non-interactive     select the default set, no prompt (CI/unattended)
+#   --headroom-mode MODE  deploy|wrap|proxy|library|skip - skips the Headroom mode prompt
+#   --no-update           never update an already-installed plugin, only report it
+#   --skip-bootstrap      narrow the selection to prerequisites + the Claude Code CLI
+#   --scope <scope>       scope for marketplace/plugin installs: user|project|local (default: user)
 
 set -uo pipefail
 
 SKIP_BOOTSTRAP=0
 NON_INTERACTIVE=0
 NO_UPDATE=0
+SELECT_ALL=0
+SELECT_SPEC=""
+HEADROOM_MODE=""
 INSTALL_SCOPE="user"   # machine-wide by default, not per-project
 
 while [ $# -gt 0 ]; do
@@ -32,6 +44,9 @@ while [ $# -gt 0 ]; do
     --skip-bootstrap)  SKIP_BOOTSTRAP=1 ;;
     --non-interactive) NON_INTERACTIVE=1 ;;
     --no-update)       NO_UPDATE=1 ;;
+    --all)             SELECT_ALL=1 ;;
+    --select)          SELECT_SPEC="${2:-}"; shift ;;
+    --headroom-mode)   HEADROOM_MODE="${2:-deploy}"; shift ;;
     --scope)           INSTALL_SCOPE="${2:-user}"; shift ;;
     *) echo "Unknown option: $1" >&2 ;;
   esac
@@ -47,21 +62,6 @@ step()   { printf '\n\033[36m==> %s\033[0m\n' "$1"; }
 ok()     { printf '    \033[32mOK:\033[0m %s\n' "$1"; }
 warn()   { printf '    \033[33mWARN:\033[0m %s\n' "$1"; }
 skip()   { printf '    \033[90mSKIP:\033[0m %s\n' "$1"; COUNT_SKIPPED=$((COUNT_SKIPPED+1)); }
-
-ask_yes_no() {
-  local prompt="$1" default="${2:-N}" reply suffix="[y/N]"
-  [ "$default" = "Y" ] && suffix="[Y/n]"
-  if [ "$NON_INTERACTIVE" -eq 1 ]; then
-    printf '\033[90m%s %s -> %s (non-interactive)\033[0m\n' "$prompt" "$suffix" "$default"
-    [ "$default" = "Y" ] && return 0 || return 1
-  fi
-  read -r -p "$prompt $suffix " reply
-  reply="${reply:-$default}"
-  case "$reply" in
-    [Yy]*) return 0 ;;
-    *) return 1 ;;
-  esac
-}
 
 run_step() {
   local name="$1"; shift
@@ -101,6 +101,31 @@ json_query() {
 }
 
 claude_available() { have claude; }
+claude_config_root() { printf '%s' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"; }
+
+# --- PATH persistence ---------------------------------------------------------
+persist_path_entry() {
+  # Append a PATH export to the login shells' rc files, once. Used for both the
+  # npm global bin (claude) and the pipx bin dir (headroom).
+  local bin_dir="$1" rc
+  local marker="# Added by useful-claude-add-ons/scripts/install-prerequisites.sh"
+  local export_line="export PATH=\"${bin_dir}:\$PATH\""
+  for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
+    if [ -f "$rc" ] || [ "$rc" = "$HOME/.bashrc" ]; then
+      touch "$rc"
+      if ! grep -qF "$export_line" "$rc" 2>/dev/null; then
+        {
+          echo ""
+          echo "$marker"
+          echo "$export_line"
+        } >> "$rc"
+        ok "Added '$bin_dir' to PATH in $rc"
+      else
+        skip "'$bin_dir' already exported in $rc"
+      fi
+    fi
+  done
+}
 
 # --- Detection: marketplaces --------------------------------------------------
 MARKETPLACES_CACHE=""
@@ -160,10 +185,10 @@ plugin_version() {
 }
 
 # --- Detection: user-level skills --------------------------------------------
-# Some things (the 'skills' CLI) install as plain user-level skills rather than as
-# Claude Code plugins, so they never appear in 'claude plugin list' - detection for
-# those is a filesystem check against the user-level skills directory.
-claude_skills_dir() { printf '%s/skills' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"; }
+# Some things (the 'skills' CLI, task-observer) install as plain user-level skills
+# rather than as Claude Code plugins, so they never appear in 'claude plugin list' -
+# detection for those is a filesystem check against the user-level skills directory.
+claude_skills_dir() { printf '%s/skills' "$(claude_config_root)"; }
 user_skill_installed() { [ -f "$(claude_skills_dir)/$1/SKILL.md" ]; }
 
 # --- Install wrappers (detect, then act) -------------------------------------
@@ -210,6 +235,273 @@ install_plugin() {
   COUNT_INSTALLED=$((COUNT_INSTALLED+1))
   ok "installed plugin '$spec'"
 }
+
+# --- Install catalog and menu -------------------------------------------------
+# Three parallel indexed arrays rather than one associative array: bash hashes have
+# no defined iteration order, and the menu numbers have to be stable between runs.
+# MENU_DEFAULT is what [D] (and --non-interactive) picks, chosen to match the prompt
+# defaults this script used before it had a menu.
+MENU_KEYS=(
+  "prereqs" "cli" "own-skills" "team" "find-skills" "community"
+  "claude-code-setup" "task-observer" "claude-mem" "gsd" "voltagent"
+  "aws-mcp" "azure-mcp" "headroom"
+)
+MENU_DEFAULT=(1 1 1 1 1 1 1 1 1 1 1 0 0 0)
+MENU_NAME=(
+  "Prerequisites: git, nodejs, npm, python3, pip3 (needs root or sudo)"
+  "Claude Code CLI (@anthropic-ai/claude-code) + PATH export"
+  "This repo's marketplace + its 19 skills"
+  "Team plugins: superpowers, frontend-design, excalidraw-generator"
+  "find-skills skill (vercel-labs/skills)"
+  "Community marketplaces + plugins (adhd-output-style, azure-tools, ppt-master, ...)"
+  "claude-code-setup plugin (anthropics/claude-plugins-official)"
+  "task-observer skill (rebelytics/one-skill-to-rule-them-all)"
+  "claude-mem memory plugin + CLAUDE_MEM_WORKER_PORT in settings.json"
+  "GSD (@opengsd/gsd-core)"
+  "VoltAgent subagents (10 plugins, 154 agents)"
+  "AWS MCP server (awslabs.aws-api-mcp-server)"
+  "Azure MCP server (@azure/mcp)"
+  "Headroom: pipx + headroom-ai[all] + mode setup + doctor"
+)
+
+SELECTED=""
+is_selected()     { case " $SELECTED " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
+selection_add()   { is_selected "$1" || SELECTED="$SELECTED $1"; }
+selection_drop()  { SELECTED=" $(printf '%s' " $SELECTED " | sed "s/ $1 / /g") "; }
+
+default_keys() {
+  local i out=""
+  for i in "${!MENU_KEYS[@]}"; do
+    [ "${MENU_DEFAULT[$i]}" -eq 1 ] && out="$out ${MENU_KEYS[$i]}"
+  done
+  printf '%s' "$out"
+}
+
+all_keys() { printf '%s' " ${MENU_KEYS[*]}"; }
+
+expand_selection_spec() {
+  # '1,3,7-9' -> the matching catalog keys. Item keys are accepted too, so
+  # --select headroom,claude-mem works without counting rows in the menu.
+  local spec="$1" token n lo hi i found out=""
+  spec="${spec//,/ }"
+  for token in $spec; do
+    if [[ "$token" =~ ^([0-9]+)-([0-9]+)$ ]]; then
+      lo="${BASH_REMATCH[1]}"; hi="${BASH_REMATCH[2]}"
+      for (( n=lo; n<=hi; n++ )); do
+        if [ "$n" -ge 1 ] && [ "$n" -le "${#MENU_KEYS[@]}" ]; then
+          out="$out ${MENU_KEYS[$((n-1))]}"
+        fi
+      done
+    elif [[ "$token" =~ ^[0-9]+$ ]]; then
+      n="$token"
+      if [ "$n" -ge 1 ] && [ "$n" -le "${#MENU_KEYS[@]}" ]; then
+        out="$out ${MENU_KEYS[$((n-1))]}"
+      else
+        # stderr, not stdout: this function's stdout is captured with $( ) as the
+        # selection itself, so a warning printed there would vanish into SELECTED.
+        warn "ignoring out-of-range menu number '$token'" >&2
+      fi
+    else
+      found=0
+      for i in "${!MENU_KEYS[@]}"; do
+        if [ "${MENU_KEYS[$i]}" = "$token" ]; then out="$out $token"; found=1; break; fi
+      done
+      [ "$found" -eq 0 ] && warn "ignoring unknown menu item '$token'" >&2
+    fi
+  done
+  printf '%s' "$out"
+}
+
+show_menu() {
+  local i mark
+  printf '\n\033[36m  Select what to install\033[0m\n'
+  printf '\033[36m  ----------------------\033[0m\n'
+  for i in "${!MENU_KEYS[@]}"; do
+    mark=" "
+    [ "${MENU_DEFAULT[$i]}" -eq 1 ] && mark="x"
+    printf '  %2d  [%s]  %s\n' "$((i+1))" "$mark" "${MENU_NAME[$i]}"
+  done
+  printf '\n\033[90m  [x] marks the default set.\033[0m\n'
+  printf '\033[90m  A = all   D = defaults   N = none   or numbers like 1,3,7-9\033[0m\n'
+}
+
+select_install_items() {
+  local answer=""
+  if [ "$SELECT_ALL" -eq 1 ]; then
+    SELECTED="$(all_keys)"
+    printf '\033[90mSelecting every item (--all).\033[0m\n'
+  elif [ -n "$SELECT_SPEC" ]; then
+    SELECTED="$(expand_selection_spec "$SELECT_SPEC")"
+    printf '\033[90mSelecting from --select "%s".\033[0m\n' "$SELECT_SPEC"
+  elif [ "$NON_INTERACTIVE" -eq 1 ]; then
+    SELECTED="$(default_keys)"
+    printf '\033[90mSelecting the default set (--non-interactive).\033[0m\n'
+  else
+    show_menu
+    read -r -p "  Select [D] " answer
+    answer="${answer:-D}"
+    case "$answer" in
+      [Aa]|[Aa][Ll][Ll])           SELECTED="$(all_keys)" ;;
+      [Dd]|[Dd][Ee][Ff][Aa][Uu][Ll][Tt]|[Dd][Ee][Ff][Aa][Uu][Ll][Tt][Ss]) SELECTED="$(default_keys)" ;;
+      [Nn]|[Nn][Oo][Nn][Ee])       SELECTED="" ;;
+      *)                           SELECTED="$(expand_selection_spec "$answer")" ;;
+    esac
+  fi
+
+  if [ "$SKIP_BOOTSTRAP" -eq 1 ]; then
+    # --skip-bootstrap predates the menu, where it meant "prerequisites and the CLI
+    # only". Keep that meaning by intersecting the selection rather than replacing it.
+    local i
+    for i in "${!MENU_KEYS[@]}"; do
+      case "${MENU_KEYS[$i]}" in
+        prereqs|cli) ;;
+        *) selection_drop "${MENU_KEYS[$i]}" ;;
+      esac
+    done
+    printf '\033[90mNarrowed to prerequisites + CLI (--skip-bootstrap).\033[0m\n'
+  fi
+}
+
+selection_count() {
+  local i n=0
+  for i in "${!MENU_KEYS[@]}"; do
+    is_selected "${MENU_KEYS[$i]}" && n=$((n+1))
+  done
+  printf '%d' "$n"
+}
+
+show_selection() {
+  local i n
+  n="$(selection_count)"
+  echo ""
+  if [ "$n" -eq 0 ]; then
+    printf '\033[33m  Nothing selected.\033[0m\n'
+    return 0
+  fi
+  printf '\033[36m  Will install (%d item(s)):\033[0m\n' "$n"
+  for i in "${!MENU_KEYS[@]}"; do
+    is_selected "${MENU_KEYS[$i]}" && printf '    - %s\n' "${MENU_NAME[$i]}"
+  done
+}
+
+select_headroom_mode() {
+  # Asked up front, alongside the menu, so the install run itself stays unattended.
+  local answer
+  if [ -n "$HEADROOM_MODE" ]; then printf '%s' "$HEADROOM_MODE"; return 0; fi
+  if [ "$NON_INTERACTIVE" -eq 1 ] || [ "$SELECT_ALL" -eq 1 ] || [ -n "$SELECT_SPEC" ]; then
+    printf 'deploy'; return 0
+  fi
+  printf '\n\033[36m  Headroom mode\033[0m\n' >&2
+  printf '    1  deploy   turnkey local deployment + agent config  (recommended)\n' >&2
+  printf '    2  wrap     wrap the claude coding agent\n' >&2
+  printf '    3  proxy    drop-in proxy on port 8787, zero code changes\n' >&2
+  printf "    4  library  no CLI wiring; use 'from headroom import compress'\n" >&2
+  printf '    5  skip     install only, configure later\n' >&2
+  read -r -p "  Mode [1] " answer
+  case "${answer:-1}" in
+    2) printf 'wrap' ;;
+    3) printf 'proxy' ;;
+    4) printf 'library' ;;
+    5) printf 'skip' ;;
+    *) printf 'deploy' ;;
+  esac
+}
+
+# --- claude-mem settings.json patch ------------------------------------------
+set_claude_mem_worker_port() {
+  # claude-mem's own bootstrap writes CLAUDE_MEM_PROVIDER but not the worker port,
+  # and the worker silently picks a different port without it. Patch the text with awk
+  # rather than round-tripping through a JSON encoder, which reformats the whole file.
+  local port="${1:-37790}" settings backup tmp
+  settings="$(claude_config_root)/settings.json"
+
+  if [ ! -f "$settings" ]; then
+    warn "no settings.json at $settings yet - claude-mem writes it on first run; re-run this script afterwards to set CLAUDE_MEM_WORKER_PORT."
+    return 0
+  fi
+  if grep -q '"CLAUDE_MEM_WORKER_PORT"' "$settings"; then
+    skip "CLAUDE_MEM_WORKER_PORT already present in $settings"
+    return 0
+  fi
+
+  backup="${settings}.bak"
+  cp -f "$settings" "$backup" || return 1
+  tmp="$(mktemp)" || return 1
+
+  if grep -q '"CLAUDE_MEM_PROVIDER"[[:space:]]*:' "$settings"; then
+    awk -v port="$port" '
+      !inserted && /^[[:space:]]*"CLAUDE_MEM_PROVIDER"[[:space:]]*:/ {
+        match($0, /^[[:space:]]*/); indent = substr($0, 1, RLENGTH)
+        line = $0
+        sub(/[[:space:]]+$/, "", line)
+        if (line ~ /,$/) {
+          # Provider already has a trailing comma, so the new key needs one too.
+          print line
+          printf "%s\"CLAUDE_MEM_WORKER_PORT\": \"%s\",\n", indent, port
+        } else {
+          # Provider was the last key in its object - give it the comma instead.
+          print line ","
+          printf "%s\"CLAUDE_MEM_WORKER_PORT\": \"%s\"\n", indent, port
+        }
+        inserted = 1
+        next
+      }
+      { print }
+    ' "$settings" > "$tmp" || { rm -f "$tmp"; return 1; }
+  elif have python3; then
+    # No provider key to anchor to. Fall back to a structural edit of the env block,
+    # writing both keys so the file ends up in the documented shape either way.
+    if ! python3 - "$settings" "$port" > "$tmp" <<'PY'
+import json
+import sys
+
+path, port = sys.argv[1], sys.argv[2]
+with open(path, encoding="utf-8") as fh:
+    data = json.load(fh)
+env = data.setdefault("env", {})
+env.setdefault("CLAUDE_MEM_PROVIDER", "claude")
+env["CLAUDE_MEM_WORKER_PORT"] = port
+json.dump(data, sys.stdout, indent=2)
+sys.stdout.write("\n")
+PY
+    then
+      warn "could not rewrite $settings as JSON - left it untouched. Add \"CLAUDE_MEM_WORKER_PORT\": \"$port\" by hand."
+      rm -f "$tmp"
+      return 1
+    fi
+    warn "CLAUDE_MEM_PROVIDER was not in $settings - rewrote the file to add the env block (formatting may change; backup at $backup)."
+  else
+    warn "CLAUDE_MEM_PROVIDER not found in $settings and python3 is unavailable - add \"CLAUDE_MEM_WORKER_PORT\": \"$port\" by hand."
+    rm -f "$tmp"
+    return 0
+  fi
+
+  # Never leave a half-written settings.json behind: validate, then restore on failure.
+  if have python3 && ! python3 -m json.tool < "$tmp" >/dev/null 2>&1; then
+    warn "the patched settings.json did not parse - restoring $backup."
+    rm -f "$tmp"
+    return 1
+  fi
+
+  cat "$tmp" > "$settings" || { rm -f "$tmp"; return 1; }
+  rm -f "$tmp"
+  COUNT_INSTALLED=$((COUNT_INSTALLED+1))
+  ok "set CLAUDE_MEM_WORKER_PORT=$port in $settings (backup: $backup)"
+}
+
+# --- Selection ----------------------------------------------------------------
+select_install_items
+show_selection
+
+if [ "$(selection_count)" -eq 0 ]; then
+  printf '\n\033[33mNothing to do.\033[0m\n'
+  exit 0
+fi
+
+HEADROOM_MODE_CHOICE="skip"
+if is_selected "headroom"; then
+  HEADROOM_MODE_CHOICE="$(select_headroom_mode)"
+fi
 
 # --- 1. OS packages: only what's actually missing ----------------------------
 install_packages() {
@@ -267,7 +559,9 @@ install_packages() {
   [ $rc -eq 0 ] && COUNT_INSTALLED=$((COUNT_INSTALLED+${#missing[@]}))
   return $rc
 }
-run_step "Install git, nodejs, npm, python (missing only)" install_packages
+if is_selected "prereqs"; then
+  run_step "Install git, nodejs, npm, python (missing only)" install_packages
+fi
 
 # --- 2. Claude Code CLI ------------------------------------------------------
 install_claude_cli() {
@@ -290,34 +584,13 @@ install_claude_cli() {
   [ $rc -eq 0 ] && COUNT_INSTALLED=$((COUNT_INSTALLED+1))
   return $rc
 }
-run_step "Install Claude Code CLI" install_claude_cli
 
-# --- 3. Export claude path ---------------------------------------------------
 export_claude_path() {
   local npm_prefix bin_dir
   npm_prefix="$(npm config get prefix)"
   bin_dir="${npm_prefix}/bin"
-
   export PATH="${bin_dir}:${PATH}"
-
-  local marker="# Added by useful-claude-add-ons/scripts/install-prerequisites.sh"
-  local export_line="export PATH=\"${bin_dir}:\$PATH\""
-
-  for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
-    if [ -f "$rc" ] || [ "$rc" = "$HOME/.bashrc" ]; then
-      touch "$rc"
-      if ! grep -qF "$export_line" "$rc" 2>/dev/null; then
-        {
-          echo ""
-          echo "$marker"
-          echo "$export_line"
-        } >> "$rc"
-        ok "Added '$bin_dir' to PATH in $rc"
-      else
-        skip "'$bin_dir' already exported in $rc"
-      fi
-    fi
-  done
+  persist_path_entry "$bin_dir"
 
   if have claude; then
     ok "claude resolved at $(command -v claude)"
@@ -325,19 +598,30 @@ export_claude_path() {
     warn "claude not found on PATH in this shell - run 'source ~/.bashrc' (or open a new shell)."
   fi
 }
-run_step "Export Claude Code CLI path" export_claude_path
 
-# --- Bootstrap ---------------------------------------------------------------
-if [ "$SKIP_BOOTSTRAP" -eq 1 ]; then
-  step "Skipping all marketplace/plugin bootstrap (--skip-bootstrap)"
-elif ! claude_available; then
-  step "Skipping marketplace/plugin bootstrap"
-  warn "claude is not on PATH in this shell - run 'source ~/.bashrc' and re-run to install marketplaces and plugins."
-else
-  load_marketplaces
-  load_plugins
+if is_selected "cli"; then
+  run_step "Install Claude Code CLI" install_claude_cli
+  run_step "Export Claude Code CLI path" export_claude_path
+fi
 
-  # --- 4. This repo's own marketplace and skills -----------------------------
+# Everything from here to the MCP servers needs the claude CLI on PATH.
+CLAUDE_ITEMS="own-skills team find-skills community claude-code-setup claude-mem gsd voltagent"
+NEEDS_CLAUDE=0
+for key in $CLAUDE_ITEMS; do
+  is_selected "$key" && NEEDS_CLAUDE=1
+done
+
+if [ "$NEEDS_CLAUDE" -eq 1 ] && ! claude_available; then
+  step "Skipping marketplace/plugin items"
+  warn "claude is not on PATH in this shell - run 'source ~/.bashrc' and re-run to install them."
+  for key in $CLAUDE_ITEMS; do selection_drop "$key"; done
+fi
+
+load_marketplaces
+load_plugins
+
+# --- 3. This repo's own marketplace and skills -------------------------------
+if is_selected "own-skills"; then
   run_step "Add this repo as a Claude Code marketplace" \
     add_marketplace "mbadali25/useful-claude-add-ons" "useful-claude-add-ons"
 
@@ -366,8 +650,10 @@ else
   for plugin in "${own_plugins[@]}"; do
     run_step "Plugin: ${plugin}@useful-claude-add-ons" install_plugin "${plugin}@useful-claude-add-ons"
   done
+fi
 
-  # --- 5. Team marketplaces and plugins --------------------------------------
+# --- 4. Team marketplaces and plugins ----------------------------------------
+if is_selected "team"; then
   run_step "Marketplace: obra/superpowers-marketplace" \
     add_marketplace "obra/superpowers-marketplace" "superpowers-marketplace"
   run_step "Marketplace: anthropics/claude-code" \
@@ -383,127 +669,171 @@ else
   for spec in "${team_plugins[@]}"; do
     run_step "Plugin: $spec" install_plugin "$spec"
   done
-
-  install_find_skills() {
-    local dir present=0 prompt
-    dir="$(claude_skills_dir)/find-skills"
-    user_skill_installed "find-skills" && present=1
-    if [ "$present" -eq 1 ] && [ "$NO_UPDATE" -eq 1 ]; then
-      skip "find-skills already installed at $dir (--no-update set)"
-      return 0
-    fi
-    if [ "$present" -eq 1 ]; then
-      prompt="find-skills is already installed at $dir. Re-run its installer to pick up updates?"
-    else
-      prompt="Install the find-skills skill (vercel-labs/skills)?"
-    fi
-    if ! ask_yes_no "$prompt" "Y"; then
-      skip "find-skills"
-      return 0
-    fi
-    npx -y skills add vercel-labs/skills --skill find-skills --agent claude-code || return 1
-    if ! user_skill_installed "find-skills"; then
-      warn "the installer finished but '$dir/SKILL.md' was not created - see the output above."
-      return 1
-    fi
-    if [ "$present" -eq 1 ]; then
-      ok "find-skills re-installed (now current)"
-    else
-      COUNT_INSTALLED=$((COUNT_INSTALLED+1))
-      ok "installed find-skills to $dir"
-    fi
-  }
-  run_step "Skill: find-skills (vercel-labs/skills)" install_find_skills
-
-  # --- 6. Community marketplaces (from claudepluginhub.com) ------------------
-  # Installed with native 'claude plugin' commands. Source repo -> marketplace name is
-  # *not* mechanical: fcakyon/claude-codex-settings publishes itself as 'claude-settings'.
-  # The second field below is the "name" in that repo's own .claude-plugin/marketplace.json,
-  # which is what 'plugin@marketplace' has to match.
-  if ask_yes_no "Install the community marketplaces and plugins (claudepluginhub.com)?" "Y"; then
-    # "source|marketplace-name" pairs
-    community_marketplaces=(
-      "anthropics/claude-plugins-official|claude-plugins-official"
-      "vercel-labs/agent-browser|agent-browser"
-      "fcakyon/claude-codex-settings|claude-settings"
-      "hugohe3/ppt-master|ppt-master"
-    )
-    for entry in "${community_marketplaces[@]}"; do
-      run_step "Marketplace: ${entry%%|*}" add_marketplace "${entry%%|*}" "${entry#*|}"
-    done
-
-    community_plugins=(
-      "adhd-output-style@claude-settings"
-      "azure-tools@claude-settings"
-      "anthropic-office-skills@claude-settings"
-      "agent-browser@agent-browser"
-      "ppt-master@ppt-master"
-    )
-    for spec in "${community_plugins[@]}"; do
-      run_step "Plugin: $spec" install_plugin "$spec"
-    done
-  else
-    skip "community marketplaces and plugins"
-  fi
-
-  # --- 7. Optional tooling ---------------------------------------------------
-  # claude-mem supports the plugin-marketplace path as a first-class alternative to its
-  # 'npx claude-mem install' bootstrapper (see its README) - the plugin's own hooks handle
-  # worker/dependency setup on first run.
-  if ask_yes_no "Install claude-mem (persistent cross-session memory)?" "Y"; then
-    run_step "Marketplace: thedotmack/claude-mem" add_marketplace "thedotmack/claude-mem" "thedotmack"
-    run_step "Plugin: claude-mem@thedotmack" install_plugin "claude-mem@thedotmack"
-  else
-    skip "claude-mem"
-  fi
-
-  install_gsd() {
-    local state="$HOME/.claude/gsd-install-state.json"
-    if [ -f "$state" ]; then
-      if [ "$NO_UPDATE" -eq 1 ]; then
-        skip "GSD already installed ($state present; --no-update set)"
-        return 0
-      fi
-      ok "GSD already installed - running the installer again to pick up updates"
-    fi
-    npx -y @opengsd/gsd-core@latest || return 1
-    [ -f "$state" ] || COUNT_INSTALLED=$((COUNT_INSTALLED+1))
-  }
-  if ask_yes_no "Install GSD (@opengsd/gsd-core)?" "Y"; then
-    run_step "Install GSD core" install_gsd
-  else
-    skip "GSD"
-  fi
-
-  # The repo publishes itself as the 'voltagent-subagents' marketplace, with its 154
-  # subagents split across ten category plugins. Installing them as plugins replaces the
-  # old 'git clone + bash install-agents.sh' path, which needed an interactive TTY and a
-  # writable ~/repos checkout.
-  if ask_yes_no "Install the VoltAgent awesome-claude-code-subagents collection?" "Y"; then
-    run_step "Marketplace: VoltAgent/awesome-claude-code-subagents" \
-      add_marketplace "VoltAgent/awesome-claude-code-subagents" "voltagent-subagents"
-
-    voltagent_plugins=(
-      "voltagent-core-dev"
-      "voltagent-lang"
-      "voltagent-infra"
-      "voltagent-qa-sec"
-      "voltagent-data-ai"
-      "voltagent-dev-exp"
-      "voltagent-domains"
-      "voltagent-biz"
-      "voltagent-meta"
-      "voltagent-research"
-    )
-    for plugin in "${voltagent_plugins[@]}"; do
-      run_step "Plugin: ${plugin}@voltagent-subagents" install_plugin "${plugin}@voltagent-subagents"
-    done
-  else
-    skip "VoltAgent awesome-claude-code-subagents"
-  fi
 fi
 
-# --- 8. Optional MCP servers -------------------------------------------------
+# --- 5. find-skills ----------------------------------------------------------
+install_find_skills() {
+  local dir present=0
+  dir="$(claude_skills_dir)/find-skills"
+  user_skill_installed "find-skills" && present=1
+  if [ "$present" -eq 1 ] && [ "$NO_UPDATE" -eq 1 ]; then
+    skip "find-skills already installed at $dir (--no-update set)"
+    return 0
+  fi
+  npx -y skills add vercel-labs/skills --skill find-skills --agent claude-code || return 1
+  if ! user_skill_installed "find-skills"; then
+    warn "the installer finished but '$dir/SKILL.md' was not created - see the output above."
+    return 1
+  fi
+  if [ "$present" -eq 1 ]; then
+    ok "find-skills re-installed (now current)"
+  else
+    COUNT_INSTALLED=$((COUNT_INSTALLED+1))
+    ok "installed find-skills to $dir"
+  fi
+}
+if is_selected "find-skills"; then
+  run_step "Skill: find-skills (vercel-labs/skills)" install_find_skills
+fi
+
+# --- 6. Community marketplaces (from claudepluginhub.com) --------------------
+# Installed with native 'claude plugin' commands. Source repo -> marketplace name is
+# *not* mechanical: fcakyon/claude-codex-settings publishes itself as 'claude-settings'.
+# The second field below is the "name" in that repo's own .claude-plugin/marketplace.json,
+# which is what 'plugin@marketplace' has to match.
+if is_selected "community"; then
+  # "source|marketplace-name" pairs
+  community_marketplaces=(
+    "anthropics/claude-plugins-official|claude-plugins-official"
+    "vercel-labs/agent-browser|agent-browser"
+    "fcakyon/claude-codex-settings|claude-settings"
+    "hugohe3/ppt-master|ppt-master"
+  )
+  for entry in "${community_marketplaces[@]}"; do
+    run_step "Marketplace: ${entry%%|*}" add_marketplace "${entry%%|*}" "${entry#*|}"
+  done
+
+  community_plugins=(
+    "adhd-output-style@claude-settings"
+    "azure-tools@claude-settings"
+    "anthropic-office-skills@claude-settings"
+    "agent-browser@agent-browser"
+    "ppt-master@ppt-master"
+  )
+  for spec in "${community_plugins[@]}"; do
+    run_step "Plugin: $spec" install_plugin "$spec"
+  done
+fi
+
+# --- 7. claude-code-setup ----------------------------------------------------
+# Ships inside anthropics/claude-plugins-official, which the community item also
+# registers - add_marketplace is a no-op when it is already there, so this item works
+# whether or not item 6 was selected.
+if is_selected "claude-code-setup"; then
+  run_step "Marketplace: anthropics/claude-plugins-official" \
+    add_marketplace "anthropics/claude-plugins-official" "claude-plugins-official"
+  run_step "Plugin: claude-code-setup@claude-plugins-official" \
+    install_plugin "claude-code-setup@claude-plugins-official"
+fi
+
+# --- 8. task-observer --------------------------------------------------------
+install_task_observer() {
+  # This repo publishes no marketplace.json, so there is nothing for
+  # 'claude plugin install' to consume - it is a plain skill directory. SKILL.md and
+  # references/ are the whole skill; the README, USER-GUIDE and two 1.5 MB PNGs in the
+  # repo are not part of it and are deliberately not copied.
+  local dest tmp present=0
+  dest="$(claude_skills_dir)/task-observer"
+  user_skill_installed "task-observer" && present=1
+  if [ "$present" -eq 1 ] && [ "$NO_UPDATE" -eq 1 ]; then
+    skip "task-observer already installed at $dest (--no-update set)"
+    return 0
+  fi
+  if ! have git; then
+    warn "git not found on PATH - select the prerequisites item (or install git) and re-run."
+    return 1
+  fi
+  tmp="$(mktemp -d)" || return 1
+  if ! git clone --depth 1 --quiet https://github.com/rebelytics/one-skill-to-rule-them-all.git "$tmp"; then
+    rm -rf "$tmp"
+    return 1
+  fi
+  if [ ! -f "$tmp/SKILL.md" ]; then
+    warn "clone succeeded but SKILL.md was not found in $tmp - the upstream layout may have changed."
+    rm -rf "$tmp"
+    return 1
+  fi
+  mkdir -p "$dest" || { rm -rf "$tmp"; return 1; }
+  cp -f "$tmp/SKILL.md" "$dest/"
+  rm -rf "$dest/references"
+  cp -R "$tmp/references" "$dest/"
+  rm -rf "$tmp"
+  if [ "$present" -eq 1 ]; then
+    ok "task-observer re-installed (now current) at $dest"
+  else
+    COUNT_INSTALLED=$((COUNT_INSTALLED+1))
+    ok "installed task-observer to $dest"
+  fi
+}
+if is_selected "task-observer"; then
+  run_step "Skill: task-observer (rebelytics/one-skill-to-rule-them-all)" install_task_observer
+fi
+
+# --- 9. claude-mem -----------------------------------------------------------
+# claude-mem supports the plugin-marketplace path as a first-class alternative to its
+# 'npx claude-mem install' bootstrapper (see its README) - the plugin's own hooks handle
+# worker/dependency setup on first run.
+if is_selected "claude-mem"; then
+  run_step "Marketplace: thedotmack/claude-mem" add_marketplace "thedotmack/claude-mem" "thedotmack"
+  run_step "Plugin: claude-mem@thedotmack" install_plugin "claude-mem@thedotmack"
+  run_step "Configure claude-mem worker port" set_claude_mem_worker_port "37790"
+fi
+
+# --- 10. GSD -----------------------------------------------------------------
+install_gsd() {
+  local state
+  state="$(claude_config_root)/gsd-install-state.json"
+  if [ -f "$state" ]; then
+    if [ "$NO_UPDATE" -eq 1 ]; then
+      skip "GSD already installed ($state present; --no-update set)"
+      return 0
+    fi
+    ok "GSD already installed - running the installer again to pick up updates"
+  fi
+  npx -y @opengsd/gsd-core@latest || return 1
+  [ -f "$state" ] || COUNT_INSTALLED=$((COUNT_INSTALLED+1))
+}
+if is_selected "gsd"; then
+  run_step "Install GSD core" install_gsd
+fi
+
+# --- 11. VoltAgent subagents -------------------------------------------------
+# The repo publishes itself as the 'voltagent-subagents' marketplace, with its 154
+# subagents split across ten category plugins. Installing them as plugins replaces the
+# old 'git clone + bash install-agents.sh' path, which needed an interactive TTY and a
+# writable ~/repos checkout.
+if is_selected "voltagent"; then
+  run_step "Marketplace: VoltAgent/awesome-claude-code-subagents" \
+    add_marketplace "VoltAgent/awesome-claude-code-subagents" "voltagent-subagents"
+
+  voltagent_plugins=(
+    "voltagent-core-dev"
+    "voltagent-lang"
+    "voltagent-infra"
+    "voltagent-qa-sec"
+    "voltagent-data-ai"
+    "voltagent-dev-exp"
+    "voltagent-domains"
+    "voltagent-biz"
+    "voltagent-meta"
+    "voltagent-research"
+  )
+  for plugin in "${voltagent_plugins[@]}"; do
+    run_step "Plugin: ${plugin}@voltagent-subagents" install_plugin "${plugin}@voltagent-subagents"
+  done
+fi
+
+# --- 12/13. Optional MCP servers ---------------------------------------------
 install_aws_mcp() {
   if ! have uv && ! have uvx; then
     if have pip3; then
@@ -523,7 +853,7 @@ install_aws_mcp() {
   claude mcp add aws-api -- uvx awslabs.aws-api-mcp-server@latest
   ok "Added aws-api MCP server. Make sure AWS credentials are configured (aws configure)."
 }
-if ask_yes_no "Install the AWS MCP server (awslabs.aws-api-mcp-server) and register it with Claude Code?"; then
+if is_selected "aws-mcp"; then
   run_step "Install AWS MCP server" install_aws_mcp
 fi
 
@@ -535,8 +865,106 @@ install_azure_mcp() {
   claude mcp add azure -- npx -y @azure/mcp@latest server start
   ok "Added azure MCP server. Make sure you have run 'az login' before using it."
 }
-if ask_yes_no "Install the Azure MCP server (@azure/mcp) and register it with Claude Code?"; then
+if is_selected "azure-mcp"; then
   run_step "Install Azure MCP server" install_azure_mcp
+fi
+
+# --- 14. Headroom ------------------------------------------------------------
+install_pipx() {
+  if have pipx; then
+    skip "pipx already installed ($(command -v pipx))"
+    return 0
+  fi
+  local py="" c base bindir
+  for c in python3 python; do
+    have "$c" && { py="$c"; break; }
+  done
+  if [ -z "$py" ]; then
+    warn "no python3 found - select the prerequisites item (or install python3) and re-run."
+    return 1
+  fi
+  "$py" -m pip install --user pipx || return 1
+  # 'pip install --user' drops console scripts in the per-user bin directory, which is
+  # not on PATH until 'pipx ensurepath' runs *and* a new shell starts. Put it on this
+  # shell's PATH so the pipx call below resolves, then persist it for future shells.
+  base="$("$py" -m site --user-base 2>/dev/null)"
+  if [ -n "$base" ] && [ -d "$base/bin" ]; then
+    bindir="$base/bin"
+    export PATH="$bindir:$PATH"
+    persist_path_entry "$bindir"
+  fi
+  "$py" -m pipx ensurepath >/dev/null 2>&1
+  export PATH="$HOME/.local/bin:$PATH"
+  persist_path_entry "$HOME/.local/bin"
+
+  if ! have pipx; then
+    warn "pipx installed but is still not resolvable in this shell - run 'source ~/.bashrc' and re-run."
+    return 1
+  fi
+  COUNT_INSTALLED=$((COUNT_INSTALLED+1))
+  ok "pipx installed at $(command -v pipx)"
+}
+
+install_headroom() {
+  if have headroom; then
+    skip "headroom already installed ($(headroom --version 2>/dev/null || echo 'version unknown'))"
+    return 0
+  fi
+  local -a pipx_args=(install)
+  if have python3.14; then
+    pipx_args+=(--python python3.14)
+  else
+    warn "python3.14 not found - installing headroom against the default interpreter."
+  fi
+  pipx_args+=("headroom-ai[all]")
+
+  if ! pipx "${pipx_args[@]}"; then
+    warn "pipx install failed - falling back to 'npm install -g headroom-ai'."
+    if ! npm install -g headroom-ai; then
+      warn "both the pipx and npm installs of headroom failed."
+      return 1
+    fi
+  fi
+  export PATH="$HOME/.local/bin:$PATH"
+  if ! have headroom; then
+    warn "headroom installed but is still not resolvable in this shell - run 'source ~/.bashrc' and re-run."
+    return 1
+  fi
+  COUNT_INSTALLED=$((COUNT_INSTALLED+1))
+  ok "headroom installed at $(command -v headroom)"
+}
+
+configure_headroom() {
+  if ! have headroom; then
+    warn "headroom is not on PATH - run 'source ~/.bashrc' and run the mode command by hand."
+    return 1
+  fi
+  # Only 'deploy' is safe to run here. 'wrap' launches the agent and 'proxy' blocks in
+  # the foreground serving requests, so either one would hang the install.
+  case "$HEADROOM_MODE_CHOICE" in
+    deploy)  headroom deploy && ok "ran 'headroom deploy'" ;;
+    wrap)    ok "wrap mode selected - start your agent with: headroom wrap claude" ;;
+    proxy)   ok "proxy mode selected - start the proxy with: headroom proxy --port 8787" ;;
+    library) ok "library mode selected - use 'from headroom import compress' in your code" ;;
+    *)       skip "headroom mode configuration (skip selected)" ;;
+  esac
+}
+
+verify_headroom() {
+  if ! have headroom; then
+    warn "headroom is not on PATH - run 'source ~/.bashrc' and then 'headroom doctor'."
+    return 1
+  fi
+  headroom doctor
+  headroom perf
+  ok "live savings dashboard: headroom dashboard (needs the proxy running)"
+}
+
+if is_selected "headroom"; then
+  run_step "Install pipx (required for headroom)" install_pipx \
+    && run_step "Install headroom-ai" install_headroom \
+    && run_step "Configure headroom ($HEADROOM_MODE_CHOICE mode)" configure_headroom \
+    && run_step "Verify headroom (doctor + perf)" verify_headroom
 fi
 
 # --- Summary -----------------------------------------------------------------
