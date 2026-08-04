@@ -31,6 +31,26 @@
 
 set -uo pipefail
 
+# Under the documented one-liner - 'curl -fsSL ... | bash' - the script itself arrives
+# on stdin, so a bare 'read' consumes the next line of the script instead of the user's
+# answer: the menu silently "answered" itself with 'show_selection'.
+#
+# The terminal therefore gets its own descriptor (fd 3) and every prompt reads from
+# that, never from fd 0. Redirecting fd 0 instead would be worse than the bug: on the
+# piped path bash is still reading the script from fd 0 and cannot seek backwards, so
+# replacing it makes bash read the rest of the script off the terminal.
+#
+# With no terminal at all (CI, a container, nohup) the prompts cannot work, so fall
+# back to the default selection rather than reading garbage.
+TTY_FD=""
+if [ -t 0 ]; then
+  TTY_FD=0
+elif [ -r /dev/tty ] && exec 3</dev/tty 2>/dev/null; then
+  TTY_FD=3
+fi
+NO_TTY=0
+[ -z "$TTY_FD" ] && NO_TTY=1
+
 SKIP_BOOTSTRAP=0
 NON_INTERACTIVE=0
 NO_UPDATE=0
@@ -52,6 +72,12 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
+
+# No terminal to prompt on and no explicit selection: take the defaults rather than
+# blocking forever or reading whatever happens to be on stdin.
+if [ "$NO_TTY" -eq 1 ] && [ "$SELECT_ALL" -eq 0 ] && [ -z "$SELECT_SPEC" ]; then
+  NON_INTERACTIVE=1
+fi
 
 FAILED_STEPS=()
 COUNT_INSTALLED=0
@@ -245,9 +271,9 @@ add_mcp_server() {
     return 0
   fi
   if [ "$env_spec" = "-" ]; then
-    claude mcp add "$name" -- "$@" || return 1
+    claude mcp add --scope "$INSTALL_SCOPE" "$name" -- "$@" || return 1
   else
-    claude mcp add "$name" --env "$env_spec" -- "$@" || return 1
+    claude mcp add --scope "$INSTALL_SCOPE" "$name" --env "$env_spec" -- "$@" || return 1
   fi
   load_mcp_servers
   COUNT_INSTALLED=$((COUNT_INSTALLED+1))
@@ -289,7 +315,9 @@ install_plugin() {
       skip "plugin '$name' already installed (version $before)"
       return 0
     fi
-    claude plugin update "$name" >/dev/null 2>&1
+    # A failed update is not fatal: the plugin is installed and usable, and
+    # 'claude plugin update' legitimately fails when its marketplace has moved on.
+    claude plugin update "$name" >/dev/null 2>&1       || warn "'claude plugin update $name' failed - keeping the installed version."
     load_plugins
     after="$(plugin_version "$name" || echo "$before")"
     if [ "$after" != "$before" ]; then
@@ -315,9 +343,9 @@ MENU_KEYS=(
   "prereqs" "cli" "own-skills" "team" "find-skills" "community"
   "claude-code-setup" "task-observer" "claude-mem" "gsd" "voltagent"
   "aws-mcp" "azure-mcp" "perplexity-mcp" "playwright-mcp" "firecrawl-mcp"
-  "chrome-mcp" "glyph-mcp" "headroom"
+  "chrome-mcp" "glyph-mcp" "omniroute" "headroom"
 )
-MENU_DEFAULT=(1 1 1 1 1 1 1 1 1 1 1 0 0 0 0 0 0 0 0)
+MENU_DEFAULT=(1 1 1 1 1 1 1 1 1 1 1 0 0 0 0 0 0 0 0 0)
 MENU_NAME=(
   "Prerequisites: git, nodejs, npm, python3, pip3 (needs root or sudo)"
   "Claude Code CLI (@anthropic-ai/claude-code) + PATH export"
@@ -337,6 +365,7 @@ MENU_NAME=(
   "MCP server: Firecrawl (needs FIRECRAWL_API_KEY)"
   "MCP server: Chrome DevTools (chrome-devtools-mcp)"
   "MCP server: Glyphs font editor (needs macOS + Glyphs.app running)"
+  "OmniRoute AI gateway (npm) + its MCP server, optional guided setup"
   "Headroom: pipx + headroom-ai[all] + mode setup + doctor"
 )
 
@@ -414,7 +443,7 @@ select_install_items() {
     printf '\033[90mSelecting the default set (--non-interactive).\033[0m\n'
   else
     show_menu
-    read -r -p "  Select [D] " answer
+    read -r -p "  Select [D] " answer <&"$TTY_FD"
     answer="${answer:-D}"
     case "$answer" in
       [Aa]|[Aa][Ll][Ll])           SELECTED="$(all_keys)" ;;
@@ -480,7 +509,7 @@ read_mcp_api_key() {
   fi
   printf '\n\033[36m  %s needs an API key.\033[0m\n' "$label" >&2
   printf '\033[90m  Get one at %s, or press Enter to skip this server.\033[0m\n' "$url" >&2
-  read -r -p "  $var " answer
+  read -r -p "  $var " answer <&"$TTY_FD"
   printf '%s' "${answer:-}"
 }
 
@@ -492,6 +521,24 @@ read_mcp_api_keys() {
   if is_selected "firecrawl-mcp"; then
     FIRECRAWL_KEY="$(read_mcp_api_key FIRECRAWL_API_KEY 'Firecrawl MCP' 'https://www.firecrawl.dev/app/api-keys')"
   fi
+}
+
+OMNIROUTE_GUIDED=0
+select_omniroute_setup() {
+  # Asked up front with the menu. The wizard itself is interactive and runs at the
+  # end, which is the one place a prompt during the install is unavoidable.
+  local answer
+  is_selected "omniroute" || { printf '0'; return 0; }
+  if [ "$NON_INTERACTIVE" -eq 1 ] || [ "$SELECT_ALL" -eq 1 ] || [ -n "$SELECT_SPEC" ]; then
+    printf '0'; return 0
+  fi
+  printf "
+[36m  OmniRoute ships a first-run wizard ('omniroute setup') that connects a[0m
+" >&2
+  printf '[90m  provider and mints an API key. It is interactive and runs at the end.[0m
+' >&2
+  read -r -p "  Walk through OmniRoute setup after installing? [y/N] " answer <&"$TTY_FD"
+  case "${answer:-N}" in [Yy]*) printf '1' ;; *) printf '0' ;; esac
 }
 
 select_headroom_mode() {
@@ -507,7 +554,7 @@ select_headroom_mode() {
   printf '    3  proxy    drop-in proxy on port 8787, zero code changes\n' >&2
   printf "    4  library  no CLI wiring; use 'from headroom import compress'\n" >&2
   printf '    5  skip     install only, configure later\n' >&2
-  read -r -p "  Mode [1] " answer
+  read -r -p "  Mode [1] " answer <&"$TTY_FD"
   case "${answer:-1}" in
     2) printf 'wrap' ;;
     3) printf 'proxy' ;;
@@ -538,7 +585,7 @@ set_claude_mem_worker_port() {
   cp -f "$settings" "$backup" || return 1
   tmp="$(mktemp)" || return 1
 
-  if grep -q '"CLAUDE_MEM_PROVIDER"[[:space:]]*:' "$settings"; then
+  if grep -q '^[[:space:]]*"CLAUDE_MEM_PROVIDER"[[:space:]]*:' "$settings"; then
     awk -v port="$port" '
       !inserted && /^[[:space:]]*"CLAUDE_MEM_PROVIDER"[[:space:]]*:/ {
         match($0, /^[[:space:]]*/); indent = substr($0, 1, RLENGTH)
@@ -586,14 +633,30 @@ PY
     return 0
   fi
 
-  # Never leave a half-written settings.json behind: validate, then restore on failure.
+  # Never leave a half-written settings.json behind. The original is still untouched
+  # at this point, so bailing out here needs no restore - $tmp is simply discarded.
   if have python3 && ! python3 -m json.tool < "$tmp" >/dev/null 2>&1; then
-    warn "the patched settings.json did not parse - restoring $backup."
+    warn "the patched settings.json did not parse - leaving $settings as it was."
+    rm -f "$tmp"
+    return 1
+  fi
+  # Belt and braces: the awk branch is anchored, so a layout it does not recognise
+  # would copy the file through unchanged and we would report a success that never
+  # happened. Confirm the key is actually there before overwriting anything.
+  if ! grep -q '"CLAUDE_MEM_WORKER_PORT"' "$tmp"; then
+    warn "could not place CLAUDE_MEM_WORKER_PORT in $settings (unrecognised layout) - left it as it was. Add \"CLAUDE_MEM_WORKER_PORT\": \"$port\" by hand."
     rm -f "$tmp"
     return 1
   fi
 
-  cat "$tmp" > "$settings" || { rm -f "$tmp"; return 1; }
+  # Only now is the live file touched. A failed write restores from the backup rather
+  # than leaving the truncation behind.
+  if ! cat "$tmp" > "$settings"; then
+    warn "writing $settings failed - restoring $backup."
+    cp -f "$backup" "$settings"
+    rm -f "$tmp"
+    return 1
+  fi
   rm -f "$tmp"
   COUNT_INSTALLED=$((COUNT_INSTALLED+1))
   ok "set CLAUDE_MEM_WORKER_PORT=$port in $settings (backup: $backup)"
@@ -609,6 +672,7 @@ if [ "$(selection_count)" -eq 0 ]; then
 fi
 
 read_mcp_api_keys
+OMNIROUTE_GUIDED="$(select_omniroute_setup)"
 
 HEADROOM_MODE_CHOICE="skip"
 if is_selected "headroom"; then
@@ -946,6 +1010,9 @@ if is_selected "voltagent"; then
 fi
 
 # --- 12/13. Optional MCP servers ---------------------------------------------
+# Warm the cache before the first add_mcp_server call so duplicate detection works.
+load_mcp_servers
+
 install_aws_mcp() {
   if ! have uv && ! have uvx; then
     if have pip3; then
@@ -962,8 +1029,8 @@ install_aws_mcp() {
     warn "claude not found on PATH in this shell - run 'source ~/.bashrc' and re-run this script."
     return 1
   fi
-  claude mcp add aws-api -- uvx awslabs.aws-api-mcp-server@latest
-  ok "Added aws-api MCP server. Make sure AWS credentials are configured (aws configure)."
+  add_mcp_server "aws-api" "-" uvx awslabs.aws-api-mcp-server@latest || return 1
+  ok "Make sure AWS credentials are configured (aws configure)."
 }
 if is_selected "aws-mcp"; then
   run_step "Install AWS MCP server" install_aws_mcp
@@ -974,14 +1041,12 @@ install_azure_mcp() {
     warn "claude not found on PATH in this shell - run 'source ~/.bashrc' and re-run this script."
     return 1
   fi
-  claude mcp add azure -- npx -y @azure/mcp@latest server start
-  ok "Added azure MCP server. Make sure you have run 'az login' before using it."
+  add_mcp_server "azure" "-" npx -y @azure/mcp@latest server start || return 1
+  ok "Make sure you have run 'az login' before using it."
 }
 if is_selected "azure-mcp"; then
   run_step "Install Azure MCP server" install_azure_mcp
 fi
-
-load_mcp_servers
 
 install_perplexity_mcp() {
   if [ -z "$PERPLEXITY_KEY" ]; then
@@ -1041,7 +1106,77 @@ if is_selected "glyph-mcp"; then
   run_step "Install Glyphs MCP server" install_glyph_mcp
 fi
 
-# --- 14. Headroom ------------------------------------------------------------
+# --- 19. OmniRoute -----------------------------------------------------------
+install_omniroute() {
+  if have omniroute; then
+    skip "omniroute already installed ($(omniroute --version 2>/dev/null || echo 'version unknown'))"
+    return 0
+  fi
+  if ! have npm; then
+    warn "npm not found on PATH - select the prerequisites item (or install Node.js) and re-run."
+    return 1
+  fi
+  if ! npm install -g omniroute; then
+    # The package builds better-sqlite3 and @swc/core natively; upstream documents
+    # this escape hatch for machines without a toolchain.
+    warn "npm install failed - retrying with OMNIROUTE_SKIP_POSTINSTALL=1 (skips the native build)."
+    OMNIROUTE_SKIP_POSTINSTALL=1 npm install -g omniroute || return 1
+  fi
+  COUNT_INSTALLED=$((COUNT_INSTALLED+1))
+  ok "omniroute installed"
+}
+
+omniroute_guided_setup() {
+  if ! have omniroute; then
+    warn "omniroute is not on PATH - open a new shell and run 'omniroute setup'."
+    return 1
+  fi
+  printf '[90m    Starting the OmniRoute wizard. Answer its prompts, then come back here.[0m
+'
+  # The wizard reads its own prompts, so hand it the terminal rather than fd 0 -
+  # on the 'curl | bash' path fd 0 is still the script.
+  omniroute setup <&"$TTY_FD" || return 1
+  ok "wizard finished"
+}
+
+register_omniroute_mcp() {
+  # OmniRoute is a local gateway: the MCP endpoint only answers while it is running
+  # ('omniroute' starts it, dashboard on :20128). Registering ahead of time is the
+  # usual order, so a closed port is a warning rather than a stop.
+  if ! tcp_port_open 127.0.0.1 20128; then
+    warn "nothing is listening on 127.0.0.1:20128 - registering anyway. Start the gateway with 'omniroute' and the server becomes reachable."
+  fi
+  add_mcp_http_server "omniroute" "http://localhost:20128/api/mcp/stream"
+}
+
+omniroute_next_steps() {
+  printf '    1. Start the gateway:      omniroute
+'
+  printf '    2. Open the dashboard:     http://localhost:20128
+'
+  printf '    3. Dashboard > Providers - connect a provider (keyless ones work immediately)
+'
+  printf '    4. Dashboard > Endpoints - copy your API key
+'
+  printf '    5. Point any OpenAI-compatible tool at:
+'
+  printf '         Base URL  http://localhost:20128/v1
+'
+  printf '         Model     auto
+'
+  printf '    Diagnostics: omniroute doctor    TUI chat: omniroute chat
+'
+}
+
+if is_selected "omniroute"; then
+  if run_step "Install OmniRoute (npm i -g omniroute)" install_omniroute; then
+    [ "$OMNIROUTE_GUIDED" = "1" ] && [ "$NO_TTY" -eq 0 ]       && run_step "OmniRoute guided setup" omniroute_guided_setup
+    run_step "Register the OmniRoute MCP server" register_omniroute_mcp
+    run_step "OmniRoute next steps" omniroute_next_steps
+  fi
+fi
+
+# --- 20. Headroom ------------------------------------------------------------
 install_pipx() {
   if have pipx; then
     skip "pipx already installed ($(command -v pipx))"
