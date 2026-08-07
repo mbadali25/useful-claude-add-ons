@@ -64,6 +64,14 @@ All notable changes to this repository are documented here. Format follows [Keep
   failed in exactly that window. Planning is now inside the guarded region for
   `note`, `update` and `close`. `--dry-run` still never queues.
 
+- `scripts/install-prerequisites.ps1` / `.sh` — a picker that failed *after* the
+  capability gate passed did not fall back. In bash the failure return was ignored,
+  leaving an empty selection that printed `Nothing to do.` and exited 0 — the same
+  output as a deliberate cancel. In PowerShell, `$ErrorActionPreference = 'Stop'`
+  meant a `SetCursorPosition` throw (a window shrunk between frames) killed the
+  whole installer. Both now drop through to the numbered menu and say why. The
+  capability gate only ever proved the picker could *start*.
+
 - `scripts/install-prerequisites.sh` — the `/dev/tty` probe printed
   `No such device or address` to stderr on hosts without a controlling terminal.
   The redirection is now grouped so `2>/dev/null` actually covers it.

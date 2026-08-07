@@ -532,6 +532,7 @@ PICK_TOP=0
 PICK_DRAWN=0
 PICK_ACTION=""
 PICK_STTY_SAVED=""
+PICKER_FAILED=0
 
 term_lines() {
   local n="${LINES:-}"
@@ -680,7 +681,10 @@ picker_draw() {
 picker_run() {
   # 0 = the user finished with it (PICK_ACTION says how), 2 = no usable terminal.
   local key i
-  picker_raw_on || return 2
+  if ! picker_raw_on; then
+    PICKER_FAILED=1
+    return 2
+  fi
   PICK_DRAWN=0
   PICK_ACTION=""
   while :; do
@@ -811,9 +815,14 @@ select_install_items() {
   elif [ "$NON_INTERACTIVE" -eq 1 ]; then
     SELECTED="$(default_keys)"
     printf '\033[90mSelecting the default set (--non-interactive).\033[0m\n'
-  elif picker_supported; then
-    pick_menu_interactive
+  elif picker_supported && pick_menu_interactive; then
+    :
   else
+    # Reached either because the terminal never supported raw input, or because it
+    # stopped part-way through. The second case is why this is a fall-through and not
+    # an else on picker_supported alone: a picker that dies mid-draw must land on the
+    # numbered prompt, not on an empty selection that looks like the user chose none.
+    [ "$PICKER_FAILED" -eq 1 ] && warn "the cursor menu could not run here - falling back to the numbered menu."
     show_menu
     read -r -p "  Select [D] " answer <&"$TTY_FD"
     answer="${answer:-D}"

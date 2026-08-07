@@ -147,3 +147,11 @@ path is doc-verified and dry-run-verified only.
 - **The one-liner URLs are SHA-pinned** and must be re-pinned after every merge
   that touches `scripts/install-prerequisites.*`. `git rev-parse HEAD`, then swap
   it into both URLs in `README.md`.
+- **Pylint CI has been red since `ec61772`**, from dozens of findings in
+  `skills/ppt-master/scripts/` (unused imports, `f`-strings with no interpolation,
+  `raise ... from`, long lines). It predates and is unrelated to the commits in
+  this entry — every other tracked `.py` file scores 10.00. Either fix that tree or
+  scope the workflow, but don't bisect toward the installer work looking for it.
+- **Neither picker has been driven by a human.** The fallback-on-failure path is
+  covered by fault injection in both scripts, but colour rendering, `Clear-Host` on
+  buffer overflow, and a live window resize mid-menu are still untested by hand.

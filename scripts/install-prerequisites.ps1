@@ -731,6 +731,25 @@ function Select-MenuInteractive {
     }
 }
 
+function Select-MenuInteractiveSafe {
+    <#
+      Returns the selected keys, or $null if the picker failed part-way through.
+
+      Test-PickerSupported only proves the picker can *start*. It can still die
+      mid-draw - SetCursorPosition throws ArgumentOutOfRange if the window is
+      resized smaller between frames - and $ErrorActionPreference is 'Stop' here,
+      so an unguarded throw would take the whole installer with it. Returning $null
+      lets the caller fall back to the numbered menu, which is what the docs promise.
+    #>
+    try {
+        return ,@(Select-MenuInteractive)
+    } catch {
+        Write-Warn2 "the cursor menu stopped working ($($_.Exception.Message)) - falling back to the numbered menu."
+        try { [Console]::CursorVisible = $true } catch { }
+        return $null
+    }
+}
+
 function Show-InstallMenu {
     Write-Host ""
     Write-Host "  Select what to install" -ForegroundColor Cyan
@@ -767,8 +786,10 @@ function Select-InstallItems {
     } elseif ($NonInteractive) {
         $keys = $defaults
         Write-Host "Selecting the default set (-NonInteractive)." -ForegroundColor DarkGray
-    } elseif (Test-PickerSupported) {
-        $keys = Select-MenuInteractive
+    } elseif ((Test-PickerSupported) -and ($null -ne ($keys = Select-MenuInteractiveSafe))) {
+        # Nothing more to do - Select-MenuInteractiveSafe returned a (possibly empty)
+        # selection. It returns $null only when the picker itself failed, which drops
+        # through to the numbered menu below rather than taking the script down.
     } else {
         Show-InstallMenu
         $answer = "$(Read-Host '  Select [D]')".Trim()
