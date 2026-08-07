@@ -6,6 +6,48 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
+- `scripts/install-prerequisites.ps1` / `.sh` — the install menu is now a **cursor
+  picker**: ↑/↓ to move, Space to tick, Enter to start, `A`/`N`/`D` for all/none/
+  defaults, `Q` or Escape to cancel. Rows scroll inside a viewport when the window
+  is short, and every printed line is clipped to the window width, because a
+  wrapped line breaks the redraw and smears the menu over whatever was above it.
+  The numbered prompt is still there as the fallback and is chosen automatically
+  when raw key input is not possible — no terminal, no `stty`, `TERM=dumb`,
+  PowerShell ISE, a redirected console, or a window under ten lines. Bash restores
+  the saved `stty` state and the cursor from an `EXIT`/`INT` trap so Ctrl-C in the
+  menu cannot leave the user's shell with echo off.
+
+- `scripts/install-prerequisites.ps1` / `.sh` — **individual skills can be
+  installed instead of all nineteen**. Pressing → on the repo's row opens a second
+  picker listing every skill in this repo; `-Skills 'cloudflare,drata'` /
+  `--skills cloudflare,drata` does the same non-interactively and also accepts
+  `all`, `none`, and positions (`1,4-6`). It composes with `-All` /
+  `-NonInteractive`, so CI can install everything except the skills, or only the
+  skills. The catalog (`SKILL_KEYS` in bash, `$script:SkillCatalog` in PowerShell)
+  is now the single source of both the picker rows and the install loop, replacing
+  the duplicated `own_plugins` / `$ownPlugins` arrays. The repo's menu row shows a
+  live count (`+ 3 of 19 skills`) rather than a hardcoded nineteen.
+
+- `skills/infra-work-ticketing` — an `mcp` block in the config file records how
+  ticket writes are routed: connector name, endpoint, tool prefix, whether to
+  prefer MCP, and which `ticketctl.py` provider takes over when it refuses.
+  `ticketctl.py doctor` prints the resolved routing and probes the connector's
+  `/health` (5-second timeout, `--no-mcp-probe` to skip). Routing metadata only —
+  the connector authenticates per person through Claude Code, so no credential
+  belongs in the block. `INFRA_TICKET_PREFER_MCP` and `INFRA_TICKET_MCP_ENDPOINT`
+  override it per session.
+
+### Fixed
+
+- `scripts/install-prerequisites.sh` — the `/dev/tty` probe printed
+  `No such device or address` to stderr on hosts without a controlling terminal.
+  The redirection is now grouped so `2>/dev/null` actually covers it.
+
+- `scripts/install-prerequisites.ps1` — hiding the cursor threw
+  `"The handle is invalid"` on hosts that don't implement `Console.CursorVisible`,
+  which would have taken the whole menu down with it. It is cosmetic, so it is now
+  best-effort.
+
 - `skills/visio-diagrams` — creates, edits, and verifies Microsoft Visio `.vsdx`
   files. Two paths from one spec: a stdlib-only writer (`vsdx_writer.py` +
   `diagram_from_spec.py`) that generates a native `.vsdx` plus an SVG preview

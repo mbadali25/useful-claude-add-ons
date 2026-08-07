@@ -6,6 +6,40 @@ Two things live in this repo: **prerequisite tooling** (git, Node.js, Python, AW
 
 One script per OS. Both are idempotent (safe to re-run) and, by default, also bootstrap the team's standard Claude Code plugin marketplaces (see step 3 and [`MARKETPLACE.md`](MARKETPLACE.md)), install every skill in this repo's own marketplace, install the [awesome-claude-code-subagents](https://github.com/VoltAgent/awesome-claude-code-subagents) collection, and optionally register the AWS/Azure MCP servers.
 
+> **Everything is chosen up front, from one menu.** Neither script asks a yes/no question per item any more — you tick what you want, press Enter, and the rest of the run is unattended.
+
+### The menu
+
+```
+  Select what to install
+  ----------------------
+    [x] Prerequisites: git, nodejs, npm, python3, pip3 (needs root or sudo)
+    [x] Claude Code CLI (@anthropic-ai/claude-code) + PATH export
+  > [x] This repo's marketplace + 19 of 19 skills  >
+    [x] Team plugins: superpowers, frontend-design, excalidraw-generator
+    ...
+    [ ] Headroom: pipx + headroom-ai[all] + mode setup + doctor
+  showing 1-20 of 20
+  ↑↓ move   Space toggle   Enter start   A all   N none   D defaults   Q cancel
+  → on the repo row picks individual skills
+```
+
+| Key | Does |
+|---|---|
+| ↑ / ↓ (or `k` / `j`) | Move the cursor |
+| Space | Tick or untick the row |
+| Enter | Start installing what's ticked |
+| → | On the repo's row only: open the per-skill picker |
+| ← | Back out of the per-skill picker |
+| `A` / `N` / `D` | Tick all / clear all / restore the default set |
+| `Q` or Escape | Cancel — nothing is installed |
+
+**The per-skill picker** (→ on row 3) lists all 19 skills in this repo with the same controls. All 19 start ticked; untick the ones you don't want and press Enter or ← to go back. Opening it also ticks the parent row, so a careful sub-selection can't be lost to an unticked parent.
+
+**When the picker isn't available**, both scripts fall back to the original numbered prompt — same items, same defaults, answered with `A`, `D`, `N`, or `1,3,7-9`. That happens when there is no usable terminal (`curl | bash` with no `/dev/tty`, CI), no `stty`, `TERM=dumb`, PowerShell ISE, a redirected console, or a window under ten lines. Nothing about the install differs; only how you choose.
+
+**To skip choosing entirely**, use `-All` / `--all`, `-Select` / `--select`, `-Skills` / `--skills`, or `-NonInteractive` / `--non-interactive`. Any of those bypasses both the picker and the numbered prompt, which is what CI and the `curl | bash` one-liner rely on.
+
 > **Native plugin commands only.** Marketplaces and plugins are installed with `claude plugin marketplace add` and `claude plugin install`. The previous `npx -y claudepluginhub <repo>` wrapper is gone: it synthesized a *local directory* marketplace per repo (registered under a generated name like `cpd-aiskillstore-marketplace-user`), which the scripts' own detection couldn't match — so those plugins were reinstalled on every run — and it was a frequent source of Windows failures. The VoltAgent subagents no longer need a `git clone` + Git Bash either; the repo publishes itself as a marketplace.
 
 ### Windows
@@ -18,14 +52,14 @@ cd useful-claude-add-ons
 .\scripts\install-prerequisites.ps1
 ```
 
-What it does, in order:
+It shows the menu, collects any API keys and the Headroom mode question up front, then installs what you ticked, in order:
 
-1. If elevated: installs [Chocolatey](https://chocolatey.org/) if not already present, then `choco install git awscli nodejs python -y`. **If not elevated, this step and the package installs are skipped entirely** — the script prints a warning and continues with everything below using whatever `git`/`node`/`npm`/`python` are already on `PATH`.
-2. Installs the Claude Code CLI (`npm install -g @anthropic-ai/claude-code`) and adds the npm global bin directory to your **User** `PATH` environment variable (persists across sessions), plus sets a `CLAUDE_CODE_HOME` user env var pointing at the npm prefix.
-3. Adds this repo (`mbadali25/useful-claude-add-ons`) as a Claude Code marketplace, then installs every skill listed in it (see [What the own-marketplace step installs](#what-the-own-marketplace-step-installs) below).
-4. Runs the team's plugin/marketplace bootstrap commands (skip with `-SkipBootstrap`).
-5. Prompts (`Y`/`n`) to add `VoltAgent/awesome-claude-code-subagents` as a marketplace and install its ten category plugins — see [Optional: awesome-claude-code-subagents](#optional-awesome-claude-code-subagents).
-6. Prompts (`y`/`N`) to register the AWS MCP server and, separately, the Azure MCP server with Claude Code — see [Optional: MCP servers](#optional-mcp-servers).
+1. **Prerequisites** — if elevated: installs [Chocolatey](https://chocolatey.org/) if not already present, then `choco install git awscli nodejs python -y`. **If not elevated, this item is skipped entirely** — the script prints a warning and continues with everything below using whatever `git`/`node`/`npm`/`python` are already on `PATH`.
+2. **Claude Code CLI** — `npm install -g @anthropic-ai/claude-code`, adds the npm global bin directory to your **User** `PATH` environment variable (persists across sessions), and sets a `CLAUDE_CODE_HOME` user env var pointing at the npm prefix.
+3. **This repo** — adds `mbadali25/useful-claude-add-ons` as a Claude Code marketplace, then installs the skills you ticked in the per-skill picker, all 19 by default (see [What the own-marketplace step installs](#what-the-own-marketplace-step-installs) below).
+4. **Team plugins, community plugins, `find-skills`, `claude-code-setup`, `task-observer`, claude-mem, GSD, VoltAgent** — each is its own menu row; `-SkipBootstrap` narrows any selection back down to items 1 and 2.
+5. **MCP servers** — AWS, Azure, Perplexity, Playwright, Firecrawl, Chrome DevTools, Glyphs. Off by default; see [Optional: MCP servers](#optional-mcp-servers). Perplexity and Firecrawl ask for their API key alongside the menu rather than mid-install.
+6. **OmniRoute** and **Headroom** — off by default. Headroom's mode question is asked before the install starts, or answered with `-HeadroomMode`.
 
 If `claude` isn't recognized immediately after the script finishes, open a new PowerShell window — the `PATH` change is written to the registry but doesn't retroactively apply to whichever shell you're still in from before Node.js/npm existed.
 
@@ -37,15 +71,16 @@ cd useful-claude-add-ons
 ./scripts/install-prerequisites.sh
 ```
 
-Runs as your current user, escalating to `sudo` (or `root` directly if already root) only for the package-manager and global-npm-install steps. What it does:
+Runs as your current user, escalating to `sudo` (or `root` directly if already root) only for the package-manager and global-npm-install steps. Same menu, same order:
 
-1. Installs `git`, `nodejs`, `npm`, `python3` via whichever of `apt-get` / `dnf` / `yum` / `pacman` / `zypper` / `apk` it finds first.
-2. Installs the Claude Code CLI (`npm install -g @anthropic-ai/claude-code`).
-3. Appends a `PATH` export for the npm global bin directory to `~/.bashrc` and `~/.zshrc` (only if not already present) and exports it in the current shell too.
-4. Adds this repo (`mbadali25/useful-claude-add-ons`) as a Claude Code marketplace, then installs every skill listed in it (see [What the own-marketplace step installs](#what-the-own-marketplace-step-installs) below).
-5. Runs the team's plugin/marketplace bootstrap commands (skip with `--skip-bootstrap`).
-6. Prompts (`Y`/`n`) to add `VoltAgent/awesome-claude-code-subagents` as a marketplace and install its ten category plugins — see [Optional: awesome-claude-code-subagents](#optional-awesome-claude-code-subagents).
-7. Prompts (`y`/`N`) to register the AWS MCP server and, separately, the Azure MCP server with Claude Code — see [Optional: MCP servers](#optional-mcp-servers).
+1. **Prerequisites** — `git`, `nodejs`, `npm`, `python3` via whichever of `apt-get` / `dnf` / `yum` / `pacman` / `zypper` / `apk` it finds first. Only packages whose command is actually missing get installed.
+2. **Claude Code CLI** — `npm install -g @anthropic-ai/claude-code`, then a `PATH` export for the npm global bin directory appended to `~/.bashrc` and `~/.zshrc` (only if not already present) and exported in the current shell too.
+3. **This repo** — adds `mbadali25/useful-claude-add-ons` as a Claude Code marketplace, then installs the skills you ticked in the per-skill picker, all 19 by default (see [What the own-marketplace step installs](#what-the-own-marketplace-step-installs) below).
+4. **Team plugins, community plugins, `find-skills`, `claude-code-setup`, `task-observer`, claude-mem, GSD, VoltAgent** — each is its own menu row; `--skip-bootstrap` narrows any selection back down to items 1 and 2.
+5. **MCP servers** — AWS, Azure, Perplexity, Playwright, Firecrawl, Chrome DevTools, Glyphs. Off by default; see [Optional: MCP servers](#optional-mcp-servers).
+6. **OmniRoute** and **Headroom** — off by default, with the Headroom mode question asked before the install starts or answered with `--headroom-mode`.
+
+Under the piped one-liner (`curl -fsSL … | bash`) the script itself arrives on stdin, so the menu reads the terminal through its own file descriptor. Where there is no terminal at all, it takes the default set rather than blocking.
 
 Run `source ~/.bashrc` (or open a new shell) afterward to pick up the `PATH` change in shells you already had open.
 
@@ -98,7 +133,7 @@ The first line adds this repo's own skills as an installable marketplace — unl
 
 ### What the own-marketplace step installs
 
-Immediately after adding `mbadali25/useful-claude-add-ons` as a marketplace, both scripts run `claude plugin install <name>@useful-claude-add-ons` for every skill currently in [`.claude-plugin/marketplace.json`](.claude-plugin/marketplace.json):
+Immediately after adding `mbadali25/useful-claude-add-ons` as a marketplace, both scripts run `claude plugin install <name>@useful-claude-add-ons` for **each skill you ticked**. All 19 are ticked by default, so an untouched run installs everything currently in [`.claude-plugin/marketplace.json`](.claude-plugin/marketplace.json):
 
 ```
 claude plugin install aws-opensearch@useful-claude-add-ons
@@ -124,7 +159,19 @@ claude plugin install work-log-reporter@useful-claude-add-ons
 
 An already-installed plugin is detected and skipped (or updated, unless `-NoUpdate` / `--no-update` is passed) rather than reinstalled.
 
-If a new skill is added to the marketplace, add its name to the `ownPlugins` / `own_plugins` list in **both** scripts and to this list to keep all four sources — `marketplace.json`, `skills/`, and the two scripts — in sync.
+To take a subset, either press → on the repo's row in the menu and untick what you don't want, or say so on the command line:
+
+```powershell
+.\scripts\install-prerequisites.ps1 -Select own-skills -Skills 'cloudflare,drata,repo-docs'
+```
+
+```bash
+./scripts/install-prerequisites.sh --select own-skills --skills cloudflare,drata,repo-docs
+```
+
+`--skills` also takes `all`, `none`, and positions (`1,4-6`), and it composes with `--all` and `--non-interactive` — so a CI run can install everything *except* the skills, or the skills and nothing else. Selecting the repo row with zero skills ticked still registers the marketplace; the script warns and names the fix rather than installing nothing silently.
+
+If a new skill is added to the marketplace, add it to the `SKILL_KEYS` / `SKILL_NAME` arrays in `install-prerequisites.sh` and to `$script:SkillCatalog` in `install-prerequisites.ps1`, plus this list — keeping `marketplace.json`, `skills/`, and the two scripts in sync. The catalogs are the single source of both the picker's rows and the install loop, so there is no second list to forget.
 
 ### Optional: MCP servers
 

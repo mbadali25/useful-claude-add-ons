@@ -39,13 +39,31 @@ cd useful-claude-add-ons
 
 Both scripts are idempotent and **detect before they install** — an already-present Chocolatey package, marketplace, or plugin is reported and skipped rather than reinstalled. Re-running is cheap and safe. Each run ends with an `Installed / Updated / Already present` summary.
 
-Both open with a **menu of everything they can install**, so you pick once up front and the rest of the run is unattended. `[x]` marks the default set; answer `A` for all, `D` (or Enter) for the defaults, `N` for none, or give numbers like `1,3,7-9`. Item keys work too, so `--select headroom,claude-mem` saves counting rows.
+Both open with a **menu of everything they can install**, so you pick once up front and the rest of the run is unattended.
+
+The menu is a cursor picker — **↑/↓ to move, Space to tick, Enter to start**:
+
+```
+  Select what to install
+  ----------------------
+    [x] Prerequisites: git, nodejs, npm, python3, pip3 (needs root or sudo)
+    [x] Claude Code CLI (@anthropic-ai/claude-code) + PATH export
+  > [x] This repo's marketplace + 19 of 19 skills  >
+    [x] Team plugins: superpowers, frontend-design, excalidraw-generator
+    ...
+  ↑↓ move   Space toggle   Enter start   A all   N none   D defaults   Q cancel
+  → on the repo row picks individual skills
+```
+
+`A` ticks everything, `N` clears it, `D` restores the default set, `Q` or Escape cancels without installing. On the repo's own row, **→ opens a second picker for the individual skills** so you can take three of them instead of all nineteen; ← or Enter comes back to the main menu.
+
+Terminals that can't read a key press one at a time — no `stty`, `TERM=dumb`, PowerShell ISE, a redirected console, a window under ten lines — fall back to the original numbered prompt automatically: `[x]` marks the default set, and you answer `A`, `D` (or Enter), `N`, or numbers like `1,3,7-9`. Item keys work in `--select` either way, so `--select headroom,claude-mem` saves counting rows.
 
 |  # | Item | Default |
 |---:|---|:---:|
 | 1 | Prerequisites — Chocolatey / `apt` etc. + git, node, python | x |
 | 2 | Claude Code CLI + PATH export | x |
-| 3 | This repo's marketplace + its 19 skills | x |
+| 3 | This repo's marketplace + its skills — **→ picks individual skills** | x |
 | 4 | Team plugins — superpowers, frontend-design, excalidraw-generator | x |
 | 5 | `find-skills` skill | x |
 | 6 | Community marketplaces + plugins | x |
@@ -80,6 +98,7 @@ Everything that can be a plugin **is** installed as one, using the CLI's own `cl
 |---|---|
 | `-All` / `--all` | Select every menu item, no prompt. |
 | `-Select '1,3,7-9'` / `--select 1,3,7-9` | Select these menu items, no prompt. Item keys work too: `--select headroom,claude-mem`. |
+| `-Skills 'cloudflare,drata'` / `--skills cloudflare,drata` | Install only these of this repo's skills, no sub-picker. Also accepts `all`, `none`, and numbers (`1,4-6`). Composes with `-All` / `-NonInteractive`. |
 | `-NonInteractive` / `--non-interactive` | Select the default set, no prompt — for unattended or CI runs. |
 | `-HeadroomMode` / `--headroom-mode` | Answer the Headroom mode question up front: `deploy`, `wrap`, `proxy`, `library`, or `skip`. |
 | `-NoUpdate` / `--no-update` | Report already-installed plugins but never update them. |
@@ -94,7 +113,7 @@ Everything that can be a plugin **is** installed as one, using the CLI's own `cl
 |---|---|---|
 | 1 Prerequisites | Chocolatey + git, awscli, nodejs, python (Windows) / git, nodejs, npm, python3, pip3 via apt/dnf/yum/pacman/zypper/apk (Linux) | package manager |
 | 2 Claude Code CLI | `@anthropic-ai/claude-code`, plus a persistent `PATH` entry for the npm global bin | npm |
-| 3 This repo | The `useful-claude-add-ons` marketplace and all 19 skills in [`skills/`](skills/) | this repo |
+| 3 This repo | The `useful-claude-add-ons` marketplace and, by default, all 19 skills in [`skills/`](skills/) — narrow it with → in the menu or `--skills` | this repo |
 | 4 Team plugins | `superpowers`, `frontend-design`, `excalidraw-generator` | 3 marketplaces |
 | 5 find-skills | The `find-skills` skill, into the user skills dir | `vercel-labs/skills` |
 | 6 Community | `adhd-output-style`, `azure-tools`, `anthropic-office-skills`, `agent-browser`, `ppt-master` | 4 marketplaces |
@@ -119,7 +138,17 @@ This repo is itself a Claude Code plugin marketplace ([`.claude-plugin/marketpla
 claude plugin marketplace add mbadali25/useful-claude-add-ons
 ```
 
-Then install whichever skills you need — plugin names match the skill folder names in the [overview table](#overview) below:
+The prerequisite installer can do this for you and let you pick which skills to take — either interactively (→ on the repo's row) or up front:
+
+```bash
+./scripts/install-prerequisites.sh --select own-skills --skills cloudflare,drata,repo-docs
+```
+
+```powershell
+.\scripts\install-prerequisites.ps1 -Select own-skills -Skills 'cloudflare,drata,repo-docs'
+```
+
+To do it by hand instead, install whichever skills you need — plugin names match the skill folder names in the [overview table](#overview) below:
 
 ```bash
 claude plugin install aws-opensearch@useful-claude-add-ons
@@ -152,6 +181,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 | [`Skill-Pipeline.md`](Skill-Pipeline.md) | Author → validate → review → merge → release → distribute lifecycle for a skill change. |
 | [`SECURITY.md`](SECURITY.md) | Reporting a vulnerability, credential-handling policy, install-script trust boundary. |
 | [`CHANGELOG.md`](CHANGELOG.md) | Notable changes to this repo, dated. |
+| [`docs/HANDOFF.md`](docs/HANDOFF.md) | Session handoff notes — why things are built the way they are, what was verified, what's still open. |
 
 ## Skills
 
@@ -175,7 +205,7 @@ See [`Skill-Authoring-Standard.md`](Skill-Authoring-Standard.md) for how a skill
 | [`cloudflare`](skills/cloudflare) | Cloud / Networking | Cloudflare v4 API — DNS, zones, cache purge, WAF/rulesets, page rules, SSL/TLS, Workers/KV/R2, Zero Trust, analytics. | Adding or correcting a DNS record; purging cache after a deploy; a WAF rule blocking legitimate traffic; auditing Zero Trust access policies. | Automatic |
 | [`drata`](skills/drata) | Compliance | Drata Public API — controls, monitoring tests, evidence, personnel, policies, frameworks, risks, vendors, assets across US/EU/APAC regions. | SOC 2 or ISO 27001 audit prep; exporting evidence or a personnel roster for an auditor; chasing a failing monitor; a CI compliance gate. | Automatic |
 | [`i-have-adhd`](skills/i-have-adhd) | Productivity | Reshapes Claude's output for ADHD-friendly reading — leads with the next action, numbers steps, suppresses tangents. Persists for the session once invoked. | A long debugging session that has turned into a wall of text; multi-step infra work where it's easy to lose your place between turns. | Manual — `/i-have-adhd` |
-| [`infra-work-ticketing`](skills/infra-work-ticketing) | Ops / Ticketing | Makes sure infrastructure work gets a ticket and a work note in Zoho ServiceDesk Plus Cloud or Jira Cloud — asks whether a ticket exists, logs the work as it happens, opens one when there isn't. | About to change a firewall, DNS record, or AD object with no ticket open; logging what was actually done onto an existing ticket; CAB-ready change documentation. | Automatic |
+| [`infra-work-ticketing`](skills/infra-work-ticketing) | Ops / Ticketing | Makes sure infrastructure work gets a ticket and a work note in Zoho ServiceDesk Plus Cloud or Jira Cloud — asks whether a ticket exists, logs the work as it happens, opens one when there isn't. Prefers the ServiceDesk Plus MCP connector so the audit trail names a person, and falls back to the `ticketctl.py` API client when it refuses. | About to change a firewall, DNS record, or AD object with no ticket open; logging what was actually done onto an existing ticket; CAB-ready change documentation. | Automatic |
 | [`intune-graph`](skills/intune-graph) | Endpoint Mgmt | Microsoft Intune via Microsoft Graph — device lookup/troubleshooting, compliance and configuration profiles, Win32/LOB app deployment, bulk report exports. | "Why is this laptop non-compliant?"; pushing a sync to a set of machines; packaging and deploying a Win32 app; exporting device inventory; a 403/429 from `graph.microsoft.com`. | Automatic |
 | [`mermaid-svg-bitbucket`](skills/mermaid-svg-bitbucket) | Docs / DevOps | Pre-renders Mermaid diagrams to committed SVG so they display in Bitbucket Cloud, which never adopted native ```mermaid``` fences. | A README diagram that renders on GitHub but shows raw code in Bitbucket; diagram labels coming out blank; migrating docs from GitHub/GitLab to Bitbucket. | Automatic |
 | [`repo-docs`](skills/repo-docs) | Docs | Generates and refreshes a whole documentation set for a codebase — `CLAUDE.md`, root and per-directory READMEs, API/function reference, architecture doc, `TODO.md`, `SECURITY.md`, `CHANGELOG.md`, handoff notes — re-runnable without clobbering human edits. | Handing a project off to someone else; "the docs are stale"; onboarding notes after a large refactor; wrapping up a substantial session. | Automatic |

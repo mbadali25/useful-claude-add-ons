@@ -1308,7 +1308,9 @@ def report_mcp_routing(cfg, probe=True):
     print(f"  tools     : {mcp.get('tool_prefix') or 'sdp_'}*")
     print(f"  preferred : {'yes - try MCP first' if prefer else 'no - ticketctl is the primary path'}")
     print(f"  fallback  : ticketctl --provider {mcp.get('fallback_provider') or cfg.get('provider')}")
-    print(f"  scrub     : {'yes - redact-check --emit before every MCP write' if as_bool(mcp.get('scrub_before_write'), True) else 'no'}")
+    scrub = "yes - redact-check --emit before every MCP write" \
+        if as_bool(mcp.get("scrub_before_write"), True) else "no"
+    print(f"  scrub     : {scrub}")
     health = mcp.get("health_url")
     if not (probe and enabled and health):
         return
