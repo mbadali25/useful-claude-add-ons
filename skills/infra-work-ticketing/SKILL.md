@@ -90,9 +90,32 @@ cares about the ticket, not the transport.
 | Read the discussion | `sdp_list_notes` | `ticketctl.py get` |
 | Open a ticket | `sdp_create` | `ticketctl.py create` |
 | Add a work note | `sdp_add_note` | `ticketctl.py note` |
+| Change fields on a ticket | `sdp_update` | `ticketctl.py update` |
+| Move it to another status | `sdp_transition` | `ticketctl.py update --status` |
+| Close it | `sdp_close` | `ticketctl.py close` (**not equivalent** - see below) |
+| Set category / subcategory | `sdp_update` with `category` | `ticketctl.py update --category --subcategory` |
+| Look up valid field values | `sdp_list_metadata` | no equivalent - use the SDP UI |
+| Add or rename a category | **not possible either way** - SDP admin UI only | |
 | Log time | `sdp_add_worklog` | no equivalent - skip |
 | Send email | none | `ticketctl.py notify` / `--email` |
 | Anything in Jira | none | `ticketctl.py --provider jira` |
+
+**Closing is the one place the fallback is not a like-for-like substitute.**
+`sdp_close` goes through ServiceDesk Plus's closure endpoint, so the desk's own
+closure rules run - mandatory comments, required resolution, closure codes.
+`ticketctl.py close` cannot: SDP Cloud's v3 API has no close sub-resource, so it
+PUTs a terminal status plus `closure_info` to the edit endpoint. A desk that
+mandates closure fields will reject that, and the command reports SDP's own error
+verbatim. Prefer `sdp_close`; when you do fall back, pass `--closure-code` and a
+closure comment and read the response rather than assuming it worked.
+
+**Nothing can create or rename a category.** The category *taxonomy* is admin
+configuration: the SDP Cloud v3 API documents no endpoint for it (48 admin
+collections, none of them category), and the connector's `sdp_list_metadata` is
+read-only. Setting the category *on a ticket* is fully supported - that is what
+the table above covers. If someone needs a new category to exist, that is a job
+for the ServiceDesk Plus admin UI, and saying so is the correct answer rather
+than reaching for an endpoint that does not exist.
 
 **Writes are enabled on the Solomon server**, so `sdp_create` and
 `sdp_add_note` are the normal path - use them without hesitating and without
@@ -231,6 +254,35 @@ At the end of a work session, add a closing note summarising what changed and
 how it was verified, even if you added notes along the way. That summary is what
 someone reads first during the next incident.
 
+### 3b. Move the ticket along as reality changes
+
+A ticket left at "Open" all week is nearly as bad as no ticket. Update the status
+when the work actually changes state, and set the category once you know what the
+work turned out to be - a queue where everything is uncategorised cannot be
+reported on.
+
+```
+sdp_update  module=request id=40219 fields={"status":{"name":"In Progress"},"category":{"name":"Backup/Restore"}}
+python scripts/ticketctl.py update --ticket 40219 --status "In Progress" --category "Backup/Restore" --subcategory Veeam
+```
+
+Resolve names before writing them: `sdp_list_metadata collection=category` (or
+`subcategory`, `status`, `priority`, `group`) turns what the user called it into
+what the desk will accept. SDP rejects the whole write on an unrecognised value,
+and the rejection names the field.
+
+**Close it when the work is done, not weeks later.** Closing takes a comment that
+says what was done and how it was verified - the same content as the closing note,
+which is why it is worth writing once and reusing:
+
+```
+sdp_close   module=request id=40219 comment=<contents of note.clean.md> closure_code=Success
+python scripts/ticketctl.py close --ticket 40219 --body-file note.md --closure-code Success
+```
+
+Ask before closing. A ticket the user still considers open is theirs to close, and
+reopening is more friction than waiting.
+
 ### 4. Email only when asked
 
 Notifications go out only when the user asks for them. Add `--email` to `create`
@@ -307,7 +359,10 @@ than a thin one, because someone will rely on it.
 
 **Never invent a ticket number.** If a `ticketctl.py` write fails, it queues the
 text locally instead of losing it; tell the user to run
-`python scripts/ticketctl.py retry` once the problem is fixed.
+`python scripts/ticketctl.py retry` once the problem is fixed. That covers all
+four write verbs - `create`, `note`, `update`, `close` - and it covers a failure
+while *planning* the write too, since turning `#40219` into an internal id is
+itself an API call that a down desk will fail.
 
 **The MCP server has no such queue.** A failed `sdp_add_note` is simply gone.
 When an MCP write fails for any reason other than the disabled-writes refusal,
@@ -393,6 +448,8 @@ Run from the skill directory, or use the full path to the script.
 | `init` | Write a config template |
 | `create --title T --body-file F` | Open a ticket |
 | `note --ticket ID --body-file F` | Add a work note |
+| `update --ticket ID [--status S] [--category C] [--subcategory S]` | Change fields on a ticket |
+| `close --ticket ID --body-file F [--closure-code C]` | Close a ticket with a closure comment |
 | `get --ticket ID` | Show a ticket and recent notes |
 | `search --text T [--open-only] [--mine]` | Find tickets before duplicating one |
 | `notify --ticket ID --subject S --body-file F --to A` | Send an email |

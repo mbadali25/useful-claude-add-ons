@@ -47,7 +47,9 @@ max-line-length=120
 
 # ticketctl.py is one file on purpose -- a skill script has to be runnable on
 # its own, so it can't import sibling modules that may not be copied with it.
-max-module-lines=2000
+# Raised from 2000 when update/close were added for both providers; the limit
+# tracks that constraint rather than expressing a target.
+max-module-lines=2400
 
 [MESSAGES CONTROL]
 disable=

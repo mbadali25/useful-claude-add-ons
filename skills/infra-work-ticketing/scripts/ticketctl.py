@@ -689,7 +689,7 @@ class ZohoSDP:
     def _named(value):
         return {"name": value} if value else None
 
-    def resolve(self, ref):
+    def resolve(self, ref, offline=False):
         """Accept a display id, an internal id, or a pasted URL -> internal id."""
         ref = str(ref).strip()
         m = re.search(r"/requests/(\d+)", ref)
@@ -698,6 +698,11 @@ class ZohoSDP:
         ref = ref.lstrip("#")
         if not ref.isdigit():
             raise TicketError(f"'{ref}' does not look like a ServiceDesk Plus request id")
+        if offline:
+            # --dry-run promises no request and no credentials. Turning a display id
+            # into an internal id needs both, so planning takes the id at face value:
+            # the printed path is then only right if the caller passed an internal id.
+            return ref, {}
         # Long ids are internal ids and work directly.
         try:
             data = self.call("GET", f"/requests/{ref}")
@@ -731,7 +736,7 @@ class ZohoSDP:
             ("urgency", d.get("urgency")),
             ("impact", d.get("impact")),
             ("category", first_nonempty(args.category, d.get("category"))),
-            ("subcategory", d.get("subcategory")),
+            ("subcategory", first_nonempty(getattr(args, "subcategory", None), d.get("subcategory"))),
             ("group", first_nonempty(args.group, d.get("group"))),
             ("site", d.get("site")),
             ("template", d.get("template")),
@@ -770,7 +775,7 @@ class ZohoSDP:
         return result
 
     def build_note(self, ref, body, args):
-        internal, _ = self.resolve(ref)
+        internal, _ = self.resolve(ref, offline=getattr(args, "dry_run", False))
         emails = split_list(args.email, whitespace=True)
         note = {
             "description": text_to_html(body),
@@ -805,6 +810,83 @@ class ZohoSDP:
             "ref": str(deep_get(note, "request", "display_id", default=internal)),
             "url": self.ticket_url(internal),
         }
+
+    def _edit_fields(self, args):
+        """The subset of request fields both update and close can set."""
+        req = {}
+        for key, val in (
+            ("request_type", args.type),
+            ("priority", args.priority),
+            ("category", args.category),
+            ("subcategory", args.subcategory),
+            ("group", args.group),
+            ("urgency", args.urgency),
+            ("impact", args.impact),
+            ("status", args.status),
+        ):
+            named = self._named(val)
+            if named:
+                req[key] = named
+        if args.title:
+            req["subject"] = args.title[:250]
+        if args.technician:
+            req["technician"] = {"email_id": args.technician}
+        if getattr(args, "update_reason", None):
+            req["update_reason"] = args.update_reason[:250]
+        return req
+
+    def build_update(self, ref, body, args):
+        internal, _ = self.resolve(ref, offline=getattr(args, "dry_run", False))
+        req = self._edit_fields(args)
+        if body:
+            # An update carries a resolution, not a note: notes have their own verb.
+            req["resolution"] = {"content": text_to_html(body)}
+        if not req:
+            raise TicketError(
+                "nothing to update - pass at least one of --title, --status, --priority, "
+                "--category, --subcategory, --group, --technician, --urgency, --impact, "
+                "--type, or a resolution with --body/--body-file")
+        return {"path": f"/requests/{internal}", "method": "PUT",
+                "input_data": {"request": req}, "_internal_id": internal}
+
+    def update(self, plan):
+        data = self.call("PUT", plan["path"], plan["input_data"])
+        req = data.get("request") or {}
+        internal = plan["_internal_id"]
+        return {
+            "id": str(internal),
+            "ref": str(req.get("display_id") or internal),
+            "url": self.ticket_url(internal),
+            "title": req.get("subject", ""),
+            "fields": sorted(plan["input_data"]["request"].keys()),
+        }
+
+    def build_close(self, ref, body, args):
+        # SDP Cloud v3 has no dedicated /close sub-resource: closing is the edit
+        # endpoint with a terminal status plus closure_info. That means the desk's
+        # mandatory-closure rules are enforced by the server, not by us - if the desk
+        # requires a closure code or comment, this PUT is rejected and the error names
+        # the field. The MCP sdp_close applies those rules itself; this does not.
+        internal, _ = self.resolve(ref, offline=getattr(args, "dry_run", False))
+        req = self._edit_fields(args)
+        req["status"] = self._named(args.status or "Closed")
+        closure = {}
+        if body:
+            closure["closure_comments"] = html_to_text(text_to_html(body))[:8000]
+        if args.closure_code:
+            closure["closure_code"] = {"name": args.closure_code}
+        if args.requester_ack:
+            closure["requester_ack_resolution"] = True
+        if closure:
+            req["closure_info"] = closure
+        return {"path": f"/requests/{internal}", "method": "PUT",
+                "input_data": {"request": req}, "_internal_id": internal,
+                "_closing": True}
+
+    def close(self, plan):
+        result = self.update(plan)
+        result["status"] = deep_get(plan, "input_data", "request", "status", "name", default="Closed")
+        return result
 
     def get(self, ref):
         internal, req = self.resolve(ref)
@@ -1131,6 +1213,94 @@ class Jira:
                 eprint(f"warning: comment added but email notification failed: {e}")
         return result
 
+    def _edit_fields(self, args):
+        """Jira's nearest equivalents to the SDP fields update accepts."""
+        fields = {}
+        if args.title:
+            fields["summary"] = args.title[:255]
+        if args.priority:
+            fields["priority"] = {"name": args.priority}
+        if args.type:
+            fields["issuetype"] = {"name": args.type}
+        labels = split_list(args.labels)
+        if labels:
+            fields["labels"] = sorted({l.replace(" ", "-") for l in labels})
+        # Jira has no category. Components are the closest analogue, so --category
+        # maps onto one rather than being silently dropped - documented in SKILL.md
+        # so nobody reads this as parity with ServiceDesk Plus.
+        components = split_list(getattr(args, "components", None)) + split_list(args.category)
+        if components:
+            fields["components"] = [{"name": c} for c in dict.fromkeys(components)]
+        return fields
+
+    def build_update(self, ref, body, args):
+        key = self.resolve(ref)
+        fields = self._edit_fields(args)
+        if body:
+            fields["description"] = text_to_adf(body)
+        if not fields and not args.technician:
+            raise TicketError(
+                "nothing to update - pass at least one of --title, --priority, --type, "
+                "--labels, --components, --category, --technician, or a new description "
+                "with --body/--body-file")
+        return {"path": f"/issue/{key}", "method": "PUT", "payload": {"fields": fields},
+                "_key": key, "_assignee_email": args.technician}
+
+    def update(self, plan):
+        if plan.get("_assignee_email"):
+            acct = self.find_account_id(plan["_assignee_email"])
+            if not acct:
+                raise TicketError(f"no Jira account found for {plan['_assignee_email']}")
+            plan["payload"]["fields"]["assignee"] = {"accountId": acct}
+        self.call("PUT", plan["path"], plan["payload"])
+        key = plan["_key"]
+        return {"id": key, "ref": key, "url": self.ticket_url(key), "title": "",
+                "fields": sorted(plan["payload"]["fields"].keys())}
+
+    def build_close(self, ref, body, args):
+        # The transition id is looked up at execution time, not here: ids differ per
+        # workflow, and --dry-run has to work without credentials.
+        key = self.resolve(ref)
+        want = args.status or "Done"
+        fields = self._edit_fields(args)
+        # The payload shown by --dry-run mirrors what close() sends, with the id left
+        # symbolic: it is read from the issue's own transition list at send time.
+        preview = {"transition": {"id": f"<id of the '{want}' transition, looked up at send>"}}
+        if fields:
+            preview["fields"] = fields
+        if body:
+            preview["update"] = {"comment": [{"add": {"body": "<the body, as ADF>"}}]}
+        return {"path": f"/issue/{key}/transitions", "method": "POST",
+                "payload": preview,
+                "_key": key, "_status": want, "_comment": body,
+                "_fields": fields, "_closing": True}
+
+    def close(self, plan):
+        key = plan["_key"]
+        want = plan["_status"]
+        data = self.call("GET", f"/issue/{key}/transitions")
+        available = data.get("transitions") or []
+        match = None
+        for t in available:
+            if t.get("name", "").lower() == want.lower() or \
+                    deep_get(t, "to", "name", default="").lower() == want.lower():
+                match = t
+                break
+        if not match:
+            names = ", ".join(sorted({t.get("name", "") for t in available})) or "(none)"
+            raise TicketError(
+                f"no transition to '{want}' is available on {key} from its current status. "
+                f"Available: {names}")
+        payload = {"transition": {"id": match["id"]}}
+        if plan.get("_fields"):
+            payload["fields"] = plan["_fields"]
+        if plan.get("_comment"):
+            payload["update"] = {"comment": [{"add": {"body": text_to_adf(plan["_comment"])}}]}
+        self.call("POST", plan["path"], payload)
+        return {"id": key, "ref": key, "url": self.ticket_url(key), "title": "",
+                "status": deep_get(match, "to", "name", default=match.get("name", want)),
+                "fields": sorted(plan.get("_fields") or {})}
+
     def get(self, ref):
         key = self.resolve(ref)
         data = self.call("GET", f"/issue/{key}", params={
@@ -1377,22 +1547,76 @@ def cmd_note(args):
     cfg = load_config(args.config)
     provider = get_provider(cfg, args.provider)
     body = prepare_body(cfg, read_body(args), False if args.no_redact else None)
-    plan = provider.build_note(args.ticket, body, args)
+    result, plan = _write_with_queue(
+        args, provider, "note", body,
+        lambda: provider.build_note(args.ticket, body, args), provider.note)
     if args.dry_run:
         show_plan(provider, plan)
         return 0
-    try:
-        result = provider.note(plan)
-    except TicketError as e:
-        queue = {"op": "note", "provider": provider.name, "ticket": args.ticket,
-                 "body": body, "args": vars_for_queue(args), "error": str(e)}
-        path = pending_append(queue)
-        raise TicketError(f"{e}\n\nThe note text was saved to {path} - "
-                          f"run `python ticketctl.py retry` once the problem is fixed.") from None
     worklog_append({"op": "note", "provider": provider.name, "ref": result["ref"],
                     "url": result["url"], "chars": len(body)})
     extra = f"  (emailed: {', '.join(result['emailed'])})" if result.get("emailed") else ""
     emit(args, f"Added note to {result['ref']}{extra}\n{result['url']}", result)
+    return 0
+
+
+def _write_with_queue(args, provider, op, body, build, run):
+    """Plan and execute a ticket-scoped write, queueing the intent if either step fails.
+
+    Building is inside the guarded region on purpose: turning '#40219' into an internal
+    id is itself an API call, so a desk that is down fails during *planning*. Queueing
+    only around the send would lose exactly the text the queue exists to protect.
+
+    Returns (result, plan). On --dry-run, result is None and nothing is queued - a
+    rehearsal that fails should say so, not leave a record behind to replay.
+    """
+    try:
+        plan = build()
+        if getattr(args, "dry_run", False):
+            return None, plan
+        return run(plan), plan
+    except TicketError as e:
+        if getattr(args, "dry_run", False):
+            raise
+        queue = {"op": op, "provider": provider.name, "ticket": args.ticket,
+                 "body": body, "args": vars_for_queue(args), "error": str(e)}
+        path = pending_append(queue)
+        raise TicketError(f"{e}\n\nThe {op} was saved to {path} - "
+                          f"run `python ticketctl.py retry` once the problem is fixed.") from None
+
+
+def cmd_update(args):
+    cfg = load_config(args.config)
+    provider = get_provider(cfg, args.provider)
+    raw = read_body(args) if (args.body or args.body_file) else ""
+    body = prepare_body(cfg, raw, False if args.no_redact else None) if raw else ""
+    result, plan = _write_with_queue(
+        args, provider, "update", body,
+        lambda: provider.build_update(args.ticket, body, args), provider.update)
+    if args.dry_run:
+        show_plan(provider, plan)
+        return 0
+    worklog_append({"op": "update", "provider": provider.name, "ref": result["ref"],
+                    "url": result["url"], "fields": result.get("fields", [])})
+    changed = ", ".join(result.get("fields") or []) or "nothing"
+    emit(args, f"Updated {result['ref']} ({changed})\n{result['url']}", result)
+    return 0
+
+
+def cmd_close(args):
+    cfg = load_config(args.config)
+    provider = get_provider(cfg, args.provider)
+    raw = read_body(args) if (args.body or args.body_file) else ""
+    body = prepare_body(cfg, raw, False if args.no_redact else None) if raw else ""
+    result, plan = _write_with_queue(
+        args, provider, "close", body,
+        lambda: provider.build_close(args.ticket, body, args), provider.close)
+    if args.dry_run:
+        show_plan(provider, plan)
+        return 0
+    worklog_append({"op": "close", "provider": provider.name, "ref": result["ref"],
+                    "url": result["url"], "status": result.get("status", "")})
+    emit(args, f"Closed {result['ref']} -> {result.get('status', 'Closed')}\n{result['url']}", result)
     return 0
 
 
@@ -1493,6 +1717,12 @@ def cmd_retry(args):
             elif rec["op"] == "note":
                 plan = provider.build_note(rec["ticket"], body, fake)
                 result = provider.note(plan)
+            elif rec["op"] == "update":
+                plan = provider.build_update(rec["ticket"], body, fake)
+                result = provider.update(plan)
+            elif rec["op"] == "close":
+                plan = provider.build_close(rec["ticket"], body, fake)
+                result = provider.close(plan)
             else:
                 eprint(f"skipping unknown queued op {rec.get('op')!r}")
                 kept.append(rec)
@@ -1509,21 +1739,31 @@ def cmd_retry(args):
     return 0 if not kept else 1
 
 
+# The flags every builder may read. FakeArgs and vars_for_queue share this list so a
+# flag added to one is never missing from the other on replay - a mismatch there
+# silently drops a field from a retried write.
+QUEUED_FLAGS = {
+    "type": None, "priority": None, "category": None, "subcategory": None,
+    "group": None, "project": None, "labels": None, "components": None,
+    "email": None, "assign_self": None, "public": False, "notify_technician": False,
+    "title": None, "status": None, "technician": None, "urgency": None,
+    "impact": None, "update_reason": None, "closure_code": None,
+    "requester_ack": False,
+}
+
+
 class FakeArgs:
-    """Rehydrate the handful of flags the builders read, for queue replay."""
-    _FIELDS = {"type": None, "priority": None, "category": None, "group": None,
-               "project": None, "labels": None, "components": None, "email": None,
-               "assign_self": None, "public": False, "notify_technician": False}
+    """Rehydrate the flags the builders read, for queue replay."""
 
     def __init__(self, data):
-        for k, v in self._FIELDS.items():
+        for k, v in QUEUED_FLAGS.items():
             setattr(self, k, data.get(k, v))
 
 
 def vars_for_queue(args):
-    keep = ("type", "priority", "category", "group", "project", "labels",
-            "components", "email", "assign_self", "public", "notify_technician")
-    return {k: getattr(args, k, None) for k in keep}
+    # Fall back to the catalog default, not None: a flag the current subcommand does
+    # not define would otherwise be replayed as None where the builder expects False.
+    return {k: getattr(args, k, default) for k, default in QUEUED_FLAGS.items()}
 
 
 def cmd_zoho_token(args):
@@ -1712,7 +1952,8 @@ def build_parser():
     s.add_argument("--title", required=True, help="one-line summary")
     s.add_argument("--type", help="request/issue type, e.g. Incident, Task, Change")
     s.add_argument("--priority", help="priority name as it appears in the tool")
-    s.add_argument("--category", help="ServiceDesk Plus category")
+    s.add_argument("--category", help="ServiceDesk Plus category (Jira: mapped to a component)")
+    s.add_argument("--subcategory", help="ServiceDesk Plus subcategory")
     s.add_argument("--group", help="ServiceDesk Plus support group")
     s.add_argument("--project", help="Jira project key, e.g. OPS")
     s.add_argument("--labels", help="Jira labels, comma separated")
@@ -1736,6 +1977,52 @@ def build_parser():
                    help="ServiceDesk Plus: notify the assigned technician")
     s.add_argument("--dry-run", action="store_true")
     s.set_defaults(func=cmd_note)
+
+    s = sub.add_parser("update", help="change fields on an existing ticket")
+    add_common(s)
+    add_body_args(s)
+    s.add_argument("--ticket", required=True, help="ticket id, key, or pasted URL")
+    s.add_argument("--title", help="new one-line summary")
+    s.add_argument("--status", help="new status name, e.g. 'In Progress'")
+    s.add_argument("--priority", help="priority name as it appears in the tool")
+    s.add_argument("--category", help="ServiceDesk Plus category (Jira: mapped to a component)")
+    s.add_argument("--subcategory", help="ServiceDesk Plus subcategory")
+    s.add_argument("--group", help="ServiceDesk Plus support group")
+    s.add_argument("--technician", help="email of the technician/assignee to hand it to")
+    s.add_argument("--urgency", help="ServiceDesk Plus urgency")
+    s.add_argument("--impact", help="ServiceDesk Plus impact")
+    s.add_argument("--type", help="request/issue type, e.g. Incident, Task, Change")
+    s.add_argument("--labels", help="Jira labels, comma separated (replaces the existing set)")
+    s.add_argument("--components", help="Jira components, comma separated (replaces the existing set)")
+    s.add_argument("--update-reason", dest="update_reason",
+                   help="ServiceDesk Plus: why this edit was made (audit trail)")
+    s.add_argument("--dry-run", action="store_true")
+    s.set_defaults(func=cmd_update)
+
+    s = sub.add_parser("close", help="close a ticket, with a closure comment")
+    add_common(s)
+    add_body_args(s)
+    s.add_argument("--ticket", required=True, help="ticket id, key, or pasted URL")
+    s.add_argument("--status", help="terminal status to move to (SDP default 'Closed', "
+                                    "Jira default the 'Done' transition)")
+    s.add_argument("--closure-code", dest="closure_code",
+                   help="ServiceDesk Plus closure code name, e.g. Success")
+    s.add_argument("--requester-ack", dest="requester_ack", action="store_true",
+                   help="ServiceDesk Plus: mark the resolution as acknowledged by the requester")
+    s.add_argument("--title", help="also correct the summary while closing")
+    s.add_argument("--priority", help="also set the priority while closing")
+    s.add_argument("--category", help="also set the category while closing")
+    s.add_argument("--subcategory", help="also set the subcategory while closing")
+    s.add_argument("--group", help="also set the support group while closing")
+    s.add_argument("--technician", help="also set the technician/assignee while closing")
+    s.add_argument("--urgency", help="also set urgency while closing")
+    s.add_argument("--impact", help="also set impact while closing")
+    s.add_argument("--type", help="also set the request/issue type while closing")
+    s.add_argument("--labels", help="Jira labels, comma separated")
+    s.add_argument("--components", help="Jira components, comma separated")
+    s.add_argument("--update-reason", dest="update_reason", help="ServiceDesk Plus audit note")
+    s.add_argument("--dry-run", action="store_true")
+    s.set_defaults(func=cmd_close)
 
     s = sub.add_parser("get", help="show a ticket and its recent notes")
     add_common(s)

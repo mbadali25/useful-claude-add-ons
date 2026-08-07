@@ -102,6 +102,51 @@ Weak note: `Added the firewall rule, works now.`
 The difference isn't length - it's that the first one names the resource, shows
 what was actually run, and states how it was checked.
 
+## Status, category, and closure
+
+A ticket's fields are how everyone who isn't reading the notes understands it.
+Keep three of them honest.
+
+**Status** should match reality at the moment someone looks. Move it when the work
+changes state, not in a batch at the end:
+
+```
+python scripts/ticketctl.py update --ticket 40219 --status "In Progress"
+python scripts/ticketctl.py update --ticket 40219 --status "Resolved" --body-file resolution.md
+```
+
+On ServiceDesk Plus, `--body`/`--body-file` on `update` sets the **resolution**,
+not a note - notes have their own verb. `--update-reason` records why the edit was
+made, which is what an auditor reads when a field changed and nobody remembers why.
+
+**Category and subcategory** are what make the queue reportable. Set them once the
+work reveals what it actually was, which is often not what it looked like at
+creation:
+
+```
+python scripts/ticketctl.py update --ticket 40219 --category "Backup/Restore" --subcategory "Veeam"
+```
+
+Use the names the desk already has - `sdp_list_metadata collection=category`
+lists them. ServiceDesk Plus rejects the entire write on a value it doesn't
+recognise, and the error names the offending field. Nothing here can *create* a
+category; that is admin configuration and belongs in the SDP UI.
+
+On Jira there is no category. `--category` maps to a **component**, which is the
+nearest equivalent and is per-project. Say which you mean rather than assuming the
+two behave alike.
+
+**Closure comments** are the highest-value text in the ticket, because they're what
+someone reads first when the same thing happens again. Reuse the closing note:
+
+```
+python scripts/ticketctl.py close --ticket 40219 --body-file note.md --closure-code Success
+```
+
+A good closure comment answers three things in a few lines: what was wrong, what
+was changed, and how it was confirmed fixed. `Done` and `Resolved` answer none of
+them.
+
 ## Worked examples by domain
 
 ### Windows Server

@@ -94,6 +94,46 @@ real console — colour handling, `Clear-Host` on buffer overflow, and window re
 mid-menu are the untested edges. Worth one manual run of each before relying on it
 on a fresh machine.
 
+### `ticketctl.py update` / `close`, and why there is no category admin
+
+Added after the menu work, in the same session. `update` and `close` now exist on
+both providers, so the API fallback is no longer missing two of the four write
+verbs.
+
+**The category question has two readings and only one is buildable.** Setting the
+category *on a ticket* works from both paths. Administering the *taxonomy* —
+adding "Backup/Restore" as a new category — has no API: the SDP Cloud v3 docs list
+48 admin collections (project_type, closure_code, product…) and category is not
+among them, `admin/category.html` 404s, and the connector's `sdp_list_metadata` is
+read-only. Writing that code would have meant guessing an endpoint and shipping it
+against a live production desk. It is documented as an SDP admin-UI job instead.
+
+**SDP close is not a clean fallback.** There is no `/requests/{id}/close`
+sub-resource in the cloud v3 API — the scrape of the request docs turns up exactly
+three paths and seven operations, none of them a close. So `ticketctl.py close`
+PUTs a terminal status plus `closure_info` to the edit endpoint, which means the
+desk's mandatory-closure rules are enforced server-side and can reject it, where
+`sdp_close` applies them itself. The routing table says so explicitly rather than
+letting the two look interchangeable.
+
+**Jira has no category.** `--category` maps to a component, the nearest analogue.
+Called out in SKILL.md so nobody reads it as parity.
+
+**A pre-existing queue gap surfaced while testing.** `cmd_note` queued only around
+the *send*, but `build_note` resolves `#40219` to an internal id — an API call. A
+service desk that is down therefore failed during planning, outside the guard, and
+the note text was lost: exactly the case the queue exists for. Planning is now
+inside the guarded region for `note`, `update` and `close`, and `--dry-run` never
+queues.
+
+Verified with `--dry-run` on all four verbs for both providers (no credentials
+needed — `resolve()` takes an `offline` path so the promise in the CLI epilog now
+actually holds for ticket-scoped verbs), redaction confirmed on closure comments,
+and a fault-injection round trip proving all three verbs queue on a planning
+failure and replay to a byte-identical payload. **Not verified against the live
+desk** — there are no ServiceDesk Plus credentials on this machine, so every write
+path is doc-verified and dry-run-verified only.
+
 ### Open items
 
 - **`skills/ppt-master` is in the repo but not in `marketplace.json`.** All the

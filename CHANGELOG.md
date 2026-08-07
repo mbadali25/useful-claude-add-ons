@@ -28,6 +28,25 @@ All notable changes to this repository are documented here. Format follows [Keep
   the duplicated `own_plugins` / `$ownPlugins` arrays. The repo's menu row shows a
   live count (`+ 3 of 19 skills`) rather than a hardcoded nineteen.
 
+- `skills/infra-work-ticketing` — `ticketctl.py` gained **`update`** and
+  **`close`**, so the API fallback covers all four write verbs rather than just
+  `create` and `note`. `update` sets title, status, priority, category,
+  subcategory, group, technician, urgency, impact, type and (on SDP) the
+  resolution and an `--update-reason` for the audit trail; `close` takes a closure
+  comment, `--closure-code`, and `--requester-ack`. On Jira, `close` looks the
+  transition up by name from the issue's own transition list rather than
+  hardcoding an id, and `--category` maps to a component — the nearest equivalent
+  Jira has. Both go through the same build/execute split as the existing verbs, so
+  `--dry-run` covers them.
+
+  Two limits are documented rather than papered over. **Closing through
+  `ticketctl.py` is not equivalent to `sdp_close`**: SDP Cloud v3 has no close
+  sub-resource, so the fallback PUTs a terminal status plus `closure_info` to the
+  edit endpoint and a desk with mandatory closure rules can reject it. And
+  **nothing can create or rename a category** — the v3 API documents no endpoint
+  for the taxonomy and the connector's metadata tool is read-only, so that stays
+  an SDP admin-UI job. Setting the category on a ticket works from either path.
+
 - `skills/infra-work-ticketing` — an `mcp` block in the config file records how
   ticket writes are routed: connector name, endpoint, tool prefix, whether to
   prefer MCP, and which `ticketctl.py` provider takes over when it refuses.
@@ -38,6 +57,12 @@ All notable changes to this repository are documented here. Format follows [Keep
   override it per session.
 
 ### Fixed
+
+- `skills/infra-work-ticketing` — a `ticketctl.py` write that failed while
+  *planning* rather than sending was not queued, so the text was lost. Resolving
+  `#40219` to an internal id is itself an API call, which means a down service desk
+  failed in exactly that window. Planning is now inside the guarded region for
+  `note`, `update` and `close`. `--dry-run` still never queues.
 
 - `scripts/install-prerequisites.sh` — the `/dev/tty` probe printed
   `No such device or address` to stderr on hosts without a controlling terminal.
