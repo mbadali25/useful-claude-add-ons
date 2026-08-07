@@ -225,6 +225,20 @@ def form_encode(mapping) -> bytes:
 CONFIG_TEMPLATE = {
     "provider": "zoho_sdp",
     "redact_secrets": True,
+    # Routing metadata for the ServiceDesk Plus MCP connector. No credentials
+    # belong here - the connector authenticates each person separately through
+    # Claude Code. This block only records which transport to try first and
+    # where to fall back when it refuses or is unauthenticated.
+    "mcp": {
+        "enabled": True,
+        "prefer_mcp": True,
+        "connector_name": "Solomon Service Desk Plus",
+        "endpoint": "https://sdp-mcp.solomoninsight.com/mcp",
+        "health_url": "https://sdp-mcp.solomoninsight.com/health",
+        "tool_prefix": "sdp_",
+        "fallback_provider": "zoho_sdp",
+        "scrub_before_write": True,
+    },
     "zoho_sdp": {
         "base_url": "https://ithelpdesk.solomoninsight.com",
         "portal": "",
@@ -290,6 +304,15 @@ ENV_OVERRIDES_NESTED = {
 }
 
 
+def as_bool(value, default=False):
+    """Coerce a config or environment value to a real bool."""
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
 def merge_defaults(template, actual):
     """Fill in any key the user's config file is missing."""
     if not isinstance(actual, dict):
@@ -334,6 +357,14 @@ def apply_env(cfg):
     prov = os.environ.get("INFRA_TICKET_PROVIDER")
     if prov:
         cfg["provider"] = prov
+    # Booleans need explicit coercion: routing them through ENV_OVERRIDES would
+    # make INFRA_TICKET_PREFER_MCP=false the truthy string "false".
+    prefer = os.environ.get("INFRA_TICKET_PREFER_MCP")
+    if prefer is not None and prefer.strip():
+        cfg.setdefault("mcp", {})["prefer_mcp"] = as_bool(prefer)
+    endpoint = os.environ.get("INFRA_TICKET_MCP_ENDPOINT")
+    if endpoint:
+        cfg.setdefault("mcp", {})["endpoint"] = endpoint
 
 
 def save_config(cfg):
@@ -1262,11 +1293,41 @@ def cmd_init(args):
     return 0
 
 
+def report_mcp_routing(cfg, probe=True):
+    """Print how ticket writes should be routed, and optionally probe /health.
+
+    ticketctl itself cannot call MCP tools; it owns the routing decision so that
+    the skill and the script read it from one place.
+    """
+    mcp = cfg.get("mcp") or {}
+    enabled = as_bool(mcp.get("enabled"), True)
+    prefer = enabled and as_bool(mcp.get("prefer_mcp"), True)
+    print("\nMCP routing")
+    print(f"  connector : {mcp.get('connector_name') or '(unset)'}")
+    print(f"  endpoint  : {mcp.get('endpoint') or '(unset)'}")
+    print(f"  tools     : {mcp.get('tool_prefix') or 'sdp_'}*")
+    print(f"  preferred : {'yes - try MCP first' if prefer else 'no - ticketctl is the primary path'}")
+    print(f"  fallback  : ticketctl --provider {mcp.get('fallback_provider') or cfg.get('provider')}")
+    print(f"  scrub     : {'yes - redact-check --emit before every MCP write' if as_bool(mcp.get('scrub_before_write'), True) else 'no'}")
+    health = mcp.get("health_url")
+    if not (probe and enabled and health):
+        return
+    # Short timeout on purpose: HTTP_TIMEOUT would hang doctor for 45s if the
+    # server is unreachable, and the probe is informational either way.
+    try:
+        status, body = http_request("GET", health, timeout=5)
+        detail = body.strip().replace("\n", " ")[:200]
+        print(f"  health    : HTTP {status} {detail}")
+    except Exception as e:  # noqa: BLE001 - never let a probe fail doctor
+        print(f"  health    : unreachable ({e}) - use ticketctl for now")
+
+
 def cmd_doctor(args):
     cfg = load_config(args.config)
     print(f"config file : {cfg['_path']}")
     print(f"state dir   : {state_dir()}")
     print(f"provider    : {cfg.get('provider')}")
+    report_mcp_routing(cfg, probe=not args.no_mcp_probe)
     provider = get_provider(cfg, args.provider)
     problems = provider.check_config()
     if problems:
@@ -1638,6 +1699,8 @@ def build_parser():
     s.set_defaults(func=cmd_init)
 
     s = sub.add_parser("doctor", help="validate config and test authentication")
+    s.add_argument("--no-mcp-probe", action="store_true",
+                   help="skip the MCP connector health check")
     add_common(s)
     s.set_defaults(func=cmd_doctor)
 

@@ -51,6 +51,32 @@ then start running commands against DC01, it has become work.
 
 ## Choosing a path
 
+Routing lives in the `mcp` block of the config file, so the skill and the script
+agree on one answer:
+
+```json
+"mcp": {
+  "enabled": true,
+  "prefer_mcp": true,
+  "connector_name": "Solomon Service Desk Plus",
+  "endpoint": "https://sdp-mcp.solomoninsight.com/mcp",
+  "health_url": "https://sdp-mcp.solomoninsight.com/health",
+  "tool_prefix": "sdp_",
+  "fallback_provider": "zoho_sdp",
+  "scrub_before_write": true
+}
+```
+
+`python scripts/ticketctl.py doctor` prints the resolved routing, including a
+health probe of the connector. **No credentials go in this block** - the
+connector authenticates each person separately through Claude Code, which is the
+whole point of preferring it.
+
+Setting `prefer_mcp` to `false` (or `INFRA_TICKET_PREFER_MCP=false` for one
+session) makes `ticketctl.py` the primary path. Do that only when the connector
+is genuinely unavailable to everyone, not because one session failed to
+authenticate.
+
 **Default to the `sdp_*` tools.** Check once per conversation whether they are
 loaded; if they are, every row below goes through MCP and `ticketctl.py` is not
 consulted at all except for the two jobs it alone can do (email, Jira) and for
@@ -307,8 +333,14 @@ from scratch: `python scripts/ticketctl.py init`, then edit the file it names.
 ### The MCP server
 
 **Endpoint:** `https://sdp-mcp.solomoninsight.com/mcp`, registered in Claude Code
-as the connector "Solomon Service Desk Plus". Nothing about it is configured from
-inside this skill.
+as the connector "Solomon Service Desk Plus".
+
+Two halves, configured in different places. **Authentication** is not configured
+from inside this skill at all - the connector is registered centrally and each
+person signs in through Claude Code. **Routing** is: the `mcp` block in the
+config file records the connector name, endpoint, tool prefix, whether to prefer
+it, and where to fall back. Changing that block changes which transport this
+skill reaches for; it cannot grant or revoke access to the server.
 
 **If the `sdp_*` tools are not loaded, the server is almost certainly registered
 but unauthenticated — a two-minute fix, not a reason to abandon MCP.** Tell the

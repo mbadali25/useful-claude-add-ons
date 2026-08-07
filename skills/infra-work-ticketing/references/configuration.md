@@ -39,6 +39,17 @@ record of what was done.
   "provider": "zoho_sdp",
   "redact_secrets": true,
 
+  "mcp": {
+    "enabled": true,
+    "prefer_mcp": true,
+    "connector_name": "Solomon Service Desk Plus",
+    "endpoint": "https://sdp-mcp.solomoninsight.com/mcp",
+    "health_url": "https://sdp-mcp.solomoninsight.com/health",
+    "tool_prefix": "sdp_",
+    "fallback_provider": "zoho_sdp",
+    "scrub_before_write": true
+  },
+
   "zoho_sdp": {
     "base_url": "https://ithelpdesk.solomoninsight.com",
     "portal": "",
@@ -101,6 +112,32 @@ Both providers can be configured at once; `provider` picks the active one and
 `--provider` overrides it for a single command. That's handy during a migration,
 or if change records go to one system and incidents to the other.
 
+### MCP connector routing
+
+The `mcp` block decides which transport reaches ServiceDesk Plus first. It holds
+**routing metadata only** - the connector authenticates each person separately
+through Claude Code, so a token in this block would duplicate a secret that
+already lives somewhere safer. `ticketctl.py` cannot call MCP tools; it stores
+and reports the decision so the skill and the script never disagree.
+
+| Key | Meaning |
+| --- | --- |
+| `enabled` | `false` takes the connector out of consideration entirely |
+| `prefer_mcp` | `true` (default) tries the `sdp_*` tools first and treats `ticketctl.py` as the fallback |
+| `connector_name` | Name shown by `claude mcp list` and `/mcp` - what to tell the user to authenticate |
+| `endpoint` | The MCP server URL, for diagnostics |
+| `health_url` | Probed by `doctor` with a 5-second timeout; reports whether writes and asset writes are on |
+| `tool_prefix` | Prefix that identifies the connector's tools, `sdp_` |
+| `fallback_provider` | Which `ticketctl.py` provider handles the work when MCP refuses or is unauthenticated |
+| `scrub_before_write` | `true` requires `redact-check --emit` before every MCP write, since the server has no scrubber |
+
+`python scripts/ticketctl.py doctor` prints the resolved routing and the health
+probe result; `doctor --no-mcp-probe` skips the network call.
+
+Prefer MCP unless it is unavailable to everyone. It acts as the signed-in user,
+so SDP's audit trail names a person rather than a shared service account - one
+unauthenticated session is a reason to authenticate, not to flip `prefer_mcp`.
+
 ### Zoho ServiceDesk Plus
 
 | Key | Notes |
@@ -132,6 +169,8 @@ entirely - useful in CI, on shared boxes, or where a secrets manager injects the
 | --- | --- |
 | `INFRA_TICKET_CONFIG` | Config file path |
 | `INFRA_TICKET_PROVIDER` | `provider` |
+| `INFRA_TICKET_PREFER_MCP` | `mcp.prefer_mcp`. Parsed as a boolean: `1/true/yes/on` are true, anything else false |
+| `INFRA_TICKET_MCP_ENDPOINT` | `mcp.endpoint` |
 | `ZOHO_SDP_BASE_URL` | `zoho_sdp.base_url` |
 | `ZOHO_SDP_PORTAL` | `zoho_sdp.portal` |
 | `ZOHO_SDP_CLIENT_ID` | `zoho_sdp.client_id` |

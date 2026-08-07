@@ -9,6 +9,12 @@ a linear run of ~15 yes/no prompts, which meant you had to sit through the whole
 to decline three things near the end. Every interactive answer (menu selection, Headroom
 mode) is collected before the first install starts.
 
+The menu is a cursor picker: Up/Down to move, Space to toggle, Enter to start. On the
+repo's own row, Right opens a second picker for the individual skills, so you can take
+three of them instead of all nineteen. Hosts that cannot read a key press - ISE, a
+redirected console, a window under ten lines - get the original numbered prompt instead,
+and every non-interactive path (-All, -Select, -Skills, -NonInteractive) bypasses both.
+
 Everything is also detected before it is installed:
   * Chocolatey packages   - skipped when the package is already present (or its
                             command already resolves, e.g. git installed outside choco)
@@ -31,6 +37,8 @@ Common switches:
     -All                select every menu item, no prompt
     -Select '1,3,7-9'   select these menu items, no prompt (also accepts keys:
                         -Select 'headroom,claude-mem')
+    -Skills 'a,b'       install only these of this repo's skills, no prompt
+                        (-Skills 'all' | 'none' also work; implies the repo item)
     -NonInteractive     select the default set, no prompt (CI/unattended)
     -HeadroomMode       deploy|wrap|proxy|library|skip - skips the Headroom mode prompt
     -NoUpdate           never update an already-installed plugin, only report it
@@ -46,6 +54,7 @@ param(
     [switch]$NoUpdate,        # don't update already-installed plugins
     [switch]$All,             # select every menu item, no menu
     [string]$Select,          # explicit selection, no menu: '1,3,7-9' or 'headroom,gsd'
+    [string]$Skills,          # explicit skill subset, no sub-picker: 'cloudflare,drata' | 'all' | 'none'
     # '' has to be a legal value. Under 'irm ... | iex' this param block is not a
     # parameter block at all - it is inline code in the caller's scope, so every
     # attribute is applied to a plain *variable*. $HeadroomMode has no default, so it
@@ -401,7 +410,7 @@ function Install-ClaudePlugin {
 $script:Catalog = @(
     [pscustomobject]@{ Key = 'prereqs';           Default = $true;  Name = 'Prerequisites: Chocolatey + git, awscli, nodejs, python (needs Administrator)' }
     [pscustomobject]@{ Key = 'cli';               Default = $true;  Name = 'Claude Code CLI (@anthropic-ai/claude-code) + PATH export' }
-    [pscustomobject]@{ Key = 'own-skills';        Default = $true;  Name = "This repo's marketplace + its 19 skills" }
+    [pscustomobject]@{ Key = 'own-skills';        Default = $true;  Name = "This repo's marketplace + its skills" }
     [pscustomobject]@{ Key = 'team';              Default = $true;  Name = 'Team plugins: superpowers, frontend-design, excalidraw-generator' }
     [pscustomobject]@{ Key = 'find-skills';       Default = $true;  Name = 'find-skills skill (vercel-labs/skills)' }
     [pscustomobject]@{ Key = 'community';         Default = $true;  Name = 'Community marketplaces + plugins (adhd-output-style, azure-tools, ppt-master, ...)' }
@@ -449,6 +458,279 @@ function Expand-SelectionSpec {
     return $keys
 }
 
+# --- This repo's individual skills ---------------------------------------------
+# Keep in sync with .claude-plugin/marketplace.json. Everything is on by default:
+# picking a subset is the exception, and a fresh machine wants the lot.
+$script:SkillCatalog = @(
+    [pscustomobject]@{ Key = 'aws-opensearch';        Selected = $true; Name = 'aws-opensearch          - Amazon OpenSearch Service over SigV4' }
+    [pscustomobject]@{ Key = 'bitbucket';             Selected = $true; Name = 'bitbucket               - Bitbucket Cloud git auth + REST API' }
+    [pscustomobject]@{ Key = 'checkpoint-email';      Selected = $true; Name = 'checkpoint-email        - Check Point Email Security (ex-Avanan)' }
+    [pscustomobject]@{ Key = 'cisco-meraki';          Selected = $true; Name = 'cisco-meraki            - Meraki Dashboard API' }
+    [pscustomobject]@{ Key = 'claude-code-defaults';  Selected = $true; Name = 'claude-code-defaults    - Claude Code settings, hooks, statusline' }
+    [pscustomobject]@{ Key = 'cloudflare';            Selected = $true; Name = 'cloudflare              - Cloudflare v4 API: DNS, WAF, Workers, Zero Trust' }
+    [pscustomobject]@{ Key = 'drata';                 Selected = $true; Name = 'drata                   - Drata compliance automation' }
+    [pscustomobject]@{ Key = 'i-have-adhd';           Selected = $true; Name = 'i-have-adhd             - ADHD-friendly output style' }
+    [pscustomobject]@{ Key = 'infra-work-ticketing';  Selected = $true; Name = 'infra-work-ticketing    - ServiceDesk Plus / Jira work notes' }
+    [pscustomobject]@{ Key = 'intune-graph';          Selected = $true; Name = 'intune-graph            - Intune via Microsoft Graph' }
+    [pscustomobject]@{ Key = 'mermaid-svg-bitbucket'; Selected = $true; Name = 'mermaid-svg-bitbucket   - Pre-render Mermaid to SVG for Bitbucket' }
+    [pscustomobject]@{ Key = 'repo-docs';             Selected = $true; Name = 'repo-docs               - Full documentation set for a codebase' }
+    [pscustomobject]@{ Key = 'shipstation';           Selected = $true; Name = 'shipstation             - ShipStation API' }
+    [pscustomobject]@{ Key = 'sophos-central';        Selected = $true; Name = 'sophos-central          - Sophos Central endpoints, alerts, XDR' }
+    [pscustomobject]@{ Key = 'terraform-docs-readme'; Selected = $true; Name = 'terraform-docs-readme   - Regenerate Terraform module READMEs' }
+    [pscustomobject]@{ Key = 'visio-diagrams';        Selected = $true; Name = 'visio-diagrams          - Create and edit .vsdx diagrams' }
+    [pscustomobject]@{ Key = 'wazuh-onprem';          Selected = $true; Name = 'wazuh-onprem            - Self-hosted Wazuh across all four surfaces' }
+    [pscustomobject]@{ Key = 'web-testing-playwright';Selected = $true; Name = 'web-testing-playwright  - Drive a real browser to test a site' }
+    [pscustomobject]@{ Key = 'work-log-reporter';     Selected = $true; Name = 'work-log-reporter       - Session work log + emailed PDF report' }
+)
+
+function Get-SelectedSkillCount {
+    return @($script:SkillCatalog | Where-Object { $_.Selected }).Count
+}
+
+function Set-AllSkills {
+    param([bool]$Value)
+    foreach ($s in $script:SkillCatalog) { $s.Selected = $Value }
+}
+
+function Expand-SkillsSpec {
+    # 'cloudflare,drata' | '1,4-6' | 'all' | 'none' -> sets .Selected on the catalog.
+    param([string]$Spec)
+    switch -Regex ($Spec) {
+        '^(?i)all$'  { Set-AllSkills $true;  return }
+        '^(?i)none$' { Set-AllSkills $false; return }
+    }
+    Set-AllSkills $false
+    foreach ($token in ($Spec -split '[,\s]+' | Where-Object { $_ })) {
+        if ($token -match '^(\d+)\s*-\s*(\d+)$') {
+            foreach ($n in [int]$Matches[1]..[int]$Matches[2]) {
+                if ($n -ge 1 -and $n -le $script:SkillCatalog.Count) { $script:SkillCatalog[$n - 1].Selected = $true }
+            }
+        } elseif ($token -match '^\d+$') {
+            $n = [int]$token
+            if ($n -ge 1 -and $n -le $script:SkillCatalog.Count) {
+                $script:SkillCatalog[$n - 1].Selected = $true
+            } else {
+                Write-Warn2 "ignoring out-of-range skill number '$token'"
+            }
+        } else {
+            $hit = $script:SkillCatalog | Where-Object { $_.Key -eq $token.ToLower() } | Select-Object -First 1
+            if ($hit) { $hit.Selected = $true } else { Write-Warn2 "ignoring unknown skill '$token'" }
+        }
+    }
+}
+
+function Get-MenuLabel {
+    # The repo row carries a live count, because "its 19 skills" stops being true the
+    # moment someone opens the skills picker and unticks one.
+    param([int]$Index)
+    $item = $script:Catalog[$Index]
+    if ($item.Key -eq 'own-skills') {
+        return ("This repo's marketplace + {0} of {1} skills  >" -f (Get-SelectedSkillCount), $script:SkillCatalog.Count)
+    }
+    return $item.Name
+}
+
+# --- Cursor picker ---------------------------------------------------------------
+# Up/Down move, Space toggles, Enter starts, Right opens a sub-picker. Drawing is
+# done with SetCursorPosition and space-padded lines rather than ANSI escapes,
+# because VT processing is not on by default in every Windows PowerShell 5.1 console.
+function Test-PickerSupported {
+    try {
+        if ([Console]::IsInputRedirected -or [Console]::IsOutputRedirected) { return $false }
+        if (-not $Host.UI.RawUI) { return $false }
+        # ISE has no real console: ReadKey there throws rather than returning a key.
+        if ($Host.Name -match 'ISE') { return $false }
+        if ([Console]::WindowHeight -lt 10 -or [Console]::WindowWidth -lt 40) { return $false }
+        # Prove ReadKey is reachable before committing the screen to a live redraw.
+        [Console]::TreatControlCAsInput | Out-Null
+    } catch {
+        return $false
+    }
+    return $true
+}
+
+# Every console touch the picker makes goes through one of these three. They exist so
+# the draw loop can be exercised without a console attached - a test dot-sources the
+# script and replaces them - and so a host that throws on one of them fails in a single
+# identifiable place rather than halfway through a repaint.
+function Get-PickerConsole {
+    return [pscustomobject]@{
+        Height       = [Console]::WindowHeight
+        Width        = [Console]::WindowWidth
+        BufferHeight = [Console]::BufferHeight
+        Top          = [Console]::CursorTop
+    }
+}
+
+function Set-PickerCursor {
+    param([int]$Row, [switch]$Reset)
+    if ($Reset) { Clear-Host; return [Console]::CursorTop }
+    [Console]::SetCursorPosition(0, $Row)
+    return $Row
+}
+
+function Read-PickerKey {
+    return [Console]::ReadKey($true)
+}
+
+function Format-PickerLine {
+    # Clip to the window width. A line that wraps shifts everything below it and the
+    # next redraw paints over the wrong rows.
+    param([string]$Text, [int]$Width)
+    if ($Text.Length -gt $Width) { return $Text.Substring(0, [Math]::Max(0, $Width - 1)) + '...' }
+    return $Text.PadRight($Width)
+}
+
+function Invoke-Picker {
+    <#
+      Renders a checkbox list and returns a hashtable:
+        Action = 'confirm' | 'cancel' | 'submenu' | 'back'
+        State  = bool[] in the same order as -Labels
+        Cursor = the row the user was on
+      Rows flagged in -Sub open a sub-picker on Right instead of toggling.
+    #>
+    param(
+        [string[]]$Labels,
+        [bool[]]$State,
+        [bool[]]$Sub,
+        [bool[]]$Defaults,
+        [string]$Title,
+        [string]$Hint,
+        [int]$Cursor = 0
+    )
+    $state = @($State)
+    $total = $Labels.Count
+    $top = 0
+    $origin = -1
+    $action = ''
+
+    try {
+        # Not every host implements this - a redirected or embedded console throws
+        # "The handle is invalid". Hiding the cursor is cosmetic, so never let it stop
+        # the menu from appearing.
+        try { [Console]::CursorVisible = $false } catch { }
+        while ($true) {
+            $con = Get-PickerConsole
+            $winH = $con.Height
+            $winW = $con.Width
+            $width = [Math]::Max(20, $winW - 10)
+            # 2 title lines + rows + 1 scroll line + 2 hint lines, plus a line of slack.
+            $avail = [Math]::Max(3, $winH - 6)
+            if ($avail -gt $total) { $avail = $total }
+
+            if ($Cursor -lt $top) { $top = $Cursor }
+            if ($Cursor -ge $top + $avail) { $top = $Cursor - $avail + 1 }
+            if ($top + $avail -gt $total) { $top = $total - $avail }
+            if ($top -lt 0) { $top = 0 }
+
+            $needed = $avail + 5
+            if ($origin -lt 0 -or ($origin + $needed) -ge $con.BufferHeight) {
+                # Repainting from a remembered row only works while that row is still on
+                # screen; once the buffer would scroll, start clean instead of smearing.
+                $origin = Set-PickerCursor -Reset
+            }
+            $null = Set-PickerCursor -Row $origin
+
+            Write-Host (Format-PickerLine "  $Title" $winW).TrimEnd().PadRight($winW - 1) -ForegroundColor Cyan
+            Write-Host ("  " + ('-' * $Title.Length)).PadRight($winW - 1) -ForegroundColor Cyan
+            for ($i = $top; $i -lt $top + $avail; $i++) {
+                $mark = if ($state[$i]) { 'x' } else { ' ' }
+                $arrow = if ($i -eq $Cursor) { '>' } else { ' ' }
+                $line = "  $arrow [$mark] " + (Format-PickerLine $Labels[$i] $width)
+                if ($i -eq $Cursor) {
+                    Write-Host $line.PadRight($winW - 1) -ForegroundColor Black -BackgroundColor Cyan
+                } else {
+                    Write-Host $line.PadRight($winW - 1)
+                }
+            }
+            $scroll = if ($total -gt $avail) { "  showing $($top + 1)-$($top + $avail) of $total" } else { '' }
+            Write-Host $scroll.PadRight($winW - 1) -ForegroundColor DarkGray
+            $keys = if ($winW -lt 84) {
+                '  Up/Dn move  Space pick  Enter go  A/N/D  Q quit'
+            } else {
+                '  Up/Down move   Space toggle   Enter start   A all   N none   D defaults   Q cancel'
+            }
+            Write-Host (Format-PickerLine $keys ($winW - 1)) -ForegroundColor DarkGray
+            Write-Host (Format-PickerLine "  $Hint" ($winW - 1)) -ForegroundColor DarkGray
+
+            $key = Read-PickerKey
+            switch ($key.Key) {
+                'UpArrow'    { if ($Cursor -gt 0)          { $Cursor-- } }
+                'DownArrow'  { if ($Cursor -lt $total - 1) { $Cursor++ } }
+                'Spacebar'   { $state[$Cursor] = -not $state[$Cursor] }
+                'Enter'      { $action = 'confirm' }
+                'RightArrow' { if ($Sub[$Cursor]) { $action = 'submenu' } }
+                'LeftArrow'  { $action = 'back' }
+                'Escape'     { $action = 'cancel' }
+                default {
+                    switch ("$($key.KeyChar)".ToLower()) {
+                        'k' { if ($Cursor -gt 0)          { $Cursor-- } }
+                        'j' { if ($Cursor -lt $total - 1) { $Cursor++ } }
+                        'a' { for ($i = 0; $i -lt $total; $i++) { $state[$i] = $true } }
+                        'n' { for ($i = 0; $i -lt $total; $i++) { $state[$i] = $false } }
+                        'd' { for ($i = 0; $i -lt $total; $i++) { $state[$i] = [bool]$Defaults[$i] } }
+                        'q' { $action = 'cancel' }
+                    }
+                }
+            }
+            if ($action) {
+                return @{ Action = $action; State = $state; Cursor = $Cursor }
+            }
+        }
+    } finally {
+        # Without this the cursor stays hidden in the user's shell after Ctrl-C.
+        try { [Console]::CursorVisible = $true } catch { }
+        Write-Host ""
+    }
+}
+
+function Select-SkillsInteractive {
+    $labels = @($script:SkillCatalog | ForEach-Object { $_.Name })
+    $state = @($script:SkillCatalog | ForEach-Object { [bool]$_.Selected })
+    $sub = @($script:SkillCatalog | ForEach-Object { $false })
+    $defaults = @($script:SkillCatalog | ForEach-Object { $true })
+    $result = Invoke-Picker -Labels $labels -State $state -Sub $sub -Defaults $defaults `
+        -Title 'Pick individual skills from this repo' `
+        -Hint 'Enter or Left to go back to the main menu   Q to discard these changes'
+    if ($result.Action -eq 'cancel') { return }
+    for ($i = 0; $i -lt $script:SkillCatalog.Count; $i++) {
+        $script:SkillCatalog[$i].Selected = [bool]$result.State[$i]
+    }
+}
+
+function Select-MenuInteractive {
+    $state = @($script:Catalog | ForEach-Object { [bool]$_.Default })
+    $defaults = @($script:Catalog | ForEach-Object { [bool]$_.Default })
+    $sub = @($script:Catalog | ForEach-Object { $_.Key -eq 'own-skills' })
+    $ownIndex = [array]::IndexOf(@($script:Catalog | ForEach-Object { $_.Key }), 'own-skills')
+    $cursor = 0
+
+    while ($true) {
+        $labels = @(for ($i = 0; $i -lt $script:Catalog.Count; $i++) { Get-MenuLabel $i })
+        $result = Invoke-Picker -Labels $labels -State $state -Sub $sub -Defaults $defaults `
+            -Title 'Select what to install' `
+            -Hint 'Right on the repo row picks individual skills' -Cursor $cursor
+        $state = @($result.State)
+        $cursor = $result.Cursor
+        if ($result.Action -eq 'submenu') {
+            Select-SkillsInteractive
+            # Opening the skills picker is a statement of intent: tick the repo row so a
+            # careful sub-selection is not silently thrown away by an unticked parent.
+            if ((Get-SelectedSkillCount) -gt 0 -and $ownIndex -ge 0) { $state[$ownIndex] = $true }
+            continue
+        }
+        if ($result.Action -eq 'cancel') {
+            Write-Host "  Cancelled - nothing selected." -ForegroundColor Yellow
+            return @()
+        }
+        $keys = @()
+        for ($i = 0; $i -lt $script:Catalog.Count; $i++) {
+            if ($state[$i]) { $keys += $script:Catalog[$i].Key }
+        }
+        return $keys
+    }
+}
+
 function Show-InstallMenu {
     Write-Host ""
     Write-Host "  Select what to install" -ForegroundColor Cyan
@@ -456,16 +738,24 @@ function Show-InstallMenu {
     for ($i = 0; $i -lt $script:Catalog.Count; $i++) {
         $item = $script:Catalog[$i]
         $mark = if ($item.Default) { 'x' } else { ' ' }
-        Write-Host ("  {0,2}  [{1}]  {2}" -f ($i + 1), $mark, $item.Name)
+        Write-Host ("  {0,2}  [{1}]  {2}" -f ($i + 1), $mark, (Get-MenuLabel $i))
     }
     Write-Host ""
     Write-Host "  [x] marks the default set." -ForegroundColor DarkGray
     Write-Host "  A = all   D = defaults   N = none   or numbers like 1,3,7-9" -ForegroundColor DarkGray
+    Write-Host "  Individual skills: re-run with -Skills 'cloudflare,drata'" -ForegroundColor DarkGray
 }
 
 function Select-InstallItems {
     $defaults = @($script:Catalog | Where-Object { $_.Default } | ForEach-Object { $_.Key })
     $everything = @($script:Catalog | ForEach-Object { $_.Key })
+
+    # -Skills is a non-interactive answer in its own right: it settles the skill list
+    # before anything is drawn, so it composes with -All and -NonInteractive.
+    if ($Skills) {
+        Expand-SkillsSpec $Skills
+        Write-Host ("Skills from -Skills '{0}' ({1} of {2})." -f $Skills, (Get-SelectedSkillCount), $script:SkillCatalog.Count) -ForegroundColor DarkGray
+    }
 
     $keys = @()
     if ($All) {
@@ -477,6 +767,8 @@ function Select-InstallItems {
     } elseif ($NonInteractive) {
         $keys = $defaults
         Write-Host "Selecting the default set (-NonInteractive)." -ForegroundColor DarkGray
+    } elseif (Test-PickerSupported) {
+        $keys = Select-MenuInteractive
     } else {
         Show-InstallMenu
         $answer = "$(Read-Host '  Select [D]')".Trim()
@@ -510,7 +802,18 @@ function Show-Selection {
         return
     }
     Write-Host "  Will install ($($chosen.Count) item(s)):" -ForegroundColor Cyan
-    foreach ($item in $chosen) { Write-Host "    - $($item.Name)" }
+    for ($i = 0; $i -lt $script:Catalog.Count; $i++) {
+        if (Test-Selected $script:Catalog[$i].Key) { Write-Host "    - $(Get-MenuLabel $i)" }
+    }
+    if (Test-Selected 'own-skills') {
+        $picked = Get-SelectedSkillCount
+        if ($picked -eq 0) {
+            Write-Warn2 "no individual skills selected - the marketplace will be registered but no skill installed. Re-run with -Skills all to get them."
+        } elseif ($picked -lt $script:SkillCatalog.Count) {
+            Write-Host "      skills:" -ForegroundColor Cyan
+            foreach ($s in ($script:SkillCatalog | Where-Object { $_.Selected })) { Write-Host "        - $($s.Key)" }
+        }
+    }
 }
 
 $script:ApiKeys = @{}
@@ -823,28 +1126,12 @@ if (Test-Selected 'own-skills') {
         Add-ClaudeMarketplace -Source 'mbadali25/useful-claude-add-ons' -Name 'useful-claude-add-ons'
     }
 
-    # Keep in sync with .claude-plugin/marketplace.json.
-    $ownPlugins = @(
-        'aws-opensearch',
-        'bitbucket',
-        'checkpoint-email',
-        'cisco-meraki',
-        'claude-code-defaults',
-        'cloudflare',
-        'drata',
-        'i-have-adhd',
-        'infra-work-ticketing',
-        'intune-graph',
-        'mermaid-svg-bitbucket',
-        'repo-docs',
-        'shipstation',
-        'sophos-central',
-        'terraform-docs-readme',
-        'visio-diagrams',
-        'wazuh-onprem',
-        'web-testing-playwright',
-        'work-log-reporter'
-    )
+    # The catalog itself lives in $script:SkillCatalog next to the menu; only the
+    # ticked ones get installed, so -Skills and the sub-picker both land here.
+    if ((Get-SelectedSkillCount) -eq 0) {
+        Write-Warn2 "no skills selected from this repo - marketplace registered, nothing installed."
+    }
+    $ownPlugins = @($script:SkillCatalog | Where-Object { $_.Selected } | ForEach-Object { $_.Key })
     foreach ($plugin in $ownPlugins) {
         Invoke-Step "Plugin: $plugin@useful-claude-add-ons" {
             Install-ClaudePlugin "$plugin@useful-claude-add-ons"

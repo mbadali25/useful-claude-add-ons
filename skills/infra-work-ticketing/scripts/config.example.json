@@ -2,6 +2,18 @@
   "provider": "zoho_sdp",
   "redact_secrets": true,
 
+  "_comment_mcp": "Routing only. The connector authenticates per person in Claude Code - never put a token here.",
+  "mcp": {
+    "enabled": true,
+    "prefer_mcp": true,
+    "connector_name": "Solomon Service Desk Plus",
+    "endpoint": "https://sdp-mcp.solomoninsight.com/mcp",
+    "health_url": "https://sdp-mcp.solomoninsight.com/health",
+    "tool_prefix": "sdp_",
+    "fallback_provider": "zoho_sdp",
+    "scrub_before_write": true
+  },
+
   "zoho_sdp": {
     "base_url": "https://ithelpdesk.solomoninsight.com",
     "portal": "REPLACE_WITH_PORTAL_NAME_FROM_YOUR_URL",

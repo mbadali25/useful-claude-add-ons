@@ -8,6 +8,12 @@
 # to decline three things near the end. Every interactive answer (menu selection, Headroom
 # mode) is collected before the first install starts.
 #
+# The menu is a cursor picker: Up/Down to move, Space to toggle, Enter to start. On the
+# repo's own row, Right opens a second picker for the individual skills, so you can take
+# three of them instead of all nineteen. Terminals that cannot do raw input - no stty, a
+# dumb TERM, a window under ten lines - get the original numbered prompt instead, and
+# every non-interactive path (--all, --select, --skills, --non-interactive) bypasses both.
+#
 # Everything is also detected before it is installed:
 #   * OS packages         - only the ones whose command is actually missing get installed
 #   * Marketplaces        - skipped when already registered (matched by name or repo)
@@ -23,6 +29,8 @@
 #   --all                 select every menu item, no prompt
 #   --select 1,3,7-9      select these menu items, no prompt (keys work too:
 #                         --select headroom,claude-mem)
+#   --skills a,b,c        install only these of this repo's skills, no prompt
+#                         (--skills all | none also work; implies the repo item)
 #   --non-interactive     select the default set, no prompt (CI/unattended)
 #   --headroom-mode MODE  deploy|wrap|proxy|library|skip - skips the Headroom mode prompt
 #   --no-update           never update an already-installed plugin, only report it
@@ -45,7 +53,7 @@ set -uo pipefail
 TTY_FD=""
 if [ -t 0 ]; then
   TTY_FD=0
-elif [ -r /dev/tty ] && exec 3</dev/tty 2>/dev/null; then
+elif [ -r /dev/tty ] && { exec 3</dev/tty; } 2>/dev/null; then
   TTY_FD=3
 fi
 NO_TTY=0
@@ -56,6 +64,7 @@ NON_INTERACTIVE=0
 NO_UPDATE=0
 SELECT_ALL=0
 SELECT_SPEC=""
+SKILLS_SPEC=""
 HEADROOM_MODE=""
 INSTALL_SCOPE="user"   # machine-wide by default, not per-project
 
@@ -66,6 +75,7 @@ while [ $# -gt 0 ]; do
     --no-update)       NO_UPDATE=1 ;;
     --all)             SELECT_ALL=1 ;;
     --select)          SELECT_SPEC="${2:-}"; shift ;;
+    --skills)          SKILLS_SPEC="${2:-}"; shift ;;
     --headroom-mode)   HEADROOM_MODE="${2:-deploy}"; shift ;;
     --scope)           INSTALL_SCOPE="${2:-user}"; shift ;;
     *) echo "Unknown option: $1" >&2 ;;
@@ -349,7 +359,7 @@ MENU_DEFAULT=(1 1 1 1 1 1 1 1 1 1 1 0 0 0 0 0 0 0 0 0)
 MENU_NAME=(
   "Prerequisites: git, nodejs, npm, python3, pip3 (needs root or sudo)"
   "Claude Code CLI (@anthropic-ai/claude-code) + PATH export"
-  "This repo's marketplace + its 19 skills"
+  "This repo's marketplace + its skills"
   "Team plugins: superpowers, frontend-design, excalidraw-generator"
   "find-skills skill (vercel-labs/skills)"
   "Community marketplaces + plugins (adhd-output-style, azure-tools, ppt-master, ...)"
@@ -417,6 +427,357 @@ expand_selection_spec() {
   printf '%s' "$out"
 }
 
+# --- This repo's individual skills --------------------------------------------
+# Keep in sync with .claude-plugin/marketplace.json. Everything is on by default:
+# picking a subset is the exception, and a fresh machine wants the lot.
+SKILL_KEYS=(
+  "aws-opensearch" "bitbucket" "checkpoint-email" "cisco-meraki"
+  "claude-code-defaults" "cloudflare" "drata" "i-have-adhd"
+  "infra-work-ticketing" "intune-graph" "mermaid-svg-bitbucket" "repo-docs"
+  "shipstation" "sophos-central" "terraform-docs-readme" "visio-diagrams"
+  "wazuh-onprem" "web-testing-playwright" "work-log-reporter"
+)
+SKILL_NAME=(
+  "aws-opensearch          - Amazon OpenSearch Service over SigV4"
+  "bitbucket               - Bitbucket Cloud git auth + REST API"
+  "checkpoint-email        - Check Point Email Security (ex-Avanan)"
+  "cisco-meraki            - Meraki Dashboard API"
+  "claude-code-defaults    - Claude Code settings, hooks, statusline"
+  "cloudflare              - Cloudflare v4 API: DNS, WAF, Workers, Zero Trust"
+  "drata                   - Drata compliance automation"
+  "i-have-adhd             - ADHD-friendly output style"
+  "infra-work-ticketing    - ServiceDesk Plus / Jira work notes"
+  "intune-graph            - Intune via Microsoft Graph"
+  "mermaid-svg-bitbucket   - Pre-render Mermaid to SVG for Bitbucket"
+  "repo-docs               - Full documentation set for a codebase"
+  "shipstation             - ShipStation API"
+  "sophos-central          - Sophos Central endpoints, alerts, XDR"
+  "terraform-docs-readme   - Regenerate Terraform module READMEs"
+  "visio-diagrams          - Create and edit .vsdx diagrams"
+  "wazuh-onprem            - Self-hosted Wazuh across all four surfaces"
+  "web-testing-playwright  - Drive a real browser to test a site"
+  "work-log-reporter       - Session work log + emailed PDF report"
+)
+SKILL_STATE=()
+for _i in "${!SKILL_KEYS[@]}"; do SKILL_STATE+=(1); done
+unset _i
+
+skills_selected_count() {
+  local i n=0
+  for i in "${!SKILL_KEYS[@]}"; do [ "${SKILL_STATE[$i]}" -eq 1 ] && n=$((n+1)); done
+  printf '%d' "$n"
+}
+
+skills_set_all() {
+  local i
+  for i in "${!SKILL_KEYS[@]}"; do SKILL_STATE[$i]="$1"; done
+}
+
+expand_skills_spec() {
+  # 'cloudflare,drata' | '1,4-6' | 'all' | 'none' -> sets SKILL_STATE.
+  local spec="$1" token n lo hi i found
+  case "$spec" in
+    [Aa][Ll][Ll])   skills_set_all 1; return 0 ;;
+    [Nn][Oo][Nn][Ee]) skills_set_all 0; return 0 ;;
+  esac
+  skills_set_all 0
+  spec="${spec//,/ }"
+  for token in $spec; do
+    if [[ "$token" =~ ^([0-9]+)-([0-9]+)$ ]]; then
+      lo="${BASH_REMATCH[1]}"; hi="${BASH_REMATCH[2]}"
+      for (( n=lo; n<=hi; n++ )); do
+        [ "$n" -ge 1 ] && [ "$n" -le "${#SKILL_KEYS[@]}" ] && SKILL_STATE[$((n-1))]=1
+      done
+    elif [[ "$token" =~ ^[0-9]+$ ]]; then
+      n="$token"
+      if [ "$n" -ge 1 ] && [ "$n" -le "${#SKILL_KEYS[@]}" ]; then
+        SKILL_STATE[$((n-1))]=1
+      else
+        warn "ignoring out-of-range skill number '$token'"
+      fi
+    else
+      found=0
+      for i in "${!SKILL_KEYS[@]}"; do
+        if [ "${SKILL_KEYS[$i]}" = "$token" ]; then SKILL_STATE[$i]=1; found=1; break; fi
+      done
+      [ "$found" -eq 0 ] && warn "ignoring unknown skill '$token'"
+    fi
+  done
+}
+
+menu_label() {
+  # The repo row carries a live count, because "its 19 skills" stops being true the
+  # moment someone opens the skills picker and unticks one.
+  local i="$1"
+  if [ "${MENU_KEYS[$i]}" = "own-skills" ]; then
+    printf "This repo's marketplace + %s of %s skills  >" \
+      "$(skills_selected_count)" "${#SKILL_KEYS[@]}"
+  else
+    printf '%s' "${MENU_NAME[$i]}"
+  fi
+}
+
+# --- Cursor picker -------------------------------------------------------------
+# Up/Down move, Space toggles, Enter starts, Right opens a sub-picker. Operates on
+# three parallel globals rather than bash 4.3 namerefs, so it still runs on older
+# bash: callers fill PICK_LABEL/PICK_STATE/PICK_SUB and read PICK_STATE back.
+PICK_LABEL=()
+PICK_STATE=()
+PICK_SUB=()
+PICK_DEFAULT=()
+PICK_TITLE=""
+PICK_HINT=""
+PICK_CURSOR=0
+PICK_TOP=0
+PICK_DRAWN=0
+PICK_ACTION=""
+PICK_STTY_SAVED=""
+
+term_lines() {
+  local n="${LINES:-}"
+  [ -z "$n" ] && have tput && n="$(tput lines 2>/dev/null)"
+  [ -z "$n" ] && n="$(stty size <&"$TTY_FD" 2>/dev/null | cut -d' ' -f1)"
+  case "$n" in ''|*[!0-9]*) n=0 ;; esac
+  printf '%d' "$n"
+}
+
+term_cols() {
+  local n="${COLUMNS:-}"
+  [ -z "$n" ] && have tput && n="$(tput cols 2>/dev/null)"
+  [ -z "$n" ] && n="$(stty size <&"$TTY_FD" 2>/dev/null | cut -d' ' -f2)"
+  case "$n" in ''|*[!0-9]*) n=80 ;; esac
+  [ "$n" -lt 40 ] && n=40
+  printf '%d' "$n"
+}
+
+picker_supported() {
+  # Every one of these is a real terminal this script has to survive: a pipe with no
+  # tty, a container without stty, TERM=dumb in a CI log, a 6-line tmux pane.
+  [ "$NO_TTY" -eq 0 ] || return 1
+  have stty || return 1
+  case "${TERM:-}" in ""|dumb) return 1 ;; esac
+  stty -g <&"$TTY_FD" >/dev/null 2>&1 || return 1
+  [ "$(term_lines)" -ge 10 ] || return 1
+  return 0
+}
+
+picker_raw_off() {
+  [ -n "$PICK_STTY_SAVED" ] && stty "$PICK_STTY_SAVED" <&"$TTY_FD" 2>/dev/null
+  PICK_STTY_SAVED=""
+  printf '\033[?25h'
+  trap - INT TERM EXIT
+}
+
+picker_raw_on() {
+  PICK_STTY_SAVED="$(stty -g <&"$TTY_FD" 2>/dev/null)" || return 1
+  # Without the trap, Ctrl-C in the menu leaves the terminal with echo off and the
+  # cursor hidden, which reads as "the installer broke my shell".
+  trap 'picker_raw_off; exit 130' INT TERM
+  trap 'picker_raw_off' EXIT
+  stty -echo -icanon min 1 time 0 <&"$TTY_FD" 2>/dev/null || { picker_raw_off; return 1; }
+  printf '\033[?25l'
+  return 0
+}
+
+picker_key() {
+  local k rest
+  IFS= read -rsn1 -u "$TTY_FD" k 2>/dev/null || { printf 'cancel'; return; }
+  case "$k" in
+    '')  printf 'enter'; return ;;
+    ' ') printf 'space'; return ;;
+  esac
+  if [ "$k" = $'\033' ]; then
+    # A lone Escape and the start of a CSI arrow sequence are the same first byte;
+    # the short timeout is what tells them apart.
+    rest=""
+    IFS= read -rsn2 -t 0.1 -u "$TTY_FD" rest 2>/dev/null
+    case "$rest" in
+      '[A') printf 'up' ;;
+      '[B') printf 'down' ;;
+      '[C') printf 'right' ;;
+      '[D') printf 'left' ;;
+      '')   printf 'cancel' ;;
+      *)    printf 'ignore' ;;
+    esac
+    return
+  fi
+  case "$k" in
+    k|K) printf 'up' ;;
+    j|J) printf 'down' ;;
+    l|L) printf 'right' ;;
+    h|H) printf 'left' ;;
+    a|A) printf 'all' ;;
+    n|N) printf 'clear' ;;
+    d|D) printf 'defaults' ;;
+    q|Q) printf 'cancel' ;;
+    *)   printf 'ignore' ;;
+  esac
+}
+
+picker_erase() {
+  [ "$PICK_DRAWN" -gt 0 ] && printf '\033[%dA\033[J' "$PICK_DRAWN"
+  PICK_DRAWN=0
+}
+
+pick_fit() {
+  # Clip a line to the window width. Every line the picker prints goes through this:
+  # one wrapped line makes the cursor-up count wrong and the next redraw smears over
+  # whatever was above the menu.
+  local text="$1" width="$2"
+  if [ "${#text}" -gt "$width" ]; then
+    printf '%s…' "${text:0:$((width-1))}"
+  else
+    printf '%s' "$text"
+  fi
+}
+
+picker_draw() {
+  local total=${#PICK_LABEL[@]} i mark cursor label avail cols width shown=0
+  cols="$(term_cols)"
+  width=$((cols - 9))
+  # 2 title lines + 1 scroll line + 2 hint lines, plus a line of slack so a full
+  # window never scrolls: scrolling would invalidate the cursor-up redraw below.
+  avail=$(( $(term_lines) - 6 ))
+  [ "$avail" -lt 3 ] && avail=3
+  [ "$avail" -gt "$total" ] && avail=$total
+
+  [ "$PICK_CURSOR" -lt "$PICK_TOP" ] && PICK_TOP="$PICK_CURSOR"
+  [ "$PICK_CURSOR" -ge $((PICK_TOP + avail)) ] && PICK_TOP=$((PICK_CURSOR - avail + 1))
+  [ "$PICK_TOP" -lt 0 ] && PICK_TOP=0
+  [ $((PICK_TOP + avail)) -gt "$total" ] && PICK_TOP=$((total - avail))
+  [ "$PICK_TOP" -lt 0 ] && PICK_TOP=0
+
+  picker_erase
+  printf '\033[36m  %s\033[0m\n' "$(pick_fit "$PICK_TITLE" "$width")"
+  printf '\033[36m  %s\033[0m\n' "$(printf '%*s' "${#PICK_TITLE}" '' | tr ' ' '-')"
+  for (( i=PICK_TOP; i<PICK_TOP+avail; i++ )); do
+    mark=" "; cursor="  "
+    [ "${PICK_STATE[$i]}" -eq 1 ] && mark="x"
+    [ "$i" -eq "$PICK_CURSOR" ] && cursor="\033[36m>\033[0m "
+    label="$(pick_fit "${PICK_LABEL[$i]}" "$width")"
+    if [ "$i" -eq "$PICK_CURSOR" ]; then
+      printf '  %b[%s] \033[1m%s\033[0m\n' "$cursor" "$mark" "$label"
+    else
+      printf '  %b[%s] %s\n' "$cursor" "$mark" "$label"
+    fi
+    shown=$((shown+1))
+  done
+  if [ "$total" -gt "$avail" ]; then
+    printf '\033[90m  showing %d-%d of %d\033[0m\n' \
+      "$((PICK_TOP+1))" "$((PICK_TOP+avail))" "$total"
+  else
+    printf '\n'
+  fi
+  local keys="↑↓ move   Space toggle   Enter start   A all   N none   D defaults   Q cancel"
+  [ "$cols" -lt 84 ] && keys="↑↓ move  Space pick  Enter go  A/N/D  Q quit"
+  printf '\033[90m  %s\033[0m\n' "$(pick_fit "$keys" "$width")"
+  printf '\033[90m  %s\033[0m\n' "$(pick_fit "$PICK_HINT" "$width")"
+  # 2 title lines + the rows + the scroll line + 2 hint lines. This number is what
+  # the next redraw walks back up, so it has to match the printfs above exactly.
+  PICK_DRAWN=$((2 + shown + 3))
+}
+
+picker_run() {
+  # 0 = the user finished with it (PICK_ACTION says how), 2 = no usable terminal.
+  local key i
+  picker_raw_on || return 2
+  PICK_DRAWN=0
+  PICK_ACTION=""
+  while :; do
+    picker_draw
+    key="$(picker_key)"
+    case "$key" in
+      up)    [ "$PICK_CURSOR" -gt 0 ] && PICK_CURSOR=$((PICK_CURSOR-1)) ;;
+      down)  [ "$PICK_CURSOR" -lt $(( ${#PICK_LABEL[@]} - 1 )) ] && PICK_CURSOR=$((PICK_CURSOR+1)) ;;
+      space) PICK_STATE[$PICK_CURSOR]=$(( 1 - PICK_STATE[PICK_CURSOR] )) ;;
+      all)   for i in "${!PICK_STATE[@]}"; do PICK_STATE[$i]=1; done ;;
+      clear) for i in "${!PICK_STATE[@]}"; do PICK_STATE[$i]=0; done ;;
+      defaults)
+             for i in "${!PICK_STATE[@]}"; do PICK_STATE[$i]="${PICK_DEFAULT[$i]:-0}"; done ;;
+      right)
+             if [ "${PICK_SUB[$PICK_CURSOR]}" -eq 1 ]; then
+               PICK_ACTION="submenu"; picker_erase; picker_raw_off; return 0
+             fi ;;
+      left)  PICK_ACTION="back"; picker_erase; picker_raw_off; return 0 ;;
+      enter) PICK_ACTION="confirm"; picker_erase; picker_raw_off; return 0 ;;
+      cancel) PICK_ACTION="cancel"; picker_erase; picker_raw_off; return 0 ;;
+    esac
+  done
+}
+
+pick_skills_interactive() {
+  local i saved=()
+  PICK_LABEL=(); PICK_STATE=(); PICK_SUB=(); PICK_DEFAULT=()
+  for i in "${!SKILL_KEYS[@]}"; do
+    PICK_LABEL+=("${SKILL_NAME[$i]}")
+    PICK_STATE+=("${SKILL_STATE[$i]}")
+    PICK_SUB+=(0)
+    PICK_DEFAULT+=(1)
+  done
+  saved=("${SKILL_STATE[@]}")
+  PICK_CURSOR=0; PICK_TOP=0
+  PICK_TITLE="Pick individual skills from this repo"
+  PICK_HINT="Enter or ← to go back to the main menu   Q to discard these changes"
+  if ! picker_run; then
+    return 1
+  fi
+  if [ "$PICK_ACTION" = "cancel" ]; then
+    SKILL_STATE=("${saved[@]}")
+    return 0
+  fi
+  for i in "${!SKILL_KEYS[@]}"; do SKILL_STATE[$i]="${PICK_STATE[$i]}"; done
+  return 0
+}
+
+pick_menu_interactive() {
+  local i
+  while :; do
+    PICK_LABEL=(); PICK_STATE=(); PICK_SUB=(); PICK_DEFAULT=()
+    for i in "${!MENU_KEYS[@]}"; do
+      PICK_LABEL+=("$(menu_label "$i")")
+      PICK_DEFAULT+=("${MENU_DEFAULT[$i]}")
+      if [ -n "${MENU_STATE[$i]:-}" ]; then
+        PICK_STATE+=("${MENU_STATE[$i]}")
+      else
+        PICK_STATE+=("${MENU_DEFAULT[$i]}")
+      fi
+      if [ "${MENU_KEYS[$i]}" = "own-skills" ]; then PICK_SUB+=(1); else PICK_SUB+=(0); fi
+    done
+    PICK_TITLE="Select what to install"
+    PICK_HINT="→ on the repo row picks individual skills"
+    picker_run || return 1
+    for i in "${!MENU_KEYS[@]}"; do MENU_STATE[$i]="${PICK_STATE[$i]}"; done
+    case "$PICK_ACTION" in
+      submenu)
+        pick_skills_interactive || return 1
+        # Opening the skills picker is a statement of intent: tick the repo row so a
+        # careful sub-selection is not silently thrown away by an unticked parent.
+        [ "$(skills_selected_count)" -gt 0 ] && MENU_STATE[$MENU_OWN_INDEX]=1
+        ;;
+      cancel)
+        SELECTED=""
+        printf '\033[33m  Cancelled - nothing selected.\033[0m\n'
+        return 0
+        ;;
+      *)
+        SELECTED=""
+        for i in "${!MENU_KEYS[@]}"; do
+          [ "${MENU_STATE[$i]}" -eq 1 ] && selection_add "${MENU_KEYS[$i]}"
+        done
+        return 0
+        ;;
+    esac
+  done
+}
+
+MENU_STATE=()
+MENU_OWN_INDEX=0
+for _i in "${!MENU_KEYS[@]}"; do
+  MENU_STATE+=("${MENU_DEFAULT[$_i]}")
+  [ "${MENU_KEYS[$_i]}" = "own-skills" ] && MENU_OWN_INDEX="$_i"
+done
+unset _i
+
 show_menu() {
   local i mark
   printf '\n\033[36m  Select what to install\033[0m\n'
@@ -424,14 +785,23 @@ show_menu() {
   for i in "${!MENU_KEYS[@]}"; do
     mark=" "
     [ "${MENU_DEFAULT[$i]}" -eq 1 ] && mark="x"
-    printf '  %2d  [%s]  %s\n' "$((i+1))" "$mark" "${MENU_NAME[$i]}"
+    printf '  %2d  [%s]  %s\n' "$((i+1))" "$mark" "$(menu_label "$i")"
   done
   printf '\n\033[90m  [x] marks the default set.\033[0m\n'
   printf '\033[90m  A = all   D = defaults   N = none   or numbers like 1,3,7-9\033[0m\n'
+  printf '\033[90m  Individual skills: re-run with --skills cloudflare,drata\033[0m\n'
 }
 
 select_install_items() {
   local answer=""
+  # --skills is a non-interactive answer in its own right: it settles the skill list
+  # before anything is drawn, so it composes with --all and --non-interactive.
+  if [ -n "$SKILLS_SPEC" ]; then
+    expand_skills_spec "$SKILLS_SPEC"
+    printf '\033[90mSkills from --skills "%s" (%d of %d).\033[0m\n' \
+      "$SKILLS_SPEC" "$(skills_selected_count)" "${#SKILL_KEYS[@]}"
+  fi
+
   if [ "$SELECT_ALL" -eq 1 ]; then
     SELECTED="$(all_keys)"
     printf '\033[90mSelecting every item (--all).\033[0m\n'
@@ -441,6 +811,8 @@ select_install_items() {
   elif [ "$NON_INTERACTIVE" -eq 1 ]; then
     SELECTED="$(default_keys)"
     printf '\033[90mSelecting the default set (--non-interactive).\033[0m\n'
+  elif picker_supported; then
+    pick_menu_interactive
   else
     show_menu
     read -r -p "  Select [D] " answer <&"$TTY_FD"
@@ -485,8 +857,20 @@ show_selection() {
   fi
   printf '\033[36m  Will install (%d item(s)):\033[0m\n' "$n"
   for i in "${!MENU_KEYS[@]}"; do
-    is_selected "${MENU_KEYS[$i]}" && printf '    - %s\n' "${MENU_NAME[$i]}"
+    is_selected "${MENU_KEYS[$i]}" && printf '    - %s\n' "$(menu_label "$i")"
   done
+  if is_selected "own-skills"; then
+    local picked
+    picked="$(skills_selected_count)"
+    if [ "$picked" -eq 0 ]; then
+      warn "no individual skills selected - the marketplace will be registered but no skill installed. Re-run with --skills all to get them."
+    elif [ "$picked" -lt "${#SKILL_KEYS[@]}" ]; then
+      printf '\033[36m      skills:\033[0m\n'
+      for i in "${!SKILL_KEYS[@]}"; do
+        [ "${SKILL_STATE[$i]}" -eq 1 ] && printf '        - %s\n' "${SKILL_KEYS[$i]}"
+      done
+    fi
+  fi
 }
 
 PERPLEXITY_KEY=""
@@ -801,29 +1185,14 @@ if is_selected "own-skills"; then
   run_step "Add this repo as a Claude Code marketplace" \
     add_marketplace "mbadali25/useful-claude-add-ons" "useful-claude-add-ons"
 
-  # Keep in sync with .claude-plugin/marketplace.json.
-  own_plugins=(
-    "aws-opensearch"
-    "bitbucket"
-    "checkpoint-email"
-    "cisco-meraki"
-    "claude-code-defaults"
-    "cloudflare"
-    "drata"
-    "i-have-adhd"
-    "infra-work-ticketing"
-    "intune-graph"
-    "mermaid-svg-bitbucket"
-    "repo-docs"
-    "shipstation"
-    "sophos-central"
-    "terraform-docs-readme"
-    "visio-diagrams"
-    "wazuh-onprem"
-    "web-testing-playwright"
-    "work-log-reporter"
-  )
-  for plugin in "${own_plugins[@]}"; do
+  # The catalog itself lives in SKILL_KEYS next to the menu; only the ticked ones
+  # get installed, so --skills and the sub-picker both land here.
+  if [ "$(skills_selected_count)" -eq 0 ]; then
+    warn "no skills selected from this repo - marketplace registered, nothing installed."
+  fi
+  for idx in "${!SKILL_KEYS[@]}"; do
+    [ "${SKILL_STATE[$idx]}" -eq 1 ] || continue
+    plugin="${SKILL_KEYS[$idx]}"
     run_step "Plugin: ${plugin}@useful-claude-add-ons" install_plugin "${plugin}@useful-claude-add-ons"
   done
 fi
