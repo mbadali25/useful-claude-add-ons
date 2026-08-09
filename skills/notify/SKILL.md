@@ -57,11 +57,17 @@ exits 0 and sends nothing.
 
 **Long bodies split automatically.** Telegram caps a message at 4096 characters
 and rejects anything longer outright, so a body over the limit goes as several
-messages numbered `(1/3)`, `(2/3)`, … Breaks land on a blank line where possible,
-then a newline, then a hard cut. Buttons are attached to the last part only, and
-that part is the one a reply correlates against — so `--wait` and `-e question`
-behave the same whether the body split or not. `--dry-run` reports the part count.
-Pass a whole log or diff as `-m` without pre-truncating it.
+messages numbered `(1/3)`, `(2/3)`, … Breaks land on a newline where possible,
+then a hard cut; whitespace is preserved exactly, so a diff or log keeps its blank
+lines across a boundary. `--dry-run` reports the part count. Pass a whole log or
+diff as `-m` without pre-truncating it.
+
+Buttons attach to the **last** part only, and in dispatcher mode that part is the
+one `notifyd` indexes for reply-to correlation — so replying to the final message,
+or tapping a button, always resolves. Replying to an *earlier* part is not indexed:
+in a topic it falls back to the newest open question there, which is ambiguous if
+several are pending. A very long subject is truncated to keep the assembled
+message under the limit.
 
 ## Two-way: asking a question and waiting
 

@@ -18,14 +18,24 @@ All notable changes to this repository are documented here. Format follows [Keep
 ### Added
 
 - `skills/notify` — **a body over Telegram's 4096-character limit now splits across
-  several messages** instead of failing the send. `tg.split_body()` breaks on a blank
-  line where it can, then a newline, then a hard cut, and it splits the *raw* text
-  before HTML-escaping so a break can never land inside an `&amp;` entity and
-  invalidate the message. Parts are headed `(1/3)`, `(2/3)`, … Buttons go on the last
-  part only, and `send_message()` returns that last message, so `notifyd`'s
-  `message_id → req_id` reply correlation is unchanged and a `question` still works
-  when its body splits. Parts are spaced one second apart to stay under Telegram's
-  per-chat rate limit; `--dry-run` reports the part count.
+  several messages** instead of failing the send. `tg.split_body()` breaks on a
+  newline where it can, then a hard cut, and it splits the *raw* text before
+  HTML-escaping so a break can never land inside an `&amp;` entity and invalidate
+  the message. Whitespace is preserved exactly — rejoining the parts reproduces the
+  input byte for byte. Parts are headed `(1/3)`, `(2/3)`, …
+
+  The budget is computed against the **assembled** message, not the body chunk
+  alone. Each part carries a `<b>subject (cont.) (2/3)</b>` header, the subject is
+  caller-supplied, and escaping can grow it 5×, so a fixed reserve was not enough —
+  a 300-character subject produced a 4,346-character message that Telegram would
+  have rejected. The header cost is now measured per call and a pathological subject
+  is truncated rather than eating the whole budget.
+
+  Buttons go on the last part only, and `send_message()` returns that last message,
+  so `notifyd`'s `message_id → req_id` correlation still resolves a button tap or a
+  reply to the final part. Replying to an *earlier* part is not indexed and falls
+  back to the newest open question in that topic. Parts are spaced one second apart
+  to stay under Telegram's per-chat rate limit; `--dry-run` reports the part count.
 
 ### Fixed
 
