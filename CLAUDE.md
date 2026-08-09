@@ -50,7 +50,11 @@ Renaming or removing a skill means the same four places, in reverse.
 ## Conventions
 
 - Skills follow `Skill-Authoring-Standard.md`; changes follow `Skill-Pipeline.md`.
-- The picker menus in both scripts clip long lines to the terminal width — keep menu
-  labels under roughly 80 characters or they get truncated on a standard console.
+- The picker menus clip every line at `terminal width - 9` (`pick_fit` in bash,
+  `Format-PickerLine` in PowerShell) and append an ellipsis. The current labels are
+  written for a ~95-column window; narrower consoles clip them, which is degradation
+  rather than breakage. What is *not* survivable is a line that wraps — that throws off
+  the cursor-up redraw count and smears the menu over whatever was above it, which is
+  why nothing may bypass the clip helpers.
 - Both scripts are idempotent by design: detect first, then act. A new install step
   needs a detection branch that reports "already installed" rather than reinstalling.

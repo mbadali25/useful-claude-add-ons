@@ -1077,9 +1077,23 @@ claude_local_version() {
   claude --version 2>/dev/null | tail -n 1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n 1
 }
 
+version_lt() {
+  # True when $1 is strictly older than $2. 'sort -V' does the comparison so a
+  # prerelease or a two-component version does not have to be special-cased.
+  [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n 1)" = "$1" ]
+}
+
+claude_from_npm() {
+  # Claude Code also ships a native installer. Reading the version tells us nothing
+  # about which one put it there, and 'npm install -g' onto a native install lays a
+  # second copy down beside the first. Only npm-owned installs get updated here.
+  have npm || return 1
+  npm ls -g --depth=0 @anthropic-ai/claude-code >/dev/null 2>&1
+}
+
 update_claude_cli() {
-  # Runs when claude is already present. npm is the source of truth for the installed
-  # channel: 'claude update' is a no-op (or an error) on an npm-managed install.
+  # Runs when claude is already present. Never returns non-zero: a failed *update*
+  # leaves an installed, working CLI behind, same reasoning as install_plugin.
   local local_ver latest
   local_ver="$(claude_local_version)"
   if [ -z "$local_ver" ]; then
@@ -1099,17 +1113,23 @@ update_claude_cli() {
     warn "could not reach the npm registry - skipping the Claude Code update check."
     return 0
   fi
-  if [ "$latest" = "$local_ver" ]; then
-    skip "Claude Code $local_ver is up to date"
+  if ! version_lt "$local_ver" "$latest"; then
+    # Equal, or local is *ahead* - a prerelease, or a dist-tag that has moved back.
+    # Installing @latest there would be a downgrade.
+    skip "Claude Code $local_ver is up to date (npm latest: $latest)"
+    return 0
+  fi
+  if ! claude_from_npm; then
+    warn "Claude Code $local_ver -> $latest available, but this install did not come from npm ($(command -v claude)) - update it the way you installed it."
     return 0
   fi
   step "Claude Code $local_ver -> $latest available"
   local npm_prefix
   npm_prefix="$(npm config get prefix)"
   if [ -w "$npm_prefix" ]; then
-    npm install -g @anthropic-ai/claude-code@latest || return 1
+    npm install -g @anthropic-ai/claude-code@latest || { warn "the Claude Code update failed - keeping $local_ver."; return 0; }
   else
-    as_root npm install -g @anthropic-ai/claude-code@latest || return 1
+    as_root npm install -g @anthropic-ai/claude-code@latest || { warn "the Claude Code update failed - keeping $local_ver."; return 0; }
   fi
   COUNT_UPDATED=$((COUNT_UPDATED+1))
   ok "Claude Code updated $local_ver -> $(claude_local_version)"
@@ -1122,7 +1142,7 @@ install_claude_cli() {
   fi
   if have claude; then
     update_claude_cli
-    return $?
+    return 0
   fi
   local npm_prefix
   npm_prefix="$(npm config get prefix)"
@@ -1541,12 +1561,12 @@ install_strix() {
     return 1
   fi
   curl -sSL https://strix.ai/install | bash || return 1
-  # The installer drops the binary in the per-user bin dir, which is not on PATH until
-  # a new shell starts - put it on this one's so the check below means something.
-  export PATH="$HOME/.local/bin:$PATH"
-  persist_path_entry "$HOME/.local/bin"
+  # Upstream does not document where the binary lands. ~/.local/bin is the usual answer
+  # for this kind of installer, so try it for *this* shell only - guessing wrong there
+  # costs nothing, whereas writing the guess into ~/.bashrc would be permanent.
+  [ -d "$HOME/.local/bin" ] && export PATH="$HOME/.local/bin:$PATH"
   if ! have strix; then
-    warn "the Strix installer finished but 'strix' is not resolvable in this shell - run 'source ~/.bashrc' and try 'strix --help'."
+    warn "the Strix installer finished but 'strix' is not resolvable in this shell - open a new shell and try 'strix --help'; the installer prints where it put the binary."
   else
     COUNT_INSTALLED=$((COUNT_INSTALLED+1))
     ok "strix installed at $(command -v strix)"
