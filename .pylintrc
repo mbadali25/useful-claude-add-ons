@@ -1,6 +1,6 @@
 # Pylint configuration for useful-claude-add-ons.
 #
-# This repo is not a Python package. It's ~19 independent Claude Code skills,
+# This repo is not a Python package. It's ~20 independent Claude Code skills,
 # each shipping standalone helper scripts that Claude runs directly. Default
 # pylint assumes a library with installed dependencies, so a few of its checks
 # fight the design rather than finding bugs. Those are disabled below, each with

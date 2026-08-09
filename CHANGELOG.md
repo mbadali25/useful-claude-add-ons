@@ -4,6 +4,26 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Removed
+
+- `skills/ppt-master` — a vendored copy of the upstream `hugohe3/ppt-master` plugin
+  (12,230 files, 88 MB) that was never registered in `marketplace.json`, either
+  README, or either install script's skill catalog, so nothing here ever offered it.
+  The installer already installs the same plugin from its own marketplace as part of
+  menu item 6 (Community marketplaces + plugins), so removing the copy changes nothing
+  for anyone running the bootstrap — it just stops the repo carrying 88 MB of upstream
+  code it would have to re-sync by hand. This also clears the Pylint CI failure: 845
+  of the 855 findings were in that tree.
+
+### Fixed
+
+- `skills/notify/scripts/*.py` — the four config reads now pass `encoding="utf-8"` to
+  `Path.read_text()`. Without it Python picks the locale encoding, which is cp1252 on
+  Windows, so a `config.json` containing any non-ASCII character (an em dash in a
+  subject template, a non-Latin chat title) raised `UnicodeDecodeError` for Windows
+  users only. Also split the comma-form imports and wrapped two over-length lines, so
+  `pylint $(git ls-files '*.py')` is back to 10.00/10.
+
 ### Added
 
 - `skills/notify` — a new skill (1.0.0) that pings you out of band about a session or

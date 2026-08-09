@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """tg.py — minimal Telegram Bot API helpers (stdlib only). Shared by notify.py and notifyd.py."""
-import json, urllib.parse, urllib.request
+import json
+import urllib.parse
+import urllib.request
 
 
 class TgError(RuntimeError):
