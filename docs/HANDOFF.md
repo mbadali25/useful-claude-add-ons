@@ -136,22 +136,12 @@ path is doc-verified and dry-run-verified only.
 
 ### Open items
 
-- **`skills/ppt-master` is in the repo but not in `marketplace.json`.** All the
-  other 19 skill directories have a matching plugin entry; this one does not, so
-  the installer never offers it. The community `ppt-master@ppt-master` plugin
-  (menu item 6) covers the same ground, which is probably why — but the repo copy
-  is then dead weight or a missing entry, and someone should decide which.
 - **Menu positions are not stable.** `--select 12` means something different once
   an item is inserted. Scripted runs should use keys (`--select chrome-mcp`), and
   the README says so, but nothing enforces it.
 - **The one-liner URLs are SHA-pinned** and must be re-pinned after every merge
   that touches `scripts/install-prerequisites.*`. `git rev-parse HEAD`, then swap
   it into both URLs in `README.md`.
-- **Pylint CI has been red since `ec61772`**, from dozens of findings in
-  `skills/ppt-master/scripts/` (unused imports, `f`-strings with no interpolation,
-  `raise ... from`, long lines). It predates and is unrelated to the commits in
-  this entry — every other tracked `.py` file scores 10.00. Either fix that tree or
-  scope the workflow, but don't bisect toward the installer work looking for it.
 - **Neither picker has been driven by a human.** The fallback-on-failure path is
   covered by fault injection in both scripts, but colour rendering, `Clear-Host` on
   buffer overflow, and a live window resize mid-menu are still untested by hand.
