@@ -55,6 +55,14 @@ Mute a whole class of alert without touching scripts: set it `false` in
 `config.events` (e.g. `"complete": false` to only hear about errors). The script
 exits 0 and sends nothing.
 
+**Long bodies split automatically.** Telegram caps a message at 4096 characters
+and rejects anything longer outright, so a body over the limit goes as several
+messages numbered `(1/3)`, `(2/3)`, … Breaks land on a blank line where possible,
+then a newline, then a hard cut. Buttons are attached to the last part only, and
+that part is the one a reply correlates against — so `--wait` and `-e question`
+behave the same whether the body split or not. `--dry-run` reports the part count.
+Pass a whole log or diff as `-m` without pre-truncating it.
+
 ## Two-way: asking a question and waiting
 
 `question` (or any `--wait`) sends the message, then **blocks** polling Telegram for

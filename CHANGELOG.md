@@ -15,7 +15,25 @@ All notable changes to this repository are documented here. Format follows [Keep
   code it would have to re-sync by hand. This also clears the Pylint CI failure: 845
   of the 855 findings were in that tree.
 
+### Added
+
+- `skills/notify` — **a body over Telegram's 4096-character limit now splits across
+  several messages** instead of failing the send. `tg.split_body()` breaks on a blank
+  line where it can, then a newline, then a hard cut, and it splits the *raw* text
+  before HTML-escaping so a break can never land inside an `&amp;` entity and
+  invalidate the message. Parts are headed `(1/3)`, `(2/3)`, … Buttons go on the last
+  part only, and `send_message()` returns that last message, so `notifyd`'s
+  `message_id → req_id` reply correlation is unchanged and a `question` still works
+  when its body splits. Parts are spaced one second apart to stay under Telegram's
+  per-chat rate limit; `--dry-run` reports the part count.
+
 ### Fixed
+
+- `skills/notify/scripts/notify.py` — stdout and stderr are reconfigured to UTF-8 with
+  `errors="replace"` at startup. On a Windows console (cp1252) printing a body that
+  contained any non-ASCII character — an em dash, an emoji, non-Latin text — raised
+  `UnicodeEncodeError` and killed the run, which made `--dry-run` unusable for exactly
+  the messages worth checking before sending.
 
 - `skills/notify/scripts/*.py` — the four config reads now pass `encoding="utf-8"` to
   `Path.read_text()`. Without it Python picks the locale encoding, which is cp1252 on

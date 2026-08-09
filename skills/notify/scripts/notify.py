@@ -25,6 +25,16 @@ from email.message import EmailMessage
 from pathlib import Path
 import tg
 
+# Windows consoles default to cp1252, so printing a body that came from a UTF-8
+# config or file (an em dash, an emoji, any non-Latin text) raises
+# UnicodeEncodeError and takes the whole run down -- including --dry-run, whose
+# only job is to print. Degrade unprintable characters instead of dying.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):  # already detached, or not a real stream
+        pass
+
 EVENT_LABEL = {"complete": "\u2705 Complete", "error": "\u274c Error",
                "question": "\u2753 Question", "info": "\u2139\ufe0f Info"}
 SMTP_PRESETS = {"gmail": ("smtp.gmail.com", 587, True), "m365": ("smtp.office365.com", 587, True),
@@ -103,8 +113,12 @@ def direct_telegram(cfg, subject, body, want_reply, buttons, timeout, dry):
     token = os.environ.get(tgc.get("bot_token_env", "TELEGRAM_BOT_TOKEN"))
     if not chat_id: die("telegram.chat_id required")
     if dry:
+        parts = tg.split_body(body)
         print(f"DRY-RUN telegram(direct) -> chat {chat_id}")
         print(f"        subject: {subject}\n        body:    {body}")
+        if len(parts) > 1:
+            print(f"        split:   {len(parts)} messages (body is over Telegram's "
+                  f"{tg.TG_TEXT_LIMIT}-char limit)")
         if want_reply: print(f"        buttons: {buttons or '(none)'} + free-text; wait {timeout}s")
         return
     if not token: die(f"env {tgc.get('bot_token_env','TELEGRAM_BOT_TOKEN')} not set")
