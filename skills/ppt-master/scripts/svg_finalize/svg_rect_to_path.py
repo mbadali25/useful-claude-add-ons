@@ -24,7 +24,7 @@ import sys
 import re
 import argparse
 from pathlib import Path
-from typing import Any, Tuple  # pylint: disable=unused-import
+from typing import Tuple
 from xml.etree import ElementTree as ET
 
 _SCRIPTS_DIR = Path(__file__).resolve().parents[1]

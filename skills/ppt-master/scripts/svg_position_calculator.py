@@ -31,7 +31,7 @@ import re
 import math
 import argparse
 from pathlib import Path
-from typing import Dict, List, Tuple, Optional, Any  # pylint: disable=unused-import
+from typing import Dict, List, Tuple, Optional
 from dataclasses import dataclass
 
 from console_encoding import configure_utf8_stdio
