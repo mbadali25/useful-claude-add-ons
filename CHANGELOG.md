@@ -15,7 +15,35 @@ All notable changes to this repository are documented here. Format follows [Keep
   code it would have to re-sync by hand. This also clears the Pylint CI failure: 845
   of the 855 findings were in that tree.
 
+### Added
+
+- `skills/notify` — **a body over Telegram's 4096-character limit now splits across
+  several messages** instead of failing the send. `tg.split_body()` breaks on a
+  newline where it can, then a hard cut, and it splits the *raw* text before
+  HTML-escaping so a break can never land inside an `&amp;` entity and invalidate
+  the message. Whitespace is preserved exactly — rejoining the parts reproduces the
+  input byte for byte. Parts are headed `(1/3)`, `(2/3)`, …
+
+  The budget is computed against the **assembled** message, not the body chunk
+  alone. Each part carries a `<b>subject (cont.) (2/3)</b>` header, the subject is
+  caller-supplied, and escaping can grow it 5×, so a fixed reserve was not enough —
+  a 300-character subject produced a 4,346-character message that Telegram would
+  have rejected. The header cost is now measured per call and a pathological subject
+  is truncated rather than eating the whole budget.
+
+  Buttons go on the last part only, and `send_message()` returns that last message,
+  so `notifyd`'s `message_id → req_id` correlation still resolves a button tap or a
+  reply to the final part. Replying to an *earlier* part is not indexed and falls
+  back to the newest open question in that topic. Parts are spaced one second apart
+  to stay under Telegram's per-chat rate limit; `--dry-run` reports the part count.
+
 ### Fixed
+
+- `skills/notify/scripts/notify.py` — stdout and stderr are reconfigured to UTF-8 with
+  `errors="replace"` at startup. On a Windows console (cp1252) printing a body that
+  contained any non-ASCII character — an em dash, an emoji, non-Latin text — raised
+  `UnicodeEncodeError` and killed the run, which made `--dry-run` unusable for exactly
+  the messages worth checking before sending.
 
 - `skills/notify/scripts/*.py` — the four config reads now pass `encoding="utf-8"` to
   `Path.read_text()`. Without it Python picks the locale encoding, which is cp1252 on
