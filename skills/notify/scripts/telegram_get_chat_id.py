@@ -33,7 +33,8 @@ def main():
         msg = u.get("message") or u.get("channel_post") or {}
         chat = msg.get("chat") or {}
         if chat.get("id") is not None:
-            name = chat.get("title") or " ".join(x for x in [chat.get("first_name"), chat.get("last_name")] if x) or chat.get("username") or ""
+            name = chat.get("title") or " ".join(x for x in [chat.get("first_name"),
+                chat.get("last_name")] if x) or chat.get("username") or ""
             seen[chat["id"]] = f"{name} ({chat.get('type')})".strip()
     if not seen:
         print("No recent messages found. Send your bot a message, then re-run.")

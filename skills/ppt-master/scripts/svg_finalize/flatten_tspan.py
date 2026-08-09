@@ -811,9 +811,8 @@ def _compute_default_out_base(inp: str) -> str:
         if tail == "svg_output":
             return os.path.join(head, "svg_output_flattext")
         return inp.rstrip("/\\") + "_flattext"
-    else:
-        base, ext = os.path.splitext(inp)
-        return base + "_flattext" + ext
+    base, ext = os.path.splitext(inp)
+    return base + "_flattext" + ext
 
 
 def _interactive_get_paths() -> tuple[str | None, str | None]:

@@ -62,6 +62,10 @@ BUILTIN_MEDIUM_STYLE_2_ACCENT_1 = "{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}"
 _POWERPOINT_COORD_MIN = -(2**31)
 _POWERPOINT_COORD_MAX = 2**31 - 1
 
+# The OOXML table style below is a verbatim part definition. Two of its element
+# lines run past 120 columns and cannot be wrapped: this is parsed by
+# ET.fromstring, and a newline inside an element would change the tree.
+# pylint: disable=line-too-long
 _BUILTIN_MEDIUM_STYLE_2_ACCENT_1_XML = ET.fromstring(
     f'''<a:tblStyle xmlns:a="{NS["a"]}"
         styleId="{BUILTIN_MEDIUM_STYLE_2_ACCENT_1}">

@@ -309,13 +309,13 @@ def _xml_and_font_inventory(
                 )
             )
             continue
-        for role in font_counts:
+        for role, counts_for_role in font_counts.items():
             for element in root.iter(
                 f"{{{DRAWINGML_NS}}}{role}"
             ):
                 face = (element.attrib.get("typeface") or "").strip()
                 if face:
-                    font_counts[role][face] += 1
+                    counts_for_role[face] += 1
     return {
         role: [
             {"value": face, "count": count}

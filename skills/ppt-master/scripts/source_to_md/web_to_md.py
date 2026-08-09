@@ -184,7 +184,10 @@ except ImportError:
 CONFIG = {
     "output_dir": "./projects",
     "timeout": 30,
-    "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "user_agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    ),
     # Specific content identifiers often found in Chinese CMS (Gov/News)
     "content_selectors": [
         {"class_": re.compile(r"tys-main-zt-show", re.I)},
@@ -236,7 +239,7 @@ def fetch_url(url: str) -> str:
 
         return _decode_response_text(response)
     except Exception as e:
-        raise Exception(f"Failed to fetch {url}: {str(e)}") from e
+        raise RuntimeError(f"Failed to fetch {url}: {e}") from e
 
 
 def clean_title(title: str) -> str:
@@ -786,7 +789,6 @@ def simple_html_to_markdown_traversal(soup: Tag | BeautifulSoup | None) -> str:
                     _sep = "| " + " | ".join(["---"] * int(cols_count/2)) + " |"
                     # Actually, the traverse of TR returns newline terminated strings.
                     # Let's just return what we gathered.
-                    pass
             return f"\n\n{inner_text}\n\n"
 
         return f"{prefix}{inner_text}{suffix}"

@@ -1816,16 +1816,15 @@ def _remap_placeholder_decorations(
     scale_y = to_height / from_height
     translate_x = to_x - from_x * scale_x
     translate_y = to_y - from_y * scale_y
-    frame_transform = "matrix({})".format(
-        " ".join((
-            _format_number(scale_x),
-            "0",
-            "0",
-            _format_number(scale_y),
-            format_coordinate(translate_x),
-            format_coordinate(translate_y),
-        ))
-    )
+    _frame_matrix = " ".join((
+        _format_number(scale_x),
+        "0",
+        "0",
+        _format_number(scale_y),
+        format_coordinate(translate_x),
+        format_coordinate(translate_y),
+    ))
+    frame_transform = f"matrix({_frame_matrix})"
     for decoration in decorations:
         existing = (decoration.get("transform") or "").strip()
         decoration.set(

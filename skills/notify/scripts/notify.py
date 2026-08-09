@@ -127,7 +127,9 @@ def direct_telegram(cfg, subject, body, want_reply, buttons, timeout, dry):
                 if "callback_query" in u:
                     cq = u["callback_query"]; rid, _, idx = cq.get("data", "").partition("|")
                     if rid == req_id:
-                        lab = buttons[int(idx)] if buttons and idx.isdigit() and int(idx) < len(buttons) else cq.get("data")
+                        lab = (buttons[int(idx)]
+                               if buttons and idx.isdigit() and int(idx) < len(buttons)
+                               else cq.get("data"))
                         tg.answer_callback(token, cq["id"], f"\u2713 {lab}")
                         print(json.dumps({"reply": lab, "via": "button"})); sys.exit(0)
                 elif "message" in u:

@@ -177,7 +177,8 @@ def _chart_ex_series_xml(chart_data: dict[str, Any]) -> str:
             value_col = _excel_col(idx * 2 + 2)
             parts.append(
                 f'<cx:series layoutId="boxWhisker" uniqueId="{{00000000-0000-4000-8000-{idx + 1:012d}}}">'
-                f'<cx:tx><cx:txData><cx:f>Sheet1!${value_col}$1</cx:f><cx:v>{_xml_escape(str(item["name"]))}</cx:v></cx:txData></cx:tx>'
+                f'<cx:tx><cx:txData><cx:f>Sheet1!${value_col}$1</cx:f>'
+                f'<cx:v>{_xml_escape(str(item["name"]))}</cx:v></cx:txData></cx:tx>'
                 f'<cx:dataId val="{idx}"/><cx:layoutPr>'
                 '<cx:visibility meanMarker="1" outliers="1"/>'
                 '<cx:statistics quartileMethod="exclusive"/>'

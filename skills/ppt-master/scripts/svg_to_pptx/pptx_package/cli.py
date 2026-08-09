@@ -46,7 +46,7 @@ if __package__ in {None, ''}:
     package = types.ModuleType('svg_to_pptx')
     package.__path__ = [str(Path(__file__).resolve().parent)]  # type: ignore[attr-defined]
     sys.modules.setdefault('svg_to_pptx', package)
-    __package__ = 'svg_to_pptx'
+    __package__ = 'svg_to_pptx'  # pylint: disable=redefined-builtin
 
 from .dimensions import CANVAS_FORMATS, get_project_info
 from .discovery import NotesFileReadError, find_notes_files, find_svg_files
@@ -383,19 +383,19 @@ def _write_postflight_report(
 ) -> _PostflightReceipt:
     """Write the unified package/resource audit for a successful PPTX."""
     try:
-        package = _package_part_counts(output_path)
+        package_counts = _package_part_counts(output_path)
     except (OSError, zipfile.BadZipFile) as exc:
         raise PptxPostflightValidationError(
             f"generated PPTX is not a readable ZIP package: {exc}"
         ) from exc
-    if package['zip_integrity'] != 'passed':
+    if package_counts['zip_integrity'] != 'passed':
         raise PptxPostflightValidationError(
-            f"PPTX ZIP integrity failed at {package['corrupt_member']}"
+            f"PPTX ZIP integrity failed at {package_counts['corrupt_member']}"
         )
-    if package['slides'] != len(svg_files):
+    if package_counts['slides'] != len(svg_files):
         raise PptxPostflightValidationError(
             "Published Slide count does not match authored SVG count: "
-            f"{package['slides']} != {len(svg_files)}"
+            f"{package_counts['slides']} != {len(svg_files)}"
         )
     source_audit = _source_resource_audit(svg_files)
     source_fingerprint = _svg_source_fingerprint(svg_files)
@@ -433,7 +433,7 @@ def _write_postflight_report(
             'layout_definition_count': len(layout_definition_files),
             'fingerprint': source_fingerprint,
         },
-        'package': package,
+        'package': package_counts,
         'checks': {
             'zip_integrity': 'passed',
             'slide_count': 'passed',
@@ -489,7 +489,7 @@ def _write_postflight_report(
         report_path=report_path,
         status=report_status,
         quality_gate=quality_gate,
-        slide_count=int(package['slides']),
+        slide_count=int(package_counts['slides']),
         warnings=warnings,
     )
 
@@ -808,7 +808,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description='PPT Master - SVG to native DrawingML PPTX Tool',
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=f'''
+        epilog='''
 Examples:
     %(prog)s examples/ppt169_demo                         # Default: native pptx -> exports/, svg_output -> backup/<ts>/
     %(prog)s examples/ppt169_demo -o out.pptx            # Explicit path (no backup/)
@@ -1867,7 +1867,7 @@ Recorded narration:
         if isinstance(metadata_title, str) and metadata_title.strip():
             structure_name = metadata_title
 
-    shared_kwargs = dict(
+    shared_kwargs = dict(  # pylint: disable=use-dict-literal
         canvas_format=canvas_format,
         expected_viewbox=expected_viewbox,
         doc_metadata=doc_metadata,

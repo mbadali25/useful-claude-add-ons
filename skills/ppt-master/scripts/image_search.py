@@ -301,8 +301,7 @@ def _try_provider(
                 file=sys.stderr,
             )
             return None, None
-        else:
-            print(f"  [{name}] error: {exc}", file=sys.stderr)
+        print(f"  [{name}] error: {exc}", file=sys.stderr)
         return None, f"{name}: {exc}"
     except (requests.RequestException, OSError, ValueError) as exc:
         print(f"  [{name}] error: {exc}", file=sys.stderr)

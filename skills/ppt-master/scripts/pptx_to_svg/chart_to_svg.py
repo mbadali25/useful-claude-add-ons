@@ -2333,8 +2333,8 @@ def _cache_point_values(cache: ET.Element | None) -> list[str]:
         raw_idx = point.attrib.get("idx")
         try:
             point_idx = int(raw_idx) if raw_idx is not None else idx
-        except ValueError:
-            raise _UnsupportedChart("unsupported-chart-cache")
+        except ValueError as exc:
+            raise _UnsupportedChart("unsupported-chart-cache") from exc
         if point_idx < 0 or point_idx in points:
             raise _UnsupportedChart("unsupported-chart-cache")
         value = point.findtext("c:v", default="", namespaces=C_NS)
@@ -2344,8 +2344,8 @@ def _cache_point_values(cache: ET.Element | None) -> list[str]:
     if count_elem is not None:
         try:
             point_count = int(count_elem.attrib.get("val", ""))
-        except ValueError:
-            raise _UnsupportedChart("unsupported-chart-cache")
+        except ValueError as exc:
+            raise _UnsupportedChart("unsupported-chart-cache") from exc
     else:
         point_count = len(points)
     if (

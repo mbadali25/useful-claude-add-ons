@@ -673,7 +673,7 @@ def _render_xy(
         for value in item.get("sizes") or []
         if float(value) >= 0
     ]
-    bubble_max = max(max(nonnegative_bubble_sizes or [0.0]), 1e-12)
+    bubble_max = max(*(nonnegative_bubble_sizes or [0.0]), 1e-12)
     scatter_style = str(payload.get("scatter_style") or "marker")
     has_line = chart_type == "scatter" and scatter_style in {"line", "lineMarker", "smooth", "smoothMarker"}
     has_marker = chart_type == "bubble" or scatter_style in {"marker", "lineMarker", "smoothMarker"}
@@ -715,7 +715,10 @@ def _render_xy(
                 )
                 parts.append(
                     f'<circle cx="{_fmt(x)}" cy="{_fmt(y)}" r="{_fmt(radius)}" '
-                    f'fill="{fill}" fill-opacity="{_fmt(style.marker_fill_opacity if chart_type == "scatter" else style.fill_opacity)}" '
+                    f'fill="{fill}" '
+                    f'fill-opacity="'
+                    f'{_fmt(style.marker_fill_opacity if chart_type == "scatter" else style.fill_opacity)}'
+                    f'" '
                     f'stroke="{stroke}" stroke-opacity="{_fmt(style.marker_stroke_opacity)}" '
                     f'stroke-width="{_fmt(max(0.6, style.marker_stroke_width))}"/>'
                 )
@@ -857,7 +860,8 @@ def _xy_grid_and_ticks(
                 f'<line x1="{_fmt(x)}" y1="{_fmt(plot.y)}" x2="{_fmt(x)}" '
                 f'y2="{_fmt(plot.y + plot.h)}" stroke="#D9D9D9" stroke-width="0.7"/>'
             )
-        parts.append(_text(x, plot.y + plot.h + size + 4.0, _format_number(tick), size=size, anchor="middle", fill="#666666"))
+        parts.append(_text(x, plot.y + plot.h + size + 4.0, _format_number(tick),
+                       size=size, anchor="middle", fill="#666666"))
     parts.append(
         f'<line x1="{_fmt(plot.x)}" y1="{_fmt(plot.y + plot.h)}" '
         f'x2="{_fmt(plot.x + plot.w)}" y2="{_fmt(plot.y + plot.h)}" '
@@ -905,7 +909,8 @@ def _draw_axis_titles(
 ) -> list[str]:
     parts: list[str] = []
     if x_title:
-        parts.append(_text(plot.x + plot.w / 2, content.y + content.h - 2.0, x_title, size=size, anchor="middle", weight="600"))
+        parts.append(_text(plot.x + plot.w / 2, content.y + content.h - 2.0, x_title,
+                       size=size, anchor="middle", weight="600"))
     if y_title:
         x = content.x + size
         y = plot.y + plot.h / 2
@@ -1064,7 +1069,13 @@ def _nice_scale(
     raw_step = (hi - lo) / 5.0
     magnitude = 10 ** math.floor(math.log10(raw_step))
     normalized = raw_step / magnitude
-    nice = 1.0 if normalized <= 1 else 2.0 if normalized <= 2 else 2.5 if normalized <= 2.5 else 5.0 if normalized <= 5 else 10.0
+    nice = (
+        1.0 if normalized <= 1
+        else 2.0 if normalized <= 2
+        else 2.5 if normalized <= 2.5
+        else 5.0 if normalized <= 5
+        else 10.0
+    )
     step = nice * magnitude
     nice_lo = math.floor(lo / step) * step
     nice_hi = math.ceil(hi / step) * step

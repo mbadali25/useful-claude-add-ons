@@ -71,10 +71,12 @@ def file_lock(lock_path: Path, timeout: float = 30.0):
         try:
             fcntl.flock(fp.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
             break
-        except BlockingIOError:
+        except BlockingIOError as exc:
             if time.monotonic() >= deadline:
                 fp.close()
-                raise TimeoutError(f"render lock contended for {timeout}s at {lock_path}")
+                raise TimeoutError(
+                    f"render lock contended for {timeout}s at {lock_path}"
+                ) from exc
             time.sleep(0.1)
     try:
         fp.write(str(os.getpid()))

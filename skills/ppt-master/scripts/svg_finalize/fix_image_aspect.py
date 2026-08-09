@@ -96,9 +96,8 @@ def get_image_dimensions_basic(image_path: str) -> tuple[int | None, int | None]
                         continue
                     if 0xD0 <= m <= 0xD7:  # RST
                         continue
-                    else:
-                        length = int.from_bytes(f.read(2), 'big')
-                        f.seek(length - 2, 1)
+                    length = int.from_bytes(f.read(2), 'big')
+                    f.seek(length - 2, 1)
 
         return None, None
     except Exception as e:
@@ -153,8 +152,7 @@ def get_image_dimensions(href: str, svg_dir: str) -> tuple[int | None, int | Non
 
     if HAS_PIL:
         return get_image_dimensions_pil(full_path)
-    else:
-        return get_image_dimensions_basic(full_path)
+    return get_image_dimensions_basic(full_path)
 
 
 def calculate_fitted_dimensions(

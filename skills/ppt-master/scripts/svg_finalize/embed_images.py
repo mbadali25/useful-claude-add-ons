@@ -59,8 +59,7 @@ def get_file_size_str(size_bytes: int) -> str:
         return f"{size_bytes} B"
     if size_bytes < 1024 * 1024:
         return f"{size_bytes / 1024:.1f} KB"
-    else:
-        return f"{size_bytes / (1024 * 1024):.1f} MB"
+    return f"{size_bytes / (1024 * 1024):.1f} MB"
 
 def _optimize_image_bytes(img_bytes: bytes, mime_type: str,
                           compress: bool = False,
@@ -196,7 +195,9 @@ def embed_images_in_svg(svg_path: str, dry_run: bool = False,
         if saved > 0 and (compress or max_dimension):
             pct = saved / len(img_bytes) * 100
             images_found.append((img_path, "EMBEDDED", img_size,
-                                 f"{get_file_size_str(len(img_bytes))} → {get_file_size_str(len(optimized_bytes))}, saved {pct:.0f}%"))
+                                 f"{get_file_size_str(len(img_bytes))} → "
+                                 f"{get_file_size_str(len(optimized_bytes))}, "
+                                 f"saved {pct:.0f}%"))
         else:
             images_found.append((img_path, "EMBEDDED", img_size, None))
 

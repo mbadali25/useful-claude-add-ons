@@ -217,8 +217,7 @@ def classify_ratio(aspect_ratio: float) -> str:
         return "Standard landscape"
     if aspect_ratio > 0.8:
         return "Near square"
-    else:
-        return "Portrait"
+    return "Portrait"
 
 
 def _analyze_images(images_dir: str) -> tuple[list[ImageAnalysis], list[str]]:

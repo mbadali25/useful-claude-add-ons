@@ -174,7 +174,8 @@ class BatchValidator:
         print(
             f"  [OK] Fully valid: {self.summary['valid']} ({self._percentage(self.summary['valid'])}%)")
         print(
-            f"  [WARN] With warnings: {self.summary['has_warnings']} ({self._percentage(self.summary['has_warnings'])}%)")
+            f"  [WARN] With warnings: {self.summary['has_warnings']} "
+            f"({self._percentage(self.summary['has_warnings'])}%)")
         print(
             f"  [ERROR] With errors: {self.summary['has_errors']} ({self._percentage(self.summary['has_errors'])}%)")
 

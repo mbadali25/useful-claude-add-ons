@@ -315,7 +315,8 @@ class ProjectManager:
                     "pipeline's canonical must-read source/asset facts\n"
                     "- `validation/`: SVG quality reports and PPTX postflight audit reports\n"
                     "- `exports/`: final native DrawingML pptx deliverables only (timestamped); "
-                    "`_native_charts_tables.pptx` name with `--native-charts-and-tables`, `_narrated.pptx` name when narration audio is embedded\n"
+                    "`_native_charts_tables.pptx` name with `--native-charts-and-tables`, `_narrated.pptx` name when "
+                    "narration audio is embedded\n"
                     "- `backup/<timestamp>/`: svg_output/ archive (always written in default-flow mode; safe to delete "
                     "old timestamps)\n"
                 ),
@@ -1303,6 +1304,9 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         parser.error(f"Unknown command: {args.command}")
+        # argparse.error() raises SystemExit, so this is unreachable. It is
+        # here so every path out of main() is an int.
+        return 2
     except Exception as exc:
         print(f"[ERROR] {exc}")
         return 1

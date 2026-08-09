@@ -1737,8 +1737,8 @@ def _instantiate_animation_row(
             continue
         ctn.set('id', str(next_id))
         next_id += 1
-    for target in row.iter(_qn(PML_NS, 'spTgt')):
-        target.set('spid', str(shape_id))
+    for sp_target in row.iter(_qn(PML_NS, 'spTgt')):
+        sp_target.set('spid', str(shape_id))
     return ET.tostring(row, encoding='unicode'), next_id
 
 

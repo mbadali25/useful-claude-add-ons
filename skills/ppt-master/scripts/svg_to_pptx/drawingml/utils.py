@@ -632,8 +632,7 @@ def is_thick_circle_shorthand(
     dash, gap = values
     circumference = 2 * math.pi * radius
     return (
-        dash < circumference
-        and dash + gap + THICK_CIRCLE_COVERAGE_TOLERANCE >= circumference
+        dash < circumference <= dash + gap + THICK_CIRCLE_COVERAGE_TOLERANCE
     )
 
 
@@ -1329,7 +1328,8 @@ def rect_to_dml_xfrm(
         rect_h = max(rect_h, 0.001)
     cross = ux * vy - uy * vx
 
-    if rect_w <= 1e-12 and rect_h > 1e-12:
+    # Two independent degeneracy tests, not a range check on one value.
+    if rect_w <= 1e-12 and rect_h > 1e-12:  # pylint: disable=chained-comparison
         angle_deg = math.degrees(math.atan2(vy, vx)) - 90.0
         flip_attr = ''
     elif cross < 0:

@@ -33,7 +33,7 @@ try:
     from PIL import Image
 except ImportError:
     print("Error: PIL (Pillow) is required. Run: pip install Pillow")
-    exit(1)
+    sys.exit(1)
 
 
 def parse_preserve_aspect_ratio(attr: str) -> tuple[str, str]:

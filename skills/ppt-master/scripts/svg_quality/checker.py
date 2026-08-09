@@ -259,7 +259,7 @@ except ImportError:
 try:
     from svg_to_pptx.pptx_package.template_structure import (
         TemplateStructureError as _TemplateStructureError,
-        _is_authored_preset_atom as _is_authored_preset_atom,
+        _is_authored_preset_atom,
         load_pptx_structure_lock as _load_pptx_structure_lock,
         parse_template_slide as _parse_template_structure_slide,
         parse_template_slides as _parse_template_structure_slides,
@@ -2630,7 +2630,10 @@ class SVGQualityChecker:
                 if current_run:
                     previous = current_run[-1]
                     line_gap = line['y'] - previous['y']
+                    # Chaining this through the tolerance would bury the
+                    # style and font-size conjuncts that follow.
                     same_frame = (
+                        # pylint: disable=chained-comparison
                         abs(line['x'] - previous['x'])
                         <= _PARAGRAPH_LINE_X_TOLERANCE
                         and line['style'] == previous['style']
@@ -4354,9 +4357,7 @@ class SVGQualityChecker:
             target[value] = total_count
 
         if sparse_sizes:
-            result['info']['sparse_typography_sizes'] = {
-                value: count for value, count in sorted(sparse_sizes.items())
-            }
+            result['info']['sparse_typography_sizes'] = dict(sorted(sparse_sizes.items()))
 
         if recurring_sizes:
             shown = ', '.join(
@@ -4622,8 +4623,7 @@ class SVGQualityChecker:
             return 'Paint issues'
         if 'font' in error_msg.lower():
             return 'Font issues'
-        else:
-            return 'Other'
+        return 'Other'
 
     def _configure_prototype_context(
         self,
@@ -6002,7 +6002,7 @@ class SVGQualityChecker:
                     'needs-manual',
                 }
             )
-            if should_be_referenced and not (actual_paths & expected_paths):
+            if should_be_referenced and not actual_paths & expected_paths:
                 self._illustration_issues.append((
                     'error',
                     'locked_image_unreferenced',

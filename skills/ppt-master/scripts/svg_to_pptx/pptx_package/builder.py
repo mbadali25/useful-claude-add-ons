@@ -3145,7 +3145,7 @@ def _promote_common_chrome_shapes_to_masters(
             safe_tokens = safe_tokens[:common_length]
             if not safe_tokens:
                 break
-        promotion_by_token = {token: shape_ids for token, shape_ids in promotions}
+        promotion_by_token = dict(promotions)
         promotions = [
             (token, promotion_by_token[token])
             for token in safe_tokens

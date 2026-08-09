@@ -960,6 +960,9 @@ def _value_repr(value: object) -> str:
         return f"<{type(value).__name__}>"
 
 
+# `field` names the payload key being validated, which is the domain term in
+# every error message. dataclasses.field is the incidental import.
+# pylint: disable=redefined-outer-name
 def validate_seconds(
     value: object,
     field: str,
