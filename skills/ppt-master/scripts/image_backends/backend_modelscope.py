@@ -111,7 +111,8 @@ def _generate_image(api_key: str, prompt: str,
     print()
     print("  [..] Generating...", end="", flush=True)
     start = time.time()
-    response = requests.post(url, headers={**common_headers,"X-ModelScope-Async-Mode": "true"}, json=payload, timeout=300)
+    response = requests.post(url, headers={**common_headers,"X-ModelScope-Async-Mode": "true"}, json=payload,
+        timeout=300)
 
     if response.status_code != 200:
         raise http_error(response, "ModelScope image generation")

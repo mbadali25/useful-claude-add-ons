@@ -295,7 +295,8 @@ Features:
     )
 
     parser.add_argument('project_path', type=str, help='Project directory path')
-    parser.add_argument('-o', '--output', type=str, default=None, help='Output directory path (default: notes directory under project)')
+    parser.add_argument('-o', '--output', type=str, default=None,
+        help='Output directory path (default: notes directory under project)')
     parser.add_argument('-q', '--quiet', action='store_true', help='Quiet mode')
 
     args = parser.parse_args()

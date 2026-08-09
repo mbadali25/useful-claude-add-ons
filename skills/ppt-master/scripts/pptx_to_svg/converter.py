@@ -334,7 +334,8 @@ def convert_pptx_to_svg(
                 part_path=slide.part.path,
                 slide_index=slide.index,
             )
-            _colors, slide_fonts = _extract_theme_info(slide_theme, slide_palette) if slide_theme is not None else ({}, result.theme_fonts)
+            _colors, slide_fonts = _extract_theme_info(slide_theme,
+                slide_palette) if slide_theme is not None else ({}, result.theme_fonts)
             artifact = _convert_slide(
                 pkg,
                 slide,
@@ -356,7 +357,8 @@ def convert_pptx_to_svg(
                     part_path=slide.part.path,
                     slide_index=slide.index,
                 )
-                _colors, slide_fonts = _extract_theme_info(slide_theme, slide_palette) if slide_theme is not None else ({}, result.theme_fonts)
+                _colors, slide_fonts = _extract_theme_info(slide_theme,
+                    slide_palette) if slide_theme is not None else ({}, result.theme_fonts)
                 artifact = _convert_slide(
                     pkg,
                     slide,

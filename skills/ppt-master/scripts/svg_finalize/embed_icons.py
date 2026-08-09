@@ -428,7 +428,8 @@ def generate_icon_group(attrs: dict[str, str | float], elements: list[str], styl
   </g>'''
 
 
-def process_svg_file(svg_path: Path, icons_dir: Path, dry_run: bool = False, verbose: bool = False, fallback_dir: Path | None = None) -> int:
+def process_svg_file(svg_path: Path, icons_dir: Path, dry_run: bool = False, verbose: bool = False,
+    fallback_dir: Path | None = None) -> int:
     """
     Process a single SVG file, replacing all icon placeholders.
 

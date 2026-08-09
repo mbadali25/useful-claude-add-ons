@@ -1329,7 +1329,8 @@ Common commands:
     bar_parser.add_argument('--area', help='Chart area "x_min,y_min,x_max,y_max"')
     bar_parser.add_argument('--bar-width', type=float, default=50, help='Bar width')
     bar_parser.add_argument('--horizontal', action='store_true', help='Horizontal bar chart')
-    bar_parser.add_argument('--value-range', help='Value axis range "min,max" (from axis tick labels; omit to auto-normalize)')
+    bar_parser.add_argument('--value-range',
+        help='Value axis range "min,max" (from axis tick labels; omit to auto-normalize)')
 
     # Pie chart
     pie_parser = calc_subparsers.add_parser('pie', help='Pie / donut chart')

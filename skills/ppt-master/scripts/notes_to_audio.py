@@ -480,7 +480,8 @@ def main() -> int:
             return 1
         backend = AudioBackend(provider=args.provider, extension=extension, api_key=api_key, voice_id=voice_id)
     else:
-        backend = AudioBackend(provider=args.provider, extension=backend_edge.edge_output_extension(), voice_id=args.voice)
+        backend = AudioBackend(provider=args.provider, extension=backend_edge.edge_output_extension(),
+            voice_id=args.voice)
 
     project = args.project_path
     notes_dir = project / "notes"

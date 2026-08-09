@@ -1541,7 +1541,8 @@ def extract_pdf_to_markdown(
                     next_el = page_elements[j]
                     if next_el["type"] != 0:
                         break
-                    if not should_merge_lines({"content": merged_content, "is_heading": False, "is_list": False}, next_el):
+                    if not should_merge_lines({"content": merged_content, "is_heading": False, "is_list": False},
+                        next_el):
                         break
                     merged_content += " " + next_el["content"]
                     j += 1
