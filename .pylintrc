@@ -111,6 +111,28 @@ ignored-modules=PIL,PIL.*,botocore,botocore.*,bs4,bs4.*,cairosvg,cairosvg.*,
 # 100 is tight for scripts that embed XML/SQL/URL literals which can't wrap.
 max-line-length=120
 
+# Exempt OOXML element lines, on top of pylint's default URL exemption.
+#
+# ppt-master emits OOXML as multi-line f-strings that are written into the
+# package verbatim, so a newline inside an element changes the part. Twelve
+# such lines across pptx_animations.py, pptx_package/notes.py and
+# pptx_package/slide_xml.py run past 120 columns and cannot be wrapped.
+#
+# This only started failing on Python 3.12. PEP 701 retokenised f-strings, so
+# pylint now sees each physical line inside one as its own token and applies
+# line-length to it, where 3.11 and earlier treated the whole literal as a
+# single token and skipped it. The CI matrix is 3.11, 3.12 and 3.13, so the
+# repo was green on one leg and red on the other two.
+#
+# A regex rather than three module-level disables: `disable=line-too-long` at
+# the top of those files would also hide genuinely over-long Python in them,
+# and the rationale would be duplicated three times. This exempts the shape
+# that cannot be fixed, and nothing else.
+#
+# The first alternative is pylint's default, kept because setting this option
+# replaces it rather than extending it.
+ignore-long-lines=^\s*(# )?<?https?://\S+>?$|^\s*<[/a-zA-Z]
+
 # ticketctl.py is one file on purpose -- a skill script has to be runnable on
 # its own, so it can't import sibling modules that may not be copied with it.
 # Raised from 2000 when update/close were added for both providers, then to
