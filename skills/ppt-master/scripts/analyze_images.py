@@ -211,14 +211,13 @@ def classify_ratio(aspect_ratio: float) -> str:
     """
     if aspect_ratio > 2.0:
         return "Ultra-wide"
-    elif aspect_ratio > 1.5:
+    if aspect_ratio > 1.5:
         return "Wide landscape"
-    elif aspect_ratio > 1.2:
+    if aspect_ratio > 1.2:
         return "Standard landscape"
-    elif aspect_ratio > 0.8:
+    if aspect_ratio > 0.8:
         return "Near square"
-    else:
-        return "Portrait"
+    return "Portrait"
 
 
 def _analyze_images(images_dir: str) -> tuple[list[ImageAnalysis], list[str]]:
@@ -360,7 +359,8 @@ def print_results(results: list[ImageAnalysis]) -> None:
         if imgs:
             print(f"\n{cat}: {len(imgs)} images")
             for img in imgs[:5]:  # Show only the first 5
-                print(f"  - {img['width']}x{img['height']} (ratio {img['aspect_ratio']:.2f}) - {img['filename'][:35]}...")
+                print(f"  - {img['width']}x{img['height']} (ratio {img['aspect_ratio']:.2f}) - "
+                      f"{img['filename'][:35]}...")
             if len(imgs) > 5:
                 print(f"  ... and {len(imgs) - 5} more")
 

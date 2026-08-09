@@ -32,7 +32,7 @@ if __package__ in {None, ''}:
     package = types.ModuleType("template_fill_pptx")
     package.__path__ = [str(package_dir)]  # type: ignore[attr-defined]
     sys.modules.setdefault("template_fill_pptx", package)
-    __package__ = "template_fill_pptx"
+    __package__ = "template_fill_pptx"  # pylint: disable=redefined-builtin
 
 from .analyzer import analyze_pptx
 from .applier import apply_plan

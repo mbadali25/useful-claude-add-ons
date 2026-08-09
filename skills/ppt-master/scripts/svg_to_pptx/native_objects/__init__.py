@@ -111,7 +111,7 @@ def _build_native_chart(elem: ET.Element, ctx: ConvertContext, payload: dict[str
         graphic_uri = CHARTEX_URI
         chart_ref_xml = (
             f'<cx:chart xmlns:cx="{CHARTEX_URI}" '
-            f'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
+            'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
             f'r:id="{rel_id}"/>'
         )
         ctx.rel_entries.append({

@@ -169,9 +169,9 @@ def format_span_text(text: str, flags: int) -> str:
 
     if is_bold and is_italic:
         return f"***{text}***"
-    elif is_bold:
+    if is_bold:
         return f"**{text}**"
-    elif is_italic:
+    if is_italic:
         return f"*{text}*"
     return text
 
@@ -1355,18 +1355,18 @@ def extract_pdf_to_markdown(
 
     if len(doc) >= 200:
         print(f"[HINT] {len(doc)} pages — for very large PDFs, consider splitting "
-              f"the source by chapter beforehand (e.g. with pdftk / qpdf / PyPDF2) "
-              f"and converting each part individually.")
+              "the source by chapter beforehand (e.g. with pdftk / qpdf / PyPDF2) "
+              "and converting each part individually.")
 
     filename = Path(pdf_path).stem
     title = re.sub(r'^\d+-', '', filename).strip()
 
-    print(f"[INFO] Analyzing document structure...")
+    print("[INFO] Analyzing document structure...")
     size_map = analyze_font_sizes(doc)
     print(f"   Font size mapping: body={size_map.get('body', 'N/A')}, " +
           f"H1={size_map.get('h1', 'N/A')}, H2={size_map.get('h2', 'N/A')}, H3={size_map.get('h3', 'N/A')}")
 
-    print(f"[INFO] Detecting repeated headers/footers...")
+    print("[INFO] Detecting repeated headers/footers...")
     noise_texts = detect_headers_footers(doc)
     if noise_texts:
         print(f"   Found {len(noise_texts)} repeated noise texts (will be removed):")
@@ -1492,7 +1492,7 @@ def extract_pdf_to_markdown(
 
                     heading_level = get_heading_level(line_size, size_map, line_text, line_flags)
 
-                    is_list, list_type, list_content = detect_list_item(line_text)
+                    is_list, _list_type, list_content = detect_list_item(line_text)
 
                     if heading_level > 0:
                         prefix = '#' * heading_level + ' '
@@ -1541,7 +1541,8 @@ def extract_pdf_to_markdown(
                     next_el = page_elements[j]
                     if next_el["type"] != 0:
                         break
-                    if not should_merge_lines({"content": merged_content, "is_heading": False, "is_list": False}, next_el):
+                    if not should_merge_lines({"content": merged_content, "is_heading": False, "is_list": False},
+                        next_el):
                         break
                     merged_content += " " + next_el["content"]
                     j += 1

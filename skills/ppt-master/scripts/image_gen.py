@@ -333,7 +333,7 @@ def _resolve_backend() -> tuple[object, str]:
         "the outputs to images/<filename>. See references/image-generator.md §7 Path B.\n"
         "\n"
         "To use Path A instead, set IMAGE_BACKEND in one of these places:\n"
-        f"  1. Current process environment\n"
+        "  1. Current process environment\n"
         f"  2. {ENV_PATH}\n"
         "\n"
         f"Supported backends: {supported}\n"
@@ -911,7 +911,7 @@ def _run_manifest(manifest: dict, manifest_path: str, backend_module, *,
         with concurrent.futures.ThreadPoolExecutor(max_workers=batch_size) as ex:
             futures = [ex.submit(_one, i) for i in batch_idx]
             for fut in concurrent.futures.as_completed(futures):
-                idx, saved_path, exc = fut.result()
+                idx, _saved_path, exc = fut.result()
                 item = items[idx]
                 with state_lock:
                     if exc is None:
@@ -1119,7 +1119,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--aspect_ratio", default="1:1", choices=ALL_ASPECT_RATIOS,
-        help=f"Aspect ratio. Default: 1:1."
+        help="Aspect ratio. Default: 1:1."
     )
     parser.add_argument(
         "--image_size", default="1K",

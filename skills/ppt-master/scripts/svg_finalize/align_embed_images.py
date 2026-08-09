@@ -45,10 +45,10 @@ crops can no longer accumulate across re-runs.
 
 from __future__ import annotations
 
+import argparse
 import base64
 import io
 import math
-import os
 import re
 import sys
 from pathlib import Path
@@ -74,7 +74,7 @@ if __package__ in {None, ''}:
     package = types.ModuleType('svg_finalize')
     package.__path__ = [str(Path(__file__).resolve().parent)]  # type: ignore[attr-defined]
     sys.modules.setdefault('svg_finalize', package)
-    __package__ = 'svg_finalize'
+    __package__ = 'svg_finalize'  # pylint: disable=redefined-builtin
 
 # Reuse helpers from the previous standalone modules.
 from .crop_images import crop_image_to_size, get_crop_anchor, parse_preserve_aspect_ratio
@@ -311,11 +311,9 @@ def _encode_pil_to_data_uri(
 
 def _iter_image_elements(root: ET.Element):
     """Yield every <image> in the tree regardless of namespace prefix."""
-    for image in root.iter(f'{{{SVG_NS}}}image'):
-        yield image
+    yield from root.iter(f'{{{SVG_NS}}}image')
     # Also catch namespace-stripped trees just in case
-    for image in root.iter('image'):
-        yield image
+    yield from root.iter('image')
 
 
 def _get_href(image: ET.Element) -> str | None:
@@ -623,7 +621,6 @@ def align_and_embed_images_in_svg(
 
 def build_parser() -> argparse.ArgumentParser:
     """Build the standalone diagnostic parser."""
-    import argparse
     parser = argparse.ArgumentParser(
         description='Align (slice/meet) and Base64-embed all <image> refs in an SVG.',
     )

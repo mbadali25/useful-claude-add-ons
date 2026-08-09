@@ -1102,6 +1102,8 @@ def _open_browser(url: str) -> bool:
     """Best-effort browser launch after the local server is reachable."""
     try:
         if os.name == 'nt':
+            # os.startfile is Windows-only and this branch is guarded by os.name == 'nt'.
+            # pylint: disable=no-member
             os.startfile(url)  # type: ignore[attr-defined]
             return True
         return bool(webbrowser.open(url))

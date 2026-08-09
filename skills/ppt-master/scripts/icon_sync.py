@@ -54,7 +54,8 @@ def _split_name(icon_name: str) -> tuple[str, str]:
     return _LIB_ALIASES.get(lib, lib), name
 
 
-def sync_icons(project_path: Path, icon_names: list[str], global_dir: Path = _GLOBAL_ICONS_DIR) -> tuple[list[str], list[str]]:
+def sync_icons(project_path: Path, icon_names: list[str], global_dir: Path = _GLOBAL_ICONS_DIR) -> tuple[list[str],
+    list[str]]:
     """Copy each `lib/name` from the global library into `<project>/icons/`.
 
     Returns (copied, missing). A name already present in the project (e.g. a

@@ -501,7 +501,7 @@ def validate_svg_viewbox(svg_files: List[Path], expected_format: Optional[str] =
             )
 
     # Check for multiple different viewBoxes
-    distinct = {viewbox for viewbox in viewboxes.values()}
+    distinct = set(viewboxes.values())
     if len(distinct) > 1:
         details = ", ".join(
             f"{name}={viewbox.canonical}"

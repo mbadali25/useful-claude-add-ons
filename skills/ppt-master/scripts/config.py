@@ -18,7 +18,7 @@ import argparse
 import json
 import os
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any  # pylint: disable=unused-import
 
 from console_encoding import configure_utf8_stdio
 

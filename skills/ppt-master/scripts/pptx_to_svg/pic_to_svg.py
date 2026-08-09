@@ -183,10 +183,10 @@ def convert_blip_fill(
             f'width="{fmt_num(xfrm.w)}" height="{fmt_num(xfrm.h)}" '
             f'viewBox="{fmt_num(vb_l, 5)} {fmt_num(vb_t, 5)} '
             f'{fmt_num(vb_w, 5)} {fmt_num(vb_h, 5)}" '
-            f'preserveAspectRatio="none" overflow="hidden">'
+            'preserveAspectRatio="none" overflow="hidden">'
             f'<image href="{href}" x="0" y="0" width="1" height="1" '
             f'preserveAspectRatio="none"{opacity_attr}/>'
-            f"</svg>"
+            "</svg>"
         )
 
     media: dict[str, bytes] = {}

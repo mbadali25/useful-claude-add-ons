@@ -270,8 +270,8 @@ def assemble_slide(
     defs_block = f"<defs>{defs_xml}</defs>" if defs_xml else ""
 
     svg = (
-        f'<svg xmlns="http://www.w3.org/2000/svg" '
-        f'xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" '
+        '<svg xmlns="http://www.w3.org/2000/svg" '
+        'xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" '
         f'width="{canvas_w_token}" height="{canvas_h_token}" '
         f'viewBox="0 0 {canvas_w_token} {canvas_h_token}">'
         f"{defs_block}"
@@ -384,8 +384,8 @@ def assemble_part_solo(
     defs_block = f"<defs>{defs_xml}</defs>" if defs_xml else ""
 
     svg = (
-        f'<svg xmlns="http://www.w3.org/2000/svg" '
-        f'xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" '
+        '<svg xmlns="http://www.w3.org/2000/svg" '
+        'xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" '
         f'width="{canvas_w_token}" height="{canvas_h_token}" '
         f'viewBox="0 0 {canvas_w_token} {canvas_h_token}">'
         f"{defs_block}"
@@ -1160,10 +1160,10 @@ def _convert_graphic_fallback(node: ShapeNode, ctx: AssemblyContext,
     placeholder = (
         f'<rect x="{fmt_num(node.xfrm.x)}" y="{fmt_num(node.xfrm.y)}" '
         f'width="{fmt_num(node.xfrm.w)}" height="{fmt_num(node.xfrm.h)}" '
-        f'fill="none" stroke="#999999" stroke-dasharray="4 4"/>'
+        'fill="none" stroke="#999999" stroke-dasharray="4 4"/>'
         f'<text x="{fmt_num(node.xfrm.x + node.xfrm.w / 2)}" '
         f'y="{fmt_num(node.xfrm.y + node.xfrm.h / 2)}" '
-        f'text-anchor="middle" font-size="14" fill="#999999">'
+        'text-anchor="middle" font-size="14" fill="#999999">'
         f"[{_xml_escape(label)}]</text>"
     )
     if chart_payload_metadata:
@@ -1181,7 +1181,7 @@ def _graphic_preview_label(node: ShapeNode, label: str) -> str:
     return (
         f'<rect x="{fmt_num(node.xfrm.x)}" y="{fmt_num(node.xfrm.y)}" '
         f'width="{fmt_num(node.xfrm.w)}" height="22" '
-        f'fill="#FFFFFF" fill-opacity="0.82" stroke="#999999" stroke-width="0.5"/>'
+        'fill="#FFFFFF" fill-opacity="0.82" stroke="#999999" stroke-width="0.5"/>'
         f'<text x="{fmt_num(node.xfrm.x + 6)}" y="{fmt_num(node.xfrm.y + 15)}" '
         f'font-size="11" fill="#666666">[{_xml_escape(label)}]</text>'
     )

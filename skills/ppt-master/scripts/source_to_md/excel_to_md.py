@@ -166,10 +166,10 @@ def _extract_rows(
     rows_truncated = False
     cols_truncated = False
 
-    if max_rows > 0 and (max_row - min_row + 1) > max_rows:
+    if 0 < max_rows < (max_row - min_row + 1):
         row_limit = min_row + max_rows - 1
         rows_truncated = True
-    if max_cols > 0 and (max_col - min_col + 1) > max_cols:
+    if 0 < max_cols < (max_col - min_col + 1):
         col_limit = min_col + max_cols - 1
         cols_truncated = True
 

@@ -92,7 +92,7 @@ def _tokenize_path_data(d: str) -> list[_GeometryToken]:
     trailing = d[cursor:]
     if _TRAILING_WHITESPACE_RE.fullmatch(trailing) is None:
         raise ValueError(
-            f'path d contains unsupported trailing syntax at offset '
+            'path d contains unsupported trailing syntax at offset '
             f'{cursor}: {trailing!r}'
         )
     if not tokens:
@@ -175,7 +175,7 @@ def _tokenize_points(points: str) -> list[_GeometryToken]:
     trailing = points[cursor:]
     if _TRAILING_WHITESPACE_RE.fullmatch(trailing) is None:
         raise ValueError(
-            f'points contains unsupported trailing syntax at offset '
+            'points contains unsupported trailing syntax at offset '
             f'{cursor}: {trailing!r}'
         )
     if not tokens:

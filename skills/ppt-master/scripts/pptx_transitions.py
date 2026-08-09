@@ -960,6 +960,9 @@ def _value_repr(value: object) -> str:
         return f"<{type(value).__name__}>"
 
 
+# `field` names the payload key being validated, which is the domain term in
+# every error message. dataclasses.field is the incidental import.
+# pylint: disable=redefined-outer-name
 def validate_seconds(
     value: object,
     field: str,
@@ -2729,7 +2732,7 @@ def set_package_use_timings(
                 f"presentation properties part is missing: {props_part}"
             )
         source = (
-            f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
             f'<p:presentationPr xmlns:p="{PML_NS}"/>'
         ).encode("utf-8")
         root = parse_source_xml(source)

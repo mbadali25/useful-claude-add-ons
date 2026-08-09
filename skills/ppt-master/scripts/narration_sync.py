@@ -315,7 +315,7 @@ def _load_timing_plan(
     }
     if unknown_top:
         raise ValueError(
-            f"Narration timing plan has unknown top-level field(s): "
+            "Narration timing plan has unknown top-level field(s): "
             f"{', '.join(sorted(unknown_top))}"
         )
     if raw.get("version") != 1:
@@ -746,7 +746,7 @@ def _resolve_animation_groups(
         svg_path = project_path / "svg_output" / f"{slide_name}.svg"
         if not svg_path.is_file():
             raise FileNotFoundError(
-                f"Animation group mapping is ambiguous and requires the page SVG: "
+                "Animation group mapping is ambiguous and requires the page SVG: "
                 f"{svg_path}"
             )
         targets, anonymous_groups = scan_svg_targets(svg_path)
@@ -858,7 +858,7 @@ def _resolve_animation_groups(
                 )
             if effect_cfg.get("trigger_shape") is not None:
                 raise ValueError(
-                    f'Recorded narration cannot synchronize trigger-shape '
+                    'Recorded narration cannot synchronize trigger-shape '
                     f'animation "{effect_path}" on slide "{slide_name}"'
                 )
             effect_trigger = normalize_animation_trigger(
@@ -866,7 +866,7 @@ def _resolve_animation_groups(
             )
             if effect_trigger == "on-click":
                 raise ValueError(
-                    f'Recorded narration cannot synchronize on-click animation '
+                    'Recorded narration cannot synchronize on-click animation '
                     f'"{effect_path}" on slide "{slide_name}"'
                 )
             preliminaries.append((
@@ -1072,7 +1072,7 @@ def rebuild_animations(
             for entry in plan_entries:
                 if entry.group_id not in state_ids:
                     raise ValueError(
-                        f'Narration timing plan references a non-animated group: '
+                        'Narration timing plan references a non-animated group: '
                         f"{slide_name}/{entry.group_id}"
                     )
                 if entry.cue_number is not None and entry.cue_number > len(cues):

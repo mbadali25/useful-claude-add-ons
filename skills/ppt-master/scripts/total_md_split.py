@@ -295,7 +295,8 @@ Features:
     )
 
     parser.add_argument('project_path', type=str, help='Project directory path')
-    parser.add_argument('-o', '--output', type=str, default=None, help='Output directory path (default: notes directory under project)')
+    parser.add_argument('-o', '--output', type=str, default=None,
+        help='Output directory path (default: notes directory under project)')
     parser.add_argument('-q', '--quiet', action='store_true', help='Quiet mode')
 
     args = parser.parse_args()
@@ -361,10 +362,10 @@ Features:
 
     if success:
         if verbose:
-            print(f"\n[Done] Notes splitting complete")
+            print("\n[Done] Notes splitting complete")
         sys.exit(0)
     else:
-        print(f"\n[Failed] Notes splitting failed")
+        print("\n[Failed] Notes splitting failed")
         sys.exit(1)
 
 

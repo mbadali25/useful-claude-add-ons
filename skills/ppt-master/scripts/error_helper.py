@@ -120,7 +120,8 @@ class ErrorHelper:
             'message': 'clip-path is only allowed on <image> elements',
             'solutions': [
                 'Remove clip-path from shapes / groups / text',
-                'Draw the target geometry directly with the matching native element: <circle> / <ellipse> / <rect rx="..."> / <polygon> / <path>. A rect clipped to a circle is just a <circle>.',
+                'Draw the target geometry directly with the matching native element: <circle> / <ellipse> / <rect '
+                'rx="..."> / <polygon> / <path>. A rect clipped to a circle is just a <circle>.',
                 'clip-path on <image> is conditionally allowed — see references/shared-standards-core.md §1.2'
             ],
             'severity': 'error'
@@ -129,7 +130,8 @@ class ErrorHelper:
             'message': 'clip-path references a <clipPath> id that does not exist in <defs>',
             'solutions': [
                 'Define the referenced <clipPath id="..."> inside <defs>',
-                'The clipPath must contain exactly one shape child (circle / ellipse / rect with rx,ry / path / polygon)',
+                'The clipPath must contain exactly one shape child (circle / ellipse / rect with rx,ry / path / '
+                'polygon)',
                 'Reference: references/shared-standards-core.md §1.2'
             ],
             'severity': 'error'

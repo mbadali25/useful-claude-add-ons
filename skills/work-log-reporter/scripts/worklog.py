@@ -251,7 +251,7 @@ def cmd_start(args) -> int:
     state = load_state(root)
     if state.get("current_session") and not args.force:
         print(f"Session {state['current_session']} is already open. "
-              f"Use --force to open another anyway.")
+              "Use --force to open another anyway.")
         return 0
 
     session = new_session(title=args.title, root=root)
@@ -347,9 +347,9 @@ def cmd_end(args) -> int:
         return 0
     if reporting.get("mode") != "per_session":
         pending = len(unreported_session_ids(root))
-        print(f"Mode is end_of_day — holding this session. "
+        print("Mode is end_of_day — holding this session. "
               f"{pending} session(s) waiting. Send with: "
-              f"python scripts/worklog.py send")
+              "python scripts/worklog.py send")
         return 0
 
     print("Auto-email is on and mode is per_session — sending now.")
@@ -544,7 +544,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     if getattr(args, "session", None) and not SESSION_ID_RE.match(args.session):
         print(f"error: '{args.session}' is not a session id "
-              f"(expected e.g. 2026-07-30-session-01)", file=sys.stderr)
+              "(expected e.g. 2026-07-30-session-01)", file=sys.stderr)
         return 2
     try:
         return args.func(args)

@@ -1147,13 +1147,13 @@ def _sanitize_epub_manifest(src: Path) -> tuple[Path, bool]:
             if len(bad_hrefs) > 3:
                 preview += " ..."
             print(
-                f"[INFO] EPUB manifest sanitized: removed "
+                "[INFO] EPUB manifest sanitized: removed "
                 f"{len(bad_hrefs)} broken item(s) [{preview}]"
             )
             return out_path, True
     except (zipfile.BadZipFile, ET.ParseError, OSError) as exc:
         print(
-            f"[WARN] EPUB sanitize skipped "
+            "[WARN] EPUB sanitize skipped "
             f"({exc.__class__.__name__}: {exc}); using original file"
         )
         return src, False
@@ -1190,7 +1190,7 @@ def _convert_epub(input_file: Path, out_file: Path) -> str:
         from bs4 import BeautifulSoup
     except ImportError as e:
         print(f"[ERROR] Missing dependency: {e.name}. "
-              f"Run: pip install ebooklib markdownify beautifulsoup4")
+              "Run: pip install ebooklib markdownify beautifulsoup4")
         return ""
 
     media_dir, rel_media_dir = _ensure_media_dir(out_file)
@@ -1345,7 +1345,7 @@ def _convert_with_pandoc(input_file: Path, out_file: Path, suffix: str) -> str:
         cmd.extend(["--extract-media", rel_media_dir])
 
     result = subprocess.run(cmd, capture_output=True, text=True,
-                            cwd=str(out_file.parent))
+                            cwd=str(out_file.parent), check=False)
     if result.returncode != 0:
         print(f"[ERROR] Pandoc conversion failed:\n{result.stderr}")
         return ""

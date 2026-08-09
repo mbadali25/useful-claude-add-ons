@@ -19,7 +19,11 @@ Correlation: inline buttons (callback_data=req_id) + reply-to (message_id->req_i
 + topic free-text (newest open question in that topic). Reply-to and buttons are
 always unambiguous; bare topic text answers the most recent open question there.
 """
-import json, os, sys, time, signal
+import json
+import os
+import sys
+import time
+import signal
 from pathlib import Path
 import tg
 
@@ -38,11 +42,11 @@ def deep_merge(base, over):
 
 def resolve_config(explicit=None):
     if explicit:
-        return json.loads(Path(explicit).read_text())
+        return json.loads(Path(explicit).read_text(encoding="utf-8"))
     cfg = {}
     for p in [Path(os.path.expanduser("~/.config/notify/config.json")), Path.cwd() / ".notify.json"]:
         if p.exists():
-            cfg = deep_merge(cfg, json.loads(p.read_text()))
+            cfg = deep_merge(cfg, json.loads(p.read_text(encoding="utf-8")))
     return cfg
 
 

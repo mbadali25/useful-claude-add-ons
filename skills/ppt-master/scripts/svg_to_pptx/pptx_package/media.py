@@ -11,6 +11,13 @@ from pathlib import Path
 # Prefer CairoSVG (better quality), fall back to svglib
 PNG_RENDERER: str | None = None
 
+# Bound up front so the names always exist. They are only ever dereferenced
+# under `PNG_RENDERER == 'svglib'`, which is set in the same branch that
+# imports them, but a static reader cannot correlate the two and neither can
+# pylint, which reported used-before-assignment on both.
+svg2rlg = None
+renderPM = None
+
 try:
     import cairosvg
     PNG_RENDERER = 'cairosvg'
@@ -31,12 +38,11 @@ def get_png_renderer_info() -> tuple[str | None, str, str | None]:
     """
     if PNG_RENDERER == 'cairosvg':
         return ('cairosvg', '(full gradient/filter support)', None)
-    elif PNG_RENDERER == 'svglib':
+    if PNG_RENDERER == 'svglib':
         return ('svglib', '(some gradients may be lost)',
                 'Install cairosvg for better results: pip install cairosvg')
-    else:
-        return (None, '(not installed)',
-                'Install via: pip install cairosvg or pip install svglib reportlab')
+    return (None, '(not installed)',
+            'Install via: pip install cairosvg or pip install svglib reportlab')
 
 
 def convert_svg_to_png(
@@ -69,7 +75,7 @@ def convert_svg_to_png(
             )
             return True
 
-        elif PNG_RENDERER == 'svglib':
+        if PNG_RENDERER == 'svglib':
             drawing = svg2rlg(str(svg_path))
             if drawing is None:
                 print(f"  Warning: Unable to parse SVG ({svg_path.name})")

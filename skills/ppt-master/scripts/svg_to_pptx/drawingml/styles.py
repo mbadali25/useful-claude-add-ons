@@ -119,7 +119,7 @@ def build_gradient_fill(
 <a:lin ang="{dml_angle}" scaled="1"/>
 </a:gradFill>'''
 
-    elif tag == 'radialGradient':
+    if tag == 'radialGradient':
         focus_x = parse_project_gradient_ratio(
             grad_elem.get('fx', grad_elem.get('cx', '0.5'))
         )
@@ -313,7 +313,7 @@ def build_pattern_fill(
         f'<a:pattFill prst="{prst}">'
         f'<a:fgClr>{fg_xml}</a:fgClr>'
         f'<a:bgClr>{bg_xml}</a:bgClr>'
-        f'</a:pattFill>'
+        '</a:pattFill>'
     )
 
 
@@ -570,9 +570,11 @@ def _infer_shadow_alignment(dx: float, dy: float, threshold: float = 0.5) -> str
         return 'l' if dx > 0 else 'r'
     if dx > 0 and dy > 0:
         return 'tl'
-    if dx < 0 and dy > 0:
+    # dx < 0 < dy would chain two unrelated axes through the zero and read
+    # worse than naming each sign test.
+    if dx < 0 and dy > 0:  # pylint: disable=chained-comparison
         return 'tr'
-    if dx > 0 and dy < 0:
+    if dx > 0 and dy < 0:  # pylint: disable=chained-comparison
         return 'bl'
     return 'br'
 

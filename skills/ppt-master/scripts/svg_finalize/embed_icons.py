@@ -29,8 +29,12 @@ Icon libraries (subdirectories of templates/icons/):
     tabler-filled/     - 1000+ fill icons, 24x24 viewBox (use prefix: tabler-filled/name)
     tabler-outline/    - 5000+ stroke icons, 24x24 viewBox (use prefix: tabler-outline/name)
     phosphor-duotone/  - 1200+ duotone icons, 256x256 viewBox (single color + 0.2-opacity backplate)
-    simple-icons/      - 3400+ brand logos, 24x24 viewBox (brand-inset library — used alongside the chosen primary library, NOT as a standalone library for generic icons)
-    imported/          - project-local extracted vector illustrations with data-icon-style="preserve-color"; preserve source colors and natural viewBox aspect ratio
+    simple-icons/      - 3400+ brand logos, 24x24 viewBox (brand-inset library,
+                         used alongside the chosen primary library, NOT as a
+                         standalone library for generic icons)
+    imported/          - project-local extracted vector illustrations with
+                         data-icon-style="preserve-color". Preserves source
+                         colors and natural viewBox aspect ratio
 
 Usage:
     python3 scripts/svg_finalize/embed_icons.py <svg_file> [svg_file2] ...
@@ -44,12 +48,11 @@ Options:
 
 from __future__ import annotations
 
-import os
 import re
 import sys
 import argparse
 from pathlib import Path
-from xml.etree import ElementTree as ET
+from xml.etree import ElementTree as ET  # pylint: disable=unused-import
 
 _SCRIPTS_DIR = Path(__file__).resolve().parents[1]
 if str(_SCRIPTS_DIR) not in sys.path:
@@ -429,7 +432,8 @@ def generate_icon_group(attrs: dict[str, str | float], elements: list[str], styl
   </g>'''
 
 
-def process_svg_file(svg_path: Path, icons_dir: Path, dry_run: bool = False, verbose: bool = False, fallback_dir: Path | None = None) -> int:
+def process_svg_file(svg_path: Path, icons_dir: Path, dry_run: bool = False, verbose: bool = False,
+    fallback_dir: Path | None = None) -> int:
     """
     Process a single SVG file, replacing all icon placeholders.
 
@@ -445,27 +449,27 @@ def process_svg_file(svg_path: Path, icons_dir: Path, dry_run: bool = False, ver
     if not svg_path.exists():
         print(f"[ERROR] File not found: {svg_path}")
         return 0
-    
+
     content = svg_path.read_text(encoding='utf-8')
-    
+
     # Match self-closing <use data-icon="..."/> placeholders. Attribute
     # parsing below accepts both single and double quotes.
     use_pattern = r'<use\b(?=[^>]*\bdata-icon\s*=)[^>]*/>'
     matches = list(re.finditer(use_pattern, content, re.IGNORECASE | re.DOTALL))
-    
+
     if not matches:
         if verbose:
             print(f"[SKIP] No icon placeholders: {svg_path}")
         return 0
-    
+
     replaced_count = 0
     new_content = content
-    
+
     # Replace from back to front to avoid position offset
     for match in reversed(matches):
         use_str = match.group(0)
         attrs = parse_use_element(use_str)
-        
+
         icon_name = attrs.get('icon')
         if not icon_name:
             continue
@@ -491,22 +495,22 @@ def process_svg_file(svg_path: Path, icons_dir: Path, dry_run: bool = False, ver
                 f"(in {svg_path.name})"
             )
             continue
-        
+
         replacement = generate_icon_group(attrs, elements, style, base_size)
-        
+
         if verbose or dry_run:
             print(f"  [*] {icon_name}: x={attrs.get('x', 0)}, y={attrs.get('y', 0)}, "
                   f"size={attrs.get('width', base_size)}, fill={color}, style={style}")
-        
+
         new_content = new_content[:match.start()] + replacement + new_content[match.end():]
         replaced_count += 1
-    
+
     if not dry_run and replaced_count > 0:
         svg_path.write_text(new_content, encoding='utf-8')
-    
+
     status = "[PREVIEW]" if dry_run else "[OK]"
     print(f"{status} {svg_path.name} ({replaced_count} icons)")
-    
+
     return replaced_count
 
 
@@ -523,7 +527,7 @@ Examples:
   python3 scripts/svg_finalize/embed_icons.py --icons-dir my_icons/ output.svg
         '''
     )
-    
+
     parser.add_argument('files', nargs='+', help='SVG files to process')
     parser.add_argument('--icons-dir', type=Path, default=DEFAULT_ICONS_DIR,
                         help=f'Icon directory path (default: {DEFAULT_ICONS_DIR})')
@@ -531,9 +535,9 @@ Examples:
                         help='Only show what would be replaced, without modifying files')
     parser.add_argument('--verbose', '-v', action='store_true',
                         help='Show detailed information')
-    
+
     args = parser.parse_args()
-    
+
     # Validate icon directory
     if not args.icons_dir.exists():
         print(f"[ERROR] Icon directory not found: {args.icons_dir}")
@@ -543,10 +547,10 @@ Examples:
     if args.dry_run:
         print("[PREVIEW] Preview mode (no files will be modified)")
     print()
-    
+
     total_replaced = 0
     total_files = 0
-    
+
     for file_pattern in args.files:
         svg_path = Path(file_pattern)
         if svg_path.exists():
@@ -554,7 +558,7 @@ Examples:
             total_replaced += count
             if count > 0:
                 total_files += 1
-    
+
     print()
     print(f"[Summary] Total: {total_files} file(s), {total_replaced} icon(s)" +
           (" (preview)" if args.dry_run else " replaced"))

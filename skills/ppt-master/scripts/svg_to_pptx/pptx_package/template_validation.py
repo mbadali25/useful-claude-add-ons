@@ -893,9 +893,9 @@ def validate_pptx_template_package(
             specs_by_layout.setdefault(spec.layout_key, []).append(spec)
         for spec in specs:
             public_specs_by_layout.setdefault(spec.layout_key, []).append(spec)
-        for layout_key, layout_specs in specs_by_layout.items():
+        for layout_key, specs_for_layout in specs_by_layout.items():
             bindings_by_layout[layout_key] = template_placeholder_bindings(
-                layout_specs[0]
+                specs_for_layout[0]
             )
     except TemplateStructureError as exc:
         raise ValueError(str(exc)) from exc
@@ -1035,8 +1035,8 @@ def validate_pptx_template_package(
                     f"missing={sorted(expected_master_keys - set(expected_master_parts))}, "
                     f"extra={sorted(set(expected_master_parts) - expected_master_keys)}"
                 )
-            for layout_key, layout_specs in specs_by_layout.items():
-                prototype = layout_specs[0]
+            for layout_key, specs_for_layout in specs_by_layout.items():
+                prototype = specs_for_layout[0]
                 layout_part = layout_parts_by_key.get(layout_key)
                 if layout_part is None:
                     errors.append(f"layout key {layout_key!r} has no resolved Layout part")

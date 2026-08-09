@@ -10,6 +10,10 @@ from __future__ import annotations
 
 from typing import Any
 
+# Supplied by the PEP 562 module __getattr__ below, not by a module-level
+# binding, so pylint's static scan reports undefined-all-variable for each.
+# Verified resolvable at runtime through getattr on the imported module.
+# pylint: disable=undefined-all-variable
 __all__ = [
     'main',
     'convert_svg_to_slide_shapes',

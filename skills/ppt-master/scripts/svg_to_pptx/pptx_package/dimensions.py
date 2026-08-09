@@ -18,7 +18,7 @@ from ..canvas_contract import (
 # Import project utility modules
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 try:
-    from project_utils import get_project_info
+    from project_utils import get_project_info  # pylint: disable=unused-import
     from config import CANVAS_FORMATS
 except ImportError:
     CANVAS_FORMATS = {

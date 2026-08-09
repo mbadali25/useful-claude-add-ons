@@ -906,7 +906,7 @@ def _combo_chart_data(payload: dict[str, Any]) -> dict[str, Any]:
         raw_series = _chart_list(payload.get("series", []), "series")
         if not raw_series:
             raise RuntimeError("Native PPTX combo chart requires plots or typed series")
-        for idx, item in enumerate(raw_series, start=1):
+        for _idx, item in enumerate(raw_series, start=1):
             if not isinstance(item, dict):
                 raise RuntimeError("Native PPTX chart series entries must be objects")
             if not (item.get("type") or item.get("chart_type")):
@@ -945,7 +945,9 @@ def _combo_chart_data(payload: dict[str, Any]) -> dict[str, Any]:
                 and signature == previous_signature
                 and plot.get("data_labels") == previous.get("data_labels")
             ):
-                previous["series"].extend(plot["series"])
+                # previous is a dict past the `is not None` conjunct above, which
+                # pylint does not follow into the body.
+                previous["series"].extend(plot["series"])  # pylint: disable=unsubscriptable-object
             else:
                 plots.append(plot)
 

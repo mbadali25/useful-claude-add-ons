@@ -142,7 +142,7 @@ def _read_json_object(path: Path, retries: int = 2, delay: float = 0.08) -> dict
             if attempt < retries:
                 time.sleep(delay)
                 continue
-            raise last_error
+            raise last_error from exc
     raise last_error
 
 
@@ -482,7 +482,7 @@ def _stage_skip_error(confirm_dir: Path) -> Optional[str]:
     return (
         f'stage skip detected: {rec_file.name} is {_stage_name(rec_stage_number)} but the last '
         f'confirmed result is {result_stage or "absent"} — the page will not render a skipped stage. '
-        f'Stages confirm in order and an active template does not exempt stage2 (generate-pptx Step 4). '
+        'Stages confirm in order and an active template does not exempt stage2 (generate-pptx Step 4). '
         f'Write the missing {expected_file} recommendations, then re-run with {reattach}.'
     )
 
@@ -2026,7 +2026,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         expected_stage = _expected_result_stage(confirm_dir)
         started_at = time.time()
         try:
-            proc, port, _ = _launch_background_server(
+            proc, _port, _ = _launch_background_server(
                 project_path,
                 preferred_port=args.port,
                 idle_timeout=args.timeout,

@@ -286,7 +286,7 @@ def _validate_result_id_collision(
 ) -> None:
     if result_id in elements_by_id and result_id not in source_ids:
         raise ValueError(
-            f"Shape Boolean result id already exists outside the sources: "
+            "Shape Boolean result id already exists outside the sources: "
             f"{result_id!r}"
         )
 
@@ -522,7 +522,7 @@ def _materialize_baked_stroke_style(
             )
         except ValueError as exc:
             raise ValueError(
-                f"Shape Boolean primary vector-effect "
+                "Shape Boolean primary vector-effect "
                 f"{raw_vector_effect!r} {exc}"
             ) from exc
         materialized["vector-effect"] = vector_effect
@@ -1290,6 +1290,9 @@ def _pathops_to_svg_path(path: Any, pathops: Any) -> str:
         elif verb == pathops.PathVerb.QUAD:
             if current is None:
                 raise ValueError("Shape Boolean result quadratic has no start point")
+            # current is a tuple past the guard above, which pylint does not
+            # follow through the raise.
+            # pylint: disable=unsubscriptable-object
             control, end = points
             control_1 = (
                 current[0] + (control[0] - current[0]) * 2.0 / 3.0,

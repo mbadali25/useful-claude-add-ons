@@ -97,10 +97,10 @@ def send(cfg: dict, msg: EmailMessage) -> str:
     except smtplib.SMTPAuthenticationError as exc:
         raise WorkLogError(
             f"SMTP rejected the login for {auth.get('username')}: {exc}\n"
-            f"Check the username and the value of "
+            "Check the username and the value of "
             f"${auth.get('password_env', 'WORKLOG_SMTP_PASSWORD')}. "
-            f"Many providers require an app-specific password rather than the "
-            f"account password."
+            "Many providers require an app-specific password rather than the "
+            "account password."
         ) from exc
     except (smtplib.SMTPException, OSError) as exc:
         raise WorkLogError(

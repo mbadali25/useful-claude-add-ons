@@ -27,7 +27,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import os
 import re
 import sys
 from dataclasses import dataclass
@@ -481,7 +480,8 @@ def main() -> int:
             return 1
         backend = AudioBackend(provider=args.provider, extension=extension, api_key=api_key, voice_id=voice_id)
     else:
-        backend = AudioBackend(provider=args.provider, extension=backend_edge.edge_output_extension(), voice_id=args.voice)
+        backend = AudioBackend(provider=args.provider, extension=backend_edge.edge_output_extension(),
+            voice_id=args.voice)
 
     project = args.project_path
     notes_dir = project / "notes"
@@ -538,7 +538,7 @@ def main() -> int:
                 _remove_stale_audio_variants(job.output_path)
             except OSError as exc:
                 print(
-                    f"error: failed to remove stale audio for "
+                    "error: failed to remove stale audio for "
                     f"{job.output_path.stem}: {exc}",
                     file=sys.stderr,
                 )

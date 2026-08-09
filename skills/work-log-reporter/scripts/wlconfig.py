@@ -154,8 +154,8 @@ def smtp_password(cfg: dict) -> str | None:
         raise WorkLogError(
             f"Auth is enabled but ${var} is not set in the environment.\n"
             f"Either export {var}=... or set smtp.auth.enabled to false "
-            f"if you are relaying through an internal server that does not "
-            f"require a login."
+            "if you are relaying through an internal server that does not "
+            "require a login."
         )
     return value
 

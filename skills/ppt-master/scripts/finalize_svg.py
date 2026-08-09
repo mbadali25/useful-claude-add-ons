@@ -158,7 +158,7 @@ def _publish_candidate_directory(candidate_dir: Path, output_dir: Path) -> None:
                         not _path_lexists(backup_dir)
                         and _path_lexists(output_dir)
                     ):
-                        raise publish_error
+                        raise publish_error from restore_error
                     preserve_backup = _path_lexists(backup_dir)
                     raise RuntimeError(
                         "Failed to publish svg_final and restore the previous "
@@ -269,7 +269,7 @@ def _process_candidate_directory(
             img_errors += errs
         if img_errors:
             safe_print(
-                f"[ERROR] Image alignment/embedding failed for "
+                "[ERROR] Image alignment/embedding failed for "
                 f"{img_errors} image(s); svg_final was not published",
                 file=sys.stderr,
             )
@@ -352,7 +352,7 @@ def finalize_project(
     # Get list of SVG files
     svg_files = list(svg_output.glob('*.svg'))
     if not svg_files:
-        safe_print(f"[ERROR] No SVG files in svg_output")
+        safe_print("[ERROR] No SVG files in svg_output")
         return False
 
     if not quiet:

@@ -51,7 +51,7 @@ def validate_timespan(path, timespan):
         raise MerakiError(
             0,
             [f"timespan {timespan}s exceeds the {limit}s maximum for {path}. "
-             f"Use t0/t1 to window a longer period, or lower --timespan."],
+             "Use t0/t1 to window a longer period, or lower --timespan."],
         )
 
 
@@ -93,7 +93,7 @@ def product_type_for(network, requested=None):
         if requested not in IN_SCOPE_PRODUCT_TYPES:
             raise MerakiError(
                 0, [f"Product type '{requested}' is outside this skill's scope "
-                    f"(MX/MS/MR only)."])
+                    "(MX/MS/MR only)."])
         return requested
 
     usable = [p for p in available if p in IN_SCOPE_PRODUCT_TYPES]
@@ -105,7 +105,7 @@ def product_type_for(network, requested=None):
         raise MerakiError(
             0, [f"Network {network.get('id')} is a combined network "
                 f"({', '.join(usable)}). The event log requires one "
-                f"productType -- pass --product-type with one of these."])
+                "productType -- pass --product-type with one of these."])
     return usable[0]
 
 
@@ -192,9 +192,9 @@ class MerakiClient:
         if len(orgs) > 1:
             listed = ", ".join(f"{o.get('name')} ({o.get('id')})" for o in orgs)
             raise MerakiError(
-                0, [f"This skill is scoped to a single organization but the key "
+                0, ["This skill is scoped to a single organization but the key "
                     f"sees {len(orgs)}: {listed}. Re-run with the intended org "
-                    f"confirmed by the user."])
+                    "confirmed by the user."])
         self._org_id = str(orgs[0]["id"])
         cache = self._load_cache(self._org_id)
         cache["org"] = {"id": self._org_id, "name": orgs[0].get("name")}
@@ -261,7 +261,7 @@ class MerakiClient:
             if "appliance" not in (net.get("productTypes") or []):
                 raise MerakiError(
                     0, [f"Network {network_id} has no MX appliance, so it has no "
-                        f"security events."])
+                        "security events."])
             path = f"/networks/{network_id}/appliance/security/events"
         else:
             org_id = self.resolve_org()
@@ -274,7 +274,7 @@ class MerakiClient:
         if "wireless" not in (net.get("productTypes") or []):
             raise MerakiError(
                 0, [f"Network {network_id} has no wireless product type, so "
-                    f"Air Marshal is unavailable."])
+                    "Air Marshal is unavailable."])
         path = f"/networks/{network_id}/wireless/airMarshal"
         validate_timespan(path, timespan)
         return self.get_all(path, {"timespan": timespan})
@@ -359,7 +359,7 @@ class MerakiClient:
                     listed = ", ".join(sorted(candidates.keys()))
                     raise MerakiError(
                         0, [f"Live tool '{tool}' on {serial} returned multiple "
-                            f"candidate job id keys; cannot determine which to "
+                            "candidate job id keys; cannot determine which to "
                             f"poll. Candidates: {listed}"])
                 if len(candidates) == 1:
                     key = next(iter(candidates.keys()))
@@ -370,7 +370,7 @@ class MerakiClient:
                        else "(non-dict response)")
             raise MerakiError(
                 0, [f"Live tool '{tool}' on {serial} returned no recognizable "
-                    f"job id, so it cannot be polled. Keys present in the "
+                    "job id, so it cannot be polled. Keys present in the "
                     f"creation response: {present or '(none)'}"])
 
         deadline = time.monotonic() + float(timeout)

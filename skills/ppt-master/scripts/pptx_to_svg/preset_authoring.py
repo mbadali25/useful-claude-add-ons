@@ -375,12 +375,12 @@ def _validate_expanded_authored_preset_group(group: ET.Element) -> list[str]:
     ]
     if len(carriers) != 1:
         errors.append(
-            f"Authored preset requires exactly one direct geometry carrier; "
+            "Authored preset requires exactly one direct geometry carrier; "
             f"found {len(carriers)}"
         )
     if len(previews) != 1:
         errors.append(
-            f"Authored preset requires exactly one direct geometry preview; "
+            "Authored preset requires exactly one direct geometry preview; "
             f"found {len(previews)}"
         )
     allowed_children = set(carriers + previews)

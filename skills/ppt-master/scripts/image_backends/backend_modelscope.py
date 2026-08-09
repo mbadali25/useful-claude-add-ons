@@ -111,11 +111,12 @@ def _generate_image(api_key: str, prompt: str,
     print()
     print("  [..] Generating...", end="", flush=True)
     start = time.time()
-    response = requests.post(url, headers={**common_headers,"X-ModelScope-Async-Mode": "true"}, json=payload, timeout=300)
-    
-    if (response.status_code != 200):
+    response = requests.post(url, headers={**common_headers,"X-ModelScope-Async-Mode": "true"}, json=payload,
+        timeout=300)
+
+    if response.status_code != 200:
         raise http_error(response, "ModelScope image generation")
-    
+
     task_id = response.json()["task_id"]
     data = poll_json(
         url=f"{_resolve_url(base_url)}/v1/tasks/{task_id}",
@@ -128,7 +129,7 @@ def _generate_image(api_key: str, prompt: str,
     print(f"\n  [DONE] Response received ({elapsed:.1f}s)")
     path = resolve_output_path(prompt, output_dir, filename, ".png")
     return download_image(data["output_images"][0], path)
-    
+
 def generate(prompt: str,
              aspect_ratio: str = "1:1", image_size: str = "1K",
              output_dir: str = None, filename: str = None,
@@ -165,4 +166,3 @@ def generate(prompt: str,
             time.sleep(delay)
 
     raise RuntimeError(f"Failed after {max_retries + 1} attempts. Last error: {last_error}")
-

@@ -33,7 +33,6 @@ class ImageRotator:
 
     def __init__(self):
         """Initialize the manager"""
-        pass
 
     @staticmethod
     def _repo_root() -> Path:
@@ -105,7 +104,7 @@ class ImageRotator:
         if not target_path.exists():
             return 0
 
-        print(f"[AUTO] Checking EXIF orientation information...")
+        print("[AUTO] Checking EXIF orientation information...")
         fixed_count = 0
         valid_exts = {'.jpg', '.jpeg', '.webp'} # PNG typically does not carry rotation EXIF
 
@@ -119,7 +118,7 @@ class ImageRotator:
         if fixed_count > 0:
             print(f"[OK] Auto-fixed EXIF orientation for {fixed_count} image(s)")
         else:
-            print(f"[INFO] No images requiring EXIF correction found")
+            print("[INFO] No images requiring EXIF correction found")
 
         return fixed_count
 
@@ -159,7 +158,8 @@ class ImageRotator:
                     # path is used for JSON data, using path relative to the working directory (usually repo root)
                     # e.g. "projects/Name/images/1.jpg"
                     # We assume the script is run from the repo root, or target_path is already absolute
-                    # The safest approach is to compute a path relative to the repo root (avoids CWD changes making fixes.json unusable)
+                    # The safest approach is to compute a path relative to the repo root (avoids CWD changes making
+                    # fixes.json unusable)
                     try:
                         repo_rel_path = f.relative_to(repo_root).as_posix()
                     except ValueError:
@@ -198,8 +198,10 @@ class ImageRotator:
             else:
                 try:
                     tasks = json.loads(json_source)
-                except json.JSONDecodeError:
-                    raise ValueError("Invalid input: not a file path nor a valid JSON string")
+                except json.JSONDecodeError as exc:
+                    raise ValueError(
+                        "Invalid input: not a file path nor a valid JSON string"
+                    ) from exc
         elif isinstance(json_source, list):
             tasks = json_source
 
@@ -590,6 +592,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     parser.error(f"Unknown command: {args.command}")
+    # argparse.error() raises SystemExit, so this is unreachable. It is here
+    # so every path out of main() is an int, which the annotation promises.
+    return 2
 
 if __name__ == '__main__':
     raise SystemExit(main())

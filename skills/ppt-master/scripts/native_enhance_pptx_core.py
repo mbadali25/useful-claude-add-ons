@@ -1571,13 +1571,13 @@ def _resolve_transition_plan(
             or re.fullmatch(r"[1-9]\d*", raw_index) is None
         ):
             raise ValueError(
-                f"transition slide key must be a canonical 1-based index: "
+                "transition slide key must be a canonical 1-based index: "
                 f"{raw_index!r}"
             )
         slide_index = int(raw_index)
         if slide_index not in valid_indices:
             raise ValueError(
-                f"transition slide index is outside the source roster: "
+                "transition slide index is outside the source roster: "
                 f"{slide_index}"
             )
         if not isinstance(override, dict):

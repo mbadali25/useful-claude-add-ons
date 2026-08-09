@@ -1660,14 +1660,14 @@ def convert_line(elem: ET.Element, ctx: ConvertContext) -> ShapeResult | None:
         ly2 = px_to_emu(y2 - min_y)
 
         geom = (
-            f'<a:custGeom>'
-            f'<a:avLst/><a:gdLst/><a:ahLst/><a:cxnLst/>'
-            f'<a:rect l="l" t="t" r="r" b="b"/>'
+            '<a:custGeom>'
+            '<a:avLst/><a:gdLst/><a:ahLst/><a:cxnLst/>'
+            '<a:rect l="l" t="t" r="r" b="b"/>'
             f'<a:pathLst><a:path w="{w_emu}" h="{h_emu}">'
             f'<a:moveTo><a:pt x="{lx1}" y="{ly1}"/></a:moveTo>'
             f'<a:lnTo><a:pt x="{lx2}" y="{ly2}"/></a:lnTo>'
-            f'</a:path></a:pathLst>'
-            f'</a:custGeom>'
+            '</a:path></a:pathLst>'
+            '</a:custGeom>'
         )
         xml = _wrap_shape(
             shape_id, f'Line {shape_id}',
@@ -1876,7 +1876,7 @@ def convert_polyline(elem: ET.Element, ctx: ConvertContext) -> ShapeResult | Non
 
     fill_op = get_fill_opacity(elem, ctx)
     stroke_op = get_stroke_opacity(elem, ctx)
-    fill = build_fill_xml(elem, ctx, fill_op)
+    _fill = build_fill_xml(elem, ctx, fill_op)
     stroke = build_stroke_xml(elem, ctx, stroke_op)
 
     shape_id = _claim_element_shape_id(elem, ctx)
@@ -2538,6 +2538,10 @@ def _build_run_properties_xml(
     sz = font_px_to_hpt(fs_px)
     b_attr = ' b="1"' if parse_project_font_weight(fw).value else ''
     i_attr = ' i="1"' if fstyle == 'italic' else ''
+    # ParsedTextProperty.value is always a 2-tuple, built in
+    # text_properties.parse_project_text_decoration. pylint cannot infer through
+    # the dataclass field.
+    # pylint: disable=unpacking-non-sequence
     underline, strike = parse_project_text_decoration(
         text_dec or 'none'
     ).value
@@ -2860,7 +2864,7 @@ def convert_text(elem: ET.Element, ctx: ConvertContext) -> ShapeResult | None:
     if reflect_y:
         box_y = 2 * y - box_y - box_h
 
-    visual_box_x = box_x
+    _visual_box_x = box_x
     visual_box_y = box_y
     exact_text_frame = None
     exact_text_insets: tuple[float, float, float] | None = None
@@ -3622,9 +3626,9 @@ def _resolve_clip_geometry(
             return DEFAULT
         adj = int(min(r / (shorter / 2), 1.0) * 50000)
         return (
-            f'<a:prstGeom prst="roundRect"><a:avLst>'
+            '<a:prstGeom prst="roundRect"><a:avLst>'
             f'<a:gd name="adj" fmla="val {adj}"/>'
-            f'</a:avLst></a:prstGeom>'
+            '</a:avLst></a:prstGeom>'
         )
 
     # --- Path → custGeom ---
@@ -4653,7 +4657,7 @@ def parse_project_nested_svg_crop(elem: ET.Element) -> NestedSvgCropSpec:
             )
     elif clip_path.strip().lower() == 'none':
         raise ValueError('nested crop clip-path cannot be "none"')
-    elif crop_marker != '1':
+    if crop_marker != '1':
         raise ValueError(
             'nested crop clip-path requires data-pptx-crop="1"'
         )
@@ -4880,9 +4884,9 @@ def _resolve_nested_svg_clip_geometry(
             return default
         adj = int(min(radius / (shorter / 2.0), 1.0) * 50000)
         return (
-            f'<a:prstGeom prst="roundRect"><a:avLst>'
+            '<a:prstGeom prst="roundRect"><a:avLst>'
             f'<a:gd name="adj" fmla="val {adj}"/>'
-            f'</a:avLst></a:prstGeom>'
+            '</a:avLst></a:prstGeom>'
         )
 
     return _resolve_clip_geometry(

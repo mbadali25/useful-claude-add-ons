@@ -404,6 +404,10 @@ def main(argv: list[str] | None = None) -> int:
             )
         output_path.parent.mkdir(parents=True, exist_ok=True)
         text_style: MasterTextStyleSpec | None = None
+        # Bound up front alongside text_style. They are only read in the branch
+        # that also requires `not args.visual_only`, so these defaults are never
+        # printed, but binding them keeps the read unconditionally defined.
+        title_px = body_px = 0.0
         if not args.visual_only:
             text_style, title_px, body_px = _master_text_style(all_svg_files)
 

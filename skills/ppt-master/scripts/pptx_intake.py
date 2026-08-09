@@ -279,7 +279,7 @@ def _load_source_index(index_path: Path) -> dict[str, Any]:
 
     if not isinstance(loaded, dict) or not isinstance(loaded.get("decks"), list):
         raise RuntimeError(
-            f"Source index must be a JSON object with a decks array and was left unchanged: "
+            "Source index must be a JSON object with a decks array and was left unchanged: "
             f"{index_path}"
         )
     for index, deck in enumerate(loaded["decks"]):

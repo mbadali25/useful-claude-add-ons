@@ -72,7 +72,7 @@ def check_hard_block(method, path):
             raise HardBlocked(
                 0,
                 [f"Refusing {method} {path}. {reason} Do this in the Meraki "
-                 f"Dashboard UI if it is genuinely intended."],
+                 "Dashboard UI if it is genuinely intended."],
             )
 
 
@@ -156,7 +156,7 @@ class ConfigTool:
         if not lines:
             raise MerakiError(
                 0, [f"Proposed config for {path} is identical to live state "
-                    f"(no change). Nothing written. "
+                    "(no change). Nothing written. "
                     f"Snapshot kept at {snapshot_path}"])
 
         rendered = render_diff(lines)
@@ -172,7 +172,7 @@ class ConfigTool:
             raise MerakiError(
                 exc.status,
                 [f"Write to {path} failed: {exc}. Live config may be "
-                 f"unchanged -- verify before retrying. Snapshot kept at "
+                 "unchanged -- verify before retrying. Snapshot kept at "
                  f"{snapshot_path}; restore with:\n"
                  f"  python meraki_config.py rollback {snapshot_path}"],
                 exc.request_id,
@@ -201,7 +201,7 @@ class ConfigTool:
         if len(orgs) > 1:
             listed = ", ".join(f"{o.get('name')} ({o.get('id')})" for o in orgs)
             raise MerakiError(
-                0, [f"This skill is scoped to a single organization but the key "
+                0, ["This skill is scoped to a single organization but the key "
                     f"sees {len(orgs)}: {listed}."])
         self._org_id = str(orgs[0]["id"])
         return self._org_id
@@ -215,7 +215,7 @@ class ConfigTool:
         if len(actions) > MAX_BATCH_ACTIONS:
             raise MerakiError(
                 0, [f"{len(actions)} actions exceeds the {MAX_BATCH_ACTIONS}-"
-                    f"action limit per batch. Split into multiple batches."])
+                    "action limit per batch. Split into multiple batches."])
 
         # All network-free validation runs first so a hard-blocked action is
         # refused without contacting the API.
@@ -228,12 +228,12 @@ class ConfigTool:
                     0, [f"Action is missing 'resource': {item}"])
             if not isinstance(resource, str):
                 raise MerakiError(
-                    0, [f"Action 'resource' must be a string, got "
+                    0, ["Action 'resource' must be a string, got "
                         f"{type(resource).__name__}: {item}"])
             operation = (item.get("operation") or "").lower()
             if operation not in valid_operations:
                 raise MerakiError(
-                    0, [f"Action has invalid operation "
+                    0, ["Action has invalid operation "
                         f"{item.get('operation')!r} for resource "
                         f"{resource!r}. Must be one of: "
                         f"{', '.join(sorted(valid_operations))}."])
@@ -246,7 +246,7 @@ class ConfigTool:
             raise MerakiError(
                 0, [f"{len(pending)} batches are already pending, at the "
                     f"{MAX_PENDING_BATCHES}-batch limit. Commit or delete one "
-                    f"in Dashboard before staging another."])
+                    "in Dashboard before staging another."])
 
         body = {"confirmed": False, "synchronous": False, "actions": actions}
         batch, _ = self.http.request(

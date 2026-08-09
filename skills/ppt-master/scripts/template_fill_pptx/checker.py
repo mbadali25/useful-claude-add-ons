@@ -221,7 +221,7 @@ def _fit_status(
     )
 
     if role == "label_candidate" or (old_width <= 8 and old_paragraphs <= 1):
-        if capacity_width is not None and new_width <= capacity_width and not (old_width <= 8):
+        if capacity_width is not None and new_width <= capacity_width and not old_width <= 8:
             return "OK", "short label fits estimated text-box capacity"
         label_limit = old_width
         if isinstance(width, int) and width >= 220:
@@ -703,9 +703,13 @@ def print_check_report(report: dict[str, Any]) -> None:
         if item["status"] == "OK":
             continue
         if "ratio" in item:
+            # .format(**item) has no f-string equivalent: the field names come
+            # from the mapping, not from local bindings.
             line = (
+                # pylint: disable=consider-using-f-string
                 "{status} P{plan_slide:02d} source={source_slide} {slot_id} "
-                "{role} old={old_len} new={new_len} ratio={ratio}: {message}".format(**item)
+                "{role} old={old_len} new={new_len} ratio={ratio}: {message}"
+                .format(**item)  # pylint: disable=consider-using-f-string
             )
         elif "plan_slide" in item:
             target = item.get("slot_id") or item.get("selector") or ""

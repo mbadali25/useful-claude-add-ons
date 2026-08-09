@@ -57,10 +57,9 @@ def get_file_size_str(size_bytes: int) -> str:
     """Convert byte count to a human-readable file size string."""
     if size_bytes < 1024:
         return f"{size_bytes} B"
-    elif size_bytes < 1024 * 1024:
+    if size_bytes < 1024 * 1024:
         return f"{size_bytes / 1024:.1f} KB"
-    else:
-        return f"{size_bytes / (1024 * 1024):.1f} MB"
+    return f"{size_bytes / (1024 * 1024):.1f} MB"
 
 def _optimize_image_bytes(img_bytes: bytes, mime_type: str,
                           compress: bool = False,
@@ -94,7 +93,7 @@ def _optimize_image_bytes(img_bytes: bytes, mime_type: str,
             if w > max_dimension or h > max_dimension:
                 print(f"  [WARN] Animated image kept as-is ({w}x{h} exceeds "
                       f"max dimension {max_dimension}px); animations are "
-                      f"exempt from size limits")
+                      "exempt from size limits")
         return img_bytes
 
     changed = False
@@ -146,32 +145,32 @@ def embed_images_in_svg(svg_path: str, dry_run: bool = False,
         tuple: (number of images processed, file size after embedding)
     """
     svg_dir = os.path.dirname(os.path.abspath(svg_path))
-    
+
     with open(svg_path, 'r', encoding='utf-8') as f:
         content = f.read()
-    
+
     original_size = len(content.encode('utf-8'))
-    
+
     # Match href="xxx.png" or href="xxx.jpg" etc. (exclude those already using data:)
     pattern = r'href="(?!data:)([^"]+\.(png|jpg|jpeg|gif|webp))"'
-    
+
     images_found = []
     images_embedded = 0
-    
+
     def replace_with_base64(match):
         nonlocal images_embedded
         img_path = match.group(1)
-        
+
         # Decode XML/HTML entities (e.g., &amp; -> &)
         import html
         img_path_decoded = html.unescape(img_path)
-        
+
         # Handle relative paths
         if not os.path.isabs(img_path_decoded):
             full_path = os.path.join(svg_dir, img_path_decoded)
         else:
             full_path = img_path_decoded
-        
+
         if not os.path.exists(full_path):
             print(f"  [WARN] Image not found: {img_path}")
             images_found.append((img_path, "NOT FOUND", 0, None))
@@ -182,7 +181,7 @@ def embed_images_in_svg(svg_path: str, dry_run: bool = False,
         if dry_run:
             images_found.append((img_path, "WILL EMBED", img_size, None))
             return match.group(0)
-        
+
         with open(full_path, 'rb') as img_file:
             img_bytes = img_file.read()
 
@@ -196,16 +195,18 @@ def embed_images_in_svg(svg_path: str, dry_run: bool = False,
         if saved > 0 and (compress or max_dimension):
             pct = saved / len(img_bytes) * 100
             images_found.append((img_path, "EMBEDDED", img_size,
-                                 f"{get_file_size_str(len(img_bytes))} → {get_file_size_str(len(optimized_bytes))}, saved {pct:.0f}%"))
+                                 f"{get_file_size_str(len(img_bytes))} → "
+                                 f"{get_file_size_str(len(optimized_bytes))}, "
+                                 f"saved {pct:.0f}%"))
         else:
             images_found.append((img_path, "EMBEDDED", img_size, None))
 
         return f'href="data:{mime_type};base64,{b64_data}"'
-    
+
     new_content = re.sub(pattern, replace_with_base64, content)
-    
+
     new_size = len(new_content.encode('utf-8'))
-    
+
     # Print processed images
     if images_found:
         print(f"\n[FILE] {os.path.basename(svg_path)}")
@@ -220,13 +221,13 @@ def embed_images_in_svg(svg_path: str, dry_run: bool = False,
                 print(f"   [PREVIEW] {img_path} ({size_str}) [dry-run]")
             else:
                 print(f"   [FAIL] {img_path} ({status})")
-        
+
         print(f"   [SIZE] {get_file_size_str(original_size)} -> {get_file_size_str(new_size)}")
-    
+
     if not dry_run and images_embedded > 0:
         with open(svg_path, 'w', encoding='utf-8') as f:
             f.write(new_content)
-    
+
     processed_count = len(images_found) if dry_run else images_embedded
     return (processed_count, new_size)
 
@@ -258,26 +259,26 @@ Examples:
         print("[INFO] Compression enabled: JPEG quality=85, PNG optimize")
     if args.max_dimension:
         print(f"[INFO] Max dimension: {args.max_dimension}px")
-    
+
     total_images = 0
     total_files = 0
-    
+
     for svg_file in args.files:
         if not os.path.exists(svg_file):
             print(f"[ERROR] File not found: {svg_file}")
             continue
-        
+
         if not svg_file.endswith('.svg'):
             print(f"[SKIP] Skipping non-SVG file: {svg_file}")
             continue
-        
+
         images, _ = embed_images_in_svg(svg_file, dry_run=args.dry_run,
                                         compress=args.compress,
                                         max_dimension=args.max_dimension)
         if images > 0:
             total_images += images
             total_files += 1
-    
+
     print(f"\n{'=' * 50}")
     if args.dry_run:
         print(f"[PREVIEW] Will process {total_images} images in {total_files} files")
