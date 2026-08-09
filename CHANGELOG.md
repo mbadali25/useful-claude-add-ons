@@ -19,10 +19,14 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 - `skills/notify/scripts/*.py` — the four config reads now pass `encoding="utf-8"` to
   `Path.read_text()`. Without it Python picks the locale encoding, which is cp1252 on
-  Windows, so a `config.json` containing any non-ASCII character (an em dash in a
-  subject template, a non-Latin chat title) raised `UnicodeDecodeError` for Windows
-  users only. Also split the comma-form imports and wrapped two over-length lines, so
-  `pylint $(git ls-files '*.py')` is back to 10.00/10.
+  Windows, and a UTF-8 `config.json` then fails in one of two ways depending on the
+  character. Most non-ASCII text decodes silently wrong: an em dash (`E2 80 94`)
+  becomes `â€”` in the message that gets sent. Text whose UTF-8 bytes include one of
+  the five undefined cp1252 positions (`81 8D 8F 90 9D`) raises `UnicodeDecodeError`
+  and takes the run down — Japanese `あ` is `E3 81 82`, so a config with CJK in it
+  crashes outright. Both are Windows-only. Also split the comma-form imports and
+  wrapped two over-length lines, so `pylint $(git ls-files '*.py')` is back to
+  10.00/10.
 
 ### Added
 
