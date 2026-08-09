@@ -33,6 +33,7 @@
 #                         (--skills all | none also work; implies the repo item)
 #   --non-interactive     select the default set, no prompt (CI/unattended)
 #   --skillui-guide       print the SkillUI quick start after installing it, no prompt
+#   --notify-setup        scaffold the notify config after installing it, no prompt
 #   --no-update           never update an already-installed plugin, only report it
 #   --skip-bootstrap      narrow the selection to prerequisites + the Claude Code CLI
 #   --scope <scope>       scope for marketplace/plugin installs: user|project|local (default: user)
@@ -66,6 +67,7 @@ SELECT_ALL=0
 SELECT_SPEC=""
 SKILLS_SPEC=""
 SKILLUI_GUIDE=""       # "1"/"0" once answered; empty means "ask"
+NOTIFY_SETUP=""        # "1"/"0" once answered; empty means "ask"
 INSTALL_SCOPE="user"   # machine-wide by default, not per-project
 
 while [ $# -gt 0 ]; do
@@ -77,6 +79,7 @@ while [ $# -gt 0 ]; do
     --select)          SELECT_SPEC="${2:-}"; shift ;;
     --skills)          SKILLS_SPEC="${2:-}"; shift ;;
     --skillui-guide)   SKILLUI_GUIDE=1 ;;
+    --notify-setup)    NOTIFY_SETUP=1 ;;
     --scope)           INSTALL_SCOPE="${2:-user}"; shift ;;
     *) echo "Unknown option: $1" >&2 ;;
   esac
@@ -405,8 +408,8 @@ expand_selection_spec() {
 SKILL_KEYS=(
   "aws-opensearch" "bitbucket" "checkpoint-email" "cisco-meraki"
   "claude-code-defaults" "cloudflare" "drata" "i-have-adhd"
-  "infra-work-ticketing" "intune-graph" "mermaid-svg-bitbucket" "repo-docs"
-  "shipstation" "sophos-central" "terraform-docs-readme" "visio-diagrams"
+  "infra-work-ticketing" "intune-graph" "mermaid-svg-bitbucket" "notify"
+  "repo-docs" "shipstation" "sophos-central" "terraform-docs-readme" "visio-diagrams"
   "wazuh-onprem" "web-testing-playwright" "work-log-reporter"
 )
 SKILL_NAME=(
@@ -421,6 +424,7 @@ SKILL_NAME=(
   "infra-work-ticketing    - ServiceDesk Plus / Jira: open tickets, log work notes"
   "intune-graph            - Intune via Graph: devices, compliance, app deployment"
   "mermaid-svg-bitbucket   - Pre-render Mermaid to SVG so Bitbucket displays it"
+  "notify                  - Ping your phone or inbox: Telegram bot (two-way) or email"
   "repo-docs               - Whole doc set: CLAUDE.md, READMEs, architecture, handoff"
   "shipstation             - ShipStation V2/V1/ShipEngine: labels, rates, orders"
   "sophos-central          - Sophos Central: isolate endpoints, triage alerts, XDR"
@@ -899,6 +903,112 @@ select_skillui_guide() {
   case "${answer:-Y}" in [Nn]*) printf '0' ;; *) printf '1' ;; esac
 }
 
+# --- notify skill setup -------------------------------------------------------
+skill_selected() {
+  # 'notify' is a sub-picker entry, not a top-level menu key, so is_selected() would
+  # always say no. Look it up in the skill catalog instead, and only count it when
+  # this repo's marketplace item is itself selected.
+  local key="$1" i
+  is_selected "own-skills" || return 1
+  for i in "${!SKILL_KEYS[@]}"; do
+    if [ "${SKILL_KEYS[$i]}" = "$key" ]; then
+      [ "${SKILL_STATE[$i]}" -eq 1 ] && return 0
+      return 1
+    fi
+  done
+  return 1
+}
+
+notify_prereqs() {
+  # Printed whether or not they opt into the config scaffold - a headless run should
+  # still see what it owes. Callers inside $( ) must redirect this to stderr.
+  printf '    Prerequisites:\n'
+  printf '      1. Python 3.8+ on PATH. No pip packages - the scripts are stdlib only.\n'
+  printf '      2. A Telegram bot: message @BotFather, send /newbot, keep the token.\n'
+  printf '      3. Message your new bot once (it cannot open a chat with you first),\n'
+  printf '         then run scripts/telegram_get_chat_id.py to read your chat_id.\n'
+  printf '      4. export TELEGRAM_BOT_TOKEN=... in your shell - the config file only\n'
+  printf '         names the env var, it never stores the token.\n'
+  printf '      5. A config at ~/.config/notify/config.json (global) or ./.notify.json\n'
+  printf '         (per project), holding telegram.chat_id.\n'
+  printf '      6. Outbound HTTPS to api.telegram.org, and the bot in polling mode -\n'
+  printf '         a webhook on the bot makes getUpdates return 409. One poller per bot.\n'
+  printf '    Optional:\n'
+  printf '      - topics mode (one thread per job): a forum supergroup with Topics on,\n'
+  printf '        the bot an admin with Manage Topics, and notifyd.py kept running.\n'
+  printf '        Bare free-text answers there also need Group Privacy off in BotFather;\n'
+  printf '        button taps and reply-to work either way.\n'
+  printf '      - email: backend smtp needs SMTP_USER/SMTP_PASS (an app password for\n'
+  printf '        Gmail/M365); backend connector needs an M365 or Gmail MCP connector\n'
+  printf '        and only works while a Claude session is driving.\n'
+  printf '    Walkthroughs: references/get-bot-token.md, references/windows.md.\n'
+}
+
+select_notify_setup() {
+  # Asked up front with the menu, like every other interactive answer. The prereq list
+  # goes to stderr so only the 0/1 lands in the caller's command substitution.
+  local answer
+  skill_selected "notify" || { printf '0'; return 0; }
+  printf '\n\033[36m  The notify skill pings your phone or inbox about a job - Telegram\033[0m\n' >&2
+  printf '\033[90m  (two-way, so it can ask you a question and wait) or email.\033[0m\n' >&2
+  notify_prereqs >&2
+  if [ -n "$NOTIFY_SETUP" ]; then printf '%s' "$NOTIFY_SETUP"; return 0; fi
+  if [ "$NON_INTERACTIVE" -eq 1 ] || [ "$SELECT_ALL" -eq 1 ] || [ -n "$SELECT_SPEC" ]; then
+    printf '0'; return 0
+  fi
+  read -r -p "  Scaffold ~/.config/notify/config.json now? [y/N] " answer <&"$TTY_FD"
+  case "${answer:-N}" in [Yy]*) printf '1' ;; *) printf '0' ;; esac
+}
+
+setup_notify() {
+  # Deliberately writes no secrets: the config names TELEGRAM_BOT_TOKEN, the user
+  # exports it. An existing config is never overwritten.
+  local dir="$HOME/.config/notify" target="$dir/config.json" src="" py=""
+  for py in python3 python; do have "$py" && break; py=""; done
+  if [ -z "$py" ]; then
+    warn "python3 is not on PATH - notify's scripts need it. Install it and re-run."
+  else
+    ok "python found at $(command -v "$py")"
+  fi
+
+  if [ -f "$target" ]; then
+    skip "notify config already exists at $target - left as it is"
+  else
+    src="$(find "$(claude_config_root)/plugins" -path '*/notify/assets/config.example.json' -print -quit 2>/dev/null || true)"
+    mkdir -p "$dir" || return 1
+    if [ -n "$src" ] && [ -f "$src" ]; then
+      cp "$src" "$target" || return 1
+    else
+      # Same key set as the skill's assets/config.example.json, but in 'dm' mode with a
+      # placeholder chat_id: 'topics' would need a forum supergroup nobody has yet.
+      cat > "$target" <<'JSON' || return 1
+{
+  "default_channel": "telegram",
+  "telegram": { "bot_token_env": "TELEGRAM_BOT_TOKEN", "chat_id": "REPLACE_ME", "mode": "dm" },
+  "dispatcher": { "enabled": false, "spool_dir": "~/.local/state/notify/spool", "close_topic_on_complete": true },
+  "email": {
+    "backend": "smtp", "to": "me@example.com", "from": "claude-jobs@example.com",
+    "smtp": { "provider": "gmail", "username_env": "SMTP_USER", "password_env": "SMTP_PASS" }
+  },
+  "events": { "complete": true, "error": true, "question": true, "info": true },
+  "reply": { "enabled": true, "timeout_seconds": 3600 }
+}
+JSON
+    fi
+    COUNT_INSTALLED=$((COUNT_INSTALLED+1))
+    ok "wrote a starter config to $target"
+  fi
+
+  printf '\n\033[36m    Finish notify setup\033[0m\n'
+  printf '    1. @BotFather -> /newbot -> copy the token, then:\n'
+  printf '         export TELEGRAM_BOT_TOKEN="123456789:AAE..."\n'
+  printf '    2. Message your bot once, then run telegram_get_chat_id.py and put the\n'
+  printf '       printed chat_id into telegram.chat_id in %s\n' "$target"
+  printf '    3. Test it:  python notify.py -e info -m "hello" --dry-run\n'
+  printf '    Or let Claude do the whole thing for you: run /notify-setup in a session.\n'
+  return 0
+}
+
 # --- claude-mem settings.json patch ------------------------------------------
 set_claude_mem_worker_port() {
   # claude-mem's own bootstrap writes CLAUDE_MEM_PROVIDER but not the worker port,
@@ -1008,6 +1118,7 @@ fi
 
 read_mcp_api_keys
 SKILLUI_GUIDE="$(select_skillui_guide)"
+NOTIFY_SETUP="$(select_notify_setup)"
 
 # --- 1. OS packages: only what's actually missing ----------------------------
 install_packages() {
@@ -1206,6 +1317,12 @@ if is_selected "own-skills"; then
     plugin="${SKILL_KEYS[$idx]}"
     run_step "Plugin: ${plugin}@useful-claude-add-ons" install_plugin "${plugin}@useful-claude-add-ons"
   done
+
+  # notify is the one skill with machine-level setup (a config file and a bot token),
+  # so it gets a post-install step when the user asked for it up front.
+  if [ "$NOTIFY_SETUP" = "1" ] && skill_selected "notify"; then
+    run_step "Set up the notify skill" setup_notify
+  fi
 fi
 
 # --- 4. Team marketplaces and plugins ----------------------------------------

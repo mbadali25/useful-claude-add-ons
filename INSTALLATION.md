@@ -15,7 +15,7 @@ One script per OS. Both are idempotent (safe to re-run) and, by default, also bo
   ----------------------
     [x] Prerequisites: git, nodejs, npm, python3, pip3 (needs root or sudo)
     [x] Claude Code CLI (@anthropic-ai/claude-code) + PATH export + update check
-  > [x] This repo's marketplace + 19 of 19 skills  >
+  > [x] This repo's marketplace + 20 of 20 skills  >
     [x] Team plugins: superpowers, frontend-design, excalidraw-generator
     ...
     [ ] Strix AI pentesting CLI (needs Docker + an LLM API key)
@@ -34,7 +34,7 @@ One script per OS. Both are idempotent (safe to re-run) and, by default, also bo
 | `A` / `N` / `D` | Tick all / clear all / restore the default set |
 | `Q` or Escape | Cancel — nothing is installed |
 
-**The per-skill picker** (→ on row 3) lists all 19 skills in this repo with the same controls. All 19 start ticked; untick the ones you don't want and press Enter or ← to go back. Opening it also ticks the parent row, so a careful sub-selection can't be lost to an unticked parent.
+**The per-skill picker** (→ on row 3) lists all 20 skills in this repo with the same controls. All 20 start ticked; untick the ones you don't want and press Enter or ← to go back. Opening it also ticks the parent row, so a careful sub-selection can't be lost to an unticked parent.
 
 **When the picker isn't available**, both scripts fall back to the original numbered prompt — same items, same defaults, answered with `A`, `D`, `N`, or `1,3,7-9`. That happens when there is no usable terminal (`curl | bash` with no `/dev/tty`, CI), no `stty`, `TERM=dumb`, PowerShell ISE, a redirected console, or a window under ten lines. Nothing about the install differs; only how you choose.
 
@@ -56,7 +56,7 @@ It shows the menu, collects any API keys and the SkillUI quick-start question up
 
 1. **Prerequisites** — if elevated: installs [Chocolatey](https://chocolatey.org/) if not already present, then `choco install git awscli nodejs python -y`. **If not elevated, this item is skipped entirely** — the script prints a warning and continues with everything below using whatever `git`/`node`/`npm`/`python` are already on `PATH`.
 2. **Claude Code CLI** — `npm install -g @anthropic-ai/claude-code`, adds the npm global bin directory to your **User** `PATH` environment variable (persists across sessions), and sets a `CLAUDE_CODE_HOME` user env var pointing at the npm prefix. When `claude` is already installed it compares the local version against the npm registry instead and updates only if it's behind (`-NoUpdate` skips the check).
-3. **This repo** — adds `mbadali25/useful-claude-add-ons` as a Claude Code marketplace, then installs the skills you ticked in the per-skill picker, all 19 by default (see [What the own-marketplace step installs](#what-the-own-marketplace-step-installs) below).
+3. **This repo** — adds `mbadali25/useful-claude-add-ons` as a Claude Code marketplace, then installs the skills you ticked in the per-skill picker, all 20 by default (see [What the own-marketplace step installs](#what-the-own-marketplace-step-installs) below).
 4. **Team plugins, community plugins, `find-skills`, `claude-code-setup`, `task-observer`, claude-mem, VoltAgent** — each is its own menu row; `-SkipBootstrap` narrows any selection back down to items 1 and 2.
 5. **MCP servers** — AWS, Azure, Perplexity, Playwright. Off by default; see [Optional: MCP servers](#optional-mcp-servers). Perplexity asks for its API key alongside the menu rather than mid-install.
 6. **Supabase, Context7, Playwright CLI, SkillUI, Strix** — off by default; see [Optional: extra tooling](#optional-extra-tooling).
@@ -75,7 +75,7 @@ Runs as your current user, escalating to `sudo` (or `root` directly if already r
 
 1. **Prerequisites** — `git`, `nodejs`, `npm`, `python3` via whichever of `apt-get` / `dnf` / `yum` / `pacman` / `zypper` / `apk` it finds first. Only packages whose command is actually missing get installed.
 2. **Claude Code CLI** — `npm install -g @anthropic-ai/claude-code`, then a `PATH` export for the npm global bin directory appended to `~/.bashrc` and `~/.zshrc` (only if not already present) and exported in the current shell too. When `claude` is already installed it compares the local version against the npm registry instead and updates only if it's behind (`--no-update` skips the check).
-3. **This repo** — adds `mbadali25/useful-claude-add-ons` as a Claude Code marketplace, then installs the skills you ticked in the per-skill picker, all 19 by default (see [What the own-marketplace step installs](#what-the-own-marketplace-step-installs) below).
+3. **This repo** — adds `mbadali25/useful-claude-add-ons` as a Claude Code marketplace, then installs the skills you ticked in the per-skill picker, all 20 by default (see [What the own-marketplace step installs](#what-the-own-marketplace-step-installs) below).
 4. **Team plugins, community plugins, `find-skills`, `claude-code-setup`, `task-observer`, claude-mem, VoltAgent** — each is its own menu row; `--skip-bootstrap` narrows any selection back down to items 1 and 2.
 5. **MCP servers** — AWS, Azure, Perplexity, Playwright. Off by default; see [Optional: MCP servers](#optional-mcp-servers).
 6. **Supabase, Context7, Playwright CLI, SkillUI, Strix** — off by default; see [Optional: extra tooling](#optional-extra-tooling).
@@ -132,7 +132,7 @@ The first line adds this repo's own skills as an installable marketplace — unl
 
 ### What the own-marketplace step installs
 
-Immediately after adding `mbadali25/useful-claude-add-ons` as a marketplace, both scripts run `claude plugin install <name>@useful-claude-add-ons` for **each skill you ticked**. All 19 are ticked by default, so an untouched run installs everything currently in [`.claude-plugin/marketplace.json`](.claude-plugin/marketplace.json):
+Immediately after adding `mbadali25/useful-claude-add-ons` as a marketplace, both scripts run `claude plugin install <name>@useful-claude-add-ons` for **each skill you ticked**. All 20 are ticked by default, so an untouched run installs everything currently in [`.claude-plugin/marketplace.json`](.claude-plugin/marketplace.json):
 
 ```
 claude plugin install aws-opensearch@useful-claude-add-ons
@@ -146,6 +146,7 @@ claude plugin install i-have-adhd@useful-claude-add-ons
 claude plugin install infra-work-ticketing@useful-claude-add-ons
 claude plugin install intune-graph@useful-claude-add-ons
 claude plugin install mermaid-svg-bitbucket@useful-claude-add-ons
+claude plugin install notify@useful-claude-add-ons
 claude plugin install repo-docs@useful-claude-add-ons
 claude plugin install shipstation@useful-claude-add-ons
 claude plugin install sophos-central@useful-claude-add-ons
@@ -157,6 +158,23 @@ claude plugin install work-log-reporter@useful-claude-add-ons
 ```
 
 An already-installed plugin is detected and skipped (or updated, unless `-NoUpdate` / `--no-update` is passed) rather than reinstalled.
+
+#### The `notify` skill asks about setup
+
+`notify` is the only skill here that needs anything set up on the machine, so when it's ticked the script prints its prerequisites alongside the menu and then asks whether to scaffold the config:
+
+| Prerequisite | Notes |
+|---|---|
+| Python 3.8+ on `PATH` | The scripts are stdlib only — nothing to `pip install`. |
+| A Telegram bot | `@BotFather` → `/newbot` → a token like `123456789:AAE...`. |
+| Your `chat_id` | Message the bot once (it can't message you first), then run `scripts/telegram_get_chat_id.py`. |
+| `TELEGRAM_BOT_TOKEN` exported | The config names the env var; the token itself is never written to a file. On Windows, `$env:TELEGRAM_BOT_TOKEN` for the session or `setx` for future shells — see the skill's `references/windows.md`. |
+| A config file | `~/.config/notify/config.json` globally, or `./.notify.json` per project. On Windows that's `%USERPROFILE%\.config\notify\config.json` — not `%APPDATA%`. |
+| Network + polling mode | Outbound HTTPS to `api.telegram.org`, no webhook set on the bot (a webhook makes `getUpdates` return 409), one poller per bot. |
+
+Optional, only if you want them: **topics mode** (one Telegram thread per job) needs a forum supergroup with Topics enabled, the bot as an admin with Manage Topics, and `notifyd.py` running — and if you want to answer with bare free text in a topic rather than tapping a button or replying to the message, Group Privacy has to be turned off in BotFather and the bot re-added to the group; **email** needs `SMTP_USER`/`SMTP_PASS` (an app password on Gmail/M365) for the `smtp` backend, or an M365/Gmail MCP connector for the `connector` backend, which only works while a Claude session is driving.
+
+Answering yes checks for Python, then writes a starter `config.json` — it never overwrites an existing one and never stores the bot token. `--notify-setup` / `-NotifySetup` answers yes up front; `--all` / `--non-interactive` prints the prerequisites and skips the scaffold. For the guided version, run `/notify-setup` inside a Claude session and it will walk you through the bot, the `chat_id`, and a test message.
 
 To take a subset, either press → on the repo's row in the menu and untick what you don't want, or say so on the command line:
 

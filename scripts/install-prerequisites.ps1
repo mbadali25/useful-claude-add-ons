@@ -41,6 +41,7 @@ Common switches:
                         (-Skills 'all' | 'none' also work; implies the repo item)
     -NonInteractive     select the default set, no prompt (CI/unattended)
     -SkillUIGuide       print the SkillUI quick start after installing it, no prompt
+    -NotifySetup        scaffold the notify config after installing it, no prompt
     -NoUpdate           never update an already-installed plugin, only report it
     -SkipBootstrap      narrow the selection to prerequisites + the Claude Code CLI
     -InstallScope       scope for marketplace/plugin installs: user (default), project, local
@@ -56,6 +57,7 @@ param(
     [string]$Select,          # explicit selection, no menu: '1,3,7-9' or 'strix,supabase'
     [string]$Skills,          # explicit skill subset, no sub-picker: 'cloudflare,drata' | 'all' | 'none'
     [switch]$SkillUIGuide,    # answer the SkillUI quick-start prompt up front
+    [switch]$NotifySetup,     # answer the notify setup prompt up front
     [Alias('PluginHubScope')]
     [ValidateSet('user', 'project', 'local')]
     [string]$InstallScope = 'user'  # machine-wide by default, not per-project
@@ -452,6 +454,7 @@ $script:SkillCatalog = @(
     [pscustomobject]@{ Key = 'infra-work-ticketing';  Selected = $true; Name = 'infra-work-ticketing    - ServiceDesk Plus / Jira: open tickets, log work notes' }
     [pscustomobject]@{ Key = 'intune-graph';          Selected = $true; Name = 'intune-graph            - Intune via Graph: devices, compliance, app deployment' }
     [pscustomobject]@{ Key = 'mermaid-svg-bitbucket'; Selected = $true; Name = 'mermaid-svg-bitbucket   - Pre-render Mermaid to SVG so Bitbucket displays it' }
+    [pscustomobject]@{ Key = 'notify';                Selected = $true; Name = 'notify                  - Ping your phone or inbox: Telegram bot (two-way) or email' }
     [pscustomobject]@{ Key = 'repo-docs';             Selected = $true; Name = 'repo-docs               - Whole doc set: CLAUDE.md, READMEs, architecture, handoff' }
     [pscustomobject]@{ Key = 'shipstation';           Selected = $true; Name = 'shipstation             - ShipStation V2/V1/ShipEngine: labels, rates, orders' }
     [pscustomobject]@{ Key = 'sophos-central';        Selected = $true; Name = 'sophos-central          - Sophos Central: isolate endpoints, triage alerts, XDR' }
@@ -859,6 +862,109 @@ function Select-SkillUIGuide {
     return (-not ($answer -match '^(?i)n(o)?$'))
 }
 
+# --- notify skill setup -------------------------------------------------------
+
+function Test-SkillSelected {
+    # 'notify' is a sub-picker entry, not a top-level menu key, so Test-Selected would
+    # always say no. Look it up in the skill catalog instead, and only count it when
+    # this repo's marketplace item is itself selected.
+    param([string]$Key)
+    if (-not (Test-Selected 'own-skills')) { return $false }
+    return @($script:SkillCatalog | Where-Object { $_.Key -eq $Key -and $_.Selected }).Count -gt 0
+}
+
+function Show-NotifyPrereqs {
+    # Printed whether or not they opt into the config scaffold - a headless run should
+    # still see what it owes.
+    Write-Host "    Prerequisites:"
+    Write-Host "      1. Python 3.8+ on PATH. No pip packages - the scripts are stdlib only."
+    Write-Host "      2. A Telegram bot: message @BotFather, send /newbot, keep the token."
+    Write-Host "      3. Message your new bot once (it cannot open a chat with you first),"
+    Write-Host "         then run scripts\telegram_get_chat_id.py to read your chat_id."
+    Write-Host "      4. `$env:TELEGRAM_BOT_TOKEN set in your shell - the config file only"
+    Write-Host "         names the env var, it never stores the token."
+    Write-Host "      5. A config at $HOME\.config\notify\config.json (global) or .\.notify.json"
+    Write-Host "         (per project), holding telegram.chat_id."
+    Write-Host "      6. Outbound HTTPS to api.telegram.org, and the bot in polling mode -"
+    Write-Host "         a webhook on the bot makes getUpdates return 409. One poller per bot."
+    Write-Host "    Optional:"
+    Write-Host "      - topics mode (one thread per job): a forum supergroup with Topics on,"
+    Write-Host "        the bot an admin with Manage Topics, and notifyd.py kept running."
+    Write-Host "        Bare free-text answers there also need Group Privacy off in BotFather;"
+    Write-Host "        button taps and reply-to work either way."
+    Write-Host "      - email: backend smtp needs SMTP_USER/SMTP_PASS (an app password for"
+    Write-Host "        Gmail/M365); backend connector needs an M365 or Gmail MCP connector"
+    Write-Host "        and only works while a Claude session is driving."
+    Write-Host "    Walkthroughs: references\get-bot-token.md, references\windows.md."
+}
+
+function Select-NotifySetup {
+    # Asked up front with the menu, like every other interactive answer.
+    if (-not (Test-SkillSelected 'notify')) { return $false }
+    Write-Host ""
+    Write-Host "  The notify skill pings your phone or inbox about a job - Telegram" -ForegroundColor Cyan
+    Write-Host "  (two-way, so it can ask you a question and wait) or email." -ForegroundColor DarkGray
+    Show-NotifyPrereqs
+    if ($NotifySetup) { return $true }
+    if ($NonInteractive -or $All -or $Select) { return $false }
+    $answer = "$(Read-Host "  Scaffold $HOME\.config\notify\config.json now? [y/N]")".Trim()
+    return ($answer -match '^(?i)y(es)?$')
+}
+
+function Install-NotifyConfig {
+    # Deliberately writes no secrets: the config names TELEGRAM_BOT_TOKEN, the user sets
+    # it. An existing config is never overwritten. notify.py resolves the global config
+    # with os.path.expanduser('~/.config/notify/config.json'), so on Windows that is
+    # $HOME\.config\notify - not %APPDATA%.
+    $dir = Join-Path $HOME '.config\notify'
+    $target = Join-Path $dir 'config.json'
+
+    $py = Get-Command python3 -ErrorAction SilentlyContinue
+    if (-not $py) { $py = Get-Command python -ErrorAction SilentlyContinue }
+    if ($py) { Write-Ok "python found at $($py.Source)" }
+    else { Write-Warn2 "python is not on PATH - notify's scripts need it. Install it and re-run." }
+
+    if (Test-Path $target) {
+        Write-Skip "notify config already exists at $target - left as it is"
+    } else {
+        $src = Get-ChildItem -Path (Join-Path (Get-ClaudeConfigRoot) 'plugins') -Filter 'config.example.json' -Recurse -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match '[\\/]notify[\\/]assets[\\/]' } | Select-Object -First 1
+        New-Item -ItemType Directory -Force -Path $dir | Out-Null
+        if ($src) {
+            Copy-Item -Path $src.FullName -Destination $target
+        } else {
+            # Same key set as the skill's assets/config.example.json, but in 'dm' mode
+            # with a placeholder chat_id: 'topics' needs a forum supergroup nobody has yet.
+            $starter = @'
+{
+  "default_channel": "telegram",
+  "telegram": { "bot_token_env": "TELEGRAM_BOT_TOKEN", "chat_id": "REPLACE_ME", "mode": "dm" },
+  "dispatcher": { "enabled": false, "spool_dir": "~/.local/state/notify/spool", "close_topic_on_complete": true },
+  "email": {
+    "backend": "smtp", "to": "me@example.com", "from": "claude-jobs@example.com",
+    "smtp": { "provider": "gmail", "username_env": "SMTP_USER", "password_env": "SMTP_PASS" }
+  },
+  "events": { "complete": true, "error": true, "question": true, "info": true },
+  "reply": { "enabled": true, "timeout_seconds": 3600 }
+}
+'@
+            Set-Content -Path $target -Value $starter -Encoding utf8
+        }
+        $script:Summary.Installed++
+        Write-Ok "wrote a starter config to $target"
+    }
+
+    Write-Host ""
+    Write-Host "    Finish notify setup" -ForegroundColor Cyan
+    Write-Host "    1. @BotFather -> /newbot -> copy the token, then:"
+    Write-Host "         `$env:TELEGRAM_BOT_TOKEN = '123456789:AAE...'      # this session"
+    Write-Host "         setx TELEGRAM_BOT_TOKEN '123456789:AAE...'        # future shells"
+    Write-Host "    2. Message your bot once, then run telegram_get_chat_id.py and put the"
+    Write-Host "       printed chat_id into telegram.chat_id in $target"
+    Write-Host "    3. Test it:  python notify.py -e info -m 'hello' --dry-run"
+    Write-Host "    Or let Claude do the whole thing for you: run /notify-setup in a session."
+}
+
 # --- Claude Code CLI update check --------------------------------------------
 
 function Get-ClaudeLocalVersion {
@@ -1033,6 +1139,7 @@ if ($chosenCount -eq 0) {
 
 Read-McpApiKeys
 $script:SkillUIGuideChoice = Select-SkillUIGuide
+$script:NotifySetupChoice = Select-NotifySetup
 
 if ((Test-Selected 'prereqs') -and -not $script:IsElevated) {
     Write-Step "Not running as Administrator"
@@ -1148,6 +1255,12 @@ if (Test-Selected 'own-skills') {
         Invoke-Step "Plugin: $plugin@useful-claude-add-ons" {
             Install-ClaudePlugin "$plugin@useful-claude-add-ons"
         }
+    }
+
+    # notify is the one skill with machine-level setup (a config file and a bot token),
+    # so it gets a post-install step when the user asked for it up front.
+    if ($script:NotifySetupChoice -and (Test-SkillSelected 'notify')) {
+        Invoke-Step "Set up the notify skill" { Install-NotifyConfig }
     }
 }
 
