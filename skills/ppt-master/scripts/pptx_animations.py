@@ -58,16 +58,6 @@ Usage:
     python3 scripts/pptx_animations.py --describe entrance_fly
 """
 
-
-# This module emits OOXML as multi-line f-strings, and several element lines
-# run past 120 columns. They cannot be wrapped: the string is written into the
-# package verbatim, so a newline inside an element changes the part.
-#
-# The check only fires on Python 3.12 and newer. PEP 701 retokenised f-strings,
-# so pylint now sees each physical line inside one as its own token and applies
-# line-length to it, where 3.11 and earlier treated the whole literal as a
-# single token and skipped it. CI runs 3.11, 3.12 and 3.13.
-# pylint: disable=line-too-long
 import argparse
 import copy
 import hashlib
