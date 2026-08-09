@@ -19,7 +19,6 @@ This module is a pure library. The CLI entry point lives in
 
 from __future__ import annotations
 
-import json
 import posixpath
 import re
 import shutil

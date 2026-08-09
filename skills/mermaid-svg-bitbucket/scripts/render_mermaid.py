@@ -219,7 +219,7 @@ def postprocess(svg_path: Path) -> None:
         raise RuntimeError(
             f"{svg_path} contains <foreignObject>; labels would be invisible in "
             f"Bitbucket. Remove any %%{{init: {{'flowchart': {{'htmlLabels': true}}}}}}%% "
-            f"directive from the source."
+            "directive from the source."
         )
 
     m = re.search(r'viewBox="[\d.\-]+ [\d.\-]+ ([\d.]+) ([\d.]+)"', svg)

@@ -21,7 +21,7 @@ from console_encoding import configure_utf8_stdio
 configure_utf8_stdio()
 
 try:
-    from project_utils import (
+    from project_utils import (  # pylint: disable=unused-import
         find_all_projects,
         get_project_info,
         validate_project_structure,
@@ -71,7 +71,7 @@ class BatchValidator:
         projects = find_all_projects(directory)
 
         if not projects:
-            print(f"[WARN] No projects found")
+            print("[WARN] No projects found")
             return []
 
         print(f"Found {len(projects)} project(s)\n")
@@ -178,7 +178,7 @@ class BatchValidator:
         print(
             f"  [ERROR] With errors: {self.summary['has_errors']} ({self._percentage(self.summary['has_errors'])}%)")
 
-        print(f"\nCommon issues:")
+        print("\nCommon issues:")
         print(f"  Missing README.md: {self.summary['missing_readme']} project(s)")
         print(f"  Missing design spec: {self.summary['missing_spec']} project(s)")
         print(f"  SVG format issues: {self.summary['svg_issues']} project(s)")
@@ -189,25 +189,25 @@ class BatchValidator:
             format_stats[result['format']] += 1
 
         if format_stats:
-            print(f"\nCanvas format distribution:")
+            print("\nCanvas format distribution:")
             for fmt, count in sorted(format_stats.items(), key=lambda x: x[1], reverse=True):
                 print(f"  {fmt}: {count} project(s)")
 
         # Provide fix suggestions
         if self.summary['has_errors'] > 0 or self.summary['has_warnings'] > 0:
-            print(f"\n[TIP] Fix suggestions:")
+            print("\n[TIP] Fix suggestions:")
 
             if self.summary['missing_readme'] > 0:
-                print(f"  1. Create documentation for projects missing README")
+                print("  1. Create documentation for projects missing README")
                 print(
-                    f"     Include the project goal, sources, canvas, artifacts, and export path")
+                    "     Include the project goal, sources, canvas, artifacts, and export path")
 
             if self.summary['svg_issues'] > 0:
-                print(f"  2. Check SVG root viewBox settings")
-                print(f"     The SVG root viewBox is the export canvas authority")
+                print("  2. Check SVG root viewBox settings")
+                print("     The SVG root viewBox is the export canvas authority")
 
             if self.summary['missing_spec'] > 0:
-                print(f"  3. Add design specification files")
+                print("  3. Add design specification files")
 
     def _percentage(self, count: int) -> int:
         """Calculate percentage"""
@@ -236,12 +236,12 @@ class BatchValidator:
                     f"Format: {result['format']} | SVG: {result['svg_count']} file(s)\n")
 
                 if result['errors']:
-                    f.write(f"\nErrors:\n")
+                    f.write("\nErrors:\n")
                     for error in result['errors']:
                         f.write(f"  - {error}\n")
 
                 if result['warnings']:
-                    f.write(f"\nWarnings:\n")
+                    f.write("\nWarnings:\n")
                     for warning in result['warnings']:
                         f.write(f"  - {warning}\n")
 
@@ -326,7 +326,7 @@ def main(argv: list[str] | None = None) -> int:
     # Return exit code
     if validator.summary['has_errors'] > 0:
         return 1
-    elif validator.summary['has_warnings'] > 0:
+    if validator.summary['has_warnings'] > 0:
         return 2
     return 0
 

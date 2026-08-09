@@ -106,7 +106,7 @@ def _generate_image(api_key: str, prompt: str,
     print()
 
     start_time = time.time()
-    print(f"  [..] Generating...", end="", flush=True)
+    print("  [..] Generating...", end="", flush=True)
 
     heartbeat_stop = threading.Event()
 
@@ -153,7 +153,7 @@ def _generate_image(api_key: str, prompt: str,
 
     if last_image_data is not None and last_image_data.inline_data is not None:
         if chunk_count > 1:
-            print(f"  Keeping the final chunk (highest quality).")
+            print("  Keeping the final chunk (highest quality).")
         path = resolve_output_path(prompt, output_dir, filename, ".png")
         return save_image_bytes(
             last_image_data.inline_data.data,

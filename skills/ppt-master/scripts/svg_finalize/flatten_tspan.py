@@ -578,7 +578,7 @@ def flatten_text_with_tspans(
             if is_new_line_tspan(child):
                 needs_flatten = True
                 break
-        
+
         # If no tspan needs a line break, skip the entire text element
         if not needs_flatten:
             continue
@@ -611,17 +611,17 @@ def flatten_text_with_tspans(
         cur_x, cur_y = base_x, base_y
 
         new_texts = []
-        
+
         # Collect tspan elements belonging to the same line
         current_line_tspans = []
         current_line_lead_text = text_el.text or None
-        
+
         for idx, child in enumerate(list(text_el)):
             if not is_svg_tag(child, "tspan"):
                 continue
 
             content = collect_text_content(child)
-            
+
             # Check whether this tspan starts a new line
             if is_new_line_tspan(child):
                 # Save previously accumulated same-line tspans first
@@ -634,17 +634,17 @@ def flatten_text_with_tspans(
                     new_texts.append(ne)
                     current_line_tspans = []
                     current_line_lead_text = None
-                
+
                 # Update position
                 nx, ny = compute_line_positions(text_el, child, cur_x, cur_y)
                 cur_x, cur_y = nx, ny
-            
+
             # Keep raw XML whitespace and tails until the shared downstream
             # text normalizer sees the whole line. A whitespace-only run can
             # still be the visible boundary between two formatted runs.
             if content or child.tail:
                 current_line_tspans.append(child)
-        
+
         # Process the last line
         if current_line_tspans or _has_non_xml_whitespace(
             current_line_lead_text

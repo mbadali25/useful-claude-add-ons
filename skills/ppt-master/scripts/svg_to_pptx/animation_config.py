@@ -1393,7 +1393,7 @@ def validate_animation_config(
                 elif trigger_target.structurally_static:
                     warnings.append(
                         f'animations.json {effect_path}.trigger_shape '
-                        f'references non-triggerable structural group '
+                        'references non-triggerable structural group '
                         f'{trigger_shape!r}'
                     )
 

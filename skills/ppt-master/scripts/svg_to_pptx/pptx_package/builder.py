@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import math
 import mimetypes
 import os
 import posixpath
@@ -25,7 +24,6 @@ from xml.etree import ElementTree as ET
 from xml.sax.saxutils import escape
 
 from pptx import Presentation
-from pptx.util import Emu
 
 from pptx_transitions import (
     MorphPairExpectation,
@@ -942,7 +940,7 @@ def _create_custom_layout(
     master_rel_id = master_rel_ids[0]
     master_rel_pattern = re.compile(
         rf'(<Relationship\b[^>]*\bId="{re.escape(master_rel_id)}"'
-        rf'[^>]*\bTarget=")[^"]*(")'
+        r'[^>]*\bTarget=")[^"]*(")'
     )
     rels_content, replaced = master_rel_pattern.subn(
         rf"\g<1>{master_target}\g<2>",
@@ -1091,7 +1089,7 @@ def _clone_master_theme(
     rels_content = master_rels.read_text(encoding="utf-8")
     theme_rel_pattern = re.compile(
         rf'(<Relationship\b[^>]*\bId="{re.escape(theme_rel_id)}"'
-        rf'[^>]*\bTarget=")[^"]*(")'
+        r'[^>]*\bTarget=")[^"]*(")'
     )
     rels_content, replaced = theme_rel_pattern.subn(
         rf"\g<1>{theme_target}\g<2>",
@@ -4316,7 +4314,7 @@ def _build_sequence_targets(
             if trigger_shape_id is None:
                 raise ValueError(
                     f'animations.json {effect_path}.trigger_shape '
-                    f'references a missing or non-triggerable group: '
+                    'references a missing or non-triggerable group: '
                     f'{trigger_shape}'
                 )
             if trigger_shape_id == shape_id:
@@ -4610,7 +4608,7 @@ def _create_preserved_base_pptx(
         layout = layouts_by_part.get(layout_contract.package_part)
         if layout is None:
             raise TemplateStructureError(
-                f"Preserved source package did not load layout part "
+                "Preserved source package did not load layout part "
                 f"{layout_contract.package_part!r}"
             )
         presentation.slides.add_slide(layout)
@@ -4944,7 +4942,7 @@ def create_pptx_with_native_svg(
                 f"{len(definition_svg_files)} internal prototype(s)"
             )
         if use_native_shapes:
-            print(f"  Mode: Native DrawingML shapes (directly editable)")
+            print("  Mode: Native DrawingML shapes (directly editable)")
             print(
                 "  Native table/chart objects: "
                 f"{'Enabled' if native_objects else 'Disabled'}"
@@ -4968,10 +4966,10 @@ def create_pptx_with_native_svg(
             else:
                 print("  Image optimization: Disabled (original bytes)")
         elif use_compat_mode:
-            print(f"  Compatibility mode: Enabled (PNG + SVG dual format)")
+            print("  Compatibility mode: Enabled (PNG + SVG dual format)")
             print(f"  PNG renderer: {renderer_name} {renderer_status}")
         else:
-            print(f"  Compatibility mode: Disabled (pure SVG)")
+            print("  Compatibility mode: Disabled (pure SVG)")
         if transition:
             canonical_transition, _transition_options = (
                 normalize_transition_effect_request(
@@ -4991,9 +4989,9 @@ def create_pptx_with_native_svg(
         if enable_notes and notes:
             print(f"  Speaker notes: {len(notes)} page(s)")
         elif enable_notes:
-            print(f"  Speaker notes: Enabled (no notes files found)")
+            print("  Speaker notes: Enabled (no notes files found)")
         else:
-            print(f"  Speaker notes: Disabled")
+            print("  Speaker notes: Disabled")
         print()
 
     animation_cli_overrides = animation_cli_overrides or {}
@@ -5196,11 +5194,11 @@ def create_pptx_with_native_svg(
                             if not isinstance(group_cfg, dict):
                                 continue
                             group_path = (
-                                f'slides['
+                                'slides['
                                 f'{json.dumps(svg_path.stem, ensure_ascii=False)}'
-                                f'].groups['
+                                '].groups['
                                 f'{json.dumps(str(group_id), ensure_ascii=False)}'
-                                f']'
+                                ']'
                             )
                             effect_entries = animation_group_effect_entries(
                                 group_cfg,
@@ -5913,7 +5911,7 @@ def create_pptx_with_native_svg(
             for i in sorted(notes_slides_created):
                 override = (
                     f'  <Override PartName="/ppt/notesSlides/notesSlide{i}.xml" '
-                    f'ContentType="application/vnd.openxmlformats-officedocument.presentationml.notesSlide+xml"/>'
+                    'ContentType="application/vnd.openxmlformats-officedocument.presentationml.notesSlide+xml"/>'
                 )
                 if override not in content_types:
                     content_types = content_types.replace('</Types>', override + '\n</Types>')
@@ -6034,7 +6032,7 @@ def create_pptx_with_native_svg(
                 f"Layout definitions: {len(definition_svg_files)}"
             )
             if use_compat_mode and has_any_image:
-                print(f"  Mode: Office compatibility mode (supports all Office versions)")
+                print("  Mode: Office compatibility mode (supports all Office versions)")
                 if PNG_RENDERER == 'svglib' and renderer_hint:
                     print(f"  [Tip] {renderer_hint}")
 

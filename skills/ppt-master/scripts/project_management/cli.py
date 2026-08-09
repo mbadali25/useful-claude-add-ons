@@ -300,17 +300,24 @@ class ProjectManager:
                     f"- Created: {date_str}\n\n"
                     "## Directories\n\n"
                     "- `svg_output/`: raw SVG output\n"
-                    "- `svg_final/`: self-contained SVG visual preview; may be inserted manually as an SVG image, but PowerPoint Convert to Shape is unsupported\n"
-                    "- `images/`: runtime image pool; converter assets keep their original short filenames when possible\n"
-                    "- `icons/`: project icon set — selected library icons copied in (via icon_sync.py) plus any custom icons you add; embedded from here at export\n"
+                    "- `svg_final/`: self-contained SVG visual preview; may be inserted manually as an SVG image, but "
+                    "PowerPoint Convert to Shape is unsupported\n"
+                    "- `images/`: runtime image pool; converter assets keep their original short filenames when "
+                    "possible\n"
+                    "- `icons/`: project icon set — selected library icons copied in (via icon_sync.py) plus any "
+                    "custom icons you add; embedded from here at export\n"
                     "- `notes/`: speaker notes\n"
                     "- `templates/`: project templates\n"
-                    "- `live_preview/`: browser preview runtime files and history (lock.json, server.log, edits.jsonl, annotations.jsonl)\n"
+                    "- `live_preview/`: browser preview runtime files and history (lock.json, server.log, edits.jsonl, "
+                    "annotations.jsonl)\n"
                     "- `sources/`: source materials and normalized markdown\n"
-                    "- `analysis/`: machine-extracted intermediate analysis (PPTX intake, image_analysis.csv) — the pipeline's canonical must-read source/asset facts\n"
+                    "- `analysis/`: machine-extracted intermediate analysis (PPTX intake, image_analysis.csv) — the "
+                    "pipeline's canonical must-read source/asset facts\n"
                     "- `validation/`: SVG quality reports and PPTX postflight audit reports\n"
-                    "- `exports/`: final native DrawingML pptx deliverables only (timestamped); `_native_charts_tables.pptx` name with `--native-charts-and-tables`, `_narrated.pptx` name when narration audio is embedded\n"
-                    "- `backup/<timestamp>/`: svg_output/ archive (always written in default-flow mode; safe to delete old timestamps)\n"
+                    "- `exports/`: final native DrawingML pptx deliverables only (timestamped); "
+                    "`_native_charts_tables.pptx` name with `--native-charts-and-tables`, `_narrated.pptx` name when narration audio is embedded\n"
+                    "- `backup/<timestamp>/`: svg_output/ archive (always written in default-flow mode; safe to delete "
+                    "old timestamps)\n"
                 ),
                 encoding="utf-8",
             )
@@ -831,13 +838,13 @@ class ProjectManager:
             if move and not inside_projects:
                 print(
                     f"note: {source_path} is outside {PROJECTS_ROOT}; copied "
-                    f"(not moved). Only sources under projects/ may be moved.",
+                    "(not moved). Only sources under projects/ may be moved.",
                     file=sys.stderr,
                 )
             elif inside_projects and not move and not copy:
                 print(
                     f"note: {source_path} is under projects/; moved into the target "
-                    f"project. Pass --copy to preserve it.",
+                    "project. Pass --copy to preserve it.",
                     file=sys.stderr,
                 )
             suffix = source_path.suffix.lower()
@@ -848,7 +855,8 @@ class ProjectManager:
                     summary["markdown"].append(str(duplicate_markdown))
                     self._propagate_companion_image_assets(duplicate_markdown, project_dir)
                     summary["notes"].append(
-                        f"{item}: skipped duplicate markdown import because equivalent content already exists as {duplicate_markdown.name}"
+                        f"{item}: skipped duplicate markdown import because equivalent content already exists as "
+                        f"{duplicate_markdown.name}"
                     )
                     continue
 
@@ -923,7 +931,8 @@ class ProjectManager:
                     summary["markdown"].append(str(canonical_markdown_path))
                     self._propagate_companion_image_assets(canonical_markdown_path, project_dir)
                     summary["notes"].append(
-                        f"{item}: skipped presentation auto-conversion because {canonical_markdown_path.name} already exists"
+                        f"{item}: skipped presentation auto-conversion because {canonical_markdown_path.name} already "
+                        f"exists"
                     )
                     continue
                 markdown_path = canonical_markdown_path
@@ -974,7 +983,8 @@ class ProjectManager:
                     summary["markdown"].append(str(canonical_markdown_path))
                     self._propagate_companion_image_assets(canonical_markdown_path, project_dir)
                     summary["notes"].append(
-                        f"{item}: skipped document auto-conversion because {canonical_markdown_path.name} already exists"
+                        f"{item}: skipped document auto-conversion because {canonical_markdown_path.name} already "
+                        f"exists"
                     )
                     continue
                 markdown_path = canonical_markdown_path

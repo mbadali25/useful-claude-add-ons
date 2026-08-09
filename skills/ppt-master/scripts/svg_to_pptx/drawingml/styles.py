@@ -119,7 +119,7 @@ def build_gradient_fill(
 <a:lin ang="{dml_angle}" scaled="1"/>
 </a:gradFill>'''
 
-    elif tag == 'radialGradient':
+    if tag == 'radialGradient':
         focus_x = parse_project_gradient_ratio(
             grad_elem.get('fx', grad_elem.get('cx', '0.5'))
         )
@@ -313,7 +313,7 @@ def build_pattern_fill(
         f'<a:pattFill prst="{prst}">'
         f'<a:fgClr>{fg_xml}</a:fgClr>'
         f'<a:bgClr>{bg_xml}</a:bgClr>'
-        f'</a:pattFill>'
+        '</a:pattFill>'
     )
 
 

@@ -27,7 +27,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import os
 import re
 import sys
 from dataclasses import dataclass
@@ -538,7 +537,7 @@ def main() -> int:
                 _remove_stale_audio_variants(job.output_path)
             except OSError as exc:
                 print(
-                    f"error: failed to remove stale audio for "
+                    "error: failed to remove stale audio for "
                     f"{job.output_path.stem}: {exc}",
                     file=sys.stderr,
                 )

@@ -65,7 +65,7 @@ def file_lock(lock_path: Path, timeout: float = 30.0):
         return
 
     lock_path.parent.mkdir(parents=True, exist_ok=True)
-    fp = open(lock_path, 'w')
+    fp = open(lock_path, 'w', encoding='utf-8')
     deadline = time.monotonic() + timeout
     while True:
         try:
@@ -218,7 +218,7 @@ def check_server(server_url: str) -> None:
             if resp.status != 200:
                 raise RuntimeError(f'{url} returned HTTP {resp.status}')
     except urllib.error.URLError as e:
-        raise RuntimeError(f'live-preview server not reachable at {server_url}: {e}')
+        raise RuntimeError(f'live-preview server not reachable at {server_url}: {e}') from e
 
 
 def main() -> int:
@@ -247,7 +247,7 @@ def main() -> int:
         return 2
 
     try:
-        from playwright.sync_api import sync_playwright  # noqa: F401
+        from playwright.sync_api import sync_playwright  # noqa: F401  # pylint: disable=unused-import
     except ImportError:
         _safe_print(
             'playwright not installed. Install with:\n'

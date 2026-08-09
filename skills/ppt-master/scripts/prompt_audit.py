@@ -1090,7 +1090,7 @@ def _registry_count_claims(paragraph: Paragraph, nouns: list[str]) -> list[int]:
         rf"\bcatalog\s*\(\s*(\d+)\s+(?:{noun_pattern})\s*\)",
         rf"\bcatalog\s+read\s*:?\s*(\d+)\s+(?:{noun_pattern})\b",
         rf"\(\s*(\d+)\s+(?:{noun_pattern})\s*\)",
-        rf"\b(?:all|every|the|total(?:\s+of)?|contains?|currently(?:\s+has)?|read(?:\s+all)?)\s+"
+        r"\b(?:all|every|the|total(?:\s+of)?|contains?|currently(?:\s+has)?|read(?:\s+all)?)\s+"
         rf"(\d+)\s+(?:{noun_pattern})\b",
     )
     claims: list[int] = []
@@ -1617,7 +1617,7 @@ def run_audit(
                     severity="error",
                     code="AUTHORITY_EDGE_UNREFERENCED",
                     message=(
-                        f"Declared authority edge has no Markdown reference: "
+                        "Declared authority edge has no Markdown reference: "
                         f"{edge['from']} -> {edge['to']}"
                     ),
                     path=manifest_label,

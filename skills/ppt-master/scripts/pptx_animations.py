@@ -799,7 +799,7 @@ def _normalize_after_effect(value: object) -> tuple[str, str | None]:
         )
     if effect_type not in ANIMATION_AFTER_EFFECTS:
         raise ValueError(
-            f'animation after_effect.type must be one of '
+            'animation after_effect.type must be one of '
             f'{", ".join(ANIMATION_AFTER_EFFECTS)}: {effect_type!r}'
         )
     if effect_type == 'dim':
@@ -970,7 +970,7 @@ def _normalize_target_mapping(
     restart = target.get('restart')
     if restart is not None and restart not in ANIMATION_RESTARTS:
         raise ValueError(
-            f'animation restart must be one of '
+            'animation restart must be one of '
             f'{", ".join(ANIMATION_RESTARTS)}: {restart!r}'
         )
     after_effect, after_effect_color = _normalize_after_effect(
@@ -2521,7 +2521,7 @@ def _timing_summary(
     if raw_repeat_count is not None:
         if not re.fullmatch(r'\d+', raw_repeat_count):
             errors.append(
-                f'object-animation repeatCount must be numeric; found '
+                'object-animation repeatCount must be numeric; found '
                 f'{raw_repeat_count!r}'
             )
         else:
@@ -2531,7 +2531,7 @@ def _timing_summary(
     if raw_repeat_duration is not None:
         if not re.fullmatch(r'\d+', raw_repeat_duration):
             errors.append(
-                f'object-animation repeatDur must be numeric; found '
+                'object-animation repeatDur must be numeric; found '
                 f'{raw_repeat_duration!r}'
             )
         else:
@@ -2576,7 +2576,7 @@ def _timing_summary(
         raw_bounce = next(iter(raw_bounce_values))
         if raw_bounce is None or not re.fullmatch(r'\d+', raw_bounce):
             errors.append(
-                f'object-animation p14:bounceEnd must be numeric; '
+                'object-animation p14:bounceEnd must be numeric; '
                 f'found {raw_bounce!r}'
             )
         else:

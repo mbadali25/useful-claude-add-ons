@@ -405,6 +405,6 @@ def _glow(elem: ET.Element, palette: ColorPalette | None) -> str:
         f'<feGaussianBlur in="SourceAlpha" stdDeviation="{fmt_num(std, 8)}" result="blurred"/>'
         f'<feFlood flood-color="{color}" '
         f'flood-opacity="{format_ooxml_alpha(alpha)}" result="flood"/>'
-        f'<feComposite in="flood" in2="blurred" operator="in" result="glow"/>'
-        f'<feMerge><feMergeNode in="glow"/><feMergeNode in="SourceGraphic"/></feMerge>'
+        '<feComposite in="flood" in2="blurred" operator="in" result="glow"/>'
+        '<feMerge><feMergeNode in="glow"/><feMergeNode in="SourceGraphic"/></feMerge>'
     )

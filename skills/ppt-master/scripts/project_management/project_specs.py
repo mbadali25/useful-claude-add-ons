@@ -804,7 +804,7 @@ def _validate_slides(
         for field_name in required_fields:
             pattern = (
                 rf"^[ \t]*-[ \t]+(?:\*\*)?{re.escape(str(field_name))}"
-                rf"(?:\*\*)?[ \t]*:"
+                r"(?:\*\*)?[ \t]*:"
             )
             if re.search(pattern, block, flags=re.MULTILINE) is None:
                 errors.append(

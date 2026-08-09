@@ -188,7 +188,9 @@ def main() -> int:
         result = None
         total_bytes = 0
         if not args.manifest_only:
-            from pptx_to_svg import convert_pptx_to_svg
+            # convert_pptx_to_svg is served by the package's PEP 562 module
+            # __getattr__, so pylint's static scan does not see it.
+            from pptx_to_svg import convert_pptx_to_svg  # pylint: disable=no-name-in-module
             from pptx_to_svg.converter import ConvertOptions
 
             options = ConvertOptions(

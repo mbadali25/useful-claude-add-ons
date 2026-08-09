@@ -328,8 +328,14 @@ def _build_arrow_marker(
     seq[0] += 1
     marker_id = f"{id_prefix}arrow{seq[0]}"
 
-    # SVG markers are drawn in their own viewBox; we use a 0..10 box and place
+    # SVG markers are drawn in their own viewBox. We use a 0..10 box and place
     # the path so refX is at the line endpoint.
+    #
+    # Initialised so the chain below is total. Every value reaching here is
+    # already one of the five the validation above allows, so no default is ever
+    # used today. A sixth type added to that set without a branch here would
+    # otherwise be a NameError rather than an empty marker.
+    path = ""
     if typ == "triangle":
         path = "M 0 0 L 10 5 L 0 10 z"
     elif typ == "stealth":

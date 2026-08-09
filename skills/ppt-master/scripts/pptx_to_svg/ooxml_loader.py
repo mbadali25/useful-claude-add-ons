@@ -15,7 +15,7 @@ from pathlib import Path, PurePosixPath
 from typing import Iterator
 from xml.etree import ElementTree as ET
 
-from .emu_units import NS, emu_attr_to_px
+from .emu_units import NS, emu_attr_to_px  # pylint: disable=unused-import
 
 
 # ---------------------------------------------------------------------------

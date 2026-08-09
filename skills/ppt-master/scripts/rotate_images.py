@@ -105,7 +105,7 @@ class ImageRotator:
         if not target_path.exists():
             return 0
 
-        print(f"[AUTO] Checking EXIF orientation information...")
+        print("[AUTO] Checking EXIF orientation information...")
         fixed_count = 0
         valid_exts = {'.jpg', '.jpeg', '.webp'} # PNG typically does not carry rotation EXIF
 
@@ -119,7 +119,7 @@ class ImageRotator:
         if fixed_count > 0:
             print(f"[OK] Auto-fixed EXIF orientation for {fixed_count} image(s)")
         else:
-            print(f"[INFO] No images requiring EXIF correction found")
+            print("[INFO] No images requiring EXIF correction found")
 
         return fixed_count
 

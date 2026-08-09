@@ -90,7 +90,7 @@ class Shape:
             return (
                 '<Section N="Geometry" IX="0">'
                 f'{_cell("NoFill", 0)}{_cell("NoLine", 0)}'
-                f'<Row T="Ellipse" IX="1">'
+                '<Row T="Ellipse" IX="1">'
                 f'{_cell("X", self.w / 2, "Width*0.5")}'
                 f'{_cell("Y", self.h / 2, "Height*0.5")}'
                 f'{_cell("A", self.w, "Width*1")}'
@@ -114,7 +114,7 @@ class Shape:
     def to_xml(self):
         return (
             f'<Shape ID="{self.id}" NameU="Shape{self.id}" Name="Shape{self.id}" '
-            f'Type="Shape" LineStyle="0" FillStyle="0" TextStyle="0">'
+            'Type="Shape" LineStyle="0" FillStyle="0" TextStyle="0">'
             f'{_cell("PinX", round(self.x, 6))}{_cell("PinY", round(self.y, 6))}'
             f'{_cell("Width", round(self.w, 6))}{_cell("Height", round(self.h, 6))}'
             f'{_cell("LocPinX", round(self.w / 2, 6), "Width*0.5")}'
@@ -126,7 +126,7 @@ class Shape:
             f'{_cell("VerticalAlign", 1)}{_cell("TextBkgnd", 0)}'
             f'{self._char_section()}{self._geometry()}'
             f'<Text>{escape(self.text)}</Text>'
-            f'</Shape>'
+            '</Shape>'
         )
 
 
@@ -168,7 +168,7 @@ class Connector:
         angle = math.atan2(ey - by, ex - bx)
         return (
             f'<Shape ID="{self.id}" NameU="Conn{self.id}" Name="Conn{self.id}" '
-            f'Type="Shape" LineStyle="0" FillStyle="0" TextStyle="0">'
+            'Type="Shape" LineStyle="0" FillStyle="0" TextStyle="0">'
             f'{_cell("PinX", round((bx + ex) / 2, 6))}{_cell("PinY", round((by + ey) / 2, 6))}'
             f'{_cell("Width", round(length, 6))}{_cell("Height", 0)}'
             f'{_cell("LocPinX", round(length / 2, 6), "Width*0.5")}'
@@ -188,7 +188,7 @@ class Connector:
             f'<Row T="LineTo" IX="2">{_cell("X", round(length, 6), "Width")}{_cell("Y", 0)}</Row>'
             '</Section>'
             f'<Text>{escape(self.label)}</Text>'
-            f'</Shape>'
+            '</Shape>'
         )
 
     def connects_xml(self):
@@ -256,7 +256,7 @@ class VisioDocument:
     def _content_types(self):
         ov = "".join(
             f'<Override PartName="/visio/pages/page{i + 1}.xml" '
-            f'ContentType="application/vnd.ms-visio.page+xml"/>'
+            'ContentType="application/vnd.ms-visio.page+xml"/>'
             for i in range(len(self.pages))
         )
         return (

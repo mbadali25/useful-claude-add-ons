@@ -759,7 +759,7 @@ def check_geometry_length_values(
         result['warnings'].append(
             f"Recommendation: project geometry {attribute}={raw!r} is "
             f"converter-compatible in {count} location(s) ({shown_examples}); "
-            f"generated SVG should prefer the unitless px spelling "
+            "generated SVG should prefer the unitless px spelling "
             f'{attribute}="{normalized}". No change is required for export.'
         )
 

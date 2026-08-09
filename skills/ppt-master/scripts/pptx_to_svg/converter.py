@@ -274,7 +274,7 @@ def convert_pptx_to_svg(
     options = options or ConvertOptions()
     if options.inheritance_mode not in {"flat", "layered", "both"}:
         raise ValueError(
-            f"inheritance_mode must be 'flat', 'layered', or 'both', "
+            "inheritance_mode must be 'flat', 'layered', or 'both', "
             f"got {options.inheritance_mode!r}"
         )
     if not options.embed_images:
@@ -765,7 +765,7 @@ def publish_staged_workspace(
                         not _path_lexists(backup_dir)
                         and _path_lexists(output_dir)
                     ):
-                        raise publish_error
+                        raise publish_error from restore_error
                     preserve_backup = _path_lexists(backup_dir)
                     raise RuntimeError(
                         "Failed to publish the new workspace and restore the "

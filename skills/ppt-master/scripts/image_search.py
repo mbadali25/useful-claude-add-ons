@@ -357,7 +357,7 @@ def _validate_downloaded_quality(
                 return False
             if enforce_thumbnail_floor and w * h < _MIN_DOWNLOAD_PIXELS:
                 print(
-                    f"    rejected: downloaded image too small "
+                    "    rejected: downloaded image too small "
                     f"({w}x{h} = {w*h:,} px < {_MIN_DOWNLOAD_PIXELS:,} px minimum)",
                     file=sys.stderr,
                 )
@@ -2092,12 +2092,12 @@ def main(argv: Optional[list[str]] = None) -> int:
         < 0.5 * result.candidate.width * result.candidate.height
     ):
         print(
-            f"\n[!] Downloaded image is much smaller than upstream metadata "
+            "\n[!] Downloaded image is much smaller than upstream metadata "
             f"({actual_dimensions[0]}x{actual_dimensions[1]} vs "
             f"{result.candidate.width}x{result.candidate.height}). The provider "
-            f"likely only exposes a preview here. Layout based on the manifest's "
-            f"width/height will be accurate; the metadata_dimensions field "
-            f"is preserved for reference.",
+            "likely only exposes a preview here. Layout based on the manifest's "
+            "width/height will be accurate; the metadata_dimensions field "
+            "is preserved for reference.",
             file=sys.stderr,
         )
 

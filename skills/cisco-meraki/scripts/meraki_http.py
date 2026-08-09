@@ -71,7 +71,7 @@ class MerakiHTTP:
             raise MerakiError(
                 0,
                 [f"No API key. Export {API_KEY_ENV} in your shell; "
-                 f"do not paste the key into chat."],
+                 "do not paste the key into chat."],
             )
         self.base_url = base_url.rstrip("/")
         self.sleep = sleep

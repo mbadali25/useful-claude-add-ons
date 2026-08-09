@@ -92,12 +92,12 @@ def _chips(field: str, values: list[str], limit: int = 8) -> str:
     if extra:
         spans += (
             f'<span style="display:inline-block;color:{MUTED};font-size:11px;'
-            f'line-height:16px;padding:3px 2px;margin:0 0 6px 0;">'
+            'line-height:16px;padding:3px 2px;margin:0 0 6px 0;">'
             f'+{extra} more</span>'
         )
     return (
-        f'<tr><td style="padding:0 0 4px 0;">'
-        f'<div style="font-size:10px;letter-spacing:.7px;text-transform:uppercase;'
+        '<tr><td style="padding:0 0 4px 0;">'
+        '<div style="font-size:10px;letter-spacing:.7px;text-transform:uppercase;'
         f'color:{MUTED};font-weight:600;margin:0 0 6px 0;">'
         f'{escape(FIELD_LABELS[field])}</div>{spans}</td></tr>'
     )
@@ -105,7 +105,7 @@ def _chips(field: str, values: list[str], limit: int = 8) -> str:
 
 def _stat(value: str, label: str) -> str:
     return (
-        f'<td width="33%" style="padding:16px 8px;text-align:center;">'
+        '<td width="33%" style="padding:16px 8px;text-align:center;">'
         f'<div style="font-family:{FONT};font-size:22px;font-weight:700;'
         f'color:{INK};line-height:26px;">{escape(value)}</div>'
         f'<div style="font-family:{FONT};font-size:10px;letter-spacing:.8px;'
@@ -126,8 +126,8 @@ def _status_badge(status: str) -> str:
     bg, fg = STATUS_STYLES.get(status, ("#f2f4f7", "#344054"))
     return (
         f'<span style="display:inline-block;background:{bg};color:{fg};'
-        f'font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;'
-        f'line-height:14px;padding:2px 6px;border-radius:4px;margin-left:6px;'
+        'font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;'
+        'line-height:14px;padding:2px 6px;border-radius:4px;margin-left:6px;'
         f'vertical-align:middle;">{escape(status)}</span>'
     )
 
@@ -136,9 +136,9 @@ def _session_card(session: dict, last: bool) -> str:
     entries = session.get("entries", [])
 
     bullets = "".join(
-        f'<tr><td width="14" valign="top" style="padding:3px 8px 0 0;">'
+        '<tr><td width="14" valign="top" style="padding:3px 8px 0 0;">'
         f'<div style="width:5px;height:5px;border-radius:3px;background:{ACCENT};'
-        f'margin-top:6px;"></div></td>'
+        'margin-top:6px;"></div></td>'
         f'<td style="font-family:{FONT};font-size:14px;line-height:21px;'
         f'color:#344054;padding-bottom:7px;">{escape(e.get("summary", ""))}'
         + _status_badge(e.get("status", ""))
@@ -156,7 +156,7 @@ def _session_card(session: dict, last: bool) -> str:
     )
     chips_block = (
         f'<tr><td style="padding:12px 0 0 0;border-top:1px solid {BORDER};">'
-        f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0">'
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0">'
         f'{chip_rows}</table></td></tr>'
     ) if chip_rows else ""
 
@@ -172,20 +172,20 @@ def _session_card(session: dict, last: bool) -> str:
 
     margin = "0" if last else "0 0 14px 0"
     return (
-        f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
         f'style="border:1px solid {BORDER};border-radius:10px;margin:{margin};">'
-        f'<tr><td style="padding:18px 20px;">'
-        f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0">'
+        '<tr><td style="padding:18px 20px;">'
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0">'
         f'<tr><td style="font-family:{FONT};font-size:16px;font-weight:650;'
         f'color:{INK};line-height:22px;padding:0 0 3px 0;">'
         f'{escape(session.get("title") or session["session_id"])}</td></tr>'
         f'<tr><td style="font-family:{FONT};font-size:11px;color:{MUTED};'
         f'padding:0 0 12px 0;">{escape(meta)}</td></tr>'
         f'{summary_line}'
-        f'<tr><td><table role="presentation" width="100%" cellpadding="0" '
+        '<tr><td><table role="presentation" width="100%" cellpadding="0" '
         f'cellspacing="0">{bullets}</table></td></tr>'
         f'{chips_block}'
-        f'</table></td></tr></table>'
+        '</table></td></tr></table>'
     )
 
 
@@ -201,12 +201,12 @@ def render_email_html(sessions: list[dict], cfg: dict, *,
         for i, s in enumerate(sessions)
     ) or (
         f'<div style="font-family:{FONT};font-size:14px;color:{MUTED};">'
-        f'No sessions were recorded in this period.</div>'
+        'No sessions were recorded in this period.</div>'
     )
 
     systems_touched = len(set(agg["totals"]["systems"]) | set(agg["totals"]["databases"]))
     stats = (
-        f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
         f'style="background:{PANEL};border-top:1px solid {BORDER};'
         f'border-bottom:1px solid {BORDER};"><tr>'
         + _stat(str(agg["session_count"]), "Sessions")
@@ -216,22 +216,22 @@ def render_email_html(sessions: list[dict], cfg: dict, *,
     )
 
     headline_block = (
-        f'<tr><td style="padding:0 0 20px 0;">'
+        '<tr><td style="padding:0 0 20px 0;">'
         f'<div style="border-left:3px solid {ACCENT};padding:2px 0 2px 14px;'
         f'font-family:{FONT};font-size:15px;line-height:23px;color:#344054;">'
         f'{escape(headline)}</div></td></tr>'
     ) if headline else ""
 
     attach_note = (
-        f'<tr><td style="padding:20px 0 0 0;">'
-        f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+        '<tr><td style="padding:20px 0 0 0;">'
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
         f'style="background:{PANEL};border:1px solid {BORDER};border-radius:8px;">'
         f'<tr><td style="padding:12px 16px;font-family:{FONT};font-size:12px;'
         f'line-height:18px;color:{MUTED};">'
         f'<strong style="color:{INK};">Full detail attached.</strong> '
-        f'The PDF includes every log entry with its notes, the exact commands run, '
-        f'and the complete list of files, databases, and tables touched.'
-        f'</td></tr></table></td></tr>'
+        'The PDF includes every log entry with its notes, the exact commands run, '
+        'and the complete list of files, databases, and tables touched.'
+        '</td></tr></table></td></tr>'
     ) if has_attachment else ""
 
     return f"""<!DOCTYPE html>

@@ -2518,7 +2518,7 @@ def _preflight_output(
         existing = sorted(path for path in templates_root.iterdir())
         if existing:
             raise MirrorMaterializationError(
-                f"Template output must be empty before mirror materialization: "
+                "Template output must be empty before mirror materialization: "
                 f"{templates_root}; first entry: {existing[0].name}"
             )
     collisions = [
@@ -2851,7 +2851,7 @@ def materialize_mirror_template(
                     hydrate_native_payload_refs(_parse_svg(staged_svg), staged_svg)
                 except NativePayloadError as exc:
                     raise MirrorMaterializationError(
-                        f"Materialized native payload reference is invalid: "
+                        "Materialized native payload reference is invalid: "
                         f"{relative}: {exc}"
                     ) from exc
                 _ensure_no_source_refs(staged_svg)

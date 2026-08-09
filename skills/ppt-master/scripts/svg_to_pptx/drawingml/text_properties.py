@@ -228,7 +228,7 @@ def normalize_project_text_segments(
     for index, (xml_space, raw_text) in enumerate(segments):
         if xml_space not in _PROJECT_XML_SPACE_VALUES:
             raise ValueError(
-                f'xml:space must be exactly default or preserve; got '
+                'xml:space must be exactly default or preserve; got '
                 f'{xml_space!r}'
             )
         text = re.sub(r'[\t\r\n]', ' ', raw_text)

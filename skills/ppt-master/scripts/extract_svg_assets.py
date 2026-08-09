@@ -853,7 +853,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             summary_path = write_authoring_summary(svg_dir)
         except (OSError, ValueError) as exc:
             print(
-                f"[ERROR] vector extraction succeeded but authoring summary "
+                "[ERROR] vector extraction succeeded but authoring summary "
                 f"refresh failed: {exc}",
                 file=sys.stderr,
             )

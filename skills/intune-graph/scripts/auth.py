@@ -50,7 +50,7 @@ def _env(name, required=False):
     if required and not v:
         raise AuthError(
             f"{name} is not set. See references/auth-setup.md for the variables "
-            f"each auth mode needs."
+            "each auth mode needs."
         )
     return v
 

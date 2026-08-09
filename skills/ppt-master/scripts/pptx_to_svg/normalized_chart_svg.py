@@ -480,7 +480,7 @@ def _render_lines_or_areas(
     ]
     labels = payload.get("data_labels") if isinstance(payload.get("data_labels"), dict) else None
     show_markers = chart_type == "line" and payload.get("line_style") == "lineMarker"
-    for series_index, (item, style, row) in enumerate(zip(series, styles, segments)):
+    for _series_index, (item, style, row) in enumerate(zip(series, styles, segments)):
         fill_color = style.fill or "none"
         line_color = style.stroke
         top = [
@@ -568,7 +568,7 @@ def _render_pie(
         return parts
     parts: list[str] = []
     angle = -math.pi / 2
-    for idx, (category, value, style) in enumerate(zip(categories, values, styles)):
+    for _idx, (category, value, style) in enumerate(zip(categories, values, styles)):
         sweep = math.tau * value / total
         end = angle + sweep
         # Pie styles are completed before rendering, so ``None`` here means

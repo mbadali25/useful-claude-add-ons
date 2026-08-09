@@ -448,9 +448,9 @@ def _compact_preset_ancestor_paint(
                         pass
                 elif name == 'stroke-dasharray' and normalized == 'none':
                     continue
-                elif name == 'stroke-linecap' and normalized == 'butt':
+                if name == 'stroke-linecap' and normalized == 'butt':
                     continue
-                elif name == 'stroke-linejoin' and normalized == 'miter':
+                if name == 'stroke-linejoin' and normalized == 'miter':
                     continue
                 inherited.add(name)
             ancestor = parents.get(ancestor)
@@ -1306,9 +1306,9 @@ class SVGQualityChecker:
         except ET.ParseError as e:
             result['errors'].append(
                 f"Invalid XML: {e} — SVG must be well-formed XML. "
-                f"Use raw Unicode for typography (—, ©, →, NBSP); "
-                f"escape XML reserved chars as &amp; &lt; &gt; &quot; &apos; "
-                f"(see references/shared-standards-core.md §1)."
+                "Use raw Unicode for typography (—, ©, →, NBSP); "
+                "escape XML reserved chars as &amp; &lt; &gt; &quot; &apos; "
+                "(see references/shared-standards-core.md §1)."
             )
             return None
 
@@ -2989,7 +2989,7 @@ class SVGQualityChecker:
         preview = '; '.join(unsupported[:8])
         suffix = '' if len(unsupported) <= 8 else f'; +{len(unsupported) - 8} more'
         result['errors'].append(
-            f"Unsupported visual SVG element(s) for native PPTX export: "
+            "Unsupported visual SVG element(s) for native PPTX export: "
             f"{preview}{suffix}"
         )
 
@@ -4243,7 +4243,7 @@ class SVGQualityChecker:
             more = len(invalid_lock_sizes) - 5
             suffix = f" (+{more} more)" if more > 0 else ""
             result['errors'].append(
-                f"spec_lock typography sizes must be positive finite unitless px values; "
+                "spec_lock typography sizes must be positive finite unitless px values; "
                 f"found {shown}{suffix}."
             )
 
@@ -4547,10 +4547,10 @@ class SVGQualityChecker:
             )
             if not has_credit:
                 result['errors'].append(
-                    f"Missing image-specific inline attribution for sourced "
+                    "Missing image-specific inline attribution for sourced "
                     f"image {filename} ({author or 'unknown author'}; "
                     f"{license_token}). Add compact author + license credit per "
-                    f"references/image-searcher.md §7."
+                    "references/image-searcher.md §7."
                 )
 
     @classmethod
@@ -4614,13 +4614,13 @@ class SVGQualityChecker:
         """Categorize issue type"""
         if 'Invalid XML' in error_msg:
             return 'XML well-formedness'
-        elif 'viewBox' in error_msg:
+        if 'viewBox' in error_msg:
             return 'viewBox issues'
-        elif 'foreignObject' in error_msg:
+        if 'foreignObject' in error_msg:
             return 'foreignObject'
-        elif 'paint' in error_msg.lower() or 'color value' in error_msg.lower():
+        if 'paint' in error_msg.lower() or 'color value' in error_msg.lower():
             return 'Paint issues'
-        elif 'font' in error_msg.lower():
+        if 'font' in error_msg.lower():
             return 'Font issues'
         else:
             return 'Other'
@@ -4731,8 +4731,8 @@ class SVGQualityChecker:
                 self.summary['total'] += 1
                 brand_valid = True
                 print(
-                    f"[INFO] Brand directory detected (kind: brand) — "
-                    f"validating design_spec.md and referenced assets."
+                    "[INFO] Brand directory detected (kind: brand) — "
+                    "validating design_spec.md and referenced assets."
                 )
                 workspace_root = (
                     spec.parent.parent
@@ -5089,7 +5089,7 @@ class SVGQualityChecker:
             definition = definitions.get(reference.layout_key)
             if definition is None:
                 errors.append(
-                    f"spec_lock.md pptx_layouts is missing Layout "
+                    "spec_lock.md pptx_layouts is missing Layout "
                     f"{reference.layout_key!r}"
                 )
                 continue
@@ -5751,7 +5751,7 @@ class SVGQualityChecker:
                     'error',
                     'planned_image_invalid_crop_policy',
                     f"{filename or '(missing filename)'} has invalid Design "
-                    f"Spec §VIII Crop Policy "
+                    "Spec §VIII Crop Policy "
                     f"{row.get('Crop Policy', '').strip()!r}; use adaptive "
                     "or no-crop.",
                 ))
@@ -5880,7 +5880,7 @@ class SVGQualityChecker:
                         'error',
                         'locked_image_source_mismatch',
                         f"{filename} spec_lock source={entry.get('source')!r} "
-                        f"does not match Design Spec §VIII Acquire Via "
+                        "does not match Design Spec §VIII Acquire Via "
                         f"{acquire!r}.",
                     ))
                 if entry.get('crop') != crop_policy:
@@ -5888,7 +5888,7 @@ class SVGQualityChecker:
                         'error',
                         'locked_image_crop_mismatch',
                         f"{filename} spec_lock crop={entry.get('crop')!r} "
-                        f"does not match Design Spec §VIII Crop Policy "
+                        "does not match Design Spec §VIII Crop Policy "
                         f"{crop_policy!r}.",
                     ))
                 if not self._layout_projection_matches(
@@ -6064,7 +6064,7 @@ class SVGQualityChecker:
                             'error',
                             'no_crop_image_fit_mismatch',
                             f"{svg_path.name}: {filename} is no-crop but its "
-                            f"rendered placement uses "
+                            "rendered placement uses "
                             f"preserveAspectRatio={actual!r}; stretching is not "
                             "a detail crop and remains forbidden.",
                         ))
@@ -6637,7 +6637,7 @@ class SVGQualityChecker:
             f"  [ERROR] With errors: {self.summary['errors']} ({self._percentage(self.summary['errors'])}%)")
 
         if self.issue_types:
-            print(f"\nIssue categories:")
+            print("\nIssue categories:")
             for issue_type, count in sorted(self.issue_types.items(), key=lambda x: x[1], reverse=True):
                 print(f"  {issue_type}: {count}")
 
@@ -6664,16 +6664,17 @@ class SVGQualityChecker:
 
         # Fix suggestions
         if self.summary['errors'] > 0 or self.summary['warnings'] > 0:
-            print(f"\n[TIP] Common fixes:")
-            print(f"  1. XML well-formedness: write typography as raw Unicode (—, ©, →, NBSP); escape XML reserved chars as &amp; &lt; &gt; &quot; &apos; — never use HTML named entities like &nbsp; &mdash; &copy;")
-            print(f"  2. viewBox issues: root viewBox is the canvas authority (see references/canvas-formats.md)")
+            print("\n[TIP] Common fixes:")
+            print("  1. XML well-formedness: write typography as raw Unicode (—, ©, →, NBSP); escape XML reserved "
+                  "chars as &amp; &lt; &gt; &quot; &apos; — never use HTML named entities like &nbsp; &mdash; &copy;")
+            print("  2. viewBox issues: root viewBox is the canvas authority (see references/canvas-formats.md)")
             print(
                 "  3. Paint recommendation: generated SVG prefers uppercase "
                 "#RRGGBB plus channel-specific opacity; compatible alternatives "
                 "remain non-blocking"
             )
-            print(f"  4. foreignObject: Use <text> + <tspan> for manual line breaks")
-            print(f"  5. Font issues: use PPT-safe exported typefaces (e.g. Microsoft YaHei / Arial / Consolas)")
+            print("  4. foreignObject: Use <text> + <tspan> for manual line breaks")
+            print("  5. Font issues: use PPT-safe exported typefaces (e.g. Microsoft YaHei / Arial / Consolas)")
 
     def _print_animation_summary(self):
         """Print animations.json validation issues if present."""
@@ -6905,12 +6906,12 @@ class SVGQualityChecker:
                     f.write(f"Info: {result['info']}\n")
 
                 if result['errors']:
-                    f.write(f"\nErrors:\n")
+                    f.write("\nErrors:\n")
                     for error in result['errors']:
                         f.write(f"  - {error}\n")
 
                 if result['warnings']:
-                    f.write(f"\nWarnings:\n")
+                    f.write("\nWarnings:\n")
                     for warning in result['warnings']:
                         f.write(f"  - {warning}\n")
 

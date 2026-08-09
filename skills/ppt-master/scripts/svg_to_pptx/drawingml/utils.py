@@ -752,7 +752,7 @@ def _parse_transform_operations(
         if gap_pattern.fullmatch(gap) is None:
             if index > 0 and not gap:
                 raise ValueError(
-                    f'SVG transform operations require a separator at '
+                    'SVG transform operations require a separator at '
                     f'offset {cursor}'
                 )
             raise ValueError(

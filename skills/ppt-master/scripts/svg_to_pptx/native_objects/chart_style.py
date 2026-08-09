@@ -18,8 +18,7 @@ from ..drawingml.utils import (
     text_has_rtl_characters,
     text_uses_rtl,
 )
-from .chart_data import _DEFAULT_CHART_COLORS
-from .marker_common import (
+from .marker_common import (  # pylint: disable=unused-import
     _bool_attr,
     _bounds,
     _chart_bool,

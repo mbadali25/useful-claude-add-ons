@@ -1535,7 +1535,7 @@ def cmd_create(args):
                  "body": body, "args": vars_for_queue(args), "error": str(e)}
         path = pending_append(queue)
         raise TicketError(f"{e}\n\nThe ticket text was saved to {path} - "
-                          f"run `python ticketctl.py retry` once the problem is fixed.") from None
+                          "run `python ticketctl.py retry` once the problem is fixed.") from None
     worklog_append({"op": "create", "provider": provider.name, "ref": result["ref"],
                     "title": title, "url": result["url"]})
     extra = f"\nnotifying: {', '.join(result['emailed'])}" if result.get("emailed") else ""
@@ -1582,7 +1582,7 @@ def _write_with_queue(args, provider, op, body, build, run):
                  "body": body, "args": vars_for_queue(args), "error": str(e)}
         path = pending_append(queue)
         raise TicketError(f"{e}\n\nThe {op} was saved to {path} - "
-                          f"run `python ticketctl.py retry` once the problem is fixed.") from None
+                          "run `python ticketctl.py retry` once the problem is fixed.") from None
 
 
 def cmd_update(args):
@@ -1802,7 +1802,7 @@ def cmd_zoho_token(args):
     print(f"Refresh token stored in {cfg['_path']}")
     if data.get("api_domain"):
         print(f"Zoho reports api_domain = {data['api_domain']} (informational; "
-              f"ServiceDesk Plus calls use your zoho_sdp.base_url)")
+              "ServiceDesk Plus calls use your zoho_sdp.base_url)")
     print("Run: python ticketctl.py doctor")
     return 0
 

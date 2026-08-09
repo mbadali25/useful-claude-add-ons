@@ -175,14 +175,14 @@ def svg_preview(page, path):
     arrows = {c.color for c in page.connectors if c.arrow}
     defs = "".join(
         f'<marker id="a{i}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" '
-        f'markerHeight="7" orient="auto-start-reverse">'
+        'markerHeight="7" orient="auto-start-reverse">'
         f'<path d="M0,0 L10,5 L0,10 z" fill="{col}"/></marker>'
         for i, col in enumerate(sorted(arrows))
     )
     marker_id = {col: f"a{i}" for i, col in enumerate(sorted(arrows))}
     out = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{W:.0f}" height="{H:.0f}" '
            f'viewBox="0 0 {W:.0f} {H:.0f}"><defs>{defs}</defs>'
-           f'<rect width="100%" height="100%" fill="#fff"/>']
+           '<rect width="100%" height="100%" fill="#fff"/>']
 
     for c in page.connectors:
         bx, by, ex, ey = c._endpoints()
@@ -192,7 +192,7 @@ def svg_preview(page, path):
                    f'y2="{fy(ey):.1f}" stroke="{c.color}" stroke-width="1.5"{dash}{head}/>')
         if c.label:
             out.append(f'<text x="{(bx+ex)/2*S:.1f}" y="{fy((by+ey)/2)-4:.1f}" '
-                       f'font-family="Calibri,sans-serif" font-size="9" fill="#404040" '
+                       'font-family="Calibri,sans-serif" font-size="9" fill="#404040" '
                        f'text-anchor="middle">{_esc(c.label)}</text>')
 
     for s in page.shapes:
@@ -207,7 +207,7 @@ def svg_preview(page, path):
                 for fx, fyy in GEOMETRY[s.kind]
             )
             out.append(f'<polygon points="{pts}" fill="{s.fill}" stroke="{s.line}" '
-                       f'stroke-width="1.2"/>')
+                       'stroke-width="1.2"/>')
         for j, ln in enumerate(_wrap(s.text, s.w)):
             dy = cy + (j - (len(_wrap(s.text, s.w)) - 1) / 2) * (s.font_size + 2) + s.font_size / 3
             out.append(f'<text x="{cx:.1f}" y="{dy:.1f}" font-family="Calibri,sans-serif" '

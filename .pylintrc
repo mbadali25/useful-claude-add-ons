@@ -11,6 +11,64 @@
 #   pylint $(git ls-files '*.py')
 
 [MAIN]
+# Put every skill's scripts/ directory on sys.path, the same way the scripts
+# themselves do at runtime before importing their siblings.
+#
+# Without this, pylint resolves a sibling package by walking the default path,
+# does not find it, and reports E0401 on imports that work fine. It also gets
+# the wrong answer where a skill ships both `foo.py` and `foo/`: ppt-master has
+# svg_to_pptx.py plus svg_to_pptx/, and pptx_to_svg.py plus pptx_to_svg/, where
+# the .py is a thin CLI wrapper meant to be executed directly, never imported.
+# Python's finder picks the *package* in that situation, confirmed with
+# importlib.util.find_spec, but astroid was picking the module and then
+# reporting E0611 for every submodule that the wrapper does not contain. That
+# was 45 findings against code that runs correctly.
+#
+# Both levels are needed. A script injects its own directory as well as a
+# sibling package directory, so svg_editor/server.py imports a bare
+# `annotations` from svg_editor/ and a bare `embed_icons` from svg_finalize/.
+#
+# The trailing slash on the second glob is load-bearing: it matches directories
+# only, which avoids needing os.path.isdir. init-hook is exec'd, and a list
+# comprehension there gets its own scope that cannot see names imported on the
+# same line, so `[p for p in ... if os.path.isdir(p)]` raises NameError: os.
+init-hook=import sys, glob; sys.path[:0] = sorted(glob.glob("skills/*/scripts") + glob.glob("skills/*/scripts/*/"))
+
+# The three thin CLI wrappers that collide with a same-named package, described
+# above. They are excluded from the lint set rather than from resolution,
+# because astroid binds the module name to whichever of the pair it is asked to
+# lint: with svg_to_pptx.py in the set, every `from svg_to_pptx.x import y`
+# elsewhere resolves against the 600-byte wrapper and reports E0611. Measured
+# both ways on template_preview_pptx.py, 0 findings without it and 4 with it.
+#
+# The cost is that these three files are not linted. They are a few hundred
+# bytes each, argument forwarding into the package, and they are unreachable by
+# import at runtime anyway since the package shadows them. Renaming them would
+# be the cleaner fix but would break the documented
+# `python3 scripts/svg_to_pptx.py` invocations in the skill's own docs.
+#
+# This is the complete set. Regenerate after adding a skill, the same way as
+# ignored-modules below:
+#
+#   python - <<'PY'
+#   import subprocess, pathlib
+#   files = subprocess.run(["git","ls-files","*.py"], capture_output=True,
+#                          text=True).stdout.split()
+#   pkgs = {str(pathlib.Path(f).parent) for f in files
+#           if pathlib.Path(f).name == "__init__.py"}
+#   for m in sorted(files):
+#       p = pathlib.Path(m)
+#       if p.name != "__init__.py" and str(p.parent / p.stem) in pkgs:
+#           print(m)
+#   PY
+# The dot is written [.] rather than \. deliberately. pylint rewrites these
+# patterns for cross-platform matching and turns a backslash-escaped dot into a
+# path separator, so `svg_to_pptx\.py` became `svg_to_pptx/.py` and matched
+# nothing. Check with --generate-toml-config if this ever stops working.
+ignore-paths=^skills/ppt-master/scripts/svg_to_pptx[.]py$,
+             ^skills/ppt-master/scripts/pptx_to_svg[.]py$,
+             ^skills/ppt-master/scripts/template_fill_pptx[.]py$
+
 # Optional third-party deps. Skill scripts import these lazily and degrade
 # gracefully when they're absent (see e.g. visio-diagrams' ensure_deps.py), so
 # CI deliberately does not install them -- there's nothing to pin, and each
@@ -38,8 +96,16 @@
 #
 # Both the bare name and the `.*` glob are listed so submodule imports
 # (reportlab.platypus, urllib3.exceptions) are covered too.
-ignored-modules=botocore,botocore.*,playwright,playwright.*,reportlab,reportlab.*,
-                requests,requests.*,urllib3,urllib3.*,vsdx,vsdx.*,yaml,yaml.*
+ignored-modules=PIL,PIL.*,botocore,botocore.*,bs4,bs4.*,cairosvg,cairosvg.*,
+                curl_cffi,curl_cffi.*,ebooklib,ebooklib.*,edge_tts,edge_tts.*,
+                fitz,fitz.*,flask,flask.*,google,google.*,lxml,lxml.*,mammoth,
+                mammoth.*,markdownify,markdownify.*,nbconvert,nbconvert.*,
+                nbformat,nbformat.*,numpy,numpy.*,openpyxl,openpyxl.*,pathops,
+                pathops.*,playwright,playwright.*,pptx,pptx.*,reportlab,
+                reportlab.*,requests,requests.*,stable_whisper,
+                stable_whisper.*,svglib,svglib.*,tiktoken,tiktoken.*,
+                uharfbuzz,uharfbuzz.*,urllib3,urllib3.*,vsdx,vsdx.*,
+                xlsxwriter,xlsxwriter.*,yaml,yaml.*
 
 [FORMAT]
 # 100 is tight for scripts that embed XML/SQL/URL literals which can't wrap.
@@ -47,9 +113,16 @@ max-line-length=120
 
 # ticketctl.py is one file on purpose -- a skill script has to be runnable on
 # its own, so it can't import sibling modules that may not be copied with it.
-# Raised from 2000 when update/close were added for both providers; the limit
-# tracks that constraint rather than expressing a target.
-max-module-lines=2400
+# Raised from 2000 when update/close were added for both providers, then to
+# 7100 when ppt-master landed. The limit tracks the largest file in the repo
+# rather than expressing a target.
+#
+# ppt-master is the reason for the current number: nine of its modules are over
+# 2400 lines and svg_to_pptx/drawingml/elements.py is 7084. Those are packaged
+# modules rather than standalone scripts, so unlike ticketctl.py they could be
+# split, and splitting them is worth doing on its own terms. It is not
+# something to do while chasing a lint failure, so the limit moved instead.
+max-module-lines=7100
 
 [MESSAGES CONTROL]
 disable=
@@ -92,6 +165,30 @@ disable=
     broad-exception-caught,
     # Tests reach into internals to assert on them.
     protected-access,
+
+    # A skill script has to run standalone, so it appends its own directory to
+    # sys.path and only then imports its siblings. That mutation has to happen
+    # before the import, which is precisely what these two checks forbid. Same
+    # reason import-outside-toplevel is disabled above. 61 files in the repo do
+    # it, and it accounted for 279 of the findings on 2026-08-09.
+    #
+    # wrong-import-order comes along for the ride: a local sibling imported
+    # after the sys.path block is classified as third party, so every stdlib
+    # import after it reads as misordered.
+    wrong-import-position,
+    wrong-import-order,
+
+    # Another shape metric, same reasoning as the too-many-* family above. The
+    # offenders are validation predicates where the conditions are the spec.
+    too-many-boolean-expressions,
+
+    # Every occurrence in this repo is a helper closure defined in a loop and
+    # invoked inside that same iteration, either called directly or handed to a
+    # function that calls it synchronously, so the late-binding trap this check
+    # exists for cannot fire. Audited all 23 on 2026-08-09 across prompt_audit,
+    # svg_quality/checker, svg_to_pptx/drawingml/utils, source_to_md/pdf_to_md
+    # and image_search. Worth re-auditing if a closure ever gets stored.
+    cell-var-from-loop,
 
     # --- Pure style -------------------------------------------------------
     # Short-lived script locals (fh, k, v, ns) read fine.

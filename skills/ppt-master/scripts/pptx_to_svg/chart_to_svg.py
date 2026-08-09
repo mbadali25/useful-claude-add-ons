@@ -658,6 +658,10 @@ def _resolved_solid_fill(
     }.get(tag, set())
     if not required.issubset(color.attrib):
         raise _UnsupportedChart("unsupported-chart-series-style")
+    # color is an ElementTree Element from find_color_elem, and iterating an
+    # Element yields its children. The name collides with an unrelated `color: str`
+    # annotation elsewhere in the module, which is what misleads pylint.
+    # pylint: disable=not-an-iterable
     for modifier in color:
         modifier_name = _local_name(modifier.tag)
         if modifier_name in _COLOR_MODIFIERS_WITH_VALUE:
@@ -1604,7 +1608,7 @@ def _validate_chart_semantics(
 ) -> list[SeriesVisualStyle]:
     """Reject valid chart features the compact marker cannot reproduce."""
     chart_type = payload["type"]
-    grouping = payload.get("grouping")
+    _grouping = payload.get("grouping")
     visual_styles = _chart_visual_styles(payload, plot, palette)
     for tag in (
         "trendline", "errBars", "dropLines", "hiLowLines", "upDownBars",
@@ -1642,7 +1646,7 @@ def _validate_chart_semantics(
         )
         marker_states: set[bool] = set()
         for series in plot.findall("c:ser", C_NS):
-            marker_node = series.find("c:marker", C_NS)
+            _marker_node = series.find("c:marker", C_NS)
             symbol = _element_val(series.find("c:marker/c:symbol", C_NS))
             if symbol not in {None, "circle", "none"}:
                 raise _UnsupportedChart("unsupported-chart-line-style")

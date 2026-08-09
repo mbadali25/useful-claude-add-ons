@@ -11,7 +11,10 @@ It prints the chat_id(s) that have recently messaged the bot.
 
 Note: the bot must be in polling mode (no webhook set). Personal bots are by default.
 """
-import json, os, sys, urllib.request
+import json
+import os
+import sys
+import urllib.request
 
 def main():
     token = os.environ.get("TELEGRAM_BOT_TOKEN")

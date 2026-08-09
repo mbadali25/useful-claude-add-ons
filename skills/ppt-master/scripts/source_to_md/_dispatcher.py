@@ -93,7 +93,7 @@ def default_markdown_path(input_arg: str) -> Path:
 def _curl_cffi_available() -> bool:
     """Return whether curl_cffi is importable."""
     try:
-        import curl_cffi  # noqa: F401
+        import curl_cffi  # noqa: F401  # pylint: disable=unused-import
         return True
     except ImportError:
         return False

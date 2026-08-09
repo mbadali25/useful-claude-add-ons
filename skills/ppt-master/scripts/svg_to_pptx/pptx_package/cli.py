@@ -1970,7 +1970,7 @@ Recorded narration:
                         if verbose:
                             print(f"  [warn] native payload backup skipped: {exc}")
         elif verbose:
-            print(f"  [info] svg_output/ not found, backup skipped")
+            print("  [info] svg_output/ not found, backup skipped")
 
     if success:
         try:

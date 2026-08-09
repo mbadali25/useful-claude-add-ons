@@ -13,7 +13,14 @@ Email: SMTP (this script) or `connector` (Claude sends via MCP; see SKILL.md).
 Subject = event / what's happening; body = details. Stdlib only.
 Exit: 0 sent/reply, 2 config, 3 send fail, 5 reply timeout.
 """
-import argparse, json, os, ssl, sys, time, uuid, smtplib
+import argparse
+import json
+import os
+import ssl
+import sys
+import time
+import uuid
+import smtplib
 from email.message import EmailMessage
 from pathlib import Path
 import tg
@@ -37,12 +44,12 @@ def deep_merge(base, over):
 
 def resolve_config(explicit):
     if explicit:
-        try: return json.loads(Path(explicit).read_text())
+        try: return json.loads(Path(explicit).read_text(encoding="utf-8"))
         except Exception as e: die(f"could not read {explicit}: {e}")
     cfg = {}
     for p in [Path(os.path.expanduser("~/.config/notify/config.json")), Path.cwd() / ".notify.json"]:
         if p.exists():
-            try: cfg = deep_merge(cfg, json.loads(p.read_text()))
+            try: cfg = deep_merge(cfg, json.loads(p.read_text(encoding="utf-8")))
             except Exception as e: die(f"could not read {p}: {e}")
     return cfg
 

@@ -226,7 +226,7 @@ def _validate_gpt_image_2_size(size: str) -> None:
         errors.append("both edges must be multiples of 16px")
     if long_edge / short_edge > GPT_IMAGE_2_MAX_RATIO:
         errors.append("long:short edge ratio must not exceed 3:1")
-    if not (GPT_IMAGE_2_MIN_PIXELS <= total_pixels <= GPT_IMAGE_2_MAX_PIXELS):
+    if not GPT_IMAGE_2_MIN_PIXELS <= total_pixels <= GPT_IMAGE_2_MAX_PIXELS:
         errors.append(
             f"total pixels {total_pixels:,} must be between "
             f"{GPT_IMAGE_2_MIN_PIXELS:,} and {GPT_IMAGE_2_MAX_PIXELS:,}"
@@ -280,7 +280,7 @@ def _read_env_int(name: str, minimum: int, maximum: int) -> int | None:
         parsed = int(value)
     except ValueError as exc:
         raise ValueError(f"Invalid {name}='{value}'. Expected integer {minimum}-{maximum}.") from exc
-    if not (minimum <= parsed <= maximum):
+    if not minimum <= parsed <= maximum:
         raise ValueError(f"Invalid {name}={parsed}. Expected integer {minimum}-{maximum}.")
     return parsed
 
@@ -472,7 +472,7 @@ def _generate_image(api_key: str, prompt: str,
     print()
 
     start_time = time.time()
-    print(f"  [..] Generating...", end="", flush=True)
+    print("  [..] Generating...", end="", flush=True)
 
     # Heartbeat thread
     heartbeat_stop = threading.Event()
@@ -544,7 +544,7 @@ def _edit_image(api_key: str, prompt: str, reference_image: str,
 
     mode_label = f"Proxy: {base_url}" if base_url else "OpenAI API"
     print(f"[OpenAI - {mode_label}]")
-    print(f"  Mode:         edit (image-to-image)")
+    print("  Mode:         edit (image-to-image)")
     print(f"  Model:        {model}")
     print(f"  Reference:    {reference_image}")
     print(f"  Prompt:       {prompt[:120]}{'...' if len(prompt) > 120 else ''}")
@@ -570,7 +570,7 @@ def _edit_image(api_key: str, prompt: str, reference_image: str,
     print()
 
     start_time = time.time()
-    print(f"  [..] Editing...", end="", flush=True)
+    print("  [..] Editing...", end="", flush=True)
 
     heartbeat_stop = threading.Event()
 

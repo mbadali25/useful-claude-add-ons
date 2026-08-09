@@ -34,7 +34,6 @@ import json
 import os
 import re
 import sys
-import time
 from pathlib import Path
 from urllib.parse import urljoin, urlparse
 
@@ -237,7 +236,7 @@ def fetch_url(url: str) -> str:
 
         return _decode_response_text(response)
     except Exception as e:
-        raise Exception(f"Failed to fetch {url}: {str(e)}")
+        raise Exception(f"Failed to fetch {url}: {str(e)}") from e
 
 
 def clean_title(title: str) -> str:
@@ -623,76 +622,76 @@ def element_to_markdown(element: Tag | NavigableString | None) -> str:
         level = int(tag_name[1])
         return f"\n{'#' * level} {content}\n\n"
 
-    elif tag_name == 'p':
+    if tag_name == 'p':
         # Clean up internal whitespace
         content = re.sub(r'\s+', ' ', content).strip()
         return f"\n{content}\n\n" if content else ""
 
-    elif tag_name == 'br':
+    if tag_name == 'br':
         return "  \n"
 
-    elif tag_name == 'hr':
+    if tag_name == 'hr':
         return "\n---\n"
 
-    elif tag_name == 'div':
+    if tag_name == 'div':
         return f"\n{content}\n"
 
-    elif tag_name == 'blockquote':
+    if tag_name == 'blockquote':
         lines = content.strip().split('\n')
         quoted = '\n'.join([f"> {line}" for line in lines if line.strip()])
         return f"\n{quoted}\n\n"
 
-    elif tag_name in ['ul', 'ol']:
+    if tag_name in ['ul', 'ol']:
         # This is tricky without "state" (knowing we are in a list)
         # For simplicity in this recursive version, we rely on LI handling
         return f"\n{content}\n"
 
-    elif tag_name == 'li':
+    if tag_name == 'li':
         # Simple list handling
         clean_content = content.strip()
         return f"- {clean_content}\n"
 
-    elif tag_name == 'pre':
+    if tag_name == 'pre':
         return f"\n```\n{content}\n```\n\n"
 
-    elif tag_name == 'code':
+    if tag_name == 'code':
         # If parent is pre, handle in pre. If inline:
         parent = element.parent
         if parent and parent.name == 'pre':
             return content
         return f"`{content}`"
 
-    elif tag_name == 'a':
+    if tag_name == 'a':
         href = element.get('href', '')
         if href and not href.startswith('javascript:'):
             return f"[{content}]({href})"
         return content
 
-    elif tag_name == 'img':
+    if tag_name == 'img':
         src = element.get('src', '')
         alt = element.get('alt', '')
         if src:
             return f"![{alt}]({src})"
         return ""
 
-    elif tag_name == 'table':
+    if tag_name == 'table':
         # Basic table text extraction, full markdown table support is complex
         # Leaving as raw text or simplistic conversion for now
         # Ideally, we'd parse TRs and TDs
         return f"\n{content}\n"
 
-    elif tag_name == 'tr':
+    if tag_name == 'tr':
         return f"{content}|\n"
 
-    elif tag_name in ['td', 'th']:
+    if tag_name in ['td', 'th']:
         return f"| {content.strip()} "
 
     # Style formatting
-    elif tag_name in ['strong', 'b']:
+    if tag_name in ['strong', 'b']:
         return f"**{content}**"
-    elif tag_name in ['em', 'i']:
+    if tag_name in ['em', 'i']:
         return f"*{content}*"
-    elif tag_name in ['del', 's', 'strike']:
+    if tag_name in ['del', 's', 'strike']:
         return f"~~{content}~~"
 
     # Default for span, section, etc.
@@ -701,7 +700,7 @@ def element_to_markdown(element: Tag | NavigableString | None) -> str:
 
 def simple_html_to_markdown_traversal(soup: Tag | BeautifulSoup | None) -> str:
     """Convert HTML content to Markdown using BeautifulSoup traversal."""
-    lines = []
+    _lines = []
 
     def traverse(node: Tag | NavigableString) -> str:
         if isinstance(node, NavigableString):
@@ -716,7 +715,7 @@ def simple_html_to_markdown_traversal(soup: Tag | BeautifulSoup | None) -> str:
             return ""
 
         # Handle Block Elements
-        is_block = node.name in ['p', 'div', 'h1', 'h2', 'h3', 'h4',
+        _is_block = node.name in ['p', 'div', 'h1', 'h2', 'h3', 'h4',
                                  'h5', 'h6', 'li', 'blockquote', 'pre', 'hr', 'table', 'tr']
 
         # Pre-processing
@@ -737,9 +736,9 @@ def simple_html_to_markdown_traversal(soup: Tag | BeautifulSoup | None) -> str:
             suffix = "\n"
         elif node.name == 'hr':
             return "\n\n---\n\n"
-        elif node.name == 'br':
+        if node.name == 'br':
             return "  \n"
-        elif node.name == 'pre':
+        if node.name == 'pre':
             # Extract raw text from pre to preserve formatting
             return f"\n\n```\n{node.get_text()}\n```\n\n"
 
@@ -784,7 +783,7 @@ def simple_html_to_markdown_traversal(soup: Tag | BeautifulSoup | None) -> str:
                 cols_count = rows[0].count('|') - 1
                 if cols_count > 0:
                     # rough approx
-                    sep = "| " + " | ".join(["---"] * int(cols_count/2)) + " |"
+                    _sep = "| " + " | ".join(["---"] * int(cols_count/2)) + " |"
                     # Actually, the traverse of TR returns newline terminated strings.
                     # Let's just return what we gathered.
                     pass
@@ -954,7 +953,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     results = []
-    for i, url in enumerate(targets):
+    for _i, url in enumerate(targets):
         # Allow specific output file only if 1 URL
         out = args.output if (len(targets) == 1 and args.output) else None
         success, url, err, out_path = process_url(url, out)

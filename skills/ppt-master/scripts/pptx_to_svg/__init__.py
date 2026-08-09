@@ -8,6 +8,9 @@ Public entry: convert_pptx_to_svg().
 
 from __future__ import annotations
 
+# Supplied by the PEP 562 module __getattr__ below, so pylint's static scan
+# reports undefined-all-variable. Verified resolvable at runtime.
+# pylint: disable=undefined-all-variable
 __all__ = ["convert_pptx_to_svg"]
 
 

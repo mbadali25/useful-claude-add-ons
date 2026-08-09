@@ -361,10 +361,10 @@ Features:
 
     if success:
         if verbose:
-            print(f"\n[Done] Notes splitting complete")
+            print("\n[Done] Notes splitting complete")
         sys.exit(0)
     else:
-        print(f"\n[Failed] Notes splitting failed")
+        print("\n[Failed] Notes splitting failed")
         sys.exit(1)
 
 

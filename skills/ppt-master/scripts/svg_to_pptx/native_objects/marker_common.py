@@ -28,7 +28,7 @@ from ..drawingml.utils import (
     parse_transform_matrix,
     transform_point,
 )
-from .marker_attributes import (
+from .marker_attributes import (  # pylint: disable=unused-import
     NativeMarkerAttributeError,
     native_metadata_payload_matches,
 )

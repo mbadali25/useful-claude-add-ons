@@ -3202,7 +3202,7 @@ def template_prototype_errors(
             if adherence == "strict":
                 errors.append(
                     f"{spec.svg_path.name}: strict placeholder id/type/index/default-"
-                    f"bounds contract differs from prototype "
+                    "bounds contract differs from prototype "
                     f"{reference.svg_path.name}"
                 )
             else:

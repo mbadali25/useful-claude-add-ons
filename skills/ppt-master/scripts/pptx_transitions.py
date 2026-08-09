@@ -2729,7 +2729,7 @@ def set_package_use_timings(
                 f"presentation properties part is missing: {props_part}"
             )
         source = (
-            f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
             f'<p:presentationPr xmlns:p="{PML_NS}"/>'
         ).encode("utf-8")
         root = parse_source_xml(source)

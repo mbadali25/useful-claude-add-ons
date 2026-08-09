@@ -113,7 +113,7 @@ def _plan_font_family_updates(
             outer = "'" if quote == '"' else '"'
             if outer in new_value:
                 raise ValueError(
-                    f"new font_family value contains both ' and \" — cannot embed: "
+                    "new font_family value contains both ' and \" — cannot embed: "
                     f"{new_value!r}"
                 )
         return f"{prefix}{outer}{new_value}{outer}"
@@ -375,8 +375,8 @@ def main() -> int:
     else:
         print(
             f"error: {section}.{key} is not supported by update_spec.py.\n"
-            f"v2 supports: colors.* (HEX), typography.font_family.\n"
-            f"Edit spec_lock.md and the affected SVGs by hand for other changes.",
+            "v2 supports: colors.* (HEX), typography.font_family.\n"
+            "Edit spec_lock.md and the affected SVGs by hand for other changes.",
             file=sys.stderr,
         )
         return 2
@@ -384,7 +384,7 @@ def main() -> int:
     if args.dry_run:
         for lock_key, previous, replacement in lock_changes:
             print(
-                f"[dry-run] spec_lock.md: "
+                "[dry-run] spec_lock.md: "
                 f"{section}.{lock_key}  {previous} → {replacement}"
             )
         print(f"[dry-run] svg_output/:  {len(changed)} file(s) would be updated")

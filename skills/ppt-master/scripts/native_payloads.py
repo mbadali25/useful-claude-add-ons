@@ -275,7 +275,7 @@ def externalize_native_payloads(
                     "txbody metadata is already externalized; source payload "
                     "must be hydrated before building a new store"
                 )
-            elif encoded:
+            if encoded:
                 if encoding != "base64":
                     raise NativePayloadError(
                         "txbody metadata must use base64 before externalization"

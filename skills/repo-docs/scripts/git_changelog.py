@@ -141,7 +141,7 @@ def build(repo: Path, rev_range: str, limit: int, keep_noise: bool):
 def render(grouped, skipped, total, rev_range, show_sha) -> str:
     out = ["## [Unreleased]", ""]
     out.insert(0, f"<!-- draft from `git log {rev_range}` — {total} commits examined; "
-                  f"rewrite in user-facing language before committing -->")
+                  "rewrite in user-facing language before committing -->")
     any_entries = False
     for category in CATEGORIES:
         entries = grouped.get(category) or []
