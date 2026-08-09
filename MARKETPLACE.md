@@ -112,9 +112,10 @@ claude plugin install claude-mem@thedotmack
 # add. The install scripts prompt before running this, and detect it on disk first.
 npx -y skills add vercel-labs/skills --skill find-skills --agent claude-code
 
-# GSD (Get Stuff Done) - structured project/phase workflow tooling. npm-distributed
-# installer, no marketplace of its own (prompted, default Yes).
-npx -y @opengsd/gsd-core@latest
+# Supabase - project, database and edge-function tooling. Off by default; ships in the
+# same official marketplace the community and claude-code-setup rows already register.
+claude plugin marketplace add anthropics/claude-plugins-official
+claude plugin install supabase@claude-plugins-official
 ```
 
 > **A marketplace's name is not its repo name.** `claude plugin install` matches on the `name` field inside that repo's `.claude-plugin/marketplace.json` — `fcakyon/claude-codex-settings` registers as `claude-settings`, and `VoltAgent/awesome-claude-code-subagents` as `voltagent-subagents`. After adding a new marketplace, confirm the name with `claude plugin marketplace list` before writing any `plugin@marketplace` spec against it.

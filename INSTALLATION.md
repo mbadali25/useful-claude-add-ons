@@ -14,12 +14,12 @@ One script per OS. Both are idempotent (safe to re-run) and, by default, also bo
   Select what to install
   ----------------------
     [x] Prerequisites: git, nodejs, npm, python3, pip3 (needs root or sudo)
-    [x] Claude Code CLI (@anthropic-ai/claude-code) + PATH export
+    [x] Claude Code CLI (@anthropic-ai/claude-code) + PATH export + update check
   > [x] This repo's marketplace + 19 of 19 skills  >
     [x] Team plugins: superpowers, frontend-design, excalidraw-generator
     ...
-    [ ] Headroom: pipx + headroom-ai[all] + mode setup + doctor
-  showing 1-20 of 20
+    [ ] Strix AI pentesting CLI (needs Docker + an LLM API key)
+  showing 1-19 of 19
   ↑↓ move   Space toggle   Enter start   A all   N none   D defaults   Q cancel
   → on the repo row picks individual skills
 ```
@@ -52,14 +52,14 @@ cd useful-claude-add-ons
 .\scripts\install-prerequisites.ps1
 ```
 
-It shows the menu, collects any API keys and the Headroom mode question up front, then installs what you ticked, in order:
+It shows the menu, collects any API keys and the SkillUI quick-start question up front, then installs what you ticked, in order:
 
 1. **Prerequisites** — if elevated: installs [Chocolatey](https://chocolatey.org/) if not already present, then `choco install git awscli nodejs python -y`. **If not elevated, this item is skipped entirely** — the script prints a warning and continues with everything below using whatever `git`/`node`/`npm`/`python` are already on `PATH`.
-2. **Claude Code CLI** — `npm install -g @anthropic-ai/claude-code`, adds the npm global bin directory to your **User** `PATH` environment variable (persists across sessions), and sets a `CLAUDE_CODE_HOME` user env var pointing at the npm prefix.
+2. **Claude Code CLI** — `npm install -g @anthropic-ai/claude-code`, adds the npm global bin directory to your **User** `PATH` environment variable (persists across sessions), and sets a `CLAUDE_CODE_HOME` user env var pointing at the npm prefix. When `claude` is already installed it compares the local version against the npm registry instead and updates only if it's behind (`-NoUpdate` skips the check).
 3. **This repo** — adds `mbadali25/useful-claude-add-ons` as a Claude Code marketplace, then installs the skills you ticked in the per-skill picker, all 19 by default (see [What the own-marketplace step installs](#what-the-own-marketplace-step-installs) below).
-4. **Team plugins, community plugins, `find-skills`, `claude-code-setup`, `task-observer`, claude-mem, GSD, VoltAgent** — each is its own menu row; `-SkipBootstrap` narrows any selection back down to items 1 and 2.
-5. **MCP servers** — AWS, Azure, Perplexity, Playwright, Firecrawl, Chrome DevTools, Glyphs. Off by default; see [Optional: MCP servers](#optional-mcp-servers). Perplexity and Firecrawl ask for their API key alongside the menu rather than mid-install.
-6. **OmniRoute** and **Headroom** — off by default. Headroom's mode question is asked before the install starts, or answered with `-HeadroomMode`.
+4. **Team plugins, community plugins, `find-skills`, `claude-code-setup`, `task-observer`, claude-mem, VoltAgent** — each is its own menu row; `-SkipBootstrap` narrows any selection back down to items 1 and 2.
+5. **MCP servers** — AWS, Azure, Perplexity, Playwright. Off by default; see [Optional: MCP servers](#optional-mcp-servers). Perplexity asks for its API key alongside the menu rather than mid-install.
+6. **Supabase, Context7, Playwright CLI, SkillUI, Strix** — off by default; see [Optional: extra tooling](#optional-extra-tooling).
 
 If `claude` isn't recognized immediately after the script finishes, open a new PowerShell window — the `PATH` change is written to the registry but doesn't retroactively apply to whichever shell you're still in from before Node.js/npm existed.
 
@@ -74,11 +74,11 @@ cd useful-claude-add-ons
 Runs as your current user, escalating to `sudo` (or `root` directly if already root) only for the package-manager and global-npm-install steps. Same menu, same order:
 
 1. **Prerequisites** — `git`, `nodejs`, `npm`, `python3` via whichever of `apt-get` / `dnf` / `yum` / `pacman` / `zypper` / `apk` it finds first. Only packages whose command is actually missing get installed.
-2. **Claude Code CLI** — `npm install -g @anthropic-ai/claude-code`, then a `PATH` export for the npm global bin directory appended to `~/.bashrc` and `~/.zshrc` (only if not already present) and exported in the current shell too.
+2. **Claude Code CLI** — `npm install -g @anthropic-ai/claude-code`, then a `PATH` export for the npm global bin directory appended to `~/.bashrc` and `~/.zshrc` (only if not already present) and exported in the current shell too. When `claude` is already installed it compares the local version against the npm registry instead and updates only if it's behind (`--no-update` skips the check).
 3. **This repo** — adds `mbadali25/useful-claude-add-ons` as a Claude Code marketplace, then installs the skills you ticked in the per-skill picker, all 19 by default (see [What the own-marketplace step installs](#what-the-own-marketplace-step-installs) below).
-4. **Team plugins, community plugins, `find-skills`, `claude-code-setup`, `task-observer`, claude-mem, GSD, VoltAgent** — each is its own menu row; `--skip-bootstrap` narrows any selection back down to items 1 and 2.
-5. **MCP servers** — AWS, Azure, Perplexity, Playwright, Firecrawl, Chrome DevTools, Glyphs. Off by default; see [Optional: MCP servers](#optional-mcp-servers).
-6. **OmniRoute** and **Headroom** — off by default, with the Headroom mode question asked before the install starts or answered with `--headroom-mode`.
+4. **Team plugins, community plugins, `find-skills`, `claude-code-setup`, `task-observer`, claude-mem, VoltAgent** — each is its own menu row; `--skip-bootstrap` narrows any selection back down to items 1 and 2.
+5. **MCP servers** — AWS, Azure, Perplexity, Playwright. Off by default; see [Optional: MCP servers](#optional-mcp-servers).
+6. **Supabase, Context7, Playwright CLI, SkillUI, Strix** — off by default; see [Optional: extra tooling](#optional-extra-tooling).
 
 Under the piped one-liner (`curl -fsSL … | bash`) the script itself arrives on stdin, so the menu reads the terminal through its own file descriptor. Where there is no terminal at all, it takes the default set rather than blocking.
 
@@ -115,16 +115,15 @@ claude plugin install ppt-master@ppt-master
 # claude-mem, prompted (default Yes)
 claude plugin marketplace add thedotmack/claude-mem
 claude plugin install claude-mem@thedotmack
-
-npx -y @opengsd/gsd-core@latest   # prompted
 ```
 
 Every install passes `--scope` (`user` by default; change it with `-InstallScope` / `--scope`).
 
-Three things are *not* Claude Code plugins and so can't go through `claude plugin install`:
+Some things are *not* Claude Code plugins and so can't go through `claude plugin install`:
 
 - **`find-skills`** — a user-level skill installed by the `skills` CLI (see below).
-- **GSD** — an npm-distributed installer with no marketplace of its own.
+- **`task-observer`** — a plain skill directory cloned into `~/.claude/skills/`.
+- **Context7, Playwright CLI, SkillUI, Strix** — ordinary CLI tools; see [Optional: extra tooling](#optional-extra-tooling).
 - **`xlsx` / `mcp-integration`** — these were previously pulled from `aiskillstore/marketplace`, which is the [Skill Store](https://skillstore.io) content repo, **not** a Claude Code marketplace (it has no `.claude-plugin/marketplace.json`). They're no longer installed by the scripts. `anthropic-office-skills@claude-settings` covers the spreadsheet/document ground; if you specifically want the Skill Store versions, install them yourself with `npx skillstore add aiskillstore/xlsx` / `npx skillstore add aiskillstore/mcp-integration`.
 
 `find-skills` is asked about before it runs (default **Yes**). It installs through the `skills` CLI as a plain user-level skill rather than as a Claude Code plugin, so it never shows up in `claude plugin list` — the scripts detect it on disk at `~/.claude/skills/find-skills/SKILL.md` (or `$CLAUDE_CONFIG_DIR/skills/...`). If it's already there, the prompt changes to offer a re-install for updates instead, and `-NoUpdate` / `--no-update` skips it outright.
@@ -175,12 +174,26 @@ If a new skill is added to the marketplace, add it to the `SKILL_KEYS` / `SKILL_
 
 ### Optional: MCP servers
 
-After the bootstrap commands, both scripts ask two yes/no questions (default **No** — just press Enter to skip):
+Four MCP servers are menu rows, all off by default:
 
-- **Install the AWS MCP server?** If yes: ensures `uv`/`uvx` is on `PATH` (installing it via `pip install --user uv` if missing), then runs `claude mcp add aws-api -- uvx awslabs.aws-api-mcp-server@latest`. You still need your own AWS credentials configured (`aws configure`) for it to work at runtime.
-- **Install the Azure MCP server?** If yes: runs `claude mcp add azure -- npx -y @azure/mcp@latest server start`. You still need to run `az login` yourself for it to work at runtime.
+- **AWS** — ensures `uv`/`uvx` is on `PATH` (installing it via `pip install --user uv` if missing), then runs `claude mcp add aws-api -- uvx awslabs.aws-api-mcp-server@latest`. You still need your own AWS credentials configured (`aws configure`) for it to work at runtime.
+- **Azure** — runs `claude mcp add azure -- npx -y @azure/mcp@latest server start`. You still need to run `az login` yourself for it to work at runtime.
+- **Perplexity** — runs `claude mcp add perplexity --env PERPLEXITY_API_KEY=… -- npx -y @perplexity-ai/mcp-server`. The key is read from the environment if it's already exported, otherwise asked for once alongside the menu; press Enter to skip the server rather than register one that can't authenticate.
+- **Playwright** — runs `claude mcp add playwright -- npx @playwright/mcp@latest`. Playwright downloads its browsers on first use; `npx playwright install` does it ahead of time.
 
-Either can be added later by hand with the same `claude mcp add` command, or removed with `claude mcp remove <name>`.
+Any of them can be added later by hand with the same `claude mcp add` command, or removed with `claude mcp remove <name>`.
+
+### Optional: extra tooling
+
+Five more rows, also off by default. None of them are MCP servers.
+
+- **Supabase** (15) — adds `anthropics/claude-plugins-official` (a no-op if the community or `claude-code-setup` row already registered it) and installs `supabase@claude-plugins-official`. Already-installed is detected and skipped or updated like any other plugin.
+- **Context7** (16) — runs `npx -y ctx7@latest setup`, an interactive wizard that wires version-accurate library documentation into whichever agents it finds. The scripts hand it the terminal explicitly; with no terminal available (CI, `curl | bash` with no `/dev/tty`, a redirected console) they print the command to run by hand rather than hanging on a prompt nobody can see. The free tier needs no key.
+- **Playwright CLI** (17) — `npm install -g @playwright/cli@latest`, detected by whether `playwright-cli` already resolves on `PATH`. `--no-update` / `-NoUpdate` leaves an existing install alone; otherwise it reinstalls `@latest`.
+- **SkillUI** (18) — `npm install -g skillui`, then `npm install -g playwright` and `npx playwright install chromium`. Playwright is installed **globally on purpose**: the scripts can be run from anywhere, and a bare `npm install playwright` would leave a `node_modules` tree in whatever directory you happened to be in. Both Playwright steps warn rather than fail the item, since SkillUI installs fine without them and only screenshot capture breaks. You're asked up front whether to print the quick start afterwards (`--skillui-guide` / `-SkillUIGuide` answers yes without asking).
+- **Strix** (19) — installs upstream's own shell installer, `curl -sSL https://strix.ai/install | bash`. **Installing it is not enough to run it**: Strix needs Docker running (the first scan pulls its sandbox image) and an LLM API key exported as `STRIX_LLM` + `LLM_API_KEY`. Both scripts print those next steps every time, including on a re-run that skipped the install. On Windows the installer is POSIX-only, so the script tries WSL first, then Git Bash, and warns with the manual command if neither is available — a WSL install is only usable from inside WSL.
+
+Before running either script on a machine you don't fully control, note that these steps run third-party code from npm and from `strix.ai` — see [`SECURITY.md`](SECURITY.md)'s install-script trust boundary.
 
 ### Optional: awesome-claude-code-subagents
 
@@ -229,7 +242,12 @@ aws --version       # Windows only — installed via choco
 claude --version
 claude plugin marketplace list
 claude plugin list
-claude mcp list      # confirm aws-api / azure if you opted in
+claude mcp list      # confirm aws-api / azure / perplexity / playwright if you opted in
+
+# Only if you ticked the matching rows:
+playwright-cli --version
+skillui --help
+strix --help         # needs Docker running and STRIX_LLM / LLM_API_KEY set
 ```
 
 If you opted into the awesome-claude-code-subagents step, `claude plugin list` should show ten `voltagent-*` plugins, and `claude plugin marketplace list` should show `voltagent-subagents`.
@@ -256,4 +274,8 @@ Or just re-run the OS install script — it's idempotent and will skip anything 
 | `claude plugin install <name>@<marketplace>` fails with an unknown-plugin error | The marketplace name doesn't match the `name` field in that repo's own `.claude-plugin/marketplace.json` — it is **not** derived from the repo name (`fcakyon/claude-codex-settings` publishes itself as `claude-settings`) | Run `claude plugin marketplace list` to see the registered name, then install with that name |
 | `claude mcp add aws-api -- uvx ...` fails with `uvx: command not found` | `uv` wasn't found or failed to install via `pip install --user uv` | Install [`uv`](https://docs.astral.sh/uv/getting-started/installation/) manually, ensure it's on `PATH`, then re-run the script (it's idempotent) or run the `claude mcp add` command yourself |
 | AWS/Azure MCP server registered but tools fail when Claude tries to use them | No AWS credentials / no Azure login | Run `aws configure` (AWS) or `az login` (Azure) — `claude mcp add` only registers the server, it doesn't authenticate it |
+| `strix` installed but every scan fails immediately | Docker isn't running, or `STRIX_LLM` / `LLM_API_KEY` aren't set | Start Docker, then export both variables (the script prints the exact lines). Providers: [docs.strix.ai](https://docs.strix.ai) |
+| Windows: "no WSL or bash found to run the Strix installer" | Strix ships a POSIX shell installer only | `wsl --install`, or install Git for Windows (menu item 1 does this via Chocolatey), then re-run — a WSL install is only usable from inside WSL |
+| `skillui` runs but produces no screenshots | `npm install -g playwright` or `npx playwright install chromium` failed — both warn rather than fail the item | Re-run those two commands by hand and read the error |
+| `npx ctx7 setup` was skipped with "no interactive console" | The script had no terminal to hand the wizard (CI, redirected console, `curl \| bash` with no `/dev/tty`) | Run `npx ctx7 setup` yourself in a normal terminal |
 | Older run left a `cpd-*-user` marketplace (e.g. `cpd-aiskillstore-marketplace-user`) in `claude plugin marketplace list` | Registered by the old `npx claudepluginhub` wrapper as a local directory marketplace | Harmless, but no longer used or refreshed — remove it with `claude plugin marketplace remove cpd-<name>-user` |

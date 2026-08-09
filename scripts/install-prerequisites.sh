@@ -5,8 +5,8 @@
 #
 # Everything is chosen from a menu up front, then installed unattended. The menu replaced
 # a linear run of ~15 yes/no prompts, which meant you had to sit through the whole script
-# to decline three things near the end. Every interactive answer (menu selection, Headroom
-# mode) is collected before the first install starts.
+# to decline three things near the end. Every interactive answer (menu selection, API
+# keys, the SkillUI quick start) is collected before the first install starts.
 #
 # The menu is a cursor picker: Up/Down to move, Space to toggle, Enter to start. On the
 # repo's own row, Right opens a second picker for the individual skills, so you can take
@@ -28,11 +28,11 @@
 # Usage: ./scripts/install-prerequisites.sh [options]
 #   --all                 select every menu item, no prompt
 #   --select 1,3,7-9      select these menu items, no prompt (keys work too:
-#                         --select headroom,claude-mem)
+#                         --select strix,claude-mem)
 #   --skills a,b,c        install only these of this repo's skills, no prompt
 #                         (--skills all | none also work; implies the repo item)
 #   --non-interactive     select the default set, no prompt (CI/unattended)
-#   --headroom-mode MODE  deploy|wrap|proxy|library|skip - skips the Headroom mode prompt
+#   --skillui-guide       print the SkillUI quick start after installing it, no prompt
 #   --no-update           never update an already-installed plugin, only report it
 #   --skip-bootstrap      narrow the selection to prerequisites + the Claude Code CLI
 #   --scope <scope>       scope for marketplace/plugin installs: user|project|local (default: user)
@@ -65,7 +65,7 @@ NO_UPDATE=0
 SELECT_ALL=0
 SELECT_SPEC=""
 SKILLS_SPEC=""
-HEADROOM_MODE=""
+SKILLUI_GUIDE=""       # "1"/"0" once answered; empty means "ask"
 INSTALL_SCOPE="user"   # machine-wide by default, not per-project
 
 while [ $# -gt 0 ]; do
@@ -76,7 +76,7 @@ while [ $# -gt 0 ]; do
     --all)             SELECT_ALL=1 ;;
     --select)          SELECT_SPEC="${2:-}"; shift ;;
     --skills)          SKILLS_SPEC="${2:-}"; shift ;;
-    --headroom-mode)   HEADROOM_MODE="${2:-deploy}"; shift ;;
+    --skillui-guide)   SKILLUI_GUIDE=1 ;;
     --scope)           INSTALL_SCOPE="${2:-user}"; shift ;;
     *) echo "Unknown option: $1" >&2 ;;
   esac
@@ -142,7 +142,7 @@ claude_config_root() { printf '%s' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"; }
 # --- PATH persistence ---------------------------------------------------------
 persist_path_entry() {
   # Append a PATH export to the login shells' rc files, once. Used for both the
-  # npm global bin (claude) and the pipx bin dir (headroom).
+  # npm global bin (claude) and the per-user bin dir (strix).
   local bin_dir="$1" rc
   local marker="# Added by useful-claude-add-ons/scripts/install-prerequisites.sh"
   local export_line="export PATH=\"${bin_dir}:\$PATH\""
@@ -240,33 +240,6 @@ mcp_server_registered() {
   return 1
 }
 
-tcp_port_open() {
-  # bash's /dev/tcp pseudo-device, so no netcat dependency.
-  local host="${1:-127.0.0.1}" port="$2"
-  (exec 3<>"/dev/tcp/$host/$port") >/dev/null 2>&1 || return 1
-  exec 3<&- 3>&-
-  return 0
-}
-
-add_mcp_http_server() {
-  # add_mcp_http_server <name> <url>
-  # For a server that is already listening over HTTP: there is no command to launch,
-  # and claude takes the endpoint as a positional argument rather than after '--'.
-  local name="$1" url="$2"
-  if ! have claude; then
-    warn "claude not found on PATH in this shell - run 'source ~/.bashrc' and re-run this script."
-    return 1
-  fi
-  if mcp_server_registered "$name"; then
-    skip "MCP server '$name' already registered"
-    return 0
-  fi
-  claude mcp add --scope "$INSTALL_SCOPE" --transport http "$name" "$url" || return 1
-  load_mcp_servers
-  COUNT_INSTALLED=$((COUNT_INSTALLED+1))
-  ok "added MCP server '$name' -> $url"
-}
-
 add_mcp_server() {
   # add_mcp_server <name> <env-spec> <command...>
   # <env-spec> is "KEY=value" or "-" for none. Detect-then-act, same contract as
@@ -351,14 +324,14 @@ install_plugin() {
 # defaults this script used before it had a menu.
 MENU_KEYS=(
   "prereqs" "cli" "own-skills" "team" "find-skills" "community"
-  "claude-code-setup" "task-observer" "claude-mem" "gsd" "voltagent"
-  "aws-mcp" "azure-mcp" "perplexity-mcp" "playwright-mcp" "firecrawl-mcp"
-  "chrome-mcp" "glyph-mcp" "omniroute" "headroom"
+  "claude-code-setup" "task-observer" "claude-mem" "voltagent"
+  "aws-mcp" "azure-mcp" "perplexity-mcp" "playwright-mcp"
+  "supabase" "context7" "playwright-cli" "skillui" "strix"
 )
-MENU_DEFAULT=(1 1 1 1 1 1 1 1 1 1 1 0 0 0 0 0 0 0 0 0)
+MENU_DEFAULT=(1 1 1 1 1 1 1 1 1 1 0 0 0 0 0 0 0 0 0)
 MENU_NAME=(
   "Prerequisites: git, nodejs, npm, python3, pip3 (needs root or sudo)"
-  "Claude Code CLI (@anthropic-ai/claude-code) + PATH export"
+  "Claude Code CLI (@anthropic-ai/claude-code) + PATH export + update check"
   "This repo's marketplace + its skills"
   "Team plugins: superpowers, frontend-design, excalidraw-generator"
   "find-skills skill (vercel-labs/skills)"
@@ -366,17 +339,16 @@ MENU_NAME=(
   "claude-code-setup plugin (anthropics/claude-plugins-official)"
   "task-observer skill (rebelytics/one-skill-to-rule-them-all)"
   "claude-mem memory plugin + CLAUDE_MEM_WORKER_PORT in settings.json"
-  "GSD (@opengsd/gsd-core)"
   "VoltAgent subagents (10 plugins, 154 agents)"
   "MCP server: AWS (awslabs.aws-api-mcp-server)"
   "MCP server: Azure (@azure/mcp)"
   "MCP server: Perplexity (needs PERPLEXITY_API_KEY)"
   "MCP server: Playwright (@playwright/mcp)"
-  "MCP server: Firecrawl (needs FIRECRAWL_API_KEY)"
-  "MCP server: Chrome DevTools (chrome-devtools-mcp)"
-  "MCP server: Glyphs font editor (needs macOS + Glyphs.app running)"
-  "OmniRoute AI gateway (npm) + its MCP server, optional guided setup"
-  "Headroom: pipx + headroom-ai[all] + mode setup + doctor"
+  "Supabase plugin (supabase@claude-plugins-official)"
+  "Context7 up-to-date library docs (npx ctx7 setup)"
+  "Playwright CLI (@playwright/cli) - browser automation from the shell"
+  "SkillUI (npm) + Playwright/Chromium - extract a design system from a URL"
+  "Strix AI pentesting CLI (needs Docker + an LLM API key)"
 )
 
 SELECTED=""
@@ -396,7 +368,7 @@ all_keys() { printf '%s' " ${MENU_KEYS[*]}"; }
 
 expand_selection_spec() {
   # '1,3,7-9' -> the matching catalog keys. Item keys are accepted too, so
-  # --select headroom,claude-mem works without counting rows in the menu.
+  # --select strix,claude-mem works without counting rows in the menu.
   local spec="$1" token n lo hi i found out=""
   spec="${spec//,/ }"
   for token in $spec; do
@@ -438,25 +410,25 @@ SKILL_KEYS=(
   "wazuh-onprem" "web-testing-playwright" "work-log-reporter"
 )
 SKILL_NAME=(
-  "aws-opensearch          - Amazon OpenSearch Service over SigV4"
-  "bitbucket               - Bitbucket Cloud git auth + REST API"
-  "checkpoint-email        - Check Point Email Security (ex-Avanan)"
-  "cisco-meraki            - Meraki Dashboard API"
-  "claude-code-defaults    - Claude Code settings, hooks, statusline"
-  "cloudflare              - Cloudflare v4 API: DNS, WAF, Workers, Zero Trust"
-  "drata                   - Drata compliance automation"
-  "i-have-adhd             - ADHD-friendly output style"
-  "infra-work-ticketing    - ServiceDesk Plus / Jira work notes"
-  "intune-graph            - Intune via Microsoft Graph"
-  "mermaid-svg-bitbucket   - Pre-render Mermaid to SVG for Bitbucket"
-  "repo-docs               - Full documentation set for a codebase"
-  "shipstation             - ShipStation API"
-  "sophos-central          - Sophos Central endpoints, alerts, XDR"
-  "terraform-docs-readme   - Regenerate Terraform module READMEs"
-  "visio-diagrams          - Create and edit .vsdx diagrams"
-  "wazuh-onprem            - Self-hosted Wazuh across all four surfaces"
-  "web-testing-playwright  - Drive a real browser to test a site"
-  "work-log-reporter       - Session work log + emailed PDF report"
+  "aws-opensearch          - AWS OpenSearch: health, shards, reindex, ISM, snapshots"
+  "bitbucket               - Bitbucket Cloud: git auth, PRs, pipelines, REST API"
+  "checkpoint-email        - Check Point Email Security: phishing triage, quarantine"
+  "cisco-meraki            - Meraki Dashboard API: inventory, events, config changes"
+  "claude-code-defaults    - Claude Code config: settings.json, permissions, hooks"
+  "cloudflare              - Cloudflare v4: DNS, WAF, cache, Workers, Zero Trust"
+  "drata                   - Drata: controls, monitors, evidence, audit prep"
+  "i-have-adhd             - ADHD-friendly output: next action first, numbered steps"
+  "infra-work-ticketing    - ServiceDesk Plus / Jira: open tickets, log work notes"
+  "intune-graph            - Intune via Graph: devices, compliance, app deployment"
+  "mermaid-svg-bitbucket   - Pre-render Mermaid to SVG so Bitbucket displays it"
+  "repo-docs               - Whole doc set: CLAUDE.md, READMEs, architecture, handoff"
+  "shipstation             - ShipStation V2/V1/ShipEngine: labels, rates, orders"
+  "sophos-central          - Sophos Central: isolate endpoints, triage alerts, XDR"
+  "terraform-docs-readme   - Regenerate a Terraform module README with terraform-docs"
+  "visio-diagrams          - Native .vsdx diagrams from a spec, or via Visio COM"
+  "wazuh-onprem            - Self-hosted Wazuh: server, indexer, dashboards, ossec.conf"
+  "web-testing-playwright  - Real-browser testing: screenshots, console, form flows"
+  "work-log-reporter       - Session work log + emailed PDF report over SMTP"
 )
 SKILL_STATE=()
 for _i in "${!SKILL_KEYS[@]}"; do SKILL_STATE+=(1); done
@@ -883,7 +855,6 @@ show_selection() {
 }
 
 PERPLEXITY_KEY=""
-FIRECRAWL_KEY=""
 read_mcp_api_key() {
   # read_mcp_api_key <VAR_NAME> <label> <signup-url>  -> prints the key on stdout.
   # An already-exported variable wins, so CI and anyone who keeps keys in their profile
@@ -911,50 +882,21 @@ read_mcp_api_keys() {
   if is_selected "perplexity-mcp"; then
     PERPLEXITY_KEY="$(read_mcp_api_key PERPLEXITY_API_KEY 'Perplexity MCP' 'https://www.perplexity.ai/account/api/keys')"
   fi
-  if is_selected "firecrawl-mcp"; then
-    FIRECRAWL_KEY="$(read_mcp_api_key FIRECRAWL_API_KEY 'Firecrawl MCP' 'https://www.firecrawl.dev/app/api-keys')"
-  fi
 }
 
-OMNIROUTE_GUIDED=0
-select_omniroute_setup() {
-  # Asked up front with the menu. The wizard itself is interactive and runs at the
-  # end, which is the one place a prompt during the install is unavoidable.
+select_skillui_guide() {
+  # Asked up front with the menu, like every other interactive answer, so the install
+  # run itself stays unattended. The guide is printed at the end of the SkillUI step.
   local answer
-  is_selected "omniroute" || { printf '0'; return 0; }
+  is_selected "skillui" || { printf '0'; return 0; }
+  [ -n "$SKILLUI_GUIDE" ] && { printf '%s' "$SKILLUI_GUIDE"; return 0; }
   if [ "$NON_INTERACTIVE" -eq 1 ] || [ "$SELECT_ALL" -eq 1 ] || [ -n "$SELECT_SPEC" ]; then
-    printf '0'; return 0
+    printf '1'; return 0
   fi
-  printf "
-[36m  OmniRoute ships a first-run wizard ('omniroute setup') that connects a[0m
-" >&2
-  printf '[90m  provider and mints an API key. It is interactive and runs at the end.[0m
-' >&2
-  read -r -p "  Walk through OmniRoute setup after installing? [y/N] " answer <&"$TTY_FD"
-  case "${answer:-N}" in [Yy]*) printf '1' ;; *) printf '0' ;; esac
-}
-
-select_headroom_mode() {
-  # Asked up front, alongside the menu, so the install run itself stays unattended.
-  local answer
-  if [ -n "$HEADROOM_MODE" ]; then printf '%s' "$HEADROOM_MODE"; return 0; fi
-  if [ "$NON_INTERACTIVE" -eq 1 ] || [ "$SELECT_ALL" -eq 1 ] || [ -n "$SELECT_SPEC" ]; then
-    printf 'deploy'; return 0
-  fi
-  printf '\n\033[36m  Headroom mode\033[0m\n' >&2
-  printf '    1  deploy   turnkey local deployment + agent config  (recommended)\n' >&2
-  printf '    2  wrap     wrap the claude coding agent\n' >&2
-  printf '    3  proxy    drop-in proxy on port 8787, zero code changes\n' >&2
-  printf "    4  library  no CLI wiring; use 'from headroom import compress'\n" >&2
-  printf '    5  skip     install only, configure later\n' >&2
-  read -r -p "  Mode [1] " answer <&"$TTY_FD"
-  case "${answer:-1}" in
-    2) printf 'wrap' ;;
-    3) printf 'proxy' ;;
-    4) printf 'library' ;;
-    5) printf 'skip' ;;
-    *) printf 'deploy' ;;
-  esac
+  printf '\n\033[36m  SkillUI extracts a design system from any URL into a folder\033[0m\n' >&2
+  printf '\033[90m  Claude Code can build against. It ships a short quick start.\033[0m\n' >&2
+  read -r -p "  Print the SkillUI quick start after installing? [Y/n] " answer <&"$TTY_FD"
+  case "${answer:-Y}" in [Nn]*) printf '0' ;; *) printf '1' ;; esac
 }
 
 # --- claude-mem settings.json patch ------------------------------------------
@@ -1065,12 +1007,7 @@ if [ "$(selection_count)" -eq 0 ]; then
 fi
 
 read_mcp_api_keys
-OMNIROUTE_GUIDED="$(select_omniroute_setup)"
-
-HEADROOM_MODE_CHOICE="skip"
-if is_selected "headroom"; then
-  HEADROOM_MODE_CHOICE="$(select_headroom_mode)"
-fi
+SKILLUI_GUIDE="$(select_skillui_guide)"
 
 # --- 1. OS packages: only what's actually missing ----------------------------
 install_packages() {
@@ -1133,14 +1070,59 @@ if is_selected "prereqs"; then
 fi
 
 # --- 2. Claude Code CLI ------------------------------------------------------
+claude_local_version() {
+  # 'claude --version' prints '2.1.226 (Claude Code)', and anything wrapping it (a
+  # proxy, a shell function) can print a banner first - take the last line and its
+  # leading semver rather than the whole string.
+  claude --version 2>/dev/null | tail -n 1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n 1
+}
+
+update_claude_cli() {
+  # Runs when claude is already present. npm is the source of truth for the installed
+  # channel: 'claude update' is a no-op (or an error) on an npm-managed install.
+  local local_ver latest
+  local_ver="$(claude_local_version)"
+  if [ -z "$local_ver" ]; then
+    warn "could not read the installed Claude Code version - skipping the update check."
+    return 0
+  fi
+  if [ "$NO_UPDATE" -eq 1 ]; then
+    skip "Claude Code $local_ver installed (--no-update set, not checking for a newer one)"
+    return 0
+  fi
+  if ! have npm; then
+    warn "npm not found on PATH - cannot check whether Claude Code $local_ver is current."
+    return 0
+  fi
+  latest="$(npm view @anthropic-ai/claude-code version 2>/dev/null | tr -d '[:space:]')"
+  if [ -z "$latest" ]; then
+    warn "could not reach the npm registry - skipping the Claude Code update check."
+    return 0
+  fi
+  if [ "$latest" = "$local_ver" ]; then
+    skip "Claude Code $local_ver is up to date"
+    return 0
+  fi
+  step "Claude Code $local_ver -> $latest available"
+  local npm_prefix
+  npm_prefix="$(npm config get prefix)"
+  if [ -w "$npm_prefix" ]; then
+    npm install -g @anthropic-ai/claude-code@latest || return 1
+  else
+    as_root npm install -g @anthropic-ai/claude-code@latest || return 1
+  fi
+  COUNT_UPDATED=$((COUNT_UPDATED+1))
+  ok "Claude Code updated $local_ver -> $(claude_local_version)"
+}
+
 install_claude_cli() {
   if ! have npm; then
     warn "npm not found on PATH - cannot install Claude Code CLI."
     return 1
   fi
   if have claude; then
-    skip "claude already installed ($(claude --version 2>/dev/null || echo 'version unknown'))"
-    return 0
+    update_claude_cli
+    return $?
   fi
   local npm_prefix
   npm_prefix="$(npm config get prefix)"
@@ -1174,7 +1156,7 @@ if is_selected "cli"; then
 fi
 
 # Everything from here to the MCP servers needs the claude CLI on PATH.
-CLAUDE_ITEMS="own-skills team find-skills community claude-code-setup claude-mem gsd voltagent"
+CLAUDE_ITEMS="own-skills team find-skills community claude-code-setup claude-mem voltagent supabase"
 NEEDS_CLAUDE=0
 for key in $CLAUDE_ITEMS; do
   is_selected "$key" && NEEDS_CLAUDE=1
@@ -1343,25 +1325,7 @@ if is_selected "claude-mem"; then
   run_step "Configure claude-mem worker port" set_claude_mem_worker_port "37790"
 fi
 
-# --- 10. GSD -----------------------------------------------------------------
-install_gsd() {
-  local state
-  state="$(claude_config_root)/gsd-install-state.json"
-  if [ -f "$state" ]; then
-    if [ "$NO_UPDATE" -eq 1 ]; then
-      skip "GSD already installed ($state present; --no-update set)"
-      return 0
-    fi
-    ok "GSD already installed - running the installer again to pick up updates"
-  fi
-  npx -y @opengsd/gsd-core@latest || return 1
-  [ -f "$state" ] || COUNT_INSTALLED=$((COUNT_INSTALLED+1))
-}
-if is_selected "gsd"; then
-  run_step "Install GSD core" install_gsd
-fi
-
-# --- 11. VoltAgent subagents -------------------------------------------------
+# --- 10. VoltAgent subagents -------------------------------------------------
 # The repo publishes itself as the 'voltagent-subagents' marketplace, with its 154
 # subagents split across ten category plugins. Installing them as plugins replaces the
 # old 'git clone + bash install-agents.sh' path, which needed an interactive TTY and a
@@ -1387,7 +1351,7 @@ if is_selected "voltagent"; then
   done
 fi
 
-# --- 12/13. Optional MCP servers ---------------------------------------------
+# --- 11-14. Optional MCP servers ---------------------------------------------
 # Warm the cache before the first add_mcp_server call so duplicate detection works.
 load_mcp_servers
 
@@ -1445,212 +1409,154 @@ if is_selected "playwright-mcp"; then
   run_step "Install Playwright MCP server" install_playwright_mcp
 fi
 
-install_firecrawl_mcp() {
-  if [ -z "$FIRECRAWL_KEY" ]; then
-    skip "Firecrawl MCP (no FIRECRAWL_API_KEY supplied)"
+# --- 15. Supabase ------------------------------------------------------------
+# Ships inside anthropics/claude-plugins-official, the same marketplace items 6 and 7
+# register - add_marketplace is a no-op when it is already there, so this item stands
+# on its own. install_plugin does the "already installed?" check.
+if is_selected "supabase"; then
+  run_step "Marketplace: anthropics/claude-plugins-official" \
+    add_marketplace "anthropics/claude-plugins-official" "claude-plugins-official"
+  run_step "Plugin: supabase@claude-plugins-official" \
+    install_plugin "supabase@claude-plugins-official"
+fi
+
+# --- 16. Context7 ------------------------------------------------------------
+install_context7() {
+  # 'ctx7 setup' writes the Context7 MCP/skill config for whichever agents it finds.
+  # It is interactive, so it gets the terminal explicitly: under 'curl | bash' fd 0 is
+  # still the script and the wizard would eat the next line of it.
+  if ! have npx; then
+    warn "npx not found on PATH - select the prerequisites item (or install Node.js) and re-run."
+    return 1
+  fi
+  if [ "$NO_TTY" -eq 1 ]; then
+    warn "no terminal available for 'ctx7 setup' - run 'npx ctx7 setup' by hand once this finishes."
     return 0
   fi
-  add_mcp_server "firecrawl" "FIRECRAWL_API_KEY=$FIRECRAWL_KEY" npx -y firecrawl-mcp
+  npx -y ctx7@latest setup <&"$TTY_FD" || return 1
+  COUNT_INSTALLED=$((COUNT_INSTALLED+1))
+  ok "Context7 configured. Free tier works without a key; higher limits: https://context7.com"
 }
-if is_selected "firecrawl-mcp"; then
-  run_step "Install Firecrawl MCP server" install_firecrawl_mcp
+if is_selected "context7"; then
+  run_step "Configure Context7 (npx ctx7 setup)" install_context7
 fi
 
-install_chrome_mcp() {
-  # Drives a real Chrome over the DevTools protocol, so a stable Chrome has to be
-  # installed. Usage statistics are on by default upstream; --no-usage-statistics turns
-  # them off and is passed here rather than left to the user to discover.
-  add_mcp_server "chrome-devtools" "-" npx chrome-devtools-mcp@latest --no-usage-statistics || return 1
-  ok "Needs a stable Chrome installed. Drop --no-usage-statistics from the config to opt back in to upstream telemetry."
-}
-if is_selected "chrome-mcp"; then
-  run_step "Install Chrome DevTools MCP server" install_chrome_mcp
-fi
-
-install_glyph_mcp() {
-  # Unlike the others this launches nothing: the server lives inside the Glyphs
-  # .glyphsPlugin bundle and is started from Edit > Glyphs MCP Server inside the app,
-  # so all that is registered here is the endpoint it listens on. The plugin is
-  # macOS-only (macOS 13+, Glyphs 3 or 4), so on Linux this only resolves when the
-  # port is forwarded from a Mac that is running it.
-  local url="http://127.0.0.1:9680/mcp/"
-  if ! tcp_port_open 127.0.0.1 9680; then
-    warn "nothing is listening on 127.0.0.1:9680 - registering anyway, but the server stays unreachable until Glyphs.app is running with Edit > Glyphs MCP Server started (or the port is forwarded from a Mac)."
-  fi
-  add_mcp_http_server "glyphs-mcp" "$url" || return 1
-  ok "Verify with: curl -H 'Accept: application/json' $url"
-}
-if is_selected "glyph-mcp"; then
-  run_step "Install Glyphs MCP server" install_glyph_mcp
-fi
-
-# --- 19. OmniRoute -----------------------------------------------------------
-install_omniroute() {
-  if have omniroute; then
-    skip "omniroute already installed ($(omniroute --version 2>/dev/null || echo 'version unknown'))"
-    return 0
+# --- 17. Playwright CLI ------------------------------------------------------
+install_playwright_cli() {
+  # Detection is on the binary the package provides ('playwright-cli'), which is what
+  # a user actually cares about - the package can also arrive via another manager.
+  if have playwright-cli; then
+    if [ "$NO_UPDATE" -eq 1 ]; then
+      skip "playwright-cli already installed ($(command -v playwright-cli))"
+      return 0
+    fi
+    ok "playwright-cli already installed - reinstalling @latest to pick up updates"
   fi
   if ! have npm; then
     warn "npm not found on PATH - select the prerequisites item (or install Node.js) and re-run."
     return 1
   fi
-  if ! npm install -g omniroute; then
-    # The package builds better-sqlite3 and @swc/core natively; upstream documents
-    # this escape hatch for machines without a toolchain.
-    warn "npm install failed - retrying with OMNIROUTE_SKIP_POSTINSTALL=1 (skips the native build)."
-    OMNIROUTE_SKIP_POSTINSTALL=1 npm install -g omniroute || return 1
+  npm install -g @playwright/cli@latest || return 1
+  if ! have playwright-cli; then
+    warn "@playwright/cli installed but 'playwright-cli' is not resolvable in this shell - run 'source ~/.bashrc' and try again."
+    return 1
   fi
   COUNT_INSTALLED=$((COUNT_INSTALLED+1))
-  ok "omniroute installed"
+  ok "playwright-cli installed at $(command -v playwright-cli)"
 }
-
-omniroute_guided_setup() {
-  if ! have omniroute; then
-    warn "omniroute is not on PATH - open a new shell and run 'omniroute setup'."
-    return 1
-  fi
-  printf '[90m    Starting the OmniRoute wizard. Answer its prompts, then come back here.[0m
-'
-  # The wizard reads its own prompts, so hand it the terminal rather than fd 0 -
-  # on the 'curl | bash' path fd 0 is still the script.
-  omniroute setup <&"$TTY_FD" || return 1
-  ok "wizard finished"
-}
-
-register_omniroute_mcp() {
-  # OmniRoute is a local gateway: the MCP endpoint only answers while it is running
-  # ('omniroute' starts it, dashboard on :20128). Registering ahead of time is the
-  # usual order, so a closed port is a warning rather than a stop.
-  if ! tcp_port_open 127.0.0.1 20128; then
-    warn "nothing is listening on 127.0.0.1:20128 - registering anyway. Start the gateway with 'omniroute' and the server becomes reachable."
-  fi
-  add_mcp_http_server "omniroute" "http://localhost:20128/api/mcp/stream"
-}
-
-omniroute_next_steps() {
-  printf '    1. Start the gateway:      omniroute
-'
-  printf '    2. Open the dashboard:     http://localhost:20128
-'
-  printf '    3. Dashboard > Providers - connect a provider (keyless ones work immediately)
-'
-  printf '    4. Dashboard > Endpoints - copy your API key
-'
-  printf '    5. Point any OpenAI-compatible tool at:
-'
-  printf '         Base URL  http://localhost:20128/v1
-'
-  printf '         Model     auto
-'
-  printf '    Diagnostics: omniroute doctor    TUI chat: omniroute chat
-'
-}
-
-if is_selected "omniroute"; then
-  if run_step "Install OmniRoute (npm i -g omniroute)" install_omniroute; then
-    [ "$OMNIROUTE_GUIDED" = "1" ] && [ "$NO_TTY" -eq 0 ]       && run_step "OmniRoute guided setup" omniroute_guided_setup
-    run_step "Register the OmniRoute MCP server" register_omniroute_mcp
-    run_step "OmniRoute next steps" omniroute_next_steps
-  fi
+if is_selected "playwright-cli"; then
+  run_step "Install Playwright CLI (@playwright/cli)" install_playwright_cli
 fi
 
-# --- 20. Headroom ------------------------------------------------------------
-install_pipx() {
-  if have pipx; then
-    skip "pipx already installed ($(command -v pipx))"
-    return 0
-  fi
-  local py="" c base bindir
-  for c in python3 python; do
-    have "$c" && { py="$c"; break; }
-  done
-  if [ -z "$py" ]; then
-    warn "no python3 found - select the prerequisites item (or install python3) and re-run."
+# --- 18. SkillUI -------------------------------------------------------------
+skillui_quick_start() {
+  printf '\n\033[36m    SkillUI quick start\033[0m  https://github.com/amaancoderx/npxskillui\n'
+  printf '    1. Extract a design system from any URL:\n'
+  printf '         skillui --url https://notion.so\n'
+  printf '    2. Open the output folder in Claude Code:\n'
+  printf '         cd notion-design && claude\n'
+  printf '    3. Ask for what you want built:\n'
+  printf '         "Build me a landing page that matches this design system"\n'
+  printf '    Claude reads the generated CLAUDE.md and SKILL.md on its own - no wiring up.\n'
+  printf '    Modes: --ultra (full extraction)   --dir <path>   --repo <url>\n'
+}
+
+install_skillui() {
+  # Three parts: the CLI, Playwright itself, and the Chromium build Playwright drives.
+  # Playwright goes in globally rather than into the current directory - this script
+  # can be run from anywhere, and 'npm install playwright' would leave a node_modules
+  # tree wherever that happened to be.
+  if ! have npm; then
+    warn "npm not found on PATH - select the prerequisites item (or install Node.js) and re-run."
     return 1
   fi
-  "$py" -m pip install --user pipx || return 1
-  # 'pip install --user' drops console scripts in the per-user bin directory, which is
-  # not on PATH until 'pipx ensurepath' runs *and* a new shell starts. Put it on this
-  # shell's PATH so the pipx call below resolves, then persist it for future shells.
-  base="$("$py" -m site --user-base 2>/dev/null)"
-  if [ -n "$base" ] && [ -d "$base/bin" ]; then
-    bindir="$base/bin"
-    export PATH="$bindir:$PATH"
-    persist_path_entry "$bindir"
+  if have skillui && [ "$NO_UPDATE" -eq 1 ]; then
+    skip "skillui already installed ($(command -v skillui); --no-update set)"
+  else
+    npm install -g skillui || return 1
+    COUNT_INSTALLED=$((COUNT_INSTALLED+1))
+    ok "skillui installed"
   fi
-  "$py" -m pipx ensurepath >/dev/null 2>&1
+  npm install -g playwright || warn "'npm install -g playwright' failed - skillui needs it to capture screenshots."
+  # Downloads the browser binary itself; skipping it leaves skillui able to start and
+  # unable to render anything.
+  npx -y playwright install chromium || warn "'npx playwright install chromium' failed - run it by hand before using skillui."
+  if ! have skillui; then
+    warn "skillui installed but is not resolvable in this shell - run 'source ~/.bashrc' and try again."
+    return 1
+  fi
+  ok "skillui ready at $(command -v skillui)"
+  [ "$SKILLUI_GUIDE" = "1" ] && skillui_quick_start
+  return 0
+}
+if is_selected "skillui"; then
+  run_step "Install SkillUI (+ Playwright and Chromium)" install_skillui
+fi
+
+# --- 19. Strix ---------------------------------------------------------------
+strix_next_steps() {
+  printf '\n\033[33m    Strix needs two more things before its first scan:\033[0m\n'
+  printf '    1. Docker running - the first scan pulls the sandbox image.\n'
+  printf '    2. An LLM API key, exported in your shell profile:\n'
+  printf '         export STRIX_LLM="openai/gpt-5.4"     # or another supported provider\n'
+  printf '         export LLM_API_KEY="your-api-key"\n'
+  printf '    Then: strix --target ./app-directory        Results: strix_runs/<run-name>\n'
+  printf '    Providers and options: https://docs.strix.ai\n'
+}
+
+install_strix() {
+  # Upstream ships a shell installer rather than an npm/pip package, so this is the
+  # documented path (https://github.com/usestrix/strix). Nothing here configures it -
+  # Strix cannot run without Docker and an LLM key, which strix_next_steps spells out.
+  if have strix; then
+    if [ "$NO_UPDATE" -eq 1 ]; then
+      skip "strix already installed ($(command -v strix); --no-update set)"
+      strix_next_steps
+      return 0
+    fi
+    ok "strix already installed - running the installer again to pick up updates"
+  fi
+  if ! have curl; then
+    warn "curl not found on PATH - install curl, or follow https://docs.strix.ai by hand."
+    return 1
+  fi
+  curl -sSL https://strix.ai/install | bash || return 1
+  # The installer drops the binary in the per-user bin dir, which is not on PATH until
+  # a new shell starts - put it on this one's so the check below means something.
   export PATH="$HOME/.local/bin:$PATH"
   persist_path_entry "$HOME/.local/bin"
-
-  if ! have pipx; then
-    warn "pipx installed but is still not resolvable in this shell - run 'source ~/.bashrc' and re-run."
-    return 1
-  fi
-  COUNT_INSTALLED=$((COUNT_INSTALLED+1))
-  ok "pipx installed at $(command -v pipx)"
-}
-
-install_headroom() {
-  if have headroom; then
-    skip "headroom already installed ($(headroom --version 2>/dev/null || echo 'version unknown'))"
-    return 0
-  fi
-  local -a pipx_args=(install)
-  if have python3.14; then
-    pipx_args+=(--python python3.14)
+  if ! have strix; then
+    warn "the Strix installer finished but 'strix' is not resolvable in this shell - run 'source ~/.bashrc' and try 'strix --help'."
   else
-    warn "python3.14 not found - installing headroom against the default interpreter."
+    COUNT_INSTALLED=$((COUNT_INSTALLED+1))
+    ok "strix installed at $(command -v strix)"
   fi
-  pipx_args+=("headroom-ai[all]")
-
-  if ! pipx "${pipx_args[@]}"; then
-    warn "pipx install failed - falling back to 'npm install -g headroom-ai'."
-    if ! npm install -g headroom-ai; then
-      warn "both the pipx and npm installs of headroom failed."
-      return 1
-    fi
-  fi
-  export PATH="$HOME/.local/bin:$PATH"
-  if ! have headroom; then
-    warn "headroom installed but is still not resolvable in this shell - run 'source ~/.bashrc' and re-run."
-    return 1
-  fi
-  COUNT_INSTALLED=$((COUNT_INSTALLED+1))
-  ok "headroom installed at $(command -v headroom)"
+  strix_next_steps
 }
-
-configure_headroom() {
-  if ! have headroom; then
-    warn "headroom is not on PATH - run 'source ~/.bashrc' and run the mode command by hand."
-    return 1
-  fi
-  # Only 'deploy' is safe to run here. 'wrap' launches the agent and 'proxy' blocks in
-  # the foreground serving requests, so either one would hang the install.
-  case "$HEADROOM_MODE_CHOICE" in
-    deploy)  headroom deploy && ok "ran 'headroom deploy'" ;;
-    wrap)    ok "wrap mode selected - start your agent with: headroom wrap claude" ;;
-    proxy)   ok "proxy mode selected - start the proxy with: headroom proxy --port 8787" ;;
-    library) ok "library mode selected - use 'from headroom import compress' in your code" ;;
-    *)       skip "headroom mode configuration (skip selected)" ;;
-  esac
-}
-
-verify_headroom() {
-  if ! have headroom; then
-    warn "headroom is not on PATH - run 'source ~/.bashrc' and then 'headroom doctor'."
-    return 1
-  fi
-  headroom doctor
-  headroom perf
-  ok "live savings dashboard: headroom dashboard (needs the proxy running)"
-}
-
-if is_selected "headroom"; then
-  run_step "Install pipx (required for headroom)" install_pipx \
-    && run_step "Install headroom-ai" install_headroom \
-    && run_step "Configure headroom ($HEADROOM_MODE_CHOICE mode)" configure_headroom \
-    && run_step "Verify headroom (doctor + perf)" verify_headroom
+if is_selected "strix"; then
+  run_step "Install Strix AI pentesting CLI" install_strix
 fi
+
 
 # --- Summary -----------------------------------------------------------------
 echo ""

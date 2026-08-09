@@ -6,8 +6,8 @@ standard Claude Code plugin marketplaces. Idempotent - safe to re-run.
 
 Everything is chosen from a menu up front, then installed unattended. The menu replaced
 a linear run of ~15 yes/no prompts, which meant you had to sit through the whole script
-to decline three things near the end. Every interactive answer (menu selection, Headroom
-mode) is collected before the first install starts.
+to decline three things near the end. Every interactive answer (menu selection, API
+keys, the SkillUI quick start) is collected before the first install starts.
 
 The menu is a cursor picker: Up/Down to move, Space to toggle, Enter to start. On the
 repo's own row, Right opens a second picker for the individual skills, so you can take
@@ -36,11 +36,11 @@ If run from a non-elevated prompt, Chocolatey and the Chocolatey packages
 Common switches:
     -All                select every menu item, no prompt
     -Select '1,3,7-9'   select these menu items, no prompt (also accepts keys:
-                        -Select 'headroom,claude-mem')
+                        -Select 'strix,claude-mem')
     -Skills 'a,b'       install only these of this repo's skills, no prompt
                         (-Skills 'all' | 'none' also work; implies the repo item)
     -NonInteractive     select the default set, no prompt (CI/unattended)
-    -HeadroomMode       deploy|wrap|proxy|library|skip - skips the Headroom mode prompt
+    -SkillUIGuide       print the SkillUI quick start after installing it, no prompt
     -NoUpdate           never update an already-installed plugin, only report it
     -SkipBootstrap      narrow the selection to prerequisites + the Claude Code CLI
     -InstallScope       scope for marketplace/plugin installs: user (default), project, local
@@ -53,16 +53,9 @@ param(
     [switch]$NonInteractive,  # take the default selection, no menu
     [switch]$NoUpdate,        # don't update already-installed plugins
     [switch]$All,             # select every menu item, no menu
-    [string]$Select,          # explicit selection, no menu: '1,3,7-9' or 'headroom,gsd'
+    [string]$Select,          # explicit selection, no menu: '1,3,7-9' or 'strix,supabase'
     [string]$Skills,          # explicit skill subset, no sub-picker: 'cloudflare,drata' | 'all' | 'none'
-    # '' has to be a legal value. Under 'irm ... | iex' this param block is not a
-    # parameter block at all - it is inline code in the caller's scope, so every
-    # attribute is applied to a plain *variable*. $HeadroomMode has no default, so it
-    # is '', and a ValidateSet without '' rejects it before the script even starts:
-    # "The attribute cannot be added because variable HeadroomMode with value  would
-    # no longer be valid." Params with a valid default (like $InstallScope) are fine.
-    [ValidateSet('', 'deploy', 'wrap', 'proxy', 'library', 'skip')]
-    [string]$HeadroomMode,    # answer the Headroom mode prompt up front
+    [switch]$SkillUIGuide,    # answer the SkillUI quick-start prompt up front
     [Alias('PluginHubScope')]
     [ValidateSet('user', 'project', 'local')]
     [string]$InstallScope = 'user'  # machine-wide by default, not per-project
@@ -280,19 +273,6 @@ function Test-McpServerRegistered {
     return ((Get-ClaudeMcpServers) -contains $Name)
 }
 
-function Test-TcpPort {
-    param([string]$HostName = '127.0.0.1', [int]$Port, [int]$TimeoutMs = 500)
-    try {
-        $client = New-Object System.Net.Sockets.TcpClient
-        $async = $client.BeginConnect($HostName, $Port, $null, $null)
-        $reached = $async.AsyncWaitHandle.WaitOne($TimeoutMs) -and $client.Connected
-        $client.Close()
-        return $reached
-    } catch {
-        return $false
-    }
-}
-
 function Add-McpServer {
     # Detect-then-act, same contract as Add-ClaudeMarketplace. $CommandArgs is the
     # server's own command line, passed after '--' so claude does not try to parse it.
@@ -409,7 +389,7 @@ function Install-ClaudePlugin {
 # match the prompt defaults this script used before it had a menu.
 $script:Catalog = @(
     [pscustomobject]@{ Key = 'prereqs';           Default = $true;  Name = 'Prerequisites: Chocolatey + git, awscli, nodejs, python (needs Administrator)' }
-    [pscustomobject]@{ Key = 'cli';               Default = $true;  Name = 'Claude Code CLI (@anthropic-ai/claude-code) + PATH export' }
+    [pscustomobject]@{ Key = 'cli';               Default = $true;  Name = 'Claude Code CLI (@anthropic-ai/claude-code) + PATH export + update check' }
     [pscustomobject]@{ Key = 'own-skills';        Default = $true;  Name = "This repo's marketplace + its skills" }
     [pscustomobject]@{ Key = 'team';              Default = $true;  Name = 'Team plugins: superpowers, frontend-design, excalidraw-generator' }
     [pscustomobject]@{ Key = 'find-skills';       Default = $true;  Name = 'find-skills skill (vercel-labs/skills)' }
@@ -417,17 +397,16 @@ $script:Catalog = @(
     [pscustomobject]@{ Key = 'claude-code-setup'; Default = $true;  Name = 'claude-code-setup plugin (anthropics/claude-plugins-official)' }
     [pscustomobject]@{ Key = 'task-observer';     Default = $true;  Name = 'task-observer skill (rebelytics/one-skill-to-rule-them-all)' }
     [pscustomobject]@{ Key = 'claude-mem';        Default = $true;  Name = 'claude-mem memory plugin + CLAUDE_MEM_WORKER_PORT in settings.json' }
-    [pscustomobject]@{ Key = 'gsd';               Default = $true;  Name = 'GSD (@opengsd/gsd-core)' }
     [pscustomobject]@{ Key = 'voltagent';         Default = $true;  Name = 'VoltAgent subagents (10 plugins, 154 agents)' }
     [pscustomobject]@{ Key = 'aws-mcp';           Default = $false; Name = 'MCP server: AWS (awslabs.aws-api-mcp-server)' }
     [pscustomobject]@{ Key = 'azure-mcp';         Default = $false; Name = 'MCP server: Azure (@azure/mcp)' }
     [pscustomobject]@{ Key = 'perplexity-mcp';    Default = $false; Name = 'MCP server: Perplexity (needs PERPLEXITY_API_KEY)' }
     [pscustomobject]@{ Key = 'playwright-mcp';    Default = $false; Name = 'MCP server: Playwright (@playwright/mcp)' }
-    [pscustomobject]@{ Key = 'firecrawl-mcp';     Default = $false; Name = 'MCP server: Firecrawl (needs FIRECRAWL_API_KEY)' }
-    [pscustomobject]@{ Key = 'chrome-mcp';        Default = $false; Name = 'MCP server: Chrome DevTools (chrome-devtools-mcp)' }
-    [pscustomobject]@{ Key = 'glyph-mcp';         Default = $false; Name = 'MCP server: Glyphs font editor (needs macOS + Glyphs.app running)' }
-    [pscustomobject]@{ Key = 'omniroute';         Default = $false; Name = 'OmniRoute AI gateway (npm) + its MCP server, optional guided setup' }
-    [pscustomobject]@{ Key = 'headroom';          Default = $false; Name = 'Headroom: pipx + headroom-ai[all] + mode setup + doctor' }
+    [pscustomobject]@{ Key = 'supabase';          Default = $false; Name = 'Supabase plugin (supabase@claude-plugins-official)' }
+    [pscustomobject]@{ Key = 'context7';          Default = $false; Name = 'Context7 up-to-date library docs (npx ctx7 setup)' }
+    [pscustomobject]@{ Key = 'playwright-cli';    Default = $false; Name = 'Playwright CLI (@playwright/cli) - browser automation from the shell' }
+    [pscustomobject]@{ Key = 'skillui';           Default = $false; Name = 'SkillUI (npm) + Playwright/Chromium - extract a design system from a URL' }
+    [pscustomobject]@{ Key = 'strix';             Default = $false; Name = 'Strix AI pentesting CLI (needs Docker + an LLM API key)' }
 )
 
 $script:Selected = @{}
@@ -435,7 +414,7 @@ function Test-Selected { param([string]$Key) return [bool]$script:Selected[$Key]
 
 function Expand-SelectionSpec {
     # '1,3,7-9' -> the matching catalog keys. Item keys are accepted too, so
-    # -Select 'headroom,claude-mem' works without counting rows in the menu.
+    # -Select 'strix,claude-mem' works without counting rows in the menu.
     param([string]$Spec)
     $keys = @()
     foreach ($token in ($Spec -split '[,\s]+' | Where-Object { $_ })) {
@@ -462,25 +441,25 @@ function Expand-SelectionSpec {
 # Keep in sync with .claude-plugin/marketplace.json. Everything is on by default:
 # picking a subset is the exception, and a fresh machine wants the lot.
 $script:SkillCatalog = @(
-    [pscustomobject]@{ Key = 'aws-opensearch';        Selected = $true; Name = 'aws-opensearch          - Amazon OpenSearch Service over SigV4' }
-    [pscustomobject]@{ Key = 'bitbucket';             Selected = $true; Name = 'bitbucket               - Bitbucket Cloud git auth + REST API' }
-    [pscustomobject]@{ Key = 'checkpoint-email';      Selected = $true; Name = 'checkpoint-email        - Check Point Email Security (ex-Avanan)' }
-    [pscustomobject]@{ Key = 'cisco-meraki';          Selected = $true; Name = 'cisco-meraki            - Meraki Dashboard API' }
-    [pscustomobject]@{ Key = 'claude-code-defaults';  Selected = $true; Name = 'claude-code-defaults    - Claude Code settings, hooks, statusline' }
-    [pscustomobject]@{ Key = 'cloudflare';            Selected = $true; Name = 'cloudflare              - Cloudflare v4 API: DNS, WAF, Workers, Zero Trust' }
-    [pscustomobject]@{ Key = 'drata';                 Selected = $true; Name = 'drata                   - Drata compliance automation' }
-    [pscustomobject]@{ Key = 'i-have-adhd';           Selected = $true; Name = 'i-have-adhd             - ADHD-friendly output style' }
-    [pscustomobject]@{ Key = 'infra-work-ticketing';  Selected = $true; Name = 'infra-work-ticketing    - ServiceDesk Plus / Jira work notes' }
-    [pscustomobject]@{ Key = 'intune-graph';          Selected = $true; Name = 'intune-graph            - Intune via Microsoft Graph' }
-    [pscustomobject]@{ Key = 'mermaid-svg-bitbucket'; Selected = $true; Name = 'mermaid-svg-bitbucket   - Pre-render Mermaid to SVG for Bitbucket' }
-    [pscustomobject]@{ Key = 'repo-docs';             Selected = $true; Name = 'repo-docs               - Full documentation set for a codebase' }
-    [pscustomobject]@{ Key = 'shipstation';           Selected = $true; Name = 'shipstation             - ShipStation API' }
-    [pscustomobject]@{ Key = 'sophos-central';        Selected = $true; Name = 'sophos-central          - Sophos Central endpoints, alerts, XDR' }
-    [pscustomobject]@{ Key = 'terraform-docs-readme'; Selected = $true; Name = 'terraform-docs-readme   - Regenerate Terraform module READMEs' }
-    [pscustomobject]@{ Key = 'visio-diagrams';        Selected = $true; Name = 'visio-diagrams          - Create and edit .vsdx diagrams' }
-    [pscustomobject]@{ Key = 'wazuh-onprem';          Selected = $true; Name = 'wazuh-onprem            - Self-hosted Wazuh across all four surfaces' }
-    [pscustomobject]@{ Key = 'web-testing-playwright';Selected = $true; Name = 'web-testing-playwright  - Drive a real browser to test a site' }
-    [pscustomobject]@{ Key = 'work-log-reporter';     Selected = $true; Name = 'work-log-reporter       - Session work log + emailed PDF report' }
+    [pscustomobject]@{ Key = 'aws-opensearch';        Selected = $true; Name = 'aws-opensearch          - AWS OpenSearch: health, shards, reindex, ISM, snapshots' }
+    [pscustomobject]@{ Key = 'bitbucket';             Selected = $true; Name = 'bitbucket               - Bitbucket Cloud: git auth, PRs, pipelines, REST API' }
+    [pscustomobject]@{ Key = 'checkpoint-email';      Selected = $true; Name = 'checkpoint-email        - Check Point Email Security: phishing triage, quarantine' }
+    [pscustomobject]@{ Key = 'cisco-meraki';          Selected = $true; Name = 'cisco-meraki            - Meraki Dashboard API: inventory, events, config changes' }
+    [pscustomobject]@{ Key = 'claude-code-defaults';  Selected = $true; Name = 'claude-code-defaults    - Claude Code config: settings.json, permissions, hooks' }
+    [pscustomobject]@{ Key = 'cloudflare';            Selected = $true; Name = 'cloudflare              - Cloudflare v4: DNS, WAF, cache, Workers, Zero Trust' }
+    [pscustomobject]@{ Key = 'drata';                 Selected = $true; Name = 'drata                   - Drata: controls, monitors, evidence, audit prep' }
+    [pscustomobject]@{ Key = 'i-have-adhd';           Selected = $true; Name = 'i-have-adhd             - ADHD-friendly output: next action first, numbered steps' }
+    [pscustomobject]@{ Key = 'infra-work-ticketing';  Selected = $true; Name = 'infra-work-ticketing    - ServiceDesk Plus / Jira: open tickets, log work notes' }
+    [pscustomobject]@{ Key = 'intune-graph';          Selected = $true; Name = 'intune-graph            - Intune via Graph: devices, compliance, app deployment' }
+    [pscustomobject]@{ Key = 'mermaid-svg-bitbucket'; Selected = $true; Name = 'mermaid-svg-bitbucket   - Pre-render Mermaid to SVG so Bitbucket displays it' }
+    [pscustomobject]@{ Key = 'repo-docs';             Selected = $true; Name = 'repo-docs               - Whole doc set: CLAUDE.md, READMEs, architecture, handoff' }
+    [pscustomobject]@{ Key = 'shipstation';           Selected = $true; Name = 'shipstation             - ShipStation V2/V1/ShipEngine: labels, rates, orders' }
+    [pscustomobject]@{ Key = 'sophos-central';        Selected = $true; Name = 'sophos-central          - Sophos Central: isolate endpoints, triage alerts, XDR' }
+    [pscustomobject]@{ Key = 'terraform-docs-readme'; Selected = $true; Name = 'terraform-docs-readme   - Regenerate a Terraform module README with terraform-docs' }
+    [pscustomobject]@{ Key = 'visio-diagrams';        Selected = $true; Name = 'visio-diagrams          - Native .vsdx diagrams from a spec, or via Visio COM' }
+    [pscustomobject]@{ Key = 'wazuh-onprem';          Selected = $true; Name = 'wazuh-onprem            - Self-hosted Wazuh: server, indexer, dashboards, ossec.conf' }
+    [pscustomobject]@{ Key = 'web-testing-playwright';Selected = $true; Name = 'web-testing-playwright  - Real-browser testing: screenshots, console, form flows' }
+    [pscustomobject]@{ Key = 'work-log-reporter';     Selected = $true; Name = 'work-log-reporter       - Session work log + emailed PDF report over SMTP' }
 )
 
 function Get-SelectedSkillCount {
@@ -865,88 +844,70 @@ function Read-McpApiKeys {
     if (Test-Selected 'perplexity-mcp') {
         $script:ApiKeys['PERPLEXITY_API_KEY'] = Read-McpApiKey 'PERPLEXITY_API_KEY' 'Perplexity MCP' 'https://www.perplexity.ai/account/api/keys'
     }
-    if (Test-Selected 'firecrawl-mcp') {
-        $script:ApiKeys['FIRECRAWL_API_KEY'] = Read-McpApiKey 'FIRECRAWL_API_KEY' 'Firecrawl MCP' 'https://www.firecrawl.dev/app/api-keys'
-    }
 }
 
-$script:OmniRouteGuided = $false
-function Select-OmniRouteSetup {
-    # Asked up front with the menu. The wizard itself is interactive and runs at the
-    # end, which is the one place a prompt during the install is unavoidable.
-    if (-not (Test-Selected 'omniroute')) { return $false }
-    if ($NonInteractive -or $All -or $Select) { return $false }
+function Select-SkillUIGuide {
+    # Asked up front with the menu, like every other interactive answer, so the install
+    # run itself stays unattended. The guide is printed at the end of the SkillUI step.
+    if (-not (Test-Selected 'skillui')) { return $false }
+    if ($SkillUIGuide) { return $true }
+    if ($NonInteractive -or $All -or $Select) { return $true }
     Write-Host ""
-    Write-Host "  OmniRoute ships a first-run wizard ('omniroute setup') that connects a" -ForegroundColor Cyan
-    Write-Host "  provider and mints an API key. It is interactive and runs at the end." -ForegroundColor DarkGray
-    $answer = "$(Read-Host '  Walk through OmniRoute setup after installing? [y/N]')".Trim()
-    return ($answer -match '^(?i)y(es)?$')
+    Write-Host "  SkillUI extracts a design system from any URL into a folder" -ForegroundColor Cyan
+    Write-Host "  Claude Code can build against. It ships a short quick start." -ForegroundColor DarkGray
+    $answer = "$(Read-Host '  Print the SkillUI quick start after installing? [Y/n]')".Trim()
+    return (-not ($answer -match '^(?i)n(o)?$'))
 }
 
-function Select-HeadroomMode {
-    # Asked up front, alongside the menu, so the install run itself stays unattended.
-    if ($HeadroomMode) { return $HeadroomMode }
-    if ($NonInteractive -or $All -or $Select) { return 'deploy' }
-    Write-Host ""
-    Write-Host "  Headroom mode" -ForegroundColor Cyan
-    Write-Host "    1  deploy   turnkey local deployment + agent config  (recommended)"
-    Write-Host "    2  wrap     wrap the claude coding agent"
-    Write-Host "    3  proxy    drop-in proxy on port 8787, zero code changes"
-    Write-Host "    4  library  no CLI wiring; use 'from headroom import compress'"
-    Write-Host "    5  skip     install only, configure later"
-    $answer = "$(Read-Host '  Mode [1]')".Trim()
-    switch ($answer) {
-        '2' { return 'wrap' }
-        '3' { return 'proxy' }
-        '4' { return 'library' }
-        '5' { return 'skip' }
-        default { return 'deploy' }
-    }
-}
+# --- Claude Code CLI update check --------------------------------------------
 
-# --- Python / pipx helpers (Headroom) ----------------------------------------
-
-function Get-PythonLauncher {
-    # 'py' first: the Windows launcher is what makes '-3.14' style version selection work.
-    foreach ($candidate in 'py', 'python', 'python3') {
-        if (Get-Command $candidate -ErrorAction SilentlyContinue) { return $candidate }
-    }
-    return $null
-}
-
-function Add-UserScriptsToPath {
-    # 'pip install --user' drops console scripts in the per-user Scripts directory,
-    # which is not on PATH until 'pipx ensurepath' runs *and* a new shell starts.
-    # Put it on the process PATH so the very next pipx call in this run resolves.
-    param([string]$PythonCmd)
+function Get-ClaudeLocalVersion {
+    # 'claude --version' prints '2.1.226 (Claude Code)', and anything wrapping it (a
+    # proxy, a shell function) can print a banner first - take the last line and its
+    # leading semver rather than the whole string.
     try {
-        $userBase = "$(& $PythonCmd -m site --user-base 2>$null | Select-Object -First 1)".Trim()
+        $out = @(claude --version 2>$null)
     } catch {
         return $null
     }
-    if (-not $userBase) { return $null }
-    $scripts = Join-Path $userBase 'Scripts'
-    if ((Test-Path $scripts) -and $env:Path -notlike "*$scripts*") {
-        $env:Path = "$scripts;$env:Path"
-    }
-    return $scripts
+    if (-not $out) { return $null }
+    $last = "$($out[-1])"
+    if ($last -match '(\d+\.\d+\.\d+)') { return $Matches[1] }
+    return $null
 }
 
-function Get-PipxPythonArgs {
-    # pipx needs a *resolvable* interpreter. 'python3.14' is a real command on Linux
-    # but almost never on Windows, where the py launcher answers '-3.14' instead and
-    # pipx accepts the bare version string. Fall back to the default interpreter.
-    if (Get-Command python3.14 -ErrorAction SilentlyContinue) {
-        return @('--python', 'python3.14')
+function Update-ClaudeCli {
+    # Runs when claude is already present. npm is the source of truth for the installed
+    # channel: 'claude update' is a no-op (or an error) on an npm-managed install.
+    param([string]$Source)
+    $local = Get-ClaudeLocalVersion
+    if (-not $local) {
+        Write-Warn2 "could not read the installed Claude Code version - skipping the update check."
+        return
     }
-    if (Get-Command py -ErrorAction SilentlyContinue) {
-        try {
-            & py -3.14 --version 2>&1 | Out-Null
-            if ($LASTEXITCODE -eq 0) { return @('--python', '3.14') }
-        } catch { }
+    if ($NoUpdate) {
+        Write-Skip "Claude Code $local installed at $Source (-NoUpdate set, not checking for a newer one)"
+        return
     }
-    Write-Warn2 "Python 3.14 not found - installing headroom against the default interpreter."
-    return @()
+    if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
+        Write-Warn2 "npm not found on PATH - cannot check whether Claude Code $local is current."
+        return
+    }
+    $latest = "$(npm view '@anthropic-ai/claude-code' version 2>$null)".Trim()
+    if (-not $latest) {
+        Write-Warn2 "could not reach the npm registry - skipping the Claude Code update check."
+        return
+    }
+    if ($latest -eq $local) {
+        Write-Skip "Claude Code $local is up to date"
+        return
+    }
+    Write-Step "Claude Code $local -> $latest available"
+    npm install -g '@anthropic-ai/claude-code@latest'
+    if ($LASTEXITCODE -ne 0) { throw "'npm install -g @anthropic-ai/claude-code@latest' failed - see the output above." }
+    Sync-SessionEnvironment
+    $script:Summary.Updated++
+    Write-Ok "Claude Code updated $local -> $(Get-ClaudeLocalVersion)"
 }
 
 # --- claude-mem settings.json patch ------------------------------------------
@@ -1039,8 +1000,7 @@ if ($chosenCount -eq 0) {
 }
 
 Read-McpApiKeys
-$script:OmniRouteGuided = Select-OmniRouteSetup
-$script:HeadroomModeChoice = if (Test-Selected 'headroom') { Select-HeadroomMode } else { 'skip' }
+$script:SkillUIGuideChoice = Select-SkillUIGuide
 
 if ((Test-Selected 'prereqs') -and -not $script:IsElevated) {
     Write-Step "Not running as Administrator"
@@ -1094,8 +1054,7 @@ if (Test-Selected 'cli') {
         Sync-SessionEnvironment
         $existing = Get-Command claude -ErrorAction SilentlyContinue
         if ($existing) {
-            $version = try { (claude --version) } catch { 'version unknown' }
-            Write-Skip "claude already installed at $($existing.Source) ($version)"
+            Update-ClaudeCli -Source $existing.Source
             return
         }
         if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
@@ -1132,7 +1091,7 @@ if (Test-Selected 'cli') {
 }
 
 # Everything from here to the MCP servers needs the claude CLI on PATH.
-$claudeItems = @('own-skills', 'team', 'find-skills', 'community', 'claude-code-setup', 'claude-mem', 'gsd', 'voltagent')
+$claudeItems = @('own-skills', 'team', 'find-skills', 'community', 'claude-code-setup', 'claude-mem', 'voltagent', 'supabase')
 $needsClaude = @($claudeItems | Where-Object { Test-Selected $_ }).Count -gt 0
 
 if ($needsClaude -and -not (Test-ClaudeAvailable)) {
@@ -1305,23 +1264,7 @@ if (Test-Selected 'claude-mem') {
     }
 }
 
-# --- 10. GSD -----------------------------------------------------------------
-if (Test-Selected 'gsd') {
-    Invoke-Step "Install GSD core" {
-        $gsdState = Join-Path (Get-ClaudeConfigRoot) 'gsd-install-state.json'
-        if ((Test-Path $gsdState) -and $NoUpdate) {
-            Write-Skip "GSD already installed ($gsdState present; -NoUpdate set)"
-            return
-        }
-        if (Test-Path $gsdState) {
-            Write-Ok "GSD already installed - running the installer again to pick up updates"
-        }
-        npx -y @opengsd/gsd-core@latest
-        if (-not (Test-Path $gsdState)) { $script:Summary.Installed++ }
-    }
-}
-
-# --- 11. VoltAgent subagents -------------------------------------------------
+# --- 10. VoltAgent subagents -------------------------------------------------
 # The repo publishes itself as the 'voltagent-subagents' marketplace, with its
 # 154 subagents split across ten category plugins. Installing them as plugins
 # replaces the old 'git clone + bash install-agents.sh' path, which needed Git
@@ -1351,7 +1294,7 @@ if (Test-Selected 'voltagent') {
     }
 }
 
-# --- 12/13. Optional MCP servers ---------------------------------------------
+# --- 11-14. Optional MCP servers ---------------------------------------------
 if (Test-Selected 'aws-mcp') {
     Invoke-Step "Install AWS MCP server" {
         if (-not (Get-Command uv -ErrorAction SilentlyContinue) -and -not (Get-Command uvx -ErrorAction SilentlyContinue)) {
@@ -1400,182 +1343,170 @@ if (Test-Selected 'playwright-mcp') {
     }
 }
 
-if (Test-Selected 'firecrawl-mcp') {
-    Invoke-Step "Install Firecrawl MCP server" {
-        $key = $script:ApiKeys['FIRECRAWL_API_KEY']
-        if (-not $key) {
-            Write-Skip "Firecrawl MCP (no FIRECRAWL_API_KEY supplied)"
+# --- 15. Supabase ------------------------------------------------------------
+# Ships inside anthropics/claude-plugins-official, the same marketplace items 6 and 7
+# register - Add-ClaudeMarketplace is a no-op when it is already there, so this item
+# stands on its own. Install-ClaudePlugin does the "already installed?" check.
+if (Test-Selected 'supabase') {
+    Invoke-Step "Marketplace: anthropics/claude-plugins-official" {
+        Add-ClaudeMarketplace -Source 'anthropics/claude-plugins-official' -Name 'claude-plugins-official'
+    }
+    Invoke-Step "Plugin: supabase@claude-plugins-official" {
+        Install-ClaudePlugin 'supabase@claude-plugins-official'
+    }
+}
+
+# --- 16. Context7 ------------------------------------------------------------
+if (Test-Selected 'context7') {
+    Invoke-Step "Configure Context7 (npx ctx7 setup)" {
+        # 'ctx7 setup' writes the Context7 MCP/skill config for whichever agents it
+        # finds. It is interactive, so there is nothing to do when the console has been
+        # redirected - print the command instead of hanging on a prompt nobody sees.
+        if (-not (Get-Command npx -ErrorAction SilentlyContinue)) {
+            throw "npx not found on PATH - select the prerequisites item (or install Node.js) and re-run."
+        }
+        if ([Console]::IsInputRedirected) {
+            Write-Warn2 "no interactive console for 'ctx7 setup' - run 'npx ctx7 setup' by hand once this finishes."
             return
         }
-        Add-McpServer -Name 'firecrawl' `
-            -CommandArgs @('npx', '-y', 'firecrawl-mcp') `
-            -EnvVars @{ FIRECRAWL_API_KEY = $key }
+        npx -y ctx7@latest setup
+        if ($LASTEXITCODE -ne 0) { throw "'npx ctx7 setup' failed - see the output above." }
+        $script:Summary.Installed++
+        Write-Ok "Context7 configured. Free tier works without a key; higher limits: https://context7.com"
     }
 }
 
-if (Test-Selected 'chrome-mcp') {
-    Invoke-Step "Install Chrome DevTools MCP server" {
-        # Drives a real Chrome over the DevTools protocol, so a stable Chrome has to be
-        # installed. Usage statistics are on by default upstream; --no-usage-statistics
-        # turns them off and is passed here rather than left to the user to discover.
-        Add-McpServer -Name 'chrome-devtools' `
-            -CommandArgs @('npx', 'chrome-devtools-mcp@latest', '--no-usage-statistics') `
-            -Note "Needs a stable Chrome installed. Drop --no-usage-statistics from the config to opt back in to upstream telemetry."
-    }
-}
-
-if (Test-Selected 'glyph-mcp') {
-    Invoke-Step "Install Glyphs MCP server" {
-        # Unlike the others this launches nothing: the server lives inside the Glyphs
-        # .glyphsPlugin bundle and is started from Edit > Glyphs MCP Server inside the
-        # app, so all that is registered here is the endpoint it listens on. The plugin
-        # is macOS-only (macOS 13+, Glyphs 3 or 4), so on Windows and Linux this only
-        # resolves when the port is forwarded from a Mac that is running it.
-        $glyphsUrl = 'http://127.0.0.1:9680/mcp/'
-        if (-not (Test-TcpPort -HostName '127.0.0.1' -Port 9680)) {
-            Write-Warn2 "nothing is listening on 127.0.0.1:9680 - registering anyway, but the server stays unreachable until Glyphs.app is running with Edit > Glyphs MCP Server started (or the port is forwarded from a Mac)."
-        }
-        Add-McpServer -Name 'glyphs-mcp' -Url $glyphsUrl `
-            -Note "Verify with: curl -H 'Accept: application/json' $glyphsUrl"
-    }
-}
-
-# --- 19. OmniRoute -----------------------------------------------------------
-if (Test-Selected 'omniroute') {
-    Invoke-Step "Install OmniRoute (npm i -g omniroute)" {
-        if (Get-Command omniroute -ErrorAction SilentlyContinue) {
-            $ver = try { (omniroute --version) } catch { 'version unknown' }
-            Write-Skip "omniroute already installed ($ver)"
+# --- 17. Playwright CLI ------------------------------------------------------
+if (Test-Selected 'playwright-cli') {
+    Invoke-Step "Install Playwright CLI (@playwright/cli)" {
+        # Detection is on the binary the package provides ('playwright-cli'), which is
+        # what a user actually cares about - it can also arrive via another manager.
+        $existing = Get-Command playwright-cli -ErrorAction SilentlyContinue
+        if ($existing -and $NoUpdate) {
+            Write-Skip "playwright-cli already installed at $($existing.Source) (-NoUpdate set)"
             return
+        }
+        if ($existing) {
+            Write-Ok "playwright-cli already installed - reinstalling @latest to pick up updates"
         }
         if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
             throw "npm not found on PATH - select the prerequisites item (or install Node.js) and re-run."
         }
-        npm install -g omniroute
-        if ($LASTEXITCODE -ne 0) {
-            # The package builds better-sqlite3 and @swc/core natively; upstream
-            # documents this escape hatch for machines without a toolchain.
-            Write-Warn2 "npm install failed - retrying with OMNIROUTE_SKIP_POSTINSTALL=1 (skips the native build)."
-            $env:OMNIROUTE_SKIP_POSTINSTALL = '1'
-            npm install -g omniroute
-            Remove-Item Env:\OMNIROUTE_SKIP_POSTINSTALL -ErrorAction SilentlyContinue
-            if ($LASTEXITCODE -ne 0) { throw "'npm install -g omniroute' failed - see the output above." }
-        }
+        npm install -g '@playwright/cli@latest'
+        if ($LASTEXITCODE -ne 0) { throw "'npm install -g @playwright/cli@latest' failed - see the output above." }
         Sync-SessionEnvironment
+        $cmd = Get-Command playwright-cli -ErrorAction SilentlyContinue
+        if (-not $cmd) {
+            throw "@playwright/cli installed but 'playwright-cli' is not resolvable in this session - open a new shell and try again."
+        }
         $script:Summary.Installed++
-        Write-Ok "omniroute installed"
-    }
-
-    if ($script:OmniRouteGuided) {
-        Invoke-Step "OmniRoute guided setup" {
-            if (-not (Get-Command omniroute -ErrorAction SilentlyContinue)) {
-                throw "omniroute is not on PATH - open a new shell and run 'omniroute setup'."
-            }
-            Write-Host "    Starting the OmniRoute wizard. Answer its prompts, then come back here." -ForegroundColor DarkGray
-            omniroute setup
-            Write-Ok "wizard finished"
-        }
-    }
-
-    Invoke-Step "Register the OmniRoute MCP server" {
-        # OmniRoute is a local gateway: the MCP endpoint only answers while it is
-        # running ('omniroute' starts it, dashboard on :20128). Registering ahead of
-        # time is fine and is the usual order, so a closed port is a warning not a stop.
-        if (-not (Test-TcpPort -HostName '127.0.0.1' -Port 20128)) {
-            Write-Warn2 "nothing is listening on 127.0.0.1:20128 - registering anyway. Start the gateway with 'omniroute' and the server becomes reachable."
-        }
-        Add-McpServer -Name 'omniroute' -Url 'http://localhost:20128/api/mcp/stream'
-    }
-
-    Invoke-Step "OmniRoute next steps" {
-        Write-Host "    1. Start the gateway:      omniroute" -ForegroundColor Gray
-        Write-Host "    2. Open the dashboard:     http://localhost:20128" -ForegroundColor Gray
-        Write-Host "    3. Dashboard > Providers - connect a provider (keyless ones work immediately)" -ForegroundColor Gray
-        Write-Host "    4. Dashboard > Endpoints - copy your API key" -ForegroundColor Gray
-        Write-Host "    5. Point any OpenAI-compatible tool at:" -ForegroundColor Gray
-        Write-Host "         Base URL  http://localhost:20128/v1" -ForegroundColor Gray
-        Write-Host "         Model     auto" -ForegroundColor Gray
-        Write-Host "    Diagnostics: omniroute doctor    TUI chat: omniroute chat" -ForegroundColor Gray
+        Write-Ok "playwright-cli installed at $($cmd.Source)"
     }
 }
 
-# --- 20. Headroom ------------------------------------------------------------
-if (Test-Selected 'headroom') {
-    Invoke-Step "Install pipx (required for headroom)" {
-        if (Get-Command pipx -ErrorAction SilentlyContinue) {
-            Write-Skip "pipx already installed ($((Get-Command pipx).Source))"
-            return
-        }
-        $py = Get-PythonLauncher
-        if (-not $py) {
-            throw "no Python launcher found ('py'/'python'/'python3') - select the prerequisites item (or install Python) and re-run."
-        }
-        & $py -m pip install --user pipx
-        if ($LASTEXITCODE -ne 0) { throw "'$py -m pip install --user pipx' failed - see the output above." }
-        Add-UserScriptsToPath -PythonCmd $py | Out-Null
-        # ensurepath writes the persistent User PATH entries (per-user Scripts and
-        # ~\.local\bin); Sync-SessionEnvironment then pulls them into this session.
-        & $py -m pipx ensurepath
-        Sync-SessionEnvironment
-        Add-UserScriptsToPath -PythonCmd $py | Out-Null
-        $pipxBin = Join-Path $env:USERPROFILE '.local\bin'
-        if ((Test-Path $pipxBin) -and $env:Path -notlike "*$pipxBin*") { $env:Path = "$pipxBin;$env:Path" }
+# --- 18. SkillUI -------------------------------------------------------------
+function Show-SkillUIQuickStart {
+    Write-Host ""
+    Write-Host "    SkillUI quick start  https://github.com/amaancoderx/npxskillui" -ForegroundColor Cyan
+    Write-Host "    1. Extract a design system from any URL:" -ForegroundColor Gray
+    Write-Host "         skillui --url https://notion.so" -ForegroundColor Gray
+    Write-Host "    2. Open the output folder in Claude Code:" -ForegroundColor Gray
+    Write-Host "         cd notion-design; claude" -ForegroundColor Gray
+    Write-Host "    3. Ask for what you want built:" -ForegroundColor Gray
+    Write-Host '         "Build me a landing page that matches this design system"' -ForegroundColor Gray
+    Write-Host "    Claude reads the generated CLAUDE.md and SKILL.md on its own - no wiring up." -ForegroundColor Gray
+    Write-Host "    Modes: --ultra (full extraction)   --dir <path>   --repo <url>" -ForegroundColor Gray
+}
 
-        if (Get-Command pipx -ErrorAction SilentlyContinue) {
-            $script:Summary.Installed++
-            Write-Ok "pipx installed at $((Get-Command pipx).Source)"
+if (Test-Selected 'skillui') {
+    Invoke-Step "Install SkillUI (+ Playwright and Chromium)" {
+        # Three parts: the CLI, Playwright itself, and the Chromium build Playwright
+        # drives. Playwright goes in globally rather than into the current directory -
+        # this script can be run from anywhere, and 'npm install playwright' would
+        # leave a node_modules tree wherever that happened to be.
+        if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
+            throw "npm not found on PATH - select the prerequisites item (or install Node.js) and re-run."
+        }
+        $existing = Get-Command skillui -ErrorAction SilentlyContinue
+        if ($existing -and $NoUpdate) {
+            Write-Skip "skillui already installed at $($existing.Source) (-NoUpdate set)"
         } else {
-            throw "pipx installed but is still not resolvable in this session - open a new shell and re-run."
+            npm install -g skillui
+            if ($LASTEXITCODE -ne 0) { throw "'npm install -g skillui' failed - see the output above." }
+            $script:Summary.Installed++
+            Write-Ok "skillui installed"
         }
-    }
-
-    Invoke-Step "Install headroom-ai" {
-        if (Get-Command headroom -ErrorAction SilentlyContinue) {
-            $ver = try { (headroom --version) } catch { 'version unknown' }
-            Write-Skip "headroom already installed ($ver)"
-            return
-        }
-        $pipxArgs = @('install') + (Get-PipxPythonArgs) + @('headroom-ai[all]')
-        & pipx @pipxArgs
-        if ($LASTEXITCODE -ne 0) {
-            Write-Warn2 "pipx install failed - falling back to 'npm install -g headroom-ai'."
-            npm install -g headroom-ai
-            if ($LASTEXITCODE -ne 0) { throw "both the pipx and npm installs of headroom failed." }
-        }
+        npm install -g playwright
+        if ($LASTEXITCODE -ne 0) { Write-Warn2 "'npm install -g playwright' failed - skillui needs it to capture screenshots." }
+        # Downloads the browser binary itself; skipping it leaves skillui able to start
+        # and unable to render anything.
+        npx -y playwright install chromium
+        if ($LASTEXITCODE -ne 0) { Write-Warn2 "'npx playwright install chromium' failed - run it by hand before using skillui." }
         Sync-SessionEnvironment
-        $pipxBin = Join-Path $env:USERPROFILE '.local\bin'
-        if ((Test-Path $pipxBin) -and $env:Path -notlike "*$pipxBin*") { $env:Path = "$pipxBin;$env:Path" }
-        if (-not (Get-Command headroom -ErrorAction SilentlyContinue)) {
-            throw "headroom installed but is still not resolvable in this session - open a new shell and re-run."
+        $cmd = Get-Command skillui -ErrorAction SilentlyContinue
+        if (-not $cmd) {
+            throw "skillui installed but is not resolvable in this session - open a new shell and try again."
         }
-        $script:Summary.Installed++
-        Write-Ok "headroom installed at $((Get-Command headroom).Source)"
-    }
-
-    Invoke-Step "Configure headroom ($script:HeadroomModeChoice mode)" {
-        if (-not (Get-Command headroom -ErrorAction SilentlyContinue)) {
-            throw "headroom is not on PATH - open a new shell and run the mode command by hand."
-        }
-        # Only 'deploy' is safe to run here. 'wrap' launches the agent and 'proxy'
-        # blocks in the foreground serving requests, so both would hang the install.
-        switch ($script:HeadroomModeChoice) {
-            'deploy'  { headroom deploy; Write-Ok "ran 'headroom deploy'" }
-            'wrap'    { Write-Ok "wrap mode selected - start your agent with: headroom wrap claude" }
-            'proxy'   { Write-Ok "proxy mode selected - start the proxy with: headroom proxy --port 8787" }
-            'library' { Write-Ok "library mode selected - use 'from headroom import compress' in your code" }
-            default   { Write-Skip "headroom mode configuration (skip selected)" }
-        }
-    }
-
-    Invoke-Step "Verify headroom (doctor + perf)" {
-        if (-not (Get-Command headroom -ErrorAction SilentlyContinue)) {
-            throw "headroom is not on PATH - open a new shell and run 'headroom doctor'."
-        }
-        headroom doctor
-        headroom perf
-        Write-Ok "live savings dashboard: headroom dashboard (needs the proxy running)"
+        Write-Ok "skillui ready at $($cmd.Source)"
+        if ($script:SkillUIGuideChoice) { Show-SkillUIQuickStart }
     }
 }
+
+# --- 19. Strix ---------------------------------------------------------------
+function Show-StrixNextSteps {
+    Write-Host ""
+    Write-Host "    Strix needs two more things before its first scan:" -ForegroundColor Yellow
+    Write-Host "    1. Docker running - the first scan pulls the sandbox image." -ForegroundColor Gray
+    Write-Host "    2. An LLM API key, set for your user:" -ForegroundColor Gray
+    Write-Host '         setx STRIX_LLM "openai/gpt-5.4"     # or another supported provider' -ForegroundColor Gray
+    Write-Host '         setx LLM_API_KEY "your-api-key"' -ForegroundColor Gray
+    Write-Host "    Then: strix --target ./app-directory        Results: strix_runs/<run-name>" -ForegroundColor Gray
+    Write-Host "    Providers and options: https://docs.strix.ai" -ForegroundColor Gray
+}
+
+if (Test-Selected 'strix') {
+    Invoke-Step "Install Strix AI pentesting CLI" {
+        # Upstream ships a POSIX shell installer rather than an npm/pip package
+        # (https://github.com/usestrix/strix), so on Windows it has to run through a
+        # bash: WSL first, then Git Bash, which the prerequisites item installs.
+        if (Get-Command strix -ErrorAction SilentlyContinue) {
+            if ($NoUpdate) {
+                Write-Skip "strix already installed (-NoUpdate set)"
+                Show-StrixNextSteps
+                return
+            }
+            Write-Ok "strix already installed - running the installer again to pick up updates"
+        }
+        $installCmd = 'curl -sSL https://strix.ai/install | bash'
+        $ran = $false
+        if (Get-Command wsl -ErrorAction SilentlyContinue) {
+            wsl -- bash -lc $installCmd
+            if ($LASTEXITCODE -eq 0) {
+                $ran = $true
+                Write-Ok "strix installed inside WSL - run it from your WSL shell ('wsl strix --help')."
+                $script:Summary.Installed++
+            } else {
+                Write-Warn2 "the Strix installer failed under WSL - trying Git Bash next."
+            }
+        }
+        if (-not $ran) {
+            $bash = Get-Command bash -ErrorAction SilentlyContinue
+            if ($bash) {
+                & $bash.Source -lc $installCmd
+                if ($LASTEXITCODE -eq 0) {
+                    $ran = $true
+                    $script:Summary.Installed++
+                    Write-Ok "strix installed via $($bash.Source)"
+                }
+            }
+        }
+        if (-not $ran) {
+            Write-Warn2 "no WSL or bash found to run the Strix installer. Install WSL (wsl --install) or Git for Windows, then run: $installCmd"
+        }
+        Show-StrixNextSteps
+    }
+}
+
 
 # --- Summary -----------------------------------------------------------------
 Write-Host ""
