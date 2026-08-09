@@ -876,38 +876,70 @@ function Get-ClaudeLocalVersion {
     return $null
 }
 
+function Test-ClaudeFromNpm {
+    # Claude Code also ships a native installer. Reading the version tells us nothing
+    # about which one put it there, and 'npm install -g' onto a native install lays a
+    # second copy down beside the first. Only npm-owned installs get updated here.
+    if (-not (Get-Command npm -ErrorAction SilentlyContinue)) { return $false }
+    try {
+        npm ls -g --depth=0 '@anthropic-ai/claude-code' 2>&1 | Out-Null
+        return ($LASTEXITCODE -eq 0)
+    } catch {
+        return $false
+    }
+}
+
 function Update-ClaudeCli {
-    # Runs when claude is already present. npm is the source of truth for the installed
-    # channel: 'claude update' is a no-op (or an error) on an npm-managed install.
+    # Runs when claude is already present. Never throws: a failed *update* leaves an
+    # installed, working CLI behind, the same reasoning as Install-ClaudePlugin.
     param([string]$Source)
-    $local = Get-ClaudeLocalVersion
-    if (-not $local) {
+    $installed = Get-ClaudeLocalVersion
+    if (-not $installed) {
         Write-Warn2 "could not read the installed Claude Code version - skipping the update check."
         return
     }
     if ($NoUpdate) {
-        Write-Skip "Claude Code $local installed at $Source (-NoUpdate set, not checking for a newer one)"
+        Write-Skip "Claude Code $installed installed at $Source (-NoUpdate set, not checking for a newer one)"
         return
     }
     if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
-        Write-Warn2 "npm not found on PATH - cannot check whether Claude Code $local is current."
+        Write-Warn2 "npm not found on PATH - cannot check whether Claude Code $installed is current."
         return
     }
-    $latest = "$(npm view '@anthropic-ai/claude-code' version 2>$null)".Trim()
-    if (-not $latest) {
+    # Native commands write to stderr for ordinary progress noise, and under
+    # $ErrorActionPreference = 'Stop' a redirected stderr line becomes a terminating
+    # error - so this needs the try/catch, not just 2>$null.
+    $latest = $null
+    try {
+        $latest = "$(npm view '@anthropic-ai/claude-code' version 2>&1 | Select-Object -Last 1)".Trim()
+    } catch {
+        $latest = $null
+    }
+    if (-not ($latest -match '^\d+\.\d+\.\d+')) {
         Write-Warn2 "could not reach the npm registry - skipping the Claude Code update check."
         return
     }
-    if ($latest -eq $local) {
-        Write-Skip "Claude Code $local is up to date"
+    # Equal, or local *ahead* (a prerelease, or a dist-tag that moved back): installing
+    # @latest there would be a downgrade.
+    $behind = $false
+    try { $behind = ([version]$installed -lt [version]$latest) } catch { $behind = ($installed -ne $latest) }
+    if (-not $behind) {
+        Write-Skip "Claude Code $installed is up to date (npm latest: $latest)"
         return
     }
-    Write-Step "Claude Code $local -> $latest available"
+    if (-not (Test-ClaudeFromNpm)) {
+        Write-Warn2 "Claude Code $installed -> $latest available, but this install did not come from npm ($Source) - update it the way you installed it."
+        return
+    }
+    Write-Step "Claude Code $installed -> $latest available"
     npm install -g '@anthropic-ai/claude-code@latest'
-    if ($LASTEXITCODE -ne 0) { throw "'npm install -g @anthropic-ai/claude-code@latest' failed - see the output above." }
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warn2 "the Claude Code update failed - keeping $installed."
+        return
+    }
     Sync-SessionEnvironment
     $script:Summary.Updated++
-    Write-Ok "Claude Code updated $local -> $(Get-ClaudeLocalVersion)"
+    Write-Ok "Claude Code updated $installed -> $(Get-ClaudeLocalVersion)"
 }
 
 # --- claude-mem settings.json patch ------------------------------------------

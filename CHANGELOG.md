@@ -109,8 +109,9 @@ All notable changes to this repository are documented here. Format follows [Keep
 - `scripts/install-prerequisites.ps1` / `.sh` — the per-skill picker's descriptions are
   fuller: each of the nineteen rows now names what the skill actually does rather than
   restating its title (`cloudflare - Cloudflare v4: DNS, WAF, cache, Workers, Zero
-  Trust`). Text is sourced from the skills table in `README.md` and kept under ~80
-  characters so a standard console does not clip it.
+  Trust`). Text is sourced from the skills table in `README.md`. The rows are written
+  for a window of about 95 columns; narrower consoles clip them with an ellipsis, as
+  they already did for the longest of the old labels.
 
 ### Fixed
 
