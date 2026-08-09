@@ -57,12 +57,12 @@ The menu is a cursor picker — **↑/↓ to move, Space to tick, Enter to start
 
 `A` ticks everything, `N` clears it, `D` restores the default set, `Q` or Escape cancels without installing. On the repo's own row, **→ opens a second picker for the individual skills** so you can take three of them instead of all nineteen; ← or Enter comes back to the main menu.
 
-Terminals that can't read a key press one at a time — no `stty`, `TERM=dumb`, PowerShell ISE, a redirected console, a window under ten lines — fall back to the original numbered prompt automatically: `[x]` marks the default set, and you answer `A`, `D` (or Enter), `N`, or numbers like `1,3,7-9`. Item keys work in `--select` either way, so `--select headroom,claude-mem` saves counting rows.
+Terminals that can't read a key press one at a time — no `stty`, `TERM=dumb`, PowerShell ISE, a redirected console, a window under ten lines — fall back to the original numbered prompt automatically: `[x]` marks the default set, and you answer `A`, `D` (or Enter), `N`, or numbers like `1,3,7-9`. Item keys work in `--select` either way, so `--select supabase,claude-mem` saves counting rows.
 
 |  # | Item | Default |
 |---:|---|:---:|
 | 1 | Prerequisites — Chocolatey / `apt` etc. + git, node, python | x |
-| 2 | Claude Code CLI + PATH export | x |
+| 2 | Claude Code CLI + PATH export + **update check** | x |
 | 3 | This repo's marketplace + its skills — **→ picks individual skills** | x |
 | 4 | Team plugins — superpowers, frontend-design, excalidraw-generator | x |
 | 5 | `find-skills` skill | x |
@@ -70,37 +70,37 @@ Terminals that can't read a key press one at a time — no `stty`, `TERM=dumb`, 
 | 7 | `claude-code-setup` plugin | x |
 | 8 | `task-observer` skill | x |
 | 9 | claude-mem — also sets `CLAUDE_MEM_WORKER_PORT` in `settings.json` | x |
-| 10 | GSD (`@opengsd/gsd-core`) | x |
-| 11 | VoltAgent subagents (10 plugins, 154 agents) | x |
-| 12 | MCP server — AWS (`awslabs.aws-api-mcp-server`) | |
-| 13 | MCP server — Azure (`@azure/mcp`) | |
-| 14 | MCP server — Perplexity (needs `PERPLEXITY_API_KEY`) | |
-| 15 | MCP server — Playwright (`@playwright/mcp`) | |
-| 16 | MCP server — Firecrawl (needs `FIRECRAWL_API_KEY`) | |
-| 17 | MCP server — Chrome DevTools (`chrome-devtools-mcp`) | |
-| 18 | MCP server — Glyphs font editor (macOS + Glyphs.app) | |
-| 19 | OmniRoute AI gateway + its MCP server, optional guided setup | |
-| 20 | Headroom — pipx + `headroom-ai[all]` + mode setup + `doctor` | |
+| 10 | VoltAgent subagents (10 plugins, 154 agents) | x |
+| 11 | MCP server — AWS (`awslabs.aws-api-mcp-server`) | |
+| 12 | MCP server — Azure (`@azure/mcp`) | |
+| 13 | MCP server — Perplexity (needs `PERPLEXITY_API_KEY`) | |
+| 14 | MCP server — Playwright (`@playwright/mcp`) | |
+| 15 | Supabase plugin (`supabase@claude-plugins-official`) | |
+| 16 | Context7 — up-to-date library docs (`npx ctx7 setup`) | |
+| 17 | Playwright CLI (`@playwright/cli`) | |
+| 18 | SkillUI + Playwright/Chromium — design system from a URL | |
+| 19 | Strix — AI pentesting CLI (needs Docker + an LLM API key) | |
 
-Menu numbers are identical on Windows and Linux, and an already-registered MCP server, marketplace, or plugin is reported and skipped rather than re-added. Numbers can shift as items are added, so scripted runs should prefer the stable keys (`--select chrome-mcp,headroom`) over positions.
+Menu numbers are identical on Windows and Linux, and an already-registered MCP server, marketplace, or plugin is reported and skipped rather than re-added. Numbers can shift as items are added, so scripted runs should prefer the stable keys (`--select supabase,strix`) over positions.
 
-Three items need a word of explanation:
+A few items need a word of explanation:
 
+- **Claude Code CLI** (2) also checks for an update when `claude` is *already* installed: it compares the local version against the npm registry and runs `npm install -g @anthropic-ai/claude-code@latest` only when they differ. `--no-update` / `-NoUpdate` reports the installed version and skips the check.
 - **claude-mem** (9) appends `"CLAUDE_MEM_WORKER_PORT": "37790"` after the `CLAUDE_MEM_PROVIDER` line in `~/.claude/settings.json`, backing the file up first and restoring it if the result doesn't parse — without the port the worker silently binds somewhere else.
-- **Perplexity** (14) and **Firecrawl** (16) need API keys. If `PERPLEXITY_API_KEY` / `FIRECRAWL_API_KEY` are already exported the script uses them silently; otherwise it asks once, up front, alongside the menu. Press Enter to skip that server rather than register one that can't authenticate. Under `--non-interactive` / `--all` an unset key skips the server with a warning.
-- **Glyphs** (18) is the odd one out: it launches nothing. The server lives inside the Glyphs `.glyphsPlugin` bundle and is started from **Edit → Glyphs MCP Server** in the app, so the script only registers the endpoint it listens on (`http://127.0.0.1:9680/mcp/`, HTTP transport). The plugin is **macOS-only** — macOS 13+ with Glyphs 3 or 4 — so on Windows and Linux this resolves only if you forward the port from a Mac that's running it. The script probes the port first and warns when nothing is listening, but registers it either way.
-- **OmniRoute** (19) is not a Claude Code plugin despite the name — it's a self-hosted AI gateway installed with `npm i -g omniroute` that fans requests across providers behind one OpenAI-compatible endpoint. The item installs it, registers its MCP endpoint (`http://localhost:20128/api/mcp/stream`), and prints the dashboard steps. If you say yes to the up-front question it also runs OmniRoute's own `omniroute setup` wizard at the end. The gateway has to be running (`omniroute`) for the MCP server to answer, so the port probe warns rather than blocks. If `npm install` fails on the native build it retries with `OMNIROUTE_SKIP_POSTINSTALL=1`.
-- **Headroom** (20) installs pipx, puts it on `PATH`, installs `headroom-ai[all]`, then asks which mode you want (`deploy`, `wrap`, `proxy`, `library`, or skip) and finishes with `headroom doctor`. Only `deploy` runs during the install; `wrap` and `proxy` block in the foreground, so the script prints those commands for you to run yourself.
+- **Perplexity** (13) needs an API key. If `PERPLEXITY_API_KEY` is already exported the script uses it silently; otherwise it asks once, up front, alongside the menu. Press Enter to skip that server rather than register one that can't authenticate. Under `--non-interactive` / `--all` an unset key skips the server with a warning.
+- **Context7** (16) runs `npx ctx7 setup`, which is an interactive wizard — the script hands it the terminal explicitly, and where there is no terminal (CI, a redirected console) it prints the command instead of hanging.
+- **SkillUI** (18) installs the CLI, Playwright, and the Chromium build Playwright drives. Playwright goes in **globally** (`npm install -g playwright`) rather than into whatever directory you ran the script from. It asks up front whether to print the quick start when it's done; `--skillui-guide` / `-SkillUIGuide` answers yes without being asked.
+- **Strix** (19) is a security tool, not a Claude Code plugin: it installs via upstream's own shell installer (`curl -sSL https://strix.ai/install | bash`). **It cannot run straight after installing** — it needs Docker running and an LLM API key (`STRIX_LLM` + `LLM_API_KEY`), which the script prints as next steps every time. On Windows the installer is POSIX-only, so the script runs it through WSL, falls back to Git Bash, and warns with the manual command if neither is present.
 
 Everything that can be a plugin **is** installed as one, using the CLI's own `claude plugin marketplace add` / `claude plugin install` — there's no `npx claudepluginhub` wrapper and no `git clone` + shell-script step any more. That removes the Windows failure modes those introduced (the wrapper needed a writable per-repo checkout, and the VoltAgent installer needed Git Bash to run a `.sh`).
 
 | Switch (Windows / Linux) | Effect |
 |---|---|
 | `-All` / `--all` | Select every menu item, no prompt. |
-| `-Select '1,3,7-9'` / `--select 1,3,7-9` | Select these menu items, no prompt. Item keys work too: `--select headroom,claude-mem`. |
+| `-Select '1,3,7-9'` / `--select 1,3,7-9` | Select these menu items, no prompt. Item keys work too: `--select supabase,claude-mem`. |
 | `-Skills 'cloudflare,drata'` / `--skills cloudflare,drata` | Install only these of this repo's skills, no sub-picker. Also accepts `all`, `none`, and numbers (`1,4-6`). Composes with `-All` / `-NonInteractive`. |
 | `-NonInteractive` / `--non-interactive` | Select the default set, no prompt — for unattended or CI runs. |
-| `-HeadroomMode` / `--headroom-mode` | Answer the Headroom mode question up front: `deploy`, `wrap`, `proxy`, `library`, or `skip`. |
+| `-SkillUIGuide` / `--skillui-guide` | Print the SkillUI quick start after installing it, without being asked. |
 | `-NoUpdate` / `--no-update` | Report already-installed plugins but never update them. |
 | `-SkipBootstrap` / `--skip-bootstrap` | Narrow whatever you selected down to the prerequisites and the Claude Code CLI. |
 | `-InstallScope` / `--scope` | Scope for every marketplace and plugin install: `user` (default), `project`, or `local`. Windows still accepts the old `-PluginHubScope` name as an alias. |
@@ -112,7 +112,7 @@ Everything that can be a plugin **is** installed as one, using the CLI's own `cl
 | Item | Pulls in | Source |
 |---|---|---|
 | 1 Prerequisites | Chocolatey + git, awscli, nodejs, python (Windows) / git, nodejs, npm, python3, pip3 via apt/dnf/yum/pacman/zypper/apk (Linux) | package manager |
-| 2 Claude Code CLI | `@anthropic-ai/claude-code`, plus a persistent `PATH` entry for the npm global bin | npm |
+| 2 Claude Code CLI | `@anthropic-ai/claude-code`, a persistent `PATH` entry for the npm global bin, and an update to the latest published version if one already exists | npm |
 | 3 This repo | The `useful-claude-add-ons` marketplace and, by default, all 19 skills in [`skills/`](skills/) — narrow it with → in the menu or `--skills` | this repo |
 | 4 Team plugins | `superpowers`, `frontend-design`, `excalidraw-generator` | 3 marketplaces |
 | 5 find-skills | The `find-skills` skill, into the user skills dir | `vercel-labs/skills` |
@@ -120,13 +120,15 @@ Everything that can be a plugin **is** installed as one, using the CLI's own `cl
 | 7 claude-code-setup | Analyses a codebase and recommends hooks/skills/MCP servers | `anthropics/claude-plugins-official` |
 | 8 task-observer | Watches a session for reusable-skill opportunities | `rebelytics/one-skill-to-rule-them-all` |
 | 9 claude-mem | Cross-session memory, plus `CLAUDE_MEM_WORKER_PORT` in `settings.json` | `thedotmack/claude-mem` |
-| 10 GSD | `@opengsd/gsd-core` — the phase/plan/execute workflow commands | npx |
-| 11 VoltAgent | 10 plugins, ~154 subagents across dev, infra, QA, data, business | `VoltAgent/awesome-claude-code-subagents` |
-| 12–18 MCP servers | AWS, Azure, Perplexity, Playwright, Firecrawl, Chrome DevTools, Glyphs | `claude mcp add` |
-| 19 OmniRoute | `omniroute` gateway + its MCP endpoint | npm |
-| 20 Headroom | `pipx`, then `headroom-ai[all]` + mode config | pipx (npm fallback) |
+| 10 VoltAgent | 10 plugins, ~154 subagents across dev, infra, QA, data, business | `VoltAgent/awesome-claude-code-subagents` |
+| 11–14 MCP servers | AWS, Azure, Perplexity, Playwright | `claude mcp add` |
+| 15 Supabase | The `supabase` plugin — project, database, and edge-function tooling | `anthropics/claude-plugins-official` |
+| 16 Context7 | `ctx7 setup` — wires up version-accurate library docs for your agents | npx |
+| 17 Playwright CLI | `@playwright/cli` (`playwright-cli` on `PATH`) | npm |
+| 18 SkillUI | `skillui` + `playwright` + the Chromium browser build | npm |
+| 19 Strix | The `strix` pentesting CLI | `curl -sSL https://strix.ai/install \| bash` |
 
-Items 1–11 are the default set. Everything from 12 on is opt-in.
+Items 1–10 are the default set. Everything from 11 on is opt-in.
 
 Full walkthrough, verification steps, and troubleshooting: [`INSTALLATION.md`](INSTALLATION.md).
 

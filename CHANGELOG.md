@@ -6,6 +6,40 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
+- `CLAUDE.md` — repo-level instructions for Claude Code. Two documentation rules are
+  stated as requirements rather than suggestions: an edit to either install script
+  must update `README.md` (menu table, "what each item installs" table, switch table,
+  and any prose that names an item by number) in the same change, and a new directory
+  under `skills/` is not finished until it is registered in all four places —
+  `marketplace.json`, `skills/README.md`, `README.md`, and both install scripts.
+
+- `scripts/install-prerequisites.ps1` / `.sh` — **the Claude Code CLI row now checks
+  for an update** when `claude` is already installed, instead of reporting the version
+  and moving on. It compares the local version against the npm registry and runs
+  `npm install -g @anthropic-ai/claude-code@latest` only when they differ. The version
+  is read from the last line of `claude --version` (which prints
+  `2.1.226 (Claude Code)`, and can be preceded by a wrapper's banner).
+  `-NoUpdate` / `--no-update` reports the installed version and skips the check.
+
+- `scripts/install-prerequisites.ps1` / `.sh` — **five new opt-in menu items**:
+  - **Supabase** (15) — `supabase@claude-plugins-official`, through the same
+    detect-then-install helper as every other plugin.
+  - **Context7** (16) — `npx -y ctx7@latest setup`. The wizard is interactive, so bash
+    hands it the terminal explicitly (under `curl | bash`, fd 0 is still the script);
+    with no terminal at all both scripts print the command rather than hang.
+  - **Playwright CLI** (17) — `npm install -g @playwright/cli@latest`, detected by
+    whether `playwright-cli` already resolves on `PATH`.
+  - **SkillUI** (18) — `skillui`, plus `playwright` and its Chromium build. Playwright
+    is installed **globally**; upstream's `npm install playwright` would leave a
+    `node_modules` tree in whatever directory the script was run from. Both Playwright
+    steps warn rather than fail the item. A quick start is printed afterwards; you're
+    asked up front, and `--skillui-guide` / `-SkillUIGuide` answers yes without asking.
+  - **Strix** (19) — upstream's own installer, `curl -sSL https://strix.ai/install |
+    bash`. Installing it is not enough to run it, so the next steps (Docker running,
+    `STRIX_LLM`, `LLM_API_KEY`) print on every run, including one that skipped the
+    install. Windows has no POSIX shell, so the script runs the installer through WSL,
+    falls back to Git Bash, and warns with the manual command if neither exists.
+
 - `scripts/install-prerequisites.ps1` / `.sh` — the install menu is now a **cursor
   picker**: ↑/↓ to move, Space to tick, Enter to start, `A`/`N`/`D` for all/none/
   defaults, `Q` or Escape to cancel. Rows scroll inside a viewport when the window
@@ -55,6 +89,28 @@ All notable changes to this repository are documented here. Format follows [Keep
   the connector authenticates per person through Claude Code, so no credential
   belongs in the block. `INFRA_TICKET_PREFER_MCP` and `INFRA_TICKET_MCP_ENDPOINT`
   override it per session.
+
+### Removed
+
+- `scripts/install-prerequisites.ps1` / `.sh` — **six menu items**: the Firecrawl,
+  Chrome DevTools, and Glyphs MCP servers, the OmniRoute gateway, Headroom, and GSD.
+  The helpers that existed only for them went with them: `tcp_port_open` and
+  `add_mcp_http_server` in bash, `Test-TcpPort`, `Get-PythonLauncher`,
+  `Add-UserScriptsToPath` and `Get-PipxPythonArgs` in PowerShell, along with the
+  `FIRECRAWL_API_KEY` prompt, the OmniRoute guided-setup question, and the Headroom
+  mode question. The `-HeadroomMode` / `--headroom-mode` switch is gone.
+
+  The menu is 19 items rather than 20, and items 1–10 are the default set (was 1–11).
+  Item numbers below 10 are unchanged; everything above shifted. Scripted runs should
+  use the stable keys (`--select supabase,strix`) rather than positions.
+
+### Changed
+
+- `scripts/install-prerequisites.ps1` / `.sh` — the per-skill picker's descriptions are
+  fuller: each of the nineteen rows now names what the skill actually does rather than
+  restating its title (`cloudflare - Cloudflare v4: DNS, WAF, cache, Workers, Zero
+  Trust`). Text is sourced from the skills table in `README.md` and kept under ~80
+  characters so a standard console does not clip it.
 
 ### Fixed
 
