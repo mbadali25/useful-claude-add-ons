@@ -6,6 +6,25 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
+- `skills/notify` — a new skill (1.0.0) that pings you out of band about a session or
+  job: a two-way Telegram bot (a `question` event blocks until you reply from your
+  phone, and a `notifyd` dispatcher gives each concurrent job its own forum topic) or
+  email over SMTP or an M365/Gmail MCP connector. Registered in `marketplace.json`,
+  both READMEs, `INSTALLATION.md`, and both install scripts, taking this repo's
+  catalog from 19 skills to 20.
+
+- `scripts/install-prerequisites.ps1` / `.sh` — **the `notify` skill asks about setup.**
+  It is the only skill here that needs anything on the machine, so ticking it prints
+  its prerequisites alongside the menu (Python 3.8+, a `@BotFather` token, a `chat_id`,
+  `TELEGRAM_BOT_TOKEN` exported, a config file, polling mode with no webhook) and then
+  asks whether to scaffold `~/.config/notify/config.json`. Answering yes checks for
+  Python and writes a starter config; it never overwrites an existing one and never
+  writes the bot token anywhere. `--notify-setup` / `-NotifySetup` answers yes without
+  asking; `--all` / `--non-interactive` prints the prerequisites and skips the
+  scaffold. Because `notify` is a sub-picker entry rather than a top-level menu key,
+  the gate reads the skill catalog (`skill_selected` / `Test-SkillSelected`) instead of
+  `is_selected` / `Test-Selected`, which would never match.
+
 - `CLAUDE.md` — repo-level instructions for Claude Code. Two documentation rules are
   stated as requirements rather than suggestions: an edit to either install script
   must update `README.md` (menu table, "what each item installs" table, switch table,

@@ -1,0 +1,25 @@
+{
+  "default_channel": "telegram",
+
+  "telegram": {
+    "bot_token_env": "TELEGRAM_BOT_TOKEN",
+    "chat_id": "-1001234567890",
+    "mode": "topics"
+  },
+
+  "dispatcher": {
+    "enabled": true,
+    "spool_dir": "~/.local/state/notify/spool",
+    "close_topic_on_complete": true
+  },
+
+  "email": {
+    "backend": "smtp",
+    "to": "me@example.com",
+    "from": "claude-jobs@example.com",
+    "smtp": { "provider": "gmail", "username_env": "SMTP_USER", "password_env": "SMTP_PASS" }
+  },
+
+  "events": { "complete": true, "error": true, "question": true, "info": true },
+  "reply":  { "enabled": true, "timeout_seconds": 3600 }
+}

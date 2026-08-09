@@ -74,6 +74,12 @@
       "version": "1.0.0"
     },
     {
+      "name": "notify",
+      "source": "./skills/notify",
+      "description": "Notify a session's progress to your phone or inbox - a two-way Telegram bot (questions wait for your reply, topic-per-job dispatcher) or email over SMTP/an MCP connector.",
+      "version": "1.0.0"
+    },
+    {
       "name": "repo-docs",
       "source": "./skills/repo-docs",
       "description": "Generate and refresh a full documentation set for a codebase - CLAUDE.md, READMEs, API reference, architecture doc, TODO/SECURITY/CHANGELOG, and handoff notes.",
