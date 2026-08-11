@@ -402,7 +402,6 @@ $script:Catalog = @(
     [pscustomobject]@{ Key = 'voltagent';         Default = $true;  Name = 'VoltAgent subagents (10 plugins, 154 agents)' }
     [pscustomobject]@{ Key = 'aws-mcp';           Default = $false; Name = 'MCP server: AWS (awslabs.aws-api-mcp-server)' }
     [pscustomobject]@{ Key = 'azure-mcp';         Default = $false; Name = 'MCP server: Azure (@azure/mcp)' }
-    [pscustomobject]@{ Key = 'perplexity-mcp';    Default = $false; Name = 'MCP server: Perplexity (needs PERPLEXITY_API_KEY)' }
     [pscustomobject]@{ Key = 'playwright-mcp';    Default = $false; Name = 'MCP server: Playwright (@playwright/mcp)' }
     [pscustomobject]@{ Key = 'supabase';          Default = $false; Name = 'Supabase plugin (supabase@claude-plugins-official)' }
     [pscustomobject]@{ Key = 'context7';          Default = $false; Name = 'Context7 up-to-date library docs (npx ctx7 setup)' }
@@ -820,36 +819,6 @@ function Show-Selection {
     }
 }
 
-$script:ApiKeys = @{}
-function Read-McpApiKey {
-    # An already-exported variable wins, so CI and anyone who keeps keys in their
-    # profile is never prompted. Returns $null when there is no key and no way to ask,
-    # which makes the caller skip that server rather than register a broken one.
-    param([string]$VarName, [string]$Label, [string]$SignupUrl)
-    $existing = [Environment]::GetEnvironmentVariable($VarName)
-    if ($existing) {
-        Write-Host "  Using $VarName from the environment for $Label." -ForegroundColor DarkGray
-        return $existing
-    }
-    if ($NonInteractive -or $All -or $Select) {
-        Write-Warn2 "$VarName is not set - $Label will be skipped. Export it and re-run."
-        return $null
-    }
-    Write-Host ""
-    Write-Host "  $Label needs an API key." -ForegroundColor Cyan
-    Write-Host "  Get one at $SignupUrl, or press Enter to skip this server." -ForegroundColor DarkGray
-    $answer = "$(Read-Host "  $VarName")".Trim()
-    if (-not $answer) { return $null }
-    return $answer
-}
-
-function Read-McpApiKeys {
-    # Collected up front with the menu so the install run itself stays unattended.
-    if (Test-Selected 'perplexity-mcp') {
-        $script:ApiKeys['PERPLEXITY_API_KEY'] = Read-McpApiKey 'PERPLEXITY_API_KEY' 'Perplexity MCP' 'https://www.perplexity.ai/account/api/keys'
-    }
-}
-
 function Select-SkillUIGuide {
     # Asked up front with the menu, like every other interactive answer, so the install
     # run itself stays unattended. The guide is printed at the end of the SkillUI step.
@@ -1182,7 +1151,6 @@ if ($chosenCount -eq 0) {
     return
 }
 
-Read-McpApiKeys
 $script:SkillUIGuideChoice = Select-SkillUIGuide
 $script:NotifySetupChoice = Select-NotifySetup
 
@@ -1486,7 +1454,7 @@ if (Test-Selected 'voltagent') {
     }
 }
 
-# --- 11-14. Optional MCP servers ---------------------------------------------
+# --- 11-13. Optional MCP servers ---------------------------------------------
 if (Test-Selected 'aws-mcp') {
     Invoke-Step "Install AWS MCP server" {
         if (-not (Get-Command uv -ErrorAction SilentlyContinue) -and -not (Get-Command uvx -ErrorAction SilentlyContinue)) {
@@ -1514,19 +1482,6 @@ if (Test-Selected 'azure-mcp') {
     }
 }
 
-if (Test-Selected 'perplexity-mcp') {
-    Invoke-Step "Install Perplexity MCP server" {
-        $key = $script:ApiKeys['PERPLEXITY_API_KEY']
-        if (-not $key) {
-            Write-Skip "Perplexity MCP (no PERPLEXITY_API_KEY supplied)"
-            return
-        }
-        Add-McpServer -Name 'perplexity' `
-            -CommandArgs @('npx', '-y', '@perplexity-ai/mcp-server') `
-            -EnvVars @{ PERPLEXITY_API_KEY = $key }
-    }
-}
-
 if (Test-Selected 'playwright-mcp') {
     Invoke-Step "Install Playwright MCP server" {
         Add-McpServer -Name 'playwright' `
@@ -1535,7 +1490,7 @@ if (Test-Selected 'playwright-mcp') {
     }
 }
 
-# --- 15. Supabase ------------------------------------------------------------
+# --- 14. Supabase ------------------------------------------------------------
 # Ships inside anthropics/claude-plugins-official, the same marketplace items 6 and 7
 # register - Add-ClaudeMarketplace is a no-op when it is already there, so this item
 # stands on its own. Install-ClaudePlugin does the "already installed?" check.
@@ -1548,7 +1503,7 @@ if (Test-Selected 'supabase') {
     }
 }
 
-# --- 16. Context7 ------------------------------------------------------------
+# --- 15. Context7 ------------------------------------------------------------
 if (Test-Selected 'context7') {
     Invoke-Step "Configure Context7 (npx ctx7 setup)" {
         # 'ctx7 setup' writes the Context7 MCP/skill config for whichever agents it
@@ -1568,7 +1523,7 @@ if (Test-Selected 'context7') {
     }
 }
 
-# --- 17. Playwright CLI ------------------------------------------------------
+# --- 16. Playwright CLI ------------------------------------------------------
 if (Test-Selected 'playwright-cli') {
     Invoke-Step "Install Playwright CLI (@playwright/cli)" {
         # Detection is on the binary the package provides ('playwright-cli'), which is
@@ -1596,7 +1551,7 @@ if (Test-Selected 'playwright-cli') {
     }
 }
 
-# --- 18. SkillUI -------------------------------------------------------------
+# --- 17. SkillUI -------------------------------------------------------------
 function Show-SkillUIQuickStart {
     Write-Host ""
     Write-Host "    SkillUI quick start  https://github.com/amaancoderx/npxskillui" -ForegroundColor Cyan
@@ -1644,7 +1599,7 @@ if (Test-Selected 'skillui') {
     }
 }
 
-# --- 19. Strix ---------------------------------------------------------------
+# --- 18. Strix ---------------------------------------------------------------
 function Show-StrixNextSteps {
     Write-Host ""
     Write-Host "    Strix needs two more things before its first scan:" -ForegroundColor Yellow

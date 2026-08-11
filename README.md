@@ -73,13 +73,12 @@ Terminals that can't read a key press one at a time — no `stty`, `TERM=dumb`, 
 | 10 | VoltAgent subagents (10 plugins, 154 agents) | x |
 | 11 | MCP server — AWS (`awslabs.aws-api-mcp-server`) | |
 | 12 | MCP server — Azure (`@azure/mcp`) | |
-| 13 | MCP server — Perplexity (needs `PERPLEXITY_API_KEY`) | |
-| 14 | MCP server — Playwright (`@playwright/mcp`) | |
-| 15 | Supabase plugin (`supabase@claude-plugins-official`) | |
-| 16 | Context7 — up-to-date library docs (`npx ctx7 setup`) | |
-| 17 | Playwright CLI (`@playwright/cli`) | |
-| 18 | SkillUI + Playwright/Chromium — design system from a URL | |
-| 19 | Strix — AI pentesting CLI (needs Docker + an LLM API key) | |
+| 13 | MCP server — Playwright (`@playwright/mcp`) | |
+| 14 | Supabase plugin (`supabase@claude-plugins-official`) | |
+| 15 | Context7 — up-to-date library docs (`npx ctx7 setup`) | |
+| 16 | Playwright CLI (`@playwright/cli`) | |
+| 17 | SkillUI + Playwright/Chromium — design system from a URL | |
+| 18 | Strix — AI pentesting CLI (needs Docker + an LLM API key) | |
 
 Menu numbers are identical on Windows and Linux, and an already-registered MCP server, marketplace, or plugin is reported and skipped rather than re-added. Numbers can shift as items are added, so scripted runs should prefer the stable keys (`--select supabase,strix`) over positions.
 
@@ -88,10 +87,9 @@ A few items need a word of explanation:
 - **Claude Code CLI** (2) also checks for an update when `claude` is *already* installed: it compares the local version against the npm registry and runs `npm install -g @anthropic-ai/claude-code@latest` only when they differ. `--no-update` / `-NoUpdate` reports the installed version and skips the check.
 - **The `notify` skill** (in the item 3 sub-picker) is the one skill that needs machine-level setup, so when it's ticked the script prints its prerequisites — Python 3.8+, a `@BotFather` bot token, your `chat_id`, `TELEGRAM_BOT_TOKEN` exported, and a config file — then asks whether to scaffold `~/.config/notify/config.json` for you. `--notify-setup` / `-NotifySetup` answers yes without being asked. It never writes the bot token anywhere; an existing config is left alone. For the guided version, run `/notify-setup` in a Claude session.
 - **claude-mem** (9) appends `"CLAUDE_MEM_WORKER_PORT": "37790"` after the `CLAUDE_MEM_PROVIDER` line in `~/.claude/settings.json`, backing the file up first and restoring it if the result doesn't parse — without the port the worker silently binds somewhere else.
-- **Perplexity** (13) needs an API key. If `PERPLEXITY_API_KEY` is already exported the script uses it silently; otherwise it asks once, up front, alongside the menu. Press Enter to skip that server rather than register one that can't authenticate. Under `--non-interactive` / `--all` an unset key skips the server with a warning.
-- **Context7** (16) runs `npx ctx7 setup`, which is an interactive wizard — the script hands it the terminal explicitly, and where there is no terminal (CI, a redirected console) it prints the command instead of hanging.
-- **SkillUI** (18) installs the CLI, Playwright, and the Chromium build Playwright drives. Playwright goes in **globally** (`npm install -g playwright`) rather than into whatever directory you ran the script from. It asks up front whether to print the quick start when it's done; `--skillui-guide` / `-SkillUIGuide` answers yes without being asked.
-- **Strix** (19) is a security tool, not a Claude Code plugin: it installs via upstream's own shell installer (`curl -sSL https://strix.ai/install | bash`). **It cannot run straight after installing** — it needs Docker running and an LLM API key (`STRIX_LLM` + `LLM_API_KEY`), which the script prints as next steps every time. On Windows the installer is POSIX-only, so the script runs it through WSL, falls back to Git Bash, and warns with the manual command if neither is present.
+- **Context7** (15) runs `npx ctx7 setup`, which is an interactive wizard — the script hands it the terminal explicitly, and where there is no terminal (CI, a redirected console) it prints the command instead of hanging.
+- **SkillUI** (17) installs the CLI, Playwright, and the Chromium build Playwright drives. Playwright goes in **globally** (`npm install -g playwright`) rather than into whatever directory you ran the script from. It asks up front whether to print the quick start when it's done; `--skillui-guide` / `-SkillUIGuide` answers yes without being asked.
+- **Strix** (18) is a security tool, not a Claude Code plugin: it installs via upstream's own shell installer (`curl -sSL https://strix.ai/install | bash`). **It cannot run straight after installing** — it needs Docker running and an LLM API key (`STRIX_LLM` + `LLM_API_KEY`), which the script prints as next steps every time. On Windows the installer is POSIX-only, so the script runs it through WSL, falls back to Git Bash, and warns with the manual command if neither is present.
 
 Everything that can be a plugin **is** installed as one, using the CLI's own `claude plugin marketplace add` / `claude plugin install` — there's no `npx claudepluginhub` wrapper and no `git clone` + shell-script step any more. That removes the Windows failure modes those introduced (the wrapper needed a writable per-repo checkout, and the VoltAgent installer needed Git Bash to run a `.sh`).
 
@@ -123,12 +121,12 @@ Everything that can be a plugin **is** installed as one, using the CLI's own `cl
 | 8 task-observer | Watches a session for reusable-skill opportunities | `rebelytics/one-skill-to-rule-them-all` |
 | 9 claude-mem | Cross-session memory, **Bun** (its worker runtime — Chocolatey on Windows, `npm -g` or `bun.sh` on Linux), plus `CLAUDE_MEM_WORKER_PORT` in `settings.json` | `thedotmack/claude-mem` |
 | 10 VoltAgent | 10 plugins, ~154 subagents across dev, infra, QA, data, business | `VoltAgent/awesome-claude-code-subagents` |
-| 11–14 MCP servers | AWS, Azure, Perplexity, Playwright | `claude mcp add` |
-| 15 Supabase | The `supabase` plugin — project, database, and edge-function tooling | `anthropics/claude-plugins-official` |
-| 16 Context7 | `ctx7 setup` — wires up version-accurate library docs for your agents | npx |
-| 17 Playwright CLI | `@playwright/cli` (`playwright-cli` on `PATH`) | npm |
-| 18 SkillUI | `skillui` + `playwright` + the Chromium browser build | npm |
-| 19 Strix | The `strix` pentesting CLI | `curl -sSL https://strix.ai/install \| bash` |
+| 11–13 MCP servers | AWS, Azure, Playwright | `claude mcp add` |
+| 14 Supabase | The `supabase` plugin — project, database, and edge-function tooling | `anthropics/claude-plugins-official` |
+| 15 Context7 | `ctx7 setup` — wires up version-accurate library docs for your agents | npx |
+| 16 Playwright CLI | `@playwright/cli` (`playwright-cli` on `PATH`) | npm |
+| 17 SkillUI | `skillui` + `playwright` + the Chromium browser build | npm |
+| 18 Strix | The `strix` pentesting CLI | `curl -sSL https://strix.ai/install \| bash` |
 
 Items 1–10 are the default set. Everything from 11 on is opt-in.
 
