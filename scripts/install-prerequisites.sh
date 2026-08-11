@@ -407,7 +407,7 @@ expand_selection_spec() {
 # picking a subset is the exception, and a fresh machine wants the lot.
 SKILL_KEYS=(
   "aws-opensearch" "bitbucket" "checkpoint-email" "cisco-meraki"
-  "claude-code-defaults" "cloudflare" "drata" "i-have-adhd"
+  "claude-code-defaults" "claude-code-tuneup" "cloudflare" "drata" "i-have-adhd"
   "infra-work-ticketing" "intune-graph" "mermaid-svg-bitbucket" "notify"
   "repo-docs" "shipstation" "sophos-central" "terraform-docs-readme" "visio-diagrams"
   "wazuh-onprem" "web-testing-playwright" "work-log-reporter"
@@ -418,6 +418,7 @@ SKILL_NAME=(
   "checkpoint-email        - Check Point Email Security: phishing triage, quarantine"
   "cisco-meraki            - Meraki Dashboard API: inventory, events, config changes"
   "claude-code-defaults    - Claude Code config: settings.json, permissions, hooks"
+  "claude-code-tuneup      - Audit a slow Claude Code setup: dupes, hooks, context"
   "cloudflare              - Cloudflare v4: DNS, WAF, cache, Workers, Zero Trust"
   "drata                   - Drata: controls, monitors, evidence, audit prep"
   "i-have-adhd             - ADHD-friendly output: next action first, numbered steps"
@@ -1456,7 +1457,38 @@ fi
 # claude-mem supports the plugin-marketplace path as a first-class alternative to its
 # 'npx claude-mem install' bootstrapper (see its README) - the plugin's own hooks handle
 # worker/dependency setup on first run.
+install_bun() {
+  # claude-mem's hooks run its worker under Bun (package.json declares engines.bun
+  # >= 1.0.0) via scripts/bun-runner.js, which resolves the interpreter from PATH and
+  # only then falls back to $HOME/.bun/bin/bun. Neither this script nor the plugin ever
+  # installed it, so on a fresh machine every claude-mem hook died with "Bun not found".
+  if have bun; then
+    skip "bun already present ($(command -v bun))"
+    return 0
+  fi
+  # No distro ships a bun package, so there is no as_root path here: bun's own installer
+  # is per-user and writes $HOME/.bun/bin/bun, which is bun-runner's fallback location.
+  # npm -g is preferred when present because it keeps bun on the same PATH as node.
+  if have npm; then
+    npm install -g bun || return 1
+  elif have curl; then
+    curl -fsSL https://bun.sh/install | bash || return 1
+  else
+    warn "neither npm nor curl found - install bun manually (https://bun.sh) or claude-mem's hooks will fail."
+    return 1
+  fi
+  export PATH="$HOME/.bun/bin:$PATH"
+  if ! have bun && [ ! -x "$HOME/.bun/bin/bun" ]; then
+    warn "bun still not found after installing - open a new shell and re-run."
+    return 1
+  fi
+  COUNT_INSTALLED=$((COUNT_INSTALLED+1))
+  ok "installed bun $(bun --version 2>/dev/null)"
+}
+
 if is_selected "claude-mem"; then
+  # Bun is the one dependency claude-mem's own hooks cannot install for themselves.
+  run_step "Install Bun (claude-mem worker runtime)" install_bun
   run_step "Marketplace: thedotmack/claude-mem" add_marketplace "thedotmack/claude-mem" "thedotmack"
   run_step "Plugin: claude-mem@thedotmack" install_plugin "claude-mem@thedotmack"
   run_step "Configure claude-mem worker port" set_claude_mem_worker_port "37790"

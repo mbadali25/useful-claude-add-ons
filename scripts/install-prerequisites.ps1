@@ -448,6 +448,7 @@ $script:SkillCatalog = @(
     [pscustomobject]@{ Key = 'checkpoint-email';      Selected = $true; Name = 'checkpoint-email        - Check Point Email Security: phishing triage, quarantine' }
     [pscustomobject]@{ Key = 'cisco-meraki';          Selected = $true; Name = 'cisco-meraki            - Meraki Dashboard API: inventory, events, config changes' }
     [pscustomobject]@{ Key = 'claude-code-defaults';  Selected = $true; Name = 'claude-code-defaults    - Claude Code config: settings.json, permissions, hooks' }
+    [pscustomobject]@{ Key = 'claude-code-tuneup';    Selected = $true; Name = 'claude-code-tuneup      - Audit a slow Claude Code setup: dupes, hooks, context' }
     [pscustomobject]@{ Key = 'cloudflare';            Selected = $true; Name = 'cloudflare              - Cloudflare v4: DNS, WAF, cache, Workers, Zero Trust' }
     [pscustomobject]@{ Key = 'drata';                 Selected = $true; Name = 'drata                   - Drata: controls, monitors, evidence, audit prep' }
     [pscustomobject]@{ Key = 'i-have-adhd';           Selected = $true; Name = 'i-have-adhd             - ADHD-friendly output: next action first, numbered steps' }
@@ -1048,6 +1049,50 @@ function Update-ClaudeCli {
     Write-Ok "Claude Code updated $installed -> $(Get-ClaudeLocalVersion)"
 }
 
+# --- claude-mem runtime: Bun --------------------------------------------------
+
+function Install-Bun {
+    # claude-mem's hooks run its worker under Bun (package.json declares engines.bun
+    # >= 1.0.0) via scripts/bun-runner.js, which resolves the interpreter with
+    # 'where bun' and only then falls back to $HOME\.bun\bin\bun.exe. Neither this
+    # script nor the plugin ever installed it, so on a fresh machine every claude-mem
+    # hook died with "Bun not found". Chocolatey's shim lands a real bun.exe on PATH,
+    # which is exactly what bun-runner looks for first.
+    $existing = Get-Command bun -ErrorAction SilentlyContinue
+    if ($existing) {
+        Write-Skip "bun already present ($($existing.Source))"
+        return
+    }
+
+    # choco install writes to C:\ProgramData and needs Administrator, so both halves of
+    # the condition matter - a non-elevated run with choco on PATH would still fail.
+    if ((Get-Command choco -ErrorAction SilentlyContinue) -and $script:IsElevated) {
+        choco install bun -y --no-progress
+        if ($LASTEXITCODE -ne 0) {
+            throw "choco install bun failed with exit code $LASTEXITCODE - see the output above."
+        }
+    } else {
+        # No Chocolatey, or not elevated. Bun's own installer is per-user and needs no
+        # Administrator rights; it writes $HOME\.bun\bin\bun.exe, which is bun-runner's
+        # documented fallback path when 'where bun' finds nothing.
+        Write-Warn2 "Chocolatey unavailable or not elevated - using bun's per-user installer instead."
+        Invoke-RestMethod https://bun.sh/install.ps1 | Invoke-Expression
+    }
+
+    Sync-SessionEnvironment
+    if (-not (Get-Command bun -ErrorAction SilentlyContinue)) {
+        $fallback = Join-Path $env:USERPROFILE '.bun\bin\bun.exe'
+        if (Test-Path $fallback) {
+            Write-Ok "installed bun at $fallback (not on PATH in this session - claude-mem finds it there anyway)"
+            $script:Summary.Installed++
+            return
+        }
+        throw "bun still not found after installing - open a new shell and re-run."
+    }
+    $script:Summary.Installed++
+    Write-Ok "installed bun $((bun --version 2>$null) -join '')"
+}
+
 # --- claude-mem settings.json patch ------------------------------------------
 
 function Set-ClaudeMemWorkerPort {
@@ -1397,7 +1442,9 @@ if (Test-Selected 'task-observer') {
 if (Test-Selected 'claude-mem') {
     # claude-mem supports the plugin-marketplace path as a first-class alternative to
     # its 'npx claude-mem install' bootstrapper (see its README) - the plugin's own
-    # hooks handle worker/dependency setup on first run.
+    # hooks handle worker/dependency setup on first run. Bun is the one dependency
+    # those hooks cannot install for themselves, so it goes first.
+    Invoke-Step "Install Bun (claude-mem worker runtime)" { Install-Bun }
     Invoke-Step "Marketplace: thedotmack/claude-mem" {
         Add-ClaudeMarketplace -Source 'thedotmack/claude-mem' -Name 'thedotmack'
     }

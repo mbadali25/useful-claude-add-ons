@@ -1,6 +1,6 @@
 ---
 name: notify
-description: Notify a Claude session's progress to your phone or inbox via a Telegram bot (primary) or email (secondary). Use whenever the user wants to be pinged/texted/emailed/messaged about a job or task — 'tell me when this finishes', 'message me if it errors', 'ping me on Telegram when the build is done', 'let me know if it needs input', 'email me the results' — or wants to wire complete/error/question/info alerts into a script or long-running task. Telegram is two-way, so a question event can block and wait for the user's reply from their phone, and concurrent jobs can each get their own topic. Config-driven (global or per-project). Trigger any time the goal is an out-of-band heads-up about session or job status, even if the user does not say Telegram or email.
+description: Notify a Claude session's progress to your phone or inbox via a Telegram bot (primary) or email (secondary), and hold a two-way conversation over it. Use whenever the user wants to be pinged/texted/emailed/messaged about a job or task — 'tell me when this finishes', 'message me if it errors', 'ping me on Telegram when the build is done', 'let me know if it needs input', 'email me the results' — or wants to wire complete/error/question/info alerts into a script or long-running task. Telegram is fully two-way: a question event blocks until the user answers from their phone, and `--inbox` picks up messages they sent unprompted, so they can redirect a running job by texting the bot ('stop', 'skip the tests', 'what's the status') and Claude sees it at the next checkpoint. Concurrent jobs can each get their own topic. Config-driven (global or per-project). Trigger any time the goal is an out-of-band heads-up about session or job status, or letting the user talk back to a running session from their phone, even if they do not say Telegram or email.
 ---
 
 # Notify (Telegram + email)
@@ -9,7 +9,8 @@ Sends a short notification about what's happening in a session. **Subject** = th
 event / what's happening; **body** = the details.
 
 - **Telegram** (primary): Bot API over HTTPS, stdlib only, works in detached jobs,
-  and is **two-way** — a `question` waits for your reply.
+  and is **two-way in both directions** — a `question` waits for your reply, and
+  `--inbox` reads anything you sent the bot on your own initiative.
 - **Email** (secondary): SMTP from a job, or the **M365 / Gmail connector** when a
   Claude session is driving.
 
@@ -47,8 +48,10 @@ python scripts/notify.py -m "test" --dry-run          # print, send nothing
 | `-s/--subject` | subject line (what's happening); defaults to the event label |
 | `--session` | job/session label, prefixed to the subject → `[label] subject` |
 | `-c/--channel` | `telegram`/`email`/`both` (default: `config.default_channel`) |
-| `--wait` | Telegram: block for a reply (implied by `--event question`) |
+| `--wait` | Telegram: block for a reply (implied by `--event question`); with `--inbox`, block for a message |
 | `--timeout` | reply-wait seconds (default `config.reply.timeout_seconds`) |
+| `--inbox` | **read** what the user sent the bot instead of sending; `-m` not needed |
+| `--peek` | with `--inbox`: return the messages but leave them unconsumed |
 | `--dry-run` | show resolved target + subject/body, send nothing |
 
 Mute a whole class of alert without touching scripts: set it `false` in
@@ -83,6 +86,52 @@ reply=$(python scripts/notify.py -e question \
 When **you (Claude)** are driving a session and hit a decision point, use this to
 ask the user on their phone and act on the answer. Parse the `reply` field; on exit
 5 (timeout) fall back to a safe default and say so.
+
+## Two-way: reading what the user sent unprompted
+
+`--wait` only covers replies to a question *you* asked. `--inbox` covers the other
+direction — anything the user typed to the bot on their own initiative, whether or not
+you were listening at the time:
+
+```bash
+python scripts/notify.py --inbox                 # drain what's waiting; exit 5 if nothing
+python scripts/notify.py --inbox --peek          # look without consuming
+python scripts/notify.py --inbox --wait --timeout 120   # block up to 2 min for a message
+python scripts/notify.py --inbox --job db-migrate       # only that job's topic
+```
+
+```json
+{"messages": [{"job": "default", "text": "skip the tests and just ship it",
+               "from": "matt", "message_id": 41, "thread_id": null, "date": 1786464306,
+               "ts": 1786464306}], "count": 1}
+```
+
+Exit 0 with messages, exit 5 with none — so `--inbox` doubles as "did they say
+anything?" in a loop.
+
+**Messages are not lost while you are busy.** The update offset is persisted to
+`<spool>/state/offset.json` and inbound messages are stored in `<spool>/inbox.jsonl`,
+so a message sent while nothing was polling is delivered on the next read rather than
+skipped. A read consumes what it returns (use `--peek` if you want to leave it), so the
+same message is never handed to you twice.
+
+**Who does the polling matters.** Telegram allows only one process to long-poll a bot
+token — a second `getUpdates` gets `409 Conflict`. So when `notifyd` is running it is
+the only reader: it files unmatched messages into the inbox and `--inbox` reads the
+file. With no daemon, the client polls Telegram itself. Both paths share the same offset
+and the same inbox file, so switching between them loses nothing.
+
+**How to use it in a long job.** Check the inbox at natural checkpoints — after a build
+step, between migration batches, before anything irreversible — and treat what you find
+as an instruction from the user:
+
+```bash
+msg=$(python scripts/notify.py --inbox) && echo "$msg"   # act on it, or carry on
+```
+
+That gives a real conversation: you report progress with `-e info`, the user replies
+"stop" or "skip the slow tests" from their phone, and you pick it up at the next
+checkpoint without them having to come back to the terminal.
 
 ## Email via a connector (when a session is driving)
 
@@ -131,8 +180,12 @@ fi
 
 ## Files
 
-- `scripts/notify.py` — client: sends, or (dispatcher mode) queues + waits. Stdlib only.
-- `scripts/notifyd.py` — the dispatcher daemon (single poller, topic-per-job, reply routing).
+- `scripts/notify.py` — client: sends, or (dispatcher mode) queues + waits, or reads the
+  inbox with `--inbox`. Stdlib only.
+- `scripts/notifyd.py` — the dispatcher daemon (single poller, topic-per-job, reply routing,
+  and it files unsolicited messages into the inbox).
+- `scripts/inbox.py` — the inbound store shared by both: `inbox.jsonl` + a persisted
+  getUpdates offset, so nothing the user sends is lost between reads.
 - `scripts/tg.py` — shared Telegram Bot API helpers.
 - `scripts/telegram_get_chat_id.py` — one-time helper to find your `chat_id`.
 - `references/get-bot-token.md` — step-by-step BotFather token guide (+ group privacy mode).
