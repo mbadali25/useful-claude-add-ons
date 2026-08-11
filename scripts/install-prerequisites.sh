@@ -244,18 +244,37 @@ plugin_enabled() {
 }
 
 ensure_plugin_enabled() {
-  # $1 is 'name@marketplace'. Best-effort: the plugin is installed either way, so a
-  # failure here warns rather than failing the step. Tries the fully qualified spec
-  # first because the bare name is ambiguous when two marketplaces publish it.
-  local spec="$1" name="${spec%%@*}"
-  plugin_enabled "$name" && return 0
-  if claude plugin enable "$spec" --scope "$INSTALL_SCOPE" >/dev/null 2>&1 \
-     || claude plugin enable "$name" --scope "$INSTALL_SCOPE" >/dev/null 2>&1; then
+  # $1 is 'name@marketplace'. For a plugin that was ALREADY installed before this run:
+  # one switched off in settings.json is installed, at the right scope, and completely
+  # inert - none of its skills or hooks are visible.
+  #
+  # Deliberately NOT called after a fresh install. 'claude plugin install' enables what
+  # it installs, and on a new machine the just-installed plugin can still read as
+  # disabled in 'claude plugin list --json' - so calling it there tries to enable every
+  # plugin in the run and reports a benign "already enabled" as a failure.
+  #
+  # Never fails the step: the plugin is installed either way. Tries the fully qualified
+  # spec first because the bare name is ambiguous when two marketplaces publish it.
+  #
+  # Success is judged from 'claude plugin list --json', not from the CLI's message:
+  # 'claude plugin enable' reports "is already enabled at user scope" even for a plugin
+  # that does not exist, so the text cannot tell success from failure. The plugin list can.
+  # 'name' is assigned on its own line, not inside the 'local': bash declares every name
+  # in a 'local' before expanding the values, so "${spec%%@*}" there reads the empty new
+  # local rather than $1 and silently makes this whole function a no-op.
+  local spec="$1" name target
+  name="${spec%%@*}"
+  plugin_version "$name" >/dev/null || return 0   # not installed - nothing to enable
+  plugin_enabled "$name" && return 0              # already live
+  for target in "$spec" "$name"; do
+    claude plugin enable "$target" --scope "$INSTALL_SCOPE" >/dev/null 2>&1
     load_plugins
-    ok "enabled plugin '$name' (--scope $INSTALL_SCOPE)"
-  else
-    warn "plugin '$name' is installed but disabled and 'claude plugin enable' failed - run '/plugin' and enable it by hand."
-  fi
+    if plugin_enabled "$name"; then
+      ok "plugin '$name' is enabled (--scope $INSTALL_SCOPE)"
+      return 0
+    fi
+  done
+  warn "plugin '$name' may be installed but disabled - run '/plugin' and enable it by hand."
   return 0
 }
 
@@ -356,7 +375,8 @@ install_plugin() {
   load_plugins
   COUNT_INSTALLED=$((COUNT_INSTALLED+1))
   ok "installed plugin '$spec'"
-  ensure_plugin_enabled "$spec"
+  # No ensure_plugin_enabled here: 'claude plugin install' already enabled it. See the
+  # comment on that function for why calling it on this path breaks a fresh machine.
 }
 
 # --- Install catalog and menu -------------------------------------------------
