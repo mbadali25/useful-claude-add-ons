@@ -91,8 +91,8 @@ Both scripts, unless skipped, run this exact sequence (documented in full in [`M
 ```
 claude plugin marketplace add mbadali25/useful-claude-add-ons
 
-claude plugin marketplace add obra/superpowers-marketplace
-claude plugin install superpowers@superpowers-marketplace
+claude plugin marketplace add anthropics/claude-plugins-official
+claude plugin install superpowers@claude-plugins-official
 claude plugin marketplace add anthropics/claude-code
 claude plugin install frontend-design@claude-code-plugins
 claude plugin marketplace add lexiaoyao20/excalidraw-generator

@@ -213,7 +213,7 @@ function Get-ClaudeMarketplaces {
 }
 
 function Test-MarketplaceInstalled {
-    # Accepts either a marketplace name ('superpowers-marketplace') or the GitHub
+    # Accepts either a marketplace name ('claude-plugins-official') or the GitHub
     # 'owner/repo' it was added from - the JSON carries both, and callers have one
     # or the other depending on which command registered it.
     param([string]$Identifier)
@@ -239,6 +239,11 @@ function Get-ClaudePlugins {
                 foreach ($p in @($raw | ConvertFrom-Json)) {
                     if (-not $p.id) { continue }
                     $name = "$($p.id)".Split('@')[0]
+                    # Two marketplaces can publish the same plugin, and the map is keyed
+                    # on the bare name. Let an enabled copy win over a disabled one -
+                    # plain last-write-wins would report 'superpowers' as disabled just
+                    # because the disabled duplicate sorts later by id.
+                    if ($map.ContainsKey($name) -and $map[$name].Enabled -and -not $p.enabled) { continue }
                     $map[$name] = [pscustomobject]@{ Id = $p.id; Version = $p.version; Enabled = $p.enabled }
                 }
             }
@@ -349,6 +354,28 @@ function Add-ClaudeMarketplace {
     Write-Ok "added marketplace '$Source'"
 }
 
+function Enable-ClaudePlugin {
+    # $Spec is 'name@marketplace'. Installing a plugin and having it actually load are
+    # two different things: a plugin switched off in settings.json is installed, at the
+    # right scope, and completely inert - none of its skills or hooks are visible.
+    # Best-effort by design; the plugin is installed either way, so this warns rather
+    # than throwing. Tries the fully qualified spec first because the bare name is
+    # ambiguous when two marketplaces publish it.
+    param([string]$Spec)
+    $name = $Spec.Split('@')[0]
+    $existing = (Get-ClaudePlugins)[$name]
+    if ($existing -and $existing.Enabled) { return }
+    foreach ($target in @($Spec, $name)) {
+        claude plugin enable $target --scope $InstallScope 2>$null | Out-Null
+        if ($LASTEXITCODE -eq 0) {
+            Get-ClaudePlugins -Refresh | Out-Null
+            Write-Ok "enabled plugin '$name' (--scope $InstallScope)"
+            return
+        }
+    }
+    Write-Warn2 "plugin '$name' is installed but disabled and 'claude plugin enable' failed - run '/plugin' and enable it by hand."
+}
+
 function Install-ClaudePlugin {
     # $Spec is 'name@marketplace'. Detection is on the bare name, so a plugin already
     # installed from a *different* marketplace counts as present and is not duplicated.
@@ -358,6 +385,7 @@ function Install-ClaudePlugin {
     if ($existing) {
         if ($NoUpdate) {
             Write-Skip "plugin '$name' already installed ($($existing.Id), version $($existing.Version))"
+            Enable-ClaudePlugin $Spec
             return
         }
         $before = $existing.Version
@@ -367,6 +395,7 @@ function Install-ClaudePlugin {
         # from has moved on. Report it and carry on; a failed *install* still throws.
         if ($LASTEXITCODE -ne 0) {
             Write-Warn2 "'claude plugin update $name' failed - keeping the installed version."
+            Enable-ClaudePlugin $Spec
             return
         }
         $after = (Get-ClaudePlugins -Refresh)[$name].Version
@@ -376,6 +405,7 @@ function Install-ClaudePlugin {
         } else {
             Write-Skip "plugin '$name' already current (version $after)"
         }
+        Enable-ClaudePlugin $Spec
         return
     }
     claude plugin install $Spec --scope $InstallScope
@@ -383,6 +413,7 @@ function Install-ClaudePlugin {
     Get-ClaudePlugins -Refresh | Out-Null
     $script:Summary.Installed++
     Write-Ok "installed plugin '$Spec'"
+    Enable-ClaudePlugin $Spec
 }
 
 # --- Install catalog and menu -------------------------------------------------
@@ -1279,8 +1310,15 @@ if (Test-Selected 'own-skills') {
 
 # --- 4. Team marketplaces and plugins ----------------------------------------
 if (Test-Selected 'team') {
+    # superpowers comes from anthropics/claude-plugins-official, not obra's own
+    # marketplace. Upstream publishes to both, but Install-ClaudePlugin detects on the
+    # bare name: a machine that already had superpowers from the official marketplace
+    # (which items 6 and 7 register) skipped the install and was left with an orphaned
+    # 'superpowers-marketplace' registration plus a second, disabled copy of the plugin.
+    # One source avoids the duplicate. Add-ClaudeMarketplace is a no-op when already
+    # present, so this stands on its own whether or not items 6 and 7 were selected.
     $teamMarketplaces = @(
-        @{ Source = 'obra/superpowers-marketplace';        Name = 'superpowers-marketplace' },
+        @{ Source = 'anthropics/claude-plugins-official';  Name = 'claude-plugins-official' },
         @{ Source = 'anthropics/claude-code';              Name = 'claude-code-plugins' },
         @{ Source = 'lexiaoyao20/excalidraw-generator';    Name = 'excalidraw-generator' }
     )
@@ -1291,7 +1329,7 @@ if (Test-Selected 'team') {
     }
 
     $teamPlugins = @(
-        'superpowers@superpowers-marketplace',
+        'superpowers@claude-plugins-official',
         'frontend-design@claude-code-plugins',
         'excalidraw-generator@excalidraw-generator'
     )
