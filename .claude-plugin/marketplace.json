@@ -38,6 +38,12 @@
       "version": "1.0.0"
     },
     {
+      "name": "claude-code-tuneup",
+      "source": "./skills/claude-code-tuneup",
+      "description": "Audit a Claude Code install for what makes it slow or bloated - duplicate skills, per-tool-call hooks, SessionStart injections, disabled-but-installed plugins, overlapping MCP servers, oversized CLAUDE.md - and return a ranked cleanup plan.",
+      "version": "1.0.0"
+    },
+    {
       "name": "cloudflare",
       "source": "./skills/cloudflare",
       "description": "Cloudflare v4 API - DNS, zones, cache, WAF, page rules, SSL/TLS, Workers/KV/R2, Zero Trust, analytics.",

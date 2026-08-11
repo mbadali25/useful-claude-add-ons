@@ -4,6 +4,63 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added
+
+- `skills/notify` — **two-way Telegram now works in both directions.** `--wait` only ever
+  covered replies to a question Claude asked; a message the user sent on their own
+  initiative was thrown away twice over. The dispatcher's `_on_message` dropped anything
+  that matched no pending question, and direct mode fast-forwarded its `getUpdates`
+  offset past everything already queued before it started listening — so a message typed
+  while Claude was busy, or between questions, was silently discarded.
+
+  New `scripts/inbox.py` is the store both halves share: `<spool>/inbox.jsonl` for
+  inbound messages and `<spool>/state/offset.json` for the `getUpdates` offset. The
+  offset has to be shared rather than per-process because Telegram answers a second
+  concurrent `getUpdates` with `409 Conflict` — the daemon owns polling when it is up,
+  the client polls only when it is not, and either way the next read resumes where the
+  last one stopped.
+
+  `notify.py --inbox` hands Claude what is waiting (exit 0 with messages, 5 without, so
+  it works as a "did they say anything?" check in a loop), `--peek` leaves them
+  unconsumed, `--wait` blocks for up to `--timeout` seconds, and `--job` filters to one
+  topic. A read consumes what it returns, so no message is delivered twice. In topics
+  mode the arriving thread is reversed through `topics.json` to attribute the message to
+  the right job.
+
+  Appends guard against a fused record: a write killed mid-line leaves no trailing
+  newline, and appending onto it would produce one unparseable line and lose the *new*
+  message as well as the broken one, so `append()` closes the dangling line first.
+
+- `skills/claude-code-tuneup` — audits a Claude Code installation for what is making it
+  slow or bloated and hands back a ranked cleanup plan. `scripts/cc_audit.py` (stdlib
+  only, read-only) inventories every settings file in scope, loose skills in
+  `~/.claude/skills/` against skills provided by installed plugins, `enabledPlugins`,
+  hooks from both settings *and* every plugin's `hooks/hooks.json`, subagents, rules
+  files, `CLAUDE.md` sizes, MCP servers, marketplaces, and the plugin cache.
+
+  It catches the duplicate-install case in **both** plugin layouts — a plugin bundling
+  `skills/<name>/SKILL.md`, and a plugin whose root *is* the skill, which is what this
+  repo's own marketplace publishes. Missing the second layout is why a naive check finds
+  none of this repo's skills duplicated. Duplicates are labelled
+  `plugin@marketplace`, because the same plugin name published by two marketplaces is
+  exactly the case worth catching, and a loose copy shadowing a *disabled* plugin is
+  reported separately from one shadowing an enabled plugin — only the latter costs
+  context.
+
+- **Menu item 9 (claude-mem) now installs Bun.** claude-mem's hooks run its worker under
+  Bun (`package.json` declares `engines.bun >= 1.0.0`) via `scripts/bun-runner.js`, which
+  resolves the interpreter with `where`/`which bun` and only then falls back to
+  `$HOME/.bun/bin/bun`. Neither install script ever installed it and the plugin's own
+  hooks cannot bootstrap it, so on a fresh machine every claude-mem hook failed with
+  "Bun not found". Windows uses `choco install bun` when Chocolatey is present *and* the
+  run is elevated — the shim lands a real `bun.exe` on `PATH`, which is what
+  `bun-runner.js` looks for first — and falls back to bun's per-user installer
+  otherwise, since that needs no Administrator rights and writes the documented
+  fallback path. Linux prefers `npm install -g bun` (keeping bun on the same `PATH` as
+  node) and falls back to `bun.sh/install`; no distro ships a bun package, so there is
+  no `as_root` path. Both halves detect first: an existing bun, however it was
+  installed, is left alone.
+
 ### Removed
 
 - `skills/ppt-master` — a vendored copy of the upstream `hugohe3/ppt-master` plugin

@@ -23,6 +23,7 @@ import time
 import uuid
 from email.message import EmailMessage
 from pathlib import Path
+import inbox
 import tg
 
 # Windows consoles default to cp1252, so printing a body that came from a UTF-8
@@ -66,6 +67,83 @@ def resolve_config(explicit):
 
 def spool_root(cfg):
     return Path(os.path.expanduser(cfg.get("dispatcher", {}).get("spool_dir", "~/.local/state/notify/spool")))
+
+
+# ---------- Inbound: read what the user sent us ----------
+def dispatcher_fresh(root):
+    hb = root / "state" / "heartbeat"
+    try:
+        return hb.exists() and (int(time.time()) - int(hb.read_text() or 0) < 10)
+    except (OSError, ValueError):
+        return False
+
+
+def poll_into_inbox(cfg, root, seconds):
+    """Direct-mode fill: only safe when the daemon is not polling the same token.
+
+    Telegram answers a second concurrent getUpdates with 409 Conflict, so when notifyd
+    is up the daemon is the only reader and this must not run.
+    """
+    tgc = cfg.get("telegram", {})
+    token = os.environ.get(tgc.get("bot_token_env", "TELEGRAM_BOT_TOKEN"))
+    if not token:
+        # Reading messages already on disk is still useful without a token, so warn and
+        # fall through to the file rather than killing the run.
+        eprint(f"notify: env {tgc.get('bot_token_env','TELEGRAM_BOT_TOKEN')} not set - "
+               "reading the stored inbox only, not polling Telegram.")
+        return
+    chat_id = tgc.get("chat_id")
+    topics = {}
+    try:
+        topics = json.loads((root / "state" / "topics.json").read_text())
+    except Exception:
+        pass
+    offset = inbox.load_offset(root)
+    deadline = time.time() + max(0, seconds)
+    first = True
+    while first or time.time() < deadline:
+        first = False
+        wait = 0 if seconds <= 0 else min(25, max(1, int(deadline - time.time())))
+        try:
+            updates = tg.get_updates(token, offset, timeout=wait)
+        except Exception as e:
+            eprint(f"getUpdates: {e}")
+            break
+        got = False
+        for u in updates:
+            offset = u["update_id"] + 1
+            m = u.get("message")
+            if m and m.get("text") and (not chat_id or
+                                        str((m.get("chat") or {}).get("id")) == str(chat_id)):
+                inbox.capture(root, m, topics=topics)
+                got = True
+        if updates:
+            inbox.save_offset(root, offset)
+        if got or seconds <= 0:
+            break
+
+
+def read_inbox(cfg, job, wait, peek, dry):
+    """Hand Claude every message the user sent that wasn't already consumed."""
+    root = spool_root(cfg)
+    if dry:
+        src = "dispatcher spool" if dispatcher_fresh(root) else "direct getUpdates"
+        print(f"DRY-RUN inbox({src}) -> job {job or '(any)'}, wait {wait}s, peek={peek}")
+        sys.exit(0)   # --inbox is a terminal action; do not fall through to the send path
+    if not dispatcher_fresh(root):
+        # No daemon: we are the only reader, so top the inbox up ourselves first.
+        poll_into_inbox(cfg, root, wait)
+        msgs = inbox.read(root, job=job, peek=peek)
+    else:
+        # The daemon owns the token. Wait for it to file something rather than polling
+        # Telegram ourselves and colliding with it.
+        deadline = time.time() + max(0, wait)
+        msgs = inbox.read(root, job=job, peek=peek)
+        while not msgs and time.time() < deadline:
+            time.sleep(1)
+            msgs = inbox.read(root, job=job, peek=peek)
+    print(json.dumps({"messages": msgs, "count": len(msgs)}, ensure_ascii=False))
+    sys.exit(0 if msgs else 5)
 
 
 # ---------- Telegram via dispatcher (spool) ----------
@@ -130,14 +208,25 @@ def direct_telegram(cfg, subject, body, want_reply, buttons, timeout, dry):
     print(f"sent telegram -> chat {chat_id}")
     if not want_reply:
         return
-    deadline = time.time() + timeout; offset = 0
+    root = spool_root(cfg)
+    deadline = time.time() + timeout
+    offset = inbox.load_offset(root)
+    # Anything already queued predates the question, so it cannot be its answer - but it
+    # is still something the user said, so file it in the inbox instead of discarding it
+    # (which is what fast-forwarding the offset to 0-latest used to do).
     try:
-        for u in tg.get_updates(token, 0, timeout=0): offset = max(offset, u["update_id"] + 1)
+        for u in tg.get_updates(token, offset, timeout=0):
+            offset = max(offset, u["update_id"] + 1)
+            m = u.get("message")
+            if m and m.get("text") and str((m.get("chat") or {}).get("id")) == str(chat_id):
+                inbox.capture(root, m)
+        inbox.save_offset(root, offset)
     except Exception: pass
     while time.time() < deadline:
         try:
             for u in tg.get_updates(token, offset, timeout=min(25, max(1, int(deadline - time.time())))):
                 offset = u["update_id"] + 1
+                inbox.save_offset(root, offset)
                 if "callback_query" in u:
                     cq = u["callback_query"]; rid, _, idx = cq.get("data", "").partition("|")
                     if rid == req_id:
@@ -186,7 +275,12 @@ def send_email(ec, subject, body, dry):
 
 def main():
     ap = argparse.ArgumentParser(description="Notify a Claude session/job via Telegram / email.")
-    ap.add_argument("--message", "-m", required=True)
+    # Not required: --inbox reads instead of sending, and has nothing to say.
+    ap.add_argument("--message", "-m", default=None)
+    ap.add_argument("--inbox", action="store_true",
+                    help="read messages the user sent the bot and exit (5 if none)")
+    ap.add_argument("--peek", action="store_true",
+                    help="with --inbox: leave the messages unconsumed")
     ap.add_argument("--event", "-e", default="info", choices=list(EVENT_LABEL))
     ap.add_argument("--subject", "-s", default=None)
     ap.add_argument("--job", "--session", dest="job", default="default",
@@ -201,6 +295,15 @@ def main():
 
     cfg = resolve_config(args.config)
     if not cfg: die("no config. See references/config.md")
+
+    if args.inbox:
+        # --inbox alone drains what is already there; add --wait to block for up to
+        # --timeout seconds (or reply.timeout_seconds) for the user to say something.
+        wait = (args.timeout or cfg.get("reply", {}).get("timeout_seconds", 3600)) if args.wait else 0
+        read_inbox(cfg, None if args.job == "default" else args.job, wait, args.peek, args.dry_run)
+    if not args.message:
+        die("--message is required unless --inbox is given")
+
     if cfg.get("events", {}).get(args.event) is False:
         print(f"muted: '{args.event}' disabled; nothing sent"); sys.exit(0)
 

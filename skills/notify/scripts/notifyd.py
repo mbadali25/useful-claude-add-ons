@@ -25,6 +25,7 @@ import signal
 import sys
 import time
 from pathlib import Path
+import inbox
 import tg
 
 FINAL_EVENTS = {"complete", "error"}
@@ -91,7 +92,9 @@ class Dispatcher:
         self.pending = {}                            # req_id -> {...}
         self.msg_index = {}                          # message_id -> req_id
         self.thread_open = {}                        # thread_id(str) -> [req_id,...]
-        self.offset = 0
+        # Resume where the last run (daemon or client) stopped reading, so messages sent
+        # while nothing was polling are still delivered.
+        self.offset = inbox.load_offset(spool.root)
 
     # -- topic management --
     def thread_for(self, job_id):
@@ -155,6 +158,11 @@ class Dispatcher:
                 self._on_callback(u["callback_query"])
             elif "message" in u:
                 self._on_message(u["message"])
+        # Persist after the batch, not per update: a crash mid-batch replays a few
+        # messages (they land in the inbox twice at worst), where not persisting at all
+        # would replay the entire history on every restart.
+        if updates:
+            inbox.save_offset(self.sp.root, self.offset)
 
     def _on_callback(self, cbq):
         data = cbq.get("data", "")
@@ -183,6 +191,11 @@ class Dispatcher:
                 req_id = max(self.pending, key=lambda r: self.pending[r]["deadline"])
         if req_id:
             self._answer(req_id, text, "text")
+        else:
+            # Not a reply to anything we asked - the user started the conversation. Store
+            # it instead of dropping it, so `notify.py --inbox` can hand it to Claude
+            # whenever it next looks.
+            inbox.capture(self.sp.root, m, job="default", topics=self.topics)
 
     def _answer(self, req_id, reply, via):
         p = self.pending.pop(req_id, None)
