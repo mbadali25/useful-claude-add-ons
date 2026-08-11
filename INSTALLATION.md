@@ -19,7 +19,7 @@ One script per OS. Both are idempotent (safe to re-run) and, by default, also bo
     [x] Team plugins: superpowers, frontend-design, excalidraw-generator
     ...
     [ ] Strix AI pentesting CLI (needs Docker + an LLM API key)
-  showing 1-19 of 19
+  showing 1-18 of 18
   ↑↓ move   Space toggle   Enter start   A all   N none   D defaults   Q cancel
   → on the repo row picks individual skills
 ```
@@ -52,13 +52,13 @@ cd useful-claude-add-ons
 .\scripts\install-prerequisites.ps1
 ```
 
-It shows the menu, collects any API keys and the SkillUI quick-start question up front, then installs what you ticked, in order:
+It shows the menu, asks the SkillUI quick-start question up front, then installs what you ticked, in order:
 
 1. **Prerequisites** — if elevated: installs [Chocolatey](https://chocolatey.org/) if not already present, then `choco install git awscli nodejs python -y`. **If not elevated, this item is skipped entirely** — the script prints a warning and continues with everything below using whatever `git`/`node`/`npm`/`python` are already on `PATH`.
 2. **Claude Code CLI** — `npm install -g @anthropic-ai/claude-code`, adds the npm global bin directory to your **User** `PATH` environment variable (persists across sessions), and sets a `CLAUDE_CODE_HOME` user env var pointing at the npm prefix. When `claude` is already installed it compares the local version against the npm registry instead and updates only if it's behind (`-NoUpdate` skips the check).
 3. **This repo** — adds `mbadali25/useful-claude-add-ons` as a Claude Code marketplace, then installs the skills you ticked in the per-skill picker, all 21 by default (see [What the own-marketplace step installs](#what-the-own-marketplace-step-installs) below).
 4. **Team plugins, community plugins, `find-skills`, `claude-code-setup`, `task-observer`, claude-mem, VoltAgent** — each is its own menu row; `-SkipBootstrap` narrows any selection back down to items 1 and 2.
-5. **MCP servers** — AWS, Azure, Perplexity, Playwright. Off by default; see [Optional: MCP servers](#optional-mcp-servers). Perplexity asks for its API key alongside the menu rather than mid-install.
+5. **MCP servers** — AWS, Azure, Playwright. Off by default; see [Optional: MCP servers](#optional-mcp-servers).
 6. **Supabase, Context7, Playwright CLI, SkillUI, Strix** — off by default; see [Optional: extra tooling](#optional-extra-tooling).
 
 If `claude` isn't recognized immediately after the script finishes, open a new PowerShell window — the `PATH` change is written to the registry but doesn't retroactively apply to whichever shell you're still in from before Node.js/npm existed.
@@ -77,7 +77,7 @@ Runs as your current user, escalating to `sudo` (or `root` directly if already r
 2. **Claude Code CLI** — `npm install -g @anthropic-ai/claude-code`, then a `PATH` export for the npm global bin directory appended to `~/.bashrc` and `~/.zshrc` (only if not already present) and exported in the current shell too. When `claude` is already installed it compares the local version against the npm registry instead and updates only if it's behind (`--no-update` skips the check).
 3. **This repo** — adds `mbadali25/useful-claude-add-ons` as a Claude Code marketplace, then installs the skills you ticked in the per-skill picker, all 21 by default (see [What the own-marketplace step installs](#what-the-own-marketplace-step-installs) below).
 4. **Team plugins, community plugins, `find-skills`, `claude-code-setup`, `task-observer`, claude-mem, VoltAgent** — each is its own menu row; `--skip-bootstrap` narrows any selection back down to items 1 and 2.
-5. **MCP servers** — AWS, Azure, Perplexity, Playwright. Off by default; see [Optional: MCP servers](#optional-mcp-servers).
+5. **MCP servers** — AWS, Azure, Playwright. Off by default; see [Optional: MCP servers](#optional-mcp-servers).
 6. **Supabase, Context7, Playwright CLI, SkillUI, Strix** — off by default; see [Optional: extra tooling](#optional-extra-tooling).
 
 Under the piped one-liner (`curl -fsSL … | bash`) the script itself arrives on stdin, so the menu reads the terminal through its own file descriptor. Where there is no terminal at all, it takes the default set rather than blocking.
@@ -194,11 +194,10 @@ If a new skill is added to the marketplace, add it to the `SKILL_KEYS` / `SKILL_
 
 ### Optional: MCP servers
 
-Four MCP servers are menu rows, all off by default:
+Three MCP servers are menu rows, all off by default:
 
 - **AWS** — ensures `uv`/`uvx` is on `PATH` (installing it via `pip install --user uv` if missing), then runs `claude mcp add aws-api -- uvx awslabs.aws-api-mcp-server@latest`. You still need your own AWS credentials configured (`aws configure`) for it to work at runtime.
 - **Azure** — runs `claude mcp add azure -- npx -y @azure/mcp@latest server start`. You still need to run `az login` yourself for it to work at runtime.
-- **Perplexity** — runs `claude mcp add perplexity --env PERPLEXITY_API_KEY=… -- npx -y @perplexity-ai/mcp-server`. The key is read from the environment if it's already exported, otherwise asked for once alongside the menu; press Enter to skip the server rather than register one that can't authenticate.
 - **Playwright** — runs `claude mcp add playwright -- npx @playwright/mcp@latest`. Playwright downloads its browsers on first use; `npx playwright install` does it ahead of time.
 
 Any of them can be added later by hand with the same `claude mcp add` command, or removed with `claude mcp remove <name>`.
@@ -207,11 +206,11 @@ Any of them can be added later by hand with the same `claude mcp add` command, o
 
 Five more rows, also off by default. None of them are MCP servers.
 
-- **Supabase** (15) — adds `anthropics/claude-plugins-official` (a no-op if the community or `claude-code-setup` row already registered it) and installs `supabase@claude-plugins-official`. Already-installed is detected and skipped or updated like any other plugin.
-- **Context7** (16) — runs `npx -y ctx7@latest setup`, an interactive wizard that wires version-accurate library documentation into whichever agents it finds. The scripts hand it the terminal explicitly; with no terminal available (CI, `curl | bash` with no `/dev/tty`, a redirected console) they print the command to run by hand rather than hanging on a prompt nobody can see. The free tier needs no key.
-- **Playwright CLI** (17) — `npm install -g @playwright/cli@latest`, detected by whether `playwright-cli` already resolves on `PATH`. `--no-update` / `-NoUpdate` leaves an existing install alone; otherwise it reinstalls `@latest`.
-- **SkillUI** (18) — `npm install -g skillui`, then `npm install -g playwright` and `npx playwright install chromium`. Playwright is installed **globally on purpose**: the scripts can be run from anywhere, and a bare `npm install playwright` would leave a `node_modules` tree in whatever directory you happened to be in. Both Playwright steps warn rather than fail the item, since SkillUI installs fine without them and only screenshot capture breaks. You're asked up front whether to print the quick start afterwards (`--skillui-guide` / `-SkillUIGuide` answers yes without asking).
-- **Strix** (19) — installs upstream's own shell installer, `curl -sSL https://strix.ai/install | bash`. **Installing it is not enough to run it**: Strix needs Docker running (the first scan pulls its sandbox image) and an LLM API key exported as `STRIX_LLM` + `LLM_API_KEY`. Both scripts print those next steps every time, including on a re-run that skipped the install. On Windows the installer is POSIX-only, so the script tries WSL first, then Git Bash, and warns with the manual command if neither is available — a WSL install is only usable from inside WSL.
+- **Supabase** (14) — adds `anthropics/claude-plugins-official` (a no-op if the community or `claude-code-setup` row already registered it) and installs `supabase@claude-plugins-official`. Already-installed is detected and skipped or updated like any other plugin.
+- **Context7** (15) — runs `npx -y ctx7@latest setup`, an interactive wizard that wires version-accurate library documentation into whichever agents it finds. The scripts hand it the terminal explicitly; with no terminal available (CI, `curl | bash` with no `/dev/tty`, a redirected console) they print the command to run by hand rather than hanging on a prompt nobody can see. The free tier needs no key.
+- **Playwright CLI** (16) — `npm install -g @playwright/cli@latest`, detected by whether `playwright-cli` already resolves on `PATH`. `--no-update` / `-NoUpdate` leaves an existing install alone; otherwise it reinstalls `@latest`.
+- **SkillUI** (17) — `npm install -g skillui`, then `npm install -g playwright` and `npx playwright install chromium`. Playwright is installed **globally on purpose**: the scripts can be run from anywhere, and a bare `npm install playwright` would leave a `node_modules` tree in whatever directory you happened to be in. Both Playwright steps warn rather than fail the item, since SkillUI installs fine without them and only screenshot capture breaks. You're asked up front whether to print the quick start afterwards (`--skillui-guide` / `-SkillUIGuide` answers yes without asking).
+- **Strix** (18) — installs upstream's own shell installer, `curl -sSL https://strix.ai/install | bash`. **Installing it is not enough to run it**: Strix needs Docker running (the first scan pulls its sandbox image) and an LLM API key exported as `STRIX_LLM` + `LLM_API_KEY`. Both scripts print those next steps every time, including on a re-run that skipped the install. On Windows the installer is POSIX-only, so the script tries WSL first, then Git Bash, and warns with the manual command if neither is available — a WSL install is only usable from inside WSL.
 
 Before running either script on a machine you don't fully control, note that these steps run third-party code from npm and from `strix.ai` — see [`SECURITY.md`](SECURITY.md)'s install-script trust boundary.
 
@@ -262,7 +261,7 @@ aws --version       # Windows only — installed via choco
 claude --version
 claude plugin marketplace list
 claude plugin list
-claude mcp list      # confirm aws-api / azure / perplexity / playwright if you opted in
+claude mcp list      # confirm aws-api / azure / playwright if you opted in
 
 # Only if you ticked the matching rows:
 playwright-cli --version

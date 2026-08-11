@@ -328,10 +328,10 @@ install_plugin() {
 MENU_KEYS=(
   "prereqs" "cli" "own-skills" "team" "find-skills" "community"
   "claude-code-setup" "task-observer" "claude-mem" "voltagent"
-  "aws-mcp" "azure-mcp" "perplexity-mcp" "playwright-mcp"
+  "aws-mcp" "azure-mcp" "playwright-mcp"
   "supabase" "context7" "playwright-cli" "skillui" "strix"
 )
-MENU_DEFAULT=(1 1 1 1 1 1 1 1 1 1 0 0 0 0 0 0 0 0 0)
+MENU_DEFAULT=(1 1 1 1 1 1 1 1 1 1 0 0 0 0 0 0 0 0)
 MENU_NAME=(
   "Prerequisites: git, nodejs, npm, python3, pip3 (needs root or sudo)"
   "Claude Code CLI (@anthropic-ai/claude-code) + PATH export + update check"
@@ -345,7 +345,6 @@ MENU_NAME=(
   "VoltAgent subagents (10 plugins, 154 agents)"
   "MCP server: AWS (awslabs.aws-api-mcp-server)"
   "MCP server: Azure (@azure/mcp)"
-  "MCP server: Perplexity (needs PERPLEXITY_API_KEY)"
   "MCP server: Playwright (@playwright/mcp)"
   "Supabase plugin (supabase@claude-plugins-official)"
   "Context7 up-to-date library docs (npx ctx7 setup)"
@@ -859,36 +858,6 @@ show_selection() {
   fi
 }
 
-PERPLEXITY_KEY=""
-read_mcp_api_key() {
-  # read_mcp_api_key <VAR_NAME> <label> <signup-url>  -> prints the key on stdout.
-  # An already-exported variable wins, so CI and anyone who keeps keys in their profile
-  # is never prompted. Prints nothing when there is no key and no way to ask, which
-  # makes the caller skip that server rather than register a broken one.
-  local var="$1" label="$2" url="$3" existing answer
-  existing="$(printenv "$var" 2>/dev/null || true)"
-  if [ -n "$existing" ]; then
-    printf '\033[90m  Using %s from the environment for %s.\033[0m\n' "$var" "$label" >&2
-    printf '%s' "$existing"
-    return 0
-  fi
-  if [ "$NON_INTERACTIVE" -eq 1 ] || [ "$SELECT_ALL" -eq 1 ] || [ -n "$SELECT_SPEC" ]; then
-    warn "$var is not set - $label will be skipped. Export it and re-run." >&2
-    return 0
-  fi
-  printf '\n\033[36m  %s needs an API key.\033[0m\n' "$label" >&2
-  printf '\033[90m  Get one at %s, or press Enter to skip this server.\033[0m\n' "$url" >&2
-  read -r -p "  $var " answer <&"$TTY_FD"
-  printf '%s' "${answer:-}"
-}
-
-read_mcp_api_keys() {
-  # Collected up front with the menu so the install run itself stays unattended.
-  if is_selected "perplexity-mcp"; then
-    PERPLEXITY_KEY="$(read_mcp_api_key PERPLEXITY_API_KEY 'Perplexity MCP' 'https://www.perplexity.ai/account/api/keys')"
-  fi
-}
-
 select_skillui_guide() {
   # Asked up front with the menu, like every other interactive answer, so the install
   # run itself stays unattended. The guide is printed at the end of the SkillUI step.
@@ -1117,7 +1086,6 @@ if [ "$(selection_count)" -eq 0 ]; then
   exit 0
 fi
 
-read_mcp_api_keys
 SKILLUI_GUIDE="$(select_skillui_guide)"
 NOTIFY_SETUP="$(select_notify_setup)"
 
@@ -1520,7 +1488,7 @@ if is_selected "voltagent"; then
   done
 fi
 
-# --- 11-14. Optional MCP servers ---------------------------------------------
+# --- 11-13. Optional MCP servers ---------------------------------------------
 # Warm the cache before the first add_mcp_server call so duplicate detection works.
 load_mcp_servers
 
@@ -1559,17 +1527,6 @@ if is_selected "azure-mcp"; then
   run_step "Install Azure MCP server" install_azure_mcp
 fi
 
-install_perplexity_mcp() {
-  if [ -z "$PERPLEXITY_KEY" ]; then
-    skip "Perplexity MCP (no PERPLEXITY_API_KEY supplied)"
-    return 0
-  fi
-  add_mcp_server "perplexity" "PERPLEXITY_API_KEY=$PERPLEXITY_KEY" npx -y @perplexity-ai/mcp-server
-}
-if is_selected "perplexity-mcp"; then
-  run_step "Install Perplexity MCP server" install_perplexity_mcp
-fi
-
 install_playwright_mcp() {
   add_mcp_server "playwright" "-" npx @playwright/mcp@latest || return 1
   ok "Playwright downloads its browsers on first use; 'npx playwright install' does it ahead of time."
@@ -1578,7 +1535,7 @@ if is_selected "playwright-mcp"; then
   run_step "Install Playwright MCP server" install_playwright_mcp
 fi
 
-# --- 15. Supabase ------------------------------------------------------------
+# --- 14. Supabase ------------------------------------------------------------
 # Ships inside anthropics/claude-plugins-official, the same marketplace items 6 and 7
 # register - add_marketplace is a no-op when it is already there, so this item stands
 # on its own. install_plugin does the "already installed?" check.
@@ -1589,7 +1546,7 @@ if is_selected "supabase"; then
     install_plugin "supabase@claude-plugins-official"
 fi
 
-# --- 16. Context7 ------------------------------------------------------------
+# --- 15. Context7 ------------------------------------------------------------
 install_context7() {
   # 'ctx7 setup' writes the Context7 MCP/skill config for whichever agents it finds.
   # It is interactive, so it gets the terminal explicitly: under 'curl | bash' fd 0 is
@@ -1610,7 +1567,7 @@ if is_selected "context7"; then
   run_step "Configure Context7 (npx ctx7 setup)" install_context7
 fi
 
-# --- 17. Playwright CLI ------------------------------------------------------
+# --- 16. Playwright CLI ------------------------------------------------------
 install_playwright_cli() {
   # Detection is on the binary the package provides ('playwright-cli'), which is what
   # a user actually cares about - the package can also arrive via another manager.
@@ -1637,7 +1594,7 @@ if is_selected "playwright-cli"; then
   run_step "Install Playwright CLI (@playwright/cli)" install_playwright_cli
 fi
 
-# --- 18. SkillUI -------------------------------------------------------------
+# --- 17. SkillUI -------------------------------------------------------------
 skillui_quick_start() {
   printf '\n\033[36m    SkillUI quick start\033[0m  https://github.com/amaancoderx/npxskillui\n'
   printf '    1. Extract a design system from any URL:\n'
@@ -1682,7 +1639,7 @@ if is_selected "skillui"; then
   run_step "Install SkillUI (+ Playwright and Chromium)" install_skillui
 fi
 
-# --- 19. Strix ---------------------------------------------------------------
+# --- 18. Strix ---------------------------------------------------------------
 strix_next_steps() {
   printf '\n\033[33m    Strix needs two more things before its first scan:\033[0m\n'
   printf '    1. Docker running - the first scan pulls the sandbox image.\n'

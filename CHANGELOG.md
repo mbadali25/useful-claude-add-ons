@@ -63,6 +63,20 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Removed
 
+- **Perplexity MCP server** — dropped from both install scripts. It was menu item 13
+  (off by default), the only row that needed an API key, so the whole up-front key
+  prompt goes with it: `read_mcp_api_key` / `read_mcp_api_keys` and `PERPLEXITY_KEY`
+  in the `.sh`, `Read-McpApiKey` / `Read-McpApiKeys` and `$script:ApiKeys` in the
+  `.ps1`. Every remaining row now installs without asking for anything mid-menu.
+
+  **Menu numbers below it shift by one on both platforms**: MCP servers are 11–13,
+  Supabase 14, Context7 15, Playwright CLI 16, SkillUI 17, Strix 18. Scripted runs
+  that pass positions (`--select 15,19`) need updating; the stable keys
+  (`--select supabase,strix`) were unaffected and remain the better habit. The
+  `perplexity-mcp` key itself is gone, so a run that names it now selects nothing for
+  that token. An already-registered `perplexity` server is left alone — remove it by
+  hand with `claude mcp remove perplexity` if you want it gone.
+
 - `skills/ppt-master` — a vendored copy of the upstream `hugohe3/ppt-master` plugin
   (12,230 files, 88 MB) that was never registered in `marketplace.json`, either
   README, or either install script's skill catalog, so nothing here ever offered it.
