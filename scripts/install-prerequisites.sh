@@ -129,11 +129,15 @@ have() { command -v "$1" >/dev/null 2>&1; }
 # --- JSON helper -------------------------------------------------------------
 # Prefer jq; fall back to python3 (which this script installs). Reads stdin.
 json_query() {
+  # Both back ends emit CRLF when they run under Git Bash / WSL interop on Windows,
+  # which leaves a stray \r on the last tab-separated field. Every caller compares
+  # that field exactly ('$enabled' = "1", '$repo' = "$id"), so strip it once here
+  # rather than in each read loop.
   local expr="$1"
   if have jq; then
-    jq -r "$expr" 2>/dev/null
+    jq -r "$expr" 2>/dev/null | sed 's/\r$//'
   elif have python3; then
-    python3 -c "$2" 2>/dev/null
+    python3 -c "$2" 2>/dev/null | sed 's/\r$//'
   else
     return 1
   fi
@@ -183,7 +187,7 @@ for m in json.load(sys.stdin):
 }
 
 marketplace_installed() {
-  # Accepts a marketplace name ('superpowers-marketplace') or the GitHub 'owner/repo'
+  # Accepts a marketplace name ('claude-plugins-official') or the GitHub 'owner/repo'
   # it was added from - the JSON carries both, and callers have one or the other.
   local id="$1" tail="${1##*/}" name repo
   [ -z "$MARKETPLACES_CACHE" ] && return 1
@@ -204,23 +208,55 @@ load_plugins() {
   local raw
   raw="$(claude plugin list --json 2>/dev/null)" || return 0
   [ -z "$raw" ] && return 0
-  # Emit one "name<TAB>version" line per plugin; ids are 'name@marketplace'.
+  # Emit one "name<TAB>version<TAB>enabled" line per plugin; ids are 'name@marketplace'.
+  # 'enabled' is tracked because installing a plugin and having it actually load are
+  # two different things: a plugin switched off in settings.json is installed, at the
+  # right scope, and completely inert - none of its skills or hooks are visible.
   PLUGINS_CACHE="$(printf '%s' "$raw" | json_query \
-    '.[] | "\(.id | split("@")[0])\t\(.version // "unknown")"' \
+    '.[] | "\(.id | split("@")[0])\t\(.version // "unknown")\t\(if .enabled then "1" else "0" end)"' \
     'import json,sys
 for p in json.load(sys.stdin):
     pid = p.get("id") or ""
     if pid:
-        print("%s\t%s" % (pid.split("@")[0], p.get("version") or "unknown"))')"
+        print("%s\t%s\t%s" % (pid.split("@")[0], p.get("version") or "unknown",
+                              "1" if p.get("enabled") else "0"))')"
 }
 
 plugin_version() {
-  local want="$1" name ver
+  local want="$1" name ver enabled
   [ -z "$PLUGINS_CACHE" ] && return 1
-  while IFS=$'\t' read -r name ver; do
+  while IFS=$'\t' read -r name ver enabled; do
     [ "$name" = "$want" ] && { printf '%s' "$ver"; return 0; }
   done <<< "$PLUGINS_CACHE"
   return 1
+}
+
+plugin_enabled() {
+  # True when *any* installed copy of the bare name is enabled. Two marketplaces can
+  # publish the same plugin, and one live copy is all that is needed - this keeps the
+  # enablement check from fighting a plugin already loaded from another marketplace.
+  local want="$1" name ver enabled
+  [ -z "$PLUGINS_CACHE" ] && return 1
+  while IFS=$'\t' read -r name ver enabled; do
+    [ "$name" = "$want" ] && [ "$enabled" = "1" ] && return 0
+  done <<< "$PLUGINS_CACHE"
+  return 1
+}
+
+ensure_plugin_enabled() {
+  # $1 is 'name@marketplace'. Best-effort: the plugin is installed either way, so a
+  # failure here warns rather than failing the step. Tries the fully qualified spec
+  # first because the bare name is ambiguous when two marketplaces publish it.
+  local spec="$1" name="${spec%%@*}"
+  plugin_enabled "$name" && return 0
+  if claude plugin enable "$spec" --scope "$INSTALL_SCOPE" >/dev/null 2>&1 \
+     || claude plugin enable "$name" --scope "$INSTALL_SCOPE" >/dev/null 2>&1; then
+    load_plugins
+    ok "enabled plugin '$name' (--scope $INSTALL_SCOPE)"
+  else
+    warn "plugin '$name' is installed but disabled and 'claude plugin enable' failed - run '/plugin' and enable it by hand."
+  fi
+  return 0
 }
 
 # --- Detection: MCP servers ---------------------------------------------------
@@ -299,6 +335,7 @@ install_plugin() {
   if before="$(plugin_version "$name")"; then
     if [ "$NO_UPDATE" -eq 1 ]; then
       skip "plugin '$name' already installed (version $before)"
+      ensure_plugin_enabled "$spec"
       return 0
     fi
     # A failed update is not fatal: the plugin is installed and usable, and
@@ -312,12 +349,14 @@ install_plugin() {
     else
       skip "plugin '$name' already current (version $after)"
     fi
+    ensure_plugin_enabled "$spec"
     return 0
   fi
   claude plugin install "$spec" --scope "$INSTALL_SCOPE" || return 1
   load_plugins
   COUNT_INSTALLED=$((COUNT_INSTALLED+1))
   ok "installed plugin '$spec'"
+  ensure_plugin_enabled "$spec"
 }
 
 # --- Install catalog and menu -------------------------------------------------
@@ -1296,15 +1335,22 @@ fi
 
 # --- 4. Team marketplaces and plugins ----------------------------------------
 if is_selected "team"; then
-  run_step "Marketplace: obra/superpowers-marketplace" \
-    add_marketplace "obra/superpowers-marketplace" "superpowers-marketplace"
+  # superpowers comes from anthropics/claude-plugins-official, not obra's own
+  # marketplace. Upstream publishes to both, but install_plugin detects on the bare
+  # name: a machine that already had superpowers from the official marketplace (which
+  # items 6 and 7 register) skipped the install and was left with an orphaned
+  # 'superpowers-marketplace' registration plus a second, disabled copy of the plugin.
+  # One source avoids the duplicate. Add-marketplace is a no-op when already present,
+  # so this stands on its own whether or not items 6 and 7 were selected.
+  run_step "Marketplace: anthropics/claude-plugins-official" \
+    add_marketplace "anthropics/claude-plugins-official" "claude-plugins-official"
   run_step "Marketplace: anthropics/claude-code" \
     add_marketplace "anthropics/claude-code" "claude-code-plugins"
   run_step "Marketplace: lexiaoyao20/excalidraw-generator" \
     add_marketplace "lexiaoyao20/excalidraw-generator" "excalidraw-generator"
 
   team_plugins=(
-    "superpowers@superpowers-marketplace"
+    "superpowers@claude-plugins-official"
     "frontend-design@claude-code-plugins"
     "excalidraw-generator@excalidraw-generator"
   )

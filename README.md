@@ -171,7 +171,7 @@ claude plugin uninstall aws-opensearch@useful-claude-add-ons   # remove a skill
 claude plugin marketplace remove useful-claude-add-ons        # stop tracking this marketplace
 ```
 
-Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for the lightweight path (clone the repo, point your own `.claude/skills/` at the folders you want). Full details, including the other marketplaces the team's install scripts wire up (Superpowers, `frontend-design`, `excalidraw-generator`, the VoltAgent subagents, and the community set), are in [`MARKETPLACE.md`](MARKETPLACE.md).
+Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for the lightweight path (clone the repo, point your own `.claude/skills/` at the folders you want). Full details, including the other marketplaces the team's install scripts wire up (`claude-plugins-official` for Superpowers, `frontend-design`, `excalidraw-generator`, the VoltAgent subagents, and the community set), are in [`MARKETPLACE.md`](MARKETPLACE.md).
 
 ## Documentation
 

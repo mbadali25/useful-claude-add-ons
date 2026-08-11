@@ -4,6 +4,50 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Fixed
+
+- **Both install scripts — Superpowers came from a second marketplace and could land
+  disabled.** Item 4 registered `obra/superpowers-marketplace` unconditionally, but
+  `install_plugin` / `Install-ClaudePlugin` detect plugins by *bare name*. On any machine
+  that already had `superpowers@claude-plugins-official` — which items 6 and 7 register —
+  the install was skipped, leaving an orphaned `superpowers-marketplace` registration and
+  a second, disabled `superpowers@superpowers-marketplace` entry: exactly the duplicate
+  [`skills/claude-code-tuneup`](skills/claude-code-tuneup/references/symptoms.md) tells you
+  to clean up. Item 4 now takes Superpowers from `anthropics/claude-plugins-official`, the
+  marketplace the scripts already register elsewhere, so there is one source for it.
+
+  Superpowers for Claude Code is plugin-only by design and cannot be installed by copying
+  `skills/` into `~/.claude/skills/`: its `SessionStart` hook resolves
+  `${CLAUDE_PLUGIN_ROOT}`, which only exists for plugins, and that hook is what injects
+  `using-superpowers` and makes the other skills fire. Six of the fourteen skills also
+  cross-reference each other as `superpowers:<name>`, which unprefixed personal skills
+  would break.
+
+  Existing machines keep the stray `superpowers-marketplace` registration — the scripts
+  deliberately do not remove marketplaces, since a bootstrap installer should not delete
+  something a user may have added on purpose. Drop it with
+  `claude plugin marketplace remove superpowers-marketplace`.
+
+- **Both install scripts — an installed-but-disabled plugin is now switched back on.**
+  Installing a plugin and having it load are different things: a plugin disabled in
+  `settings.json` is installed, at the right scope, and completely inert. New
+  `ensure_plugin_enabled` / `Enable-ClaudePlugin` run after every plugin install, update,
+  and already-current skip, and call `claude plugin enable --scope` when no enabled copy of
+  the name exists. Best-effort by design — the plugin is installed either way, so a failure
+  warns instead of failing the step.
+
+- **`install-prerequisites.ps1` — a disabled duplicate could mask an enabled plugin.**
+  `Get-ClaudePlugins` keys its map on the bare name with last-write-wins, so with both
+  `superpowers@claude-plugins-official` (enabled) and `superpowers@superpowers-marketplace`
+  (disabled) installed, the disabled copy won on id sort order and the plugin was reported
+  as disabled. An enabled entry now wins over a disabled one.
+
+- **`install-prerequisites.sh` — `json_query` output is stripped of trailing `\r`.** Under
+  Git Bash / WSL interop on Windows both `jq` and `python3` emit CRLF, leaving a stray
+  carriage return on the last tab-separated field. Every caller compares that field exactly
+  (`"$enabled" = "1"`, `"$repo" = "$id"`), so `marketplace_installed` could miss a
+  marketplace matched by repo, and the new enablement check read every plugin as disabled.
+
 ### Added
 
 - `skills/notify` — **two-way Telegram now works in both directions.** `--wait` only ever

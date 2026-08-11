@@ -67,8 +67,11 @@ The prerequisite install scripts also wire up these external marketplaces and th
 
 ```bash
 # Superpowers - process skills (brainstorming, TDD, systematic debugging, writing plans, etc.)
-claude plugin marketplace add obra/superpowers-marketplace
-claude plugin install superpowers@superpowers-marketplace
+# Upstream (obra/superpowers) publishes to its own marketplace as well, but the scripts
+# take it from Anthropic's official one: they detect plugins by bare name, so pulling it
+# from two sources leaves an orphaned marketplace and a second, disabled copy.
+claude plugin marketplace add anthropics/claude-plugins-official
+claude plugin install superpowers@claude-plugins-official
 
 # Anthropic's official plugin marketplace - frontend-design skill
 claude plugin marketplace add anthropics/claude-code
