@@ -8,11 +8,13 @@
 # to decline three things near the end. Every interactive answer (menu selection, API
 # keys, the SkillUI quick start) is collected before the first install starts.
 #
-# The menu is a cursor picker: Up/Down to move, Space to toggle, Enter to start. On the
-# repo's own row, Right opens a second picker for the individual skills, so you can take
-# three of them instead of all nineteen. Terminals that cannot do raw input - no stty, a
-# dumb TERM, a window under ten lines - get the original numbered prompt instead, and
-# every non-interactive path (--all, --select, --skills, --non-interactive) bypasses both.
+# The menu is a cursor picker: Up/Down to move, Space to toggle, Enter to start. Rows
+# whose label ends in '>' - this repo's skills, the team plugins, the community plugins -
+# open a second picker on Right, so you can take three of this repo's skills instead of
+# all twenty-one, or ppt-master without agent-browser. Terminals that cannot do raw input
+# - no stty, a dumb TERM, a window under ten lines - get the original numbered prompt
+# instead, and every non-interactive path (--all, --select, --skills, --team-plugins,
+# --community-plugins, --non-interactive) bypasses both.
 #
 # Everything is also detected before it is installed:
 #   * OS packages         - only the ones whose command is actually missing get installed
@@ -31,6 +33,10 @@
 #                         --select strix,claude-mem)
 #   --skills a,b,c        install only these of this repo's skills, no prompt
 #                         (--skills all | none also work; implies the repo item)
+#   --team-plugins a,b    install only these team plugins, no sub-picker
+#                         (all | none | numbers like 1,3 also work)
+#   --community-plugins a,b
+#                         install only these community plugins, no sub-picker
 #   --non-interactive     select the default set, no prompt (CI/unattended)
 #   --skillui-guide       print the SkillUI quick start after installing it, no prompt
 #   --notify-setup        scaffold the notify config after installing it, no prompt
@@ -66,21 +72,25 @@ NO_UPDATE=0
 SELECT_ALL=0
 SELECT_SPEC=""
 SKILLS_SPEC=""
+TEAM_SPEC=""
+COMMUNITY_SPEC=""
 SKILLUI_GUIDE=""       # "1"/"0" once answered; empty means "ask"
 NOTIFY_SETUP=""        # "1"/"0" once answered; empty means "ask"
 INSTALL_SCOPE="user"   # machine-wide by default, not per-project
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --skip-bootstrap)  SKIP_BOOTSTRAP=1 ;;
-    --non-interactive) NON_INTERACTIVE=1 ;;
-    --no-update)       NO_UPDATE=1 ;;
-    --all)             SELECT_ALL=1 ;;
-    --select)          SELECT_SPEC="${2:-}"; shift ;;
-    --skills)          SKILLS_SPEC="${2:-}"; shift ;;
-    --skillui-guide)   SKILLUI_GUIDE=1 ;;
-    --notify-setup)    NOTIFY_SETUP=1 ;;
-    --scope)           INSTALL_SCOPE="${2:-user}"; shift ;;
+    --skip-bootstrap)    SKIP_BOOTSTRAP=1 ;;
+    --non-interactive)   NON_INTERACTIVE=1 ;;
+    --no-update)         NO_UPDATE=1 ;;
+    --all)               SELECT_ALL=1 ;;
+    --select)            SELECT_SPEC="${2:-}"; shift ;;
+    --skills)            SKILLS_SPEC="${2:-}"; shift ;;
+    --team-plugins)      TEAM_SPEC="${2:-}"; shift ;;
+    --community-plugins) COMMUNITY_SPEC="${2:-}"; shift ;;
+    --skillui-guide)     SKILLUI_GUIDE=1 ;;
+    --notify-setup)      NOTIFY_SETUP=1 ;;
+    --scope)             INSTALL_SCOPE="${2:-user}"; shift ;;
     *) echo "Unknown option: $1" >&2 ;;
   esac
   shift
@@ -371,13 +381,22 @@ MENU_KEYS=(
   "supabase" "context7" "playwright-cli" "skillui" "strix"
 )
 MENU_DEFAULT=(1 1 1 1 1 1 1 1 1 1 0 0 0 0 0 0 0 0)
+# A non-empty entry here names the sub-catalog that row expands into: the row opens a
+# second picker on Right, and its MENU_NAME is a printf template taking "ticked" and
+# "total" so the row shows a live count instead of a fixed claim.
+MENU_SUB=(
+  "" "" "SKILL" "TEAM" "" "COMMUNITY"
+  "" "" "" ""
+  "" "" ""
+  "" "" "" "" ""
+)
 MENU_NAME=(
   "Prerequisites: git, nodejs, npm, python3, pip3 (needs root or sudo)"
   "Claude Code CLI (@anthropic-ai/claude-code) + PATH export + update check"
-  "This repo's marketplace + its skills"
-  "Team plugins: superpowers, frontend-design, excalidraw-generator"
+  "This repo's marketplace + %s of %s skills  >"
+  "Team plugins - %s of %s: superpowers, frontend-design, excalidraw-generator  >"
   "find-skills skill (vercel-labs/skills)"
-  "Community marketplaces + plugins (adhd-output-style, azure-tools, ppt-master, ...)"
+  "Community marketplaces + plugins - %s of %s: adhd-output-style, azure-tools, ...  >"
   "claude-code-setup plugin (anthropics/claude-plugins-official)"
   "task-observer skill (rebelytics/one-skill-to-rule-them-all)"
   "claude-mem memory plugin + CLAUDE_MEM_WORKER_PORT in settings.json"
@@ -440,9 +459,16 @@ expand_selection_spec() {
   printf '%s' "$out"
 }
 
-# --- This repo's individual skills --------------------------------------------
-# Keep in sync with .claude-plugin/marketplace.json. Everything is on by default:
-# picking a subset is the exception, and a fresh machine wants the lot.
+# --- Sub-catalogs --------------------------------------------------------------
+# Three menu rows expand into a checkbox list of their own, opened with Right. Each is a
+# set of parallel arrays named <PREFIX>_KEYS / _NAME / _STATE; the two plugin catalogs add
+# _PLUGIN (the 'name@marketplace' spec) and _SOURCE ('owner/repo|marketplace-name', the
+# marketplace that has to be registered before that plugin can be installed). bash 3.2 has
+# neither namerefs nor ordered hashes, so the helpers below reach a catalog through eval on
+# its prefix - every prefix in this file is a literal, never built from user input.
+
+# This repo's own skills. Keep in sync with .claude-plugin/marketplace.json. Everything is
+# on by default: picking a subset is the exception, and a fresh machine wants the lot.
 SKILL_KEYS=(
   "aws-opensearch" "bitbucket" "checkpoint-email" "cisco-meraki"
   "claude-code-defaults" "claude-code-tuneup" "cloudflare" "drata" "i-have-adhd"
@@ -473,60 +499,169 @@ SKILL_NAME=(
   "web-testing-playwright  - Real-browser testing: screenshots, console, form flows"
   "work-log-reporter       - Session work log + emailed PDF report over SMTP"
 )
-SKILL_STATE=()
-for _i in "${!SKILL_KEYS[@]}"; do SKILL_STATE+=(1); done
+
+# Team plugins. superpowers comes from anthropics/claude-plugins-official, not obra's own
+# marketplace: upstream publishes to both, but install_plugin detects on the bare name, so
+# a machine that already had superpowers from the official marketplace skipped the install
+# and was left with an orphaned 'superpowers-marketplace' registration plus a second,
+# disabled copy of the plugin. One source per plugin avoids the duplicate.
+TEAM_KEYS=(
+  "superpowers" "frontend-design" "excalidraw-generator"
+)
+TEAM_NAME=(
+  "superpowers             - brainstorming, TDD, systematic debugging, plan execution"
+  "frontend-design         - distinctive UI: typography, colour, layout with intent"
+  "excalidraw-generator    - hand-drawn .excalidraw diagrams from a description"
+)
+TEAM_PLUGIN=(
+  "superpowers@claude-plugins-official"
+  "frontend-design@claude-code-plugins"
+  "excalidraw-generator@excalidraw-generator"
+)
+TEAM_SOURCE=(
+  "anthropics/claude-plugins-official|claude-plugins-official"
+  "anthropics/claude-code|claude-code-plugins"
+  "lexiaoyao20/excalidraw-generator|excalidraw-generator"
+)
+
+# Community plugins, from claudepluginhub.com. Source repo -> marketplace name is *not*
+# mechanical: fcakyon/claude-codex-settings publishes itself as 'claude-settings'. The
+# name after the '|' is the "name" in that repo's own .claude-plugin/marketplace.json,
+# which is what 'plugin@marketplace' has to match.
+COMMUNITY_KEYS=(
+  "adhd-output-style" "azure-tools" "anthropic-office-skills"
+  "agent-browser" "ppt-master"
+)
+COMMUNITY_NAME=(
+  "adhd-output-style       - ADHD-friendly output: short, numbered, action first"
+  "azure-tools             - Azure CLI and Bicep helpers, deployment commands"
+  "anthropic-office-skills - docx, xlsx, pptx and pdf authoring skills"
+  "agent-browser           - drive a real browser from an agent (vercel-labs)"
+  "ppt-master              - build and edit PowerPoint decks"
+)
+COMMUNITY_PLUGIN=(
+  "adhd-output-style@claude-settings"
+  "azure-tools@claude-settings"
+  "anthropic-office-skills@claude-settings"
+  "agent-browser@agent-browser"
+  "ppt-master@ppt-master"
+)
+COMMUNITY_SOURCE=(
+  "fcakyon/claude-codex-settings|claude-settings"
+  "fcakyon/claude-codex-settings|claude-settings"
+  "fcakyon/claude-codex-settings|claude-settings"
+  "vercel-labs/agent-browser|agent-browser"
+  "hugohe3/ppt-master|ppt-master"
+)
+
+SKILL_STATE=(); TEAM_STATE=(); COMMUNITY_STATE=()
+for _i in "${!SKILL_KEYS[@]}";     do SKILL_STATE+=(1);     done
+for _i in "${!TEAM_KEYS[@]}";      do TEAM_STATE+=(1);      done
+for _i in "${!COMMUNITY_KEYS[@]}"; do COMMUNITY_STATE+=(1); done
 unset _i
 
-skills_selected_count() {
-  local i n=0
-  for i in "${!SKILL_KEYS[@]}"; do [ "${SKILL_STATE[$i]}" -eq 1 ] && n=$((n+1)); done
-  printf '%d' "$n"
+SUB_COUNT=0
+SUB_TOTAL=0
+sub_tally() {
+  # Sets SUB_COUNT/SUB_TOTAL rather than printing them. The main menu recomputes this for
+  # every sub-row on every keypress, and a command substitution here would fork a subshell
+  # each time - which is slow enough to feel on a Windows-hosted bash.
+  local v states=()
+  eval "states=(\"\${${1}_STATE[@]}\")"
+  SUB_TOTAL=${#states[@]}
+  SUB_COUNT=0
+  for v in "${states[@]}"; do [ "$v" -eq 1 ] && SUB_COUNT=$((SUB_COUNT+1)); done
+  return 0
 }
 
-skills_set_all() {
-  local i
-  for i in "${!SKILL_KEYS[@]}"; do SKILL_STATE[$i]="$1"; done
-}
-
-expand_skills_spec() {
-  # 'cloudflare,drata' | '1,4-6' | 'all' | 'none' -> sets SKILL_STATE.
-  local spec="$1" token n lo hi i found
-  case "$spec" in
-    [Aa][Ll][Ll])   skills_set_all 1; return 0 ;;
-    [Nn][Oo][Nn][Ee]) skills_set_all 0; return 0 ;;
+sub_title() {
+  case "$1" in
+    SKILL)     printf 'Pick individual skills from this repo' ;;
+    TEAM)      printf 'Pick team plugins' ;;
+    COMMUNITY) printf 'Pick community plugins' ;;
   esac
-  skills_set_all 0
+}
+
+sub_noun() {
+  case "$1" in
+    SKILL)     printf 'skill' ;;
+    TEAM)      printf 'team plugin' ;;
+    COMMUNITY) printf 'community plugin' ;;
+  esac
+}
+
+sub_flag() {
+  case "$1" in
+    SKILL)     printf -- '--skills' ;;
+    TEAM)      printf -- '--team-plugins' ;;
+    COMMUNITY) printf -- '--community-plugins' ;;
+  esac
+}
+
+sub_set_all() {
+  local pfx="$1" val="$2" i total
+  eval "total=\${#${pfx}_KEYS[@]}"
+  for (( i=0; i<total; i++ )); do eval "${pfx}_STATE[$i]=$val"; done
+}
+
+sub_expand_spec() {
+  # 'cloudflare,drata' | '1,4-6' | 'all' | 'none' -> sets <PREFIX>_STATE.
+  local pfx="$1" spec="$2" noun token n lo hi i total found keys=()
+  noun="$(sub_noun "$pfx")"
+  case "$spec" in
+    [Aa][Ll][Ll])     sub_set_all "$pfx" 1; return 0 ;;
+    [Nn][Oo][Nn][Ee]) sub_set_all "$pfx" 0; return 0 ;;
+  esac
+  eval "keys=(\"\${${pfx}_KEYS[@]}\")"
+  total=${#keys[@]}
+  sub_set_all "$pfx" 0
   spec="${spec//,/ }"
   for token in $spec; do
     if [[ "$token" =~ ^([0-9]+)-([0-9]+)$ ]]; then
       lo="${BASH_REMATCH[1]}"; hi="${BASH_REMATCH[2]}"
       for (( n=lo; n<=hi; n++ )); do
-        [ "$n" -ge 1 ] && [ "$n" -le "${#SKILL_KEYS[@]}" ] && SKILL_STATE[$((n-1))]=1
+        [ "$n" -ge 1 ] && [ "$n" -le "$total" ] && eval "${pfx}_STATE[$((n-1))]=1"
       done
     elif [[ "$token" =~ ^[0-9]+$ ]]; then
       n="$token"
-      if [ "$n" -ge 1 ] && [ "$n" -le "${#SKILL_KEYS[@]}" ]; then
-        SKILL_STATE[$((n-1))]=1
+      if [ "$n" -ge 1 ] && [ "$n" -le "$total" ]; then
+        eval "${pfx}_STATE[$((n-1))]=1"
       else
-        warn "ignoring out-of-range skill number '$token'"
+        warn "ignoring out-of-range $noun number '$token'"
       fi
     else
       found=0
-      for i in "${!SKILL_KEYS[@]}"; do
-        if [ "${SKILL_KEYS[$i]}" = "$token" ]; then SKILL_STATE[$i]=1; found=1; break; fi
+      for i in "${!keys[@]}"; do
+        if [ "${keys[$i]}" = "$token" ]; then eval "${pfx}_STATE[$i]=1"; found=1; break; fi
       done
-      [ "$found" -eq 0 ] && warn "ignoring unknown skill '$token'"
+      [ "$found" -eq 0 ] && warn "ignoring unknown $noun '$token'"
     fi
   done
+  return 0
+}
+
+sub_key_selected() {
+  local pfx="$1" key="$2" i keys=() states=()
+  eval "keys=(\"\${${pfx}_KEYS[@]}\"); states=(\"\${${pfx}_STATE[@]}\")"
+  for i in "${!keys[@]}"; do
+    if [ "${keys[$i]}" = "$key" ]; then
+      [ "${states[$i]}" -eq 1 ] && return 0
+      return 1
+    fi
+  done
+  return 1
 }
 
 menu_label() {
-  # The repo row carries a live count, because "its 19 skills" stops being true the
-  # moment someone opens the skills picker and unticks one.
+  # A sub-catalog row carries a live count, because "its 21 skills" stops being true the
+  # moment someone opens the sub-picker and unticks one.
   local i="$1"
-  if [ "${MENU_KEYS[$i]}" = "own-skills" ]; then
-    printf "This repo's marketplace + %s of %s skills  >" \
-      "$(skills_selected_count)" "${#SKILL_KEYS[@]}"
+  if [ -n "${MENU_SUB[$i]}" ]; then
+    sub_tally "${MENU_SUB[$i]}"
+    # The template is a literal from MENU_NAME, never user input - the two %s are the
+    # ticked count and the catalog size.
+    # shellcheck disable=SC2059
+    printf "${MENU_NAME[$i]}" "$SUB_COUNT" "$SUB_TOTAL"
   else
     printf '%s' "${MENU_NAME[$i]}"
   fi
@@ -724,32 +859,28 @@ picker_run() {
   done
 }
 
-pick_skills_interactive() {
-  local i saved=()
+pick_sub_interactive() {
+  # Only writes back on confirm, so Q discards the whole sub-selection by doing nothing.
+  local pfx="$1" i names=() states=()
+  eval "names=(\"\${${pfx}_NAME[@]}\"); states=(\"\${${pfx}_STATE[@]}\")"
   PICK_LABEL=(); PICK_STATE=(); PICK_SUB=(); PICK_DEFAULT=()
-  for i in "${!SKILL_KEYS[@]}"; do
-    PICK_LABEL+=("${SKILL_NAME[$i]}")
-    PICK_STATE+=("${SKILL_STATE[$i]}")
+  for i in "${!names[@]}"; do
+    PICK_LABEL+=("${names[$i]}")
+    PICK_STATE+=("${states[$i]}")
     PICK_SUB+=(0)
     PICK_DEFAULT+=(1)
   done
-  saved=("${SKILL_STATE[@]}")
   PICK_CURSOR=0; PICK_TOP=0
-  PICK_TITLE="Pick individual skills from this repo"
+  PICK_TITLE="$(sub_title "$pfx")"
   PICK_HINT="Enter or ← to go back to the main menu   Q to discard these changes"
-  if ! picker_run; then
-    return 1
-  fi
-  if [ "$PICK_ACTION" = "cancel" ]; then
-    SKILL_STATE=("${saved[@]}")
-    return 0
-  fi
-  for i in "${!SKILL_KEYS[@]}"; do SKILL_STATE[$i]="${PICK_STATE[$i]}"; done
+  picker_run || return 1
+  [ "$PICK_ACTION" = "cancel" ] && return 0
+  for i in "${!PICK_STATE[@]}"; do eval "${pfx}_STATE[$i]=${PICK_STATE[$i]}"; done
   return 0
 }
 
 pick_menu_interactive() {
-  local i
+  local i row pfx
   while :; do
     PICK_LABEL=(); PICK_STATE=(); PICK_SUB=(); PICK_DEFAULT=()
     for i in "${!MENU_KEYS[@]}"; do
@@ -760,18 +891,24 @@ pick_menu_interactive() {
       else
         PICK_STATE+=("${MENU_DEFAULT[$i]}")
       fi
-      if [ "${MENU_KEYS[$i]}" = "own-skills" ]; then PICK_SUB+=(1); else PICK_SUB+=(0); fi
+      if [ -n "${MENU_SUB[$i]}" ]; then PICK_SUB+=(1); else PICK_SUB+=(0); fi
     done
     PICK_TITLE="Select what to install"
-    PICK_HINT="→ on the repo row picks individual skills"
+    PICK_HINT="→ on a row ending in > picks what goes into it"
     picker_run || return 1
     for i in "${!MENU_KEYS[@]}"; do MENU_STATE[$i]="${PICK_STATE[$i]}"; done
     case "$PICK_ACTION" in
       submenu)
-        pick_skills_interactive || return 1
-        # Opening the skills picker is a statement of intent: tick the repo row so a
-        # careful sub-selection is not silently thrown away by an unticked parent.
-        [ "$(skills_selected_count)" -gt 0 ] && MENU_STATE[$MENU_OWN_INDEX]=1
+        # The sub-picker resets PICK_CURSOR, so remember the row first and put the cursor
+        # back on it afterwards rather than dumping the user at the top of the menu.
+        row="$PICK_CURSOR"
+        pfx="${MENU_SUB[$row]}"
+        pick_sub_interactive "$pfx" || return 1
+        # Opening a sub-picker is a statement of intent: tick the parent row so a careful
+        # sub-selection is not silently thrown away by an unticked parent.
+        sub_tally "$pfx"
+        [ "$SUB_COUNT" -gt 0 ] && MENU_STATE[$row]=1
+        PICK_CURSOR="$row"
         ;;
       cancel)
         SELECTED=""
@@ -790,11 +927,7 @@ pick_menu_interactive() {
 }
 
 MENU_STATE=()
-MENU_OWN_INDEX=0
-for _i in "${!MENU_KEYS[@]}"; do
-  MENU_STATE+=("${MENU_DEFAULT[$_i]}")
-  [ "${MENU_KEYS[$_i]}" = "own-skills" ] && MENU_OWN_INDEX="$_i"
-done
+for _i in "${!MENU_KEYS[@]}"; do MENU_STATE+=("${MENU_DEFAULT[$_i]}"); done
 unset _i
 
 show_menu() {
@@ -808,17 +941,31 @@ show_menu() {
   done
   printf '\n\033[90m  [x] marks the default set.\033[0m\n'
   printf '\033[90m  A = all   D = defaults   N = none   or numbers like 1,3,7-9\033[0m\n'
-  printf '\033[90m  Individual skills: re-run with --skills cloudflare,drata\033[0m\n'
+  printf '\033[90m  Rows ending in > hold a list: --skills cloudflare,drata\033[0m\n'
+  printf '\033[90m  --team-plugins superpowers   --community-plugins ppt-master\033[0m\n'
 }
 
 select_install_items() {
   local answer=""
-  # --skills is a non-interactive answer in its own right: it settles the skill list
-  # before anything is drawn, so it composes with --all and --non-interactive.
+  # The sub-catalog flags are non-interactive answers in their own right: they settle
+  # each list before anything is drawn, so they compose with --all and --non-interactive.
   if [ -n "$SKILLS_SPEC" ]; then
-    expand_skills_spec "$SKILLS_SPEC"
+    sub_expand_spec SKILL "$SKILLS_SPEC"
+    sub_tally SKILL
     printf '\033[90mSkills from --skills "%s" (%d of %d).\033[0m\n' \
-      "$SKILLS_SPEC" "$(skills_selected_count)" "${#SKILL_KEYS[@]}"
+      "$SKILLS_SPEC" "$SUB_COUNT" "$SUB_TOTAL"
+  fi
+  if [ -n "$TEAM_SPEC" ]; then
+    sub_expand_spec TEAM "$TEAM_SPEC"
+    sub_tally TEAM
+    printf '\033[90mTeam plugins from --team-plugins "%s" (%d of %d).\033[0m\n' \
+      "$TEAM_SPEC" "$SUB_COUNT" "$SUB_TOTAL"
+  fi
+  if [ -n "$COMMUNITY_SPEC" ]; then
+    sub_expand_spec COMMUNITY "$COMMUNITY_SPEC"
+    sub_tally COMMUNITY
+    printf '\033[90mCommunity plugins from --community-plugins "%s" (%d of %d).\033[0m\n' \
+      "$COMMUNITY_SPEC" "$SUB_COUNT" "$SUB_TOTAL"
   fi
 
   if [ "$SELECT_ALL" -eq 1 ]; then
@@ -871,6 +1018,22 @@ selection_count() {
   printf '%d' "$n"
 }
 
+show_sub_selection() {
+  # Only worth spelling out when it is a subset - the row label already reads "N of N".
+  local pfx="$1" i keys=() states=()
+  sub_tally "$pfx"
+  if [ "$SUB_COUNT" -eq 0 ]; then
+    warn "nothing ticked in this list - it will be skipped. Re-run with $(sub_flag "$pfx") all to get everything."
+    return 0
+  fi
+  [ "$SUB_COUNT" -eq "$SUB_TOTAL" ] && return 0
+  eval "keys=(\"\${${pfx}_KEYS[@]}\"); states=(\"\${${pfx}_STATE[@]}\")"
+  for i in "${!keys[@]}"; do
+    [ "${states[$i]}" -eq 1 ] && printf '        - %s\n' "${keys[$i]}"
+  done
+  return 0
+}
+
 show_selection() {
   local i n
   n="$(selection_count)"
@@ -881,20 +1044,10 @@ show_selection() {
   fi
   printf '\033[36m  Will install (%d item(s)):\033[0m\n' "$n"
   for i in "${!MENU_KEYS[@]}"; do
-    is_selected "${MENU_KEYS[$i]}" && printf '    - %s\n' "$(menu_label "$i")"
+    is_selected "${MENU_KEYS[$i]}" || continue
+    printf '    - %s\n' "$(menu_label "$i")"
+    [ -n "${MENU_SUB[$i]}" ] && show_sub_selection "${MENU_SUB[$i]}"
   done
-  if is_selected "own-skills"; then
-    local picked
-    picked="$(skills_selected_count)"
-    if [ "$picked" -eq 0 ]; then
-      warn "no individual skills selected - the marketplace will be registered but no skill installed. Re-run with --skills all to get them."
-    elif [ "$picked" -lt "${#SKILL_KEYS[@]}" ]; then
-      printf '\033[36m      skills:\033[0m\n'
-      for i in "${!SKILL_KEYS[@]}"; do
-        [ "${SKILL_STATE[$i]}" -eq 1 ] && printf '        - %s\n' "${SKILL_KEYS[$i]}"
-      done
-    fi
-  fi
 }
 
 select_skillui_guide() {
@@ -917,15 +1070,8 @@ skill_selected() {
   # 'notify' is a sub-picker entry, not a top-level menu key, so is_selected() would
   # always say no. Look it up in the skill catalog instead, and only count it when
   # this repo's marketplace item is itself selected.
-  local key="$1" i
   is_selected "own-skills" || return 1
-  for i in "${!SKILL_KEYS[@]}"; do
-    if [ "${SKILL_KEYS[$i]}" = "$key" ]; then
-      [ "${SKILL_STATE[$i]}" -eq 1 ] && return 0
-      return 1
-    fi
-  done
-  return 1
+  sub_key_selected SKILL "$1"
 }
 
 notify_prereqs() {
@@ -1317,7 +1463,8 @@ if is_selected "own-skills"; then
 
   # The catalog itself lives in SKILL_KEYS next to the menu; only the ticked ones
   # get installed, so --skills and the sub-picker both land here.
-  if [ "$(skills_selected_count)" -eq 0 ]; then
+  sub_tally SKILL
+  if [ "$SUB_COUNT" -eq 0 ]; then
     warn "no skills selected from this repo - marketplace registered, nothing installed."
   fi
   for idx in "${!SKILL_KEYS[@]}"; do
@@ -1334,29 +1481,33 @@ if is_selected "own-skills"; then
 fi
 
 # --- 4. Team marketplaces and plugins ----------------------------------------
-if is_selected "team"; then
-  # superpowers comes from anthropics/claude-plugins-official, not obra's own
-  # marketplace. Upstream publishes to both, but install_plugin detects on the bare
-  # name: a machine that already had superpowers from the official marketplace (which
-  # items 6 and 7 register) skipped the install and was left with an orphaned
-  # 'superpowers-marketplace' registration plus a second, disabled copy of the plugin.
-  # One source avoids the duplicate. Add-marketplace is a no-op when already present,
-  # so this stands on its own whether or not items 6 and 7 were selected.
-  run_step "Marketplace: anthropics/claude-plugins-official" \
-    add_marketplace "anthropics/claude-plugins-official" "claude-plugins-official"
-  run_step "Marketplace: anthropics/claude-code" \
-    add_marketplace "anthropics/claude-code" "claude-code-plugins"
-  run_step "Marketplace: lexiaoyao20/excalidraw-generator" \
-    add_marketplace "lexiaoyao20/excalidraw-generator" "excalidraw-generator"
-
-  team_plugins=(
-    "superpowers@claude-plugins-official"
-    "frontend-design@claude-code-plugins"
-    "excalidraw-generator@excalidraw-generator"
-  )
-  for spec in "${team_plugins[@]}"; do
-    run_step "Plugin: $spec" install_plugin "$spec"
+install_sub_catalog() {
+  # Registers only the marketplaces the ticked plugins actually need. Unticking every
+  # plugin from one source leaves that source unregistered rather than dangling, and a
+  # source shared by several plugins is still only added once. add_marketplace is a no-op
+  # when the marketplace is already there, so overlaps with other menu items are free.
+  local pfx="$1" i keys=() plugins=() sources=() states=() added=" " src name
+  eval "keys=(\"\${${pfx}_KEYS[@]}\");     plugins=(\"\${${pfx}_PLUGIN[@]}\")"
+  eval "sources=(\"\${${pfx}_SOURCE[@]}\"); states=(\"\${${pfx}_STATE[@]}\")"
+  for i in "${!keys[@]}"; do
+    [ "${states[$i]}" -eq 1 ] || continue
+    src="${sources[$i]%%|*}"
+    name="${sources[$i]#*|}"
+    case "$added" in
+      *" $name "*) ;;
+      *) run_step "Marketplace: $src" add_marketplace "$src" "$name"
+         added="$added$name " ;;
+    esac
+    run_step "Plugin: ${plugins[$i]}" install_plugin "${plugins[$i]}"
   done
+}
+
+if is_selected "team"; then
+  sub_tally TEAM
+  if [ "$SUB_COUNT" -eq 0 ]; then
+    warn "no team plugins ticked - nothing to install for that item."
+  fi
+  install_sub_catalog TEAM
 fi
 
 # --- 5. find-skills ----------------------------------------------------------
@@ -1385,38 +1536,21 @@ if is_selected "find-skills"; then
 fi
 
 # --- 6. Community marketplaces (from claudepluginhub.com) --------------------
-# Installed with native 'claude plugin' commands. Source repo -> marketplace name is
-# *not* mechanical: fcakyon/claude-codex-settings publishes itself as 'claude-settings'.
-# The second field below is the "name" in that repo's own .claude-plugin/marketplace.json,
-# which is what 'plugin@marketplace' has to match.
+# Installed with native 'claude plugin' commands, from the COMMUNITY_* catalog next to
+# the menu - so unticking a plugin in the sub-picker also drops its marketplace when
+# nothing else needs it.
 if is_selected "community"; then
-  # "source|marketplace-name" pairs
-  community_marketplaces=(
-    "anthropics/claude-plugins-official|claude-plugins-official"
-    "vercel-labs/agent-browser|agent-browser"
-    "fcakyon/claude-codex-settings|claude-settings"
-    "hugohe3/ppt-master|ppt-master"
-  )
-  for entry in "${community_marketplaces[@]}"; do
-    run_step "Marketplace: ${entry%%|*}" add_marketplace "${entry%%|*}" "${entry#*|}"
-  done
-
-  community_plugins=(
-    "adhd-output-style@claude-settings"
-    "azure-tools@claude-settings"
-    "anthropic-office-skills@claude-settings"
-    "agent-browser@agent-browser"
-    "ppt-master@ppt-master"
-  )
-  for spec in "${community_plugins[@]}"; do
-    run_step "Plugin: $spec" install_plugin "$spec"
-  done
+  sub_tally COMMUNITY
+  if [ "$SUB_COUNT" -eq 0 ]; then
+    warn "no community plugins ticked - nothing to install for that item."
+  fi
+  install_sub_catalog COMMUNITY
 fi
 
 # --- 7. claude-code-setup ----------------------------------------------------
-# Ships inside anthropics/claude-plugins-official, which the community item also
-# registers - add_marketplace is a no-op when it is already there, so this item works
-# whether or not item 6 was selected.
+# Ships inside anthropics/claude-plugins-official, which the team item also registers -
+# add_marketplace is a no-op when it is already there, so this item works whether or not
+# item 4 was selected.
 if is_selected "claude-code-setup"; then
   run_step "Marketplace: anthropics/claude-plugins-official" \
     add_marketplace "anthropics/claude-plugins-official" "claude-plugins-official"
@@ -1582,7 +1716,7 @@ if is_selected "playwright-mcp"; then
 fi
 
 # --- 14. Supabase ------------------------------------------------------------
-# Ships inside anthropics/claude-plugins-official, the same marketplace items 6 and 7
+# Ships inside anthropics/claude-plugins-official, the same marketplace items 4 and 7
 # register - add_marketplace is a no-op when it is already there, so this item stands
 # on its own. install_plugin does the "already installed?" check.
 if is_selected "supabase"; then

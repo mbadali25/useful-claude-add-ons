@@ -39,6 +39,10 @@ Common switches:
                         -Select 'strix,claude-mem')
     -Skills 'a,b'       install only these of this repo's skills, no prompt
                         (-Skills 'all' | 'none' also work; implies the repo item)
+    -TeamPlugins 'a,b'  install only these team plugins, no sub-picker
+                        ('all' | 'none' | numbers like '1,3' also work)
+    -CommunityPlugins 'a,b'
+                        install only these community plugins, no sub-picker
     -NonInteractive     select the default set, no prompt (CI/unattended)
     -SkillUIGuide       print the SkillUI quick start after installing it, no prompt
     -NotifySetup        scaffold the notify config after installing it, no prompt
@@ -56,6 +60,8 @@ param(
     [switch]$All,             # select every menu item, no menu
     [string]$Select,          # explicit selection, no menu: '1,3,7-9' or 'strix,supabase'
     [string]$Skills,          # explicit skill subset, no sub-picker: 'cloudflare,drata' | 'all' | 'none'
+    [string]$TeamPlugins,     # explicit team-plugin subset, no sub-picker
+    [string]$CommunityPlugins,# explicit community-plugin subset, no sub-picker
     [switch]$SkillUIGuide,    # answer the SkillUI quick-start prompt up front
     [switch]$NotifySetup,     # answer the notify setup prompt up front
     [Alias('PluginHubScope')]
@@ -419,14 +425,17 @@ function Install-ClaudePlugin {
 # --- Install catalog and menu -------------------------------------------------
 # One ordered entry per selectable item. 'Key' is what the rest of the script tests
 # with Test-Selected; 'Default' is what [D] (and -NonInteractive) picks, chosen to
-# match the prompt defaults this script used before it had a menu.
+# match the prompt defaults this script used before it had a menu. 'Sub' names the
+# sub-catalog a row expands into: those rows open a second picker on Right, and their
+# Name is a -f template taking the ticked count and the catalog size, so the row shows
+# a live count rather than a fixed claim.
 $script:Catalog = @(
     [pscustomobject]@{ Key = 'prereqs';           Default = $true;  Name = 'Prerequisites: Chocolatey + git, awscli, nodejs, python (needs Administrator)' }
     [pscustomobject]@{ Key = 'cli';               Default = $true;  Name = 'Claude Code CLI (@anthropic-ai/claude-code) + PATH export + update check' }
-    [pscustomobject]@{ Key = 'own-skills';        Default = $true;  Name = "This repo's marketplace + its skills" }
-    [pscustomobject]@{ Key = 'team';              Default = $true;  Name = 'Team plugins: superpowers, frontend-design, excalidraw-generator' }
+    [pscustomobject]@{ Key = 'own-skills';        Default = $true;  Sub = 'SKILL';     Name = "This repo's marketplace + {0} of {1} skills  >" }
+    [pscustomobject]@{ Key = 'team';              Default = $true;  Sub = 'TEAM';      Name = 'Team plugins - {0} of {1}: superpowers, frontend-design, excalidraw-generator  >' }
     [pscustomobject]@{ Key = 'find-skills';       Default = $true;  Name = 'find-skills skill (vercel-labs/skills)' }
-    [pscustomobject]@{ Key = 'community';         Default = $true;  Name = 'Community marketplaces + plugins (adhd-output-style, azure-tools, ppt-master, ...)' }
+    [pscustomobject]@{ Key = 'community';         Default = $true;  Sub = 'COMMUNITY'; Name = 'Community marketplaces + plugins - {0} of {1}: adhd-output-style, azure-tools, ...  >' }
     [pscustomobject]@{ Key = 'claude-code-setup'; Default = $true;  Name = 'claude-code-setup plugin (anthropics/claude-plugins-official)' }
     [pscustomobject]@{ Key = 'task-observer';     Default = $true;  Name = 'task-observer skill (rebelytics/one-skill-to-rule-them-all)' }
     [pscustomobject]@{ Key = 'claude-mem';        Default = $true;  Name = 'claude-mem memory plugin + CLAUDE_MEM_WORKER_PORT in settings.json' }
@@ -469,9 +478,15 @@ function Expand-SelectionSpec {
     return $keys
 }
 
-# --- This repo's individual skills ---------------------------------------------
-# Keep in sync with .claude-plugin/marketplace.json. Everything is on by default:
-# picking a subset is the exception, and a fresh machine wants the lot.
+# --- Sub-catalogs ----------------------------------------------------------------
+# Three menu rows expand into a checkbox list of their own, opened with Right. Each
+# sub-catalog carries the strings the helpers need to talk about it (Title, Noun, Flag)
+# plus its Items. The two plugin catalogs give each item a Plugin ('name@marketplace')
+# and the Source/Marketplace pair that has to be registered before it can be installed,
+# so a marketplace is only added when something ticked actually needs it.
+#
+# This repo's own skills. Keep in sync with .claude-plugin/marketplace.json. Everything
+# is on by default: picking a subset is the exception, and a fresh machine wants the lot.
 $script:SkillCatalog = @(
     [pscustomobject]@{ Key = 'aws-opensearch';        Selected = $true; Name = 'aws-opensearch          - AWS OpenSearch: health, shards, reindex, ISM, snapshots' }
     [pscustomobject]@{ Key = 'bitbucket';             Selected = $true; Name = 'bitbucket               - Bitbucket Cloud: git auth, PRs, pipelines, REST API' }
@@ -496,49 +511,92 @@ $script:SkillCatalog = @(
     [pscustomobject]@{ Key = 'work-log-reporter';     Selected = $true; Name = 'work-log-reporter       - Session work log + emailed PDF report over SMTP' }
 )
 
-function Get-SelectedSkillCount {
-    return @($script:SkillCatalog | Where-Object { $_.Selected }).Count
+# Team plugins. superpowers comes from anthropics/claude-plugins-official, not obra's own
+# marketplace: upstream publishes to both, but Install-ClaudePlugin detects on the bare
+# name, so a machine that already had superpowers from the official marketplace skipped
+# the install and was left with an orphaned 'superpowers-marketplace' registration plus a
+# second, disabled copy of the plugin. One source per plugin avoids the duplicate.
+$script:TeamCatalog = @(
+    [pscustomobject]@{ Key = 'superpowers';          Selected = $true; Name = 'superpowers             - brainstorming, TDD, systematic debugging, plan execution'; Plugin = 'superpowers@claude-plugins-official';       Source = 'anthropics/claude-plugins-official'; Marketplace = 'claude-plugins-official' }
+    [pscustomobject]@{ Key = 'frontend-design';      Selected = $true; Name = 'frontend-design         - distinctive UI: typography, colour, layout with intent';  Plugin = 'frontend-design@claude-code-plugins';       Source = 'anthropics/claude-code';               Marketplace = 'claude-code-plugins' }
+    [pscustomobject]@{ Key = 'excalidraw-generator'; Selected = $true; Name = 'excalidraw-generator    - hand-drawn .excalidraw diagrams from a description';     Plugin = 'excalidraw-generator@excalidraw-generator'; Source = 'lexiaoyao20/excalidraw-generator';     Marketplace = 'excalidraw-generator' }
+)
+
+# Community plugins, from claudepluginhub.com. Source repo -> marketplace name is *not*
+# mechanical: fcakyon/claude-codex-settings publishes itself as 'claude-settings'. Each
+# Marketplace below is the "name" field in that repo's own .claude-plugin/marketplace.json,
+# which is what 'plugin@marketplace' has to match.
+$script:CommunityCatalog = @(
+    [pscustomobject]@{ Key = 'adhd-output-style';       Selected = $true; Name = 'adhd-output-style       - ADHD-friendly output: short, numbered, action first'; Plugin = 'adhd-output-style@claude-settings';       Source = 'fcakyon/claude-codex-settings'; Marketplace = 'claude-settings' }
+    [pscustomobject]@{ Key = 'azure-tools';             Selected = $true; Name = 'azure-tools             - Azure CLI and Bicep helpers, deployment commands';    Plugin = 'azure-tools@claude-settings';             Source = 'fcakyon/claude-codex-settings'; Marketplace = 'claude-settings' }
+    [pscustomobject]@{ Key = 'anthropic-office-skills'; Selected = $true; Name = 'anthropic-office-skills - docx, xlsx, pptx and pdf authoring skills';           Plugin = 'anthropic-office-skills@claude-settings'; Source = 'fcakyon/claude-codex-settings'; Marketplace = 'claude-settings' }
+    [pscustomobject]@{ Key = 'agent-browser';           Selected = $true; Name = 'agent-browser           - drive a real browser from an agent (vercel-labs)';    Plugin = 'agent-browser@agent-browser';             Source = 'vercel-labs/agent-browser';     Marketplace = 'agent-browser' }
+    [pscustomobject]@{ Key = 'ppt-master';              Selected = $true; Name = 'ppt-master              - build and edit PowerPoint decks';                     Plugin = 'ppt-master@ppt-master';                   Source = 'hugohe3/ppt-master';            Marketplace = 'ppt-master' }
+)
+
+$script:SubCatalogs = @{
+    SKILL     = [pscustomobject]@{ Title = 'Pick individual skills from this repo'; Noun = 'skill';            Flag = '-Skills';           Items = $script:SkillCatalog }
+    TEAM      = [pscustomobject]@{ Title = 'Pick team plugins';                     Noun = 'team plugin';      Flag = '-TeamPlugins';      Items = $script:TeamCatalog }
+    COMMUNITY = [pscustomobject]@{ Title = 'Pick community plugins';                Noun = 'community plugin'; Flag = '-CommunityPlugins'; Items = $script:CommunityCatalog }
 }
 
-function Set-AllSkills {
-    param([bool]$Value)
-    foreach ($s in $script:SkillCatalog) { $s.Selected = $Value }
+function Get-SubCatalog {
+    param([string]$Name)
+    return $script:SubCatalogs[$Name]
 }
 
-function Expand-SkillsSpec {
-    # 'cloudflare,drata' | '1,4-6' | 'all' | 'none' -> sets .Selected on the catalog.
-    param([string]$Spec)
+function Get-SubSelectedCount {
+    param([string]$Name)
+    return @((Get-SubCatalog $Name).Items | Where-Object { $_.Selected }).Count
+}
+
+function Set-AllSubItems {
+    param([string]$Name, [bool]$Value)
+    foreach ($item in (Get-SubCatalog $Name).Items) { $item.Selected = $Value }
+}
+
+function Expand-SubSpec {
+    # 'cloudflare,drata' | '1,4-6' | 'all' | 'none' -> sets .Selected on the sub-catalog.
+    param([string]$Name, [string]$Spec)
+    $cat = Get-SubCatalog $Name
     switch -Regex ($Spec) {
-        '^(?i)all$'  { Set-AllSkills $true;  return }
-        '^(?i)none$' { Set-AllSkills $false; return }
+        '^(?i)all$'  { Set-AllSubItems $Name $true;  return }
+        '^(?i)none$' { Set-AllSubItems $Name $false; return }
     }
-    Set-AllSkills $false
+    Set-AllSubItems $Name $false
+    $items = $cat.Items
     foreach ($token in ($Spec -split '[,\s]+' | Where-Object { $_ })) {
         if ($token -match '^(\d+)\s*-\s*(\d+)$') {
             foreach ($n in [int]$Matches[1]..[int]$Matches[2]) {
-                if ($n -ge 1 -and $n -le $script:SkillCatalog.Count) { $script:SkillCatalog[$n - 1].Selected = $true }
+                if ($n -ge 1 -and $n -le $items.Count) { $items[$n - 1].Selected = $true }
             }
         } elseif ($token -match '^\d+$') {
             $n = [int]$token
-            if ($n -ge 1 -and $n -le $script:SkillCatalog.Count) {
-                $script:SkillCatalog[$n - 1].Selected = $true
+            if ($n -ge 1 -and $n -le $items.Count) {
+                $items[$n - 1].Selected = $true
             } else {
-                Write-Warn2 "ignoring out-of-range skill number '$token'"
+                Write-Warn2 "ignoring out-of-range $($cat.Noun) number '$token'"
             }
         } else {
-            $hit = $script:SkillCatalog | Where-Object { $_.Key -eq $token.ToLower() } | Select-Object -First 1
-            if ($hit) { $hit.Selected = $true } else { Write-Warn2 "ignoring unknown skill '$token'" }
+            $hit = $items | Where-Object { $_.Key -eq $token.ToLower() } | Select-Object -First 1
+            if ($hit) { $hit.Selected = $true } else { Write-Warn2 "ignoring unknown $($cat.Noun) '$token'" }
         }
     }
 }
 
+function Test-SubKeySelected {
+    param([string]$Name, [string]$Key)
+    return @((Get-SubCatalog $Name).Items | Where-Object { $_.Key -eq $Key -and $_.Selected }).Count -gt 0
+}
+
 function Get-MenuLabel {
-    # The repo row carries a live count, because "its 19 skills" stops being true the
-    # moment someone opens the skills picker and unticks one.
+    # A sub-catalog row carries a live count, because "its 21 skills" stops being true the
+    # moment someone opens the sub-picker and unticks one.
     param([int]$Index)
     $item = $script:Catalog[$Index]
-    if ($item.Key -eq 'own-skills') {
-        return ("This repo's marketplace + {0} of {1} skills  >" -f (Get-SelectedSkillCount), $script:SkillCatalog.Count)
+    if ($item.Sub) {
+        $cat = Get-SubCatalog $item.Sub
+        return ($item.Name -f (Get-SubSelectedCount $item.Sub), $cat.Items.Count)
     }
     return $item.Name
 }
@@ -697,39 +755,43 @@ function Invoke-Picker {
     }
 }
 
-function Select-SkillsInteractive {
-    $labels = @($script:SkillCatalog | ForEach-Object { $_.Name })
-    $state = @($script:SkillCatalog | ForEach-Object { [bool]$_.Selected })
-    $sub = @($script:SkillCatalog | ForEach-Object { $false })
-    $defaults = @($script:SkillCatalog | ForEach-Object { $true })
+function Select-SubInteractive {
+    # Only writes back on confirm, so Q discards the whole sub-selection by doing nothing.
+    param([string]$Name)
+    $cat = Get-SubCatalog $Name
+    $items = $cat.Items
+    $labels = @($items | ForEach-Object { $_.Name })
+    $state = @($items | ForEach-Object { [bool]$_.Selected })
+    $sub = @($items | ForEach-Object { $false })
+    $defaults = @($items | ForEach-Object { $true })
     $result = Invoke-Picker -Labels $labels -State $state -Sub $sub -Defaults $defaults `
-        -Title 'Pick individual skills from this repo' `
+        -Title $cat.Title `
         -Hint 'Enter or Left to go back to the main menu   Q to discard these changes'
     if ($result.Action -eq 'cancel') { return }
-    for ($i = 0; $i -lt $script:SkillCatalog.Count; $i++) {
-        $script:SkillCatalog[$i].Selected = [bool]$result.State[$i]
+    for ($i = 0; $i -lt $items.Count; $i++) {
+        $items[$i].Selected = [bool]$result.State[$i]
     }
 }
 
 function Select-MenuInteractive {
     $state = @($script:Catalog | ForEach-Object { [bool]$_.Default })
     $defaults = @($script:Catalog | ForEach-Object { [bool]$_.Default })
-    $sub = @($script:Catalog | ForEach-Object { $_.Key -eq 'own-skills' })
-    $ownIndex = [array]::IndexOf(@($script:Catalog | ForEach-Object { $_.Key }), 'own-skills')
+    $sub = @($script:Catalog | ForEach-Object { [bool]$_.Sub })
     $cursor = 0
 
     while ($true) {
         $labels = @(for ($i = 0; $i -lt $script:Catalog.Count; $i++) { Get-MenuLabel $i })
         $result = Invoke-Picker -Labels $labels -State $state -Sub $sub -Defaults $defaults `
             -Title 'Select what to install' `
-            -Hint 'Right on the repo row picks individual skills' -Cursor $cursor
+            -Hint 'Right on a row ending in > picks what goes into it' -Cursor $cursor
         $state = @($result.State)
         $cursor = $result.Cursor
         if ($result.Action -eq 'submenu') {
-            Select-SkillsInteractive
-            # Opening the skills picker is a statement of intent: tick the repo row so a
+            $subName = $script:Catalog[$cursor].Sub
+            Select-SubInteractive $subName
+            # Opening a sub-picker is a statement of intent: tick the parent row so a
             # careful sub-selection is not silently thrown away by an unticked parent.
-            if ((Get-SelectedSkillCount) -gt 0 -and $ownIndex -ge 0) { $state[$ownIndex] = $true }
+            if ((Get-SubSelectedCount $subName) -gt 0) { $state[$cursor] = $true }
             continue
         }
         if ($result.Action -eq 'cancel') {
@@ -775,18 +837,25 @@ function Show-InstallMenu {
     Write-Host ""
     Write-Host "  [x] marks the default set." -ForegroundColor DarkGray
     Write-Host "  A = all   D = defaults   N = none   or numbers like 1,3,7-9" -ForegroundColor DarkGray
-    Write-Host "  Individual skills: re-run with -Skills 'cloudflare,drata'" -ForegroundColor DarkGray
+    Write-Host "  Rows ending in > hold a list: -Skills 'cloudflare,drata'" -ForegroundColor DarkGray
+    Write-Host "  -TeamPlugins 'superpowers'   -CommunityPlugins 'ppt-master'" -ForegroundColor DarkGray
 }
 
 function Select-InstallItems {
     $defaults = @($script:Catalog | Where-Object { $_.Default } | ForEach-Object { $_.Key })
     $everything = @($script:Catalog | ForEach-Object { $_.Key })
 
-    # -Skills is a non-interactive answer in its own right: it settles the skill list
-    # before anything is drawn, so it composes with -All and -NonInteractive.
-    if ($Skills) {
-        Expand-SkillsSpec $Skills
-        Write-Host ("Skills from -Skills '{0}' ({1} of {2})." -f $Skills, (Get-SelectedSkillCount), $script:SkillCatalog.Count) -ForegroundColor DarkGray
+    # The sub-catalog switches are non-interactive answers in their own right: they settle
+    # each list before anything is drawn, so they compose with -All and -NonInteractive.
+    foreach ($pair in @(
+        @{ Name = 'SKILL';     Spec = $Skills;          Label = 'Skills';            Flag = '-Skills' },
+        @{ Name = 'TEAM';      Spec = $TeamPlugins;     Label = 'Team plugins';      Flag = '-TeamPlugins' },
+        @{ Name = 'COMMUNITY'; Spec = $CommunityPlugins;Label = 'Community plugins'; Flag = '-CommunityPlugins' }
+    )) {
+        if (-not $pair.Spec) { continue }
+        Expand-SubSpec $pair.Name $pair.Spec
+        Write-Host ("{0} from {1} '{2}' ({3} of {4})." -f $pair.Label, $pair.Flag, $pair.Spec,
+            (Get-SubSelectedCount $pair.Name), (Get-SubCatalog $pair.Name).Items.Count) -ForegroundColor DarkGray
     }
 
     $keys = @()
@@ -837,15 +906,17 @@ function Show-Selection {
     }
     Write-Host "  Will install ($($chosen.Count) item(s)):" -ForegroundColor Cyan
     for ($i = 0; $i -lt $script:Catalog.Count; $i++) {
-        if (Test-Selected $script:Catalog[$i].Key) { Write-Host "    - $(Get-MenuLabel $i)" }
-    }
-    if (Test-Selected 'own-skills') {
-        $picked = Get-SelectedSkillCount
+        $item = $script:Catalog[$i]
+        if (-not (Test-Selected $item.Key)) { continue }
+        Write-Host "    - $(Get-MenuLabel $i)"
+        if (-not $item.Sub) { continue }
+        # Only worth spelling out when it is a subset - the row label already reads "N of N".
+        $cat = Get-SubCatalog $item.Sub
+        $picked = Get-SubSelectedCount $item.Sub
         if ($picked -eq 0) {
-            Write-Warn2 "no individual skills selected - the marketplace will be registered but no skill installed. Re-run with -Skills all to get them."
-        } elseif ($picked -lt $script:SkillCatalog.Count) {
-            Write-Host "      skills:" -ForegroundColor Cyan
-            foreach ($s in ($script:SkillCatalog | Where-Object { $_.Selected })) { Write-Host "        - $($s.Key)" }
+            Write-Warn2 "nothing ticked in this list - it will be skipped. Re-run with $($cat.Flag) all to get everything."
+        } elseif ($picked -lt $cat.Items.Count) {
+            foreach ($s in ($cat.Items | Where-Object { $_.Selected })) { Write-Host "        - $($s.Key)" }
         }
     }
 }
@@ -871,7 +942,7 @@ function Test-SkillSelected {
     # this repo's marketplace item is itself selected.
     param([string]$Key)
     if (-not (Test-Selected 'own-skills')) { return $false }
-    return @($script:SkillCatalog | Where-Object { $_.Key -eq $Key -and $_.Selected }).Count -gt 0
+    return (Test-SubKeySelected 'SKILL' $Key)
 }
 
 function Show-NotifyPrereqs {
@@ -1198,7 +1269,13 @@ if ((Test-Selected 'prereqs') -and $script:IsElevated) {
             Write-Skip "Chocolatey already installed ($(choco --version))"
             return
         }
-        Set-ExecutionPolicy Bypass -Scope Process -Force
+        # Upstream's snippet opens with 'Set-ExecutionPolicy Bypass -Scope Process'. It is
+        # deliberately not here: on a machine where the policy is set by Group Policy or
+        # MDM that call throws, and with $ErrorActionPreference = 'Stop' it takes the whole
+        # step down before Chocolatey is even downloaded. Nothing below needs it - the
+        # installer arrives as a string and is run through Invoke-Expression, not as a .ps1
+        # on disk. A host that really is locked down to AllSigned will say so, and the
+        # answer there is a policy exemption, not a call this script is not allowed to make.
         [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
         Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
         Sync-SessionEnvironment
@@ -1291,7 +1368,7 @@ if (Test-Selected 'own-skills') {
 
     # The catalog itself lives in $script:SkillCatalog next to the menu; only the
     # ticked ones get installed, so -Skills and the sub-picker both land here.
-    if ((Get-SelectedSkillCount) -eq 0) {
+    if ((Get-SubSelectedCount 'SKILL') -eq 0) {
         Write-Warn2 "no skills selected from this repo - marketplace registered, nothing installed."
     }
     $ownPlugins = @($script:SkillCatalog | Where-Object { $_.Selected } | ForEach-Object { $_.Key })
@@ -1309,35 +1386,36 @@ if (Test-Selected 'own-skills') {
 }
 
 # --- 4. Team marketplaces and plugins ----------------------------------------
-if (Test-Selected 'team') {
-    # superpowers comes from anthropics/claude-plugins-official, not obra's own
-    # marketplace. Upstream publishes to both, but Install-ClaudePlugin detects on the
-    # bare name: a machine that already had superpowers from the official marketplace
-    # (which items 6 and 7 register) skipped the install and was left with an orphaned
-    # 'superpowers-marketplace' registration plus a second, disabled copy of the plugin.
-    # One source avoids the duplicate. Add-ClaudeMarketplace is a no-op when already
-    # present, so this stands on its own whether or not items 6 and 7 were selected.
-    $teamMarketplaces = @(
-        @{ Source = 'anthropics/claude-plugins-official';  Name = 'claude-plugins-official' },
-        @{ Source = 'anthropics/claude-code';              Name = 'claude-code-plugins' },
-        @{ Source = 'lexiaoyao20/excalidraw-generator';    Name = 'excalidraw-generator' }
-    )
-    foreach ($mp in $teamMarketplaces) {
-        Invoke-Step "Marketplace: $($mp.Source)" {
-            Add-ClaudeMarketplace -Source $mp.Source -Name $mp.Name
+function Install-SubCatalog {
+    # Registers only the marketplaces the ticked plugins actually need. Unticking every
+    # plugin from one source leaves that source unregistered rather than dangling, and a
+    # source shared by several plugins is still only added once. Add-ClaudeMarketplace is
+    # a no-op when the marketplace is already there, so overlaps with other menu items
+    # (claude-plugins-official is also registered by items 7 and 14) cost nothing.
+    param([string]$Name)
+    $cat = Get-SubCatalog $Name
+    $added = @{}
+    foreach ($item in ($cat.Items | Where-Object { $_.Selected })) {
+        if (-not $added.ContainsKey($item.Marketplace)) {
+            $source = $item.Source
+            $market = $item.Marketplace
+            Invoke-Step "Marketplace: $source" {
+                Add-ClaudeMarketplace -Source $source -Name $market
+            }
+            $added[$item.Marketplace] = $true
         }
-    }
-
-    $teamPlugins = @(
-        'superpowers@claude-plugins-official',
-        'frontend-design@claude-code-plugins',
-        'excalidraw-generator@excalidraw-generator'
-    )
-    foreach ($spec in $teamPlugins) {
+        $spec = $item.Plugin
         Invoke-Step "Plugin: $spec" {
             Install-ClaudePlugin $spec
         }
     }
+}
+
+if (Test-Selected 'team') {
+    if ((Get-SubSelectedCount 'TEAM') -eq 0) {
+        Write-Warn2 "no team plugins ticked - nothing to install for that item."
+    }
+    Install-SubCatalog 'TEAM'
 }
 
 # --- 5. find-skills ----------------------------------------------------------
@@ -1365,39 +1443,20 @@ if (Test-Selected 'find-skills') {
 }
 
 # --- 6. Community marketplaces (from claudepluginhub.com) --------------------
-# Installed with native 'claude plugin' commands. Source repo -> marketplace name
-# is *not* mechanical: fcakyon/claude-codex-settings publishes itself as
-# 'claude-settings'. Each Name below is the "name" field in that repo's own
-# .claude-plugin/marketplace.json, which is what 'plugin@marketplace' must match.
+# Installed with native 'claude plugin' commands, from $script:CommunityCatalog next to
+# the menu - so unticking a plugin in the sub-picker also drops its marketplace when
+# nothing else ticked needs it.
 if (Test-Selected 'community') {
-    $communityMarketplaces = @(
-        @{ Source = 'anthropics/claude-plugins-official'; Name = 'claude-plugins-official' },
-        @{ Source = 'vercel-labs/agent-browser';          Name = 'agent-browser' },
-        @{ Source = 'fcakyon/claude-codex-settings';      Name = 'claude-settings' },
-        @{ Source = 'hugohe3/ppt-master';                 Name = 'ppt-master' }
-    )
-    foreach ($mp in $communityMarketplaces) {
-        Invoke-Step "Marketplace: $($mp.Source)" {
-            Add-ClaudeMarketplace -Source $mp.Source -Name $mp.Name
-        }
+    if ((Get-SubSelectedCount 'COMMUNITY') -eq 0) {
+        Write-Warn2 "no community plugins ticked - nothing to install for that item."
     }
-
-    $communityPlugins = @(
-        'adhd-output-style@claude-settings',
-        'azure-tools@claude-settings',
-        'anthropic-office-skills@claude-settings',
-        'agent-browser@agent-browser',
-        'ppt-master@ppt-master'
-    )
-    foreach ($spec in $communityPlugins) {
-        Invoke-Step "Plugin: $spec" { Install-ClaudePlugin $spec }
-    }
+    Install-SubCatalog 'COMMUNITY'
 }
 
 # --- 7. claude-code-setup ----------------------------------------------------
-# Ships inside anthropics/claude-plugins-official, which the community item also
-# registers - Add-ClaudeMarketplace is a no-op when it is already there, so this
-# item works whether or not item 6 was selected.
+# Ships inside anthropics/claude-plugins-official, which the team item also registers -
+# Add-ClaudeMarketplace is a no-op when it is already there, so this item works whether
+# or not item 4 was selected.
 if (Test-Selected 'claude-code-setup') {
     Invoke-Step "Marketplace: anthropics/claude-plugins-official" {
         Add-ClaudeMarketplace -Source 'anthropics/claude-plugins-official' -Name 'claude-plugins-official'
@@ -1529,7 +1588,7 @@ if (Test-Selected 'playwright-mcp') {
 }
 
 # --- 14. Supabase ------------------------------------------------------------
-# Ships inside anthropics/claude-plugins-official, the same marketplace items 6 and 7
+# Ships inside anthropics/claude-plugins-official, the same marketplace items 4 and 7
 # register - Add-ClaudeMarketplace is a no-op when it is already there, so this item
 # stands on its own. Install-ClaudePlugin does the "already installed?" check.
 if (Test-Selected 'supabase') {

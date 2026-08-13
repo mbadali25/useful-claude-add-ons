@@ -16,12 +16,14 @@ One script per OS. Both are idempotent (safe to re-run) and, by default, also bo
     [x] Prerequisites: git, nodejs, npm, python3, pip3 (needs root or sudo)
     [x] Claude Code CLI (@anthropic-ai/claude-code) + PATH export + update check
   > [x] This repo's marketplace + 21 of 21 skills  >
-    [x] Team plugins: superpowers, frontend-design, excalidraw-generator
+    [x] Team plugins - 3 of 3: superpowers, frontend-design, excalidraw-generator  >
+    [x] find-skills skill (vercel-labs/skills)
+    [x] Community marketplaces + plugins - 5 of 5: adhd-output-style, azure-tools, ...  >
     ...
     [ ] Strix AI pentesting CLI (needs Docker + an LLM API key)
   showing 1-18 of 18
   ↑↓ move   Space toggle   Enter start   A all   N none   D defaults   Q cancel
-  → on the repo row picks individual skills
+  → on a row ending in > picks what goes into it
 ```
 
 | Key | Does |
@@ -29,16 +31,28 @@ One script per OS. Both are idempotent (safe to re-run) and, by default, also bo
 | ↑ / ↓ (or `k` / `j`) | Move the cursor |
 | Space | Tick or untick the row |
 | Enter | Start installing what's ticked |
-| → | On the repo's row only: open the per-skill picker |
-| ← | Back out of the per-skill picker |
+| → | On a row ending in `>`: open that row's sub-picker |
+| ← | Back out of a sub-picker |
 | `A` / `N` / `D` | Tick all / clear all / restore the default set |
 | `Q` or Escape | Cancel — nothing is installed |
 
-**The per-skill picker** (→ on row 3) lists all 21 skills in this repo with the same controls. All 21 start ticked; untick the ones you don't want and press Enter or ← to go back. Opening it also ticks the parent row, so a careful sub-selection can't be lost to an unticked parent.
+### The three sub-pickers
 
-**When the picker isn't available**, both scripts fall back to the original numbered prompt — same items, same defaults, answered with `A`, `D`, `N`, or `1,3,7-9`. That happens when there is no usable terminal (`curl | bash` with no `/dev/tty`, CI), no `stty`, `TERM=dumb`, PowerShell ISE, a redirected console, or a window under ten lines. Nothing about the install differs; only how you choose.
+Rows 3, 4 and 6 each expand into a checkbox list of their own. They end in `>` and carry a live `N of M` count, so the main menu always shows what the row will actually do:
 
-**To skip choosing entirely**, use `-All` / `--all`, `-Select` / `--select`, `-Skills` / `--skills`, or `-NonInteractive` / `--non-interactive`. Any of those bypasses both the picker and the numbered prompt, which is what CI and the `curl | bash` one-liner rely on.
+| Row | Sub-picker | Switch |
+|---|---|---|
+| 3 This repo | all 21 skills in [`skills/`](skills/) | `-Skills` / `--skills` |
+| 4 Team plugins | `superpowers`, `frontend-design`, `excalidraw-generator` | `-TeamPlugins` / `--team-plugins` |
+| 6 Community | `adhd-output-style`, `azure-tools`, `anthropic-office-skills`, `agent-browser`, `ppt-master` | `-CommunityPlugins` / `--community-plugins` |
+
+Everything starts ticked; untick what you don't want and press Enter or ← to go back — the cursor returns to the row you opened, not the top of the menu. `Q` in a sub-picker discards that sub-selection and leaves the list as it was. Opening a sub-picker also ticks its parent row, so a careful sub-selection can't be lost to an unticked parent.
+
+For rows 4 and 6, **the marketplaces follow the ticks**: each plugin knows which marketplace it comes from, and only the marketplaces that a ticked plugin needs get registered. Take `ppt-master` alone from row 6 and only `hugohe3/ppt-master` is added — `fcakyon/claude-codex-settings` and `vercel-labs/agent-browser` are left out entirely, instead of registered with nothing installed from them. A marketplace shared by several ticked plugins is still only added once.
+
+**When the picker isn't available**, both scripts fall back to the original numbered prompt — same items, same defaults, answered with `A`, `D`, `N`, or `1,3,7-9`. That happens when there is no usable terminal (`curl | bash` with no `/dev/tty`, CI), no `stty`, `TERM=dumb`, PowerShell ISE, a redirected console, or a window under ten lines. Nothing about the install differs; only how you choose. The sub-lists are still reachable there — through their switches rather than →.
+
+**To skip choosing entirely**, use `-All` / `--all`, `-Select` / `--select`, any of the three sub-list switches, or `-NonInteractive` / `--non-interactive`. Any of those bypasses both the picker and the numbered prompt, which is what CI and the `curl | bash` one-liner rely on.
 
 > **Native plugin commands only.** Marketplaces and plugins are installed with `claude plugin marketplace add` and `claude plugin install`. The previous `npx -y claudepluginhub <repo>` wrapper is gone: it synthesized a *local directory* marketplace per repo (registered under a generated name like `cpd-aiskillstore-marketplace-user`), which the scripts' own detection couldn't match — so those plugins were reinstalled on every run — and it was a frequent source of Windows failures. The VoltAgent subagents no longer need a `git clone` + Git Bash either; the repo publishes itself as a marketplace.
 
@@ -54,10 +68,10 @@ cd useful-claude-add-ons
 
 It shows the menu, asks the SkillUI quick-start question up front, then installs what you ticked, in order:
 
-1. **Prerequisites** — if elevated: installs [Chocolatey](https://chocolatey.org/) if not already present, then `choco install git awscli nodejs python -y`. **If not elevated, this item is skipped entirely** — the script prints a warning and continues with everything below using whatever `git`/`node`/`npm`/`python` are already on `PATH`.
+1. **Prerequisites** — if elevated: installs [Chocolatey](https://chocolatey.org/) if not already present (via upstream's own bootstrap script, fetched as a string and run through `Invoke-Expression`), then `choco install git awscli nodejs python -y`. **If not elevated, this item is skipped entirely** — the script prints a warning and continues with everything below using whatever `git`/`node`/`npm`/`python` are already on `PATH`.
 2. **Claude Code CLI** — `npm install -g @anthropic-ai/claude-code`, adds the npm global bin directory to your **User** `PATH` environment variable (persists across sessions), and sets a `CLAUDE_CODE_HOME` user env var pointing at the npm prefix. When `claude` is already installed it compares the local version against the npm registry instead and updates only if it's behind (`-NoUpdate` skips the check).
 3. **This repo** — adds `mbadali25/useful-claude-add-ons` as a Claude Code marketplace, then installs the skills you ticked in the per-skill picker, all 21 by default (see [What the own-marketplace step installs](#what-the-own-marketplace-step-installs) below).
-4. **Team plugins, community plugins, `find-skills`, `claude-code-setup`, `task-observer`, claude-mem, VoltAgent** — each is its own menu row; `-SkipBootstrap` narrows any selection back down to items 1 and 2.
+4. **Team plugins, community plugins, `find-skills`, `claude-code-setup`, `task-observer`, claude-mem, VoltAgent** — each is its own menu row, and the team and community rows have sub-pickers of their own (→, or `-TeamPlugins` / `-CommunityPlugins`); `-SkipBootstrap` narrows any selection back down to items 1 and 2.
 5. **MCP servers** — AWS, Azure, Playwright. Off by default; see [Optional: MCP servers](#optional-mcp-servers).
 6. **Supabase, Context7, Playwright CLI, SkillUI, Strix** — off by default; see [Optional: extra tooling](#optional-extra-tooling).
 
@@ -76,7 +90,7 @@ Runs as your current user, escalating to `sudo` (or `root` directly if already r
 1. **Prerequisites** — `git`, `nodejs`, `npm`, `python3` via whichever of `apt-get` / `dnf` / `yum` / `pacman` / `zypper` / `apk` it finds first. Only packages whose command is actually missing get installed.
 2. **Claude Code CLI** — `npm install -g @anthropic-ai/claude-code`, then a `PATH` export for the npm global bin directory appended to `~/.bashrc` and `~/.zshrc` (only if not already present) and exported in the current shell too. When `claude` is already installed it compares the local version against the npm registry instead and updates only if it's behind (`--no-update` skips the check).
 3. **This repo** — adds `mbadali25/useful-claude-add-ons` as a Claude Code marketplace, then installs the skills you ticked in the per-skill picker, all 21 by default (see [What the own-marketplace step installs](#what-the-own-marketplace-step-installs) below).
-4. **Team plugins, community plugins, `find-skills`, `claude-code-setup`, `task-observer`, claude-mem, VoltAgent** — each is its own menu row; `--skip-bootstrap` narrows any selection back down to items 1 and 2.
+4. **Team plugins, community plugins, `find-skills`, `claude-code-setup`, `task-observer`, claude-mem, VoltAgent** — each is its own menu row, and the team and community rows have sub-pickers of their own (→, or `--team-plugins` / `--community-plugins`); `--skip-bootstrap` narrows any selection back down to items 1 and 2.
 5. **MCP servers** — AWS, Azure, Playwright. Off by default; see [Optional: MCP servers](#optional-mcp-servers).
 6. **Supabase, Context7, Playwright CLI, SkillUI, Strix** — off by default; see [Optional: extra tooling](#optional-extra-tooling).
 
@@ -190,7 +204,17 @@ To take a subset, either press → on the repo's row in the menu and untick what
 
 `--skills` also takes `all`, `none`, and positions (`1,4-6`), and it composes with `--all` and `--non-interactive` — so a CI run can install everything *except* the skills, or the skills and nothing else. Selecting the repo row with zero skills ticked still registers the marketplace; the script warns and names the fix rather than installing nothing silently.
 
-If a new skill is added to the marketplace, add it to the `SKILL_KEYS` / `SKILL_NAME` arrays in `install-prerequisites.sh` and to `$script:SkillCatalog` in `install-prerequisites.ps1`, plus this list — keeping `marketplace.json`, `skills/`, and the two scripts in sync. The catalogs are the single source of both the picker's rows and the install loop, so there is no second list to forget.
+`--team-plugins` and `--community-plugins` work the same way on rows 4 and 6:
+
+```powershell
+.\scripts\install-prerequisites.ps1 -NonInteractive -TeamPlugins 'superpowers' -CommunityPlugins 'none'
+```
+
+```bash
+./scripts/install-prerequisites.sh --non-interactive --team-plugins superpowers --community-plugins none
+```
+
+If a new skill is added to the marketplace, add it to the `SKILL_KEYS` / `SKILL_NAME` arrays in `install-prerequisites.sh` and to `$script:SkillCatalog` in `install-prerequisites.ps1`, plus this list — keeping `marketplace.json`, `skills/`, and the two scripts in sync. The same goes for a new team or community plugin: `TEAM_*` / `COMMUNITY_*` in the `.sh`, `$script:TeamCatalog` / `$script:CommunityCatalog` in the `.ps1`. Each plugin entry carries its own `Plugin` spec and `Source`/`Marketplace` pair, so adding one is a single row — there is no separate marketplace list to keep in step. The catalogs are the single source of both the picker's rows and the install loop, so there is no second list to forget.
 
 ### Optional: MCP servers
 
@@ -287,7 +311,7 @@ Or just re-run the OS install script — it's idempotent and will skip anything 
 | `choco : The term 'choco' is not recognized` right after install (Windows) | PATH not refreshed in the current shell | Open a new PowerShell window |
 | `claude: command not found` after the script finishes | Shell's `PATH` was cached before the script updated it | Open a new shell (Windows) / `source ~/.bashrc` (Linux) |
 | `npm install -g` fails with `EACCES` (Linux) | npm global prefix not writable by your user | The script already falls back to `sudo` for this; if it still fails, see `npm config get prefix` and fix ownership, or configure a user-writable npm prefix |
-| Chocolatey install script blocked | PowerShell execution policy | The script sets `Bypass` for its own process only — no machine-wide policy change needed; re-run from an elevated prompt if it still fails |
+| Chocolatey install script blocked | PowerShell execution policy is `AllSigned` or `Restricted` by Group Policy / MDM | The script no longer calls `Set-ExecutionPolicy Bypass -Scope Process` — that call throws on a managed machine and would kill the step before Chocolatey was downloaded. Nothing here writes a `.ps1` to disk, so the policy usually does not bite; if it does, you need a policy exemption, or install Chocolatey by hand and re-run |
 | `claude plugin marketplace add mbadali25/useful-claude-add-ons` fails | Repo is private and you're not authenticated to GitHub, or the CLI can't reach GitHub | Confirm `git ls-remote git@github.com:mbadali25/useful-claude-add-ons.git` works from the same machine first |
 | Windows script skips Chocolatey/git/awscli/nodejs/python entirely | Not run from an elevated prompt | Expected behavior, not an error — re-run from an elevated PowerShell prompt if you need those installed; everything else (Claude Code CLI, marketplaces, skills, MCP prompts, subagents) still runs |
 | `claude plugin install <name>@<marketplace>` fails with an unknown-plugin error | The marketplace name doesn't match the `name` field in that repo's own `.claude-plugin/marketplace.json` — it is **not** derived from the repo name (`fcakyon/claude-codex-settings` publishes itself as `claude-settings`) | Run `claude plugin marketplace list` to see the registered name, then install with that name |

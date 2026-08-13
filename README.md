@@ -49,13 +49,19 @@ The menu is a cursor picker — **↑/↓ to move, Space to tick, Enter to start
     [x] Prerequisites: git, nodejs, npm, python3, pip3 (needs root or sudo)
     [x] Claude Code CLI (@anthropic-ai/claude-code) + PATH export
   > [x] This repo's marketplace + 21 of 21 skills  >
-    [x] Team plugins: superpowers, frontend-design, excalidraw-generator
+    [x] Team plugins - 3 of 3: superpowers, frontend-design, excalidraw-generator  >
+    [x] find-skills skill (vercel-labs/skills)
+    [x] Community marketplaces + plugins - 5 of 5: adhd-output-style, azure-tools, ...  >
     ...
   ↑↓ move   Space toggle   Enter start   A all   N none   D defaults   Q cancel
-  → on the repo row picks individual skills
+  → on a row ending in > picks what goes into it
 ```
 
-`A` ticks everything, `N` clears it, `D` restores the default set, `Q` or Escape cancels without installing. On the repo's own row, **→ opens a second picker for the individual skills** so you can take three of them instead of all twenty-one; ← or Enter comes back to the main menu.
+`A` ticks everything, `N` clears it, `D` restores the default set, `Q` or Escape cancels without installing.
+
+**Three rows hold a list of their own** — this repo's skills, the team plugins, the community plugins. They end in `>`, carry a live `N of M` count, and **→ opens a second picker** so you can take three of this repo's twenty-one skills, or `ppt-master` without `agent-browser`; ← or Enter comes back to the main menu, cursor still on the row you opened. Opening a sub-picker ticks its parent row, so a careful sub-selection can't be lost to an unticked parent.
+
+For the two plugin lists, **a marketplace is only registered when something ticked actually needs it** — untick every `claude-settings` plugin and that marketplace is never added, rather than left registered with nothing installed from it.
 
 Terminals that can't read a key press one at a time — no `stty`, `TERM=dumb`, PowerShell ISE, a redirected console, a window under ten lines — fall back to the original numbered prompt automatically: `[x]` marks the default set, and you answer `A`, `D` (or Enter), `N`, or numbers like `1,3,7-9`. Item keys work in `--select` either way, so `--select supabase,claude-mem` saves counting rows.
 
@@ -64,9 +70,9 @@ Terminals that can't read a key press one at a time — no `stty`, `TERM=dumb`, 
 | 1 | Prerequisites — Chocolatey / `apt` etc. + git, node, python | x |
 | 2 | Claude Code CLI + PATH export + **update check** | x |
 | 3 | This repo's marketplace + its skills — **→ picks individual skills** (`notify` asks about setup) | x |
-| 4 | Team plugins — superpowers, frontend-design, excalidraw-generator | x |
+| 4 | Team plugins — **→ picks individual plugins** (superpowers, frontend-design, excalidraw-generator) | x |
 | 5 | `find-skills` skill | x |
-| 6 | Community marketplaces + plugins | x |
+| 6 | Community marketplaces + plugins — **→ picks individual plugins** | x |
 | 7 | `claude-code-setup` plugin | x |
 | 8 | `task-observer` skill | x |
 | 9 | claude-mem — installs **Bun** (its worker runtime) and sets `CLAUDE_MEM_WORKER_PORT` in `settings.json` | x |
@@ -84,6 +90,7 @@ Menu numbers are identical on Windows and Linux, and an already-registered MCP s
 
 A few items need a word of explanation:
 
+- **Prerequisites** (1) on Windows installs Chocolatey from upstream's own bootstrap script. It deliberately does *not* run `Set-ExecutionPolicy Bypass -Scope Process` first, the way upstream's copy-paste snippet does: on a machine whose execution policy comes from Group Policy or MDM that call throws, and it would take the whole step down before Chocolatey was even downloaded. Nothing in the step needs it — the installer is fetched as a string and run through `Invoke-Expression`, not saved as a `.ps1`.
 - **Claude Code CLI** (2) also checks for an update when `claude` is *already* installed: it compares the local version against the npm registry and runs `npm install -g @anthropic-ai/claude-code@latest` only when they differ. `--no-update` / `-NoUpdate` reports the installed version and skips the check.
 - **The `notify` skill** (in the item 3 sub-picker) is the one skill that needs machine-level setup, so when it's ticked the script prints its prerequisites — Python 3.8+, a `@BotFather` bot token, your `chat_id`, `TELEGRAM_BOT_TOKEN` exported, and a config file — then asks whether to scaffold `~/.config/notify/config.json` for you. `--notify-setup` / `-NotifySetup` answers yes without being asked. It never writes the bot token anywhere; an existing config is left alone. For the guided version, run `/notify-setup` in a Claude session.
 - **claude-mem** (9) appends `"CLAUDE_MEM_WORKER_PORT": "37790"` after the `CLAUDE_MEM_PROVIDER` line in `~/.claude/settings.json`, backing the file up first and restoring it if the result doesn't parse — without the port the worker silently binds somewhere else.
@@ -98,6 +105,8 @@ Everything that can be a plugin **is** installed as one, using the CLI's own `cl
 | `-All` / `--all` | Select every menu item, no prompt. |
 | `-Select '1,3,7-9'` / `--select 1,3,7-9` | Select these menu items, no prompt. Item keys work too: `--select supabase,claude-mem`. |
 | `-Skills 'cloudflare,drata'` / `--skills cloudflare,drata` | Install only these of this repo's skills, no sub-picker. Also accepts `all`, `none`, and numbers (`1,4-6`). Composes with `-All` / `-NonInteractive`. |
+| `-TeamPlugins 'superpowers'` / `--team-plugins superpowers` | Install only these team plugins (item 4), no sub-picker. Same `all` / `none` / numbers grammar as `--skills`. |
+| `-CommunityPlugins 'ppt-master'` / `--community-plugins ppt-master` | Install only these community plugins (item 6), no sub-picker. Same grammar again. |
 | `-NonInteractive` / `--non-interactive` | Select the default set, no prompt — for unattended or CI runs. |
 | `-SkillUIGuide` / `--skillui-guide` | Print the SkillUI quick start after installing it, without being asked. |
 | `-NotifySetup` / `--notify-setup` | Scaffold `~/.config/notify/config.json` after installing the `notify` skill, without being asked. The prerequisites are printed either way. |
@@ -114,9 +123,9 @@ Everything that can be a plugin **is** installed as one, using the CLI's own `cl
 | 1 Prerequisites | Chocolatey + git, awscli, nodejs, python (Windows) / git, nodejs, npm, python3, pip3 via apt/dnf/yum/pacman/zypper/apk (Linux) | package manager |
 | 2 Claude Code CLI | `@anthropic-ai/claude-code`, a persistent `PATH` entry for the npm global bin, and an update to the latest published version if one already exists | npm |
 | 3 This repo | The `useful-claude-add-ons` marketplace and, by default, all 21 skills in [`skills/`](skills/) — narrow it with → in the menu or `--skills` | this repo |
-| 4 Team plugins | `superpowers`, `frontend-design`, `excalidraw-generator` | 3 marketplaces |
+| 4 Team plugins | By default all 3 — `superpowers`, `frontend-design`, `excalidraw-generator` — narrow it with → or `--team-plugins` | 3 marketplaces, added on demand |
 | 5 find-skills | The `find-skills` skill, into the user skills dir | `vercel-labs/skills` |
-| 6 Community | `adhd-output-style`, `azure-tools`, `anthropic-office-skills`, `agent-browser`, `ppt-master` | 4 marketplaces |
+| 6 Community | By default all 5 — `adhd-output-style`, `azure-tools`, `anthropic-office-skills`, `agent-browser`, `ppt-master` — narrow it with → or `--community-plugins` | 3 marketplaces, added on demand |
 | 7 claude-code-setup | Analyses a codebase and recommends hooks/skills/MCP servers | `anthropics/claude-plugins-official` |
 | 8 task-observer | Watches a session for reusable-skill opportunities | `rebelytics/one-skill-to-rule-them-all` |
 | 9 claude-mem | Cross-session memory, **Bun** (its worker runtime — Chocolatey on Windows, `npm -g` or `bun.sh` on Linux), plus `CLAUDE_MEM_WORKER_PORT` in `settings.json` | `thedotmack/claude-mem` |

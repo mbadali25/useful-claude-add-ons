@@ -4,12 +4,52 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added
+
+- **Both install scripts — the team and community rows now have sub-pickers, like the
+  repo row.** Menu items 4 and 6 were all-or-nothing: taking `ppt-master` meant also
+  taking `agent-browser` and three `claude-settings` plugins. Both rows now end in `>`,
+  carry a live `N of M` count, and open a checkbox list on →, exactly the way item 3's
+  per-skill picker already worked. New `-TeamPlugins` / `--team-plugins` and
+  `-CommunityPlugins` / `--community-plugins` switches take the same
+  `all` / `none` / keys / `1,4-6` grammar as `--skills`, for runs with no picker.
+
+  The sub-picker machinery was generalised rather than copied: one set of helpers now
+  drives all three catalogs (`SKILL`, `TEAM`, `COMMUNITY`), so the count in the row
+  label, the `→` handler, the switch parser, the confirmation list, and the install loop
+  are shared code. Adding a fourth list is a catalog and one `MENU_SUB` / `Sub` entry.
+
+  **Marketplaces now follow the ticks.** Each plugin entry carries its own
+  `Source` / `Marketplace` pair, and a marketplace is registered only when a *ticked*
+  plugin needs it — deduplicated, so `claude-settings` is still added once for its three
+  plugins. Previously items 4 and 6 registered their marketplaces unconditionally. Two
+  consequences: unticking every plugin from a source no longer leaves that source
+  registered with nothing installed from it, and the community item no longer registers
+  `anthropics/claude-plugins-official`, which it never installed anything from — items 4,
+  7 and 14 each register it for the plugin they actually take from it.
+
+  Returning from a sub-picker also puts the cursor back on the row you opened, instead of
+  at the top of the menu.
+
+### Changed
+
+- **`install-prerequisites.ps1` — the Chocolatey step no longer calls
+  `Set-ExecutionPolicy`.** Upstream's copy-paste snippet opens with
+  `Set-ExecutionPolicy Bypass -Scope Process -Force`, and the script carried it verbatim.
+  On a machine whose execution policy is set by Group Policy or MDM that call *throws*,
+  and with `$ErrorActionPreference = 'Stop'` it took the whole step down before
+  Chocolatey was even downloaded — turning a policy that would not have blocked anything
+  into a hard failure. Nothing in the step needs it: the installer is fetched as a string
+  and run through `Invoke-Expression`, never written to disk as a `.ps1`. A host genuinely
+  locked to `AllSigned` will now say so, and the answer there is a policy exemption rather
+  than a call this script is not entitled to make.
+
 ### Fixed
 
 - **Both install scripts — Superpowers came from a second marketplace and could land
   disabled.** Item 4 registered `obra/superpowers-marketplace` unconditionally, but
   `install_plugin` / `Install-ClaudePlugin` detect plugins by *bare name*. On any machine
-  that already had `superpowers@claude-plugins-official` — which items 6 and 7 register —
+  that already had `superpowers@claude-plugins-official` — which items 7 and 14 also register —
   the install was skipped, leaving an orphaned `superpowers-marketplace` registration and
   a second, disabled `superpowers@superpowers-marketplace` entry: exactly the duplicate
   [`skills/claude-code-tuneup`](skills/claude-code-tuneup/references/symptoms.md) tells you
