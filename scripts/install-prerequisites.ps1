@@ -355,25 +355,42 @@ function Add-ClaudeMarketplace {
 }
 
 function Enable-ClaudePlugin {
-    # $Spec is 'name@marketplace'. Installing a plugin and having it actually load are
-    # two different things: a plugin switched off in settings.json is installed, at the
-    # right scope, and completely inert - none of its skills or hooks are visible.
-    # Best-effort by design; the plugin is installed either way, so this warns rather
-    # than throwing. Tries the fully qualified spec first because the bare name is
-    # ambiguous when two marketplaces publish it.
+    # $Spec is 'name@marketplace'. For a plugin that was ALREADY installed before this
+    # run: one switched off in settings.json is installed, at the right scope, and
+    # completely inert - none of its skills or hooks are visible.
+    #
+    # Deliberately NOT called after a fresh install. 'claude plugin install' enables what
+    # it installs, and on a new machine the just-installed plugin can still read as
+    # disabled in 'claude plugin list --json' - so calling it there tried to enable every
+    # plugin in the run and turned a benign "already enabled at user scope" into 18
+    # failed steps.
+    #
+    # Never throws. Both preference variables are shadowed function-locally (PowerShell
+    # restores them on return) because a native stderr line under
+    # $ErrorActionPreference = 'Stop' - or any non-zero exit when
+    # $PSNativeCommandUseErrorActionPreference is $true - becomes a *terminating* error.
+    # That is what turned this into 18 failed steps, and the throw preempted any attempt
+    # to inspect the command's own output.
+    #
+    # Success is judged from 'claude plugin list --json', not from the CLI's message:
+    # 'claude plugin enable' reports "is already enabled at user scope" even for a plugin
+    # that does not exist, so the text cannot tell success from failure. The plugin list
+    # can.
     param([string]$Spec)
+    $ErrorActionPreference = 'Continue'
+    $PSNativeCommandUseErrorActionPreference = $false
     $name = $Spec.Split('@')[0]
     $existing = (Get-ClaudePlugins)[$name]
-    if ($existing -and $existing.Enabled) { return }
+    if (-not $existing) { return }      # not installed - nothing to enable
+    if ($existing.Enabled) { return }   # already live
     foreach ($target in @($Spec, $name)) {
-        claude plugin enable $target --scope $InstallScope 2>$null | Out-Null
-        if ($LASTEXITCODE -eq 0) {
-            Get-ClaudePlugins -Refresh | Out-Null
-            Write-Ok "enabled plugin '$name' (--scope $InstallScope)"
+        try { claude plugin enable $target --scope $InstallScope 2>&1 | Out-Null } catch { }
+        if ((Get-ClaudePlugins -Refresh)[$name].Enabled) {
+            Write-Ok "plugin '$name' is enabled (--scope $InstallScope)"
             return
         }
     }
-    Write-Warn2 "plugin '$name' is installed but disabled and 'claude plugin enable' failed - run '/plugin' and enable it by hand."
+    Write-Warn2 "plugin '$name' may be installed but disabled - run '/plugin' and enable it by hand."
 }
 
 function Install-ClaudePlugin {
@@ -413,7 +430,8 @@ function Install-ClaudePlugin {
     Get-ClaudePlugins -Refresh | Out-Null
     $script:Summary.Installed++
     Write-Ok "installed plugin '$Spec'"
-    Enable-ClaudePlugin $Spec
+    # No Enable-ClaudePlugin here: 'claude plugin install' already enabled it. See the
+    # comment on that function for why calling it on this path breaks a fresh machine.
 }
 
 # --- Install catalog and menu -------------------------------------------------

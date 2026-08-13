@@ -31,10 +31,32 @@ All notable changes to this repository are documented here. Format follows [Keep
 - **Both install scripts — an installed-but-disabled plugin is now switched back on.**
   Installing a plugin and having it load are different things: a plugin disabled in
   `settings.json` is installed, at the right scope, and completely inert. New
-  `ensure_plugin_enabled` / `Enable-ClaudePlugin` run after every plugin install, update,
-  and already-current skip, and call `claude plugin enable --scope` when no enabled copy of
-  the name exists. Best-effort by design — the plugin is installed either way, so a failure
-  warns instead of failing the step.
+  `ensure_plugin_enabled` / `Enable-ClaudePlugin` run on the *already-installed* paths
+  (update and already-current skip) and call `claude plugin enable --scope` when no enabled
+  copy of the name exists. Best-effort by design — the plugin is installed either way, so a
+  failure warns instead of failing the step.
+
+  **Not** called after a fresh install: `claude plugin install` already enables what it
+  installs. The first cut of this called it there too, which broke a brand-new machine —
+  a just-installed plugin can still read as disabled in `claude plugin list --json`, so
+  every plugin in the run got an enable attempt, and the CLI's benign "already enabled at
+  user scope" reply was reported as a failed step. 18 of them on one run.
+
+  Three separate defects behind that, all fixed:
+
+  - `Enable-ClaudePlugin` used `2>$null` with no `try`/`catch`. Under
+    `$ErrorActionPreference = 'Stop'` a native command's stderr line — or any non-zero exit
+    when `$PSNativeCommandUseErrorActionPreference` is `$true` — becomes a *terminating*
+    error, so `Invoke-Step` marked the step failed. The same hazard is already documented
+    at the Claude Code update check. Both preference variables are now shadowed
+    function-locally, and the whole call is wrapped, so this function cannot throw.
+  - Success was judged from the CLI's message. It can't be: `claude plugin enable` reports
+    "is already enabled at user scope" even for a plugin that does not exist. Both scripts
+    now judge the outcome from `claude plugin list --json` instead.
+  - The bash version was a silent no-op. `local spec="$1" name="${spec%%@*}"` doesn't work
+    — bash declares every name in a `local` before expanding the values, so `$spec` read
+    the empty new local and `name` was always empty. Assigned on its own line now, matching
+    the existing style in `install_plugin`.
 
 - **`install-prerequisites.ps1` — a disabled duplicate could mask an enabled plugin.**
   `Get-ClaudePlugins` keys its map on the bare name with last-write-wins, so with both
