@@ -121,12 +121,26 @@ if [ ${#MISSING[@]} -gt 0 ]; then
 fi
 
 if ! command -v node >/dev/null 2>&1; then
-  if [ "$APPLY" -eq 1 ]; then
-    curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - >/tmp/co-setup.log 2>&1 \
-      && install_pkgs nodejs >>/tmp/co-setup.log 2>&1 \
-      && fix "node" "installed" || fail "node" "install failed - see /tmp/co-setup.log"
+  # NodeSource publishes .deb repositories only, so it is correct for apt and
+  # wrong everywhere else. Fedora and Arch package a current Node themselves.
+  case "$PKG" in
+    apt-get) node_how="NodeSource (Debian/Ubuntu ship an older Node)" ;;
+    dnf|pacman) node_how="the distro package (nodejs, npm)" ;;
+    *) node_how="" ;;
+  esac
+  if [ -z "$node_how" ]; then
+    fail "node" "no supported package manager to install Node with"
+  elif [ "$APPLY" -eq 0 ]; then
+    fix "node" "would install Node via $node_how"
+  elif [ "$PKG" = "apt-get" ]; then
+    if curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - >/tmp/co-setup.log 2>&1 \
+       && install_pkgs nodejs >>/tmp/co-setup.log 2>&1; then
+      fix "node" "installed via NodeSource"
+    else
+      fail "node" "install failed - see /tmp/co-setup.log"
+    fi
   else
-    fix "node" "would install Node 22 via nodesource"
+    run "install node via $PKG" install_pkgs nodejs npm
   fi
 fi
 
@@ -187,8 +201,10 @@ if [ -f "$VAULT/.claude-obsidian.json" ]; then
 elif [ ! -f "$CORE" ]; then
   fix "vault" "waiting on product checkout"
 else
-  mkdir -p "$(dirname "$VAULT")"
   if [ "$APPLY" -eq 1 ]; then
+    # Nothing above this line may touch the filesystem: a dry-run must leave the
+    # disk exactly as it found it, mkdir included.
+    mkdir -p "$(dirname "$VAULT")"
     # The product's own preview-then-apply contract: never apply a plan that
     # was not just reviewed, and pass its emitted hash back unchanged.
     PLAN=$(python3 "$CORE" init "$VAULT" --generated-at "$STAMP" \

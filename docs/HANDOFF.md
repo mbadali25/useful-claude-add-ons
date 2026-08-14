@@ -68,6 +68,25 @@ presents as something unrelated:
 - A full `--apply` run against a throwaway vault created the expected 14-file layout and
   finished `doctor ok` / `lint 0 issues`; a second `--apply` reported
   `already initialised` and changed nothing.
+- **Reviewed by `codex exec review --base main`** (codex-cli 0.147.0), which found three
+  real defects, all fixed before merge:
+  1. The Windows script reported a missing WSL `python3` as "will install" but never
+     queued it — the presence loop only covered `git` and `curl`, so `-Apply` left the
+     distro without Python and every vault write still refused. Introduced while removing
+     a cosmetic duplicate check id; the version probe now feeds `$needPkgs` directly, and
+     the `fcntl` probe reports "unknown until python3 is installed" instead of a bare
+     failure.
+  2. The Linux script ran the Debian NodeSource bootstrap on *any* distro, so Node install
+     failed on the Fedora and Arch paths it otherwise claims to support. Node now installs
+     per package manager: NodeSource for apt, the distro's own `nodejs`/`npm` for
+     dnf/pacman.
+  3. The Linux script ran `mkdir -p` before checking `--apply`, so a dry-run created
+     directories — breaking the guarantee the whole script is built on. Moved inside the
+     apply branch and verified: a dry-run against a nonexistent nested root now creates
+     nothing.
+
+  Worth repeating the lesson from (1): the cosmetic fix and the functional break were the
+  same edit. Removing an item from a presence-check loop silently removed its install.
 
 ### What is still open
 

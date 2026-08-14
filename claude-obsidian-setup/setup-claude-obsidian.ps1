@@ -104,16 +104,29 @@ $wslOk = $false
 if ($wslExe -and ((& wsl.exe -l -q 2>&1 | Out-String) -replace "`0","") -match [regex]::Escape($Distro)) {
   $wslOk = $true
 
+  $needPkgs = @()
+
   $pyv = (Wsl -- python3 -c "import sys;print('%d.%d'%sys.version_info[:2])").Trim()
-  if ($pyv -match '^3\.(1[1-9]|[2-9]\d)') { Pass "wsl:python3" $pyv }
-  elseif ($pyv) { Fail "wsl:python3" "$pyv found, 3.11+ required" }
-  else { Fix "wsl:python3" "missing - will install" }
+  if ($pyv -match '^3\.(1[1-9]|[2-9]\d)') {
+    Pass "wsl:python3" $pyv
+  } elseif ($pyv) {
+    Fail "wsl:python3" "$pyv found, 3.11+ required"
+  } else {
+    # Absent, not merely outdated - queue it for install, or the fcntl probe and
+    # every vault write below stay broken even under -Apply.
+    Fix "wsl:python3" "missing - will install"
+    $needPkgs += 'python3'
+  }
 
   $fcntl = (Wsl -- python3 -c "import fcntl;print('ok')").Trim()
-  if ($fcntl -match 'ok') { Pass "wsl:fcntl" "available (vault writes supported)" }
-  else { Fail "wsl:fcntl" "missing - vault writes will be refused" }
+  if ($fcntl -match 'ok') {
+    Pass "wsl:fcntl" "available (vault writes supported)"
+  } elseif ($needPkgs -contains 'python3') {
+    Fix "wsl:fcntl" "unknown until python3 is installed"
+  } else {
+    Fail "wsl:fcntl" "missing - vault writes will be refused"
+  }
 
-  $needPkgs = @()
   # python3 is version-checked above; only presence-check the rest here.
   foreach ($p in @("git","curl")) {
     $found = (Wsl -- sh -c "command -v $p || true").Trim()
