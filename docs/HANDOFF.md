@@ -109,6 +109,23 @@ presents as something unrelated:
   a defect that only appears on a machine unlike the one being developed on — no python3
   in WSL, a non-Debian distro, or a pre-existing `[automount]` section.
 
+- **A third pass** raised the Python **floor** (3.11), all three findings genuine:
+  1. *Fixed.* The Windows script version-checked `python.exe` nowhere before aliasing it,
+     so on a 3.10 machine it would create `python3.exe → python.exe` and report the alias
+     "repaired" while every hook it exists for stayed broken. It now version-gates first
+     and refuses to alias an interpreter below the floor.
+  2. *Deliberately not auto-repaired* (both scripts). An existing `python3` below 3.11 —
+     Ubuntu 22.04 ships 3.10 — is reported with the concrete remedy rather than fixed,
+     because reaching 3.11+ there means adding a third-party repository (deadsnakes) and
+     possibly moving `update-alternatives`. That is too invasive to do behind a single
+     `--apply` on someone's machine. What was fixed is the *consequence*: the vault step
+     now refuses with `blocked: python3 3.11+ is required` instead of proceeding and
+     failing obscurely somewhere inside the core.
+
+  Stopped reviewing after three rounds. Rounds one and two were straight defects; round
+  three was one real bug plus a scope decision. Further passes were returning judgment
+  calls rather than faults.
+
 ### What is still open
 
 - **Item 19 is untested end-to-end on a machine without Obsidian.** The install branches

@@ -74,9 +74,24 @@ with `-VaultPath` / `--vault` and `-ProductRoot` / `--product`.
    the plan, read back its `approved_plan_sha256`, and pass that exact hash to
    `--apply`. An unreviewed plan is never applied.
 
+## Python 3.11+ is a hard requirement
+
+The product's floor is Python 3.11. Both scripts version-check it rather than merely
+looking for the binary, and neither will proceed to create a vault with an older
+interpreter — you get `blocked: python3 3.11+ is required` instead of a failure from deep
+inside the core.
+
+An interpreter that is *absent* is installed for you. An interpreter that is *too old* is
+**not** upgraded automatically: on a distro like Ubuntu 22.04 (which ships 3.10) that
+means adding a third-party repository such as deadsnakes and possibly moving
+`update-alternatives`, which is too invasive to do behind one `--apply`. The scripts print
+the exact remedy instead. On Windows/WSL the simplest fix is `-Distro Ubuntu-24.04`, which
+ships 3.12.
+
 ## What gets installed
 
-- Python 3.11+, git, curl, Node.js, Claude Code
+- Python 3.11+ (installed when absent; see above when merely outdated), git, curl,
+  Node.js, Claude Code
 - **Obsidian desktop** — Chocolatey (falling back to winget) on Windows;
   flatpak or snap on Linux
 - The product checkout, `AgriciDaniel/claude-obsidian`

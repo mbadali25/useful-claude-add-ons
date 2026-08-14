@@ -47,6 +47,7 @@ if (-not $VaultPath)   { $VaultPath   = Join-Path $RepoRoot 'Claude' }
 if (-not $ProductRoot) { $ProductRoot = Join-Path $RepoRoot 'claude-obsidian' }
 
 $script:Failed = 0
+$script:WslPyOk = $false   # set once the WSL interpreter clears the 3.11 floor
 function Pass($id,$msg){ Write-Host ("  PASS  {0,-28} {1}" -f $id,$msg) -ForegroundColor Green }
 function Fix ($id,$msg){ Write-Host ("  FIX   {0,-28} {1}" -f $id,$msg) -ForegroundColor Yellow }
 function Fail($id,$msg){ Write-Host ("  FAIL  {0,-28} {1}" -f $id,$msg) -ForegroundColor Red; $script:Failed = 1 }
@@ -109,8 +110,13 @@ if ($wslExe -and ((& wsl.exe -l -q 2>&1 | Out-String) -replace "`0","") -match [
   $pyv = (Wsl -- python3 -c "import sys;print('%d.%d'%sys.version_info[:2])").Trim()
   if ($pyv -match '^3\.(1[1-9]|[2-9]\d)') {
     Pass "wsl:python3" $pyv
+    $script:WslPyOk = $true
   } elseif ($pyv) {
-    Fail "wsl:python3" "$pyv found, 3.11+ required"
+    # Not auto-repaired: on a distro older than the default Ubuntu-24.04 (which
+    # ships 3.12) reaching 3.11+ means a third-party repository such as
+    # deadsnakes and possibly update-alternatives. Too invasive for one -Apply,
+    # so report the remedy and let the vault step refuse.
+    Fail "wsl:python3" "$pyv found, 3.11+ required - use -Distro Ubuntu-24.04, or install python3.11+ inside $Distro"
   } else {
     # Absent, not merely outdated - queue it for install, or the fcntl probe and
     # every vault write below stay broken even under -Apply.
@@ -202,13 +208,31 @@ fi
 Head "4. Windows-side tools"
 # ==========================================================================
 $py = Get-Command python.exe -ErrorAction SilentlyContinue
-if ($py) { Pass "python" "$($py.Source)" } else { Fix "python" "install Python 3.11+ from python.org (needed for read-only/dry-run)" }
+$pyWinOk = $false
+if ($py) {
+  # Version-gate before we consider aliasing it: linking python3.exe to a 3.10
+  # interpreter would "repair" the alias while leaving every hook and command
+  # still broken, which is worse than reporting it plainly.
+  $wv = (& $py.Source -c "import sys;print('%d.%d'%sys.version_info[:2])" 2>$null)
+  if ($wv -match '^3\.(1[1-9]|[2-9]\d)') {
+    $pyWinOk = $true
+    Pass "python" "$($py.Source) ($wv)"
+  } else {
+    Fail "python" "$($py.Source) is $wv - 3.11+ required; install a newer Python from python.org"
+  }
+} else {
+  Fix "python" "install Python 3.11+ from python.org (needed for read-only/dry-run)"
+}
 
 # python3 must not resolve to the Microsoft Store alias stub.
 $py3 = Get-Command python3 -ErrorAction SilentlyContinue
 $storeStub = $py3 -and ($py3.Source -like "*WindowsApps*")
 if ($py3 -and -not $storeStub) {
   Pass "python3" $py3.Source
+} elseif ($py -and -not $pyWinOk) {
+  # Refuse to alias an interpreter that is too old: the alias would look fixed
+  # while the hooks it exists for stayed broken.
+  Fail "python3" "not aliasing $($py.Source) - it is below the 3.11 floor; upgrade Python first"
 } elseif ($py) {
   $target = Join-Path (Split-Path $py.Source) "python3.exe"
   if ($Apply) {
@@ -312,6 +336,10 @@ if (Test-Path $vaultCfg) {
   Pass "vault" "$VaultPath (already initialised)"
 } elseif (-not (Test-Path $core) -or -not $wslOk) {
   Fix "vault" "waiting on product checkout and WSL"
+} elseif (-not $script:WslPyOk -and -not ($needPkgs -contains 'python3')) {
+  # Below the floor: the core would fail somewhere deep inside. Stop here so the
+  # actionable wsl:python3 message stays the last word.
+  Fail "vault" "blocked: python3 3.11+ inside $Distro is required to create a vault"
 } elseif ($Apply) {
   New-Item -ItemType Directory -Force -Path $VaultPath | Out-Null
   $wCore  = To-Wsl $core

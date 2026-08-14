@@ -85,13 +85,20 @@ install_pkgs() {
 }
 
 MISSING=()
+PY_OK=0
 # Python 3.11+ is the product's documented floor.
 if command -v python3 >/dev/null 2>&1; then
   PYV=$(python3 -c 'import sys;print("%d.%d"%sys.version_info[:2])' 2>/dev/null || echo 0.0)
   if python3 -c 'import sys;raise SystemExit(0 if sys.version_info>=(3,11) else 1)' 2>/dev/null; then
     pass "python3" "$PYV"
+    PY_OK=1
   else
-    fail "python3" "$PYV found, 3.11+ required"
+    # Deliberately NOT auto-repaired. On a distro whose python3 predates 3.11
+    # (Ubuntu 22.04 ships 3.10) getting 3.11+ means adding a third-party
+    # repository such as deadsnakes and possibly switching update-alternatives.
+    # That is too invasive to do behind one --apply, so this reports the exact
+    # remedy and the vault step below refuses rather than failing obscurely.
+    fail "python3" "$PYV found, 3.11+ required - install python3.11+ (e.g. deadsnakes PPA on Ubuntu 22.04) or run this on a newer distro"
   fi
 else
   # Absent is repairable in this same run, so it is a FIX, not a FAIL - a FAIL
@@ -205,6 +212,10 @@ if [ -f "$VAULT/.claude-obsidian.json" ]; then
   pass "vault" "$VAULT (already initialised)"
 elif [ ! -f "$CORE" ]; then
   fix "vault" "waiting on product checkout"
+elif [ "$PY_OK" -ne 1 ] && ! printf '%s\n' "${MISSING[@]:-}" | grep -qx python3; then
+  # An interpreter below the floor would fail somewhere deep inside the core.
+  # Stop here so the actionable python3 message above is the last word.
+  fail "vault" "blocked: python3 3.11+ is required to create a vault"
 else
   if [ "$APPLY" -eq 1 ]; then
     # Nothing above this line may touch the filesystem: a dry-run must leave the
