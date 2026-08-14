@@ -418,7 +418,12 @@ if (Test-Path (Join-Path $VaultPath ".git")) {
 # ==========================================================================
 Head "9. Verify"
 # ==========================================================================
-if ((Test-Path $core) -and (Test-Path $vaultCfg) -and $wslOk) {
+if ($wslOk -and -not $script:WslPyOk) {
+  # WslPy is still the below-floor interpreter. Running doctor/lint through it
+  # would report failures that say nothing about the vault, and would fail an
+  # otherwise repairable dry run.
+  Fix "verify" "deferred until a python3 3.11+ interpreter is in place inside $Distro"
+} elseif ((Test-Path $core) -and (Test-Path $vaultCfg) -and $wslOk) {
   $wCore = To-Wsl $core; $wVault = To-Wsl $VaultPath
   $doc = Wsl -- $script:WslPy $wCore doctor --vault $wVault
   if ($doc -match '"ok":\s*true') { Pass "doctor" "ok" } else { Fail "doctor" "not ok" }

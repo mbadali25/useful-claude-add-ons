@@ -315,7 +315,12 @@ fi
 # --------------------------------------------------------------------------
 head2 "6. Verify"
 # --------------------------------------------------------------------------
-if [ -f "$CORE" ] && [ -f "$VAULT/.claude-obsidian.json" ]; then
+if [ "$PY_OK" -ne 1 ]; then
+  # $PY is still the below-floor interpreter. Running doctor/lint through it
+  # would report failures that say nothing about the vault, and would fail an
+  # otherwise repairable dry run.
+  fix "verify" "deferred until a python3 3.11+ interpreter is in place"
+elif [ -f "$CORE" ] && [ -f "$VAULT/.claude-obsidian.json" ]; then
   if "$PY" "$CORE" doctor --vault "$VAULT" 2>/dev/null | grep -q '"ok": true'; then
     pass "doctor" "ok"
   else
