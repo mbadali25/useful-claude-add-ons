@@ -161,9 +161,30 @@ if (-not $wslOk) {
     Pass "wsl:metadata" "/mnt/c mounted with metadata"
   } else {
     if ($Apply) {
-      Fix "wsl:metadata" "adding [automount] to /etc/wsl.conf (sudo may prompt)"
-      $conf = 'grep -q "^\[automount\]" /etc/wsl.conf 2>/dev/null || printf "\n[automount]\noptions = \"metadata,uid=1000,gid=1000\"\n" | sudo tee -a /etc/wsl.conf >/dev/null'
-      & wsl.exe -d $Distro -- sudo cp -n /etc/wsl.conf /etc/wsl.conf.bak-claude-obsidian 2>$null
+      Fix "wsl:metadata" "setting [automount] options in /etc/wsl.conf (sudo may prompt)"
+      # An existing [automount] section that merely lacks `metadata` is the common
+      # case, and a bare "append the section if absent" guard is a silent no-op
+      # there. Handle all three shapes: no file/section, a section with an
+      # options line to rewrite, and a section with no options line at all.
+      $conf = @'
+CONF=/etc/wsl.conf
+OPT='options = "metadata,uid=1000,gid=1000"'
+sudo cp -n "$CONF" "$CONF.bak-claude-obsidian" 2>/dev/null || true
+if [ ! -f "$CONF" ] || ! grep -q '^\[automount\]' "$CONF"; then
+  printf '\n[automount]\n%s\n' "$OPT" | sudo tee -a "$CONF" >/dev/null
+  echo "  (appended a new [automount] section)"
+else
+  awk -v OPT="$OPT" '
+    /^\[automount\]/ { print; inauto=1; printed=0; next }
+    /^\[/            { if (inauto && !printed) { print OPT; printed=1 } inauto=0; print; next }
+    inauto && /^[ \t]*options[ \t]*=/ { print OPT; printed=1; next }
+                     { print }
+    END              { if (inauto && !printed) print OPT }
+  ' "$CONF" > /tmp/wsl.conf.new
+  sudo cp /tmp/wsl.conf.new "$CONF"
+  echo "  (merged metadata into the existing [automount] section; original saved as $CONF.bak-claude-obsidian)"
+fi
+'@
       & wsl.exe -d $Distro -- bash -lc $conf
       Fix "wsl:metadata" "shutting WSL down so the new mount options take effect"
       & wsl.exe --shutdown

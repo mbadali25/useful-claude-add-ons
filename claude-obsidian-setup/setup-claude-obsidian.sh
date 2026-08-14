@@ -94,12 +94,17 @@ if command -v python3 >/dev/null 2>&1; then
     fail "python3" "$PYV found, 3.11+ required"
   fi
 else
-  fail "python3" "not installed"; MISSING+=(python3)
+  # Absent is repairable in this same run, so it is a FIX, not a FAIL - a FAIL
+  # would leave the exit status at 1 even after we successfully install it.
+  fix "python3" "not installed - will install"; MISSING+=(python3)
 fi
 
 # fcntl.flock + POSIX directory descriptors are what make vault writes safe.
 if python3 -c 'import fcntl' >/dev/null 2>&1; then
   pass "python3-fcntl" "available (vault writes supported)"
+elif printf '%s\n' "${MISSING[@]:-}" | grep -qx python3; then
+  # Can't know yet, and saying FAIL here would wrongly fail the whole run.
+  fix "python3-fcntl" "unknown until python3 is installed"
 else
   fail "python3-fcntl" "missing - vault writes will be refused"
 fi

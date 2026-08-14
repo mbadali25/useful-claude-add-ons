@@ -88,6 +88,27 @@ presents as something unrelated:
   Worth repeating the lesson from (1): the cosmetic fix and the functional break were the
   same edit. Removing an item from a presence-check loop silently removed its install.
 
+- **A second `codex exec review --base main` pass** found two more real defects and one
+  false positive:
+  1. *Real.* The `/etc/wsl.conf` guard was `grep -q '^\[automount\]' || append`, which is
+     a silent no-op on the **most likely** machine: one that already has an `[automount]`
+     section but no `metadata` option. It would shut WSL down and still leave writes
+     broken. Now handled with awk across all three shapes — no file/section, a section
+     with an `options` line to rewrite, and a section with no `options` line — preserving
+     sibling keys like `enabled = true` and backing the original up. Verified against six
+     synthetic configs including idempotency and the mid-file-section case.
+  2. *Real.* On Linux an absent `python3` called `fail`, which latches `FAILED=1`. Since
+     the same run then installs it, a fully successful setup still exited 1. Repairable
+     conditions now report `FIX`, and the `fcntl` probe reports "unknown until python3 is
+     installed" rather than a failure that cannot be true yet.
+  3. *False positive.* It claimed `git clone` cannot create missing parent directories, so
+     a fresh `~/repos` would break the clone. Tested directly: `git clone` into
+     `/tmp/a/deep/nested/repo` creates every parent. No change made.
+
+  Both rounds are a good argument for running the reviewer: rounds one and two each found
+  a defect that only appears on a machine unlike the one being developed on — no python3
+  in WSL, a non-Debian distro, or a pre-existing `[automount]` section.
+
 ### What is still open
 
 - **Item 19 is untested end-to-end on a machine without Obsidian.** The install branches
