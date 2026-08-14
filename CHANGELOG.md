@@ -4,6 +4,55 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added
+
+- **Menu item 19 — Obsidian desktop + `claude-obsidian` and `obsidian-skills`
+  plugins.** Off by default, on both scripts, with identical keys, order, and default
+  flags. The app is not on npm, so it installs from a package manager: Chocolatey then
+  winget on Windows, flatpak then snap on Linux — distro repositories generally do not
+  carry it. Chocolatey needs elevation; without it the app is skipped with a warning and
+  the two plugins still install. The item then registers
+  `AgriciDaniel/claude-obsidian` (the vault engine: transactional writes, provenance
+  ledgers, deterministic lint, the `/claude-obsidian:*` skills) and
+  [`kepano/obsidian-skills`](https://github.com/kepano/obsidian-skills) (Obsidian's own
+  upstream references for Obsidian Flavored Markdown, Bases, JSON Canvas, the Obsidian
+  CLI, and Defuddle).
+
+  The item deliberately stops there. Creating a vault writes to disk under a reviewed
+  transaction, so it is a separate, explicitly previewed step rather than a side effect
+  of a bootstrap run. `--obsidian-repo-root` / `-ObsidianRepoRoot` sets the root the item
+  suggests for it (default `C:\repos` on Windows, `~/repos` on Linux).
+
+- **`claude-obsidian-setup/` — vault setup for Windows (WSL) and Linux.** A matched pair
+  of installers that bring both platforms to the same claude-obsidian standard, plus a
+  README. Dry-run by default, idempotent, `PASS`/`FIX`/`FAIL` per check against stable
+  check ids, non-zero exit on failure, and a closing `doctor` + `lint` against the new
+  vault. Vault creation follows the product's own preview-then-apply contract: run the
+  plan, read back its `approved_plan_sha256`, pass that exact hash to `--apply`.
+
+  Everything hangs off one root — `C:\repos` / `~/repos` — so `-RepoRoot` /
+  `--repo-root` relocates the vault and the product checkout together;
+  `-VaultPath`/`--vault` and `-ProductRoot`/`--product` override either half.
+
+  The Windows script exists mostly to repair four failures that are otherwise silent and
+  hard to diagnose:
+
+  1. **Native Windows cannot write to a vault at all.** Mutation safety is bound to POSIX
+     directory descriptors and `fcntl.flock`; native Python has no `fcntl`, so the core
+     refuses every write with `UNSUPPORTED_PLATFORM`. Reads and dry-runs work natively —
+     writes are routed through WSL, which is why the vault is created from inside it.
+  2. **`python3` resolves to a Microsoft Store stub.** Windows ships no `python3.exe`, so
+     the name hits the App Execution Alias and prints an install advert instead of running
+     Python — breaking the plugin's `SessionStart`/`Stop` hooks and every documented
+     `python3 …` command. Fixed with a hard link `python3.exe → python.exe`.
+  3. **`/mnt/c` mounts without `metadata`.** DrvFs then rejects `chmod` with `EPERM` and
+     every apply dies with `CORRUPT_RUNTIME_STATE: cannot write confined bundle copy`.
+     This cannot be fixed by remounting live; it needs an `[automount]` stanza in
+     `/etc/wsl.conf` and a full `wsl --shutdown`. The existing file is backed up first.
+  4. **Git identity does not cross the WSL boundary.** `checkpoint` runs inside WSL, where
+     Windows' `git config --global` is invisible, so it fails `GIT_FAILED: Author identity
+     unknown`. Fixed by setting identity repo-locally, which both environments read.
+
 ### Fixed
 
 - **Both install scripts — Superpowers came from a second marketplace and could land

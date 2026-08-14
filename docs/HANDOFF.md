@@ -6,6 +6,88 @@ that does not survive in a diff.
 
 ---
 
+## 2026-08-14 — Obsidian vault setup: menu item 19 + `claude-obsidian-setup/`
+
+### What changed
+
+**Menu item 19 installs Obsidian and its two Claude plugins.** Off by default, added
+to both installers as a matched pair. The app comes from a package manager
+(Chocolatey → winget on Windows, flatpak → snap on Linux) because Obsidian ships no
+npm/pip package and distro repos generally don't carry it. Then two marketplaces:
+`AgriciDaniel/claude-obsidian` for the vault engine, and
+[`kepano/obsidian-skills`](https://github.com/kepano/obsidian-skills) for Obsidian's
+own upstream syntax references.
+
+**`claude-obsidian-setup/` creates and verifies the vault.** Two scripts plus a
+README, dry-run by default, ending in the product's own `doctor` and `lint`.
+
+### Why it was done this way
+
+**Item 19 stops at the app and the plugins, on purpose.** Creating a vault is a
+filesystem write governed by a reviewed transaction — you read a plan, you get back an
+`approved_plan_sha256`, and you pass that exact hash to apply it. Folding that into an
+unattended bootstrap run would mean applying a plan nobody reviewed, which is precisely
+the thing the product's contract exists to prevent. So the item prints the next step and
+the dedicated scripts perform it.
+
+**One root, one switch.** `-RepoRoot` / `--repo-root` (default `C:\repos`, `~/repos`)
+moves the vault *and* the product checkout together, because the two are almost always
+kept side by side. Either half can still be overridden alone. The vault's internal
+layout is fully relative — `.claude-obsidian.json` stores `"vault": "."` and the source
+ledger uses vault-relative locators — so the absolute path genuinely doesn't matter,
+which is what makes a single switch safe.
+
+**Most of the Windows script is scar tissue.** Four failure modes, each of which
+presents as something unrelated:
+
+- Native Windows can't write to a vault at all. Mutation safety needs POSIX directory
+  descriptors and `fcntl.flock`; native Python has no `fcntl`. Reads and dry-runs work,
+  writes are refused with `UNSUPPORTED_PLATFORM`. Hence creating the vault inside WSL.
+- `python3` on Windows resolves to the Microsoft Store App Execution Alias, which prints
+  an install advert to stdout instead of running Python. That silently breaks the
+  plugin's `SessionStart`/`Stop` hooks — a `SessionStart` hook that "succeeds" while
+  emitting that advert injects it as session context. A hard link
+  `python3.exe → python.exe` fixes it globally, and is preferable to hardcoding an
+  interpreter path into the plugin's `hooks.json`, which would create a permanent local
+  diff against an upstream checkout.
+- `/mnt/c` mounts without the `metadata` option, so `chmod` returns `EPERM` and every
+  apply dies with `CORRUPT_RUNTIME_STATE: cannot write confined bundle copy`. A live
+  remount does **not** fix this — the option only takes effect at mount time, so it needs
+  `/etc/wsl.conf` plus `wsl --shutdown`.
+- `git config --global` does not cross the Windows/WSL boundary, and `checkpoint` runs in
+  WSL, so it fails `GIT_FAILED: Author identity unknown` even when Windows git is fully
+  configured. Setting identity repo-locally satisfies both.
+
+### What was verified
+
+- Both installers parse clean (`bash -n`, PowerShell AST parser).
+- Catalog parity checked mechanically: 19 keys, 19 default flags, 19 labels, identical
+  key order and default flags across the pair, `obsidian` last and opt-in on both, and
+  all four marketplace/plugin identifiers present in both scripts.
+- `claude-obsidian-setup` scripts dry-run clean on Windows and under WSL.
+- A full `--apply` run against a throwaway vault created the expected 14-file layout and
+  finished `doctor ok` / `lint 0 issues`; a second `--apply` reported
+  `already initialised` and changed nothing.
+
+### What is still open
+
+- **Item 19 is untested end-to-end on a machine without Obsidian.** The install branches
+  (choco, winget, flatpak, snap) are written from upstream's documented package ids but
+  were not exercised — this machine already had Obsidian. The detection branch and the
+  plugin half were exercised.
+- **Four post-install steps stay manual** and are printed rather than automated: the
+  Templates folder, the Daily-notes folder and date format, the optional Obsidian CLI
+  toggle, and opening the vault. This is not laziness — the product refuses to write
+  arbitrary `.obsidian` config, and its non-wiki allowlist is only five paths
+  (`app.json`, `appearance.json`, `graph.json`, `snippets/vault-colors.css`,
+  `.claude-obsidian.json`). `daily-notes.json` and `templates.json` are not on it, and
+  bypassing that with a host write would defeat the contract.
+- **Obsidian re-serialises `.base` files it opens**, rewriting content and permissions.
+  That makes an exact per-operation `checkpoint` fail with `COMMITTED_MODE_MISMATCH` if
+  Obsidian is running. Checkpoint immediately after an operation, or close Obsidian first.
+
+---
+
 ## 2026-08-07 — Cursor-driven install menu, per-skill selection, SDP connector routing
 
 ### What changed

@@ -42,6 +42,7 @@ Common switches:
     -NonInteractive     select the default set, no prompt (CI/unattended)
     -SkillUIGuide       print the SkillUI quick start after installing it, no prompt
     -NotifySetup        scaffold the notify config after installing it, no prompt
+    -ObsidianRepoRoot   root the Obsidian item suggests for the vault (default: C:\repos)
     -NoUpdate           never update an already-installed plugin, only report it
     -SkipBootstrap      narrow the selection to prerequisites + the Claude Code CLI
     -InstallScope       scope for marketplace/plugin installs: user (default), project, local
@@ -58,6 +59,7 @@ param(
     [string]$Skills,          # explicit skill subset, no sub-picker: 'cloudflare,drata' | 'all' | 'none'
     [switch]$SkillUIGuide,    # answer the SkillUI quick-start prompt up front
     [switch]$NotifySetup,     # answer the notify setup prompt up front
+    [string]$ObsidianRepoRoot = 'C:\repos',  # root the Obsidian item suggests for the vault
     [Alias('PluginHubScope')]
     [ValidateSet('user', 'project', 'local')]
     [string]$InstallScope = 'user'  # machine-wide by default, not per-project
@@ -457,6 +459,7 @@ $script:Catalog = @(
     [pscustomobject]@{ Key = 'playwright-cli';    Default = $false; Name = 'Playwright CLI (@playwright/cli) - browser automation from the shell' }
     [pscustomobject]@{ Key = 'skillui';           Default = $false; Name = 'SkillUI (npm) + Playwright/Chromium - extract a design system from a URL' }
     [pscustomobject]@{ Key = 'strix';             Default = $false; Name = 'Strix AI pentesting CLI (needs Docker + an LLM API key)' }
+    [pscustomobject]@{ Key = 'obsidian';          Default = $false; Name = 'Obsidian desktop + claude-obsidian + obsidian-skills plugins' }
 )
 
 $script:Selected = @{}
@@ -1707,6 +1710,66 @@ if (Test-Selected 'strix') {
             Write-Warn2 "no WSL or bash found to run the Strix installer. Install WSL (wsl --install) or Git for Windows, then run: $installCmd"
         }
         Show-StrixNextSteps
+    }
+}
+
+# --- 19. Obsidian + claude-obsidian ------------------------------------------
+function Show-ObsidianNextSteps {
+    param([string]$VaultRoot)
+    Write-Host ""
+    Write-Host "    Obsidian is installed, but the vault is a separate step:" -ForegroundColor Yellow
+    Write-Host "      claude-obsidian-setup\setup-claude-obsidian.ps1 -Apply -RepoRoot $VaultRoot" -ForegroundColor Gray
+    Write-Host "    That creates and verifies the vault. Run it without -Apply first to preview." -ForegroundColor Gray
+    Write-Host "    On Windows the vault is written through WSL - native Windows is read-only" -ForegroundColor Gray
+    Write-Host "    for claude-obsidian, which the setup script detects and handles." -ForegroundColor Gray
+    Write-Host "    Details: claude-obsidian-setup\README.md" -ForegroundColor Gray
+}
+
+if (Test-Selected 'obsidian') {
+    Invoke-Step "Install Obsidian desktop + claude-obsidian and obsidian-skills plugins" {
+        # Obsidian ships no npm/pip package, so this is a desktop installer:
+        # Chocolatey first (the prerequisites item already installs it), then
+        # winget for machines that have winget but not choco.
+        $obsExe = @("$env:LOCALAPPDATA\Programs\Obsidian\Obsidian.exe",
+                    "$env:ProgramFiles\Obsidian\Obsidian.exe") |
+                  Where-Object { Test-Path $_ } | Select-Object -First 1
+        if ($obsExe) {
+            Write-Skip "Obsidian already installed ($obsExe)"
+        } elseif (Test-ChocoPackageInstalled 'obsidian') {
+            Write-Skip "Obsidian already installed (Chocolatey package present)"
+        } elseif (Get-Command choco -ErrorAction SilentlyContinue) {
+            if (-not (Test-Admin)) {
+                Write-Warn2 "Obsidian needs an elevated prompt to install via Chocolatey - skipping the app, continuing with the plugins."
+            } else {
+                choco install obsidian -y --no-progress
+                if ($LASTEXITCODE -ne 0) { throw "choco install obsidian failed with exit code $LASTEXITCODE - see the output above." }
+                $script:Summary.Installed++
+                Write-Ok "Obsidian installed via Chocolatey"
+            }
+        } elseif (Get-Command winget -ErrorAction SilentlyContinue) {
+            winget install --id Obsidian.Obsidian -e --accept-source-agreements --accept-package-agreements
+            if ($LASTEXITCODE -eq 0) {
+                $script:Summary.Installed++
+                Write-Ok "Obsidian installed via winget"
+            } else {
+                Write-Warn2 "winget install Obsidian.Obsidian failed (exit $LASTEXITCODE) - install it from https://obsidian.md"
+            }
+        } else {
+            Write-Warn2 "no Chocolatey or winget found - install Obsidian from https://obsidian.md, then re-run."
+        }
+
+        if (Test-ClaudeAvailable) {
+            # The vault engine, and Obsidian's own upstream syntax skills
+            # (Markdown, Bases, JSON Canvas, the Obsidian CLI, Defuddle).
+            Add-ClaudeMarketplace 'AgriciDaniel/claude-obsidian'
+            Install-ClaudePlugin  'claude-obsidian@agricidaniel-claude-obsidian'
+            Add-ClaudeMarketplace 'kepano/obsidian-skills'
+            Install-ClaudePlugin  'obsidian@obsidian-skills'
+        } else {
+            Write-Warn2 "'claude' is not on PATH yet - re-run with item 2 selected, or open a new shell and re-run this item."
+        }
+
+        Show-ObsidianNextSteps $ObsidianRepoRoot
     }
 }
 
