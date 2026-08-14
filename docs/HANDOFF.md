@@ -126,6 +126,31 @@ presents as something unrelated:
   three was one real bug plus a scope decision. Further passes were returning judgment
   calls rather than faults.
 
+### Follow-up: both deferred findings resolved
+
+The two items originally left alone were revisited and closed:
+
+- **The Python floor is now genuinely repaired, not just reported.** The first judgement —
+  "too invasive to fix" — was too broad. It is only true of the *last* resort. Both
+  scripts now, in order: use a newer versioned interpreter that is already installed;
+  else install one (`python3.13`/`3.12`/`3.11`) from the repositories **already configured
+  on the machine** and use it alongside the untouched system `python3`; else stop with the
+  concrete remedy. `update-alternatives` is never touched and no third-party repository is
+  ever added, so the original objection still holds for the case it actually applied to.
+
+  Every downstream call now runs through a `$PY` / `$script:WslPy` variable rather than a
+  hardcoded `python3`, which is what makes "use a different interpreter" possible at all.
+
+  Verified by faking it: a stub `python3` reporting 3.10 was put first on `PATH`, and the
+  script located the real `python3.12`, used it, and built a complete 14-file vault with
+  `doctor ok` and `lint 0 issues`, exiting 0. That path had never executed before.
+
+- **The `git clone` parent directory was made explicit** even though the finding was a
+  false positive. `git clone` does create missing parents — verified directly — so nothing
+  was broken; the `mkdir -p` simply removes the dependency on that behaviour and keeps the
+  failure obvious if the root is not writable. Recorded here so nobody "fixes" it back on
+  the strength of the same incorrect claim.
+
 ### What is still open
 
 - **Item 19 is untested end-to-end on a machine without Obsidian.** The install branches

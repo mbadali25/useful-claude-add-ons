@@ -4,6 +4,28 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Fixed
+
+- **`claude-obsidian-setup` — a Python below the 3.11 floor is now repaired rather than
+  only reported.** Both scripts previously stopped with "install python3.11+ yourself" on
+  any distro whose `python3` predates 3.11. That was over-broad: it treated the hardest
+  case as if it were the only one. They now, in order, (1) use a newer versioned
+  interpreter that is already installed, (2) install one — `python3.13`/`3.12`/`3.11` —
+  from the repositories **already configured on the machine** and use it alongside the
+  untouched system `python3`, or (3) stop with the concrete remedy. `update-alternatives`
+  is never touched and no third-party repository is ever added, so the original objection
+  still applies to the only case it was ever true of.
+
+  Every downstream invocation now runs through a selected-interpreter variable rather than
+  a hardcoded `python3`. Verified by putting a stub `python3` reporting 3.10 first on
+  `PATH`: the script found the real `python3.12`, used it, and produced a complete 14-file
+  vault with `doctor ok` and `lint 0 issues`.
+
+- **`claude-obsidian-setup/setup-claude-obsidian.sh` creates the product checkout's parent
+  explicitly.** `git clone` does create missing parents — this was verified, and the review
+  finding that claimed otherwise was wrong — so nothing was broken. The `mkdir -p` removes
+  the dependency on that behaviour and makes an unwritable root fail obviously.
+
 ### Added
 
 - **Menu item 19 — Obsidian desktop + `claude-obsidian` and `obsidian-skills`

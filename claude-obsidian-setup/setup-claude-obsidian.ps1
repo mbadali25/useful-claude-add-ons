@@ -47,7 +47,9 @@ if (-not $VaultPath)   { $VaultPath   = Join-Path $RepoRoot 'Claude' }
 if (-not $ProductRoot) { $ProductRoot = Join-Path $RepoRoot 'claude-obsidian' }
 
 $script:Failed = 0
-$script:WslPyOk = $false   # set once the WSL interpreter clears the 3.11 floor
+$script:WslPy      = "python3"  # the WSL interpreter every later step uses
+$script:WslPyOk    = $false     # WslPy already clears the 3.11 floor
+$script:WslPyPending = $false   # not yet, but this run can repair it
 function Pass($id,$msg){ Write-Host ("  PASS  {0,-28} {1}" -f $id,$msg) -ForegroundColor Green }
 function Fix ($id,$msg){ Write-Host ("  FIX   {0,-28} {1}" -f $id,$msg) -ForegroundColor Yellow }
 function Fail($id,$msg){ Write-Host ("  FAIL  {0,-28} {1}" -f $id,$msg) -ForegroundColor Red; $script:Failed = 1 }
@@ -112,22 +114,51 @@ if ($wslExe -and ((& wsl.exe -l -q 2>&1 | Out-String) -replace "`0","") -match [
     Pass "wsl:python3" $pyv
     $script:WslPyOk = $true
   } elseif ($pyv) {
-    # Not auto-repaired: on a distro older than the default Ubuntu-24.04 (which
-    # ships 3.12) reaching 3.11+ means a third-party repository such as
-    # deadsnakes and possibly update-alternatives. Too invasive for one -Apply,
-    # so report the remedy and let the vault step refuse.
-    Fail "wsl:python3" "$pyv found, 3.11+ required - use -Distro Ubuntu-24.04, or install python3.11+ inside $Distro"
+    # `python3` is below the floor. Rather than touch update-alternatives or add
+    # a third-party repository, look for a newer *versioned* interpreter and use
+    # it explicitly: one already installed first, then one the distro's own
+    # configured repositories can supply. The system python3 is left alone.
+    foreach ($c in @('python3.14','python3.13','python3.12','python3.11')) {
+      $probe = (Wsl -- sh -c "command -v $c >/dev/null 2>&1 && $c -c 'import sys;raise SystemExit(0 if sys.version_info>=(3,11) else 1)' && echo $c").Trim()
+      if ($probe -match [regex]::Escape($c)) {
+        $script:WslPy = $c; $script:WslPyOk = $true
+        Pass "wsl:python3" "system python3 is $pyv; using $c instead"
+        break
+      }
+    }
+    if (-not $script:WslPyOk) {
+      $cand = (Wsl -- sh -c "for c in python3.13 python3.12 python3.11; do if apt-cache show `$c >/dev/null 2>&1; then echo `$c; break; fi; done").Trim()
+      if (-not $cand) {
+        Fail "wsl:python3" "$pyv found, 3.11+ required, and no newer python3 in $Distro's configured repositories - use -Distro Ubuntu-24.04 (ships 3.12)"
+      } elseif (-not $Apply) {
+        $script:WslPyPending = $true
+        Fix "wsl:python3" "$pyv too old - would install $cand inside $Distro and use that"
+      } else {
+        Fix "wsl:python3" "installing $cand inside $Distro (sudo may prompt)"
+        & wsl.exe -d $Distro -- sudo apt-get update -qq
+        & wsl.exe -d $Distro -- sudo apt-get install -y $cand
+        $recheck = (Wsl -- sh -c "$cand -c 'import sys;raise SystemExit(0 if sys.version_info>=(3,11) else 1)' && echo ok").Trim()
+        if ($recheck -match 'ok') {
+          $script:WslPy = $cand; $script:WslPyOk = $true
+          Pass "wsl:python3" "installed $cand alongside the system python3 ($pyv) and using it"
+        } else {
+          Fail "wsl:python3" "installing $cand failed - use -Distro Ubuntu-24.04, or install python3.11+ inside $Distro by hand"
+        }
+      }
+    }
   } else {
     # Absent, not merely outdated - queue it for install, or the fcntl probe and
-    # every vault write below stay broken even under -Apply.
+    # every vault write below stay broken even under -Apply. Pending, not failed:
+    # this run can repair it, and the post-install re-check below confirms it.
     Fix "wsl:python3" "missing - will install"
     $needPkgs += 'python3'
+    $script:WslPyPending = $true
   }
 
-  $fcntl = (Wsl -- python3 -c "import fcntl;print('ok')").Trim()
+  $fcntl = (Wsl -- $script:WslPy -c "import fcntl;print('ok')").Trim()
   if ($fcntl -match 'ok') {
     Pass "wsl:fcntl" "available (vault writes supported)"
-  } elseif ($needPkgs -contains 'python3') {
+  } elseif (($needPkgs -contains 'python3') -or $script:WslPyPending) {
     Fix "wsl:fcntl" "unknown until python3 is installed"
   } else {
     Fail "wsl:fcntl" "missing - vault writes will be refused"
@@ -143,6 +174,34 @@ if ($wslExe -and ((& wsl.exe -l -q 2>&1 | Out-String) -replace "`0","") -match [
       Fix "wsl:packages" "installing: $($needPkgs -join ', ') (sudo may prompt)"
       & wsl.exe -d $Distro -- sudo apt-get update -qq
       & wsl.exe -d $Distro -- sudo apt-get install -y @needPkgs
+
+      # The distro's default python3 may itself be below the floor, so re-check
+      # instead of assuming the install satisfied it - and if it is too old, run
+      # the same versioned-interpreter search used above rather than stopping.
+      if (($needPkgs -contains 'python3') -and -not $script:WslPyOk) {
+        $nv = (Wsl -- python3 -c "import sys;print('%d.%d'%sys.version_info[:2])").Trim()
+        if ($nv -match '^3\.(1[1-9]|[2-9]\d)') {
+          $script:WslPyOk = $true; $script:WslPyPending = $false
+          Pass "wsl:python3" "installed $nv"
+        } else {
+          $picked = $null
+          foreach ($c in @('python3.13','python3.12','python3.11')) {
+            $avail = (Wsl -- sh -c "apt-cache show $c >/dev/null 2>&1 && echo yes").Trim()
+            if ($avail -match 'yes') {
+              & wsl.exe -d $Distro -- sudo apt-get install -y $c
+              $chk = (Wsl -- sh -c "$c -c 'import sys;raise SystemExit(0 if sys.version_info>=(3,11) else 1)' && echo ok").Trim()
+              if ($chk -match 'ok') { $picked = $c; break }
+            }
+          }
+          if ($picked) {
+            $script:WslPy = $picked; $script:WslPyOk = $true; $script:WslPyPending = $false
+            Pass "wsl:python3" "default python3 is $nv; installed and using $picked"
+          } else {
+            $script:WslPyPending = $false
+            Fail "wsl:python3" "installed python3 is $nv and no supported version is available in $Distro - use -Distro Ubuntu-24.04"
+          }
+        }
+      }
     } else {
       Fix "wsl:packages" "would apt-get install: $($needPkgs -join ', ')"
     }
@@ -336,7 +395,11 @@ if (Test-Path $vaultCfg) {
   Pass "vault" "$VaultPath (already initialised)"
 } elseif (-not (Test-Path $core) -or -not $wslOk) {
   Fix "vault" "waiting on product checkout and WSL"
-} elseif (-not $script:WslPyOk -and -not ($needPkgs -contains 'python3')) {
+} elseif (-not $script:WslPyOk -and -not $script:WslPyPending) {
+  # Requires the interpreter to have actually cleared the floor. "python3 is
+  # queued for install" is not sufficient: on -Apply the install has already
+  # happened by now and been re-validated above, and on a dry run the pending
+  # flag covers it.
   # Below the floor: the core would fail somewhere deep inside. Stop here so the
   # actionable wsl:python3 message stays the last word.
   Fail "vault" "blocked: python3 3.11+ inside $Distro is required to create a vault"
@@ -348,7 +411,7 @@ if (Test-Path $vaultCfg) {
   # Preview and apply in the SAME environment: the approval hash binds to the
   # reviewing environment's filesystem identity, so a hash produced natively
   # cannot be replayed from WSL.
-  $plan = Wsl -- python3 $wCore init $wVault --generated-at $stamp --operation-id init-reviewed
+  $plan = Wsl -- $script:WslPy $wCore init $wVault --generated-at $stamp --operation-id init-reviewed
   $hash = ([regex]'"approved_plan_sha256": "([a-f0-9]{64})"').Match($plan).Groups[1].Value
   if (-not $hash) {
     Fail "vault init" "dry-run produced no approval hash"
@@ -356,7 +419,7 @@ if (Test-Path $vaultCfg) {
   } else {
     $paths = ([regex]'"changed_paths": \[(?s)(.*?)\]').Match($plan).Groups[1].Value
     Write-Host "        changed paths:"; Write-Host $paths
-    $out = Wsl -- python3 $wCore init $wVault --generated-at $stamp --operation-id init-reviewed --approved-plan-sha256 $hash --apply
+    $out = Wsl -- $script:WslPy $wCore init $wVault --generated-at $stamp --operation-id init-reviewed --approved-plan-sha256 $hash --apply
     if ($out -match '"status":\s*"complete"') { Fix "vault init" "created $VaultPath" }
     else { Fail "vault init" (($out.Trim() -split "`n")[0]) }
   }
@@ -389,11 +452,16 @@ if (Test-Path (Join-Path $VaultPath ".git")) {
 # ==========================================================================
 Head "9. Verify"
 # ==========================================================================
-if ((Test-Path $core) -and (Test-Path $vaultCfg) -and $wslOk) {
+if ($wslOk -and -not $script:WslPyOk) {
+  # WslPy is still the below-floor interpreter. Running doctor/lint through it
+  # would report failures that say nothing about the vault, and would fail an
+  # otherwise repairable dry run.
+  Fix "verify" "deferred until a python3 3.11+ interpreter is in place inside $Distro"
+} elseif ((Test-Path $core) -and (Test-Path $vaultCfg) -and $wslOk) {
   $wCore = To-Wsl $core; $wVault = To-Wsl $VaultPath
-  $doc = Wsl -- python3 $wCore doctor --vault $wVault
+  $doc = Wsl -- $script:WslPy $wCore doctor --vault $wVault
   if ($doc -match '"ok":\s*true') { Pass "doctor" "ok" } else { Fail "doctor" "not ok" }
-  $lint = Wsl -- python3 $wCore lint --vault $wVault
+  $lint = Wsl -- $script:WslPy $wCore lint --vault $wVault
   $m = [regex]::Match($lint,'"issues_found":\s*(\d+)')
   if ($m.Success) {
     if ($m.Groups[1].Value -eq "0") { Pass "lint" "0 issues" } else { Fail "lint" "$($m.Groups[1].Value) issue(s)" }

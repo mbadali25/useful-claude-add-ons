@@ -84,32 +84,80 @@ install_pkgs() {
   esac
 }
 
+pkg_available() {
+  # Is $1 offered by the repositories already configured on this machine?
+  # Deliberately does not consult or add third-party repositories.
+  case "$PKG" in
+    apt-get) apt-cache show "$1" >/dev/null 2>&1 ;;
+    dnf)     dnf -q list --available "$1" >/dev/null 2>&1 ;;
+    pacman)  pacman -Si "$1" >/dev/null 2>&1 ;;
+    *)       return 1 ;;
+  esac
+}
+py_version_ok() {
+  "$1" -c 'import sys;raise SystemExit(0 if sys.version_info>=(3,11) else 1)' >/dev/null 2>&1
+}
+
 MISSING=()
-PY_OK=0
-# Python 3.11+ is the product's documented floor.
-if command -v python3 >/dev/null 2>&1; then
+PY=python3        # the interpreter every later step actually uses
+PY_OK=0           # PY already clears the 3.11 floor
+PY_PENDING=0      # PY does not clear it yet, but this run can repair it
+
+# Choose the interpreter every later step will use. Written as a function so it
+# can run again after packages are installed: a distro whose default python3 is
+# below the floor still needs the versioned-interpreter search afterwards, and
+# doing that inline once would miss it.
+select_python() {
+  # $1 = "quiet" to skip reporting (used for the post-install re-selection)
+  local quiet="${1:-}" c
+  PY=python3; PY_OK=0; PY_PENDING=0
+  command -v python3 >/dev/null 2>&1 || return 1
   PYV=$(python3 -c 'import sys;print("%d.%d"%sys.version_info[:2])' 2>/dev/null || echo 0.0)
-  if python3 -c 'import sys;raise SystemExit(0 if sys.version_info>=(3,11) else 1)' 2>/dev/null; then
-    pass "python3" "$PYV"
+  if py_version_ok python3; then
     PY_OK=1
-  else
-    # Deliberately NOT auto-repaired. On a distro whose python3 predates 3.11
-    # (Ubuntu 22.04 ships 3.10) getting 3.11+ means adding a third-party
-    # repository such as deadsnakes and possibly switching update-alternatives.
-    # That is too invasive to do behind one --apply, so this reports the exact
-    # remedy and the vault step below refuses rather than failing obscurely.
-    fail "python3" "$PYV found, 3.11+ required - install python3.11+ (e.g. deadsnakes PPA on Ubuntu 22.04) or run this on a newer distro"
+    [ "$quiet" = quiet ] || pass "python3" "$PYV"
+    return 0
   fi
-else
+  # `python3` is too old. Rather than touch update-alternatives or add a
+  # third-party repository, look for a newer *versioned* interpreter and use it
+  # explicitly - first one already installed, then one the configured
+  # repositories can supply. The system python3 is left exactly as it is.
+  for c in python3.14 python3.13 python3.12 python3.11; do
+    if command -v "$c" >/dev/null 2>&1 && py_version_ok "$c"; then
+      PY="$c"; PY_OK=1
+      [ "$quiet" = quiet ] || pass "python3" "system python3 is $PYV; using $c instead"
+      return 0
+    fi
+  done
+  CAND=""
+  for c in python3.13 python3.12 python3.11; do
+    if pkg_available "$c"; then CAND="$c"; break; fi
+  done
+  if [ -z "$CAND" ]; then
+    fail "python3" "$PYV found, 3.11+ required, and no newer python3 in the configured repositories - add one (e.g. the deadsnakes PPA on Ubuntu 22.04) or use a newer distro"
+  elif [ "$APPLY" -eq 0 ]; then
+    PY_PENDING=1
+    fix "python3" "$PYV too old - would install $CAND alongside it and use that"
+  elif install_pkgs "$CAND" >/dev/null 2>&1 && command -v "$CAND" >/dev/null 2>&1 && py_version_ok "$CAND"; then
+    PY="$CAND"; PY_OK=1
+    fix "python3" "installed $CAND alongside the system python3 ($PYV) and using it"
+  else
+    fail "python3" "installing $CAND failed - install python3.11+ by hand and re-run"
+  fi
+  return 0
+}
+
+# Python 3.11+ is the product's documented floor.
+if ! select_python; then
   # Absent is repairable in this same run, so it is a FIX, not a FAIL - a FAIL
   # would leave the exit status at 1 even after we successfully install it.
-  fix "python3" "not installed - will install"; MISSING+=(python3)
+  fix "python3" "not installed - will install"; MISSING+=(python3); PY_PENDING=1
 fi
 
 # fcntl.flock + POSIX directory descriptors are what make vault writes safe.
-if python3 -c 'import fcntl' >/dev/null 2>&1; then
-  pass "python3-fcntl" "available (vault writes supported)"
-elif printf '%s\n' "${MISSING[@]:-}" | grep -qx python3; then
+if command -v "$PY" >/dev/null 2>&1 && "$PY" -c 'import fcntl' >/dev/null 2>&1; then
+  pass "python3-fcntl" "available via $PY (vault writes supported)"
+elif [ "$PY_PENDING" -eq 1 ]; then
   # Can't know yet, and saying FAIL here would wrongly fail the whole run.
   fix "python3-fcntl" "unknown until python3 is installed"
 else
@@ -130,6 +178,17 @@ fi
 
 if [ ${#MISSING[@]} -gt 0 ]; then
   run "install packages: ${MISSING[*]}" install_pkgs "${MISSING[@]}"
+  # The distro's default python3 may itself be below the floor, so run the whole
+  # selection again rather than assuming the install satisfied the requirement.
+  # This is what lets "no python3 at all, default is 3.10, but python3.11 is
+  # packaged" end up on a supported interpreter instead of stopping.
+  if [ "$APPLY" -eq 1 ] && [ "$PY_OK" -ne 1 ]; then
+    if select_python quiet && [ "$PY_OK" -eq 1 ]; then
+      pass "python3" "using $PY ($("$PY" -c 'import sys;print("%d.%d"%sys.version_info[:2])'))"
+    elif [ "$PY_OK" -ne 1 ] && [ "$PY_PENDING" -ne 1 ]; then
+      fail "python3" "still below 3.11 after installing - install python3.11+ by hand and re-run"
+    fi
+  fi
 fi
 
 if ! command -v node >/dev/null 2>&1; then
@@ -184,6 +243,10 @@ head2 "2. Product checkout"
 if [ -f "$PRODUCT/scripts/claude-obsidian.py" ]; then
   pass "product" "$PRODUCT"
 else
+  # git clone does create missing parent directories, but creating the parent
+  # explicitly removes the dependency on that behaviour and keeps the failure
+  # mode obvious if the root is not writable.
+  [ "$APPLY" -eq 1 ] && mkdir -p "$(dirname "$PRODUCT")"
   run "clone product to $PRODUCT" git clone --depth 1 \
     https://github.com/AgriciDaniel/claude-obsidian.git "$PRODUCT"
 fi
@@ -212,7 +275,7 @@ if [ -f "$VAULT/.claude-obsidian.json" ]; then
   pass "vault" "$VAULT (already initialised)"
 elif [ ! -f "$CORE" ]; then
   fix "vault" "waiting on product checkout"
-elif [ "$PY_OK" -ne 1 ] && ! printf '%s\n' "${MISSING[@]:-}" | grep -qx python3; then
+elif [ "$PY_OK" -ne 1 ] && [ "$PY_PENDING" -ne 1 ]; then
   # An interpreter below the floor would fail somewhere deep inside the core.
   # Stop here so the actionable python3 message above is the last word.
   fail "vault" "blocked: python3 3.11+ is required to create a vault"
@@ -223,7 +286,7 @@ else
     mkdir -p "$(dirname "$VAULT")"
     # The product's own preview-then-apply contract: never apply a plan that
     # was not just reviewed, and pass its emitted hash back unchanged.
-    PLAN=$(python3 "$CORE" init "$VAULT" --generated-at "$STAMP" \
+    PLAN=$("$PY" "$CORE" init "$VAULT" --generated-at "$STAMP" \
              --operation-id init-reviewed 2>&1)
     HASH=$(printf '%s' "$PLAN" | grep -o '"approved_plan_sha256": "[a-f0-9]\{64\}"' \
              | head -1 | grep -o '[a-f0-9]\{64\}')
@@ -232,7 +295,7 @@ else
       printf '%s\n' "$PLAN" | head -5 | sed 's/^/        /'
     else
       printf '%s\n' "$PLAN" | grep -A20 '"changed_paths"' | head -20 | sed 's/^/        /'
-      if python3 "$CORE" init "$VAULT" --generated-at "$STAMP" \
+      if "$PY" "$CORE" init "$VAULT" --generated-at "$STAMP" \
            --operation-id init-reviewed --approved-plan-sha256 "$HASH" --apply \
            >/tmp/co-setup.log 2>&1; then
         fix "vault init" "created $VAULT"
@@ -261,14 +324,19 @@ fi
 # --------------------------------------------------------------------------
 head2 "6. Verify"
 # --------------------------------------------------------------------------
-if [ -f "$CORE" ] && [ -f "$VAULT/.claude-obsidian.json" ]; then
-  if python3 "$CORE" doctor --vault "$VAULT" 2>/dev/null | grep -q '"ok": true'; then
+if [ "$PY_OK" -ne 1 ]; then
+  # $PY is still the below-floor interpreter. Running doctor/lint through it
+  # would report failures that say nothing about the vault, and would fail an
+  # otherwise repairable dry run.
+  fix "verify" "deferred until a python3 3.11+ interpreter is in place"
+elif [ -f "$CORE" ] && [ -f "$VAULT/.claude-obsidian.json" ]; then
+  if "$PY" "$CORE" doctor --vault "$VAULT" 2>/dev/null | grep -q '"ok": true'; then
     pass "doctor" "ok"
   else
     fail "doctor" "not ok"
   fi
-  ISSUES=$(python3 "$CORE" lint --vault "$VAULT" 2>/dev/null \
-           | python3 -c 'import sys,json;print(json.load(sys.stdin)["summary"]["issues_found"])' 2>/dev/null || echo "?")
+  ISSUES=$("$PY" "$CORE" lint --vault "$VAULT" 2>/dev/null \
+           | "$PY" -c 'import sys,json;print(json.load(sys.stdin)["summary"]["issues_found"])' 2>/dev/null || echo "?")
   [ "$ISSUES" = "0" ] && pass "lint" "0 issues" || fail "lint" "$ISSUES issue(s)"
 else
   fix "verify" "runs once product and vault exist"
