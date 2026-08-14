@@ -37,6 +37,8 @@
 #   --no-update           never update an already-installed plugin, only report it
 #   --skip-bootstrap      narrow the selection to prerequisites + the Claude Code CLI
 #   --scope <scope>       scope for marketplace/plugin installs: user|project|local (default: user)
+#   --obsidian-repo-root <dir>
+#                         root the Obsidian item suggests for the vault (default: ~/repos)
 
 set -uo pipefail
 
@@ -69,6 +71,9 @@ SKILLS_SPEC=""
 SKILLUI_GUIDE=""       # "1"/"0" once answered; empty means "ask"
 NOTIFY_SETUP=""        # "1"/"0" once answered; empty means "ask"
 INSTALL_SCOPE="user"   # machine-wide by default, not per-project
+# Root the Obsidian item suggests for the vault. ~/repos is the Linux
+# counterpart of the Windows default C:\repos.
+OBSIDIAN_REPO_ROOT="${HOME}/repos"
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -81,6 +86,7 @@ while [ $# -gt 0 ]; do
     --skillui-guide)   SKILLUI_GUIDE=1 ;;
     --notify-setup)    NOTIFY_SETUP=1 ;;
     --scope)           INSTALL_SCOPE="${2:-user}"; shift ;;
+    --obsidian-repo-root) OBSIDIAN_REPO_ROOT="${2:-$HOME/repos}"; shift ;;
     *) echo "Unknown option: $1" >&2 ;;
   esac
   shift
@@ -388,9 +394,9 @@ MENU_KEYS=(
   "prereqs" "cli" "own-skills" "team" "find-skills" "community"
   "claude-code-setup" "task-observer" "claude-mem" "voltagent"
   "aws-mcp" "azure-mcp" "playwright-mcp"
-  "supabase" "context7" "playwright-cli" "skillui" "strix"
+  "supabase" "context7" "playwright-cli" "skillui" "strix" "obsidian"
 )
-MENU_DEFAULT=(1 1 1 1 1 1 1 1 1 1 0 0 0 0 0 0 0 0)
+MENU_DEFAULT=(1 1 1 1 1 1 1 1 1 1 0 0 0 0 0 0 0 0 0)
 MENU_NAME=(
   "Prerequisites: git, nodejs, npm, python3, pip3 (needs root or sudo)"
   "Claude Code CLI (@anthropic-ai/claude-code) + PATH export + update check"
@@ -410,6 +416,7 @@ MENU_NAME=(
   "Playwright CLI (@playwright/cli) - browser automation from the shell"
   "SkillUI (npm) + Playwright/Chromium - extract a design system from a URL"
   "Strix AI pentesting CLI (needs Docker + an LLM API key)"
+  "Obsidian desktop + claude-obsidian + obsidian-skills plugins"
 )
 
 SELECTED=""
@@ -1747,6 +1754,49 @@ install_strix() {
 }
 if is_selected "strix"; then
   run_step "Install Strix AI pentesting CLI" install_strix
+fi
+
+# --- 19. Obsidian + claude-obsidian ------------------------------------------
+obsidian_next_steps() {
+  echo ""
+  printf '\033[33m    Obsidian is installed, but the vault is a separate step:\033[0m\n'
+  printf '      claude-obsidian-setup/setup-claude-obsidian.sh --apply --repo-root %s\n' "$OBSIDIAN_REPO_ROOT"
+  echo "    That creates and verifies the vault. Run it without --apply first to preview."
+  echo "    Details: claude-obsidian-setup/README.md"
+}
+
+install_obsidian() {
+  # Obsidian ships no npm/pip package. Upstream publishes to Flathub and Snap,
+  # plus raw AppImage/.deb; distro repos generally do not carry it at all.
+  if have obsidian || flatpak info md.obsidian.Obsidian >/dev/null 2>&1 || [ -d /snap/obsidian ]; then
+    skip "Obsidian already installed"
+  elif have flatpak; then
+    flatpak install -y flathub md.obsidian.Obsidian || return 1
+    COUNT_INSTALLED=$((COUNT_INSTALLED+1))
+    ok "Obsidian installed via flatpak"
+  elif have snap; then
+    as_root snap install obsidian --classic || return 1
+    COUNT_INSTALLED=$((COUNT_INSTALLED+1))
+    ok "Obsidian installed via snap"
+  else
+    warn "no flatpak or snap found - install Obsidian from https://obsidian.md (AppImage or .deb), then re-run."
+  fi
+
+  if claude_available; then
+    # The vault engine, and Obsidian's own upstream syntax skills (Markdown,
+    # Bases, JSON Canvas, the Obsidian CLI, Defuddle).
+    add_marketplace "AgriciDaniel/claude-obsidian"
+    install_plugin  "claude-obsidian@agricidaniel-claude-obsidian"
+    add_marketplace "kepano/obsidian-skills"
+    install_plugin  "obsidian@obsidian-skills"
+  else
+    warn "'claude' is not on PATH yet - re-run with item 2 selected, or open a new shell and re-run this item."
+  fi
+
+  obsidian_next_steps
+}
+if is_selected "obsidian"; then
+  run_step "Install Obsidian desktop + claude-obsidian and obsidian-skills plugins" install_obsidian
 fi
 
 

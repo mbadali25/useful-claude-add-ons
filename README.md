@@ -79,6 +79,7 @@ Terminals that can't read a key press one at a time — no `stty`, `TERM=dumb`, 
 | 16 | Playwright CLI (`@playwright/cli`) | |
 | 17 | SkillUI + Playwright/Chromium — design system from a URL | |
 | 18 | Strix — AI pentesting CLI (needs Docker + an LLM API key) | |
+| 19 | Obsidian desktop + `claude-obsidian` and `obsidian-skills` plugins | |
 
 Menu numbers are identical on Windows and Linux, and an already-registered MCP server, marketplace, or plugin is reported and skipped rather than re-added. Numbers can shift as items are added, so scripted runs should prefer the stable keys (`--select supabase,strix`) over positions.
 
@@ -90,6 +91,8 @@ A few items need a word of explanation:
 - **Context7** (15) runs `npx ctx7 setup`, which is an interactive wizard — the script hands it the terminal explicitly, and where there is no terminal (CI, a redirected console) it prints the command instead of hanging.
 - **SkillUI** (17) installs the CLI, Playwright, and the Chromium build Playwright drives. Playwright goes in **globally** (`npm install -g playwright`) rather than into whatever directory you ran the script from. It asks up front whether to print the quick start when it's done; `--skillui-guide` / `-SkillUIGuide` answers yes without being asked.
 - **Strix** (18) is a security tool, not a Claude Code plugin: it installs via upstream's own shell installer (`curl -sSL https://strix.ai/install | bash`). **It cannot run straight after installing** — it needs Docker running and an LLM API key (`STRIX_LLM` + `LLM_API_KEY`), which the script prints as next steps every time. On Windows the installer is POSIX-only, so the script runs it through WSL, falls back to Git Bash, and warns with the manual command if neither is present.
+
+- **Obsidian** (19) is a desktop app, not a plugin, so it comes from a package manager: Chocolatey first on Windows (falling back to winget), flatpak first on Linux (falling back to snap) — distro repos generally don't carry it. Chocolatey needs an elevated prompt; without one the app is skipped and the two plugins still install. It then adds the `claude-obsidian` vault engine and [`kepano/obsidian-skills`](https://github.com/kepano/obsidian-skills), Obsidian's own upstream skills for Markdown, Bases, JSON Canvas, the Obsidian CLI, and Defuddle. **The app and plugins are all this item does** — creating the vault is a separate, deliberately reviewed step, which the item prints as its next step and [`claude-obsidian-setup/`](claude-obsidian-setup/) performs. `--obsidian-repo-root` / `-ObsidianRepoRoot` changes the root it suggests (default `C:\repos` on Windows, `~/repos` on Linux).
 
 Everything that can be a plugin **is** installed as one, using the CLI's own `claude plugin marketplace add` / `claude plugin install` — there's no `npx claudepluginhub` wrapper and no `git clone` + shell-script step any more. That removes the Windows failure modes those introduced (the wrapper needed a writable per-repo checkout, and the VoltAgent installer needed Git Bash to run a `.sh`).
 
@@ -104,6 +107,7 @@ Everything that can be a plugin **is** installed as one, using the CLI's own `cl
 | `-NoUpdate` / `--no-update` | Report already-installed plugins but never update them. |
 | `-SkipBootstrap` / `--skip-bootstrap` | Narrow whatever you selected down to the prerequisites and the Claude Code CLI. |
 | `-InstallScope` / `--scope` | Scope for every marketplace and plugin install: `user` (default), `project`, or `local`. Windows still accepts the old `-PluginHubScope` name as an alias. |
+| `-ObsidianRepoRoot` / `--obsidian-repo-root` | Root that item 19 suggests for the Obsidian vault — `C:\repos` on Windows, `~/repos` on Linux. Only affects the printed next step; the vault itself is created by [`claude-obsidian-setup/`](claude-obsidian-setup/). |
 
 > On Windows, run from an **elevated** prompt for the full setup. Without elevation the script skips menu item 1 (Chocolatey and its packages: git/awscli/nodejs/python) and runs everything else you selected.
 
@@ -127,6 +131,7 @@ Everything that can be a plugin **is** installed as one, using the CLI's own `cl
 | 16 Playwright CLI | `@playwright/cli` (`playwright-cli` on `PATH`) | npm |
 | 17 SkillUI | `skillui` + `playwright` + the Chromium browser build | npm |
 | 18 Strix | The `strix` pentesting CLI | `curl -sSL https://strix.ai/install \| bash` |
+| 19 Obsidian | The Obsidian desktop app (Chocolatey → winget on Windows, flatpak → snap on Linux), plus the `claude-obsidian` vault engine and [`kepano/obsidian-skills`](https://github.com/kepano/obsidian-skills) — Obsidian's own Markdown, Bases, JSON Canvas, CLI and Defuddle skills | choco/winget/flatpak/snap + 2 marketplaces |
 
 Items 1–10 are the default set. Everything from 11 on is opt-in.
 
@@ -184,6 +189,40 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 | [`SECURITY.md`](SECURITY.md) | Reporting a vulnerability, credential-handling policy, install-script trust boundary. |
 | [`CHANGELOG.md`](CHANGELOG.md) | Notable changes to this repo, dated. |
 | [`docs/HANDOFF.md`](docs/HANDOFF.md) | Session handoff notes — why things are built the way they are, what was verified, what's still open. |
+| [`claude-obsidian-setup/`](claude-obsidian-setup/) | **Obsidian knowledge-vault setup** for Windows (WSL) and Linux — the deeper version of menu item 19. |
+
+## Obsidian knowledge vault
+
+[**`claude-obsidian-setup/`**](claude-obsidian-setup/) sets up a source-cited Obsidian vault driven from Claude Code, identically on Windows and Linux. Menu item 19 of the bootstrap installs the app and the plugins; these scripts also **create and verify the vault**.
+
+| Platform | Script |
+|---|---|
+| Windows 10/11 + WSL | [`claude-obsidian-setup/setup-claude-obsidian.ps1`](claude-obsidian-setup/setup-claude-obsidian.ps1) |
+| Linux (native) | [`claude-obsidian-setup/setup-claude-obsidian.sh`](claude-obsidian-setup/setup-claude-obsidian.sh) |
+
+Both are **dry-run by default** — nothing changes without `-Apply` / `--apply`:
+
+```powershell
+# Windows (elevated for the Obsidian install)
+.\claude-obsidian-setup\setup-claude-obsidian.ps1
+.\claude-obsidian-setup\setup-claude-obsidian.ps1 -Apply
+
+# Somewhere other than the C:\repos default
+.\claude-obsidian-setup\setup-claude-obsidian.ps1 -Apply -RepoRoot D:\work
+```
+
+```bash
+# Linux
+bash claude-obsidian-setup/setup-claude-obsidian.sh
+bash claude-obsidian-setup/setup-claude-obsidian.sh --apply
+
+# Somewhere other than the ~/repos default
+bash claude-obsidian-setup/setup-claude-obsidian.sh --apply --repo-root /srv/work
+```
+
+Everything hangs off one root — `C:\repos` on Windows, `~/repos` on Linux — so `-RepoRoot` / `--repo-root` relocates the vault *and* the product checkout together. `-VaultPath` / `--vault` and `-ProductRoot` / `--product` override either half.
+
+On Windows they also fix four things that otherwise break claude-obsidian silently: native Windows cannot write to a vault at all (no `fcntl`), `python3` resolves to a Microsoft Store stub, `/mnt/c` mounts without the `metadata` option so every write fails `EPERM`, and git identity doesn't cross into WSL so `checkpoint` can't commit. See [`claude-obsidian-setup/README.md`](claude-obsidian-setup/README.md).
 
 ## Skills
 

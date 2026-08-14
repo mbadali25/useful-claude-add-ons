@@ -19,7 +19,8 @@ One script per OS. Both are idempotent (safe to re-run) and, by default, also bo
     [x] Team plugins: superpowers, frontend-design, excalidraw-generator
     ...
     [ ] Strix AI pentesting CLI (needs Docker + an LLM API key)
-  showing 1-18 of 18
+    [ ] Obsidian desktop + claude-obsidian + obsidian-skills plugins
+  showing 1-19 of 19
   ↑↓ move   Space toggle   Enter start   A all   N none   D defaults   Q cancel
   → on the repo row picks individual skills
 ```
@@ -204,7 +205,7 @@ Any of them can be added later by hand with the same `claude mcp add` command, o
 
 ### Optional: extra tooling
 
-Five more rows, also off by default. None of them are MCP servers.
+Six more rows, also off by default. None of them are MCP servers.
 
 - **Supabase** (14) — adds `anthropics/claude-plugins-official` (a no-op if the community or `claude-code-setup` row already registered it) and installs `supabase@claude-plugins-official`. Already-installed is detected and skipped or updated like any other plugin.
 - **Context7** (15) — runs `npx -y ctx7@latest setup`, an interactive wizard that wires version-accurate library documentation into whichever agents it finds. The scripts hand it the terminal explicitly; with no terminal available (CI, `curl | bash` with no `/dev/tty`, a redirected console) they print the command to run by hand rather than hanging on a prompt nobody can see. The free tier needs no key.
@@ -212,7 +213,39 @@ Five more rows, also off by default. None of them are MCP servers.
 - **SkillUI** (17) — `npm install -g skillui`, then `npm install -g playwright` and `npx playwright install chromium`. Playwright is installed **globally on purpose**: the scripts can be run from anywhere, and a bare `npm install playwright` would leave a `node_modules` tree in whatever directory you happened to be in. Both Playwright steps warn rather than fail the item, since SkillUI installs fine without them and only screenshot capture breaks. You're asked up front whether to print the quick start afterwards (`--skillui-guide` / `-SkillUIGuide` answers yes without asking).
 - **Strix** (18) — installs upstream's own shell installer, `curl -sSL https://strix.ai/install | bash`. **Installing it is not enough to run it**: Strix needs Docker running (the first scan pulls its sandbox image) and an LLM API key exported as `STRIX_LLM` + `LLM_API_KEY`. Both scripts print those next steps every time, including on a re-run that skipped the install. On Windows the installer is POSIX-only, so the script tries WSL first, then Git Bash, and warns with the manual command if neither is available — a WSL install is only usable from inside WSL.
 
-Before running either script on a machine you don't fully control, note that these steps run third-party code from npm and from `strix.ai` — see [`SECURITY.md`](SECURITY.md)'s install-script trust boundary.
+- **Obsidian** (19) — the [Obsidian](https://obsidian.md) desktop app plus the two plugins that make Claude Code useful against a vault. The app is not on npm, so it comes from a package manager: Chocolatey on Windows (falling back to winget), flatpak on Linux (falling back to snap), since distro repositories generally don't carry it. Chocolatey needs an elevated prompt; without one the app is skipped with a warning and **the plugins still install**. Then two marketplaces are added and one plugin taken from each:
+
+  ```bash
+  claude plugin marketplace add AgriciDaniel/claude-obsidian
+  claude plugin install claude-obsidian@agricidaniel-claude-obsidian
+
+  claude plugin marketplace add kepano/obsidian-skills
+  claude plugin install obsidian@obsidian-skills
+  ```
+
+  The first is the vault engine — transactional writes, provenance ledgers, deterministic lint, and the `/claude-obsidian:*` skills. The second is [`kepano/obsidian-skills`](https://github.com/kepano/obsidian-skills), maintained by Obsidian's own team: authoritative references for Obsidian Flavored Markdown, Bases (`.base`), JSON Canvas (`.canvas`), the Obsidian CLI, and Defuddle. Both are detected and skipped or updated like any other plugin.
+
+  **This item stops at the app and the plugins.** It deliberately does not create a vault — that writes to disk under a reviewed transaction and belongs in its own step, which the item prints when it finishes and [`claude-obsidian-setup/`](claude-obsidian-setup/) performs. `--obsidian-repo-root` / `-ObsidianRepoRoot` changes the root it suggests (default `C:\repos` on Windows, `~/repos` on Linux).
+
+Before running either script on a machine you don't fully control, note that these steps run third-party code from npm, from `strix.ai`, and from Chocolatey/flatpak/snap — see [`SECURITY.md`](SECURITY.md)'s install-script trust boundary.
+
+### Optional: the Obsidian knowledge vault
+
+Item 19 gets you the app and the plugins. Creating and verifying an actual vault is [`claude-obsidian-setup/`](claude-obsidian-setup/):
+
+```powershell
+# Windows - preview first, then apply
+.\claude-obsidian-setup\setup-claude-obsidian.ps1
+.\claude-obsidian-setup\setup-claude-obsidian.ps1 -Apply -RepoRoot C:\repos
+```
+
+```bash
+# Linux
+bash claude-obsidian-setup/setup-claude-obsidian.sh
+bash claude-obsidian-setup/setup-claude-obsidian.sh --apply --repo-root ~/repos
+```
+
+Both are dry-run by default and idempotent, report `PASS`/`FIX`/`FAIL` per check, and end by running the product's own `doctor` and `lint` against the new vault. On Windows they additionally repair four things that break claude-obsidian silently — native Windows cannot write to a vault at all, `python3` resolves to a Microsoft Store stub, `/mnt/c` mounts without `metadata` so writes fail `EPERM`, and git identity does not cross into WSL. Full detail, including the cross-platform notes: [`claude-obsidian-setup/README.md`](claude-obsidian-setup/README.md).
 
 ### Optional: awesome-claude-code-subagents
 
