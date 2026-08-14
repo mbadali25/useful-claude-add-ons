@@ -82,11 +82,20 @@ interpreter — you get `blocked: python3 3.11+ is required` instead of a failur
 inside the core.
 
 An interpreter that is *absent* is installed for you. An interpreter that is *too old* is
-**not** upgraded automatically: on a distro like Ubuntu 22.04 (which ships 3.10) that
-means adding a third-party repository such as deadsnakes and possibly moving
-`update-alternatives`, which is too invasive to do behind one `--apply`. The scripts print
-the exact remedy instead. On Windows/WSL the simplest fix is `-Distro Ubuntu-24.04`, which
-ships 3.12.
+handled without ever touching your system `python3`, in this order:
+
+1. **Use a newer versioned interpreter that is already installed** — `python3.13`,
+   `python3.12`, `python3.11`. Nothing is installed and `python3` is left exactly as it is.
+2. **Install one from the repositories already configured on the machine** —
+   `apt-cache`/`dnf`/`pacman` are asked whether a newer `python3.X` is available; if so it
+   is installed *alongside* the system interpreter and used explicitly.
+3. **Otherwise, stop with the concrete remedy.** No third-party repository is ever added
+   and `update-alternatives` is never touched — that would be too invasive to do behind a
+   single `--apply` — so a machine with nothing newer available (Ubuntu 22.04, whose
+   repositories top out at 3.10) is told to add the deadsnakes PPA or use a newer distro.
+
+Everything downstream then runs on whichever interpreter was selected, not on `python3`.
+On Windows/WSL the simplest answer remains `-Distro Ubuntu-24.04`, which ships 3.12.
 
 ## What gets installed
 
