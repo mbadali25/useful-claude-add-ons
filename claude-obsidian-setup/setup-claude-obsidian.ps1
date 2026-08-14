@@ -148,9 +148,11 @@ if ($wslExe -and ((& wsl.exe -l -q 2>&1 | Out-String) -replace "`0","") -match [
     }
   } else {
     # Absent, not merely outdated - queue it for install, or the fcntl probe and
-    # every vault write below stay broken even under -Apply.
+    # every vault write below stay broken even under -Apply. Pending, not failed:
+    # this run can repair it, and the post-install re-check below confirms it.
     Fix "wsl:python3" "missing - will install"
     $needPkgs += 'python3'
+    $script:WslPyPending = $true
   }
 
   $fcntl = (Wsl -- $script:WslPy -c "import fcntl;print('ok')").Trim()
@@ -172,6 +174,34 @@ if ($wslExe -and ((& wsl.exe -l -q 2>&1 | Out-String) -replace "`0","") -match [
       Fix "wsl:packages" "installing: $($needPkgs -join ', ') (sudo may prompt)"
       & wsl.exe -d $Distro -- sudo apt-get update -qq
       & wsl.exe -d $Distro -- sudo apt-get install -y @needPkgs
+
+      # The distro's default python3 may itself be below the floor, so re-check
+      # instead of assuming the install satisfied it - and if it is too old, run
+      # the same versioned-interpreter search used above rather than stopping.
+      if (($needPkgs -contains 'python3') -and -not $script:WslPyOk) {
+        $nv = (Wsl -- python3 -c "import sys;print('%d.%d'%sys.version_info[:2])").Trim()
+        if ($nv -match '^3\.(1[1-9]|[2-9]\d)') {
+          $script:WslPyOk = $true; $script:WslPyPending = $false
+          Pass "wsl:python3" "installed $nv"
+        } else {
+          $picked = $null
+          foreach ($c in @('python3.13','python3.12','python3.11')) {
+            $avail = (Wsl -- sh -c "apt-cache show $c >/dev/null 2>&1 && echo yes").Trim()
+            if ($avail -match 'yes') {
+              & wsl.exe -d $Distro -- sudo apt-get install -y $c
+              $chk = (Wsl -- sh -c "$c -c 'import sys;raise SystemExit(0 if sys.version_info>=(3,11) else 1)' && echo ok").Trim()
+              if ($chk -match 'ok') { $picked = $c; break }
+            }
+          }
+          if ($picked) {
+            $script:WslPy = $picked; $script:WslPyOk = $true; $script:WslPyPending = $false
+            Pass "wsl:python3" "default python3 is $nv; installed and using $picked"
+          } else {
+            $script:WslPyPending = $false
+            Fail "wsl:python3" "installed python3 is $nv and no supported version is available in $Distro - use -Distro Ubuntu-24.04"
+          }
+        }
+      }
     } else {
       Fix "wsl:packages" "would apt-get install: $($needPkgs -join ', ')"
     }
@@ -365,7 +395,11 @@ if (Test-Path $vaultCfg) {
   Pass "vault" "$VaultPath (already initialised)"
 } elseif (-not (Test-Path $core) -or -not $wslOk) {
   Fix "vault" "waiting on product checkout and WSL"
-} elseif (-not $script:WslPyOk -and -not $script:WslPyPending -and -not ($needPkgs -contains 'python3')) {
+} elseif (-not $script:WslPyOk -and -not $script:WslPyPending) {
+  # Requires the interpreter to have actually cleared the floor. "python3 is
+  # queued for install" is not sufficient: on -Apply the install has already
+  # happened by now and been re-validated above, and on a dry run the pending
+  # flag covers it.
   # Below the floor: the core would fail somewhere deep inside. Stop here so the
   # actionable wsl:python3 message stays the last word.
   Fail "vault" "blocked: python3 3.11+ inside $Distro is required to create a vault"
