@@ -4,6 +4,21 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added
+
+- **`vault-automation/` — self-feeding vault pipeline.** New component that automates
+  the Obsidian memory loop end to end: Claude Code `SessionEnd`/`PreCompact` hooks
+  queue every session into `inbox/pending-reflect.md`; a nightly `Claude Vault
+  Gardener` scheduled task runs headless Claude to distill queued sessions into
+  source-cited `wiki/concepts` pages and `wiki/daily` digests (with a provenance pass
+  that promotes well-attested concepts); a `HOME.md` Dataview dashboard surfaces
+  stale/unsourced concepts and the live queue; five community plugins installed
+  file-level. Obsidian-Sync-aware: git is an optional layer (`-UseGit`/`-GitRemote`)
+  and the gardener skips git operations on git-less vaults. Dry-run by default,
+  idempotent, documented in `vault-automation/README.md` (incl. run-the-gardener-on-
+  one-machine-only and cost/safety notes). Root README gained a "Vault automation"
+  section with the run commands.
+
 ### Fixed
 
 - **`claude-obsidian-setup` — a Python below the 3.11 floor is now repaired rather than

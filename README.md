@@ -190,6 +190,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 | [`CHANGELOG.md`](CHANGELOG.md) | Notable changes to this repo, dated. |
 | [`docs/HANDOFF.md`](docs/HANDOFF.md) | Session handoff notes — why things are built the way they are, what was verified, what's still open. |
 | [`claude-obsidian-setup/`](claude-obsidian-setup/) | **Obsidian knowledge-vault setup** for Windows (WSL) and Linux — the deeper version of menu item 19. |
+| [`vault-automation/`](vault-automation/) | **Self-feeding vault pipeline** — session-capture hooks, nightly gardener (headless Claude distillation), Dataview dashboard, Obsidian plugins, optional git layer. |
 
 ## Obsidian knowledge vault
 
@@ -223,6 +224,21 @@ bash claude-obsidian-setup/setup-claude-obsidian.sh --apply --repo-root /srv/wor
 Everything hangs off one root — `C:\repos` on Windows, `~/repos` on Linux — so `-RepoRoot` / `--repo-root` relocates the vault *and* the product checkout together. `-VaultPath` / `--vault` and `-ProductRoot` / `--product` override either half.
 
 On Windows they also fix four things that otherwise break claude-obsidian silently: native Windows cannot write to a vault at all (no `fcntl`), `python3` resolves to a Microsoft Store stub, `/mnt/c` mounts without the `metadata` option so every write fails `EPERM`, and git identity doesn't cross into WSL so `checkpoint` can't commit. See [`claude-obsidian-setup/README.md`](claude-obsidian-setup/README.md).
+
+### Vault automation — the vault that feeds itself
+
+Once a vault exists, [**`vault-automation/`**](vault-automation/) installs the layer that makes it learn on its own: `SessionEnd`/`PreCompact` hooks queue every Claude session into the vault inbox, a nightly **gardener** task runs headless Claude to distill queued sessions into source-cited concept pages and daily digests, and a `HOME.md` Dataview dashboard surfaces what needs attention. Works with Obsidian Sync alone (no git required) or with an optional git history layer. Dry-run by default:
+
+```powershell
+# Preview, then apply against the default vault (C:\repos\claude-memories)
+.\vault-automation\setup-vault-automation.ps1
+.\vault-automation\setup-vault-automation.ps1 -Apply
+
+# With the optional git history layer
+.\vault-automation\setup-vault-automation.ps1 -Apply -UseGit -GitRemote git@github.com:you/claude-memories.git
+```
+
+Run the gardener on **one machine only**; details and safety notes in [`vault-automation/README.md`](vault-automation/README.md).
 
 ## Skills
 

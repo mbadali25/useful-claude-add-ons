@@ -6,6 +6,39 @@ that does not survive in a diff.
 
 ---
 
+## 2026-08-15 — `vault-automation/`: the vault that feeds itself
+
+### What changed
+
+New sibling component to `claude-obsidian-setup/`. Where that one CREATES a vault,
+this one AUTOMATES an existing vault: capture hooks (SessionEnd/PreCompact →
+`~/.claude/hooks/vault-capture.py` → `inbox/pending-reflect.md`), a nightly
+headless-Claude gardener (scheduled task, 5-sessions/night cap, 80-turn/2h limits),
+a Dataview `HOME.md` dashboard, the five community plugins, and an OPTIONAL git
+layer. Built live on the primary machine first (vault `C:\repos\claude-memories`),
+then extracted here as parameterized, dry-run-by-default, idempotent scripts.
+
+### Why this way
+
+- **Obsidian Sync is the source of truth for sync/backup** — the vault owner uses
+  Sync, so git is strictly additive (history/rollback) and everything degrades
+  gracefully without it. The gardener probes `.git`/origin at runtime and adjusts
+  its own prompt. Do not "fix" this by making git mandatory.
+- The settings.json hook merge is done in embedded Python, not PowerShell — PS 5.1's
+  ConvertFrom-Json round-trip mangles deep hook arrays.
+- Hook script fails silent by design: a capture miss must never break a session.
+- Gardener uses `--dangerously-skip-permissions` because headless sessions cannot
+  answer permission prompts; scope is bounded (own vault, turn/time caps).
+
+### Still open
+
+- First real gardener run happens tonight on the primary machine — its log
+  (`<vault>\.claude\gardener-logs\`) will show whether the 5-session cap and the
+  giant-transcript case (a 100+-turn infra session is queued) behave.
+- SessionStart digest injection (surface yesterday's daily note at session start)
+  was deliberately deferred — startup context cost needs measuring first.
+- No Linux/WSL variant of the setup script yet (Task Scheduler → cron/systemd).
+
 ## 2026-08-14 — Obsidian vault setup: menu item 19 + `claude-obsidian-setup/`
 
 ### What changed
