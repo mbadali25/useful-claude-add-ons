@@ -29,6 +29,17 @@ def main() -> None:
                 print(f"selftest FAIL: vault path missing: {VAULT_PATH}", file=sys.stderr)
                 sys.exit(1)
             INBOX.parent.mkdir(parents=True, exist_ok=True)
+            # Real writability probe: open for append (creates with header if new,
+            # raises on a read-only file/dir). Appends nothing to an existing queue.
+            try:
+                if not INBOX.exists():
+                    INBOX.write_text(HEADER, encoding="utf-8")
+                else:
+                    with INBOX.open("a", encoding="utf-8"):
+                        pass
+            except Exception as e:
+                print(f"selftest FAIL: inbox not writable: {e}", file=sys.stderr)
+                sys.exit(1)
             print("selftest OK")
             return
         try:

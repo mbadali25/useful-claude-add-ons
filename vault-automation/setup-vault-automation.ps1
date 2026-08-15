@@ -43,7 +43,7 @@ $ErrorActionPreference = 'Stop'
 if ($GitRemote) { $UseGit = $true }
 # Paths get baked into Python raw strings and single-quoted PowerShell literals -
 # normalize/reject shapes that would break either (trailing backslash, quotes).
-$VaultPath = $VaultPath.TrimEnd('\')
+if ($VaultPath.Length -gt 3) { $VaultPath = $VaultPath.TrimEnd('\') }  # keep drive roots like D:\ intact
 if ($VaultPath -match "'" ) { throw "VaultPath must not contain a single quote: $VaultPath" }
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $claudeDir = Join-Path $env:USERPROFILE '.claude'
