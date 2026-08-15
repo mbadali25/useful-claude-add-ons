@@ -41,6 +41,10 @@ param(
 
 $ErrorActionPreference = 'Stop'
 if ($GitRemote) { $UseGit = $true }
+# Paths get baked into Python raw strings and single-quoted PowerShell literals -
+# normalize/reject shapes that would break either (trailing backslash, quotes).
+$VaultPath = $VaultPath.TrimEnd('\')
+if ($VaultPath -match "'" ) { throw "VaultPath must not contain a single quote: $VaultPath" }
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $claudeDir = Join-Path $env:USERPROFILE '.claude'
 $mode = if ($Apply) { 'APPLY' } else { 'DRY-RUN (pass -Apply to execute)' }
@@ -60,6 +64,7 @@ if (-not (Test-Path $claudeExe)) {
     $cmd = Get-Command claude -ErrorAction SilentlyContinue
     if ($cmd) { $claudeExe = $cmd.Source } else { throw 'claude CLI not found (install Claude Code first)' }
 }
+if ($claudeExe -match "'") { throw "claude path must not contain a single quote: $claudeExe" }
 $python = (Get-Command python -ErrorAction SilentlyContinue)
 if (-not $python) { throw 'python not found on PATH (required for the capture hook)' }
 foreach ($skill in 'recall','reflect','canvas') {
@@ -136,8 +141,8 @@ Step 'Session capture hook script (~/.claude/hooks/vault-capture.py)' {
     New-Item -ItemType Directory -Force -Path (Split-Path $hookPy) | Out-Null
     (Get-Content (Join-Path $here 'vault-capture.py') -Raw).Replace('__VAULT_PATH__', $VaultPath) |
         Set-Content $hookPy -Encoding utf8
-    # Pipe-test it
-    $test = '{"session_id":"setup-selftest","cwd":"x","transcript_path":"y"}' | python $hookPy setup-test
+    # Validation-only self-test: checks vault path + inbox writability, writes no queue entry
+    python $hookPy --selftest
     if ($LASTEXITCODE -ne 0) { throw 'vault-capture.py self-test failed' }
     Write-Host '   written + self-tested'
 }
@@ -151,7 +156,7 @@ Step 'Claude Code hooks (SessionEnd + PreCompact) in ~/.claude/settings.json' {
     $mergePy = @'
 import json, sys, pathlib
 p = pathlib.Path(sys.argv[1]); hook_py = sys.argv[2].replace("\\", "/")
-d = json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
+d = json.loads(p.read_text(encoding="utf-8-sig")) if p.exists() else {}
 hooks = d.setdefault("hooks", {})
 def entry(trigger):
     return {"type": "command", "command": f'python "{hook_py}" {trigger}', "timeout": 15}

@@ -55,7 +55,7 @@ Dry-run by default — nothing changes until `-Apply`:
 .\setup-vault-automation.ps1 -Apply -VaultPath D:\vaults\memories -GardenerTime '03:41'
 ```
 
-Idempotent: re-running skips what's already present (plugins, hooks, files, task).
+Re-run safe: content files already present (HOME.md, inbox, plugins, hook entries) are skipped; the capture/gardener scripts and the scheduled task are refreshed in place. The self-test writes no queue entries.
 
 ## After -Apply
 
