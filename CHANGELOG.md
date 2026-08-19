@@ -6,6 +6,27 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
+- **`claude-memories-vault` and `claude-memories-canvas` skills — the conventions of the
+  `claude-memories` Obsidian vault, written on the workstation during the 2026-08-19
+  memory migration and only now given a canonical home.** `claude-memories-vault` covers
+  the folder layout, the six required frontmatter fields, the `type`/`status` value sets
+  the `HOME.md` Dataview queries filter on, how wikilinks resolve by *filename* on Windows
+  (a `:` cannot appear in one, so the link must match the file and not the prose), the
+  `vault-lock.ps1` write lock the nightly gardener respects, the single-writer rule on
+  `inbox/pending-reflect.md`, and the decision rule for vault versus Claude Code
+  auto-memory. `claude-memories-canvas` covers the `wiki/maps` node and edge schema
+  actually in use, the colour and id styles, the column-and-group geometry, and the two
+  rules that make a canvas findable at all: facts live in notes because a canvas-only fact
+  is invisible to search, and every canvas is linked from its `Project - *.md` because
+  canvases do not backlink.
+
+  Both keep the concrete `C:\repos\claude-memories` path rather than a placeholder — the
+  same choice `vault-automation/` already makes with its `-VaultPath` default — because
+  these are the conventions of one real vault and a parameterised version has never been
+  tested. Both name their siblings explicitly in the `description`: the generic
+  `obsidian-canvas` for any other vault, and `obsidian-vault-server` for hosting one.
+  `obsidian-canvas` gained a matching one-line pointer back.
+
 - **`obsidian-vault-server` skill — a self-hosted Obsidian vault on a headless Ubuntu
   host.** The real Obsidian desktop app in a container (Sync has no headless client, so
   there is no other way), signed in to an obsidian.md account, with the
@@ -48,6 +69,18 @@ All notable changes to this repository are documented here. Format follows [Keep
   section with the run commands.
 
 ### Fixed
+
+- **The installers' skill catalogs had fallen two skills behind the marketplace.**
+  `obsidian-canvas` and `obsidian-vault-server` were registered in
+  `.claude-plugin/marketplace.json` and `skills/README.md` but never added to
+  `SKILL_KEYS`/`SKILL_NAME` in `install-prerequisites.sh` or `$script:SkillCatalog` in
+  the `.ps1`, so the per-skill picker offered 21 of the 23 that existed and neither could
+  be selected by name. Both were also missing from the `<!-- BEGIN skills/README.md -->`
+  mirror in the root `README.md`, which had silently stopped being a mirror. Both are in
+  the catalogs and the mirror now, alongside the two new
+  `claude-memories-*` skills, and the hard-coded counts in `README.md` and
+  `INSTALLATION.md` — plus the stale "all nineteen" in both installer headers — now read
+  25, matching the directory count, the marketplace manifest, and both catalogs.
 
 - **`claude-obsidian-setup` — a Python below the 3.11 floor is now repaired rather than
   only reported.** Both scripts previously stopped with "install python3.11+ yourself" on

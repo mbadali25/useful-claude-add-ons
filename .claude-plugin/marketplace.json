@@ -44,6 +44,18 @@
       "version": "1.0.0"
     },
     {
+      "name": "claude-memories-canvas",
+      "source": "./skills/claude-memories-canvas",
+      "description": "Canvas conventions for the claude-memories vault - wiki/maps schema, colours, ids, column-and-group geometry, and the rules that keep a canvas findable.",
+      "version": "1.0.0"
+    },
+    {
+      "name": "claude-memories-vault",
+      "source": "./skills/claude-memories-vault",
+      "description": "Note conventions for the claude-memories Obsidian vault - folder layout, the six frontmatter fields, wikilink resolution, the write lock, and vault vs auto-memory.",
+      "version": "1.0.0"
+    },
+    {
       "name": "cloudflare",
       "source": "./skills/cloudflare",
       "description": "Cloudflare v4 API - DNS, zones, cache, WAF, page rules, SSL/TLS, Workers/KV/R2, Zero Trust, analytics.",
