@@ -10,7 +10,7 @@
 #
 # The menu is a cursor picker: Up/Down to move, Space to toggle, Enter to start. On the
 # repo's own row, Right opens a second picker for the individual skills, so you can take
-# three of them instead of all nineteen. Terminals that cannot do raw input - no stty, a
+# three of them instead of all twenty-five. Terminals that cannot do raw input - no stty, a
 # dumb TERM, a window under ten lines - get the original numbered prompt instead, and
 # every non-interactive path (--all, --select, --skills, --non-interactive) bypasses both.
 #
@@ -499,8 +499,10 @@ expand_selection_spec() {
 # picking a subset is the exception, and a fresh machine wants the lot.
 SKILL_KEYS=(
   "aws-opensearch" "bitbucket" "checkpoint-email" "cisco-meraki"
-  "claude-code-defaults" "claude-code-tuneup" "cloudflare" "drata" "i-have-adhd"
+  "claude-code-defaults" "claude-code-tuneup" "claude-memories-canvas"
+  "claude-memories-vault" "cloudflare" "drata" "i-have-adhd"
   "infra-work-ticketing" "intune-graph" "mermaid-svg-bitbucket" "notify"
+  "obsidian-canvas" "obsidian-vault-server"
   "repo-docs" "shipstation" "sophos-central" "terraform-docs-readme" "visio-diagrams"
   "wazuh-onprem" "web-testing-playwright" "work-log-reporter"
 )
@@ -511,6 +513,8 @@ SKILL_NAME=(
   "cisco-meraki            - Meraki Dashboard API: inventory, events, config changes"
   "claude-code-defaults    - Claude Code config: settings.json, permissions, hooks"
   "claude-code-tuneup      - Audit a slow Claude Code setup: dupes, hooks, context"
+  "claude-memories-canvas  - claude-memories vault: wiki/maps .canvas conventions"
+  "claude-memories-vault   - claude-memories vault: layout, frontmatter, write lock"
   "cloudflare              - Cloudflare v4: DNS, WAF, cache, Workers, Zero Trust"
   "drata                   - Drata: controls, monitors, evidence, audit prep"
   "i-have-adhd             - ADHD-friendly output: next action first, numbered steps"
@@ -518,6 +522,8 @@ SKILL_NAME=(
   "intune-graph            - Intune via Graph: devices, compliance, app deployment"
   "mermaid-svg-bitbucket   - Pre-render Mermaid to SVG so Bitbucket displays it"
   "notify                  - Ping your phone or inbox: Telegram bot (two-way) or email"
+  "obsidian-canvas         - Obsidian .canvas files as JSON: maps, boards, diagrams"
+  "obsidian-vault-server   - Self-hosted Obsidian on Ubuntu: Sync, REST/MCP endpoint"
   "repo-docs               - Whole doc set: CLAUDE.md, READMEs, architecture, handoff"
   "shipstation             - ShipStation V2/V1/ShipEngine: labels, rates, orders"
   "sophos-central          - Sophos Central: isolate endpoints, triage alerts, XDR"
