@@ -38,6 +38,8 @@
 #   --skip-bootstrap      narrow the selection to prerequisites + the Claude Code CLI
 #   --scope <scope>       scope for marketplace/plugin installs: user|project|local (default: user)
 #   --obsidian-repo-root <dir>
+#   --obsidian-mcp-url <url>   vault-server MCP endpoint (default http://127.0.0.1:27123/mcp/)
+#   --obsidian-mcp-key <key>   Local REST API key; without it the item explains and skips
 #                         root the Obsidian item suggests for the vault (default: ~/repos)
 
 set -uo pipefail
@@ -87,6 +89,8 @@ while [ $# -gt 0 ]; do
     --notify-setup)    NOTIFY_SETUP=1 ;;
     --scope)           INSTALL_SCOPE="${2:-user}"; shift ;;
     --obsidian-repo-root) OBSIDIAN_REPO_ROOT="${2:-$HOME/repos}"; shift ;;
+    --obsidian-mcp-url)   OBSIDIAN_MCP_URL="${2:-}"; shift ;;
+    --obsidian-mcp-key)   OBSIDIAN_MCP_KEY="${2:-}"; shift ;;
     *) echo "Unknown option: $1" >&2 ;;
   esac
   shift
@@ -327,6 +331,29 @@ add_mcp_server() {
   ok "added MCP server '$name'"
 }
 
+add_mcp_http_server() {
+  # add_mcp_http_server <name> <url> [<header> ...]
+  # For a server that is ALREADY listening over HTTP: there is no command to
+  # launch, claude takes the endpoint as a positional argument, and each header
+  # is passed whole ("Authorization: Bearer x"). Same detect-then-act contract.
+  local name="$1" url="$2"; shift 2
+  if ! have claude; then
+    warn "claude not found on PATH in this shell - run 'source ~/.bashrc' and re-run this script."
+    return 1
+  fi
+  if mcp_server_registered "$name"; then
+    skip "MCP server '$name' already registered"
+    return 0
+  fi
+  local -a args=(mcp add --scope "$INSTALL_SCOPE" --transport http "$name" "$url")
+  local h
+  for h in "$@"; do args+=(--header "$h"); done
+  claude "${args[@]}" || return 1
+  load_mcp_servers
+  COUNT_INSTALLED=$((COUNT_INSTALLED+1))
+  ok "added MCP server '$name'"
+}
+
 # --- Detection: user-level skills --------------------------------------------
 # Some things (the 'skills' CLI, task-observer) install as plain user-level skills
 # rather than as Claude Code plugins, so they never appear in 'claude plugin list' -
@@ -393,7 +420,7 @@ install_plugin() {
 MENU_KEYS=(
   "prereqs" "cli" "own-skills" "team" "find-skills" "community"
   "claude-code-setup" "task-observer" "claude-mem" "voltagent"
-  "aws-mcp" "azure-mcp" "playwright-mcp"
+  "aws-mcp" "azure-mcp" "playwright-mcp" "obsidian-mcp"
   "supabase" "context7" "playwright-cli" "skillui" "strix" "obsidian"
 )
 MENU_DEFAULT=(1 1 1 1 1 1 1 1 1 1 0 0 0 0 0 0 0 0 0)
@@ -1607,6 +1634,35 @@ install_playwright_mcp() {
 if is_selected "playwright-mcp"; then
   run_step "Install Playwright MCP server" install_playwright_mcp
 fi
+
+install_obsidian_mcp() {
+  # Not a launched command: the endpoint is the obsidian-local-rest-api plugin
+  # already running inside the vault-server container. It listens on the SERVER's
+  # loopback, so the URL is a local port forwarded by SSH. The API key is
+  # per-deployment and cannot be baked in.
+  if [ -z "${OBSIDIAN_MCP_KEY:-}" ]; then
+    skip "Obsidian MCP: no --obsidian-mcp-key given"
+    printf '        Get the key from the vault server:
+'
+    printf '          sudo ./obsidian-vault-server.sh apikey
+'
+    printf '        Open the tunnel, then re-run with the key:
+'
+    printf '          ssh -N -L 27123:127.0.0.1:27123 <user>@<server>
+'
+    printf '          ./install-prerequisites.sh --select obsidian-mcp --obsidian-mcp-key <key>
+'
+    printf '        See the obsidian-vault-server skill for the whole setup.
+'
+    return 0
+  fi
+  add_mcp_http_server "obsidian-server" "${OBSIDIAN_MCP_URL:-http://127.0.0.1:27123/mcp/}"     "Authorization: Bearer ${OBSIDIAN_MCP_KEY}" || return 1
+  ok "Requires an SSH tunnel: ssh -N -L 27123:127.0.0.1:27123 <user>@<server>"
+}
+if is_selected "obsidian-mcp"; then
+  run_step "Register the Obsidian vault server MCP endpoint" install_obsidian_mcp
+fi
+
 
 # --- 14. Supabase ------------------------------------------------------------
 # Ships inside anthropics/claude-plugins-official, the same marketplace items 6 and 7

@@ -9,7 +9,10 @@ to inbox/pending-reflect.md. Never raises: a capture failure must not break a se
 Invoke with --selftest to validate config (vault path exists, inbox writable) without
 writing a queue entry.
 """
-import sys, json, datetime, pathlib
+import sys
+import json
+import datetime
+import pathlib
 
 VAULT_PATH = r"__VAULT_PATH__"  # rewritten by the installer
 INBOX = pathlib.Path(VAULT_PATH) / "inbox" / "pending-reflect.md"
