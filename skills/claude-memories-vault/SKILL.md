@@ -172,6 +172,25 @@ Canvas links include the extension: `[[exec-insights.canvas]]`.
    chase. **Always `-Release` when you finish**, including on the path where the write
    failed — an unreleased lock wedges the gardener and every other agent. `-Status`
    reports the current holder if you need to check before deciding.
+
+   **Exception — the lock may already be held *for* you.** If `VAULT_LOCK_HELD=1` is set
+   in your environment, a wrapper took the lock before spawning you and holds it for the
+   whole run; `VAULT_LOCK_PID` names the holder. Write normally, and **do not acquire or
+   release** — the wrapper's `finally` owns the release.
+
+   This is not hypothetical. `gardener.ps1` acquires with `-KeepOpen` and then invokes
+   `claude -p`; without this exception the agent inside follows the rule above, is refused
+   **by its own parent**, reads that as contention, and stops. The run logs a lock
+   acquired and a model invoked, and distils nothing — silent success while doing nothing,
+   nightly.
+
+   If the variable is somehow absent, the distinguisher is the **process tree, never the
+   lock file** — `pid`, `owner`, `mode` and `ttl` look identical whether the holder is
+   your own parent or a stranger. Walk `ParentProcessId` from `$PID`; if the lock's pid is
+   an ancestor, the serialising has already been done on your behalf. **Never `-Force`
+   past a lock to resolve this** — on a genuinely foreign lock that is exactly the
+   collision the lock exists to prevent, and the two cases are indistinguishable without
+   the check.
 3. **One idea per page.** Set `updated` when you touch a page. Populate `sources:`.
 4. **Facts in notes, shape on canvases.** Anything load-bearing must exist as text in
    a note even if it also appears on a canvas — a canvas-only fact is invisible to
