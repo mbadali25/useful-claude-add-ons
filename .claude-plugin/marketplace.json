@@ -92,6 +92,12 @@
       "version": "1.0.0"
     },
     {
+      "name": "obsidian-vault-server",
+      "source": "./skills/obsidian-vault-server",
+      "description": "Self-hosted Obsidian vault on Ubuntu - containerised desktop app, obsidian.md Sync, and the Local REST API MCP endpoint over an SSH tunnel.",
+      "version": "1.0.0"
+    },
+    {
       "name": "repo-docs",
       "source": "./skills/repo-docs",
       "description": "Generate and refresh a full documentation set for a codebase - CLAUDE.md, READMEs, API reference, architecture doc, TODO/SECURITY/CHANGELOG, and handoff notes.",

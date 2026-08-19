@@ -6,6 +6,34 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
+- **`obsidian-vault-server` skill — a self-hosted Obsidian vault on a headless Ubuntu
+  host.** The real Obsidian desktop app in a container (Sync has no headless client, so
+  there is no other way), signed in to an obsidian.md account, with the
+  `obsidian-local-rest-api` plugin's built-in MCP endpoint reached over an SSH tunnel —
+  no separate MCP server process. Three references cover install, the Claude wiring, and
+  getting a workstation's plugins onto the server. The safety rails are the point: the
+  container's web GUI has a terminal with passwordless `sudo`, so the skill treats
+  firewalling it and never overwriting the REST API key as non-negotiable rather than
+  advisory.
+
+- **`claude-obsidian-setup/` now installs the Obsidian community plugin set.** The setup
+  scripts installed *Claude Code* plugins but never the Obsidian plugins a working vault
+  needs. `obsidian-plugin-profile.json` pins 15 community plugins with their repos plus
+  the 27 core plugins to enable, and `install-obsidian-plugins.ps1` / `.sh` install them
+  from GitHub releases. Same house contract as the setup scripts: dry run by default,
+  `--apply` / `-Apply` to write, PASS/FIX/FAIL against stable check ids, idempotent.
+  Additive — `community-plugins.json` and `core-plugins.json` are unioned with whatever
+  the vault already enables, in both the list and object-map shapes. Verified on both
+  platforms: 15/15 at pinned versions, second run all PASS, pre-existing entries kept.
+
+- **Menu item: `obsidian-mcp` — register the Obsidian vault server's MCP endpoint.** Off
+  by default, on both scripts, with identical keys and order. Not a launched command: the
+  endpoint is a plugin already running in the vault-server container, listening on the
+  *server's* loopback, so the URL is a local port forwarded by SSH. The API key is
+  per-deployment and cannot be baked in, so without `-ObsidianMcpKey` /
+  `--obsidian-mcp-key` the item explains how to get one and skips rather than failing.
+  `Add-McpServer` / `add_mcp_http_server` gained header support for the bearer token.
+
 - **`vault-automation/` — self-feeding vault pipeline.** New component that automates
   the Obsidian memory loop end to end: Claude Code `SessionEnd`/`PreCompact` hooks
   queue every session into `inbox/pending-reflect.md`; a nightly `Claude Vault

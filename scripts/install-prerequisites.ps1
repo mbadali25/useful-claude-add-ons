@@ -60,6 +60,8 @@ param(
     [switch]$SkillUIGuide,    # answer the SkillUI quick-start prompt up front
     [switch]$NotifySetup,     # answer the notify setup prompt up front
     [string]$ObsidianRepoRoot = 'C:\repos',  # root the Obsidian item suggests for the vault
+    [string]$ObsidianMcpUrl = 'http://127.0.0.1:27123/mcp/',  # vault-server MCP endpoint (through an SSH tunnel)
+    [string]$ObsidianMcpKey,                 # Local REST API key; without it the item explains and skips
     [Alias('PluginHubScope')]
     [ValidateSet('user', 'project', 'local')]
     [string]$InstallScope = 'user'  # machine-wide by default, not per-project
@@ -292,6 +294,7 @@ function Add-McpServer {
         [string[]]$CommandArgs,
         [string]$Url,
         [hashtable]$EnvVars,
+        [hashtable]$Headers,
         [string]$Note
     )
     if (-not (Test-ClaudeAvailable)) {
@@ -303,6 +306,12 @@ function Add-McpServer {
     }
     if ($Url) {
         $addArgs = @('mcp', 'add', '--scope', $InstallScope, '--transport', 'http', $Name, $Url)
+        # Headers go after the URL. Used for endpoints that authenticate with a
+        # bearer token rather than launching a command, e.g. the Obsidian vault
+        # server's Local REST API.
+        if ($Headers) {
+            foreach ($k in $Headers.Keys) { $addArgs += @('--header', "${k}: $($Headers[$k])") }
+        }
     } else {
         $addArgs = @('mcp', 'add', '--scope', $InstallScope, $Name)
         if ($EnvVars) {
@@ -454,6 +463,7 @@ $script:Catalog = @(
     [pscustomobject]@{ Key = 'aws-mcp';           Default = $false; Name = 'MCP server: AWS (awslabs.aws-api-mcp-server)' }
     [pscustomobject]@{ Key = 'azure-mcp';         Default = $false; Name = 'MCP server: Azure (@azure/mcp)' }
     [pscustomobject]@{ Key = 'playwright-mcp';    Default = $false; Name = 'MCP server: Playwright (@playwright/mcp)' }
+    [pscustomobject]@{ Key = 'obsidian-mcp';      Default = $false; Name = 'MCP server: Obsidian vault server (Local REST API over an SSH tunnel)' }
     [pscustomobject]@{ Key = 'supabase';          Default = $false; Name = 'Supabase plugin (supabase@claude-plugins-official)' }
     [pscustomobject]@{ Key = 'context7';          Default = $false; Name = 'Context7 up-to-date library docs (npx ctx7 setup)' }
     [pscustomobject]@{ Key = 'playwright-cli';    Default = $false; Name = 'Playwright CLI (@playwright/cli) - browser automation from the shell' }
@@ -1546,6 +1556,28 @@ if (Test-Selected 'playwright-mcp') {
         Add-McpServer -Name 'playwright' `
             -CommandArgs @('npx', '@playwright/mcp@latest') `
             -Note "Playwright downloads its browsers on first use; 'npx playwright install' does it ahead of time."
+    }
+}
+
+if (Test-Selected 'obsidian-mcp') {
+    Invoke-Step "Register the Obsidian vault server MCP endpoint" {
+        # Not a launched command: the endpoint is the obsidian-local-rest-api
+        # plugin already running inside the vault-server container. It listens on
+        # the SERVER's loopback, so the URL is a local port forwarded by SSH.
+        # The API key is per-deployment, so it cannot be baked in here.
+        if (-not $ObsidianMcpKey) {
+            Write-Skip "Obsidian MCP: no -ObsidianMcpKey given"
+            Write-Host "        Get the key from the vault server:"
+            Write-Host "          sudo ./obsidian-vault-server.sh apikey"
+            Write-Host "        Open the tunnel, then re-run with the key:"
+            Write-Host "          ssh -N -L 27123:127.0.0.1:27123 <user>@<server>"
+            Write-Host "          .\install-prerequisites.ps1 -Select obsidian-mcp -ObsidianMcpKey <key>"
+            Write-Host "        See the obsidian-vault-server skill for the whole setup."
+            return
+        }
+        Add-McpServer -Name 'obsidian-server' -Url $ObsidianMcpUrl `
+            -Headers @{ Authorization = "Bearer $ObsidianMcpKey" } `
+            -Note "Requires an SSH tunnel to the vault server: ssh -N -L 27123:127.0.0.1:27123 <user>@<server>"
     }
 }
 
