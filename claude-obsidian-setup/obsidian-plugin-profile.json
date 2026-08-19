@@ -1,0 +1,125 @@
+{
+  "schema": 1,
+  "description": "Obsidian community plugins installed by claude-obsidian-setup. Versions are the ones this set was last verified against; the installers fall back to a plugin's latest release if a pinned version is unavailable.",
+  "enabledCorePlugins": [
+    "backlink",
+    "bases",
+    "bookmarks",
+    "canvas",
+    "command-palette",
+    "daily-notes",
+    "editor-status",
+    "file-explorer",
+    "file-recovery",
+    "footnotes",
+    "global-search",
+    "graph",
+    "markdown-importer",
+    "note-composer",
+    "outgoing-link",
+    "outline",
+    "page-preview",
+    "properties",
+    "publish",
+    "random-note",
+    "switcher",
+    "sync",
+    "tag-pane",
+    "templates",
+    "webviewer",
+    "word-count",
+    "workspaces"
+  ],
+  "communityPlugins": [
+    {
+      "id": "auto-note-mover",
+      "name": "Auto Note Mover",
+      "version": "1.2.0",
+      "repo": "farux/obsidian-auto-note-mover"
+    },
+    {
+      "id": "breadcrumbs",
+      "name": "Breadcrumbs",
+      "version": "4.21.10",
+      "repo": "michaelpporter/breadcrumbs"
+    },
+    {
+      "id": "dataview",
+      "name": "Dataview",
+      "version": "0.5.68",
+      "repo": "blacksmithgu/obsidian-dataview"
+    },
+    {
+      "id": "metadata-menu",
+      "name": "Metadata Menu",
+      "version": "0.8.12",
+      "repo": "mdelobelle/metadatamenu"
+    },
+    {
+      "id": "obsidian-advanced-uri",
+      "name": "Advanced URI",
+      "version": "2.0.0",
+      "repo": "vinzent03/obsidian-advanced-uri"
+    },
+    {
+      "id": "obsidian-charts",
+      "name": "Charts",
+      "version": "3.9.0",
+      "repo": "phibr0/obsidian-charts"
+    },
+    {
+      "id": "obsidian-excalidraw-plugin",
+      "name": "Excalidraw",
+      "version": "2.26.4",
+      "repo": "zsviczian/obsidian-excalidraw-plugin"
+    },
+    {
+      "id": "obsidian-git",
+      "name": "Git",
+      "version": "2.39.0",
+      "repo": "vinzent03/obsidian-git"
+    },
+    {
+      "id": "obsidian-kanban",
+      "name": "Kanban",
+      "version": "2.0.51",
+      "repo": "obsidian-community/obsidian-kanban"
+    },
+    {
+      "id": "obsidian-linter",
+      "name": "Linter",
+      "version": "1.32.0",
+      "repo": "platers/obsidian-linter"
+    },
+    {
+      "id": "obsidian-local-rest-api",
+      "name": "Local REST API with MCP",
+      "version": "5.1.0",
+      "repo": "coddingtonbear/obsidian-local-rest-api"
+    },
+    {
+      "id": "omnisearch",
+      "name": "Omnisearch",
+      "version": "1.30.1",
+      "repo": "scambier/obsidian-omnisearch"
+    },
+    {
+      "id": "periodic-notes",
+      "name": "Periodic Notes",
+      "version": "0.0.17",
+      "repo": "liamcain/obsidian-periodic-notes"
+    },
+    {
+      "id": "templater-obsidian",
+      "name": "Templater",
+      "version": "2.25.0",
+      "repo": "silentvoid13/Templater"
+    },
+    {
+      "id": "text-extractor",
+      "name": "Text Extractor",
+      "version": "0.7.0",
+      "repo": "scambier/obsidian-text-extractor"
+    }
+  ]
+}
