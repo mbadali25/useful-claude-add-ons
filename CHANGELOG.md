@@ -70,6 +70,24 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`install-prerequisites.sh` aborted on startup with `MENU_DEFAULT[$_i]: unbound
+  variable`.** The `obsidian-mcp` menu item was added to `MENU_KEYS` but never to the two
+  arrays that run parallel to it, leaving 20 keys against 19 defaults and 19 names. Under
+  `set -u` the `MENU_STATE` initialiser walked off the end of `MENU_DEFAULT` and killed
+  the script before it drew anything, so *no* item could be installed on Linux — not just
+  the Obsidian one. `MENU_NAME` was short in the same way, and because the gap sat at
+  index 13, every label from `obsidian-mcp` onward was displaying the *next* item's text:
+  row 14 read "Supabase plugin", row 19 read "Strix", and row 20 had no label at all.
+  Both arrays now carry all 20 entries, matching `$script:Catalog` in the `.ps1` key for
+  key, name for name, and default for default.
+
+  The menu-numbering fallout was documentation-only but wide: `README.md` and
+  `INSTALLATION.md` both still described a 19-item menu, so every reference to items
+  14–19 was off by one from the moment `obsidian-mcp` landed. Renumbered to 15–20, with
+  the item itself now documented in the menu table, the "what each item installs" table,
+  the MCP-servers walkthrough, and the switch table — `--obsidian-mcp-url` and
+  `--obsidian-mcp-key` had never been listed there either.
+
 - **The installers' skill catalogs had fallen two skills behind the marketplace.**
   `obsidian-canvas` and `obsidian-vault-server` were registered in
   `.claude-plugin/marketplace.json` and `skills/README.md` but never added to

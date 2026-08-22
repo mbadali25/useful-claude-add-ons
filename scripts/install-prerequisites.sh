@@ -423,7 +423,7 @@ MENU_KEYS=(
   "aws-mcp" "azure-mcp" "playwright-mcp" "obsidian-mcp"
   "supabase" "context7" "playwright-cli" "skillui" "strix" "obsidian"
 )
-MENU_DEFAULT=(1 1 1 1 1 1 1 1 1 1 0 0 0 0 0 0 0 0 0)
+MENU_DEFAULT=(1 1 1 1 1 1 1 1 1 1 0 0 0 0 0 0 0 0 0 0)
 MENU_NAME=(
   "Prerequisites: git, nodejs, npm, python3, pip3 (needs root or sudo)"
   "Claude Code CLI (@anthropic-ai/claude-code) + PATH export + update check"
@@ -438,6 +438,7 @@ MENU_NAME=(
   "MCP server: AWS (awslabs.aws-api-mcp-server)"
   "MCP server: Azure (@azure/mcp)"
   "MCP server: Playwright (@playwright/mcp)"
+  "MCP server: Obsidian vault server (Local REST API over an SSH tunnel)"
   "Supabase plugin (supabase@claude-plugins-official)"
   "Context7 up-to-date library docs (npx ctx7 setup)"
   "Playwright CLI (@playwright/cli) - browser automation from the shell"
