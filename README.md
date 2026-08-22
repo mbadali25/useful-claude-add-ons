@@ -9,13 +9,13 @@ One-line bootstrap — no `git clone` needed. Pulls the prerequisite installer s
 **Windows** (elevated PowerShell):
 
 ```powershell
-irm 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/54af3a41cb87c48fc7294f1acb4418d77bd58467/scripts/install-prerequisites.ps1' | iex
+irm 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/ca068740167e54029b881c7bf9967b28ba9c9a3e/scripts/install-prerequisites.ps1' | iex
 ```
 
 **Linux**:
 
 ```bash
-curl -fsSL 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/54af3a41cb87c48fc7294f1acb4418d77bd58467/scripts/install-prerequisites.sh' | bash
+curl -fsSL 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/ca068740167e54029b881c7bf9967b28ba9c9a3e/scripts/install-prerequisites.sh' | bash
 ```
 
 Both links are pinned to a specific commit SHA rather than `main`, so the exact script you're running is fixed and auditable — it can't silently change between when you review it and when you run it. **Update the SHA above whenever `scripts/install-prerequisites.*` changes**: after merging to `main`, run `git rev-parse HEAD` and swap it into both URLs.
@@ -74,12 +74,13 @@ Terminals that can't read a key press one at a time — no `stty`, `TERM=dumb`, 
 | 11 | MCP server — AWS (`awslabs.aws-api-mcp-server`) | |
 | 12 | MCP server — Azure (`@azure/mcp`) | |
 | 13 | MCP server — Playwright (`@playwright/mcp`) | |
-| 14 | Supabase plugin (`supabase@claude-plugins-official`) | |
-| 15 | Context7 — up-to-date library docs (`npx ctx7 setup`) | |
-| 16 | Playwright CLI (`@playwright/cli`) | |
-| 17 | SkillUI + Playwright/Chromium — design system from a URL | |
-| 18 | Strix — AI pentesting CLI (needs Docker + an LLM API key) | |
-| 19 | Obsidian desktop + `claude-obsidian` and `obsidian-skills` plugins | |
+| 14 | MCP server — Obsidian vault server (Local REST API over an SSH tunnel) | |
+| 15 | Supabase plugin (`supabase@claude-plugins-official`) | |
+| 16 | Context7 — up-to-date library docs (`npx ctx7 setup`) | |
+| 17 | Playwright CLI (`@playwright/cli`) | |
+| 18 | SkillUI + Playwright/Chromium — design system from a URL | |
+| 19 | Strix — AI pentesting CLI (needs Docker + an LLM API key) | |
+| 20 | Obsidian desktop + `claude-obsidian` and `obsidian-skills` plugins | |
 
 Menu numbers are identical on Windows and Linux, and an already-registered MCP server, marketplace, or plugin is reported and skipped rather than re-added. Numbers can shift as items are added, so scripted runs should prefer the stable keys (`--select supabase,strix`) over positions.
 
@@ -88,11 +89,13 @@ A few items need a word of explanation:
 - **Claude Code CLI** (2) also checks for an update when `claude` is *already* installed: it compares the local version against the npm registry and runs `npm install -g @anthropic-ai/claude-code@latest` only when they differ. `--no-update` / `-NoUpdate` reports the installed version and skips the check.
 - **The `notify` skill** (in the item 3 sub-picker) is the one skill that needs machine-level setup, so when it's ticked the script prints its prerequisites — Python 3.8+, a `@BotFather` bot token, your `chat_id`, `TELEGRAM_BOT_TOKEN` exported, and a config file — then asks whether to scaffold `~/.config/notify/config.json` for you. `--notify-setup` / `-NotifySetup` answers yes without being asked. It never writes the bot token anywhere; an existing config is left alone. For the guided version, run `/notify-setup` in a Claude session.
 - **claude-mem** (9) appends `"CLAUDE_MEM_WORKER_PORT": "37790"` after the `CLAUDE_MEM_PROVIDER` line in `~/.claude/settings.json`, backing the file up first and restoring it if the result doesn't parse — without the port the worker silently binds somewhere else.
-- **Context7** (15) runs `npx ctx7 setup`, which is an interactive wizard — the script hands it the terminal explicitly, and where there is no terminal (CI, a redirected console) it prints the command instead of hanging.
-- **SkillUI** (17) installs the CLI, Playwright, and the Chromium build Playwright drives. Playwright goes in **globally** (`npm install -g playwright`) rather than into whatever directory you ran the script from. It asks up front whether to print the quick start when it's done; `--skillui-guide` / `-SkillUIGuide` answers yes without being asked.
-- **Strix** (18) is a security tool, not a Claude Code plugin: it installs via upstream's own shell installer (`curl -sSL https://strix.ai/install | bash`). **It cannot run straight after installing** — it needs Docker running and an LLM API key (`STRIX_LLM` + `LLM_API_KEY`), which the script prints as next steps every time. On Windows the installer is POSIX-only, so the script runs it through WSL, falls back to Git Bash, and warns with the manual command if neither is present.
+- **Context7** (16) runs `npx ctx7 setup`, which is an interactive wizard — the script hands it the terminal explicitly, and where there is no terminal (CI, a redirected console) it prints the command instead of hanging.
+- **SkillUI** (18) installs the CLI, Playwright, and the Chromium build Playwright drives. Playwright goes in **globally** (`npm install -g playwright`) rather than into whatever directory you ran the script from. It asks up front whether to print the quick start when it's done; `--skillui-guide` / `-SkillUIGuide` answers yes without being asked.
+- **Strix** (19) is a security tool, not a Claude Code plugin: it installs via upstream's own shell installer (`curl -sSL https://strix.ai/install | bash`). **It cannot run straight after installing** — it needs Docker running and an LLM API key (`STRIX_LLM` + `LLM_API_KEY`), which the script prints as next steps every time. On Windows the installer is POSIX-only, so the script runs it through WSL, falls back to Git Bash, and warns with the manual command if neither is present.
 
-- **Obsidian** (19) is a desktop app, not a plugin, so it comes from a package manager: Chocolatey first on Windows (falling back to winget), flatpak first on Linux (falling back to snap) — distro repos generally don't carry it. Chocolatey needs an elevated prompt; without one the app is skipped and the two plugins still install. It then adds the `claude-obsidian` vault engine and [`kepano/obsidian-skills`](https://github.com/kepano/obsidian-skills), Obsidian's own upstream skills for Markdown, Bases, JSON Canvas, the Obsidian CLI, and Defuddle. **The app and plugins are all this item does** — creating the vault is a separate, deliberately reviewed step, which the item prints as its next step and [`claude-obsidian-setup/`](claude-obsidian-setup/) performs. `--obsidian-repo-root` / `-ObsidianRepoRoot` changes the root it suggests (default `C:\repos` on Windows, `~/repos` on Linux).
+- **The Obsidian vault-server MCP endpoint** (14) registers an HTTP MCP server rather than launching a command: the endpoint is the `obsidian-local-rest-api` plugin already running inside the vault-server container, listening on that **server's** loopback, so the URL is normally a port you forwarded over SSH. The API key is per-deployment and can't be baked in, so without `--obsidian-mcp-key` / `-ObsidianMcpKey` the item prints how to obtain one (`sudo ./obsidian-vault-server.sh apikey`) and skips instead of failing. See the [`obsidian-vault-server`](skills/obsidian-vault-server/) skill for the whole setup.
+
+- **Obsidian** (20) is a desktop app, not a plugin, so it comes from a package manager: Chocolatey first on Windows (falling back to winget), flatpak first on Linux (falling back to snap) — distro repos generally don't carry it. Chocolatey needs an elevated prompt; without one the app is skipped and the two plugins still install. It then adds the `claude-obsidian` vault engine and [`kepano/obsidian-skills`](https://github.com/kepano/obsidian-skills), Obsidian's own upstream skills for Markdown, Bases, JSON Canvas, the Obsidian CLI, and Defuddle. **The app and plugins are all this item does** — creating the vault is a separate, deliberately reviewed step, which the item prints as its next step and [`claude-obsidian-setup/`](claude-obsidian-setup/) performs. `--obsidian-repo-root` / `-ObsidianRepoRoot` changes the root it suggests (default `C:\repos` on Windows, `~/repos` on Linux).
 
 Everything that can be a plugin **is** installed as one, using the CLI's own `claude plugin marketplace add` / `claude plugin install` — there's no `npx claudepluginhub` wrapper and no `git clone` + shell-script step any more. That removes the Windows failure modes those introduced (the wrapper needed a writable per-repo checkout, and the VoltAgent installer needed Git Bash to run a `.sh`).
 
@@ -107,7 +110,9 @@ Everything that can be a plugin **is** installed as one, using the CLI's own `cl
 | `-NoUpdate` / `--no-update` | Report already-installed plugins but never update them. |
 | `-SkipBootstrap` / `--skip-bootstrap` | Narrow whatever you selected down to the prerequisites and the Claude Code CLI. |
 | `-InstallScope` / `--scope` | Scope for every marketplace and plugin install: `user` (default), `project`, or `local`. Windows still accepts the old `-PluginHubScope` name as an alias. |
-| `-ObsidianRepoRoot` / `--obsidian-repo-root` | Root that item 19 suggests for the Obsidian vault — `C:\repos` on Windows, `~/repos` on Linux. Only affects the printed next step; the vault itself is created by [`claude-obsidian-setup/`](claude-obsidian-setup/). |
+| `-ObsidianRepoRoot` / `--obsidian-repo-root` | Root that item 20 suggests for the Obsidian vault — `C:\repos` on Windows, `~/repos` on Linux. Only affects the printed next step; the vault itself is created by [`claude-obsidian-setup/`](claude-obsidian-setup/). |
+| `-ObsidianMcpUrl` / `--obsidian-mcp-url` | MCP endpoint item 14 registers for the Obsidian vault server. Default `http://127.0.0.1:27123/mcp/` — loopback, because the endpoint is normally reached through an SSH tunnel. |
+| `-ObsidianMcpKey` / `--obsidian-mcp-key` | Local REST API key for item 14. Per-deployment, so there is no default: without it the item explains how to get one and skips. |
 
 > On Windows, run from an **elevated** prompt for the full setup. Without elevation the script skips menu item 1 (Chocolatey and its packages: git/awscli/nodejs/python) and runs everything else you selected.
 
@@ -126,12 +131,13 @@ Everything that can be a plugin **is** installed as one, using the CLI's own `cl
 | 9 claude-mem | Cross-session memory, **Bun** (its worker runtime — Chocolatey on Windows, `npm -g` or `bun.sh` on Linux), plus `CLAUDE_MEM_WORKER_PORT` in `settings.json` | `thedotmack/claude-mem` |
 | 10 VoltAgent | 10 plugins, ~154 subagents across dev, infra, QA, data, business | `VoltAgent/awesome-claude-code-subagents` |
 | 11–13 MCP servers | AWS, Azure, Playwright | `claude mcp add` |
-| 14 Supabase | The `supabase` plugin — project, database, and edge-function tooling | `anthropics/claude-plugins-official` |
-| 15 Context7 | `ctx7 setup` — wires up version-accurate library docs for your agents | npx |
-| 16 Playwright CLI | `@playwright/cli` (`playwright-cli` on `PATH`) | npm |
-| 17 SkillUI | `skillui` + `playwright` + the Chromium browser build | npm |
-| 18 Strix | The `strix` pentesting CLI | `curl -sSL https://strix.ai/install \| bash` |
-| 19 Obsidian | The Obsidian desktop app (Chocolatey → winget on Windows, flatpak → snap on Linux), plus the `claude-obsidian` vault engine and [`kepano/obsidian-skills`](https://github.com/kepano/obsidian-skills) — Obsidian's own Markdown, Bases, JSON Canvas, CLI and Defuddle skills | choco/winget/flatpak/snap + 2 marketplaces |
+| 14 Obsidian MCP | The `obsidian-server` HTTP MCP endpoint (`obsidian-local-rest-api`'s built-in MCP route), bearer-authenticated with `--obsidian-mcp-key` — skipped with instructions when no key is given | `claude mcp add` |
+| 15 Supabase | The `supabase` plugin — project, database, and edge-function tooling | `anthropics/claude-plugins-official` |
+| 16 Context7 | `ctx7 setup` — wires up version-accurate library docs for your agents | npx |
+| 17 Playwright CLI | `@playwright/cli` (`playwright-cli` on `PATH`) | npm |
+| 18 SkillUI | `skillui` + `playwright` + the Chromium browser build | npm |
+| 19 Strix | The `strix` pentesting CLI | `curl -sSL https://strix.ai/install \| bash` |
+| 20 Obsidian | The Obsidian desktop app (Chocolatey → winget on Windows, flatpak → snap on Linux), plus the `claude-obsidian` vault engine and [`kepano/obsidian-skills`](https://github.com/kepano/obsidian-skills) — Obsidian's own Markdown, Bases, JSON Canvas, CLI and Defuddle skills | choco/winget/flatpak/snap + 2 marketplaces |
 
 Items 1–10 are the default set. Everything from 11 on is opt-in.
 
@@ -189,12 +195,12 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 | [`SECURITY.md`](SECURITY.md) | Reporting a vulnerability, credential-handling policy, install-script trust boundary. |
 | [`CHANGELOG.md`](CHANGELOG.md) | Notable changes to this repo, dated. |
 | [`docs/HANDOFF.md`](docs/HANDOFF.md) | Session handoff notes — why things are built the way they are, what was verified, what's still open. |
-| [`claude-obsidian-setup/`](claude-obsidian-setup/) | **Obsidian knowledge-vault setup** for Windows (WSL) and Linux — the deeper version of menu item 19. |
+| [`claude-obsidian-setup/`](claude-obsidian-setup/) | **Obsidian knowledge-vault setup** for Windows (WSL) and Linux — the deeper version of menu item 20. |
 | [`vault-automation/`](vault-automation/) | **Self-feeding vault pipeline** — session-capture hooks, nightly gardener (headless Claude distillation), Dataview dashboard, Obsidian plugins, optional git layer. |
 
 ## Obsidian knowledge vault
 
-[**`claude-obsidian-setup/`**](claude-obsidian-setup/) sets up a source-cited Obsidian vault driven from Claude Code, identically on Windows and Linux. Menu item 19 of the bootstrap installs the app and the plugins; these scripts also **create and verify the vault**.
+[**`claude-obsidian-setup/`**](claude-obsidian-setup/) sets up a source-cited Obsidian vault driven from Claude Code, identically on Windows and Linux. Menu item 20 of the bootstrap installs the app and the plugins; these scripts also **create and verify the vault**.
 
 | Platform | Script |
 |---|---|
