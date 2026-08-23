@@ -1,107 +1,215 @@
-import os, re, glob, json, sys
+"""Structural validation for crew's commands, agents and skills.
+
+    python hooks/scripts/_test/validate-prompts.py
+
+Checks what a machine can check: that frontmatter parses, that every named tool
+exists, that referenced agents and plugin paths resolve, that a read-only agent
+holds no write tools, and that a command spawning a subagent is permitted to.
+
+It does NOT check whether the prompts produce good work. They are instructions
+to a model, and only a live session on a real ticket exercises that - which is
+what setup phase 7 is for. Passing this file means the wiring is sound, not
+that the crew is any good.
+
+Exits 1 if anything failed, so it can gate a commit.
+"""
+
+import glob
+import os
+import re
+import sys
+
 os.chdir(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", ".."))
 
-OK = []; BAD = []
-def ok(m):  OK.append(m)
-def bad(m): BAD.append(m)
+PASSED = []
+FAILED = []
+
+
+def ok(msg):
+    """Record a passing check."""
+    PASSED.append(msg)
+
+
+def bad(msg):
+    """Record a failing check."""
+    FAILED.append(msg)
+
 
 def frontmatter(path):
-    t = open(path, encoding='utf-8').read()
-    if not t.startswith('---\n'):
-        return None, t
-    end = t.index('\n---\n', 3)
-    fm = {}
-    for line in t[4:end].split('\n'):
-        if ':' in line and not line.startswith(' '):
-            k, v = line.split(':', 1)
-            fm[k.strip()] = v.strip()
-    return fm, t[end+5:]
+    """Return (frontmatter dict, body). The dict is None when there is none."""
+    with open(path, encoding="utf-8") as handle:
+        text = handle.read()
+    if not text.startswith("---\n"):
+        return None, text
+    end = text.index("\n---\n", 3)
+    fields = {}
+    for line in text[4:end].split("\n"):
+        if ":" in line and not line.startswith(" "):
+            key, value = line.split(":", 1)
+            fields[key.strip()] = value.strip()
+    return fields, text[end + 5:]
 
-agents = {os.path.basename(f)[:-3] for f in glob.glob('agents/*.md')}
-cmds   = {os.path.basename(f)[:-3] for f in glob.glob('commands/*.md')}
-skills = {os.path.basename(os.path.dirname(f)) for f in glob.glob('skills/*/SKILL.md')}
-KNOWN_TOOLS = {'Read','Write','Edit','Bash','Grep','Glob','Agent','Skill','WebSearch',
-               'WebFetch','ToolSearch','NotebookEdit','PowerShell','Task','MultiEdit'}
 
-print("=== COMMANDS (%d) ===" % len(cmds))
-for f in sorted(glob.glob('commands/*.md')):
-    n = os.path.basename(f)
-    fm, body = frontmatter(f)
-    if fm is None: bad(f"{n}: no YAML frontmatter"); continue
-    if not fm.get('description'): bad(f"{n}: no description")
-    elif len(fm['description']) > 120: bad(f"{n}: description {len(fm['description'])} chars (keep it short)")
-    else: ok(f"{n}: description")
-    at = fm.get('allowed-tools', '')
-    if not at: bad(f"{n}: no allowed-tools")
-    else:
-        unknown = [t.strip() for t in at.split(',') if t.strip() and t.strip() not in KNOWN_TOOLS]
-        if unknown: bad(f"{n}: unknown tool(s) {unknown}")
-        else: ok(f"{n}: allowed-tools")
-    # agents it invokes must exist
-    for m in re.finditer(r'`?crew:([a-z-]+)`?\s+subagent|`crew:([a-z-]+)`', body):
-        a = m.group(1) or m.group(2)
-        if a in cmds or a in skills: continue
-        if a not in agents: bad(f"{n}: references agent crew:{a} which does not exist")
-    # any plugin-root path it names must exist
-    for m in re.finditer(r'\$\{CLAUDE_PLUGIN_ROOT\}/([A-Za-z0-9_\-./]+)', body):
-        p = m.group(1).rstrip('.,`)')
-        if not os.path.exists(p): bad(f"{n}: names missing path {p}")
-    # a command that spawns agents must be allowed to
-    if re.search(r'crew:(explorer|planner|analyst|qa-reviewer|security|dba|docs-writer|smoke-author|browser-tester)', body):
-        if 'Agent' not in at: bad(f"{n}: spawns a subagent but allowed-tools has no Agent")
-        else: ok(f"{n}: Agent permitted for the subagents it spawns")
-    if len(body.strip()) < 200: bad(f"{n}: body is only {len(body.strip())} chars")
+AGENTS = {os.path.basename(f)[:-3] for f in glob.glob("agents/*.md")}
+COMMANDS = {os.path.basename(f)[:-3] for f in glob.glob("commands/*.md")}
+SKILLS = {os.path.basename(os.path.dirname(f)) for f in glob.glob("skills/*/SKILL.md")}
 
-print("=== AGENTS (%d) ===" % len(agents))
-for f in sorted(glob.glob('agents/*.md')):
-    n = os.path.basename(f)
-    fm, body = frontmatter(f)
-    if fm is None: bad(f"{n}: no YAML frontmatter"); continue
-    if fm.get('name') != n[:-3]: bad(f"{n}: name '{fm.get('name')}' != filename")
-    else: ok(f"{n}: name matches filename")
-    if not fm.get('description'): bad(f"{n}: no description")
-    else: ok(f"{n}: description")
-    for k in fm:
-        if k not in ('name','description','tools','model'):
-            bad(f"{n}: unsupported frontmatter key '{k}' (silently ignored)")
-    t = fm.get('tools','')
-    unknown = [x.strip() for x in t.split(',') if x.strip() and x.strip() not in KNOWN_TOOLS]
-    if unknown: bad(f"{n}: unknown tool(s) {unknown}")
-    else: ok(f"{n}: tools")
-    m = fm.get('model','inherit')
-    if m not in ('inherit','opus','sonnet','haiku'): bad(f"{n}: odd model '{m}'")
-    else: ok(f"{n}: model")
-    # a read-only agent must not hold write tools
-    if 'read-only' in fm.get('description','').lower() or 'Read-only' in body[:400]:
-        for w in ('Write','Edit'):
-            if w in t: bad(f"{n}: described as read-only but holds {w}")
-    if len(body.strip()) < 200: bad(f"{n}: body is only {len(body.strip())} chars")
+KNOWN_TOOLS = {
+    "Read", "Write", "Edit", "MultiEdit", "Bash", "PowerShell", "Grep", "Glob",
+    "Agent", "Task", "Skill", "WebSearch", "WebFetch", "ToolSearch", "NotebookEdit",
+}
+SPAWNABLE = "|".join(sorted(AGENTS)) or "$^"
+PLUGIN_PATH = re.compile(r"\$\{CLAUDE_PLUGIN_ROOT\}/([A-Za-z0-9_\-./]+)")
 
-print("=== SKILLS (%d) ===" % len(skills))
-total_desc = 0
-for f in sorted(glob.glob('skills/*/SKILL.md')):
-    d = os.path.basename(os.path.dirname(f))
-    fm, body = frontmatter(f)
-    if fm is None: bad(f"{d}: no frontmatter"); continue
-    if fm.get('name') != d: bad(f"{d}: name '{fm.get('name')}' != directory")
-    else: ok(f"{d}: name matches directory")
-    desc = fm.get('description','')
-    if not desc: bad(f"{d}: no description")
-    total_desc += len(desc)
-    for k in fm:
-        if k not in ('name','description','license','allowed-tools'):
-            bad(f"{d}: unsupported frontmatter key '{k}'")
-    for m in re.finditer(r'\$\{CLAUDE_PLUGIN_ROOT\}/([A-Za-z0-9_\-./]+)', body):
-        p = m.group(1).rstrip('.,`)')
-        if not os.path.exists(p): bad(f"{d}: names missing path {p}")
 
-print()
-print("PASS: %d checks" % len(OK))
-if BAD:
-    print("FAIL: %d" % len(BAD))
-    for b in BAD: print("   -", b)
-else:
-    print("FAIL: 0")
-print()
-print("always-loaded skill description cost: %d chars (~%d tokens)" % (total_desc, total_desc//4))
-sys.exit(1 if BAD else 0)
+def check_plugin_paths(name, body):
+    """Every ${CLAUDE_PLUGIN_ROOT} path a file names must exist."""
+    for match in PLUGIN_PATH.finditer(body):
+        path = match.group(1).rstrip(".,`)")
+        if not os.path.exists(path):
+            bad(f"{name}: names missing path {path}")
+
+
+def check_commands():
+    """Frontmatter, tool names, subagent permission, referenced paths."""
+    print(f"=== COMMANDS ({len(COMMANDS)}) ===")
+    for path in sorted(glob.glob("commands/*.md")):
+        name = os.path.basename(path)
+        fields, body = frontmatter(path)
+        if fields is None:
+            bad(f"{name}: no YAML frontmatter")
+            continue
+
+        desc = fields.get("description", "")
+        if not desc:
+            bad(f"{name}: no description")
+        elif len(desc) > 120:
+            bad(f"{name}: description is {len(desc)} chars; keep it to one line")
+        else:
+            ok(f"{name}: description")
+
+        tools = fields.get("allowed-tools", "")
+        if not tools:
+            bad(f"{name}: no allowed-tools")
+        else:
+            unknown = [t.strip() for t in tools.split(",")
+                       if t.strip() and t.strip() not in KNOWN_TOOLS]
+            if unknown:
+                bad(f"{name}: unknown tool(s) {unknown}")
+            else:
+                ok(f"{name}: allowed-tools")
+
+        for match in re.finditer(r"`?crew:([a-z-]+)`?", body):
+            target = match.group(1)
+            if target in COMMANDS or target in SKILLS or target in AGENTS:
+                continue
+            bad(f"{name}: references crew:{target}, which is not an agent, command or skill")
+
+        check_plugin_paths(name, body)
+
+        if re.search(rf"crew:({SPAWNABLE})", body):
+            if "Agent" not in tools:
+                bad(f"{name}: spawns a subagent but allowed-tools has no Agent")
+            else:
+                ok(f"{name}: Agent permitted for the subagents it spawns")
+
+        if len(body.strip()) < 200:
+            bad(f"{name}: body is only {len(body.strip())} chars")
+
+
+def check_agents():
+    """Name matches filename, no unsupported keys, read-only means read-only."""
+    print(f"=== AGENTS ({len(AGENTS)}) ===")
+    for path in sorted(glob.glob("agents/*.md")):
+        name = os.path.basename(path)
+        fields, body = frontmatter(path)
+        if fields is None:
+            bad(f"{name}: no YAML frontmatter")
+            continue
+
+        if fields.get("name") != name[:-3]:
+            bad(f"{name}: name '{fields.get('name')}' does not match the filename")
+        else:
+            ok(f"{name}: name matches filename")
+
+        if fields.get("description"):
+            ok(f"{name}: description")
+        else:
+            bad(f"{name}: no description")
+
+        for key in fields:
+            if key not in ("name", "description", "tools", "model"):
+                bad(f"{name}: unsupported frontmatter key '{key}' - silently ignored")
+
+        tools = fields.get("tools", "")
+        unknown = [t.strip() for t in tools.split(",")
+                   if t.strip() and t.strip() not in KNOWN_TOOLS]
+        if unknown:
+            bad(f"{name}: unknown tool(s) {unknown}")
+        else:
+            ok(f"{name}: tools")
+
+        model = fields.get("model", "inherit")
+        if model in ("inherit", "opus", "sonnet", "haiku"):
+            ok(f"{name}: model")
+        else:
+            bad(f"{name}: unrecognised model '{model}'")
+
+        readonly = "read-only" in fields.get("description", "").lower()
+        if readonly or "Read-only" in body[:400]:
+            for write_tool in ("Write", "Edit"):
+                if write_tool in tools:
+                    bad(f"{name}: described as read-only but holds {write_tool}")
+
+        if len(body.strip()) < 200:
+            bad(f"{name}: body is only {len(body.strip())} chars")
+
+
+def check_skills():
+    """Name matches directory, supported keys only, referenced paths exist."""
+    print(f"=== SKILLS ({len(SKILLS)}) ===")
+    total = 0
+    for path in sorted(glob.glob("skills/*/SKILL.md")):
+        directory = os.path.basename(os.path.dirname(path))
+        fields, body = frontmatter(path)
+        if fields is None:
+            bad(f"{directory}: no frontmatter")
+            continue
+
+        if fields.get("name") != directory:
+            bad(f"{directory}: name '{fields.get('name')}' does not match the directory")
+        else:
+            ok(f"{directory}: name matches directory")
+
+        desc = fields.get("description", "")
+        if not desc:
+            bad(f"{directory}: no description")
+        total += len(desc)
+
+        for key in fields:
+            if key not in ("name", "description", "license", "allowed-tools"):
+                bad(f"{directory}: unsupported frontmatter key '{key}'")
+
+        check_plugin_paths(directory, body)
+    return total
+
+
+def main():
+    """Run every check and report."""
+    check_commands()
+    check_agents()
+    description_chars = check_skills()
+
+    print()
+    print(f"PASS: {len(PASSED)} checks")
+    print(f"FAIL: {len(FAILED)}")
+    for failure in FAILED:
+        print(f"   - {failure}")
+    print()
+    print("always-loaded skill description cost: "
+          f"{description_chars} chars (~{description_chars // 4} tokens)")
+    return 1 if FAILED else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
