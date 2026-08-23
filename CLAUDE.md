@@ -33,7 +33,48 @@ Windows and Linux. Change one, change the other.
 The README's one-liner install URLs are pinned to a commit SHA. After merging a change
 to either script to `main`, run `git rev-parse HEAD` and re-pin both URLs.
 
-### 2. New skill under `skills/` → update `README.md`
+### 2. Changing a skill or plugin → bump its `version`
+
+`claude plugin update` decides whether to re-copy a plugin by comparing the **declared
+version**, not its contents. Editing anything under `skills/<name>/` or `plugin/<name>/`
+without bumping that entry's `version` in `.claude-plugin/marketplace.json` means every
+machine that already installed it keeps the old copy forever — the CLI reports "already
+at the latest version" and copies nothing. Nothing about the repo looks wrong; the bug
+only exists on other people's machines.
+
+So: **content change → version bump, in the same commit.** A plugin that carries its own
+`.claude-plugin/plugin.json` (`crew`) has to be bumped in both, to the same value.
+
+`scripts/check-marketplace.py` enforces this and runs in CI. It walks the history of
+`marketplace.json` to find where each version was last set and fails if that plugin's
+files have changed since. It also checks every registration rule below, so run it before
+pushing:
+
+```bash
+python3 scripts/check-marketplace.py
+```
+
+The install scripts detect the same condition at runtime and report it rather than
+claiming the plugin is current. The suites for all of this live in `scripts/_test/`:
+
+| Script | Covers | Needs |
+|---|---|---|
+| `scripts/check-marketplace.py` | every registration rule here, version drift, and the two install scripts being a matched pair | python3, git |
+| `scripts/check-powershell.ps1` | the `.ps1` parses **and** every `Verb-Noun` call resolves | pwsh |
+| `scripts/_test/drift-detection.sh` | the plugin update path, against a throwaway marketplace | the `claude` CLI |
+| `scripts/_test/menu-groups.sh` | the sub-picker catalogs, `--<group>` flags, parent implication, and once-per-marketplace registration | bash |
+
+All but the drift suite run in CI (`.github/workflows/marketplace.yml`). That one drives
+the real Claude Code CLI, which a runner does not have, so run it by hand before pushing
+a change to the plugin update path. Every suite builds throwaway fixtures, uses
+`--dry-run` or a stub `claude`, and never touches the real config or installs anything.
+
+`check-powershell.ps1` exists because the `.ps1` is Windows-only end to end: a call to a
+function that does not exist parses cleanly, is never reached on Linux, and dies on the
+one platform that matters. That is not hypothetical - a mis-named picker call shipped
+exactly that way and killed every sub-picker on Windows.
+
+### 3. New skill under `skills/` → update `README.md`
 
 Adding a directory to `skills/` is not finished until it is registered in all four
 places:
@@ -48,7 +89,7 @@ places:
 
 Renaming or removing a skill means the same four places, in reverse.
 
-### 3. New plugin under `plugin/` → five places, plus two extra rules
+### 4. New plugin under `plugin/` → five places, plus two extra rules
 
 A directory under `plugin/` is a full Claude Code plugin, not a skill. It carries the
 skills' registration rule with one more place bolted on — `plugin/` has both a catalog

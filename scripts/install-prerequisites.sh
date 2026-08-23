@@ -31,10 +31,20 @@
 #                         --select strix,claude-mem)
 #   --skills a,b,c        install only these of this repo's skills, no prompt
 #                         (--skills all | none also work; implies the repo item)
+#   --team a,b            likewise for the team plugins (item 4)
+#   --community a,b       likewise for the community plugins (item 6)
+#   --voltagent a,b       likewise for the VoltAgent subagent packs (item 10)
+#   --plugins a,b         likewise for this repo's own plugins (item 21)
+#                         every one of these accepts names, numbers, 'all' or 'none',
+#                         and selecting any of them implies its parent menu item
 #   --non-interactive     select the default set, no prompt (CI/unattended)
 #   --skillui-guide       print the SkillUI quick start after installing it, no prompt
 #   --notify-setup        scaffold the notify config after installing it, no prompt
 #   --no-update           never update an already-installed plugin, only report it
+#   --force-refresh       reinstall a plugin whose files changed in its marketplace
+#                         but whose declared version did not (see 'content drift')
+#   --dry-run             work out and print the selection, then stop without
+#                         installing anything
 #   --skip-bootstrap      narrow the selection to prerequisites + the Claude Code CLI
 #   --scope <scope>       scope for marketplace/plugin installs: user|project|local (default: user)
 #   --obsidian-repo-root <dir>
@@ -67,9 +77,19 @@ NO_TTY=0
 SKIP_BOOTSTRAP=0
 NON_INTERACTIVE=0
 NO_UPDATE=0
+FORCE_REFRESH=0
+# Set once the selection came from the menu rather than a flag.
+SELECTION_INTERACTIVE=0
+# --dry-run: settle the selection, print it, install nothing.
+DRY_RUN=0
 SELECT_ALL=0
 SELECT_SPEC=""
-SKILLS_SPEC=""
+# One "--<group> a,b,c" spec per sub-picker group; empty means "not given".
+GROUP_SPEC_SKILL=""
+GROUP_SPEC_TEAM=""
+GROUP_SPEC_COMMUNITY=""
+GROUP_SPEC_VOLTAGENT=""
+GROUP_SPEC_PLUGIN=""
 SKILLUI_GUIDE=""       # "1"/"0" once answered; empty means "ask"
 NOTIFY_SETUP=""        # "1"/"0" once answered; empty means "ask"
 INSTALL_SCOPE="user"   # machine-wide by default, not per-project
@@ -82,9 +102,15 @@ while [ $# -gt 0 ]; do
     --skip-bootstrap)  SKIP_BOOTSTRAP=1 ;;
     --non-interactive) NON_INTERACTIVE=1 ;;
     --no-update)       NO_UPDATE=1 ;;
+    --force-refresh)   FORCE_REFRESH=1 ;;
+    --dry-run)         DRY_RUN=1 ;;
     --all)             SELECT_ALL=1 ;;
     --select)          SELECT_SPEC="${2:-}"; shift ;;
-    --skills)          SKILLS_SPEC="${2:-}"; shift ;;
+    --skills)          GROUP_SPEC_SKILL="${2:-}"; shift ;;
+    --team)            GROUP_SPEC_TEAM="${2:-}"; shift ;;
+    --community)       GROUP_SPEC_COMMUNITY="${2:-}"; shift ;;
+    --voltagent)       GROUP_SPEC_VOLTAGENT="${2:-}"; shift ;;
+    --plugins)         GROUP_SPEC_PLUGIN="${2:-}"; shift ;;
     --skillui-guide)   SKILLUI_GUIDE=1 ;;
     --notify-setup)    NOTIFY_SETUP=1 ;;
     --scope)           INSTALL_SCOPE="${2:-user}"; shift ;;
@@ -253,6 +279,216 @@ plugin_enabled() {
   return 1
 }
 
+# --- Detection: what a marketplace clone and an installed plugin were built from ---
+# A re-run used to spend one 'claude plugin update' spawn per plugin: 25 of this repo's
+# skills meant 25 CLI launches that each re-checked the same marketplace and found
+# nothing to do. Claude Code already records, per installed plugin, the marketplace
+# commit it was installed from, and add_marketplace has just re-cloned that marketplace.
+# When the two SHAs match there is nothing to update and the spawn can be skipped
+# outright. Everything below is a file read; any failure reports "cannot tell", which
+# install_plugin treats as "ask the CLI" so the slow path is still there when needed.
+INSTALLED_SHAS_CACHE=""
+INSTALLED_SHAS_LOADED=0
+load_installed_shas() {
+  INSTALLED_SHAS_LOADED=1
+  INSTALLED_SHAS_CACHE=""
+  local f
+  f="$(claude_config_root)/plugins/installed_plugins.json"
+  [ -r "$f" ] || return 0
+  # Emit one "name@marketplace<TAB>sha" line per installed copy.
+  INSTALLED_SHAS_CACHE="$(json_query \
+    '(.plugins // {}) | to_entries[] | .key as $k | (.value[]? | "\($k)\t\(.gitCommitSha // "")")' \
+    'import json,sys
+for k, entries in (json.load(sys.stdin).get("plugins") or {}).items():
+    for e in entries or []:
+        print("%s\t%s" % (k, e.get("gitCommitSha") or ""))' < "$f")" || INSTALLED_SHAS_CACHE=""
+  return 0
+}
+
+installed_plugin_sha() {
+  local want="$1" id sha
+  [ "$INSTALLED_SHAS_LOADED" -eq 1 ] || load_installed_shas
+  [ -z "$INSTALLED_SHAS_CACHE" ] && return 1
+  while IFS=$'\t' read -r id sha; do
+    [ "$id" = "$want" ] && [ -n "$sha" ] && { printf '%s' "$sha"; return 0; }
+  done <<< "$INSTALLED_SHAS_CACHE"
+  return 1
+}
+
+# Where a marketplace's checkout actually lives. Usually
+# '<config>/plugins/marketplaces/<name>', but a marketplace added from a local path is
+# used in place and Claude Code records that in known_marketplaces.json, so read the
+# recorded location and only fall back to the conventional one.
+MARKETPLACE_DIR_CACHE=""
+MARKETPLACE_DIR_LOADED=0
+load_marketplace_dirs() {
+  MARKETPLACE_DIR_LOADED=1
+  MARKETPLACE_DIR_CACHE=""
+  local f
+  f="$(claude_config_root)/plugins/known_marketplaces.json"
+  [ -r "$f" ] || return 0
+  MARKETPLACE_DIR_CACHE="$(json_query \
+    'to_entries[] | "\(.key)\t\(.value.installLocation // "")"' \
+    'import json,sys
+for k, v in (json.load(sys.stdin) or {}).items():
+    print("%s\t%s" % (k, (v or {}).get("installLocation") or ""))' < "$f")" || MARKETPLACE_DIR_CACHE=""
+  return 0
+}
+
+marketplace_dir() {
+  local mkt="$1" key val
+  [ "$MARKETPLACE_DIR_LOADED" -eq 1 ] || load_marketplace_dirs
+  if [ -n "$MARKETPLACE_DIR_CACHE" ]; then
+    while IFS=$'\t' read -r key val; do
+      [ "$key" = "$mkt" ] && [ -n "$val" ] && { printf '%s' "$val"; return 0; }
+    done <<< "$MARKETPLACE_DIR_CACHE"
+  fi
+  printf '%s/plugins/marketplaces/%s' "$(claude_config_root)" "$mkt"
+}
+
+# Cached per marketplace - all 25 of this repo's skills share one - and stored as a
+# newline/tab string rather than an associative array so this still runs on bash 3.2.
+# A marketplace whose SHA cannot be read is remembered as "-" so it is not re-probed.
+MARKETPLACE_SHA_CACHE=""
+marketplace_head_sha() {
+  local mkt="$1" key val dir sha
+  [ -z "$mkt" ] && return 1
+  if [ -n "$MARKETPLACE_SHA_CACHE" ]; then
+    while IFS=$'\t' read -r key val; do
+      if [ "$key" = "$mkt" ]; then
+        [ "$val" = "-" ] && return 1
+        printf '%s' "$val"; return 0
+      fi
+    done <<< "$MARKETPLACE_SHA_CACHE"
+  fi
+  sha=""
+  dir="$(marketplace_dir "$mkt")"
+  if have git && [ -d "$dir/.git" ]; then
+    sha="$(git -C "$dir" rev-parse HEAD 2>/dev/null)" || sha=""
+  fi
+  MARKETPLACE_SHA_CACHE="${MARKETPLACE_SHA_CACHE}${MARKETPLACE_SHA_CACHE:+$'\n'}${mkt}"$'\t'"${sha:--}"
+  [ -z "$sha" ] && return 1
+  printf '%s' "$sha"
+}
+
+force_refresh_plugin() {
+  # The only way to make Claude Code re-copy a plugin whose files changed upstream but
+  # whose declared version did not: uninstall and install again. '--keep-data' leaves
+  # the plugin's persistent data directory alone, so this costs the user nothing beyond
+  # the two CLI calls. Only ever reached with --force-refresh.
+  local spec="$1"
+  claude plugin uninstall "$spec" --keep-data --scope "$INSTALL_SCOPE" >/dev/null 2>&1 \
+    || { warn "could not uninstall '$spec' to force a refresh - leaving the stale copy in place."; return 1; }
+  # The install is deliberately NOT redirected, exactly as install_plugin runs it: the
+  # CLI refuses a plugin whose marketplace declares an install command when stdout is
+  # not a TTY, so swallowing the output here could fail the reinstall of a plugin this
+  # function has already uninstalled.
+  claude plugin install "$spec" --scope "$INSTALL_SCOPE" \
+    || { warn "'$spec' was uninstalled but reinstalling it failed - run 'claude plugin install $spec' by hand."; return 1; }
+  return 0
+}
+
+# name -> declared version and source path, read once per marketplace from the clone's
+# own marketplace.json. The version fills the in-memory plugin cache after an install
+# without paying for another 'claude plugin list --json'; the source path is what the
+# drift check diffs.
+MARKETPLACE_CATALOG_CACHE=""
+load_marketplace_catalog() {
+  # Lines are "marketplace<TAB>name<TAB>version<TAB>source". The marketplace column is
+  # prefixed here rather than inside the jq/python expression so a marketplace name is
+  # never interpolated into either program. Idempotent per marketplace.
+  local mkt="$1" f rows
+  [ -z "$mkt" ] && return 1
+  case "$MARKETPLACE_CATALOG_CACHE" in
+    "$mkt"$'\t'*|*$'\n'"$mkt"$'\t'*) return 0 ;;
+  esac
+  f="$(marketplace_dir "$mkt")/.claude-plugin/marketplace.json"
+  rows=""
+  if [ -r "$f" ]; then
+    # 'source' is only useful when it is a path inside the clone; a marketplace entry
+    # may instead carry an object (a git URL elsewhere), which is left empty so the
+    # drift check reports "cannot tell" rather than diffing a path that is not there.
+    rows="$(json_query \
+      '(.plugins // [])[] | "\(.name)\t\(.version // "unknown")\t\(if (.source|type) == "string" then (.source | sub("^\\./";"")) else "" end)"' \
+      'import json,sys
+for p in (json.load(sys.stdin).get("plugins") or []):
+    src = p.get("source")
+    src = src[2:] if isinstance(src, str) and src.startswith("./") else (src if isinstance(src, str) else "")
+    print("%s\t%s\t%s" % (p.get("name") or "", p.get("version") or "unknown", src))' < "$f" \
+      | sed "s|^|${mkt}\t|")" || rows=""
+  fi
+  # The bare marker line goes in either way, so an unreadable or empty marketplace is
+  # not re-parsed once per plugin.
+  MARKETPLACE_CATALOG_CACHE="${MARKETPLACE_CATALOG_CACHE}${MARKETPLACE_CATALOG_CACHE:+$'\n'}${mkt}"$'\t\t\t'"${rows:+$'\n'}${rows}"
+  return 0
+}
+
+marketplace_catalog_field() {
+  # $1 marketplace, $2 plugin name, $3 field number (3 = version, 4 = source).
+  local mkt="$1" want="$2" field="$3" mk key ver src val
+  load_marketplace_catalog "$mkt" || return 1
+  while IFS=$'\t' read -r mk key ver src; do
+    [ "$mk" = "$mkt" ] && [ "$key" = "$want" ] || continue
+    case "$field" in 3) val="$ver" ;; 4) val="$src" ;; *) val="" ;; esac
+    [ -n "$val" ] && { printf '%s' "$val"; return 0; }
+  done <<< "$MARKETPLACE_CATALOG_CACHE"
+  return 1
+}
+
+marketplace_plugin_version() { marketplace_catalog_field "$1" "$2" 3; }
+marketplace_plugin_source()  { marketplace_catalog_field "$1" "$2" 4; }
+
+ensure_marketplace_caches() {
+  # Every reader below is called as "$(...)", which runs in a subshell: an assignment
+  # to a cache variable in there is discarded the moment the substitution ends. So the
+  # caches are filled by *bare* calls here, in this shell, before anything reads them.
+  # Without this the caching is silently a no-op - correct, but paying for a git and a
+  # jq per plugin instead of one per marketplace.
+  local mkt="$1"
+  [ "$INSTALLED_SHAS_LOADED" -eq 1 ] || load_installed_shas
+  [ -z "$mkt" ] && return 0
+  [ "$MARKETPLACE_DIR_LOADED" -eq 1 ] || load_marketplace_dirs
+  marketplace_head_sha "$mkt" >/dev/null 2>&1 || true
+  load_marketplace_catalog "$mkt" || true
+  return 0
+}
+
+plugin_source_changed() {
+  # Did this plugin's own files change between two marketplace commits? Any commit in
+  # the marketplace moves HEAD, so without this an unrelated edit anywhere in the repo
+  # would drag every plugin in it back onto the slow path.
+  #   0 = the plugin's files differ between the two commits
+  #   1 = they do not
+  #   2 = cannot tell (no git, a shallow clone, or a commit a force-push pruned)
+  local mkt="$1" old="$2" new="$3" src="$4" dir rc
+  [ -n "$src" ] || return 2
+  have git || return 2
+  dir="$(marketplace_dir "$mkt")"
+  [ -d "$dir/.git" ] || return 2
+  git -C "$dir" cat-file -e "${old}^{commit}" 2>/dev/null || return 2
+  git -C "$dir" cat-file -e "${new}^{commit}" 2>/dev/null || return 2
+  # 'git diff --quiet -- <path>' also exits 0 when the pathspec matches nothing, which
+  # is indistinguishable from "unchanged" - so a plugin whose declared source is not a
+  # real path in the clone would read as current forever. Check the path is there first.
+  git -C "$dir" cat-file -e "${new}:${src}" 2>/dev/null || return 2
+  git -C "$dir" diff --quiet "$old" "$new" -- "$src" 2>/dev/null
+  rc=$?
+  case "$rc" in
+    0) return 1 ;;
+    1) return 0 ;;
+    *) return 2 ;;
+  esac
+}
+
+plugin_cache_add() {
+  # Record a just-installed plugin in the in-memory cache instead of reloading the
+  # whole list. 'claude plugin install' enables what it installs, so it is live - and
+  # trusting that is more accurate than re-reading, since a freshly installed plugin
+  # can still read as disabled in 'claude plugin list --json' (see ensure_plugin_enabled).
+  local name="$1" ver="${2:-unknown}"
+  PLUGINS_CACHE="${PLUGINS_CACHE}${PLUGINS_CACHE:+$'\n'}${name}"$'\t'"${ver}"$'\t1'
+}
+
 ensure_plugin_enabled() {
   # $1 is 'name@marketplace'. For a plugin that was ALREADY installed before this run:
   # one switched off in settings.json is installed, at the right scope, and completely
@@ -382,22 +618,86 @@ add_marketplace() {
 install_plugin() {
   # $1 is 'name@marketplace'. Detection is on the bare name, so a plugin already
   # installed from a *different* marketplace counts as present and is not duplicated.
-  local spec="$1" name before after
+  local spec="$1" name mkt before after target head_sha old_sha drift
   name="${spec%%@*}"
+  case "$spec" in *@*) mkt="${spec#*@}" ;; *) mkt="" ;; esac
+  # Warmed here, before either branch: every reader below runs inside "$(...)", and an
+  # assignment in a subshell is discarded. Both paths need the marketplace catalog.
+  ensure_marketplace_caches "$mkt"
   if before="$(plugin_version "$name")"; then
     if [ "$NO_UPDATE" -eq 1 ]; then
       skip "plugin '$name' already installed (version $before)"
       ensure_plugin_enabled "$spec"
       return 0
     fi
+    # Claude Code records the marketplace commit each installed copy came from, and
+    # add_marketplace has just re-cloned that marketplace. Comparing the two SHAs
+    # answers "is there anything to update?" from two file reads instead of a CLI
+    # launch - the whole reason a re-run of the 25-skill item finishes in seconds
+    # rather than minutes. Anything unreadable leaves both empty, and the slow path
+    # below runs exactly as it always did.
+    head_sha=""; old_sha=""; drift=2
+    if [ -n "$mkt" ]; then
+      head_sha="$(marketplace_head_sha "$mkt")" || head_sha=""
+      old_sha="$(installed_plugin_sha "$spec")" || old_sha=""
+    fi
+    if [ -n "$head_sha" ] && [ -n "$old_sha" ]; then
+      if [ "$head_sha" = "$old_sha" ]; then
+        skip "plugin '$name' already current (version $before)"
+        ensure_plugin_enabled "$spec"
+        return 0
+      fi
+      # The marketplace has moved, but that says nothing about *this* plugin: one
+      # commit anywhere in the repo moves HEAD for every plugin it publishes. Ask git
+      # whether this plugin's own files changed before paying for the CLI.
+      plugin_source_changed "$mkt" "$old_sha" "$head_sha" \
+        "$(marketplace_plugin_source "$mkt" "$name" || printf '')"
+      drift=$?
+      if [ "$drift" -eq 1 ]; then
+        skip "plugin '$name' already current (version $before)"
+        ensure_plugin_enabled "$spec"
+        return 0
+      fi
+    fi
+    # The fully qualified 'name@marketplace' is what 'claude plugin update' wants: a
+    # bare name is rejected with 'Plugin "<name>" not found', which made every update
+    # in a re-run fail and print a warning that read like a real problem.
+    target="${mkt:+$spec}"
+    target="${target:-$name}"
     # A failed update is not fatal: the plugin is installed and usable, and
     # 'claude plugin update' legitimately fails when its marketplace has moved on.
-    claude plugin update "$name" >/dev/null 2>&1       || warn "'claude plugin update $name' failed - keeping the installed version."
+    claude plugin update "$target" >/dev/null 2>&1     || warn "'claude plugin update $target' failed - keeping the installed version."
     load_plugins
     after="$(plugin_version "$name" || echo "$before")"
     if [ "$after" != "$before" ]; then
       COUNT_UPDATED=$((COUNT_UPDATED+1))
       ok "plugin '$name' updated $before -> $after"
+      ensure_plugin_enabled "$spec"
+      return 0
+    fi
+    # Content drift: this plugin's files changed upstream and the update did not take.
+    # 'claude plugin update' decides by declared version, so a marketplace that edits a
+    # plugin without bumping its version leaves every installed copy silently stale -
+    # the CLI cheerfully reports "already at the latest version" and copies nothing.
+    # Say so plainly rather than reporting it as current.
+    if [ "$drift" -eq 0 ]; then
+      load_installed_shas   # bare, not in $( ): see ensure_marketplace_caches
+      if [ "$(installed_plugin_sha "$spec" || printf '')" = "$head_sha" ]; then
+        COUNT_UPDATED=$((COUNT_UPDATED+1))
+        ok "plugin '$name' refreshed (version $after, marketplace moved to ${head_sha:0:7})"
+      elif [ "$FORCE_REFRESH" -eq 1 ]; then
+        # force_refresh_plugin uninstalls before installing, so a failure here can leave
+        # the plugin *gone*, not merely stale. It says which half failed; this fails the
+        # step so the run does not end with "All steps completed".
+        force_refresh_plugin "$spec" || return 1
+        load_plugins
+        load_installed_shas
+        COUNT_UPDATED=$((COUNT_UPDATED+1))
+        ok "plugin '$name' reinstalled to pick up changed files (version $after, unbumped)"
+        return 0
+      else
+        warn "plugin '$name' changed in its marketplace but still declares version $after, so 'claude plugin update' copied nothing - the installed copy is stale. Ask the marketplace to bump the version, or re-run with --force-refresh to reinstall it."
+      fi
     else
       skip "plugin '$name' already current (version $after)"
     fi
@@ -405,7 +705,10 @@ install_plugin() {
     return 0
   fi
   claude plugin install "$spec" --scope "$INSTALL_SCOPE" || return 1
-  load_plugins
+  # Add the new plugin to the in-memory cache rather than reloading the whole list:
+  # a fresh run installs 25+ plugins, and 'claude plugin list --json' after each one
+  # was a second CLI spawn per plugin that nothing in this run reads differently.
+  plugin_cache_add "$name" "$(marketplace_plugin_version "$mkt" "$name" || printf 'unknown')"
   COUNT_INSTALLED=$((COUNT_INSTALLED+1))
   ok "installed plugin '$spec'"
   # No ensure_plugin_enabled here: 'claude plugin install' already enabled it. See the
@@ -536,6 +839,10 @@ SKILL_NAME=(
   "web-testing-playwright  - Real-browser testing: screenshots, console, form flows"
   "work-log-reporter       - Session work log + emailed PDF report over SMTP"
 )
+SKILL_SPEC=()
+for _i in "${!SKILL_KEYS[@]}"; do
+  SKILL_SPEC+=("${SKILL_KEYS[$_i]}@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons")
+done
 SKILL_STATE=()
 for _i in "${!SKILL_KEYS[@]}"; do SKILL_STATE+=(1); done
 unset _i
@@ -551,57 +858,283 @@ PLUGIN_KEYS=(
 PLUGIN_NAME=(
   "crew                    - Virtual dev team: 9 agents, 16 commands, safety hooks"
 )
+PLUGIN_SPEC=(
+  "crew@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons"
+)
+PLUGIN_STATE=()
+for _i in "${!PLUGIN_KEYS[@]}"; do PLUGIN_STATE+=(1); done
+unset _i
 
-skills_selected_count() {
-  local i n=0
-  for i in "${!SKILL_KEYS[@]}"; do [ "${SKILL_STATE[$i]}" -eq 1 ] && n=$((n+1)); done
-  printf '%d' "$n"
+# --- Team plugins (menu item 4) -----------------------------------------------
+# <PREFIX>_SPEC entries are "plugin@marketplace|marketplace-source|marketplace-name":
+# unlike the skills, these come from three different marketplaces, and only the ones
+# behind a ticked plugin need registering.
+TEAM_KEYS=("superpowers" "frontend-design" "excalidraw-generator")
+TEAM_NAME=(
+  "superpowers             - Workflow skills: brainstorm, plans, TDD, code review"
+  "frontend-design         - Anthropic's frontend design skill"
+  "excalidraw-generator    - Excalidraw diagrams from a description"
+)
+TEAM_SPEC=(
+  "superpowers@claude-plugins-official|anthropics/claude-plugins-official|claude-plugins-official"
+  "frontend-design@claude-code-plugins|anthropics/claude-code|claude-code-plugins"
+  "excalidraw-generator@excalidraw-generator|lexiaoyao20/excalidraw-generator|excalidraw-generator"
+)
+TEAM_STATE=()
+for _i in "${!TEAM_KEYS[@]}"; do TEAM_STATE+=(1); done
+unset _i
+
+# --- Community plugins (menu item 6) ------------------------------------------
+COMMUNITY_KEYS=(
+  "adhd-output-style" "azure-tools" "anthropic-office-skills" "agent-browser" "ppt-master"
+)
+COMMUNITY_NAME=(
+  "adhd-output-style       - ADHD-friendly output style"
+  "azure-tools             - Azure CLI/portal helpers"
+  "anthropic-office-skills - Anthropic's docx/pptx/xlsx/pdf skills"
+  "agent-browser           - vercel-labs browser agent"
+  "ppt-master              - PowerPoint deck generation"
+)
+COMMUNITY_SPEC=(
+  "adhd-output-style@claude-settings|fcakyon/claude-codex-settings|claude-settings"
+  "azure-tools@claude-settings|fcakyon/claude-codex-settings|claude-settings"
+  "anthropic-office-skills@claude-settings|fcakyon/claude-codex-settings|claude-settings"
+  "agent-browser@agent-browser|vercel-labs/agent-browser|agent-browser"
+  "ppt-master@ppt-master|hugohe3/ppt-master|ppt-master"
+)
+COMMUNITY_STATE=()
+for _i in "${!COMMUNITY_KEYS[@]}"; do COMMUNITY_STATE+=(1); done
+unset _i
+
+# --- VoltAgent subagent plugins (menu item 10) --------------------------------
+# All ten come from the one marketplace; the agent counts are upstream's own split.
+VOLTAGENT_KEYS=(
+  "voltagent-core-dev" "voltagent-lang" "voltagent-infra" "voltagent-qa-sec"
+  "voltagent-data-ai" "voltagent-dev-exp" "voltagent-domains" "voltagent-biz"
+  "voltagent-meta" "voltagent-research"
+)
+VOLTAGENT_NAME=(
+  "core-dev                - Core development: API, backend, frontend, mobile"
+  "lang                    - Language specialists: python, go, rust, ts, java, ..."
+  "infra                   - Infrastructure: cloud, k8s, terraform, SRE, network"
+  "qa-sec                  - QA and security: test automation, pentest, audit"
+  "data-ai                 - Data and AI: pipelines, ML, LLM, analytics"
+  "dev-exp                 - Developer experience: tooling, CI/CD, refactoring"
+  "domains                 - Domain specialists: fintech, health, gaming, IoT"
+  "biz                     - Business: product, PM, marketing, sales, support"
+  "meta                    - Meta/orchestration: multi-agent, workflow, context"
+  "research                - Research and analysis: market, competitor, data"
+)
+VOLTAGENT_SPEC=()
+for _i in "${!VOLTAGENT_KEYS[@]}"; do
+  VOLTAGENT_SPEC+=("${VOLTAGENT_KEYS[$_i]}@voltagent-subagents|VoltAgent/awesome-claude-code-subagents|voltagent-subagents")
+done
+VOLTAGENT_STATE=()
+for _i in "${!VOLTAGENT_KEYS[@]}"; do VOLTAGENT_STATE+=(1); done
+unset _i
+
+# --- Generic sub-picker groups ------------------------------------------------
+# Every menu row that installs more than one thing gets a sub-picker on -> , exactly
+# like the repo's own skills row always had. A group is the parallel arrays
+# <PREFIX>_KEYS / _NAME / _STATE (and _SPEC where the entries span marketplaces).
+# Parallel arrays plus eval indirection rather than associative arrays or namerefs,
+# because this has to keep running on bash 3.2.
+GROUP_MENU_KEYS=("own-skills" "team"   "community"   "voltagent"   "repo-plugins")
+GROUP_PREFIXES=( "SKILL"      "TEAM"   "COMMUNITY"   "VOLTAGENT"   "PLUGIN")
+GROUP_FLAGS=(    "--skills"   "--team" "--community" "--voltagent" "--plugins")
+GROUP_NOUN=(     "skills"     "team plugins" "community plugins" "VoltAgent plugins" "plugins")
+# Singular, for "ignoring unknown <thing> 'x'" warnings.
+GROUP_NOUN1=(    "skill"      "team plugin"  "community plugin"  "VoltAgent pack"    "plugin")
+# printf template for the menu row: selected, total.
+GROUP_LABEL=(
+  "This repo's marketplace + %s of %s skills  >"
+  "Team plugins: %s of %s (superpowers, frontend-design, excalidraw)  >"
+  "Community marketplaces + %s of %s plugins  >"
+  "VoltAgent subagents: %s of %s plugins (154 agents)  >"
+  "This repo's plugins: %s of %s (crew - agents, commands, hooks)  >"
+)
+GROUP_TITLE=(
+  "Pick individual skills from this repo"
+  "Pick team plugins"
+  "Pick community plugins"
+  "Pick VoltAgent subagent packs"
+  "Pick plugins from this repo"
+)
+
+group_index_for() {
+  # menu key -> index into the GROUP_* arrays, or failure when the row has no group.
+  local key="$1" i
+  for i in "${!GROUP_MENU_KEYS[@]}"; do
+    [ "${GROUP_MENU_KEYS[$i]}" = "$key" ] && { printf '%s' "$i"; return 0; }
+  done
+  return 1
+}
+group_prefix_for() {
+  local idx
+  idx="$(group_index_for "$1")" || return 1
+  printf '%s' "${GROUP_PREFIXES[$idx]}"
 }
 
-skills_set_all() {
-  local i
-  for i in "${!SKILL_KEYS[@]}"; do SKILL_STATE[$i]="$1"; done
+# Indirection helpers. '$1' is always the prefix; nothing else is ever eval'd, and the
+# prefixes are literals from GROUP_PREFIXES, never user input.
+group_count()  { eval "printf '%s' \"\${#${1}_KEYS[@]}\""; }
+group_key()    { eval "printf '%s' \"\${${1}_KEYS[$2]}\""; }
+group_name()   { eval "printf '%s' \"\${${1}_NAME[$2]}\""; }
+group_state()  { eval "printf '%s' \"\${${1}_STATE[$2]}\""; }
+group_spec()   { eval "printf '%s' \"\${${1}_SPEC[$2]:-}\""; }
+group_set()    { eval "${1}_STATE[$2]=$3"; }
+
+group_set_all() {
+  local prefix="$1" value="$2" i n
+  n="$(group_count "$prefix")"
+  for (( i=0; i<n; i++ )); do group_set "$prefix" "$i" "$value"; done
 }
 
-expand_skills_spec() {
-  # 'cloudflare,drata' | '1,4-6' | 'all' | 'none' -> sets SKILL_STATE.
-  local spec="$1" token n lo hi i found
+group_selected_count() {
+  local prefix="$1" i n c=0
+  n="$(group_count "$prefix")"
+  for (( i=0; i<n; i++ )); do [ "$(group_state "$prefix" "$i")" -eq 1 ] && c=$((c+1)); done
+  printf '%d' "$c"
+}
+
+group_entry_selected() {
+  # $1 prefix, $2 entry key. Only true when the parent menu row is selected too - an
+  # entry ticked in a sub-picker whose parent is off installs nothing.
+  local prefix="$1" want="$2" idx i n
+  for idx in "${!GROUP_PREFIXES[@]}"; do
+    if [ "${GROUP_PREFIXES[$idx]}" = "$prefix" ]; then
+      is_selected "${GROUP_MENU_KEYS[$idx]}" || return 1
+      break
+    fi
+  done
+  n="$(group_count "$prefix")"
+  for (( i=0; i<n; i++ )); do
+    if [ "$(group_key "$prefix" "$i")" = "$want" ]; then
+      [ "$(group_state "$prefix" "$i")" -eq 1 ] && return 0
+      return 1
+    fi
+  done
+  return 1
+}
+
+expand_group_spec() {
+  # $1 prefix, $2 spec: 'cloudflare,drata' | '1,4-6' | 'all' | 'none'.
+  local prefix="$1" spec="$2" token n lo hi i total found noun
+  total="$(group_count "$prefix")"
+  noun="$(group_noun_for "$prefix" single)"
   case "$spec" in
-    [Aa][Ll][Ll])   skills_set_all 1; return 0 ;;
-    [Nn][Oo][Nn][Ee]) skills_set_all 0; return 0 ;;
+    [Aa][Ll][Ll])     group_set_all "$prefix" 1; return 0 ;;
+    [Nn][Oo][Nn][Ee]) group_set_all "$prefix" 0; return 0 ;;
   esac
-  skills_set_all 0
+  group_set_all "$prefix" 0
   spec="${spec//,/ }"
   for token in $spec; do
     if [[ "$token" =~ ^([0-9]+)-([0-9]+)$ ]]; then
       lo="${BASH_REMATCH[1]}"; hi="${BASH_REMATCH[2]}"
-      for (( n=lo; n<=hi; n++ )); do
-        [ "$n" -ge 1 ] && [ "$n" -le "${#SKILL_KEYS[@]}" ] && SKILL_STATE[$((n-1))]=1
-      done
+      # Rejected rather than silently reinterpreted: bash's for-loop selects nothing
+      # from '3-1' while PowerShell's '..' counts down and selects three, so the same
+      # command line would mean different things on the two platforms.
+      if [ "$lo" -gt "$hi" ]; then
+        warn "ignoring reversed $noun range '$token' - write it low-to-high"
+      else
+        for (( n=lo; n<=hi; n++ )); do
+          [ "$n" -ge 1 ] && [ "$n" -le "$total" ] && group_set "$prefix" "$((n-1))" 1
+        done
+      fi
     elif [[ "$token" =~ ^[0-9]+$ ]]; then
       n="$token"
-      if [ "$n" -ge 1 ] && [ "$n" -le "${#SKILL_KEYS[@]}" ]; then
-        SKILL_STATE[$((n-1))]=1
+      if [ "$n" -ge 1 ] && [ "$n" -le "$total" ]; then
+        group_set "$prefix" "$((n-1))" 1
       else
-        warn "ignoring out-of-range skill number '$token'"
+        warn "ignoring out-of-range $noun number '$token'"
       fi
     else
       found=0
-      for i in "${!SKILL_KEYS[@]}"; do
-        if [ "${SKILL_KEYS[$i]}" = "$token" ]; then SKILL_STATE[$i]=1; found=1; break; fi
+      for (( i=0; i<total; i++ )); do
+        # Match the catalog key, or the label the picker actually shows. The VoltAgent
+        # rows display 'infra' while their plugin is 'voltagent-infra', so a name read
+        # off the screen has to work - it is the only name the user ever sees.
+        if [ "$(group_key "$prefix" "$i")" = "$token" ] \
+        || [ "$(group_display_name "$prefix" "$i")" = "$token" ]; then
+          group_set "$prefix" "$i" 1; found=1; break
+        fi
       done
-      [ "$found" -eq 0 ] && warn "ignoring unknown skill '$token'"
+      [ "$found" -eq 0 ] && warn "ignoring unknown $noun '$token'"
     fi
   done
 }
 
+group_display_name() {
+  # The first word of the catalog label - what the picker shows in its left column.
+  local name
+  name="$(group_name "$1" "$2")"
+  printf '%s' "${name%%[[:space:]]*}"
+}
+
+group_noun_for() {
+  # $2 is 'plural' (default) or 'single'.
+  local prefix="$1" form="${2:-plural}" i
+  for i in "${!GROUP_PREFIXES[@]}"; do
+    if [ "${GROUP_PREFIXES[$i]}" = "$prefix" ]; then
+      case "$form" in
+        single) printf '%s' "${GROUP_NOUN1[$i]}" ;;
+        *)      printf '%s' "${GROUP_NOUN[$i]}" ;;
+      esac
+      return 0
+    fi
+  done
+  printf 'item'
+}
+
+install_group() {
+  # Install a group's ticked entries. Every sub-picker group goes through here, so the
+  # catalog really is the single source it claims to be: the menu label, the picker,
+  # the --<group> flag and this loop all read the same <PREFIX>_SPEC.
+  #
+  # Marketplaces are registered once each, before any plugin. Registering per plugin
+  # meant three 'claude plugin marketplace update' runs against claude-settings on the
+  # community row alone - and a marketplace refresh re-clones the repo.
+  #
+  # $2, if given, is a marketplace the caller has already registered.
+  local prefix="$1" seen=" ${2:-} " i n spec plugin source mkt
+  n="$(group_count "$prefix")"
+  for (( i=0; i<n; i++ )); do
+    [ "$(group_state "$prefix" "$i")" -eq 1 ] || continue
+    spec="$(group_spec "$prefix" "$i")"
+    [ -n "$spec" ] || continue
+    spec="${spec#*|}"
+    source="${spec%%|*}"; mkt="${spec#*|}"
+    case "$seen" in
+      *" $mkt "*) continue ;;
+    esac
+    seen="$seen$mkt "
+    run_step "Marketplace: $source" add_marketplace "$source" "$mkt"
+  done
+  for (( i=0; i<n; i++ )); do
+    [ "$(group_state "$prefix" "$i")" -eq 1 ] || continue
+    spec="$(group_spec "$prefix" "$i")"
+    [ -n "$spec" ] || continue
+    plugin="${spec%%|*}"
+    run_step "Plugin: $plugin" install_plugin "$plugin"
+  done
+}
+
+
+skills_selected_count() { group_selected_count SKILL; }
+
+skills_set_all() { group_set_all SKILL "$1"; }
+
+expand_skills_spec() { expand_group_spec SKILL "$1"; }
+
 menu_label() {
-  # The repo row carries a live count, because "its 19 skills" stops being true the
-  # moment someone opens the skills picker and unticks one.
-  local i="$1"
-  if [ "${MENU_KEYS[$i]}" = "own-skills" ]; then
-    printf "This repo's marketplace + %s of %s skills  >" \
-      "$(skills_selected_count)" "${#SKILL_KEYS[@]}"
+  # A grouped row carries a live count, because "its 25 skills" stops being true the
+  # moment someone opens the sub-picker and unticks one.
+  local i="$1" idx prefix
+  if idx="$(group_index_for "${MENU_KEYS[$i]}")"; then
+    prefix="${GROUP_PREFIXES[$idx]}"
+    # shellcheck disable=SC2059 - the template is ours, from GROUP_LABEL.
+    printf "${GROUP_LABEL[$idx]}" \
+      "$(group_selected_count "$prefix")" "$(group_count "$prefix")"
   else
     printf '%s' "${MENU_NAME[$i]}"
   fi
@@ -799,32 +1332,36 @@ picker_run() {
   done
 }
 
-pick_skills_interactive() {
-  local i saved=()
+pick_group_interactive() {
+  # $1 is the index into the GROUP_* arrays. Restores the previous ticks on Q, so
+  # backing out of a sub-picker cannot silently rewrite a selection.
+  local idx="$1" prefix i n saved=()
+  prefix="${GROUP_PREFIXES[$idx]}"
+  n="$(group_count "$prefix")"
   PICK_LABEL=(); PICK_STATE=(); PICK_SUB=(); PICK_DEFAULT=()
-  for i in "${!SKILL_KEYS[@]}"; do
-    PICK_LABEL+=("${SKILL_NAME[$i]}")
-    PICK_STATE+=("${SKILL_STATE[$i]}")
+  for (( i=0; i<n; i++ )); do
+    PICK_LABEL+=("$(group_name "$prefix" "$i")")
+    PICK_STATE+=("$(group_state "$prefix" "$i")")
     PICK_SUB+=(0)
     PICK_DEFAULT+=(1)
+    saved+=("$(group_state "$prefix" "$i")")
   done
-  saved=("${SKILL_STATE[@]}")
   PICK_CURSOR=0; PICK_TOP=0
-  PICK_TITLE="Pick individual skills from this repo"
+  PICK_TITLE="${GROUP_TITLE[$idx]}"
   PICK_HINT="Enter or ← to go back to the main menu   Q to discard these changes"
   if ! picker_run; then
     return 1
   fi
   if [ "$PICK_ACTION" = "cancel" ]; then
-    SKILL_STATE=("${saved[@]}")
+    for (( i=0; i<n; i++ )); do group_set "$prefix" "$i" "${saved[$i]}"; done
     return 0
   fi
-  for i in "${!SKILL_KEYS[@]}"; do SKILL_STATE[$i]="${PICK_STATE[$i]}"; done
+  for (( i=0; i<n; i++ )); do group_set "$prefix" "$i" "${PICK_STATE[$i]}"; done
   return 0
 }
 
 pick_menu_interactive() {
-  local i
+  local i sub_idx parent_row menu_row=0
   while :; do
     PICK_LABEL=(); PICK_STATE=(); PICK_SUB=(); PICK_DEFAULT=()
     for i in "${!MENU_KEYS[@]}"; do
@@ -835,18 +1372,25 @@ pick_menu_interactive() {
       else
         PICK_STATE+=("${MENU_DEFAULT[$i]}")
       fi
-      if [ "${MENU_KEYS[$i]}" = "own-skills" ]; then PICK_SUB+=(1); else PICK_SUB+=(0); fi
+      if group_index_for "${MENU_KEYS[$i]}" >/dev/null; then PICK_SUB+=(1); else PICK_SUB+=(0); fi
     done
     PICK_TITLE="Select what to install"
-    PICK_HINT="→ on the repo row picks individual skills"
+    PICK_HINT="→ on a row marked > picks the individual items inside it"
+    PICK_CURSOR="${menu_row:-0}"; PICK_TOP=0
     picker_run || return 1
+    menu_row="$PICK_CURSOR"
     for i in "${!MENU_KEYS[@]}"; do MENU_STATE[$i]="${PICK_STATE[$i]}"; done
     case "$PICK_ACTION" in
       submenu)
-        pick_skills_interactive || return 1
-        # Opening the skills picker is a statement of intent: tick the repo row so a
+        # Remember which main-menu row we descended from: pick_group_interactive runs
+        # the same picker, so it overwrites PICK_CURSOR with the sub-picker's own row.
+        parent_row="$PICK_CURSOR"
+        sub_idx="$(group_index_for "${MENU_KEYS[$parent_row]}")" || continue
+        pick_group_interactive "$sub_idx" || return 1
+        # Opening a sub-picker is a statement of intent: tick the parent row so a
         # careful sub-selection is not silently thrown away by an unticked parent.
-        [ "$(skills_selected_count)" -gt 0 ] && MENU_STATE[$MENU_OWN_INDEX]=1
+        [ "$(group_selected_count "${GROUP_PREFIXES[$sub_idx]}")" -gt 0 ] \
+          && MENU_STATE[$parent_row]=1
         ;;
       cancel)
         SELECTED=""
@@ -865,11 +1409,7 @@ pick_menu_interactive() {
 }
 
 MENU_STATE=()
-MENU_OWN_INDEX=0
-for _i in "${!MENU_KEYS[@]}"; do
-  MENU_STATE+=("${MENU_DEFAULT[$_i]}")
-  [ "${MENU_KEYS[$_i]}" = "own-skills" ] && MENU_OWN_INDEX="$_i"
-done
+for _i in "${!MENU_KEYS[@]}"; do MENU_STATE+=("${MENU_DEFAULT[$_i]}"); done
 unset _i
 
 show_menu() {
@@ -883,18 +1423,25 @@ show_menu() {
   done
   printf '\n\033[90m  [x] marks the default set.\033[0m\n'
   printf '\033[90m  A = all   D = defaults   N = none   or numbers like 1,3,7-9\033[0m\n'
-  printf '\033[90m  Individual skills: re-run with --skills cloudflare,drata\033[0m\n'
+  printf '\033[90m  Rows marked > hold several items; pick inside them with the arrow\033[0m\n'
+  printf '\033[90m  keys, or non-interactively with --skills / --team / --community /\033[0m\n'
+  printf '\033[90m  --voltagent / --plugins (names, numbers, all, none)\033[0m\n'
 }
 
 select_install_items() {
-  local answer=""
-  # --skills is a non-interactive answer in its own right: it settles the skill list
-  # before anything is drawn, so it composes with --all and --non-interactive.
-  if [ -n "$SKILLS_SPEC" ]; then
-    expand_skills_spec "$SKILLS_SPEC"
-    printf '\033[90mSkills from --skills "%s" (%d of %d).\033[0m\n' \
-      "$SKILLS_SPEC" "$(skills_selected_count)" "${#SKILL_KEYS[@]}"
-  fi
+  local answer="" gi prefix spec
+  # A --<group> spec is a non-interactive answer in its own right: it settles that
+  # group's list before anything is drawn, so it composes with --all and
+  # --non-interactive.
+  for gi in "${!GROUP_PREFIXES[@]}"; do
+    prefix="${GROUP_PREFIXES[$gi]}"
+    eval "spec=\"\${GROUP_SPEC_${prefix}}\""
+    [ -n "$spec" ] || continue
+    expand_group_spec "$prefix" "$spec"
+    printf '\033[90m%s from %s "%s" (%d of %d).\033[0m\n' \
+      "${GROUP_NOUN[$gi]}" "${GROUP_FLAGS[$gi]}" "$spec" \
+      "$(group_selected_count "$prefix")" "$(group_count "$prefix")"
+  done
 
   if [ "$SELECT_ALL" -eq 1 ]; then
     SELECTED="$(all_keys)"
@@ -906,13 +1453,14 @@ select_install_items() {
     SELECTED="$(default_keys)"
     printf '\033[90mSelecting the default set (--non-interactive).\033[0m\n'
   elif picker_supported && pick_menu_interactive; then
-    :
+    SELECTION_INTERACTIVE=1
   else
     # Reached either because the terminal never supported raw input, or because it
     # stopped part-way through. The second case is why this is a fall-through and not
     # an else on picker_supported alone: a picker that dies mid-draw must land on the
     # numbered prompt, not on an empty selection that looks like the user chose none.
     [ "$PICKER_FAILED" -eq 1 ] && warn "the cursor menu could not run here - falling back to the numbered menu."
+    SELECTION_INTERACTIVE=1
     show_menu
     read -r -p "  Select [D] " answer <&"$TTY_FD"
     answer="${answer:-D}"
@@ -923,6 +1471,24 @@ select_install_items() {
       *)                           SELECTED="$(expand_selection_spec "$answer")" ;;
     esac
   fi
+
+  # A --<group> spec is also a statement that you want that row: naming plugins inside
+  # a row that is off by default (--plugins crew) would otherwise print a tidy summary
+  # and install nothing. Only when something in the group is actually ticked, so
+  # '--plugins none' still means none - and never after the menu, where unticking the
+  # row (or pressing Q) is a decision this must not quietly reverse.
+  for gi in "${!GROUP_PREFIXES[@]}"; do
+    [ "$SELECTION_INTERACTIVE" -eq 1 ] && break
+    prefix="${GROUP_PREFIXES[$gi]}"
+    eval "spec=\"\${GROUP_SPEC_${prefix}}\""
+    [ -n "$spec" ] || continue
+    [ "$(group_selected_count "$prefix")" -gt 0 ] || continue
+    is_selected "${GROUP_MENU_KEYS[$gi]}" || {
+      selection_add "${GROUP_MENU_KEYS[$gi]}"
+      printf '\033[90mAlso selecting "%s" - %s names items inside it.\033[0m\n' \
+        "${GROUP_MENU_KEYS[$gi]}" "${GROUP_FLAGS[$gi]}"
+    }
+  done
 
   if [ "$SKIP_BOOTSTRAP" -eq 1 ]; then
     # --skip-bootstrap predates the menu, where it meant "prerequisites and the CLI
@@ -958,18 +1524,29 @@ show_selection() {
   for i in "${!MENU_KEYS[@]}"; do
     is_selected "${MENU_KEYS[$i]}" && printf '    - %s\n' "$(menu_label "$i")"
   done
-  if is_selected "own-skills"; then
-    local picked
-    picked="$(skills_selected_count)"
+  # Spell out any sub-selection: a row that says "3 of 25" is not enough to review.
+  local gi prefix picked total j
+  for gi in "${!GROUP_MENU_KEYS[@]}"; do
+    is_selected "${GROUP_MENU_KEYS[$gi]}" || continue
+    prefix="${GROUP_PREFIXES[$gi]}"
+    picked="$(group_selected_count "$prefix")"
+    total="$(group_count "$prefix")"
     if [ "$picked" -eq 0 ]; then
-      warn "no individual skills selected - the marketplace will be registered but no skill installed. Re-run with --skills all to get them."
-    elif [ "$picked" -lt "${#SKILL_KEYS[@]}" ]; then
-      printf '\033[36m      skills:\033[0m\n'
-      for i in "${!SKILL_KEYS[@]}"; do
-        [ "${SKILL_STATE[$i]}" -eq 1 ] && printf '        - %s\n' "${SKILL_KEYS[$i]}"
+      # Only this repo's own row registers its marketplace regardless; for the others
+      # registration follows a ticked plugin, so an empty group installs and registers
+      # nothing at all.
+      if [ "${GROUP_MENU_KEYS[$gi]}" = "own-skills" ]; then
+        warn "no ${GROUP_NOUN[$gi]} selected - the marketplace will be registered but nothing installed from it. Re-run with ${GROUP_FLAGS[$gi]} all to get them."
+      else
+        warn "no ${GROUP_NOUN[$gi]} selected - this item will install nothing and register no marketplace. Re-run with ${GROUP_FLAGS[$gi]} all to get them."
+      fi
+    elif [ "$picked" -lt "$total" ]; then
+      printf '\033[36m      %s:\033[0m\n' "${GROUP_NOUN[$gi]}"
+      for (( j=0; j<total; j++ )); do
+        [ "$(group_state "$prefix" "$j")" -eq 1 ] && printf '        - %s\n' "$(group_key "$prefix" "$j")"
       done
     fi
-  fi
+  done
 }
 
 select_skillui_guide() {
@@ -990,17 +1567,9 @@ select_skillui_guide() {
 # --- notify skill setup -------------------------------------------------------
 skill_selected() {
   # 'notify' is a sub-picker entry, not a top-level menu key, so is_selected() would
-  # always say no. Look it up in the skill catalog instead, and only count it when
-  # this repo's marketplace item is itself selected.
-  local key="$1" i
-  is_selected "own-skills" || return 1
-  for i in "${!SKILL_KEYS[@]}"; do
-    if [ "${SKILL_KEYS[$i]}" = "$key" ]; then
-      [ "${SKILL_STATE[$i]}" -eq 1 ] && return 0
-      return 1
-    fi
-  done
-  return 1
+  # always say no. group_entry_selected looks it up in the skill catalog and only
+  # counts it when this repo's marketplace row is itself ticked.
+  group_entry_selected SKILL "$1"
 }
 
 notify_prereqs() {
@@ -1200,6 +1769,11 @@ if [ "$(selection_count)" -eq 0 ]; then
   exit 0
 fi
 
+if [ "$DRY_RUN" -eq 1 ]; then
+  printf '\n\033[33m--dry-run: stopping here. Nothing was installed.\033[0m\n'
+  exit 0
+fi
+
 SKILLUI_GUIDE="$(select_skillui_guide)"
 NOTIFY_SETUP="$(select_notify_setup)"
 
@@ -1387,19 +1961,18 @@ load_plugins
 
 # --- 3. This repo's own marketplace and skills -------------------------------
 if is_selected "own-skills"; then
+  # Registered up front rather than left to install_group, so ticking zero skills still
+  # leaves the marketplace available to browse with /plugin - which is what the warning
+  # below promises. install_group is told about it so it is not added twice.
   run_step "Add this repo as a Claude Code marketplace" \
     add_marketplace "mbadali25/useful-claude-add-ons" "useful-claude-add-ons"
 
-  # The catalog itself lives in SKILL_KEYS next to the menu; only the ticked ones
-  # get installed, so --skills and the sub-picker both land here.
+  # The catalog itself lives in SKILL_KEYS next to the menu; only the ticked ones get
+  # installed, so --skills and the sub-picker both land here.
   if [ "$(skills_selected_count)" -eq 0 ]; then
-    warn "no skills selected from this repo - marketplace registered, nothing installed."
+    warn "no skills selected from this repo - marketplace registered, nothing installed. Re-run with --skills all to get them."
   fi
-  for idx in "${!SKILL_KEYS[@]}"; do
-    [ "${SKILL_STATE[$idx]}" -eq 1 ] || continue
-    plugin="${SKILL_KEYS[$idx]}"
-    run_step "Plugin: ${plugin}@useful-claude-add-ons" install_plugin "${plugin}@useful-claude-add-ons"
-  done
+  install_group SKILL "useful-claude-add-ons"
 
   # notify is the one skill with machine-level setup (a config file and a bot token),
   # so it gets a post-install step when the user asked for it up front.
@@ -1409,29 +1982,19 @@ if is_selected "own-skills"; then
 fi
 
 # --- 4. Team marketplaces and plugins ----------------------------------------
+# The catalog is TEAM_KEYS/TEAM_SPEC next to the menu, so -> on the row (or --team)
+# narrows it. Each entry names its own marketplace: superpowers comes from
+# anthropics/claude-plugins-official rather than obra's own marketplace, because
+# install_plugin detects on the bare name - a machine that already had superpowers
+# from the official marketplace would otherwise end up with an orphaned
+# 'superpowers-marketplace' registration plus a second, disabled copy. Only the
+# marketplaces behind a ticked plugin get registered, and add_marketplace is a no-op
+# when one is already present.
 if is_selected "team"; then
-  # superpowers comes from anthropics/claude-plugins-official, not obra's own
-  # marketplace. Upstream publishes to both, but install_plugin detects on the bare
-  # name: a machine that already had superpowers from the official marketplace (which
-  # items 6 and 7 register) skipped the install and was left with an orphaned
-  # 'superpowers-marketplace' registration plus a second, disabled copy of the plugin.
-  # One source avoids the duplicate. Add-marketplace is a no-op when already present,
-  # so this stands on its own whether or not items 6 and 7 were selected.
-  run_step "Marketplace: anthropics/claude-plugins-official" \
-    add_marketplace "anthropics/claude-plugins-official" "claude-plugins-official"
-  run_step "Marketplace: anthropics/claude-code" \
-    add_marketplace "anthropics/claude-code" "claude-code-plugins"
-  run_step "Marketplace: lexiaoyao20/excalidraw-generator" \
-    add_marketplace "lexiaoyao20/excalidraw-generator" "excalidraw-generator"
-
-  team_plugins=(
-    "superpowers@claude-plugins-official"
-    "frontend-design@claude-code-plugins"
-    "excalidraw-generator@excalidraw-generator"
-  )
-  for spec in "${team_plugins[@]}"; do
-    run_step "Plugin: $spec" install_plugin "$spec"
-  done
+  if [ "$(group_selected_count TEAM)" -eq 0 ]; then
+    warn "no team plugins selected - nothing installed for this item, and no marketplace registered."
+  fi
+  install_group TEAM
 fi
 
 # --- 5. find-skills ----------------------------------------------------------
@@ -1459,33 +2022,17 @@ if is_selected "find-skills"; then
   run_step "Skill: find-skills (vercel-labs/skills)" install_find_skills
 fi
 
-# --- 6. Community marketplaces (from claudepluginhub.com) --------------------
-# Installed with native 'claude plugin' commands. Source repo -> marketplace name is
-# *not* mechanical: fcakyon/claude-codex-settings publishes itself as 'claude-settings'.
-# The second field below is the "name" in that repo's own .claude-plugin/marketplace.json,
-# which is what 'plugin@marketplace' has to match.
+# --- 6. Community marketplaces and plugins -----------------------------------
+# The catalog is COMMUNITY_KEYS/COMMUNITY_SPEC next to the menu, so -> on the row (or
+# --community) narrows it. Source repo -> marketplace name is *not* mechanical:
+# fcakyon/claude-codex-settings publishes itself as 'claude-settings'. The middle
+# field of each spec is the source, the last is the "name" in that repo's own
+# .claude-plugin/marketplace.json, which is what 'plugin@marketplace' has to match.
 if is_selected "community"; then
-  # "source|marketplace-name" pairs
-  community_marketplaces=(
-    "anthropics/claude-plugins-official|claude-plugins-official"
-    "vercel-labs/agent-browser|agent-browser"
-    "fcakyon/claude-codex-settings|claude-settings"
-    "hugohe3/ppt-master|ppt-master"
-  )
-  for entry in "${community_marketplaces[@]}"; do
-    run_step "Marketplace: ${entry%%|*}" add_marketplace "${entry%%|*}" "${entry#*|}"
-  done
-
-  community_plugins=(
-    "adhd-output-style@claude-settings"
-    "azure-tools@claude-settings"
-    "anthropic-office-skills@claude-settings"
-    "agent-browser@agent-browser"
-    "ppt-master@ppt-master"
-  )
-  for spec in "${community_plugins[@]}"; do
-    run_step "Plugin: $spec" install_plugin "$spec"
-  done
+  if [ "$(group_selected_count COMMUNITY)" -eq 0 ]; then
+    warn "no community plugins selected - nothing installed for this item, and no marketplace registered."
+  fi
+  install_group COMMUNITY
 fi
 
 # --- 7. claude-code-setup ----------------------------------------------------
@@ -1587,26 +2134,14 @@ fi
 # The repo publishes itself as the 'voltagent-subagents' marketplace, with its 154
 # subagents split across ten category plugins. Installing them as plugins replaces the
 # old 'git clone + bash install-agents.sh' path, which needed an interactive TTY and a
-# writable ~/repos checkout.
+# writable ~/repos checkout. The ten are VOLTAGENT_KEYS next to the menu, so -> on the
+# row (or --voltagent) takes a subset - most people want two or three categories, not
+# all 154 agents.
 if is_selected "voltagent"; then
-  run_step "Marketplace: VoltAgent/awesome-claude-code-subagents" \
-    add_marketplace "VoltAgent/awesome-claude-code-subagents" "voltagent-subagents"
-
-  voltagent_plugins=(
-    "voltagent-core-dev"
-    "voltagent-lang"
-    "voltagent-infra"
-    "voltagent-qa-sec"
-    "voltagent-data-ai"
-    "voltagent-dev-exp"
-    "voltagent-domains"
-    "voltagent-biz"
-    "voltagent-meta"
-    "voltagent-research"
-  )
-  for plugin in "${voltagent_plugins[@]}"; do
-    run_step "Plugin: ${plugin}@voltagent-subagents" install_plugin "${plugin}@voltagent-subagents"
-  done
+  if [ "$(group_selected_count VOLTAGENT)" -eq 0 ]; then
+    warn "no VoltAgent packs selected - nothing installed for this item, and no marketplace registered."
+  fi
+  install_group VOLTAGENT
 fi
 
 # --- 11-14. Optional MCP servers ---------------------------------------------
@@ -1896,14 +2431,12 @@ crew_next_steps() {
 if is_selected "repo-plugins"; then
   run_step "Add this repo as a Claude Code marketplace"     add_marketplace "mbadali25/useful-claude-add-ons" "useful-claude-add-ons"
 
-  # The catalog lives in PLUGIN_KEYS next to the menu. No sub-picker: there is one
-  # plugin, and it is opt-in already.
-  for idx in "${!PLUGIN_KEYS[@]}"; do
-    plugin="${PLUGIN_KEYS[$idx]}"
-    run_step "Plugin: ${plugin}@useful-claude-add-ons" install_plugin "${plugin}@useful-claude-add-ons"
-  done
+  # The catalog lives in PLUGIN_KEYS next to the menu; -> on the row (or --plugins)
+  # narrows it, the same as every other multi-item row.
+  install_group PLUGIN "useful-claude-add-ons"
 
-  crew_next_steps
+  # Only worth printing when crew is actually one of the ones installed.
+  group_entry_selected PLUGIN "crew" && crew_next_steps
 fi
 
 

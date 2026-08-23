@@ -11,7 +11,7 @@ Read the **Hooks** section of any plugin before installing it. Commands and agen
 | | |
 |---|---|
 | **Source** | [`crew/`](crew) |
-| **Version** | 0.2.0 |
+| **Version** | 0.3.0 |
 | **Install** | `claude plugin install crew@useful-claude-add-ons` |
 | **Menu item** | 21, `repo-plugins` — **off by default** |
 | **Registers** | 9 agents, 16 commands, 14 skills, 7 hooks across 5 events |

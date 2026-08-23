@@ -36,7 +36,19 @@ One script per OS. Both are idempotent (safe to re-run) and, by default, also bo
 | `A` / `N` / `D` | Tick all / clear all / restore the default set |
 | `Q` or Escape | Cancel — nothing is installed |
 
-**The per-skill picker** (→ on row 3) lists all 25 skills in this repo with the same controls. All 25 start ticked; untick the ones you don't want and press Enter or ← to go back. Opening it also ticks the parent row, so a careful sub-selection can't be lost to an unticked parent.
+**Sub-pickers.** Every row that installs more than one thing is marked `>` and opens its own picker on →, with the same controls. Everything inside starts ticked; untick what you don't want and press Enter or ← to go back (`Q` there discards just that sub-selection). Opening one also ticks the parent row, so a careful sub-selection can't be lost to an unticked parent, and the parent's label keeps a live count.
+
+| Row | What → picks | Non-interactive equivalent |
+|---|---|---|
+| 3 | the 25 skills in this repo | `--skills` / `-Skills` |
+| 4 | superpowers, frontend-design, excalidraw-generator | `--team` / `-Team` |
+| 6 | the 5 community plugins | `--community` / `-Community` |
+| 10 | the 10 VoltAgent packs | `--voltagent` / `-VoltAgent` |
+| 21 | this repo's own plugins (`crew`) | `--plugins` / `-Plugins` |
+
+Each flag takes names, numbers, `all` or `none` — `--voltagent infra,qa-sec`, `--team 1,3`, `--community none`. A name matches either the plugin key or the short label the picker shows, so `--voltagent infra` and `--voltagent voltagent-infra` are the same thing. Naming items inside a row also selects that row, which matters for the ones that are off by default (`--plugins crew`); it never overrides a choice you made at the menu. Only the marketplaces behind a ticked plugin get registered, so `--team excalidraw-generator` adds one marketplace rather than three.
+
+`--dry-run` / `-DryRun` settles the selection, prints it, and stops without installing anything — the quickest way to see what a set of flags resolves to.
 
 **When the picker isn't available**, both scripts fall back to the original numbered prompt — same items, same defaults, answered with `A`, `D`, `N`, or `1,3,7-9`. That happens when there is no usable terminal (`curl | bash` with no `/dev/tty`, CI), no `stty`, `TERM=dumb`, PowerShell ISE, a redirected console, or a window under ten lines. Nothing about the install differs; only how you choose.
 
@@ -346,7 +358,24 @@ claude plugin marketplace update useful-claude-add-ons
 claude plugin update <skill-name>@useful-claude-add-ons
 ```
 
+Note the `@useful-claude-add-ons` suffix — `claude plugin update` rejects a bare plugin
+name with `Plugin "<name>" not found`.
+
 Or just re-run the OS install script — it's idempotent and will skip anything already installed.
+To decide that cheaply it compares the commit its marketplace clone is on against the commit
+Claude Code recorded when each plugin was installed, then asks git whether that plugin's own files
+changed between the two. Only the ones that actually changed cost a `claude plugin update`; a run
+where nothing has moved upstream launches the CLI once for the marketplace refresh and not at all
+per plugin. If `git` is missing, the marketplace has no history, or the recorded commit was pruned
+by a force-push, it falls back to asking the CLI about every plugin — correct, just slower.
+`--no-update` / `-NoUpdate` skips the update check entirely.
+
+**When a skill changes but its version does not.** `claude plugin update` compares declared
+versions, so an edit without a version bump copies nothing and the installed copy stays stale. The
+scripts report that case rather than calling the plugin current, and `--force-refresh` /
+`-ForceRefresh` reinstalls it (`--keep-data`, so the plugin's persistent data survives). For this
+repo's own skills it should never happen: `scripts/check-marketplace.py` fails CI on a skill whose
+files changed without a bump.
 
 ## Troubleshooting
 
