@@ -19,6 +19,11 @@ jobs:
         run: python3 scripts/check-marketplace.py
       - name: Shell syntax
         run: bash -n scripts/install-prerequisites.sh
+      # Runs here because it needs nothing but bash: the end-to-end cases use --dry-run
+      # or a stub 'claude'. The drift suite is the one that cannot - it drives the real
+      # Claude Code CLI.
+      - name: Sub-picker group regression suite
+        run: ./scripts/_test/menu-groups.sh
       # Not just a parse: the PowerShell script is Windows-only end to end, so a call to
       # a function that does not exist parses cleanly and only fails on the one platform
       # nothing here can run. check-powershell.ps1 resolves every Verb-Noun call.

@@ -467,6 +467,10 @@ plugin_source_changed() {
   [ -d "$dir/.git" ] || return 2
   git -C "$dir" cat-file -e "${old}^{commit}" 2>/dev/null || return 2
   git -C "$dir" cat-file -e "${new}^{commit}" 2>/dev/null || return 2
+  # 'git diff --quiet -- <path>' also exits 0 when the pathspec matches nothing, which
+  # is indistinguishable from "unchanged" - so a plugin whose declared source is not a
+  # real path in the clone would read as current forever. Check the path is there first.
+  git -C "$dir" cat-file -e "${new}:${src}" 2>/dev/null || return 2
   git -C "$dir" diff --quiet "$old" "$new" -- "$src" 2>/dev/null
   rc=$?
   case "$rc" in
@@ -617,6 +621,9 @@ install_plugin() {
   local spec="$1" name mkt before after target head_sha old_sha drift
   name="${spec%%@*}"
   case "$spec" in *@*) mkt="${spec#*@}" ;; *) mkt="" ;; esac
+  # Warmed here, before either branch: every reader below runs inside "$(...)", and an
+  # assignment in a subshell is discarded. Both paths need the marketplace catalog.
+  ensure_marketplace_caches "$mkt"
   if before="$(plugin_version "$name")"; then
     if [ "$NO_UPDATE" -eq 1 ]; then
       skip "plugin '$name' already installed (version $before)"
@@ -631,7 +638,6 @@ install_plugin() {
     # below runs exactly as it always did.
     head_sha=""; old_sha=""; drift=2
     if [ -n "$mkt" ]; then
-      ensure_marketplace_caches "$mkt"
       head_sha="$(marketplace_head_sha "$mkt")" || head_sha=""
       old_sha="$(installed_plugin_sha "$spec")" || old_sha=""
     fi
@@ -702,7 +708,6 @@ install_plugin() {
   # Add the new plugin to the in-memory cache rather than reloading the whole list:
   # a fresh run installs 25+ plugins, and 'claude plugin list --json' after each one
   # was a second CLI spawn per plugin that nothing in this run reads differently.
-  load_marketplace_catalog "$mkt" || true   # bare: see ensure_marketplace_caches
   plugin_cache_add "$name" "$(marketplace_plugin_version "$mkt" "$name" || printf 'unknown')"
   COUNT_INSTALLED=$((COUNT_INSTALLED+1))
   ok "installed plugin '$spec'"
@@ -1527,7 +1532,14 @@ show_selection() {
     picked="$(group_selected_count "$prefix")"
     total="$(group_count "$prefix")"
     if [ "$picked" -eq 0 ]; then
-      warn "no ${GROUP_NOUN[$gi]} selected - the marketplace will be registered but nothing installed from it. Re-run with ${GROUP_FLAGS[$gi]} all to get them."
+      # Only this repo's own row registers its marketplace regardless; for the others
+      # registration follows a ticked plugin, so an empty group installs and registers
+      # nothing at all.
+      if [ "${GROUP_MENU_KEYS[$gi]}" = "own-skills" ]; then
+        warn "no ${GROUP_NOUN[$gi]} selected - the marketplace will be registered but nothing installed from it. Re-run with ${GROUP_FLAGS[$gi]} all to get them."
+      else
+        warn "no ${GROUP_NOUN[$gi]} selected - this item will install nothing and register no marketplace. Re-run with ${GROUP_FLAGS[$gi]} all to get them."
+      fi
     elif [ "$picked" -lt "$total" ]; then
       printf '\033[36m      %s:\033[0m\n' "${GROUP_NOUN[$gi]}"
       for (( j=0; j<total; j++ )); do

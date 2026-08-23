@@ -530,6 +530,11 @@ function Test-PluginSourceChanged {
             git -C $dir cat-file -e "$sha^{commit}" 2>&1 | Out-Null
             if ($LASTEXITCODE -ne 0) { return 'unknown' }
         }
+        # 'git diff --quiet -- <path>' also exits 0 when the pathspec matches nothing,
+        # which is indistinguishable from "unchanged" - so a plugin whose declared source
+        # is not a real path in the clone would read as current forever. Check first.
+        git -C $dir cat-file -e "${NewSha}:${Source}" 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) { return 'unknown' }
         git -C $dir diff --quiet $OldSha $NewSha -- $Source 2>&1 | Out-Null
         switch ($LASTEXITCODE) {
             0       { return 'same' }
@@ -1368,7 +1373,14 @@ function Show-Selection {
         $catalog = Get-GroupCatalog $group
         $picked = Get-GroupSelectedCount $group
         if ($picked -eq 0) {
-            Write-Warn2 "no $($group.Noun) selected - the marketplace will be registered but nothing installed from it. Re-run with $($group.Flag) all to get them."
+            # Only this repo's own row registers its marketplace regardless; for the
+            # others registration follows a ticked plugin, so an empty group installs
+            # and registers nothing at all.
+            if ($group.MenuKey -eq 'own-skills') {
+                Write-Warn2 "no $($group.Noun) selected - the marketplace will be registered but nothing installed from it. Re-run with $($group.Flag) all to get them."
+            } else {
+                Write-Warn2 "no $($group.Noun) selected - this item will install nothing and register no marketplace. Re-run with $($group.Flag) all to get them."
+            }
         } elseif ($picked -lt $catalog.Count) {
             Write-Host "      $($group.Noun):" -ForegroundColor Cyan
             foreach ($e in ($catalog | Where-Object { $_.Selected })) { Write-Host "        - $($e.Key)" }

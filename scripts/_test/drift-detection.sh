@@ -162,7 +162,27 @@ run_both
 assert_line "alpha current" "SKIP|already current" alpha
 assert_line "beta current"  "SKIP|already current" beta
 
-echo "7. --no-update reports without touching anything"
+echo "7. a source path that is not in the clone reports 'cannot tell', not 'unchanged'"
+# 'git diff --quiet -- <path>' exits 0 when the pathspec matches nothing, which is
+# indistinguishable from "no differences" - so a plugin whose declared source does not
+# exist would have read as current forever. plugin_source_changed must return 2.
+head="$(git -C "$MKT" rev-parse HEAD)"
+prev="$(git -C "$MKT" rev-parse HEAD~1)"
+plugin_source_changed drifttest "$prev" "$head" "skills/alpha"; rc=$?
+[ "$rc" -le 1 ] && got="answered" || got="cannot tell"
+if [ "$got" = "answered" ]; then
+  green "  PASS  a real source path gets a real answer"; PASS=$((PASS+1))
+else
+  red   "  FAIL  a real source path should not report 'cannot tell'"; FAIL=$((FAIL+1))
+fi
+plugin_source_changed drifttest "$prev" "$head" "skills/no-such-plugin"; rc=$?
+if [ "$rc" -eq 2 ]; then
+  green "  PASS  a missing source path reports 'cannot tell'"; PASS=$((PASS+1))
+else
+  red   "  FAIL  a missing source path returned $rc, wanted 2 (cannot tell)"; FAIL=$((FAIL+1))
+fi
+
+echo "8. --no-update reports without touching anything"
 write_skill alpha ALPHA-V3
 commit "alpha content again, still no bump"
 claude plugin marketplace update drifttest >/dev/null 2>&1

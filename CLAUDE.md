@@ -62,11 +62,12 @@ claiming the plugin is current. The suites for all of this live in `scripts/_tes
 | `scripts/check-marketplace.py` | every registration rule here, version drift, and the two install scripts being a matched pair | python3, git |
 | `scripts/check-powershell.ps1` | the `.ps1` parses **and** every `Verb-Noun` call resolves | pwsh |
 | `scripts/_test/drift-detection.sh` | the plugin update path, against a throwaway marketplace | the `claude` CLI |
-| `scripts/_test/menu-groups.sh` | the sub-picker catalogs, `--<group>` flags, and parent implication | bash |
+| `scripts/_test/menu-groups.sh` | the sub-picker catalogs, `--<group>` flags, parent implication, and once-per-marketplace registration | bash |
 
-The first two run in CI (`.github/workflows/marketplace.yml`); the other two need tools a
-runner does not have, so run them before pushing a change to either install script. Both
-build throwaway fixtures and never touch the real config.
+All but the drift suite run in CI (`.github/workflows/marketplace.yml`). That one drives
+the real Claude Code CLI, which a runner does not have, so run it by hand before pushing
+a change to the plugin update path. Every suite builds throwaway fixtures, uses
+`--dry-run` or a stub `claude`, and never touches the real config or installs anything.
 
 `check-powershell.ps1` exists because the `.ps1` is Windows-only end to end: a call to a
 function that does not exist parses cleanly, is never reached on Linux, and dies on the
