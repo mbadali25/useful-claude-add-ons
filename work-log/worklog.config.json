@@ -1,0 +1,30 @@
+{
+  "project": {
+    "name": "useful-claude-add-ons",
+    "environment": ""
+  },
+  "smtp": {
+    "server": "smtp.example.com",
+    "port": 587,
+    "security": "starttls",
+    "timeout_seconds": 30,
+    "auth": {
+      "enabled": true,
+      "username": "",
+      "password_env": "WORKLOG_SMTP_PASSWORD"
+    }
+  },
+  "email": {
+    "from_address": "",
+    "from_name": "Work Log Reporter",
+    "to": [],
+    "cc": [],
+    "subject_prefix": "[Work Log]"
+  },
+  "reporting": {
+    "auto_email_enabled": false,
+    "mode": "end_of_day",
+    "attach_detail_pdf": true,
+    "include_commands_in_pdf": true
+  }
+}
