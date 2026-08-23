@@ -240,6 +240,16 @@ def direct_telegram(cfg, subject, body, want_reply, buttons, timeout, dry):
                     m = u["message"]
                     if str((m.get("chat") or {}).get("id")) == str(chat_id) and m.get("text"):
                         print(json.dumps({"reply": m["text"], "via": "text"})); sys.exit(0)
+                    # Not our answer - but the offset has already advanced past
+                    # it, so dropping it here loses it for good. Only the
+                    # pre-loop drain captured; this branch did not, which
+                    # reintroduced exactly the message loss inbox.py exists to
+                    # prevent.
+                    if m.get("text"):
+                        try:
+                            inbox.capture(root, m)
+                        except Exception as exc:   # pylint: disable=broad-except
+                            eprint(f"inbox capture failed: {exc}")
         except Exception as e:
             eprint(f"getUpdates: {e}"); time.sleep(2)
     print(json.dumps({"reply": None, "timed_out": True})); sys.exit(5)

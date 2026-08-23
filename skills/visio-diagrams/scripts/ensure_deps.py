@@ -37,7 +37,17 @@ def pip_install(pkgs: list[str]) -> bool:
     """Try a plain install first; retry with --break-system-packages for
     PEP-668 environments (Debian/Ubuntu system Python, most containers)."""
     base = [sys.executable, "-m", "pip", "install", "--quiet", *pkgs]
-    for args in (base, base + ["--break-system-packages"]):
+    attempts = (base, base + ["--break-system-packages"])
+    for attempt, args in enumerate(attempts):
+        if attempt:
+            # Say it out loud. --break-system-packages writes into a Python the
+            # OS package manager owns; that is a decision someone should make
+            # knowingly rather than discover later.
+            print("  plain install refused (PEP 668: this Python is managed "
+                  "by the OS). Retrying with --break-system-packages, which "
+                  "installs into the system Python. Ctrl-C and use a "
+                  "virtualenv instead if you would rather not.",
+                  file=sys.stderr)
         try:
             r = subprocess.run(args, capture_output=True, text=True, timeout=180, check=False)
         except (subprocess.TimeoutExpired, OSError) as e:

@@ -22,7 +22,7 @@ import math
 import os
 import zipfile
 from datetime import datetime, timezone
-from xml.sax.saxutils import escape
+from xml.sax.saxutils import escape, quoteattr
 
 NS = "http://schemas.microsoft.com/office/visio/2012/main"
 R_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
@@ -49,8 +49,15 @@ DEFAULT_TEXT = "#000000"
 
 def _cell(n, v, f=None):
     if f:
-        return f'<Cell N="{n}" V="{v}" F="{escape(f)}"/>'
-    return f'<Cell N="{n}" V="{v}"/>'
+        return (f'<Cell N={quoteattr(str(n))} '
+                f'V={quoteattr(str(v))} '
+                f'F={quoteattr(str(f))}/>')
+    # quoteattr, not escape: escape() covers &, < and > but NOT the quote
+    # character, and these are attribute values. A colour or label holding a
+    # double quote - which a user-authored spec can easily carry - would close
+    # the attribute early and produce a .vsdx Visio refuses to open.
+    # quoteattr supplies its own surrounding quotes, hence none written here.
+    return f'<Cell N={quoteattr(str(n))} V={quoteattr(str(v))}/>'
 
 
 class Shape:
