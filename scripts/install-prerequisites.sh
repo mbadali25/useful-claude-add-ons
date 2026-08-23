@@ -379,7 +379,11 @@ force_refresh_plugin() {
   local spec="$1"
   claude plugin uninstall "$spec" --keep-data --scope "$INSTALL_SCOPE" >/dev/null 2>&1 \
     || { warn "could not uninstall '$spec' to force a refresh - leaving the stale copy in place."; return 1; }
-  claude plugin install "$spec" --scope "$INSTALL_SCOPE" >/dev/null 2>&1 \
+  # The install is deliberately NOT redirected, exactly as install_plugin runs it: the
+  # CLI refuses a plugin whose marketplace declares an install command when stdout is
+  # not a TTY, so swallowing the output here could fail the reinstall of a plugin this
+  # function has already uninstalled.
+  claude plugin install "$spec" --scope "$INSTALL_SCOPE" \
     || { warn "'$spec' was uninstalled but reinstalling it failed - run 'claude plugin install $spec' by hand."; return 1; }
   return 0
 }
@@ -830,6 +834,10 @@ SKILL_NAME=(
   "web-testing-playwright  - Real-browser testing: screenshots, console, form flows"
   "work-log-reporter       - Session work log + emailed PDF report over SMTP"
 )
+SKILL_SPEC=()
+for _i in "${!SKILL_KEYS[@]}"; do
+  SKILL_SPEC+=("${SKILL_KEYS[$_i]}@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons")
+done
 SKILL_STATE=()
 for _i in "${!SKILL_KEYS[@]}"; do SKILL_STATE+=(1); done
 unset _i
@@ -1018,9 +1026,16 @@ expand_group_spec() {
   for token in $spec; do
     if [[ "$token" =~ ^([0-9]+)-([0-9]+)$ ]]; then
       lo="${BASH_REMATCH[1]}"; hi="${BASH_REMATCH[2]}"
-      for (( n=lo; n<=hi; n++ )); do
-        [ "$n" -ge 1 ] && [ "$n" -le "$total" ] && group_set "$prefix" "$((n-1))" 1
-      done
+      # Rejected rather than silently reinterpreted: bash's for-loop selects nothing
+      # from '3-1' while PowerShell's '..' counts down and selects three, so the same
+      # command line would mean different things on the two platforms.
+      if [ "$lo" -gt "$hi" ]; then
+        warn "ignoring reversed $noun range '$token' - write it low-to-high"
+      else
+        for (( n=lo; n<=hi; n++ )); do
+          [ "$n" -ge 1 ] && [ "$n" -le "$total" ] && group_set "$prefix" "$((n-1))" 1
+        done
+      fi
     elif [[ "$token" =~ ^[0-9]+$ ]]; then
       n="$token"
       if [ "$n" -ge 1 ] && [ "$n" -le "$total" ]; then
@@ -1066,13 +1081,37 @@ group_noun_for() {
   printf 'item'
 }
 
-install_group_entry() {
-  # Install one <PREFIX>_SPEC entry: register its marketplace, then the plugin.
-  local spec="$1" plugin source name
-  plugin="${spec%%|*}"; spec="${spec#*|}"
-  source="${spec%%|*}"; name="${spec#*|}"
-  run_step "Marketplace: $source" add_marketplace "$source" "$name"
-  run_step "Plugin: $plugin" install_plugin "$plugin"
+install_group() {
+  # Install a group's ticked entries. Every sub-picker group goes through here, so the
+  # catalog really is the single source it claims to be: the menu label, the picker,
+  # the --<group> flag and this loop all read the same <PREFIX>_SPEC.
+  #
+  # Marketplaces are registered once each, before any plugin. Registering per plugin
+  # meant three 'claude plugin marketplace update' runs against claude-settings on the
+  # community row alone - and a marketplace refresh re-clones the repo.
+  #
+  # $2, if given, is a marketplace the caller has already registered.
+  local prefix="$1" seen=" ${2:-} " i n spec plugin source mkt
+  n="$(group_count "$prefix")"
+  for (( i=0; i<n; i++ )); do
+    [ "$(group_state "$prefix" "$i")" -eq 1 ] || continue
+    spec="$(group_spec "$prefix" "$i")"
+    [ -n "$spec" ] || continue
+    spec="${spec#*|}"
+    source="${spec%%|*}"; mkt="${spec#*|}"
+    case "$seen" in
+      *" $mkt "*) continue ;;
+    esac
+    seen="$seen$mkt "
+    run_step "Marketplace: $source" add_marketplace "$source" "$mkt"
+  done
+  for (( i=0; i<n; i++ )); do
+    [ "$(group_state "$prefix" "$i")" -eq 1 ] || continue
+    spec="$(group_spec "$prefix" "$i")"
+    [ -n "$spec" ] || continue
+    plugin="${spec%%|*}"
+    run_step "Plugin: $plugin" install_plugin "$plugin"
+  done
 }
 
 
@@ -1910,19 +1949,18 @@ load_plugins
 
 # --- 3. This repo's own marketplace and skills -------------------------------
 if is_selected "own-skills"; then
+  # Registered up front rather than left to install_group, so ticking zero skills still
+  # leaves the marketplace available to browse with /plugin - which is what the warning
+  # below promises. install_group is told about it so it is not added twice.
   run_step "Add this repo as a Claude Code marketplace" \
     add_marketplace "mbadali25/useful-claude-add-ons" "useful-claude-add-ons"
 
-  # The catalog itself lives in SKILL_KEYS next to the menu; only the ticked ones
-  # get installed, so --skills and the sub-picker both land here.
+  # The catalog itself lives in SKILL_KEYS next to the menu; only the ticked ones get
+  # installed, so --skills and the sub-picker both land here.
   if [ "$(skills_selected_count)" -eq 0 ]; then
-    warn "no skills selected from this repo - marketplace registered, nothing installed."
+    warn "no skills selected from this repo - marketplace registered, nothing installed. Re-run with --skills all to get them."
   fi
-  for idx in "${!SKILL_KEYS[@]}"; do
-    [ "${SKILL_STATE[$idx]}" -eq 1 ] || continue
-    plugin="${SKILL_KEYS[$idx]}"
-    run_step "Plugin: ${plugin}@useful-claude-add-ons" install_plugin "${plugin}@useful-claude-add-ons"
-  done
+  install_group SKILL "useful-claude-add-ons"
 
   # notify is the one skill with machine-level setup (a config file and a bot token),
   # so it gets a post-install step when the user asked for it up front.
@@ -1942,13 +1980,9 @@ fi
 # when one is already present.
 if is_selected "team"; then
   if [ "$(group_selected_count TEAM)" -eq 0 ]; then
-    warn "no team plugins selected - nothing installed for this item."
+    warn "no team plugins selected - nothing installed for this item, and no marketplace registered."
   fi
-  team_total="$(group_count TEAM)"
-  for (( idx=0; idx<team_total; idx++ )); do
-    [ "$(group_state TEAM "$idx")" -eq 1 ] || continue
-    install_group_entry "$(group_spec TEAM "$idx")"
-  done
+  install_group TEAM
 fi
 
 # --- 5. find-skills ----------------------------------------------------------
@@ -1984,13 +2018,9 @@ fi
 # .claude-plugin/marketplace.json, which is what 'plugin@marketplace' has to match.
 if is_selected "community"; then
   if [ "$(group_selected_count COMMUNITY)" -eq 0 ]; then
-    warn "no community plugins selected - nothing installed for this item."
+    warn "no community plugins selected - nothing installed for this item, and no marketplace registered."
   fi
-  community_total="$(group_count COMMUNITY)"
-  for (( idx=0; idx<community_total; idx++ )); do
-    [ "$(group_state COMMUNITY "$idx")" -eq 1 ] || continue
-    install_group_entry "$(group_spec COMMUNITY "$idx")"
-  done
+  install_group COMMUNITY
 fi
 
 # --- 7. claude-code-setup ----------------------------------------------------
@@ -2097,17 +2127,9 @@ fi
 # all 154 agents.
 if is_selected "voltagent"; then
   if [ "$(group_selected_count VOLTAGENT)" -eq 0 ]; then
-    warn "no VoltAgent packs selected - nothing installed for this item."
-  else
-    run_step "Marketplace: VoltAgent/awesome-claude-code-subagents" \
-      add_marketplace "VoltAgent/awesome-claude-code-subagents" "voltagent-subagents"
+    warn "no VoltAgent packs selected - nothing installed for this item, and no marketplace registered."
   fi
-  voltagent_total="$(group_count VOLTAGENT)"
-  for (( idx=0; idx<voltagent_total; idx++ )); do
-    [ "$(group_state VOLTAGENT "$idx")" -eq 1 ] || continue
-    plugin="$(group_key VOLTAGENT "$idx")"
-    run_step "Plugin: ${plugin}@voltagent-subagents" install_plugin "${plugin}@voltagent-subagents"
-  done
+  install_group VOLTAGENT
 fi
 
 # --- 11-14. Optional MCP servers ---------------------------------------------
@@ -2399,12 +2421,7 @@ if is_selected "repo-plugins"; then
 
   # The catalog lives in PLUGIN_KEYS next to the menu; -> on the row (or --plugins)
   # narrows it, the same as every other multi-item row.
-  plugin_total="$(group_count PLUGIN)"
-  for (( idx=0; idx<plugin_total; idx++ )); do
-    [ "$(group_state PLUGIN "$idx")" -eq 1 ] || continue
-    plugin="$(group_key PLUGIN "$idx")"
-    run_step "Plugin: ${plugin}@useful-claude-add-ons" install_plugin "${plugin}@useful-claude-add-ons"
-  done
+  install_group PLUGIN "useful-claude-add-ons"
 
   # Only worth printing when crew is actually one of the ones installed.
   group_entry_selected PLUGIN "crew" && crew_next_steps

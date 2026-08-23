@@ -559,7 +559,11 @@ function Invoke-ForcePluginRefresh {
             Write-Warn2 "could not uninstall '$Spec' to force a refresh - leaving the stale copy in place."
             return $false
         }
-        claude plugin install $Spec --scope $InstallScope 2>&1 | Out-Null
+        # The install is deliberately NOT redirected, exactly as Install-ClaudePlugin
+        # runs it: the CLI refuses a plugin whose marketplace declares an install command
+        # when stdout is not a TTY, so swallowing the output here could fail the reinstall
+        # of a plugin this function has already uninstalled.
+        claude plugin install $Spec --scope $InstallScope
         if ($LASTEXITCODE -ne 0) {
             Write-Warn2 "'$Spec' was uninstalled but reinstalling it failed - run 'claude plugin install $Spec' by hand."
             return $false
@@ -822,6 +826,10 @@ $script:SkillCatalog = @(
     [pscustomobject]@{ Key = 'work-log-reporter';     Selected = $true; Name = 'work-log-reporter       - Session work log + emailed PDF report over SMTP' }
 )
 
+foreach ($sk in $script:SkillCatalog) {
+    $sk | Add-Member -NotePropertyName Spec -NotePropertyValue "$($sk.Key)@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons"
+}
+
 # --- This repo's own plugins --------------------------------------------------
 # Keep in sync with .claude-plugin/marketplace.json and plugin/README.md. Unlike the
 # skills, the menu row is off by default: a plugin can register hooks, and a hook runs
@@ -929,8 +937,16 @@ function Expand-GroupSpec {
     Set-AllInGroup $Group $false
     foreach ($token in ($Spec -split '[,\s]+' | Where-Object { $_ })) {
         if ($token -match '^(\d+)\s*-\s*(\d+)$') {
-            foreach ($n in [int]$Matches[1]..[int]$Matches[2]) {
-                if ($n -ge 1 -and $n -le $catalog.Count) { $catalog[$n - 1].Selected = $true }
+            $lo = [int]$Matches[1]; $hi = [int]$Matches[2]
+            # Rejected rather than silently reinterpreted: PowerShell's '..' counts down
+            # from '3-1' and would select three items while bash's for-loop selects none,
+            # so the same command line would mean different things on the two platforms.
+            if ($lo -gt $hi) {
+                Write-Warn2 "ignoring reversed $($Group.Single) range '$token' - write it low-to-high"
+            } else {
+                foreach ($n in $lo..$hi) {
+                    if ($n -ge 1 -and $n -le $catalog.Count) { $catalog[$n - 1].Selected = $true }
+                }
             }
         } elseif ($token -match '^\d+$') {
             $n = [int]$token
@@ -953,22 +969,38 @@ function Expand-GroupSpec {
     }
 }
 
-function Install-GroupEntry {
-    # Install one catalog entry's Spec: register its marketplace, then the plugin.
+function Install-Group {
+    # Install a group's ticked entries. Every sub-picker group goes through here, so the
+    # catalog really is the single source it claims to be: the menu label, the picker,
+    # the -<Group> flag and this loop all read the same Spec.
+    #
+    # Marketplaces are registered once each, before any plugin. Registering per plugin
+    # meant three 'claude plugin marketplace update' runs against claude-settings on the
+    # community row alone - and a marketplace refresh re-clones the repo.
+    #
+    # -AlreadyRegistered names a marketplace the caller has registered itself.
     #
     # The locals are named so they cannot collide with Invoke-Step's own parameters, and
-    # the script blocks are closed over their values. PowerShell resolves a variable in
-    # a script block against the *dynamic* scope it runs in, so a plain '$name' here
-    # picked up Invoke-Step's [string]$Name - the step label - and every marketplace was
-    # re-added under the name "Marketplace: owner/repo" on every run.
-    param([string]$Spec)
-    $entryPlugin, $entrySource, $entryMarketplace = $Spec -split '\|', 3
-    Invoke-Step "Marketplace: $entrySource" {
-        Add-ClaudeMarketplace -Source $entrySource -Name $entryMarketplace
-    }.GetNewClosure()
-    Invoke-Step "Plugin: $entryPlugin" {
-        Install-ClaudePlugin $entryPlugin
-    }.GetNewClosure()
+    # the script blocks are closed over their values: PowerShell resolves a variable in a
+    # script block against the *dynamic* scope it runs in, so a plain '$name' here would
+    # pick up Invoke-Step's [string]$Name - the step label.
+    param($Group, [string]$AlreadyRegistered = '')
+    $entries = @((Get-GroupCatalog $Group) | Where-Object { $_.Selected -and $_.Spec })
+    $seen = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    if ($AlreadyRegistered) { $null = $seen.Add($AlreadyRegistered) }
+    foreach ($entry in $entries) {
+        $null, $entrySource, $entryMarketplace = $entry.Spec -split '\|', 3
+        if (-not $seen.Add($entryMarketplace)) { continue }
+        Invoke-Step "Marketplace: $entrySource" {
+            Add-ClaudeMarketplace -Source $entrySource -Name $entryMarketplace
+        }.GetNewClosure()
+    }
+    foreach ($entry in $entries) {
+        $entryPlugin = ($entry.Spec -split '\|', 3)[0]
+        Invoke-Step "Plugin: $entryPlugin" {
+            Install-ClaudePlugin $entryPlugin
+        }.GetNewClosure()
+    }
 }
 
 function Get-SelectedSkillCount { return (Get-GroupSelectedCount (Get-Group 'own-skills')) }
@@ -1786,21 +1818,19 @@ if ($needsClaude -and -not (Test-ClaudeAvailable)) {
 
 # --- 3. This repo's own marketplace and skills -------------------------------
 if (Test-Selected 'own-skills') {
+    # Registered up front rather than left to Install-Group, so ticking zero skills
+    # still leaves the marketplace available to browse with /plugin - which is what the
+    # warning below promises. Install-Group is told about it so it is not added twice.
     Invoke-Step "Add this repo as a Claude Code marketplace" {
         Add-ClaudeMarketplace -Source 'mbadali25/useful-claude-add-ons' -Name 'useful-claude-add-ons'
     }
 
-    # The catalog itself lives in $script:SkillCatalog next to the menu; only the
-    # ticked ones get installed, so -Skills and the sub-picker both land here.
+    # The catalog itself lives in $script:SkillCatalog next to the menu; only the ticked
+    # ones get installed, so -Skills and the sub-picker both land here.
     if ((Get-SelectedSkillCount) -eq 0) {
-        Write-Warn2 "no skills selected from this repo - marketplace registered, nothing installed."
+        Write-Warn2 "no skills selected from this repo - marketplace registered, nothing installed. Re-run with -Skills all to get them."
     }
-    $ownPlugins = @($script:SkillCatalog | Where-Object { $_.Selected } | ForEach-Object { $_.Key })
-    foreach ($plugin in $ownPlugins) {
-        Invoke-Step "Plugin: $plugin@useful-claude-add-ons" {
-            Install-ClaudePlugin "$plugin@useful-claude-add-ons"
-        }
-    }
+    Install-Group (Get-Group 'own-skills') -AlreadyRegistered 'useful-claude-add-ons'
 
     # notify is the one skill with machine-level setup (a config file and a bot token),
     # so it gets a post-install step when the user asked for it up front.
@@ -1816,11 +1846,9 @@ if (Test-Selected 'own-skills') {
 if (Test-Selected 'team') {
     $group = Get-Group 'team'
     if ((Get-GroupSelectedCount $group) -eq 0) {
-        Write-Warn2 "no team plugins selected - nothing installed for this item."
+        Write-Warn2 "no team plugins selected - nothing installed for this item, and no marketplace registered."
     }
-    foreach ($entry in ((Get-GroupCatalog $group) | Where-Object { $_.Selected })) {
-        Install-GroupEntry $entry.Spec
-    }
+    Install-Group $group
 }
 
 # --- 5. find-skills ----------------------------------------------------------
@@ -1856,11 +1884,9 @@ if (Test-Selected 'find-skills') {
 if (Test-Selected 'community') {
     $group = Get-Group 'community'
     if ((Get-GroupSelectedCount $group) -eq 0) {
-        Write-Warn2 "no community plugins selected - nothing installed for this item."
+        Write-Warn2 "no community plugins selected - nothing installed for this item, and no marketplace registered."
     }
-    foreach ($entry in ((Get-GroupCatalog $group) | Where-Object { $_.Selected })) {
-        Install-GroupEntry $entry.Spec
-    }
+    Install-Group $group
 }
 
 # --- 7. claude-code-setup ----------------------------------------------------
@@ -1942,16 +1968,9 @@ if (Test-Selected 'claude-mem') {
 if (Test-Selected 'voltagent') {
     $group = Get-Group 'voltagent'
     if ((Get-GroupSelectedCount $group) -eq 0) {
-        Write-Warn2 "no VoltAgent packs selected - nothing installed for this item."
-    } else {
-        Invoke-Step "Marketplace: VoltAgent/awesome-claude-code-subagents" {
-            Add-ClaudeMarketplace -Source 'VoltAgent/awesome-claude-code-subagents' -Name 'voltagent-subagents'
-        }
+        Write-Warn2 "no VoltAgent packs selected - nothing installed for this item, and no marketplace registered."
     }
-    foreach ($entry in ((Get-GroupCatalog $group) | Where-Object { $_.Selected })) {
-        $voltSpec = "$($entry.Key)@voltagent-subagents"
-        Invoke-Step "Plugin: $voltSpec" { Install-ClaudePlugin $voltSpec }.GetNewClosure()
-    }
+    Install-Group $group
 }
 
 # --- 11-14. Optional MCP servers ---------------------------------------------
@@ -2261,10 +2280,7 @@ if (Test-Selected 'repo-plugins') {
 
     # The catalog lives in $script:PluginCatalog next to the menu; Right on the row
     # (or -Plugins) narrows it, the same as every other multi-item row.
-    foreach ($entry in ((Get-GroupCatalog (Get-Group 'repo-plugins')) | Where-Object { $_.Selected })) {
-        $repoSpec = "$($entry.Key)@useful-claude-add-ons"
-        Invoke-Step "Plugin: $repoSpec" { Install-ClaudePlugin $repoSpec }.GetNewClosure()
-    }
+    Install-Group (Get-Group 'repo-plugins') -AlreadyRegistered 'useful-claude-add-ons'
 
     # Only worth printing when crew is actually one of the ones installed.
     if (Test-GroupEntrySelected 'repo-plugins' 'crew') { Show-CrewNextSteps }

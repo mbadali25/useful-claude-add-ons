@@ -31,6 +31,21 @@ check() {
   fi
 }
 
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
+
+# Capture a warning WITHOUT losing the state change: "$(cmd 2>&1)" runs cmd in a
+# subshell, so the catalog edits it makes are discarded. That is the same subshell trap
+# the script itself hit with its caches, and it made two of these cases pass by luck.
+warned() {
+  # $1 substring to look for; the rest is the command to run in *this* shell.
+  # Both streams are redirected: a plain redirection does not fork, so the catalog
+  # edits survive, but the message can arrive on either one.
+  local want="$1"; shift
+  "$@" >"$TMP/out" 2>&1
+  grep -qF "$want" "$TMP/out"
+}
+
 # --- load the group layer out of the real script ------------------------------
 warn() { printf 'WARN: %s\n' "$1"; }
 have() { command -v "$1" >/dev/null 2>&1; }
@@ -65,13 +80,23 @@ expand_group_spec COMMUNITY 'none'
 check "none"                "0" "$(group_selected_count COMMUNITY)"
 expand_group_spec COMMUNITY 'all'
 check "all"                 "5" "$(group_selected_count COMMUNITY)"
-out="$(expand_group_spec TEAM 'superpowers,not-a-plugin' 2>&1)"
-check "unknown name warns, keeps the good one" "1" "$(group_selected_count TEAM)"
-case "$out" in *"ignoring unknown team plugin 'not-a-plugin'"*) got=yes ;; *) got=no ;; esac
-check "and says so, in the singular" yes "$got"
-out="$(expand_group_spec VOLTAGENT '99' 2>&1)"
-case "$out" in *"out-of-range VoltAgent pack number '99'"*) got=yes ;; *) got=no ;; esac
-check "out-of-range number warns" yes "$got"
+warned "ignoring unknown team plugin 'not-a-plugin'" \
+  expand_group_spec TEAM 'superpowers,not-a-plugin' && got=yes || got=no
+check "unknown name warns, in the singular"    yes "$got"
+check "and the good name is still selected"    "1" "$(group_selected_count TEAM)"
+warned "out-of-range VoltAgent pack number '99'" expand_group_spec VOLTAGENT '99' && got=yes || got=no
+check "out-of-range number warns"              yes "$got"
+check "and selects nothing"                    "0" "$(group_selected_count VOLTAGENT)"
+
+echo "3b. a reversed range is rejected, not reinterpreted"
+# bash's for-loop selects nothing from '3-1'; PowerShell's '..' counts down and selects
+# three. Both scripts must refuse it, or the same command line means two things.
+expand_group_spec VOLTAGENT 'all'
+warned "reversed VoltAgent pack range '3-1'" expand_group_spec VOLTAGENT '3-1' && got=yes || got=no
+check "reversed range warns"           yes "$got"
+check "and selects nothing"            "0" "$(group_selected_count VOLTAGENT)"
+expand_group_spec VOLTAGENT '1-3'
+check "a forward range still works"    "3" "$(group_selected_count VOLTAGENT)"
 
 echo "4. an entry only counts when its parent row is selected"
 expand_group_spec PLUGIN 'all'
@@ -83,7 +108,7 @@ group_entry_selected PLUGIN crew && got=yes || got=no
 check "crew with the row off" no  "$got"
 
 echo "5. every SPEC entry is plugin@marketplace|source|name"
-for prefix in TEAM COMMUNITY VOLTAGENT PLUGIN; do
+for prefix in SKILL TEAM COMMUNITY VOLTAGENT PLUGIN; do
   n="$(group_count "$prefix")"
   bad=0
   for (( j=0; j<n; j++ )); do
@@ -97,8 +122,6 @@ for prefix in TEAM COMMUNITY VOLTAGENT PLUGIN; do
 done
 
 echo "6. a --<group> flag selects its parent row, even one that defaults to off"
-TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT
 run_summary() {
   # --dry-run settles the selection, prints it, and stops. Without it these cases ran
   # the real installer - apt-get, npm -g, a ~/.bashrc edit - which is not something a
@@ -118,6 +141,26 @@ check "--plugins none leaves it out"                         no  "$got"
 out="$(run_summary --team superpowers --non-interactive)"
 case "$out" in *"Team plugins: 1 of 3"*) got=yes ;; *) got=no ;; esac
 check "--team narrows the row label"         yes "$got"
+
+echo "7. a marketplace behind several plugins is registered once, not once per plugin"
+# Three of the community row's five plugins come from claude-settings. Before
+# install_group that was three separate "Marketplace:" steps, and a marketplace refresh
+# re-clones the repo. A stub 'claude' makes this observable without installing anything.
+mkdir -p "$TMP/bin"
+printf '#!/bin/sh\nexit 0\n' > "$TMP/bin/claude"
+chmod +x "$TMP/bin/claude"
+steps="$(CLAUDE_CONFIG_DIR="$TMP/cfg" PATH="$TMP/bin:$PATH" \
+  bash "$SCRIPT" --select community --community all 2>&1 \
+  | sed 's/\x1b\[[0-9;]*m//g' | grep -c '^==> Marketplace:')"
+check "5 community plugins -> 3 marketplace steps" "3" "$steps"
+plugins="$(CLAUDE_CONFIG_DIR="$TMP/cfg" PATH="$TMP/bin:$PATH" \
+  bash "$SCRIPT" --select community --community all 2>&1 \
+  | sed 's/\x1b\[[0-9;]*m//g' | grep -c '^==> Plugin:')"
+check "and 5 plugin steps"                         "5" "$plugins"
+one="$(CLAUDE_CONFIG_DIR="$TMP/cfg" PATH="$TMP/bin:$PATH" \
+  bash "$SCRIPT" --select community --community ppt-master 2>&1 \
+  | sed 's/\x1b\[[0-9;]*m//g' | grep -c '^==> Marketplace:')"
+check "one plugin -> one marketplace step"         "1" "$one"
 
 echo
 if [ "$FAIL" -eq 0 ]; then green "$PASS passed, 0 failed"; exit 0; fi

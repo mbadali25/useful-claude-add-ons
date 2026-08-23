@@ -39,7 +39,10 @@ All notable changes to this repository are documented here. Format follows [Keep
   off by default - but never overrides a choice made at the menu. Only the marketplaces behind a ticked plugin are registered now, so
   `--team excalidraw-generator` adds one marketplace instead of three. The five catalogs
   are the single source for the menu label, the picker, the flag and the install loop,
-  so a row cannot say "3 of 3" and then install something else.
+  so a row cannot say "3 of 3" and then install something else - all five, including the
+  skills, go through one `install_group` / `Install-Group`. That also fixed a smaller
+  thing: a marketplace behind several ticked plugins is registered once rather than once
+  per plugin, so the community row no longer re-clones `claude-settings` three times.
 
 - **Content-drift detection in both install scripts.** A version bump fixes today's
   staleness; this stops it recurring silently. For an already-installed plugin the
