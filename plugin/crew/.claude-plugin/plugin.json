@@ -1,0 +1,14 @@
+{
+  "name": "crew",
+  "version": "0.1.0",
+  "description": "A small, honest virtual dev team: context-isolated agents, deterministic gates, file-backed work state. Optional Codex QA, optional Jira, optional Obsidian memory.",
+  "author": {
+    "name": "Matthew Badali",
+    "email": "badalim@anewbiz.net",
+    "url": "https://github.com/mbadali25/useful-claude-add-ons"
+  },
+  "homepage": "https://github.com/mbadali25/useful-claude-add-ons/tree/main/plugin/crew",
+  "repository": "https://github.com/mbadali25/useful-claude-add-ons",
+  "license": "See LICENSE at the repository root",
+  "keywords": ["workflow", "qa", "multi-repo", "legacy", "agents", "hooks"]
+}
