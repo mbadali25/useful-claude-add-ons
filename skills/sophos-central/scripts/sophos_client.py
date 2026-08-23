@@ -146,7 +146,10 @@ class SophosClient:
                 cid = ""
                 try:
                     cid = r.json().get("correlationId", "")
-                except Exception:
+                except Exception:  # pylint: disable=broad-except
+                    # Deliberately broad: this only enriches an error message
+                    # that is about to be raised. A failure here must not
+                    # replace the real error with a parsing error.
                     pass
                 raise SystemExit(
                     f"{method} {url} -> {r.status_code}: {r.text[:500]}"

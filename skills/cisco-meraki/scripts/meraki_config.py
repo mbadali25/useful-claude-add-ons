@@ -34,7 +34,13 @@ from meraki_diff import (
 )
 from meraki_http import MerakiError, MerakiHTTP
 
-SNAPSHOT_DIR = ".meraki-snapshots"
+# Anchored to this script, not the cwd. Snapshots hold unredacted config by
+# design, and a cwd-relative path drops them into whatever directory the caller
+# happened to be in - outside this repo's .gitignore, and easy to commit.
+SNAPSHOT_DIR = os.environ.get(
+    "MERAKI_SNAPSHOT_DIR",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), ".meraki-snapshots"),
+)
 
 # Client-side caps so a too-large batch fails locally with a clear message
 # rather than as an opaque server rejection. Verify against the live API.
@@ -259,10 +265,48 @@ class ConfigTool:
             params={"status": "pending"})
         return batches or []
 
-    def batch_commit(self, batch_id, org_id=None, timeout=120.0,
+    def batch_commit(self, batch_id, confirm, org_id=None, timeout=120.0,
                      poll_interval=2.0):
+        """Show what the batch will do, get a yes, then commit.
+
+        A batch can create, update and DESTROY across many networks in one
+        call. Committing one unseen is the largest single blast radius in this
+        module, so it takes the same confirm callable apply() does - the
+        module docstring's guarantee has to hold for every write path, not
+        just the one it was written about.
+        """
         org = org_id or self.resolve_org()
         path = f"/organizations/{org}/actionBatches/{batch_id}"
+
+        batch, _ = self.http.request("GET", path)
+        batch = batch or {}
+        if (batch.get("status") or {}).get("completed"):
+            raise MerakiError(0, [f"Action batch {batch_id} is already completed."])
+        actions = batch.get("actions") or []
+        if not actions:
+            raise MerakiError(
+                0, [f"Action batch {batch_id} has no actions. Nothing to commit."])
+
+        destructive = [a for a in actions
+                       if str(a.get("operation", "")).lower()
+                       in ("destroy", "delete", "remove")]
+        lines = [f"Action batch {batch_id} in org {org}",
+                 f"{len(actions)} action(s), {len(destructive)} destructive:"]
+        for act in actions[:40]:
+            lines.append(f"  {act.get('operation', '?'):<8} "
+                         f"{act.get('resource', '?')}")
+        if len(actions) > 40:
+            lines.append(f"  ... and {len(actions) - 40} more")
+        if destructive:
+            lines.append("")
+            lines.append(f"{len(destructive)} action(s) DESTROY live "
+                         f"configuration. There is no snapshot for a batch - "
+                         f"rollback means rebuilding by hand.")
+
+        if not confirm("\n".join(lines)):
+            raise MerakiError(0, [f"Action batch {batch_id} declined. "
+                                  f"Nothing committed."])
+
         self.http.request("PUT", path, body={"confirmed": True})
 
         deadline = time.monotonic() + float(timeout)
@@ -326,6 +370,8 @@ def build_parser():
     commit = sub.add_parser("batch-commit")
     commit.add_argument("batch_id")
     commit.add_argument("--timeout", type=float, default=120.0)
+    commit.add_argument("--yes", action="store_true",
+                        help="skip the confirmation prompt")
 
     return parser
 
@@ -355,7 +401,9 @@ def main(argv=None):
             json.dump(redact_secrets(batch), sys.stdout, indent=2, default=str)
             sys.stdout.write("\n")
         elif args.command == "batch-commit":
-            batch = tool.batch_commit(args.batch_id, timeout=args.timeout)
+            confirm = _auto_confirm if args.yes else _confirm_interactively
+            batch = tool.batch_commit(args.batch_id, confirm,
+                                      timeout=args.timeout)
             json.dump(redact_secrets(batch), sys.stdout, indent=2, default=str)
             sys.stdout.write("\n")
     except MerakiError as exc:

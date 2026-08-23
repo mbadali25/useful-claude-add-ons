@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-wazuh_client.py — a self-contained client for an on-premises Wazuh deployment.
+wazuh_client.py - a self-contained client for an on-premises Wazuh deployment.
 
 Two APIs live behind one Wazuh install and this client speaks both:
 
-  * Server (Manager) API   — HTTPS, default port 55000, JWT auth.
+  * Server (Manager) API   - HTTPS, default port 55000, JWT auth.
       Manage agents, rules, decoders, groups, manager config, cluster, RBAC.
-  * Indexer API            — HTTPS, default port 9200, OpenSearch REST + Query DSL.
+  * Indexer API            - HTTPS, default port 9200, OpenSearch REST + Query DSL.
       Search and aggregate alert/event data (wazuh-alerts-*, and in 5.x the
       per-category data streams).
 
@@ -64,7 +64,8 @@ except ImportError:
 try:
     from urllib3.exceptions import InsecureRequestWarning
     warnings.simplefilter("ignore", InsecureRequestWarning)
-except Exception:
+except ImportError:
+    # urllib3 not installed is fine - there is then no warning to silence.
     pass
 
 
@@ -110,7 +111,7 @@ class WazuhClient:
         self.indexer_user = indexer_user or os.environ.get("WAZUH_INDEXER_USER")
         self.indexer_password = indexer_password or os.environ.get("WAZUH_INDEXER_PASSWORD")
 
-        # Dashboard (OpenSearch Dashboards) — saved-objects import/export lives here,
+        # Dashboard (OpenSearch Dashboards) - saved-objects import/export lives here,
         # NOT on the Indexer. Port 443 by default. Credentials are a Dashboard *login*
         # (a UI user with saved-objects permission), distinct from the Indexer user.
         self.dashboard_url = (dashboard_url or os.environ.get(
@@ -197,7 +198,7 @@ class WazuhClient:
 
         inner = data.get("data") if isinstance(data, dict) else None
         if isinstance(inner, dict) and inner.get("total_failed_items", 0):
-            # Surface partial failures loudly — common on bulk agent operations.
+            # Surface partial failures loudly - common on bulk agent operations.
             print(
                 f"WARNING: {inner['total_failed_items']} item(s) failed: "
                 f"{json.dumps(inner.get('failed_items'))[:400]}",
@@ -303,7 +304,7 @@ class WazuhClient:
     #
     # Wazuh Dashboard is OpenSearch Dashboards. Visualizations/dashboards/index-patterns
     # are "saved objects" managed through the /api/saved_objects/* API on the DASHBOARD
-    # host (port 443) — a different host, port, auth, and content model from the Indexer.
+    # host (port 443) - a different host, port, auth, and content model from the Indexer.
     # Every write needs the `osd-xsrf` header or the Dashboard rejects it with a 400.
 
     def _dashboard_auth(self):
@@ -356,7 +357,7 @@ class WazuhClient:
 
         overwrite=True resolves conflicts by replacing existing objects (matches the
         UI's "Automatically overwrite conflicts"). create_new_copies generates fresh
-        IDs instead — mutually exclusive with overwrite. Returns the import summary,
+        IDs instead - mutually exclusive with overwrite. Returns the import summary,
         which reports successCount and any per-object errors (broken references show
         up here, the usual cause of a 404 when you later click the dashboard).
         """

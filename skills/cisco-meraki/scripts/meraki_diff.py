@@ -23,10 +23,23 @@ import json
 from collections import defaultdict
 from difflib import SequenceMatcher
 
-SECRET_KEYS = frozenset({
-    "psk", "secret", "sharedsecret", "passphrase", "password",
-    "privatekey", "authkey", "presharedkey", "radiussecret",
-})
+# Matched as SUBSTRINGS of the lowercased key, not exact names. An exact-match
+# list only redacts the field names someone thought of: Meraki ships
+# wpaPreSharedKey, ikePresharedKey, vpnSecret, radiusSecret and more, and a
+# denylist that misses one leaks it into a diff, a ticket, and a snapshot file.
+# Over-redacting makes a diff less informative; under-redacting publishes a
+# secret, so the bias goes one way.
+SECRET_SUBSTRINGS = (
+    "psk", "secret", "password", "passphrase", "credential",
+    "presharedkey", "privatekey", "authkey", "apikey", "accesskey",
+    "token", "passcode", "pin",
+)
+
+
+def is_secret_key(name):
+    """True when a config key's name suggests it carries a secret value."""
+    low = str(name).lower().replace("_", "").replace("-", "")
+    return any(marker in low for marker in SECRET_SUBSTRINGS)
 
 REDACTION = "***REDACTED***"
 
@@ -57,7 +70,7 @@ def redact_secrets(obj):
     """Deep copy with any secret-bearing value replaced."""
     if isinstance(obj, dict):
         return {
-            k: (REDACTION if k.lower() in SECRET_KEYS else redact_secrets(v))
+            k: (REDACTION if is_secret_key(k) else redact_secrets(v))
             for k, v in obj.items()
         }
     if isinstance(obj, list):

@@ -19,6 +19,7 @@ Usage:
 from __future__ import annotations
 
 import math
+import os
 import zipfile
 from datetime import datetime, timezone
 from xml.sax.saxutils import escape
@@ -393,7 +394,7 @@ class VisioDocument:
             '</Properties>'
         )
 
-    def save(self, path):
+    def save(self, path, overwrite=False):
         if not self.pages:
             raise ValueError("document has no pages")
         parts = {
@@ -409,6 +410,14 @@ class VisioDocument:
         }
         for i, p in enumerate(self.pages):
             parts[f"visio/pages/page{i + 1}.xml"] = p.contents_xml()
+
+        # zipfile "w" truncates. Pointing this at a hand-edited .vsdx would
+        # destroy it with no warning, and the tool would report success.
+        if os.path.exists(path) and not overwrite:
+            raise FileExistsError(
+                f"{path} already exists. Writing would replace it entirely - a "
+                f"hand-edited diagram would be lost. Pass --overwrite if that "
+                f"is what you want, or choose another output path.")
 
         with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
             # [Content_Types].xml must be the first entry in an OPC package.

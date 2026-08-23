@@ -20,15 +20,31 @@ Automate and query Cloudflare: DNS, zones, cache purge, firewall/WAF and ruleset
 3. **Figure out scope.** Almost every resource hangs off one of two prefixes:
    - **Zone-scoped**: `/zones/{zone_id}/...` (DNS records, cache, page rules, most WAF, SSL settings, DNSSEC).
    - **Account-scoped**: `/accounts/{account_id}/...` (Workers, R2, KV, Zero Trust, account rulesets, members).
-   Resolve a zone name -> `zone_id` and an account -> `account_id` with the helper (see below) before building calls.
+
+   **Set the ids in the environment and skip the lookup:**
+   ```bash
+   export CLOUDFLARE_ACCOUNT_ID=...   # dashboard -> the account -> id in the URL / sidebar
+   export CLOUDFLARE_ZONE_ID=...      # dashboard -> the zone -> Overview -> API section
+   ```
+   This is not a convenience. **A scoped token frequently cannot list `/accounts`
+   or `/zones` at all** - it returns 403, or an empty array, even when it has
+   full permission on the account you care about. So resolving an id by name
+   fails in a way that looks like a broken token and is not. Set the ids, and
+   nothing has to be enumerated.
+
+   Resolve by name only when the credential is allowed to enumerate:
+   `python scripts/cloudflare_client.py zone-id example.com`. With one visible
+   zone or account, the name can be omitted entirely.
 
 ## Helper script
 
 `scripts/cloudflare_client.py` is a self-contained Python client (stdlib only - no third-party packages) that handles both auth methods, the standard `{success, errors, messages, result, result_info}` envelope, offset (`page`/`per_page`) pagination, 429 backoff (Cloudflare does **not** send `Retry-After`, so it uses exponential backoff), and a read-only / dry-run guard for mutations. Use it instead of re-writing boilerplate:
 
 ```bash
-export CLOUDFLARE_API_TOKEN=xxxxx                 # scoped token (preferred), OR:
-# export CLOUDFLARE_EMAIL=you@corp.com CLOUDFLARE_API_KEY=global_key   # legacy
+export CLOUDFLARE_API_TOKEN=xxxxx                 # scoped token - use this
+export CLOUDFLARE_ACCOUNT_ID=xxxxx                # optional, skips a lookup a token may not be allowed
+export CLOUDFLARE_ZONE_ID=xxxxx                   # optional, same
+# export CLOUDFLARE_EMAIL=you@corp.com CLOUDFLARE_API_KEY=global_key   # legacy, root-equivalent, avoid
 
 python scripts/cloudflare_client.py verify                                   # token check
 python scripts/cloudflare_client.py zone-id example.com                      # name -> zone_id

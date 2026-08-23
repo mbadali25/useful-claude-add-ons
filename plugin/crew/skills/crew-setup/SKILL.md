@@ -92,7 +92,7 @@ CLAUDE.md                  # created if absent; if present, sections APPENDED, n
   "jira": { "project": null },
   "memory": { "mode": "repo", "vaultPath": null },
   "verifyGate": true,
-  "context": { "enabled": true, "warnAt": 0.8, "budgetTokens": 200000, "handoffPath": ".work/HANDOFF.md", "keepTranscripts": 5 },
+  "context": { "enabled": true, "warnAt": 0.8, "budgetTokens": null, "handoffPath": ".work/HANDOFF.md", "keepTranscripts": 5 },
   "notify": { "provider": "none", "urlEnv": null, "tokenEnv": null, "chatId": null, "events": ["phase", "gate", "waiting"] },
   "platform": { "os": null, "wsl": null, "shell": null, "windowsHostIp": null }
 }

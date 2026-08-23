@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""tg.py — minimal Telegram Bot API helpers (stdlib only). Shared by notify.py and notifyd.py."""
+"""tg.py - minimal Telegram Bot API helpers (stdlib only). Shared by notify.py and notifyd.py."""
 import json
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -26,15 +27,54 @@ class TgError(RuntimeError):
     pass
 
 
-def api(token, method, params=None, timeout=35):
+def api(token, method, params=None, timeout=35, retries=3):
+    """Call the Bot API. Every failure arrives as TgError.
+
+    urlopen raises HTTPError for 401/403/409/429 - which are ORDINARY Telegram
+    responses, not exceptional ones. Letting those escape means a rate limit or
+    an expired token takes the whole daemon down instead of failing one send,
+    and the caller only ever catches TgError. So they are translated here.
+    """
     url = f"https://api.telegram.org/bot{token}/{method}"
-    data = urllib.parse.urlencode({k: v for k, v in (params or {}).items() if v is not None}).encode()
-    req = urllib.request.Request(url, data=data)
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        out = json.loads(r.read().decode())
-    if not out.get("ok"):
-        raise TgError(out.get("description", f"{method} failed"))
-    return out.get("result")
+    data = urllib.parse.urlencode(
+        {k: v for k, v in (params or {}).items() if v is not None}).encode()
+
+    for attempt in range(retries + 1):
+        req = urllib.request.Request(url, data=data)
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                out = json.loads(r.read().decode())
+        except urllib.error.HTTPError as exc:
+            try:
+                out = json.loads(exc.read().decode())
+            except (ValueError, OSError):
+                raise TgError(f"{method} -> HTTP {exc.code}") from exc
+            desc = out.get("description", f"HTTP {exc.code}")
+            # 429 carries the wait in parameters.retry_after. Honour it once
+            # rather than hammering a chat that is already throttled.
+            retry_after = (out.get("parameters") or {}).get("retry_after")
+            # 'is not None', not truthiness: Telegram can send retry_after 0,
+            # and 0 is a valid instruction to retry immediately.
+            if exc.code == 429 and attempt < retries:
+                wait = float(retry_after) if retry_after is not None else 2 ** attempt
+                time.sleep(min(wait, 60.0))
+                continue
+            raise TgError(f"{method} -> {desc}") from exc
+        except urllib.error.URLError as exc:
+            if attempt < retries:
+                time.sleep(2 ** attempt)
+                continue
+            raise TgError(f"{method} -> network error: {exc.reason}") from exc
+        except (TimeoutError, OSError) as exc:
+            if attempt < retries:
+                time.sleep(2 ** attempt)
+                continue
+            raise TgError(f"{method} -> {exc}") from exc
+
+        if not out.get("ok"):
+            raise TgError(out.get("description", f"{method} failed"))
+        return out.get("result")
+    raise TgError(f"{method} failed after {retries + 1} attempts")
 
 
 def esc(s):
@@ -53,7 +93,7 @@ def header_for(subject, index, total):
     if total > 1:
         head = f"{head} ({index + 1}/{total})"
     if len(head) > MAX_HEADER:
-        head = head[:MAX_HEADER - 1] + "…"
+        head = head[:MAX_HEADER - 1] + "..."
     return f"<b>{head}</b>\n"
 
 

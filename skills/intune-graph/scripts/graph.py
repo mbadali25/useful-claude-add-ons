@@ -20,6 +20,7 @@ Library:
 """
 import argparse
 import json
+import os
 import sys
 import time
 
@@ -45,7 +46,7 @@ def _explain(resp):
 
     code = err.get("code", "")
     msg = err.get("message", "")
-    # Intune nests a JSON string inside .message — unwrap it if present.
+    # Intune nests a JSON string inside .message - unwrap it if present.
     inner = ""
     if isinstance(msg, str) and msg.strip().startswith("{"):
         try:
@@ -137,6 +138,55 @@ class GraphClient:
         return self.request("DELETE", path)
 
 
+# Actions with no undo. Intune queues these against real hardware: a wipe
+# reimages a user's laptop, a retire strips corporate data, a deleted
+# configuration policy stops applying to every device in its assignment. None
+# of them can be reversed from this tool, so none of them run from a one-liner.
+IRREVERSIBLE = (
+    "/wipe", "/retire", "/deleteuserfromsharedappledevice",
+    "/rebootnow", "/shutdown", "/resetpasscode", "/disable",
+    "/recoverypasswordrotation", "/revokeapplevpplicenses",
+    "/cleanwindowsdevice", "/windowsdefenderscan",
+)
+
+
+def check_mutation(method, path, assume_yes):
+    """Refuse an unsafe write, or ask. Returns nothing; raises to refuse.
+
+    Read-only by default is deliberate for a fleet-management API. The cost of
+    an accidental GET is nothing; the cost of an accidental wipe is somebody's
+    laptop.
+    """
+    if method == "GET":
+        return
+    if os.environ.get("INTUNE_READ_ONLY", "").lower() in ("1", "true", "yes"):
+        raise GraphError(
+            0, f"INTUNE_READ_ONLY is set - refusing {method} {path}. "
+               f"Unset it to allow writes.")
+
+    low = "/" + path.lower().lstrip("/")
+    hit = next((a for a in IRREVERSIBLE if a in low), None)
+    if hit:
+        raise GraphError(
+            0,
+            f"Refusing {method} {path}.\n"
+            f"'{hit.strip('/')}' cannot be undone from this tool - it acts on real "
+            f"hardware or strips data from it. Run it from the Intune portal, "
+            f"where the blast radius is shown and the action is logged against "
+            f"your name.")
+
+    if assume_yes:
+        return
+    if not sys.stdin.isatty():
+        raise GraphError(
+            0, f"Refusing {method} {path} - not a terminal, so there is nobody "
+               f"to confirm. Pass --yes if this is deliberate automation.")
+    print(f"\n{method} {path}", file=sys.stderr)
+    print("This writes to Intune and affects real devices.", file=sys.stderr)
+    if input("Type 'yes' to continue: ").strip().lower() != "yes":
+        raise GraphError(0, "Declined. Nothing sent.")
+
+
 def main():
     ap = argparse.ArgumentParser(description="Call a Microsoft Graph / Intune endpoint.")
     ap.add_argument("method", choices=["GET", "POST", "PATCH", "PUT", "DELETE"])
@@ -150,6 +200,8 @@ def main():
     ap.add_argument("--beta", action="store_true", help="use the beta endpoint")
     ap.add_argument("--mode", choices=["client_credentials", "device_code", "azure_cli"])
     ap.add_argument("--count-only", action="store_true", help="print only the number of results")
+    ap.add_argument("--yes", action="store_true",
+                    help="skip the confirmation prompt on a write")
     a = ap.parse_args()
 
     try:
@@ -162,6 +214,7 @@ def main():
                 return
             print(json.dumps(res, indent=2))
         else:
+            check_mutation(a.method, a.path, a.yes)
             body = json.loads(a.body) if a.body else None
             res = g.request(a.method, a.path, body=body)
             # 204 is the norm for Intune actions and means "queued", not "done".

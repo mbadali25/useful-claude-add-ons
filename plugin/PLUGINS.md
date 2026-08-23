@@ -41,7 +41,9 @@ A hook cannot be argued out of blocking `terraform apply`; an agent can. That is
 
 Three committed suites, all sabotage-tested: `hooks/scripts/_test/run-tests.sh` (50 cases across the three gates), `setup-walkthrough.sh` (32 cases running every setup-phase script against a real mixed-stack scratch repo), and `validate-prompts.py` (91 structural checks over the commands, agents and skills). What none of them proves is whether the prompts produce good work — that needs a live session on a real ticket, which is what setup Phase 7 is for.
 
-**The `Stop` gate is inert until you build its map.** `verify-gate.sh` reads `.crew/verify.json`; with no such file there is nothing to run. `/crew:verify` builds it. Set `verifyGate: false` in `.crew/config.json` to disable the gate without uninstalling.
+**Every hook is inert until the repository has `.crew/config.json`.** Installing the plugin arms nothing - `/crew:init` in a repo is what turns the gates on there. A gate firing in every repository you opened would be hostile, so this is deliberate; it does mean "installed it, nothing happened" is expected rather than broken.
+
+**The `Stop` gate is additionally inert until you build its map.** `verify-gate.sh` reads `.crew/verify.json`; with no such file there is nothing to run. `/crew:verify` builds it. Set `verifyGate: false` in `.crew/config.json` to disable the gate without uninstalling.
 
 **Windows dispatch — fixed in 0.2.0.** Previously only `PreToolUse` had a Windows branch, and it was registered with a `shell: powershell` field that Claude Code does not read. `guard.sh` and `verify-gate.sh` additionally exited 0 on MSYS/MINGW to "defer" to twins nothing invoked, so on Windows the command guard blocked nothing and the `Stop` gate ran nothing — which reads as "the gate passed" rather than "the gate never ran". The guard now dispatches on `tool_name` from inside the bash script, the other hooks simply do their work in bash, and `handoff-write.ps1` has been written. The remaining requirement on Windows is that **`bash` is on `PATH`** — Git Bash satisfies it. Without any bash at all, no hook fires; the plugin does not pretend otherwise.
 

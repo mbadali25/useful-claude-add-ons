@@ -28,7 +28,7 @@ def build_message(cfg: dict, subject: str, html_body: str, text_body: str,
     to = [a for a in (email_cfg.get("to") or []) if a]
     cc = [a for a in (email_cfg.get("cc") or []) if a]
     if not to:
-        raise WorkLogError("email.to is empty — nowhere to send the report.")
+        raise WorkLogError("email.to is empty - nowhere to send the report.")
     msg["To"] = ", ".join(to)
     if cc:
         msg["Cc"] = ", ".join(cc)
@@ -69,6 +69,21 @@ def send(cfg: dict, msg: EmailMessage) -> str:
     server = smtp_cfg["server"]
     port = int(smtp_cfg["port"])
     security = smtp_cfg.get("security", "starttls")
+    # Validate rather than fall through. The branch below is
+    # "ssl" -> SMTP_SSL, anything else -> plain SMTP, then starttls only when
+    # security == "starttls" exactly. So a typo like "tls" or "TLS" opens a
+    # cleartext socket and logs in over it, mailing the password in the clear
+    # with nothing reported. An unknown value must stop, not downgrade.
+    if security not in ("ssl", "starttls", "none"):
+        raise WorkLogError(
+            f"Unknown smtp.security value {security!r}. Use 'ssl' (implicit TLS, "
+            f"usually port 465), 'starttls' (usually 587), or 'none'. Anything "
+            f"else would silently send your password over an unencrypted "
+            f"connection.")
+    if security == "none" and smtp_cfg.get("auth", {}).get("enabled", True):
+        raise WorkLogError(
+            "smtp.security is 'none' but auth is enabled - that mails the "
+            "password in cleartext. Use starttls or ssl, or disable auth.")
     timeout = int(smtp_cfg.get("timeout_seconds", 30))
     auth = smtp_cfg.get("auth", {})
     to_all = recipients(cfg)

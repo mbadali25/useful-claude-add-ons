@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """
-manager_config.py — safe SSH-based editor for the Wazuh manager's ossec.conf.
+manager_config.py - safe SSH-based editor for the Wazuh manager's ossec.conf.
 
 Unlike wazuh_client.py (HTTP calls to the Server/Indexer/Dashboard APIs), this
 talks to the manager host directly over SSH, because integrations, active
 response, and log-source modules (office365, ms-graph, aws-s3, custom wodles)
-are all configured in /var/ossec/etc/ossec.conf on disk — there is no API for
+are all configured in /var/ossec/etc/ossec.conf on disk - there is no API for
 most of this on-prem.
 
 IMPORTANT: this shells out to the local `ssh`/`scp` binaries. It only works if
 the manager host is reachable from wherever this script runs and an SSH key is
 authorized. In a sandboxed/agent environment with no route to the on-prem
-network, these calls will simply fail to connect — that's expected; run the
+network, these calls will simply fail to connect - that's expected; run the
 script from a host that has network access to the manager (or copy it there).
 
 Every write follows the same flow: backup -> candidate -> xmllint -> apply
@@ -37,9 +37,26 @@ Usage:
 import argparse
 import difflib
 import os
+import tempfile
+import uuid
 import subprocess
 import sys
 import time
+
+def _scratch_path(kind):
+    """A per-run scratch path, local and remote.
+
+    These were hardcoded as /tmp/_wazuh_<kind>_ossec.conf. Two apply or diff
+    runs at once - two operators, or one operator running a second config
+    before the first cleaned up - would clobber each other's candidate file
+    mid-flight, and the second run would install the first run's config. A
+    fixed /tmp path also does not exist on native Windows.
+    """
+    return os.path.join(
+        tempfile.gettempdir(),
+        f"_wazuh_{kind}_{os.getpid()}_{uuid.uuid4().hex[:8]}_ossec.conf",
+    ).replace("\\", "/")
+
 
 DEFAULT_CONF_PATH = "/var/ossec/etc/ossec.conf"
 
@@ -75,7 +92,7 @@ def _scp_base(key, port):
 
 def run_remote(host, user, key, port, remote_cmd, check=True):
     """Run a command on the manager over SSH. remote_cmd is a shell string
-    (built carefully by callers — no untrusted interpolation)."""
+    (built carefully by callers - no untrusted interpolation)."""
     full = _ssh_base(host, user, key, port) + [remote_cmd]
     result = subprocess.run(full, capture_output=True, text=True, check=False)
     if check and result.returncode != 0:
@@ -104,7 +121,7 @@ def insert_block(current_xml, block_xml, anchor=None):
     """Insert `block_xml` into `current_xml`.
 
     Default: insert just before the closing </ossec_config> tag (the safe,
-    generic anchor — every valid ossec.conf has exactly one). If `anchor` is
+    generic anchor - every valid ossec.conf has exactly one). If `anchor` is
     given (a tag name, e.g. "integration"), insert after the LAST occurrence
     of that tag's closing tag instead, so related blocks stay grouped.
     """
@@ -115,14 +132,14 @@ def insert_block(current_xml, block_xml, anchor=None):
         if idx == -1:
             raise ValueError(
                 f"Anchor </{anchor}> not found in current config; "
-                "falling back to end-of-file insertion is safer — omit --anchor."
+                "falling back to end-of-file insertion is safer - omit --anchor."
             )
         insert_at = idx + len(needle)
         return current_xml[:insert_at] + "\n\n  " + block_xml + current_xml[insert_at:]
     needle = "</ossec_config>"
     idx = current_xml.rfind(needle)
     if idx == -1:
-        raise ValueError("No </ossec_config> closing tag found — is this a valid ossec.conf?")
+        raise ValueError("No </ossec_config> closing tag found - is this a valid ossec.conf?")
     return current_xml[:idx] + "\n  " + block_xml + "\n" + current_xml[idx:]
 
 
@@ -134,7 +151,7 @@ def cmd_fetch(args):
 
 def cmd_diff(args):
     host, user, key, port, conf_path = cfg()
-    tmp_current = "/tmp/_wazuh_current_ossec.conf"
+    tmp_current = _scratch_path("current")
     scp_down(host, user, key, port, conf_path, tmp_current)
     with open(tmp_current, encoding="utf-8") as f:
         current = f.read()
@@ -159,7 +176,7 @@ def cmd_apply(args):
     run_remote(host, user, key, port, f"sudo cp {conf_path} {backup_path}")
 
     print("2/6 Fetching current config", file=sys.stderr)
-    tmp_current = "/tmp/_wazuh_current_ossec.conf"
+    tmp_current = _scratch_path("current")
     scp_down(host, user, key, port, conf_path, tmp_current)
     with open(tmp_current, encoding="utf-8") as f:
         current = f.read()
@@ -168,16 +185,16 @@ def cmd_apply(args):
     with open(args.block, encoding="utf-8") as f:
         block = f.read()
     candidate = insert_block(current, block, anchor=args.anchor)
-    tmp_candidate = "/tmp/_wazuh_candidate_ossec.conf"
+    tmp_candidate = _scratch_path("candidate")
     with open(tmp_candidate, "w", encoding="utf-8") as f:
         f.write(candidate)
 
     print("4/6 Uploading candidate and checking XML well-formedness", file=sys.stderr)
-    remote_candidate = "/tmp/_wazuh_candidate_ossec.conf"
+    remote_candidate = _scratch_path("candidate")
     scp_up(host, user, key, port, tmp_candidate, remote_candidate)
     xml_check = run_remote(host, user, key, port, f"xmllint --noout {remote_candidate}", check=False)
     if xml_check.returncode != 0:
-        sys.exit(f"ABORTED — candidate is not well-formed XML, nothing was touched:\n{xml_check.stderr}")
+        sys.exit(f"ABORTED - candidate is not well-formed XML, nothing was touched:\n{xml_check.stderr}")
 
     print("5/6 Installing candidate and running Wazuh config test", file=sys.stderr)
     run_remote(host, user, key, port, f"sudo cp {remote_candidate} {conf_path}")
@@ -189,7 +206,7 @@ def cmd_apply(args):
     if test.returncode != 0:
         print(f"Config test FAILED, rolling back:\n{test.stdout}{test.stderr}", file=sys.stderr)
         run_remote(host, user, key, port, f"sudo cp {backup_path} {conf_path}")
-        sys.exit("ROLLED BACK — the candidate config failed wazuh-analysisd -t. Backup restored.")
+        sys.exit("ROLLED BACK - the candidate config failed wazuh-analysisd -t. Backup restored.")
 
     print("6/6 Config test passed.", file=sys.stderr)
     if args.restart:

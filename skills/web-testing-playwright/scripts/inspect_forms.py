@@ -3,7 +3,7 @@
 
 Run this before writing form-filling code so the selectors come from the real
 rendered DOM rather than from guesswork or from source that may not match what
-ships. Also flags accessibility problems that will bite you later — an input
+ships. Also flags accessibility problems that will bite you later - an input
 with no label is both an a11y bug and an unstable thing to target.
 
     python3 inspect_forms.py https://example.com/signup
@@ -94,7 +94,7 @@ EXTRACT_JS = r"""
 
   const CONTROLS = 'input, select, textarea, [contenteditable="true"]';
   const BUTTONS = 'button, input[type=submit], input[type=button], input[type=reset], [role=button]';
-  // input[type=submit] etc. match CONTROLS too — they belong under buttons, not fields.
+  // input[type=submit] etc. match CONTROLS too - they belong under buttons, not fields.
   const NON_FIELD = new Set(['hidden', 'submit', 'button', 'reset', 'image']);
   const isField = (el) => !NON_FIELD.has((el.type || '').toLowerCase());
 
@@ -159,7 +159,7 @@ def suggest_locator(f):
         return f'page.get_by_placeholder("{q(f["placeholder"])}")'
     role = ROLE_BY_TYPE.get(f["type"])
     if role and f.get("name"):
-        return f'page.locator("{f["tag"]}[name=\'{f["name"]}\']")  # no label — role lookup needs a name'
+        return f'page.locator("{f["tag"]}[name=\'{f["name"]}\']")  # no label - role lookup needs a name'
     if f.get("name"):
         return f'page.locator("{f["tag"]}[name=\'{q(f["name"])}\']")'
     if f.get("id"):
@@ -199,7 +199,7 @@ def render_field(f, indent="    "):
 
     ident = f["name"] or f["id"] or f.get("testid") or "(anonymous)"
     lines = [f"{indent}{f['type']:<10} {ident}{flagstr}"]
-    lines.append(f"{indent}  label     : {f['label'] or '** NONE — a11y issue **'}")
+    lines.append(f"{indent}  label     : {f['label'] or '** NONE - a11y issue **'}")
     if f.get("value"):
         lines.append(f"{indent}  value     : {f['value']}")
     if f.get("options"):
@@ -259,7 +259,7 @@ def main():
         print(json.dumps(data, indent=2))
         return 0
 
-    print(f"\n{data['title']!r}  —  {data['url']}")
+    print(f"\n{data['title']!r}  -  {data['url']}")
     print(f"{len(data['forms'])} <form> element(s), "
           f"{len(data['orphans'])} control(s) outside any form\n")
 
@@ -301,7 +301,7 @@ def main():
     unlabeled += [f for f in data["orphans"] if not f["label"]]
     if unlabeled:
         print(f"NOTE: {len(unlabeled)} control(s) have no accessible label. "
-              "That's an accessibility bug and it forces brittle selectors — "
+              "That's an accessibility bug and it forces brittle selectors - "
               "worth reporting to the user.")
     return 0
 

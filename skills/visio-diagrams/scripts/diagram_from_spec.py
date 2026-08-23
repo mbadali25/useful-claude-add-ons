@@ -242,12 +242,14 @@ def main():
     ap.add_argument("spec")
     ap.add_argument("-o", "--output", default=None)
     ap.add_argument("--no-preview", action="store_true")
+    ap.add_argument("--overwrite", action="store_true",
+                    help="replace the output file if it already exists")
     a = ap.parse_args()
 
     sp = Path(a.spec)
     doc, page = build(load_spec(sp))
     out = Path(a.output) if a.output else sp.with_suffix(".vsdx")
-    doc.save(out)
+    doc.save(out, overwrite=a.overwrite)
     print(f"vsdx    : {out}  ({len(page.shapes)} shapes, {len(page.connectors)} connectors)")
     if not a.no_preview:
         prev = out.with_suffix(".svg")

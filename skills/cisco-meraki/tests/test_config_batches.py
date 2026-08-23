@@ -148,35 +148,96 @@ class TestBatchCommit(unittest.TestCase):
     def test_confirms_then_polls_to_completion(self):
         tool, calls = self._tool([
             ok([{"id": "111"}]),
+            ok({"id": "B1",
+                "actions": [{"operation": "update",
+                             "resource": "/networks/N1/vlans/10"}],
+                "status": {"completed": False, "failed": False}}),
             ok({"id": "B1", "status": {"completed": False, "failed": False}}),
             ok({"id": "B1", "status": {"completed": False, "failed": False}}),
             ok({"id": "B1", "status": {"completed": True, "failed": False,
                                        "errors": []}}),
         ])
 
-        result = tool.batch_commit("B1", poll_interval=0, timeout=30)
+        result = tool.batch_commit("B1", lambda text: True,
+                                   poll_interval=0, timeout=30)
 
         self.assertTrue(result["status"]["completed"])
-        self.assertEqual(calls[1][0], "PUT")
-        self.assertIs(json.loads(calls[1][2].decode())["confirmed"], True)
+        # calls: [0] GET /organizations, [1] GET the batch (to show it), [2] PUT
+        self.assertEqual(calls[2][0], "PUT")
+        self.assertIs(json.loads(calls[2][2].decode())["confirmed"], True)
+
+    def test_declining_commits_nothing(self):
+        """The gate is the point: a no must reach the API as no PUT at all."""
+        tool, calls = self._tool([
+            ok([{"id": "111"}]),
+            ok({"id": "B1",
+                "actions": [{"operation": "update",
+                             "resource": "/networks/N1/vlans/10"}],
+                "status": {"completed": False, "failed": False}}),
+        ])
+        with self.assertRaises(MerakiError):
+            tool.batch_commit("B1", lambda text: False,
+                              poll_interval=0, timeout=30)
+        self.assertNotIn("PUT", [c[0] for c in calls])
+
+    def test_confirmation_names_the_destructive_count(self):
+        """A batch that destroys must say so before anyone can agree to it."""
+        seen = {}
+        tool, _ = self._tool([
+            ok([{"id": "111"}]),
+            ok({"id": "B1",
+                "actions": [{"operation": "destroy", "resource": "/networks/N1"},
+                            {"operation": "update", "resource": "/networks/N2"}],
+                "status": {"completed": False, "failed": False}}),
+            ok({}),  # the PUT
+            ok({"id": "B1", "status": {"completed": True, "failed": False,
+                                       "errors": []}}),
+        ])
+        tool.batch_commit("B1",
+                          lambda text: seen.setdefault("text", text) or True,
+                          poll_interval=0, timeout=30)
+        self.assertIn("1 destructive", seen["text"])
+        self.assertIn("DESTROY", seen["text"])
+
+    def test_an_empty_batch_is_refused_before_any_write(self):
+        tool, calls = self._tool([
+            ok([{"id": "111"}]),
+            ok({"id": "B1", "actions": [],
+                "status": {"completed": False, "failed": False}}),
+        ])
+        with self.assertRaises(MerakiError) as ctx:
+            tool.batch_commit("B1", lambda text: True,
+                              poll_interval=0, timeout=30)
+        self.assertIn("no actions", str(ctx.exception).lower())
+        self.assertNotIn("PUT", [c[0] for c in calls])
 
     def test_failed_batch_raises_with_the_server_errors(self):
         tool, _ = self._tool([
             ok([{"id": "111"}]),
+            ok({"id": "B1",
+                "actions": [{"operation": "update",
+                             "resource": "/networks/N1/vlans/10"}],
+                "status": {"completed": False, "failed": False}}),
             ok({"id": "B1", "status": {"completed": False, "failed": False}}),
             ok({"id": "B1", "status": {"completed": False, "failed": True,
                                        "errors": ["vlan 10 not found"]}}),
         ])
         with self.assertRaises(MerakiError) as ctx:
-            tool.batch_commit("B1", poll_interval=0, timeout=30)
+            tool.batch_commit("B1", lambda text: True,
+                              poll_interval=0, timeout=30)
         self.assertIn("vlan 10 not found", str(ctx.exception))
 
     def test_timeout_raises_and_names_the_batch_id(self):
         stuck = [ok({"id": "B1", "status": {"completed": False,
                                             "failed": False}})] * 40
-        tool, _ = self._tool([ok([{"id": "111"}])] + stuck)
+        batch = ok({"id": "B1",
+                    "actions": [{"operation": "update",
+                                 "resource": "/networks/N1/vlans/10"}],
+                    "status": {"completed": False, "failed": False}})
+        tool, _ = self._tool([ok([{"id": "111"}]), batch] + stuck)
         with self.assertRaises(MerakiError) as ctx:
-            tool.batch_commit("B1", poll_interval=0, timeout=0)
+            tool.batch_commit("B1", lambda text: True,
+                              poll_interval=0, timeout=0)
         self.assertIn("B1", str(ctx.exception))
 
 

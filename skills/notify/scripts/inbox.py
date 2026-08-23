@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-inbox.py — the inbound half of two-way notify.
+inbox.py - the inbound half of two-way notify.
 
 `notify.py --wait` already handles the *solicited* direction: ask a question, block,
 take the answer. What it never had was the unsolicited one. A message you send the bot
