@@ -597,7 +597,7 @@ Everything reads `.crew/config.json`:
   "context": {
     "enabled": true,
     "warnAt": 0.8,
-    "budgetTokens": 200000,
+    "budgetTokens": null,
     "handoffPath": ".work/HANDOFF.md"
   },
   "notify": {
@@ -622,7 +622,7 @@ omit the block and assume.
 | `verifyGate` | `true`, `false` | Whether the `Stop` hook blocks on failed checks. Set `false` only while first building the harness. |
 | `context.enabled` | `true`, `false` | The `Stop` context watch. **Absent block = off.** |
 | `context.warnAt` | `0.0`–`1.0` | Fraction of budget at which the handoff is requested. Default `0.8`. |
-| `context.budgetTokens` | integer | Your real window. Calibrate once against `/context`; the estimate is from transcript bytes, not a token count. |
+| `context.budgetTokens` | integer or `null` | `null` (the default) works the window out from the model id and this session's own peak usage. Set a number to pin it. |
 | `context.handoffPath` | path | Where the handoff note lives. Default `.work/HANDOFF.md`. |
 | `notify.provider` | `teams`, `telegram`, `none` | Outbound notifications. **Absent block = off.** Credentials come from env vars, never config. |
 | `notify.events` | subset of `phase`, `gate`, `review`, `waiting`, `done` | Which events send. Empty or absent sends everything; a channel that pings constantly gets muted within a week. |
@@ -1331,6 +1331,13 @@ Most legacy repos have a deploy script and no post-deploy proof at all. Build it
 | `handoff-write.sh` | `PreCompact` | Snapshots the transcript, writes a skeleton handoff |
 | `handoff-read.sh` | `SessionStart` | Injects the handoff after clear, compact, or resume |
 | `notify.sh` | `Notification`, plus called by commands | Outbound one-line message to Teams or Telegram. Never reads. |
+
+**Every hook is inert until a repository has `.crew/config.json`.** Installing the
+plugin arms nothing; `/crew:init` in a given repo is what turns the gates on there.
+That is deliberate - a gate that fired in every repository you opened would be
+hostile - but it does mean "I installed crew and nothing happened" is the expected
+first experience, not a fault. Check with `ls .crew/` before concluding a hook is
+broken.
 
 Hooks are deterministic. That is their whole value — a hook cannot be argued out of blocking `terraform apply`, and an agent can.
 
