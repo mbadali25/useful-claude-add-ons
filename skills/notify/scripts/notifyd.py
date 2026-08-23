@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-notifyd.py — the notify dispatcher. One process owns the single Telegram poller so
+notifyd.py - the notify dispatcher. One process owns the single Telegram poller so
 any number of concurrent jobs can ask questions without fighting over getUpdates.
 
 Modes (config.telegram.mode):

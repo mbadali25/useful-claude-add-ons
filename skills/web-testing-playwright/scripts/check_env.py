@@ -138,7 +138,7 @@ def recommendations(info):
             elif "choco" in info["package_managers"]:
                 cmd = "choco install nodejs-lts -y   (needs an elevated shell)"
             else:
-                cmd = "No winget or choco found — see references/setup-windows.md"
+                cmd = "No winget or choco found - see references/setup-windows.md"
             recs.append(("Node.js (optional)", "only if you want @playwright/test", cmd))
         else:
             recs.append(
@@ -165,7 +165,7 @@ def recommendations(info):
 
     if system == "Linux" and not info["display"] and not info["wsl"]:
         recs.append(
-            ("Headed mode (optional)", "no DISPLAY detected — headless works fine as-is",
+            ("Headed mode (optional)", "no DISPLAY detected - headless works fine as-is",
              "install xvfb and prefix commands with: xvfb-run -a")
         )
 
@@ -196,9 +196,9 @@ def render(info):
     if not recs:
         lines.append("Ready to go. Try: python3 scripts/audit_page.py https://example.com")
     else:
-        lines.append("Missing pieces — ASK THE USER before running any of these:")
+        lines.append("Missing pieces - ASK THE USER before running any of these:")
         for what, why, cmd in recs:
-            lines.append(f"\n  {what}  — {why}")
+            lines.append(f"\n  {what}  - {why}")
             lines.append(f"      {cmd}")
         guide = "setup-windows.md" if info["os"] == "Windows" else "setup-linux.md"
         lines.append(f"\n  Full instructions: references/{guide}")

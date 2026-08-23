@@ -2,7 +2,7 @@
 the detailed PDF attachment.
 
 The split of responsibility matters and is intentional. The email body carries
-the *high level* story — what got done, where, and roughly when — so a manager
+the *high level* story - what got done, where, and roughly when - so a manager
 can read it on a phone in fifteen seconds without opening anything. The PDF
 carries the full record, including per-entry detail prose and the exact
 commands run, for the reader who wants to audit it.
@@ -51,14 +51,21 @@ FONT = ("-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',"
 MONO = "ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace"
 
 
+# strftime's no-pad modifier is platform-specific: "%-I" is glibc, "%#I" is
+# Windows, and the wrong one raises ValueError rather than degrading. Build the
+# unpadded parts in Python so the same code renders on every machine.
 def _time(value: str | None) -> str:
     dt = parse_iso(value)
-    return dt.strftime("%-I:%M %p") if dt else ""
+    if not dt:
+        return ""
+    return f"{dt.hour % 12 or 12}:{dt:%M %p}"
 
 
 def _day(value: str | None) -> str:
     dt = parse_iso(value)
-    return dt.strftime("%a %b %-d") if dt else ""
+    if not dt:
+        return ""
+    return f"{dt:%a %b} {dt.day}"
 
 
 def _duration(session: dict) -> str:
@@ -119,7 +126,7 @@ def _status_badge(status: str) -> str:
 
     A blocked or in-progress item is the single most actionable thing in a
     report, so it has to be visible in the email body rather than only in the
-    attachment. 'done' gets no badge — marking the normal case just adds noise.
+    attachment. 'done' gets no badge - marking the normal case just adds noise.
     """
     if not status or status == "done":
         return ""
@@ -142,7 +149,7 @@ def _session_card(session: dict, last: bool) -> str:
         f'<td style="font-family:{FONT};font-size:14px;line-height:21px;'
         f'color:#344054;padding-bottom:7px;">{escape(e.get("summary", ""))}'
         + _status_badge(e.get("status", ""))
-        + (f'<span style="color:{MUTED};font-size:12px;"> · '
+        + (f'<span style="color:{MUTED};font-size:12px;"> | '
            f'{escape(_time(e.get("timestamp")))}</span>' if _time(e.get("timestamp")) else "")
         + "</td></tr>"
         for e in entries
@@ -160,10 +167,10 @@ def _session_card(session: dict, last: bool) -> str:
         f'{chip_rows}</table></td></tr>'
     ) if chip_rows else ""
 
-    window = " – ".join(x for x in [_time(session.get("started_at")),
+    window = " - ".join(x for x in [_time(session.get("started_at")),
                                     _time(session.get("ended_at"))] if x)
     duration = _duration(session)
-    meta = " · ".join(x for x in [_day(session.get("started_at")), window, duration] if x)
+    meta = " | ".join(x for x in [_day(session.get("started_at")), window, duration] if x)
 
     summary_line = (
         f'<tr><td style="font-family:{FONT};font-size:14px;line-height:21px;'
@@ -194,7 +201,7 @@ def render_email_html(sessions: list[dict], cfg: dict, *,
     agg = aggregate(sessions)
     project = cfg["project"].get("name") or "Work Log"
     env = cfg["project"].get("environment")
-    eyebrow = f"{project} · {env}" if env else project
+    eyebrow = f"{project} | {env}" if env else project
 
     cards = "".join(
         _session_card(s, last=i == len(sessions) - 1)
@@ -237,7 +244,7 @@ def render_email_html(sessions: list[dict], cfg: dict, *,
     return f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{escape(project)} — Work Log Report</title></head>
+<title>{escape(project)} - Work Log Report</title></head>
 <body style="margin:0;padding:0;background:{CANVAS};">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
  style="background:{CANVAS};">
@@ -284,7 +291,7 @@ def render_email_text(sessions: list[dict], cfg: dict, *,
     agg = aggregate(sessions)
     project = cfg["project"].get("name") or "Work Log"
     lines = [
-        f"{project} — Work Log Report",
+        f"{project} - Work Log Report",
         date_range_label(agg),
         "=" * 60,
         "",
@@ -292,7 +299,7 @@ def render_email_text(sessions: list[dict], cfg: dict, *,
     if headline:
         lines += [headline, ""]
     lines.append(
-        f"{agg['session_count']} session(s) · {agg['entry_count']} items of work"
+        f"{agg['session_count']} session(s) | {agg['entry_count']} items of work"
     )
     lines.append("")
 
@@ -314,7 +321,7 @@ def render_email_text(sessions: list[dict], cfg: dict, *,
         lines.append("")
 
     if has_attachment:
-        lines.append("Full detail — including per-entry notes and commands run — "
+        lines.append("Full detail - including per-entry notes and commands run - "
                      "is in the attached PDF.")
     return "\n".join(lines)
 
@@ -397,10 +404,10 @@ def render_pdf(sessions: list[dict], cfg: dict, out_path: Path, *,
 
     story: list = []
     story.append(Paragraph(escape(project.upper()), styles["eyebrow"]))
-    story.append(Paragraph("Work Log — Detailed Report", styles["title"]))
+    story.append(Paragraph("Work Log - Detailed Report", styles["title"]))
     story.append(Paragraph(
-        f"{escape(date_range_label(agg))} &nbsp;·&nbsp; "
-        f"{agg['session_count']} session(s) &nbsp;·&nbsp; "
+        f"{escape(date_range_label(agg))} &nbsp;|&nbsp; "
+        f"{agg['session_count']} session(s) &nbsp;|&nbsp; "
         f"{agg['entry_count']} items of work", styles["sub"]))
     story.append(HRFlowable(width="100%", thickness=1, color=rule, spaceAfter=14))
 
@@ -420,9 +427,9 @@ def render_pdf(sessions: list[dict], cfg: dict, out_path: Path, *,
 
     for index, session in enumerate(sessions):
         story.append(PageBreak() if index or scope_pairs else Spacer(1, 4))
-        window = " – ".join(x for x in [_time(session.get("started_at")),
+        window = " - ".join(x for x in [_time(session.get("started_at")),
                                         _time(session.get("ended_at"))] if x)
-        meta = " · ".join(x for x in [
+        meta = " | ".join(x for x in [
             session["session_id"], _day(session.get("started_at")),
             window, _duration(session)] if x)
 
@@ -440,7 +447,7 @@ def render_pdf(sessions: list[dict], cfg: dict, out_path: Path, *,
                 f'{escape(entry.get("summary", ""))}', styles["entry"])]
             stamp = _time(entry.get("timestamp"))
             status = entry.get("status", "")
-            tag = " · ".join(x for x in [stamp, status] if x)
+            tag = " | ".join(x for x in [stamp, status] if x)
             if tag:
                 block.append(Paragraph(escape(tag), styles["meta"]))
             if entry.get("detail"):
@@ -463,7 +470,7 @@ def render_pdf(sessions: list[dict], cfg: dict, out_path: Path, *,
         canvas.setFont("Helvetica", 7.5)
         canvas.setFillColor(muted)
         canvas.drawString(0.75 * inch, 0.5 * inch,
-                          f"{project} — work log detail")
+                          f"{project} - work log detail")
         canvas.drawRightString(letter[0] - 0.75 * inch, 0.5 * inch,
                                f"Page {doc.page}")
         canvas.setStrokeColor(rule)
@@ -476,7 +483,7 @@ def render_pdf(sessions: list[dict], cfg: dict, out_path: Path, *,
         str(out_path), pagesize=letter,
         leftMargin=0.75 * inch, rightMargin=0.75 * inch,
         topMargin=0.75 * inch, bottomMargin=0.85 * inch,
-        title=f"{project} — Work Log Detail", author="work-log-reporter",
+        title=f"{project} - Work Log Detail", author="work-log-reporter",
     )
     doc.build(story, onFirstPage=footer, onLaterPages=footer)
     return out_path

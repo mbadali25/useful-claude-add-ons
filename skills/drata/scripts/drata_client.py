@@ -199,7 +199,7 @@ class DrataClient:
                 return {"endpoint": path, "result": self.get(path)}
             except SystemExit:
                 continue
-        raise SystemExit("Could not reach any identity endpoint — check key, scope, and region.")
+        raise SystemExit("Could not reach any identity endpoint - check key, scope, and region.")
 
     def get_all(self, path, params=None, max_pages=1000):
         """Yield every record across all pages.

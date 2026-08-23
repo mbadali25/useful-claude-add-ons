@@ -140,7 +140,7 @@ def build(repo: Path, rev_range: str, limit: int, keep_noise: bool):
 
 def render(grouped, skipped, total, rev_range, show_sha) -> str:
     out = ["## [Unreleased]", ""]
-    out.insert(0, f"<!-- draft from `git log {rev_range}` — {total} commits examined; "
+    out.insert(0, f"<!-- draft from `git log {rev_range}` - {total} commits examined; "
                   f"rewrite in user-facing language before committing -->")
     any_entries = False
     for category in CATEGORIES:
@@ -163,7 +163,7 @@ def render(grouped, skipped, total, rev_range, show_sha) -> str:
         for e in skipped[:25]:
             out.append(f"     {e['sha']} {e['original'][:90]}")
         if len(skipped) > 25:
-            out.append(f"     … {len(skipped)-25} more")
+            out.append(f"     ... {len(skipped)-25} more")
         out.append("-->")
     return "\n".join(out)
 

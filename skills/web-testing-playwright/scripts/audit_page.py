@@ -46,7 +46,7 @@ def parse_viewports(spec):
             w, h = chunk.lower().split("x")
             out.append({"width": int(w), "height": int(h)})
         except ValueError:
-            sys.exit(f"Bad viewport {chunk!r} — expected WIDTHxHEIGHT, e.g. 1280x800")
+            sys.exit(f"Bad viewport {chunk!r} - expected WIDTHxHEIGHT, e.g. 1280x800")
     return out
 
 
@@ -239,7 +239,7 @@ def main():
             lambda c: f"{c['text'][:180]}  [{c['source']}]")
     section("Console warnings", warnings, lambda c: c["text"][:180])
     section("Failed requests", report["failed_requests"],
-            lambda r: f"{r['method']} {r['url'][:140]} — {r['failure']}")
+            lambda r: f"{r['method']} {r['url'][:140]} - {r['failure']}")
     section("HTTP >= 400", report["bad_responses"],
             lambda r: f"{r['status']} {r['url'][:140]}")
     section("Slow requests", report["slow_requests"],

@@ -28,7 +28,7 @@ def build_message(cfg: dict, subject: str, html_body: str, text_body: str,
     to = [a for a in (email_cfg.get("to") or []) if a]
     cc = [a for a in (email_cfg.get("cc") or []) if a]
     if not to:
-        raise WorkLogError("email.to is empty — nowhere to send the report.")
+        raise WorkLogError("email.to is empty - nowhere to send the report.")
     msg["To"] = ", ".join(to)
     if cc:
         msg["Cc"] = ", ".join(cc)

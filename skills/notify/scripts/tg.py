@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""tg.py — minimal Telegram Bot API helpers (stdlib only). Shared by notify.py and notifyd.py."""
+"""tg.py - minimal Telegram Bot API helpers (stdlib only). Shared by notify.py and notifyd.py."""
 import json
 import time
 import urllib.parse
@@ -53,7 +53,7 @@ def header_for(subject, index, total):
     if total > 1:
         head = f"{head} ({index + 1}/{total})"
     if len(head) > MAX_HEADER:
-        head = head[:MAX_HEADER - 1] + "…"
+        head = head[:MAX_HEADER - 1] + "..."
     return f"<b>{head}</b>\n"
 
 

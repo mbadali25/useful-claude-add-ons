@@ -45,7 +45,7 @@ def _explain(resp):
 
     code = err.get("code", "")
     msg = err.get("message", "")
-    # Intune nests a JSON string inside .message — unwrap it if present.
+    # Intune nests a JSON string inside .message - unwrap it if present.
     inner = ""
     if isinstance(msg, str) and msg.strip().startswith("{"):
         try:

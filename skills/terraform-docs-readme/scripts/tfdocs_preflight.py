@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Preflight checks for `terraform-docs .` — reports state, changes nothing.
+"""Preflight checks for `terraform-docs .` - reports state, changes nothing.
 
 Verifies that the binary exists, that its version satisfies both the repo's
 .tool-versions pin and the minimum the config file actually requires, and that
@@ -12,7 +12,7 @@ Usage:
 
 Exit codes:
     0  ready to run
-    1  blocked — at least one FAIL
+    1  blocked - at least one FAIL
 """
 
 from __future__ import annotations
@@ -117,7 +117,7 @@ def main() -> int:
         print(f"FAIL  {module_dir} is not a directory")
         return 1
 
-    print(f"terraform-docs preflight — {module_dir}\n")
+    print(f"terraform-docs preflight - {module_dir}\n")
 
     # --- config -----------------------------------------------------------
     cfg_path = find_config(module_dir)
@@ -129,7 +129,7 @@ def main() -> int:
         record("PASS", "config", rel)
         cfg = load_config(cfg_path)
         if not cfg.get("formatter"):
-            record("FAIL", "formatter", "not set — bare `terraform-docs .` needs it")
+            record("FAIL", "formatter", "not set - bare `terraform-docs .` needs it")
 
     needs_modern = bool(cfg.get("footer-from")) or ".Module" in (cfg.get("content") or "")
     required_min = MODERN_FEATURES_MIN if needs_modern else BASELINE_MIN
@@ -138,7 +138,7 @@ def main() -> int:
     exe = shutil.which("terraform-docs")
     installed = None
     if not exe:
-        record("FAIL", "terraform-docs", "not on PATH — see references/install.md")
+        record("FAIL", "terraform-docs", "not on PATH - see references/install.md")
     else:
         try:
             out = subprocess.run(
@@ -162,14 +162,14 @@ def main() -> int:
     # --- .tool-versions pin ----------------------------------------------
     pinned, tv_path = read_tool_versions(module_dir)
     if tv_path is None:
-        record("WARN", ".tool-versions", "not found — version is unpinned")
+        record("WARN", ".tool-versions", "not found - version is unpinned")
     elif pinned is None:
         record("WARN", ".tool-versions", f"{tv_path} has no terraform-docs line")
     elif pinned < required_min:
         record(
             "FAIL",
             ".tool-versions",
-            f"pins {fmt(pinned)}, config requires >= {fmt(required_min)} — bump the pin",
+            f"pins {fmt(pinned)}, config requires >= {fmt(required_min)} - bump the pin",
         )
     else:
         record("PASS", ".tool-versions", f"pins {fmt(pinned)}")
@@ -177,7 +177,7 @@ def main() -> int:
             record(
                 "WARN",
                 "pin drift",
-                f"running {fmt(installed)} but pinned {fmt(pinned)} — run `asdf install`",
+                f"running {fmt(installed)} but pinned {fmt(pinned)} - run `asdf install`",
             )
 
     # --- referenced files -------------------------------------------------
@@ -192,14 +192,14 @@ def main() -> int:
                 record(
                     "FAIL",
                     "header-from",
-                    f"{header_rel} does not open with a /** */ block — header renders empty",
+                    f"{header_rel} does not open with a /** */ block - header renders empty",
                 )
             else:
                 record("PASS", "header-from", header_rel)
         else:
             record("PASS", "header-from", header_rel)
         if b"\r\n" in header.read_bytes():
-            record("WARN", "line endings", f"{header_rel} is CRLF — see SKILL.md on diff noise")
+            record("WARN", "line endings", f"{header_rel} is CRLF - see SKILL.md on diff noise")
 
     footer_rel = cfg.get("footer-from")
     if footer_rel:
@@ -212,11 +212,11 @@ def main() -> int:
     out_rel = cfg.get("output-file")
     mode = (cfg.get("output-mode") or "inject").lower()
     if not out_rel:
-        record("WARN", "output.file", "not set — output goes to stdout only")
+        record("WARN", "output.file", "not set - output goes to stdout only")
     else:
         out_path = module_dir / out_rel
         if not out_path.is_file():
-            record("WARN", "output.file", f"{out_rel} does not exist yet — it will be created")
+            record("WARN", "output.file", f"{out_rel} does not exist yet - it will be created")
         else:
             body = out_path.read_text(encoding="utf-8", errors="replace")
             has_begin = "BEGIN_TF_DOCS" in body
@@ -227,13 +227,13 @@ def main() -> int:
                 record(
                     "WARN",
                     "markers",
-                    f"{out_rel} is missing BEGIN/END_TF_DOCS — generated block will be appended",
+                    f"{out_rel} is missing BEGIN/END_TF_DOCS - generated block will be appended",
                 )
             elif mode == "replace":
-                record("WARN", "output.mode", "replace — the whole file is overwritten")
+                record("WARN", "output.mode", "replace - the whole file is overwritten")
 
     if cfg.get("recursive"):
-        record("WARN", "recursive", "enabled — submodules under `path` are also regenerated")
+        record("WARN", "recursive", "enabled - submodules under `path` are also regenerated")
 
     # --- report -----------------------------------------------------------
     width = max((len(label) for _, label, _ in results), default=0)
