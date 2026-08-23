@@ -5,7 +5,7 @@
     "email": "badalim@anewbiz.net",
     "url": "https://github.com/mbadali25/useful-claude-add-ons"
   },
-  "description": "Internal marketplace of Claude Code skills for the team - APIs, security tooling, and productivity add-ons.",
+  "description": "Internal marketplace of Claude Code skills and plugins for the team - APIs, security tooling, workflow automation, and productivity add-ons.",
   "plugins": [
     {
       "name": "aws-opensearch",
@@ -44,10 +44,28 @@
       "version": "1.0.0"
     },
     {
+      "name": "claude-memories-canvas",
+      "source": "./skills/claude-memories-canvas",
+      "description": "Canvas conventions for the claude-memories vault - wiki/maps schema, colours, ids, column-and-group geometry, and the rules that keep a canvas findable.",
+      "version": "1.0.0"
+    },
+    {
+      "name": "claude-memories-vault",
+      "source": "./skills/claude-memories-vault",
+      "description": "Note conventions for the claude-memories Obsidian vault - folder layout, the six frontmatter fields, wikilink resolution, the write lock, and vault vs auto-memory.",
+      "version": "1.0.0"
+    },
+    {
       "name": "cloudflare",
       "source": "./skills/cloudflare",
       "description": "Cloudflare v4 API - DNS, zones, cache, WAF, page rules, SSL/TLS, Workers/KV/R2, Zero Trust, analytics.",
       "version": "1.0.0"
+    },
+    {
+      "name": "crew",
+      "source": "./plugin/crew",
+      "description": "Virtual dev team for multi-repo legacy work - 9 context-isolated agents, 14 slash commands, 14 bundled skills, and deterministic hooks that block unsafe commands, gate unverified turns, and carry a handoff across compaction.",
+      "version": "0.2.0"
     },
     {
       "name": "drata",
@@ -89,6 +107,12 @@
       "name": "obsidian-canvas",
       "source": "./skills/obsidian-canvas",
       "description": "Create and edit Obsidian Canvas (.canvas) files directly as JSON Canvas - architecture maps, decision trees, and boards with embedded live notes, groups, and labeled arrows; no plugin or REST bridge required.",
+      "version": "1.0.0"
+    },
+    {
+      "name": "obsidian-vault-server",
+      "source": "./skills/obsidian-vault-server",
+      "description": "Self-hosted Obsidian vault on Ubuntu - containerised desktop app, obsidian.md Sync, and the Local REST API MCP endpoint over an SSH tunnel.",
       "version": "1.0.0"
     },
     {

@@ -10,7 +10,7 @@
 #
 # The menu is a cursor picker: Up/Down to move, Space to toggle, Enter to start. On the
 # repo's own row, Right opens a second picker for the individual skills, so you can take
-# three of them instead of all nineteen. Terminals that cannot do raw input - no stty, a
+# three of them instead of all twenty-five. Terminals that cannot do raw input - no stty, a
 # dumb TERM, a window under ten lines - get the original numbered prompt instead, and
 # every non-interactive path (--all, --select, --skills, --non-interactive) bypasses both.
 #
@@ -38,6 +38,8 @@
 #   --skip-bootstrap      narrow the selection to prerequisites + the Claude Code CLI
 #   --scope <scope>       scope for marketplace/plugin installs: user|project|local (default: user)
 #   --obsidian-repo-root <dir>
+#   --obsidian-mcp-url <url>   vault-server MCP endpoint (default http://127.0.0.1:27123/mcp/)
+#   --obsidian-mcp-key <key>   Local REST API key; without it the item explains and skips
 #                         root the Obsidian item suggests for the vault (default: ~/repos)
 
 set -uo pipefail
@@ -87,6 +89,8 @@ while [ $# -gt 0 ]; do
     --notify-setup)    NOTIFY_SETUP=1 ;;
     --scope)           INSTALL_SCOPE="${2:-user}"; shift ;;
     --obsidian-repo-root) OBSIDIAN_REPO_ROOT="${2:-$HOME/repos}"; shift ;;
+    --obsidian-mcp-url)   OBSIDIAN_MCP_URL="${2:-}"; shift ;;
+    --obsidian-mcp-key)   OBSIDIAN_MCP_KEY="${2:-}"; shift ;;
     *) echo "Unknown option: $1" >&2 ;;
   esac
   shift
@@ -327,6 +331,29 @@ add_mcp_server() {
   ok "added MCP server '$name'"
 }
 
+add_mcp_http_server() {
+  # add_mcp_http_server <name> <url> [<header> ...]
+  # For a server that is ALREADY listening over HTTP: there is no command to
+  # launch, claude takes the endpoint as a positional argument, and each header
+  # is passed whole ("Authorization: Bearer x"). Same detect-then-act contract.
+  local name="$1" url="$2"; shift 2
+  if ! have claude; then
+    warn "claude not found on PATH in this shell - run 'source ~/.bashrc' and re-run this script."
+    return 1
+  fi
+  if mcp_server_registered "$name"; then
+    skip "MCP server '$name' already registered"
+    return 0
+  fi
+  local -a args=(mcp add --scope "$INSTALL_SCOPE" --transport http "$name" "$url")
+  local h
+  for h in "$@"; do args+=(--header "$h"); done
+  claude "${args[@]}" || return 1
+  load_mcp_servers
+  COUNT_INSTALLED=$((COUNT_INSTALLED+1))
+  ok "added MCP server '$name'"
+}
+
 # --- Detection: user-level skills --------------------------------------------
 # Some things (the 'skills' CLI, task-observer) install as plain user-level skills
 # rather than as Claude Code plugins, so they never appear in 'claude plugin list' -
@@ -393,10 +420,11 @@ install_plugin() {
 MENU_KEYS=(
   "prereqs" "cli" "own-skills" "team" "find-skills" "community"
   "claude-code-setup" "task-observer" "claude-mem" "voltagent"
-  "aws-mcp" "azure-mcp" "playwright-mcp"
+  "aws-mcp" "azure-mcp" "playwright-mcp" "obsidian-mcp"
   "supabase" "context7" "playwright-cli" "skillui" "strix" "obsidian"
+  "repo-plugins"
 )
-MENU_DEFAULT=(1 1 1 1 1 1 1 1 1 1 0 0 0 0 0 0 0 0 0)
+MENU_DEFAULT=(1 1 1 1 1 1 1 1 1 1 0 0 0 0 0 0 0 0 0 0 0)
 MENU_NAME=(
   "Prerequisites: git, nodejs, npm, python3, pip3 (needs root or sudo)"
   "Claude Code CLI (@anthropic-ai/claude-code) + PATH export + update check"
@@ -411,12 +439,14 @@ MENU_NAME=(
   "MCP server: AWS (awslabs.aws-api-mcp-server)"
   "MCP server: Azure (@azure/mcp)"
   "MCP server: Playwright (@playwright/mcp)"
+  "MCP server: Obsidian vault server (Local REST API over an SSH tunnel)"
   "Supabase plugin (supabase@claude-plugins-official)"
   "Context7 up-to-date library docs (npx ctx7 setup)"
   "Playwright CLI (@playwright/cli) - browser automation from the shell"
   "SkillUI (npm) + Playwright/Chromium - extract a design system from a URL"
   "Strix AI pentesting CLI (needs Docker + an LLM API key)"
   "Obsidian desktop + claude-obsidian + obsidian-skills plugins"
+  "This repo's plugins: crew (agents, commands, hooks)"
 )
 
 SELECTED=""
@@ -472,8 +502,10 @@ expand_selection_spec() {
 # picking a subset is the exception, and a fresh machine wants the lot.
 SKILL_KEYS=(
   "aws-opensearch" "bitbucket" "checkpoint-email" "cisco-meraki"
-  "claude-code-defaults" "claude-code-tuneup" "cloudflare" "drata" "i-have-adhd"
+  "claude-code-defaults" "claude-code-tuneup" "claude-memories-canvas"
+  "claude-memories-vault" "cloudflare" "drata" "i-have-adhd"
   "infra-work-ticketing" "intune-graph" "mermaid-svg-bitbucket" "notify"
+  "obsidian-canvas" "obsidian-vault-server"
   "repo-docs" "shipstation" "sophos-central" "terraform-docs-readme" "visio-diagrams"
   "wazuh-onprem" "web-testing-playwright" "work-log-reporter"
 )
@@ -484,6 +516,8 @@ SKILL_NAME=(
   "cisco-meraki            - Meraki Dashboard API: inventory, events, config changes"
   "claude-code-defaults    - Claude Code config: settings.json, permissions, hooks"
   "claude-code-tuneup      - Audit a slow Claude Code setup: dupes, hooks, context"
+  "claude-memories-canvas  - claude-memories vault: wiki/maps .canvas conventions"
+  "claude-memories-vault   - claude-memories vault: layout, frontmatter, write lock"
   "cloudflare              - Cloudflare v4: DNS, WAF, cache, Workers, Zero Trust"
   "drata                   - Drata: controls, monitors, evidence, audit prep"
   "i-have-adhd             - ADHD-friendly output: next action first, numbered steps"
@@ -491,6 +525,8 @@ SKILL_NAME=(
   "intune-graph            - Intune via Graph: devices, compliance, app deployment"
   "mermaid-svg-bitbucket   - Pre-render Mermaid to SVG so Bitbucket displays it"
   "notify                  - Ping your phone or inbox: Telegram bot (two-way) or email"
+  "obsidian-canvas         - Obsidian .canvas files as JSON: maps, boards, diagrams"
+  "obsidian-vault-server   - Self-hosted Obsidian on Ubuntu: Sync, REST/MCP endpoint"
   "repo-docs               - Whole doc set: CLAUDE.md, READMEs, architecture, handoff"
   "shipstation             - ShipStation V2/V1/ShipEngine: labels, rates, orders"
   "sophos-central          - Sophos Central: isolate endpoints, triage alerts, XDR"
@@ -503,6 +539,18 @@ SKILL_NAME=(
 SKILL_STATE=()
 for _i in "${!SKILL_KEYS[@]}"; do SKILL_STATE+=(1); done
 unset _i
+
+# --- This repo's own plugins --------------------------------------------------
+# Keep in sync with .claude-plugin/marketplace.json and plugin/README.md. Unlike the
+# skills, these are off by default and have no sub-picker: a plugin can register hooks,
+# and a hook runs whether or not Claude agrees with it, so it is opted into explicitly.
+# Parallel arrays for the same reason SKILL_KEYS uses them - stable order.
+PLUGIN_KEYS=(
+  "crew"
+)
+PLUGIN_NAME=(
+  "crew                    - Virtual dev team: 9 agents, 14 commands, safety hooks"
+)
 
 skills_selected_count() {
   local i n=0
@@ -1322,7 +1370,7 @@ if is_selected "cli"; then
 fi
 
 # Everything from here to the MCP servers needs the claude CLI on PATH.
-CLAUDE_ITEMS="own-skills team find-skills community claude-code-setup claude-mem voltagent supabase"
+CLAUDE_ITEMS="own-skills team find-skills community claude-code-setup claude-mem voltagent supabase repo-plugins"
 NEEDS_CLAUDE=0
 for key in $CLAUDE_ITEMS; do
   is_selected "$key" && NEEDS_CLAUDE=1
@@ -1561,7 +1609,7 @@ if is_selected "voltagent"; then
   done
 fi
 
-# --- 11-13. Optional MCP servers ---------------------------------------------
+# --- 11-14. Optional MCP servers ---------------------------------------------
 # Warm the cache before the first add_mcp_server call so duplicate detection works.
 load_mcp_servers
 
@@ -1608,7 +1656,36 @@ if is_selected "playwright-mcp"; then
   run_step "Install Playwright MCP server" install_playwright_mcp
 fi
 
-# --- 14. Supabase ------------------------------------------------------------
+install_obsidian_mcp() {
+  # Not a launched command: the endpoint is the obsidian-local-rest-api plugin
+  # already running inside the vault-server container. It listens on the SERVER's
+  # loopback, so the URL is a local port forwarded by SSH. The API key is
+  # per-deployment and cannot be baked in.
+  if [ -z "${OBSIDIAN_MCP_KEY:-}" ]; then
+    skip "Obsidian MCP: no --obsidian-mcp-key given"
+    printf '        Get the key from the vault server:
+'
+    printf '          sudo ./obsidian-vault-server.sh apikey
+'
+    printf '        Open the tunnel, then re-run with the key:
+'
+    printf '          ssh -N -L 27123:127.0.0.1:27123 <user>@<server>
+'
+    printf '          ./install-prerequisites.sh --select obsidian-mcp --obsidian-mcp-key <key>
+'
+    printf '        See the obsidian-vault-server skill for the whole setup.
+'
+    return 0
+  fi
+  add_mcp_http_server "obsidian-server" "${OBSIDIAN_MCP_URL:-http://127.0.0.1:27123/mcp/}"     "Authorization: Bearer ${OBSIDIAN_MCP_KEY}" || return 1
+  ok "Requires an SSH tunnel: ssh -N -L 27123:127.0.0.1:27123 <user>@<server>"
+}
+if is_selected "obsidian-mcp"; then
+  run_step "Register the Obsidian vault server MCP endpoint" install_obsidian_mcp
+fi
+
+
+# --- 15. Supabase ------------------------------------------------------------
 # Ships inside anthropics/claude-plugins-official, the same marketplace items 6 and 7
 # register - add_marketplace is a no-op when it is already there, so this item stands
 # on its own. install_plugin does the "already installed?" check.
@@ -1619,7 +1696,7 @@ if is_selected "supabase"; then
     install_plugin "supabase@claude-plugins-official"
 fi
 
-# --- 15. Context7 ------------------------------------------------------------
+# --- 16. Context7 ------------------------------------------------------------
 install_context7() {
   # 'ctx7 setup' writes the Context7 MCP/skill config for whichever agents it finds.
   # It is interactive, so it gets the terminal explicitly: under 'curl | bash' fd 0 is
@@ -1640,7 +1717,7 @@ if is_selected "context7"; then
   run_step "Configure Context7 (npx ctx7 setup)" install_context7
 fi
 
-# --- 16. Playwright CLI ------------------------------------------------------
+# --- 17. Playwright CLI ------------------------------------------------------
 install_playwright_cli() {
   # Detection is on the binary the package provides ('playwright-cli'), which is what
   # a user actually cares about - the package can also arrive via another manager.
@@ -1667,7 +1744,7 @@ if is_selected "playwright-cli"; then
   run_step "Install Playwright CLI (@playwright/cli)" install_playwright_cli
 fi
 
-# --- 17. SkillUI -------------------------------------------------------------
+# --- 18. SkillUI -------------------------------------------------------------
 skillui_quick_start() {
   printf '\n\033[36m    SkillUI quick start\033[0m  https://github.com/amaancoderx/npxskillui\n'
   printf '    1. Extract a design system from any URL:\n'
@@ -1712,7 +1789,7 @@ if is_selected "skillui"; then
   run_step "Install SkillUI (+ Playwright and Chromium)" install_skillui
 fi
 
-# --- 18. Strix ---------------------------------------------------------------
+# --- 19. Strix ---------------------------------------------------------------
 strix_next_steps() {
   printf '\n\033[33m    Strix needs two more things before its first scan:\033[0m\n'
   printf '    1. Docker running - the first scan pulls the sandbox image.\n'
@@ -1756,7 +1833,7 @@ if is_selected "strix"; then
   run_step "Install Strix AI pentesting CLI" install_strix
 fi
 
-# --- 19. Obsidian + claude-obsidian ------------------------------------------
+# --- 20. Obsidian + claude-obsidian ------------------------------------------
 obsidian_next_steps() {
   echo ""
   printf '\033[33m    Obsidian is installed, but the vault is a separate step:\033[0m\n'
@@ -1797,6 +1874,36 @@ install_obsidian() {
 }
 if is_selected "obsidian"; then
   run_step "Install Obsidian desktop + claude-obsidian and obsidian-skills plugins" install_obsidian
+fi
+
+# --- 21. This repo's own plugins ---------------------------------------------
+# Same marketplace as item 3, so add_marketplace is a no-op when item 3 already ran -
+# this item stands on its own. install_plugin does the "already installed?" check.
+crew_next_steps() {
+  echo ""
+  step "crew: next steps"
+  echo "  Unlike a skill, crew registers hooks that run on their own:"
+  echo "    - PreToolUse on Bash/PowerShell blocks terraform apply/destroy, destructive"
+  echo "      DDL, force push, hard reset, and commands that would print a secret."
+  echo "    - Stop runs the checks your changed paths map to and fails the turn on red."
+  echo "  Set it up per repository before relying on either:"
+  echo "    cd <your repo> && claude"
+  echo "    /crew:init         # guided, resumable setup"
+  echo "    /crew:onboard      # build the code map"
+  echo "    /crew:verify       # build the change-to-check map the Stop gate needs"
+  echo "  Full guide: https://github.com/mbadali25/useful-claude-add-ons/blob/main/plugin/crew/README.md"
+}
+if is_selected "repo-plugins"; then
+  run_step "Add this repo as a Claude Code marketplace"     add_marketplace "mbadali25/useful-claude-add-ons" "useful-claude-add-ons"
+
+  # The catalog lives in PLUGIN_KEYS next to the menu. No sub-picker: there is one
+  # plugin, and it is opt-in already.
+  for idx in "${!PLUGIN_KEYS[@]}"; do
+    plugin="${PLUGIN_KEYS[$idx]}"
+    run_step "Plugin: ${plugin}@useful-claude-add-ons" install_plugin "${plugin}@useful-claude-add-ons"
+  done
+
+  crew_next_steps
 fi
 
 

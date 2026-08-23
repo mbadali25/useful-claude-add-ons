@@ -149,6 +149,52 @@ followed by a full `wsl --shutdown`. The script backs the file up to
 so it fails with `GIT_FAILED: Author identity unknown`. Fix: set identity
 **repo-locally** in the vault, which both environments read from `.git/config`.
 
+## Obsidian community plugins
+
+The setup scripts above install *Claude Code* plugins. They do not install the
+Obsidian community plugins a working vault needs. That is a separate, matched pair:
+
+```bash
+# Windows - preview, then apply
+.\install-obsidian-plugins.ps1 -VaultPath C:\repos\Claude
+.\install-obsidian-plugins.ps1 -VaultPath C:\repos\Claude -Apply
+
+# Linux / WSL - preview, then apply
+./install-obsidian-plugins.sh --vault ~/repos/Claude
+./install-obsidian-plugins.sh --vault ~/repos/Claude --apply
+```
+
+The set lives in `obsidian-plugin-profile.json` — 15 community plugins pinned to a
+version and repo, plus the 27 core plugins to enable. Edit that file to change what a
+vault gets; both scripts read it.
+
+| Switch | Effect |
+|---|---|
+| `-Apply` / `--apply` | Write. Without it, preview only |
+| `-Latest` / `--latest` | Install each plugin's latest release instead of the pinned version |
+| `-Only` / `--only` | Restrict to a comma-separated list of plugin ids |
+| `-ProfilePath` / `--profile` | Use a different manifest |
+
+Additive and idempotent. `community-plugins.json` and `core-plugins.json` are
+unioned with whatever the vault already enables — a vault already in use keeps its own
+plugins — and a second run reports PASS rather than rewriting. `core-plugins.json`
+is handled in both shapes: a list in older vaults, an object map in newer ones.
+
+`obsidian-local-rest-api` is installed but its settings are never written. The plugin
+mints a per-machine API key on first load; overwriting it breaks any MCP client already
+pointed at that vault.
+
+Applying to a **server** vault: run it on the host, not inside the container, then
+re-`chown` and restart, since the container's user must own the files.
+
+```bash
+./install-obsidian-plugins.sh --vault /opt/obsidian-server/config/vault --apply
+sudo chown -R 1000:1000 /opt/obsidian-server/config/vault/.obsidian
+docker restart obsidian
+```
+
+See the `obsidian-vault-server` skill for the server side.
+
 ## Operating notes
 
 - **Run WSL from PowerShell, not Git Bash.** Git Bash rewrites `/mnt/...`

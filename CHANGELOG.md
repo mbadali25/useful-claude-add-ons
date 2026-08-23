@@ -4,7 +4,163 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added
+
+- **A `plugin/` tree, and the `crew` plugin in it — the repo's first entry that is a
+  plugin rather than a skill.** `crew` 0.2.0 is a virtual dev team for multi-repo legacy
+  work: 9 context-isolated subagents, 14 slash commands, 14 bundled skills, and 7 hooks
+  across 5 events (`PreToolUse`, `Stop`, `PreCompact`, `SessionStart`, `Notification`).
+  Beyond the safety gates it now carries a handoff note across a `/clear` or an
+  auto-compact, and watches context use. Roles
+  exist only where they buy an isolated context window, a restricted tool set, or
+  genuinely independent eyes — project management, BA, and architecture are files and
+  commands, not agents. Codex QA, Jira, Obsidian memory, and Teams/Telegram notifications
+  are all optional. Registered in [`.claude-plugin/marketplace.json`](.claude-plugin/marketplace.json)
+  with `source` `./plugin/crew`, so `claude plugin install crew@useful-claude-add-ons`
+  works the same way a skill install does.
+- **`plugin/README.md` — the plugins counterpart to `skills/README.md`**, with the same
+  five-column overview table, inlined into the root `README.md` between
+  `<!-- BEGIN plugin/README.md -->` markers exactly as the skills table is. It leads with
+  the distinction that actually matters: a skill is a document Claude reads, whereas a
+  plugin can register subagents, slash commands, and **hooks** — and a hook runs whether
+  or not Claude agrees with it.
+- **`plugin/PLUGINS.md` — the per-plugin reference the catalog points at.** `skills/` gets
+  away with one file because a skill is one `SKILL.md`; a plugin is a bundle, so the
+  catalog row cannot carry the detail. This is where every command, agent, bundled skill,
+  and hook is listed, with the hooks first, because they are the only part that runs
+  without being asked. It also records what is *not* wired: only `PreToolUse` pairs a
+  `.sh` with a `shell: powershell` twin, so `verify-gate.ps1`, `context-watch.ps1`, and
+  `handoff-read.ps1` sit on disk unreferenced and the `Stop` gate never fires on a
+  Windows box with no `bash` on `PATH`. Documented rather than fixed — it is a change to
+  `crew`'s runtime behaviour, not to its packaging.
+- **Menu item 21, `This repo's plugins`, in both bootstrap scripts — off by default.**
+  Appended at the end of the menu so items 1–20 keep their numbers and no existing
+  `--select 3,7` invocation changes meaning. New `PLUGIN_KEYS` / `PLUGIN_NAME` arrays in
+  the `.sh` and `$script:PluginCatalog` in the `.ps1` mirror the skill catalogs. The item
+  adds this repo's marketplace itself, so it stands alone whether or not item 3 ran, and
+  finishes by printing the per-repository setup (`/crew:init`, `/crew:onboard`,
+  `/crew:verify`). It is unticked by default *on purpose*: every other menu row installs
+  something Claude may choose to use, whereas `crew`'s `PreToolUse` hook blocks
+  `terraform apply`/`destroy`, destructive DDL, force push, hard reset, and any command
+  that would print a secret, and its `Stop` hook fails a turn whose checks go red. Those
+  are deterministic and start the moment the plugin is enabled, which is not something a
+  bootstrap run should add without the box being ticked.
+- **A plugin registration rule in `CLAUDE.md`**, alongside the existing skill rule: the
+  same four places, plus two that only apply to plugins — a hook-bearing plugin defaults
+  to OFF in the menu, and every hook script ships in both `.sh` and `.ps1` flavours,
+  because a bash-only hook is silently inert on Windows and reads as "the gate passed"
+  rather than "the gate never ran".
+
 ### Fixed
+
+- **Section-comment numbering in both install scripts had drifted by one from item 14
+  onward** — `obsidian-mcp` was inserted at position 14 without renumbering the comments
+  below it, so the block installing menu item 20 was labelled `# --- 19. Obsidian`.
+  Comment-only; no behaviour change. Verified by parsing `MENU_KEYS`/`MENU_DEFAULT` out
+  of the `.sh` and `$script:Catalog` out of the `.ps1` and diffing them: 21 keys each,
+  same order, same defaults.
+
+### Changed
+
+- **`plugin/crew/.claude-plugin/plugin.json` no longer ships placeholder metadata** —
+  its author was `{ "name": "you" }`. It now carries the repo's owner, homepage, and
+  repository. A stray `plugin/crew/.claude-plugin/marketplace.json` naming a marketplace
+  `my-marketplace` owned by `you` was removed: the repo root's marketplace is the only
+  one here, and a nested one makes the plugin directory look like a second marketplace.
+
+- **`claude-memories-vault` and `claude-memories-canvas` skills — the conventions of the
+  `claude-memories` Obsidian vault, written on the workstation during the 2026-08-19
+  memory migration and only now given a canonical home.** `claude-memories-vault` covers
+  the folder layout, the six required frontmatter fields, the `type`/`status` value sets
+  the `HOME.md` Dataview queries filter on, how wikilinks resolve by *filename* on Windows
+  (a `:` cannot appear in one, so the link must match the file and not the prose), the
+  `vault-lock.ps1` write lock the nightly gardener respects, the single-writer rule on
+  `inbox/pending-reflect.md`, and the decision rule for vault versus Claude Code
+  auto-memory. `claude-memories-canvas` covers the `wiki/maps` node and edge schema
+  actually in use, the colour and id styles, the column-and-group geometry, and the two
+  rules that make a canvas findable at all: facts live in notes because a canvas-only fact
+  is invisible to search, and every canvas is linked from its `Project - *.md` because
+  canvases do not backlink.
+
+  Both keep the concrete `C:\repos\claude-memories` path rather than a placeholder — the
+  same choice `vault-automation/` already makes with its `-VaultPath` default — because
+  these are the conventions of one real vault and a parameterised version has never been
+  tested. Both name their siblings explicitly in the `description`: the generic
+  `obsidian-canvas` for any other vault, and `obsidian-vault-server` for hosting one.
+  `obsidian-canvas` gained a matching one-line pointer back.
+
+- **`obsidian-vault-server` skill — a self-hosted Obsidian vault on a headless Ubuntu
+  host.** The real Obsidian desktop app in a container (Sync has no headless client, so
+  there is no other way), signed in to an obsidian.md account, with the
+  `obsidian-local-rest-api` plugin's built-in MCP endpoint reached over an SSH tunnel —
+  no separate MCP server process. Three references cover install, the Claude wiring, and
+  getting a workstation's plugins onto the server. The safety rails are the point: the
+  container's web GUI has a terminal with passwordless `sudo`, so the skill treats
+  firewalling it and never overwriting the REST API key as non-negotiable rather than
+  advisory.
+
+- **`claude-obsidian-setup/` now installs the Obsidian community plugin set.** The setup
+  scripts installed *Claude Code* plugins but never the Obsidian plugins a working vault
+  needs. `obsidian-plugin-profile.json` pins 15 community plugins with their repos plus
+  the 27 core plugins to enable, and `install-obsidian-plugins.ps1` / `.sh` install them
+  from GitHub releases. Same house contract as the setup scripts: dry run by default,
+  `--apply` / `-Apply` to write, PASS/FIX/FAIL against stable check ids, idempotent.
+  Additive — `community-plugins.json` and `core-plugins.json` are unioned with whatever
+  the vault already enables, in both the list and object-map shapes. Verified on both
+  platforms: 15/15 at pinned versions, second run all PASS, pre-existing entries kept.
+
+- **Menu item: `obsidian-mcp` — register the Obsidian vault server's MCP endpoint.** Off
+  by default, on both scripts, with identical keys and order. Not a launched command: the
+  endpoint is a plugin already running in the vault-server container, listening on the
+  *server's* loopback, so the URL is a local port forwarded by SSH. The API key is
+  per-deployment and cannot be baked in, so without `-ObsidianMcpKey` /
+  `--obsidian-mcp-key` the item explains how to get one and skips rather than failing.
+  `Add-McpServer` / `add_mcp_http_server` gained header support for the bearer token.
+
+- **`vault-automation/` — self-feeding vault pipeline.** New component that automates
+  the Obsidian memory loop end to end: Claude Code `SessionEnd`/`PreCompact` hooks
+  queue every session into `inbox/pending-reflect.md`; a nightly `Claude Vault
+  Gardener` scheduled task runs headless Claude to distill queued sessions into
+  source-cited `wiki/concepts` pages and `wiki/daily` digests (with a provenance pass
+  that promotes well-attested concepts); a `HOME.md` Dataview dashboard surfaces
+  stale/unsourced concepts and the live queue; five community plugins installed
+  file-level. Obsidian-Sync-aware: git is an optional layer (`-UseGit`/`-GitRemote`)
+  and the gardener skips git operations on git-less vaults. Dry-run by default,
+  idempotent, documented in `vault-automation/README.md` (incl. run-the-gardener-on-
+  one-machine-only and cost/safety notes). Root README gained a "Vault automation"
+  section with the run commands.
+
+### Fixed
+
+- **`install-prerequisites.sh` aborted on startup with `MENU_DEFAULT[$_i]: unbound
+  variable`.** The `obsidian-mcp` menu item was added to `MENU_KEYS` but never to the two
+  arrays that run parallel to it, leaving 20 keys against 19 defaults and 19 names. Under
+  `set -u` the `MENU_STATE` initialiser walked off the end of `MENU_DEFAULT` and killed
+  the script before it drew anything, so *no* item could be installed on Linux — not just
+  the Obsidian one. `MENU_NAME` was short in the same way, and because the gap sat at
+  index 13, every label from `obsidian-mcp` onward was displaying the *next* item's text:
+  row 14 read "Supabase plugin", row 19 read "Strix", and row 20 had no label at all.
+  Both arrays now carry all 20 entries, matching `$script:Catalog` in the `.ps1` key for
+  key, name for name, and default for default.
+
+  The menu-numbering fallout was documentation-only but wide: `README.md` and
+  `INSTALLATION.md` both still described a 19-item menu, so every reference to items
+  14–19 was off by one from the moment `obsidian-mcp` landed. Renumbered to 15–20, with
+  the item itself now documented in the menu table, the "what each item installs" table,
+  the MCP-servers walkthrough, and the switch table — `--obsidian-mcp-url` and
+  `--obsidian-mcp-key` had never been listed there either.
+
+- **The installers' skill catalogs had fallen two skills behind the marketplace.**
+  `obsidian-canvas` and `obsidian-vault-server` were registered in
+  `.claude-plugin/marketplace.json` and `skills/README.md` but never added to
+  `SKILL_KEYS`/`SKILL_NAME` in `install-prerequisites.sh` or `$script:SkillCatalog` in
+  the `.ps1`, so the per-skill picker offered 21 of the 23 that existed and neither could
+  be selected by name. Both were also missing from the `<!-- BEGIN skills/README.md -->`
+  mirror in the root `README.md`, which had silently stopped being a mirror. Both are in
+  the catalogs and the mirror now, alongside the two new
+  `claude-memories-*` skills, and the hard-coded counts in `README.md` and
+  `INSTALLATION.md` — plus the stale "all nineteen" in both installer headers — now read
+  25, matching the directory count, the marketplace manifest, and both catalogs.
 
 - **`claude-obsidian-setup` — a Python below the 3.11 floor is now repaired rather than
   only reported.** Both scripts previously stopped with "install python3.11+ yourself" on

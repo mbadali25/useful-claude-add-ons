@@ -1,6 +1,6 @@
 # Installation
 
-Two things live in this repo: **prerequisite tooling** (git, Node.js, Python, AWS CLI, the Claude Code CLI itself) and **the skills**. This doc covers both.
+Three things live in this repo: **prerequisite tooling** (git, Node.js, Python, AWS CLI, the Claude Code CLI itself), **the skills** under `skills/`, and **the plugins** under `plugin/`. This doc covers all three.
 
 ## 1. Install prerequisites
 
@@ -15,12 +15,13 @@ One script per OS. Both are idempotent (safe to re-run) and, by default, also bo
   ----------------------
     [x] Prerequisites: git, nodejs, npm, python3, pip3 (needs root or sudo)
     [x] Claude Code CLI (@anthropic-ai/claude-code) + PATH export + update check
-  > [x] This repo's marketplace + 21 of 21 skills  >
+  > [x] This repo's marketplace + 25 of 25 skills  >
     [x] Team plugins: superpowers, frontend-design, excalidraw-generator
     ...
     [ ] Strix AI pentesting CLI (needs Docker + an LLM API key)
     [ ] Obsidian desktop + claude-obsidian + obsidian-skills plugins
-  showing 1-19 of 19
+    [ ] This repo's plugins: crew (agents, commands, hooks)
+  showing 1-21 of 21
   ↑↓ move   Space toggle   Enter start   A all   N none   D defaults   Q cancel
   → on the repo row picks individual skills
 ```
@@ -35,7 +36,7 @@ One script per OS. Both are idempotent (safe to re-run) and, by default, also bo
 | `A` / `N` / `D` | Tick all / clear all / restore the default set |
 | `Q` or Escape | Cancel — nothing is installed |
 
-**The per-skill picker** (→ on row 3) lists all 21 skills in this repo with the same controls. All 21 start ticked; untick the ones you don't want and press Enter or ← to go back. Opening it also ticks the parent row, so a careful sub-selection can't be lost to an unticked parent.
+**The per-skill picker** (→ on row 3) lists all 25 skills in this repo with the same controls. All 25 start ticked; untick the ones you don't want and press Enter or ← to go back. Opening it also ticks the parent row, so a careful sub-selection can't be lost to an unticked parent.
 
 **When the picker isn't available**, both scripts fall back to the original numbered prompt — same items, same defaults, answered with `A`, `D`, `N`, or `1,3,7-9`. That happens when there is no usable terminal (`curl | bash` with no `/dev/tty`, CI), no `stty`, `TERM=dumb`, PowerShell ISE, a redirected console, or a window under ten lines. Nothing about the install differs; only how you choose.
 
@@ -57,7 +58,7 @@ It shows the menu, asks the SkillUI quick-start question up front, then installs
 
 1. **Prerequisites** — if elevated: installs [Chocolatey](https://chocolatey.org/) if not already present, then `choco install git awscli nodejs python -y`. **If not elevated, this item is skipped entirely** — the script prints a warning and continues with everything below using whatever `git`/`node`/`npm`/`python` are already on `PATH`.
 2. **Claude Code CLI** — `npm install -g @anthropic-ai/claude-code`, adds the npm global bin directory to your **User** `PATH` environment variable (persists across sessions), and sets a `CLAUDE_CODE_HOME` user env var pointing at the npm prefix. When `claude` is already installed it compares the local version against the npm registry instead and updates only if it's behind (`-NoUpdate` skips the check).
-3. **This repo** — adds `mbadali25/useful-claude-add-ons` as a Claude Code marketplace, then installs the skills you ticked in the per-skill picker, all 21 by default (see [What the own-marketplace step installs](#what-the-own-marketplace-step-installs) below).
+3. **This repo** — adds `mbadali25/useful-claude-add-ons` as a Claude Code marketplace, then installs the skills you ticked in the per-skill picker, all 25 by default (see [What the own-marketplace step installs](#what-the-own-marketplace-step-installs) below).
 4. **Team plugins, community plugins, `find-skills`, `claude-code-setup`, `task-observer`, claude-mem, VoltAgent** — each is its own menu row; `-SkipBootstrap` narrows any selection back down to items 1 and 2.
 5. **MCP servers** — AWS, Azure, Playwright. Off by default; see [Optional: MCP servers](#optional-mcp-servers).
 6. **Supabase, Context7, Playwright CLI, SkillUI, Strix** — off by default; see [Optional: extra tooling](#optional-extra-tooling).
@@ -76,7 +77,7 @@ Runs as your current user, escalating to `sudo` (or `root` directly if already r
 
 1. **Prerequisites** — `git`, `nodejs`, `npm`, `python3` via whichever of `apt-get` / `dnf` / `yum` / `pacman` / `zypper` / `apk` it finds first. Only packages whose command is actually missing get installed.
 2. **Claude Code CLI** — `npm install -g @anthropic-ai/claude-code`, then a `PATH` export for the npm global bin directory appended to `~/.bashrc` and `~/.zshrc` (only if not already present) and exported in the current shell too. When `claude` is already installed it compares the local version against the npm registry instead and updates only if it's behind (`--no-update` skips the check).
-3. **This repo** — adds `mbadali25/useful-claude-add-ons` as a Claude Code marketplace, then installs the skills you ticked in the per-skill picker, all 21 by default (see [What the own-marketplace step installs](#what-the-own-marketplace-step-installs) below).
+3. **This repo** — adds `mbadali25/useful-claude-add-ons` as a Claude Code marketplace, then installs the skills you ticked in the per-skill picker, all 25 by default (see [What the own-marketplace step installs](#what-the-own-marketplace-step-installs) below).
 4. **Team plugins, community plugins, `find-skills`, `claude-code-setup`, `task-observer`, claude-mem, VoltAgent** — each is its own menu row; `--skip-bootstrap` narrows any selection back down to items 1 and 2.
 5. **MCP servers** — AWS, Azure, Playwright. Off by default; see [Optional: MCP servers](#optional-mcp-servers).
 6. **Supabase, Context7, Playwright CLI, SkillUI, Strix** — off by default; see [Optional: extra tooling](#optional-extra-tooling).
@@ -195,25 +196,26 @@ If a new skill is added to the marketplace, add it to the `SKILL_KEYS` / `SKILL_
 
 ### Optional: MCP servers
 
-Three MCP servers are menu rows, all off by default:
+Four MCP servers are menu rows, all off by default:
 
 - **AWS** — ensures `uv`/`uvx` is on `PATH` (installing it via `pip install --user uv` if missing), then runs `claude mcp add aws-api -- uvx awslabs.aws-api-mcp-server@latest`. You still need your own AWS credentials configured (`aws configure`) for it to work at runtime.
 - **Azure** — runs `claude mcp add azure -- npx -y @azure/mcp@latest server start`. You still need to run `az login` yourself for it to work at runtime.
 - **Playwright** — runs `claude mcp add playwright -- npx @playwright/mcp@latest`. Playwright downloads its browsers on first use; `npx playwright install` does it ahead of time.
+- **Obsidian vault server** (14) — the odd one out: it registers an **HTTP** endpoint rather than a command to launch, because the MCP server is the `obsidian-local-rest-api` plugin already running inside the vault-server container. That plugin listens on the *server's* loopback, so the URL is normally a local port you forwarded over SSH — hence the `http://127.0.0.1:27123/mcp/` default, overridable with `--obsidian-mcp-url` / `-ObsidianMcpUrl`. The key is per-deployment and cannot be baked into the script, so without `--obsidian-mcp-key` / `-ObsidianMcpKey` the item prints how to read it (`sudo ./obsidian-vault-server.sh apikey` on the vault host) and **skips rather than failing**. Never overwrite an existing key — everything already pointing at the vault stops working. Whole setup: the [`obsidian-vault-server`](skills/obsidian-vault-server/) skill.
 
-Any of them can be added later by hand with the same `claude mcp add` command, or removed with `claude mcp remove <name>`.
+The first three can be added later by hand with the same `claude mcp add` command; the Obsidian one takes a URL and an `Authorization` header instead. Any of them is removed with `claude mcp remove <name>`.
 
 ### Optional: extra tooling
 
 Six more rows, also off by default. None of them are MCP servers.
 
-- **Supabase** (14) — adds `anthropics/claude-plugins-official` (a no-op if the community or `claude-code-setup` row already registered it) and installs `supabase@claude-plugins-official`. Already-installed is detected and skipped or updated like any other plugin.
-- **Context7** (15) — runs `npx -y ctx7@latest setup`, an interactive wizard that wires version-accurate library documentation into whichever agents it finds. The scripts hand it the terminal explicitly; with no terminal available (CI, `curl | bash` with no `/dev/tty`, a redirected console) they print the command to run by hand rather than hanging on a prompt nobody can see. The free tier needs no key.
-- **Playwright CLI** (16) — `npm install -g @playwright/cli@latest`, detected by whether `playwright-cli` already resolves on `PATH`. `--no-update` / `-NoUpdate` leaves an existing install alone; otherwise it reinstalls `@latest`.
-- **SkillUI** (17) — `npm install -g skillui`, then `npm install -g playwright` and `npx playwright install chromium`. Playwright is installed **globally on purpose**: the scripts can be run from anywhere, and a bare `npm install playwright` would leave a `node_modules` tree in whatever directory you happened to be in. Both Playwright steps warn rather than fail the item, since SkillUI installs fine without them and only screenshot capture breaks. You're asked up front whether to print the quick start afterwards (`--skillui-guide` / `-SkillUIGuide` answers yes without asking).
-- **Strix** (18) — installs upstream's own shell installer, `curl -sSL https://strix.ai/install | bash`. **Installing it is not enough to run it**: Strix needs Docker running (the first scan pulls its sandbox image) and an LLM API key exported as `STRIX_LLM` + `LLM_API_KEY`. Both scripts print those next steps every time, including on a re-run that skipped the install. On Windows the installer is POSIX-only, so the script tries WSL first, then Git Bash, and warns with the manual command if neither is available — a WSL install is only usable from inside WSL.
+- **Supabase** (15) — adds `anthropics/claude-plugins-official` (a no-op if the community or `claude-code-setup` row already registered it) and installs `supabase@claude-plugins-official`. Already-installed is detected and skipped or updated like any other plugin.
+- **Context7** (16) — runs `npx -y ctx7@latest setup`, an interactive wizard that wires version-accurate library documentation into whichever agents it finds. The scripts hand it the terminal explicitly; with no terminal available (CI, `curl | bash` with no `/dev/tty`, a redirected console) they print the command to run by hand rather than hanging on a prompt nobody can see. The free tier needs no key.
+- **Playwright CLI** (17) — `npm install -g @playwright/cli@latest`, detected by whether `playwright-cli` already resolves on `PATH`. `--no-update` / `-NoUpdate` leaves an existing install alone; otherwise it reinstalls `@latest`.
+- **SkillUI** (18) — `npm install -g skillui`, then `npm install -g playwright` and `npx playwright install chromium`. Playwright is installed **globally on purpose**: the scripts can be run from anywhere, and a bare `npm install playwright` would leave a `node_modules` tree in whatever directory you happened to be in. Both Playwright steps warn rather than fail the item, since SkillUI installs fine without them and only screenshot capture breaks. You're asked up front whether to print the quick start afterwards (`--skillui-guide` / `-SkillUIGuide` answers yes without asking).
+- **Strix** (19) — installs upstream's own shell installer, `curl -sSL https://strix.ai/install | bash`. **Installing it is not enough to run it**: Strix needs Docker running (the first scan pulls its sandbox image) and an LLM API key exported as `STRIX_LLM` + `LLM_API_KEY`. Both scripts print those next steps every time, including on a re-run that skipped the install. On Windows the installer is POSIX-only, so the script tries WSL first, then Git Bash, and warns with the manual command if neither is available — a WSL install is only usable from inside WSL.
 
-- **Obsidian** (19) — the [Obsidian](https://obsidian.md) desktop app plus the two plugins that make Claude Code useful against a vault. The app is not on npm, so it comes from a package manager: Chocolatey on Windows (falling back to winget), flatpak on Linux (falling back to snap), since distro repositories generally don't carry it. Chocolatey needs an elevated prompt; without one the app is skipped with a warning and **the plugins still install**. Then two marketplaces are added and one plugin taken from each:
+- **Obsidian** (20) — the [Obsidian](https://obsidian.md) desktop app plus the two plugins that make Claude Code useful against a vault. The app is not on npm, so it comes from a package manager: Chocolatey on Windows (falling back to winget), flatpak on Linux (falling back to snap), since distro repositories generally don't carry it. Chocolatey needs an elevated prompt; without one the app is skipped with a warning and **the plugins still install**. Then two marketplaces are added and one plugin taken from each:
 
   ```bash
   claude plugin marketplace add AgriciDaniel/claude-obsidian
@@ -227,11 +229,44 @@ Six more rows, also off by default. None of them are MCP servers.
 
   **This item stops at the app and the plugins.** It deliberately does not create a vault — that writes to disk under a reviewed transaction and belongs in its own step, which the item prints when it finishes and [`claude-obsidian-setup/`](claude-obsidian-setup/) performs. `--obsidian-repo-root` / `-ObsidianRepoRoot` changes the root it suggests (default `C:\repos` on Windows, `~/repos` on Linux).
 
+### Optional: this repo's own plugins
+
+- **This repo's plugins** (21) - installs everything under [`plugin/`](plugin/) from this repo's own marketplace. Today that is one plugin, [`crew`](plugin/crew): 9 subagents, 14 slash commands, 14 bundled skills, and 7 hooks across 5 events. It adds the marketplace itself first, so the item works whether or not item 3 ran; both steps are no-ops when they are already present.
+
+  ```bash
+  claude plugin marketplace add mbadali25/useful-claude-add-ons
+  claude plugin install crew@useful-claude-add-ons
+  ```
+
+  **It is off by default on purpose, and it is the only item here where that matters for safety.** Every other row installs something Claude *may* use. `crew` installs hooks, which the harness runs on its own:
+
+  | Hook | Event | What it does the moment the plugin is enabled |
+  |---|---|---|
+  | `guard.sh` / `guard.ps1` | `PreToolUse` on Bash and PowerShell | Blocks `terraform apply`/`destroy`, destructive DDL, force push, hard reset, prod-targeted commands, and any command that would print a secret into the transcript |
+  | `verify-gate.sh` | `Stop` | Runs the checks the changed paths map to and **fails the turn** on red, or on a changed path with no rule |
+  | `context-watch.sh` | `Stop` | Estimates context use and asks for a handoff once per session |
+  | `handoff-write.sh` | `PreCompact` | Snapshots the transcript and writes a skeleton handoff before compaction discards it |
+  | `handoff-read.sh` | `SessionStart` | Injects that handoff back after a clear, compact, or resume |
+  | `notify.sh` | `Notification` | Sends a one-line outbound message to Teams or Telegram, if configured. Never reads |
+
+  A hook cannot be argued out of blocking something - that is the point of it, and it is also why a bootstrap run should not add one to a machine without the box being ticked. The `Stop` gate in particular is a no-op until you build the change-to-check map, so the item finishes by printing the per-repository setup:
+
+  ```bash
+  cd <your repo> && claude
+  /crew:init         # guided, resumable setup
+  /crew:onboard      # build the code map
+  /crew:verify       # build the change-to-check map the Stop gate needs
+  ```
+
+  **The Windows dispatch is incomplete, and it fails quietly.** Only the `PreToolUse` guard pairs a `.sh` with a `shell: powershell` twin, because there the branch is chosen by *which tool Claude used* rather than by which OS you are on. The other five hook entries invoke `bash` unconditionally, so on a Windows machine with no `bash` on `PATH` the `Stop` gate, the context watch, and both halves of the handoff cycle never fire - and nothing says so. Install WSL or Git Bash, or treat the gate as advisory on that machine.
+
+  Uninstall with `claude plugin uninstall crew@useful-claude-add-ons`; the hooks go with it. To keep the plugin but stop the `Stop` gate, set `verifyGate: false` in the repository's `.crew/config.json`. Full guide: [`plugin/crew/README.md`](plugin/crew/README.md), with [`plugin/README.md`](plugin/README.md) for how plugins differ from skills here and [`plugin/PLUGINS.md`](plugin/PLUGINS.md) for the per-component breakdown.
+
 Before running either script on a machine you don't fully control, note that these steps run third-party code from npm, from `strix.ai`, and from Chocolatey/flatpak/snap — see [`SECURITY.md`](SECURITY.md)'s install-script trust boundary.
 
 ### Optional: the Obsidian knowledge vault
 
-Item 19 gets you the app and the plugins. Creating and verifying an actual vault is [`claude-obsidian-setup/`](claude-obsidian-setup/):
+Item 20 gets you the app and the plugins. Creating and verifying an actual vault is [`claude-obsidian-setup/`](claude-obsidian-setup/):
 
 ```powershell
 # Windows - preview first, then apply

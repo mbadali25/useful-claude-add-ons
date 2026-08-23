@@ -11,7 +11,7 @@ keys, the SkillUI quick start) is collected before the first install starts.
 
 The menu is a cursor picker: Up/Down to move, Space to toggle, Enter to start. On the
 repo's own row, Right opens a second picker for the individual skills, so you can take
-three of them instead of all nineteen. Hosts that cannot read a key press - ISE, a
+three of them instead of all twenty-five. Hosts that cannot read a key press - ISE, a
 redirected console, a window under ten lines - get the original numbered prompt instead,
 and every non-interactive path (-All, -Select, -Skills, -NonInteractive) bypasses both.
 
@@ -60,6 +60,8 @@ param(
     [switch]$SkillUIGuide,    # answer the SkillUI quick-start prompt up front
     [switch]$NotifySetup,     # answer the notify setup prompt up front
     [string]$ObsidianRepoRoot = 'C:\repos',  # root the Obsidian item suggests for the vault
+    [string]$ObsidianMcpUrl = 'http://127.0.0.1:27123/mcp/',  # vault-server MCP endpoint (through an SSH tunnel)
+    [string]$ObsidianMcpKey,                 # Local REST API key; without it the item explains and skips
     [Alias('PluginHubScope')]
     [ValidateSet('user', 'project', 'local')]
     [string]$InstallScope = 'user'  # machine-wide by default, not per-project
@@ -292,6 +294,7 @@ function Add-McpServer {
         [string[]]$CommandArgs,
         [string]$Url,
         [hashtable]$EnvVars,
+        [hashtable]$Headers,
         [string]$Note
     )
     if (-not (Test-ClaudeAvailable)) {
@@ -303,6 +306,12 @@ function Add-McpServer {
     }
     if ($Url) {
         $addArgs = @('mcp', 'add', '--scope', $InstallScope, '--transport', 'http', $Name, $Url)
+        # Headers go after the URL. Used for endpoints that authenticate with a
+        # bearer token rather than launching a command, e.g. the Obsidian vault
+        # server's Local REST API.
+        if ($Headers) {
+            foreach ($k in $Headers.Keys) { $addArgs += @('--header', "${k}: $($Headers[$k])") }
+        }
     } else {
         $addArgs = @('mcp', 'add', '--scope', $InstallScope, $Name)
         if ($EnvVars) {
@@ -454,12 +463,14 @@ $script:Catalog = @(
     [pscustomobject]@{ Key = 'aws-mcp';           Default = $false; Name = 'MCP server: AWS (awslabs.aws-api-mcp-server)' }
     [pscustomobject]@{ Key = 'azure-mcp';         Default = $false; Name = 'MCP server: Azure (@azure/mcp)' }
     [pscustomobject]@{ Key = 'playwright-mcp';    Default = $false; Name = 'MCP server: Playwright (@playwright/mcp)' }
+    [pscustomobject]@{ Key = 'obsidian-mcp';      Default = $false; Name = 'MCP server: Obsidian vault server (Local REST API over an SSH tunnel)' }
     [pscustomobject]@{ Key = 'supabase';          Default = $false; Name = 'Supabase plugin (supabase@claude-plugins-official)' }
     [pscustomobject]@{ Key = 'context7';          Default = $false; Name = 'Context7 up-to-date library docs (npx ctx7 setup)' }
     [pscustomobject]@{ Key = 'playwright-cli';    Default = $false; Name = 'Playwright CLI (@playwright/cli) - browser automation from the shell' }
     [pscustomobject]@{ Key = 'skillui';           Default = $false; Name = 'SkillUI (npm) + Playwright/Chromium - extract a design system from a URL' }
     [pscustomobject]@{ Key = 'strix';             Default = $false; Name = 'Strix AI pentesting CLI (needs Docker + an LLM API key)' }
     [pscustomobject]@{ Key = 'obsidian';          Default = $false; Name = 'Obsidian desktop + claude-obsidian + obsidian-skills plugins' }
+    [pscustomobject]@{ Key = 'repo-plugins';      Default = $false; Name = "This repo's plugins: crew (agents, commands, hooks)" }
 )
 
 $script:Selected = @{}
@@ -500,6 +511,8 @@ $script:SkillCatalog = @(
     [pscustomobject]@{ Key = 'cisco-meraki';          Selected = $true; Name = 'cisco-meraki            - Meraki Dashboard API: inventory, events, config changes' }
     [pscustomobject]@{ Key = 'claude-code-defaults';  Selected = $true; Name = 'claude-code-defaults    - Claude Code config: settings.json, permissions, hooks' }
     [pscustomobject]@{ Key = 'claude-code-tuneup';    Selected = $true; Name = 'claude-code-tuneup      - Audit a slow Claude Code setup: dupes, hooks, context' }
+    [pscustomobject]@{ Key = 'claude-memories-canvas';Selected = $true; Name = 'claude-memories-canvas  - claude-memories vault: wiki/maps .canvas conventions' }
+    [pscustomobject]@{ Key = 'claude-memories-vault'; Selected = $true; Name = 'claude-memories-vault   - claude-memories vault: layout, frontmatter, write lock' }
     [pscustomobject]@{ Key = 'cloudflare';            Selected = $true; Name = 'cloudflare              - Cloudflare v4: DNS, WAF, cache, Workers, Zero Trust' }
     [pscustomobject]@{ Key = 'drata';                 Selected = $true; Name = 'drata                   - Drata: controls, monitors, evidence, audit prep' }
     [pscustomobject]@{ Key = 'i-have-adhd';           Selected = $true; Name = 'i-have-adhd             - ADHD-friendly output: next action first, numbered steps' }
@@ -507,6 +520,8 @@ $script:SkillCatalog = @(
     [pscustomobject]@{ Key = 'intune-graph';          Selected = $true; Name = 'intune-graph            - Intune via Graph: devices, compliance, app deployment' }
     [pscustomobject]@{ Key = 'mermaid-svg-bitbucket'; Selected = $true; Name = 'mermaid-svg-bitbucket   - Pre-render Mermaid to SVG so Bitbucket displays it' }
     [pscustomobject]@{ Key = 'notify';                Selected = $true; Name = 'notify                  - Ping your phone or inbox: Telegram bot (two-way) or email' }
+    [pscustomobject]@{ Key = 'obsidian-canvas';       Selected = $true; Name = 'obsidian-canvas         - Obsidian .canvas files as JSON: maps, boards, diagrams' }
+    [pscustomobject]@{ Key = 'obsidian-vault-server'; Selected = $true; Name = 'obsidian-vault-server   - Self-hosted Obsidian on Ubuntu: Sync, REST/MCP endpoint' }
     [pscustomobject]@{ Key = 'repo-docs';             Selected = $true; Name = 'repo-docs               - Whole doc set: CLAUDE.md, READMEs, architecture, handoff' }
     [pscustomobject]@{ Key = 'shipstation';           Selected = $true; Name = 'shipstation             - ShipStation V2/V1/ShipEngine: labels, rates, orders' }
     [pscustomobject]@{ Key = 'sophos-central';        Selected = $true; Name = 'sophos-central          - Sophos Central: isolate endpoints, triage alerts, XDR' }
@@ -515,6 +530,14 @@ $script:SkillCatalog = @(
     [pscustomobject]@{ Key = 'wazuh-onprem';          Selected = $true; Name = 'wazuh-onprem            - Self-hosted Wazuh: server, indexer, dashboards, ossec.conf' }
     [pscustomobject]@{ Key = 'web-testing-playwright';Selected = $true; Name = 'web-testing-playwright  - Real-browser testing: screenshots, console, form flows' }
     [pscustomobject]@{ Key = 'work-log-reporter';     Selected = $true; Name = 'work-log-reporter       - Session work log + emailed PDF report over SMTP' }
+)
+
+# --- This repo's own plugins --------------------------------------------------
+# Keep in sync with .claude-plugin/marketplace.json and plugin/README.md. Unlike the
+# skills, these are off by default and have no sub-picker: a plugin can register hooks,
+# and a hook runs whether or not Claude agrees with it, so it is opted into explicitly.
+$script:PluginCatalog = @(
+    [pscustomobject]@{ Key = 'crew'; Name = 'crew                    - Virtual dev team: 9 agents, 14 commands, safety hooks' }
 )
 
 function Get-SelectedSkillCount {
@@ -1295,7 +1318,7 @@ if (Test-Selected 'cli') {
 }
 
 # Everything from here to the MCP servers needs the claude CLI on PATH.
-$claudeItems = @('own-skills', 'team', 'find-skills', 'community', 'claude-code-setup', 'claude-mem', 'voltagent', 'supabase')
+$claudeItems = @('own-skills', 'team', 'find-skills', 'community', 'claude-code-setup', 'claude-mem', 'voltagent', 'supabase', 'repo-plugins')
 $needsClaude = @($claudeItems | Where-Object { Test-Selected $_ }).Count -gt 0
 
 if ($needsClaude -and -not (Test-ClaudeAvailable)) {
@@ -1513,7 +1536,7 @@ if (Test-Selected 'voltagent') {
     }
 }
 
-# --- 11-13. Optional MCP servers ---------------------------------------------
+# --- 11-14. Optional MCP servers ---------------------------------------------
 if (Test-Selected 'aws-mcp') {
     Invoke-Step "Install AWS MCP server" {
         if (-not (Get-Command uv -ErrorAction SilentlyContinue) -and -not (Get-Command uvx -ErrorAction SilentlyContinue)) {
@@ -1549,7 +1572,29 @@ if (Test-Selected 'playwright-mcp') {
     }
 }
 
-# --- 14. Supabase ------------------------------------------------------------
+if (Test-Selected 'obsidian-mcp') {
+    Invoke-Step "Register the Obsidian vault server MCP endpoint" {
+        # Not a launched command: the endpoint is the obsidian-local-rest-api
+        # plugin already running inside the vault-server container. It listens on
+        # the SERVER's loopback, so the URL is a local port forwarded by SSH.
+        # The API key is per-deployment, so it cannot be baked in here.
+        if (-not $ObsidianMcpKey) {
+            Write-Skip "Obsidian MCP: no -ObsidianMcpKey given"
+            Write-Host "        Get the key from the vault server:"
+            Write-Host "          sudo ./obsidian-vault-server.sh apikey"
+            Write-Host "        Open the tunnel, then re-run with the key:"
+            Write-Host "          ssh -N -L 27123:127.0.0.1:27123 <user>@<server>"
+            Write-Host "          .\install-prerequisites.ps1 -Select obsidian-mcp -ObsidianMcpKey <key>"
+            Write-Host "        See the obsidian-vault-server skill for the whole setup."
+            return
+        }
+        Add-McpServer -Name 'obsidian-server' -Url $ObsidianMcpUrl `
+            -Headers @{ Authorization = "Bearer $ObsidianMcpKey" } `
+            -Note "Requires an SSH tunnel to the vault server: ssh -N -L 27123:127.0.0.1:27123 <user>@<server>"
+    }
+}
+
+# --- 15. Supabase ------------------------------------------------------------
 # Ships inside anthropics/claude-plugins-official, the same marketplace items 6 and 7
 # register - Add-ClaudeMarketplace is a no-op when it is already there, so this item
 # stands on its own. Install-ClaudePlugin does the "already installed?" check.
@@ -1562,7 +1607,7 @@ if (Test-Selected 'supabase') {
     }
 }
 
-# --- 15. Context7 ------------------------------------------------------------
+# --- 16. Context7 ------------------------------------------------------------
 if (Test-Selected 'context7') {
     Invoke-Step "Configure Context7 (npx ctx7 setup)" {
         # 'ctx7 setup' writes the Context7 MCP/skill config for whichever agents it
@@ -1582,7 +1627,7 @@ if (Test-Selected 'context7') {
     }
 }
 
-# --- 16. Playwright CLI ------------------------------------------------------
+# --- 17. Playwright CLI ------------------------------------------------------
 if (Test-Selected 'playwright-cli') {
     Invoke-Step "Install Playwright CLI (@playwright/cli)" {
         # Detection is on the binary the package provides ('playwright-cli'), which is
@@ -1610,7 +1655,7 @@ if (Test-Selected 'playwright-cli') {
     }
 }
 
-# --- 17. SkillUI -------------------------------------------------------------
+# --- 18. SkillUI -------------------------------------------------------------
 function Show-SkillUIQuickStart {
     Write-Host ""
     Write-Host "    SkillUI quick start  https://github.com/amaancoderx/npxskillui" -ForegroundColor Cyan
@@ -1658,7 +1703,7 @@ if (Test-Selected 'skillui') {
     }
 }
 
-# --- 18. Strix ---------------------------------------------------------------
+# --- 19. Strix ---------------------------------------------------------------
 function Show-StrixNextSteps {
     Write-Host ""
     Write-Host "    Strix needs two more things before its first scan:" -ForegroundColor Yellow
@@ -1713,7 +1758,7 @@ if (Test-Selected 'strix') {
     }
 }
 
-# --- 19. Obsidian + claude-obsidian ------------------------------------------
+# --- 20. Obsidian + claude-obsidian ------------------------------------------
 function Show-ObsidianNextSteps {
     param([string]$VaultRoot)
     Write-Host ""
@@ -1771,6 +1816,40 @@ if (Test-Selected 'obsidian') {
 
         Show-ObsidianNextSteps $ObsidianRepoRoot
     }
+}
+
+# --- 21. This repo's own plugins ---------------------------------------------
+# Same marketplace as item 3, so Add-ClaudeMarketplace is a no-op when item 3 already
+# ran - this item stands on its own. Install-ClaudePlugin does the "already installed?"
+# check.
+function Show-CrewNextSteps {
+    Write-Host ""
+    Write-Step "crew: next steps"
+    Write-Host "  Unlike a skill, crew registers hooks that run on their own:"
+    Write-Host "    - PreToolUse on Bash/PowerShell blocks terraform apply/destroy, destructive"
+    Write-Host "      DDL, force push, hard reset, and commands that would print a secret."
+    Write-Host "    - Stop runs the checks your changed paths map to and fails the turn on red."
+    Write-Host "  Set it up per repository before relying on either:"
+    Write-Host "    cd <your repo>; claude"
+    Write-Host "    /crew:init         # guided, resumable setup"
+    Write-Host "    /crew:onboard      # build the code map"
+    Write-Host "    /crew:verify       # build the change-to-check map the Stop gate needs"
+    Write-Host "  Full guide: https://github.com/mbadali25/useful-claude-add-ons/blob/main/plugin/crew/README.md"
+}
+if (Test-Selected 'repo-plugins') {
+    Invoke-Step "Add this repo as a Claude Code marketplace" {
+        Add-ClaudeMarketplace -Source 'mbadali25/useful-claude-add-ons' -Name 'useful-claude-add-ons'
+    }
+
+    # The catalog lives in $script:PluginCatalog next to the menu. No sub-picker: there
+    # is one plugin, and it is opt-in already.
+    foreach ($plugin in @($script:PluginCatalog | ForEach-Object { $_.Key })) {
+        Invoke-Step "Plugin: $plugin@useful-claude-add-ons" {
+            Install-ClaudePlugin "$plugin@useful-claude-add-ons"
+        }
+    }
+
+    Show-CrewNextSteps
 }
 
 

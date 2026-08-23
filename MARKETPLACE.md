@@ -34,6 +34,16 @@ claude plugin install wazuh-onprem@useful-claude-add-ons
 
 Add `--scope project` to install into the current project's `.claude/` config instead of your user-level config, or `--scope local` for a machine-local, non-shared install.
 
+### Install a plugin from it
+
+The same marketplace also serves this repo's plugins from [`plugin/`](plugin/) — the entries whose `source` is `./plugin/<name>` rather than `./skills/<name>`. Installing one is identical:
+
+```bash
+claude plugin install crew@useful-claude-add-ons
+```
+
+The difference is what arrives. A skill is a document Claude reads when the conversation matches it. A plugin can also register **subagents**, **slash commands**, and **hooks** — and a hook is a shell script the harness runs on tool use or on stop, whether or not Claude agrees with it. `crew`'s hooks block `terraform apply`, force push, and destructive DDL, and fail a turn whose checks go red. That is the intent, but it is not something to install absent-mindedly, which is why the bootstrap scripts leave item 21 unticked. See [`plugin/README.md`](plugin/README.md).
+
 ### List, update, remove
 
 ```bash
