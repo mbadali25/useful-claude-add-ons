@@ -253,6 +253,121 @@ plugin_enabled() {
   return 1
 }
 
+# --- Detection: what a marketplace clone and an installed plugin were built from ---
+# A re-run used to spend one 'claude plugin update' spawn per plugin: 25 of this repo's
+# skills meant 25 CLI launches that each re-checked the same marketplace and found
+# nothing to do. Claude Code already records, per installed plugin, the marketplace
+# commit it was installed from, and add_marketplace has just re-cloned that marketplace.
+# When the two SHAs match there is nothing to update and the spawn can be skipped
+# outright. Everything below is a file read; any failure reports "cannot tell", which
+# install_plugin treats as "ask the CLI" so the slow path is still there when needed.
+INSTALLED_SHAS_CACHE=""
+INSTALLED_SHAS_LOADED=0
+load_installed_shas() {
+  INSTALLED_SHAS_LOADED=1
+  INSTALLED_SHAS_CACHE=""
+  local f
+  f="$(claude_config_root)/plugins/installed_plugins.json"
+  [ -r "$f" ] || return 0
+  # Emit one "name@marketplace<TAB>sha" line per installed copy.
+  INSTALLED_SHAS_CACHE="$(json_query \
+    '(.plugins // {}) | to_entries[] | .key as $k | (.value[]? | "\($k)\t\(.gitCommitSha // "")")' \
+    'import json,sys
+for k, entries in (json.load(sys.stdin).get("plugins") or {}).items():
+    for e in entries or []:
+        print("%s\t%s" % (k, e.get("gitCommitSha") or ""))' < "$f")" || INSTALLED_SHAS_CACHE=""
+  return 0
+}
+
+installed_plugin_sha() {
+  local want="$1" id sha
+  [ "$INSTALLED_SHAS_LOADED" -eq 1 ] || load_installed_shas
+  [ -z "$INSTALLED_SHAS_CACHE" ] && return 1
+  while IFS=$'\t' read -r id sha; do
+    [ "$id" = "$want" ] && [ -n "$sha" ] && { printf '%s' "$sha"; return 0; }
+  done <<< "$INSTALLED_SHAS_CACHE"
+  return 1
+}
+
+# Cached per marketplace - all 25 of this repo's skills share one - and stored as a
+# newline/tab string rather than an associative array so this still runs on bash 3.2.
+# A marketplace whose SHA cannot be read is remembered as "-" so it is not re-probed.
+MARKETPLACE_SHA_CACHE=""
+marketplace_head_sha() {
+  local mkt="$1" key val dir sha
+  [ -z "$mkt" ] && return 1
+  if [ -n "$MARKETPLACE_SHA_CACHE" ]; then
+    while IFS=$'\t' read -r key val; do
+      if [ "$key" = "$mkt" ]; then
+        [ "$val" = "-" ] && return 1
+        printf '%s' "$val"; return 0
+      fi
+    done <<< "$MARKETPLACE_SHA_CACHE"
+  fi
+  sha=""
+  dir="$(claude_config_root)/plugins/marketplaces/$mkt"
+  if have git && [ -d "$dir/.git" ]; then
+    sha="$(git -C "$dir" rev-parse HEAD 2>/dev/null)" || sha=""
+  fi
+  MARKETPLACE_SHA_CACHE="${MARKETPLACE_SHA_CACHE}${MARKETPLACE_SHA_CACHE:+$'\n'}${mkt}"$'\t'"${sha:--}"
+  [ -z "$sha" ] && return 1
+  printf '%s' "$sha"
+}
+
+plugin_at_marketplace_head() {
+  # True only when both SHAs are known and equal. "Cannot tell" is false, so the caller
+  # falls back to running 'claude plugin update' exactly as it always did.
+  local spec="$1" mkt head installed
+  case "$spec" in *@*) mkt="${spec#*@}" ;; *) return 1 ;; esac
+  head="$(marketplace_head_sha "$mkt")" || return 1
+  installed="$(installed_plugin_sha "$spec")" || return 1
+  [ "$head" = "$installed" ]
+}
+
+# name -> declared version, read once per marketplace from the clone's own
+# marketplace.json. Used to fill the in-memory plugin cache after an install without
+# paying for another 'claude plugin list --json'.
+MARKETPLACE_CATALOG_CACHE=""
+marketplace_plugin_version() {
+  # Lines are "marketplace<TAB>name<TAB>version"; the marketplace column is prefixed
+  # here rather than inside the jq/python expression so a marketplace name is never
+  # interpolated into either program.
+  local mkt="$1" want="$2" f cached rows mk key ver
+  [ -z "$mkt" ] && return 1
+  case "$MARKETPLACE_CATALOG_CACHE" in
+    "$mkt"$'\t'*|*$'\n'"$mkt"$'\t'*) cached=1 ;;
+    *) cached=0 ;;
+  esac
+  if [ "$cached" -eq 0 ]; then
+    f="$(claude_config_root)/plugins/marketplaces/$mkt/.claude-plugin/marketplace.json"
+    rows=""
+    if [ -r "$f" ]; then
+      rows="$(json_query \
+        '(.plugins // [])[] | "\(.name)\t\(.version // "unknown")"' \
+        'import json,sys
+for p in (json.load(sys.stdin).get("plugins") or []):
+    print("%s\t%s" % (p.get("name") or "", p.get("version") or "unknown"))' < "$f" \
+        | sed "s|^|${mkt}\t|")" || rows=""
+    fi
+    # The bare marker line goes in either way, so an unreadable or empty marketplace
+    # is not re-parsed once per plugin.
+    MARKETPLACE_CATALOG_CACHE="${MARKETPLACE_CATALOG_CACHE}${MARKETPLACE_CATALOG_CACHE:+$'\n'}${mkt}"$'\t\t'"${rows:+$'\n'}${rows}"
+  fi
+  while IFS=$'\t' read -r mk key ver; do
+    [ "$mk" = "$mkt" ] && [ "$key" = "$want" ] && [ -n "$ver" ] && { printf '%s' "$ver"; return 0; }
+  done <<< "$MARKETPLACE_CATALOG_CACHE"
+  return 1
+}
+
+plugin_cache_add() {
+  # Record a just-installed plugin in the in-memory cache instead of reloading the
+  # whole list. 'claude plugin install' enables what it installs, so it is live - and
+  # trusting that is more accurate than re-reading, since a freshly installed plugin
+  # can still read as disabled in 'claude plugin list --json' (see ensure_plugin_enabled).
+  local name="$1" ver="${2:-unknown}"
+  PLUGINS_CACHE="${PLUGINS_CACHE}${PLUGINS_CACHE:+$'\n'}${name}"$'\t'"${ver}"$'\t1'
+}
+
 ensure_plugin_enabled() {
   # $1 is 'name@marketplace'. For a plugin that was ALREADY installed before this run:
   # one switched off in settings.json is installed, at the right scope, and completely
@@ -382,17 +497,32 @@ add_marketplace() {
 install_plugin() {
   # $1 is 'name@marketplace'. Detection is on the bare name, so a plugin already
   # installed from a *different* marketplace counts as present and is not duplicated.
-  local spec="$1" name before after
+  local spec="$1" name mkt before after target
   name="${spec%%@*}"
+  case "$spec" in *@*) mkt="${spec#*@}" ;; *) mkt="" ;; esac
   if before="$(plugin_version "$name")"; then
     if [ "$NO_UPDATE" -eq 1 ]; then
       skip "plugin '$name' already installed (version $before)"
       ensure_plugin_enabled "$spec"
       return 0
     fi
+    # Nothing new in the marketplace this copy was installed from, so there is nothing
+    # for 'claude plugin update' to do. Skipping the spawn is the whole reason a re-run
+    # of the 25-skill item finishes in seconds instead of minutes; see
+    # plugin_at_marketplace_head for why a "cannot tell" still takes the slow path.
+    if plugin_at_marketplace_head "$spec"; then
+      skip "plugin '$name' already current (version $before)"
+      ensure_plugin_enabled "$spec"
+      return 0
+    fi
+    # The fully qualified 'name@marketplace' is what 'claude plugin update' wants: a
+    # bare name is rejected with 'Plugin "<name>" not found', which made every update
+    # in a re-run fail and print a warning that read like a real problem.
+    target="${mkt:+$spec}"
+    target="${target:-$name}"
     # A failed update is not fatal: the plugin is installed and usable, and
     # 'claude plugin update' legitimately fails when its marketplace has moved on.
-    claude plugin update "$name" >/dev/null 2>&1       || warn "'claude plugin update $name' failed - keeping the installed version."
+    claude plugin update "$target" >/dev/null 2>&1     || warn "'claude plugin update $target' failed - keeping the installed version."
     load_plugins
     after="$(plugin_version "$name" || echo "$before")"
     if [ "$after" != "$before" ]; then
@@ -405,7 +535,10 @@ install_plugin() {
     return 0
   fi
   claude plugin install "$spec" --scope "$INSTALL_SCOPE" || return 1
-  load_plugins
+  # Add the new plugin to the in-memory cache rather than reloading the whole list:
+  # a fresh run installs 25+ plugins, and 'claude plugin list --json' after each one
+  # was a second CLI spawn per plugin that nothing in this run reads differently.
+  plugin_cache_add "$name" "$(marketplace_plugin_version "$mkt" "$name" || printf 'unknown')"
   COUNT_INSTALLED=$((COUNT_INSTALLED+1))
   ok "installed plugin '$spec'"
   # No ensure_plugin_enabled here: 'claude plugin install' already enabled it. See the

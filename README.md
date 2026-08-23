@@ -37,7 +37,7 @@ cd useful-claude-add-ons
 ./scripts/install-prerequisites.sh
 ```
 
-Both scripts are idempotent and **detect before they install** — an already-present Chocolatey package, marketplace, or plugin is reported and skipped rather than reinstalled. Re-running is cheap and safe. Each run ends with an `Installed / Updated / Already present` summary.
+Both scripts are idempotent and **detect before they install** — an already-present Chocolatey package, marketplace, or plugin is reported and skipped rather than reinstalled. Re-running is cheap and safe: a plugin whose marketplace has not moved since it was installed is skipped without launching `claude` at all, so a no-op re-run of the 25-skill item takes seconds rather than minutes. Each run ends with an `Installed / Updated / Already present` summary.
 
 Both open with a **menu of everything they can install**, so you pick once up front and the rest of the run is unattended.
 

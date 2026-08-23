@@ -346,7 +346,16 @@ claude plugin marketplace update useful-claude-add-ons
 claude plugin update <skill-name>@useful-claude-add-ons
 ```
 
+Note the `@useful-claude-add-ons` suffix — `claude plugin update` rejects a bare plugin
+name with `Plugin "<name>" not found`.
+
 Or just re-run the OS install script — it's idempotent and will skip anything already installed.
+To decide that cheaply it compares the commit its marketplace clone is on against the commit
+Claude Code recorded when each plugin was installed, and only shells out to `claude plugin update`
+for the ones that differ; a run where nothing has changed upstream launches the CLI once for the
+marketplace refresh and not at all per plugin. If `git` is missing or the marketplace was added by
+some other means, it falls back to asking the CLI about every plugin, which is correct but slower.
+`--no-update` / `-NoUpdate` skips the update check entirely.
 
 ## Troubleshooting
 

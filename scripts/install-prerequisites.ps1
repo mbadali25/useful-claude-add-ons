@@ -365,6 +365,110 @@ function Add-ClaudeMarketplace {
     Write-Ok "added marketplace '$Source'"
 }
 
+# --- Detection: what a marketplace clone and an installed plugin were built from ---
+# A re-run used to spend one 'claude plugin update' spawn per plugin: 25 of this repo's
+# skills meant 25 CLI launches that each re-checked the same marketplace and found
+# nothing to do. Claude Code already records, per installed plugin, the marketplace
+# commit it was installed from, and Add-ClaudeMarketplace has just re-cloned that
+# marketplace. When the two SHAs match there is nothing to update and the spawn can be
+# skipped outright. Everything below is a file read; any failure reports "cannot tell",
+# which Install-ClaudePlugin treats as "ask the CLI" so the slow path is still there.
+$script:InstalledShaCache = $null
+function Get-InstalledPluginShas {
+    # 'name@marketplace' -> the marketplace commit that copy was installed from.
+    if ($null -ne $script:InstalledShaCache) { return $script:InstalledShaCache }
+    $map = @{}
+    $file = Join-Path (Join-Path (Get-ClaudeConfigRoot) 'plugins') 'installed_plugins.json'
+    if (Test-Path $file) {
+        try {
+            $data = Get-Content -Raw -Path $file | ConvertFrom-Json
+            if ($data.plugins) {
+                foreach ($entry in $data.plugins.PSObject.Properties) {
+                    foreach ($copy in @($entry.Value)) {
+                        if ($copy.gitCommitSha -and -not $map.ContainsKey($entry.Name)) {
+                            $map[$entry.Name] = "$($copy.gitCommitSha)"
+                        }
+                    }
+                }
+            }
+        } catch {
+            # An unreadable or reshaped state file just means "cannot tell".
+        }
+    }
+    $script:InstalledShaCache = $map
+    return $map
+}
+
+# Cached per marketplace - all 25 of this repo's skills share one. A marketplace whose
+# SHA cannot be read is remembered as '' so it is not re-probed once per plugin.
+$script:MarketplaceShaCache = @{}
+function Get-MarketplaceHeadSha {
+    param([string]$Marketplace)
+    if (-not $Marketplace) { return '' }
+    if ($script:MarketplaceShaCache.ContainsKey($Marketplace)) {
+        return $script:MarketplaceShaCache[$Marketplace]
+    }
+    $sha = ''
+    $dir = Join-Path (Join-Path (Join-Path (Get-ClaudeConfigRoot) 'plugins') 'marketplaces') $Marketplace
+    if ((Get-Command git -ErrorAction SilentlyContinue) -and (Test-Path (Join-Path $dir '.git'))) {
+        try {
+            $out = git -C $dir rev-parse HEAD 2>$null
+            if ($LASTEXITCODE -eq 0 -and $out) { $sha = "$out".Trim() }
+        } catch { }
+    }
+    $script:MarketplaceShaCache[$Marketplace] = $sha
+    return $sha
+}
+
+function Test-PluginAtMarketplaceHead {
+    # True only when both SHAs are known and equal. "Cannot tell" is false, so the
+    # caller falls back to running 'claude plugin update' exactly as it always did.
+    param([string]$Spec)
+    if ($Spec -notmatch '@') { return $false }
+    $mkt = $Spec.Substring($Spec.IndexOf('@') + 1)
+    $head = Get-MarketplaceHeadSha $mkt
+    if (-not $head) { return $false }
+    $installed = (Get-InstalledPluginShas)[$Spec]
+    if (-not $installed) { return $false }
+    return ($head -eq $installed)
+}
+
+# name -> declared version, read once per marketplace from the clone's own
+# marketplace.json. Used to fill the in-memory plugin cache after an install without
+# paying for another 'claude plugin list --json'.
+$script:MarketplaceCatalogCache = @{}
+function Get-MarketplacePluginVersion {
+    param([string]$Marketplace, [string]$Name)
+    if (-not $Marketplace) { return 'unknown' }
+    if (-not $script:MarketplaceCatalogCache.ContainsKey($Marketplace)) {
+        $map = @{}
+        $file = Join-Path (Join-Path (Join-Path (Join-Path (Join-Path (Get-ClaudeConfigRoot) 'plugins') 'marketplaces') $Marketplace) '.claude-plugin') 'marketplace.json'
+        if (Test-Path $file) {
+            try {
+                foreach ($p in @((Get-Content -Raw -Path $file | ConvertFrom-Json).plugins)) {
+                    if ($p.name) { $map["$($p.name)"] = if ($p.version) { "$($p.version)" } else { 'unknown' } }
+                }
+            } catch { }
+        }
+        $script:MarketplaceCatalogCache[$Marketplace] = $map
+    }
+    $found = $script:MarketplaceCatalogCache[$Marketplace][$Name]
+    if ($found) { return $found }
+    return 'unknown'
+}
+
+function Add-PluginToCache {
+    # Record a just-installed plugin in the in-memory cache instead of reloading the
+    # whole list. 'claude plugin install' enables what it installs, so the copy is live -
+    # and trusting that is more accurate than re-reading, since a freshly installed
+    # plugin can still read as disabled in 'claude plugin list --json' (see
+    # Enable-ClaudePlugin).
+    param([string]$Spec, [string]$Version)
+    $name = $Spec.Split('@')[0]
+    $cache = Get-ClaudePlugins
+    $cache[$name] = [pscustomobject]@{ Id = $Spec; Version = $Version; Enabled = $true }
+}
+
 function Enable-ClaudePlugin {
     # $Spec is 'name@marketplace'. For a plugin that was ALREADY installed before this
     # run: one switched off in settings.json is installed, at the right scope, and
@@ -417,12 +521,26 @@ function Install-ClaudePlugin {
             return
         }
         $before = $existing.Version
-        claude plugin update $name | Out-Null
+        # Nothing new in the marketplace this copy was installed from, so there is
+        # nothing for 'claude plugin update' to do. Skipping the spawn is the whole
+        # reason a re-run of the 25-skill item finishes in seconds instead of minutes;
+        # see Test-PluginAtMarketplaceHead for why a "cannot tell" still takes the
+        # slow path.
+        if (Test-PluginAtMarketplaceHead $Spec) {
+            Write-Skip "plugin '$name' already current (version $before)"
+            Enable-ClaudePlugin $Spec
+            return
+        }
+        # The fully qualified 'name@marketplace' is what 'claude plugin update' wants:
+        # a bare name is rejected with 'Plugin "<name>" not found', which made every
+        # update in a re-run fail and print a warning that read like a real problem.
+        $target = if ($Spec -match '@') { $Spec } else { $name }
+        claude plugin update $target | Out-Null
         # A failed *update* is not fatal - the plugin is already installed and usable,
         # and 'claude plugin update' legitimately fails when the marketplace it came
         # from has moved on. Report it and carry on; a failed *install* still throws.
         if ($LASTEXITCODE -ne 0) {
-            Write-Warn2 "'claude plugin update $name' failed - keeping the installed version."
+            Write-Warn2 "'claude plugin update $target' failed - keeping the installed version."
             Enable-ClaudePlugin $Spec
             return
         }
@@ -438,7 +556,11 @@ function Install-ClaudePlugin {
     }
     claude plugin install $Spec --scope $InstallScope
     if ($LASTEXITCODE -ne 0) { throw "'claude plugin install $Spec' failed - see the output above." }
-    Get-ClaudePlugins -Refresh | Out-Null
+    # Add the new plugin to the in-memory cache rather than reloading the whole list:
+    # a fresh run installs 25+ plugins, and 'claude plugin list --json' after each one
+    # was a second CLI spawn per plugin that nothing in this run reads differently.
+    $mkt = if ($Spec -match '@') { $Spec.Substring($Spec.IndexOf('@') + 1) } else { '' }
+    Add-PluginToCache $Spec (Get-MarketplacePluginVersion $mkt $name)
     $script:Summary.Installed++
     Write-Ok "installed plugin '$Spec'"
     # No Enable-ClaudePlugin here: 'claude plugin install' already enabled it. See the

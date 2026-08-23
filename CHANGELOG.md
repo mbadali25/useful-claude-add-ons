@@ -6,6 +6,24 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **Install scripts — installing this repo's skills took minutes, and every re-run
+  warned about all of them.** Two problems compounded. First, `claude plugin update`
+  was called with a bare plugin name; the CLI only accepts `name@marketplace` and
+  rejects a bare name with `Plugin "<name>" not found`, so *every* update in a re-run
+  failed and printed `'claude plugin update <name>' failed - keeping the installed
+  version.` — 25 spawned CLI processes that could not have succeeded, plus 25 warnings
+  that read like real breakage. Second, both scripts reloaded the entire plugin list
+  (`claude plugin list --json`) after every single install, doubling the CLI spawns on
+  a fresh run. `install_plugin` / `Install-ClaudePlugin` now compare the marketplace
+  clone's HEAD commit against the commit Claude Code recorded for the installed copy
+  (`installed_plugins.json`) and skip the update spawn entirely when they match, pass
+  the fully qualified `name@marketplace` when they do not, and add a freshly installed
+  plugin to the in-memory cache instead of re-reading the whole list. Both SHA lookups
+  are file reads, and either one being unavailable (no `git`, an unreadable state file,
+  a plugin installed from a different marketplace) reports "cannot tell" and falls back
+  to the old CLI path. Measured on the 25-skill item: re-run 38.5s -> 5.8s, fresh
+  install 51s -> 32s, and no spurious warnings.
+
 - **`crew` 0.2.0 — the Windows hooks never ran.** `guard.sh` and `verify-gate.sh` exited 0
   on MSYS/MINGW to "defer" to `.ps1` twins, and the twins were registered with a
   `shell: powershell` field that Claude Code does not read — `verify-gate.ps1`,
