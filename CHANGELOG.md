@@ -4,6 +4,12 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Changed
+
+- **Re-pinned the README's one-liner install URLs** from `f59faf1` to `7059ede`, per the
+  rule in `CLAUDE.md`. The old pin predated everything below, so the documented one-liner
+  was still handing people the installer with the broken `claude plugin update` call.
+
 ### Fixed
 
 - **Every installed skill was frozen at whatever it looked like on the day it was first
