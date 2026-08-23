@@ -405,7 +405,20 @@ class MerakiClient:
         items = []
         next_path = path
         next_params = params
+        # A malformed or self-referential Link header pages forever, and a busy
+        # org's events feed is effectively unbounded. Stop and say so rather
+        # than filling memory silently.
+        pages = 0
+        max_pages = int(os.environ.get("MERAKI_MAX_PAGES", "500"))
         while next_path:
+            pages += 1
+            if pages > max_pages:
+                raise MerakiError(
+                    0, [f"Stopped after {max_pages} pages of {path} with "
+                        f"{len(items)} items - the Link header never "
+                        f"terminated. Narrow the query (timespan, perPage), or "
+                        f"raise MERAKI_MAX_PAGES if the result really is this "
+                        f"large."])
             data, headers = self.http.request("GET", next_path, params=next_params)
             if isinstance(data, list):
                 items.extend(data)

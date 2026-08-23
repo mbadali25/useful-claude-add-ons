@@ -15,6 +15,7 @@ import argparse
 import base64
 import json
 import os
+import shutil
 import stat
 import sys
 import time
@@ -77,7 +78,13 @@ def _save_cache(key, token, expires_in):
     except (OSError, ValueError):
         blob = {}
     blob[key] = {"access_token": token, "expires_at": time.time() + int(expires_in)}
-    with open(CACHE_PATH, "w", encoding="utf-8") as f:
+    # Create the file already private rather than writing it world-readable
+    # and chmod'ing after - the gap between the two is a live bearer token on
+    # disk at the default umask. On Windows this is cosmetic (ACLs, not mode
+    # bits), so the cache still should not live on a shared machine.
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+    fd = os.open(CACHE_PATH, flags, stat.S_IRUSR | stat.S_IWUSR)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
         json.dump(blob, f)
     os.chmod(CACHE_PATH, stat.S_IRUSR | stat.S_IWUSR)  # 0600 - it's a bearer token
 
@@ -159,14 +166,36 @@ def _device_code(quiet=False):
     raise AuthError("Device code flow timed out waiting for sign-in.")
 
 
+def _find_az():
+    """Locate the az launcher.
+
+    On Windows az ships as az.cmd, and CreateProcess does not apply PATHEXT -
+    so subprocess.run(["az", ...]) raises FileNotFoundError even when az is
+    installed and on PATH. shutil.which does apply PATHEXT. Without this the
+    error below blames PATH for a problem that is not PATH, and you go looking
+    for an install that is already there.
+    """
+    for name in ("az", "az.cmd", "az.bat", "az.exe"):
+        found = shutil.which(name)
+        if found:
+            return found
+    return None
+
+
 def _azure_cli():
+    az = _find_az()
+    if not az:
+        raise AuthError(
+            "azure_cli mode needs the `az` CLI. It was not found via PATH "
+            "(including PATHEXT on Windows, where az is az.cmd). Install it, or "
+            "use --mode client_credentials / device_code.")
     try:
         out = subprocess.run(
-            ["az", "account", "get-access-token", "--resource", "https://graph.microsoft.com", "-o", "json"],
+            [az, "account", "get-access-token", "--resource", "https://graph.microsoft.com", "-o", "json"],
             capture_output=True, text=True, timeout=60, check=False,
         )
-    except FileNotFoundError as exc:
-        raise AuthError("azure_cli mode needs the `az` CLI on PATH.") from exc
+    except OSError as exc:
+        raise AuthError(f"Could not run {az}: {exc}") from exc
     if out.returncode != 0:
         raise AuthError(f"az get-access-token failed - run `az login` first.\n{out.stderr[:400]}")
     tok = json.loads(out.stdout)

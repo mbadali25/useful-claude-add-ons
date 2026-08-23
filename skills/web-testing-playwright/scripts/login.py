@@ -121,6 +121,9 @@ def main():
     ap.add_argument("--user-selector", help="override username field detection")
     ap.add_argument("--password-selector", help="override password field detection")
     ap.add_argument("--submit-selector", help="override submit button detection")
+    ap.add_argument("--next-selector",
+                    help="selector for the first-screen Next button on a "
+                         "two-step login; falls back to --submit-selector")
     ap.add_argument("--success-url", help="URL glob expected after login, e.g. '**/dashboard'")
     ap.add_argument("--success-selector",
                     help="selector that only exists when logged in, e.g. '[data-testid=avatar]'")
@@ -182,7 +185,12 @@ def main():
         print(f"   filled username from ${args.user_env}")
 
         if args.two_step:
-            nxt = resolve(page, SUBMIT_CANDIDATES, args.submit_selector, "submit")
+            # --next-selector, not --submit-selector: on a real two-screen login
+            # the "Next" and "Sign in" buttons rarely share markup, and reusing
+            # one selector for both means either the first click misses or the
+            # second one does.
+            nxt = resolve(page, SUBMIT_CANDIDATES,
+                          args.next_selector or args.submit_selector, "next")
             if nxt:
                 nxt.click()
                 page.wait_for_load_state("domcontentloaded")

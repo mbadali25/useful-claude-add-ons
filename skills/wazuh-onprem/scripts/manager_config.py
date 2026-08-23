@@ -37,9 +37,26 @@ Usage:
 import argparse
 import difflib
 import os
+import tempfile
+import uuid
 import subprocess
 import sys
 import time
+
+def _scratch_path(kind):
+    """A per-run scratch path, local and remote.
+
+    These were hardcoded as /tmp/_wazuh_<kind>_ossec.conf. Two apply or diff
+    runs at once - two operators, or one operator running a second config
+    before the first cleaned up - would clobber each other's candidate file
+    mid-flight, and the second run would install the first run's config. A
+    fixed /tmp path also does not exist on native Windows.
+    """
+    return os.path.join(
+        tempfile.gettempdir(),
+        f"_wazuh_{kind}_{os.getpid()}_{uuid.uuid4().hex[:8]}_ossec.conf",
+    ).replace("\\", "/")
+
 
 DEFAULT_CONF_PATH = "/var/ossec/etc/ossec.conf"
 
@@ -134,7 +151,7 @@ def cmd_fetch(args):
 
 def cmd_diff(args):
     host, user, key, port, conf_path = cfg()
-    tmp_current = "/tmp/_wazuh_current_ossec.conf"
+    tmp_current = _scratch_path("current")
     scp_down(host, user, key, port, conf_path, tmp_current)
     with open(tmp_current, encoding="utf-8") as f:
         current = f.read()
@@ -159,7 +176,7 @@ def cmd_apply(args):
     run_remote(host, user, key, port, f"sudo cp {conf_path} {backup_path}")
 
     print("2/6 Fetching current config", file=sys.stderr)
-    tmp_current = "/tmp/_wazuh_current_ossec.conf"
+    tmp_current = _scratch_path("current")
     scp_down(host, user, key, port, conf_path, tmp_current)
     with open(tmp_current, encoding="utf-8") as f:
         current = f.read()
@@ -168,12 +185,12 @@ def cmd_apply(args):
     with open(args.block, encoding="utf-8") as f:
         block = f.read()
     candidate = insert_block(current, block, anchor=args.anchor)
-    tmp_candidate = "/tmp/_wazuh_candidate_ossec.conf"
+    tmp_candidate = _scratch_path("candidate")
     with open(tmp_candidate, "w", encoding="utf-8") as f:
         f.write(candidate)
 
     print("4/6 Uploading candidate and checking XML well-formedness", file=sys.stderr)
-    remote_candidate = "/tmp/_wazuh_candidate_ossec.conf"
+    remote_candidate = _scratch_path("candidate")
     scp_up(host, user, key, port, tmp_candidate, remote_candidate)
     xml_check = run_remote(host, user, key, port, f"xmllint --noout {remote_candidate}", check=False)
     if xml_check.returncode != 0:
