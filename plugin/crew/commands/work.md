@@ -6,6 +6,12 @@ allowed-tools: Read, Edit, Write, Bash, Grep, Glob, Agent
 
 Work ticket $1.
 
+When the ticket is complete and verified, and `notify.provider` is not `none`,
+send one line - this is the `done` event:
+`bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notify.sh done "$1 complete"`
+Only after the checks pass. "Done" that means "I stopped typing" is the reason
+nobody trusts a notification channel.
+
 1. Read the ticket. Files mode: `.work/tickets/$1.md`. Jira mode: `.work/cache/$1.md`,
    and if it is missing run `/crew:jira-sync $1` first. Do NOT read INDEX.md or
    any other ticket.
@@ -15,7 +21,7 @@ Work ticket $1.
 5. Implement the smallest change that satisfies Done.
 6. Verify. If `.crew/verify.json` exists, run the checks your changed paths map
    to (the Stop hook enforces this anyway; running it yourself is faster feedback).
-   Otherwise `./scripts/smoke.sh`. On failure, fix and rerun. Never proceed past
+   Otherwise `./_verify/smoke.sh`. On failure, fix and rerun. Never proceed past
    a red gate. If a changed path maps to no rule, add one before finishing.
 7. If the change touches auth, input, SQL, secrets, or IaC -> `crew:security`.
    If it touches a migration, schema, or a big-table query and the `dba` role is

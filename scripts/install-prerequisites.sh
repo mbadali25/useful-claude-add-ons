@@ -549,7 +549,7 @@ PLUGIN_KEYS=(
   "crew"
 )
 PLUGIN_NAME=(
-  "crew                    - Virtual dev team: 9 agents, 14 commands, safety hooks"
+  "crew                    - Virtual dev team: 9 agents, 16 commands, safety hooks"
 )
 
 skills_selected_count() {

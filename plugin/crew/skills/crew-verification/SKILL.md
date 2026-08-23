@@ -25,7 +25,7 @@ Write `.crew/verify.json`:
   "anchor": "repo@a1b2c3d",
   "rules": [
     { "paths": ["src/Api/**", "src/Domain/**"],
-      "run": ["dotnet test tests/Api --no-restore", "./scripts/smoke.sh"],
+      "run": ["dotnet test tests/Api --no-restore", "./_verify/smoke.sh"],
       "why": "Domain changes break API contracts; smoke catches boot failures" },
 
     { "paths": ["**/*.css", "**/*.scss", "src/components/**"],
@@ -33,7 +33,7 @@ Write `.crew/verify.json`:
       "why": "Style changes are invisible to API tests" },
 
     { "paths": ["migrations/**", "**/*.sql"],
-      "run": ["./scripts/_smoke/migrate-fresh.sh", "./scripts/smoke.sh"],
+      "run": ["./_verify/cases/migrate-fresh.sh", "./_verify/smoke.sh"],
       "agents": ["dba"],
       "why": "Fresh-database apply is the only check that catches ordering bugs" },
 
@@ -42,7 +42,7 @@ Write `.crew/verify.json`:
       "why": "Plan is the review artifact; apply is never automatic" }
   ],
   "always": ["npm run lint"],
-  "default": ["./scripts/smoke.sh"],
+  "default": ["./_verify/smoke.sh"],
   "unmapped": "fail"
 }
 ```
@@ -92,6 +92,23 @@ Derive it from evidence, not from a naming convention:
    have just learned something important about your coverage.
 3. Record the pairing with a `why`. A rule nobody can justify gets deleted in six
    months by someone who assumes it was cargo cult.
+
+### Which keys are executed, and which are for you
+
+Not every key in `verify.json` is read by the gate, and it matters which is
+which - a key that looks executable and is not is how a rule ends up trusted
+without ever running.
+
+| Key | Read by |
+|---|---|
+| `paths`, `run`, `always`, `default`, `unmapped` | the `Stop` hook. These execute. |
+| `agents` | `/crew:review` - the hook cannot spawn a subagent, so specialist review is a review-time concern |
+| `environments` and everything under it | `/crew:promote` |
+| `why`, `anchor`, `version` | **nothing.** They are notes for the next human. |
+
+`why` is worth writing anyway: a rule whose reason nobody remembers gets deleted
+the first time it is inconvenient. `anchor` records the sha the map was built
+against, so you can tell how stale it is. Neither changes what runs.
 
 ### The authoring contract
 
@@ -271,3 +288,135 @@ Business logic. If a rule can be tested at the unit or API level, test it there 
 it will be a hundred times faster and it will not break when a button moves.
 Browser tests are for what only a browser can observe: rendering, layout,
 navigation, and the integration of the whole stack.
+
+---
+
+## 4. Promotion: development -> qa -> production
+
+A merge is not a deploy, a deploy is not a working application, and a green
+pipeline says only that the pipeline is green. Every environment gets its own
+post-deploy proof, run against the environment that was just deployed to.
+
+### The order is fixed
+
+```
+development  ->  qa  ->  production
+```
+
+No skipping. Code reaches production only by having passed the same artifact
+through qa. A hotfix is not an exception - it is the same path, run faster.
+
+### The four gates, per environment
+
+Each promotion runs these in order, and **stops at the first failure**:
+
+| # | Gate | Answers |
+|---|---|---|
+| 1 | Pre-deploy | Is the source environment still green, and is this the artifact it proved? |
+| 2 | Deploy | Did the deployment mechanism report success? |
+| 3 | Smoke | Does the deployed thing respond at all, in this environment? |
+| 4 | Regression | Does everything that worked yesterday still work? |
+| 5 | Verify | Are the environment's own signals clean - error logs, alarms, queue depth? |
+
+Gate 2 is the weakest evidence in the list and the one most often mistaken for
+the whole set. A successful deploy proves bytes moved. Gates 3-5 are what prove
+the application works.
+
+### The mechanism: an `environments` block
+
+Put it in `.crew/verify.json` alongside the path rules. Same file, same idea:
+the checks are declared, not remembered.
+
+```json
+{
+  "rules": [ /* ... path rules, as above ... */ ],
+  "environments": {
+    "development": {
+      "deploy":     ["./scripts/deploy.sh dev"],
+      "smoke":      ["./_verify/smoke.sh --env dev"],
+      "regression": ["npm test"],
+      "verify":     ["./scripts/check-logs.sh dev --since 10m"],
+      "promotesTo": "qa"
+    },
+    "qa": {
+      "requires":   ["development"],
+      "deploy":     ["./scripts/deploy.sh qa"],
+      "smoke":      ["./_verify/smoke.sh --env qa"],
+      "regression": ["npm test", "npx playwright test --grep @flow"],
+      "verify":     ["./scripts/check-logs.sh qa --since 10m"],
+      "soakMinutes": 10,
+      "promotesTo": "production"
+    },
+    "production": {
+      "requires":     ["qa"],
+      "deploy":       ["./scripts/deploy.sh prod"],
+      "smoke":        ["./_verify/smoke.sh --env prod"],
+      "regression":   ["npx playwright test --grep @flow --project=prod"],
+      "verify":       ["./scripts/check-logs.sh prod --since 15m",
+                       "./scripts/check-alarms.sh prod"],
+      "soakMinutes":  15,
+      "rollback":     "docs/runbooks/rollback.md",
+      "requireHuman": true
+    }
+  }
+}
+```
+
+| Key | Meaning |
+|---|---|
+| `requires` | Environments that must have a green promotion record first |
+| `deploy` | The deploy command. Never inferred |
+| `smoke` | Does it respond - fast, shallow, this environment |
+| `regression` | Does everything else still work - the slow, broad suite |
+| `verify` | The environment's own signals: logs, alarms, queues, dashboards |
+| `soakMinutes` | Wait this long after deploy before running `verify` |
+| `rollback` | Path to the runbook. Production will not promote without one |
+| `requireHuman` | Stop and get explicit approval before deploying |
+
+### The promotion record
+
+Every promotion appends one line to `.work/PROMOTIONS.md`:
+
+```
+| when (UTC) | env | sha | smoke | regression | verify | by |
+|---|---|---|---|---|---|---|
+| 2026-08-23T14:02Z | qa | a1b2c3d | pass | pass | pass | mbadali |
+| 2026-08-23T15:40Z | production | a1b2c3d | pass | pass | FAIL | mbadali |
+```
+
+This is what `requires` reads. It is also the only honest answer to "is prod
+running the thing qa signed off on" - compare the shas, not the branch names.
+
+Record failures too. A promotions log with no failures in it is a log nobody
+is actually writing to.
+
+### Rules that are not negotiable
+
+- **The sha must match across environments.** A rebuild between qa and prod is
+  a different artifact, and qa proved nothing about it.
+- **Smoke and regression are separate gates.** Smoke that passes tells you the
+  deploy landed; it says nothing about the feature that broke three modules over.
+  A run that only smoke-tests has skipped the gate that catches regressions.
+- **`verify` runs after the soak, not immediately.** Errors surface on the first
+  real traffic, which arrives after the deploy finishes, not during it.
+- **Production needs a rollback runbook verified inside 90 days.** No verified
+  rollback, no deploy. This is the one gate with no override.
+- **A failed gate is a stop, not a note.** Roll back or fix forward, then run the
+  whole sequence again from gate 1. Do not resume mid-sequence.
+
+### What to do when the repo has none of this
+
+Most legacy repos have a deploy script and nothing else. Do not invent five
+scripts. Build the sequence in the order it pays off:
+
+1. `smoke` for the environment you deploy to most - one command, exit non-zero
+   on failure. This is the whole of `crew-verification` section 1 applied to a
+   running system rather than a working tree.
+2. `verify` - even `grep -c ERROR` over the last ten minutes of log beats nothing,
+   because it turns "looks fine" into a number.
+3. `regression` last. It is the most expensive to build and the least useful
+   until the first two are trustworthy.
+
+An `environments` block with only `deploy` and `smoke` filled in is honest and
+useful. One with five aspirational commands that nobody has run is worse than
+an empty file, because it reads as coverage.

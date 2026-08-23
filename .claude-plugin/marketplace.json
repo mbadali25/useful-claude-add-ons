@@ -64,7 +64,7 @@
     {
       "name": "crew",
       "source": "./plugin/crew",
-      "description": "Virtual dev team for multi-repo legacy work - 9 context-isolated agents, 14 slash commands, 14 bundled skills, and deterministic hooks that block unsafe commands, gate unverified turns, and carry a handoff across compaction.",
+      "description": "Virtual dev team for multi-repo legacy work - 9 context-isolated agents, 16 slash commands, 14 bundled skills, and deterministic hooks that block unsafe commands, gate unverified turns, and carry a handoff across compaction.",
       "version": "0.2.0"
     },
     {

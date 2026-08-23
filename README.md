@@ -141,7 +141,7 @@ Everything that can be a plugin **is** installed as one, using the CLI's own `cl
 | 18 SkillUI | `skillui` + `playwright` + the Chromium browser build | npm |
 | 19 Strix | The `strix` pentesting CLI | `curl -sSL https://strix.ai/install \| bash` |
 | 20 Obsidian | The Obsidian desktop app (Chocolatey → winget on Windows, flatpak → snap on Linux), plus the `claude-obsidian` vault engine and [`kepano/obsidian-skills`](https://github.com/kepano/obsidian-skills) — Obsidian's own Markdown, Bases, JSON Canvas, CLI and Defuddle skills | choco/winget/flatpak/snap + 2 marketplaces |
-| 21 This repo's plugins | The `crew` plugin from [`plugin/`](plugin/) — 9 subagents, 14 slash commands, 14 bundled skills, and 7 hooks across 5 events. Off by default because hooks execute whether or not Claude agrees with them | this repo |
+| 21 This repo's plugins | The `crew` plugin from [`plugin/`](plugin/) — 9 subagents, 16 slash commands, 14 bundled skills, and 7 hooks across 5 events. Off by default because hooks execute whether or not Claude agrees with them | this repo |
 
 Items 1–10 are the default set. Everything from 11 on is opt-in.
 
@@ -329,7 +329,7 @@ Each subdirectory in [`plugin/`](plugin/) is a self-contained [Claude Code plugi
 
 | Plugin | Category | What it does | Use cases | Provides |
 |---|---|---|---|---|
-| [`crew`](plugin/crew) | Workflow / QA | A virtual dev team for multi-repo legacy work — file-backed tickets, one implementation session, an independent reviewer, and deterministic gates that block on failure instead of offering an opinion. Roles exist only where they buy an isolated context window, a restricted tool set, or genuinely independent eyes; project management, BA, and architecture are files and commands, not agents. Codex QA, Jira, Obsidian memory, and Teams/Telegram notifications are all optional. | Several repositories, mixed stacks, legacy code, and almost no test coverage; a change that needs review by something that did not write it; wanting `terraform apply`, force-push, and destructive DDL blocked by a hook rather than by good intentions; a turn that should fail when the checks its changed paths map to go red; losing the thread across a `/clear` or an auto-compact. | 9 agents, 14 commands, 14 skills, 7 hooks |
+| [`crew`](plugin/crew) | Workflow / QA | A virtual dev team for multi-repo legacy work — file-backed tickets, one implementation session, an independent reviewer, and deterministic gates that block on failure instead of offering an opinion. Three hooks enforce: unsafe commands, unverified turns, and unearned production deploys. Roles exist only where they buy an isolated context window, a restricted tool set, or genuinely independent eyes; project management, BA, and architecture are files and commands, not agents. Codex QA, Jira, Obsidian memory, and Teams/Telegram notifications are all optional. | Several repositories, mixed stacks, legacy code, and almost no test coverage; a change that needs review by something that did not write it; wanting `terraform apply`, force-push, and destructive DDL blocked by a hook rather than by good intentions; a turn that should fail when the checks its changed paths map to go red; a production deploy that should be refused unless qa signed off on **that exact sha** and the rollback runbook is still verified; wanting to know what every endpoint and scheduled job actually does; losing the thread across a `/clear` or an auto-compact. | 9 agents, 16 commands, 14 skills, 7 hooks |
 
 **Provides** counts what the plugin registers with Claude Code. The per-item breakdown — every command, agent, bundled skill, and hook event — is in [`plugin/PLUGINS.md`](plugin/PLUGINS.md); the authoritative upstream guide is [`plugin/crew/README.md`](plugin/crew/README.md).
 
@@ -342,7 +342,7 @@ Bundled **skills** work in Claude Code, Claude chat, Claude Desktop's Chat tab, 
 Same four-place rule the skills follow, plus a couple. Full checklist in [`plugin/README.md`](plugin/README.md); the short version:
 
 1. Create `plugin/<plugin-name>/.claude-plugin/plugin.json` — kebab-case directory name matching the `name` field exactly. No `marketplace.json` inside a plugin directory; the repo root's is the only marketplace here.
-2. Ship hook scripts in **both** flavours — a `.sh` and a `.ps1` registered with `shell: powershell` — and **wire both in `hooks.json`**. A `.ps1` on disk that nothing references is dead code, and a bash-only hook is silently inert on Windows.
+2. Register each hook **once, as bash**, and branch inside the script. There is no `shell` field in a `hooks.json` entry — Claude Code does not read one, so `shell: powershell` makes a hook silently inert. A hook that judges a *command* branches on `tool_name`; one that judges no command needs no twin at all. A blocking hook also needs a committed, sabotage-tested regression suite.
 3. Register it in [`.claude-plugin/marketplace.json`](.claude-plugin/marketplace.json) (`source` is `./plugin/<name>`), the table above, [`plugin/README.md`](plugin/README.md), [`plugin/PLUGINS.md`](plugin/PLUGINS.md), and both install scripts (`PLUGIN_KEYS` / `PLUGIN_NAME` in the `.sh`, `$script:PluginCatalog` in the `.ps1`).
 4. Default its menu item to **off** if it registers hooks.
 

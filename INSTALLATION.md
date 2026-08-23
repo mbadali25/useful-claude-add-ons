@@ -258,7 +258,7 @@ Six more rows, also off by default. None of them are MCP servers.
   /crew:verify       # build the change-to-check map the Stop gate needs
   ```
 
-  **The Windows dispatch is incomplete, and it fails quietly.** Only the `PreToolUse` guard pairs a `.sh` with a `shell: powershell` twin, because there the branch is chosen by *which tool Claude used* rather than by which OS you are on. The other five hook entries invoke `bash` unconditionally, so on a Windows machine with no `bash` on `PATH` the `Stop` gate, the context watch, and both halves of the handoff cycle never fire - and nothing says so. Install WSL or Git Bash, or treat the gate as advisory on that machine.
+  **Windows needs `bash` on `PATH`.** Every hook is registered once as bash; Git Bash or WSL satisfies it. Only the `PreToolUse` guards branch to a PowerShell twin, and they branch on which *tool* the command came from rather than on the OS, so a `Bash` call is judged by bash rules even on Windows. With no bash at all, no hook fires - the plugin does not pretend otherwise. (Before 0.2.0 the guards stood down on Windows and the twins were registered with a `shell: powershell` field Claude Code does not read, so the command guard blocked nothing and the `Stop` gate ran nothing. Fixed.)
 
   Uninstall with `claude plugin uninstall crew@useful-claude-add-ons`; the hooks go with it. To keep the plugin but stop the `Stop` gate, set `verifyGate: false` in the repository's `.crew/config.json`. Full guide: [`plugin/crew/README.md`](plugin/crew/README.md), with [`plugin/README.md`](plugin/README.md) for how plugins differ from skills here and [`plugin/PLUGINS.md`](plugin/PLUGINS.md) for the per-component breakdown.
 

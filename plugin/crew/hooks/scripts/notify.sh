@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+. "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 # Outbound-only notifier. Never reads from chat, never accepts instructions.
 # Usage: notify.sh <event> <one-line message>
 #   events: phase | gate | review | waiting | done
@@ -6,7 +7,8 @@ cd "${CLAUDE_PROJECT_DIR:-.}" || exit 0
 EVENT="${1:-info}"; shift 2>/dev/null; MSG="$*"
 [ -f .crew/config.json ] || exit 0
 
-read_cfg() { python3 - "$1" << 'PY' 2>/dev/null
+CREW_PY=$(crew_py) || exit 0
+read_cfg() { "$CREW_PY" - "$1" << 'PY' 2>/dev/null
 import json,sys
 try: c=json.load(open(".crew/config.json")).get("notify",{})
 except Exception: sys.exit(0)
@@ -25,7 +27,7 @@ EVENTS=$(read_cfg events)
 case ",$EVENTS," in *",$EVENT,"*) ;; *) [ -n "$EVENTS" ] && exit 0 ;; esac
 
 REPO=$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
-BRANCH=$(git branch --show-current 2>/dev/null)
+BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
 
 # One line. No diffs, no findings text, no ticket bodies, no secrets.
 # A chat channel is a less controlled place than the repo; keep payloads dull.
@@ -36,7 +38,7 @@ case "$PROVIDER" in
     URL_ENV=$(read_cfg urlEnv); URL="${!URL_ENV}"
     [ -z "$URL" ] && { echo "notify: \$$URL_ENV not set" >&2; exit 0; }
     curl -sS -m 10 -X POST "$URL" -H 'Content-Type: application/json' \
-      -d "$(python3 -c 'import json,sys;print(json.dumps({"type":"message","attachments":[{"contentType":"application/vnd.microsoft.card.adaptive","content":{"type":"AdaptiveCard","version":"1.4","body":[{"type":"TextBlock","text":sys.argv[1],"wrap":True}]}}]}))' "$TEXT")" >/dev/null
+      -d "$("$CREW_PY" -c 'import json,sys;print(json.dumps({"type":"message","attachments":[{"contentType":"application/vnd.microsoft.card.adaptive","content":{"type":"AdaptiveCard","version":"1.4","body":[{"type":"TextBlock","text":sys.argv[1],"wrap":True}]}}]}))' "$TEXT")" >/dev/null
     ;;
   telegram)
     TOK_ENV=$(read_cfg tokenEnv); TOK="${!TOK_ENV}"
