@@ -23,11 +23,15 @@ Built for the awkward case: several repositories, mixed stacks, legacy code, and
 13. [Optional: Jira via MCP](#13-optional-jira-via-mcp)
 14. [Optional: Obsidian for memory](#14-optional-obsidian-for-memory)
 15. [Optional: Teams and Telegram notifications](#15-optional-teams-and-telegram-notifications)
-16. [Diagrams](#16-diagrams)
-17. [AWS and Azure MCP](#17-aws-and-azure-mcp)
-18. [Growing the crew](#18-growing-the-crew)
-19. [Command and agent reference](#19-command-and-agent-reference)
-20. [Troubleshooting](#20-troubleshooting)
+16. [Context handoff](#16-context-handoff)
+17. [Linting, Terraform docs, and repo conventions](#17-linting-terraform-docs-and-repo-conventions)
+18. [Document maintenance](#18-document-maintenance)
+19. [Runbooks](#19-runbooks)
+20. [Diagrams](#20-diagrams)
+21. [AWS and Azure MCP](#21-aws-and-azure-mcp)
+22. [Growing the crew](#22-growing-the-crew)
+23. [Command and agent reference](#23-command-and-agent-reference)
+24. [Troubleshooting](#24-troubleshooting)
 
 ---
 
@@ -297,6 +301,46 @@ Each pairing is **verified when written**: break the code, run the mapped check,
 confirm it goes red, revert. An unverified mapping is a guess written in JSON —
 and a pairing that stays green has just told you about a coverage hole.
 
+### Checks and rules are written together
+
+**Whoever writes a check writes its rule, in the same turn.** `smoke-author` and
+`browser-tester` both do this now, and both prove the rule fires before calling
+it done — break the code, run the mapped command, confirm red, revert.
+
+The failure this prevents is quiet and common: a check exists, is committed, is
+visible in the repo, and never runs. Nobody finds out until the change it was
+meant to catch ships. **An unmapped check is worse than a missing one, because
+it reads as coverage.**
+
+Watch the tag/grep interaction on browser tests in particular: a rule running
+`--grep @visual` does not run your new `@flow` spec. That is the most common way
+UI coverage ends up existing but never executing.
+
+```bash
+bash skills/crew-setup/scripts/map-audit.sh   # or /crew:verify --sync
+```
+
+Reports both directions — checks on disk that no rule invokes, and rules pointing
+at files that no longer exist. Run it after any session that touched tests.
+
+### After database changes
+
+Code-level rules do not cover schema. A migration needs three checks, and the
+rule runs all three:
+
+| Check | Catches |
+|---|---|
+| Fresh apply to an empty database | Ordering bugs invisible on an already-migrated dev box |
+| Rollback apply | An untested down script, which is not a rollback |
+| Round trip through the changed path | Shape errors a successful migration hides |
+
+The third is the one people skip, and it is the one that matters: a migration
+that applies cleanly and leaves a column nullable the code assumes is populated
+passes the first two and fails in production.
+
+`dba` proposes the specific check — which script, what it asserts, which paths —
+and `smoke-author` writes it, since `dba` is read-only.
+
 `"unmapped": "fail"` is the most valuable line in the file. A changed path with
 no rule blocks the turn and names the file, so "we forgot to test that area"
 becomes a visible condition rather than a silent one, and the map improves as a
@@ -447,7 +491,7 @@ Everything reads `.crew/config.json`:
 | `tracker` | `files`, `jira` | Where tickets live. Jira additionally requires the MCP connector. |
 | `memory.mode` | `repo`, `obsidian` | Where the code map lives. `obsidian` also needs `vaultPath`. |
 | `verifyGate` | `true`, `false` | Whether the `Stop` hook blocks on failed checks. Set `false` only while first building the harness. |
-| `tier` / `roles` | see §18 | Which agents are in play. Managed by `/crew:scale`. |
+| `tier` / `roles` | see §22 | Which agents are in play. Managed by `/crew:scale`. |
 
 ---
 
@@ -621,7 +665,234 @@ first-party, auth handled, no new inbound path.
 
 ---
 
-## 16. Diagrams
+## 16. Context handoff
+
+**First, a correction worth having up front:** Claude Code cannot clear its own
+session, and a script launched by a hook cannot either — hooks run as child
+processes, and a child cannot reset its parent's conversation.
+
+You don't need it to. The lifecycle already covers the cycle:
+
+| Moment | Hook | What happens |
+|---|---|---|
+| Nearing the limit | `Stop` | Estimates usage, asks for a handoff before the turn ends |
+| Auto-compaction imminent | `PreCompact` | Snapshots the transcript, writes a skeleton handoff |
+| After `/clear`, `/compact`, resume | `SessionStart` | Prints the handoff — stdout is injected as context |
+
+So: crew tells you it's time, you type `/clear`, and the next session opens
+already holding the note. The one manual step is the `/clear` — which is the
+step that should stay manual.
+
+### The threshold is an estimate
+
+No hook reports token count. `context-watch.sh` measures the JSONL transcript
+that hooks receive as `transcript_path`. Bytes aren't tokens and the file carries
+JSON scaffolding the model never sees, so **calibrate once**: run `/context`,
+compare, adjust `context.budgetTokens`. Being 20% early is fine; being late
+defeats the purpose.
+
+It fires **once per session**, gated by a marker file that `SessionStart`
+clears. Without that gate, a `Stop` hook returning exit 2 fires every turn and
+traps the session in a loop.
+
+### Pointers, not narrative
+
+```
+/crew:handoff
+```
+
+The note is built from `git status`, the diff, the ticket, and the last gate
+result — plus the two things only the session knows: the next action in one
+concrete sentence, and the dead ends already tried.
+
+A session at 85% context is the *least* reliable narrator of what it just did —
+that's exactly when detail has been compacted away. The diff is more trustworthy
+than the recollection of it. A good handoff says "look here," not "here's what
+happened." Under 40 lines; if it's longer, the session was doing too many things
+at once, and that's the real finding.
+
+Anything uncertain goes under **Verify first** rather than being asserted as done.
+
+### Auto-resume is off by default
+
+`SessionStart` can return an `initialUserMessage` to start the next session
+working with no human turn. `context.autoResume` enables it, and I'd leave it
+off. It removes the one moment where a human reads what the previous session
+claimed before more work is built on top of it — and if a handoff is subtly
+wrong, that's how the error compounds unattended.
+
+### Housekeeping
+
+`/crew:work` deletes `HANDOFF.md` on ticket completion. A stale handoff is worse
+than none: it gets injected into every later session as though current, and that
+session can't tell it's reading history.
+
+`PreCompact` keeps the last five raw transcripts in `.crew/transcripts/`, which
+setup gitignores — transcripts contain everything the session saw, including any
+secret that reached it.
+
+---
+
+## 17. Linting, Terraform docs, and repo conventions
+
+### Your `_verify` directories
+
+**These are not discovered automatically.** Nothing in crew knows what a
+`_verify/` directory is, and a check nobody runs reads like coverage to the next
+person — which is worse than having none.
+
+Phase 5 now searches for `_verify/`, `qa/`, `spec/`, `_test*/` and similar, and
+when it finds one it **asks you** rather than guessing: what runs it, which
+changes should trigger it, does it need credentials. Then it gets a rule of its
+own, with the directory named in `why` so the mapping outlives the person who
+explained it:
+
+```json
+{ "paths": ["src/loaders/**"],
+  "run": ["bash _verify/run.sh loaders"],
+  "why": "_verify/ holds the team's hand-written QA checks for loader changes" }
+```
+
+`smoke-author` also checks for these before writing anything, so it wires into
+what exists instead of building a parallel suite that will drift out of
+agreement with it.
+
+### Linters
+
+Path-scoped rules in `verify.json`, per the `crew-lint` skill: `ruff` for Python,
+`PSScriptAnalyzer` for PowerShell, `phpstan` + `phpcs` for PHP, `fmt`/`validate`/
+`tflint` for Terraform, `eslint`/`prettier` for JS.
+
+Two rules that keep a gate alive:
+
+**Format automatically, lint blockingly.** Formatter in write mode, committed;
+linter in check mode, failing. Arguing with a formatter in review is wasted time.
+
+**Baseline the legacy debt on day one.** `phpstan --generate-baseline`, ruff
+per-file ignores, a PSScriptAnalyzer settings file. A gate that starts red never
+becomes a gate — it becomes something people pass with `--force`. Burn the
+baseline down as its own tickets.
+
+Start phpstan at level 1 and PSScriptAnalyzer at `Error` only. Level 8 on legacy
+PHP produces a wall nobody reads.
+
+### terraform-docs and tflint
+
+Templates ship for `.terraform-docs.yml`, `.tflint.hcl`, and `footer.md`.
+
+The critical rule: **never edit inside `<!-- BEGIN_TF_DOCS -->`.** That block is
+regenerated, so edits there are destroyed silently on the next run. To change it,
+change the source — the `/** */` header at the top of `main.tf`, `footer.md`, or
+the `description` on each variable and output. Hand-written prose lives *above*
+the marker.
+
+Put `terraform-docs .` in the gate. That way a variable added without a
+`description` shows up as a README diff in the pull request, so undocumented
+inputs become visible instead of accumulating quietly.
+
+One tflint note worth keeping: the template disables `terraform_comment_syntax`
+**deliberately**, because that rule flags the `/** */` block terraform-docs reads
+its header from. The config carries a comment explaining why — leave it there, or
+someone will "fix" it in six months and break the docs pipeline.
+
+`tflint --init` must run once per machine and once in CI. A missing plugin fails
+unhelpfully.
+
+Requires terraform-docs >= 0.16.0; `footer-from` and `.Module` in `content` do
+not exist earlier, and the failure is a template error rather than a version
+message.
+
+---
+
+## 18. Document maintenance
+
+```
+/crew:docs           # update what this change should touch, and only that
+/crew:docs --audit   # report staleness everywhere, change nothing
+```
+
+**The default is: do not touch.** Updating every document on every change is how
+documentation becomes noise — a CHANGELOG with an entry per typo fix is
+unreadable, and a README rewritten every sprint stops being trusted.
+
+So each document has a trigger condition, checked once per ticket at step 10 of
+`/crew:work`:
+
+| Document | Update when | Never |
+|---|---|---|
+| `CHANGELOG.md` | Observable behaviour changed | Refactors, formatting, renames |
+| `README.md` | Setup, commands, or the mental model changed | Every ticket |
+| `SECURITY.md` | Reporting process or supported versions changed | Routine security fixes |
+| `TODO.md` | Something deferred, with a reason | As a substitute for tickets |
+| `docs/adr/` | A decision with a real rejected alternative | Implementation detail |
+| `docs/diagrams/` | The structure a diagram shows moved | Cosmetic changes |
+
+"None of them" is the common and correct answer, and the command says so plainly
+rather than finding something to write.
+
+Before editing any markdown it checks for generated-block markers and, if the
+target is inside one, edits the source instead and tells you which. That covers
+terraform-docs, OpenAPI generators, and anything using `AUTO-GENERATED`.
+
+Two specifics worth stating: CHANGELOG entries are written from the ticket and
+the diff in user-facing language — "rejects files with a BOM," not "added BOM
+strip in `validate_header()`" — and `SECURITY.md` never logs an unfixed
+vulnerability, because a public file describing an open hole is a disclosure.
+
+`--audit` is worth running monthly. It reports rather than fixes: bulk
+documentation diffs are unreviewable, which means they get approved unread.
+
+---
+
+## 19. Runbooks
+
+```
+/crew:runbook roll-back-inventory-loader
+/crew:runbook --from-ticket T-0042
+/crew:runbook --verify roll-back-inventory-loader
+/crew:runbook --audit
+```
+
+A runbook answers exactly one question: **"it's 3am, this is broken, what do I
+type?"** Not how the system works — that's architecture. Not why it was built
+that way — that's an ADR. A procedure someone half-awake can follow without
+judgement calls.
+
+`/crew:work` step 10 captures one when a ticket involved a procedure that will
+be repeated, is destructive, or lived only in one person's head. Drafts are built
+from the commands **actually run in the session**, plus `verify.json` and the
+terraform config for real resource names — never from memory, because a wrong
+resource name in a runbook is worse than no runbook. It's followed under
+pressure.
+
+Format rules that make one usable at 3am: exact copy-pasteable commands, a
+**verify line after every destructive step** (the failure mode is a step that
+silently did nothing while the operator moves on), a rollback for the fix itself,
+and a named escalation so "I'm stuck" isn't a decision.
+
+### The index is keyed by symptom
+
+`docs/runbooks/INDEX.md` lists symptom → runbook → severity → last verified.
+Symptom-first because that's what you have at 3am: you don't know which component
+failed, you know what you're seeing. Only the index loads by default; agents read
+it, then one runbook — the same token rule as the code map.
+
+### Verification is the whole value
+
+**A runbook nobody has executed is a wish.** Commands drift, resource names
+change, a step that used to work now needs a flag. And an unverified runbook is
+actively dangerous, because it's trusted exactly when there's no time to check
+it.
+
+So every runbook carries `last verified: <date> by <who>`, drafts start at
+`NEVER` rather than blank, and `--verify` walks it in dev and fixes what differed.
+`--audit` reports anything unverified in 90 days or referencing resources that no
+longer exist — and **reports rather than fixes**, because quietly updating a
+stale runbook converts a known-stale procedure into an apparently-fresh one.
+
+---
+
+## 20. Diagrams
 
 ```
 /crew:diagram architecture
@@ -671,7 +942,7 @@ without needing a licence at all.
 
 ---
 
-## 17. AWS and Azure MCP
+## 21. AWS and Azure MCP
 
 Official servers for both, configured per repo — the terraform repo needs the
 IaC server; the AngularJS front end does not.
@@ -716,7 +987,7 @@ Studio and VS Code use `servers`; copying a snippet between them fails silently.
 
 ---
 
-## 18. Growing the crew
+## 22. Growing the crew
 
 ```
 /crew:scale
@@ -759,7 +1030,7 @@ A scaling review that concludes "this is the right size" is a successful review.
 
 ---
 
-## 19. Command and agent reference
+## 23. Command and agent reference
 
 ### Commands
 
@@ -771,6 +1042,9 @@ A scaling review that concludes "this is the right size" is a successful review.
 | `/crew:onboard [--refresh <area>]` | Build or refresh the code map |
 | `/crew:init` | Guided phased setup, resumable |
 | `/crew:plan <decision>` | Independent design opinion before building |
+| `/crew:runbook <name\|--audit\|--verify>` | Write, verify, or audit operational runbooks |
+| `/crew:docs [--audit]` | Update the documents this change should touch |
+| `/crew:handoff` | Write the handoff note before clearing |
 | `/crew:diagram <type>` | Architecture, data-flow, process and sequence diagrams |
 | `/crew:verify` | Build or refresh the change-to-check map |
 | `/crew:survey [area]` | Research gaps, produce ranked findings with options |
@@ -798,13 +1072,16 @@ A scaling review that concludes "this is the right size" is a successful review.
 | `guard.sh` | `PreToolUse` on Bash | Blocks `terraform apply`/`destroy`, destructive DDL, force push, hard reset, prod-targeted commands, and any command that would print a secret value into the transcript |
 | `verify-gate.sh` | `Stop` | Runs the checks the changed paths map to; fails the turn on red, or on a changed path with no rule |
 | `guard.ps1` / `verify-gate.ps1` | same events, `PowerShell` tool | Native Windows equivalents, registered with `shell: powershell` |
+| `context-watch.sh` | `Stop` | Estimates context use; asks for a handoff once per session |
+| `handoff-write.sh` | `PreCompact` | Snapshots the transcript, writes a skeleton handoff |
+| `handoff-read.sh` | `SessionStart` | Injects the handoff after clear, compact, or resume |
 | `notify.sh` | `Notification`, plus called by commands | Outbound one-line message to Teams or Telegram. Never reads. |
 
 Hooks are deterministic. That is their whole value — a hook cannot be argued out of blocking `terraform apply`, and an agent can.
 
 ---
 
-## 20. Troubleshooting
+## 24. Troubleshooting
 
 | Symptom | Likely cause |
 |---|---|
@@ -820,6 +1097,17 @@ Hooks are deterministic. That is their whole value — a hook cannot be argued o
 | Teams webhook returns 404 or 410 | An old Office 365 Connector URL. Those were disabled in May 2026 — recreate it via Workflows. |
 | Telegram `getUpdates` returns nothing | You have not messaged the bot yet. A bot cannot open the conversation. |
 | Notifications stopped with no error | The Teams Workflow runs under its creator's account. Check whether they left or lost the licence. |
+| Runbook commands fail when needed | It was never verified. `--verify` it in dev; check `last verified`. |
+| crew skills stop triggering | A broadly-scoped skill is competing. `find-skills` is the first to test — see its BUNDLING-NOTE.md. |
+| README keeps reverting | You edited inside `BEGIN_TF_DOCS`. Edit the `/** */` header in `main.tf`, `footer.md`, or the variable descriptions instead. |
+| `tflint` fails with a plugin error | Run `tflint --init` once per machine and in CI. |
+| terraform-docs template error | Needs >= 0.16.0 for `footer-from` and `.Module`. |
+| A test exists but never runs | No rule invokes it. Run `/crew:verify --sync`. |
+| Migration passed, production broke | The rule covered apply but not the round trip. Add all three DB checks. |
+| `_verify` checks never run | Nothing maps to them. Add a rule in `.crew/verify.json` naming the directory. |
+| Handoff prompt fires every turn | The marker file is not being cleared. Check that the `SessionStart` hook is registered. |
+| Warning arrives too late | `budgetTokens` is set too high for the real window. Calibrate against `/context`. |
+| Old handoff keeps reappearing | It was never deleted. Remove `.work/HANDOFF.md` when the work is done. |
 | `mmdc` fails in a container | Headless Chromium needs `--no-sandbox`. The render script passes it; a direct `mmdc` call will not. |
 | Rendered PNG unreadable in Teams | Transparent background on dark mode. Render with `-b white` for chat and print. |
 | Azure MCP tools fail oddly | You are not authenticated. `az login` before starting the server. |
@@ -832,6 +1120,26 @@ Hooks are deterministic. That is their whole value — a hook cannot be argued o
 | Smoke suite takes minutes instead of seconds | Repo is on `/mnt/c`. Re-clone inside WSL. |
 | Hooks do not fire on Windows | Native Windows uses the `.ps1` hooks via the `PowerShell` tool. A bash hook path will not resolve. |
 | Code map contradicts the code | The map is stale. Code wins. Re-run `/crew:onboard --refresh <area>` and delete what cannot be verified. |
+
+---
+
+## A note on the bundled find-skills
+
+`skills/find-skills/` is a third-party skill from the open skills ecosystem,
+vendored here rather than installed with `npx skills add`. That means no
+updates — `npx skills check` won't see this copy, and upstream fixes have to be
+pulled in by hand.
+
+Installing it separately keeps it updatable and lets you disable it without
+touching crew. Vendoring is right only if it needs to travel with the plugin to
+machines that won't run the skills CLI.
+
+Worth knowing: its upstream description fires on *"asks how do I do X"*, which is
+close to "any question." That competes with crew's own skills for ordinary
+requests, and selection gets worse as more broadly-scoped skills load. If
+`crew-setup` stops firing on "set up crew," disable this for one session and see
+whether the problem goes away. `BUNDLING-NOTE.md` beside it has a narrowed
+description you can swap in that keeps the capability and removes the collision.
 
 ---
 

@@ -98,7 +98,7 @@ A few items need a word of explanation:
 
 - **Obsidian** (20) is a desktop app, not a plugin, so it comes from a package manager: Chocolatey first on Windows (falling back to winget), flatpak first on Linux (falling back to snap) — distro repos generally don't carry it. Chocolatey needs an elevated prompt; without one the app is skipped and the two plugins still install. It then adds the `claude-obsidian` vault engine and [`kepano/obsidian-skills`](https://github.com/kepano/obsidian-skills), Obsidian's own upstream skills for Markdown, Bases, JSON Canvas, the Obsidian CLI, and Defuddle. **The app and plugins are all this item does** — creating the vault is a separate, deliberately reviewed step, which the item prints as its next step and [`claude-obsidian-setup/`](claude-obsidian-setup/) performs. `--obsidian-repo-root` / `-ObsidianRepoRoot` changes the root it suggests (default `C:\repos` on Windows, `~/repos` on Linux).
 
-- **This repo's plugins** (21) installs [`plugin/crew`](plugin/crew) from this same marketplace — so it works whether or not item 3 ran. It is **off by default, deliberately**: unlike a skill, `crew` registers **hooks**, and a hook is not advisory. Its `PreToolUse` hook blocks `terraform apply`/`destroy`, destructive DDL, force push, hard reset, and any command that would print a secret into the transcript; its `Stop` hook runs the checks your changed paths map to and fails the turn on red. Both start working the moment the plugin is enabled, so the item ends by printing the per-repository setup (`/crew:init`, `/crew:onboard`, `/crew:verify`) rather than leaving you to discover the gates by hitting them. See [`plugin/README.md`](plugin/README.md).
+- **This repo's plugins** (21) installs [`plugin/crew`](plugin/crew) from this same marketplace — so it works whether or not item 3 ran. It is **off by default, deliberately**: unlike a skill, `crew` registers **hooks**, and a hook is not advisory. Its `PreToolUse` hook blocks `terraform apply`/`destroy`, destructive DDL, force push, hard reset, and any command that would print a secret into the transcript; its `Stop` hooks run the checks your changed paths map to (failing the turn on red) and watch context use; a `PreCompact`/`SessionStart` pair carries a handoff note across compaction. All of them start working the moment the plugin is enabled, so the item ends by printing the per-repository setup (`/crew:init`, `/crew:onboard`, `/crew:verify`) rather than leaving you to discover the gates by hitting them. See [`plugin/README.md`](plugin/README.md) for the catalog and [`plugin/PLUGINS.md`](plugin/PLUGINS.md) for what each plugin actually contains.
 
 Everything that can be a plugin **is** installed as one, using the CLI's own `claude plugin marketplace add` / `claude plugin install` — there's no `npx claudepluginhub` wrapper and no `git clone` + shell-script step any more. That removes the Windows failure modes those introduced (the wrapper needed a writable per-repo checkout, and the VoltAgent installer needed Git Bash to run a `.sh`).
 
@@ -141,7 +141,7 @@ Everything that can be a plugin **is** installed as one, using the CLI's own `cl
 | 18 SkillUI | `skillui` + `playwright` + the Chromium browser build | npm |
 | 19 Strix | The `strix` pentesting CLI | `curl -sSL https://strix.ai/install \| bash` |
 | 20 Obsidian | The Obsidian desktop app (Chocolatey → winget on Windows, flatpak → snap on Linux), plus the `claude-obsidian` vault engine and [`kepano/obsidian-skills`](https://github.com/kepano/obsidian-skills) — Obsidian's own Markdown, Bases, JSON Canvas, CLI and Defuddle skills | choco/winget/flatpak/snap + 2 marketplaces |
-| 21 This repo's plugins | The `crew` plugin from [`plugin/`](plugin/) — 9 subagents, 11 slash commands, 8 bundled skills, and 4 hooks. Off by default because hooks execute whether or not Claude agrees with them | this repo |
+| 21 This repo's plugins | The `crew` plugin from [`plugin/`](plugin/) — 9 subagents, 14 slash commands, 14 bundled skills, and 7 hooks across 5 events. Off by default because hooks execute whether or not Claude agrees with them | this repo |
 
 Items 1–10 are the default set. Everything from 11 on is opt-in.
 
@@ -206,6 +206,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 |---|---|
 | [`INSTALLATION.md`](INSTALLATION.md) | Prerequisite install scripts (Windows/Linux), installing skills, verification, troubleshooting. |
 | [`plugin/README.md`](plugin/README.md) | This repo's **plugins** — what a plugin adds over a skill, the overview table, and how to add one. |
+| [`plugin/PLUGINS.md`](plugin/PLUGINS.md) | Per-plugin reference — every command, agent, bundled skill, and hook, and what starts running on enable. |
 | [`MARKETPLACE.md`](MARKETPLACE.md) | Adding this repo (and the team's other marketplaces) to Claude Code, installing/updating/removing plugins. |
 | [`Skill-Authoring-Standard.md`](Skill-Authoring-Standard.md) | Required structure, frontmatter, and style for any skill in this repo. |
 | [`Skill-Pipeline.md`](Skill-Pipeline.md) | Author → validate → review → merge → release → distribute lifecycle for a skill change. |
@@ -316,7 +317,7 @@ See [`Skill-Authoring-Standard.md`](Skill-Authoring-Standard.md) for how a skill
 
 ## Plugins
 
-The canonical, always-current version of this section lives in [`plugin/README.md`](plugin/README.md) — it's reproduced here so it's visible without an extra click.
+The canonical, always-current version of this section lives in [`plugin/README.md`](plugin/README.md) — it's reproduced here so it's visible without an extra click. The per-plugin detail lives in [`plugin/PLUGINS.md`](plugin/PLUGINS.md).
 
 <!-- BEGIN plugin/README.md -->
 
@@ -328,9 +329,9 @@ Each subdirectory in [`plugin/`](plugin/) is a self-contained [Claude Code plugi
 
 | Plugin | Category | What it does | Use cases | Provides |
 |---|---|---|---|---|
-| [`crew`](plugin/crew) | Workflow / QA | A virtual dev team for multi-repo legacy work — file-backed tickets, one implementation session, an independent reviewer, and deterministic gates that block on failure instead of offering an opinion. Roles exist only where they buy an isolated context window, a restricted tool set, or genuinely independent eyes; project management, BA, and architecture are files and commands, not agents. Codex QA, Jira, Obsidian memory, and Teams/Telegram notifications are all optional. | Several repositories, mixed stacks, legacy code, and almost no test coverage; a change that needs review by something that did not write it; wanting `terraform apply`, force-push, and destructive DDL blocked by a hook rather than by good intentions; a turn that should fail when the checks its changed paths map to go red. | 9 agents, 11 commands, 4 hooks, 8 skills |
+| [`crew`](plugin/crew) | Workflow / QA | A virtual dev team for multi-repo legacy work — file-backed tickets, one implementation session, an independent reviewer, and deterministic gates that block on failure instead of offering an opinion. Roles exist only where they buy an isolated context window, a restricted tool set, or genuinely independent eyes; project management, BA, and architecture are files and commands, not agents. Codex QA, Jira, Obsidian memory, and Teams/Telegram notifications are all optional. | Several repositories, mixed stacks, legacy code, and almost no test coverage; a change that needs review by something that did not write it; wanting `terraform apply`, force-push, and destructive DDL blocked by a hook rather than by good intentions; a turn that should fail when the checks its changed paths map to go red; losing the thread across a `/clear` or an auto-compact. | 9 agents, 14 commands, 14 skills, 7 hooks |
 
-**Provides** counts what the plugin registers with Claude Code. `crew`'s full breakdown — every command, agent, tool restriction, and hook event — is in [`plugin/crew/README.md`](plugin/crew/README.md) §19.
+**Provides** counts what the plugin registers with Claude Code. The per-item breakdown — every command, agent, bundled skill, and hook event — is in [`plugin/PLUGINS.md`](plugin/PLUGINS.md); the authoritative upstream guide is [`plugin/crew/README.md`](plugin/crew/README.md).
 
 ### Hooks only run where hooks run
 
@@ -338,11 +339,11 @@ Bundled **skills** work in Claude Code, Claude chat, Claude Desktop's Chat tab, 
 
 ### Adding a new plugin
 
-Same four-place rule the skills follow, and one extra. Full checklist in [`plugin/README.md`](plugin/README.md); the short version:
+Same four-place rule the skills follow, plus a couple. Full checklist in [`plugin/README.md`](plugin/README.md); the short version:
 
 1. Create `plugin/<plugin-name>/.claude-plugin/plugin.json` — kebab-case directory name matching the `name` field exactly. No `marketplace.json` inside a plugin directory; the repo root's is the only marketplace here.
-2. Ship hook scripts in **both** flavours — a `.sh` and a `.ps1` registered with `shell: powershell` — or the plugin silently does nothing on half the team's machines.
-3. Register it in [`.claude-plugin/marketplace.json`](.claude-plugin/marketplace.json) (`source` is `./plugin/<name>`), the table above, [`plugin/README.md`](plugin/README.md), and both install scripts (`PLUGIN_KEYS` / `PLUGIN_NAME` in the `.sh`, `$script:PluginCatalog` in the `.ps1`).
+2. Ship hook scripts in **both** flavours — a `.sh` and a `.ps1` registered with `shell: powershell` — and **wire both in `hooks.json`**. A `.ps1` on disk that nothing references is dead code, and a bash-only hook is silently inert on Windows.
+3. Register it in [`.claude-plugin/marketplace.json`](.claude-plugin/marketplace.json) (`source` is `./plugin/<name>`), the table above, [`plugin/README.md`](plugin/README.md), [`plugin/PLUGINS.md`](plugin/PLUGINS.md), and both install scripts (`PLUGIN_KEYS` / `PLUGIN_NAME` in the `.sh`, `$script:PluginCatalog` in the `.ps1`).
 4. Default its menu item to **off** if it registers hooks.
 
 <!-- END plugin/README.md -->

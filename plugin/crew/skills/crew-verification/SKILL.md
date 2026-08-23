@@ -47,7 +47,40 @@ Write `.crew/verify.json`:
 }
 ```
 
-### How to build it
+### Find the repo's own conventions first
+
+Before deriving anything, look for verification the team already built. Repos
+often carry a convention the tooling knows nothing about:
+
+```bash
+find . -maxdepth 3 -type d \( -name '_verify' -o -name '_test*' -o -name 'tests' \
+  -o -name 'spec' -o -name 'e2e' -o -name '__tests__' -o -name 'qa' \) \
+  -not -path './node_modules/*' -not -path './.git/*'
+```
+
+A `_verify/` directory (or any local equivalent) is a deliberate signal from
+whoever built it. **Nothing in crew discovers it automatically** — you have to
+read it and map it, once.
+
+When you find one, ask the user rather than guessing:
+
+- What runs it? A script, a test runner, or is it read by a human?
+- Which changes should trigger it?
+- Does it need credentials or a running service?
+
+Then give it a rule of its own in `verify.json`, naming the directory in `why`
+so the mapping survives the person who explained it:
+
+```json
+{ "paths": ["src/loaders/**"],
+  "run": ["bash _verify/run.sh loaders"],
+  "why": "_verify/ holds the team's hand-written QA checks for loader changes" }
+```
+
+If a `_verify` directory exists but nothing runs it, say so. An unrun check
+directory is worse than none: it reads like coverage to the next person.
+
+### How to build the rest
 
 Derive it from evidence, not from a naming convention:
 
@@ -59,6 +92,40 @@ Derive it from evidence, not from a naming convention:
    have just learned something important about your coverage.
 3. Record the pairing with a `why`. A rule nobody can justify gets deleted in six
    months by someone who assumes it was cargo cult.
+
+### The authoring contract
+
+**Whoever writes a check writes its rule, in the same turn.** This applies to
+`smoke-author`, `browser-tester`, and to you when you add a check by hand.
+
+The failure this prevents is subtle and common: a check exists, is committed, is
+visible in the repo, and never runs. Nobody discovers that until the change it
+was supposed to catch ships. An unmapped check is worse than a missing one,
+because it reads as coverage.
+
+Reconcile both directions with:
+
+```bash
+bash ${CLAUDE_PLUGIN_ROOT}/skills/crew-setup/scripts/map-audit.sh
+```
+
+It reports checks on disk that no rule invokes, and rules pointing at files that
+no longer exist. Run it at the end of any session that touched tests, and in
+`/crew:verify --sync`.
+
+### After database changes
+
+Code-level rules do not cover schema. A migration needs three checks, and the
+rule runs all three:
+
+| Check | Catches |
+|---|---|
+| Fresh apply to an empty database | Ordering bugs invisible on an already-migrated dev box |
+| Rollback apply | An untested down script, which is not a rollback |
+| Round trip through the changed path | Shape errors that a successful migration hides |
+
+The third is the one people skip. A migration that applies cleanly and leaves a
+column nullable that the code assumes is populated will pass the first two.
 
 ### `"unmapped": "fail"`
 

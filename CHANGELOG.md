@@ -7,8 +7,11 @@ All notable changes to this repository are documented here. Format follows [Keep
 ### Added
 
 - **A `plugin/` tree, and the `crew` plugin in it — the repo's first entry that is a
-  plugin rather than a skill.** `crew` is a virtual dev team for multi-repo legacy work:
-  9 context-isolated subagents, 11 slash commands, 8 bundled skills, and 4 hooks. Roles
+  plugin rather than a skill.** `crew` 0.2.0 is a virtual dev team for multi-repo legacy
+  work: 9 context-isolated subagents, 14 slash commands, 14 bundled skills, and 7 hooks
+  across 5 events (`PreToolUse`, `Stop`, `PreCompact`, `SessionStart`, `Notification`).
+  Beyond the safety gates it now carries a handoff note across a `/clear` or an
+  auto-compact, and watches context use. Roles
   exist only where they buy an isolated context window, a restricted tool set, or
   genuinely independent eyes — project management, BA, and architecture are files and
   commands, not agents. Codex QA, Jira, Obsidian memory, and Teams/Telegram notifications
@@ -21,6 +24,15 @@ All notable changes to this repository are documented here. Format follows [Keep
   the distinction that actually matters: a skill is a document Claude reads, whereas a
   plugin can register subagents, slash commands, and **hooks** — and a hook runs whether
   or not Claude agrees with it.
+- **`plugin/PLUGINS.md` — the per-plugin reference the catalog points at.** `skills/` gets
+  away with one file because a skill is one `SKILL.md`; a plugin is a bundle, so the
+  catalog row cannot carry the detail. This is where every command, agent, bundled skill,
+  and hook is listed, with the hooks first, because they are the only part that runs
+  without being asked. It also records what is *not* wired: only `PreToolUse` pairs a
+  `.sh` with a `shell: powershell` twin, so `verify-gate.ps1`, `context-watch.ps1`, and
+  `handoff-read.ps1` sit on disk unreferenced and the `Stop` gate never fires on a
+  Windows box with no `bash` on `PATH`. Documented rather than fixed — it is a change to
+  `crew`'s runtime behaviour, not to its packaging.
 - **Menu item 21, `This repo's plugins`, in both bootstrap scripts — off by default.**
   Appended at the end of the menu so items 1–20 keep their numbers and no existing
   `--select 3,7` invocation changes meaning. New `PLUGIN_KEYS` / `PLUGIN_NAME` arrays in

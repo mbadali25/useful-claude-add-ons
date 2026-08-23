@@ -231,7 +231,7 @@ Six more rows, also off by default. None of them are MCP servers.
 
 ### Optional: this repo's own plugins
 
-- **This repo's plugins** (21) - installs everything under [`plugin/`](plugin/) from this repo's own marketplace. Today that is one plugin, [`crew`](plugin/crew): 9 subagents, 11 slash commands, 8 bundled skills, and 4 hooks. It adds the marketplace itself first, so the item works whether or not item 3 ran; both steps are no-ops when they are already present.
+- **This repo's plugins** (21) - installs everything under [`plugin/`](plugin/) from this repo's own marketplace. Today that is one plugin, [`crew`](plugin/crew): 9 subagents, 14 slash commands, 14 bundled skills, and 7 hooks across 5 events. It adds the marketplace itself first, so the item works whether or not item 3 ran; both steps are no-ops when they are already present.
 
   ```bash
   claude plugin marketplace add mbadali25/useful-claude-add-ons
@@ -244,6 +244,9 @@ Six more rows, also off by default. None of them are MCP servers.
   |---|---|---|
   | `guard.sh` / `guard.ps1` | `PreToolUse` on Bash and PowerShell | Blocks `terraform apply`/`destroy`, destructive DDL, force push, hard reset, prod-targeted commands, and any command that would print a secret into the transcript |
   | `verify-gate.sh` | `Stop` | Runs the checks the changed paths map to and **fails the turn** on red, or on a changed path with no rule |
+  | `context-watch.sh` | `Stop` | Estimates context use and asks for a handoff once per session |
+  | `handoff-write.sh` | `PreCompact` | Snapshots the transcript and writes a skeleton handoff before compaction discards it |
+  | `handoff-read.sh` | `SessionStart` | Injects that handoff back after a clear, compact, or resume |
   | `notify.sh` | `Notification` | Sends a one-line outbound message to Teams or Telegram, if configured. Never reads |
 
   A hook cannot be argued out of blocking something - that is the point of it, and it is also why a bootstrap run should not add one to a machine without the box being ticked. The `Stop` gate in particular is a no-op until you build the change-to-check map, so the item finishes by printing the per-repository setup:
@@ -255,7 +258,9 @@ Six more rows, also off by default. None of them are MCP servers.
   /crew:verify       # build the change-to-check map the Stop gate needs
   ```
 
-  Uninstall with `claude plugin uninstall crew@useful-claude-add-ons`; the hooks go with it. Full guide: [`plugin/crew/README.md`](plugin/crew/README.md), and [`plugin/README.md`](plugin/README.md) for how plugins differ from skills here.
+  **The Windows dispatch is incomplete, and it fails quietly.** Only the `PreToolUse` guard pairs a `.sh` with a `shell: powershell` twin, because there the branch is chosen by *which tool Claude used* rather than by which OS you are on. The other five hook entries invoke `bash` unconditionally, so on a Windows machine with no `bash` on `PATH` the `Stop` gate, the context watch, and both halves of the handoff cycle never fire - and nothing says so. Install WSL or Git Bash, or treat the gate as advisory on that machine.
+
+  Uninstall with `claude plugin uninstall crew@useful-claude-add-ons`; the hooks go with it. To keep the plugin but stop the `Stop` gate, set `verifyGate: false` in the repository's `.crew/config.json`. Full guide: [`plugin/crew/README.md`](plugin/crew/README.md), with [`plugin/README.md`](plugin/README.md) for how plugins differ from skills here and [`plugin/PLUGINS.md`](plugin/PLUGINS.md) for the per-component breakdown.
 
 Before running either script on a machine you don't fully control, note that these steps run third-party code from npm, from `strix.ai`, and from Chocolatey/flatpak/snap — see [`SECURITY.md`](SECURITY.md)'s install-script trust boundary.
 

@@ -63,6 +63,26 @@ Test users come from environment variables loaded by the harness, never
 hardcoded and never read from a production secret store. See the
 `crew-verification` skill for how credentials reach the test run.
 
+## Map every spec you write
+
+A spec that no rule invokes never runs. In the same turn you add a spec, add or
+extend its rule in `.crew/verify.json`, and make sure the tag you used is
+actually selected by it:
+
+```json
+{ "paths": ["**/*.css", "**/*.scss", "src/components/**"],
+  "run": ["npx playwright test --grep @visual"],
+  "why": "style changes are invisible to API checks" }
+```
+
+Watch the interaction between tags and greps. A rule running
+`--grep @visual` does **not** run your new `@flow` spec, so a flow spec needs a
+rule of its own or a broader command. This is the most common way browser
+coverage ends up existing but never executing.
+
+Then prove it: break the page the spec guards, run the mapped command, confirm
+red, revert.
+
 ## Flake discipline
 
 A test that fails intermittently is worse than no test: it trains everyone to

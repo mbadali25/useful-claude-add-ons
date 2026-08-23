@@ -27,7 +27,7 @@ updated: <date>
 | # | Phase | State | Notes |
 |---|-------|-------|-------|
 | 0 | Platform          | done    | wsl2/Ubuntu, repo on native fs |
-| 1 | Config            | done    | files tracker, verifyGate on |
+| 1 | Config+context    | done    | files tracker, verifyGate on, warnAt 0.8 |
 | 2 | Providers+notify  | partial | codex ok; gemini key not set |
 | 3 | Smoke harness     | blocked | 4/7 checks passing |
 | 4 | Code map          | todo    | |
@@ -61,7 +61,26 @@ Then **fill in the CLAUDE.md with me**, do not leave the template blanks. Ask
 for the build command, the run command, the do-not-touch paths, and the landmine
 that breaks every time. Thirty lines, no more.
 
-**Done when:** `.crew/config.json` is complete and `CLAUDE.md` has no placeholders.
+**Context handling.** Write the `context` block into config and explain the cycle
+in one breath, per the `crew-context` skill:
+
+- Near the limit, the `Stop` hook asks for a handoff note — once per session.
+- `PreCompact` snapshots the transcript and writes a skeleton if none exists.
+- After `/clear` or `/compact`, `SessionStart` injects the note automatically.
+
+Say plainly that **you cannot clear the session yourself** — a hook runs as a
+child process and cannot reset its parent. The `/clear` stays manual, which is
+the right place for it to stay.
+
+Tell them the threshold is an estimate from transcript size, not a token count,
+and that they should calibrate once against `/context` and adjust
+`budgetTokens`. Being early is fine; being late defeats the purpose.
+
+Add `.crew/transcripts/` to `.gitignore` — raw transcripts contain everything
+the session saw, including any secret that reached it.
+
+**Done when:** `.crew/config.json` is complete, `CLAUDE.md` has no placeholders,
+and `.gitignore` covers secrets and transcripts.
 
 ## Phase 2 — Providers and notifications
 
@@ -133,7 +152,20 @@ pairing by breaking the code and confirming the mapped check goes red.**
 Report every pairing that stayed green — those are coverage holes, and finding
 them is half the value of this phase.
 
-**Done when:** rules cover the hot paths, each is verified, `"unmapped": "fail"`.
+**Also in this phase:**
+
+- **Repo conventions.** Search for `_verify/`, `qa/`, `spec/` and similar. If one
+  exists, ask what runs it and give it a rule. This is the most commonly missed
+  step and the most valuable one.
+- **Linters.** Per the `crew-lint` skill, add path-scoped rules for the languages
+  actually present. Baseline existing findings so the gate starts green — a gate
+  that starts red never becomes a gate.
+- **Terraform.** If there are `.tf` files, set up terraform-docs and tflint per
+  `crew-terraform`, and put `terraform-docs .` in the gate so an undocumented
+  variable shows up as a README diff in the pull request.
+
+**Done when:** rules cover the hot paths, each is verified, `"unmapped": "fail"`,
+and linters run green on the current tree.
 
 ## Phase 6 — Browser tests
 
@@ -177,5 +209,8 @@ Say this plainly:
 
 - Repeat Phases 0–5 for the next repo when this one has earned it — not before.
 - Run `/crew:survey` now that there is a safety net worth acting on.
+- Write the first runbook for whatever this repo's deploy or rollback actually
+  is, then `/crew:runbook --verify` it. An unverified runbook is a guess
+  formatted as instructions.
 - Run `/crew:scale` after about ten tickets, and believe the numbers over the
   ambition.

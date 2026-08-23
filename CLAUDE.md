@@ -48,16 +48,20 @@ places:
 
 Renaming or removing a skill means the same four places, in reverse.
 
-### 3. New plugin under `plugin/` → the same rule, plus two
+### 3. New plugin under `plugin/` → five places, plus two extra rules
 
-A directory under `plugin/` is a full Claude Code plugin, not a skill. Register it in
-the same four places, with `source` pointing at `./plugin/<name>`:
+A directory under `plugin/` is a full Claude Code plugin, not a skill. It carries the
+skills' registration rule with one more place bolted on — `plugin/` has both a catalog
+(`README.md`) and a detail doc (`PLUGINS.md`), where `skills/` has only the catalog.
+Register it in all five, with `source` pointing at `./plugin/<name>`:
 
 1. `.claude-plugin/marketplace.json`.
 2. `plugin/README.md` — a row in the overview table (all five columns).
-3. `README.md` — the same row, inside the `<!-- BEGIN plugin/README.md -->` block, plus
+3. `plugin/PLUGINS.md` — a section with the full component breakdown: every command,
+   agent, bundled skill, and hook, and what starts running the moment it is enabled.
+4. `README.md` — the same row, inside the `<!-- BEGIN plugin/README.md -->` block, plus
    the plugin count wherever it appears as a number.
-4. Both install scripts — `PLUGIN_KEYS` / `PLUGIN_NAME` in the `.sh`,
+5. Both install scripts — `PLUGIN_KEYS` / `PLUGIN_NAME` in the `.sh`,
    `$script:PluginCatalog` in the `.ps1`.
 
 Two rules that apply to plugins and not to skills:
@@ -66,8 +70,9 @@ Two rules that apply to plugins and not to skills:
   advisory — it runs whether or not Claude agrees with it — so a bootstrap run must not
   add one to someone's machine without the box being ticked.
 - **Ship every hook script in both flavours**, a `.sh` and a `.ps1` registered with
-  `shell: powershell`. A bash-only hook is silently inert on Windows, which reads as
-  "the gate passed" rather than "the gate never ran".
+  `shell: powershell`, and **wire both in `hooks.json`**. A `.ps1` sitting on disk that
+  nothing references is dead code, and a bash-only hook is silently inert on Windows,
+  which reads as "the gate passed" rather than "the gate never ran".
 
 Never commit a `marketplace.json` inside a plugin directory. The repo root's is the only
 marketplace here; a nested one makes the plugin directory look like a second marketplace
