@@ -7,8 +7,9 @@
 # parts that can be checked without a terminal; the cursor behaviour itself needs a
 # pty and is exercised by hand.
 #
-# Needs: bash. Does not touch the real Claude config - the end-to-end cases run the
-# script with CLAUDE_CONFIG_DIR pointed at a temp directory and stop at the summary.
+# Needs: bash. Installs nothing and touches no real config - the end-to-end cases run
+# the script with --dry-run and CLAUDE_CONFIG_DIR pointed at a temp directory, so it
+# settles the selection, prints it and stops.
 #     ./scripts/_test/menu-groups.sh
 # Exit status is 0 when every case passes, 1 otherwise.
 
@@ -99,13 +100,12 @@ echo "6. a --<group> flag selects its parent row, even one that defaults to off"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 run_summary() {
-  CLAUDE_CONFIG_DIR="$TMP/cfg" PATH="$TMP/bin:$PATH" \
-    bash "$SCRIPT" "$@" 2>&1
+  # --dry-run settles the selection, prints it, and stops. Without it these cases ran
+  # the real installer - apt-get, npm -g, a ~/.bashrc edit - which is not something a
+  # test suite may do to the machine it runs on.
+  CLAUDE_CONFIG_DIR="$TMP/cfg" bash "$SCRIPT" --dry-run "$@" 2>&1
 }
-# A stub 'claude' keeps this offline and instant: only the selection is under test.
-mkdir -p "$TMP/bin" "$TMP/cfg"
-printf '#!/bin/sh\nexit 0\n' > "$TMP/bin/claude"
-chmod +x "$TMP/bin/claude"
+mkdir -p "$TMP/cfg"
 # Assert on the outcome - the row actually appearing in the install list - not on the
 # "Also selecting" message. A sabotage that dropped the selection but kept the message
 # passed an earlier version of this test.

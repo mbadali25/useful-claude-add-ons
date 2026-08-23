@@ -21,6 +21,10 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
+- **`--dry-run` / `-DryRun`.** Settles the selection, prints it, and stops without
+  installing anything - the quickest way to see what a set of flags actually resolves
+  to, and what `scripts/_test/menu-groups.sh` uses so a test run cannot reach `apt-get`
+  or `npm install -g`.
 - **Every menu row that installs more than one thing now has a sub-picker.** Only the
   repo's own skills row did; the team, community, VoltAgent and repo-plugin rows were
   all-or-nothing, so wanting one of the three team plugins, or two of the ten VoltAgent
@@ -28,8 +32,11 @@ All notable changes to this repository are documented here. Format follows [Keep
   now marked `>` in the menu, open their own picker on the right arrow, and carry a live
   `N of M` count. New flags for the non-interactive path, matching `--skills`:
   `--team` / `-Team`, `--community` / `-Community`, `--voltagent` / `-VoltAgent`,
-  `--plugins` / `-Plugins`, each taking names, numbers, `all` or `none` and implying its
-  parent item. Only the marketplaces behind a ticked plugin are registered now, so
+  `--plugins` / `-Plugins`, each taking names, numbers, `all` or `none`. A name matches
+  the plugin key or the short label the picker shows, so `--voltagent infra` and
+  `--voltagent voltagent-infra` are the same thing. Naming items inside a row also
+  selects that row - which is what makes `--plugins crew` work at all, since that row is
+  off by default - but never overrides a choice made at the menu. Only the marketplaces behind a ticked plugin are registered now, so
   `--team excalidraw-generator` adds one marketplace instead of three. The five catalogs
   are the single source for the menu label, the picker, the flag and the install loop,
   so a row cannot say "3 of 3" and then install something else.

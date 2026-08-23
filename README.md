@@ -107,12 +107,13 @@ Everything that can be a plugin **is** installed as one, using the CLI's own `cl
 | `-All` / `--all` | Select every menu item, no prompt. |
 | `-Select '1,3,7-9'` / `--select 1,3,7-9` | Select these menu items, no prompt. Item keys work too: `--select supabase,claude-mem`. |
 | `-Skills 'cloudflare,drata'` / `--skills cloudflare,drata` | Install only these of this repo's skills, no sub-picker. Also accepts `all`, `none`, and numbers (`1,4-6`). Composes with `-All` / `-NonInteractive`. |
-| `-Team` / `--team`, `-Community` / `--community`, `-VoltAgent` / `--voltagent`, `-Plugins` / `--plugins` | The same for the other multi-item rows — items 4, 6, 10 and 21. Each takes names, numbers, `all` or `none`, skips that row's sub-picker, and implies its parent item. E.g. `--voltagent infra,qa-sec --team superpowers`. |
+| `-Team` / `--team`, `-Community` / `--community`, `-VoltAgent` / `--voltagent`, `-Plugins` / `--plugins` | The same for the other multi-item rows — items 4, 6, 10 and 21. Each takes names, numbers, `all` or `none`, skips that row's sub-picker, and implies its parent item. Names match either the plugin key or the short label the picker shows, so `--voltagent infra,qa-sec` and `--voltagent voltagent-infra,voltagent-qa-sec` both work. |
 | `-NonInteractive` / `--non-interactive` | Select the default set, no prompt — for unattended or CI runs. |
 | `-SkillUIGuide` / `--skillui-guide` | Print the SkillUI quick start after installing it, without being asked. |
 | `-NotifySetup` / `--notify-setup` | Scaffold `~/.config/notify/config.json` after installing the `notify` skill, without being asked. The prerequisites are printed either way. |
 | `-NoUpdate` / `--no-update` | Report already-installed plugins but never update them. |
 | `-ForceRefresh` / `--force-refresh` | Reinstall a plugin whose files changed in its marketplace but whose declared version did not. Without it such a plugin is reported and left alone — see [Content drift](#content-drift) below. |
+| `-DryRun` / `--dry-run` | Work out the selection, print it, and stop — installs nothing. Useful for checking what a set of flags actually resolves to. |
 | `-SkipBootstrap` / `--skip-bootstrap` | Narrow whatever you selected down to the prerequisites and the Claude Code CLI. |
 | `-InstallScope` / `--scope` | Scope for every marketplace and plugin install: `user` (default), `project`, or `local`. Windows still accepts the old `-PluginHubScope` name as an alias. |
 | `-ObsidianRepoRoot` / `--obsidian-repo-root` | Root that item 20 suggests for the Obsidian vault — `C:\repos` on Windows, `~/repos` on Linux. Only affects the printed next step; the vault itself is created by [`claude-obsidian-setup/`](claude-obsidian-setup/). |
@@ -142,9 +143,9 @@ For this repo's own skills, [`scripts/check-marketplace.py`](scripts/check-marke
 | 1 Prerequisites | Chocolatey + git, awscli, nodejs, python (Windows) / git, nodejs, npm, python3, pip3 via apt/dnf/yum/pacman/zypper/apk (Linux) | package manager |
 | 2 Claude Code CLI | `@anthropic-ai/claude-code`, a persistent `PATH` entry for the npm global bin, and an update to the latest published version if one already exists | npm |
 | 3 This repo | The `useful-claude-add-ons` marketplace and, by default, all 25 skills in [`skills/`](skills/) — narrow it with → in the menu or `--skills` | this repo |
-| 4 Team plugins | `superpowers`, `frontend-design`, `excalidraw-generator` | 3 marketplaces |
+| 4 Team plugins | `superpowers`, `frontend-design`, `excalidraw-generator` | 3 marketplaces (only the ones behind a ticked plugin) |
 | 5 find-skills | The `find-skills` skill, into the user skills dir | `vercel-labs/skills` |
-| 6 Community | `adhd-output-style`, `azure-tools`, `anthropic-office-skills`, `agent-browser`, `ppt-master` | 4 marketplaces |
+| 6 Community | `adhd-output-style`, `azure-tools`, `anthropic-office-skills`, `agent-browser`, `ppt-master` | 3 marketplaces (only the ones behind a ticked plugin) |
 | 7 claude-code-setup | Analyses a codebase and recommends hooks/skills/MCP servers | `anthropics/claude-plugins-official` |
 | 8 task-observer | Watches a session for reusable-skill opportunities | `rebelytics/one-skill-to-rule-them-all` |
 | 9 claude-mem | Cross-session memory, **Bun** (its worker runtime — Chocolatey on Windows, `npm -g` or `bun.sh` on Linux), plus `CLAUDE_MEM_WORKER_PORT` in `settings.json` | `thedotmack/claude-mem` |

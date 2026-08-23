@@ -46,7 +46,9 @@ One script per OS. Both are idempotent (safe to re-run) and, by default, also bo
 | 10 | the 10 VoltAgent packs | `--voltagent` / `-VoltAgent` |
 | 21 | this repo's own plugins (`crew`) | `--plugins` / `-Plugins` |
 
-Each flag takes names, numbers, `all` or `none` — `--voltagent infra,qa-sec`, `--team 1,3`, `--community none` — and selecting any of them implies its parent menu item. Only the marketplaces behind a ticked plugin get registered, so `--team excalidraw-generator` adds one marketplace rather than three.
+Each flag takes names, numbers, `all` or `none` — `--voltagent infra,qa-sec`, `--team 1,3`, `--community none`. A name matches either the plugin key or the short label the picker shows, so `--voltagent infra` and `--voltagent voltagent-infra` are the same thing. Naming items inside a row also selects that row, which matters for the ones that are off by default (`--plugins crew`); it never overrides a choice you made at the menu. Only the marketplaces behind a ticked plugin get registered, so `--team excalidraw-generator` adds one marketplace rather than three.
+
+`--dry-run` / `-DryRun` settles the selection, prints it, and stops without installing anything — the quickest way to see what a set of flags resolves to.
 
 **When the picker isn't available**, both scripts fall back to the original numbered prompt — same items, same defaults, answered with `A`, `D`, `N`, or `1,3,7-9`. That happens when there is no usable terminal (`curl | bash` with no `/dev/tty`, CI), no `stty`, `TERM=dumb`, PowerShell ISE, a redirected console, or a window under ten lines. Nothing about the install differs; only how you choose.
 

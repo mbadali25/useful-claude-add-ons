@@ -43,6 +43,8 @@
 #   --no-update           never update an already-installed plugin, only report it
 #   --force-refresh       reinstall a plugin whose files changed in its marketplace
 #                         but whose declared version did not (see 'content drift')
+#   --dry-run             work out and print the selection, then stop without
+#                         installing anything
 #   --skip-bootstrap      narrow the selection to prerequisites + the Claude Code CLI
 #   --scope <scope>       scope for marketplace/plugin installs: user|project|local (default: user)
 #   --obsidian-repo-root <dir>
@@ -76,6 +78,10 @@ SKIP_BOOTSTRAP=0
 NON_INTERACTIVE=0
 NO_UPDATE=0
 FORCE_REFRESH=0
+# Set once the selection came from the menu rather than a flag.
+SELECTION_INTERACTIVE=0
+# --dry-run: settle the selection, print it, install nothing.
+DRY_RUN=0
 SELECT_ALL=0
 SELECT_SPEC=""
 # One "--<group> a,b,c" spec per sub-picker group; empty means "not given".
@@ -97,6 +103,7 @@ while [ $# -gt 0 ]; do
     --non-interactive) NON_INTERACTIVE=1 ;;
     --no-update)       NO_UPDATE=1 ;;
     --force-refresh)   FORCE_REFRESH=1 ;;
+    --dry-run)         DRY_RUN=1 ;;
     --all)             SELECT_ALL=1 ;;
     --select)          SELECT_SPEC="${2:-}"; shift ;;
     --skills)          GROUP_SPEC_SKILL="${2:-}"; shift ;;
@@ -668,7 +675,11 @@ install_plugin() {
       if [ "$(installed_plugin_sha "$spec" || printf '')" = "$head_sha" ]; then
         COUNT_UPDATED=$((COUNT_UPDATED+1))
         ok "plugin '$name' refreshed (version $after, marketplace moved to ${head_sha:0:7})"
-      elif [ "$FORCE_REFRESH" -eq 1 ] && force_refresh_plugin "$spec"; then
+      elif [ "$FORCE_REFRESH" -eq 1 ]; then
+        # force_refresh_plugin uninstalls before installing, so a failure here can leave
+        # the plugin *gone*, not merely stale. It says which half failed; this fails the
+        # step so the run does not end with "All steps completed".
+        force_refresh_plugin "$spec" || return 1
         load_plugins
         load_installed_shas
         COUNT_UPDATED=$((COUNT_UPDATED+1))
@@ -1020,11 +1031,24 @@ expand_group_spec() {
     else
       found=0
       for (( i=0; i<total; i++ )); do
-        if [ "$(group_key "$prefix" "$i")" = "$token" ]; then group_set "$prefix" "$i" 1; found=1; break; fi
+        # Match the catalog key, or the label the picker actually shows. The VoltAgent
+        # rows display 'infra' while their plugin is 'voltagent-infra', so a name read
+        # off the screen has to work - it is the only name the user ever sees.
+        if [ "$(group_key "$prefix" "$i")" = "$token" ] \
+        || [ "$(group_display_name "$prefix" "$i")" = "$token" ]; then
+          group_set "$prefix" "$i" 1; found=1; break
+        fi
       done
       [ "$found" -eq 0 ] && warn "ignoring unknown $noun '$token'"
     fi
   done
+}
+
+group_display_name() {
+  # The first word of the catalog label - what the picker shows in its left column.
+  local name
+  name="$(group_name "$1" "$2")"
+  printf '%s' "${name%%[[:space:]]*}"
 }
 
 group_noun_for() {
@@ -1385,13 +1409,14 @@ select_install_items() {
     SELECTED="$(default_keys)"
     printf '\033[90mSelecting the default set (--non-interactive).\033[0m\n'
   elif picker_supported && pick_menu_interactive; then
-    :
+    SELECTION_INTERACTIVE=1
   else
     # Reached either because the terminal never supported raw input, or because it
     # stopped part-way through. The second case is why this is a fall-through and not
     # an else on picker_supported alone: a picker that dies mid-draw must land on the
     # numbered prompt, not on an empty selection that looks like the user chose none.
     [ "$PICKER_FAILED" -eq 1 ] && warn "the cursor menu could not run here - falling back to the numbered menu."
+    SELECTION_INTERACTIVE=1
     show_menu
     read -r -p "  Select [D] " answer <&"$TTY_FD"
     answer="${answer:-D}"
@@ -1406,8 +1431,10 @@ select_install_items() {
   # A --<group> spec is also a statement that you want that row: naming plugins inside
   # a row that is off by default (--plugins crew) would otherwise print a tidy summary
   # and install nothing. Only when something in the group is actually ticked, so
-  # '--plugins none' still means none.
+  # '--plugins none' still means none - and never after the menu, where unticking the
+  # row (or pressing Q) is a decision this must not quietly reverse.
   for gi in "${!GROUP_PREFIXES[@]}"; do
+    [ "$SELECTION_INTERACTIVE" -eq 1 ] && break
     prefix="${GROUP_PREFIXES[$gi]}"
     eval "spec=\"\${GROUP_SPEC_${prefix}}\""
     [ -n "$spec" ] || continue
@@ -1688,6 +1715,11 @@ show_selection
 
 if [ "$(selection_count)" -eq 0 ]; then
   printf '\n\033[33mNothing to do.\033[0m\n'
+  exit 0
+fi
+
+if [ "$DRY_RUN" -eq 1 ]; then
+  printf '\n\033[33m--dry-run: stopping here. Nothing was installed.\033[0m\n'
   exit 0
 fi
 

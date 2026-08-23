@@ -49,6 +49,8 @@ Common switches:
     -NoUpdate           never update an already-installed plugin, only report it
     -ForceRefresh       reinstall a plugin whose files changed in its marketplace
                         but whose declared version did not (see 'content drift')
+    -DryRun             work out and print the selection, then stop without
+                        installing anything
     -SkipBootstrap      narrow the selection to prerequisites + the Claude Code CLI
     -InstallScope       scope for marketplace/plugin installs: user (default), project, local
                         (accepts -PluginHubScope as an alias for backward compatibility)
@@ -60,6 +62,7 @@ param(
     [switch]$NonInteractive,  # take the default selection, no menu
     [switch]$NoUpdate,        # don't update already-installed plugins
     [switch]$ForceRefresh,    # reinstall a plugin whose files changed upstream without a version bump
+    [switch]$DryRun,          # work out and print the selection, then stop without installing
     [switch]$All,             # select every menu item, no menu
     [string]$Select,          # explicit selection, no menu: '1,3,7-9' or 'strix,supabase'
     [string]$Skills,          # explicit skill subset, no sub-picker: 'cloudflare,drata' | 'all' | 'none'
@@ -622,7 +625,14 @@ function Enable-ClaudePlugin {
 function Install-ClaudePlugin {
     # $Spec is 'name@marketplace'. Detection is on the bare name, so a plugin already
     # installed from a *different* marketplace counts as present and is not duplicated.
+    #
+    # Both preference variables are shadowed function-locally, as everywhere else on
+    # this path: this function reads $LASTEXITCODE to decide whether an update failed
+    # (documented as "not fatal"), and a terminating error there would skip the whole
+    # drift branch below instead.
     param([string]$Spec)
+    $ErrorActionPreference = 'Continue'
+    $PSNativeCommandUseErrorActionPreference = $false
     $name = $Spec.Split('@')[0]
     $existing = (Get-ClaudePlugins)[$name]
     if ($existing) {
@@ -690,7 +700,14 @@ function Install-ClaudePlugin {
             if ((Get-InstalledPluginShas)[$Spec] -eq $headSha) {
                 $script:Summary.Updated++
                 Write-Ok "plugin '$name' refreshed (version $after, marketplace moved to $($headSha.Substring(0, [Math]::Min(7, $headSha.Length))))"
-            } elseif ($ForceRefresh -and (Invoke-ForcePluginRefresh $Spec)) {
+            } elseif ($ForceRefresh) {
+                # Invoke-ForcePluginRefresh uninstalls before installing, so a failure
+                # here can leave the plugin *gone*, not merely stale. It says which half
+                # failed; throwing fails the step so the run does not end with "All
+                # steps completed".
+                if (-not (Invoke-ForcePluginRefresh $Spec)) {
+                    throw "could not force-refresh '$Spec' - see the warning above."
+                }
                 Get-ClaudePlugins -Refresh | Out-Null
                 $script:InstalledShaCache = $null
                 $script:Summary.Updated++
@@ -923,7 +940,14 @@ function Expand-GroupSpec {
                 Write-Warn2 "ignoring out-of-range $($Group.Single) number '$token'"
             }
         } else {
-            $hit = $catalog | Where-Object { $_.Key -eq $token.ToLower() } | Select-Object -First 1
+            # Match the catalog key, or the label the picker actually shows. The
+            # VoltAgent rows display 'infra' while their plugin is 'voltagent-infra',
+            # so a name read off the screen has to work - it is the only name the user
+            # ever sees.
+            $want = $token.ToLower()
+            $hit = $catalog | Where-Object {
+                $_.Key -eq $want -or ($_.Name -split '\s+')[0].ToLower() -eq $want
+            } | Select-Object -First 1
             if ($hit) { $hit.Selected = $true } else { Write-Warn2 "ignoring unknown $($Group.Single) '$token'" }
         }
     }
@@ -931,10 +955,20 @@ function Expand-GroupSpec {
 
 function Install-GroupEntry {
     # Install one catalog entry's Spec: register its marketplace, then the plugin.
+    #
+    # The locals are named so they cannot collide with Invoke-Step's own parameters, and
+    # the script blocks are closed over their values. PowerShell resolves a variable in
+    # a script block against the *dynamic* scope it runs in, so a plain '$name' here
+    # picked up Invoke-Step's [string]$Name - the step label - and every marketplace was
+    # re-added under the name "Marketplace: owner/repo" on every run.
     param([string]$Spec)
-    $plugin, $source, $name = $Spec -split '\|', 3
-    Invoke-Step "Marketplace: $source" { Add-ClaudeMarketplace -Source $source -Name $name }
-    Invoke-Step "Plugin: $plugin"      { Install-ClaudePlugin $plugin }
+    $entryPlugin, $entrySource, $entryMarketplace = $Spec -split '\|', 3
+    Invoke-Step "Marketplace: $entrySource" {
+        Add-ClaudeMarketplace -Source $entrySource -Name $entryMarketplace
+    }.GetNewClosure()
+    Invoke-Step "Plugin: $entryPlugin" {
+        Install-ClaudePlugin $entryPlugin
+    }.GetNewClosure()
 }
 
 function Get-SelectedSkillCount { return (Get-GroupSelectedCount (Get-Group 'own-skills')) }
@@ -1228,6 +1262,7 @@ function Select-InstallItems {
     }
 
     $keys = @()
+    $interactive = $false
     if ($All) {
         $keys = $everything
         Write-Host "Selecting every item (-All)." -ForegroundColor DarkGray
@@ -1241,7 +1276,9 @@ function Select-InstallItems {
         # Nothing more to do - Select-MenuInteractiveSafe returned a (possibly empty)
         # selection. It returns $null only when the picker itself failed, which drops
         # through to the numbered menu below rather than taking the script down.
+        $interactive = $true
     } else {
+        $interactive = $true
         Show-InstallMenu
         $answer = "$(Read-Host '  Select [D]')".Trim()
         if ([string]::IsNullOrWhiteSpace($answer)) { $answer = 'D' }
@@ -1259,8 +1296,10 @@ function Select-InstallItems {
     # A -<Group> spec is also a statement that you want that row: naming plugins inside
     # a row that is off by default (-Plugins crew) would otherwise print a tidy summary
     # and install nothing. Only when something in the group is actually ticked, so
-    # '-Plugins none' still means none.
+    # '-Plugins none' still means none - and never after the menu, where unticking the
+    # row (or pressing Q) is a decision this must not quietly reverse.
     foreach ($group in $script:Groups) {
+        if ($interactive) { break }
         $spec = $specs[$group.MenuKey]
         if (-not $spec) { continue }
         if ((Get-GroupSelectedCount $group) -eq 0) { continue }
@@ -1637,6 +1676,13 @@ if ($chosenCount -eq 0) {
     return
 }
 
+if ($DryRun) {
+    Write-Host "`n-DryRun: stopping here. Nothing was installed." -ForegroundColor Yellow
+    # Every exit path has to hand the caller's shell back (see the note at the top).
+    $ErrorActionPreference = $script:PreviousErrorActionPreference
+    return
+}
+
 $script:SkillUIGuideChoice = Select-SkillUIGuide
 $script:NotifySetupChoice = Select-NotifySetup
 
@@ -1903,8 +1949,8 @@ if (Test-Selected 'voltagent') {
         }
     }
     foreach ($entry in ((Get-GroupCatalog $group) | Where-Object { $_.Selected })) {
-        $spec = "$($entry.Key)@voltagent-subagents"
-        Invoke-Step "Plugin: $spec" { Install-ClaudePlugin $spec }
+        $voltSpec = "$($entry.Key)@voltagent-subagents"
+        Invoke-Step "Plugin: $voltSpec" { Install-ClaudePlugin $voltSpec }.GetNewClosure()
     }
 }
 
@@ -2216,8 +2262,8 @@ if (Test-Selected 'repo-plugins') {
     # The catalog lives in $script:PluginCatalog next to the menu; Right on the row
     # (or -Plugins) narrows it, the same as every other multi-item row.
     foreach ($entry in ((Get-GroupCatalog (Get-Group 'repo-plugins')) | Where-Object { $_.Selected })) {
-        $spec = "$($entry.Key)@useful-claude-add-ons"
-        Invoke-Step "Plugin: $spec" { Install-ClaudePlugin $spec }
+        $repoSpec = "$($entry.Key)@useful-claude-add-ons"
+        Invoke-Step "Plugin: $repoSpec" { Install-ClaudePlugin $repoSpec }.GetNewClosure()
     }
 
     # Only worth printing when crew is actually one of the ones installed.
