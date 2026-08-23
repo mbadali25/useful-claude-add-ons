@@ -4,10 +4,11 @@ Instructions for Claude Code working in this repository.
 
 ## What this repo is
 
-A Claude Code **skill marketplace**. Every directory under `skills/` is an installable
-plugin, registered in `.claude-plugin/marketplace.json`. Two bootstrap scripts under
-`scripts/` install those skills, plus the team's other marketplaces and tooling, onto a
-fresh machine.
+A Claude Code **marketplace**. Every directory under `skills/` is an installable plugin
+holding a single `SKILL.md`; every directory under `plugin/` is a full plugin that may
+also bundle subagents, slash commands, and hooks. Both are registered in
+`.claude-plugin/marketplace.json`. Two bootstrap scripts under `scripts/` install them,
+plus the team's other marketplaces and tooling, onto a fresh machine.
 
 ## Documentation rules — not optional
 
@@ -46,6 +47,31 @@ places:
    in the `.ps1`. Keep the two in the same order, with the same text.
 
 Renaming or removing a skill means the same four places, in reverse.
+
+### 3. New plugin under `plugin/` → the same rule, plus two
+
+A directory under `plugin/` is a full Claude Code plugin, not a skill. Register it in
+the same four places, with `source` pointing at `./plugin/<name>`:
+
+1. `.claude-plugin/marketplace.json`.
+2. `plugin/README.md` — a row in the overview table (all five columns).
+3. `README.md` — the same row, inside the `<!-- BEGIN plugin/README.md -->` block, plus
+   the plugin count wherever it appears as a number.
+4. Both install scripts — `PLUGIN_KEYS` / `PLUGIN_NAME` in the `.sh`,
+   `$script:PluginCatalog` in the `.ps1`.
+
+Two rules that apply to plugins and not to skills:
+
+- **A plugin that registers hooks defaults to OFF in the menu.** A hook is not
+  advisory — it runs whether or not Claude agrees with it — so a bootstrap run must not
+  add one to someone's machine without the box being ticked.
+- **Ship every hook script in both flavours**, a `.sh` and a `.ps1` registered with
+  `shell: powershell`. A bash-only hook is silently inert on Windows, which reads as
+  "the gate passed" rather than "the gate never ran".
+
+Never commit a `marketplace.json` inside a plugin directory. The repo root's is the only
+marketplace here; a nested one makes the plugin directory look like a second marketplace
+to `claude plugin marketplace add`.
 
 ## Conventions
 

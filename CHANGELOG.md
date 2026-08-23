@@ -6,6 +6,56 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
+- **A `plugin/` tree, and the `crew` plugin in it — the repo's first entry that is a
+  plugin rather than a skill.** `crew` is a virtual dev team for multi-repo legacy work:
+  9 context-isolated subagents, 11 slash commands, 8 bundled skills, and 4 hooks. Roles
+  exist only where they buy an isolated context window, a restricted tool set, or
+  genuinely independent eyes — project management, BA, and architecture are files and
+  commands, not agents. Codex QA, Jira, Obsidian memory, and Teams/Telegram notifications
+  are all optional. Registered in [`.claude-plugin/marketplace.json`](.claude-plugin/marketplace.json)
+  with `source` `./plugin/crew`, so `claude plugin install crew@useful-claude-add-ons`
+  works the same way a skill install does.
+- **`plugin/README.md` — the plugins counterpart to `skills/README.md`**, with the same
+  five-column overview table, inlined into the root `README.md` between
+  `<!-- BEGIN plugin/README.md -->` markers exactly as the skills table is. It leads with
+  the distinction that actually matters: a skill is a document Claude reads, whereas a
+  plugin can register subagents, slash commands, and **hooks** — and a hook runs whether
+  or not Claude agrees with it.
+- **Menu item 21, `This repo's plugins`, in both bootstrap scripts — off by default.**
+  Appended at the end of the menu so items 1–20 keep their numbers and no existing
+  `--select 3,7` invocation changes meaning. New `PLUGIN_KEYS` / `PLUGIN_NAME` arrays in
+  the `.sh` and `$script:PluginCatalog` in the `.ps1` mirror the skill catalogs. The item
+  adds this repo's marketplace itself, so it stands alone whether or not item 3 ran, and
+  finishes by printing the per-repository setup (`/crew:init`, `/crew:onboard`,
+  `/crew:verify`). It is unticked by default *on purpose*: every other menu row installs
+  something Claude may choose to use, whereas `crew`'s `PreToolUse` hook blocks
+  `terraform apply`/`destroy`, destructive DDL, force push, hard reset, and any command
+  that would print a secret, and its `Stop` hook fails a turn whose checks go red. Those
+  are deterministic and start the moment the plugin is enabled, which is not something a
+  bootstrap run should add without the box being ticked.
+- **A plugin registration rule in `CLAUDE.md`**, alongside the existing skill rule: the
+  same four places, plus two that only apply to plugins — a hook-bearing plugin defaults
+  to OFF in the menu, and every hook script ships in both `.sh` and `.ps1` flavours,
+  because a bash-only hook is silently inert on Windows and reads as "the gate passed"
+  rather than "the gate never ran".
+
+### Fixed
+
+- **Section-comment numbering in both install scripts had drifted by one from item 14
+  onward** — `obsidian-mcp` was inserted at position 14 without renumbering the comments
+  below it, so the block installing menu item 20 was labelled `# --- 19. Obsidian`.
+  Comment-only; no behaviour change. Verified by parsing `MENU_KEYS`/`MENU_DEFAULT` out
+  of the `.sh` and `$script:Catalog` out of the `.ps1` and diffing them: 21 keys each,
+  same order, same defaults.
+
+### Changed
+
+- **`plugin/crew/.claude-plugin/plugin.json` no longer ships placeholder metadata** —
+  its author was `{ "name": "you" }`. It now carries the repo's owner, homepage, and
+  repository. A stray `plugin/crew/.claude-plugin/marketplace.json` naming a marketplace
+  `my-marketplace` owned by `you` was removed: the repo root's marketplace is the only
+  one here, and a nested one makes the plugin directory look like a second marketplace.
+
 - **`claude-memories-vault` and `claude-memories-canvas` skills — the conventions of the
   `claude-memories` Obsidian vault, written on the workstation during the 2026-08-19
   memory migration and only now given a canonical home.** `claude-memories-vault` covers
