@@ -90,9 +90,14 @@ a ticket.
 
 ## Secrets
 
-`meraki_diff.SECRET_KEYS` covers `psk`, `secret`, `sharedsecret`, `passphrase`,
-`password`, `privatekey`, `authkey`, `presharedkey`, `radiussecret` (matched
-case-insensitively, at any depth).
+`meraki_diff.is_secret_key()` matches SUBSTRINGS of the lowercased key name:
+`psk`, `secret`, `password`, `passphrase`, `credential`, `presharedkey`,
+`privatekey`, `authkey`, `apikey`, `accesskey`, `token`, `passcode`, `pin`.
+So `wpaPreSharedKey`, `ikePresharedKey`, `vpnSecret` and `radiusSecret` are all
+covered without being listed individually. This was an exact-match denylist and
+it leaked every one of those four - a denylist only redacts the names someone
+thought of. Over-redaction costs you detail in a diff; under-redaction publishes
+a secret into a diff, a ticket, and a snapshot file on disk.
 
 - **Displayed diffs redact** these to `***REDACTED***`.
 - **Snapshot files do not.** A rollback that restored an SSID without its PSK, or a

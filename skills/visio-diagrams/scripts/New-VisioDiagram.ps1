@@ -43,7 +43,8 @@ param(
     [Parameter(Mandatory)][string]$OutputPath,
     [string]$Stencil = "BASIC_U.VSSX",
     [switch]$AutoLayout,
-    [switch]$Visible
+    [switch]$Visible,
+    [switch]$Overwrite
 )
 
 $ErrorActionPreference = 'Stop'
@@ -129,7 +130,18 @@ try {
         $page.ResizeToFitContents() | Out-Null
     }
 
+    # AlertResponse = 7 above answers Visio's own "overwrite?" dialog with No,
+    # so SaveAs over an existing file fails SILENTLY unless we look. Check the
+    # file first, and check that it actually appeared afterwards.
+    if ((Test-Path $OutputPath) -and -not $Overwrite) {
+        throw "$OutputPath already exists. Pass -Overwrite to replace it, or choose another path."
+    }
+    if (Test-Path $OutputPath) { Remove-Item $OutputPath -Force }
+
     $doc.SaveAs($OutputPath)
+    if (-not (Test-Path $OutputPath)) {
+        throw "SaveAs reported no error but $OutputPath was not written. Visio's alerts are suppressed, so the reason is not shown - check the path is writable and not open in another process."
+    }
     Write-Host "Wrote $OutputPath ($($shapes.Count) shapes, $($spec.edges.Count) connectors)"
 }
 finally {
