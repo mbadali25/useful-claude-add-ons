@@ -1,6 +1,6 @@
 # Installation
 
-Two things live in this repo: **prerequisite tooling** (git, Node.js, Python, AWS CLI, the Claude Code CLI itself) and **the skills**. This doc covers both.
+Three things live in this repo: **prerequisite tooling** (git, Node.js, Python, AWS CLI, the Claude Code CLI itself), **the skills** under `skills/`, and **the plugins** under `plugin/`. This doc covers all three.
 
 ## 1. Install prerequisites
 
@@ -20,7 +20,8 @@ One script per OS. Both are idempotent (safe to re-run) and, by default, also bo
     ...
     [ ] Strix AI pentesting CLI (needs Docker + an LLM API key)
     [ ] Obsidian desktop + claude-obsidian + obsidian-skills plugins
-  showing 1-20 of 20
+    [ ] This repo's plugins: crew (agents, commands, hooks)
+  showing 1-21 of 21
   ↑↓ move   Space toggle   Enter start   A all   N none   D defaults   Q cancel
   → on the repo row picks individual skills
 ```
@@ -227,6 +228,39 @@ Six more rows, also off by default. None of them are MCP servers.
   The first is the vault engine — transactional writes, provenance ledgers, deterministic lint, and the `/claude-obsidian:*` skills. The second is [`kepano/obsidian-skills`](https://github.com/kepano/obsidian-skills), maintained by Obsidian's own team: authoritative references for Obsidian Flavored Markdown, Bases (`.base`), JSON Canvas (`.canvas`), the Obsidian CLI, and Defuddle. Both are detected and skipped or updated like any other plugin.
 
   **This item stops at the app and the plugins.** It deliberately does not create a vault — that writes to disk under a reviewed transaction and belongs in its own step, which the item prints when it finishes and [`claude-obsidian-setup/`](claude-obsidian-setup/) performs. `--obsidian-repo-root` / `-ObsidianRepoRoot` changes the root it suggests (default `C:\repos` on Windows, `~/repos` on Linux).
+
+### Optional: this repo's own plugins
+
+- **This repo's plugins** (21) - installs everything under [`plugin/`](plugin/) from this repo's own marketplace. Today that is one plugin, [`crew`](plugin/crew): 9 subagents, 14 slash commands, 14 bundled skills, and 7 hooks across 5 events. It adds the marketplace itself first, so the item works whether or not item 3 ran; both steps are no-ops when they are already present.
+
+  ```bash
+  claude plugin marketplace add mbadali25/useful-claude-add-ons
+  claude plugin install crew@useful-claude-add-ons
+  ```
+
+  **It is off by default on purpose, and it is the only item here where that matters for safety.** Every other row installs something Claude *may* use. `crew` installs hooks, which the harness runs on its own:
+
+  | Hook | Event | What it does the moment the plugin is enabled |
+  |---|---|---|
+  | `guard.sh` / `guard.ps1` | `PreToolUse` on Bash and PowerShell | Blocks `terraform apply`/`destroy`, destructive DDL, force push, hard reset, prod-targeted commands, and any command that would print a secret into the transcript |
+  | `verify-gate.sh` | `Stop` | Runs the checks the changed paths map to and **fails the turn** on red, or on a changed path with no rule |
+  | `context-watch.sh` | `Stop` | Estimates context use and asks for a handoff once per session |
+  | `handoff-write.sh` | `PreCompact` | Snapshots the transcript and writes a skeleton handoff before compaction discards it |
+  | `handoff-read.sh` | `SessionStart` | Injects that handoff back after a clear, compact, or resume |
+  | `notify.sh` | `Notification` | Sends a one-line outbound message to Teams or Telegram, if configured. Never reads |
+
+  A hook cannot be argued out of blocking something - that is the point of it, and it is also why a bootstrap run should not add one to a machine without the box being ticked. The `Stop` gate in particular is a no-op until you build the change-to-check map, so the item finishes by printing the per-repository setup:
+
+  ```bash
+  cd <your repo> && claude
+  /crew:init         # guided, resumable setup
+  /crew:onboard      # build the code map
+  /crew:verify       # build the change-to-check map the Stop gate needs
+  ```
+
+  **The Windows dispatch is incomplete, and it fails quietly.** Only the `PreToolUse` guard pairs a `.sh` with a `shell: powershell` twin, because there the branch is chosen by *which tool Claude used* rather than by which OS you are on. The other five hook entries invoke `bash` unconditionally, so on a Windows machine with no `bash` on `PATH` the `Stop` gate, the context watch, and both halves of the handoff cycle never fire - and nothing says so. Install WSL or Git Bash, or treat the gate as advisory on that machine.
+
+  Uninstall with `claude plugin uninstall crew@useful-claude-add-ons`; the hooks go with it. To keep the plugin but stop the `Stop` gate, set `verifyGate: false` in the repository's `.crew/config.json`. Full guide: [`plugin/crew/README.md`](plugin/crew/README.md), with [`plugin/README.md`](plugin/README.md) for how plugins differ from skills here and [`plugin/PLUGINS.md`](plugin/PLUGINS.md) for the per-component breakdown.
 
 Before running either script on a machine you don't fully control, note that these steps run third-party code from npm, from `strix.ai`, and from Chocolatey/flatpak/snap — see [`SECURITY.md`](SECURITY.md)'s install-script trust boundary.
 

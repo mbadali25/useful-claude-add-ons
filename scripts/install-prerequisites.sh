@@ -422,8 +422,9 @@ MENU_KEYS=(
   "claude-code-setup" "task-observer" "claude-mem" "voltagent"
   "aws-mcp" "azure-mcp" "playwright-mcp" "obsidian-mcp"
   "supabase" "context7" "playwright-cli" "skillui" "strix" "obsidian"
+  "repo-plugins"
 )
-MENU_DEFAULT=(1 1 1 1 1 1 1 1 1 1 0 0 0 0 0 0 0 0 0 0)
+MENU_DEFAULT=(1 1 1 1 1 1 1 1 1 1 0 0 0 0 0 0 0 0 0 0 0)
 MENU_NAME=(
   "Prerequisites: git, nodejs, npm, python3, pip3 (needs root or sudo)"
   "Claude Code CLI (@anthropic-ai/claude-code) + PATH export + update check"
@@ -445,6 +446,7 @@ MENU_NAME=(
   "SkillUI (npm) + Playwright/Chromium - extract a design system from a URL"
   "Strix AI pentesting CLI (needs Docker + an LLM API key)"
   "Obsidian desktop + claude-obsidian + obsidian-skills plugins"
+  "This repo's plugins: crew (agents, commands, hooks)"
 )
 
 SELECTED=""
@@ -537,6 +539,18 @@ SKILL_NAME=(
 SKILL_STATE=()
 for _i in "${!SKILL_KEYS[@]}"; do SKILL_STATE+=(1); done
 unset _i
+
+# --- This repo's own plugins --------------------------------------------------
+# Keep in sync with .claude-plugin/marketplace.json and plugin/README.md. Unlike the
+# skills, these are off by default and have no sub-picker: a plugin can register hooks,
+# and a hook runs whether or not Claude agrees with it, so it is opted into explicitly.
+# Parallel arrays for the same reason SKILL_KEYS uses them - stable order.
+PLUGIN_KEYS=(
+  "crew"
+)
+PLUGIN_NAME=(
+  "crew                    - Virtual dev team: 9 agents, 14 commands, safety hooks"
+)
 
 skills_selected_count() {
   local i n=0
@@ -1356,7 +1370,7 @@ if is_selected "cli"; then
 fi
 
 # Everything from here to the MCP servers needs the claude CLI on PATH.
-CLAUDE_ITEMS="own-skills team find-skills community claude-code-setup claude-mem voltagent supabase"
+CLAUDE_ITEMS="own-skills team find-skills community claude-code-setup claude-mem voltagent supabase repo-plugins"
 NEEDS_CLAUDE=0
 for key in $CLAUDE_ITEMS; do
   is_selected "$key" && NEEDS_CLAUDE=1
@@ -1595,7 +1609,7 @@ if is_selected "voltagent"; then
   done
 fi
 
-# --- 11-13. Optional MCP servers ---------------------------------------------
+# --- 11-14. Optional MCP servers ---------------------------------------------
 # Warm the cache before the first add_mcp_server call so duplicate detection works.
 load_mcp_servers
 
@@ -1671,7 +1685,7 @@ if is_selected "obsidian-mcp"; then
 fi
 
 
-# --- 14. Supabase ------------------------------------------------------------
+# --- 15. Supabase ------------------------------------------------------------
 # Ships inside anthropics/claude-plugins-official, the same marketplace items 6 and 7
 # register - add_marketplace is a no-op when it is already there, so this item stands
 # on its own. install_plugin does the "already installed?" check.
@@ -1682,7 +1696,7 @@ if is_selected "supabase"; then
     install_plugin "supabase@claude-plugins-official"
 fi
 
-# --- 15. Context7 ------------------------------------------------------------
+# --- 16. Context7 ------------------------------------------------------------
 install_context7() {
   # 'ctx7 setup' writes the Context7 MCP/skill config for whichever agents it finds.
   # It is interactive, so it gets the terminal explicitly: under 'curl | bash' fd 0 is
@@ -1703,7 +1717,7 @@ if is_selected "context7"; then
   run_step "Configure Context7 (npx ctx7 setup)" install_context7
 fi
 
-# --- 16. Playwright CLI ------------------------------------------------------
+# --- 17. Playwright CLI ------------------------------------------------------
 install_playwright_cli() {
   # Detection is on the binary the package provides ('playwright-cli'), which is what
   # a user actually cares about - the package can also arrive via another manager.
@@ -1730,7 +1744,7 @@ if is_selected "playwright-cli"; then
   run_step "Install Playwright CLI (@playwright/cli)" install_playwright_cli
 fi
 
-# --- 17. SkillUI -------------------------------------------------------------
+# --- 18. SkillUI -------------------------------------------------------------
 skillui_quick_start() {
   printf '\n\033[36m    SkillUI quick start\033[0m  https://github.com/amaancoderx/npxskillui\n'
   printf '    1. Extract a design system from any URL:\n'
@@ -1775,7 +1789,7 @@ if is_selected "skillui"; then
   run_step "Install SkillUI (+ Playwright and Chromium)" install_skillui
 fi
 
-# --- 18. Strix ---------------------------------------------------------------
+# --- 19. Strix ---------------------------------------------------------------
 strix_next_steps() {
   printf '\n\033[33m    Strix needs two more things before its first scan:\033[0m\n'
   printf '    1. Docker running - the first scan pulls the sandbox image.\n'
@@ -1819,7 +1833,7 @@ if is_selected "strix"; then
   run_step "Install Strix AI pentesting CLI" install_strix
 fi
 
-# --- 19. Obsidian + claude-obsidian ------------------------------------------
+# --- 20. Obsidian + claude-obsidian ------------------------------------------
 obsidian_next_steps() {
   echo ""
   printf '\033[33m    Obsidian is installed, but the vault is a separate step:\033[0m\n'
@@ -1860,6 +1874,36 @@ install_obsidian() {
 }
 if is_selected "obsidian"; then
   run_step "Install Obsidian desktop + claude-obsidian and obsidian-skills plugins" install_obsidian
+fi
+
+# --- 21. This repo's own plugins ---------------------------------------------
+# Same marketplace as item 3, so add_marketplace is a no-op when item 3 already ran -
+# this item stands on its own. install_plugin does the "already installed?" check.
+crew_next_steps() {
+  echo ""
+  step "crew: next steps"
+  echo "  Unlike a skill, crew registers hooks that run on their own:"
+  echo "    - PreToolUse on Bash/PowerShell blocks terraform apply/destroy, destructive"
+  echo "      DDL, force push, hard reset, and commands that would print a secret."
+  echo "    - Stop runs the checks your changed paths map to and fails the turn on red."
+  echo "  Set it up per repository before relying on either:"
+  echo "    cd <your repo> && claude"
+  echo "    /crew:init         # guided, resumable setup"
+  echo "    /crew:onboard      # build the code map"
+  echo "    /crew:verify       # build the change-to-check map the Stop gate needs"
+  echo "  Full guide: https://github.com/mbadali25/useful-claude-add-ons/blob/main/plugin/crew/README.md"
+}
+if is_selected "repo-plugins"; then
+  run_step "Add this repo as a Claude Code marketplace"     add_marketplace "mbadali25/useful-claude-add-ons" "useful-claude-add-ons"
+
+  # The catalog lives in PLUGIN_KEYS next to the menu. No sub-picker: there is one
+  # plugin, and it is opt-in already.
+  for idx in "${!PLUGIN_KEYS[@]}"; do
+    plugin="${PLUGIN_KEYS[$idx]}"
+    run_step "Plugin: ${plugin}@useful-claude-add-ons" install_plugin "${plugin}@useful-claude-add-ons"
+  done
+
+  crew_next_steps
 fi
 
 

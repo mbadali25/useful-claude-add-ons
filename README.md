@@ -1,6 +1,6 @@
 # useful-claude-add-ons
 
-An internal repository of [Claude Code](https://docs.claude.com/en/docs/claude-code) Skills, and eventually plugins, built for easy distribution to the team. It also doubles as a Claude Code **plugin marketplace** ([`.claude-plugin/marketplace.json`](.claude-plugin/marketplace.json)) — see [`MARKETPLACE.md`](MARKETPLACE.md) to add it and install skills directly.
+An internal repository of [Claude Code](https://docs.claude.com/en/docs/claude-code) **Skills** ([`skills/`](skills/) — one `SKILL.md` each) and **plugins** ([`plugin/`](plugin/) — bundled subagents, slash commands, and hooks), built for easy distribution to the team. It also doubles as a Claude Code **plugin marketplace** ([`.claude-plugin/marketplace.json`](.claude-plugin/marketplace.json)) — see [`MARKETPLACE.md`](MARKETPLACE.md) to add it and install either directly.
 
 ## Quick Install
 
@@ -9,13 +9,13 @@ One-line bootstrap — no `git clone` needed. Pulls the prerequisite installer s
 **Windows** (elevated PowerShell):
 
 ```powershell
-irm 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/ca068740167e54029b881c7bf9967b28ba9c9a3e/scripts/install-prerequisites.ps1' | iex
+irm 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/f59faf13d749f3140a2aa1b782bad0a099d04d12/scripts/install-prerequisites.ps1' | iex
 ```
 
 **Linux**:
 
 ```bash
-curl -fsSL 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/ca068740167e54029b881c7bf9967b28ba9c9a3e/scripts/install-prerequisites.sh' | bash
+curl -fsSL 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/f59faf13d749f3140a2aa1b782bad0a099d04d12/scripts/install-prerequisites.sh' | bash
 ```
 
 Both links are pinned to a specific commit SHA rather than `main`, so the exact script you're running is fixed and auditable — it can't silently change between when you review it and when you run it. **Update the SHA above whenever `scripts/install-prerequisites.*` changes**: after merging to `main`, run `git rev-parse HEAD` and swap it into both URLs.
@@ -81,6 +81,7 @@ Terminals that can't read a key press one at a time — no `stty`, `TERM=dumb`, 
 | 18 | SkillUI + Playwright/Chromium — design system from a URL | |
 | 19 | Strix — AI pentesting CLI (needs Docker + an LLM API key) | |
 | 20 | Obsidian desktop + `claude-obsidian` and `obsidian-skills` plugins | |
+| 21 | This repo's plugins — `crew` (agents, commands, **hooks**) | |
 
 Menu numbers are identical on Windows and Linux, and an already-registered MCP server, marketplace, or plugin is reported and skipped rather than re-added. Numbers can shift as items are added, so scripted runs should prefer the stable keys (`--select supabase,strix`) over positions.
 
@@ -96,6 +97,8 @@ A few items need a word of explanation:
 - **The Obsidian vault-server MCP endpoint** (14) registers an HTTP MCP server rather than launching a command: the endpoint is the `obsidian-local-rest-api` plugin already running inside the vault-server container, listening on that **server's** loopback, so the URL is normally a port you forwarded over SSH. The API key is per-deployment and can't be baked in, so without `--obsidian-mcp-key` / `-ObsidianMcpKey` the item prints how to obtain one (`sudo ./obsidian-vault-server.sh apikey`) and skips instead of failing. See the [`obsidian-vault-server`](skills/obsidian-vault-server/) skill for the whole setup.
 
 - **Obsidian** (20) is a desktop app, not a plugin, so it comes from a package manager: Chocolatey first on Windows (falling back to winget), flatpak first on Linux (falling back to snap) — distro repos generally don't carry it. Chocolatey needs an elevated prompt; without one the app is skipped and the two plugins still install. It then adds the `claude-obsidian` vault engine and [`kepano/obsidian-skills`](https://github.com/kepano/obsidian-skills), Obsidian's own upstream skills for Markdown, Bases, JSON Canvas, the Obsidian CLI, and Defuddle. **The app and plugins are all this item does** — creating the vault is a separate, deliberately reviewed step, which the item prints as its next step and [`claude-obsidian-setup/`](claude-obsidian-setup/) performs. `--obsidian-repo-root` / `-ObsidianRepoRoot` changes the root it suggests (default `C:\repos` on Windows, `~/repos` on Linux).
+
+- **This repo's plugins** (21) installs [`plugin/crew`](plugin/crew) from this same marketplace — so it works whether or not item 3 ran. It is **off by default, deliberately**: unlike a skill, `crew` registers **hooks**, and a hook is not advisory. Its `PreToolUse` hook blocks `terraform apply`/`destroy`, destructive DDL, force push, hard reset, and any command that would print a secret into the transcript; its `Stop` hooks run the checks your changed paths map to (failing the turn on red) and watch context use; a `PreCompact`/`SessionStart` pair carries a handoff note across compaction. All of them start working the moment the plugin is enabled, so the item ends by printing the per-repository setup (`/crew:init`, `/crew:onboard`, `/crew:verify`) rather than leaving you to discover the gates by hitting them. See [`plugin/README.md`](plugin/README.md) for the catalog and [`plugin/PLUGINS.md`](plugin/PLUGINS.md) for what each plugin actually contains.
 
 Everything that can be a plugin **is** installed as one, using the CLI's own `claude plugin marketplace add` / `claude plugin install` — there's no `npx claudepluginhub` wrapper and no `git clone` + shell-script step any more. That removes the Windows failure modes those introduced (the wrapper needed a writable per-repo checkout, and the VoltAgent installer needed Git Bash to run a `.sh`).
 
@@ -138,6 +141,7 @@ Everything that can be a plugin **is** installed as one, using the CLI's own `cl
 | 18 SkillUI | `skillui` + `playwright` + the Chromium browser build | npm |
 | 19 Strix | The `strix` pentesting CLI | `curl -sSL https://strix.ai/install \| bash` |
 | 20 Obsidian | The Obsidian desktop app (Chocolatey → winget on Windows, flatpak → snap on Linux), plus the `claude-obsidian` vault engine and [`kepano/obsidian-skills`](https://github.com/kepano/obsidian-skills) — Obsidian's own Markdown, Bases, JSON Canvas, CLI and Defuddle skills | choco/winget/flatpak/snap + 2 marketplaces |
+| 21 This repo's plugins | The `crew` plugin from [`plugin/`](plugin/) — 9 subagents, 14 slash commands, 14 bundled skills, and 7 hooks across 5 events. Off by default because hooks execute whether or not Claude agrees with them | this repo |
 
 Items 1–10 are the default set. Everything from 11 on is opt-in.
 
@@ -170,7 +174,19 @@ claude plugin install cloudflare@useful-claude-add-ons
 # ...repeat for any other skill you want.
 ```
 
-Both commands also work as slash commands inside an interactive session: `/plugin marketplace add mbadali25/useful-claude-add-ons` and `/plugin install <skill-name>@useful-claude-add-ons`.
+The same marketplace also carries this repo's own **plugins** — the ones under [`plugin/`](plugin/), which bundle subagents, slash commands, and hooks rather than a single `SKILL.md`. They install identically:
+
+```bash
+claude plugin install crew@useful-claude-add-ons
+```
+
+Or take it from the bootstrap script as **item 21**, which is off by default:
+
+```bash
+./scripts/install-prerequisites.sh --select repo-plugins
+```
+
+Both commands also work as slash commands inside an interactive session: `/plugin marketplace add mbadali25/useful-claude-add-ons` and `/plugin install <name>@useful-claude-add-ons`.
 
 Manage it later with:
 
@@ -189,6 +205,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 | Doc | What's in it |
 |---|---|
 | [`INSTALLATION.md`](INSTALLATION.md) | Prerequisite install scripts (Windows/Linux), installing skills, verification, troubleshooting. |
+| [`plugin/README.md`](plugin/README.md) | This repo's **plugins** — what a plugin adds over a skill, the overview table, and how to add one. |
+| [`plugin/PLUGINS.md`](plugin/PLUGINS.md) | Per-plugin reference — every command, agent, bundled skill, and hook, and what starts running on enable. |
 | [`MARKETPLACE.md`](MARKETPLACE.md) | Adding this repo (and the team's other marketplaces) to Claude Code, installing/updating/removing plugins. |
 | [`Skill-Authoring-Standard.md`](Skill-Authoring-Standard.md) | Required structure, frontmatter, and style for any skill in this repo. |
 | [`Skill-Pipeline.md`](Skill-Pipeline.md) | Author → validate → review → merge → release → distribute lifecycle for a skill change. |
@@ -296,6 +314,39 @@ See [`Skill-Authoring-Standard.md`](Skill-Authoring-Standard.md) for how a skill
 4. Add a row to the table above **and** to [`skills/README.md`](skills/README.md) — keep both in sync. Fill all five columns; **Use cases** should be concrete scenarios that would send someone looking for the skill ("a 403 from `graph.microsoft.com`", "the docs are stale"), not a restatement of *What it does*.
 
 <!-- END skills/README.md -->
+
+## Plugins
+
+The canonical, always-current version of this section lives in [`plugin/README.md`](plugin/README.md) — it's reproduced here so it's visible without an extra click. The per-plugin detail lives in [`plugin/PLUGINS.md`](plugin/PLUGINS.md).
+
+<!-- BEGIN plugin/README.md -->
+
+Each subdirectory in [`plugin/`](plugin/) is a self-contained [Claude Code plugin](https://docs.claude.com/en/docs/claude-code/plugins) — a `.claude-plugin/plugin.json` manifest plus any `agents/`, `commands/`, `hooks/`, or `skills/` it bundles. Every one is registered in [`.claude-plugin/marketplace.json`](.claude-plugin/marketplace.json) and installs the same way a skill from [`skills/`](skills/) does.
+
+**A plugin is not a bigger skill.** A skill is a document Claude reads when the conversation matches its `description`. A plugin can also register **subagents** (their own context window and tool set), **slash commands** (you type them), and **hooks** (deterministic shell scripts the harness runs on tool use, on stop, or on notification — they execute whether or not Claude agrees with them). That last part is why plugins here are opt-in in the install scripts and skills are not: a hook can block a command you ran on purpose.
+
+### Overview
+
+| Plugin | Category | What it does | Use cases | Provides |
+|---|---|---|---|---|
+| [`crew`](plugin/crew) | Workflow / QA | A virtual dev team for multi-repo legacy work — file-backed tickets, one implementation session, an independent reviewer, and deterministic gates that block on failure instead of offering an opinion. Roles exist only where they buy an isolated context window, a restricted tool set, or genuinely independent eyes; project management, BA, and architecture are files and commands, not agents. Codex QA, Jira, Obsidian memory, and Teams/Telegram notifications are all optional. | Several repositories, mixed stacks, legacy code, and almost no test coverage; a change that needs review by something that did not write it; wanting `terraform apply`, force-push, and destructive DDL blocked by a hook rather than by good intentions; a turn that should fail when the checks its changed paths map to go red; losing the thread across a `/clear` or an auto-compact. | 9 agents, 14 commands, 14 skills, 7 hooks |
+
+**Provides** counts what the plugin registers with Claude Code. The per-item breakdown — every command, agent, bundled skill, and hook event — is in [`plugin/PLUGINS.md`](plugin/PLUGINS.md); the authoritative upstream guide is [`plugin/crew/README.md`](plugin/crew/README.md).
+
+### Hooks only run where hooks run
+
+Bundled **skills** work in Claude Code, Claude chat, Claude Desktop's Chat tab, and Cowork. Bundled **hooks and subagents** run only in Claude Code and Cowork — they are greyed out in chat. Installing a plugin on claude.ai does not install it in your terminal, and vice versa; the file format is shared, the installation is not. Since `crew` is mostly hooks, subagents, and slash commands operating on a local git repository, installing it on the web gives you the bundled skills' written guidance and nothing that executes.
+
+### Adding a new plugin
+
+Same four-place rule the skills follow, plus a couple. Full checklist in [`plugin/README.md`](plugin/README.md); the short version:
+
+1. Create `plugin/<plugin-name>/.claude-plugin/plugin.json` — kebab-case directory name matching the `name` field exactly. No `marketplace.json` inside a plugin directory; the repo root's is the only marketplace here.
+2. Ship hook scripts in **both** flavours — a `.sh` and a `.ps1` registered with `shell: powershell` — and **wire both in `hooks.json`**. A `.ps1` on disk that nothing references is dead code, and a bash-only hook is silently inert on Windows.
+3. Register it in [`.claude-plugin/marketplace.json`](.claude-plugin/marketplace.json) (`source` is `./plugin/<name>`), the table above, [`plugin/README.md`](plugin/README.md), [`plugin/PLUGINS.md`](plugin/PLUGINS.md), and both install scripts (`PLUGIN_KEYS` / `PLUGIN_NAME` in the `.sh`, `$script:PluginCatalog` in the `.ps1`).
+4. Default its menu item to **off** if it registers hooks.
+
+<!-- END plugin/README.md -->
 
 ## License
 

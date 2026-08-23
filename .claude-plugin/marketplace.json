@@ -5,7 +5,7 @@
     "email": "badalim@anewbiz.net",
     "url": "https://github.com/mbadali25/useful-claude-add-ons"
   },
-  "description": "Internal marketplace of Claude Code skills for the team - APIs, security tooling, and productivity add-ons.",
+  "description": "Internal marketplace of Claude Code skills and plugins for the team - APIs, security tooling, workflow automation, and productivity add-ons.",
   "plugins": [
     {
       "name": "aws-opensearch",
@@ -60,6 +60,12 @@
       "source": "./skills/cloudflare",
       "description": "Cloudflare v4 API - DNS, zones, cache, WAF, page rules, SSL/TLS, Workers/KV/R2, Zero Trust, analytics.",
       "version": "1.0.0"
+    },
+    {
+      "name": "crew",
+      "source": "./plugin/crew",
+      "description": "Virtual dev team for multi-repo legacy work - 9 context-isolated agents, 14 slash commands, 14 bundled skills, and deterministic hooks that block unsafe commands, gate unverified turns, and carry a handoff across compaction.",
+      "version": "0.2.0"
     },
     {
       "name": "drata",

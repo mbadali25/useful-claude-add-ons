@@ -470,6 +470,7 @@ $script:Catalog = @(
     [pscustomobject]@{ Key = 'skillui';           Default = $false; Name = 'SkillUI (npm) + Playwright/Chromium - extract a design system from a URL' }
     [pscustomobject]@{ Key = 'strix';             Default = $false; Name = 'Strix AI pentesting CLI (needs Docker + an LLM API key)' }
     [pscustomobject]@{ Key = 'obsidian';          Default = $false; Name = 'Obsidian desktop + claude-obsidian + obsidian-skills plugins' }
+    [pscustomobject]@{ Key = 'repo-plugins';      Default = $false; Name = "This repo's plugins: crew (agents, commands, hooks)" }
 )
 
 $script:Selected = @{}
@@ -529,6 +530,14 @@ $script:SkillCatalog = @(
     [pscustomobject]@{ Key = 'wazuh-onprem';          Selected = $true; Name = 'wazuh-onprem            - Self-hosted Wazuh: server, indexer, dashboards, ossec.conf' }
     [pscustomobject]@{ Key = 'web-testing-playwright';Selected = $true; Name = 'web-testing-playwright  - Real-browser testing: screenshots, console, form flows' }
     [pscustomobject]@{ Key = 'work-log-reporter';     Selected = $true; Name = 'work-log-reporter       - Session work log + emailed PDF report over SMTP' }
+)
+
+# --- This repo's own plugins --------------------------------------------------
+# Keep in sync with .claude-plugin/marketplace.json and plugin/README.md. Unlike the
+# skills, these are off by default and have no sub-picker: a plugin can register hooks,
+# and a hook runs whether or not Claude agrees with it, so it is opted into explicitly.
+$script:PluginCatalog = @(
+    [pscustomobject]@{ Key = 'crew'; Name = 'crew                    - Virtual dev team: 9 agents, 14 commands, safety hooks' }
 )
 
 function Get-SelectedSkillCount {
@@ -1309,7 +1318,7 @@ if (Test-Selected 'cli') {
 }
 
 # Everything from here to the MCP servers needs the claude CLI on PATH.
-$claudeItems = @('own-skills', 'team', 'find-skills', 'community', 'claude-code-setup', 'claude-mem', 'voltagent', 'supabase')
+$claudeItems = @('own-skills', 'team', 'find-skills', 'community', 'claude-code-setup', 'claude-mem', 'voltagent', 'supabase', 'repo-plugins')
 $needsClaude = @($claudeItems | Where-Object { Test-Selected $_ }).Count -gt 0
 
 if ($needsClaude -and -not (Test-ClaudeAvailable)) {
@@ -1527,7 +1536,7 @@ if (Test-Selected 'voltagent') {
     }
 }
 
-# --- 11-13. Optional MCP servers ---------------------------------------------
+# --- 11-14. Optional MCP servers ---------------------------------------------
 if (Test-Selected 'aws-mcp') {
     Invoke-Step "Install AWS MCP server" {
         if (-not (Get-Command uv -ErrorAction SilentlyContinue) -and -not (Get-Command uvx -ErrorAction SilentlyContinue)) {
@@ -1585,7 +1594,7 @@ if (Test-Selected 'obsidian-mcp') {
     }
 }
 
-# --- 14. Supabase ------------------------------------------------------------
+# --- 15. Supabase ------------------------------------------------------------
 # Ships inside anthropics/claude-plugins-official, the same marketplace items 6 and 7
 # register - Add-ClaudeMarketplace is a no-op when it is already there, so this item
 # stands on its own. Install-ClaudePlugin does the "already installed?" check.
@@ -1598,7 +1607,7 @@ if (Test-Selected 'supabase') {
     }
 }
 
-# --- 15. Context7 ------------------------------------------------------------
+# --- 16. Context7 ------------------------------------------------------------
 if (Test-Selected 'context7') {
     Invoke-Step "Configure Context7 (npx ctx7 setup)" {
         # 'ctx7 setup' writes the Context7 MCP/skill config for whichever agents it
@@ -1618,7 +1627,7 @@ if (Test-Selected 'context7') {
     }
 }
 
-# --- 16. Playwright CLI ------------------------------------------------------
+# --- 17. Playwright CLI ------------------------------------------------------
 if (Test-Selected 'playwright-cli') {
     Invoke-Step "Install Playwright CLI (@playwright/cli)" {
         # Detection is on the binary the package provides ('playwright-cli'), which is
@@ -1646,7 +1655,7 @@ if (Test-Selected 'playwright-cli') {
     }
 }
 
-# --- 17. SkillUI -------------------------------------------------------------
+# --- 18. SkillUI -------------------------------------------------------------
 function Show-SkillUIQuickStart {
     Write-Host ""
     Write-Host "    SkillUI quick start  https://github.com/amaancoderx/npxskillui" -ForegroundColor Cyan
@@ -1694,7 +1703,7 @@ if (Test-Selected 'skillui') {
     }
 }
 
-# --- 18. Strix ---------------------------------------------------------------
+# --- 19. Strix ---------------------------------------------------------------
 function Show-StrixNextSteps {
     Write-Host ""
     Write-Host "    Strix needs two more things before its first scan:" -ForegroundColor Yellow
@@ -1749,7 +1758,7 @@ if (Test-Selected 'strix') {
     }
 }
 
-# --- 19. Obsidian + claude-obsidian ------------------------------------------
+# --- 20. Obsidian + claude-obsidian ------------------------------------------
 function Show-ObsidianNextSteps {
     param([string]$VaultRoot)
     Write-Host ""
@@ -1807,6 +1816,40 @@ if (Test-Selected 'obsidian') {
 
         Show-ObsidianNextSteps $ObsidianRepoRoot
     }
+}
+
+# --- 21. This repo's own plugins ---------------------------------------------
+# Same marketplace as item 3, so Add-ClaudeMarketplace is a no-op when item 3 already
+# ran - this item stands on its own. Install-ClaudePlugin does the "already installed?"
+# check.
+function Show-CrewNextSteps {
+    Write-Host ""
+    Write-Step "crew: next steps"
+    Write-Host "  Unlike a skill, crew registers hooks that run on their own:"
+    Write-Host "    - PreToolUse on Bash/PowerShell blocks terraform apply/destroy, destructive"
+    Write-Host "      DDL, force push, hard reset, and commands that would print a secret."
+    Write-Host "    - Stop runs the checks your changed paths map to and fails the turn on red."
+    Write-Host "  Set it up per repository before relying on either:"
+    Write-Host "    cd <your repo>; claude"
+    Write-Host "    /crew:init         # guided, resumable setup"
+    Write-Host "    /crew:onboard      # build the code map"
+    Write-Host "    /crew:verify       # build the change-to-check map the Stop gate needs"
+    Write-Host "  Full guide: https://github.com/mbadali25/useful-claude-add-ons/blob/main/plugin/crew/README.md"
+}
+if (Test-Selected 'repo-plugins') {
+    Invoke-Step "Add this repo as a Claude Code marketplace" {
+        Add-ClaudeMarketplace -Source 'mbadali25/useful-claude-add-ons' -Name 'useful-claude-add-ons'
+    }
+
+    # The catalog lives in $script:PluginCatalog next to the menu. No sub-picker: there
+    # is one plugin, and it is opt-in already.
+    foreach ($plugin in @($script:PluginCatalog | ForEach-Object { $_.Key })) {
+        Invoke-Step "Plugin: $plugin@useful-claude-add-ons" {
+            Install-ClaudePlugin "$plugin@useful-claude-add-ons"
+        }
+    }
+
+    Show-CrewNextSteps
 }
 
 
