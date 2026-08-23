@@ -1,16 +1,21 @@
 #!/usr/bin/env bash
+. "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 # Stop hook. Estimates context usage from the transcript and, once past the
 # threshold, asks Claude to write a handoff note before ending the turn.
 # Exit 2 sends control back to the model with the reason on stderr.
 INPUT=$(cat)
-read_json() { python3 -c 'import sys,json;d=json.load(sys.stdin);print(d.get(sys.argv[1],""))' "$1" <<< "$INPUT" 2>/dev/null; }
+# Resolve python ONCE and fail loudly. Every value below depends on it, and
+# each call was suppressed with 2>/dev/null - so a missing interpreter turned
+# the whole context watch off with nothing said.
+PY=$(crew_py) || { echo "crew context-watch: no usable python - context warnings are OFF" >&2; exit 0; }
+read_json() { "$PY" -c 'import sys,json;d=json.load(sys.stdin);print(d.get(sys.argv[1],""))' "$1" <<< "$INPUT" 2>/dev/null; }
 TRANSCRIPT=$(read_json transcript_path)
 CWD=$(read_json cwd)
 cd "${CWD:-${CLAUDE_PROJECT_DIR:-.}}" 2>/dev/null || exit 0
 [ -f "$TRANSCRIPT" ] || exit 0
 [ -f .crew/config.json ] || exit 0
 
-CFG=$(python3 - << 'PY' 2>/dev/null
+CFG=$("$PY" - << 'PY' 2>/dev/null
 import json
 try: c=json.load(open(".crew/config.json")).get("context",{})
 except Exception: c={}
@@ -29,13 +34,13 @@ BYTES=$(wc -c < "$TRANSCRIPT" 2>/dev/null || echo 0)
 # Rough proxy: JSONL transcript bytes -> tokens. ~4 chars/token, and the file
 # carries JSON scaffolding the model never sees, so we discount it.
 # This is an ESTIMATE. Calibrate against /context once and adjust budgetTokens.
-EST=$(python3 -c "print(int($BYTES/4*0.75))")
-PCT=$(python3 -c "print(round($EST/$BUDGET,3))")
-OVER=$(python3 -c "print(1 if $PCT >= $WARN_AT else 0)")
+EST=$("$PY" -c "print(int($BYTES/4*0.75))")
+PCT=$("$PY" -c "print(round($EST/$BUDGET,3))")
+OVER=$("$PY" -c "print(1 if $PCT >= $WARN_AT else 0)")
 [ "$OVER" -eq 0 ] && exit 0
 
 touch "$MARKER"
-PCT_H=$(python3 -c "print(int($PCT*100))")
+PCT_H=$("$PY" -c "print(int($PCT*100))")
 
 bash "$(dirname "$0")/notify.sh" waiting "context ~${PCT_H}% - writing handoff" 2>/dev/null
 

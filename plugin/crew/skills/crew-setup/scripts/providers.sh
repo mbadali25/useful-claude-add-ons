@@ -5,7 +5,7 @@ say() { printf '%-14s %s\n' "$1" "$2"; }
 echo "== QA reviewer =="
 if command -v codex >/dev/null 2>&1; then
   say "codex:" "found ($(codex --version 2>/dev/null | head -1))"
-  say "auth:" "run: codex exec --skip-git-repo-check 'reply OK' — must return without prompting"
+  say "auth:" "run: codex exec --skip-git-repo-check 'reply OK'  -  must return without prompting"
 else
   say "codex:" "NOT FOUND -> /crew:review falls back to the qa-reviewer agent"
 fi

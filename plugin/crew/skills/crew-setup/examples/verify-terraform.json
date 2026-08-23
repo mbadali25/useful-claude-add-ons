@@ -1,0 +1,75 @@
+{
+  "_note": "version, anchor and why are notes for humans - nothing executes them. paths/run/always/default/unmapped drive the Stop gate; agents drives /crew:review; environments drives /crew:promote.",
+  "version": 1,
+  "anchor": "REPO@SHA",
+  "rules": [
+    { "paths": ["**/*.tf", "**/*.tfvars", "versions.tf"],
+      "run": ["terraform fmt -recursive -check",
+              "terraform validate",
+              "tflint",
+              "terraform-docs markdown table . --output-file README.md --output-check"],
+      "agents": ["security"],
+      "why": "fmt/validate catch syntax; tflint catches deprecated syntax and undocumented variables; terraform-docs --output-check FAILS when the README is stale instead of rewriting it - a gate that writes to the tree makes README.md a changed file on the next run, which trips unmapped:fail in a loop" },
+
+    { "paths": ["**/*.py"],
+      "run": ["ruff check .", "ruff format --check .", "./_verify/smoke.sh"],
+      "why": "Lambda handlers are orchestration; smoke proves the CSV-to-stg round trip still works" },
+
+    { "paths": ["sql/**", "migrations/**"],
+      "run": ["./_verify/migrate-fresh.sh",
+              "./_verify/migrate-rollback.sh",
+              "./_verify/smoke.sh"],
+      "agents": ["dba"],
+      "why": "business logic lives in procedures; fresh apply catches ordering, rollback proves the down path, smoke proves data still moves" },
+
+    { "paths": ["**/*.css", "**/*.scss", "src/components/**", "**/*.html"],
+      "run": ["npx playwright test --grep @visual"],
+      "why": "style changes are invisible to API checks; visual baselines are the only thing that sees them" },
+
+    { "paths": ["iam/**", "**/policy*.json", "**/*iam*.tf"],
+      "run": ["terraform validate", "trivy config ."],
+      "agents": ["security"],
+      "why": "permission changes need a scanner and a second pair of eyes, not just fmt" },
+
+    { "paths": ["README.md", "footer.md", "docs/**", "_verify/README.md"],
+      "run": [],
+      "why": "documentation. Listed so it does not trip unmapped:fail - deliberately unchecked, not forgotten" }
+  ],
+
+  "always": [],
+  "default": ["./_verify/smoke.sh"],
+  "unmapped": "fail",
+
+  "environments": {
+    "development": {
+      "deploy":       ["./scripts/deploy.sh dev"],
+      "smoke":        ["./_verify/smoke.sh --env dev"],
+      "regression":   ["./_verify/run-all.sh --env dev"],
+      "verify":       ["./_verify/check-logs.sh dev --since 10m"],
+      "soakMinutes":  2,
+      "promotesTo":   "qa"
+    },
+    "qa": {
+      "requires":     ["development"],
+      "deploy":       ["./scripts/deploy.sh qa"],
+      "smoke":        ["./_verify/smoke.sh --env qa"],
+      "regression":   ["./_verify/run-all.sh --env qa",
+                       "npx playwright test --grep @flow"],
+      "verify":       ["./_verify/check-logs.sh qa --since 10m"],
+      "soakMinutes":  10,
+      "promotesTo":   "production"
+    },
+    "production": {
+      "requires":     ["qa"],
+      "deploy":       ["./scripts/deploy.sh prod"],
+      "smoke":        ["./_verify/smoke.sh --env prod"],
+      "regression":   ["./_verify/run-all.sh --env prod --read-only",
+                       "npx playwright test --grep @flow --project=prod"],
+      "verify":       ["./_verify/check-logs.sh prod --since 15m",
+                       "./_verify/check-alarms.sh prod"],
+      "soakMinutes":  15,
+      "rollback":     "docs/runbooks/rollback.md",
+      "requireHuman": true
+    }
+  }
+}

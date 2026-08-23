@@ -69,14 +69,22 @@ Wire them into `.crew/verify.json` so a `.tf` change runs them automatically:
 
 ```json
 { "paths": ["**/*.tf", "**/*.tfvars"],
-  "run": ["terraform fmt -recursive -check", "terraform validate", "tflint", "terraform-docs ."],
+  "run": ["terraform fmt -recursive -check", "terraform validate", "tflint",
+          "terraform-docs markdown table . --output-file README.md --output-check"],
   "agents": ["dba"],
-  "why": "fmt and validate catch syntax; tflint catches deprecated and undocumented; docs keeps the README honest" }
+  "why": "fmt and validate catch syntax; tflint catches deprecated and undocumented; the `--output-check` form FAILS on a stale README instead of rewriting it. The writing form mutates the tree mid-gate, which makes README.md a changed file on the next run and trips `unmapped: fail` in a loop" }
 ```
 
 Putting `terraform-docs` in the gate matters more than it looks: it means a
-variable added without a `description` shows up as a README diff in the pull
-request, so undocumented inputs become visible rather than accumulating.
+variable added without a `description` shows up as a failing check, so
+undocumented inputs become visible rather than accumulating.
+
+**Use `--output-check` in the gate, never the writing form.** `terraform-docs .`
+rewrites `README.md`. Inside the `Stop` gate that mutates the working tree, which
+makes `README.md` a changed file on the next run, which has no rule, which trips
+`unmapped: fail` - and the gate now blocks on a file it edited itself. The
+`--output-check` form exits non-zero when the README is stale and writes nothing.
+Run the writing form by hand or from `/crew:docs`.
 
 ## The tflint rules worth knowing
 

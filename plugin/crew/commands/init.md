@@ -7,7 +7,7 @@ allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill
 Run the guided setup for this repository.
 
 Follow `${CLAUDE_PLUGIN_ROOT}/skills/crew-setup/phases.md` exactly. It defines all
-eight phases, the status file format, and the rules about stopping between phases.
+nine phases, the status file format, and the rules about stopping between phases.
 
 Arguments: $ARGUMENTS
 - `--status` — print the phase table from `.crew/STATUS.md` and stop

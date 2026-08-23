@@ -79,7 +79,7 @@ This is one of the few cases where WSL1 is simpler.
 
 ### 3. Line endings break shell scripts silently
 
-If `git` checked out `scripts/smoke.sh` with CRLF endings, bash fails with
+If `git` checked out `_verify/smoke.sh` with CRLF endings, bash fails with
 `bad interpreter: /usr/bin/env bash^M` — a message that looks like a missing
 interpreter rather than a line-ending problem, which is why it costs people an
 hour.
@@ -116,16 +116,30 @@ what ships with Windows. Do not assume it.
 
 ## Hooks
 
-The plugin registers both. The bash hooks match the `Bash` tool; the PowerShell
-hooks match the `PowerShell` tool and carry `shell: powershell`. Under WSL, Git
-Bash, Linux, and macOS the bash hooks run and the PowerShell ones never match.
+**Every hook is registered once, as bash.** `hooks.json` has no `shell` field —
+Claude Code does not read one, and a hook registered with `shell: powershell` is
+silently inert, which reads as "the gate passed" rather than "the gate never
+ran". So `bash` must be on `PATH`; Git Bash satisfies that on Windows.
 
-The bash hooks also exit immediately if `uname` reports MSYS or Cygwin, so on a
-native Windows session with Git Bash present the two sets cannot both act on the
-same command.
+Only the `PreToolUse` guards branch, and they branch on **which tool the command
+came from**, not on which OS is running:
 
-If you add your own hooks on Windows, write them in PowerShell and add
-`shell: powershell` to the entry — a bash hook path will not resolve.
+```bash
+INPUT=$(cat)
+crew_tool_dispatch guard.ps1 "$INPUT"   # tool_name == PowerShell -> PowerShell rules
+```
+
+That distinction matters. A `Bash` tool call is bash syntax *even on Windows*, so
+judging it with PowerShell rules gets it wrong in both directions — it blocks the
+correct secret-capture form and misses the wrong one.
+
+The remaining hooks judge no command. They are reached through `bash`, so if they
+run at all bash is present and can do the work; a `.ps1` beside them would be
+unreachable. The twins exist for anyone wiring crew's hooks into a
+PowerShell-only harness by hand, and `hooks.json` does not reference them.
+
+If you add your own hook, follow the same shape: register it as bash, and branch
+inside the script if it needs to.
 
 ## Docker
 

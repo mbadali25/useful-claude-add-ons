@@ -537,7 +537,7 @@ $script:SkillCatalog = @(
 # skills, these are off by default and have no sub-picker: a plugin can register hooks,
 # and a hook runs whether or not Claude agrees with it, so it is opted into explicitly.
 $script:PluginCatalog = @(
-    [pscustomobject]@{ Key = 'crew'; Name = 'crew                    - Virtual dev team: 9 agents, 14 commands, safety hooks' }
+    [pscustomobject]@{ Key = 'crew'; Name = 'crew                    - Virtual dev team: 9 agents, 16 commands, safety hooks' }
 )
 
 function Get-SelectedSkillCount {

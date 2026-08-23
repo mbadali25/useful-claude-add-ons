@@ -76,7 +76,8 @@ Configure deliberately or the output is worthless.
     { "paths": ["**/*.ps1", "**/*.psm1"], "run": ["pwsh -c \"Invoke-ScriptAnalyzer -Path . -Recurse -Severity Error\""], "why": "PowerShell errors only" },
     { "paths": ["**/*.php"], "run": ["vendor/bin/phpstan analyse --level=1", "vendor/bin/phpcs --standard=PSR12 src/"], "why": "types and PSR-12" },
     { "paths": ["**/*.tf", "**/*.tfvars"],
-      "run": ["terraform fmt -recursive -check", "terraform validate", "tflint", "terraform-docs ."],
+      "run": ["terraform fmt -recursive -check", "terraform validate", "tflint",
+              "terraform-docs markdown table . --output-file README.md --output-check"],
       "why": "syntax, lint, and README stays honest" }
   ]
 }

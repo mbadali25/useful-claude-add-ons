@@ -28,7 +28,7 @@ have() { command -v "$1" >/dev/null 2>&1 && echo true || echo false; }
 
 # CRLF line endings break shell scripts with "bad interpreter"
 crlf=false
-for f in scripts/smoke.sh .crew/*.sh; do
+for f in _verify/*.sh _verify/cases/*.sh scripts/smoke.sh .crew/*.sh; do
   [ -f "$f" ] && head -1 "$f" | grep -q $'\r' && crlf=true
 done
 

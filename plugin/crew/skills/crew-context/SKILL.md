@@ -89,16 +89,18 @@ want here.
 
 ### Auto-resume
 
-`SessionStart` can return JSON with an `initialUserMessage` to start the new
-session working immediately, with no human turn.
+`SessionStart` can in principle return JSON with an `initialUserMessage` to start
+the new session working immediately, with no human turn.
 
-Off by default, and it should stay off unless you have a specific reason. It
-removes the one moment where a human reads what the previous session claimed
-before work continues on top of it. If a handoff is subtly wrong, auto-resume is
-how that error compounds unattended.
+**crew does not implement this.** `handoff-read.sh` prints the note as plain
+context and stops. `context.autoResume` is accepted in config and read by
+nothing; setting it to `true` changes no behaviour.
 
-Turn it on with `context.autoResume: true` only after you have watched a dozen
-handoffs and trust their accuracy.
+That is deliberate. Auto-resume removes the one moment where a human reads what
+the previous session claimed before work continues on top of it, and if a handoff
+is subtly wrong that is how the error compounds unattended. If you want it, it is
+a change to `handoff-read.sh` and its `.ps1` twin - not a config flag that is
+already wired.
 
 ## Configuration
 
@@ -108,10 +110,13 @@ handoffs and trust their accuracy.
   "warnAt": 0.8,
   "budgetTokens": 200000,
   "handoffPath": ".work/HANDOFF.md",
-  "autoResume": false,
   "keepTranscripts": 5
 }
 ```
+
+`keepTranscripts` is honoured by `PreCompact`: that many `.jsonl` snapshots are
+kept under `.crew/transcripts/` and older ones are deleted. `autoResume` is
+accepted and ignored - see above.
 
 `PreCompact` keeps the last few raw transcripts under `.crew/transcripts/`.
 Gitignore that directory — transcripts contain everything the session saw,

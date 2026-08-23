@@ -64,15 +64,31 @@ Register it in all five, with `source` pointing at `./plugin/<name>`:
 5. Both install scripts — `PLUGIN_KEYS` / `PLUGIN_NAME` in the `.sh`,
    `$script:PluginCatalog` in the `.ps1`.
 
-Two rules that apply to plugins and not to skills:
+Four rules that apply to plugins and not to skills:
 
 - **A plugin that registers hooks defaults to OFF in the menu.** A hook is not
   advisory — it runs whether or not Claude agrees with it — so a bootstrap run must not
   add one to someone's machine without the box being ticked.
-- **Ship every hook script in both flavours**, a `.sh` and a `.ps1` registered with
-  `shell: powershell`, and **wire both in `hooks.json`**. A `.ps1` sitting on disk that
-  nothing references is dead code, and a bash-only hook is silently inert on Windows,
-  which reads as "the gate passed" rather than "the gate never ran".
+- **Register each hook once, as bash, and branch inside the script.** There is no
+  `shell` field in a `hooks.json` entry - Claude Code does not read one, so a hook
+  registered with `shell: powershell` is silently inert, which reads as "the gate
+  passed" rather than "the gate never ran". `crew` shipped exactly that bug for a
+  release; see `plugin/crew/hooks/scripts/_common.sh` for the working pattern.
+  - **Branch on the tool, not the OS.** A hook that judges a *command* (a `PreToolUse`
+    guard) must dispatch on `tool_name`: a `Bash` tool call is bash syntax even on
+    Windows, and judging it with PowerShell rules gets it wrong in both directions.
+  - **A hook that judges no command needs no twin.** It is reached through `bash`, so
+    if it runs at all bash is present and can do the work; a `.ps1` beside it is
+    unreachable code. Ship one only for someone wiring the hooks in by hand, and say
+    in the docs that `hooks.json` does not reference it.
+  - **Assume nothing about the interpreter.** Git Bash ships without `python3`. Resolve
+    `python3`/`python`/`py` and fail loudly on stderr rather than suppressing the error
+    and exiting 0.
+- **A hook that can block needs a committed regression suite**, with must-block and
+  must-allow cases, and it must be sabotage-tested: reintroduce a bug it should catch
+  and confirm the suite goes red. `plugin/crew/hooks/scripts/_test/run-tests.sh` is the
+  worked example. Two of `crew`'s guard bugs shipped past code review and were only
+  found by running the thing.
 
 Never commit a `marketplace.json` inside a plugin directory. The repo root's is the only
 marketplace here; a nested one makes the plugin directory look like a second marketplace

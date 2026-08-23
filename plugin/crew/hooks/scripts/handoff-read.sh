@@ -1,17 +1,19 @@
 #!/usr/bin/env bash
+. "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 # SessionStart hook. On clear / compact / resume, prints the handoff note.
 # stdout from SessionStart is injected into the new session's context.
 INPUT=$(cat)
-read_json() { python3 -c 'import sys,json;d=json.load(sys.stdin);print(d.get(sys.argv[1],""))' "$1" <<< "$INPUT" 2>/dev/null; }
+read_json() { crew_json_field "$INPUT" "$1"; }
 SOURCE=$(read_json source); CWD=$(read_json cwd)
 cd "${CWD:-${CLAUDE_PROJECT_DIR:-.}}" 2>/dev/null || exit 0
 
 rm -f .crew/.handoff-requested   # reset the once-per-session gate
+rm -f .crew/.deploy-in-flight    # a deploy from a dead session cannot be recorded now
 
 case "$SOURCE" in clear|compact|resume) ;; *) exit 0 ;; esac
 [ -f .crew/config.json ] || exit 0
 
-HANDOFF=$(python3 -c 'import json;print(json.load(open(".crew/config.json")).get("context",{}).get("handoffPath",".work/HANDOFF.md"))' 2>/dev/null)
+PY=$(crew_py) && HANDOFF=$("$PY" -c 'import json;print(json.load(open(".crew/config.json")).get("context",{}).get("handoffPath",".work/HANDOFF.md"))' 2>/dev/null)
 HANDOFF="${HANDOFF:-.work/HANDOFF.md}"
 [ -f "$HANDOFF" ] || exit 0
 
