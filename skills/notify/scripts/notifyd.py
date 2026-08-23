@@ -22,6 +22,7 @@ always unambiguous; bare topic text answers the most recent open question there.
 import json
 import os
 import signal
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -219,6 +220,17 @@ class Dispatcher:
             (self.sp.active / f"{req_id}.json").unlink(missing_ok=True)
 
     def run(self):
+        # Telegram allows exactly ONE long-poll per bot token; a second
+        # getUpdates gets 409 Conflict. The pidfile was overwritten
+        # unconditionally, so a second daemon would start, fight the first for
+        # updates, and leave `stop` killing whichever pid was written last.
+        existing = _running_pid(self.sp)
+        if existing:
+            eprint(f"notifyd already running as pid {existing} "
+                   f"(spool {self.sp.root}). Refusing to start a second - two "
+                   f"long-polls on one bot token fight each other for updates. "
+                   f"Use `notifyd stop` first.")
+            raise SystemExit(1)
         self.sp.pidfile.write_text(str(os.getpid()))
         eprint(f"notifyd up: mode={self.mode} chat={self.chat_id} spool={self.sp.root}")
         # reload any active (unanswered) requests left from a previous run
@@ -238,6 +250,59 @@ class Dispatcher:
             self.sp.pidfile.unlink(missing_ok=True)
 
 
+def _pid_alive(pid):
+    """True when a process with this pid exists. No signal is delivered."""
+    try:
+        pid = int(pid)
+    except (TypeError, ValueError):
+        return False
+    if pid <= 0:
+        return False
+    if os.name == "nt":
+        # signal 0 is not a Windows concept; ask the task list instead.
+        try:
+            out = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/NH"],
+                                 capture_output=True, text=True, timeout=10,
+                                 check=False)
+        except (OSError, subprocess.SubprocessError):
+            return True  # cannot tell - assume alive rather than double-start
+        return str(pid) in (out.stdout or "")
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True  # exists, owned by someone else
+    except OSError:
+        return True
+    return True
+
+
+def _running_pid(sp):
+    """The pid of a live daemon on this spool, or None.
+
+    A stale pidfile from a killed process must not block a restart, so the pid
+    is checked for liveness rather than trusted for existing. The heartbeat is
+    the cross-check: a pid that exists but has not written one in a while is
+    some unrelated process that inherited the number.
+    """
+    if not sp.pidfile.exists():
+        return None
+    try:
+        pid = int(sp.pidfile.read_text().strip())
+    except (OSError, ValueError):
+        return None
+    if not _pid_alive(pid):
+        return None
+    try:
+        beat = int(sp.heartbeat.read_text().strip())
+    except (OSError, ValueError):
+        beat = 0
+    if beat and time.time() - beat > 60:
+        return None  # pid reused by something else; ours would be beating
+    return pid
+
+
 def spool_root(cfg):
     d = cfg.get("dispatcher", {}).get("spool_dir", "~/.local/state/notify/spool")
     return Path(os.path.expanduser(d))
@@ -255,6 +320,10 @@ def main():
                           "running": age is not None and age < 10}, indent=2))
         return
     if cmd == "stop":
+        if not _running_pid(sp) and sp.pidfile.exists():
+            sp.pidfile.unlink(missing_ok=True)
+            print("not running (cleared a stale pidfile)")
+            return
         if sp.pidfile.exists():
             try: os.kill(int(sp.pidfile.read_text()), signal.SIGTERM); print("stopped")
             except Exception as e: print(f"could not stop: {e}")

@@ -37,7 +37,17 @@ def ensure_vsdx() -> bool:
         return True
     print("vsdx package not found; installing...")
     base = [sys.executable, "-m", "pip", "install", "--quiet", "vsdx"]
-    for args in (base, base + ["--break-system-packages"]):
+    attempts = (base, base + ["--break-system-packages"])
+    for attempt, args in enumerate(attempts):
+        if attempt:
+            # Say it out loud. --break-system-packages writes into a Python the
+            # OS package manager owns; that is a decision someone should make
+            # knowingly rather than discover later.
+            print("  plain install refused (PEP 668: this Python is managed "
+                  "by the OS). Retrying with --break-system-packages, which "
+                  "installs into the system Python. Ctrl-C and use a "
+                  "virtualenv instead if you would rather not.",
+                  file=sys.stderr)
         try:
             if subprocess.run(args, capture_output=True, text=True,
                              timeout=180, check=False).returncode == 0:
