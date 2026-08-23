@@ -427,6 +427,21 @@ marketplace_catalog_field() {
 marketplace_plugin_version() { marketplace_catalog_field "$1" "$2" 3; }
 marketplace_plugin_source()  { marketplace_catalog_field "$1" "$2" 4; }
 
+ensure_marketplace_caches() {
+  # Every reader below is called as "$(...)", which runs in a subshell: an assignment
+  # to a cache variable in there is discarded the moment the substitution ends. So the
+  # caches are filled by *bare* calls here, in this shell, before anything reads them.
+  # Without this the caching is silently a no-op - correct, but paying for a git and a
+  # jq per plugin instead of one per marketplace.
+  local mkt="$1"
+  [ "$INSTALLED_SHAS_LOADED" -eq 1 ] || load_installed_shas
+  [ -z "$mkt" ] && return 0
+  [ "$MARKETPLACE_DIR_LOADED" -eq 1 ] || load_marketplace_dirs
+  marketplace_head_sha "$mkt" >/dev/null 2>&1 || true
+  load_marketplace_catalog "$mkt" || true
+  return 0
+}
+
 plugin_source_changed() {
   # Did this plugin's own files change between two marketplace commits? Any commit in
   # the marketplace moves HEAD, so without this an unrelated edit anywhere in the repo
@@ -605,6 +620,7 @@ install_plugin() {
     # below runs exactly as it always did.
     head_sha=""; old_sha=""; drift=2
     if [ -n "$mkt" ]; then
+      ensure_marketplace_caches "$mkt"
       head_sha="$(marketplace_head_sha "$mkt")" || head_sha=""
       old_sha="$(installed_plugin_sha "$spec")" || old_sha=""
     fi
@@ -648,7 +664,7 @@ install_plugin() {
     # the CLI cheerfully reports "already at the latest version" and copies nothing.
     # Say so plainly rather than reporting it as current.
     if [ "$drift" -eq 0 ]; then
-      load_installed_shas
+      load_installed_shas   # bare, not in $( ): see ensure_marketplace_caches
       if [ "$(installed_plugin_sha "$spec" || printf '')" = "$head_sha" ]; then
         COUNT_UPDATED=$((COUNT_UPDATED+1))
         ok "plugin '$name' refreshed (version $after, marketplace moved to ${head_sha:0:7})"
@@ -671,6 +687,7 @@ install_plugin() {
   # Add the new plugin to the in-memory cache rather than reloading the whole list:
   # a fresh run installs 25+ plugins, and 'claude plugin list --json' after each one
   # was a second CLI spawn per plugin that nothing in this run reads differently.
+  load_marketplace_catalog "$mkt" || true   # bare: see ensure_marketplace_caches
   plugin_cache_add "$name" "$(marketplace_plugin_version "$mkt" "$name" || printf 'unknown')"
   COUNT_INSTALLED=$((COUNT_INSTALLED+1))
   ok "installed plugin '$spec'"
@@ -902,6 +919,8 @@ GROUP_MENU_KEYS=("own-skills" "team"   "community"   "voltagent"   "repo-plugins
 GROUP_PREFIXES=( "SKILL"      "TEAM"   "COMMUNITY"   "VOLTAGENT"   "PLUGIN")
 GROUP_FLAGS=(    "--skills"   "--team" "--community" "--voltagent" "--plugins")
 GROUP_NOUN=(     "skills"     "team plugins" "community plugins" "VoltAgent plugins" "plugins")
+# Singular, for "ignoring unknown <thing> 'x'" warnings.
+GROUP_NOUN1=(    "skill"      "team plugin"  "community plugin"  "VoltAgent pack"    "plugin")
 # printf template for the menu row: selected, total.
 GROUP_LABEL=(
   "This repo's marketplace + %s of %s skills  >"
@@ -978,7 +997,7 @@ expand_group_spec() {
   # $1 prefix, $2 spec: 'cloudflare,drata' | '1,4-6' | 'all' | 'none'.
   local prefix="$1" spec="$2" token n lo hi i total found noun
   total="$(group_count "$prefix")"
-  noun="$(group_noun_for "$prefix")"
+  noun="$(group_noun_for "$prefix" single)"
   case "$spec" in
     [Aa][Ll][Ll])     group_set_all "$prefix" 1; return 0 ;;
     [Nn][Oo][Nn][Ee]) group_set_all "$prefix" 0; return 0 ;;
@@ -1009,9 +1028,16 @@ expand_group_spec() {
 }
 
 group_noun_for() {
-  local prefix="$1" i
+  # $2 is 'plural' (default) or 'single'.
+  local prefix="$1" form="${2:-plural}" i
   for i in "${!GROUP_PREFIXES[@]}"; do
-    [ "${GROUP_PREFIXES[$i]}" = "$prefix" ] && { printf '%s' "${GROUP_NOUN[$i]}"; return 0; }
+    if [ "${GROUP_PREFIXES[$i]}" = "$prefix" ]; then
+      case "$form" in
+        single) printf '%s' "${GROUP_NOUN1[$i]}" ;;
+        *)      printf '%s' "${GROUP_NOUN[$i]}" ;;
+      esac
+      return 0
+    fi
   done
   printf 'item'
 }
@@ -1267,7 +1293,7 @@ pick_group_interactive() {
 }
 
 pick_menu_interactive() {
-  local i sub_idx
+  local i sub_idx parent_row menu_row=0
   while :; do
     PICK_LABEL=(); PICK_STATE=(); PICK_SUB=(); PICK_DEFAULT=()
     for i in "${!MENU_KEYS[@]}"; do
@@ -1282,16 +1308,21 @@ pick_menu_interactive() {
     done
     PICK_TITLE="Select what to install"
     PICK_HINT="→ on a row marked > picks the individual items inside it"
+    PICK_CURSOR="${menu_row:-0}"; PICK_TOP=0
     picker_run || return 1
+    menu_row="$PICK_CURSOR"
     for i in "${!MENU_KEYS[@]}"; do MENU_STATE[$i]="${PICK_STATE[$i]}"; done
     case "$PICK_ACTION" in
       submenu)
-        sub_idx="$(group_index_for "${MENU_KEYS[$PICK_CURSOR]}")" || continue
+        # Remember which main-menu row we descended from: pick_group_interactive runs
+        # the same picker, so it overwrites PICK_CURSOR with the sub-picker's own row.
+        parent_row="$PICK_CURSOR"
+        sub_idx="$(group_index_for "${MENU_KEYS[$parent_row]}")" || continue
         pick_group_interactive "$sub_idx" || return 1
         # Opening a sub-picker is a statement of intent: tick the parent row so a
         # careful sub-selection is not silently thrown away by an unticked parent.
         [ "$(group_selected_count "${GROUP_PREFIXES[$sub_idx]}")" -gt 0 ] \
-          && MENU_STATE[$PICK_CURSOR]=1
+          && MENU_STATE[$parent_row]=1
         ;;
       cancel)
         SELECTED=""
@@ -1371,6 +1402,22 @@ select_install_items() {
       *)                           SELECTED="$(expand_selection_spec "$answer")" ;;
     esac
   fi
+
+  # A --<group> spec is also a statement that you want that row: naming plugins inside
+  # a row that is off by default (--plugins crew) would otherwise print a tidy summary
+  # and install nothing. Only when something in the group is actually ticked, so
+  # '--plugins none' still means none.
+  for gi in "${!GROUP_PREFIXES[@]}"; do
+    prefix="${GROUP_PREFIXES[$gi]}"
+    eval "spec=\"\${GROUP_SPEC_${prefix}}\""
+    [ -n "$spec" ] || continue
+    [ "$(group_selected_count "$prefix")" -gt 0 ] || continue
+    is_selected "${GROUP_MENU_KEYS[$gi]}" || {
+      selection_add "${GROUP_MENU_KEYS[$gi]}"
+      printf '\033[90mAlso selecting "%s" - %s names items inside it.\033[0m\n' \
+        "${GROUP_MENU_KEYS[$gi]}" "${GROUP_FLAGS[$gi]}"
+    }
+  done
 
   if [ "$SKIP_BOOTSTRAP" -eq 1 ]; then
     # --skip-bootstrap predates the menu, where it meant "prerequisites and the CLI

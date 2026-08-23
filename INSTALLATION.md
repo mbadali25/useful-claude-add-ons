@@ -36,7 +36,17 @@ One script per OS. Both are idempotent (safe to re-run) and, by default, also bo
 | `A` / `N` / `D` | Tick all / clear all / restore the default set |
 | `Q` or Escape | Cancel — nothing is installed |
 
-**The per-skill picker** (→ on row 3) lists all 25 skills in this repo with the same controls. All 25 start ticked; untick the ones you don't want and press Enter or ← to go back. Opening it also ticks the parent row, so a careful sub-selection can't be lost to an unticked parent.
+**Sub-pickers.** Every row that installs more than one thing is marked `>` and opens its own picker on →, with the same controls. Everything inside starts ticked; untick what you don't want and press Enter or ← to go back (`Q` there discards just that sub-selection). Opening one also ticks the parent row, so a careful sub-selection can't be lost to an unticked parent, and the parent's label keeps a live count.
+
+| Row | What → picks | Non-interactive equivalent |
+|---|---|---|
+| 3 | the 25 skills in this repo | `--skills` / `-Skills` |
+| 4 | superpowers, frontend-design, excalidraw-generator | `--team` / `-Team` |
+| 6 | the 5 community plugins | `--community` / `-Community` |
+| 10 | the 10 VoltAgent packs | `--voltagent` / `-VoltAgent` |
+| 21 | this repo's own plugins (`crew`) | `--plugins` / `-Plugins` |
+
+Each flag takes names, numbers, `all` or `none` — `--voltagent infra,qa-sec`, `--team 1,3`, `--community none` — and selecting any of them implies its parent menu item. Only the marketplaces behind a ticked plugin get registered, so `--team excalidraw-generator` adds one marketplace rather than three.
 
 **When the picker isn't available**, both scripts fall back to the original numbered prompt — same items, same defaults, answered with `A`, `D`, `N`, or `1,3,7-9`. That happens when there is no usable terminal (`curl | bash` with no `/dev/tty`, CI), no `stty`, `TERM=dumb`, PowerShell ISE, a redirected console, or a window under ten lines. Nothing about the install differs; only how you choose.
 

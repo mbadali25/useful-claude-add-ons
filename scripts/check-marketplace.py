@@ -63,6 +63,34 @@ def on_disk() -> dict[str, str]:
     return found
 
 
+def bash_array(text: str, name: str) -> list[str] | None:
+    r"""Read a bash array literal, whether it is written on one line or many.
+
+    Anchoring the close on ``^\)`` only works for the multi-line form; ``TEAM_KEYS=("a"
+    "b")`` closes on the same line and would otherwise run on to the next array.
+    """
+    block = re.search(rf"^{name}=\((.*?)\)\s*$", text, re.S | re.M)
+    if not block:
+        return None
+    return [x.strip('"') for x in block.group(1).split()]
+
+
+def ps_keys(text: str, name: str) -> list[str] | None:
+    """Read the Key values out of a PowerShell catalog literal.
+
+    Comment lines are dropped first: a row that has been commented out is not in the
+    catalog, but its ``Key = '...'`` still matches, which would hide exactly the kind of
+    half-finished edit this is here to catch.
+    """
+    block = re.search(rf"\$script:{name}\s*=\s*@\((.*?)^\)", text, re.S | re.M)
+    if not block:
+        return None
+    live = "\n".join(
+        line for line in block.group(1).splitlines() if not line.lstrip().startswith("#")
+    )
+    return re.findall(r"Key\s*=\s*'([^']+)'", live)
+
+
 def check_registration(entries, disk, fail):
     """Every directory is registered, every entry exists, and sources point at it."""
     names = {e["name"] for e in entries}
@@ -143,17 +171,15 @@ def check_catalogs(entries, fail):
     shell = read(SH)
     pwsh = read(PS1)
 
-    def bash_array(var):
-        block = re.search(rf"^{var}=\((.*?)^\)", shell, re.S | re.M)
-        return [x.strip('"') for x in block.group(1).split()] if block else []
+    def keys(var):
+        return bash_array(shell, var) or []
 
     def ps_catalog(var):
-        block = re.search(rf"\${{?script:{var}}}?\s*=\s*@\((.*?)^\)", pwsh, re.S | re.M)
-        return re.findall(r"Key\s*=\s*'([^']+)'", block.group(1)) if block else []
+        return ps_keys(pwsh, var) or []
 
     for label, actual, expected in (
-        ("SKILL_KEYS (.sh)", bash_array("SKILL_KEYS"), skills),
-        ("PLUGIN_KEYS (.sh)", bash_array("PLUGIN_KEYS"), plugins),
+        ("SKILL_KEYS (.sh)", keys("SKILL_KEYS"), skills),
+        ("PLUGIN_KEYS (.sh)", keys("PLUGIN_KEYS"), plugins),
         ("SkillCatalog (.ps1)", ps_catalog("SkillCatalog"), skills),
         ("PluginCatalog (.ps1)", ps_catalog("PluginCatalog"), plugins),
     ):
@@ -163,6 +189,76 @@ def check_catalogs(entries, fail):
                 f"      has:      {actual}\n"
                 f"      expected: {expected}"
             )
+
+
+def check_menu_parity(fail):
+    """The two install scripts must offer the same menu, in the same order.
+
+    ``--select 3,7`` is positional, so a row present in one script and not the other
+    silently means something different on Windows and Linux, and every doc that names an
+    item by number is wrong for half the users.
+    """
+    shell = read(SH)
+    pwsh = read(PS1)
+
+    sh_keys = bash_array(shell, "MENU_KEYS") or []
+    sh_defaults = re.search(r"^MENU_DEFAULT=\((.*?)\)", shell, re.S | re.M).group(1).split()
+    catalog = re.search(r"\$script:Catalog\s*=\s*@\((.*?)^\)", pwsh, re.S | re.M).group(1)
+    catalog = "\n".join(
+        line for line in catalog.splitlines() if not line.lstrip().startswith("#")
+    )
+    ps_rows = re.findall(
+        r"Key\s*=\s*'([^']+)'\s*;\s*Default\s*=\s*\$(true|false)", catalog
+    )
+    ps_menu = [k for k, _ in ps_rows]
+    ps_defaults = ["1" if d == "true" else "0" for _, d in ps_rows]
+
+    if sh_keys != ps_menu:
+        fail(
+            "the two install scripts do not offer the same menu\n"
+            f"      .sh:  {sh_keys}\n"
+            f"      .ps1: {ps_menu}"
+        )
+    if len(sh_defaults) != len(sh_keys):
+        fail("MENU_DEFAULT has a different length from MENU_KEYS in the .sh")
+    elif sh_defaults != ps_defaults:
+        differing = [
+            f"{k} (.sh {a}, .ps1 {b})"
+            for k, a, b in zip(sh_keys, sh_defaults, ps_defaults)
+            if a != b
+        ]
+        fail(f"menu rows are ticked by default in one script and not the other: {differing}")
+
+
+def check_group_parity(fail):
+    """Every sub-picker group has to hold the same entries, in order, in both scripts."""
+    shell = read(SH)
+    pwsh = read(PS1)
+
+    groups = (
+        ("own-skills", "SKILL_KEYS", "SkillCatalog"),
+        ("team", "TEAM_KEYS", "TeamCatalog"),
+        ("community", "COMMUNITY_KEYS", "CommunityCatalog"),
+        ("voltagent", "VOLTAGENT_KEYS", "VoltAgentCatalog"),
+        ("repo-plugins", "PLUGIN_KEYS", "PluginCatalog"),
+    )
+    for menu_key, bash_var, ps_var in groups:
+        sh_keys = bash_array(shell, bash_var)
+        if sh_keys is None:
+            fail(f"{menu_key}: the .sh has no {bash_var} array")
+            continue
+        ps_entries = ps_keys(pwsh, ps_var)
+        if ps_entries is None:
+            fail(f"{menu_key}: the .ps1 has no ${ps_var}")
+            continue
+        if sh_keys != ps_entries:
+            fail(
+                f"{menu_key}: {bash_var} and ${ps_var} do not match\n"
+                f"      .sh:  {sh_keys}\n"
+                f"      .ps1: {ps_entries}"
+            )
+        if not sh_keys:
+            fail(f"{menu_key}: the group is empty, so its sub-picker would show nothing")
 
 
 def check_docs(entries, fail):
@@ -246,6 +342,8 @@ def main() -> int:
     check_skill_manifests(entries, fail)
     check_plugin_manifests(entries, fail)
     check_catalogs(entries, fail)
+    check_menu_parity(fail)
+    check_group_parity(fail)
     check_docs(entries, fail)
     check_versions(entries, fail)
 

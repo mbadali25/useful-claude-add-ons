@@ -19,16 +19,9 @@ jobs:
         run: python3 scripts/check-marketplace.py
       - name: Shell syntax
         run: bash -n scripts/install-prerequisites.sh
-      - name: PowerShell syntax
+      # Not just a parse: the PowerShell script is Windows-only end to end, so a call to
+      # a function that does not exist parses cleanly and only fails on the one platform
+      # nothing here can run. check-powershell.ps1 resolves every Verb-Noun call.
+      - name: PowerShell static checks
         shell: pwsh
-        run: |
-          $errors = $null
-          $null = [System.Management.Automation.Language.Parser]::ParseFile(
-              (Resolve-Path scripts/install-prerequisites.ps1), [ref]$null, [ref]$errors)
-          if ($errors) {
-              $errors | ForEach-Object {
-                  Write-Host "::error file=scripts/install-prerequisites.ps1,line=$($_.Extent.StartLineNumber)::$($_.Message)"
-              }
-              exit 1
-          }
-          Write-Host "parse ok"
+        run: ./scripts/check-powershell.ps1

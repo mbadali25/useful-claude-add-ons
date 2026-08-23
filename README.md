@@ -52,10 +52,10 @@ The menu is a cursor picker — **↑/↓ to move, Space to tick, Enter to start
     [x] Team plugins: superpowers, frontend-design, excalidraw-generator
     ...
   ↑↓ move   Space toggle   Enter start   A all   N none   D defaults   Q cancel
-  → on the repo row picks individual skills
+  → on a row marked > picks the individual items inside it
 ```
 
-`A` ticks everything, `N` clears it, `D` restores the default set, `Q` or Escape cancels without installing. On the repo's own row, **→ opens a second picker for the individual skills** so you can take three of them instead of all twenty-five; ← or Enter comes back to the main menu.
+`A` ticks everything, `N` clears it, `D` restores the default set, `Q` or Escape cancels without installing. Every row that installs **more than one thing** is marked `>`, and **→ opens a second picker for the items inside it** — so you can take three skills instead of all twenty-five, two VoltAgent packs instead of all ten, or one team plugin instead of three; ← or Enter comes back to the main menu, and `Q` there discards just that sub-selection. The row's label keeps a live count (`3 of 25`), and opening a sub-picker ticks its parent row so a careful selection can't be lost to an unticked parent.
 
 Terminals that can't read a key press one at a time — no `stty`, `TERM=dumb`, PowerShell ISE, a redirected console, a window under ten lines — fall back to the original numbered prompt automatically: `[x]` marks the default set, and you answer `A`, `D` (or Enter), `N`, or numbers like `1,3,7-9`. Item keys work in `--select` either way, so `--select supabase,claude-mem` saves counting rows.
 
@@ -64,13 +64,13 @@ Terminals that can't read a key press one at a time — no `stty`, `TERM=dumb`, 
 | 1 | Prerequisites — Chocolatey / `apt` etc. + git, node, python | x |
 | 2 | Claude Code CLI + PATH export + **update check** | x |
 | 3 | This repo's marketplace + its skills — **→ picks individual skills** (`notify` asks about setup) | x |
-| 4 | Team plugins — superpowers, frontend-design, excalidraw-generator | x |
+| 4 | Team plugins — superpowers, frontend-design, excalidraw-generator — **→ picks which** | x |
 | 5 | `find-skills` skill | x |
-| 6 | Community marketplaces + plugins | x |
+| 6 | Community marketplaces + plugins — **→ picks which** (adhd-output-style, azure-tools, anthropic-office-skills, agent-browser, ppt-master) | x |
 | 7 | `claude-code-setup` plugin | x |
 | 8 | `task-observer` skill | x |
 | 9 | claude-mem — installs **Bun** (its worker runtime) and sets `CLAUDE_MEM_WORKER_PORT` in `settings.json` | x |
-| 10 | VoltAgent subagents (10 plugins, 154 agents) | x |
+| 10 | VoltAgent subagents (10 plugins, 154 agents) — **→ picks which packs** | x |
 | 11 | MCP server — AWS (`awslabs.aws-api-mcp-server`) | |
 | 12 | MCP server — Azure (`@azure/mcp`) | |
 | 13 | MCP server — Playwright (`@playwright/mcp`) | |
@@ -81,7 +81,7 @@ Terminals that can't read a key press one at a time — no `stty`, `TERM=dumb`, 
 | 18 | SkillUI + Playwright/Chromium — design system from a URL | |
 | 19 | Strix — AI pentesting CLI (needs Docker + an LLM API key) | |
 | 20 | Obsidian desktop + `claude-obsidian` and `obsidian-skills` plugins | |
-| 21 | This repo's plugins — `crew` (agents, commands, **hooks**) | |
+| 21 | This repo's plugins — `crew` (agents, commands, **hooks**) — **→ picks which** | |
 
 Menu numbers are identical on Windows and Linux, and an already-registered MCP server, marketplace, or plugin is reported and skipped rather than re-added. Numbers can shift as items are added, so scripted runs should prefer the stable keys (`--select supabase,strix`) over positions.
 
@@ -107,6 +107,7 @@ Everything that can be a plugin **is** installed as one, using the CLI's own `cl
 | `-All` / `--all` | Select every menu item, no prompt. |
 | `-Select '1,3,7-9'` / `--select 1,3,7-9` | Select these menu items, no prompt. Item keys work too: `--select supabase,claude-mem`. |
 | `-Skills 'cloudflare,drata'` / `--skills cloudflare,drata` | Install only these of this repo's skills, no sub-picker. Also accepts `all`, `none`, and numbers (`1,4-6`). Composes with `-All` / `-NonInteractive`. |
+| `-Team` / `--team`, `-Community` / `--community`, `-VoltAgent` / `--voltagent`, `-Plugins` / `--plugins` | The same for the other multi-item rows — items 4, 6, 10 and 21. Each takes names, numbers, `all` or `none`, skips that row's sub-picker, and implies its parent item. E.g. `--voltagent infra,qa-sec --team superpowers`. |
 | `-NonInteractive` / `--non-interactive` | Select the default set, no prompt — for unattended or CI runs. |
 | `-SkillUIGuide` / `--skillui-guide` | Print the SkillUI quick start after installing it, without being asked. |
 | `-NotifySetup` / `--notify-setup` | Scaffold `~/.config/notify/config.json` after installing the `notify` skill, without being asked. The prerequisites are printed either way. |

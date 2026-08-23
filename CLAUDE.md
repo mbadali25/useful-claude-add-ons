@@ -55,9 +55,23 @@ python3 scripts/check-marketplace.py
 ```
 
 The install scripts detect the same condition at runtime and report it rather than
-claiming the plugin is current; `scripts/_test/drift-detection.sh` is its regression
-suite (needs the `claude` CLI; it builds a throwaway marketplace and never touches the
-real config).
+claiming the plugin is current. The suites for all of this live in `scripts/_test/`:
+
+| Script | Covers | Needs |
+|---|---|---|
+| `scripts/check-marketplace.py` | every registration rule here, version drift, and the two install scripts being a matched pair | python3, git |
+| `scripts/check-powershell.ps1` | the `.ps1` parses **and** every `Verb-Noun` call resolves | pwsh |
+| `scripts/_test/drift-detection.sh` | the plugin update path, against a throwaway marketplace | the `claude` CLI |
+| `scripts/_test/menu-groups.sh` | the sub-picker catalogs, `--<group>` flags, and parent implication | bash |
+
+The first two run in CI (`.github/workflows/marketplace.yml`); the other two need tools a
+runner does not have, so run them before pushing a change to either install script. Both
+build throwaway fixtures and never touch the real config.
+
+`check-powershell.ps1` exists because the `.ps1` is Windows-only end to end: a call to a
+function that does not exist parses cleanly, is never reached on Linux, and dies on the
+one platform that matters. That is not hypothetical - a mis-named picker call shipped
+exactly that way and killed every sub-picker on Windows.
 
 ### 3. New skill under `skills/` → update `README.md`
 

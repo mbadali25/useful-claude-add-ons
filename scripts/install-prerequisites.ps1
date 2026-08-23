@@ -38,6 +38,9 @@ Common switches:
     -Select '1,3,7-9'   select these menu items, no prompt (also accepts keys:
                         -Select 'strix,claude-mem')
     -Skills 'a,b'       install only these of this repo's skills, no prompt
+    -Team / -Community / -VoltAgent / -Plugins   the same for menu items 4, 6, 10 and 21
+                        each accepts names, numbers, 'all' or 'none', and selecting any
+                        of them implies its parent menu item
                         (-Skills 'all' | 'none' also work; implies the repo item)
     -NonInteractive     select the default set, no prompt (CI/unattended)
     -SkillUIGuide       print the SkillUI quick start after installing it, no prompt
@@ -60,6 +63,10 @@ param(
     [switch]$All,             # select every menu item, no menu
     [string]$Select,          # explicit selection, no menu: '1,3,7-9' or 'strix,supabase'
     [string]$Skills,          # explicit skill subset, no sub-picker: 'cloudflare,drata' | 'all' | 'none'
+    [string]$Team,            # explicit team-plugin subset (menu item 4)
+    [string]$Community,       # explicit community-plugin subset (menu item 6)
+    [string]$VoltAgent,       # explicit VoltAgent-pack subset (menu item 10)
+    [string]$Plugins,         # explicit subset of this repo's own plugins (menu item 21)
     [switch]$SkillUIGuide,    # answer the SkillUI quick-start prompt up front
     [switch]$NotifySetup,     # answer the notify setup prompt up front
     [string]$ObsidianRepoRoot = 'C:\repos',  # root the Obsidian item suggests for the vault
@@ -501,20 +508,33 @@ function Test-PluginSourceChanged {
     # the marketplace moves HEAD, so without this an unrelated edit anywhere in the repo
     # would drag every plugin in it back onto the slow path. Returns 'changed', 'same',
     # or 'unknown' (no git, a shallow clone, or a commit a force-push pruned).
+    #
+    # Both preference variables are shadowed function-locally (PowerShell restores them
+    # on return): a non-zero native exit under $PSNativeCommandUseErrorActionPreference,
+    # or a stderr line under $ErrorActionPreference = 'Stop', becomes a *terminating*
+    # error. 'git diff --quiet' exits 1 for "there are differences", which is the drift
+    # case itself - the whole reason this function exists - so a throw there would take
+    # the installer down on exactly the input it is meant to detect.
     param([string]$Marketplace, [string]$OldSha, [string]$NewSha, [string]$Source)
+    $ErrorActionPreference = 'Continue'
+    $PSNativeCommandUseErrorActionPreference = $false
     if (-not $Source) { return 'unknown' }
     if (-not (Get-Command git -ErrorAction SilentlyContinue)) { return 'unknown' }
     $dir = Get-MarketplaceDir $Marketplace
     if (-not (Test-Path (Join-Path $dir '.git'))) { return 'unknown' }
-    foreach ($sha in @($OldSha, $NewSha)) {
-        git -C $dir cat-file -e "$sha^{commit}" 2>$null | Out-Null
-        if ($LASTEXITCODE -ne 0) { return 'unknown' }
-    }
-    git -C $dir diff --quiet $OldSha $NewSha -- $Source 2>$null | Out-Null
-    switch ($LASTEXITCODE) {
-        0       { return 'same' }
-        1       { return 'changed' }
-        default { return 'unknown' }
+    try {
+        foreach ($sha in @($OldSha, $NewSha)) {
+            git -C $dir cat-file -e "$sha^{commit}" 2>&1 | Out-Null
+            if ($LASTEXITCODE -ne 0) { return 'unknown' }
+        }
+        git -C $dir diff --quiet $OldSha $NewSha -- $Source 2>&1 | Out-Null
+        switch ($LASTEXITCODE) {
+            0       { return 'same' }
+            1       { return 'changed' }
+            default { return 'unknown' }
+        }
+    } catch {
+        return 'unknown'
     }
 }
 
@@ -523,15 +543,26 @@ function Invoke-ForcePluginRefresh {
     # whose declared version did not: uninstall and install again. '-KeepData' leaves the
     # plugin's persistent data directory alone, so this costs the user nothing beyond the
     # two CLI calls. Only ever reached with -ForceRefresh.
+    #
+    # Both preference variables are shadowed function-locally for the same reason as
+    # Test-PluginSourceChanged: this inspects $LASTEXITCODE itself, so a native failure
+    # must come back as an exit code rather than a terminating error.
     param([string]$Spec)
-    claude plugin uninstall $Spec --keep-data --scope $InstallScope 2>&1 | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-        Write-Warn2 "could not uninstall '$Spec' to force a refresh - leaving the stale copy in place."
-        return $false
-    }
-    claude plugin install $Spec --scope $InstallScope 2>&1 | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-        Write-Warn2 "'$Spec' was uninstalled but reinstalling it failed - run 'claude plugin install $Spec' by hand."
+    $ErrorActionPreference = 'Continue'
+    $PSNativeCommandUseErrorActionPreference = $false
+    try {
+        claude plugin uninstall $Spec --keep-data --scope $InstallScope 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warn2 "could not uninstall '$Spec' to force a refresh - leaving the stale copy in place."
+            return $false
+        }
+        claude plugin install $Spec --scope $InstallScope 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warn2 "'$Spec' was uninstalled but reinstalling it failed - run 'claude plugin install $Spec' by hand."
+            return $false
+        }
+    } catch {
+        Write-Warn2 "forcing a refresh of '$Spec' failed ($($_.Exception.Message)) - run 'claude plugin install $Spec' by hand."
         return $false
     }
     return $true
@@ -776,55 +807,157 @@ $script:SkillCatalog = @(
 
 # --- This repo's own plugins --------------------------------------------------
 # Keep in sync with .claude-plugin/marketplace.json and plugin/README.md. Unlike the
-# skills, these are off by default and have no sub-picker: a plugin can register hooks,
-# and a hook runs whether or not Claude agrees with it, so it is opted into explicitly.
+# skills, the menu row is off by default: a plugin can register hooks, and a hook runs
+# whether or not Claude agrees with it, so it is opted into explicitly. 'Spec' is
+# 'plugin@marketplace|marketplace-source|marketplace-name'.
 $script:PluginCatalog = @(
-    [pscustomobject]@{ Key = 'crew'; Name = 'crew                    - Virtual dev team: 9 agents, 16 commands, safety hooks' }
+    [pscustomobject]@{ Key = 'crew'; Selected = $true; Name = 'crew                    - Virtual dev team: 9 agents, 16 commands, safety hooks'; Spec = 'crew@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons' }
 )
 
-function Get-SelectedSkillCount {
-    return @($script:SkillCatalog | Where-Object { $_.Selected }).Count
+# --- Team plugins (menu item 4) -----------------------------------------------
+# Unlike the skills these come from three different marketplaces, and only the ones
+# behind a ticked plugin need registering. superpowers comes from
+# anthropics/claude-plugins-official rather than obra's own marketplace: Install-
+# ClaudePlugin detects on the bare name, so a machine that already had superpowers from
+# the official marketplace would otherwise end up with an orphaned
+# 'superpowers-marketplace' registration plus a second, disabled copy.
+$script:TeamCatalog = @(
+    [pscustomobject]@{ Key = 'superpowers';          Selected = $true; Name = 'superpowers             - Workflow skills: brainstorm, plans, TDD, code review'; Spec = 'superpowers@claude-plugins-official|anthropics/claude-plugins-official|claude-plugins-official' }
+    [pscustomobject]@{ Key = 'frontend-design';      Selected = $true; Name = "frontend-design         - Anthropic's frontend design skill";                   Spec = 'frontend-design@claude-code-plugins|anthropics/claude-code|claude-code-plugins' }
+    [pscustomobject]@{ Key = 'excalidraw-generator'; Selected = $true; Name = 'excalidraw-generator    - Excalidraw diagrams from a description';              Spec = 'excalidraw-generator@excalidraw-generator|lexiaoyao20/excalidraw-generator|excalidraw-generator' }
+)
+
+# --- Community plugins (menu item 6) ------------------------------------------
+# Source repo -> marketplace name is *not* mechanical: fcakyon/claude-codex-settings
+# publishes itself as 'claude-settings', and the last field is what
+# 'plugin@marketplace' has to match.
+$script:CommunityCatalog = @(
+    [pscustomobject]@{ Key = 'adhd-output-style';       Selected = $true; Name = 'adhd-output-style       - ADHD-friendly output style';                Spec = 'adhd-output-style@claude-settings|fcakyon/claude-codex-settings|claude-settings' }
+    [pscustomobject]@{ Key = 'azure-tools';             Selected = $true; Name = 'azure-tools             - Azure CLI/portal helpers';                  Spec = 'azure-tools@claude-settings|fcakyon/claude-codex-settings|claude-settings' }
+    [pscustomobject]@{ Key = 'anthropic-office-skills'; Selected = $true; Name = "anthropic-office-skills - Anthropic's docx/pptx/xlsx/pdf skills";      Spec = 'anthropic-office-skills@claude-settings|fcakyon/claude-codex-settings|claude-settings' }
+    [pscustomobject]@{ Key = 'agent-browser';           Selected = $true; Name = 'agent-browser           - vercel-labs browser agent';                 Spec = 'agent-browser@agent-browser|vercel-labs/agent-browser|agent-browser' }
+    [pscustomobject]@{ Key = 'ppt-master';              Selected = $true; Name = 'ppt-master              - PowerPoint deck generation';                Spec = 'ppt-master@ppt-master|hugohe3/ppt-master|ppt-master' }
+)
+
+# --- VoltAgent subagent plugins (menu item 10) --------------------------------
+# All ten come from the one marketplace; the split is upstream's own.
+$script:VoltAgentCatalog = @(
+    [pscustomobject]@{ Key = 'voltagent-core-dev'; Selected = $true; Name = 'core-dev                - Core development: API, backend, frontend, mobile' }
+    [pscustomobject]@{ Key = 'voltagent-lang';     Selected = $true; Name = 'lang                    - Language specialists: python, go, rust, ts, java, ...' }
+    [pscustomobject]@{ Key = 'voltagent-infra';    Selected = $true; Name = 'infra                   - Infrastructure: cloud, k8s, terraform, SRE, network' }
+    [pscustomobject]@{ Key = 'voltagent-qa-sec';   Selected = $true; Name = 'qa-sec                  - QA and security: test automation, pentest, audit' }
+    [pscustomobject]@{ Key = 'voltagent-data-ai';  Selected = $true; Name = 'data-ai                 - Data and AI: pipelines, ML, LLM, analytics' }
+    [pscustomobject]@{ Key = 'voltagent-dev-exp';  Selected = $true; Name = 'dev-exp                 - Developer experience: tooling, CI/CD, refactoring' }
+    [pscustomobject]@{ Key = 'voltagent-domains';  Selected = $true; Name = 'domains                 - Domain specialists: fintech, health, gaming, IoT' }
+    [pscustomobject]@{ Key = 'voltagent-biz';      Selected = $true; Name = 'biz                     - Business: product, PM, marketing, sales, support' }
+    [pscustomobject]@{ Key = 'voltagent-meta';     Selected = $true; Name = 'meta                    - Meta/orchestration: multi-agent, workflow, context' }
+    [pscustomobject]@{ Key = 'voltagent-research'; Selected = $true; Name = 'research                - Research and analysis: market, competitor, data' }
+)
+foreach ($v in $script:VoltAgentCatalog) {
+    $v | Add-Member -NotePropertyName Spec -NotePropertyValue "$($v.Key)@voltagent-subagents|VoltAgent/awesome-claude-code-subagents|voltagent-subagents"
 }
 
-function Set-AllSkills {
-    param([bool]$Value)
-    foreach ($s in $script:SkillCatalog) { $s.Selected = $Value }
+# --- Sub-picker groups --------------------------------------------------------
+# Every menu row that installs more than one thing gets a sub-picker on the Right
+# arrow, exactly like the repo's own skills row always had. 'Label' is a format string
+# taking selected and total.
+$script:Groups = @(
+    [pscustomobject]@{ MenuKey = 'own-skills'; Single = 'skill';   Catalog = { $script:SkillCatalog };     Flag = '-Skills';    Noun = 'skills';            Title = 'Pick individual skills from this repo'; Label = "This repo's marketplace + {0} of {1} skills  >" }
+    [pscustomobject]@{ MenuKey = 'team'; Single = 'team plugin';         Catalog = { $script:TeamCatalog };      Flag = '-Team';      Noun = 'team plugins';      Title = 'Pick team plugins';                     Label = 'Team plugins: {0} of {1} (superpowers, frontend-design, excalidraw)  >' }
+    [pscustomobject]@{ MenuKey = 'community'; Single = 'community plugin';    Catalog = { $script:CommunityCatalog }; Flag = '-Community'; Noun = 'community plugins'; Title = 'Pick community plugins';                Label = 'Community marketplaces + {0} of {1} plugins  >' }
+    [pscustomobject]@{ MenuKey = 'voltagent'; Single = 'VoltAgent pack';    Catalog = { $script:VoltAgentCatalog }; Flag = '-VoltAgent'; Noun = 'VoltAgent plugins'; Title = 'Pick VoltAgent subagent packs';         Label = 'VoltAgent subagents: {0} of {1} plugins (154 agents)  >' }
+    [pscustomobject]@{ MenuKey = 'repo-plugins'; Single = 'plugin'; Catalog = { $script:PluginCatalog };    Flag = '-Plugins';   Noun = 'plugins';           Title = "Pick plugins from this repo";           Label = "This repo's plugins: {0} of {1} (crew - agents, commands, hooks)  >" }
+)
+
+function Get-Group {
+    # Menu key -> its group descriptor, or $null when the row has no sub-picker.
+    param([string]$MenuKey)
+    return ($script:Groups | Where-Object { $_.MenuKey -eq $MenuKey } | Select-Object -First 1)
 }
 
-function Expand-SkillsSpec {
+function Get-GroupCatalog {
+    param($Group)
+    return @(& $Group.Catalog)
+}
+
+function Get-GroupSelectedCount {
+    param($Group)
+    return @((Get-GroupCatalog $Group) | Where-Object { $_.Selected }).Count
+}
+
+function Set-AllInGroup {
+    param($Group, [bool]$Value)
+    foreach ($e in (Get-GroupCatalog $Group)) { $e.Selected = $Value }
+}
+
+function Test-GroupEntrySelected {
+    # Only true when the parent menu row is selected too - an entry ticked in a
+    # sub-picker whose parent is off installs nothing.
+    param([string]$MenuKey, [string]$Key)
+    if (-not (Test-Selected $MenuKey)) { return $false }
+    $group = Get-Group $MenuKey
+    if (-not $group) { return $false }
+    $hit = (Get-GroupCatalog $group) | Where-Object { $_.Key -eq $Key } | Select-Object -First 1
+    return [bool]($hit -and $hit.Selected)
+}
+
+function Expand-GroupSpec {
     # 'cloudflare,drata' | '1,4-6' | 'all' | 'none' -> sets .Selected on the catalog.
-    param([string]$Spec)
+    param($Group, [string]$Spec)
+    $catalog = Get-GroupCatalog $Group
     switch -Regex ($Spec) {
-        '^(?i)all$'  { Set-AllSkills $true;  return }
-        '^(?i)none$' { Set-AllSkills $false; return }
+        '^(?i)all$'  { Set-AllInGroup $Group $true;  return }
+        '^(?i)none$' { Set-AllInGroup $Group $false; return }
     }
-    Set-AllSkills $false
+    Set-AllInGroup $Group $false
     foreach ($token in ($Spec -split '[,\s]+' | Where-Object { $_ })) {
         if ($token -match '^(\d+)\s*-\s*(\d+)$') {
             foreach ($n in [int]$Matches[1]..[int]$Matches[2]) {
-                if ($n -ge 1 -and $n -le $script:SkillCatalog.Count) { $script:SkillCatalog[$n - 1].Selected = $true }
+                if ($n -ge 1 -and $n -le $catalog.Count) { $catalog[$n - 1].Selected = $true }
             }
         } elseif ($token -match '^\d+$') {
             $n = [int]$token
-            if ($n -ge 1 -and $n -le $script:SkillCatalog.Count) {
-                $script:SkillCatalog[$n - 1].Selected = $true
+            if ($n -ge 1 -and $n -le $catalog.Count) {
+                $catalog[$n - 1].Selected = $true
             } else {
-                Write-Warn2 "ignoring out-of-range skill number '$token'"
+                Write-Warn2 "ignoring out-of-range $($Group.Single) number '$token'"
             }
         } else {
-            $hit = $script:SkillCatalog | Where-Object { $_.Key -eq $token.ToLower() } | Select-Object -First 1
-            if ($hit) { $hit.Selected = $true } else { Write-Warn2 "ignoring unknown skill '$token'" }
+            $hit = $catalog | Where-Object { $_.Key -eq $token.ToLower() } | Select-Object -First 1
+            if ($hit) { $hit.Selected = $true } else { Write-Warn2 "ignoring unknown $($Group.Single) '$token'" }
         }
     }
 }
 
+function Install-GroupEntry {
+    # Install one catalog entry's Spec: register its marketplace, then the plugin.
+    param([string]$Spec)
+    $plugin, $source, $name = $Spec -split '\|', 3
+    Invoke-Step "Marketplace: $source" { Add-ClaudeMarketplace -Source $source -Name $name }
+    Invoke-Step "Plugin: $plugin"      { Install-ClaudePlugin $plugin }
+}
+
+function Get-SelectedSkillCount { return (Get-GroupSelectedCount (Get-Group 'own-skills')) }
+
+function Set-AllSkills {
+    param([bool]$Value)
+    Set-AllInGroup (Get-Group 'own-skills') $Value
+}
+
+function Expand-SkillsSpec {
+    param([string]$Spec)
+    Expand-GroupSpec (Get-Group 'own-skills') $Spec
+}
+
 function Get-MenuLabel {
-    # The repo row carries a live count, because "its 19 skills" stops being true the
-    # moment someone opens the skills picker and unticks one.
+    # A grouped row carries a live count, because "its 25 skills" stops being true the
+    # moment someone opens the sub-picker and unticks one.
     param([int]$Index)
     $item = $script:Catalog[$Index]
-    if ($item.Key -eq 'own-skills') {
-        return ("This repo's marketplace + {0} of {1} skills  >" -f (Get-SelectedSkillCount), $script:SkillCatalog.Count)
+    $group = Get-Group $item.Key
+    if ($group) {
+        $catalog = Get-GroupCatalog $group
+        return ($group.Label -f (Get-GroupSelectedCount $group), $catalog.Count)
     }
     return $item.Name
 }
@@ -983,39 +1116,50 @@ function Invoke-Picker {
     }
 }
 
-function Select-SkillsInteractive {
-    $labels = @($script:SkillCatalog | ForEach-Object { $_.Name })
-    $state = @($script:SkillCatalog | ForEach-Object { [bool]$_.Selected })
-    $sub = @($script:SkillCatalog | ForEach-Object { $false })
-    $defaults = @($script:SkillCatalog | ForEach-Object { $true })
+function Select-GroupInteractive {
+    # Restores the previous ticks on Q, so backing out of a sub-picker cannot silently
+    # rewrite a selection.
+    param($Group)
+    $catalog = Get-GroupCatalog $Group
+    $labels = @($catalog | ForEach-Object { $_.Name })
+    $state = @($catalog | ForEach-Object { [bool]$_.Selected })
+    $sub = @($catalog | ForEach-Object { $false })
+    $defaults = @($catalog | ForEach-Object { $true })
+    $saved = @($catalog | ForEach-Object { [bool]$_.Selected })
     $result = Invoke-Picker -Labels $labels -State $state -Sub $sub -Defaults $defaults `
-        -Title 'Pick individual skills from this repo' `
+        -Title $Group.Title `
         -Hint 'Enter or Left to go back to the main menu   Q to discard these changes'
-    if ($result.Action -eq 'cancel') { return }
-    for ($i = 0; $i -lt $script:SkillCatalog.Count; $i++) {
-        $script:SkillCatalog[$i].Selected = [bool]$result.State[$i]
+    if ($result.Action -eq 'cancel') {
+        for ($i = 0; $i -lt $catalog.Count; $i++) { $catalog[$i].Selected = $saved[$i] }
+        return
+    }
+    for ($i = 0; $i -lt $catalog.Count; $i++) {
+        $catalog[$i].Selected = [bool]$result.State[$i]
     }
 }
 
 function Select-MenuInteractive {
     $state = @($script:Catalog | ForEach-Object { [bool]$_.Default })
     $defaults = @($script:Catalog | ForEach-Object { [bool]$_.Default })
-    $sub = @($script:Catalog | ForEach-Object { $_.Key -eq 'own-skills' })
-    $ownIndex = [array]::IndexOf(@($script:Catalog | ForEach-Object { $_.Key }), 'own-skills')
+    $sub = @($script:Catalog | ForEach-Object { [bool](Get-Group $_.Key) })
     $cursor = 0
 
     while ($true) {
         $labels = @(for ($i = 0; $i -lt $script:Catalog.Count; $i++) { Get-MenuLabel $i })
         $result = Invoke-Picker -Labels $labels -State $state -Sub $sub -Defaults $defaults `
             -Title 'Select what to install' `
-            -Hint 'Right on the repo row picks individual skills' -Cursor $cursor
+            -Hint 'Right on a row marked > picks the individual items inside it' -Cursor $cursor
         $state = @($result.State)
         $cursor = $result.Cursor
         if ($result.Action -eq 'submenu') {
-            Select-SkillsInteractive
-            # Opening the skills picker is a statement of intent: tick the repo row so a
-            # careful sub-selection is not silently thrown away by an unticked parent.
-            if ((Get-SelectedSkillCount) -gt 0 -and $ownIndex -ge 0) { $state[$ownIndex] = $true }
+            $group = Get-Group $script:Catalog[$cursor].Key
+            if ($group) {
+                Select-GroupInteractive $group
+                # Opening a sub-picker is a statement of intent: tick the parent row so
+                # a careful sub-selection is not silently thrown away by an unticked
+                # parent.
+                if ((Get-GroupSelectedCount $group) -gt 0) { $state[$cursor] = $true }
+            }
             continue
         }
         if ($result.Action -eq 'cancel') {
@@ -1061,18 +1205,26 @@ function Show-InstallMenu {
     Write-Host ""
     Write-Host "  [x] marks the default set." -ForegroundColor DarkGray
     Write-Host "  A = all   D = defaults   N = none   or numbers like 1,3,7-9" -ForegroundColor DarkGray
-    Write-Host "  Individual skills: re-run with -Skills 'cloudflare,drata'" -ForegroundColor DarkGray
+    Write-Host "  Rows marked > hold several items; pick inside them with the arrow" -ForegroundColor DarkGray
+    Write-Host "  keys, or non-interactively with -Skills / -Team / -Community /" -ForegroundColor DarkGray
+    Write-Host "  -VoltAgent / -Plugins (names, numbers, all, none)" -ForegroundColor DarkGray
 }
 
 function Select-InstallItems {
     $defaults = @($script:Catalog | Where-Object { $_.Default } | ForEach-Object { $_.Key })
     $everything = @($script:Catalog | ForEach-Object { $_.Key })
 
-    # -Skills is a non-interactive answer in its own right: it settles the skill list
-    # before anything is drawn, so it composes with -All and -NonInteractive.
-    if ($Skills) {
-        Expand-SkillsSpec $Skills
-        Write-Host ("Skills from -Skills '{0}' ({1} of {2})." -f $Skills, (Get-SelectedSkillCount), $script:SkillCatalog.Count) -ForegroundColor DarkGray
+    # A -<Group> spec is a non-interactive answer in its own right: it settles that
+    # group's list before anything is drawn, so it composes with -All and
+    # -NonInteractive.
+    $specs = @{ 'own-skills' = $Skills; 'team' = $Team; 'community' = $Community
+                'voltagent' = $VoltAgent; 'repo-plugins' = $Plugins }
+    foreach ($group in $script:Groups) {
+        $spec = $specs[$group.MenuKey]
+        if (-not $spec) { continue }
+        Expand-GroupSpec $group $spec
+        Write-Host ("{0} from {1} '{2}' ({3} of {4})." -f $group.Noun, $group.Flag, $spec,
+            (Get-GroupSelectedCount $group), (Get-GroupCatalog $group).Count) -ForegroundColor DarkGray
     }
 
     $keys = @()
@@ -1104,6 +1256,20 @@ function Select-InstallItems {
     $script:Selected = @{}
     foreach ($k in $keys) { $script:Selected[$k] = $true }
 
+    # A -<Group> spec is also a statement that you want that row: naming plugins inside
+    # a row that is off by default (-Plugins crew) would otherwise print a tidy summary
+    # and install nothing. Only when something in the group is actually ticked, so
+    # '-Plugins none' still means none.
+    foreach ($group in $script:Groups) {
+        $spec = $specs[$group.MenuKey]
+        if (-not $spec) { continue }
+        if ((Get-GroupSelectedCount $group) -eq 0) { continue }
+        if (-not $script:Selected[$group.MenuKey]) {
+            $script:Selected[$group.MenuKey] = $true
+            Write-Host ("Also selecting '{0}' - {1} names items inside it." -f $group.MenuKey, $group.Flag) -ForegroundColor DarkGray
+        }
+    }
+
     if ($SkipBootstrap) {
         # -SkipBootstrap predates the menu, where it meant "prerequisites and the CLI
         # only". Keep that meaning by intersecting the selection rather than replacing it.
@@ -1125,13 +1291,16 @@ function Show-Selection {
     for ($i = 0; $i -lt $script:Catalog.Count; $i++) {
         if (Test-Selected $script:Catalog[$i].Key) { Write-Host "    - $(Get-MenuLabel $i)" }
     }
-    if (Test-Selected 'own-skills') {
-        $picked = Get-SelectedSkillCount
+    # Spell out any sub-selection: a row that says "3 of 25" is not enough to review.
+    foreach ($group in $script:Groups) {
+        if (-not (Test-Selected $group.MenuKey)) { continue }
+        $catalog = Get-GroupCatalog $group
+        $picked = Get-GroupSelectedCount $group
         if ($picked -eq 0) {
-            Write-Warn2 "no individual skills selected - the marketplace will be registered but no skill installed. Re-run with -Skills all to get them."
-        } elseif ($picked -lt $script:SkillCatalog.Count) {
-            Write-Host "      skills:" -ForegroundColor Cyan
-            foreach ($s in ($script:SkillCatalog | Where-Object { $_.Selected })) { Write-Host "        - $($s.Key)" }
+            Write-Warn2 "no $($group.Noun) selected - the marketplace will be registered but nothing installed from it. Re-run with $($group.Flag) all to get them."
+        } elseif ($picked -lt $catalog.Count) {
+            Write-Host "      $($group.Noun):" -ForegroundColor Cyan
+            foreach ($e in ($catalog | Where-Object { $_.Selected })) { Write-Host "        - $($e.Key)" }
         }
     }
 }
@@ -1595,34 +1764,16 @@ if (Test-Selected 'own-skills') {
 }
 
 # --- 4. Team marketplaces and plugins ----------------------------------------
+# The catalog is $script:TeamCatalog next to the menu, so Right on the row (or -Team)
+# narrows it. Each entry names its own marketplace, and only the ones behind a ticked
+# plugin get registered; Add-ClaudeMarketplace is a no-op when one is already present.
 if (Test-Selected 'team') {
-    # superpowers comes from anthropics/claude-plugins-official, not obra's own
-    # marketplace. Upstream publishes to both, but Install-ClaudePlugin detects on the
-    # bare name: a machine that already had superpowers from the official marketplace
-    # (which items 6 and 7 register) skipped the install and was left with an orphaned
-    # 'superpowers-marketplace' registration plus a second, disabled copy of the plugin.
-    # One source avoids the duplicate. Add-ClaudeMarketplace is a no-op when already
-    # present, so this stands on its own whether or not items 6 and 7 were selected.
-    $teamMarketplaces = @(
-        @{ Source = 'anthropics/claude-plugins-official';  Name = 'claude-plugins-official' },
-        @{ Source = 'anthropics/claude-code';              Name = 'claude-code-plugins' },
-        @{ Source = 'lexiaoyao20/excalidraw-generator';    Name = 'excalidraw-generator' }
-    )
-    foreach ($mp in $teamMarketplaces) {
-        Invoke-Step "Marketplace: $($mp.Source)" {
-            Add-ClaudeMarketplace -Source $mp.Source -Name $mp.Name
-        }
+    $group = Get-Group 'team'
+    if ((Get-GroupSelectedCount $group) -eq 0) {
+        Write-Warn2 "no team plugins selected - nothing installed for this item."
     }
-
-    $teamPlugins = @(
-        'superpowers@claude-plugins-official',
-        'frontend-design@claude-code-plugins',
-        'excalidraw-generator@excalidraw-generator'
-    )
-    foreach ($spec in $teamPlugins) {
-        Invoke-Step "Plugin: $spec" {
-            Install-ClaudePlugin $spec
-        }
+    foreach ($entry in ((Get-GroupCatalog $group) | Where-Object { $_.Selected })) {
+        Install-GroupEntry $entry.Spec
     }
 }
 
@@ -1650,33 +1801,19 @@ if (Test-Selected 'find-skills') {
     }
 }
 
-# --- 6. Community marketplaces (from claudepluginhub.com) --------------------
-# Installed with native 'claude plugin' commands. Source repo -> marketplace name
-# is *not* mechanical: fcakyon/claude-codex-settings publishes itself as
-# 'claude-settings'. Each Name below is the "name" field in that repo's own
-# .claude-plugin/marketplace.json, which is what 'plugin@marketplace' must match.
+# --- 6. Community marketplaces and plugins -----------------------------------
+# The catalog is $script:CommunityCatalog next to the menu, so Right on the row (or
+# -Community) narrows it. Source repo -> marketplace name is *not* mechanical:
+# fcakyon/claude-codex-settings publishes itself as 'claude-settings'. The last field
+# of each Spec is the "name" in that repo's own .claude-plugin/marketplace.json, which
+# is what 'plugin@marketplace' must match.
 if (Test-Selected 'community') {
-    $communityMarketplaces = @(
-        @{ Source = 'anthropics/claude-plugins-official'; Name = 'claude-plugins-official' },
-        @{ Source = 'vercel-labs/agent-browser';          Name = 'agent-browser' },
-        @{ Source = 'fcakyon/claude-codex-settings';      Name = 'claude-settings' },
-        @{ Source = 'hugohe3/ppt-master';                 Name = 'ppt-master' }
-    )
-    foreach ($mp in $communityMarketplaces) {
-        Invoke-Step "Marketplace: $($mp.Source)" {
-            Add-ClaudeMarketplace -Source $mp.Source -Name $mp.Name
-        }
+    $group = Get-Group 'community'
+    if ((Get-GroupSelectedCount $group) -eq 0) {
+        Write-Warn2 "no community plugins selected - nothing installed for this item."
     }
-
-    $communityPlugins = @(
-        'adhd-output-style@claude-settings',
-        'azure-tools@claude-settings',
-        'anthropic-office-skills@claude-settings',
-        'agent-browser@agent-browser',
-        'ppt-master@ppt-master'
-    )
-    foreach ($spec in $communityPlugins) {
-        Invoke-Step "Plugin: $spec" { Install-ClaudePlugin $spec }
+    foreach ($entry in ((Get-GroupCatalog $group) | Where-Object { $_.Selected })) {
+        Install-GroupEntry $entry.Spec
     }
 }
 
@@ -1749,32 +1886,25 @@ if (Test-Selected 'claude-mem') {
 }
 
 # --- 10. VoltAgent subagents -------------------------------------------------
-# The repo publishes itself as the 'voltagent-subagents' marketplace, with its
-# 154 subagents split across ten category plugins. Installing them as plugins
-# replaces the old 'git clone + bash install-agents.sh' path, which needed Git
-# Bash on Windows (and failed outright when the script ran non-elevated, since
-# Chocolatey - and therefore git - was skipped).
+# The repo publishes itself as the 'voltagent-subagents' marketplace, with its 154
+# subagents split across ten category plugins. Installing them as plugins replaces the
+# old 'git clone + bash install-agents.sh' path, which needed Git Bash on Windows (and
+# failed outright when the script ran non-elevated, since Chocolatey - and therefore
+# git - was skipped). The ten are $script:VoltAgentCatalog next to the menu, so Right
+# on the row (or -VoltAgent) takes a subset: most people want two or three categories,
+# not all 154 agents.
 if (Test-Selected 'voltagent') {
-    Invoke-Step "Marketplace: VoltAgent/awesome-claude-code-subagents" {
-        Add-ClaudeMarketplace -Source 'VoltAgent/awesome-claude-code-subagents' -Name 'voltagent-subagents'
-    }
-
-    $voltAgentPlugins = @(
-        'voltagent-core-dev',
-        'voltagent-lang',
-        'voltagent-infra',
-        'voltagent-qa-sec',
-        'voltagent-data-ai',
-        'voltagent-dev-exp',
-        'voltagent-domains',
-        'voltagent-biz',
-        'voltagent-meta',
-        'voltagent-research'
-    )
-    foreach ($plugin in $voltAgentPlugins) {
-        Invoke-Step "Plugin: $plugin@voltagent-subagents" {
-            Install-ClaudePlugin "$plugin@voltagent-subagents"
+    $group = Get-Group 'voltagent'
+    if ((Get-GroupSelectedCount $group) -eq 0) {
+        Write-Warn2 "no VoltAgent packs selected - nothing installed for this item."
+    } else {
+        Invoke-Step "Marketplace: VoltAgent/awesome-claude-code-subagents" {
+            Add-ClaudeMarketplace -Source 'VoltAgent/awesome-claude-code-subagents' -Name 'voltagent-subagents'
         }
+    }
+    foreach ($entry in ((Get-GroupCatalog $group) | Where-Object { $_.Selected })) {
+        $spec = "$($entry.Key)@voltagent-subagents"
+        Invoke-Step "Plugin: $spec" { Install-ClaudePlugin $spec }
     }
 }
 
@@ -2083,15 +2213,15 @@ if (Test-Selected 'repo-plugins') {
         Add-ClaudeMarketplace -Source 'mbadali25/useful-claude-add-ons' -Name 'useful-claude-add-ons'
     }
 
-    # The catalog lives in $script:PluginCatalog next to the menu. No sub-picker: there
-    # is one plugin, and it is opt-in already.
-    foreach ($plugin in @($script:PluginCatalog | ForEach-Object { $_.Key })) {
-        Invoke-Step "Plugin: $plugin@useful-claude-add-ons" {
-            Install-ClaudePlugin "$plugin@useful-claude-add-ons"
-        }
+    # The catalog lives in $script:PluginCatalog next to the menu; Right on the row
+    # (or -Plugins) narrows it, the same as every other multi-item row.
+    foreach ($entry in ((Get-GroupCatalog (Get-Group 'repo-plugins')) | Where-Object { $_.Selected })) {
+        $spec = "$($entry.Key)@useful-claude-add-ons"
+        Invoke-Step "Plugin: $spec" { Install-ClaudePlugin $spec }
     }
 
-    Show-CrewNextSteps
+    # Only worth printing when crew is actually one of the ones installed.
+    if (Test-GroupEntrySelected 'repo-plugins' 'crew') { Show-CrewNextSteps }
 }
 
 

@@ -21,6 +21,19 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
+- **Every menu row that installs more than one thing now has a sub-picker.** Only the
+  repo's own skills row did; the team, community, VoltAgent and repo-plugin rows were
+  all-or-nothing, so wanting one of the three team plugins, or two of the ten VoltAgent
+  packs (154 subagents), meant taking the lot or editing the script. All five rows are
+  now marked `>` in the menu, open their own picker on the right arrow, and carry a live
+  `N of M` count. New flags for the non-interactive path, matching `--skills`:
+  `--team` / `-Team`, `--community` / `-Community`, `--voltagent` / `-VoltAgent`,
+  `--plugins` / `-Plugins`, each taking names, numbers, `all` or `none` and implying its
+  parent item. Only the marketplaces behind a ticked plugin are registered now, so
+  `--team excalidraw-generator` adds one marketplace instead of three. The five catalogs
+  are the single source for the menu label, the picker, the flag and the install loop,
+  so a row cannot say "3 of 3" and then install something else.
+
 - **Content-drift detection in both install scripts.** A version bump fixes today's
   staleness; this stops it recurring silently. For an already-installed plugin the
   scripts compare the commit its marketplace is on against the commit Claude Code
@@ -44,7 +57,22 @@ All notable changes to this repository are documented here. Format follows [Keep
   directories, `plugin.json` versions agreeing with the marketplace, the `SKILL_KEYS` /
   `SkillCatalog` catalogs in both install scripts matching in content and order, and a
   table row in each of the three catalog docs. Sabotage-tested against eight
-  reintroduced faults. The workflow also syntax-checks both install scripts.
+  reintroduced faults. It also holds the two install scripts to `CLAUDE.md`'s rule
+  that they are a matched pair: same menu keys, same order, same default flags, and
+  the same entries in every sub-picker group - a mismatch there makes `--select 3,7`
+  mean different things on Windows and Linux and silently invalidates every doc that
+  names an item by number.
+- **`scripts/check-powershell.ps1` + `scripts/_test/menu-groups.sh`.** The PowerShell
+  script is Windows-only end to end, so a call to a function that does not exist parses
+  cleanly, is never reached on a CI runner, and only fails on the one platform that
+  matters - which is how a mis-named picker call got through review here and would have
+  killed every sub-picker on Windows. `check-powershell.ps1` resolves every `Verb-Noun`
+  call against the script's own functions and the available cmdlets, with a short,
+  justified allowlist for names a runtime `Import-Module` supplies. `menu-groups.sh`
+  covers the sub-picker catalogs, the `--<group>` spec parser and the parent-implication
+  rule (32 assertions). Both were sabotage-tested; the menu suite caught a weakness in
+  its own first draft, which asserted on the message a flag printed rather than on the
+  row actually being installed.
 
 ### Fixed
 
