@@ -111,6 +111,7 @@ Everything that can be a plugin **is** installed as one, using the CLI's own `cl
 | `-SkillUIGuide` / `--skillui-guide` | Print the SkillUI quick start after installing it, without being asked. |
 | `-NotifySetup` / `--notify-setup` | Scaffold `~/.config/notify/config.json` after installing the `notify` skill, without being asked. The prerequisites are printed either way. |
 | `-NoUpdate` / `--no-update` | Report already-installed plugins but never update them. |
+| `-ForceRefresh` / `--force-refresh` | Reinstall a plugin whose files changed in its marketplace but whose declared version did not. Without it such a plugin is reported and left alone — see [Content drift](#content-drift) below. |
 | `-SkipBootstrap` / `--skip-bootstrap` | Narrow whatever you selected down to the prerequisites and the Claude Code CLI. |
 | `-InstallScope` / `--scope` | Scope for every marketplace and plugin install: `user` (default), `project`, or `local`. Windows still accepts the old `-PluginHubScope` name as an alias. |
 | `-ObsidianRepoRoot` / `--obsidian-repo-root` | Root that item 20 suggests for the Obsidian vault — `C:\repos` on Windows, `~/repos` on Linux. Only affects the printed next step; the vault itself is created by [`claude-obsidian-setup/`](claude-obsidian-setup/). |
@@ -118,6 +119,20 @@ Everything that can be a plugin **is** installed as one, using the CLI's own `cl
 | `-ObsidianMcpKey` / `--obsidian-mcp-key` | Local REST API key for item 14. Per-deployment, so there is no default: without it the item explains how to get one and skips. |
 
 > On Windows, run from an **elevated** prompt for the full setup. Without elevation the script skips menu item 1 (Chocolatey and its packages: git/awscli/nodejs/python) and runs everything else you selected.
+
+### Content drift
+
+`claude plugin update` decides whether to re-copy a plugin by comparing **declared versions**. A marketplace that edits a skill without bumping its `version` therefore leaves every already-installed copy silently stale: the CLI reports *"already at the latest version"* and copies nothing.
+
+Both scripts detect this. For an installed plugin they compare the commit its marketplace is on now against the commit Claude Code recorded when it was installed, and:
+
+- **same commit** — nothing to do, and no `claude` process is launched at all.
+- **different commit, but this plugin's own files are unchanged** — also nothing to do. One commit anywhere in a marketplace moves `HEAD` for every plugin it publishes, so this is the common case.
+- **this plugin's files changed** — run `claude plugin update`. If the version moved, it updates normally. If it did not, the script says so plainly instead of reporting the plugin as current, and `--force-refresh` / `-ForceRefresh` reinstalls it (`--keep-data`, so the plugin's persistent data survives).
+
+If `git` is missing, the marketplace was added from somewhere without history, or the recorded commit has been pruned by a force-push, the check reports "cannot tell" and falls back to asking the CLI about every plugin — correct, just slower.
+
+For this repo's own skills, [`scripts/check-marketplace.py`](scripts/check-marketplace.py) fails CI when a skill's files change without a version bump, so the drift never reaches anyone's machine in the first place.
 
 ### What each item actually installs
 

@@ -351,11 +351,19 @@ name with `Plugin "<name>" not found`.
 
 Or just re-run the OS install script — it's idempotent and will skip anything already installed.
 To decide that cheaply it compares the commit its marketplace clone is on against the commit
-Claude Code recorded when each plugin was installed, and only shells out to `claude plugin update`
-for the ones that differ; a run where nothing has changed upstream launches the CLI once for the
-marketplace refresh and not at all per plugin. If `git` is missing or the marketplace was added by
-some other means, it falls back to asking the CLI about every plugin, which is correct but slower.
+Claude Code recorded when each plugin was installed, then asks git whether that plugin's own files
+changed between the two. Only the ones that actually changed cost a `claude plugin update`; a run
+where nothing has moved upstream launches the CLI once for the marketplace refresh and not at all
+per plugin. If `git` is missing, the marketplace has no history, or the recorded commit was pruned
+by a force-push, it falls back to asking the CLI about every plugin — correct, just slower.
 `--no-update` / `-NoUpdate` skips the update check entirely.
+
+**When a skill changes but its version does not.** `claude plugin update` compares declared
+versions, so an edit without a version bump copies nothing and the installed copy stays stale. The
+scripts report that case rather than calling the plugin current, and `--force-refresh` /
+`-ForceRefresh` reinstalls it (`--keep-data`, so the plugin's persistent data survives). For this
+repo's own skills it should never happen: `scripts/check-marketplace.py` fails CI on a skill whose
+files changed without a bump.
 
 ## Troubleshooting
 

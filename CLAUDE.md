@@ -33,7 +33,33 @@ Windows and Linux. Change one, change the other.
 The README's one-liner install URLs are pinned to a commit SHA. After merging a change
 to either script to `main`, run `git rev-parse HEAD` and re-pin both URLs.
 
-### 2. New skill under `skills/` → update `README.md`
+### 2. Changing a skill or plugin → bump its `version`
+
+`claude plugin update` decides whether to re-copy a plugin by comparing the **declared
+version**, not its contents. Editing anything under `skills/<name>/` or `plugin/<name>/`
+without bumping that entry's `version` in `.claude-plugin/marketplace.json` means every
+machine that already installed it keeps the old copy forever — the CLI reports "already
+at the latest version" and copies nothing. Nothing about the repo looks wrong; the bug
+only exists on other people's machines.
+
+So: **content change → version bump, in the same commit.** A plugin that carries its own
+`.claude-plugin/plugin.json` (`crew`) has to be bumped in both, to the same value.
+
+`scripts/check-marketplace.py` enforces this and runs in CI. It walks the history of
+`marketplace.json` to find where each version was last set and fails if that plugin's
+files have changed since. It also checks every registration rule below, so run it before
+pushing:
+
+```bash
+python3 scripts/check-marketplace.py
+```
+
+The install scripts detect the same condition at runtime and report it rather than
+claiming the plugin is current; `scripts/_test/drift-detection.sh` is its regression
+suite (needs the `claude` CLI; it builds a throwaway marketplace and never touches the
+real config).
+
+### 3. New skill under `skills/` → update `README.md`
 
 Adding a directory to `skills/` is not finished until it is registered in all four
 places:
@@ -48,7 +74,7 @@ places:
 
 Renaming or removing a skill means the same four places, in reverse.
 
-### 3. New plugin under `plugin/` → five places, plus two extra rules
+### 4. New plugin under `plugin/` → five places, plus two extra rules
 
 A directory under `plugin/` is a full Claude Code plugin, not a skill. It carries the
 skills' registration rule with one more place bolted on — `plugin/` has both a catalog

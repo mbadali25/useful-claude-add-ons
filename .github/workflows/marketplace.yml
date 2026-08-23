@@ -1,0 +1,34 @@
+name: Marketplace
+
+on: [push, pull_request]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The version-drift check walks the history of marketplace.json to find where
+          # each plugin's declared version was last set, so a shallow clone cannot
+          # answer it.
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Check the marketplace is internally consistent
+        run: python3 scripts/check-marketplace.py
+      - name: Shell syntax
+        run: bash -n scripts/install-prerequisites.sh
+      - name: PowerShell syntax
+        shell: pwsh
+        run: |
+          $errors = $null
+          $null = [System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path scripts/install-prerequisites.ps1), [ref]$null, [ref]$errors)
+          if ($errors) {
+              $errors | ForEach-Object {
+                  Write-Host "::error file=scripts/install-prerequisites.ps1,line=$($_.Extent.StartLineNumber)::$($_.Message)"
+              }
+              exit 1
+          }
+          Write-Host "parse ok"

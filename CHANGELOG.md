@@ -6,6 +6,48 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **Every installed skill was frozen at whatever it looked like on the day it was first
+  published.** `claude plugin update` decides whether to re-copy a plugin by comparing
+  declared versions, and no skill in this marketplace had ever had its `version` bumped -
+  all 25 sat at `1.0.0` from the day they were added. Nineteen of them had had real
+  content changes since. The CLI answered every update with "already at the latest
+  version (1.0.0)" and copied nothing, so anyone who ran the installer once was still
+  running the original text of every skill, with no indication anything was wrong. The
+  matching `claude plugin update` bug (below) had been masking it behind a warning that
+  looked like the real explanation. The 18 skills whose files had changed since their
+  version was set are now `1.1.0`; `crew` goes to `0.3.0` (its `0.2.0` was declared a
+  commit before the Windows hook fix landed, and two further changes landed after that).
+  The seven skills whose files genuinely had not changed are left at `1.0.0`.
+
+### Added
+
+- **Content-drift detection in both install scripts.** A version bump fixes today's
+  staleness; this stops it recurring silently. For an already-installed plugin the
+  scripts compare the commit its marketplace is on against the commit Claude Code
+  recorded at install time, and then ask git whether *that plugin's* files changed
+  between the two - one commit anywhere in a marketplace moves `HEAD` for everything it
+  publishes, so this also keeps unrelated commits off the slow path. If the files did
+  change and `claude plugin update` still copies nothing, that is the unbumped-version
+  case, and the scripts now say so plainly instead of reporting the plugin as current.
+  New `--force-refresh` / `-ForceRefresh` reinstalls such a plugin (`claude plugin
+  uninstall --keep-data` then install), which is the only way to make the CLI re-copy it.
+  Anything the check cannot answer - no `git`, no history, a commit pruned by a
+  force-push - falls back to the previous CLI path. Regression suite:
+  `scripts/_test/drift-detection.sh` (15 assertions over 7 scenarios, asserting on the
+  bytes on disk and not only on what the script printed; sabotage-tested by
+  reintroducing both original bugs).
+- **`scripts/check-marketplace.py` + a `Marketplace` CI workflow.** Fails when a skill's
+  files have changed since its version was last set - the bug above, caught in the repo
+  instead of on users' machines - and checks every registration rule in `CLAUDE.md`:
+  directories registered in `marketplace.json` and vice versa, required fields, `source`
+  paths, no nested `marketplace.json`, `SKILL.md` frontmatter names matching their
+  directories, `plugin.json` versions agreeing with the marketplace, the `SKILL_KEYS` /
+  `SkillCatalog` catalogs in both install scripts matching in content and order, and a
+  table row in each of the three catalog docs. Sabotage-tested against eight
+  reintroduced faults. The workflow also syntax-checks both install scripts.
+
+### Fixed
+
 - **Install scripts — installing this repo's skills took minutes, and every re-run
   warned about all of them.** Two problems compounded. First, `claude plugin update`
   was called with a bare plugin name; the CLI only accepts `name@marketplace` and

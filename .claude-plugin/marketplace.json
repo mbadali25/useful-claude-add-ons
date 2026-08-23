@@ -11,13 +11,13 @@
       "name": "aws-opensearch",
       "source": "./skills/aws-opensearch",
       "description": "Diagnose and remediate Amazon OpenSearch Service managed domains over SigV4, with dry-run guards on destructive calls.",
-      "version": "1.0.0"
+      "version": "1.1.0"
     },
     {
       "name": "bitbucket",
       "source": "./skills/bitbucket",
       "description": "Git over HTTPS with Atlassian API tokens plus the Bitbucket Cloud REST API - PRs, pipelines, comments, branches.",
-      "version": "1.0.0"
+      "version": "1.1.0"
     },
     {
       "name": "checkpoint-email",
@@ -29,7 +29,7 @@
       "name": "cisco-meraki",
       "source": "./skills/cisco-meraki",
       "description": "Cisco Meraki Dashboard API v1 - inventory, status, event and config-change logs, live diagnostics, and MX/MS/MR config changes with snapshot/diff/confirm and rollback.",
-      "version": "1.0.0"
+      "version": "1.1.0"
     },
     {
       "name": "claude-code-defaults",
@@ -53,25 +53,25 @@
       "name": "claude-memories-vault",
       "source": "./skills/claude-memories-vault",
       "description": "Note conventions for the claude-memories Obsidian vault - folder layout, the six frontmatter fields, wikilink resolution, the write lock, and vault vs auto-memory.",
-      "version": "1.0.0"
+      "version": "1.1.0"
     },
     {
       "name": "cloudflare",
       "source": "./skills/cloudflare",
       "description": "Cloudflare v4 API - DNS, zones, cache, WAF, page rules, SSL/TLS, Workers/KV/R2, Zero Trust, analytics.",
-      "version": "1.0.0"
+      "version": "1.1.0"
     },
     {
       "name": "crew",
       "source": "./plugin/crew",
       "description": "Virtual dev team for multi-repo legacy work - 9 context-isolated agents, 16 slash commands, 14 bundled skills, and deterministic hooks that block unsafe commands, gate unverified turns, and carry a handoff across compaction.",
-      "version": "0.2.0"
+      "version": "0.3.0"
     },
     {
       "name": "drata",
       "source": "./skills/drata",
       "description": "Drata Public API - controls, monitoring tests, evidence, personnel, policies, frameworks, risks across US/EU/APAC.",
-      "version": "1.0.0"
+      "version": "1.1.0"
     },
     {
       "name": "i-have-adhd",
@@ -83,31 +83,31 @@
       "name": "infra-work-ticketing",
       "source": "./skills/infra-work-ticketing",
       "description": "Infrastructure work ticketing for Zoho ServiceDesk Plus Cloud and Jira Cloud - confirm a ticket exists, log work notes as the work happens, or open a ticket.",
-      "version": "1.0.0"
+      "version": "1.1.0"
     },
     {
       "name": "intune-graph",
       "source": "./skills/intune-graph",
       "description": "Microsoft Intune via Microsoft Graph - device troubleshooting, compliance/config profiles, app deployment, report exports.",
-      "version": "1.0.0"
+      "version": "1.1.0"
     },
     {
       "name": "mermaid-svg-bitbucket",
       "source": "./skills/mermaid-svg-bitbucket",
       "description": "Pre-render Mermaid diagrams to committed SVG so they display correctly in Bitbucket Cloud.",
-      "version": "1.0.0"
+      "version": "1.1.0"
     },
     {
       "name": "notify",
       "source": "./skills/notify",
       "description": "Notify a session's progress to your phone or inbox - a two-way Telegram bot (questions wait for your reply, topic-per-job dispatcher) or email over SMTP/an MCP connector.",
-      "version": "1.0.0"
+      "version": "1.1.0"
     },
     {
       "name": "obsidian-canvas",
       "source": "./skills/obsidian-canvas",
       "description": "Create and edit Obsidian Canvas (.canvas) files directly as JSON Canvas - architecture maps, decision trees, and boards with embedded live notes, groups, and labeled arrows; no plugin or REST bridge required.",
-      "version": "1.0.0"
+      "version": "1.1.0"
     },
     {
       "name": "obsidian-vault-server",
@@ -119,7 +119,7 @@
       "name": "repo-docs",
       "source": "./skills/repo-docs",
       "description": "Generate and refresh a full documentation set for a codebase - CLAUDE.md, READMEs, API reference, architecture doc, TODO/SECURITY/CHANGELOG, and handoff notes.",
-      "version": "1.0.0"
+      "version": "1.1.0"
     },
     {
       "name": "shipstation",
@@ -131,37 +131,37 @@
       "name": "sophos-central",
       "source": "./skills/sophos-central",
       "description": "Sophos Central API - endpoint management, alert triage, SIEM export, XDR/Live Discover, firewall management.",
-      "version": "1.0.0"
+      "version": "1.1.0"
     },
     {
       "name": "terraform-docs-readme",
       "source": "./skills/terraform-docs-readme",
       "description": "Regenerate a Terraform module's README.md with terraform-docs - .terraform-docs.yml, main.tf header block, footer.md, and the BEGIN_TF_DOCS/END_TF_DOCS injection markers.",
-      "version": "1.0.0"
+      "version": "1.1.0"
     },
     {
       "name": "visio-diagrams",
       "source": "./skills/visio-diagrams",
       "description": "Create, edit, and verify Microsoft Visio .vsdx diagrams - stdlib-only generator from a YAML/JSON spec with no Visio install needed, plus COM automation for real stencil masters.",
-      "version": "1.0.0"
+      "version": "1.1.0"
     },
     {
       "name": "wazuh-onprem",
       "source": "./skills/wazuh-onprem",
       "description": "Self-hosted Wazuh across Server API, Indexer API, Dashboard saved-objects API, and ossec.conf over SSH.",
-      "version": "1.0.0"
+      "version": "1.1.0"
     },
     {
       "name": "web-testing-playwright",
       "source": "./skills/web-testing-playwright",
       "description": "Drive a real browser with Playwright - screenshots across viewports, console errors, failed requests, form and login flows, plus Windows/Linux browser setup.",
-      "version": "1.0.0"
+      "version": "1.1.0"
     },
     {
       "name": "work-log-reporter",
       "source": "./skills/work-log-reporter",
       "description": "Per-session work log in a committed work-log/ directory, plus a formatted email report with a PDF attachment sent over SMTP.",
-      "version": "1.0.0"
+      "version": "1.1.0"
     }
   ]
 }
