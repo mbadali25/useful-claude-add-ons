@@ -148,7 +148,10 @@ class TestBatchCommit(unittest.TestCase):
     def test_confirms_then_polls_to_completion(self):
         tool, calls = self._tool([
             ok([{"id": "111"}]),
-            ok({"id": "B1", "actions": [{"operation": "update", "resource": "/networks/N1/vlans/10"}], "status": {"completed": False, "failed": False}}),
+            ok({"id": "B1",
+                "actions": [{"operation": "update",
+                             "resource": "/networks/N1/vlans/10"}],
+                "status": {"completed": False, "failed": False}}),
             ok({"id": "B1", "status": {"completed": False, "failed": False}}),
             ok({"id": "B1", "status": {"completed": False, "failed": False}}),
             ok({"id": "B1", "status": {"completed": True, "failed": False,
@@ -167,7 +170,10 @@ class TestBatchCommit(unittest.TestCase):
         """The gate is the point: a no must reach the API as no PUT at all."""
         tool, calls = self._tool([
             ok([{"id": "111"}]),
-            ok({"id": "B1", "actions": [{"operation": "update", "resource": "/networks/N1/vlans/10"}], "status": {"completed": False, "failed": False}}),
+            ok({"id": "B1",
+                "actions": [{"operation": "update",
+                             "resource": "/networks/N1/vlans/10"}],
+                "status": {"completed": False, "failed": False}}),
         ])
         with self.assertRaises(MerakiError):
             tool.batch_commit("B1", lambda text: False,
@@ -208,7 +214,10 @@ class TestBatchCommit(unittest.TestCase):
     def test_failed_batch_raises_with_the_server_errors(self):
         tool, _ = self._tool([
             ok([{"id": "111"}]),
-            ok({"id": "B1", "actions": [{"operation": "update", "resource": "/networks/N1/vlans/10"}], "status": {"completed": False, "failed": False}}),
+            ok({"id": "B1",
+                "actions": [{"operation": "update",
+                             "resource": "/networks/N1/vlans/10"}],
+                "status": {"completed": False, "failed": False}}),
             ok({"id": "B1", "status": {"completed": False, "failed": False}}),
             ok({"id": "B1", "status": {"completed": False, "failed": True,
                                        "errors": ["vlan 10 not found"]}}),
@@ -221,7 +230,11 @@ class TestBatchCommit(unittest.TestCase):
     def test_timeout_raises_and_names_the_batch_id(self):
         stuck = [ok({"id": "B1", "status": {"completed": False,
                                             "failed": False}})] * 40
-        tool, _ = self._tool([ok([{"id": "111"}]), ok({"id": "B1", "actions": [{"operation": "update", "resource": "/networks/N1/vlans/10"}], "status": {"completed": False, "failed": False}}),] + stuck)
+        batch = ok({"id": "B1",
+                    "actions": [{"operation": "update",
+                                 "resource": "/networks/N1/vlans/10"}],
+                    "status": {"completed": False, "failed": False}})
+        tool, _ = self._tool([ok([{"id": "111"}]), batch] + stuck)
         with self.assertRaises(MerakiError) as ctx:
             tool.batch_commit("B1", lambda text: True,
                               poll_interval=0, timeout=0)
