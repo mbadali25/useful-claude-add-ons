@@ -5,16 +5,10 @@ try { $d = $raw | ConvertFrom-Json } catch { exit 0 }
 $cwd = if ($d.cwd) { $d.cwd } elseif ($env:CLAUDE_PROJECT_DIR) { $env:CLAUDE_PROJECT_DIR } else { "." }
 Set-Location $cwd -ErrorAction SilentlyContinue
 
-# PreCompact has no matcher, so this and handoff-write.sh both fire wherever
-# both interpreters exist. Same hook name as handoff-write.sh so the two race
-# for the same marker; only the winner does any work.
-$dir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$py = (Get-Command python3, python -ErrorAction SilentlyContinue |
-       Select-Object -First 1).Source
-if (-not $py) { exit 0 }
-& $py (Join-Path $dir 'hook_once.py') 'handoff-write' $d.session_id
-if ($LASTEXITCODE -ne 0) { exit 0 }
-
+# No hook_once claim here on purpose: PreCompact can fire more than once per
+# session, and both writes below are idempotent (the transcript copy is
+# timestamped, the handoff skeleton only gets written if one doesn't already
+# exist) -- duplication is safe, suppression of the only handoff is not.
 if (-not (Test-Path ".crew/config.json")) { exit 0 }
 
 $trigger = if ($d.trigger) { $d.trigger } else { "auto" }

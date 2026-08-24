@@ -11,6 +11,16 @@ A claim decides by arrival instead, which needs no knowledge of the platform.
 The winner is whichever process creates the marker first; O_CREAT|O_EXCL makes
 that atomic, so a tie cannot produce two winners.
 
+Use this ONLY for events that fire once per session (SessionStart). The
+marker is keyed on (hook, session) and is not cleared after a successful
+claim -- only pruned after 24h -- so it is wrong for anything that can fire
+more than once against the same session id. Stop is the case that bit us:
+it fires once per TURN, so a claim taken on turn 1 suppresses the hook for
+every later turn in that session, which for a 600-second verify gate reads
+as "the work passed". For those events (Stop, Notification, PreCompact),
+prefer letting both flavours run -- duplication there is a safe failure,
+suppression is not.
+
 Usage:  python3 hook_once.py <hook-name> <session-id>
 Exit 0  you won the claim -- do the work.
 Exit 1  someone else already has it -- exit quietly.

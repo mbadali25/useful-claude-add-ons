@@ -8,20 +8,10 @@ param(
 )
 $root = if ($env:CLAUDE_PROJECT_DIR) { $env:CLAUDE_PROJECT_DIR } else { "." }
 Set-Location $root -ErrorAction SilentlyContinue
-
-# Notification has no matcher, so this and notify.sh both fire wherever both
-# interpreters exist when invoked as a hook. Same hook name as notify.sh so
-# the two race for the same marker.
-$raw = [Console]::In.ReadToEnd()
-try { $d = $raw | ConvertFrom-Json } catch { $d = $null }
-$dir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$py = (Get-Command python3, python -ErrorAction SilentlyContinue |
-       Select-Object -First 1).Source
-if (-not $py) { exit 0 }
-& $py (Join-Path $dir 'hook_once.py') 'notify' $d.session_id
-if ($LASTEXITCODE -ne 0) { exit 0 }
-
 if (-not (Test-Path .crew/config.json)) { exit 0 }
+
+# No hook_once claim here on purpose: Notification can fire many times per
+# session, and a duplicate ping is a safe failure -- a suppressed one is not.
 
 $cfg = (Get-Content .crew/config.json -Raw | ConvertFrom-Json).notify
 if ($null -eq $cfg) { exit 0 }

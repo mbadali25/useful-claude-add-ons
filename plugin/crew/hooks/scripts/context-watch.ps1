@@ -5,16 +5,11 @@ try { $d = $raw | ConvertFrom-Json } catch { exit 0 }
 $cwd = if ($d.cwd) { $d.cwd } elseif ($env:CLAUDE_PROJECT_DIR) { $env:CLAUDE_PROJECT_DIR } else { "." }
 Set-Location $cwd -ErrorAction SilentlyContinue
 
-# Stop has no matcher, so this and context-watch.sh both fire wherever both
-# interpreters exist. Same hook name as context-watch.sh so the two race for
-# the same marker; only the winner does any work.
-$dir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$py = (Get-Command python3, python -ErrorAction SilentlyContinue |
-       Select-Object -First 1).Source
-if (-not $py) { exit 0 }
-& $py (Join-Path $dir 'hook_once.py') 'context-watch' $d.session_id
-if ($LASTEXITCODE -ne 0) { exit 0 }
-
+# No hook_once claim here on purpose: Stop fires once per TURN against a
+# stable session id, so a session-scoped claim taken on turn 1 would suppress
+# the context nag for the rest of the session. $marker below (.handoff-requested)
+# is the real once-per-session gate for this hook, reset by handoff-read.ps1 at
+# the next SessionStart -- that stays.
 if (-not (Test-Path ".crew/config.json")) { exit 0 }
 if (-not $d.transcript_path -or -not (Test-Path $d.transcript_path)) { exit 0 }
 
