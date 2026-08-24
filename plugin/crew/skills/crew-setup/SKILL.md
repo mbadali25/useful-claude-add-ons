@@ -55,6 +55,14 @@ scripts with a misleading error.
 
 Report what it found and what you propose to create. Wait for approval.
 
+**Global `find-skills`.** If `detect.sh` reports one installed at
+`~/.claude/skills/find-skills`, say so by name: its trigger fires on almost any
+"how do I" question, which competes with `crew-setup` and `crew-verification`
+for ordinary requests in this session. Offer to remove it. Never delete it
+yourself, with or without asking — it is the user's own global configuration,
+and a setup skill that quietly reaches into `~/.claude` is worse than the
+collision it fixes.
+
 ## 2. Ask exactly three things
 
 Do not ask more. Everything else has a sane default and can change later.
@@ -80,6 +88,7 @@ CLAUDE.md                  # only if absent; never overwrite
 `config.json`:
 ```json
 {
+  "schema": 2,
   "tier": 0,
   "roles": ["explorer", "qa-reviewer"],
   "qa": { "provider": "auto" },
@@ -90,9 +99,16 @@ CLAUDE.md                  # only if absent; never overwrite
   "verifyGate": true,
   "context": { "enabled": true, "warnAt": 0.8, "budgetTokens": 200000, "handoffPath": ".work/HANDOFF.md", "autoResume": false, "keepTranscripts": 5 },
   "notify": { "provider": "none", "urlEnv": null, "tokenEnv": null, "chatId": null, "events": ["phase", "gate", "waiting"] },
-  "platform": { "os": null, "wsl": null, "shell": null, "windowsHostIp": null }
+  "platform": { "os": null, "wsl": null, "shell": null, "windowsHostIp": null },
+  "pm": { "enabled": true, "mode": "adaptive", "quietLines": 8, "maxLines": 40, "authority": "report-only" },
+  "graph": { "enabled": true, "tool": "graphify", "out": "graphify-out", "mode": "code-only", "commitHook": false, "obsidian": { "enabled": false, "dir": null, "confirmed": false } }
 }
 ```
+
+`schema: 2` — this repo is born current. It never trips `upgradeNeeded`, which fires only
+when a config predates the `pm` and `graph` blocks. The `pm` and `graph` blocks above must
+match `crew_state.PM_DEFAULTS` and `crew_upgrade.GRAPH_BLOCK` exactly — those modules are
+the source of truth; this template is a copy of them, not the other way around.
 `qa.provider`: `auto` uses Codex when present and falls back to Claude, announcing
 which ran. Use `codex` to hard-fail instead of falling back, `claude` to force it.
 

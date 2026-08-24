@@ -18,6 +18,7 @@ You do not need it to. The lifecycle already provides the whole cycle:
 | Approaching the limit | `Stop` | Estimate usage; ask for a handoff note before the turn ends |
 | Auto-compaction about to run | `PreCompact` | Snapshot the transcript, write a skeleton handoff if none exists |
 | After `/clear`, `/compact`, or resume | `SessionStart` | Print the handoff — its stdout is injected as context |
+| Also on `SessionStart`, including plain `startup` | `pm-brief` | Print the PM's brief (triggers like `upgradeNeeded`, `handoffPending`, `graphStale`) so crew says something even on a fresh session, not only after a clear or compact |
 
 So the flow is: crew tells you it is time, you type `/clear` or `/compact`, and
 the next session opens already holding the handoff. The one manual step is the
