@@ -361,6 +361,60 @@ def test_triggers_come_back_in_priority_order():
     assert got == ["upgradeNeeded", "handoffPending", "reviewNotWorking"]
 
 
+def test_a_hand_edited_schema_does_not_crash_collect(tmp_path):
+    """The crash that would break every session opened in the repo.
+
+    .get(key, default) substitutes the default only when the KEY IS ABSENT, so
+    a present `"schema": null` returns None and `None < 2` raises TypeError.
+    """
+    for bad in (None, "two", [], {}, True):
+        root = crew_fixtures.make_repo(tmp_path / f"s{abs(hash(str(bad))) % 9999}",
+                                      config={"schema": bad, "tier": 0})
+        got = crew_state.collect(str(root))
+        assert isinstance(got["schema"], int), bad
+        assert isinstance(got["triggers"], list), bad
+
+
+def test_a_numeric_string_schema_is_read_as_a_number(tmp_path):
+    root = crew_fixtures.make_repo(tmp_path, config={"schema": "2"})
+    assert crew_state.collect(str(root))["schema"] == 2
+    assert "upgradeNeeded" not in crew_state.collect(str(root))["triggers"]
+
+
+def test_hand_edited_pm_line_counts_do_not_crash(tmp_path):
+    # Task 6 does int(pm["quietLines"]); an unvalidated "eight" would raise
+    # there instead, and silently swallow the whole brief.
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"schema": 2, "pm": {"quietLines": "eight",
+                                              "maxLines": None}}
+    )
+    pm = crew_state.collect(str(root))["pm"]
+    assert pm["quietLines"] == 8
+    assert pm["maxLines"] == 40
+
+
+def test_hand_edited_tier_and_roles_are_normalised(tmp_path):
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"schema": 2, "tier": {}, "roles": "explorer"}
+    )
+    got = crew_state.collect(str(root))
+    assert got["tier"] is None
+    assert got["roles"] == []
+
+
+def test_a_non_crew_directory_reports_no_triggers(tmp_path):
+    """A directory with no crew has no findings.
+
+    Without the isCrew gate every plain git repo reports graphStale, and
+    /crew:pm calls collect() directly with no gate of its own.
+    """
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    got = crew_state.collect(str(plain))
+    assert got["isCrew"] is False
+    assert got["triggers"] == []
+
+
 def test_collect_on_a_non_crew_directory_is_not_crew(tmp_path):
     root = tmp_path / "plain"
     root.mkdir()
