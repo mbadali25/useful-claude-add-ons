@@ -6,16 +6,21 @@ read_json() { python3 -c 'import sys,json;d=json.load(sys.stdin);print(d.get(sys
 SOURCE=$(read_json source); CWD=$(read_json cwd); SESSION=$(read_json session_id)
 cd "${CWD:-${CLAUDE_PROJECT_DIR:-.}}" 2>/dev/null || exit 0
 
-# Both flavours of this hook are registered on SessionStart, which has no
-# matcher, so both fire wherever both interpreters exist. Only the winner of
-# this claim does any work; the loser exits quietly.
-DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PY=$(command -v python3 || command -v python) || exit 0
-"$PY" "$DIR/hook_once.py" handoff-read "$SESSION" || exit 0
-
 rm -f .crew/.handoff-requested   # reset the once-per-session gate
 
-case "$SOURCE" in clear|compact|resume) ;; *) exit 0 ;; esac
+# SessionStart fires once per SOURCE EVENT (startup, clear, compact, resume,
+# fork), not once per session -- claiming on session id alone would let the
+# `startup` firing burn the claim, exit here on the filter having done
+# nothing, and make the `clear` firing lose the race: the handoff would never
+# be read after /clear, which is the entire point of this hook. So the claim
+# comes AFTER the filter and is keyed on session+source together. Both
+# flavours are registered here with no matcher, so both fire wherever both
+# interpreters exist; only the winner of the claim does any work.
+case "$SOURCE" in clear|compact|resume|fork) ;; *) exit 0 ;; esac
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PY=$(command -v python3 || command -v python) || exit 0
+"$PY" "$DIR/hook_once.py" handoff-read "${SESSION}-${SOURCE}" || exit 0
+
 [ -f .crew/config.json ] || exit 0
 
 HANDOFF=$(python3 -c 'import json;print(json.load(open(".crew/config.json")).get("context",{}).get("handoffPath",".work/HANDOFF.md"))' 2>/dev/null)

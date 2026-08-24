@@ -185,7 +185,18 @@ def main(argv=None):
     # matcher to pick one -- so whichever arrives second must print nothing.
     # Claiming here rather than in the wrappers means one implementation
     # instead of two, and no shell-specific platform guessing.
-    if not hook_once.claim(root, "pm-brief", payload.get("session_id")):
+    #
+    # The key includes `source`, and that is load-bearing. SessionStart fires
+    # once per SOURCE EVENT -- startup, clear, compact, resume, fork -- not once
+    # per session. Keying on session_id alone means the brief prints at startup
+    # and stays silent after every later /clear and /compact, which is exactly
+    # when a fresh session most needs its state. Including source is safe
+    # whichever way session_id behaves: if it changes across /clear the key is
+    # unique anyway; if it does not, source disambiguates.
+    session = payload.get("session_id")
+    source = payload.get("source") or "unknown"
+    if not hook_once.claim(root, "pm-brief", f"{session}-{source}" if session
+                           else None):
         return 0
 
     # A Windows console often runs an OEM codepage (cp437/cp850) that cannot

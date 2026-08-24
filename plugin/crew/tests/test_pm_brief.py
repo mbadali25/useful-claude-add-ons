@@ -111,6 +111,46 @@ def test_second_call_in_one_session_prints_nothing(tmp_path, monkeypatch, capsys
     assert _run(root, "sess-abc", monkeypatch, capsys) == ""
 
 
+def test_the_brief_prints_again_after_a_clear(tmp_path, monkeypatch, capsys):
+    """SessionStart fires once per SOURCE, not once per session.
+
+    Keying the claim on session_id alone made the brief print at startup and
+    stay silent after every later /clear and /compact -- exactly when a fresh
+    session most needs its state.
+    """
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"schema": 2, "tier": 0, "roles": [],
+                          "tracker": "files"}, graph=True
+    )
+    seen = []
+    for source in ("startup", "clear", "compact", "resume", "fork"):
+        payload = json.dumps({"source": source, "cwd": str(root),
+                              "session_id": "one-session"})
+        monkeypatch.setattr("sys.stdin", io.StringIO(payload))
+        assert pm_brief.main([]) == 0
+        seen.append(bool(capsys.readouterr().out.strip()))
+    assert all(seen), f"silent on: {seen}"
+
+
+def test_the_same_source_twice_in_one_session_prints_once(tmp_path, monkeypatch,
+                                                          capsys):
+    # The double-fire case still has to hold: both wrappers fire one event.
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"schema": 2, "tier": 0, "roles": [],
+                          "tracker": "files"}, graph=True
+    )
+    payload = json.dumps({"source": "clear", "cwd": str(root),
+                          "session_id": "one-session"})
+    monkeypatch.setattr("sys.stdin", io.StringIO(payload))
+    pm_brief.main([])
+    first = capsys.readouterr().out
+    monkeypatch.setattr("sys.stdin", io.StringIO(payload))
+    pm_brief.main([])
+    second = capsys.readouterr().out
+    assert first.strip()
+    assert second == ""
+
+
 def test_a_new_session_prints_again(tmp_path, monkeypatch, capsys):
     # A permanent marker would be worse than a double-print: the brief would
     # appear once per repo, ever.
