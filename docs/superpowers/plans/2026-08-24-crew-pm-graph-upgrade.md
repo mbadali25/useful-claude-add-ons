@@ -491,6 +491,23 @@ def test_a_leading_status_word_does_mark_it_finished(tmp_path):
     assert crew_state.read_work(str(root))["ticket"] == "T-0002"
 
 
+def test_capitalised_status_keywords_are_recognised(tmp_path):
+    """re.IGNORECASE is load-bearing; dropping it once already shipped a bug.
+
+    A status keyword is written however the author felt at the time. If this
+    test fails, someone removed the flag and finished tickets are being read
+    as open.
+    """
+    for marker in ("DONE:", "Done:", "Shipped:", "CLOSED:", "Merged:"):
+        root = crew_fixtures.make_repo(tmp_path / marker.strip(":"))
+        lines = ["# Work", "", f"- {marker} T-0001", "- T-0002 in progress", ""]
+        (root / ".work" / "INDEX.md").write_text(
+            chr(10).join(lines), encoding="utf-8"
+        )
+        got = crew_state.read_work(str(root))["ticket"]
+        assert got == "T-0002", f"{marker} was not treated as a done marker"
+
+
 def test_a_leading_status_word_without_a_colon_is_still_open(tmp_path):
     """The three shapes that defeated the position-anchored version.
 
@@ -572,10 +589,17 @@ _TICKET_RE = re.compile(r"([A-Z][A-Z0-9]*-\d+)")
 # What actually discriminates is syntactic form -- a checkbox, a strikethrough,
 # or a keyword followed by a COLON. The colon is what turns "done" into a label
 # rather than an instruction. Bullet forms cover -, *, + and numbered lists
-# (1. / 1)), because `1. [x] T-1` is a finished ticket too.
+# (1. / 1)), because `1. [x] T-1` is a finished ticket too.#
+# re.IGNORECASE is load-bearing and has been dropped once already. `- DONE: T-1`
+# and `- Shipped: T-3` are ordinary ways to write a status, and hand-patching
+# only the checkbox branch to [xX] leaves the keyword branch lowercase-only --
+# which is exactly the regression that shipped. The test
+# test_capitalised_status_keywords_are_recognised exists so removing the flag
+# fails loudly rather than silently reading finished tickets as open.
 _DONE_RE = re.compile(
     r"^\s*(?:[-*+]|\d+[.)])?\s*"
-    r"(?:\[[xX]\]|~~|(?:done|closed|merged|shipped|complete[d]?)\s*:)"
+    r"(?:\[x\]|~~|(?:done|closed|merged|shipped|complete[d]?)\s*:)",
+    re.IGNORECASE,
 )
 
 
