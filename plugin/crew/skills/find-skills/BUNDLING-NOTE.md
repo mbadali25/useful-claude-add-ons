@@ -14,20 +14,28 @@ Installing it separately (`npx skills add -g`) keeps it updatable and lets you
 disable it without touching crew. Vendoring is the right call only if you need
 it to travel with the plugin to machines that will not run the skills CLI.
 
-## The trigger-breadth problem
+## The trigger-breadth problem (narrowed)
 
-The upstream description fires on *"asks how do I do X"*, which is close to
-"any question." In a crew session that competes with `crew-setup`,
-`crew-verification`, and the rest for ordinary requests, and skill selection gets
-noticeably worse as more broadly-scoped skills load.
+The upstream description fired on *"asks how do I do X"*, which is close to
+"any question." In a crew session that competed with `crew-setup`,
+`crew-verification`, and the rest for ordinary requests, and skill selection got
+noticeably worse as more broadly-scoped skills loaded.
 
-If crew's own skills stop firing reliably, this is the first thing to test —
-disable it for one session and see whether the problem goes away.
+Original upstream description, kept here for comparison:
 
-To narrow it without touching the body, replace the `description:` line with:
+```
+description: Helps users discover and install agent skills when they ask questions like "how do I do X", "find a skill for X", "is there a skill that can...", or express interest in extending capabilities. This skill should be used when the user is looking for functionality that might exist as an installable skill.
+```
+
+The `description:` line in `SKILL.md` has been replaced with the narrowed
+version below. Only that one line changed; the rest of the body is still
+upstream's, untouched. Do not apply this narrowing again — it is already in
+place.
 
 ```
 description: Discover and install agent skills from the open skills ecosystem via the skills CLI. Use only when the user explicitly asks to find, search for, browse, or install a skill or plugin - not for general "how do I" questions, which should be answered directly.
 ```
 
-That keeps the capability and removes the collision.
+The two other copies of this skill (the global `~/.claude/skills/find-skills`
+install and a project-scoped copy) have been removed; this vendored copy under
+`plugin/crew/skills/find-skills/` is now the only one that ships with crew.
