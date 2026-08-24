@@ -153,7 +153,9 @@ def test_anchor_matching_head_is_not_behind(tmp_path):
     )
     got = crew_state.read_knowledge(str(root), {})
     assert got["subsystems"] == 1
-    assert got["behind"] == []
+    # not "not got['behind']": that also passes for None, which is not what
+    # this test checks.
+    assert got["behind"] == []  # pylint: disable=use-implicit-booleaness-not-comparison
 
 
 def test_anchor_behind_head_is_reported(tmp_path):
