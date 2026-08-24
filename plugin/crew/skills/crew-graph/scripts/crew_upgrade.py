@@ -68,6 +68,14 @@ def upgrade_config(cfg):
     out = dict(cfg)
     out["pm"] = _merged(PM_BLOCK, cfg.get("pm"))
     out["graph"] = _merged(GRAPH_BLOCK, cfg.get("graph"))
+    # _merged only recurses when the supplied side has a dict at this key --
+    # with no graph.obsidian supplied (the ordinary v1 case) out["graph"]
+    # ["obsidian"] IS the module-level GRAPH_BLOCK["obsidian"] object. Writing
+    # through it below would mutate that shared default for every future
+    # caller in the process, which is the same failure PM_BLOCK's identity-
+    # sharing is meant to prevent, one level down and inverted: here the
+    # returned config must NOT share the module's mutable default.
+    out["graph"]["obsidian"] = dict(out["graph"]["obsidian"])
     # obsidian.confirmed is a consent flag, not a setting. An upgrade must
     # never grant it -- only the user, in session, can.
     out["graph"]["obsidian"]["confirmed"] = (
@@ -121,7 +129,9 @@ def _report(status, head, results):
     ]
     conflicts = [c for r in results.values() for c in r["conflicts"]]
     lines.append("## Contradictions — kept in the map, verify by hand")
-    lines.extend(f"- {c}" for c in conflicts or ["- none"])
+    # Not `f"- {c}" for c in conflicts or [...]`: that prefixes the fallback
+    # too, rendering "- - none". Build the fallback as the finished line.
+    lines.extend((f"- {c}" for c in conflicts) if conflicts else ["- none"])
     lines.append("")
     lines.append("## Added by the graph")
     added = [f"- {name}: {len(r['added'])} new line(s)"

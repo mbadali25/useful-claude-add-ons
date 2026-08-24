@@ -184,6 +184,12 @@ def test_obsidian_confirmed_defaults_false_even_if_dir_is_set():
     assert got["graph"]["obsidian"]["confirmed"] is False
 
 
+def test_upgrade_config_does_not_alias_the_shared_graph_block():
+    got = crew_upgrade.upgrade_config({})
+    assert got["graph"]["obsidian"] is not crew_upgrade.GRAPH_BLOCK["obsidian"]
+    assert crew_upgrade.GRAPH_BLOCK["obsidian"]["confirmed"] is False
+
+
 def test_backup_is_taken_before_any_write(tmp_path):
     root = crew_fixtures.make_repo(tmp_path, config={"tier": 0},
                              codemap={"auth": V1_MAP})
@@ -223,6 +229,15 @@ def test_conflicts_land_in_the_report_not_in_the_map(tmp_path):
     assert "src/auth.py:10" in body   # the contradicted claim is KEPT
     assert "src/cron.py:1" in body    # the graph's fact is ADDED
     assert out["conflicts"]
+
+
+def test_report_does_not_double_prefix_the_no_conflicts_line(tmp_path):
+    root = crew_fixtures.make_repo(tmp_path, config={"tier": 0},
+                             codemap={"auth": V1_MAP})
+    crew_upgrade.run(str(root), {})
+    report = (root / ".crew" / "codemap" / "UPGRADE.md").read_text(encoding="utf-8")
+    assert "- - none" not in report
+    assert "- none" in report
 
 
 def test_anchor_is_bumped_only_on_a_touched_file(tmp_path):
