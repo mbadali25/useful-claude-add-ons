@@ -2840,6 +2840,51 @@ def test_untouched_sections_are_not_in_touched():
     assert "Calls out to" not in out["touched"]
 
 
+def test_a_heading_the_map_never_had_is_created_not_dropped():
+    """The silent-loss case.
+
+    A v1 note written before anyone recorded owned tables is exactly the note
+    most likely to lack the heading, and exactly the one the graph has most to
+    add to. Dropping those facts without a word is the worst shape a gap can
+    take in an upgrade tool.
+    """
+    note = "# a\n\n## Does\nthing\n\n## Landmines\n- keep me\n"
+    out = graph_reconcile.reconcile(
+        note, {"Owns data": ["- users via `src/db.py:4`"]}
+    )
+    assert "users via" in out["body"]
+    assert out["added"]
+    assert "Owns data" in out["touched"]
+    assert "- keep me" in out["body"]
+
+
+def test_creating_a_heading_is_idempotent():
+    note = "# a\n\n## Does\nthing\n"
+    derived = {"Owns data": ["- users via `src/db.py:4`"]}
+    once = graph_reconcile.reconcile(note, derived)
+    twice = graph_reconcile.reconcile(once["body"], derived)
+    assert twice["added"] == []
+    assert twice["body"] == once["body"]
+
+
+def test_an_empty_derived_list_does_not_create_an_empty_heading():
+    note = "# a\n\n## Does\nthing\n"
+    out = graph_reconcile.reconcile(note, {"Owns data": []})
+    assert "Owns data" not in out["body"]
+    assert out["touched"] == []
+
+
+def test_conflict_strings_are_ascii():
+    # /crew:upgrade reports these, and a cp437 console cannot encode an em-dash.
+    note = "# a\n\n## Entry points\n- `src/auth.py:10` - router\n"
+    out = graph_reconcile.reconcile(
+        note, {"Entry points": ["- `src/cron.py:1` - cron"]}
+    )
+    assert out["conflicts"]
+    for line in out["conflicts"]:
+        line.encode("ascii")
+
+
 def test_reconcile_is_idempotent():
     derived = {"Entry points": ["- `src/cli.py:7` — called by the CLI"]}
     once = graph_reconcile.reconcile(V1_MAP, derived)
@@ -2927,9 +2972,20 @@ def reconcile(text, derived):
     conflicts, added, touched = [], [], []
 
     for heading, new_lines in derived.items():
-        if heading in KEEP or heading not in sections:
+        if heading in KEEP or heading not in DERIVE:
             continue
-        if heading not in DERIVE:
+
+        if heading not in sections:
+            # The map never had this heading. Without this branch the graph's
+            # facts for it are dropped in silence -- not wrong, absent, which is
+            # the worse failure for an upgrade tool. A v1 note written before
+            # anyone thought to record owned tables is precisely the note most
+            # likely to lack the heading and most in need of the content.
+            if not new_lines:
+                continue
+            sections[heading] = [""] + list(new_lines) + [""]
+            added.extend(new_lines)
+            touched.append(heading)
             continue
 
         existing = sections[heading]
@@ -2954,9 +3010,12 @@ def reconcile(text, derived):
         # A conflict is a whole FILE the map claims and the graph does not
         # know about -- not a line that moved.
         for path in sorted(have - want):
+            # ASCII on purpose: /crew:upgrade reports conflicts, and a console
+            # on a Windows OEM codepage cannot encode an em-dash -- the same
+            # crash already fixed once in pm_brief.
             conflicts.append(
                 f"{heading}: `{path}` is in the map but not in the graph "
-                f"— kept, verify by hand"
+                f"- kept, verify by hand"
             )
 
     out = []
