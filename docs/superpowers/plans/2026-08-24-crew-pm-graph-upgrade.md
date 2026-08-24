@@ -466,6 +466,31 @@ def test_work_skips_finished_tickets_above_the_open_one(tmp_path):
     assert crew_state.read_work(str(root))["ticket"] == "T-0003"
 
 
+def test_a_done_word_in_the_description_does_not_mark_it_finished(tmp_path):
+    """A status marker is positional, not lexical. `merged` inside a
+    description is what the work is about, not whether it is over.
+    """
+    root = helpers.make_repo(tmp_path)
+    (root / ".work" / "INDEX.md").write_text(
+        "# Work\n\n"
+        "- [x] T-0001 — done\n"
+        "- T-0002 — clean up after the merged branch\n",
+        encoding="utf-8",
+    )
+    assert crew_state.read_work(str(root))["ticket"] == "T-0002"
+
+
+def test_a_leading_status_word_does_mark_it_finished(tmp_path):
+    root = helpers.make_repo(tmp_path)
+    (root / ".work" / "INDEX.md").write_text(
+        "# Work\n\n"
+        "- done: T-0001 shipped last week\n"
+        "- T-0002 — in progress\n",
+        encoding="utf-8",
+    )
+    assert crew_state.read_work(str(root))["ticket"] == "T-0002"
+
+
 def test_work_with_every_ticket_done_reports_none(tmp_path):
     # "no ticket open" is true; naming a closed ticket is not.
     root = helpers.make_repo(tmp_path)
@@ -506,10 +531,13 @@ METRICS_WINDOW = 10
 
 _TICKET_RE = re.compile(r"([A-Z][A-Z0-9]*-\d+)")
 
-# Markers that mean a ticket line is finished. `[x]` is the markdown checkbox
-# form; the words cover how these files actually get written by hand.
+# Markers that mean a ticket line is finished, matched only at the START of the
+# line (after any list bullet). Scanning the whole line for words like "done"
+# or "merged" reads a description as a status: `- T-3 — clean up after the
+# merged branch` is open work, and skipping it would report "no ticket open"
+# while one is -- the same class of bug as taking the first match.
 _DONE_RE = re.compile(
-    r"(\[x\]|~~|\bdone\b|\bclosed\b|\bmerged\b|\bshipped\b|\bcomplete)",
+    r"^[-*\s]*(\[x\]|~~|(done|closed|merged|shipped|complete\w*)\b[:\s-])",
     re.IGNORECASE,
 )
 
@@ -1123,11 +1151,16 @@ git commit -m "feat(crew): evaluate PM attention triggers and expose full state"
 - Test: `plugin/crew/tests/test_pm_brief.py`
 
 **Interfaces:**
-- Consumes: `crew_state.collect` (Task 4).
+- Consumes: `crew_state.collect` (Task 4), `hook_once.claim`.
+
+**Ordering:** `hook_once.py` is listed under Task 7 because that is where the
+hook wiring it serves is explained, but this task's tests import it. **Do Task 7
+Step 1 first**, then return here. Do not stub `claim` — a stub that returns
+`True` makes every double-fire test pass while the bug ships.
 - Produces:
   - `render(state: dict) -> list[str]` — the brief's lines, no trailing newline
   - `main(argv: list[str] | None = None) -> int` — reads the hook's JSON payload
-    from stdin, prints, returns 0
+    from stdin, claims the session, prints, returns 0
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1222,6 +1255,47 @@ def test_main_on_a_plain_directory_prints_nothing(tmp_path, monkeypatch, capsys)
     monkeypatch.setattr("sys.stdin", io.StringIO(payload))
     assert pm_brief.main([]) == 0
     assert capsys.readouterr().out == ""
+
+
+def _run(root, session, monkeypatch, capsys):
+    payload = json.dumps({"source": "startup", "cwd": str(root),
+                          "session_id": session})
+    monkeypatch.setattr("sys.stdin", io.StringIO(payload))
+    assert pm_brief.main([]) == 0
+    return capsys.readouterr().out
+
+
+def test_second_call_in_one_session_prints_nothing(tmp_path, monkeypatch, capsys):
+    """The double-fire case. Both the .sh and .ps1 wrapper call this module in
+    the same session, because SessionStart has no matcher to pick one.
+    """
+    root = helpers.make_repo(
+        tmp_path, config={"schema": 2, "tier": 0, "roles": [],
+                          "tracker": "files"}, graph=True
+    )
+    assert "## crew" in _run(root, "sess-abc", monkeypatch, capsys)
+    assert _run(root, "sess-abc", monkeypatch, capsys) == ""
+
+
+def test_a_new_session_prints_again(tmp_path, monkeypatch, capsys):
+    # A permanent marker would be worse than a double-print: the brief would
+    # appear once per repo, ever.
+    root = helpers.make_repo(
+        tmp_path, config={"schema": 2, "tier": 0, "roles": [],
+                          "tracker": "files"}, graph=True
+    )
+    assert "## crew" in _run(root, "sess-abc", monkeypatch, capsys)
+    assert "## crew" in _run(root, "sess-xyz", monkeypatch, capsys)
+
+
+def test_no_session_id_still_prints(tmp_path, monkeypatch, capsys):
+    # Without an id there is nothing to scope a claim to. Printing twice is
+    # bad; never printing is worse.
+    root = helpers.make_repo(
+        tmp_path, config={"schema": 2, "tier": 0, "roles": [],
+                          "tracker": "files"}, graph=True
+    )
+    assert "## crew" in _run(root, None, monkeypatch, capsys)
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -1242,9 +1316,11 @@ hooks/scripts/handoff-read.sh for the same reasoning.
 """
 
 import json
+import os
 import sys
 
 import crew_state
+import hook_once
 
 
 def _crew_line(state):
@@ -1325,9 +1401,16 @@ def main(argv=None):
     if not isinstance(payload, dict):
         payload = {}
 
-    root = payload.get("cwd") or crew_state.os.environ.get(
+    root = payload.get("cwd") or os.environ.get(
         "CLAUDE_PROJECT_DIR"
-    ) or crew_state.os.getcwd()
+    ) or os.getcwd()
+
+    # Both the .sh and .ps1 wrapper call this module, and SessionStart has no
+    # matcher to pick one -- so whichever arrives second must print nothing.
+    # Claiming here rather than in the wrappers means one implementation
+    # instead of two, and no shell-specific platform guessing.
+    if not hook_once.claim(root, "pm-brief", payload.get("session_id")):
+        return 0
 
     try:
         lines = render(crew_state.collect(root))
@@ -1573,14 +1656,123 @@ a 600-second gate — runs twice per Stop.
 So the three unwired `.ps1` files are not an oversight; they are the unresolved
 half of this problem. Wiring them naively is a regression, not a fix.
 
-**The fix is a guard inside each `.ps1`, not a change to `hooks.json`.** Every
-matcher-less PowerShell hook exits early when a POSIX bash is reachable, so bash
-wins where both exist and the `.ps1` still covers the case it exists for —
-Windows with no POSIX layer, where the `.sh` is silently inert. `guard.ps1` is
-**excluded**: `PreToolUse` discriminates by tool name, so both entries there are
-correct and adding the guard would disable PowerShell command inspection.
+**The fix is a first-one-wins claim, not PATH sniffing.** The obvious guard —
+"exit if a POSIX bash is reachable" — is unsound on the only platform it
+matters. Measured on the target machine:
 
-- [ ] **Step 1: Write `pm-brief.sh`**
+```
+PS> Get-Command bash -All | % Source
+C:\WINDOWS\system32\bash.exe                      <- the WSL launcher
+C:\Users\...\AppData\Local\Microsoft\WindowsApps\bash.exe
+```
+
+Git Bash's `bash` is not on PowerShell's PATH at all, so `Get-Command bash`
+finds the WSL stub. A `.ps1` that defers to it steps aside for an interpreter
+that cannot resolve a `C:\...` plugin path — and if the `hooks.json` bash entry
+also fails, **neither** runs. For `verify-gate` that means an inert gate on
+exactly the machine the `.ps1` was added to cover, reading as "the gate passed".
+
+So both flavours run and **race for a per-session claim** instead. The claim is
+atomic (`O_CREAT|O_EXCL`), keyed on the session id from the hook payload, and
+implemented once in `hook_once.py` — called by both flavours so there is no
+shell-specific logic to get wrong and one thing to test.
+
+`guard.ps1` is **excluded** from the claim: `PreToolUse` discriminates by tool
+name, so both its entries are correct, and a claim there would make the first
+tool call of a session suppress inspection of the other tool's commands.
+
+- [ ] **Step 1: Write `hook_once.py`**
+
+The shared claim. Both flavours of every matcher-less hook call it; the loser
+exits without doing its work.
+
+```python
+"""Grants one caller per session the right to run a hook.
+
+Both the .sh and .ps1 flavour of every matcher-less hook are registered, so
+both fire wherever both interpreters exist. Deciding by interpreter does not
+work: on Windows `bash` on PATH is usually C:\\Windows\\System32\\bash.exe, the
+WSL launcher, which cannot resolve the plugin's own path -- so a .ps1 that
+steps aside for "a bash" can step aside for one that then fails, leaving the
+hook unrun.
+
+A claim decides by arrival instead, which needs no knowledge of the platform.
+The winner is whichever process creates the marker first; O_CREAT|O_EXCL makes
+that atomic, so a tie cannot produce two winners.
+
+Usage:  python3 hook_once.py <hook-name> <session-id>
+Exit 0  you won the claim -- do the work.
+Exit 1  someone else already has it -- exit quietly.
+"""
+
+import os
+import sys
+import time
+
+# Markers older than this are from dead sessions. Generous on purpose: the cost
+# of a stale marker is one skipped hook, the cost of pruning too eagerly is a
+# double-fire.
+_STALE_SECONDS = 24 * 60 * 60
+
+
+def _prune(dirpath):
+    """Drop markers from sessions that are long gone."""
+    cutoff = time.time() - _STALE_SECONDS
+    try:
+        names = os.listdir(dirpath)
+    except OSError:
+        return
+    for name in names:
+        if not name.startswith(".hook-"):
+            continue
+        path = os.path.join(dirpath, name)
+        try:
+            if os.path.getmtime(path) < cutoff:
+                os.unlink(path)
+        except OSError:
+            pass
+
+
+def claim(root, hook, session):
+    """True if this process may run `hook` for `session`.
+
+    Returns True when there is nowhere to put a marker -- a repo with no
+    .crew/ is not a crew repo, and the caller will no-op on its own. Failing
+    open here keeps the decision in one place.
+    """
+    if not session:
+        # No session id means no way to scope the claim. Running twice is bad;
+        # never running is worse, so let it through.
+        return True
+    dirpath = os.path.join(root, ".crew")
+    if not os.path.isdir(dirpath):
+        return True
+    _prune(dirpath)
+    marker = os.path.join(dirpath, f".hook-{hook}-{session}")
+    try:
+        fd = os.open(marker, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    except FileExistsError:
+        return False
+    except OSError:
+        return True
+    os.close(fd)
+    return True
+
+
+def main(argv=None):
+    args = list(sys.argv[1:] if argv is None else argv)
+    if len(args) < 2:
+        return 0
+    hook, session = args[0], args[1]
+    root = os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
+    return 0 if claim(root, hook, session) else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+```
+
+- [ ] **Step 2: Write `pm-brief.sh`**
 
 ```bash
 #!/usr/bin/env bash
@@ -1590,14 +1782,15 @@ correct and adding the guard would disable PowerShell command inspection.
 # `startup` too, which is the whole point: before this hook existed, crew said
 # nothing at all when you opened a fresh session.
 #
-# Thin wrapper on purpose. The logic lives in pm_brief.py so that the bash and
-# PowerShell paths cannot drift.
+# Thin wrapper on purpose. The logic lives in pm_brief.py so the bash and
+# PowerShell paths cannot drift, and the once-per-session claim lives in
+# pm_brief.py too so both flavours share one implementation of it.
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PY=$(command -v python3 || command -v python) || exit 0
 exec "$PY" "$DIR/pm_brief.py"
 ```
 
-- [ ] **Step 2: Write `pm-brief.ps1`**
+- [ ] **Step 3: Write `pm-brief.ps1`**
 
 ```powershell
 # SessionStart hook. Prints the crew PM's brief; stdout is injected as context.
@@ -1605,12 +1798,12 @@ exec "$PY" "$DIR/pm_brief.py"
 # drift from the other.
 $ErrorActionPreference = 'SilentlyContinue'
 
-# SessionStart has no matcher, so BOTH this and pm-brief.sh are registered and
-# both fire wherever both interpreters exist -- printing the brief twice. bash
-# wins when it is reachable; this script covers the case it exists for, which is
-# Windows with no POSIX layer, where the .sh is silently inert.
-if (Get-Command bash -ErrorAction SilentlyContinue) { exit 0 }
-
+# No platform check here on purpose. SessionStart has no matcher, so this and
+# pm-brief.sh both fire wherever both interpreters exist -- but deciding by
+# interpreter is unsound (on Windows, `bash` on PATH is normally the WSL
+# launcher, which cannot resolve this script's own directory). pm_brief.py
+# claims the session once and the loser prints nothing, so it does not matter
+# which of us arrives first or how many of us there are.
 $dir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $py = (Get-Command python3, python -ErrorAction SilentlyContinue |
        Select-Object -First 1).Source
@@ -1619,26 +1812,42 @@ if (-not $py) { exit 0 }
 exit 0
 ```
 
-- [ ] **Step 3: Add the same guard to the three existing `.ps1` hooks**
+- [ ] **Step 4: Add the claim to the three existing `.ps1` hooks and their `.sh` twins**
 
-`handoff-read.ps1`, `verify-gate.ps1`, and `context-watch.ps1` each get the
-identical four-line guard, with the identical comment. They are about to be
-wired for the first time, and without it wiring them is a regression:
+`handoff-read`, `verify-gate`, and `context-watch` are about to be wired in both
+flavours for the first time. Without a claim that is a regression:
 double-printed handoffs, a doubled `context-watch` marker, and a 600-second
 verify gate running twice per Stop.
 
-**Do not add it to `guard.ps1`.** `PreToolUse` discriminates by tool name, so
-its two entries are both correct — the guard would disable PowerShell command
-inspection entirely.
+Each script gains a claim call near the top, **before** it does any work. Bash:
 
-- [ ] **Step 4: Write `handoff-write.ps1` and `notify.ps1`**
+```bash
+SESSION=$(read_json session_id)
+"$PY" "$DIR/hook_once.py" verify-gate "$SESSION" || exit 0
+```
 
-Port `handoff-write.sh` and `notify.sh` line for line, each opening with the
-same guard. Read each `.sh` first and mirror its behaviour exactly — same paths,
-same config keys, same exit codes. Do not improve them in this task; a port that
-also changes behaviour cannot be reviewed against its original.
+PowerShell, with the same hook name so the two race for the same marker:
 
-- [ ] **Step 5: Rewrite `hooks.json`**
+```powershell
+& $py (Join-Path $dir 'hook_once.py') 'verify-gate' $session
+if ($LASTEXITCODE -ne 0) { exit 0 }
+```
+
+The hook name string must be **identical** between the pair, or they claim
+different markers and both run — which is the bug, silently unfixed.
+
+**Do not add a claim to `guard.sh` / `guard.ps1`.** `PreToolUse` discriminates
+by tool name, so both entries are correct; a per-session claim there would make
+the first tool call suppress inspection of every later one.
+
+- [ ] **Step 5: Write `handoff-write.ps1` and `notify.ps1`**
+
+Port `handoff-write.sh` and `notify.sh` line for line, each with the claim call.
+Read each `.sh` first and mirror its behaviour exactly — same paths, same config
+keys, same exit codes. Do not improve them in this task; a port that also
+changes behaviour cannot be reviewed against its original.
+
+- [ ] **Step 6: Rewrite `hooks.json`**
 
 ```json
 {
@@ -1673,7 +1882,7 @@ also changes behaviour cannot be reviewed against its original.
 }
 ```
 
-- [ ] **Step 6: Verify — every referenced script exists, every script is referenced**
+- [ ] **Step 7: Verify — every referenced script exists, every script is referenced**
 
 ```bash
 python - <<'PY'
@@ -1690,7 +1899,7 @@ PY
 Expected: both lists empty. A non-empty second list is the dead-code condition
 `CLAUDE.md` prohibits.
 
-- [ ] **Step 7: Verify `hooks.json` is valid JSON, and that every matcher-less PowerShell hook carries the guard**
+- [ ] **Step 8: Verify `hooks.json` is valid JSON, and that every matcher-less PowerShell hook carries the guard**
 
 ```bash
 python - <<'PY'
@@ -1708,23 +1917,37 @@ for event, entries in spec.items():
         if entry.get("matcher"):
             continue
         for hook in entry.get("hooks", []):
-            for name in re.findall(r"hooks/scripts/([A-Za-z0-9_.-]+\.ps1)",
+            for name in re.findall(r"hooks/scripts/([A-Za-z0-9_.-]+\.(?:sh|ps1))",
                                    hook.get("command", "")):
                 needs.add(name)
 
-missing = []
+# Every script on a matcher-less event must claim, and the two flavours of one
+# hook must claim the SAME name -- a typo there means both run and the bug
+# survives silently.
+claims, missing = {}, []
 for name in sorted(needs):
     body = open(f"{root}/scripts/{name}", encoding="utf-8").read()
-    if "Get-Command bash" not in body:
+    found = re.search(r"hook_once(?:\.py)?['\"]?[\s)]*['\"]?([a-z-]+)", body)
+    if "hook_once" not in body:
         missing.append(name)
-print("matcher-less .ps1 hooks:", sorted(needs))
-print("MISSING the double-fire guard:", missing)
+    else:
+        claims.setdefault(name.rsplit(".", 1)[0], set()).add(
+            found.group(1) if found else "<unparsed>"
+        )
+
+print("matcher-less hook scripts:", sorted(needs))
+print("MISSING a claim:", missing)
+mismatched = {k: v for k, v in claims.items() if len(v) > 1}
+print("MISMATCHED claim names:", mismatched)
 assert not missing, missing
+assert not mismatched, mismatched
 PY
 ```
-Expected: `MISSING the double-fire guard: []`
+Expected: both `MISSING a claim: []` and `MISMATCHED claim names: {}`. Note this
+checks `.sh` files too — the claim is symmetric, and a claim on only one side
+does nothing.
 
-- [ ] **Step 8: Verify the composed hook set fires each hook exactly once**
+- [ ] **Step 9: Verify the composed hook set fires each hook exactly once**
 
 This is the check that the per-script tests cannot make. Running `pm-brief.sh`
 and `pm-brief.ps1` separately and diffing them proves they agree; it says
@@ -1737,20 +1960,54 @@ git init -q && git config user.email t@e.invalid && git config user.name T
 echo x > f.txt && git add . && git commit -qm init
 printf '{"schema":2,"tier":0,"roles":[],"tracker":"files"}' > .crew/config.json
 
-# Simulate what Claude Code does: run every registered SessionStart entry.
-printf '{"source":"startup","cwd":"%s"}' "$FIX" | bash <plugin>/hooks/scripts/pm-brief.sh  >  out.txt
-printf '{"source":"startup","cwd":"%s"}' "$FIX" | pwsh -NoProfile -File <plugin>/hooks/scripts/pm-brief.ps1 >> out.txt
+# The SAME session_id in both payloads -- that is what the claim keys on, and
+# what Claude Code sends to every hook of one session.
+P=$(printf '{"source":"startup","cwd":"%s","session_id":"sess-abc"}' "$FIX")
+printf '%s' "$P" | bash <plugin>/hooks/scripts/pm-brief.sh              >  out.txt
+printf '%s' "$P" | pwsh -NoProfile -File <plugin>/hooks/scripts/pm-brief.ps1 >> out.txt
 grep -c '^## crew' out.txt
 ```
-Expected: **`1`**. A `2` means the guard is not working and the brief will print
-twice on every session — which is the defect this step exists to catch.
+Expected: **`1`**, in whichever order they ran. A `2` means the claim is not
+working and the brief prints twice on every session.
 
-Repeat for `verify-gate` (both entries, one Stop payload) and `context-watch`,
-confirming a single `.crew/.handoff-requested` write rather than two.
+Then confirm the claim is scoped to the session rather than permanent — a new
+session must print again:
 
-- [ ] **Step 9: Codex review**
+```bash
+printf '{"source":"startup","cwd":"%s","session_id":"sess-xyz"}' "$FIX" \
+  | bash <plugin>/hooks/scripts/pm-brief.sh | grep -c '^## crew'
+```
+Expected: **`1`**. A `0` means the marker is not session-scoped and the brief
+would print once per repo, ever — which is worse than double-printing.
 
-- [ ] **Step 10: Commit**
+Repeat both checks for `verify-gate` (one Stop payload through both entries;
+the gate must run once) and `context-watch` (a single `.crew/.handoff-requested`
+write, not two).
+
+- [ ] **Step 10: Measure what a missing interpreter costs**
+
+`hooks.json` now invokes `pwsh` on five events instead of one. On Linux with no
+`pwsh` that is five commands per session pointing at an absent interpreter.
+`guard.ps1` already had this exposure under `PreToolUse`, so it is not new — but
+it has been multiplied by five, and the question is whether it is silent.
+
+```bash
+# A deliberately absent interpreter, shaped like the real entries.
+printf '{"source":"startup","cwd":"%s","session_id":"s1"}' "$PWD" \
+  | pwsh-does-not-exist -NoProfile -File /nonexistent.ps1; echo "exit=$?"
+```
+Then enable the plugin in a session on a machine without `pwsh` (or temporarily
+rename it) and look at what the user sees.
+
+- **Silent skip** — fine. Note it and move on.
+- **Visible error text** — this plugin just became noisy on every non-Windows
+  install. That is a shipped-behaviour change and belongs in `PLUGINS.md` under
+  "what starts running the moment it is enabled" (Task 18 Step 2), not
+  discovered by whoever installs it first.
+
+- [ ] **Step 11: Codex review**
+
+- [ ] **Step 12: Commit**
 
 ```bash
 git add plugin/crew/hooks/
@@ -2656,6 +2913,23 @@ Required content:
   while it knows nothing about the pulled code. A build that skips this step
   leaves the graph permanently reported as stale — which is the safe direction,
   but means the PM nags forever.
+- **The commit-hook timing trap.** If `graphify hook install` installs a
+  **pre-commit** hook, `git rev-parse HEAD` inside it returns the *parent*
+  commit. The sidecar then records the sha before the commit being made, HEAD
+  advances, and the graph reports `current: false` permanently — on a graph that
+  is perfectly fresh. The PM would fire `graphStale` every session in every repo
+  with the hook installed, and rebuilding would not clear it, making the nag
+  both constant and unactionable.
+
+  Task 13 Step 4 determines which hook graphify actually installs. Then:
+
+  - **post-commit** — stamp from it directly; nothing more to do.
+  - **pre-commit** — do **not** stamp from graphify's hook. Install a separate
+    `post-commit` hook that writes the sidecar, so the sha recorded is the
+    commit that exists.
+
+  Whichever branch applies, record it in this skill with the graphify version it
+  was observed on.
 - **Obsidian — the gate, stated as a refusal.** Two conditions, both required:
   `graph.obsidian.confirmed == true` in `.crew/config.json`, and a completed
   scratch-directory proof run. Absent either, **refuse and ask**. Default target
@@ -2688,7 +2962,28 @@ Expected: `graphify-out/graph.json` exists and the query answers with no API key
 set. If it demands a key for a code-only corpus, stop and report — the skill's
 central claim is wrong and the plan needs revisiting.
 
-- [ ] **Step 3: Confirm or correct the community key**
+- [ ] **Step 3: Determine graphify's commit-hook timing**
+
+```bash
+graphify hook install
+ls .git/hooks/ | grep -i commit
+for h in pre-commit post-commit; do
+  [ -f ".git/hooks/$h" ] && echo "--- $h ---" && sed -n '1,20p' ".git/hooks/$h"
+done
+```
+Then prove the consequence rather than reasoning about it:
+
+```bash
+git rev-parse --short=7 HEAD > graphify-out/.crew-graph-sha
+echo change >> probe.txt && git add probe.txt && git commit -qm probe
+echo "sidecar: $(cat graphify-out/.crew-graph-sha)"
+echo "HEAD:    $(git rev-parse --short=7 HEAD)"
+```
+If they differ after a commit that rebuilt the graph, graphify's hook is
+pre-commit and the sidecar must be written from a separate `post-commit` hook.
+Record which branch applies in `SKILL.md`, with the graphify version.
+
+- [ ] **Step 4: Confirm or correct the community key**
 
 ```bash
 python - <<'PY'
@@ -2701,9 +2996,9 @@ PY
 ```
 Write what you find into `SKILL.md`, replacing the caveat with the real key.
 
-- [ ] **Step 4: Codex review**
+- [ ] **Step 5: Codex review**
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add plugin/crew/skills/crew-graph/
