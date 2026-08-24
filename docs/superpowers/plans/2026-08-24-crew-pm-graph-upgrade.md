@@ -928,7 +928,13 @@ def _read_graph(root, cfg):
     sidecar means the graph was built outside crew, so its provenance is
     unknown -- and unknown resolves to stale, which is the honest direction.
     """
-    out = dict_or_empty(cfg.get("graph")).get("out") or GRAPH_OUT_DEFAULT
+    out = dict_or_empty(cfg.get("graph")).get("out")
+    # A well-shaped graph block can still carry a wrong-typed "out": dict_or_empty
+    # guards the BLOCK, not the value inside it, and os.path.join raises
+    # TypeError on a non-str. An empty string is rejected for the same reason it
+    # would be useless -- it resolves the graph to the repo root.
+    if not isinstance(out, str) or not out:
+        out = GRAPH_OUT_DEFAULT
     path = os.path.join(root, out, "graph.json")
     if not os.path.exists(path):
         return {"present": False, "current": False, "builtAt": None,
