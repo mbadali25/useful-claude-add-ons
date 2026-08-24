@@ -176,6 +176,29 @@ def test_upgrade_config_does_not_clobber_an_existing_pm_block():
     assert got["pm"]["mode"] == "adaptive"  # defaults still filled in
 
 
+def test_a_wrong_typed_block_does_not_crash_the_upgrade():
+    """The nested shape case none of the other guards reach.
+
+    /crew:upgrade runs against a real repository and run() writes the config
+    before reconciling the codemap, so a crash here is a migration that dies
+    partway, not merely a silent session.
+    """
+    for bad in ("yes", 1, ["a"], None, 0, True):
+        got = crew_upgrade.upgrade_config({"graph": {"obsidian": bad}})
+        assert got["graph"]["obsidian"]["confirmed"] is False, bad
+        assert got["graph"]["obsidian"]["enabled"] is False, bad
+
+
+def test_a_legitimate_nested_override_still_wins():
+    got = crew_upgrade.upgrade_config(
+        {"pm": {"quietLines": 3}, "graph": {"obsidian": {"dir": "/vault"}}}
+    )
+    assert got["pm"]["quietLines"] == 3
+    assert got["pm"]["mode"] == "adaptive"          # default still filled in
+    assert got["graph"]["obsidian"]["dir"] == "/vault"
+    assert got["graph"]["obsidian"]["confirmed"] is False
+
+
 def test_obsidian_confirmed_defaults_false_even_if_dir_is_set():
     got = crew_upgrade.upgrade_config(
         {"graph": {"obsidian": {"dir": "/somewhere"}}}

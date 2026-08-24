@@ -51,13 +51,23 @@ _ANCHOR_LINE_RE = re.compile(r"^(anchor:\s*\S*@?)([0-9a-f]{7,40})",
 
 
 def _merged(defaults, supplied):
-    """defaults, overlaid with anything already present. Recurses one level."""
+    """defaults, overlaid with anything already present. Recurses one level.
+
+    Where the default is a dict, a non-dict override is DISCARDED rather than
+    applied. The caller indexes into these blocks afterwards, so letting a
+    hand-edited `"obsidian": "yes"` replace the dict raises TypeError partway
+    through an upgrade -- and `run()` has already written the config by then.
+    A scalar where the schema wants a block is a mistake, and the default is
+    the honest fallback. A legitimate nested override still wins.
+    """
     out = dict(defaults)
     if not isinstance(supplied, dict):
         return out
     for key, value in supplied.items():
-        if isinstance(value, dict) and isinstance(out.get(key), dict):
-            out[key] = _merged(out[key], value)
+        if isinstance(out.get(key), dict):
+            if isinstance(value, dict):
+                out[key] = _merged(out[key], value)
+            # else: keep the default; see the docstring.
         else:
             out[key] = value
     return out
