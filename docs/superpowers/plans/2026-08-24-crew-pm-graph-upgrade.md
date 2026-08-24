@@ -1732,6 +1732,32 @@ def test_every_trigger_at_once_respects_max_lines():
     assert len(out) <= HEALTHY["pm"]["maxLines"]
 
 
+def test_truncation_never_orphans_a_finding_from_its_action():
+    """A finding whose action was cut names a problem and says nothing about it.
+
+    Every even cap used to do exactly that, because the cut fell between the
+    two lines of one pair.
+    """
+    state = dict(HEALTHY, schema=1,
+                 triggers=list(pm_brief.crew_state.TRIGGERS))
+    # From 2, the floor max(2, ...) enforces. Below that the requested cap
+    # is not the effective one, so comparing against it tests the harness.
+    for cap in range(2, 24):
+        out = pm_brief.render(dict(state, pm=dict(HEALTHY["pm"], maxLines=cap)))
+        assert len(out) <= cap, f"cap {cap} exceeded: {len(out)}"
+        findings = sum(1 for line in out if line.startswith("- "))
+        actions = sum(1 for line in out if line.strip().startswith("->"))
+        assert findings == actions, (
+            f"cap {cap}: {findings} findings but {actions} actions"
+        )
+
+
+def test_the_truncation_notice_is_ascii():
+    # The all-triggers case fits under the default cap, so the notice is never
+    # rendered there and the ascii sweep never sees it.
+    pm_brief._TRUNCATED.encode("ascii")  # pylint: disable=protected-access
+
+
 def test_truncation_points_at_the_pm_command():
     state = dict(HEALTHY, schema=1,
                  triggers=list(pm_brief.crew_state.TRIGGERS),
@@ -1827,23 +1853,41 @@ def render(state):
     if pm.get("mode") != "adaptive" or not triggers:
         return quiet[: max(1, int(pm.get("quietLines", 8)))]
 
-    lines = list(quiet) + [""]
+    # A finding and its action are one unit. Truncation cuts between units,
+    # never inside one: a finding whose action was dropped names a problem and
+    # says nothing about it, which is worse than omitting it entirely.
+    pairs = []
     for name in triggers:
         entry = FINDINGS.get(name)
         if not entry:
             continue
         finding, action = entry
-        lines.append(f"- {finding}")
-        lines.append(f"  -> {action}")
-    lines.append("")
-    lines.append(_AUTHORITY_NOTE)
+        pairs.append((f"- {finding}", f"  -> {action}"))
 
     cap = max(2, int(pm.get("maxLines", 40)))
-    if len(lines) <= cap:
-        return lines
-    # Truncate from the bottom: crew_state returns triggers in priority order,
-    # so what survives is the most actionable finding.
-    return lines[: cap - 1] + [_TRUNCATED]
+    tail = ["", _AUTHORITY_NOTE]
+    flat = [line for pair in pairs for line in pair]
+
+    if len(quiet) + len(flat) + len(tail) <= cap:
+        return list(quiet) + flat + tail
+
+    # No room for everything. Keep whole pairs, highest priority first --
+    # crew_state returns triggers in priority order -- and spend the last line
+    # on the pointer to the full report.
+    room = cap - len(quiet) - 1
+    if room < 2:
+        # Not even one finding fits. The cap wins over the content, including
+        # over the state summary: a brief that exceeds its own cap is not a
+        # capped brief.
+        if cap > len(quiet):
+            return list(quiet) + [_TRUNCATED]
+        return list(quiet)[:cap]
+    kept = pairs[: room // 2]
+    return (
+        list(quiet)
+        + [line for pair in kept for line in pair]
+        + [_TRUNCATED]
+    )
 ```
 
 - [ ] **Step 4: Run tests to verify they pass**
