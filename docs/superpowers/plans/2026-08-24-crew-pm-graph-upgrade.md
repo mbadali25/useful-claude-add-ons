@@ -927,7 +927,7 @@ def _read_graph(root, cfg):
     sidecar means the graph was built outside crew, so its provenance is
     unknown -- and unknown resolves to stale, which is the honest direction.
     """
-    out = (cfg.get("graph") or {}).get("out") or GRAPH_OUT_DEFAULT
+    out = dict_or_empty(cfg.get("graph")).get("out") or GRAPH_OUT_DEFAULT
     path = os.path.join(root, out, "graph.json")
     if not os.path.exists(path):
         return {"present": False, "current": False, "builtAt": None,
@@ -1002,6 +1002,7 @@ git commit -m "feat(crew): report codemap anchor drift and graph freshness"
   - `TRIGGERS: tuple[str, ...]` in priority order —
     `("upgradeNeeded", "handoffPending", "graphStale", "knowledgeBehind", "reviewNotWorking", "ticketsTooLarge")`
   - `int_or(value, default: int) -> int` — coerce an untrusted config
+  - `dict_or_empty(value) -> dict` — `{}` unless value is truly a dict
     value; rejects bools deliberately
   - `evaluate_triggers(state: dict) -> list[str]`
   - `collect(root: str) -> dict` — the whole state object, keys:
@@ -1104,6 +1105,28 @@ def test_a_hand_edited_schema_does_not_crash_collect(tmp_path):
         assert isinstance(got["triggers"], list), bad
 
 
+def test_a_hand_edited_graph_block_does_not_crash_collect(tmp_path):
+    """The same failure as the schema Critical, reached through shape.
+
+    `(cfg.get("graph") or {})` guards a missing or falsy value but passes a
+    wrong-typed truthy one through to .get(), which raises AttributeError on a
+    str/int/list -- and from a SessionStart hook that breaks every session.
+    """
+    for index, bad in enumerate(("oops", 123, ["a"], True, 3.5, {"out": 7})):
+        root = crew_fixtures.make_repo(
+            tmp_path / f"graph{index}", config={"schema": 2, "graph": bad}
+        )
+        got = crew_state.collect(str(root))
+        assert isinstance(got["knowledge"]["graph"], dict), bad
+        assert isinstance(got["triggers"], list), bad
+
+
+def test_dict_or_empty_rejects_non_dicts():
+    for value in ("s", 1, [], (), True, None, 0, 3.5, set()):
+        assert crew_state.dict_or_empty(value) == {}
+    assert crew_state.dict_or_empty({"a": 1}) == {"a": 1}
+
+
 def test_a_numeric_string_schema_is_read_as_a_number(tmp_path):
     root = crew_fixtures.make_repo(tmp_path, config={"schema": "2"})
     assert crew_state.collect(str(root))["schema"] == 2
@@ -1191,6 +1214,17 @@ PM_DEFAULTS = {
     "maxLines": 40,
     "authority": "report-only",
 }
+
+
+def dict_or_empty(value):
+    """`value` when it is genuinely a dict, else `{}`.
+
+    `(cfg.get(k) or {})` is the tempting idiom and it is wrong: it guards a
+    MISSING or falsy value but hands a wrong-typed truthy one straight through,
+    so `"graph": "oops"` reaches `.get()` on a str and raises AttributeError.
+    From a SessionStart hook that breaks every session opened in the repo.
+    """
+    return value if isinstance(value, dict) else {}
 
 
 def int_or(value, default):
@@ -2864,8 +2898,10 @@ def upgrade_config(cfg):
     out["graph"] = _merged(GRAPH_BLOCK, cfg.get("graph"))
     # obsidian.confirmed is a consent flag, not a setting. An upgrade must
     # never grant it -- only the user, in session, can.
-    out["graph"]["obsidian"]["confirmed"] = bool(
-        (cfg.get("graph") or {}).get("obsidian", {}).get("confirmed") is True
+    out["graph"]["obsidian"]["confirmed"] = (
+        crew_state.dict_or_empty(
+            crew_state.dict_or_empty(cfg.get("graph")).get("obsidian")
+        ).get("confirmed") is True
     )
     out["schema"] = crew_state.SCHEMA_CURRENT
     return out
