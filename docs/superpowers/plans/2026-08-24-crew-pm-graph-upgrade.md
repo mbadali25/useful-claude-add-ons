@@ -2572,10 +2572,17 @@ then confirm `verify.json` / `secrets.md` / `e2e/` exist) and onboarding a role
 every invocation — name the defect class it covers, and check `metrics.md`
 supports it first).
 
-`offboarding.md`: remove from `config.json.roles`; recompute `tier` from the
-tier table; append a dated line to `.crew/metrics.md` recording the removal and
-its reason; delete role-specific artifacts; and **name the failure mode now
-uncovered**. A role removed without naming what it was catching is a silent
+`offboarding.md`: **step zero, confirm the role is actually in
+`config.json.roles`** — if it is not, say so and stop, changing nothing.
+The check comes first rather than as an aside because every later step
+writes something: on a mistyped role name the procedure would append a real
+`offboarded <role>` row to `.crew/metrics.md` for a role that was never
+active, and `metrics.md` is what `/crew:scale` reads to decide whether the
+crew is catching anything.
+
+Then: remove it from `config.json.roles`; recompute `tier`; append a dated
+line to `.crew/metrics.md` recording the removal and its reason; delete
+role-specific artifacts; and **name the failure mode now uncovered**. A role removed without naming what it was catching is a silent
 coverage regression, which is the one outcome offboarding must not produce.
 
 - [ ] **Step 1: Write the three files** per the above.
