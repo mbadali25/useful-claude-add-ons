@@ -1497,7 +1497,7 @@ def _crew_line(state):
     tracker = state.get("tracker")
     if tracker:
         parts.append(f"tracker {tracker}")
-    return f"{parts[0]} — " + ", ".join(parts[1:])
+    return f"{parts[0]} - " + ", ".join(parts[1:])
 
 
 def _health_line(state):
@@ -1506,7 +1506,7 @@ def _health_line(state):
         return "health: no reviews recorded yet"
     return (
         f"health: {health['rate']} BLOCK+FIX per ticket "
-        f"over {health['tickets']} — {health['verdict']}"
+        f"over {health['tickets']} - {health['verdict']}"
     )
 
 
@@ -1577,14 +1577,27 @@ def main(argv=None):
     if not hook_once.claim(root, "pm-brief", payload.get("session_id")):
         return 0
 
+    # A Windows console often runs an OEM codepage (cp437/cp850) that cannot
+    # encode characters this module has no reason to emit. Measured: printing
+    # an em-dash under cp437 raises UnicodeEncodeError and the hook exits 1.
+    # Output is kept ASCII, and this is the second line of defence -- the next
+    # non-ASCII string someone adds degrades to '?' rather than taking out
+    # every session in the repo.
+    try:
+        sys.stdout.reconfigure(errors="replace")
+    except (AttributeError, ValueError, OSError):
+        pass
+
     try:
         lines = render(crew_state.collect(root))
+        if lines:
+            print("\n".join(lines))
     except Exception:  # pylint: disable=broad-except
         # A SessionStart hook that raises breaks every session opened in this
-        # repository. Silence is the only acceptable failure mode.
+        # repository. Silence is the only acceptable failure mode, and the
+        # print belongs inside the guard: encoding errors happen at write time,
+        # not at render time.
         return 0
-    if lines:
-        print("\n".join(lines))
     return 0
 
 
@@ -1631,6 +1644,25 @@ def _with(trigger, **over):
 def test_expanded_brief_names_the_finding_and_one_action():
     out = "\n".join(pm_brief.render(_with("upgradeNeeded", schema=1)))
     assert "/crew:upgrade" in out
+
+
+def test_the_brief_is_pure_ascii(tmp_path):
+    """A Windows console on an OEM codepage cannot encode what this module has
+    no reason to emit.
+
+    Measured: an em-dash under cp437 raises UnicodeEncodeError and the hook
+    exits 1, which breaks every session opened in that repo. Rendering is
+    checked here rather than at the print, so a non-ASCII string is caught the
+    moment someone adds it.
+    """
+    state = dict(HEALTHY, schema=1,
+                 triggers=list(pm_brief.crew_state.TRIGGERS))
+    for line in pm_brief.render(state) + pm_brief.render(HEALTHY):
+        line.encode("ascii")  # raises UnicodeEncodeError if it ever regresses
+
+    for finding, action in pm_brief.FINDINGS.values():
+        finding.encode("ascii")
+        action.encode("ascii")
 
 
 def test_each_trigger_has_a_finding_and_an_action():
@@ -1698,12 +1730,12 @@ Add to `pm_brief.py`, and replace `render`:
 FINDINGS = {
     "upgradeNeeded": (
         "this setup predates the PM and the code graph (config has no schema)",
-        "run /crew:upgrade — it backs up the codemap first and reports "
+        "run /crew:upgrade - it backs up the codemap first and reports "
         "conflicts rather than overwriting them",
     ),
     "handoffPending": (
         "a handoff note from a previous session is still in place",
-        "finish or delete it — a stale handoff is injected into every "
+        "finish or delete it - a stale handoff is injected into every "
         "session as though it were current",
     ),
     "graphStale": (
@@ -1719,7 +1751,7 @@ FINDINGS = {
         "review is finding almost nothing, which usually means it is broken "
         "rather than that the code is clean",
         "check that Codex is really running, the diff is not empty, and the "
-        "base branch is right — before adding any role",
+        "base branch is right - before adding any role",
     ),
     "ticketsTooLarge": (
         "findings per ticket are high enough that the tickets are probably "
@@ -1733,7 +1765,7 @@ _AUTHORITY_NOTE = (
     "delete anything without being asked."
 )
 
-_TRUNCATED = "More findings than fit here — run /crew:pm for the full report."
+_TRUNCATED = "More findings than fit here - run /crew:pm for the full report."
 
 
 def render(state):
@@ -2953,7 +2985,7 @@ def main(argv=None):
     out = run(args.root, derived, force=args.force)
     print(out["status"])
     if out["conflicts"]:
-        print(f"{len(out['conflicts'])} conflict(s) — see .crew/codemap/UPGRADE.md")
+        print(f"{len(out['conflicts'])} conflict(s) - see .crew/codemap/UPGRADE.md")
     return 0
 
 
