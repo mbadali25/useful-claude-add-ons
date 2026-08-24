@@ -123,6 +123,36 @@ def test_a_leading_status_word_does_mark_it_finished(tmp_path):
     assert crew_state.read_work(str(root))["ticket"] == "T-0002"
 
 
+def test_a_leading_status_word_without_a_colon_is_still_open(tmp_path):
+    """The three shapes that defeated the position-anchored version.
+
+    Each leads with a status word and is open work, so a rule based on
+    position reports "no ticket open" while a ticket is.
+    """
+    cases = (
+        ("- Complete the T-5 setup", "T-5"),
+        ("- Closed captions for T-7 need review", "T-7"),
+        ("- Merged conflicts remain in T-8", "T-8"),
+    )
+    for index, (line, want) in enumerate(cases):
+        root = crew_fixtures.make_repo(tmp_path / f"case{index}")
+        body = "# Work" + chr(10) + chr(10) + line + chr(10)
+        (root / ".work" / "INDEX.md").write_text(body, encoding="utf-8")
+        assert crew_state.read_work(str(root))["ticket"] == want, line
+
+
+def test_numbered_list_checkbox_is_recognised_as_done(tmp_path):
+    """A numbered bullet did not match the old bullet class, so a finished
+    ticket read as open.
+    """
+    root = crew_fixtures.make_repo(tmp_path)
+    lines = ["# Work", "", "1. [x] T-0001 done", "2. T-0002 in progress", ""]
+    (root / ".work" / "INDEX.md").write_text(
+        chr(10).join(lines), encoding="utf-8"
+    )
+    assert crew_state.read_work(str(root))["ticket"] == "T-0002"
+
+
 def test_work_with_every_ticket_done_reports_none(tmp_path):
     # "no ticket open" is true; naming a closed ticket is not.
     root = crew_fixtures.make_repo(tmp_path)
