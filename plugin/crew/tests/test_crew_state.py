@@ -269,3 +269,96 @@ def test_knowledge_survives_a_non_git_directory(tmp_path):
     )
     got = crew_state.read_knowledge(str(root), {})
     assert got["subsystems"] == 1  # no crash, and no false freshness claim
+
+
+def _state(**over):
+    base = {
+        "schema": 2,
+        "health": {"rate": 1.0, "verdict": "healthy"},
+        "work": {"ticket": None, "handoffPending": False},
+        "knowledge": {"subsystems": 0, "behind": [],
+                      "graph": {"present": True, "current": True}},
+    }
+    base.update(over)
+    return base
+
+
+def test_healthy_state_fires_no_triggers():
+    assert crew_state.evaluate_triggers(_state()) == []
+
+
+def test_v1_schema_fires_upgrade_needed():
+    assert "upgradeNeeded" in crew_state.evaluate_triggers(_state(schema=1))
+
+
+def test_absent_graph_fires_graph_stale():
+    got = crew_state.evaluate_triggers(
+        _state(knowledge={"subsystems": 0, "behind": [],
+                          "graph": {"present": False, "current": False}})
+    )
+    assert "graphStale" in got
+
+
+def test_behind_anchors_fire_knowledge_behind():
+    got = crew_state.evaluate_triggers(
+        _state(knowledge={"subsystems": 2, "behind": ["auth"],
+                          "graph": {"present": True, "current": True}})
+    )
+    assert "knowledgeBehind" in got
+
+
+def test_low_rate_fires_review_not_working():
+    got = crew_state.evaluate_triggers(
+        _state(health={"rate": 0.1, "verdict": "review not catching defects"})
+    )
+    assert "reviewNotWorking" in got
+
+
+def test_no_data_does_not_fire_review_not_working():
+    # A fresh repo has run no reviews. That is not a broken review.
+    got = crew_state.evaluate_triggers(
+        _state(health={"rate": None, "verdict": "no data"})
+    )
+    assert "reviewNotWorking" not in got
+
+
+def test_high_rate_fires_tickets_too_large():
+    got = crew_state.evaluate_triggers(
+        _state(health={"rate": 3.0, "verdict": "tickets too large"})
+    )
+    assert "ticketsTooLarge" in got
+
+
+def test_pending_handoff_fires():
+    got = crew_state.evaluate_triggers(
+        _state(work={"ticket": "T-1", "handoffPending": True})
+    )
+    assert "handoffPending" in got
+
+
+def test_triggers_come_back_in_priority_order():
+    got = crew_state.evaluate_triggers(
+        _state(schema=1, work={"ticket": None, "handoffPending": True},
+               health={"rate": 0.0, "verdict": "review not catching defects"})
+    )
+    assert got == ["upgradeNeeded", "handoffPending", "reviewNotWorking"]
+
+
+def test_collect_on_a_non_crew_directory_is_not_crew(tmp_path):
+    root = tmp_path / "plain"
+    root.mkdir()
+    assert crew_state.collect(str(root))["isCrew"] is False
+
+
+def test_collect_defaults_schema_to_one_when_absent(tmp_path):
+    root = crew_fixtures.make_repo(tmp_path, config={"tier": 0, "roles": []})
+    assert crew_state.collect(str(root))["schema"] == 1
+
+
+def test_collect_reads_pm_block_defaults(tmp_path):
+    root = crew_fixtures.make_repo(tmp_path, config={"schema": 2})
+    pm = crew_state.collect(str(root))["pm"]
+    assert pm["enabled"] is True
+    assert pm["mode"] == "adaptive"
+    assert pm["quietLines"] == 8
+    assert pm["maxLines"] == 40

@@ -238,3 +238,83 @@ def read_knowledge(root, cfg):
         "behind": behind,
         "graph": _read_graph(root, cfg),
     }
+
+
+# Priority order. pm_brief truncates from the bottom when it hits the line cap,
+# so the most actionable finding has to sort first. upgradeNeeded leads because
+# every other finding may be an artifact of a pre-upgrade layout.
+TRIGGERS = (
+    "upgradeNeeded",
+    "handoffPending",
+    "graphStale",
+    "knowledgeBehind",
+    "reviewNotWorking",
+    "ticketsTooLarge",
+)
+
+PM_DEFAULTS = {
+    "enabled": True,
+    "mode": "adaptive",
+    "quietLines": 8,
+    "maxLines": 40,
+    "authority": "report-only",
+}
+
+
+def evaluate_triggers(state):
+    """Reasons the PM should speak up, in TRIGGERS order."""
+    knowledge = state.get("knowledge") or {}
+    graph = knowledge.get("graph") or {}
+    health = state.get("health") or {}
+    work = state.get("work") or {}
+
+    fired = {
+        "upgradeNeeded": state.get("schema", 1) < SCHEMA_CURRENT,
+        "handoffPending": bool(work.get("handoffPending")),
+        # An absent graph is stale by definition -- there is nothing to trust.
+        "graphStale": not graph.get("present") or not graph.get("current"),
+        "knowledgeBehind": bool(knowledge.get("behind")),
+        # `rate is None` means no reviews have run. A repo that has reviewed
+        # nothing has not got a broken review, and saying so would be noise
+        # on every fresh setup.
+        "reviewNotWorking": health.get("rate") is not None
+        and health["rate"] < HEALTHY_LOW,
+        "ticketsTooLarge": health.get("rate") is not None
+        and health["rate"] > HEALTHY_HIGH,
+    }
+    return [name for name in TRIGGERS if fired[name]]
+
+
+def collect(root):
+    """Full crew state for a repository. Never raises."""
+    cfg = load_config(root)
+    pm = dict(PM_DEFAULTS)
+    supplied = cfg.get("pm")
+    if isinstance(supplied, dict):
+        pm.update(supplied)
+
+    state = {
+        "isCrew": bool(cfg),
+        # No `schema` key means a config written before schema tracking: v1.
+        "schema": cfg.get("schema", 1) if cfg else SCHEMA_CURRENT,
+        "tier": cfg.get("tier"),
+        "roles": cfg.get("roles") or [],
+        "tracker": cfg.get("tracker"),
+        "pm": pm,
+        "health": read_metrics(root),
+        "work": read_work(root),
+        "knowledge": read_knowledge(root, cfg),
+    }
+    state["triggers"] = evaluate_triggers(state)
+    return state
+
+
+def main():
+    """Print the state as JSON. Exit code is always 0."""
+    root = os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
+    print(json.dumps(collect(root), indent=2, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
