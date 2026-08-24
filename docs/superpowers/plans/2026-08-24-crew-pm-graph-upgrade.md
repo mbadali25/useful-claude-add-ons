@@ -3823,6 +3823,18 @@ work, not a follow-up.
   fires on `startup`. That last point is the one a reader most needs and is
   easiest to omit.
 
+  Also cover, because each surprises a reader who has not seen it:
+  - `context.autoWrapUp` and `context.autoResume` (Tasks 21, 22), both default
+    off, and plainly that **the `/clear` is manual because no hook can trigger
+    one** — otherwise the feature reads as broken rather than as bounded.
+  - Both hook flavours are registered on every matcher-less event **on purpose**.
+    On Windows the `.sh` side may fail outright depending on which `bash` is
+    first on PATH — measured: Git's `usr/bin/bash.exe` exits 127 where
+    `bin/bash.exe` works — and the `.ps1` twin covers it. One flavour failing
+    is expected, not a bug.
+  - Real hook-runner behaviour with **no `pwsh` on Linux** is unverified (Task 7
+    Step 10 could not test it). Say so rather than implying it was checked.
+
 - [ ] **Step 3: `plugin/README.md`** row (all five columns), then the same row
   inside `README.md`'s `<!-- BEGIN plugin/README.md -->` block, plus any count
   that appears as a number.
