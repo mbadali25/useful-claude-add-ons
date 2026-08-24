@@ -6,7 +6,14 @@ INPUT=$(cat)
 read_json() { python3 -c 'import sys,json;d=json.load(sys.stdin);print(d.get(sys.argv[1],""))' "$1" <<< "$INPUT" 2>/dev/null; }
 TRANSCRIPT=$(read_json transcript_path)
 CWD=$(read_json cwd)
+SESSION=$(read_json session_id)
 cd "${CWD:-${CLAUDE_PROJECT_DIR:-.}}" 2>/dev/null || exit 0
+
+# Stop has no matcher, so this and context-watch.ps1 both fire wherever both
+# interpreters exist. Only the winner of this claim does any work.
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PY=$(command -v python3 || command -v python) || exit 0
+"$PY" "$DIR/hook_once.py" context-watch "$SESSION" || exit 0
 [ -f "$TRANSCRIPT" ] || exit 0
 [ -f .crew/config.json ] || exit 0
 

@@ -1,5 +1,18 @@
 # PowerShell end-of-turn gate for native Windows. Mirrors verify-gate.sh.
 # Runs the checks the CHANGED FILES require, from .crew/verify.json. Exit 2 = not done.
+$raw = [Console]::In.ReadToEnd()
+try { $d = $raw | ConvertFrom-Json } catch { $d = $null }
+
+# Stop has no matcher, so this and verify-gate.sh both fire wherever both
+# interpreters exist. Same hook name as verify-gate.sh so the two race for
+# the same marker; only the winner runs the actual checks.
+$dir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$py = (Get-Command python3, python -ErrorAction SilentlyContinue |
+       Select-Object -First 1).Source
+if (-not $py) { exit 0 }
+& $py (Join-Path $dir 'hook_once.py') 'verify-gate' $d.session_id
+if ($LASTEXITCODE -ne 0) { exit 0 }
+
 $root = if ($env:CLAUDE_PROJECT_DIR) { $env:CLAUDE_PROJECT_DIR } else { "." }
 Set-Location $root
 

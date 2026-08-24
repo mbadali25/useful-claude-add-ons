@@ -1,10 +1,20 @@
 #!/usr/bin/env bash
 
 # Native Windows (no POSIX layer) runs the .ps1 twin instead; stand down here.
+# This MUST come before the claim below: if we claimed first and then stood
+# down, we would have taken the marker without doing the work, and verify-gate.ps1
+# would lose the race and also not run -- an inert gate that reads as "passed".
 case "$(uname -s 2>/dev/null)" in MINGW*|MSYS*|CYGWIN*) exit 0 ;; esac
 
 # End-of-turn gate. Runs the checks that the CHANGED FILES actually require,
 # from .crew/verify.json. Exit 2 = the work is not done.
+INPUT=$(cat)
+read_json() { python3 -c 'import sys,json;d=json.load(sys.stdin);print(d.get(sys.argv[1],""))' "$1" <<< "$INPUT" 2>/dev/null; }
+SESSION=$(read_json session_id)
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PY=$(command -v python3 || command -v python) || exit 0
+"$PY" "$DIR/hook_once.py" verify-gate "$SESSION" || exit 0
+
 cd "${CLAUDE_PROJECT_DIR:-.}" || exit 0
 grep -q '"verifyGate"[[:space:]]*:[[:space:]]*false' .crew/config.json 2>/dev/null && exit 0
 

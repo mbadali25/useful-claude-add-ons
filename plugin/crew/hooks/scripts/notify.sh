@@ -4,6 +4,18 @@
 #   events: phase | gate | review | waiting | done
 cd "${CLAUDE_PROJECT_DIR:-.}" || exit 0
 EVENT="${1:-info}"; shift 2>/dev/null; MSG="$*"
+
+# Notification has no matcher, so this and notify.ps1 both fire wherever both
+# interpreters exist when invoked as a hook. When invoked as a plain
+# subprocess (e.g. from context-watch.sh) stdin is already at EOF, session
+# comes back empty, and the claim fails open -- see hook_once.py.
+INPUT=$(cat 2>/dev/null)
+read_json() { python3 -c 'import sys,json;d=json.load(sys.stdin);print(d.get(sys.argv[1],""))' "$1" <<< "$INPUT" 2>/dev/null; }
+SESSION=$(read_json session_id)
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PY=$(command -v python3 || command -v python) || exit 0
+"$PY" "$DIR/hook_once.py" notify "$SESSION" || exit 0
+
 [ -f .crew/config.json ] || exit 0
 
 read_cfg() { python3 - "$1" << 'PY' 2>/dev/null
