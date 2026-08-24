@@ -156,7 +156,10 @@ The workflow is scoped deliberately: an unscoped pytest job would also collect
   `(ticket, n_block, n_fix)`), `codemap: dict[str, str] | None` (subsystem name
   -> file body), `work_ticket: str | None`, `handoff: bool`, `graph: bool`,
   `git: bool` (default `True`; runs `git init` and one commit so
-  `rev-parse HEAD` works).
+  `rev-parse HEAD` works), `graph_sha: str | None` (default `"head"` — stamps
+  the graph's sidecar with the real HEAD; a literal sha stamps that instead;
+  `None` writes no sidecar).
+  Also `helpers.head_sha(root, length=7) -> str`.
 
 - [ ] **Step 1: Write `context.py`**
 
@@ -194,7 +197,8 @@ def _git(root, *args):
 
 
 def make_repo(tmp_path, config=None, metrics=None, codemap=None,
-              work_ticket=None, handoff=False, graph=False, git=True):
+              work_ticket=None, handoff=False, graph=False, git=True,
+              graph_sha="head"):
     """Write a synthetic crew repo under tmp_path and return its root."""
     root = tmp_path / "repo"
     (root / ".crew").mkdir(parents=True)
@@ -243,6 +247,15 @@ def make_repo(tmp_path, config=None, metrics=None, codemap=None,
         out.mkdir()
         (out / "graph.json").write_text('{"nodes": [], "edges": []}',
                                         encoding="utf-8")
+        # graph_sha: "head" stamps the sidecar with the real HEAD (a fresh
+        # graph), a literal sha stamps that (a stale one), None writes no
+        # sidecar (a graph built outside crew).
+        if graph_sha == "head" and git:
+            (out / ".crew-graph-sha").write_text(head_sha(root) + "\n",
+                                                 encoding="utf-8")
+        elif graph_sha and graph_sha != "head":
+            (out / ".crew-graph-sha").write_text(graph_sha + "\n",
+                                                 encoding="utf-8")
 
     return root
 
@@ -254,6 +267,21 @@ def head_sha(root, length=7):
         cwd=root, check=True, capture_output=True, text=True,
     )
     return done.stdout.strip()
+
+
+def commit_with_date(root, path, iso_date):
+    """Commit one file with both dates forced, simulating a pulled commit.
+
+    A pull lands commits authored earlier than now, which is what breaks any
+    freshness check based on timestamps rather than a recorded sha.
+    """
+    env = dict(os.environ,
+               GIT_AUTHOR_DATE=iso_date, GIT_COMMITTER_DATE=iso_date)
+    subprocess.run(("git", "add", path), cwd=root, check=True,
+                   capture_output=True, text=True)
+    subprocess.run(("git", "commit", "-q", "-m", f"backdated {path}"),
+                   cwd=root, check=True, capture_output=True, text=True,
+                   env=env)
 ```
 
 - [ ] **Step 3: Write the workflow**
@@ -420,6 +448,32 @@ def test_work_absent_is_none_and_false(tmp_path):
     got = crew_state.read_work(str(root))
     assert got["ticket"] is None
     assert got["handoffPending"] is False
+
+
+def test_work_skips_finished_tickets_above_the_open_one(tmp_path):
+    """A real INDEX.md accumulates. Taking the first match names a closed
+    ticket, in the brief, as fact, on every session.
+    """
+    root = helpers.make_repo(tmp_path)
+    (root / ".work" / "INDEX.md").write_text(
+        "# Work\n\n"
+        "- [x] T-0001 — done\n"
+        "- ~~T-0002~~ merged\n"
+        "- T-0003 — in progress\n"
+        "- T-0004 — queued\n",
+        encoding="utf-8",
+    )
+    assert crew_state.read_work(str(root))["ticket"] == "T-0003"
+
+
+def test_work_with_every_ticket_done_reports_none(tmp_path):
+    # "no ticket open" is true; naming a closed ticket is not.
+    root = helpers.make_repo(tmp_path)
+    (root / ".work" / "INDEX.md").write_text(
+        "# Work\n\n- [x] T-0001 — done\n- [x] T-0002 — closed\n",
+        encoding="utf-8",
+    )
+    assert crew_state.read_work(str(root))["ticket"] is None
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -451,6 +505,13 @@ HEALTHY_HIGH = 2.0
 METRICS_WINDOW = 10
 
 _TICKET_RE = re.compile(r"([A-Z][A-Z0-9]*-\d+)")
+
+# Markers that mean a ticket line is finished. `[x]` is the markdown checkbox
+# form; the words cover how these files actually get written by hand.
+_DONE_RE = re.compile(
+    r"(\[x\]|~~|\bdone\b|\bclosed\b|\bmerged\b|\bshipped\b|\bcomplete)",
+    re.IGNORECASE,
+)
 
 
 def read_text(path):
@@ -526,17 +587,27 @@ def read_metrics(root, window=METRICS_WINDOW):
 
 
 def read_work(root):
-    """The open ticket and whether a handoff is waiting.
+    """The OPEN ticket and whether a handoff is waiting.
 
-    Only the handoff's presence is reported. Printing its content is
-    handoff-read.sh's job, and doing it twice would double the cost of the
-    one file most likely to be long.
+    Not simply the first ticket in the file. A real .work/INDEX.md accumulates
+    finished tickets above the current one, so taking the first match names a
+    ticket that closed weeks ago -- on every session, in the brief, as fact.
+
+    A line is skipped when it carries a done marker; the first line that does
+    not wins. A file with no in-progress line yields None rather than a guess,
+    because "no ticket open" is a true statement and a stale ticket number is
+    not.
     """
     ticket = None
     text = read_text(os.path.join(root, ".work", "INDEX.md"))
-    if text:
-        found = _TICKET_RE.search(text)
-        ticket = found.group(1) if found else None
+    for line in (text or "").splitlines():
+        found = _TICKET_RE.search(line)
+        if not found:
+            continue
+        if _DONE_RE.search(line):
+            continue
+        ticket = found.group(1)
+        break
     return {
         "ticket": ticket,
         "handoffPending": os.path.exists(
@@ -548,7 +619,7 @@ def read_work(root):
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `python -m pytest plugin/crew/tests/test_crew_state.py -v`
-Expected: 11 passed
+Expected: all pass, none skipped, none errored
 
 - [ ] **Step 5: Lint**
 
@@ -576,9 +647,11 @@ git commit -m "feat(crew): read crew config, review metrics, and work state"
 - Consumes: `read_text`, `load_config` (Task 2).
 - Produces:
   - `git_out(root: str, *args: str) -> str | None`
+  - `GRAPH_SHA_FILE: str = ".crew-graph-sha"`
   - `read_knowledge(root: str, cfg: dict) -> dict` with keys
     `subsystems: int`, `behind: list[str]`, `graph: dict`
-  - `graph` sub-dict keys: `present: bool`, `current: bool`, `path: str`
+  - `graph` sub-dict keys: `present: bool`, `current: bool`,
+    `builtAt: str | None`, `path: str`
 
 **Design note — why "behind HEAD" and not "stale".** `commands/onboard.md`
 defines staleness per-path: `git diff --name-only <anchor-sha>..HEAD -- <paths>`.
@@ -641,10 +714,42 @@ def test_absent_graph_is_not_present(tmp_path):
     assert got["current"] is False
 
 
-def test_graph_newer_than_head_commit_is_current(tmp_path):
-    root = helpers.make_repo(tmp_path, graph=True)
-    # make_repo commits before writing the graph, so mtime > commit time.
+def test_graph_built_at_head_is_current(tmp_path):
+    root = helpers.make_repo(tmp_path, graph=True, graph_sha="head")
     assert crew_state.read_knowledge(str(root), {})["graph"]["current"] is True
+
+
+def test_graph_built_at_another_sha_is_not_current(tmp_path):
+    root = helpers.make_repo(tmp_path, graph=True, graph_sha="0000000")
+    assert crew_state.read_knowledge(str(root), {})["graph"]["current"] is False
+
+
+def test_graph_with_no_sidecar_is_not_current(tmp_path):
+    # Built outside crew, so its provenance is unknown. Unknown resolves to
+    # stale: claiming freshness we cannot prove is the failure mode.
+    root = helpers.make_repo(tmp_path, graph=True, graph_sha=None)
+    got = crew_state.read_knowledge(str(root), {})["graph"]
+    assert got["present"] is True
+    assert got["current"] is False
+    assert got["builtAt"] is None
+
+
+def test_a_pull_of_older_commits_makes_the_graph_stale(tmp_path):
+    """The regression a timestamp comparison gets wrong.
+
+    `git pull` brings in commits authored before the graph was built, so any
+    mtime-vs-commit-time check reports the graph current while it knows
+    nothing about the pulled code.
+    """
+    root = helpers.make_repo(tmp_path, graph=True, graph_sha="head")
+    assert crew_state.read_knowledge(str(root), {})["graph"]["current"] is True
+
+    # A new commit backdated well before the graph was written.
+    (root / "pulled.py").write_text("# from upstream\n", encoding="utf-8")
+    helpers.commit_with_date(root, "pulled.py", "2020-01-01T00:00:00")
+
+    got = crew_state.read_knowledge(str(root), {})["graph"]
+    assert got["current"] is False, "backdated commit must invalidate the graph"
 
 
 def test_graph_out_dir_comes_from_config(tmp_path):
@@ -681,6 +786,10 @@ _ANCHOR_RE = re.compile(
 # Files under .crew/codemap/ that describe the map rather than a subsystem.
 _NOT_SUBSYSTEMS = frozenset({"INDEX.md", "UPGRADE.md", "MIGRATION.md"})
 
+# Written by crew-graph at build time, holding the short HEAD sha the graph was
+# built from. A sha, not a timestamp -- see _read_graph.
+GRAPH_SHA_FILE = ".crew-graph-sha"
+
 _GIT_TIMEOUT = 10
 
 
@@ -703,26 +812,29 @@ def git_out(root, *args):
 
 
 def _read_graph(root, cfg):
-    """Graph presence and whether it postdates the HEAD commit.
+    """Graph presence, and whether it was built at the current HEAD.
 
-    Freshness compares graph.json's mtime against HEAD's commit timestamp
-    rather than a sha recorded inside the file. graphify may well record a
-    build sha, but this code does not claim to know its key name -- read the
-    file and prefer the recorded sha if one turns out to exist.
+    Freshness is a recorded sha, never a timestamp. Comparing graph.json's
+    mtime against HEAD's commit time looks reasonable and is wrong: `git pull`
+    brings in commits authored earlier than the graph was built, so a graph
+    that knows nothing about the pulled code reports itself current. That is
+    the false-freshness failure this module exists to avoid.
+
+    The sha comes from a sidecar that crew-graph writes at build time. No
+    sidecar means the graph was built outside crew, so its provenance is
+    unknown -- and unknown resolves to stale, which is the honest direction.
     """
     out = (cfg.get("graph") or {}).get("out") or "graphify-out"
     path = os.path.join(root, out, "graph.json")
     if not os.path.exists(path):
-        return {"present": False, "current": False, "path": path}
+        return {"present": False, "current": False, "builtAt": None,
+                "path": path}
 
-    current = False
-    committed = git_out(root, "log", "-1", "--format=%ct")
-    if committed:
-        try:
-            current = os.path.getmtime(path) >= float(committed)
-        except (OSError, ValueError):
-            current = False
-    return {"present": True, "current": current, "path": path}
+    built = (read_text(os.path.join(root, out, GRAPH_SHA_FILE)) or "").strip()
+    head = git_out(root, "rev-parse", "--short=7", "HEAD")
+    current = bool(built) and bool(head) and built[:7] == head[:7]
+    return {"present": True, "current": current,
+            "builtAt": built or None, "path": path}
 
 
 def read_knowledge(root, cfg):
@@ -760,7 +872,7 @@ def read_knowledge(root, cfg):
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `python -m pytest plugin/crew/tests/test_crew_state.py -v`
-Expected: 19 passed
+Expected: all pass, none skipped, none errored
 
 - [ ] **Step 5: Lint** — `pylint plugin/crew/hooks/scripts/crew_state.py`
 
@@ -986,7 +1098,7 @@ never fires `upgradeNeeded` on a repo that has no crew at all.
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `python -m pytest plugin/crew/tests/test_crew_state.py -v`
-Expected: 31 passed
+Expected: all pass, none skipped, none errored
 
 - [ ] **Step 5: Verify it runs standalone against this repo**
 
@@ -1235,7 +1347,7 @@ if __name__ == "__main__":
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `python -m pytest plugin/crew/tests/test_pm_brief.py -v`
-Expected: 11 passed
+Expected: all pass, none skipped, none errored
 
 - [ ] **Step 5: Lint, then Codex review**
 
@@ -1417,7 +1529,7 @@ def render(state):
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `python -m pytest plugin/crew/tests/ -v`
-Expected: 50 passed
+Expected: all pass, none skipped, none errored
 
 - [ ] **Step 5: Lint, then Codex review**
 
@@ -1448,6 +1560,26 @@ flavours wired. Two hand-written implementations of the same logic drift, and
 the drift is invisible because each platform only ever runs one of them. A
 wrapper per platform over one Python module makes identical output structural.
 
+**Why the three existing `.ps1` files were never wired — read this first.**
+Only `PreToolUse` has a `matcher`, and it keys on the **tool name** (`Bash` vs
+`PowerShell`), which is why `guard` legitimately has two entries.
+`SessionStart`, `Stop`, `PreCompact`, and `Notification` have **no matcher at
+all**. Registering both flavours there does not pick one per platform — it runs
+both, on any machine that has both interpreters. On a Windows box with Git Bash
+and PowerShell that means the handoff prints twice, the brief prints twice,
+`context-watch` writes its marker and returns exit 2 twice, and `verify-gate` —
+a 600-second gate — runs twice per Stop.
+
+So the three unwired `.ps1` files are not an oversight; they are the unresolved
+half of this problem. Wiring them naively is a regression, not a fix.
+
+**The fix is a guard inside each `.ps1`, not a change to `hooks.json`.** Every
+matcher-less PowerShell hook exits early when a POSIX bash is reachable, so bash
+wins where both exist and the `.ps1` still covers the case it exists for —
+Windows with no POSIX layer, where the `.sh` is silently inert. `guard.ps1` is
+**excluded**: `PreToolUse` discriminates by tool name, so both entries there are
+correct and adding the guard would disable PowerShell command inspection.
+
 - [ ] **Step 1: Write `pm-brief.sh`**
 
 ```bash
@@ -1472,6 +1604,13 @@ exec "$PY" "$DIR/pm_brief.py"
 # PowerShell twin of pm-brief.sh -- both delegate to pm_brief.py so neither can
 # drift from the other.
 $ErrorActionPreference = 'SilentlyContinue'
+
+# SessionStart has no matcher, so BOTH this and pm-brief.sh are registered and
+# both fire wherever both interpreters exist -- printing the brief twice. bash
+# wins when it is reachable; this script covers the case it exists for, which is
+# Windows with no POSIX layer, where the .sh is silently inert.
+if (Get-Command bash -ErrorAction SilentlyContinue) { exit 0 }
+
 $dir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $py = (Get-Command python3, python -ErrorAction SilentlyContinue |
        Select-Object -First 1).Source
@@ -1480,14 +1619,26 @@ if (-not $py) { exit 0 }
 exit 0
 ```
 
-- [ ] **Step 3: Write `handoff-write.ps1` and `notify.ps1`**
+- [ ] **Step 3: Add the same guard to the three existing `.ps1` hooks**
 
-Port `handoff-write.sh` and `notify.sh` line for line. Read each `.sh` first
-and mirror its behaviour exactly — same paths, same config keys, same exit
-codes. Do not improve them in this task; a port that also changes behaviour
-cannot be reviewed against its original.
+`handoff-read.ps1`, `verify-gate.ps1`, and `context-watch.ps1` each get the
+identical four-line guard, with the identical comment. They are about to be
+wired for the first time, and without it wiring them is a regression:
+double-printed handoffs, a doubled `context-watch` marker, and a 600-second
+verify gate running twice per Stop.
 
-- [ ] **Step 4: Rewrite `hooks.json`**
+**Do not add it to `guard.ps1`.** `PreToolUse` discriminates by tool name, so
+its two entries are both correct — the guard would disable PowerShell command
+inspection entirely.
+
+- [ ] **Step 4: Write `handoff-write.ps1` and `notify.ps1`**
+
+Port `handoff-write.sh` and `notify.sh` line for line, each opening with the
+same guard. Read each `.sh` first and mirror its behaviour exactly — same paths,
+same config keys, same exit codes. Do not improve them in this task; a port that
+also changes behaviour cannot be reviewed against its original.
+
+- [ ] **Step 5: Rewrite `hooks.json`**
 
 ```json
 {
@@ -1522,7 +1673,7 @@ cannot be reviewed against its original.
 }
 ```
 
-- [ ] **Step 5: Verify — every referenced script exists, every script is referenced**
+- [ ] **Step 6: Verify — every referenced script exists, every script is referenced**
 
 ```bash
 python - <<'PY'
@@ -1539,27 +1690,67 @@ PY
 Expected: both lists empty. A non-empty second list is the dead-code condition
 `CLAUDE.md` prohibits.
 
-- [ ] **Step 6: Verify `hooks.json` is valid JSON**
-
-Run: `python -c "import json;json.load(open('plugin/crew/hooks/hooks.json',encoding='utf-8'));print('ok')"`
-Expected: `ok`
-
-- [ ] **Step 7: Verify both wrappers agree, for every source**
+- [ ] **Step 7: Verify `hooks.json` is valid JSON, and that every matcher-less PowerShell hook carries the guard**
 
 ```bash
-for src in startup clear compact resume; do
-  echo "--- $src ---"
-  printf '{"source":"%s","cwd":"%s"}' "$src" "$PWD" | bash plugin/crew/hooks/scripts/pm-brief.sh
-  echo "exit=$?"
-done
+python - <<'PY'
+import json, os, re
+root = "plugin/crew/hooks"
+spec = json.load(open(f"{root}/hooks.json", encoding="utf-8"))["hooks"]
+print("json ok")
+
+# Any .ps1 registered on an event with no matcher fires alongside its .sh twin
+# and MUST guard against it. guard.ps1 is exempt: PreToolUse matches on tool
+# name, so its two entries are both correct.
+needs = set()
+for event, entries in spec.items():
+    for entry in entries:
+        if entry.get("matcher"):
+            continue
+        for hook in entry.get("hooks", []):
+            for name in re.findall(r"hooks/scripts/([A-Za-z0-9_.-]+\.ps1)",
+                                   hook.get("command", "")):
+                needs.add(name)
+
+missing = []
+for name in sorted(needs):
+    body = open(f"{root}/scripts/{name}", encoding="utf-8").read()
+    if "Get-Command bash" not in body:
+        missing.append(name)
+print("matcher-less .ps1 hooks:", sorted(needs))
+print("MISSING the double-fire guard:", missing)
+assert not missing, missing
+PY
 ```
-Expected: exit 0 every time, and no output (this repo has no `.crew/`). Then run
-the same payloads through `pm-brief.ps1` in PowerShell and diff the output —
-they must be byte-identical.
+Expected: `MISSING the double-fire guard: []`
 
-- [ ] **Step 8: Codex review**
+- [ ] **Step 8: Verify the composed hook set fires each hook exactly once**
 
-- [ ] **Step 9: Commit**
+This is the check that the per-script tests cannot make. Running `pm-brief.sh`
+and `pm-brief.ps1` separately and diffing them proves they agree; it says
+nothing about how many times the *registered set* runs.
+
+```bash
+# A crew fixture, so the brief actually has something to print.
+FIX="$(mktemp -d)/fire"; mkdir -p "$FIX/.crew"; cd "$FIX"
+git init -q && git config user.email t@e.invalid && git config user.name T
+echo x > f.txt && git add . && git commit -qm init
+printf '{"schema":2,"tier":0,"roles":[],"tracker":"files"}' > .crew/config.json
+
+# Simulate what Claude Code does: run every registered SessionStart entry.
+printf '{"source":"startup","cwd":"%s"}' "$FIX" | bash <plugin>/hooks/scripts/pm-brief.sh  >  out.txt
+printf '{"source":"startup","cwd":"%s"}' "$FIX" | pwsh -NoProfile -File <plugin>/hooks/scripts/pm-brief.ps1 >> out.txt
+grep -c '^## crew' out.txt
+```
+Expected: **`1`**. A `2` means the guard is not working and the brief will print
+twice on every session — which is the defect this step exists to catch.
+
+Repeat for `verify-gate` (both entries, one Stop payload) and `context-watch`,
+confirming a single `.crew/.handoff-requested` write rather than two.
+
+- [ ] **Step 9: Codex review**
+
+- [ ] **Step 10: Commit**
 
 ```bash
 git add plugin/crew/hooks/
@@ -1747,6 +1938,12 @@ git commit -m "feat(crew): add the crew:pm agent and /crew:pm with offboarding"
     `body: str` (the new file text), `conflicts: list[str]`,
     `added: list[str]`, `touched: list[str]`
 
+**Comparison granularity is by file path, not by `path:line`.** A refactor
+shifts line numbers constantly; comparing on `path:line` would report every
+hand-written entry as a contradiction, and an `UPGRADE.md` that is mostly
+line-drift noise is a report nobody reads. A moved line is an update. A file the
+graph has never heard of is a conflict.
+
 **The rule this module enforces:** `KEEP` sections pass through byte-identical.
 `DERIVE` sections get graph facts added. A `DERIVE` line the graph contradicts
 is **retained and reported**, never replaced — the graph misses generated call
@@ -1802,19 +1999,43 @@ def test_does_section_survives():
 
 def test_derived_facts_are_added():
     out = graph_reconcile.reconcile(
-        V1_MAP, {"Entry points": ["- `src/auth.py:44` — called by the cron"]}
+        V1_MAP, {"Entry points": ["- `src/cli.py:7` — called by the CLI"]}
     )
-    assert "src/auth.py:44" in out["body"]
+    assert "src/cli.py:7" in out["body"]
     assert "Entry points" in out["touched"]
 
 
-def test_a_contradicted_line_is_kept_and_reported():
-    # The graph does not list src/auth.py:10 at all. The v1 claim stays.
+def test_a_line_number_shift_is_not_a_conflict():
+    """The noise case. The map says src/auth.py:10, the graph says :44 --
+    same file, moved line. Reporting that as a contradiction would make
+    UPGRADE.md mostly line-drift noise on any repo that has been refactored,
+    and a report nobody reads protects nothing.
+    """
     out = graph_reconcile.reconcile(
         V1_MAP, {"Entry points": ["- `src/auth.py:44` — called by the cron"]}
     )
-    assert "src/auth.py:10" in out["body"]
-    assert any("auth.py:10" in c for c in out["conflicts"])
+    assert out["conflicts"] == []
+    assert "src/auth.py:10" in out["body"]   # the human's note is still there
+    assert out["added"] == []                # and the graph added nothing new
+
+
+def test_a_file_the_graph_does_not_know_is_a_conflict():
+    # billing.py is claimed by the map and absent from the graph entirely.
+    out = graph_reconcile.reconcile(
+        V1_MAP, {"Calls out to": ["- payments at `src/pay.py:3`"]}
+    )
+    assert "src/billing.py" not in V1_MAP  # guard: the fixture says `src/auth.py:99`
+    assert any("auth.py" in c for c in out["conflicts"])
+    assert "src/auth.py:99" in out["body"]  # kept regardless
+
+
+def test_a_new_file_from_the_graph_is_added():
+    out = graph_reconcile.reconcile(
+        V1_MAP, {"Entry points": ["- `src/cron.py:1` — called by the scheduler"]}
+    )
+    assert "src/cron.py:1" in out["body"]
+    assert out["added"]
+    assert "Entry points" in out["touched"]
 
 
 def test_a_keep_section_is_never_touched_even_if_derived_is_supplied():
@@ -1831,8 +2052,9 @@ def test_untouched_sections_are_not_in_touched():
 
 
 def test_reconcile_is_idempotent():
-    derived = {"Entry points": ["- `src/auth.py:44` — called by the cron"]}
+    derived = {"Entry points": ["- `src/cli.py:7` — called by the CLI"]}
     once = graph_reconcile.reconcile(V1_MAP, derived)
+    assert once["added"], "first pass must actually add something"
     twice = graph_reconcile.reconcile(once["body"], derived)
     assert twice["body"] == once["body"]
     assert twice["added"] == []
@@ -1869,6 +2091,7 @@ DERIVE = frozenset({"Entry points", "Owns data", "Calls out to"})
 
 _HEADING_RE = re.compile(r"^##\s+(.+?)\s*$")
 _ANCHOR_TOKEN_RE = re.compile(r"`([^`]+)`")
+_LINE_SUFFIX_RE = re.compile(r":\d+$")
 
 
 def split_sections(text):
@@ -1885,10 +2108,21 @@ def split_sections(text):
     return sections
 
 
-def _tokens(lines):
-    """Backticked anchors in a set of lines -- what two claims are compared on."""
+def _path_of(token):
+    """The file path from a `path:line` anchor, dropping the line number.
+
+    Comparison is by path, never by path:line. A refactor that shifts line
+    numbers would otherwise turn every hand-written entry into a
+    "contradiction", and an UPGRADE.md that is mostly line-drift noise is a
+    report nobody reads -- which protects nothing.
+    """
+    return token.rsplit(":", 1)[0] if _LINE_SUFFIX_RE.search(token) else token
+
+
+def _paths(lines):
+    """Anchored file paths in a set of lines -- what two claims are compared on."""
     return {
-        token
+        _path_of(token)
         for line in lines
         for token in _ANCHOR_TOKEN_RE.findall(line)
     }
@@ -1910,22 +2144,29 @@ def reconcile(text, derived):
             continue
 
         existing = sections[heading]
-        have = _tokens(existing)
-        want = _tokens(new_lines)
+        have = _paths(existing)
+        want = _paths(new_lines)
 
-        fresh = [
-            line for line in new_lines
-            if not (_ANCHOR_TOKEN_RE.findall(line) or [None])[0] in have
-        ]
+        # A graph line whose path is already claimed is an update to an
+        # existing entry (typically a shifted line number), not a new fact.
+        fresh = []
+        for line in new_lines:
+            found = _ANCHOR_TOKEN_RE.findall(line)
+            if found and _path_of(found[0]) in have:
+                continue
+            fresh.append(line)
+
         if fresh:
             body = [ln for ln in existing if ln.strip()]
             sections[heading] = [""] + body + fresh + [""]
             added.extend(fresh)
             touched.append(heading)
 
-        for token in sorted(have - want):
+        # A conflict is a whole FILE the map claims and the graph does not
+        # know about -- not a line that moved.
+        for path in sorted(have - want):
             conflicts.append(
-                f"{heading}: `{token}` is in the map but not in the graph "
+                f"{heading}: `{path}` is in the map but not in the graph "
                 f"— kept, verify by hand"
             )
 
@@ -1942,7 +2183,7 @@ def reconcile(text, derived):
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `python -m pytest plugin/crew/tests/test_upgrade.py -v`
-Expected: 8 passed
+Expected: all pass, none skipped, none errored
 
 - [ ] **Step 5: Lint, then Codex review** — ask Codex specifically whether
   `reconcile` can ever drop a `KEEP` line, and whether the idempotency test
@@ -2040,13 +2281,15 @@ def test_force_reruns_a_current_setup(tmp_path):
 def test_conflicts_land_in_the_report_not_in_the_map(tmp_path):
     root = helpers.make_repo(tmp_path, config={"tier": 0},
                              codemap={"auth": V1_MAP})
-    derived = {"auth": {"Entry points": ["- `src/auth.py:44` — cron"]}}
+    # The graph knows src/cron.py and does NOT know src/auth.py at all, so the
+    # map's src/auth.py claim is a genuine contradiction rather than line drift.
+    derived = {"auth": {"Entry points": ["- `src/cron.py:1` — scheduler"]}}
     out = crew_upgrade.run(str(root), derived)
     report = (root / ".crew" / "codemap" / "UPGRADE.md").read_text(encoding="utf-8")
-    assert "auth.py:10" in report
+    assert "auth.py" in report
     body = (root / ".crew" / "codemap" / "auth.md").read_text(encoding="utf-8")
-    assert "src/auth.py:10" in body   # kept
-    assert "src/auth.py:44" in body   # added
+    assert "src/auth.py:10" in body   # the contradicted claim is KEPT
+    assert "src/cron.py:1" in body    # the graph's fact is ADDED
     assert out["conflicts"]
 
 
@@ -2055,7 +2298,7 @@ def test_anchor_is_bumped_only_on_a_touched_file(tmp_path):
         tmp_path, config={"tier": 0},
         codemap={"auth": V1_MAP, "billing": V1_MAP.replace("# auth", "# billing")},
     )
-    derived = {"auth": {"Entry points": ["- `src/auth.py:44` — cron"]}}
+    derived = {"auth": {"Entry points": ["- `src/cron.py:1` — scheduler"]}}
     crew_upgrade.run(str(root), derived)
     head = helpers.head_sha(root)
     auth = (root / ".crew" / "codemap" / "auth.md").read_text(encoding="utf-8")
@@ -2299,7 +2542,7 @@ if __name__ == "__main__":
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `python -m pytest plugin/crew/tests/ -v`
-Expected: 71 passed
+Expected: all pass, none skipped, none errored
 
 - [ ] **Step 5: Lint, then Codex review** — ask Codex specifically whether
   `run` can lose data on a second invocation, and whether `upgrade_config` can
@@ -2400,6 +2643,19 @@ Required content:
   merge driver for `graph.json`. That merge driver is why `graph.json` is
   committed rather than ignored. `.gitignore` gets the HTML, the wiki, and any
   vault export.
+- **Stamp every build.** Immediately after a successful build, write the short
+  HEAD sha to `<out>/.crew-graph-sha`:
+
+  ```bash
+  git rev-parse --short=7 HEAD > graphify-out/.crew-graph-sha
+  ```
+
+  `crew_state._read_graph` reads this and nothing else. Freshness must be a
+  recorded sha rather than a file timestamp: `git pull` lands commits authored
+  before the graph was built, so a timestamp comparison reports a graph current
+  while it knows nothing about the pulled code. A build that skips this step
+  leaves the graph permanently reported as stale — which is the safe direction,
+  but means the PM nags forever.
 - **Obsidian — the gate, stated as a refusal.** Two conditions, both required:
   `graph.obsidian.confirmed == true` in `.crew/config.json`, and a completed
   scratch-directory proof run. Absent either, **refuse and ask**. Default target
