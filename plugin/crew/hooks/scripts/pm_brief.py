@@ -64,6 +64,49 @@ def _knowledge_line(state):
     return f"knowledge: {maps}; {graph_part}"
 
 
+# One finding and exactly one next action per trigger. One action because a
+# brief that lists three is a brief nobody acts on.
+FINDINGS = {
+    "upgradeNeeded": (
+        "this setup predates the PM and the code graph (config has no schema)",
+        "run /crew:upgrade - it backs up the codemap first and reports "
+        "conflicts rather than overwriting them",
+    ),
+    "handoffPending": (
+        "a handoff note from a previous session is still in place",
+        "finish or delete it - a stale handoff is injected into every "
+        "session as though it were current",
+    ),
+    "graphStale": (
+        "the code graph is missing or older than HEAD",
+        "run /crew:onboard, or graphify . --no-viz to refresh it",
+    ),
+    "knowledgeBehind": (
+        "some codemap anchors are behind HEAD, so those notes may describe "
+        "code that has since changed",
+        "run /crew:onboard --refresh <subsystem> before relying on them",
+    ),
+    "reviewNotWorking": (
+        "review is finding almost nothing, which usually means it is broken "
+        "rather than that the code is clean",
+        "check that Codex is really running, the diff is not empty, and the "
+        "base branch is right - before adding any role",
+    ),
+    "ticketsTooLarge": (
+        "findings per ticket are high enough that the tickets are probably "
+        "too large",
+        "cut ticket scope rather than adding roles",
+    ),
+}
+
+_AUTHORITY_NOTE = (
+    "The manager reports and recommends; it does not change roles, tier, or "
+    "delete anything without being asked."
+)
+
+_TRUNCATED = "More findings than fit here - run /crew:pm for the full report."
+
+
 def render(state):
     """The brief's lines. Empty list means print nothing at all."""
     if not state.get("isCrew"):
@@ -71,12 +114,35 @@ def render(state):
     pm = state.get("pm") or {}
     if not pm.get("enabled", True):
         return []
-    return [
+
+    quiet = [
         _crew_line(state),
         _health_line(state),
         _work_line(state),
         _knowledge_line(state),
     ]
+
+    triggers = state.get("triggers") or []
+    if pm.get("mode") != "adaptive" or not triggers:
+        return quiet[: max(1, int(pm.get("quietLines", 8)))]
+
+    lines = list(quiet)
+    for name in triggers:
+        entry = FINDINGS.get(name)
+        if not entry:
+            continue
+        finding, action = entry
+        lines.append(f"- {finding}")
+        lines.append(f"  -> {action}")
+    lines.append("")
+    lines.append(_AUTHORITY_NOTE)
+
+    cap = max(2, int(pm.get("maxLines", 40)))
+    if len(lines) <= cap:
+        return lines
+    # Truncate from the bottom: crew_state returns triggers in priority order,
+    # so what survives is the most actionable finding.
+    return lines[: cap - 1] + [_TRUNCATED]
 
 
 def main(argv=None):

@@ -130,3 +130,83 @@ def test_no_session_id_still_prints(tmp_path, monkeypatch, capsys):
                           "tracker": "files"}, graph=True
     )
     assert "## crew" in _run(root, None, monkeypatch, capsys)
+
+
+def _with(trigger, **over):
+    state = dict(HEALTHY, triggers=[trigger])
+    state.update(over)
+    return state
+
+
+def test_expanded_brief_names_the_finding_and_one_action():
+    out = "\n".join(pm_brief.render(_with("upgradeNeeded", schema=1)))
+    assert "/crew:upgrade" in out
+
+
+def test_the_brief_is_pure_ascii(tmp_path):
+    """A Windows console on an OEM codepage cannot encode what this module has
+    no reason to emit.
+
+    Measured: an em-dash under cp437 raises UnicodeEncodeError and the hook
+    exits 1, which breaks every session opened in that repo. Rendering is
+    checked here rather than at the print, so a non-ASCII string is caught the
+    moment someone adds it.
+    """
+    state = dict(HEALTHY, schema=1,
+                 triggers=list(pm_brief.crew_state.TRIGGERS))
+    for line in pm_brief.render(state) + pm_brief.render(HEALTHY):
+        line.encode("ascii")  # raises UnicodeEncodeError if it ever regresses
+
+    for finding, action in pm_brief.FINDINGS.values():
+        finding.encode("ascii")
+        action.encode("ascii")
+
+
+def test_each_trigger_has_a_finding_and_an_action():
+    # A trigger with no entry would fire silently, which is worse than not
+    # firing: the state says something is wrong and the brief says nothing.
+    for name in pm_brief.crew_state.TRIGGERS:
+        assert name in pm_brief.FINDINGS
+        finding, action = pm_brief.FINDINGS[name]
+        assert finding and action
+
+
+def test_expanded_brief_states_report_only_authority():
+    out = "\n".join(pm_brief.render(_with("upgradeNeeded", schema=1))).lower()
+    assert "recommend" in out or "report" in out
+
+
+def test_healthy_state_stays_quiet():
+    out = pm_brief.render(HEALTHY)
+    assert len(out) <= HEALTHY["pm"]["quietLines"]
+    assert "/crew:upgrade" not in "\n".join(out)
+
+
+def test_every_trigger_at_once_respects_max_lines():
+    state = dict(HEALTHY, schema=1,
+                 triggers=list(pm_brief.crew_state.TRIGGERS))
+    out = pm_brief.render(state)
+    assert len(out) <= HEALTHY["pm"]["maxLines"]
+
+
+def test_truncation_points_at_the_pm_command():
+    state = dict(HEALTHY, schema=1,
+                 triggers=list(pm_brief.crew_state.TRIGGERS),
+                 pm=dict(HEALTHY["pm"], maxLines=7))
+    out = pm_brief.render(state)
+    assert len(out) <= 7
+    assert "/crew:pm" in out[-1]
+
+
+def test_truncation_keeps_the_highest_priority_finding():
+    state = dict(HEALTHY, schema=1,
+                 triggers=["upgradeNeeded", "ticketsTooLarge"],
+                 pm=dict(HEALTHY["pm"], maxLines=7))
+    out = "\n".join(pm_brief.render(state))
+    assert "/crew:upgrade" in out
+
+
+def test_quiet_mode_config_never_expands():
+    state = dict(HEALTHY, schema=1, triggers=["upgradeNeeded"],
+                 pm=dict(HEALTHY["pm"], mode="quiet"))
+    assert "/crew:upgrade" not in "\n".join(pm_brief.render(state))
