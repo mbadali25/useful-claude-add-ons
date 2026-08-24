@@ -56,9 +56,9 @@ def test_a_line_number_shift_is_not_a_conflict():
     out = graph_reconcile.reconcile(
         V1_MAP, {"Entry points": ["- `src/auth.py:44` — called by the cron"]}
     )
-    assert out["conflicts"] == []
+    assert out["conflicts"] == []  # pylint: disable=use-implicit-booleaness-not-comparison
     assert "src/auth.py:10" in out["body"]   # the human's note is still there
-    assert out["added"] == []                # and the graph added nothing new
+    assert out["added"] == []  # pylint: disable=use-implicit-booleaness-not-comparison
 
 
 def test_a_file_the_graph_does_not_know_is_a_conflict():
@@ -99,4 +99,4 @@ def test_reconcile_is_idempotent():
     assert once["added"], "first pass must actually add something"
     twice = graph_reconcile.reconcile(once["body"], derived)
     assert twice["body"] == once["body"]
-    assert twice["added"] == []
+    assert twice["added"] == []  # pylint: disable=use-implicit-booleaness-not-comparison
