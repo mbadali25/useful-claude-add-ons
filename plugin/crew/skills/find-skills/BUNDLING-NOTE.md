@@ -37,5 +37,8 @@ description: Discover and install agent skills from the open skills ecosystem vi
 ```
 
 The two other copies of this skill (the global `~/.claude/skills/find-skills`
-install and a project-scoped copy) have been removed; this vendored copy under
-`plugin/crew/skills/find-skills/` is now the only one that ships with crew.
+install and a project-scoped copy) were removed from this machine during the
+crew rollout; this vendored copy under `plugin/crew/skills/find-skills/` is
+the only one that ships with crew. A global copy can still exist on someone
+else's machine — that is what `crew-setup`'s detection step (`detect.sh`)
+checks for and reports on.
