@@ -4020,6 +4020,76 @@ python -c "import json;json.load(open('plugin/crew/hooks/hooks.json',encoding='u
 ```
 Expected: all green. A failure here is fixed, not noted.
 
+- [ ] **Step 1a: Reconcile the plan against the shipped code**
+
+Two divergences appeared during this plan's execution, in opposite directions:
+a helper that existed only in the plan (so the code crashed), and a guard that
+existed only in the code (so the plan would have regenerated the bug on the next
+transcription). **Neither is visible to any test, lint, or review** — the tests
+pass because they test what exists, the lint lints what exists, and the plan
+reads correct because it is correct; it just is not what shipped. Both were
+found by implementers tripping over them.
+
+Briefs cannot cover this either: they are generated from the plan as
+point-in-time snapshots, and every one on disk is stale by the end of a run.
+
+So compare the two directly, both ways:
+
+```bash
+python - <<'PY'
+import ast, pathlib, re, textwrap
+REPO = pathlib.Path(".")
+PLAN = REPO / "docs/superpowers/plans/2026-08-24-crew-pm-graph-upgrade.md"
+MODULES = [
+    "plugin/crew/hooks/scripts/crew_state.py",
+    "plugin/crew/hooks/scripts/pm_brief.py",
+    "plugin/crew/hooks/scripts/hook_once.py",
+    "plugin/crew/skills/crew-graph/scripts/graph_reconcile.py",
+    "plugin/crew/skills/crew-graph/scripts/crew_upgrade.py",
+]
+
+def names(src):
+    try:
+        tree = ast.parse(src)
+    except SyntaxError:
+        return set()
+    out = set()
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.ClassDef)):
+            out.add(node.name)
+        elif isinstance(node, ast.Assign):
+            out |= {t.id for t in node.targets if isinstance(t, ast.Name)}
+    return out
+
+text = PLAN.read_text(encoding="utf-8")
+planned = set()
+for block in re.findall(r"```python\n(.*?)```", text, re.S):
+    block = textwrap.dedent(block)
+    if block.lstrip().startswith(("def test_", "import context")):
+        continue
+    planned |= {n for n in names(block) if not n.startswith("test_")}
+
+shipped = set()
+for rel in MODULES:
+    path = REPO / rel
+    if path.exists():
+        shipped |= names(path.read_text(encoding="utf-8"))
+
+missing = sorted(n for n in planned - shipped)
+print("defined in the plan, absent from shipped code:", missing or "none")
+print("NOTE: names belonging to test modules are expected here.")
+PY
+```
+
+Then, for every module above, diff the plan's version of each function against
+the shipped one and account for **every** difference. A difference is not a
+defect by itself — an implementer improving on the plan is the good case, and it
+happened at least twice here. What is not acceptable is an *unexplained* one.
+
+Where the code is better, **update the plan to match** before merge, so the next
+person to transcribe it gets the better version. Where the plan is right and the
+code drifted, fix the code.
+
 - [ ] **Step 2: Codex review of this plan's changes**
 
 ```bash
