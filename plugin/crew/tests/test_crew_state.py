@@ -123,6 +123,23 @@ def test_a_leading_status_word_does_mark_it_finished(tmp_path):
     assert crew_state.read_work(str(root))["ticket"] == "T-0002"
 
 
+def test_capitalised_status_keywords_are_recognised(tmp_path):
+    """re.IGNORECASE is load-bearing; dropping it once already shipped a bug.
+
+    A status keyword is written however the author felt at the time. If this
+    test fails, someone removed the flag and finished tickets are being read
+    as open.
+    """
+    for index, marker in enumerate(("DONE:", "Done:", "Shipped:", "CLOSED:", "Merged:")):
+        root = crew_fixtures.make_repo(tmp_path / f"case{index}")
+        lines = ["# Work", "", f"- {marker} T-0001", "- T-0002 in progress", ""]
+        (root / ".work" / "INDEX.md").write_text(
+            chr(10).join(lines), encoding="utf-8"
+        )
+        got = crew_state.read_work(str(root))["ticket"]
+        assert got == "T-0002", f"{marker} was not treated as a done marker"
+
+
 def test_a_leading_status_word_without_a_colon_is_still_open(tmp_path):
     """The three shapes that defeated the position-anchored version.
 
