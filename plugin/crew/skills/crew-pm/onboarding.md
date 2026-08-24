@@ -16,11 +16,12 @@ Do not run any of this yourself. Delegate.
 2. Once `.crew/` exists, run `/crew:onboard` to build the codemap.
 3. Confirm the setup actually produced a usable crew, not just files that
    exist:
-   - `.crew/config.json` — `verify.json` (or the `verifyGate` it configures)
-     is present and not stubbed out. A verify gate that always passes is
-     worse than none, because it looks like a safety net.
-   - `secrets.md` — present if the repo has any secrets to track at all.
-     Absence is fine for a repo with none; silence about whether it was
+   - `.crew/verify.json` — the map from changed paths to the checks they
+     require, built by `/crew:verify`. Present and not stubbed out. A verify
+     gate that always passes is worse than none, because it looks like a
+     safety net.
+   - `.crew/secrets.md` — present if the repo has any secrets to track at
+     all. Absence is fine for a repo with none; silence about whether it was
      checked is not.
    - `e2e/` — present if `crew-setup`'s detection found a UI to test.
      Absence is fine for a pure backend or library repo.

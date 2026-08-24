@@ -64,6 +64,13 @@ current despite the anchor lag. This check is this skill's job, not the
 hook's — `crew_state.py` runs on every `SessionStart` and cannot afford a
 `git diff` per subsystem on every session in every repo.
 
+The reverse direction also needs care: an empty `knowledge.behind` is not
+proof everything is current. Outside a git repository `crew_state.py` has no
+HEAD to compare anchors against, and an absent HEAD skips the comparison
+entirely — so "nothing reported behind" can mean either "checked, all
+current" or "no git, nothing checked." Confirm `git rev-parse HEAD` succeeds
+before treating an empty list as a clean bill of health.
+
 **Graph freshness is commit-based, not working-tree-based.** `knowledge.graph.current`
 compares the graph's recorded build sha against HEAD. It says nothing about
 uncommitted changes: edit a tracked file and don't commit, and the graph

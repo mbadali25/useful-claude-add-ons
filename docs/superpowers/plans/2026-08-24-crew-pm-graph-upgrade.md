@@ -1483,6 +1483,46 @@ def test_second_call_in_one_session_prints_nothing(tmp_path, monkeypatch, capsys
     assert _run(root, "sess-abc", monkeypatch, capsys) == ""
 
 
+def test_the_brief_prints_again_after_a_clear(tmp_path, monkeypatch, capsys):
+    """SessionStart fires once per SOURCE, not once per session.
+
+    Keying the claim on session_id alone made the brief print at startup and
+    stay silent after every later /clear and /compact -- exactly when a fresh
+    session most needs its state.
+    """
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"schema": 2, "tier": 0, "roles": [],
+                          "tracker": "files"}, graph=True
+    )
+    seen = []
+    for source in ("startup", "clear", "compact", "resume", "fork"):
+        payload = json.dumps({"source": source, "cwd": str(root),
+                              "session_id": "one-session"})
+        monkeypatch.setattr("sys.stdin", io.StringIO(payload))
+        assert pm_brief.main([]) == 0
+        seen.append(bool(capsys.readouterr().out.strip()))
+    assert all(seen), f"silent on: {seen}"
+
+
+def test_the_same_source_twice_in_one_session_prints_once(tmp_path, monkeypatch,
+                                                          capsys):
+    # The double-fire case still has to hold: both wrappers fire one event.
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"schema": 2, "tier": 0, "roles": [],
+                          "tracker": "files"}, graph=True
+    )
+    payload = json.dumps({"source": "clear", "cwd": str(root),
+                          "session_id": "one-session"})
+    monkeypatch.setattr("sys.stdin", io.StringIO(payload))
+    pm_brief.main([])
+    first = capsys.readouterr().out
+    monkeypatch.setattr("sys.stdin", io.StringIO(payload))
+    pm_brief.main([])
+    second = capsys.readouterr().out
+    assert first.strip()
+    assert second == ""
+
+
 def test_a_new_session_prints_again(tmp_path, monkeypatch, capsys):
     # A permanent marker would be worse than a double-print: the brief would
     # appear once per repo, ever.
@@ -1615,7 +1655,18 @@ def main(argv=None):
     # matcher to pick one -- so whichever arrives second must print nothing.
     # Claiming here rather than in the wrappers means one implementation
     # instead of two, and no shell-specific platform guessing.
-    if not hook_once.claim(root, "pm-brief", payload.get("session_id")):
+    #
+    # The key includes `source`, and that is load-bearing. SessionStart fires
+    # once per SOURCE EVENT -- startup, clear, compact, resume, fork -- not once
+    # per session. Keying on session_id alone means the brief prints at startup
+    # and stays silent after every later /clear and /compact, which is exactly
+    # when a fresh session most needs its state. Including source is safe
+    # whichever way session_id behaves: if it changes across /clear the key is
+    # unique anyway; if it does not, source disambiguates.
+    session = payload.get("session_id")
+    source = payload.get("source") or "unknown"
+    if not hook_once.claim(root, "pm-brief", f"{session}-{source}" if session
+                           else None):
         return 0
 
     # A Windows console often runs an OEM codepage (cp437/cp850) that cannot
@@ -2168,6 +2219,33 @@ keys, same exit codes. Do not improve them in this task; a port that also
 changes behaviour cannot be reviewed against its original.
 
 
+
+- [ ] **Step 4a: Key `handoff-read`'s claim on source too, and claim AFTER the filter**
+
+`handoff-read.sh` and `.ps1` currently take the claim at line ~14, **before** the
+`case "$SOURCE" in clear|compact|resume)` filter at line ~18. Two consequences,
+both bad:
+
+- The `startup` firing takes the claim and then exits immediately on the filter,
+  having done nothing — so the later `clear` firing loses the race and **the
+  handoff is never read after `/clear`**, which is the entire point of it.
+- Even without that ordering, a session-only key means one claim covers every
+  source event in the session.
+
+Fix both: move the claim to **after** the source filter, and key it on session
+and source together:
+
+```bash
+case "$SOURCE" in clear|compact|resume|fork) ;; *) exit 0 ;; esac
+"$PY" "$DIR/hook_once.py" handoff-read "${SESSION}-${SOURCE}" || exit 0
+```
+
+`fork` is added deliberately: the docs list it as a `SessionStart` source
+(`claude --fork-session`), and a forked session wants the handoff for the same
+reason a resumed one does.
+
+Mirror both changes in `handoff-read.ps1`, keeping the claim name string
+identical between the two flavours.
 
 - [ ] **Step 5a: Write `plugin/crew/tests/test_hook_once.py`**
 
