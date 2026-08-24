@@ -996,6 +996,8 @@ git commit -m "feat(crew): report codemap anchor drift and graph freshness"
 - Produces:
   - `TRIGGERS: tuple[str, ...]` in priority order —
     `("upgradeNeeded", "handoffPending", "graphStale", "knowledgeBehind", "reviewNotWorking", "ticketsTooLarge")`
+  - `int_or(value, default: int) -> int` — coerce an untrusted config
+    value; rejects bools deliberately
   - `evaluate_triggers(state: dict) -> list[str]`
   - `collect(root: str) -> dict` — the whole state object, keys:
     `isCrew, schema, tier, roles, tracker, pm, health, work, knowledge, triggers`
@@ -1082,6 +1084,60 @@ def test_triggers_come_back_in_priority_order():
     assert got == ["upgradeNeeded", "handoffPending", "reviewNotWorking"]
 
 
+def test_a_hand_edited_schema_does_not_crash_collect(tmp_path):
+    """The crash that would break every session opened in the repo.
+
+    .get(key, default) substitutes the default only when the KEY IS ABSENT, so
+    a present `"schema": null` returns None and `None < 2` raises TypeError.
+    """
+    for bad in (None, "two", [], {}, True):
+        root = crew_fixtures.make_repo(tmp_path / f"s{abs(hash(str(bad))) % 9999}",
+                                      config={"schema": bad, "tier": 0})
+        got = crew_state.collect(str(root))
+        assert isinstance(got["schema"], int), bad
+        assert isinstance(got["triggers"], list), bad
+
+
+def test_a_numeric_string_schema_is_read_as_a_number(tmp_path):
+    root = crew_fixtures.make_repo(tmp_path, config={"schema": "2"})
+    assert crew_state.collect(str(root))["schema"] == 2
+    assert "upgradeNeeded" not in crew_state.collect(str(root))["triggers"]
+
+
+def test_hand_edited_pm_line_counts_do_not_crash(tmp_path):
+    # Task 6 does int(pm["quietLines"]); an unvalidated "eight" would raise
+    # there instead, and silently swallow the whole brief.
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"schema": 2, "pm": {"quietLines": "eight",
+                                              "maxLines": None}}
+    )
+    pm = crew_state.collect(str(root))["pm"]
+    assert pm["quietLines"] == 8
+    assert pm["maxLines"] == 40
+
+
+def test_hand_edited_tier_and_roles_are_normalised(tmp_path):
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"schema": 2, "tier": {}, "roles": "explorer"}
+    )
+    got = crew_state.collect(str(root))
+    assert got["tier"] is None
+    assert got["roles"] == []
+
+
+def test_a_non_crew_directory_reports_no_triggers(tmp_path):
+    """A directory with no crew has no findings.
+
+    Without the isCrew gate every plain git repo reports graphStale, and
+    /crew:pm calls collect() directly with no gate of its own.
+    """
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    got = crew_state.collect(str(plain))
+    assert got["isCrew"] is False
+    assert got["triggers"] == []
+
+
 def test_collect_on_a_non_crew_directory_is_not_crew(tmp_path):
     root = tmp_path / "plain"
     root.mkdir()
@@ -1131,6 +1187,25 @@ PM_DEFAULTS = {
 }
 
 
+def int_or(value, default):
+    """`value` as an int when it plausibly is one, else `default`.
+
+    Config is hand-edited, so every numeric field arrives untrusted. A bool is
+    rejected on purpose: `True` is an int in Python, and a config saying
+    `"schema": true` means someone was confused, not that the schema is 1.
+    """
+    if isinstance(value, bool):
+        return default
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        try:
+            return int(value.strip())
+        except ValueError:
+            return default
+    return default
+
+
 def evaluate_triggers(state):
     """Reasons the PM should speak up, in TRIGGERS order."""
     knowledge = state.get("knowledge") or {}
@@ -1138,8 +1213,14 @@ def evaluate_triggers(state):
     health = state.get("health") or {}
     work = state.get("work") or {}
 
+    # `schema` is normalised by collect(), but evaluate_triggers is also called
+    # directly by tests and by the crew:pm agent, so it must not assume that.
+    # .get(key, default) substitutes the default only when the KEY IS ABSENT --
+    # a present `"schema": null` returns None, and `None < 2` is a TypeError
+    # that would break every session opened in the repo.
+    schema = int_or(state.get("schema", 1), 1)
     fired = {
-        "upgradeNeeded": state.get("schema", 1) < SCHEMA_CURRENT,
+        "upgradeNeeded": schema < SCHEMA_CURRENT,
         "handoffPending": bool(work.get("handoffPending")),
         # An absent graph is stale by definition -- there is nothing to trust.
         "graphStale": not graph.get("present") or not graph.get("current"),
@@ -1163,19 +1244,33 @@ def collect(root):
     if isinstance(supplied, dict):
         pm.update(supplied)
 
+    # Coerce every numeric field once, here, so nothing downstream has to guess.
+    # These come from a hand-edited JSON file: the types are whatever someone
+    # typed, and an unguarded comparison against one is a TypeError that takes
+    # out every session in the repo.
+    for key, default in (("quietLines", 8), ("maxLines", 40)):
+        pm[key] = int_or(pm.get(key, default), default)
+
+    tier = cfg.get("tier")
+    roles = cfg.get("roles")
+
     state = {
         "isCrew": bool(cfg),
         # No `schema` key means a config written before schema tracking: v1.
-        "schema": cfg.get("schema", 1) if cfg else SCHEMA_CURRENT,
-        "tier": cfg.get("tier"),
-        "roles": cfg.get("roles") or [],
+        "schema": int_or(cfg.get("schema", 1), 1) if cfg else SCHEMA_CURRENT,
+        "tier": tier if isinstance(tier, int) and not isinstance(tier, bool) else None,
+        "roles": roles if isinstance(roles, list) else [],
         "tracker": cfg.get("tracker"),
         "pm": pm,
         "health": read_metrics(root),
         "work": read_work(root),
         "knowledge": read_knowledge(root, cfg),
     }
-    state["triggers"] = evaluate_triggers(state)
+    # A directory with no crew has no findings. evaluate_triggers would
+    # otherwise report graphStale for every plain git repo on the machine,
+    # because _read_graph correctly finds no graph -- and /crew:pm and the
+    # crew:pm agent call collect() directly, with no isCrew gate of their own.
+    state["triggers"] = evaluate_triggers(state) if state["isCrew"] else []
     return state
 
 
