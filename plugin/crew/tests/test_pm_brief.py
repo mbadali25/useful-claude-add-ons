@@ -21,12 +21,13 @@ HEALTHY = {
 
 
 def test_non_crew_repo_renders_nothing():
+    # pylint: disable-next=use-implicit-booleaness-not-comparison
     assert pm_brief.render({"isCrew": False, "triggers": []}) == []
 
 
 def test_disabled_pm_renders_nothing():
     state = dict(HEALTHY, pm=dict(HEALTHY["pm"], enabled=False))
-    assert pm_brief.render(state) == []
+    assert pm_brief.render(state) == []  # pylint: disable=use-implicit-booleaness-not-comparison
 
 
 def test_quiet_brief_respects_quiet_lines():
