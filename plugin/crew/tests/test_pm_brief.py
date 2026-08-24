@@ -189,6 +189,32 @@ def test_every_trigger_at_once_respects_max_lines():
     assert len(out) <= HEALTHY["pm"]["maxLines"]
 
 
+def test_truncation_never_orphans_a_finding_from_its_action():
+    """A finding whose action was cut names a problem and says nothing about it.
+
+    Every even cap used to do exactly that, because the cut fell between the
+    two lines of one pair.
+    """
+    state = dict(HEALTHY, schema=1,
+                 triggers=list(pm_brief.crew_state.TRIGGERS))
+    # From 2, the floor max(2, ...) enforces. Below that the requested cap
+    # is not the effective one, so comparing against it tests the harness.
+    for cap in range(2, 24):
+        out = pm_brief.render(dict(state, pm=dict(HEALTHY["pm"], maxLines=cap)))
+        assert len(out) <= cap, f"cap {cap} exceeded: {len(out)}"
+        findings = sum(1 for line in out if line.startswith("- "))
+        actions = sum(1 for line in out if line.strip().startswith("->"))
+        assert findings == actions, (
+            f"cap {cap}: {findings} findings but {actions} actions"
+        )
+
+
+def test_the_truncation_notice_is_ascii():
+    # The all-triggers case fits under the default cap, so the notice is never
+    # rendered there and the ascii sweep never sees it.
+    pm_brief._TRUNCATED.encode("ascii")  # pylint: disable=protected-access
+
+
 def test_truncation_points_at_the_pm_command():
     state = dict(HEALTHY, schema=1,
                  triggers=list(pm_brief.crew_state.TRIGGERS),

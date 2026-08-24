@@ -126,23 +126,41 @@ def render(state):
     if pm.get("mode") != "adaptive" or not triggers:
         return quiet[: max(1, int(pm.get("quietLines", 8)))]
 
-    lines = list(quiet)
+    # A finding and its action are one unit. Truncation cuts between units,
+    # never inside one: a finding whose action was dropped names a problem and
+    # says nothing about it, which is worse than omitting it entirely.
+    pairs = []
     for name in triggers:
         entry = FINDINGS.get(name)
         if not entry:
             continue
         finding, action = entry
-        lines.append(f"- {finding}")
-        lines.append(f"  -> {action}")
-    lines.append("")
-    lines.append(_AUTHORITY_NOTE)
+        pairs.append((f"- {finding}", f"  -> {action}"))
 
     cap = max(2, int(pm.get("maxLines", 40)))
-    if len(lines) <= cap:
-        return lines
-    # Truncate from the bottom: crew_state returns triggers in priority order,
-    # so what survives is the most actionable finding.
-    return lines[: cap - 1] + [_TRUNCATED]
+    tail = ["", _AUTHORITY_NOTE]
+    flat = [line for pair in pairs for line in pair]
+
+    if len(quiet) + len(flat) + len(tail) <= cap:
+        return list(quiet) + flat + tail
+
+    # No room for everything. Keep whole pairs, highest priority first --
+    # crew_state returns triggers in priority order -- and spend the last line
+    # on the pointer to the full report.
+    room = cap - len(quiet) - 1
+    if room < 2:
+        # Not even one finding fits. The cap wins over the content, including
+        # over the state summary: a brief that exceeds its own cap is not a
+        # capped brief.
+        if cap > len(quiet):
+            return list(quiet) + [_TRUNCATED]
+        return list(quiet)[:cap]
+    kept = pairs[: room // 2]
+    return (
+        list(quiet)
+        + [line for pair in kept for line in pair]
+        + [_TRUNCATED]
+    )
 
 
 def main(argv=None):
