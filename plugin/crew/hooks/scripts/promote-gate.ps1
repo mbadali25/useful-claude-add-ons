@@ -55,20 +55,29 @@ foreach ($up in $cfg.requires) {
   }
 }
 
-# rollback runbook: exists and verified inside 90 days
-if ($cfg.rollback) {
-  if (-not (Test-Path $cfg.rollback)) {
-    $problems.Add("the rollback runbook '$($cfg.rollback)' does not exist. No verified rollback, no deploy.")
+# rollback runbook: required for every gated environment. Fail CLOSED - an
+# absent key used to mean "no rollback needed"; now it blocks the deploy. The
+# only way to opt out is rollback: "none" plus a rollbackReason.
+if (-not ($cfg.PSObject.Properties.Name -contains 'rollback')) {
+  $problems.Add("'$envName' has no 'rollback' key in .crew/verify.json. Add rollback: `"<path to a runbook>`", or rollback: `"none`" plus a rollbackReason string explaining why $envName does not need one. Fix: edit the '$envName' block in .crew/verify.json.")
+} elseif ($cfg.rollback -eq 'none') {
+  $reason = "$($cfg.rollbackReason)".Trim()
+  if (-not $reason) {
+    $problems.Add("'$envName' sets rollback: `"none`" but has no rollbackReason. State why $envName does not need a rollback plan. Fix: add a rollbackReason string next to rollback in .crew/verify.json.")
+  }
+} elseif (-not $cfg.rollback) {
+  $problems.Add("'$envName' has an invalid rollback value. Fix: set rollback to a runbook path, or to the literal string `"none`" plus a rollbackReason.")
+} elseif (-not (Test-Path $cfg.rollback)) {
+  $problems.Add("the rollback runbook '$($cfg.rollback)' does not exist. No verified rollback, no deploy.")
+} else {
+  $txt = Get-Content $cfg.rollback -Raw
+  $m = [regex]::Match($txt, 'last[ _-]?verified\s*[:=]\s*(\d{4}-\d{2}-\d{2})', 'IgnoreCase')
+  if (-not $m.Success) {
+    $problems.Add("'$($cfg.rollback)' has no 'last verified: YYYY-MM-DD' line. An unverified rollback is not a rollback.")
   } else {
-    $txt = Get-Content $cfg.rollback -Raw
-    $m = [regex]::Match($txt, 'last[ _-]?verified\s*[:=]\s*(\d{4}-\d{2}-\d{2})', 'IgnoreCase')
-    if (-not $m.Success) {
-      $problems.Add("'$($cfg.rollback)' has no 'last verified: YYYY-MM-DD' line. An unverified rollback is not a rollback.")
-    } else {
-      $age = (Get-Date).Date - [datetime]::ParseExact($m.Groups[1].Value, 'yyyy-MM-dd', $null)
-      if ($age.Days -gt 90) {
-        $problems.Add("'$($cfg.rollback)' was last verified $($age.Days) days ago (ceiling is 90). Re-run it against a real environment first.")
-      }
+    $age = (Get-Date).Date - [datetime]::ParseExact($m.Groups[1].Value, 'yyyy-MM-dd', $null)
+    if ($age.Days -gt 90) {
+      $problems.Add("'$($cfg.rollback)' was last verified $($age.Days) days ago (ceiling is 90). Re-run it against a real environment first.")
     }
   }
 }

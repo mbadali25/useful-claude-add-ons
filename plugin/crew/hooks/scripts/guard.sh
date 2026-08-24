@@ -23,13 +23,89 @@ echo "$CMD" | grep -qiE '\b(DROP|TRUNCATE)[[:space:]]+(TABLE|DATABASE|SCHEMA)' &
 echo "$CMD" | grep -qE '\bgit[[:space:]]+push\b.*(--force|-f)\b' && block "force push."
 echo "$CMD" | grep -qE '\bgit[[:space:]]+(reset[[:space:]]+--hard|clean[[:space:]]+-[a-z]*f)' && block "destroys uncommitted work."
 echo "$CMD" | grep -qE '\brm[[:space:]]+-[a-z]*rf?[[:space:]]+/' && block "recursive delete from root."
-# Whole-token match. A substring match blocks "s3://my-product-images",
-# "reproducible-builds" and "select * from products", which trains you to
-# work around the guard - and a guard people route around is not a guard.
-if echo "$CMD" | grep -qiE '(^|[^[:alnum:]])(prod|production)([^[:alnum:]]|$)'; then
-  echo "$CMD" | grep -qiE '(^|[^[:alnum:]])(psql|mysql|sqlcmd|mongo|az|aws|gcloud)([^[:alnum:]]|$)' \
-    && block "command targets production. If this is not production, rename the argument or run it yourself."
+# Argument-position match, not substring presence. The old check matched
+# "prod"/"production" as a whole word ANYWHERE in the command text, plus one
+# of a handful of infra CLI names ANYWHERE in that same text - so it blocked
+# `gh pr comment ... --body "...the prod outage..."` (both words were just
+# prose, "gh" is not an infra CLI) and `aws events describe-rule --name
+# thd-prod-inventory-created` (an unrelated resource name that happens to
+# have "prod" as a middle segment). It was also trivially dodged: quote the
+# argument differently and the substring match still fires, or wrap the same
+# command in a script and it silently stops firing - noisy and ineffective.
+#
+# Fix: tokenize the command for real. The infra CLI must be the actual
+# program invoked (not a word anywhere in the text). The environment name
+# must be the whole argument, or the first/last hyphen-joined segment of one
+# - never a value handed to a message-type flag (-m, --body, ...), a web URL,
+# or any token carrying whitespace (which can only be a quoted string).
+ENV_PY=$(crew_py) || ENV_PY=""
+if [ -n "$ENV_PY" ]; then
+  ENVHIT=$("$ENV_PY" - "$CMD" <<'PYEOF'
+import re, shlex, sys
+
+cmd = sys.argv[1]
+TOOLS = {"psql", "mysql", "sqlcmd", "mongo", "az", "aws", "gcloud"}
+ENVS = {"prod", "production"}
+PROSE_FLAGS = {"-m", "--message", "--body", "--comment", "--title",
+               "--description", "--subject", "-F"}
+
+
+def segments(tok):
+    return [s for s in re.split(r"[^A-Za-z0-9]+", tok) if s]
+
+
+def strip_scheme(tok):
+    m = re.match(r"^[A-Za-z][A-Za-z0-9+.-]*://(.*)$", tok)
+    return m.group(1) if m else tok
+
+
+hit = False
+for part in re.split(r"&&|\|\||[|;]", cmd):
+    part = part.strip()
+    if not part:
+        continue
+    try:
+        toks = shlex.split(part)
+    except ValueError:
+        toks = part.split()
+    if not toks:
+        continue
+    prog = toks[0].rsplit("/", 1)[-1].lower()
+    if prog not in TOOLS:
+        continue
+    skip_next = False
+    for tok in toks[1:]:
+        if skip_next:
+            skip_next = False
+            continue
+        if tok in PROSE_FLAGS:
+            skip_next = True
+            continue
+        if re.match(r"(?i)^https?://", tok):
+            continue
+        if any(ch.isspace() for ch in tok):
+            continue
+        segs = segments(strip_scheme(tok))
+        if segs and (segs[0].lower() in ENVS or segs[-1].lower() in ENVS):
+            hit = True
+            break
+    if hit:
+        break
+
+print("1" if hit else "0")
+PYEOF
+)
+else
+  # No python: fall back to the old, cruder whole-word check rather than
+  # silently disabling this rule.
+  if echo "$CMD" | grep -qiE '(^|[^[:alnum:]])(prod|production)([^[:alnum:]]|$)' \
+     && echo "$CMD" | grep -qiE '(^|[^[:alnum:]])(psql|mysql|sqlcmd|mongo|az|aws|gcloud)([^[:alnum:]]|$)'; then
+    ENVHIT=1
+  else
+    ENVHIT=0
+  fi
 fi
+[ "$ENVHIT" = "1" ] && block "command targets production. If this is not production, rename the argument or run it yourself."
 
 # --- secrets: never let VALUES reach the transcript -----------------------
 # Retrieving a secret is fine. Printing it is not: the value lands in context,

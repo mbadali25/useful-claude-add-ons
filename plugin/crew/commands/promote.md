@@ -31,8 +31,10 @@ with the error text verbatim.
 - Every environment in `requires` has a `pass` row in `.work/PROMOTIONS.md` for
   the sha you are about to deploy. Not "a pass row" - a pass row *for this sha*.
 - The working tree is clean and the sha is pushed.
-- If `rollback` is set, that runbook exists and its `last verified` date is
-  inside 90 days. If it is not, stop. This one has no override.
+- `rollback` must be set: either a runbook that exists with a `last verified`
+  date inside 90 days, or the literal `"none"` plus a `rollbackReason`. An
+  absent key is a stop, not a pass - the fix is to add one of the two, in
+  `.crew/verify.json`. Production without a verified runbook has no override.
 - If `requireHuman` is set, show me the sha, the diff summary, and what the last
   production promotion was, then wait for me to say go. Do not proceed on
   silence.

@@ -112,7 +112,9 @@ cat > .crew/verify.json <<'EOF'
   {"paths":["CLAUDE.md","_verify/**",".gitignore","package.json","requirements.txt"],"run":[],"why":"docs/config"}],
  "always":[],"default":["true"],"unmapped":"fail",
  "environments":{
-  "qa":{"deploy":["./deploy.sh qa"],"smoke":["true"],"promotesTo":"production"},
+  "qa":{"deploy":["./deploy.sh qa"],"smoke":["true"],
+        "rollback":"none","rollbackReason":"qa is disposable, rebuilt on every push",
+        "promotesTo":"production"},
   "production":{"requires":["qa"],"deploy":["./deploy.sh prod"],
                 "rollback":"docs/runbooks/rollback.md","requireHuman":true}}}
 EOF

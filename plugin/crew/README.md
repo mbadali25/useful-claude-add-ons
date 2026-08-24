@@ -1219,6 +1219,8 @@ The sequence lives in the `environments` block of `.crew/verify.json`, beside th
     "regression":   ["./_verify/run-all.sh --env qa", "npx playwright test --grep @flow"],
     "verify":       ["./_verify/check-logs.sh qa --since 10m"],
     "soakMinutes":  10,
+    "rollback":       "none",
+    "rollbackReason": "qa is rebuilt from the latest development deploy; there is nothing to roll back to",
     "promotesTo":   "production"
   },
   "production": {
@@ -1254,9 +1256,18 @@ Every promotion appends a row to `.work/PROMOTIONS.md`, failures included:
 declared `deploy` entry unless, for the sha at HEAD:
 
 - every environment in `requires` has an **all-pass** row in `.work/PROMOTIONS.md`
-- the `rollback` runbook exists and carries `last verified: YYYY-MM-DD` inside 90 days
+- `rollback` is set: a runbook that exists and carries `last verified: YYYY-MM-DD` inside 90 days, or the literal `"none"` plus a `rollbackReason` - an absent key blocks the deploy
 - `requireHuman` has an approval marker at `.crew/.approved-<env>-<sha>`
 - the working tree is clean - you cannot deploy a sha plus uncommitted changes
+
+**Limitation: this enforcement lives in the session, not the repo.** All three
+gates - `guard.sh`, `verify-gate.sh`, `promote-gate.sh` - are hooks that run
+only inside a Claude Code session with the crew plugin active. A fresh
+session that does not have the plugin installed - a teammate who skipped
+setup, a different machine, any tool other than Claude Code - gets none of
+these guarantees, even though `.crew/verify.json`, `.crew/STATUS.md`, and
+this README are all still sitting in the repo looking fully configured.
+Nothing here is durable across that boundary except the plugin being active.
 
 `verify-gate.sh` then refuses to end a turn that deployed and recorded nothing.
 
@@ -1274,7 +1285,7 @@ the hook greps for.
 
 - **The sha must match across environments.** A rebuild between qa and production is a different artifact, and qa proved nothing about it.
 - **`verify` runs after the soak.** Errors surface on the first real traffic, which arrives after the deploy finishes, not during it.
-- **Production needs a rollback runbook verified inside 90 days.** No verified rollback, no deploy.
+- **Every gated environment declares a rollback plan, or says why it does not need one.** A verified runbook inside 90 days, or `rollback: "none"` plus a `rollbackReason` - an absent key blocks the deploy. Production without a verified runbook is the one case with no override.
 - **A failed gate is a stop.** Roll back or fix forward, then run the whole sequence again from gate 1. Never resume mid-sequence.
 
 ### Starting from nothing

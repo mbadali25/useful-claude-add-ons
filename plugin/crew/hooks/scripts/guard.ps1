@@ -12,10 +12,52 @@ if ($cmd -match '(?i)\b(DROP|TRUNCATE)\s+(TABLE|DATABASE|SCHEMA)') { Block "dest
 if ($cmd -match '(?i)\bgit\s+push\b.*(--force|-f)\b')            { Block "force push." }
 if ($cmd -match '(?i)\bgit\s+(reset\s+--hard|clean\s+-[a-z]*f)') { Block "destroys uncommitted work." }
 if ($cmd -match '(?i)Remove-Item\s+.*-Recurse.*-Force.*[A-Z]:\\?\s*$') { Block "recursive delete of a drive root." }
-# Whole-token match. A substring match blocks "s3://my-product-images" and
-# "select * from products", which trains you to work around the guard.
-if ($cmd -match '(?i)(^|[^\p{L}\p{N}])(prod|production)([^\p{L}\p{N}]|$)' -and
-    $cmd -match '(?i)(^|[^\p{L}\p{N}])(psql|mysql|sqlcmd|mongo|az|aws|gcloud)([^\p{L}\p{N}]|$)') {
+# Argument-position match, not substring presence. Mirrors guard.sh: the old
+# check matched "prod"/"production" as a whole word ANYWHERE in the command
+# text, plus an infra CLI name ANYWHERE in that same text - so it blocked
+# prose (e.g. `gh pr comment ... --body "...the prod outage..."`, where "gh"
+# is not an infra CLI) and unrelated resource names (e.g. `aws events
+# describe-rule --name thd-prod-inventory-created`, where "prod" is a middle
+# segment). Now: the infra CLI must be the actual program invoked, and the
+# environment name must be the whole argument or the first/last hyphen-joined
+# segment of one - never a message-flag value, a web URL, or a token with
+# whitespace (only a quoted string can carry one).
+function Test-EnvArgHit([string]$c) {
+  $tools = @('psql', 'mysql', 'sqlcmd', 'mongo', 'az', 'aws', 'gcloud')
+  $envs = @('prod', 'production')
+  $proseFlags = @('-m', '--message', '--body', '--comment', '--title', '--description', '--subject', '-F')
+  $dq = [char]34
+  $tokRegex = "$dq([^$dq]*)$dq|(\S+)"
+  foreach ($part in [regex]::Split($c, '&&|\|\||[|;]')) {
+    $p = $part.Trim()
+    if (-not $p) { continue }
+    $toks = @([regex]::Matches($p, $tokRegex) | ForEach-Object {
+      if ($_.Groups[1].Success) { $_.Groups[1].Value } else { $_.Groups[2].Value }
+    })
+    if (-not $toks -or $toks.Count -eq 0) { continue }
+    $prog = ($toks[0] -split '[\\/]')[-1].ToLower()
+    if ($tools -notcontains $prog) { continue }
+    $skipNext = $false
+    for ($i = 1; $i -lt $toks.Count; $i++) {
+      $tok = $toks[$i]
+      if ($skipNext) { $skipNext = $false; continue }
+      if ($proseFlags -contains $tok) { $skipNext = $true; continue }
+      if ($tok -match '(?i)^https?://') { continue }
+      if ($tok -match '\s') { continue }
+      $rest = $tok -replace '^[A-Za-z][A-Za-z0-9+.\-]*://', ''
+      # @(...) forces an array even when exactly one segment survives the
+      # filter - PowerShell otherwise unwraps a single-item pipeline result
+      # to a bare string, and $segs[0] would then index a character, not
+      # the segment.
+      $segs = @(($rest -split '[^\p{L}\p{N}]+') | Where-Object { $_ -ne '' })
+      if ($segs.Count -gt 0 -and ($envs -contains $segs[0].ToLower() -or $envs -contains $segs[-1].ToLower())) {
+        return $true
+      }
+    }
+  }
+  return $false
+}
+if (Test-EnvArgHit $cmd) {
   Block "command targets production. If this is not production, rename the argument or run it yourself."
 }
 

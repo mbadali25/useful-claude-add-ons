@@ -41,6 +41,19 @@ States: `todo`, `in progress`, `partial`, `blocked`, `done`, `n/a`.
 Be honest with `partial` and `blocked`. A status file that says `done` when a
 thing half works is how the whole system quietly stops meaning anything.
 
+**Limitation: this file records phases, not a durable guarantee.** Every gate
+crew enforces - `guard.sh`, `verify-gate.sh`, `promote-gate.sh` - is enforced by
+hooks that live in whichever Claude Code session has the crew **plugin**
+active, not by anything this phase table or `.crew/verify.json` writes into the
+repo. A phase marked `done` here says the setup work happened once; it says
+nothing about whether the session running right now actually has the plugin
+enabled. A fresh session without it - a teammate who never installed crew, a
+different machine, Claude Code pointed at this repo through a different
+config - gets no `guard.sh`, no `verify-gate.sh`, no `promote-gate.sh`, even
+though this file, `CLAUDE.md`, and `.crew/verify.json` are all sitting right
+there looking fully set up. There is nothing in this repo that makes
+enforcement durable across that boundary; only the plugin being active does.
+
 ---
 
 ## Phase 0 — Platform
