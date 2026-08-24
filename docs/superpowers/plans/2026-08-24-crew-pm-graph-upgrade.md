@@ -498,8 +498,12 @@ def test_capitalised_status_keywords_are_recognised(tmp_path):
     test fails, someone removed the flag and finished tickets are being read
     as open.
     """
-    for marker in ("DONE:", "Done:", "Shipped:", "CLOSED:", "Merged:"):
-        root = crew_fixtures.make_repo(tmp_path / marker.strip(":"))
+    markers = ("DONE:", "Done:", "Shipped:", "CLOSED:", "Merged:")
+    for index, marker in enumerate(markers):
+        # Indexed, not named after the marker: 'DONE' and 'Done' are the
+        # SAME directory on a case-insensitive filesystem, so naming them
+        # after the marker makes the second iteration collide.
+        root = crew_fixtures.make_repo(tmp_path / f"case{index}")
         lines = ["# Work", "", f"- {marker} T-0001", "- T-0002 in progress", ""]
         (root / ".work" / "INDEX.md").write_text(
             chr(10).join(lines), encoding="utf-8"
@@ -589,7 +593,8 @@ _TICKET_RE = re.compile(r"([A-Z][A-Z0-9]*-\d+)")
 # What actually discriminates is syntactic form -- a checkbox, a strikethrough,
 # or a keyword followed by a COLON. The colon is what turns "done" into a label
 # rather than an instruction. Bullet forms cover -, *, + and numbered lists
-# (1. / 1)), because `1. [x] T-1` is a finished ticket too.#
+# (1. / 1)), because `1. [x] T-1` is a finished ticket too.
+#
 # re.IGNORECASE is load-bearing and has been dropped once already. `- DONE: T-1`
 # and `- Shipped: T-3` are ordinary ways to write a status, and hand-patching
 # only the checkbox branch to [xX] leaves the keyword branch lowercase-only --
@@ -1090,9 +1095,10 @@ def test_a_hand_edited_schema_does_not_crash_collect(tmp_path):
     .get(key, default) substitutes the default only when the KEY IS ABSENT, so
     a present `"schema": null` returns None and `None < 2` raises TypeError.
     """
-    for bad in (None, "two", [], {}, True):
-        root = crew_fixtures.make_repo(tmp_path / f"s{abs(hash(str(bad))) % 9999}",
-                                      config={"schema": bad, "tier": 0})
+    for index, bad in enumerate((None, "two", [], {}, True)):
+        root = crew_fixtures.make_repo(
+            tmp_path / f"schema{index}", config={"schema": bad, "tier": 0}
+        )
         got = crew_state.collect(str(root))
         assert isinstance(got["schema"], int), bad
         assert isinstance(got["triggers"], list), bad
