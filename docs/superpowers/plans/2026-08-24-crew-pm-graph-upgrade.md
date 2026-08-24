@@ -491,6 +491,40 @@ def test_a_leading_status_word_does_mark_it_finished(tmp_path):
     assert crew_state.read_work(str(root))["ticket"] == "T-0002"
 
 
+def test_a_leading_status_word_without_a_colon_is_still_open(tmp_path):
+    """The cases that defeated the position-anchored version. Each of these
+    leads with a status word and is open work, so a positional rule reports
+    "no ticket open" while three tickets are.
+    """
+    for line, want in (
+        ("- Complete the T-5 setup", "T-5"),
+        ("- Closed captions for T-7 need review", "T-7"),
+        ("- Merged conflicts remain in T-8", "T-8"),
+    ):
+        root = crew_fixtures.make_repo(tmp_path / line[2:6].strip())
+        (root / ".work" / "INDEX.md").write_text(
+            f"# Work
+
+{line}
+", encoding="utf-8"
+        )
+        assert crew_state.read_work(str(root))["ticket"] == want, line
+
+
+def test_numbered_list_checkbox_is_recognised_as_done(tmp_path):
+    # `^[-*\s]*` did not match "1.", so a finished ticket read as open.
+    root = crew_fixtures.make_repo(tmp_path)
+    (root / ".work" / "INDEX.md").write_text(
+        "# Work
+
+1. [x] T-0001 done
+2. T-0002 in progress
+",
+        encoding="utf-8",
+    )
+    assert crew_state.read_work(str(root))["ticket"] == "T-0002"
+
+
 def test_work_with_every_ticket_done_reports_none(tmp_path):
     # "no ticket open" is true; naming a closed ticket is not.
     root = crew_fixtures.make_repo(tmp_path)
@@ -531,14 +565,21 @@ METRICS_WINDOW = 10
 
 _TICKET_RE = re.compile(r"([A-Z][A-Z0-9]*-\d+)")
 
-# Markers that mean a ticket line is finished, matched only at the START of the
-# line (after any list bullet). Scanning the whole line for words like "done"
-# or "merged" reads a description as a status: `- T-3 — clean up after the
-# merged branch` is open work, and skipping it would report "no ticket open"
-# while one is -- the same class of bug as taking the first match.
+# Markers that mean a ticket line is finished.
+#
+# Position is NOT the discriminator, which an earlier version of this got wrong.
+# Anchoring a bare keyword to the start of the line still misreads open work:
+# `- Merged conflicts remain in T-8` and `- Complete the T-5 setup` both lead
+# with a status word and are both open. A leading word is a verb as often as a
+# label.
+#
+# What actually discriminates is syntactic form -- a checkbox, a strikethrough,
+# or a keyword followed by a COLON. The colon is what turns "done" into a label
+# rather than an instruction. Bullet forms cover -, *, + and numbered lists
+# (1. / 1)), because `1. [x] T-1` is a finished ticket too.
 _DONE_RE = re.compile(
-    r"^[-*\s]*(\[x\]|~~|(done|closed|merged|shipped|complete\w*)\b[:\s-])",
-    re.IGNORECASE,
+    r"^\s*(?:[-*+]|\d+[.)])?\s*"
+    r"(?:\[[xX]\]|~~|(?:done|closed|merged|shipped|complete[d]?)\s*:)"
 )
 
 
@@ -547,7 +588,12 @@ def read_text(path):
     try:
         with open(path, "r", encoding="utf-8", errors="replace") as handle:
             return handle.read()
-    except OSError:
+    except (OSError, ValueError):
+        # ValueError covers a path Python rejects before touching the disk (an
+        # embedded NUL raises rather than returning ENOENT). Unreachable from a
+        # real filesystem, but this module must never raise from a SessionStart
+        # hook under any input, so the cheap catch beats the argument about
+        # reachability.
         return None
 
 
