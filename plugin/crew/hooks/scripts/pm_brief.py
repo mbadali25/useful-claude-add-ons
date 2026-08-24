@@ -24,7 +24,7 @@ def _crew_line(state):
     tracker = state.get("tracker")
     if tracker:
         parts.append(f"tracker {tracker}")
-    return f"{parts[0]} — " + ", ".join(parts[1:])
+    return f"{parts[0]} - " + ", ".join(parts[1:])
 
 
 def _health_line(state):
@@ -33,7 +33,7 @@ def _health_line(state):
         return "health: no reviews recorded yet"
     return (
         f"health: {health['rate']} BLOCK+FIX per ticket "
-        f"over {health['tickets']} — {health['verdict']}"
+        f"over {health['tickets']} - {health['verdict']}"
     )
 
 
@@ -104,14 +104,27 @@ def main(argv=None):
     if not hook_once.claim(root, "pm-brief", payload.get("session_id")):
         return 0
 
+    # A Windows console often runs an OEM codepage (cp437/cp850) that cannot
+    # encode characters this module has no reason to emit. Measured: printing
+    # an em-dash under cp437 raises UnicodeEncodeError and the hook exits 1.
+    # Output is kept ASCII, and this is the second line of defence -- the next
+    # non-ASCII string someone adds degrades to '?' rather than taking out
+    # every session in the repo.
+    try:
+        sys.stdout.reconfigure(errors="replace")
+    except (AttributeError, ValueError, OSError):
+        pass
+
     try:
         lines = render(crew_state.collect(root))
+        if lines:
+            print("\n".join(lines))
     except Exception:  # pylint: disable=broad-except
         # A SessionStart hook that raises breaks every session opened in this
-        # repository. Silence is the only acceptable failure mode.
+        # repository. Silence is the only acceptable failure mode, and the
+        # print belongs inside the guard: encoding errors happen at write time,
+        # not at render time.
         return 0
-    if lines:
-        print("\n".join(lines))
     return 0
 
 
