@@ -1984,6 +1984,12 @@ that atomic, so a tie cannot produce two winners.
 Usage:  python3 hook_once.py <hook-name> <session-id>
 Exit 0  you won the claim -- do the work.
 Exit 1  someone else already has it -- exit quietly.
+
+ONLY for events that fire once per session -- in practice, SessionStart.
+`Stop`, `PreCompact` and `Notification` fire repeatedly within one session
+against a stable session id, so a marker claimed on the first firing suppresses
+every later one. For those, let both flavours run: duplication is a safe
+failure and suppression is not.
 """
 
 import os
@@ -2093,14 +2099,43 @@ if (-not $py) { exit 0 }
 exit 0
 ```
 
-- [ ] **Step 4: Add the claim to the three existing `.ps1` hooks and their `.sh` twins**
+- [ ] **Step 4: Add the claim to `handoff-read` only — NOT to the Stop hooks**
 
-`handoff-read`, `verify-gate`, and `context-watch` are about to be wired in both
-flavours for the first time. Without a claim that is a regression:
-double-printed handoffs, a doubled `context-watch` marker, and a 600-second
-verify gate running twice per Stop.
+`handoff-read` fires on `SessionStart`, which happens once per session, so a
+session-scoped claim fits the event exactly and deduplicates its two flavours.
 
-Each script gains a claim call near the top, **before** it does any work. Bash:
+**`verify-gate` and `context-watch` get no claim, deliberately.** They fire on
+`Stop`, which happens once per **turn** with a stable session id — so a
+session-scoped marker claimed on turn 1 is still there on turn 2, both flavours
+lose the race, and the hook silently does nothing for the rest of the session.
+Reproduced:
+
+```
+turn 1: sh=True  ps1=False  RAN
+turn 2: sh=False ps1=False  *** gate never ran ***
+```
+
+For a 600-second verify gate that reads as "the gate passed" — strictly worse
+than the double-run it would have prevented. The same applies to
+`handoff-write` (`PreCompact`) and `notify` (`Notification`).
+
+The rule, per hook: **claim only where the event is genuinely once-per-session
+AND duplication is harmful.** Everywhere else prefer running twice, because
+duplication is a safe failure and suppression is not. `verify-gate` running
+twice costs time and stays correct; `verify-gate` not running is a broken gate.
+`context-watch` and `handoff-write` are idempotent — the second run rewrites the
+same marker and the same file.
+
+A TTL was considered and rejected: too short duplicates (safe), too long
+suppresses (unsafe), and a turn can finish inside any TTL short enough to be
+useful — it converts a certainty into a race whose losing side is unsafe.
+
+In practice one flavour usually fails anyway. Measured on the target machine,
+`bash` resolves to `Git\usr\bin\bash.EXE` and exits 127, so only the `.ps1`
+runs regardless.
+
+`handoff-read` gains a claim call near the top, **before** it does any work.
+Bash:
 
 ```bash
 SESSION=$(read_json session_id)
@@ -2120,6 +2155,9 @@ different markers and both run — which is the bug, silently unfixed.
 **Do not add a claim to `guard.sh` / `guard.ps1`.** `PreToolUse` discriminates
 by tool name, so both entries are correct; a per-session claim there would make
 the first tool call suppress inspection of every later one.
+
+**Do not add a claim to `verify-gate`, `context-watch`, `handoff-write`, or
+`notify`.** Their events fire more than once per session; see above.
 
 - [ ] **Step 5: Write `handoff-write.ps1` and `notify.ps1`**
 
