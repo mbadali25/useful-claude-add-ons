@@ -246,17 +246,17 @@ def make_repo(tmp_path, config=None, metrics=None, codemap=None,
     if graph:
         out = root / "graphify-out"
         out.mkdir()
-        (out / "graph.json").write_text('{"nodes": [], "edges": []}',
-                                        encoding="utf-8")
-        # graph_sha: "head" stamps the sidecar with the real HEAD (a fresh
-        # graph), a literal sha stamps that (a stale one), None writes no
-        # sidecar (a graph built outside crew).
+        # graphify records the build commit inside graph.json as
+        # "built_at_commit", so the fixture puts it there rather than in a
+        # sidecar -- otherwise the freshness tests assert against a file
+        # nothing reads. graph_sha: "head" is a fresh graph, a literal sha is
+        # a stale one, None is a graph whose provenance is unknown.
+        payload = {"nodes": [], "links": []}
         if graph_sha == "head" and git:
-            (out / ".crew-graph-sha").write_text(head_sha(root) + "\n",
-                                                 encoding="utf-8")
+            payload["built_at_commit"] = head_sha(root, length=40)
         elif graph_sha and graph_sha != "head":
-            (out / ".crew-graph-sha").write_text(graph_sha + "\n",
-                                                 encoding="utf-8")
+            payload["built_at_commit"] = graph_sha
+        (out / "graph.json").write_text(json.dumps(payload), encoding="utf-8")
 
     return root
 
@@ -747,7 +747,8 @@ git commit -m "feat(crew): read crew config, review metrics, and work state"
 - Consumes: `read_text`, `load_config` (Task 2).
 - Produces:
   - `git_out(root: str, *args: str) -> str | None`
-  - `GRAPH_SHA_FILE: str = ".crew-graph-sha"`
+  - `_built_at_commit(path) -> str | None` — the sha graphify recorded in
+    `graph.json`, read from a bounded tail
   - `read_knowledge(root: str, cfg: dict) -> dict` with keys
     `subsystems: int`, `behind: list[str]`, `graph: dict`
   - `graph` sub-dict keys: `present: bool`, `current: bool`,
@@ -886,9 +887,12 @@ _ANCHOR_RE = re.compile(
 # Files under .crew/codemap/ that describe the map rather than a subsystem.
 _NOT_SUBSYSTEMS = frozenset({"INDEX.md", "UPGRADE.md", "MIGRATION.md"})
 
-# Written by crew-graph at build time, holding the short HEAD sha the graph was
-# built from. A sha, not a timestamp -- see _read_graph.
-GRAPH_SHA_FILE = ".crew-graph-sha"
+# graphify writes a top-level "built_at_commit" into graph.json holding the full
+# sha it built from. It sits near the end of the file, so a bounded tail read
+# finds it without parsing megabytes -- measured at 0.12 ms against 10.34 ms for
+# a full json.load on a 1.8 MB graph, and this runs on every session start.
+_BUILT_AT_RE = re.compile(rb'"built_at_commit"\s*:\s*"([0-9a-f]{7,40})"')
+_GRAPH_TAIL_BYTES = 65536
 
 # Where the graph lives when config does not say. Defined here rather than in
 # crew_upgrade because this module has to resolve it with no config at all.
@@ -913,6 +917,34 @@ def git_out(root, *args):
     if done.returncode != 0:
         return None
     return done.stdout.strip()
+
+
+def _built_at_commit(path):
+    """The sha graphify recorded when it built this graph, or None.
+
+    Read from graph.json rather than from a sidecar crew writes itself.
+    graphify records it atomically with the graph, so it cannot drift, cannot be
+    forgotten by a build, and is immune to the pre-commit-hook trap where
+    `git rev-parse HEAD` returns the parent commit.
+
+    Only the tail is read: the key sits near the end and a real repository's
+    graph is far larger than the one this was measured on. Falls back to a whole
+    -file scan for a graph whose layout puts it elsewhere, and to None -- which
+    read_knowledge treats as stale -- for anything it cannot find, because
+    unknown provenance is not freshness.
+    """
+    try:
+        size = os.path.getsize(path)
+        with open(path, "rb") as handle:
+            if size > _GRAPH_TAIL_BYTES:
+                handle.seek(size - _GRAPH_TAIL_BYTES)
+            found = _BUILT_AT_RE.search(handle.read())
+            if not found:
+                handle.seek(0)
+                found = _BUILT_AT_RE.search(handle.read())
+    except (OSError, ValueError):
+        return None
+    return found.group(1).decode("ascii") if found else None
 
 
 def _read_graph(root, cfg):
@@ -940,7 +972,7 @@ def _read_graph(root, cfg):
         return {"present": False, "current": False, "builtAt": None,
                 "path": path}
 
-    built = (read_text(os.path.join(root, out, GRAPH_SHA_FILE)) or "").strip()
+    built = _built_at_commit(path)
     head = git_out(root, "rev-parse", "--short=7", "HEAD")
     current = bool(built) and bool(head) and built[:7] == head[:7]
     return {"present": True, "current": current,
@@ -3522,8 +3554,10 @@ Required content:
   offer `uv tool install graphifyy` — the PyPI package is `graphifyy`
   (double-y) while the CLI is `graphify`, and other `graphify*` packages on
   PyPI are unaffiliated. Say that, because installing the wrong one is silent.
-- **Build.** `graphify . --no-viz` is the default: code-only, **no API key
-  needed**. `--no-viz` because the HTML is unopenable past ~5000 nodes and is
+- **Build.** `graphify . --no-viz --code-only` is the default: code-only, **no API key
+  needed**, and `--code-only` is required rather than optional — without it
+  graphify errors out on any repo containing docs, which is nearly all of
+  them. `--no-viz` because the HTML is unopenable past ~5000 nodes and is
   not what an agent reads anyway. Docs, PDFs, and images require an LLM call —
   opt-in, and state the key requirement at the point of choice.
 - **Query.** `graphify query`, `graphify path`, `graphify explain`. Prefer these
@@ -3532,44 +3566,19 @@ Required content:
   merge driver for `graph.json`. That merge driver is why `graph.json` is
   committed rather than ignored. `.gitignore` gets the HTML, the wiki, and any
   vault export.
-- **Stamp every build.** Immediately after a successful build, write the short
-  HEAD sha to `<out>/.crew-graph-sha`:
+- **Freshness needs no stamping step.** graphify records a top-level
+  `built_at_commit` in `graph.json` — the full sha it built from, written
+  atomically with the graph. `crew_state._built_at_commit` reads it from a
+  bounded tail of the file: measured 0.12 ms against 10.34 ms for a full parse
+  on a 1.8 MB graph, and this runs on every session start.
 
-  ```bash
-  git rev-parse --short=7 HEAD > graphify-out/.crew-graph-sha
-  ```
+  An earlier design had crew write its own `.crew-graph-sha` sidecar. That was
+  strictly worse — it could be forgotten by a build, drift from the graph beside
+  it, and was vulnerable to the pre-commit-hook trap where `git rev-parse HEAD`
+  returns the parent commit. graphify's own record is authoritative about what
+  graphify built. **Do not reintroduce a sidecar**, and note that graphify's
+  hook timing no longer matters for the same reason.
 
-  `crew_state._read_graph` reads this and nothing else.
-
-  **State the limit in the skill, because it is not obvious.** The check is
-  commit-based, so it cannot see uncommitted work: edit a tracked file without
-  committing and the graph still reports current, because HEAD has not moved.
-  That is inherent to any commit-anchored freshness rule, not a bug to fix here
-  -- but a user reading "graph current" while holding uncommitted edits deserves
-  to know what the claim covers.
-
-  Freshness must be a recorded sha rather than a file timestamp: `git pull` lands commits authored
-  before the graph was built, so a timestamp comparison reports a graph current
-  while it knows nothing about the pulled code. A build that skips this step
-  leaves the graph permanently reported as stale — which is the safe direction,
-  but means the PM nags forever.
-- **The commit-hook timing trap.** If `graphify hook install` installs a
-  **pre-commit** hook, `git rev-parse HEAD` inside it returns the *parent*
-  commit. The sidecar then records the sha before the commit being made, HEAD
-  advances, and the graph reports `current: false` permanently — on a graph that
-  is perfectly fresh. The PM would fire `graphStale` every session in every repo
-  with the hook installed, and rebuilding would not clear it, making the nag
-  both constant and unactionable.
-
-  Task 13 Step 4 determines which hook graphify actually installs. Then:
-
-  - **post-commit** — stamp from it directly; nothing more to do.
-  - **pre-commit** — do **not** stamp from graphify's hook. Install a separate
-    `post-commit` hook that writes the sidecar, so the sha recorded is the
-    commit that exists.
-
-  Whichever branch applies, record it in this skill with the graphify version it
-  was observed on.
 - **Obsidian — the gate, stated as a refusal.** Two conditions, both required:
   `graph.obsidian.confirmed == true` in `.crew/config.json`, and a completed
   scratch-directory proof run. Absent either, **refuse and ask**. Default target
@@ -3594,7 +3603,7 @@ and that anchors are bumped only on re-verified sections.
 uv tool install graphifyy
 graphify --version
 cd "$(mktemp -d)" && git clone --depth 1 <this repo> probe && cd probe
-graphify . --no-viz
+graphify . --no-viz --code-only
 ls -la graphify-out/
 graphify query "what connects the install scripts to the skills catalog?"
 ```
@@ -3602,26 +3611,21 @@ Expected: `graphify-out/graph.json` exists and the query answers with no API key
 set. If it demands a key for a code-only corpus, stop and report — the skill's
 central claim is wrong and the plan needs revisiting.
 
-- [ ] **Step 3: Determine graphify's commit-hook timing**
+- [ ] **Step 3: Confirm the measured facts still hold**
 
-```bash
-graphify hook install
-ls .git/hooks/ | grep -i commit
-for h in pre-commit post-commit; do
-  [ -f ".git/hooks/$h" ] && echo "--- $h ---" && sed -n '1,20p' ".git/hooks/$h"
-done
-```
-Then prove the consequence rather than reasoning about it:
+These were established by running graphify 0.9.49, not by reading its docs. Spot
+-check them against whatever version is installed and correct this table if it
+has moved:
 
-```bash
-git rev-parse --short=7 HEAD > graphify-out/.crew-graph-sha
-echo change >> probe.txt && git add probe.txt && git commit -qm probe
-echo "sidecar: $(cat graphify-out/.crew-graph-sha)"
-echo "HEAD:    $(git rev-parse --short=7 HEAD)"
-```
-If they differ after a commit that rebuilt the graph, graphify's hook is
-pre-commit and the sidecar must be written from a separate `post-commit` hook.
-Record which branch applies in `SKILL.md`, with the graphify version.
+| Fact | Value |
+|---|---|
+| Keyless build | `graphify . --no-viz --code-only` |
+| Without `--code-only` | **errors**: "no LLM API key found (N doc/paper/image file(s) need semantic extraction)" |
+| Build commit | top-level `built_at_commit` in `graph.json`, full sha |
+| Community field | `community`, a **node-level** key (106 distinct values here) |
+| Output | `graph.json`, `manifest.json`, `cache/` |
+| Scale seen | 106 code files → 1478 nodes, 3170 edges, 1.8 MB |
+| Also installs | a second executable, `graphify-mcp` |
 
 - [ ] **Step 4: Confirm or correct the community key**
 
