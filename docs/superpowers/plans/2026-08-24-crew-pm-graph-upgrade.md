@@ -3971,6 +3971,131 @@ version. Commit and push.
 
 ---
 
+---
+
+## Task 21: `context.autoWrapUp` — reach a stopping point at the threshold
+
+**Files:**
+- Modify: `plugin/crew/hooks/scripts/context-watch.sh`
+- Modify: `plugin/crew/hooks/scripts/context-watch.ps1`
+- Modify: `plugin/crew/skills/crew-context/SKILL.md`
+- Modify: `plugin/crew/skills/crew-setup/SKILL.md` (the `context` config block)
+- Test: `plugin/crew/tests/test_context_watch.py`
+
+**Interfaces:**
+- Consumes: the existing transcript-size estimate in `context-watch`.
+- Produces: `context.autoWrapUp` (bool, **default false**), and a `Stop` hook
+  that emits `hookSpecificOutput.additionalContext` when the estimate crosses
+  `context.warnAt`.
+
+**What is and is not possible here — established from the hook docs, not assumed.**
+No hook can trigger `/clear` or `/compact`. `PreCompact` can only *block*
+compaction; `SessionEnd` fires *on* `/clear` but has no decision control. So the
+clear itself stays a human keystroke, and this task automates everything before
+it. Do not add a step that claims to clear the session.
+
+What a `Stop` hook *can* do is return text the model then acts on:
+
+```json
+{"hookSpecificOutput": {"hookEventName": "Stop",
+  "additionalContext": "..."}}
+```
+
+That is delivered to Claude and shown in the transcript as "Stop hook feedback"
+— feedback, not an error notice. It is what turns this from a warning into work.
+
+- [ ] **Step 1: Write the failing tests**
+
+Cover, at minimum: below threshold emits nothing; above threshold with
+`autoWrapUp: false` emits the existing warning only; above threshold with
+`autoWrapUp: true` emits the wrap-up instruction; `stop_hook_active: true`
+emits nothing (the wrap-up is already in progress); and the once-per-session
+marker still gates repeats.
+
+- [ ] **Step 2: Run them and confirm they fail for the right reason**
+
+- [ ] **Step 3: Implement in `context-watch.sh`**
+
+The instruction text must name the four things to do and stop there:
+
+```
+You are at roughly <n>% of the context budget. Reach a stopping point now:
+finish or safely abandon the change in flight, write .work/HANDOFF.md per the
+crew-context skill, update the ticket, then tell the user the session is ready
+to clear. Do not start new work.
+```
+
+Phrase it as project information and a request, consistent with every other
+hook's output — text framed as out-of-band system instructions trips
+prompt-injection defences and gets surfaced to the user rather than acted on.
+
+**Loop safety, three layers.** `stop_hook_active` is true when Claude Code is
+already continuing because of a stop hook — check it and emit nothing.
+The existing once-per-session marker gates repeats. And Claude Code itself ends
+the turn after **8 consecutive blocks**, which is the backstop if both of the
+above are wrong.
+
+**Keep the output ASCII.** A `Stop` hook's stdout reaches the same console that
+made an em-dash crash `pm_brief` under cp437.
+
+- [ ] **Step 4: Mirror in `context-watch.ps1`**, identical text.
+
+- [ ] **Step 5: Run the tests; lint post-commit asserting the exit code; commit.**
+
+- [ ] **Step 6: Document it** in `crew-context/SKILL.md` — including, plainly,
+  that the clear is manual and why, so nobody reads the feature as broken.
+
+---
+
+## Task 22: `context.autoResume` — pick up where the last session stopped
+
+**Files:**
+- Modify: `plugin/crew/hooks/scripts/pm_brief.py`
+- Modify: `plugin/crew/skills/crew-context/SKILL.md`
+- Modify: `plugin/crew/skills/crew-setup/SKILL.md`
+- Test: `plugin/crew/tests/test_pm_brief.py`
+
+**Interfaces:**
+- Consumes: `crew_state.collect`, the handoff at `context.handoffPath`.
+- Produces: `context.autoResume` (bool, **default false**).
+
+**Step 0 — settle an unconfirmed fact before building on it.**
+`SessionStart` supports `initialUserMessage`, documented as applying "in
+non-interactive mode with the `-p` flag". Whether that phrasing *excludes*
+interactive sessions is **inference, not a quote** — the research flagged it
+unconfirmed. Test it: register a trivial `SessionStart` hook returning
+`initialUserMessage`, open an interactive session, and see whether a turn
+starts. Record the result and the Claude Code version in `crew-context/SKILL.md`.
+
+- **If it works interactively:** emit `initialUserMessage` when `autoResume` is
+  true and a handoff exists, so the session begins working with no human turn.
+- **If it is `-p`-only:** emit `additionalContext` instead — confirmed for all
+  sources — carrying the handoff and its next action, so the session opens
+  already holding them and the human presses Enter rather than typing. Say so in
+  the docs rather than shipping a flag that silently does nothing.
+
+Either way the JSON goes on `pm_brief`'s stdout, and `render` keeps its line
+caps for the brief itself.
+
+- [ ] **Step 1: Write the failing tests** — `autoResume: false` (default) changes
+  nothing; `autoResume: true` with no handoff changes nothing; `autoResume: true`
+  with a handoff emits the chosen field; the output is valid JSON; and the
+  existing per-source claim still dedupes two wrappers on one event.
+
+- [ ] **Step 2: Run them and confirm they fail for the right reason.**
+
+- [ ] **Step 3: Implement**, gated on `context.autoResume` being exactly `true`.
+
+- [ ] **Step 4: Tests, post-commit lint asserting the exit code, commit.**
+
+- [ ] **Step 5: Document why the default is off**, in `crew-context/SKILL.md`.
+  The plugin's existing argument stands and should be quoted rather than
+  paraphrased: auto-resume removes the one moment where a human reads what the
+  previous session claimed before work continues on top of it. If a handoff is
+  subtly wrong, auto-resume is how that error compounds unattended.
+
+---
+
 ## Self-Review
 
 **Spec coverage.**
@@ -4016,3 +4141,25 @@ match `pm_brief.FINDINGS` keys, and Task 6 has a test asserting exactly that.
 `crew_state` and imported by `crew_upgrade`. `PM_BLOCK`/`GRAPH_BLOCK` are
 defined once in `crew_upgrade` and asserted equal to the `crew-setup` template
 by Task 16 Step 5.
+
+---
+
+## Appendix: the `context` block after Tasks 21 and 22
+
+```json
+"context": {
+  "enabled": true,
+  "warnAt": 0.8,
+  "budgetTokens": 200000,
+  "handoffPath": ".work/HANDOFF.md",
+  "autoWrapUp": false,
+  "autoResume": false,
+  "keepTranscripts": 5
+}
+```
+
+`autoWrapUp` and `autoResume` both default **false**. `autoWrapUp` makes the
+session stop, write its handoff and update the ticket when the estimate crosses
+`warnAt`; the `/clear` itself stays manual because no hook can trigger one.
+`autoResume` makes the next session pick up from the handoff. See Tasks 21
+and 22.
