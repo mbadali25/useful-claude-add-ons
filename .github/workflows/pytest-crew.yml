@@ -1,0 +1,28 @@
+name: Pytest (crew plugin)
+
+on: [push]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Matches the pylint job's floor: pylint 4 needs >=3.10, and these
+        # scripts are stdlib-only so there is nothing else to pin against.
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Install pytest
+      run: |
+        python -m pip install --upgrade pip
+        pip install 'pytest~=8.0'
+    - name: Run crew plugin tests
+      # Scoped to this directory on purpose. An unscoped run would also collect
+      # skills/cisco-meraki/tests/test_live_smoke.py, which needs live
+      # credentials and would fail every push.
+      run: pytest plugin/crew/tests/ -v
