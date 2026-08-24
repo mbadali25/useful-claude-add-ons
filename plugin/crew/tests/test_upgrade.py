@@ -1,5 +1,9 @@
 """Tests for codemap/graph reconciliation and the v1 -> v2 upgrade."""
+import json
+
 import context  # noqa: F401  pylint: disable=unused-import
+import crew_fixtures
+import crew_upgrade
 import graph_reconcile
 
 V1_MAP = """# auth
@@ -100,3 +104,149 @@ def test_reconcile_is_idempotent():
     twice = graph_reconcile.reconcile(once["body"], derived)
     assert twice["body"] == once["body"]
     assert twice["added"] == []  # pylint: disable=use-implicit-booleaness-not-comparison
+
+
+def test_a_heading_the_map_never_had_is_created_not_dropped():
+    """The silent-loss case.
+
+    A v1 note written before anyone recorded owned tables is exactly the note
+    most likely to lack the heading, and exactly the one the graph has most to
+    add to. Dropping those facts without a word is the worst shape a gap can
+    take in an upgrade tool.
+    """
+    note = "# a\n\n## Does\nthing\n\n## Landmines\n- keep me\n"
+    out = graph_reconcile.reconcile(
+        note, {"Owns data": ["- users via `src/db.py:4`"]}
+    )
+    assert "users via" in out["body"]
+    assert out["added"]
+    assert "Owns data" in out["touched"]
+    assert "- keep me" in out["body"]
+
+
+def test_creating_a_heading_is_idempotent():
+    note = "# a\n\n## Does\nthing\n"
+    derived = {"Owns data": ["- users via `src/db.py:4`"]}
+    once = graph_reconcile.reconcile(note, derived)
+    twice = graph_reconcile.reconcile(once["body"], derived)
+    assert twice["added"] == []  # pylint: disable=use-implicit-booleaness-not-comparison
+    assert twice["body"] == once["body"]
+
+
+def test_an_empty_derived_list_does_not_create_an_empty_heading():
+    note = "# a\n\n## Does\nthing\n"
+    out = graph_reconcile.reconcile(note, {"Owns data": []})
+    assert "Owns data" not in out["body"]
+    assert out["touched"] == []  # pylint: disable=use-implicit-booleaness-not-comparison
+
+
+def test_conflict_strings_are_ascii():
+    # /crew:upgrade reports these, and a cp437 console cannot encode an em-dash.
+    note = "# a\n\n## Entry points\n- `src/auth.py:10` - router\n"
+    out = graph_reconcile.reconcile(
+        note, {"Entry points": ["- `src/cron.py:1` - cron"]}
+    )
+    assert out["conflicts"]
+    for line in out["conflicts"]:
+        line.encode("ascii")
+
+
+def test_upgrade_config_sets_schema_two():
+    assert crew_upgrade.upgrade_config({})["schema"] == 2
+
+
+def test_upgrade_config_adds_pm_and_graph_blocks():
+    got = crew_upgrade.upgrade_config({"tier": 0})
+    assert got["pm"]["mode"] == "adaptive"
+    assert got["pm"]["authority"] == "report-only"
+    assert got["graph"]["mode"] == "code-only"
+    assert got["graph"]["obsidian"]["confirmed"] is False
+
+
+def test_upgrade_config_preserves_unknown_keys():
+    # A config written by a newer crew than the one running must survive.
+    got = crew_upgrade.upgrade_config({"somethingNew": {"a": 1}, "tier": 2})
+    assert got["somethingNew"] == {"a": 1}
+    assert got["tier"] == 2
+
+
+def test_upgrade_config_does_not_clobber_an_existing_pm_block():
+    got = crew_upgrade.upgrade_config({"pm": {"quietLines": 3}})
+    assert got["pm"]["quietLines"] == 3
+    assert got["pm"]["mode"] == "adaptive"  # defaults still filled in
+
+
+def test_obsidian_confirmed_defaults_false_even_if_dir_is_set():
+    got = crew_upgrade.upgrade_config(
+        {"graph": {"obsidian": {"dir": "/somewhere"}}}
+    )
+    assert got["graph"]["obsidian"]["dir"] == "/somewhere"
+    assert got["graph"]["obsidian"]["confirmed"] is False
+
+
+def test_backup_is_taken_before_any_write(tmp_path):
+    root = crew_fixtures.make_repo(tmp_path, config={"tier": 0},
+                             codemap={"auth": V1_MAP})
+    crew_upgrade.run(str(root), {})
+    backup = root / ".crew" / "codemap.v1.bak" / "auth.md"
+    assert backup.read_text(encoding="utf-8") == V1_MAP
+
+
+def test_run_writes_schema_two_to_disk(tmp_path):
+    root = crew_fixtures.make_repo(tmp_path, config={"tier": 0})
+    crew_upgrade.run(str(root), {})
+    cfg = json.loads((root / ".crew" / "config.json").read_text(encoding="utf-8"))
+    assert cfg["schema"] == 2
+
+
+def test_second_run_reports_already_current(tmp_path):
+    root = crew_fixtures.make_repo(tmp_path, config={"tier": 0})
+    crew_upgrade.run(str(root), {})
+    assert crew_upgrade.run(str(root), {})["status"] == "already current"
+
+
+def test_force_reruns_a_current_setup(tmp_path):
+    root = crew_fixtures.make_repo(tmp_path, config={"schema": 2})
+    assert crew_upgrade.run(str(root), {}, force=True)["status"] == "upgraded"
+
+
+def test_conflicts_land_in_the_report_not_in_the_map(tmp_path):
+    root = crew_fixtures.make_repo(tmp_path, config={"tier": 0},
+                             codemap={"auth": V1_MAP})
+    # The graph knows src/cron.py and does NOT know src/auth.py at all, so the
+    # map's src/auth.py claim is a genuine contradiction rather than line drift.
+    derived = {"auth": {"Entry points": ["- `src/cron.py:1` — scheduler"]}}
+    out = crew_upgrade.run(str(root), derived)
+    report = (root / ".crew" / "codemap" / "UPGRADE.md").read_text(encoding="utf-8")
+    assert "auth.py" in report
+    body = (root / ".crew" / "codemap" / "auth.md").read_text(encoding="utf-8")
+    assert "src/auth.py:10" in body   # the contradicted claim is KEPT
+    assert "src/cron.py:1" in body    # the graph's fact is ADDED
+    assert out["conflicts"]
+
+
+def test_anchor_is_bumped_only_on_a_touched_file(tmp_path):
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"tier": 0},
+        codemap={"auth": V1_MAP, "billing": V1_MAP.replace("# auth", "# billing")},
+    )
+    derived = {"auth": {"Entry points": ["- `src/cron.py:1` — scheduler"]}}
+    crew_upgrade.run(str(root), derived)
+    head = crew_fixtures.head_sha(root)
+    auth = (root / ".crew" / "codemap" / "auth.md").read_text(encoding="utf-8")
+    billing = (root / ".crew" / "codemap" / "billing.md").read_text(encoding="utf-8")
+    assert head in auth
+    # billing was not re-verified, so claiming freshness for it would be a lie.
+    assert head not in billing
+    assert "0000000" in billing
+
+
+def test_run_on_a_repo_with_no_codemap_still_upgrades_config(tmp_path):
+    root = crew_fixtures.make_repo(tmp_path, config={"tier": 0})
+    assert crew_upgrade.run(str(root), {})["status"] == "upgraded"
+
+
+def test_run_on_a_non_crew_directory_reports_not_crew(tmp_path):
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    assert crew_upgrade.run(str(plain), {})["status"] == "not a crew repo"

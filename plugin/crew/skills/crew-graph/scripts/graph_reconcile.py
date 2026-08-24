@@ -68,9 +68,20 @@ def reconcile(text, derived):
     conflicts, added, touched = [], [], []
 
     for heading, new_lines in derived.items():
-        if heading in KEEP or heading not in sections:
+        if heading in KEEP or heading not in DERIVE:
             continue
-        if heading not in DERIVE:
+
+        if heading not in sections:
+            # The map never had this heading. Without this branch the graph's
+            # facts for it are dropped in silence -- not wrong, absent, which is
+            # the worse failure for an upgrade tool. A v1 note written before
+            # anyone thought to record owned tables is precisely the note most
+            # likely to lack the heading and most in need of the content.
+            if not new_lines:
+                continue
+            sections[heading] = [""] + list(new_lines) + [""]
+            added.extend(new_lines)
+            touched.append(heading)
             continue
 
         existing = sections[heading]
@@ -95,9 +106,12 @@ def reconcile(text, derived):
         # A conflict is a whole FILE the map claims and the graph does not
         # know about -- not a line that moved.
         for path in sorted(have - want):
+            # ASCII on purpose: /crew:upgrade reports conflicts, and a console
+            # on a Windows OEM codepage cannot encode an em-dash -- the same
+            # crash already fixed once in pm_brief.
             conflicts.append(
                 f"{heading}: `{path}` is in the map but not in the graph "
-                f"— kept, verify by hand"
+                f"- kept, verify by hand"
             )
 
     out = []
