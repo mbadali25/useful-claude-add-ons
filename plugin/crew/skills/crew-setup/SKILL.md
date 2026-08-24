@@ -140,9 +140,12 @@ Act on what it found, and say why:
 
 ## 3c. Gitignore secrets before any exist
 
-Append `.env`, `.env.*`, `!.env.example`, and `.crew/*.local` to `.gitignore`
-during setup. Doing this before the first secret exists is the only time it is
-free.
+Append `.env`, `.env.*`, `!.env.example`, `.crew/*.local`, `.crew/.hook-*`, and
+`.crew/transcripts/` to `.gitignore` during setup. Doing this before the first
+secret exists is the only time it is free. `.crew/.hook-*` is the once-per-session
+claim marker (see `hooks/scripts/hook_once.py`) — a repo that commits `.crew/`,
+which crew's own design encourages, collects one of these per claimed hook per
+session and shows them in every `git status` if they are not ignored.
 
 ## 4. Write the repo CLAUDE.md
 
