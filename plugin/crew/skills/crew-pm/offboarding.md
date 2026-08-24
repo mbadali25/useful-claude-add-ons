@@ -20,6 +20,16 @@ line existing and being findable.
 
 ## Steps
 
+0. **Confirm the role is actually on the crew.** Check `.crew/config.json` →
+   `roles` — or `crew_state.py`'s `roles` field, which reads the same file —
+   for the name given. If it is not there, say so and stop; change nothing.
+   This check comes first, not as an aside, because every step below writes
+   something: running the procedure on a role that was never active would
+   append a real `offboarded <role>` line to `.crew/metrics.md`, and
+   `metrics.md` is what `/crew:scale` reads to decide whether the crew is
+   catching anything. A fabricated row there corrupts the input to every
+   later scaling decision, and step 5 would end up asking you to name the
+   failure mode uncovered by a role that covered nothing.
 1. **Remove the role.** Delete it from `.crew/config.json` → `roles`.
 2. **Recompute `tier`.** Use the tier table in `crew-scaling/SKILL.md` — do
    not restate that table here, it drifts out of sync with this copy if you

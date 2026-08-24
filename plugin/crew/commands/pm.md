@@ -32,11 +32,26 @@ yes/no. Only on yes: add the role to `.crew/config.json` -> `roles` and
 recompute `tier` from `crew-scaling`'s tier table.
 
 **`offboard <role>`.**
-Read `${CLAUDE_PLUGIN_ROOT}/skills/crew-pm/offboarding.md` and follow it
-exactly — this is new capability with no shorter version to fall back to. Stop
-and ask me yes/no before touching `.crew/config.json` or deleting anything.
-The procedure ends with naming, out loud, the failure mode this removal
-leaves uncovered — that sentence is the actual point, not optional polish.
+Check the role is actually on the crew before doing anything else: read
+`roles` from `crew_state.py`'s output and confirm the named role is in it. If
+it is not, say so and stop — do not open `offboarding.md` for a role that was
+never active. Running the procedure anyway would append a real `offboarded
+<role>` line to `.crew/metrics.md` for coverage that never existed, and
+`metrics.md` is what `/crew:scale` reads to decide whether the crew is
+catching anything.
+
+If it is on the crew, read
+`${CLAUDE_PLUGIN_ROOT}/skills/crew-pm/offboarding.md` and follow it exactly —
+this is new capability with no shorter version to fall back to. Stop and ask
+me yes/no before touching `.crew/config.json` or deleting anything. The
+procedure ends with naming, out loud, the failure mode this removal leaves
+uncovered — that sentence is the actual point, not optional polish.
+
+**Anything else.**
+An argument that is not empty, `onboard <role>`, or `offboard <role>` is
+unrecognised. Do not fall through to the status form and do not stay silent
+either — list the three supported forms and stop. A command that does
+nothing on a typo is indistinguishable from one that did the work.
 
 Never change a role or `tier` without my explicit yes, no matter how obvious
 the recommendation looks.
