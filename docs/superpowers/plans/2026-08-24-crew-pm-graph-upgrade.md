@@ -818,6 +818,10 @@ _NOT_SUBSYSTEMS = frozenset({"INDEX.md", "UPGRADE.md", "MIGRATION.md"})
 # built from. A sha, not a timestamp -- see _read_graph.
 GRAPH_SHA_FILE = ".crew-graph-sha"
 
+# Where the graph lives when config does not say. Defined here rather than in
+# crew_upgrade because this module has to resolve it with no config at all.
+GRAPH_OUT_DEFAULT = "graphify-out"
+
 _GIT_TIMEOUT = 10
 
 
@@ -852,7 +856,7 @@ def _read_graph(root, cfg):
     sidecar means the graph was built outside crew, so its provenance is
     unknown -- and unknown resolves to stale, which is the honest direction.
     """
-    out = (cfg.get("graph") or {}).get("out") or "graphify-out"
+    out = (cfg.get("graph") or {}).get("out") or GRAPH_OUT_DEFAULT
     path = os.path.join(root, out, "graph.json")
     if not os.path.exists(path):
         return {"present": False, "current": False, "builtAt": None,
@@ -2620,18 +2624,18 @@ sys.path.insert(0, os.path.join(
 ))
 import crew_state  # pylint: disable=wrong-import-position
 
-PM_BLOCK = {
-    "enabled": True,
-    "mode": "adaptive",
-    "quietLines": 8,
-    "maxLines": 40,
-    "authority": "report-only",
-}
+# Not a second copy of the PM defaults. crew_state owns them because the hook
+# reads config on every session start; if an upgrade wrote defaults the hook
+# disagreed with, a freshly upgraded repo would behave differently from a
+# freshly created one and nothing would say so.
+PM_BLOCK = crew_state.PM_DEFAULTS
 
 GRAPH_BLOCK = {
     "enabled": True,
     "tool": "graphify",
-    "out": "graphify-out",
+    # crew_state owns this default too -- it has to resolve the same directory
+    # when no config exists at all.
+    "out": crew_state.GRAPH_OUT_DEFAULT,
     "mode": "code-only",
     "commitHook": False,
     "obsidian": {"enabled": False, "dir": None, "confirmed": False},
@@ -3185,6 +3189,10 @@ tpl = json.loads(blob)
 assert tpl["schema"] == crew_upgrade.crew_state.SCHEMA_CURRENT
 assert tpl["pm"] == crew_upgrade.PM_BLOCK, "pm block drifted from the upgrade"
 assert tpl["graph"] == crew_upgrade.GRAPH_BLOCK, "graph block drifted"
+# And that the upgrade did not fork its own copy of the PM defaults: the hook
+# reads these on every session, so a fork means an upgraded repo and a fresh
+# one behave differently with nothing to say so.
+assert crew_upgrade.PM_BLOCK is crew_upgrade.crew_state.PM_DEFAULTS,     "crew_upgrade forked PM_DEFAULTS instead of importing it"
 print("template matches upgrade defaults")
 PY
 ```
