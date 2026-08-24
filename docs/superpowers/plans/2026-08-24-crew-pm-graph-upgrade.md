@@ -492,35 +492,31 @@ def test_a_leading_status_word_does_mark_it_finished(tmp_path):
 
 
 def test_a_leading_status_word_without_a_colon_is_still_open(tmp_path):
-    """The cases that defeated the position-anchored version. Each of these
-    leads with a status word and is open work, so a positional rule reports
-    "no ticket open" while three tickets are.
+    """The three shapes that defeated the position-anchored version.
+
+    Each leads with a status word and is open work, so a rule based on
+    position reports "no ticket open" while a ticket is.
     """
-    for line, want in (
+    cases = (
         ("- Complete the T-5 setup", "T-5"),
         ("- Closed captions for T-7 need review", "T-7"),
         ("- Merged conflicts remain in T-8", "T-8"),
-    ):
-        root = crew_fixtures.make_repo(tmp_path / line[2:6].strip())
-        (root / ".work" / "INDEX.md").write_text(
-            f"# Work
-
-{line}
-", encoding="utf-8"
-        )
+    )
+    for index, (line, want) in enumerate(cases):
+        root = crew_fixtures.make_repo(tmp_path / f"case{index}")
+        body = "# Work" + chr(10) + chr(10) + line + chr(10)
+        (root / ".work" / "INDEX.md").write_text(body, encoding="utf-8")
         assert crew_state.read_work(str(root))["ticket"] == want, line
 
 
 def test_numbered_list_checkbox_is_recognised_as_done(tmp_path):
-    # `^[-*\s]*` did not match "1.", so a finished ticket read as open.
+    """A numbered bullet did not match the old bullet class, so a finished
+    ticket read as open.
+    """
     root = crew_fixtures.make_repo(tmp_path)
+    lines = ["# Work", "", "1. [x] T-0001 done", "2. T-0002 in progress", ""]
     (root / ".work" / "INDEX.md").write_text(
-        "# Work
-
-1. [x] T-0001 done
-2. T-0002 in progress
-",
-        encoding="utf-8",
+        chr(10).join(lines), encoding="utf-8"
     )
     assert crew_state.read_work(str(root))["ticket"] == "T-0002"
 
