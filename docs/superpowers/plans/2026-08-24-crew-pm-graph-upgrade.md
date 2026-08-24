@@ -2953,8 +2953,16 @@ Required content:
   git rev-parse --short=7 HEAD > graphify-out/.crew-graph-sha
   ```
 
-  `crew_state._read_graph` reads this and nothing else. Freshness must be a
-  recorded sha rather than a file timestamp: `git pull` lands commits authored
+  `crew_state._read_graph` reads this and nothing else.
+
+  **State the limit in the skill, because it is not obvious.** The check is
+  commit-based, so it cannot see uncommitted work: edit a tracked file without
+  committing and the graph still reports current, because HEAD has not moved.
+  That is inherent to any commit-anchored freshness rule, not a bug to fix here
+  -- but a user reading "graph current" while holding uncommitted edits deserves
+  to know what the claim covers.
+
+  Freshness must be a recorded sha rather than a file timestamp: `git pull` lands commits authored
   before the graph was built, so a timestamp comparison reports a graph current
   while it knows nothing about the pulled code. A build that skips this step
   leaves the graph permanently reported as stale — which is the safe direction,
