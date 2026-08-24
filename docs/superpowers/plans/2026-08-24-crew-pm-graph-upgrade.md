@@ -2651,6 +2651,21 @@ Command body: `$ARGUMENTS` routing for the bare form, `onboard <role>`, and
 `crew:pm` when the analysis is large; never change roles or tier without an
 explicit yes.
 
+**Two guards the routing needs, because their absence fails silently:**
+
+- **Check the role is actually on the crew before offboarding it.** Read
+  `roles` from `crew_state.py`'s output and confirm the named role is in it. If
+  it is not, say so and stop. Running the procedure anyway appends an
+  `offboarded <role>` line to `.crew/metrics.md` for a role that was never
+  active — and `metrics.md` is the file `/crew:scale` reads to decide whether
+  the crew is catching anything, so a fabricated row there corrupts the input to
+  every later scaling decision. It would also ask the PM to name the failure
+  mode now uncovered by a role that covered nothing.
+- **Handle an unrecognised argument by asking, not guessing.** A typo must not
+  fall through to the bare form or to silence: a command that does nothing on a
+  typo is indistinguishable from one that did the work. List the three
+  supported forms and stop.
+
 `scale.md` and `crew-scaling/SKILL.md` gain one line each pointing at
 `/crew:pm offboard <role>` for removals — the tier table already implies
 shrinking is possible but nothing implemented it.
