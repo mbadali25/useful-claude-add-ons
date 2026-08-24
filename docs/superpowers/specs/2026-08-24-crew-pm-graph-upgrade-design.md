@@ -52,6 +52,9 @@ Three complaints, plus one consequence of fixing them.
 | graphify seam | New `crew-graph` skill; `/crew:onboard` consumes it | Graph gives mechanics; explorers give judgment |
 | find-skills | Narrow the vendored description; detect-and-offer for the global copy | Fixes the actual cause, does not delete user config silently |
 | Upgrade command name | `/crew:upgrade`, not `/crew:migrate` | "migration" already means database migrations here — `agents/dba.md`, and `scripts/detect.sh:21` greps for migration directories |
+| Sequencing | A–E in one plan | User choice; E included in full |
+| Review | Codex reviews and QAs every change before merge | User requirement; `codex-cli 0.146.0` verified present |
+| Delivery | PR from `feat/crew-plugin`, merged to `main` after QA | User instruction — see "Delivery" below for what that merge actually includes |
 
 ---
 
@@ -424,6 +427,31 @@ Mandated by `CLAUDE.md` and part of the work, not a follow-up:
 - `plugin/crew/README.md` — the plugin's own documentation
 
 Re-pin both one-liner install URLs to a fresh SHA after this merges to `main`.
+
+## Delivery
+
+Sections A–E ship as one plan. Codex reviews and QAs every change before the PR
+merges; `codex-cli 0.146.0` is present.
+
+**What the merge actually includes — read this before approving it.**
+`feat/crew-plugin` is **28 commits and 96 files** ahead of `main`, with no
+divergence in the other direction (nothing to rebase). The work in this spec is a
+fraction of that. Merging the PR also ships, for the first time:
+
+- `plugin/crew/` — the entire plugin, currently unreviewed and unmerged
+- `claude-obsidian-setup/` — Obsidian bootstrap scripts
+- `vault-automation/` — vault capture and gardener automation
+- `.claude/skills/find-skills/` — the project-scoped copy discussed in section B
+- install-script and documentation changes already on the branch
+
+So "merge after QA" means QA covers the branch, not only the new work. Codex
+reviews this spec's changes closely and the pre-existing branch content at least
+well enough to say whether it should ship — if that second part turns up
+something significant, it gets raised rather than merged past.
+
+Post-merge, required by `CLAUDE.md`: `git rev-parse HEAD` on `main` and re-pin
+both one-liner install URLs in `README.md`, because the install scripts change in
+sections B and C.
 
 ## Risks
 
