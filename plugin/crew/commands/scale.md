@@ -44,4 +44,8 @@ Update `.crew/config.json` -> `roles` and `tier` with what I approve. Add nothin
 without asking, and always state what it costs: each extra role is a full
 context load plus a CLAUDE.md load on every invocation.
 
+This command only grows the crew. To shrink it, run `/crew:pm offboard <role>`
+instead — that procedure requires naming the coverage the removal loses, which
+matters enough to have its own command rather than a shorter version here.
+
 If the honest answer is "change nothing," say that. That is a successful run.

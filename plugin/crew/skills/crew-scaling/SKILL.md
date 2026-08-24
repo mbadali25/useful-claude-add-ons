@@ -55,6 +55,10 @@ Tier 3 native coordination needs `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` and is
 experimental, with known limitations around session resumption and shutdown.
 Prefer plain parallel sessions across repos until that matters.
 
+Shrinking follows this table in reverse, but not by hand-editing `config.json`:
+run `/crew:pm offboard <role>` instead. That path requires naming the coverage
+the removal loses, which is the part a direct edit would skip.
+
 ## Cost to state every time
 
 Each additional role costs a full context load plus the whole CLAUDE.md hierarchy
