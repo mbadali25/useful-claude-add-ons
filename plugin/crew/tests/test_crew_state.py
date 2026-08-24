@@ -131,3 +131,109 @@ def test_work_with_every_ticket_done_reports_none(tmp_path):
         encoding="utf-8",
     )
     assert crew_state.read_work(str(root))["ticket"] is None
+
+
+CODEMAP_BODY = """# auth
+anchor: repo@{sha}
+verified: 2026-08-01
+
+## Does
+Authenticates.
+
+## Landmines
+- Do not touch the session cache.
+"""
+
+
+def test_anchor_matching_head_is_not_behind(tmp_path):
+    root = crew_fixtures.make_repo(tmp_path, codemap={"auth": "placeholder"})
+    sha = crew_fixtures.head_sha(root)
+    (root / ".crew" / "codemap" / "auth.md").write_text(
+        CODEMAP_BODY.format(sha=sha), encoding="utf-8"
+    )
+    got = crew_state.read_knowledge(str(root), {})
+    assert got["subsystems"] == 1
+    assert got["behind"] == []
+
+
+def test_anchor_behind_head_is_reported(tmp_path):
+    root = crew_fixtures.make_repo(
+        tmp_path, codemap={"auth": CODEMAP_BODY.format(sha="0000000")}
+    )
+    assert crew_state.read_knowledge(str(root), {})["behind"] == ["auth"]
+
+
+def test_missing_anchor_counts_as_behind(tmp_path):
+    root = crew_fixtures.make_repo(tmp_path, codemap={"auth": "# auth\nno anchor\n"})
+    assert crew_state.read_knowledge(str(root), {})["behind"] == ["auth"]
+
+
+def test_index_and_upgrade_reports_are_not_subsystems(tmp_path):
+    root = crew_fixtures.make_repo(
+        tmp_path,
+        codemap={"INDEX": "# index\n", "UPGRADE": "# report\n",
+                 "auth": CODEMAP_BODY.format(sha="0000000")},
+    )
+    assert crew_state.read_knowledge(str(root), {})["subsystems"] == 1
+
+
+def test_absent_graph_is_not_present(tmp_path):
+    root = crew_fixtures.make_repo(tmp_path)
+    got = crew_state.read_knowledge(str(root), {})["graph"]
+    assert got["present"] is False
+    assert got["current"] is False
+
+
+def test_graph_built_at_head_is_current(tmp_path):
+    root = crew_fixtures.make_repo(tmp_path, graph=True, graph_sha="head")
+    assert crew_state.read_knowledge(str(root), {})["graph"]["current"] is True
+
+
+def test_graph_built_at_another_sha_is_not_current(tmp_path):
+    root = crew_fixtures.make_repo(tmp_path, graph=True, graph_sha="0000000")
+    assert crew_state.read_knowledge(str(root), {})["graph"]["current"] is False
+
+
+def test_graph_with_no_sidecar_is_not_current(tmp_path):
+    # Built outside crew, so its provenance is unknown. Unknown resolves to
+    # stale: claiming freshness we cannot prove is the failure mode.
+    root = crew_fixtures.make_repo(tmp_path, graph=True, graph_sha=None)
+    got = crew_state.read_knowledge(str(root), {})["graph"]
+    assert got["present"] is True
+    assert got["current"] is False
+    assert got["builtAt"] is None
+
+
+def test_a_pull_of_older_commits_makes_the_graph_stale(tmp_path):
+    """The regression a timestamp comparison gets wrong.
+
+    `git pull` brings in commits authored before the graph was built, so any
+    mtime-vs-commit-time check reports the graph current while it knows
+    nothing about the pulled code.
+    """
+    root = crew_fixtures.make_repo(tmp_path, graph=True, graph_sha="head")
+    assert crew_state.read_knowledge(str(root), {})["graph"]["current"] is True
+
+    # A new commit backdated well before the graph was written.
+    (root / "pulled.py").write_text("# from upstream\n", encoding="utf-8")
+    crew_fixtures.commit_with_date(root, "pulled.py", "2020-01-01T00:00:00")
+
+    got = crew_state.read_knowledge(str(root), {})["graph"]
+    assert got["current"] is False, "backdated commit must invalidate the graph"
+
+
+def test_graph_out_dir_comes_from_config(tmp_path):
+    root = crew_fixtures.make_repo(tmp_path)
+    (root / "custom-out").mkdir()
+    (root / "custom-out" / "graph.json").write_text("{}", encoding="utf-8")
+    cfg = {"graph": {"out": "custom-out"}}
+    assert crew_state.read_knowledge(str(root), cfg)["graph"]["present"] is True
+
+
+def test_knowledge_survives_a_non_git_directory(tmp_path):
+    root = crew_fixtures.make_repo(
+        tmp_path, codemap={"auth": CODEMAP_BODY.format(sha="0000000")},
+        git=False,
+    )
+    got = crew_state.read_knowledge(str(root), {})
+    assert got["subsystems"] == 1  # no crash, and no false freshness claim

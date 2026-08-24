@@ -9,6 +9,7 @@ traceback.
 import json
 import os
 import re
+import subprocess
 
 SCHEMA_CURRENT = 2
 
@@ -130,4 +131,98 @@ def read_work(root):
         "handoffPending": os.path.exists(
             os.path.join(root, ".work", "HANDOFF.md")
         ),
+    }
+
+
+_ANCHOR_RE = re.compile(
+    r"^anchor:\s*(?:\S*@)?([0-9a-f]{7,40})\s*$", re.MULTILINE | re.IGNORECASE
+)
+
+# Files under .crew/codemap/ that describe the map rather than a subsystem.
+_NOT_SUBSYSTEMS = frozenset({"INDEX.md", "UPGRADE.md", "MIGRATION.md"})
+
+# Written by crew-graph at build time, holding the short HEAD sha the graph was
+# built from. A sha, not a timestamp -- see _read_graph.
+GRAPH_SHA_FILE = ".crew-graph-sha"
+
+# Where the graph lives when config does not say. Defined here rather than in
+# crew_upgrade because this module has to resolve it with no config at all.
+GRAPH_OUT_DEFAULT = "graphify-out"
+
+_GIT_TIMEOUT = 10
+
+
+def git_out(root, *args):
+    """Stripped stdout of a git command, or None on any failure.
+
+    Failure includes git being absent and root not being a repository. Both
+    are ordinary: the hook runs wherever the user opens a session.
+    """
+    try:
+        done = subprocess.run(
+            ("git",) + args, cwd=root, capture_output=True,
+            text=True, timeout=_GIT_TIMEOUT, check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if done.returncode != 0:
+        return None
+    return done.stdout.strip()
+
+
+def _read_graph(root, cfg):
+    """Graph presence, and whether it was built at the current HEAD.
+
+    Freshness is a recorded sha, never a timestamp. Comparing graph.json's
+    mtime against HEAD's commit time looks reasonable and is wrong: `git pull`
+    brings in commits authored earlier than the graph was built, so a graph
+    that knows nothing about the pulled code reports itself current. That is
+    the false-freshness failure this module exists to avoid.
+
+    The sha comes from a sidecar that crew-graph writes at build time. No
+    sidecar means the graph was built outside crew, so its provenance is
+    unknown -- and unknown resolves to stale, which is the honest direction.
+    """
+    out = (cfg.get("graph") or {}).get("out") or GRAPH_OUT_DEFAULT
+    path = os.path.join(root, out, "graph.json")
+    if not os.path.exists(path):
+        return {"present": False, "current": False, "builtAt": None,
+                "path": path}
+
+    built = (read_text(os.path.join(root, out, GRAPH_SHA_FILE)) or "").strip()
+    head = git_out(root, "rev-parse", "--short=7", "HEAD")
+    current = bool(built) and bool(head) and built[:7] == head[:7]
+    return {"present": True, "current": current,
+            "builtAt": built or None, "path": path}
+
+
+def read_knowledge(root, cfg):
+    """Codemap inventory plus graph freshness.
+
+    `behind` names maps whose anchor is not HEAD. That is not the same as
+    wrong -- see the design note in the plan. Without git there is no HEAD to
+    compare against, so nothing is claimed either way.
+    """
+    head = git_out(root, "rev-parse", "--short=7", "HEAD")
+    mapdir = os.path.join(root, ".crew", "codemap")
+    try:
+        names = sorted(os.listdir(mapdir))
+    except OSError:
+        names = []
+
+    subsystems, behind = 0, []
+    for name in names:
+        if not name.endswith(".md") or name in _NOT_SUBSYSTEMS:
+            continue
+        subsystems += 1
+        if not head:
+            continue
+        found = _ANCHOR_RE.search(read_text(os.path.join(mapdir, name)) or "")
+        if not found or found.group(1)[:7] != head[:7]:
+            behind.append(name[: -len(".md")])
+
+    return {
+        "subsystems": subsystems,
+        "behind": behind,
+        "graph": _read_graph(root, cfg),
     }
