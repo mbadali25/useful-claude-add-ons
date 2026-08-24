@@ -203,7 +203,11 @@ def _read_graph(root, cfg):
     sidecar means the graph was built outside crew, so its provenance is
     unknown -- and unknown resolves to stale, which is the honest direction.
     """
-    out = (cfg.get("graph") or {}).get("out") or GRAPH_OUT_DEFAULT
+    out = dict_or_empty(cfg.get("graph")).get("out")
+    # A well-shaped graph block can still carry a wrong-typed "out" -- a dict
+    # passes dict_or_empty but `os.path.join` raises TypeError on a non-str.
+    if not isinstance(out, str) or not out:
+        out = GRAPH_OUT_DEFAULT
     path = os.path.join(root, out, "graph.json")
     if not os.path.exists(path):
         return {"present": False, "current": False, "builtAt": None,
@@ -267,6 +271,17 @@ PM_DEFAULTS = {
     "maxLines": 40,
     "authority": "report-only",
 }
+
+
+def dict_or_empty(value):
+    """`value` when it is genuinely a dict, else `{}`.
+
+    `(cfg.get(k) or {})` is the tempting idiom and it is wrong: it guards a
+    MISSING or falsy value but hands a wrong-typed truthy one straight through,
+    so `"graph": "oops"` reaches `.get()` on a str and raises AttributeError.
+    From a SessionStart hook that breaks every session opened in the repo.
+    """
+    return value if isinstance(value, dict) else {}
 
 
 def int_or(value, default):
