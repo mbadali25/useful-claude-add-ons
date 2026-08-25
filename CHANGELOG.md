@@ -67,7 +67,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   `except (OSError, subprocess.SubprocessError): return None`, written to
   turn "git is absent" into a soft `None` - which also silently swallowed
   the transient handle-invalid error and returned a wrong-but-non-crashing
-  `None` on an unpredictable subset of runs. All seven call sites (four in
+  `None` on an unpredictable subset of runs. All eight call sites (four in
   `tests/crew_fixtures.py`, one each in `tests/test_crew_fixtures.py` and
   `tests/test_gates_powershell.py`, plus the two production sites) now pin
   `stdin=subprocess.DEVNULL`, removing the dependency on the inherited
