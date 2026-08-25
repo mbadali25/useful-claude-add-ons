@@ -68,7 +68,11 @@ collision it fixes.
 Do not ask more. Everything else has a sane default and can change later.
 
 1. **QA reviewer:** Codex (detected/not detected) or Claude fallback?
-2. **Tickets:** local files or Jira?
+2. **Tickets:** local files, Jira, or ServiceDesk Plus? Offer the last two only
+   when their MCP tools are actually reachable - `mcp__atlassian__*` /
+   `sdp_*`. Offering a tracker that cannot connect produces a repo configured
+   for an API nobody can call, and every later command stops on the same
+   missing precondition.
 3. **Memory:** repo-local `.crew/` or an Obsidian vault path?
 
 ## 3. Create
@@ -79,7 +83,7 @@ Do not ask more. Everything else has a sane default and can change later.
 .crew/codemap/INDEX.md     # empty until /crew:onboard runs
 .work/INDEX.md             # files mode
 .work/tickets/             # files mode
-.work/cache/               # jira mode
+.work/cache/               # jira and sdp modes
 _verify/                   # from template, NOT filled in
   README.md                # layout + status tables
   smoke.sh                 # fast and shallow
@@ -99,6 +103,7 @@ CLAUDE.md                  # created if absent; if present, sections APPENDED, n
   "secondOpinion": { "provider": "none", "mode": "cli", "model": null, "keyEnv": "GEMINI_API_KEY", "sendsCode": false },
   "tracker": "files",
   "jira": { "project": null },
+  "sdp": { "portal": null, "noteVisibility": "private", "closeOnDone": false },
   "memory": { "mode": "repo", "vaultPath": null },
   "verifyGate": true,
   "context": { "enabled": true, "warnAt": 0.8, "budgetTokens": null, "reserveTokens": 100000, "handoffPath": ".work/HANDOFF.md", "keepTranscripts": 5 },
@@ -141,6 +146,31 @@ Note: plugin-shipped agents cannot declare `mcpServers` in frontmatter, for
 security reasons. Jira access therefore lives at session level. If Jira calls
 should be isolated in their own context window, that agent must live in
 `~/.claude/agents/` outside this plugin.
+
+## 3c. ServiceDesk Plus only — confirm the connector, then write two settings
+
+Only if the user chose ServiceDesk Plus.
+
+1. Confirm the `sdp_*` tools are reachable, searching for them first if tool
+   search is active. Then call `sdp_whoami` once: it proves the connection is
+   live and names the account whose audit trail every write will land under.
+   Crew does not ship an `.mcp.json` for this - the SDP connector is normally
+   registered at user or session scope, and a per-repo one would prompt for
+   approval in every repository the plugin is enabled in.
+2. Set `tracker: "sdp"` and create `.work/cache/`.
+3. Write the two settings that are decisions rather than lookups, and say what
+   each means before writing it:
+   - `sdp.noteVisibility` - `"private"` (the default) keeps crew's push note off
+     the requester-visible thread. `"public"` only where the requester is an
+     engineer who wants it.
+   - `sdp.closeOnDone` - `false` (the default) means crew transitions a request
+     and leaves closure to whoever owns the queue. `true` only for a queue that
+     is genuinely the user's.
+   `sdp.portal` stays `null` unless the connector serves more than one instance.
+
+Tell them the local key is `SDP-<id>`, not the bare request number: the rest of
+crew - the session brief, `/crew:work`, the index - recognises a ticket by its
+`LETTERS-digits` shape, and a bare number is invisible to all of it.
 
 ## 3a. Record the platform
 

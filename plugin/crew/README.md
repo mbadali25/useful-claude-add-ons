@@ -22,6 +22,7 @@ Built for the awkward case: several repositories, mixed stacks, legacy code, and
 11. [Configuration reference](#11-configuration-reference)
 12. [Optional: Codex as reviewer](#12-optional-codex-as-reviewer-gemini-as-design-partner)
 13. [Optional: Jira via MCP](#13-optional-jira-via-mcp)
+13b. [Optional: ServiceDesk Plus via MCP](#13b-optional-servicedesk-plus-via-mcp)
 14. [Optional: Obsidian for memory](#14-optional-obsidian-for-memory)
 15. [Optional: Teams and Telegram notifications](#15-optional-teams-and-telegram-notifications)
 16. [Context handoff](#16-context-handoff)
@@ -594,6 +595,7 @@ Everything reads `.crew/config.json`:
   "secondOpinion": { "provider": "gemini", "mode": "cli", "model": "gemini-2.5-flash", "sendsCode": false },
   "tracker": "files",
   "jira": { "cloudId": null, "project": null },
+  "sdp": { "portal": null, "noteVisibility": "private", "closeOnDone": false },
   "memory": { "mode": "repo", "vaultPath": null },
   "verifyGate": true,
   "context": {
@@ -643,7 +645,10 @@ omit the block and assume.
 | `notify.chatId` | string | Telegram only. Group ids are negative; that is normal. |
 | `secondOpinion.provider` | `gemini`, `local`, `none` | Design partner. `sendsCode` stays `false` on any free tier. |
 | `qa.provider` | `auto`, `codex`, `claude` | `auto` prefers Codex, falls back to Claude, announces which ran. `codex` fails loudly instead of falling back. |
-| `tracker` | `files`, `jira` | Where tickets live. Jira additionally requires the MCP connector. |
+| `tracker` | `files`, `jira`, `sdp` | Where tickets live. `jira` and `sdp` each additionally require their MCP connector; without it every ticket command stops on the same missing precondition. |
+| `sdp.noteVisibility` | `private` (default), `public` | Whether the push note lands on the requester-visible thread. Private by default because a requester is often not an engineer. |
+| `sdp.closeOnDone` | `true`, `false` (default) | Whether completing a ticket closes the request or only transitions it. `false` leaves closure to whoever owns the queue. |
+| `sdp.portal` | string or `null` | Only needed where the connector serves more than one SDP instance. |
 | `memory.mode` | `repo`, `obsidian` | Where the code map lives. `obsidian` also needs `vaultPath`. |
 | `tier` / `roles` | see §22 | Which agents are in play. Managed by `/crew:scale`. |
 | `context.autoWrapUp` | `true`, `false` (default `false`) | At `warnAt`, instructs the session to reach a stopping point and write the handoff, instead of just asking. The `/clear` itself stays manual either way — no hook can trigger one. See §16. |
@@ -733,6 +738,44 @@ Run `/mcp`, approve the server, authenticate. The cloud ID is then fetched once 
 So `/crew:jira-sync` keeps six fields and discards the rest, writing a compact local file that `/crew:work` reads instead of calling the API. That is the difference between paying for a ticket once and paying for it on every pickup, retry, and context reset. Sync happens at two boundaries only: pickup and completion. Three Jira calls in one ticket means the cache is wrong.
 
 One limitation to know rather than discover: plugin-shipped agents cannot declare `mcpServers` in frontmatter, for security reasons. Jira access therefore lives at session level. If you want it isolated in its own context window, that agent has to live in `~/.claude/agents/` outside the plugin.
+
+---
+
+## 13b. Optional: ServiceDesk Plus via MCP
+
+Same bargain as Jira, a different desk, and one extra category of care.
+
+`tracker: "sdp"` plus a reachable ServiceDesk Plus MCP connector (tools named
+`sdp_*`). Crew ships no `.mcp.json` for it: the SDP connector is normally
+registered at user or session scope, and a per-repo one would prompt for
+approval in every repository where the plugin is enabled. If the tools are not
+there, `/crew:sdp-sync` says so and stops rather than quietly writing a file
+ticket — a silent fallback splits the source of truth and nobody notices until
+two people are working from divergent state.
+
+**The local key is `SDP-<id>`, not the bare request number.** SDP request ids are
+plain integers, and the rest of crew recognises a ticket by its `LETTERS-digits`
+shape — so a bare `40219` is invisible to the session brief, to `/crew:work`, and
+to the index. `/crew:sdp-sync` accepts either form and always writes `SDP-40219`.
+
+The caching argument is identical to Jira's: a request payload runs thousands of
+tokens across resolution HTML, the full note history, SLA timers, approvals and
+every UDF the desk has ever defined, and about forty of them affect what you
+build. `/crew:sdp-sync` keeps id, subject, status, requester, priority, category
+and the last three notes, and `/crew:work` reads that file instead of the API.
+
+**What is different from Jira, and worth knowing before the first write:**
+
+| | Why it matters |
+|---|---|
+| Notes are requester-visible unless private | A requester is often not an engineer. `sdp.noteVisibility` defaults to `private`, and that is not a substitute for scrubbing: hostnames, credentials and internal addresses do not belong in a desk record either way. |
+| A bad field value rejects the *whole* write | SDP does not partially apply an update. Resolve status, category and priority against `sdp_list_metadata` first and send what the desk accepts, not what the local ticket happens to call it. |
+| Closing is somebody's job, not crew's | `sdp.closeOnDone` defaults to `false`: push transitions the request and leaves closure alone. Set it `true` only for a queue that is genuinely yours, and let `sdp_close` do it — it goes through the desk's closure endpoint and satisfies mandatory closure fields, which a faked `sdp_update` does not. |
+| A failed write is gone | There is no local outbox. If a note fails it is not queued anywhere; re-read with `sdp_get` before retrying so a partial success is not duplicated. |
+
+The writes act as the signed-in user, so the desk's audit trail names a person
+rather than "an automation". `sdp_whoami` tells you which person, and is the
+cheapest way to prove the connector is live before configuring a repo around it.
 
 ---
 
@@ -1510,11 +1553,12 @@ a worktree each, so a half-applied one cannot land on top of the other.
 | `/crew:survey [area]` | Research gaps, produce ranked findings with options |
 | `/crew:scale` | Evidence-based crew sizing |
 | `/crew:jira-sync <KEY> [--push]` | Sync one issue with the local cache |
+| `/crew:sdp-sync <REQUEST-ID> [--push]` | Sync one ServiceDesk Plus request with the local cache — see §13b |
 | `/crew:pm [onboard\|offboard <role>]` | Crew-manager status, or add/remove a role — see §22 |
 | `/crew:upgrade [--force]` | Bring a pre-schema-2 (`v1`) setup forward — see §11 |
 | `/crew:emergency <what is broken>` | Declare a time-boxed incident: gates stand down and record what they skipped, lanes investigate in parallel — see §24. `status`, `extend [min]`, `end` |
 
-19 commands.
+20 commands.
 
 ### Agents
 
@@ -1587,7 +1631,7 @@ pytest tests/                                     # 234 cases - the python modul
 | `validate-prompts.py` | Frontmatter parses, tools are real, referenced agents and paths exist, read-only agents hold no write tools, commands that spawn subagents are permitted to | **whether the prompts produce good work** |
 | `pytest tests/` | The python modules, and that the `.sh` and `.ps1` flavours of `context-watch`, `verify-gate` and `promote-gate` agree - including the emergency lane's expiry, which is the one property that keeps a forgotten incident from ungating a repo forever | anything on a platform the suite is not running on; the Windows-only cases skip elsewhere |
 
-That last gap is real and no test closes it. The 19 commands and 10 agents are
+That last gap is real and no test closes it. The 20 commands and 10 agents are
 instructions to a model; only a live session running a real ticket exercises
 them. Setup Phase 7 exists for exactly that, and it is the one thing here that
 has to be done by hand.

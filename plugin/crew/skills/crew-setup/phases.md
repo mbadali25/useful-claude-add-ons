@@ -93,7 +93,10 @@ its trigger competes with `crew-setup` and `crew-verification` for ordinary
 requests, and offer to remove it. Never delete it yourself — it is the user's
 own global configuration.
 
-Ask the three questions (reviewer, tracker, memory). Create
+Ask the three questions (reviewer, tracker, memory). The tracker choice is
+files, Jira, or ServiceDesk Plus - offer the last two only when their MCP tools
+are actually reachable, since a repo configured for an API nobody can call stops
+every later command on the same missing precondition. Create
 `.crew/`, `.work/`, `docs/adr/`, `_verify/` from template (README.md, smoke.sh,
 run-all.sh, cases/), gitignore
 entries for secrets, and a `CLAUDE.md` if absent.
