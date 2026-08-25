@@ -1,10 +1,39 @@
 """Tests for codemap/graph reconciliation and the v1 -> v2 upgrade."""
 import json
+import subprocess
 
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_fixtures
 import crew_upgrade
 import graph_reconcile
+
+
+def test_head_never_inherits_the_parent_stdin(tmp_path, monkeypatch):
+    """crew_upgrade._head must pin stdin, for the same reason git_out does
+    in crew_state.py: an inherited stdin handle is torn down and rebuilt by
+    pytest's fd capturing on every test, and the resulting transient OSError
+    (WinError 6 on Windows, EBADF on a CI runner whose stdin is a pipe) is
+    swallowed by _head's except clause and turned into a silently wrong
+    None -- indistinguishable from git being absent.
+    """
+    calls = []
+    real_run = subprocess.run
+
+    def recording_run(*args, **kwargs):
+        calls.append(kwargs)
+        return real_run(*args, **kwargs)  # pylint: disable=subprocess-run-check
+
+    monkeypatch.setattr(crew_upgrade.subprocess, "run", recording_run)
+
+    root = crew_fixtures.make_repo(tmp_path)
+    assert crew_upgrade._head(str(root))  # pylint: disable=protected-access
+
+    assert calls, "expected _head to have called subprocess.run"
+    for kwargs in calls:
+        assert kwargs.get("stdin") == subprocess.DEVNULL, (
+            "_head's subprocess.run call is missing stdin=subprocess.DEVNULL "
+            f"-- kwargs were: {kwargs}"
+        )
 
 V1_MAP = """# auth
 anchor: repo@0000000
