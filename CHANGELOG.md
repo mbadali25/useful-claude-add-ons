@@ -6,7 +6,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
-- **`crew` 0.6.1 - `context.autoClear`, experimental, off by default.** A matched
+- **`crew` 0.6.2 - `context.autoClear`, experimental, off by default.** A matched
   pair of scripts that type `/clear` into the terminal once the handoff note is
   written. This does **not** contradict the standing correction that a hook
   cannot clear its own session - it does not touch the conversation. It drives
@@ -49,8 +49,9 @@ All notable changes to this repository are documented here. Format follows [Keep
     nothing is worse than failing, because the log then says it worked. It now
     exits immediately unless `$IsWindows`, the suite treats that flavour as
     native-Windows-only, and a new case pins the stand-down on a non-Windows
-    pwsh. 0.6.0 was set on the branch and never published; the released version
-    is 0.6.1.
+    pwsh. 0.6.0 and 0.6.1 were set on the branch and never published; the
+    released version is 0.6.2, which also carries the ANEWINF-758 pytest
+    determinism fix this branch merged in from `main`.
   - Two bugs found by running it rather than reading it, both now covered. The
     config was read as tab-separated fields with a tab as the field separator,
     and a tab is IFS *whitespace*, so bash collapsed consecutive separators and

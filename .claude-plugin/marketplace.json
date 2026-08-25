@@ -65,7 +65,7 @@
       "name": "crew",
       "source": "./plugin/crew",
       "description": "Virtual dev team for multi-repo legacy work - 10 context-isolated agents, 18 slash commands, 16 bundled skills, and deterministic hooks that block unsafe commands, gate unverified turns, brief a report-only PM at session start, and carry a handoff across compaction.",
-      "version": "0.6.1"
+      "version": "0.6.2"
     },
     {
       "name": "drata",
