@@ -6,6 +6,52 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
+- **`crew` 0.7.0 - the `platform` block repairs itself at session start.** It is
+  the one block in `.crew/config.json` that is committed and is therefore wrong
+  for everybody who did not run `/crew:init` - and `windowsHostIp` is wrong for
+  the same person after a reboot, because WSL2's gateway changes. Open a repo on
+  Windows that was set up in WSL and the session now opens with
+  `## platform - config said linux, this is windows-bash; updated 5 field(s)`,
+  itemised, and the config already fixed.
+  - **One rule makes it safe: it writes derived facts and nothing else.** The
+    seven writable keys are `os`, `wsl`, `wslVersion`, `distro`, `shell`,
+    `repoFilesystem` and `windowsHostIp` - each an answer to "what machine is
+    this", which nobody hand-edits usefully. A test pins that list, because
+    adding a preference to it would turn the hook into something that overrules
+    people.
+  - **Preferences are reported, never rewritten:** an `autoClear.method` that
+    only exists on the other platform (which would otherwise make auto-clear
+    stand down silently), a clone under `/mnt/` where every file operation goes
+    through the Windows translation layer, CRLF in a committed `.sh` that bash
+    reports as "bad interpreter: ...^M". `tracker`, `qa`, `roles`, `tier`,
+    `notify`, `emergency`, the context thresholds and `verifyGate` are never
+    touched.
+  - This is why it may write when the PM may not: the PM's subject is
+    *judgement*, and whether a role earns its context is not a fact.
+    `platform.os` is a fact, it is wrong on the other machine, and being asked
+    about it once per clone would be worse than having it fixed. It still says
+    what it changed - a silent config edit would be indefensible.
+  - It does not write when nothing changed, so it never dirties a tree just by
+    opening a session, and it preserves the file's existing line endings - a
+    CRLF config rewritten as LF is a whole-file diff for whoever committed it.
+    A read-only checkout, or no python, reports what it *would* have changed.
+  - Detection covers native Linux, WSL1, WSL2 (including reading the gateway as
+    the Windows host address), macOS, native Windows, and Git Bash on Windows -
+    which `sys.platform` cannot distinguish from a cmd session, so `MSYSTEM`
+    decides whether crew should be writing bash or PowerShell here.
+  - Both flavours are thin wrappers over one python module
+    (`hooks/scripts/crew_platform.py`), the `pm-brief` pattern. For a hook that
+    writes config, two implementations that disagree about what they write is
+    the last thing anybody wants, and this plugin's `.sh`/`.ps1` pairs have
+    drifted for a whole release before.
+  - `tests/test_platform_sync.py`, 29 cases. The detection paths are exercised
+    by faking `platform.system()` and the `/proc` files WSL is recognised by,
+    because a suite that only covers the OS it runs on is how a cross-platform
+    bug survives.
+  - Found while writing it: reading the config in text mode let universal-newline
+    translation strip CRLF before anything could see it, so the
+    line-ending-preserving write silently rewrote a CRLF config as LF.
+
 - **`crew` 0.6.2 - `context.autoClear`, experimental, off by default.** A matched
   pair of scripts that type `/clear` into the terminal once the handoff note is
   written. This does **not** contradict the standing correction that a hook

@@ -121,6 +121,50 @@ Full detail, including a bash-to-PowerShell command translation table, is in
 
 ---
 
+### The platform block fixes itself
+
+`.crew/config.json` is committed, and its `platform` block describes the machine
+that ran `/crew:init`. The moment it lands in git it is wrong for everybody else
+— and `windowsHostIp` is wrong for the same person after a reboot, because WSL2's
+gateway changes.
+
+So a `SessionStart` hook repairs it. Open the repo on Windows after someone
+committed it from WSL and the first thing the session says is:
+
+```
+## platform - config said linux, this is windows-bash; updated 5 field(s) in .crew/config.json
+- platform.distro: 'Ubuntu' -> ''
+- platform.os: 'linux' -> 'windows-bash'
+- platform.windowsHostIp: '172.24.16.1' -> ''
+- platform.wsl: 'yes' -> 'no'
+- platform.wslVersion: '2' -> ''
+```
+
+**One rule makes this safe: it writes derived facts and nothing else.**
+
+| | |
+|---|---|
+| Rewritten | `os`, `wsl`, `wslVersion`, `distro`, `shell`, `repoFilesystem`, `windowsHostIp` — every one an answer to "what machine is this", which nobody hand-edits usefully |
+| Reported, not changed | a preference this OS cannot honour: an `autoClear.method` that only exists on the other platform, a clone under `/mnt/`, CRLF in a committed `.sh` |
+| Never touched | everything else. `tracker`, `qa`, `roles`, `tier`, `notify`, `emergency`, the context thresholds, `verifyGate`. If a human chose it, it stays chosen |
+
+That split is the whole design, and it is why this hook is allowed to write when
+the PM is report-only. The PM's subject is *judgement* — whether a role earns its
+context is not a fact. `platform.os` is a fact, it is wrong on the other machine,
+and being asked about it once per clone would be worse than having it fixed.
+
+It never writes when nothing changed, so it does not dirty your tree on every
+session, and it preserves the file's existing line endings — rewriting a
+LF config as CRLF would show up as a whole-file diff for everyone else.
+
+**Both flavours delegate to one python module** (`hooks/scripts/crew_platform.py`)
+rather than reimplementing detection twice. For a hook that writes config, two
+implementations that disagree about what they write is the last thing you want —
+and the `.sh`/`.ps1` pair here has drifted for a whole release before.
+
+A read-only checkout, or no python at all, means it says what it *would* have
+changed and changes nothing.
+
 ### Resolving the toolchain
 
 Detection tells you what you are on. It does not tell you whether the commands
@@ -1678,6 +1722,7 @@ registered on its own matcher or event — 16 entries total.
 | `promote-gate.sh` / `.ps1` | `PreToolUse` on Bash / PowerShell | Refuses a declared `deploy` command unless the upstream environment has an all-pass row for **this sha**, the rollback runbook is verified inside 90 days, `requireHuman` is approved, and the tree is clean. During an emergency lane it records each unmet precondition and allows the deploy (§24) |
 | `handoff-read.sh` / `.ps1` | `SessionStart` | Injects the handoff after clear, compact, or resume |
 | `pm-brief.sh` / `.ps1` | `SessionStart` | Runs `crew_state.py`, prints the prioritized PM brief (triggers, health, knowledge, graph freshness) — report-only, changes nothing |
+| `platform-sync.sh` / `.ps1` | `SessionStart` | Detects this machine and repairs the `platform` block in `.crew/config.json` — see §3b. The only hook that writes config, and only the seven derived facts |
 | `verify-gate.sh` / `.ps1` | `Stop` | Runs the checks the changed paths map to; fails the turn on red, on a changed path with no rule, or on a deploy that recorded no promotion row. Stands down while an emergency lane is open (§24), recording what did not run |
 | `context-watch.sh` / `.ps1` | `Stop` | Measures window occupancy from the transcript; asks for a handoff once per session at the later of `warnAt` and `reserveTokens` remaining, or instructs a wrap-up if `context.autoWrapUp` is on |
 | `handoff-write.sh` / `.ps1` | `PreCompact` | Snapshots the transcript, writes a skeleton handoff |
