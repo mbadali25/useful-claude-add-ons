@@ -23,6 +23,13 @@ PY=$(command -v python3 || command -v python) || exit 0
 
 [ -f .crew/config.json ] || exit 0
 
+# When context.autoResume is exactly true, pm_brief._resume_context() owns
+# the handoff in this mode: it folds the same text plus the extracted next
+# action into its additionalContext payload. Standing down here keeps the
+# handoff to a single emitter -- printing it here too would inject it twice.
+AUTO_RESUME=$(python3 -c 'import json;print(json.load(open(".crew/config.json")).get("context",{}).get("autoResume") is True)' 2>/dev/null)
+[ "$AUTO_RESUME" = "True" ] && exit 0
+
 HANDOFF=$(python3 -c 'import json;print(json.load(open(".crew/config.json")).get("context",{}).get("handoffPath",".work/HANDOFF.md"))' 2>/dev/null)
 HANDOFF="${HANDOFF:-.work/HANDOFF.md}"
 [ -f "$HANDOFF" ] || exit 0

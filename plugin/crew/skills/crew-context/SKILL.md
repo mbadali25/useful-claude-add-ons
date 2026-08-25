@@ -90,8 +90,18 @@ want here.
 
 ### Auto-resume
 
-`SessionStart` can return JSON with an `initialUserMessage` to start the new
-session working immediately, with no human turn.
+`SessionStart` can return JSON with an `additionalContext` payload. With
+`context.autoResume: true` and a handoff on disk, `pm_brief` folds the
+handoff text plus its extracted next action into `additionalContext`, so the
+new session opens already holding that context — the human presses Enter
+rather than typing. It does not start working on its own.
+
+`SessionStart` can also return `initialUserMessage`, which starts the new
+session working with no human turn at all. It is confirmed working only for
+non-interactive `claude -p` sessions (tested against Claude Code 2.1.243); no
+PTY was available to prove it in an interactive session, so interactive
+behavior is unproven. Crew does not use it. Reproduce the `-p` test before
+relying on it interactively.
 
 Off by default, and it should stay off unless you have a specific reason. It
 removes the one moment where a human reads what the previous session claimed
@@ -100,6 +110,10 @@ how that error compounds unattended.
 
 Turn it on with `context.autoResume: true` only after you have watched a dozen
 handoffs and trust their accuracy.
+
+When it is on, `handoff-read` stands down on `clear`/`compact`/`resume`/`fork`
+so `pm_brief` is the handoff's only emitter — otherwise the same handoff would
+be injected twice.
 
 ## Configuration
 

@@ -24,6 +24,13 @@ if ($LASTEXITCODE -ne 0) { exit 0 }
 
 if (-not (Test-Path ".crew/config.json")) { exit 0 }
 $cfg = Get-Content .crew/config.json -Raw | ConvertFrom-Json
+
+# When context.autoResume is exactly true, pm_brief._resume_context() owns
+# the handoff in this mode: it folds the same text plus the extracted next
+# action into its additionalContext payload. Standing down here keeps the
+# handoff to a single emitter -- printing it here too would inject it twice.
+if ($cfg.context.autoResume -is [bool] -and $cfg.context.autoResume -eq $true) { exit 0 }
+
 $path = if ($cfg.context.handoffPath) { $cfg.context.handoffPath } else { ".work/HANDOFF.md" }
 if (-not (Test-Path $path)) { exit 0 }
 
