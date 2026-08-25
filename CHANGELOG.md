@@ -57,6 +57,10 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
+- **Re-pinned the README's one-liner install URLs** from `8fc09be` to `ae58c21`, per the
+  rule in `CLAUDE.md`. `8fc09be` predates the menu trim above, so the documented
+  one-liner was still installing `claude-mem`, Bun and the ten VoltAgent packs by
+  default, and still numbering its menu 1–22.
 - **Re-pinned the README's one-liner install URLs** from `f59faf1` to `7059ede`, per the
   rule in `CLAUDE.md`. The old pin predated everything below, so the documented one-liner
   was still handing people the installer with the broken `claude plugin update` call.
