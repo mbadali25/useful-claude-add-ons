@@ -4,7 +4,7 @@ Three things live in this repo: **prerequisite tooling** (git, Node.js, Python, 
 
 ## 1. Install prerequisites
 
-One script per OS. Both are idempotent (safe to re-run) and, by default, also bootstrap the team's standard Claude Code plugin marketplaces (see step 3 and [`MARKETPLACE.md`](MARKETPLACE.md)), install every skill in this repo's own marketplace, install the [awesome-claude-code-subagents](https://github.com/VoltAgent/awesome-claude-code-subagents) collection, and optionally register the AWS/Azure MCP servers.
+One script per OS. Both are idempotent (safe to re-run) and, by default, also bootstrap the team's standard Claude Code plugin marketplaces (see step 3 and [`MARKETPLACE.md`](MARKETPLACE.md)), install every skill in this repo's own marketplace, and optionally register the AWS/Azure MCP servers.
 
 > **Everything is chosen up front, from one menu.** Neither script asks a yes/no question per item any more — you tick what you want, press Enter, and the rest of the run is unattended.
 
@@ -44,10 +44,9 @@ One script per OS. Both are idempotent (safe to re-run) and, by default, also bo
 | 3 | the 25 skills in this repo | `--skills` / `-Skills` |
 | 4 | superpowers, frontend-design, excalidraw-generator | `--team` / `-Team` |
 | 6 | the 5 community plugins | `--community` / `-Community` |
-| 10 | the 10 VoltAgent packs | `--voltagent` / `-VoltAgent` |
-| 21 | this repo's own plugins (`crew`) | `--plugins` / `-Plugins` |
+| 19 | this repo's own plugins (`crew`) | `--plugins` / `-Plugins` |
 
-Each flag takes names, numbers, `all` or `none` — `--voltagent infra,qa-sec`, `--team 1,3`, `--community none`. A name matches either the plugin key or the short label the picker shows, so `--voltagent infra` and `--voltagent voltagent-infra` are the same thing. Naming items inside a row also selects that row, which matters for the ones that are off by default (`--plugins crew`); it never overrides a choice you made at the menu. Only the marketplaces behind a ticked plugin get registered, so `--team excalidraw-generator` adds one marketplace rather than three.
+Each flag takes names, numbers, `all` or `none` — `--skills cloudflare,drata`, `--team 1,3`, `--community none`. A name matches either the plugin key or the short label the picker shows. Naming items inside a row also selects that row, which matters for the ones that are off by default (`--plugins crew`); it never overrides a choice you made at the menu. Only the marketplaces behind a ticked plugin get registered, so `--team excalidraw-generator` adds one marketplace rather than three.
 
 `--dry-run` / `-DryRun` settles the selection, prints it, and stops without installing anything — the quickest way to see what a set of flags resolves to.
 
@@ -55,7 +54,7 @@ Each flag takes names, numbers, `all` or `none` — `--voltagent infra,qa-sec`, 
 
 **To skip choosing entirely**, use `-All` / `--all`, `-Select` / `--select`, `-Skills` / `--skills`, or `-NonInteractive` / `--non-interactive`. Any of those bypasses both the picker and the numbered prompt, which is what CI and the `curl | bash` one-liner rely on.
 
-> **Native plugin commands only.** Marketplaces and plugins are installed with `claude plugin marketplace add` and `claude plugin install`. The previous `npx -y claudepluginhub <repo>` wrapper is gone: it synthesized a *local directory* marketplace per repo (registered under a generated name like `cpd-aiskillstore-marketplace-user`), which the scripts' own detection couldn't match — so those plugins were reinstalled on every run — and it was a frequent source of Windows failures. The VoltAgent subagents no longer need a `git clone` + Git Bash either; the repo publishes itself as a marketplace.
+> **Native plugin commands only.** Marketplaces and plugins are installed with `claude plugin marketplace add` and `claude plugin install`. The previous `npx -y claudepluginhub <repo>` wrapper is gone: it synthesized a *local directory* marketplace per repo (registered under a generated name like `cpd-aiskillstore-marketplace-user`), which the scripts' own detection couldn't match — so those plugins were reinstalled on every run — and it was a frequent source of Windows failures.
 
 ### Windows
 
@@ -72,7 +71,7 @@ It shows the menu, asks the SkillUI quick-start question up front, then installs
 1. **Prerequisites** — if elevated: installs [Chocolatey](https://chocolatey.org/) if not already present, then `choco install git awscli nodejs python -y`. **If not elevated, this item is skipped entirely** — the script prints a warning and continues with everything below using whatever `git`/`node`/`npm`/`python` are already on `PATH`.
 2. **Claude Code CLI** — `npm install -g @anthropic-ai/claude-code`, adds the npm global bin directory to your **User** `PATH` environment variable (persists across sessions), and sets a `CLAUDE_CODE_HOME` user env var pointing at the npm prefix. When `claude` is already installed it compares the local version against the npm registry instead and updates only if it's behind (`-NoUpdate` skips the check).
 3. **This repo** — adds `mbadali25/useful-claude-add-ons` as a Claude Code marketplace, then installs the skills you ticked in the per-skill picker, all 25 by default (see [What the own-marketplace step installs](#what-the-own-marketplace-step-installs) below).
-4. **Team plugins, community plugins, `find-skills`, `claude-code-setup`, `task-observer`, claude-mem, VoltAgent** — each is its own menu row; `-SkipBootstrap` narrows any selection back down to items 1 and 2.
+4. **Team plugins, community plugins, `find-skills`, `claude-code-setup`, `task-observer`** — each is its own menu row; `-SkipBootstrap` narrows any selection back down to items 1 and 2.
 5. **MCP servers** — AWS, Azure, Playwright. Off by default; see [Optional: MCP servers](#optional-mcp-servers).
 6. **Supabase, Context7, Playwright CLI, SkillUI, Strix** — off by default; see [Optional: extra tooling](#optional-extra-tooling).
 
@@ -91,7 +90,7 @@ Runs as your current user, escalating to `sudo` (or `root` directly if already r
 1. **Prerequisites** — `git`, `nodejs`, `npm`, `python3` via whichever of `apt-get` / `dnf` / `yum` / `pacman` / `zypper` / `apk` it finds first. Only packages whose command is actually missing get installed.
 2. **Claude Code CLI** — `npm install -g @anthropic-ai/claude-code`, then a `PATH` export for the npm global bin directory appended to `~/.bashrc` and `~/.zshrc` (only if not already present) and exported in the current shell too. When `claude` is already installed it compares the local version against the npm registry instead and updates only if it's behind (`--no-update` skips the check).
 3. **This repo** — adds `mbadali25/useful-claude-add-ons` as a Claude Code marketplace, then installs the skills you ticked in the per-skill picker, all 25 by default (see [What the own-marketplace step installs](#what-the-own-marketplace-step-installs) below).
-4. **Team plugins, community plugins, `find-skills`, `claude-code-setup`, `task-observer`, claude-mem, VoltAgent** — each is its own menu row; `--skip-bootstrap` narrows any selection back down to items 1 and 2.
+4. **Team plugins, community plugins, `find-skills`, `claude-code-setup`, `task-observer`** — each is its own menu row; `--skip-bootstrap` narrows any selection back down to items 1 and 2.
 5. **MCP servers** — AWS, Azure, Playwright. Off by default; see [Optional: MCP servers](#optional-mcp-servers).
 6. **Supabase, Context7, Playwright CLI, SkillUI, Strix** — off by default; see [Optional: extra tooling](#optional-extra-tooling).
 
@@ -126,11 +125,6 @@ claude plugin install azure-tools@claude-settings
 claude plugin install anthropic-office-skills@claude-settings
 claude plugin install agent-browser@agent-browser
 claude plugin install ppt-master@ppt-master
-
-# claude-mem, prompted (default Yes)
-choco install bun -y              # Windows; npm install -g bun on Linux
-claude plugin marketplace add thedotmack/claude-mem
-claude plugin install claude-mem@thedotmack
 ```
 
 Every install passes `--scope` (`user` by default; change it with `-InstallScope` / `--scope`).
@@ -214,7 +208,7 @@ Four MCP servers are menu rows, all off by default:
 - **AWS** — ensures `uv`/`uvx` is on `PATH` (installing it via `pip install --user uv` if missing), then runs `claude mcp add aws-api -- uvx awslabs.aws-api-mcp-server@latest`. You still need your own AWS credentials configured (`aws configure`) for it to work at runtime.
 - **Azure** — runs `claude mcp add azure -- npx -y @azure/mcp@latest server start`. You still need to run `az login` yourself for it to work at runtime.
 - **Playwright** — runs `claude mcp add playwright -- npx @playwright/mcp@latest`. Playwright downloads its browsers on first use; `npx playwright install` does it ahead of time.
-- **Obsidian vault server** (14) — the odd one out: it registers an **HTTP** endpoint rather than a command to launch, because the MCP server is the `obsidian-local-rest-api` plugin already running inside the vault-server container. That plugin listens on the *server's* loopback, so the URL is normally a local port you forwarded over SSH — hence the `http://127.0.0.1:27123/mcp/` default, overridable with `--obsidian-mcp-url` / `-ObsidianMcpUrl`. The key is per-deployment and cannot be baked into the script, so without `--obsidian-mcp-key` / `-ObsidianMcpKey` the item prints how to read it (`sudo ./obsidian-vault-server.sh apikey` on the vault host) and **skips rather than failing**. Never overwrite an existing key — everything already pointing at the vault stops working. Whole setup: the [`obsidian-vault-server`](skills/obsidian-vault-server/) skill.
+- **Obsidian vault server** (12) — the odd one out: it registers an **HTTP** endpoint rather than a command to launch, because the MCP server is the `obsidian-local-rest-api` plugin already running inside the vault-server container. That plugin listens on the *server's* loopback, so the URL is normally a local port you forwarded over SSH — hence the `http://127.0.0.1:27123/mcp/` default, overridable with `--obsidian-mcp-url` / `-ObsidianMcpUrl`. The key is per-deployment and cannot be baked into the script, so without `--obsidian-mcp-key` / `-ObsidianMcpKey` the item prints how to read it (`sudo ./obsidian-vault-server.sh apikey` on the vault host) and **skips rather than failing**. Never overwrite an existing key — everything already pointing at the vault stops working. Whole setup: the [`obsidian-vault-server`](skills/obsidian-vault-server/) skill.
 
 The first three can be added later by hand with the same `claude mcp add` command; the Obsidian one takes a URL and an `Authorization` header instead. Any of them is removed with `claude mcp remove <name>`.
 
@@ -222,13 +216,13 @@ The first three can be added later by hand with the same `claude mcp add` comman
 
 Six more rows, also off by default. None of them are MCP servers.
 
-- **Supabase** (15) — adds `anthropics/claude-plugins-official` (a no-op if the community or `claude-code-setup` row already registered it) and installs `supabase@claude-plugins-official`. Already-installed is detected and skipped or updated like any other plugin.
-- **Context7** (16) — runs `npx -y ctx7@latest setup`, an interactive wizard that wires version-accurate library documentation into whichever agents it finds. The scripts hand it the terminal explicitly; with no terminal available (CI, `curl | bash` with no `/dev/tty`, a redirected console) they print the command to run by hand rather than hanging on a prompt nobody can see. The free tier needs no key.
-- **Playwright CLI** (17) — `npm install -g @playwright/cli@latest`, detected by whether `playwright-cli` already resolves on `PATH`. `--no-update` / `-NoUpdate` leaves an existing install alone; otherwise it reinstalls `@latest`.
-- **SkillUI** (18) — `npm install -g skillui`, then `npm install -g playwright` and `npx playwright install chromium`. Playwright is installed **globally on purpose**: the scripts can be run from anywhere, and a bare `npm install playwright` would leave a `node_modules` tree in whatever directory you happened to be in. Both Playwright steps warn rather than fail the item, since SkillUI installs fine without them and only screenshot capture breaks. You're asked up front whether to print the quick start afterwards (`--skillui-guide` / `-SkillUIGuide` answers yes without asking).
-- **Strix** (19) — installs upstream's own shell installer, `curl -sSL https://strix.ai/install | bash`. **Installing it is not enough to run it**: Strix needs Docker running (the first scan pulls its sandbox image) and an LLM API key exported as `STRIX_LLM` + `LLM_API_KEY`. Both scripts print those next steps every time, including on a re-run that skipped the install. On Windows the installer is POSIX-only, so the script tries WSL first, then Git Bash, and warns with the manual command if neither is available — a WSL install is only usable from inside WSL.
+- **Supabase** (13) — adds `anthropics/claude-plugins-official` (a no-op if the community or `claude-code-setup` row already registered it) and installs `supabase@claude-plugins-official`. Already-installed is detected and skipped or updated like any other plugin.
+- **Context7** (14) — runs `npx -y ctx7@latest setup`, an interactive wizard that wires version-accurate library documentation into whichever agents it finds. The scripts hand it the terminal explicitly; with no terminal available (CI, `curl | bash` with no `/dev/tty`, a redirected console) they print the command to run by hand rather than hanging on a prompt nobody can see. The free tier needs no key.
+- **Playwright CLI** (15) — `npm install -g @playwright/cli@latest`, detected by whether `playwright-cli` already resolves on `PATH`. `--no-update` / `-NoUpdate` leaves an existing install alone; otherwise it reinstalls `@latest`.
+- **SkillUI** (16) — `npm install -g skillui`, then `npm install -g playwright` and `npx playwright install chromium`. Playwright is installed **globally on purpose**: the scripts can be run from anywhere, and a bare `npm install playwright` would leave a `node_modules` tree in whatever directory you happened to be in. Both Playwright steps warn rather than fail the item, since SkillUI installs fine without them and only screenshot capture breaks. You're asked up front whether to print the quick start afterwards (`--skillui-guide` / `-SkillUIGuide` answers yes without asking).
+- **Strix** (17) — installs upstream's own shell installer, `curl -sSL https://strix.ai/install | bash`. **Installing it is not enough to run it**: Strix needs Docker running (the first scan pulls its sandbox image) and an LLM API key exported as `STRIX_LLM` + `LLM_API_KEY`. Both scripts print those next steps every time, including on a re-run that skipped the install. On Windows the installer is POSIX-only, so the script tries WSL first, then Git Bash, and warns with the manual command if neither is available — a WSL install is only usable from inside WSL.
 
-- **Obsidian** (20) — the [Obsidian](https://obsidian.md) desktop app plus the two plugins that make Claude Code useful against a vault. The app is not on npm, so it comes from a package manager: Chocolatey on Windows (falling back to winget), flatpak on Linux (falling back to snap), since distro repositories generally don't carry it. Chocolatey needs an elevated prompt; without one the app is skipped with a warning and **the plugins still install**. Then two marketplaces are added and one plugin taken from each:
+- **Obsidian** (18) — the [Obsidian](https://obsidian.md) desktop app plus the two plugins that make Claude Code useful against a vault. The app is not on npm, so it comes from a package manager: Chocolatey on Windows (falling back to winget), flatpak on Linux (falling back to snap), since distro repositories generally don't carry it. Chocolatey needs an elevated prompt; without one the app is skipped with a warning and **the plugins still install**. Then two marketplaces are added and one plugin taken from each:
 
   ```bash
   claude plugin marketplace add AgriciDaniel/claude-obsidian
@@ -244,7 +238,7 @@ Six more rows, also off by default. None of them are MCP servers.
 
 ### Optional: this repo's own plugins
 
-- **This repo's plugins** (21) - installs everything under [`plugin/`](plugin/) from this repo's own marketplace. Today that is one plugin, [`crew`](plugin/crew): 10 subagents, 18 slash commands, 16 bundled skills, and 16 hook entries (8 scripts, each shipped as a `.sh`/`.ps1` pair) across 5 events. It adds the marketplace itself first, so the item works whether or not item 3 ran; both steps are no-ops when they are already present.
+- **This repo's plugins** (19) - installs everything under [`plugin/`](plugin/) from this repo's own marketplace. Today that is one plugin, [`crew`](plugin/crew): 10 subagents, 18 slash commands, 16 bundled skills, and 16 hook entries (8 scripts, each shipped as a `.sh`/`.ps1` pair) across 5 events. It adds the marketplace itself first, so the item works whether or not item 3 ran; both steps are no-ops when they are already present.
 
   This item also detects a global `find-skills` collision: if `~/.claude/skills/find-skills` exists (from menu item 5, or a direct `npx skills add`), it warns that two active copies can both trigger on the same prompt and prints the manual removal command. Detection only; it never deletes anything.
 
@@ -283,7 +277,7 @@ Six more rows, also off by default. None of them are MCP servers.
 
 ### Optional: the `graphify` code graph
 
-- **`graphify`** (22) - installs the third-party `graphify` CLI via `uv tool install graphifyy` (the PyPI package is `graphifyy`, double-y; it installs a `graphify` executable) and registers it **per-repository**, never globally, with `graphify install --project`. Off by default; no new flag, since it reuses `--select` / `-Select` like every other item.
+- **`graphify`** (20) - installs the third-party `graphify` CLI via `uv tool install graphifyy` (the PyPI package is `graphifyy`, double-y; it installs a `graphify` executable) and registers it **per-repository**, never globally, with `graphify install --project`. Off by default; no new flag, since it reuses `--select` / `-Select` like every other item.
 
   ```bash
   cd <your repo> && graphify . --no-viz --code-only
@@ -291,13 +285,13 @@ Six more rows, also off by default. None of them are MCP servers.
 
   Both flags matter: `--code-only` skips docs, papers, and images — omit it against a repo that has any of those and `graphify` errors instead of skipping them. `--no-viz` skips the HTML visualization, which is effectively unopenable past a modest repo size.
 
-  This item installs the CLI only; it does nothing on its own until something calls it. [`crew`](plugin/crew) (item 21) is the thing that does — its `crew-graph` skill builds and queries the graph, and `/crew:upgrade` reads it to bring a pre-schema-2 crew setup forward. Freshness is tracked from `graphify`'s own `built_at_commit` field in `graph.json`, never a file timestamp, so a `git pull` that predates the last build still reports correctly as stale. Exporting the graph into an Obsidian vault needs a separate, explicit opt-in — `graph.obsidian.confirmed` set by hand in `.crew/config.json` — which an upgrade never sets for you.
+  This item installs the CLI only; it does nothing on its own until something calls it. [`crew`](plugin/crew) (item 19) is the thing that does — its `crew-graph` skill builds and queries the graph, and `/crew:upgrade` reads it to bring a pre-schema-2 crew setup forward. Freshness is tracked from `graphify`'s own `built_at_commit` field in `graph.json`, never a file timestamp, so a `git pull` that predates the last build still reports correctly as stale. Exporting the graph into an Obsidian vault needs a separate, explicit opt-in — `graph.obsidian.confirmed` set by hand in `.crew/config.json` — which an upgrade never sets for you.
 
 Before running either script on a machine you don't fully control, note that these steps run third-party code from npm, from `strix.ai`, from `uv`, and from Chocolatey/flatpak/snap — see [`SECURITY.md`](SECURITY.md)'s install-script trust boundary.
 
 ### Optional: the Obsidian knowledge vault
 
-Item 20 gets you the app and the plugins. Creating and verifying an actual vault is [`claude-obsidian-setup/`](claude-obsidian-setup/):
+Item 18 gets you the app and the plugins. Creating and verifying an actual vault is [`claude-obsidian-setup/`](claude-obsidian-setup/):
 
 ```powershell
 # Windows - preview first, then apply
@@ -312,29 +306,6 @@ bash claude-obsidian-setup/setup-claude-obsidian.sh --apply --repo-root ~/repos
 ```
 
 Both are dry-run by default and idempotent, report `PASS`/`FIX`/`FAIL` per check, and end by running the product's own `doctor` and `lint` against the new vault. On Windows they additionally repair four things that break claude-obsidian silently — native Windows cannot write to a vault at all, `python3` resolves to a Microsoft Store stub, `/mnt/c` mounts without `metadata` so writes fail `EPERM`, and git identity does not cross into WSL. Full detail, including the cross-platform notes: [`claude-obsidian-setup/README.md`](claude-obsidian-setup/README.md).
-
-### Optional: awesome-claude-code-subagents
-
-Both scripts ask once (default **Yes**), then install [`VoltAgent/awesome-claude-code-subagents`](https://github.com/VoltAgent/awesome-claude-code-subagents) **as plugins**. The repo publishes itself as a marketplace named `voltagent-subagents`, with its 154 subagents grouped into ten category plugins:
-
-```bash
-claude plugin marketplace add VoltAgent/awesome-claude-code-subagents
-
-claude plugin install voltagent-core-dev@voltagent-subagents    # core development
-claude plugin install voltagent-lang@voltagent-subagents        # language specialists
-claude plugin install voltagent-infra@voltagent-subagents       # infrastructure & DevOps
-claude plugin install voltagent-qa-sec@voltagent-subagents      # quality & security
-claude plugin install voltagent-data-ai@voltagent-subagents     # data & AI
-claude plugin install voltagent-dev-exp@voltagent-subagents     # developer experience
-claude plugin install voltagent-domains@voltagent-subagents     # specialized domains
-claude plugin install voltagent-biz@voltagent-subagents         # business & product
-claude plugin install voltagent-meta@voltagent-subagents        # meta & orchestration
-claude plugin install voltagent-research@voltagent-subagents    # research & analysis
-```
-
-The scripts install all ten (matching what the old installer's "everything" path produced). Want fewer? Answer **n** to the prompt and run only the category lines you want — or `claude plugin uninstall voltagent-<category>@voltagent-subagents` afterwards.
-
-This replaces the previous `git clone` + interactive `install-agents.sh` step. That step needed Git Bash on Windows (PowerShell can't execute a `.sh` directly) and therefore **failed outright on a non-elevated run**, where Chocolatey — and so `git` — had been skipped. There's no longer a checkout under `C:\repos` / `~/repos` to maintain; if you have one from an earlier run, it's now unused and safe to delete.
 
 Before running either script on a machine you don't fully control, read [`SECURITY.md`](SECURITY.md)'s "Install-script trust boundary" section — these steps run third-party code from Chocolatey, npm, PyPI (`uv`), and GitHub-hosted marketplaces/repositories.
 
@@ -367,8 +338,6 @@ playwright-cli --version
 skillui --help
 strix --help         # needs Docker running and STRIX_LLM / LLM_API_KEY set
 ```
-
-If you opted into the awesome-claude-code-subagents step, `claude plugin list` should show ten `voltagent-*` plugins, and `claude plugin marketplace list` should show `voltagent-subagents`.
 
 ## 4. Updating later
 

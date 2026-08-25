@@ -239,7 +239,6 @@ def check_group_parity(fail):
         ("own-skills", "SKILL_KEYS", "SkillCatalog"),
         ("team", "TEAM_KEYS", "TeamCatalog"),
         ("community", "COMMUNITY_KEYS", "CommunityCatalog"),
-        ("voltagent", "VOLTAGENT_KEYS", "VoltAgentCatalog"),
         ("repo-plugins", "PLUGIN_KEYS", "PluginCatalog"),
     )
     for menu_key, bash_var, ps_var in groups:
@@ -329,6 +328,52 @@ def check_versions(entries, fail):
             )
 
 
+def check_hook_commands(entries, fail):
+    r"""Every shell-form hook command survives the shell that will actually run it.
+
+    Two failures this catches, both of which shipped in crew and were invisible from the
+    repo because they only reproduce on Windows:
+
+    ``${CLAUDE_PLUGIN_ROOT}`` in a ``shell: powershell`` command is substituted as a
+    PowerShell *environment reference*, not as a literal path. Inside single quotes
+    PowerShell does not expand it, so ``&`` is handed the token verbatim and the hook dies
+    with "is not recognized as a name of a cmdlet". The path has to be double-quoted.
+
+    ``& script.ps1`` inside PowerShell's ``-Command`` does not propagate the script's exit
+    code - a guard's ``exit 2`` arrives as 1, which Claude Code reports as a non-blocking
+    error and lets the command through. Every PowerShell entry has to end by re-raising it
+    with ``; exit $LASTEXITCODE``.
+
+    Bash entries get the same double-quote rule, for paths with spaces.
+    """
+    for entry in entries:
+        path = os.path.join(ROOT, entry["source"].lstrip("./"), "hooks", "hooks.json")
+        if not os.path.isfile(path):
+            continue
+        where = f"{entry['name']}: hooks/hooks.json"
+        for event, matchers in json.loads(read(path)).get("hooks", {}).items():
+            for matcher in matchers:
+                for hook in matcher.get("hooks", []):
+                    command = hook.get("command", "")
+                    if hook.get("type") != "command" or "args" in hook:
+                        continue  # exec form: no shell re-parses it, so no quoting bug
+                    if "${CLAUDE_PLUGIN_ROOT}" in command and (
+                        "\"${CLAUDE_PLUGIN_ROOT}" not in command
+                    ):
+                        fail(
+                            f"{where}: {event} hook does not double-quote "
+                            f"${{CLAUDE_PLUGIN_ROOT}} - {command!r}"
+                        )
+                    if hook.get("shell") == "powershell" and not command.rstrip().endswith(
+                        "exit $LASTEXITCODE"
+                    ):
+                        fail(
+                            f"{where}: {event} PowerShell hook does not end with "
+                            f"'; exit $LASTEXITCODE', so its exit code is swallowed and a "
+                            f"blocking exit 2 blocks nothing - {command!r}"
+                        )
+
+
 def main() -> int:
     """Run every check and report."""
     problems: list[str] = []
@@ -345,6 +390,7 @@ def main() -> int:
     check_menu_parity(fail)
     check_group_parity(fail)
     check_docs(entries, fail)
+    check_hook_commands(entries, fail)
     check_versions(entries, fail)
 
     skills = sum(1 for e in entries if e["source"].startswith("./skills/"))

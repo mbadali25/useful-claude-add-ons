@@ -4,6 +4,57 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Removed
+
+- **The `claude-mem` and VoltAgent menu items are gone from both install scripts.**
+  They were items 9 and 10, both on by default, so a bootstrap run installed a memory
+  plugin, Bun as its worker runtime, a `CLAUDE_MEM_WORKER_PORT` patch to
+  `settings.json`, and ten VoltAgent subagent plugins whether or not you wanted any of
+  them. All of that is out: the `--voltagent` / `-VoltAgent` flag and its sub-picker
+  group, the `VOLTAGENT_*` / `$script:VoltAgentCatalog` catalogs, `install_bun` /
+  `Install-Bun`, and `set_claude_mem_worker_port` / `Set-ClaudeMemWorkerPort`. The menu
+  is now 20 items, 8 of them on by default. **Everything after the hole shifted down by
+  two** — the MCP servers are 9–12, Supabase 13, Context7 14, Playwright CLI 15, SkillUI
+  16, Strix 17, Obsidian 18, this repo's plugins 19, `graphify` 20 — so any script
+  passing `--select` by *number* needs updating; the stable keys (`--select
+  supabase,strix`) do not. Both scripts were changed together and verified to produce
+  the same 20-row menu and the same answer for `--select 19` / `-Select 19`. The
+  removal is documented across `README.md` (both tables, the switch table, and every
+  per-item note that names a number), `INSTALLATION.md`, `MARKETPLACE.md` and
+  `SECURITY.md`; `scripts/_test/menu-groups.sh` now exercises the range and
+  out-of-range cases against the skills group instead of the VoltAgent one, and
+  `check-marketplace.py` no longer expects a `VOLTAGENT_KEYS` array. Nothing already
+  installed on a machine is touched — uninstall those plugins by hand if you want them
+  gone (`claude plugin uninstall claude-mem@thedotmack`, and likewise for each
+  `voltagent-*@voltagent-subagents`). The removed flag fails differently on the two
+  platforms, so a script still passing it needs editing either way: `--voltagent a,b`
+  on the `.sh` warns `Unknown option` twice (once for the flag, once for its argument,
+  which no longer gets shifted past) and then installs the rest of the selection, while
+  `-VoltAgent a,b` on the `.ps1` is a parameter-binding error and the script does not
+  run at all.
+
+### Fixed
+
+- **`crew` 0.4.2 — every PowerShell hook was dead on Windows, and the command guard
+  blocked nothing there for the second time.** `hooks.json` wrote each PowerShell entry
+  as `& '${CLAUDE_PLUGIN_ROOT}/hooks/scripts/x.ps1'`. For a `shell: powershell` entry
+  Claude Code substitutes that placeholder as a PowerShell *environment reference*, and
+  PowerShell does not expand anything inside single quotes — so `&` was handed the token
+  verbatim and the hook died with "is not recognized as a name of a cmdlet". Only the two
+  `SessionStart` hooks reported it visibly, because they are the ones that fire at
+  startup; `guard.ps1`, `promote-gate.ps1`, `handoff-write.ps1`, `notify.ps1`,
+  `verify-gate.ps1` and `context-watch.ps1` were failing just as silently. Fixing the
+  quoting exposed a second failure underneath it: `& script.ps1` inside PowerShell's
+  `-Command` does not propagate the script's exit code, so a guard's `exit 2` arrived as
+  1 — a non-blocking error — and the command ran anyway. Every PowerShell entry now
+  double-quotes the path and ends with `; exit $LASTEXITCODE`, verified end to end
+  against `guard.ps1` (blocking `git push --force`, exit 2; allowing `Get-ChildItem`,
+  exit 0). The bash entries got the same double-quoting, which they needed for a home
+  directory with a space in it. `scripts/check-marketplace.py` grew a
+  `check_hook_commands` check that fails CI on either mistake, and both new rules are
+  written into `CLAUDE.md`. This was not an install-script problem — the repo and
+  installed copies were byte-identical, so every Windows install of `crew` had it.
+
 ### Changed
 
 - **Re-pinned the README's one-liner install URLs** from `f59faf1` to `7059ede`, per the
