@@ -6,9 +6,15 @@ INPUT=$(cat)
 read_json() { python3 -c 'import sys,json;d=json.load(sys.stdin);print(d.get(sys.argv[1],""))' "$1" <<< "$INPUT" 2>/dev/null; }
 TRANSCRIPT=$(read_json transcript_path)
 CWD=$(read_json cwd)
+STOP_HOOK_ACTIVE=$(read_json stop_hook_active)
 cd "${CWD:-${CLAUDE_PROJECT_DIR:-.}}" 2>/dev/null || exit 0
 [ -f "$TRANSCRIPT" ] || exit 0
 [ -f .crew/config.json ] || exit 0
+
+# Loop safety, layer 1: Claude Code is already continuing because of a stop
+# hook -- do not pile on more feedback. Layer 2 is the once-per-session
+# marker below. Layer 3 is Claude Code's own 8-consecutive-block backstop.
+[ "$STOP_HOOK_ACTIVE" = "True" ] && exit 0
 
 # No hook_once claim here on purpose: Stop fires once per TURN against a
 # stable session id, so a session-scoped claim taken on turn 1 would suppress
@@ -20,11 +26,11 @@ CFG=$(python3 - << 'PY' 2>/dev/null
 import json
 try: c=json.load(open(".crew/config.json")).get("context",{})
 except Exception: c={}
-print(c.get("warnAt",0.8), c.get("budgetTokens",200000), c.get("handoffPath",".work/HANDOFF.md"), str(c.get("enabled",True)).lower())
+print(c.get("warnAt",0.8), c.get("budgetTokens",200000), c.get("handoffPath",".work/HANDOFF.md"), str(c.get("enabled",True)).lower(), str(c.get("autoWrapUp",False)).lower())
 PY
 )
 [ -z "$CFG" ] && exit 0
-read -r WARN_AT BUDGET HANDOFF ENABLED <<< "$CFG"
+read -r WARN_AT BUDGET HANDOFF ENABLED AUTO_WRAP_UP <<< "$CFG"
 [ "$ENABLED" = "false" ] && exit 0
 
 # Loop safety: fire once per session until SessionStart clears the marker.
@@ -45,6 +51,14 @@ PCT_H=$(python3 -c "print(int($PCT*100))")
 
 bash "$(dirname "$0")/notify.sh" waiting "context ~${PCT_H}% - writing handoff" 2>/dev/null
 
+if [ "$AUTO_WRAP_UP" = "true" ]; then
+cat >&2 << MSG
+You are at roughly ${PCT_H}% of the context budget. Reach a stopping point
+now: finish or safely abandon the change in flight, write ${HANDOFF} per the
+crew-context skill, update the ticket, then tell the user the session is
+ready to clear. Do not start new work.
+MSG
+else
 cat >&2 << MSG
 Context is at roughly ${PCT_H}% of budget (estimated from transcript size).
 
@@ -57,4 +71,5 @@ than the recollection.
 Then tell me the note is ready so I can /clear or /compact. Do not start new
 work in this session.
 MSG
+fi
 exit 2
