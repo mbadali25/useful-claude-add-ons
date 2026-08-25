@@ -118,17 +118,79 @@ Two conditions, both required, before any export runs:
    the user explicitly approving this in the current session. An upgrade
    (`crew_upgrade.py`) never sets this flag itself; it always resets it to
    `false` unless it was already `true`, on purpose.
-2. A scratch-directory proof run has been done and its output inspected:
-   export with `--obsidian-dir` pointed at an empty throwaway directory,
-   then look at what landed there and confirm nothing was written outside
-   it. Upstream claims `--obsidian-dir` never overwrites existing notes or
-   `.obsidian` config. That claim is verified once against a scratch
-   directory, not trusted the first time against a vault the user actually
-   cares about.
+2. A scratch-directory proof run has been done and its output inspected —
+   see **Verified behaviour** below. Upstream's non-destructive claim is
+   verified once against a scratch directory, not trusted the first time
+   against a vault the user actually cares about.
 
 If either condition is unmet, **refuse the export and ask** — don't run it
 "just this once" or treat a missing scratch-run as good enough. Default
 target when both conditions hold: `<vault>/codegraphs/<repo>/`.
+
+**CLI syntax:** the export is its own subcommand, not a flag on the build
+command. `graphify . --obsidian --obsidian-dir <path>` is silently ignored —
+those flags don't exist on the default build/extract command, and an
+unrecognized flag there produces no error, so it looks like it worked. The
+real invocation is:
+
+```
+graphify export obsidian --graph <repo>/graphify-out/graph.json --dir <vault-target>
+```
+
+### Verified behaviour (graphify 0.9.49, checked 2026-08-24)
+
+Proof run: built a scratch vault (populated `.obsidian/` with `app.json` +
+`workspace.json`, notes in nested subfolders, a top-level `README.md` and a
+`my-notes/graph.md` chosen to collide with plausible generated output),
+snapshotted every file by SHA-256, then ran `graphify export obsidian`
+against it from a scratch clone of this repo under three configurations:
+`--dir` at the vault root, `--dir` at the documented
+`<vault>/codegraphs/<repo>/` target, and a second export re-run into an
+already-exported vault. A fourth run pre-seeded a real
+`.obsidian/graph.json` to test the overwrite case directly.
+
+- **Pre-existing notes: untouched in every configuration.** Every
+  snapshotted file's hash was identical after export, including the two
+  collision-candidate filenames, under both the root-targeted and the
+  subdirectory-targeted run.
+- **`.obsidian/app.json` and `.obsidian/workspace.json` at the vault root:
+  untouched in every configuration**, including when `--dir` pointed at the
+  vault root itself.
+- **Targeting the vault root directly writes into `.obsidian/`.** Obsidian's
+  own graph-view config file (`.obsidian/graph.json`) is a filename graphify
+  also uses. Pointed at the vault root, graphify created that file where none
+  existed. Re-run against a vault that already had a real
+  `.obsidian/graph.json`, it skipped it and printed: `WARNING: skipped 1
+  pre-existing file(s) graphify did not create, to avoid overwriting your
+  notes: .obsidian/graph.json` — i.e. it does not overwrite a file it did not
+  create, but it will create one under a name Obsidian also uses if that name
+  is free. **Whether the user's real vault already has
+  `.obsidian/graph.json` is the one fact this proof can't answer — ask them,
+  don't assume.**
+- **Targeting the documented default, `<vault>/codegraphs/<repo>/`, avoids
+  this entirely.** graphify created its own `.obsidian/` *inside* that
+  subdirectory (a self-contained nested-vault config), and the real
+  `.obsidian/` at the vault root was untouched — confirmed by diff, not just
+  by the absence of a warning.
+- **It tracks its own output** in a `.graphify_obsidian_manifest.json` at the
+  export root and skips any pre-existing file not listed there. What was
+  *not* tested: whether a hand-edit to a note graphify itself generated
+  survives a re-export — the second-export result below suggests it would
+  be silently overwritten, since re-export reproduces the same file set.
+- **Second export into the same directory:** identical file count and file
+  set (no duplicates) — it overwrote its own previously-generated notes and
+  `graph.canvas` in place. Pre-existing notes and `.obsidian` config outside
+  its own manifest remained untouched.
+- **Nothing was written outside the named `--dir`** except the scratch
+  clone's own `<repo>/graphify-out/` (the graph build artifacts, expected)
+  — checked by directory listing before and after, and confirmed no
+  `~/.graphify/` global directory was created or touched.
+
+Upstream's non-destructive claim held under every configuration tested: it
+never overwrote a pre-existing note or a pre-existing `.obsidian` file. The
+one caveat is additive, not destructive — pointed at a vault root, it can add
+a new `.obsidian/graph.json` if that name is free, which the documented
+`codegraphs/<repo>/` target avoids by construction.
 
 ## MCP server — optional, off by default
 
