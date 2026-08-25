@@ -194,6 +194,7 @@ def git_out(root, *args):
         done = subprocess.run(
             ("git",) + args, cwd=root, capture_output=True,
             text=True, timeout=_GIT_TIMEOUT, check=False,
+            stdin=subprocess.DEVNULL,
         )
     except (OSError, subprocess.SubprocessError):
         return None

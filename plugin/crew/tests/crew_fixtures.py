@@ -11,7 +11,7 @@ import subprocess
 def _git(root, *args):
     subprocess.run(
         ("git",) + args, cwd=root, check=True,
-        capture_output=True, text=True,
+        capture_output=True, text=True, stdin=subprocess.DEVNULL,
     )
 
 
@@ -83,6 +83,7 @@ def head_sha(root, length=7):
     done = subprocess.run(
         ("git", "rev-parse", f"--short={length}", "HEAD"),
         cwd=root, check=True, capture_output=True, text=True,
+        stdin=subprocess.DEVNULL,
     )
     return done.stdout.strip()
 
@@ -96,7 +97,8 @@ def commit_with_date(root, path, iso_date):
     env = dict(os.environ,
                GIT_AUTHOR_DATE=iso_date, GIT_COMMITTER_DATE=iso_date)
     subprocess.run(("git", "add", path), cwd=root, check=True,
-                   capture_output=True, text=True)
+                   capture_output=True, text=True,
+                   stdin=subprocess.DEVNULL)
     subprocess.run(("git", "commit", "-q", "-m", f"backdated {path}"),
                    cwd=root, check=True, capture_output=True, text=True,
-                   env=env)
+                   env=env, stdin=subprocess.DEVNULL)
