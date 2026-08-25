@@ -14,6 +14,11 @@ its `schema` field.
 
 - `isCrew: false` — there is no `.crew/config.json` here. Say so and stop;
   `crew_upgrade.py` would report `not a crew repo` for the same reason.
+- Config present but unreadable (a BOM that survives, truncated JSON, etc.) —
+  `crew_upgrade.py` reports `config unreadable` and touches nothing: no
+  backup, no write. Say the config could not be parsed and stop; a migration
+  tool must never write `upgrade_config({})` over a file it could not
+  understand.
 - `schema >= 2` and `$ARGUMENTS` does not contain `--force` — print
   **"already current"** and stop. Do not touch the config, the codemap, or
   the graph. `crew_upgrade.py` makes this same check and returns
@@ -119,5 +124,5 @@ nothing — resuming requires `--force`, same as any other re-run of step 4.
 Say this if the previous run's exit status is unknown.
 
 Finish by naming the exit status `crew_upgrade.py` returned
-(`upgraded`/`already current`/`not a crew repo`) so the state of the repo is
-never left implicit.
+(`upgraded`/`already current`/`not a crew repo`/`config unreadable`) so the
+state of the repo is never left implicit.

@@ -48,9 +48,16 @@ _DONE_RE = re.compile(
 
 
 def read_text(path):
-    """Return the file's text, or None if it cannot be read for any reason."""
+    """Return the file's text, or None if it cannot be read for any reason.
+
+    utf-8-sig rather than utf-8: a BOM-prefixed file (Windows Notepad's
+    default save) is otherwise valid utf-8 whose first character decodes as
+    U+FEFF, which then makes json.loads reject an otherwise well-formed
+    config as malformed. utf-8-sig strips a leading BOM when present and is
+    a no-op on a plain utf-8 file, so every other reader here is unaffected.
+    """
     try:
-        with open(path, "r", encoding="utf-8", errors="replace") as handle:
+        with open(path, "r", encoding="utf-8-sig", errors="replace") as handle:
             return handle.read()
     except (OSError, ValueError):
         # ValueError covers a path Python rejects before touching the disk (an

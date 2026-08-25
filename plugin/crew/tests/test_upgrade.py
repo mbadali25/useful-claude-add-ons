@@ -288,3 +288,75 @@ def test_run_on_a_non_crew_directory_reports_not_crew(tmp_path):
     plain = tmp_path / "plain"
     plain.mkdir()
     assert crew_upgrade.run(str(plain), {})["status"] == "not a crew repo"
+
+
+def test_bom_prefixed_config_upgrades_normally(tmp_path):
+    # Windows Notepad's default save. Must not be treated as unreadable, and
+    # every existing key -- including one this module has never heard of --
+    # must survive the round trip.
+    root = crew_fixtures.make_repo(tmp_path)
+    (root / ".crew" / "config.json").write_text(
+        json.dumps({
+            "tier": 2,
+            "roles": ["explorer", "dba"],
+            "tracker": "jira",
+            "jira": {"cloudId": "abc", "project": "PROJ"},
+            "myCustomKey": {"anything": "goes"},
+        }),
+        encoding="utf-8-sig",
+    )
+    out = crew_upgrade.run(str(root), {})
+    assert out["status"] == "upgraded"
+    cfg = json.loads((root / ".crew" / "config.json").read_text(encoding="utf-8"))
+    assert cfg["tier"] == 2
+    assert cfg["roles"] == ["explorer", "dba"]
+    assert cfg["tracker"] == "jira"
+    assert cfg["jira"] == {"cloudId": "abc", "project": "PROJ"}
+    assert cfg["myCustomKey"] == {"anything": "goes"}
+    assert cfg["schema"] == 2
+
+
+def test_unparseable_config_is_refused_not_overwritten(tmp_path):
+    # This is the destructive case BLOCK B exists to close: a config that
+    # fails to parse must be reported and left byte-identical, never
+    # silently replaced with upgrade_config({}).
+    root = crew_fixtures.make_repo(tmp_path)
+    original = "{not valid json at all"
+    (root / ".crew" / "config.json").write_text(original, encoding="utf-8")
+    out = crew_upgrade.run(str(root), {})
+    assert out["status"] == "config unreadable"
+    assert (root / ".crew" / "config.json").read_text(encoding="utf-8") == original
+    assert not (root / ".crew" / "config.json.v1.bak").exists()
+
+
+def test_null_schema_does_not_raise(tmp_path):
+    root = crew_fixtures.make_repo(tmp_path, config={"schema": None, "tier": 1})
+    out = crew_upgrade.run(str(root), {})
+    assert out["status"] == "upgraded"
+    cfg = json.loads((root / ".crew" / "config.json").read_text(encoding="utf-8"))
+    assert cfg["schema"] == 2
+    assert cfg["tier"] == 1
+
+
+def test_absent_config_is_unchanged(tmp_path):
+    root = crew_fixtures.make_repo(tmp_path)
+    assert not (root / ".crew" / "config.json").exists()
+    out = crew_upgrade.run(str(root), {})
+    assert out["status"] == "not a crew repo"
+    assert not (root / ".crew" / "config.json").exists()
+
+
+def test_config_is_backed_up_before_being_overwritten(tmp_path):
+    root = crew_fixtures.make_repo(tmp_path, config={"tier": 0})
+    crew_upgrade.run(str(root), {})
+    backup = root / ".crew" / "config.json.v1.bak"
+    assert json.loads(backup.read_text(encoding="utf-8")) == {"tier": 0}
+
+
+def test_config_backup_is_not_overwritten_by_a_second_run(tmp_path):
+    root = crew_fixtures.make_repo(tmp_path, config={"tier": 0})
+    crew_upgrade.run(str(root), {})
+    backup = root / ".crew" / "config.json.v1.bak"
+    backup.write_text('{"sentinel": true}', encoding="utf-8")
+    crew_upgrade.run(str(root), {}, force=True)
+    assert json.loads(backup.read_text(encoding="utf-8")) == {"sentinel": True}

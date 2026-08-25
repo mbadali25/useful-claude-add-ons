@@ -21,6 +21,17 @@ def test_config_list_at_top_level_is_rejected(tmp_path):
     assert crew_state.load_config(str(root)) == {}
 
 
+def test_bom_prefixed_config_still_parses(tmp_path):
+    # Windows Notepad's default save. A BOM-prefixed file is otherwise valid
+    # utf-8; treating it as malformed would make json.loads see a stray
+    # U+FEFF and reject an otherwise well-formed config.
+    root = crew_fixtures.make_repo(tmp_path)
+    (root / ".crew" / "config.json").write_text(
+        '{"tier": 2}', encoding="utf-8-sig"
+    )
+    assert crew_state.load_config(str(root)) == {"tier": 2}
+
+
 def test_metrics_rate_is_findings_over_tickets(tmp_path):
     root = crew_fixtures.make_repo(
         tmp_path, metrics=[("T-1", 1, 0), ("T-2", 0, 1), ("T-3", 1, 1)]

@@ -109,6 +109,45 @@ def backup_codemap(root):
     return dst
 
 
+def backup_config(root):
+    """Copy .crew/config.json aside. Returns the path, or None if there is none.
+
+    Same rule as backup_codemap: this is the file run() is about to
+    overwrite, so it gets the same non-destructive backup, taken once.
+    """
+    src = os.path.join(root, ".crew", "config.json")
+    if not os.path.isfile(src):
+        return None
+    dst = os.path.join(root, ".crew", "config.json.v1.bak")
+    if os.path.exists(dst):
+        return dst          # a previous run already took one; do not overwrite
+    shutil.copy2(src, dst)
+    return dst
+
+
+def _read_config_strict(root):
+    """Parse .crew/config.json, distinguishing "nothing to preserve" from
+    "something here failed to parse".
+
+    crew_state.load_config() collapses both cases to {} on purpose -- it
+    backs a SessionStart hook that must never raise, so "malformed" and
+    "absent" have to look the same to it. run() cannot afford that
+    collapse: writing upgrade_config({}) over a config that merely failed to
+    parse discards it, reported as success. Returns (cfg, ok); ok is False
+    only when the file is present but did not yield a dict.
+    """
+    text = crew_state.read_text(os.path.join(root, ".crew", "config.json"))
+    if text is None:
+        return {}, True  # absent: nothing to preserve, nothing wrong
+    try:
+        parsed = json.loads(text)
+    except ValueError:
+        return {}, False
+    if not isinstance(parsed, dict):
+        return {}, False
+    return parsed, True
+
+
 def _head(root):
     try:
         done = subprocess.run(
@@ -162,11 +201,16 @@ def run(root, derived, force=False):
     if not os.path.exists(cfg_path):
         return {"status": "not a crew repo", "report": "", "conflicts": []}
 
-    cfg = crew_state.load_config(root)
-    if cfg.get("schema", 1) >= crew_state.SCHEMA_CURRENT and not force:
+    cfg, ok = _read_config_strict(root)
+    if not ok:
+        # Present but unparseable. Change nothing -- see _read_config_strict.
+        return {"status": "config unreadable", "report": "", "conflicts": []}
+    if crew_state.int_or(cfg.get("schema", 1), 1) >= crew_state.SCHEMA_CURRENT \
+            and not force:
         return {"status": "already current", "report": "", "conflicts": []}
 
     backup_codemap(root)
+    backup_config(root)
 
     with open(cfg_path, "w", encoding="utf-8") as handle:
         json.dump(upgrade_config(cfg), handle, indent=2, sort_keys=True)
