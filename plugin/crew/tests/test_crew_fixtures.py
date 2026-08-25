@@ -8,6 +8,7 @@ instead of "no tests collected" (pytest exit code 5).
 """
 import json
 import re
+import subprocess
 
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_fixtures
@@ -120,9 +121,43 @@ def test_commit_with_date_backdates_author_and_committer(tmp_path):
     root = crew_fixtures.make_repo(tmp_path)
     (root / "later.txt").write_text("x\n", encoding="utf-8")
     crew_fixtures.commit_with_date(root, "later.txt", "2020-01-01T00:00:00")
-    import subprocess  # pylint: disable=import-outside-toplevel
     done = subprocess.run(
         ("git", "log", "-1", "--format=%ad", "--date=short"),
         cwd=root, check=True, capture_output=True, text=True,
+        stdin=subprocess.DEVNULL,
     )
     assert done.stdout.strip() == "2020-01-01"
+
+
+def test_git_calls_never_inherit_the_parent_stdin(tmp_path, monkeypatch):
+    """Every subprocess.run the fixture builder makes must redirect stdin.
+
+    Leaving stdin=None lets git inherit whatever OS handle pytest's fd
+    capturing currently has fd 0 pointed at. That handle gets torn down and
+    rebuilt on every test's setup/teardown, and on Windows -- and on a CI
+    runner whose own stdin is a pipe -- an inherited-but-stale handle makes
+    subprocess.Popen fail with "the handle is invalid" (Windows) or "Bad
+    file descriptor" (Linux) on an unpredictable subset of tests. Pinning
+    stdin=DEVNULL removes the dependency on that handle entirely, which is
+    what makes ~180 sequential git calls across the suite deterministic.
+    """
+    calls = []
+    real_run = subprocess.run
+
+    def recording_run(*args, **kwargs):
+        calls.append(kwargs)
+        return real_run(*args, **kwargs)  # pylint: disable=subprocess-run-check
+
+    monkeypatch.setattr(crew_fixtures.subprocess, "run", recording_run)
+
+    root = crew_fixtures.make_repo(tmp_path)
+    crew_fixtures.head_sha(root)
+    (root / "later.txt").write_text("x\n", encoding="utf-8")
+    crew_fixtures.commit_with_date(root, "later.txt", "2020-01-01T00:00:00")
+
+    assert calls, "expected the fixture builder to have called subprocess.run"
+    for kwargs in calls:
+        assert kwargs.get("stdin") == subprocess.DEVNULL, (
+            "a git subprocess.run call is missing stdin=subprocess.DEVNULL "
+            f"-- kwargs were: {kwargs}"
+        )
