@@ -81,6 +81,14 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`crew` 0.5.3 - a comment, from an advisory review.** `read_skips` now
+  dedupes on `(gate, detail)`, which made the per-gate loop in `report()`
+  look like a redundant second dedupe worth deleting. It is not: what it does
+  that `read_skips` does not is drop empty details, which would otherwise
+  print as a bare bullet - and the count beside it is distinct debts rather
+  than how many turns declined to run something. Both are now stated where
+  someone would go to simplify it.
+
 - **`crew` 0.5.1 - findings from the Codex review pass, fixed before merge.** 0.5.0
   was set on the branch and never published; the released version is 0.5.1.
 
