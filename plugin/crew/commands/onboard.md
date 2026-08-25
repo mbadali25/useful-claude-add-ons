@@ -115,7 +115,27 @@ python3 ${CLAUDE_PLUGIN_ROOT}/skills/crew-graph/scripts/crew_upgrade.py \
 
 `--force` is required here even on an up-to-date schema: without it,
 `crew_upgrade.py` sees `schema >= 2` and returns `already current` without
-reconciling anything. The config rewrite this forces is a no-op merge of
-already-current blocks; the reconciliation is the part `--refresh` is for.
+reconciling anything.
+
+`--force` is not free on a repo that was never behind schema. Say these
+consequences before running it, not after:
+
+- `.crew/codemap/UPGRADE.md` is overwritten unconditionally, including its
+  header claiming `from schema: 1 -> 2` — false on a repo that was already
+  current. If a previous `/crew:upgrade` left contradictions there that
+  nobody has verified yet, this run erases that list. Read the existing
+  `UPGRADE.md` before running `--refresh` if one is present, and fold its
+  unresolved contradictions into what you report afterward.
+- `.crew/codemap.v1.bak/` is (re)confirmed if absent — on a repo that was
+  never at v1, this creates a "v1 backup" that actually holds current-schema
+  notes. Harmless, but say it happened; a stray backup with a misleading name
+  is exactly the kind of thing that looks like evidence of a problem later.
+- The config file is rewritten (reformatted and re-sorted) even though its
+  content does not change — mention this if the user diffs `.crew/config.json`
+  and is surprised to see churn.
+- The command's own return status will say `"upgraded"` for a repo that was
+  never behind. Report the reconciliation result (added facts, conflicts,
+  stale anchors) instead of repeating that status verbatim.
+
 Report any conflicts and any anchor left stale on purpose exactly as
 `/crew:upgrade` does — surfaced, not resolved.

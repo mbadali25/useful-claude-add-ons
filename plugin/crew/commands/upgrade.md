@@ -66,6 +66,11 @@ python3 ${CLAUDE_PLUGIN_ROOT}/skills/crew-graph/scripts/crew_upgrade.py \
   --root <repo> --derived <path-to-derived.json>
 ```
 
+Pass `--force` here if `$ARGUMENTS` had it (step 1). Without it, a repo whose
+`schema` is already current hits `run()`'s early return and writes nothing —
+the whole reason `--force` exists is to run this step anyway, so the flag has
+to reach the actual invocation, not just gate step 1's early exit.
+
 A subsystem with nothing new to add can be omitted from the JSON entirely —
 `crew_upgrade.py` treats a missing key the same as an empty one.
 
@@ -104,6 +109,14 @@ reads as one that succeeded:
 - If the graph had to be built in step 3, say that graph freshness is
   commit-based: it describes the last commit, not uncommitted edits to
   tracked files.
+
+**A run interrupted between the config write and the reconcile loop leaves
+the repo half-upgraded.** `run()` writes `schema: 2` to the config before it
+starts reconciling codemaps one file at a time, so a kill mid-loop leaves
+some subsystems reconciled and others untouched, with the config already
+saying "current." A plain re-run then reports `already current` and does
+nothing — resuming requires `--force`, same as any other re-run of step 4.
+Say this if the previous run's exit status is unknown.
 
 Finish by naming the exit status `crew_upgrade.py` returned
 (`upgraded`/`already current`/`not a crew repo`) so the state of the repo is
