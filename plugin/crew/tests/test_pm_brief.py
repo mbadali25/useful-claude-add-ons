@@ -276,3 +276,80 @@ def test_quiet_mode_config_never_expands():
     state = dict(HEALTHY, schema=1, triggers=["upgradeNeeded"],
                  pm=dict(HEALTHY["pm"], mode="quiet"))
     assert "/crew:upgrade" not in "\n".join(pm_brief.render(state))
+
+
+# -- context.autoResume ------------------------------------------------------
+#
+# Step 0 found initialUserMessage confirmed only in non-interactive (-p) mode;
+# no PTY was available to drive an interactive session from this sandbox, and
+# the CLI itself refuses non-tty stdio without --print semantics, which is
+# consistent with (though not proof of) the -p-only reading. So the emitted
+# field is additionalContext, not initialUserMessage -- see crew-context
+# SKILL.md for the full record. additionalContext only ever changes shape
+# (plain text -> one JSON object) when autoResume actually fires; the default
+# path is untouched.
+
+_BASE_CONFIG = {"schema": 2, "tier": 0, "roles": [], "tracker": "files"}
+
+
+def test_auto_resume_false_by_default_changes_nothing(tmp_path, monkeypatch,
+                                                       capsys):
+    root = crew_fixtures.make_repo(tmp_path, config=_BASE_CONFIG, graph=True,
+                                   handoff=True)
+    out = _run(root, "sess-1", monkeypatch, capsys)
+    assert "## crew" in out
+    assert "additionalContext" not in out
+    assert "hookSpecificOutput" not in out
+
+
+def test_auto_resume_true_with_no_handoff_changes_nothing(tmp_path,
+                                                          monkeypatch, capsys):
+    config = dict(_BASE_CONFIG, context={"autoResume": True})
+    root = crew_fixtures.make_repo(tmp_path, config=config, graph=True,
+                                   handoff=False)
+    out = _run(root, "sess-1", monkeypatch, capsys)
+    assert "## crew" in out
+    assert "additionalContext" not in out
+    assert "hookSpecificOutput" not in out
+
+
+def test_auto_resume_true_with_a_handoff_emits_additional_context(
+    tmp_path, monkeypatch, capsys
+):
+    config = dict(_BASE_CONFIG, context={"autoResume": True})
+    root = crew_fixtures.make_repo(tmp_path, config=config, graph=True,
+                                   handoff=True)
+    out = _run(root, "sess-1", monkeypatch, capsys)
+    parsed = json.loads(out)  # the whole of stdout must be valid JSON
+    payload = parsed["hookSpecificOutput"]
+    assert payload["hookEventName"] == "SessionStart"
+    assert "Something." in payload["additionalContext"]
+    assert "## crew" in payload["additionalContext"]
+
+
+def test_auto_resume_non_true_values_do_not_enable_it(tmp_path, monkeypatch,
+                                                       capsys):
+    # Gated on the value being exactly `true` -- "1" and 1 are not `true`.
+    for value in ("true", 1):
+        config = dict(_BASE_CONFIG, context={"autoResume": value})
+        root = crew_fixtures.make_repo(
+            tmp_path / f"case-{value}", config=config, graph=True,
+            handoff=True,
+        )
+        out = _run(root, "sess-1", monkeypatch, capsys)
+        assert "additionalContext" not in out
+
+
+def test_auto_resume_second_call_in_one_session_prints_nothing(
+    tmp_path, monkeypatch, capsys
+):
+    # The double-fire case (both .sh and .ps1 wrappers) still has to hold on
+    # the JSON path -- the per-source claim gates emission before the
+    # additionalContext branch is even reached.
+    config = dict(_BASE_CONFIG, context={"autoResume": True})
+    root = crew_fixtures.make_repo(tmp_path, config=config, graph=True,
+                                   handoff=True)
+    first = _run(root, "sess-abc", monkeypatch, capsys)
+    assert "additionalContext" in first
+    second = _run(root, "sess-abc", monkeypatch, capsys)
+    assert second == ""

@@ -9,10 +9,17 @@ hooks/scripts/handoff-read.sh for the same reasoning.
 
 import json
 import os
+import re
 import sys
 
 import crew_state
 import hook_once
+
+# Default kept identical to crew_state.read_work's hard-coded path and to
+# handoff-read.sh's own fallback, so all three agree absent an override.
+_DEFAULT_HANDOFF_PATH = ".work/HANDOFF.md"
+
+_NEXT_ACTION_RE = re.compile(r"^##\s*next action\s*$", re.IGNORECASE)
 
 
 def _crew_line(state):
@@ -79,7 +86,7 @@ FINDINGS = {
     ),
     "graphStale": (
         "the code graph is missing or older than HEAD",
-        "run /crew:onboard, or graphify . --no-viz to refresh it",
+        "run /crew:onboard, or graphify . --no-viz --code-only to refresh it",
     ),
     "knowledgeBehind": (
         "some codemap anchors are behind HEAD, so those notes may describe "
@@ -163,6 +170,87 @@ def render(state):
     )
 
 
+def _handoff_path(cfg):
+    """The configured handoff path, or the shared default when absent or
+    wrong-typed. A dict or a number here must not raise; see
+    crew_state.dict_or_empty for the same defensive shape elsewhere.
+    """
+    context_cfg = crew_state.dict_or_empty(cfg.get("context"))
+    path = context_cfg.get("handoffPath")
+    return path if isinstance(path, str) and path else _DEFAULT_HANDOFF_PATH
+
+
+def _auto_resume_enabled(cfg):
+    """True only when context.autoResume is exactly the JSON boolean true.
+
+    Not a truthiness check: config is hand-edited, and "true" (a string) or
+    1 (an int) mean someone was confused, not that the flag is on. Getting
+    this wrong in the permissive direction would let a stray non-boolean
+    value skip the one human read of a handoff before work resumes on it.
+    """
+    context_cfg = crew_state.dict_or_empty(cfg.get("context"))
+    return context_cfg.get("autoResume") is True
+
+
+def _next_action(handoff_text):
+    """The text under the handoff's '## Next action' heading, or None.
+
+    Joined onto one line -- this becomes one line of a JSON string value,
+    not a rendered document -- and stops at the next heading or end of file.
+    """
+    lines = handoff_text.splitlines()
+    for i, line in enumerate(lines):
+        if not _NEXT_ACTION_RE.match(line.strip()):
+            continue
+        action = []
+        for later in lines[i + 1:]:
+            if later.strip().startswith("##"):
+                break
+            if later.strip():
+                action.append(later.strip())
+        if action:
+            return " ".join(action)
+    return None
+
+
+def _resume_context(root, cfg, brief_lines):
+    """additionalContext for context.autoResume, or None when it does not
+    apply.
+
+    Step 0 found `initialUserMessage` confirmed only for non-interactive
+    (`-p`) invocations -- see crew-context/SKILL.md for the full record of
+    that test. No PTY was available in this environment to drive an actual
+    interactive session, so this emits `additionalContext` rather than
+    `initialUserMessage`: confirmed for all sources, at the cost of the
+    session opening with the handoff already in view rather than already
+    working.
+
+    Fires only when autoResume is exactly true AND a handoff file exists at
+    the configured path -- both conditions, not either.
+    """
+    if not _auto_resume_enabled(cfg):
+        return None
+    handoff_text = crew_state.read_text(
+        os.path.join(root, _handoff_path(cfg))
+    )
+    if not handoff_text or not handoff_text.strip():
+        return None
+
+    parts = []
+    if brief_lines:
+        parts.append("\n".join(brief_lines))
+    parts.append("## Resuming from the previous session's handoff")
+    parts.append(handoff_text.strip())
+    next_action = _next_action(handoff_text)
+    if next_action:
+        parts.append(f"Next action: {next_action}")
+    parts.append(
+        "The working tree is the source of truth. Verify the notes above "
+        "against git diff before acting on them."
+    )
+    return "\n\n".join(parts)
+
+
 def main(argv=None):
     """Hook entry point. Reads the SessionStart payload from stdin. Always 0."""
     del argv
@@ -212,7 +300,20 @@ def main(argv=None):
 
     try:
         lines = render(crew_state.collect(root))
-        if lines:
+        cfg = crew_state.load_config(root)
+        resume = _resume_context(root, cfg, lines)
+        if resume is not None:
+            # The whole of stdout must be valid JSON here -- there is no
+            # channel to print the plain brief alongside it, so the brief's
+            # own lines are folded into the payload by _resume_context
+            # rather than printed separately.
+            print(json.dumps({
+                "hookSpecificOutput": {
+                    "hookEventName": "SessionStart",
+                    "additionalContext": resume,
+                },
+            }))
+        elif lines:
             print("\n".join(lines))
     except Exception:  # pylint: disable=broad-except
         # A SessionStart hook that raises breaks every session opened in this
