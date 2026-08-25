@@ -3582,7 +3582,7 @@ Required content:
 - **Obsidian — the gate, stated as a refusal.** Two conditions, both required:
   `graph.obsidian.confirmed == true` in `.crew/config.json`, and a completed
   scratch-directory proof run. Absent either, **refuse and ask**. Default target
-  `<vault>/codegraphs/<repo>/`. Upstream says `--obsidian-dir` never overwrites
+  `<vault>/codegraphs/<repo>/`. Upstream says the export never overwrites
   your notes or `.obsidian` config; that is verified once against a scratch
   directory rather than trusted against a vault the user cares about.
 - **MCP server** — `python -m graphify.serve` documented as optional and off by
@@ -3669,13 +3669,40 @@ echo '{"probe":true}' > "$SCRATCH/.obsidian/app.json"
 echo 'a note I care about' > "$SCRATCH/my-notes/keep.md"
 cp -r "$SCRATCH" "$SCRATCH.before"
 
-graphify . --obsidian --obsidian-dir "$SCRATCH"
+graphify . --no-viz --code-only
+graphify export obsidian --graph graphify-out/graph.json --dir "$SCRATCH"
 
 diff -r "$SCRATCH.before/.obsidian" "$SCRATCH/.obsidian" && echo "config untouched"
 diff -r "$SCRATCH.before/my-notes"  "$SCRATCH/my-notes"  && echo "notes untouched"
 ```
 Expected: both diffs clean. **If either is dirty, stop.** Report it and do not
 proceed to step 2 — the whole gate exists for this outcome.
+
+### Obsidian export, measured against graphify 0.9.49
+
+The proof run (Task 14) settled four things. Two of them change what the skill
+may say:
+
+- **`graphify . --obsidian --obsidian-dir <path>` is not a real invocation.**
+  Those are not flags on the default build command; the vault is left untouched
+  and the export appears to have succeeded. The working command is the
+  subcommand `graphify export obsidian --graph <out>/graph.json --dir <target>`.
+  Independently reproduced: vault file count identical before and after.
+- **Targeting the vault ROOT writes `.obsidian/graph.json`** — which collides
+  with Obsidian's own graph-view settings filename. graphify creates it only
+  when absent and skips a pre-existing one with an explicit warning rather than
+  overwriting, but the collision is reason enough not to target the root.
+- **The documented default `<vault>/codegraphs/<repo>/` avoids it entirely.**
+  graphify's own `.obsidian/` lands inside that subfolder and the vault root's
+  real `.obsidian/` is untouched — confirmed by hash diff, not mtime.
+- **Pre-existing notes were untouched in every configuration**, including two
+  filenames chosen to collide with generated output. A second export produced an
+  identical file set with no duplicates, overwriting only its own prior output,
+  tracked via `.graphify_obsidian_manifest.json`.
+
+Not tested, and worth stating rather than assuming: whether a **hand-edit to a
+graphify-generated note** survives a re-export. The identical-file-set result
+suggests it would be silently overwritten. Treat generated notes as generated.
 
 - [ ] **Step 2: Write the finding into `SKILL.md`**
 
