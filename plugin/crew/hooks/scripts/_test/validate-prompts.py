@@ -107,7 +107,14 @@ def check_commands():
 
         check_plugin_paths(name, body)
 
-        if re.search(rf"crew:({SPAWNABLE})", body):
+        # A leading "/" marks a cross-reference to a separate top-level
+        # command ("run `/crew:pm offboard <role>` next"), not a subagent
+        # this command spawns itself. Bare "crew:pm" (no slash) is the
+        # convention for an actual delegation. Without excluding the slash
+        # form, a command name that happens to collide with an agent name
+        # (pm is both agents/pm.md and commands/pm.md) reads as a false
+        # "spawns a subagent" positive.
+        if re.search(rf"(?<!/)crew:({SPAWNABLE})", body):
             if "Agent" not in tools:
                 bad(f"{name}: spawns a subagent but allowed-tools has no Agent")
             else:
