@@ -6,6 +6,36 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`crew` 0.4.5 — the Windows `Stop` hook ran the verify smoke inside WSL.**
+  With WSL installed, PowerShell resolves a bare `bash` to
+  `C:\Windows\system32\bash.exe`, so `verify-gate.ps1` ran `_verify/smoke.sh`
+  in a distro with no terraform, no python and a different `~`, and reported
+  `SMOKE: 0/9 FAIL` on trees where Git Bash reads 12/12 — a blocking gate
+  failing for a reason that had nothing to do with the repository.
+  `Resolve-CrewBash` in `hooks/scripts/verify-gate.ps1` now walks up from
+  `git.exe`'s own directory to `bin\bash.exe` or `usr\bin\bash.exe`, falls
+  back to `Get-Command bash -All` minus System32 and WindowsApps, and only then
+  to a bare `bash`, so nothing changes off Windows. Both call sites use it —
+  the `smoke.sh` invocation and the `run: ["bash ..."]` rules from
+  `.crew/verify.json` — and the failure output now names the interpreter it
+  used. `tests/test_verify_gate_bash_resolver.py` covers the four resolution
+  shapes: System32 first on PATH, a `mingw64` install, the WindowsApps
+  execution alias, and a `git` defined as a PowerShell function, which used to
+  throw a terminating error out of the hook. The PATH fallback carries the same
+  guard as the walk-up, for the same reason: a `bash` function or alias in a
+  PowerShell profile is returned by `Get-Command bash -All` ahead of any real
+  executable with an empty `.Source`, which the gate would have run as an empty
+  interpreter and reported as a smoke failure.
+  0.4.4 was set on the branch and never published; the released version is
+  0.4.5.
+- **`crew` 0.4.5 also carries the five ANEWINF-720 silent-failure fixes**, which
+  merged without a version bump and so never reached an installed copy: the
+  rollback gate fails closed instead of skipping when `.crew/verify.json` omits
+  `rollback`, generated `STATUS.md` and `verify.json` state that enforcement is
+  session-local, `/crew:review` writes ticket-scoped scratch paths rather than
+  racing concurrent reviews, the tool matcher sees commands invoked from inside
+  a script, and the guard no longer fires on an incidental substring match.
+
 - **`crew` 0.4.3 — the context watch no longer ends Windows sessions on turn one,
   and knows that Claude 5 models have a 1M window.** Three causes, all in the
   `Stop` hook pair `hooks/scripts/context-watch.{sh,ps1}`:

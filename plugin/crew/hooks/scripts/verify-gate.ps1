@@ -54,6 +54,13 @@ function Resolve-CrewBash {
   $sysRoot = $env:SystemRoot
   $candidates = Get-Command bash -All -ErrorAction SilentlyContinue
   foreach ($cmd in $candidates) {
+    # Same guard as the git walk-up above, for the same reason. A `bash`
+    # function or alias defined in a PowerShell profile is returned here ahead
+    # of any bash.exe and its .Source is empty: .StartsWith() on that throws,
+    # and returning it hands the caller an empty interpreter, so the gate
+    # reports a smoke failure that is really a resolution failure. Only real
+    # executables are candidates.
+    if ($cmd.CommandType -ne 'Application' -or -not $cmd.Source) { continue }
     $src = $cmd.Source
     if ($sysRoot -and $src.StartsWith($sysRoot, [System.StringComparison]::OrdinalIgnoreCase)) { continue }
     if ($src -match 'WindowsApps') { continue }

@@ -59,7 +59,7 @@ def _print_bash(path_entries):
         env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True,
         check=False,
     )
-    assert result.returncode == 0, "stderr: %s" % result.stderr
+    assert result.returncode == 0, f"stderr: {result.stderr}"
     return result.stdout.strip()
 
 
@@ -134,7 +134,7 @@ def test_falls_through_when_git_is_a_powershell_function(tmp_path):
         check=False,
     )
 
-    assert result.returncode == 0, "stderr: %s" % result.stderr
+    assert result.returncode == 0, f"stderr: {result.stderr}"
     resolved = result.stdout.strip()
     assert resolved == str(real_bash)
     assert "System32" not in resolved
@@ -144,7 +144,7 @@ def test_falls_through_when_git_is_a_powershell_function(tmp_path):
     # $ErrorActionPreference, so execution falls through to tier b anyway)
     # -- but it does so noisily. A clean run must not touch Split-Path at
     # all for a non-Application git, so stderr must be empty.
-    assert result.stderr == "", "unexpected stderr: %s" % result.stderr
+    assert result.stderr == "", f"unexpected stderr: {result.stderr}"
 
 
 def test_falls_back_to_path_excluding_windowsapps_when_no_git_found(tmp_path):
@@ -164,3 +164,36 @@ def test_falls_back_to_path_excluding_windowsapps_when_no_git_found(tmp_path):
 
     assert resolved == str(real_bash)
     assert "WindowsApps" not in resolved
+
+
+def test_tier_b_skips_a_bash_defined_as_a_powershell_function(tmp_path):
+    """The mirror image of the git-as-a-function case, in tier b. `Get-Command
+    bash -All` returns a profile-defined `bash` function first, and its .Source
+    is an empty string -- calling .StartsWith() on that throws, and returning
+    it hands `& $bashExe` an empty interpreter, so the gate blocks the turn
+    with a smoke failure that is really a resolution failure. Only Application
+    entries are candidates, so the real bash.exe later on PATH must win and
+    nothing may reach stderr."""
+    wsl_dir = tmp_path / "Windows" / "System32"
+    _touch(str(wsl_dir / "bash.exe"))
+
+    real_dir = tmp_path / "Git" / "bin"
+    real_bash = real_dir / "bash.exe"
+    _touch(str(real_bash))
+
+    env = os.environ.copy()
+    # Tier b's System32 filter compares against $env:SystemRoot rather than
+    # path text, so SystemRoot has to point at this fake tree.
+    env["SystemRoot"] = str(tmp_path / "Windows")
+    # No git on PATH at all, so tier a cannot resolve and tier b runs.
+    env["PATH"] = os.pathsep.join([str(wsl_dir), str(real_dir)])
+    command = "function bash { }\n& '%s' -PrintBash" % _PS1
+    result = subprocess.run(
+        [_PWSH, "-NoProfile", "-NonInteractive", "-Command", command],
+        env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, f"stderr: {result.stderr}"
+    assert result.stdout.strip() == str(real_bash)
+    assert result.stderr == "", f"unexpected stderr: {result.stderr}"
