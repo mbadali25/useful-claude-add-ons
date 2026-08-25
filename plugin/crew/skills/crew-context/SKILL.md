@@ -11,6 +11,13 @@ Claude Code cannot clear its own session, and neither can a shell script a hook
 launches — hooks run as child processes of the session, and a child cannot reset
 its parent's conversation. Anything promising otherwise is guessing.
 
+`context.autoClear` (experimental, off by default) does not contradict that. It
+does not clear the conversation; it drives the **terminal**, typing `/clear` at
+the prompt the way a human would. Different mechanism, different failure mode —
+it depends on knowing which terminal, which is why `tmux` (exact, by pane id) is
+the only method that needs no window title and the rest refuse without one. See
+`hooks/scripts/auto-clear.sh` and the crew README's Auto-clear section.
+
 You do not need it to. The lifecycle already provides the whole cycle:
 
 | Moment | Hook | What crew does |
@@ -142,7 +149,10 @@ be injected twice.
 
 `keepTranscripts` is honoured by `PreCompact`: that many `.jsonl` snapshots are
 kept under `.crew/transcripts/` and older ones are deleted. `autoWrapUp` and
-`autoResume` are both off by default - see above.
+`autoResume` are both off by default - see above. So is `autoClear`, which is
+experimental and presses a key on the user's behalf; its own block is
+`context.autoClear` and it refuses rather than guessing whenever it cannot
+identify what it would be typing into.
 
 ## How the reading is taken
 

@@ -6,6 +6,51 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
+- **`crew` 0.6.0 - `context.autoClear`, experimental, off by default.** A matched
+  pair of scripts that type `/clear` into the terminal once the handoff note is
+  written. This does **not** contradict the standing correction that a hook
+  cannot clear its own session - it does not touch the conversation. It drives
+  the *terminal*, typing at the prompt the way a human would, which is a
+  different mechanism with a different failure mode.
+  - That failure mode is why it is experimental: typing into a terminal is only
+    safe if you know which terminal. `tmux` targets `$TMUX_PANE` by id and never
+    touches focus, so in tmux this needs no configuration beyond
+    `enabled: true`. `xdotool`, `wtype` and the Windows `SendKeys` path all
+    depend on focus, so they **require** `context.autoClear.windowTitle` and
+    refuse rather than guessing; `wtype` additionally needs `unsafeFocus: true`,
+    because Wayland offers no way to check what has focus at all. The Windows
+    child re-checks the foreground window's title immediately before typing, so
+    alt-tabbing during the delay cancels the send rather than redirecting it.
+  - Five conditions before it types anything: `enabled` exactly `true` (the
+    string `"true"` is not), the handoff was actually requested this session,
+    the note exists and is **newer** than that request, it has at least
+    `minHandoffLines` non-blank lines (default 5 - clearing on a two-line
+    placeholder loses the work and leaves a note that says "continue the work"),
+    and nothing has claimed the one-per-session attempt.
+  - The attempt is claimed immediately **before** the send, not with the
+    conditions, so a misconfiguration does not burn the session's only try -
+    fixing `windowTitle` mid-session actually retries. A `--dry-run` does not
+    claim it either.
+  - Every refusal is written to `.crew/.autoclear.log`, because a `Stop` hook's
+    stderr is invisible when it exits 0 and without it "nothing happened" cannot
+    be told apart from "the feature is broken".
+  - `--dry-run` / `-DryRun` prints the method, target, command and delay it would
+    use and sends nothing; `--force` / `-Force` skips the handoff conditions so
+    the plan can be inspected outside a real session.
+  - `tests/test_auto_clear.py` - 32 cases across both flavours, every one either
+    `--dry-run` or against a fake `tmux`/`xdotool` on `PATH`, so no test can send
+    a keystroke to the machine running it. Sabotage-tested three ways: moving the
+    claim back into the conditions block (5 red), dropping the CR strip (12 red),
+    and allowing a focus-based method with no window title (1 red).
+  - Two bugs found by running it rather than reading it, both now covered. The
+    config was read as tab-separated fields with a tab as the field separator,
+    and a tab is IFS *whitespace*, so bash collapsed consecutive separators and
+    an empty `windowTitle` - the default - shifted every later field left by
+    one. And python on Windows writes CR-LF, so every value arrived with a
+    trailing carriage return: the `enabled` comparison failed and the script
+    exited having done nothing. Both were invisible failures from a `Stop`
+    hook, which is the worst kind.
+
 - **`crew` 0.5.2 - ServiceDesk Plus as a third tracker.** `tracker: "sdp"` plus
   `/crew:sdp-sync <REQUEST-ID> [--push]`, mirroring the Jira path rather than
   inventing a second shape: pull keeps id, subject, status, requester, priority,
