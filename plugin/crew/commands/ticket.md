@@ -41,6 +41,16 @@ Description = the Want/Scope/Done sections, Labels = repos. Then write the same
 markdown to `.work/cache/<KEY>.md` so `/crew:work` never has to call the API to
 read it back.
 
+**ServiceDesk Plus mode.** Same content, created with `sdp_create module=request`.
+Subject = title, description = the Want/Scope/Done sections. Resolve category,
+priority and status against `sdp_list_metadata` before writing - SDP rejects the
+whole request on an unrecognised value rather than partially applying it. The
+description is visible to the requester, so scrub it the way `/crew:sdp-sync`
+describes. Then write the same markdown to `.work/cache/SDP-<id>.md`, and use
+`SDP-<id>` as the local key everywhere - the bare number the desk returns is
+invisible to the rest of crew, which recognises a ticket by its `LETTERS-digits`
+shape.
+
 Terseness is the point either way — this file is re-read on every pickup.
 
 Multi-repo work gets one ticket per repo, cross-referenced by ID in Notes.
