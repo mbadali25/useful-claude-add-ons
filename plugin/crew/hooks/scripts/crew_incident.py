@@ -305,9 +305,14 @@ def report(root, cfg=None, now=None):
     else:
         for gate in sorted(by_gate):
             details = by_gate[gate]
+            # read_skips already deduped on (gate, detail), so this count is
+            # distinct debts, which is what the report is for - NOT how many
+            # turns the gate declined to run something.
             lines.append(f"- {gate}: {len(details)} skipped")
-            # Distinct details only, and capped: a 40-line list of the same
-            # pytest invocation tells you nothing the count did not.
+            # The loop below therefore is not a second dedupe, whatever it looks
+            # like: what it does that read_skips does not is drop details that
+            # are empty, which would otherwise print as a bare bullet. Removing
+            # it as redundant would reintroduce that.
             seen = []
             for detail in details:
                 if detail and detail not in seen:
