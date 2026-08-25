@@ -38,8 +38,9 @@
 #
 # Both the bare name and the `.*` glob are listed so submodule imports
 # (reportlab.platypus, urllib3.exceptions) are covered too.
-ignored-modules=botocore,botocore.*,playwright,playwright.*,reportlab,reportlab.*,
-                requests,requests.*,urllib3,urllib3.*,vsdx,vsdx.*,yaml,yaml.*
+ignored-modules=botocore,botocore.*,playwright,playwright.*,pytest,pytest.*,
+                reportlab,reportlab.*,requests,requests.*,urllib3,urllib3.*,
+                vsdx,vsdx.*,yaml,yaml.*
 
 [FORMAT]
 # 100 is tight for scripts that embed XML/SQL/URL literals which can't wrap.
