@@ -8,6 +8,7 @@ stdin, exit code and stderr as the contract.
 """
 import json
 import pathlib
+import re
 import shutil
 import subprocess
 
@@ -172,3 +173,27 @@ def test_once_per_session_marker_still_gates_repeats(flavor, tmp_path):
     second = _run(flavor, root, transcript)
     assert second.returncode == 0, second.stderr
     assert second.stderr.strip() == "", second.stderr
+
+
+def test_auto_wrap_up_instruction_is_identical_across_flavors(tmp_path):
+    # "Both flavours must behave identically" is a real claim, not an
+    # assumption -- substring checks in the tests above would not have
+    # caught the two scripts drifting apart. Compare full stderr, not just
+    # a few keywords, for the branch this task owns.
+    if not (_HAS_BASH and _HAS_PWSH):
+        pytest.skip("need both bash and pwsh on PATH to compare flavors")
+    texts = {}
+    for flavor in ("sh", "ps1"):
+        root = crew_fixtures.make_repo(
+            tmp_path / flavor, config=_config(auto_wrap_up=True), git=False)
+        transcript = _transcript(root, _OVER_BYTES)
+        result = _run(flavor, root, transcript)
+        assert result.returncode == 2, (flavor, result.stderr)
+        # Normalize line endings (PowerShell's WriteLine emits CRLF, bash's
+        # heredoc emits LF) and the percentage digits: bash's estimate
+        # truncates (python int()) where PowerShell's rounds ([int] cast),
+        # a one-off pre-existing divergence in the shared math, not the
+        # instruction text this task owns.
+        text = result.stderr.replace("\r\n", "\n").strip()
+        texts[flavor] = re.sub(r"\d+%", "N%", text)
+    assert texts["sh"] == texts["ps1"]

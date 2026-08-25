@@ -14,7 +14,7 @@ cd "${CWD:-${CLAUDE_PROJECT_DIR:-.}}" 2>/dev/null || exit 0
 # Loop safety, layer 1: Claude Code is already continuing because of a stop
 # hook -- do not pile on more feedback. Layer 2 is the once-per-session
 # marker below. Layer 3 is Claude Code's own 8-consecutive-block backstop.
-[ "$STOP_HOOK_ACTIVE" = "True" ] && exit 0
+{ [ "$STOP_HOOK_ACTIVE" = "True" ] || [ "$STOP_HOOK_ACTIVE" = "true" ]; } && exit 0
 
 # No hook_once claim here on purpose: Stop fires once per TURN against a
 # stable session id, so a session-scoped claim taken on turn 1 would suppress

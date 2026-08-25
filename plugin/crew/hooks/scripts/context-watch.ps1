@@ -50,7 +50,8 @@ Context is at roughly $pctH% of budget (estimated from transcript size).
 Before ending this turn, write the handoff note to $path following the
 crew-context skill. Keep it to pointers and one short "next action" - do not
 write a long narrative summary. A session this deep into its context is the
-least reliable narrator of what it just did.
+least reliable narrator of what it just did; the files are more trustworthy
+than the recollection.
 
 Then tell me the note is ready so I can /clear or /compact. Do not start new
 work in this session.
