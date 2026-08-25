@@ -36,9 +36,9 @@ If run from a non-elevated prompt, Chocolatey and the Chocolatey packages
 Common switches:
     -All                select every menu item, no prompt
     -Select '1,3,7-9'   select these menu items, no prompt (also accepts keys:
-                        -Select 'strix,claude-mem')
+                        -Select 'strix,obsidian')
     -Skills 'a,b'       install only these of this repo's skills, no prompt
-    -Team / -Community / -VoltAgent / -Plugins   the same for menu items 4, 6, 10 and 21
+    -Team / -Community / -Plugins   the same for menu items 4, 6 and 19
                         each accepts names, numbers, 'all' or 'none', and selecting any
                         of them implies its parent menu item
                         (-Skills 'all' | 'none' also work; implies the repo item)
@@ -68,8 +68,7 @@ param(
     [string]$Skills,          # explicit skill subset, no sub-picker: 'cloudflare,drata' | 'all' | 'none'
     [string]$Team,            # explicit team-plugin subset (menu item 4)
     [string]$Community,       # explicit community-plugin subset (menu item 6)
-    [string]$VoltAgent,       # explicit VoltAgent-pack subset (menu item 10)
-    [string]$Plugins,         # explicit subset of this repo's own plugins (menu item 21)
+    [string]$Plugins,         # explicit subset of this repo's own plugins (menu item 19)
     [switch]$SkillUIGuide,    # answer the SkillUI quick-start prompt up front
     [switch]$NotifySetup,     # answer the notify setup prompt up front
     [string]$ObsidianRepoRoot = 'C:\repos',  # root the Obsidian item suggests for the vault
@@ -757,8 +756,6 @@ $script:Catalog = @(
     [pscustomobject]@{ Key = 'community';         Default = $true;  Name = 'Community marketplaces + plugins (adhd-output-style, azure-tools, ppt-master, ...)' }
     [pscustomobject]@{ Key = 'claude-code-setup'; Default = $true;  Name = 'claude-code-setup plugin (anthropics/claude-plugins-official)' }
     [pscustomobject]@{ Key = 'task-observer';     Default = $true;  Name = 'task-observer skill (rebelytics/one-skill-to-rule-them-all)' }
-    [pscustomobject]@{ Key = 'claude-mem';        Default = $true;  Name = 'claude-mem memory plugin + CLAUDE_MEM_WORKER_PORT in settings.json' }
-    [pscustomobject]@{ Key = 'voltagent';         Default = $true;  Name = 'VoltAgent subagents (10 plugins, 154 agents)' }
     [pscustomobject]@{ Key = 'aws-mcp';           Default = $false; Name = 'MCP server: AWS (awslabs.aws-api-mcp-server)' }
     [pscustomobject]@{ Key = 'azure-mcp';         Default = $false; Name = 'MCP server: Azure (@azure/mcp)' }
     [pscustomobject]@{ Key = 'playwright-mcp';    Default = $false; Name = 'MCP server: Playwright (@playwright/mcp)' }
@@ -778,7 +775,7 @@ function Test-Selected { param([string]$Key) return [bool]$script:Selected[$Key]
 
 function Expand-SelectionSpec {
     # '1,3,7-9' -> the matching catalog keys. Item keys are accepted too, so
-    # -Select 'strix,claude-mem' works without counting rows in the menu.
+    # -Select 'strix,obsidian' works without counting rows in the menu.
     param([string]$Spec)
     $keys = @()
     foreach ($token in ($Spec -split '[,\s]+' | Where-Object { $_ })) {
@@ -870,24 +867,6 @@ $script:CommunityCatalog = @(
     [pscustomobject]@{ Key = 'ppt-master';              Selected = $true; Name = 'ppt-master              - PowerPoint deck generation';                Spec = 'ppt-master@ppt-master|hugohe3/ppt-master|ppt-master' }
 )
 
-# --- VoltAgent subagent plugins (menu item 10) --------------------------------
-# All ten come from the one marketplace; the split is upstream's own.
-$script:VoltAgentCatalog = @(
-    [pscustomobject]@{ Key = 'voltagent-core-dev'; Selected = $true; Name = 'core-dev                - Core development: API, backend, frontend, mobile' }
-    [pscustomobject]@{ Key = 'voltagent-lang';     Selected = $true; Name = 'lang                    - Language specialists: python, go, rust, ts, java, ...' }
-    [pscustomobject]@{ Key = 'voltagent-infra';    Selected = $true; Name = 'infra                   - Infrastructure: cloud, k8s, terraform, SRE, network' }
-    [pscustomobject]@{ Key = 'voltagent-qa-sec';   Selected = $true; Name = 'qa-sec                  - QA and security: test automation, pentest, audit' }
-    [pscustomobject]@{ Key = 'voltagent-data-ai';  Selected = $true; Name = 'data-ai                 - Data and AI: pipelines, ML, LLM, analytics' }
-    [pscustomobject]@{ Key = 'voltagent-dev-exp';  Selected = $true; Name = 'dev-exp                 - Developer experience: tooling, CI/CD, refactoring' }
-    [pscustomobject]@{ Key = 'voltagent-domains';  Selected = $true; Name = 'domains                 - Domain specialists: fintech, health, gaming, IoT' }
-    [pscustomobject]@{ Key = 'voltagent-biz';      Selected = $true; Name = 'biz                     - Business: product, PM, marketing, sales, support' }
-    [pscustomobject]@{ Key = 'voltagent-meta';     Selected = $true; Name = 'meta                    - Meta/orchestration: multi-agent, workflow, context' }
-    [pscustomobject]@{ Key = 'voltagent-research'; Selected = $true; Name = 'research                - Research and analysis: market, competitor, data' }
-)
-foreach ($v in $script:VoltAgentCatalog) {
-    $v | Add-Member -NotePropertyName Spec -NotePropertyValue "$($v.Key)@voltagent-subagents|VoltAgent/awesome-claude-code-subagents|voltagent-subagents"
-}
-
 # --- Sub-picker groups --------------------------------------------------------
 # Every menu row that installs more than one thing gets a sub-picker on the Right
 # arrow, exactly like the repo's own skills row always had. 'Label' is a format string
@@ -896,7 +875,6 @@ $script:Groups = @(
     [pscustomobject]@{ MenuKey = 'own-skills'; Single = 'skill';   Catalog = { $script:SkillCatalog };     Flag = '-Skills';    Noun = 'skills';            Title = 'Pick individual skills from this repo'; Label = "This repo's marketplace + {0} of {1} skills  >" }
     [pscustomobject]@{ MenuKey = 'team'; Single = 'team plugin';         Catalog = { $script:TeamCatalog };      Flag = '-Team';      Noun = 'team plugins';      Title = 'Pick team plugins';                     Label = 'Team plugins: {0} of {1} (superpowers, frontend-design, excalidraw)  >' }
     [pscustomobject]@{ MenuKey = 'community'; Single = 'community plugin';    Catalog = { $script:CommunityCatalog }; Flag = '-Community'; Noun = 'community plugins'; Title = 'Pick community plugins';                Label = 'Community marketplaces + {0} of {1} plugins  >' }
-    [pscustomobject]@{ MenuKey = 'voltagent'; Single = 'VoltAgent pack';    Catalog = { $script:VoltAgentCatalog }; Flag = '-VoltAgent'; Noun = 'VoltAgent plugins'; Title = 'Pick VoltAgent subagent packs';         Label = 'VoltAgent subagents: {0} of {1} plugins (154 agents)  >' }
     [pscustomobject]@{ MenuKey = 'repo-plugins'; Single = 'plugin'; Catalog = { $script:PluginCatalog };    Flag = '-Plugins';   Noun = 'plugins';           Title = "Pick plugins from this repo";           Label = "This repo's plugins: {0} of {1} (crew - agents, commands, hooks)  >" }
 )
 
@@ -962,10 +940,10 @@ function Expand-GroupSpec {
                 Write-Warn2 "ignoring out-of-range $($Group.Single) number '$token'"
             }
         } else {
-            # Match the catalog key, or the label the picker actually shows. The
-            # VoltAgent rows display 'infra' while their plugin is 'voltagent-infra',
-            # so a name read off the screen has to work - it is the only name the user
-            # ever sees.
+            # Match the catalog key, or the label the picker actually shows, which is
+            # the only name the user ever sees. Every current catalog leads its label
+            # with the key, but a group whose label differs still has to answer to
+            # what is on screen.
             $want = $token.ToLower()
             $hit = $catalog | Where-Object {
                 $_.Key -eq $want -or ($_.Name -split '\s+')[0].ToLower() -eq $want
@@ -1279,7 +1257,7 @@ function Show-InstallMenu {
     Write-Host "  A = all   D = defaults   N = none   or numbers like 1,3,7-9" -ForegroundColor DarkGray
     Write-Host "  Rows marked > hold several items; pick inside them with the arrow" -ForegroundColor DarkGray
     Write-Host "  keys, or non-interactively with -Skills / -Team / -Community /" -ForegroundColor DarkGray
-    Write-Host "  -VoltAgent / -Plugins (names, numbers, all, none)" -ForegroundColor DarkGray
+    Write-Host "  -Plugins (names, numbers, all, none)" -ForegroundColor DarkGray
 }
 
 function Select-InstallItems {
@@ -1290,7 +1268,7 @@ function Select-InstallItems {
     # group's list before anything is drawn, so it composes with -All and
     # -NonInteractive.
     $specs = @{ 'own-skills' = $Skills; 'team' = $Team; 'community' = $Community
-                'voltagent' = $VoltAgent; 'repo-plugins' = $Plugins }
+                'repo-plugins' = $Plugins }
     foreach ($group in $script:Groups) {
         $spec = $specs[$group.MenuKey]
         if (-not $spec) { continue }
@@ -1588,123 +1566,6 @@ function Update-ClaudeCli {
     Write-Ok "Claude Code updated $installed -> $(Get-ClaudeLocalVersion)"
 }
 
-# --- claude-mem runtime: Bun --------------------------------------------------
-
-function Install-Bun {
-    # claude-mem's hooks run its worker under Bun (package.json declares engines.bun
-    # >= 1.0.0) via scripts/bun-runner.js, which resolves the interpreter with
-    # 'where bun' and only then falls back to $HOME\.bun\bin\bun.exe. Neither this
-    # script nor the plugin ever installed it, so on a fresh machine every claude-mem
-    # hook died with "Bun not found". Chocolatey's shim lands a real bun.exe on PATH,
-    # which is exactly what bun-runner looks for first.
-    $existing = Get-Command bun -ErrorAction SilentlyContinue
-    if ($existing) {
-        Write-Skip "bun already present ($($existing.Source))"
-        return
-    }
-
-    # choco install writes to C:\ProgramData and needs Administrator, so both halves of
-    # the condition matter - a non-elevated run with choco on PATH would still fail.
-    if ((Get-Command choco -ErrorAction SilentlyContinue) -and $script:IsElevated) {
-        choco install bun -y --no-progress
-        if ($LASTEXITCODE -ne 0) {
-            throw "choco install bun failed with exit code $LASTEXITCODE - see the output above."
-        }
-    } else {
-        # No Chocolatey, or not elevated. Bun's own installer is per-user and needs no
-        # Administrator rights; it writes $HOME\.bun\bin\bun.exe, which is bun-runner's
-        # documented fallback path when 'where bun' finds nothing.
-        Write-Warn2 "Chocolatey unavailable or not elevated - using bun's per-user installer instead."
-        Invoke-RestMethod https://bun.sh/install.ps1 | Invoke-Expression
-    }
-
-    Sync-SessionEnvironment
-    if (-not (Get-Command bun -ErrorAction SilentlyContinue)) {
-        $fallback = Join-Path $env:USERPROFILE '.bun\bin\bun.exe'
-        if (Test-Path $fallback) {
-            Write-Ok "installed bun at $fallback (not on PATH in this session - claude-mem finds it there anyway)"
-            $script:Summary.Installed++
-            return
-        }
-        throw "bun still not found after installing - open a new shell and re-run."
-    }
-    $script:Summary.Installed++
-    Write-Ok "installed bun $((bun --version 2>$null) -join '')"
-}
-
-# --- claude-mem settings.json patch ------------------------------------------
-
-function Set-ClaudeMemWorkerPort {
-    # claude-mem's own bootstrap writes CLAUDE_MEM_PROVIDER but not the worker port,
-    # and the worker silently picks a different port without it. Patch the text rather
-    # than round-tripping through ConvertTo-Json, which reformats the entire file.
-    param([string]$Port = '37790')
-
-    $settings = Join-Path (Get-ClaudeConfigRoot) 'settings.json'
-    if (-not (Test-Path $settings)) {
-        Write-Warn2 "no settings.json at $settings yet - claude-mem writes it on first run; re-run this script afterwards to set CLAUDE_MEM_WORKER_PORT."
-        return
-    }
-
-    $raw = Get-Content -Path $settings -Raw -Encoding UTF8
-    if ($raw -match '"CLAUDE_MEM_WORKER_PORT"') {
-        Write-Skip "CLAUDE_MEM_WORKER_PORT already present in $settings"
-        return
-    }
-
-    $backup = "$settings.bak"
-    Copy-Item -Path $settings -Destination $backup -Force
-
-    $updated = $null
-    $providerLine = '(?m)^([ \t]*)"CLAUDE_MEM_PROVIDER"[ \t]*:[ \t]*"[^"]*"[ \t]*(,?)[ \t]*\r?$'
-    if ($raw -match $providerLine) {
-        $updated = [regex]::Replace($raw, $providerLine, {
-            param($m)
-            $indent = $m.Groups[1].Value
-            $line = $m.Value.TrimEnd()
-            if ($m.Groups[2].Value -eq ',') {
-                # Provider already has a trailing comma, so the new key needs one too.
-                "$line`r`n$indent`"CLAUDE_MEM_WORKER_PORT`": `"$Port`","
-            } else {
-                # Provider was the last key in its object - give it the comma instead.
-                "$line,`r`n$indent`"CLAUDE_MEM_WORKER_PORT`": `"$Port`""
-            }
-        }, 1)
-    } else {
-        # No provider key to anchor to. Fall back to a structural edit of the env block,
-        # writing both keys so the file ends up in the documented shape either way.
-        try {
-            $json = $raw | ConvertFrom-Json
-        } catch {
-            Write-Warn2 "could not parse $settings as JSON ($($_.Exception.Message)) - left it untouched. Add `"CLAUDE_MEM_WORKER_PORT`": `"$Port`" by hand."
-            Remove-Item $backup -Force -ErrorAction SilentlyContinue
-            return
-        }
-        if (-not $json.PSObject.Properties['env']) {
-            $json | Add-Member -NotePropertyName 'env' -NotePropertyValue ([pscustomobject]@{})
-        }
-        if (-not $json.env.PSObject.Properties['CLAUDE_MEM_PROVIDER']) {
-            $json.env | Add-Member -NotePropertyName 'CLAUDE_MEM_PROVIDER' -NotePropertyValue 'claude' -Force
-        }
-        $json.env | Add-Member -NotePropertyName 'CLAUDE_MEM_WORKER_PORT' -NotePropertyValue $Port -Force
-        $updated = $json | ConvertTo-Json -Depth 100
-        Write-Warn2 "CLAUDE_MEM_PROVIDER was not in $settings - rewrote the file to add the env block (formatting may change; backup at $backup)."
-    }
-
-    # Never leave a half-written settings.json behind: validate, then restore on failure.
-    try {
-        $updated | ConvertFrom-Json | Out-Null
-    } catch {
-        Write-Warn2 "the patched settings.json did not parse ($($_.Exception.Message)) - restoring $backup."
-        Copy-Item -Path $backup -Destination $settings -Force
-        return
-    }
-
-    Set-Content -Path $settings -Value $updated -Encoding UTF8 -NoNewline
-    $script:Summary.Installed++
-    Write-Ok "set CLAUDE_MEM_WORKER_PORT=$Port in $settings (backup: $backup)"
-}
-
 # --- Selection ----------------------------------------------------------------
 
 $script:IsElevated = Test-Admin
@@ -1820,7 +1681,7 @@ if (Test-Selected 'cli') {
 }
 
 # Everything from here to the MCP servers needs the claude CLI on PATH.
-$claudeItems = @('own-skills', 'team', 'find-skills', 'community', 'claude-code-setup', 'claude-mem', 'voltagent', 'supabase', 'repo-plugins')
+$claudeItems = @('own-skills', 'team', 'find-skills', 'community', 'claude-code-setup', 'supabase', 'repo-plugins')
 $needsClaude = @($claudeItems | Where-Object { Test-Selected $_ }).Count -gt 0
 
 if ($needsClaude -and -not (Test-ClaudeAvailable)) {
@@ -1952,41 +1813,7 @@ if (Test-Selected 'task-observer') {
     }
 }
 
-# --- 9. claude-mem -----------------------------------------------------------
-if (Test-Selected 'claude-mem') {
-    # claude-mem supports the plugin-marketplace path as a first-class alternative to
-    # its 'npx claude-mem install' bootstrapper (see its README) - the plugin's own
-    # hooks handle worker/dependency setup on first run. Bun is the one dependency
-    # those hooks cannot install for themselves, so it goes first.
-    Invoke-Step "Install Bun (claude-mem worker runtime)" { Install-Bun }
-    Invoke-Step "Marketplace: thedotmack/claude-mem" {
-        Add-ClaudeMarketplace -Source 'thedotmack/claude-mem' -Name 'thedotmack'
-    }
-    Invoke-Step "Plugin: claude-mem@thedotmack" {
-        Install-ClaudePlugin 'claude-mem@thedotmack'
-    }
-    Invoke-Step "Configure claude-mem worker port" {
-        Set-ClaudeMemWorkerPort -Port '37790'
-    }
-}
-
-# --- 10. VoltAgent subagents -------------------------------------------------
-# The repo publishes itself as the 'voltagent-subagents' marketplace, with its 154
-# subagents split across ten category plugins. Installing them as plugins replaces the
-# old 'git clone + bash install-agents.sh' path, which needed Git Bash on Windows (and
-# failed outright when the script ran non-elevated, since Chocolatey - and therefore
-# git - was skipped). The ten are $script:VoltAgentCatalog next to the menu, so Right
-# on the row (or -VoltAgent) takes a subset: most people want two or three categories,
-# not all 154 agents.
-if (Test-Selected 'voltagent') {
-    $group = Get-Group 'voltagent'
-    if ((Get-GroupSelectedCount $group) -eq 0) {
-        Write-Warn2 "no VoltAgent packs selected - nothing installed for this item, and no marketplace registered."
-    }
-    Install-Group $group
-}
-
-# --- 11-14. Optional MCP servers ---------------------------------------------
+# --- 9-12. Optional MCP servers ----------------------------------------------
 if (Test-Selected 'aws-mcp') {
     Invoke-Step "Install AWS MCP server" {
         if (-not (Get-Command uv -ErrorAction SilentlyContinue) -and -not (Get-Command uvx -ErrorAction SilentlyContinue)) {
@@ -2044,7 +1871,7 @@ if (Test-Selected 'obsidian-mcp') {
     }
 }
 
-# --- 15. Supabase ------------------------------------------------------------
+# --- 13. Supabase ------------------------------------------------------------ ---
 # Ships inside anthropics/claude-plugins-official, the same marketplace items 6 and 7
 # register - Add-ClaudeMarketplace is a no-op when it is already there, so this item
 # stands on its own. Install-ClaudePlugin does the "already installed?" check.
@@ -2057,7 +1884,7 @@ if (Test-Selected 'supabase') {
     }
 }
 
-# --- 16. Context7 ------------------------------------------------------------
+# --- 14. Context7 ------------------------------------------------------------ ---
 if (Test-Selected 'context7') {
     Invoke-Step "Configure Context7 (npx ctx7 setup)" {
         # 'ctx7 setup' writes the Context7 MCP/skill config for whichever agents it
@@ -2077,7 +1904,7 @@ if (Test-Selected 'context7') {
     }
 }
 
-# --- 17. Playwright CLI ------------------------------------------------------
+# --- 15. Playwright CLI ------------------------------------------------------ ---
 if (Test-Selected 'playwright-cli') {
     Invoke-Step "Install Playwright CLI (@playwright/cli)" {
         # Detection is on the binary the package provides ('playwright-cli'), which is
@@ -2105,7 +1932,7 @@ if (Test-Selected 'playwright-cli') {
     }
 }
 
-# --- 18. SkillUI -------------------------------------------------------------
+# --- 16. SkillUI ------------------------------------------------------------- ---
 function Show-SkillUIQuickStart {
     Write-Host ""
     Write-Host "    SkillUI quick start  https://github.com/amaancoderx/npxskillui" -ForegroundColor Cyan
@@ -2153,7 +1980,7 @@ if (Test-Selected 'skillui') {
     }
 }
 
-# --- 19. Strix ---------------------------------------------------------------
+# --- 17. Strix --------------------------------------------------------------- ---
 function Show-StrixNextSteps {
     Write-Host ""
     Write-Host "    Strix needs two more things before its first scan:" -ForegroundColor Yellow
@@ -2208,7 +2035,7 @@ if (Test-Selected 'strix') {
     }
 }
 
-# --- 20. Obsidian + claude-obsidian ------------------------------------------
+# --- 18. Obsidian + claude-obsidian ------------------------------------------ ---
 function Show-ObsidianNextSteps {
     param([string]$VaultRoot)
     Write-Host ""
@@ -2268,7 +2095,7 @@ if (Test-Selected 'obsidian') {
     }
 }
 
-# --- 21. This repo's own plugins ---------------------------------------------
+# --- 19. This repo's own plugins --------------------------------------------- ---
 # Same marketplace as item 3, so Add-ClaudeMarketplace is a no-op when item 3 already
 # ran - this item stands on its own. Install-ClaudePlugin does the "already installed?"
 # check.
@@ -2319,7 +2146,7 @@ if (Test-Selected 'repo-plugins') {
     }
 }
 
-# --- 22. graphify --------------------------------------------------------------
+# --- 20. graphify -------------------------------------------------------------- ---
 # graphifyy on PyPI (double-y) provides two executables: 'graphify' and
 # 'graphify-mcp'. Other 'graphify*' packages on PyPI are unaffiliated - installing the
 # wrong one fails silently, so the double-y package is named explicitly below and in

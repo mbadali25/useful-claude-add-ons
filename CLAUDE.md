@@ -124,6 +124,20 @@ Three rules that apply to plugins and not to skills:
     Windows, or PowerShell only when Git Bash isn't installed. A `bash` resolved from
     some non-MSYS parent process is not necessarily what actually runs it — verify on
     the machine you're targeting rather than assuming.
+  - **Double-quote `${CLAUDE_PLUGIN_ROOT}` in every shell-form command.** In a
+    `shell: powershell` entry the placeholder is substituted as a PowerShell
+    *environment reference*, not as a literal path, and PowerShell does not expand
+    anything inside single quotes — so `& '${CLAUDE_PLUGIN_ROOT}/x.ps1'` hands `&`
+    the token verbatim and every one of those hooks dies with "is not recognized as
+    a name of a cmdlet". `& "${CLAUDE_PLUGIN_ROOT}/x.ps1"` is the fix, and the same
+    quoting keeps the bash side working under a home directory with a space in it.
+  - **End every PowerShell hook command with `; exit $LASTEXITCODE`.** `& script.ps1`
+    inside PowerShell's `-Command` does not propagate the script's exit code: a
+    guard's `exit 2` comes back as 1, which Claude Code reports as a non-blocking
+    error and then runs the command anyway. Exec form (`args`) does not have this
+    problem, but it also ignores `shell`, so a `powershell.exe` entry then fails to
+    spawn on macOS and Linux instead of being skipped. `scripts/check-marketplace.py`
+    enforces both this and the quoting rule above.
   - **Branch on the tool, not the OS.** A hook that judges a *command* (a `PreToolUse`
     guard) must dispatch on `tool_name`, either via separate matchers per tool (each
     with its matching `shell` field) or from inside one script to its twin: a `Bash`

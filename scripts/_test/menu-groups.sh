@@ -72,10 +72,10 @@ done
 echo "3. --<group> specs: names, numbers, ranges, all, none"
 expand_group_spec TEAM 'excalidraw-generator'
 check "one name"            "1" "$(group_selected_count TEAM)"
-expand_group_spec VOLTAGENT '1,3'
-check "two numbers"         "2" "$(group_selected_count VOLTAGENT)"
-expand_group_spec VOLTAGENT '2-5'
-check "a range"             "4" "$(group_selected_count VOLTAGENT)"
+expand_group_spec SKILL '1,3'
+check "two numbers"         "2" "$(group_selected_count SKILL)"
+expand_group_spec SKILL '2-5'
+check "a range"             "4" "$(group_selected_count SKILL)"
 expand_group_spec COMMUNITY 'none'
 check "none"                "0" "$(group_selected_count COMMUNITY)"
 expand_group_spec COMMUNITY 'all'
@@ -84,19 +84,19 @@ warned "ignoring unknown team plugin 'not-a-plugin'" \
   expand_group_spec TEAM 'superpowers,not-a-plugin' && got=yes || got=no
 check "unknown name warns, in the singular"    yes "$got"
 check "and the good name is still selected"    "1" "$(group_selected_count TEAM)"
-warned "out-of-range VoltAgent pack number '99'" expand_group_spec VOLTAGENT '99' && got=yes || got=no
+warned "out-of-range skill number '99'" expand_group_spec SKILL '99' && got=yes || got=no
 check "out-of-range number warns"              yes "$got"
-check "and selects nothing"                    "0" "$(group_selected_count VOLTAGENT)"
+check "and selects nothing"                    "0" "$(group_selected_count SKILL)"
 
 echo "3b. a reversed range is rejected, not reinterpreted"
 # bash's for-loop selects nothing from '3-1'; PowerShell's '..' counts down and selects
 # three. Both scripts must refuse it, or the same command line means two things.
-expand_group_spec VOLTAGENT 'all'
-warned "reversed VoltAgent pack range '3-1'" expand_group_spec VOLTAGENT '3-1' && got=yes || got=no
+expand_group_spec SKILL 'all'
+warned "reversed skill range '3-1'" expand_group_spec SKILL '3-1' && got=yes || got=no
 check "reversed range warns"           yes "$got"
-check "and selects nothing"            "0" "$(group_selected_count VOLTAGENT)"
-expand_group_spec VOLTAGENT '1-3'
-check "a forward range still works"    "3" "$(group_selected_count VOLTAGENT)"
+check "and selects nothing"            "0" "$(group_selected_count SKILL)"
+expand_group_spec SKILL '1-3'
+check "a forward range still works"    "3" "$(group_selected_count SKILL)"
 
 echo "4. an entry only counts when its parent row is selected"
 expand_group_spec PLUGIN 'all'
@@ -108,7 +108,7 @@ group_entry_selected PLUGIN crew && got=yes || got=no
 check "crew with the row off" no  "$got"
 
 echo "5. every SPEC entry is plugin@marketplace|source|name"
-for prefix in SKILL TEAM COMMUNITY VOLTAGENT PLUGIN; do
+for prefix in SKILL TEAM COMMUNITY PLUGIN; do
   n="$(group_count "$prefix")"
   bad=0
   for (( j=0; j<n; j++ )); do

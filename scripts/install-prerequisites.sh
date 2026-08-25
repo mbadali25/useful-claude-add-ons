@@ -28,13 +28,12 @@
 # Usage: ./scripts/install-prerequisites.sh [options]
 #   --all                 select every menu item, no prompt
 #   --select 1,3,7-9      select these menu items, no prompt (keys work too:
-#                         --select strix,claude-mem)
+#                         --select strix,obsidian)
 #   --skills a,b,c        install only these of this repo's skills, no prompt
 #                         (--skills all | none also work; implies the repo item)
 #   --team a,b            likewise for the team plugins (item 4)
 #   --community a,b       likewise for the community plugins (item 6)
-#   --voltagent a,b       likewise for the VoltAgent subagent packs (item 10)
-#   --plugins a,b         likewise for this repo's own plugins (item 21)
+#   --plugins a,b         likewise for this repo's own plugins (item 19)
 #                         every one of these accepts names, numbers, 'all' or 'none',
 #                         and selecting any of them implies its parent menu item
 #   --non-interactive     select the default set, no prompt (CI/unattended)
@@ -88,7 +87,6 @@ SELECT_SPEC=""
 GROUP_SPEC_SKILL=""
 GROUP_SPEC_TEAM=""
 GROUP_SPEC_COMMUNITY=""
-GROUP_SPEC_VOLTAGENT=""
 GROUP_SPEC_PLUGIN=""
 SKILLUI_GUIDE=""       # "1"/"0" once answered; empty means "ask"
 NOTIFY_SETUP=""        # "1"/"0" once answered; empty means "ask"
@@ -109,7 +107,6 @@ while [ $# -gt 0 ]; do
     --skills)          GROUP_SPEC_SKILL="${2:-}"; shift ;;
     --team)            GROUP_SPEC_TEAM="${2:-}"; shift ;;
     --community)       GROUP_SPEC_COMMUNITY="${2:-}"; shift ;;
-    --voltagent)       GROUP_SPEC_VOLTAGENT="${2:-}"; shift ;;
     --plugins)         GROUP_SPEC_PLUGIN="${2:-}"; shift ;;
     --skillui-guide)   SKILLUI_GUIDE=1 ;;
     --notify-setup)    NOTIFY_SETUP=1 ;;
@@ -722,12 +719,12 @@ install_plugin() {
 # defaults this script used before it had a menu.
 MENU_KEYS=(
   "prereqs" "cli" "own-skills" "team" "find-skills" "community"
-  "claude-code-setup" "task-observer" "claude-mem" "voltagent"
+  "claude-code-setup" "task-observer"
   "aws-mcp" "azure-mcp" "playwright-mcp" "obsidian-mcp"
   "supabase" "context7" "playwright-cli" "skillui" "strix" "obsidian"
   "repo-plugins" "graphify"
 )
-MENU_DEFAULT=(1 1 1 1 1 1 1 1 1 1 0 0 0 0 0 0 0 0 0 0 0 0)
+MENU_DEFAULT=(1 1 1 1 1 1 1 1 0 0 0 0 0 0 0 0 0 0 0 0)
 MENU_NAME=(
   "Prerequisites: git, nodejs, npm, python3, pip3 (needs root or sudo)"
   "Claude Code CLI (@anthropic-ai/claude-code) + PATH export + update check"
@@ -737,8 +734,6 @@ MENU_NAME=(
   "Community marketplaces + plugins (adhd-output-style, azure-tools, ppt-master, ...)"
   "claude-code-setup plugin (anthropics/claude-plugins-official)"
   "task-observer skill (rebelytics/one-skill-to-rule-them-all)"
-  "claude-mem memory plugin + CLAUDE_MEM_WORKER_PORT in settings.json"
-  "VoltAgent subagents (10 plugins, 154 agents)"
   "MCP server: AWS (awslabs.aws-api-mcp-server)"
   "MCP server: Azure (@azure/mcp)"
   "MCP server: Playwright (@playwright/mcp)"
@@ -770,7 +765,7 @@ all_keys() { printf '%s' " ${MENU_KEYS[*]}"; }
 
 expand_selection_spec() {
   # '1,3,7-9' -> the matching catalog keys. Item keys are accepted too, so
-  # --select strix,claude-mem works without counting rows in the menu.
+  # --select strix,obsidian works without counting rows in the menu.
   local spec="$1" token n lo hi i found out=""
   spec="${spec//,/ }"
   for token in $spec; do
@@ -907,58 +902,29 @@ COMMUNITY_STATE=()
 for _i in "${!COMMUNITY_KEYS[@]}"; do COMMUNITY_STATE+=(1); done
 unset _i
 
-# --- VoltAgent subagent plugins (menu item 10) --------------------------------
-# All ten come from the one marketplace; the agent counts are upstream's own split.
-VOLTAGENT_KEYS=(
-  "voltagent-core-dev" "voltagent-lang" "voltagent-infra" "voltagent-qa-sec"
-  "voltagent-data-ai" "voltagent-dev-exp" "voltagent-domains" "voltagent-biz"
-  "voltagent-meta" "voltagent-research"
-)
-VOLTAGENT_NAME=(
-  "core-dev                - Core development: API, backend, frontend, mobile"
-  "lang                    - Language specialists: python, go, rust, ts, java, ..."
-  "infra                   - Infrastructure: cloud, k8s, terraform, SRE, network"
-  "qa-sec                  - QA and security: test automation, pentest, audit"
-  "data-ai                 - Data and AI: pipelines, ML, LLM, analytics"
-  "dev-exp                 - Developer experience: tooling, CI/CD, refactoring"
-  "domains                 - Domain specialists: fintech, health, gaming, IoT"
-  "biz                     - Business: product, PM, marketing, sales, support"
-  "meta                    - Meta/orchestration: multi-agent, workflow, context"
-  "research                - Research and analysis: market, competitor, data"
-)
-VOLTAGENT_SPEC=()
-for _i in "${!VOLTAGENT_KEYS[@]}"; do
-  VOLTAGENT_SPEC+=("${VOLTAGENT_KEYS[$_i]}@voltagent-subagents|VoltAgent/awesome-claude-code-subagents|voltagent-subagents")
-done
-VOLTAGENT_STATE=()
-for _i in "${!VOLTAGENT_KEYS[@]}"; do VOLTAGENT_STATE+=(1); done
-unset _i
-
 # --- Generic sub-picker groups ------------------------------------------------
 # Every menu row that installs more than one thing gets a sub-picker on -> , exactly
 # like the repo's own skills row always had. A group is the parallel arrays
 # <PREFIX>_KEYS / _NAME / _STATE (and _SPEC where the entries span marketplaces).
 # Parallel arrays plus eval indirection rather than associative arrays or namerefs,
 # because this has to keep running on bash 3.2.
-GROUP_MENU_KEYS=("own-skills" "team"   "community"   "voltagent"   "repo-plugins")
-GROUP_PREFIXES=( "SKILL"      "TEAM"   "COMMUNITY"   "VOLTAGENT"   "PLUGIN")
-GROUP_FLAGS=(    "--skills"   "--team" "--community" "--voltagent" "--plugins")
-GROUP_NOUN=(     "skills"     "team plugins" "community plugins" "VoltAgent plugins" "plugins")
+GROUP_MENU_KEYS=("own-skills" "team"   "community"   "repo-plugins")
+GROUP_PREFIXES=( "SKILL"      "TEAM"   "COMMUNITY"   "PLUGIN")
+GROUP_FLAGS=(    "--skills"   "--team" "--community" "--plugins")
+GROUP_NOUN=(     "skills"     "team plugins" "community plugins" "plugins")
 # Singular, for "ignoring unknown <thing> 'x'" warnings.
-GROUP_NOUN1=(    "skill"      "team plugin"  "community plugin"  "VoltAgent pack"    "plugin")
+GROUP_NOUN1=(    "skill"      "team plugin"  "community plugin"  "plugin")
 # printf template for the menu row: selected, total.
 GROUP_LABEL=(
   "This repo's marketplace + %s of %s skills  >"
   "Team plugins: %s of %s (superpowers, frontend-design, excalidraw)  >"
   "Community marketplaces + %s of %s plugins  >"
-  "VoltAgent subagents: %s of %s plugins (154 agents)  >"
   "This repo's plugins: %s of %s (crew - agents, commands, hooks)  >"
 )
 GROUP_TITLE=(
   "Pick individual skills from this repo"
   "Pick team plugins"
   "Pick community plugins"
-  "Pick VoltAgent subagent packs"
   "Pick plugins from this repo"
 )
 
@@ -1052,9 +1018,9 @@ expand_group_spec() {
     else
       found=0
       for (( i=0; i<total; i++ )); do
-        # Match the catalog key, or the label the picker actually shows. The VoltAgent
-        # rows display 'infra' while their plugin is 'voltagent-infra', so a name read
-        # off the screen has to work - it is the only name the user ever sees.
+        # Match the catalog key, or the label the picker actually shows, which is the
+        # only name the user ever sees. Every current catalog leads its label with the
+        # key, but a group whose label differs still has to answer to what is on screen.
         if [ "$(group_key "$prefix" "$i")" = "$token" ] \
         || [ "$(group_display_name "$prefix" "$i")" = "$token" ]; then
           group_set "$prefix" "$i" 1; found=1; break
@@ -1426,7 +1392,7 @@ show_menu() {
   printf '\033[90m  A = all   D = defaults   N = none   or numbers like 1,3,7-9\033[0m\n'
   printf '\033[90m  Rows marked > hold several items; pick inside them with the arrow\033[0m\n'
   printf '\033[90m  keys, or non-interactively with --skills / --team / --community /\033[0m\n'
-  printf '\033[90m  --voltagent / --plugins (names, numbers, all, none)\033[0m\n'
+  printf '\033[90m  --plugins (names, numbers, all, none)\033[0m\n'
 }
 
 select_install_items() {
@@ -1663,104 +1629,6 @@ JSON
   return 0
 }
 
-# --- claude-mem settings.json patch ------------------------------------------
-set_claude_mem_worker_port() {
-  # claude-mem's own bootstrap writes CLAUDE_MEM_PROVIDER but not the worker port,
-  # and the worker silently picks a different port without it. Patch the text with awk
-  # rather than round-tripping through a JSON encoder, which reformats the whole file.
-  local port="${1:-37790}" settings backup tmp
-  settings="$(claude_config_root)/settings.json"
-
-  if [ ! -f "$settings" ]; then
-    warn "no settings.json at $settings yet - claude-mem writes it on first run; re-run this script afterwards to set CLAUDE_MEM_WORKER_PORT."
-    return 0
-  fi
-  if grep -q '"CLAUDE_MEM_WORKER_PORT"' "$settings"; then
-    skip "CLAUDE_MEM_WORKER_PORT already present in $settings"
-    return 0
-  fi
-
-  backup="${settings}.bak"
-  cp -f "$settings" "$backup" || return 1
-  tmp="$(mktemp)" || return 1
-
-  if grep -q '^[[:space:]]*"CLAUDE_MEM_PROVIDER"[[:space:]]*:' "$settings"; then
-    awk -v port="$port" '
-      !inserted && /^[[:space:]]*"CLAUDE_MEM_PROVIDER"[[:space:]]*:/ {
-        match($0, /^[[:space:]]*/); indent = substr($0, 1, RLENGTH)
-        line = $0
-        sub(/[[:space:]]+$/, "", line)
-        if (line ~ /,$/) {
-          # Provider already has a trailing comma, so the new key needs one too.
-          print line
-          printf "%s\"CLAUDE_MEM_WORKER_PORT\": \"%s\",\n", indent, port
-        } else {
-          # Provider was the last key in its object - give it the comma instead.
-          print line ","
-          printf "%s\"CLAUDE_MEM_WORKER_PORT\": \"%s\"\n", indent, port
-        }
-        inserted = 1
-        next
-      }
-      { print }
-    ' "$settings" > "$tmp" || { rm -f "$tmp"; return 1; }
-  elif have python3; then
-    # No provider key to anchor to. Fall back to a structural edit of the env block,
-    # writing both keys so the file ends up in the documented shape either way.
-    if ! python3 - "$settings" "$port" > "$tmp" <<'PY'
-import json
-import sys
-
-path, port = sys.argv[1], sys.argv[2]
-with open(path, encoding="utf-8") as fh:
-    data = json.load(fh)
-env = data.setdefault("env", {})
-env.setdefault("CLAUDE_MEM_PROVIDER", "claude")
-env["CLAUDE_MEM_WORKER_PORT"] = port
-json.dump(data, sys.stdout, indent=2)
-sys.stdout.write("\n")
-PY
-    then
-      warn "could not rewrite $settings as JSON - left it untouched. Add \"CLAUDE_MEM_WORKER_PORT\": \"$port\" by hand."
-      rm -f "$tmp"
-      return 1
-    fi
-    warn "CLAUDE_MEM_PROVIDER was not in $settings - rewrote the file to add the env block (formatting may change; backup at $backup)."
-  else
-    warn "CLAUDE_MEM_PROVIDER not found in $settings and python3 is unavailable - add \"CLAUDE_MEM_WORKER_PORT\": \"$port\" by hand."
-    rm -f "$tmp"
-    return 0
-  fi
-
-  # Never leave a half-written settings.json behind. The original is still untouched
-  # at this point, so bailing out here needs no restore - $tmp is simply discarded.
-  if have python3 && ! python3 -m json.tool < "$tmp" >/dev/null 2>&1; then
-    warn "the patched settings.json did not parse - leaving $settings as it was."
-    rm -f "$tmp"
-    return 1
-  fi
-  # Belt and braces: the awk branch is anchored, so a layout it does not recognise
-  # would copy the file through unchanged and we would report a success that never
-  # happened. Confirm the key is actually there before overwriting anything.
-  if ! grep -q '"CLAUDE_MEM_WORKER_PORT"' "$tmp"; then
-    warn "could not place CLAUDE_MEM_WORKER_PORT in $settings (unrecognised layout) - left it as it was. Add \"CLAUDE_MEM_WORKER_PORT\": \"$port\" by hand."
-    rm -f "$tmp"
-    return 1
-  fi
-
-  # Only now is the live file touched. A failed write restores from the backup rather
-  # than leaving the truncation behind.
-  if ! cat "$tmp" > "$settings"; then
-    warn "writing $settings failed - restoring $backup."
-    cp -f "$backup" "$settings"
-    rm -f "$tmp"
-    return 1
-  fi
-  rm -f "$tmp"
-  COUNT_INSTALLED=$((COUNT_INSTALLED+1))
-  ok "set CLAUDE_MEM_WORKER_PORT=$port in $settings (backup: $backup)"
-}
-
 # --- Selection ----------------------------------------------------------------
 select_install_items
 show_selection
@@ -1945,7 +1813,7 @@ if is_selected "cli"; then
 fi
 
 # Everything from here to the MCP servers needs the claude CLI on PATH.
-CLAUDE_ITEMS="own-skills team find-skills community claude-code-setup claude-mem voltagent supabase repo-plugins"
+CLAUDE_ITEMS="own-skills team find-skills community claude-code-setup supabase repo-plugins"
 NEEDS_CLAUDE=0
 for key in $CLAUDE_ITEMS; do
   is_selected "$key" && NEEDS_CLAUDE=1
@@ -2090,62 +1958,7 @@ if is_selected "task-observer"; then
   run_step "Skill: task-observer (rebelytics/one-skill-to-rule-them-all)" install_task_observer
 fi
 
-# --- 9. claude-mem -----------------------------------------------------------
-# claude-mem supports the plugin-marketplace path as a first-class alternative to its
-# 'npx claude-mem install' bootstrapper (see its README) - the plugin's own hooks handle
-# worker/dependency setup on first run.
-install_bun() {
-  # claude-mem's hooks run its worker under Bun (package.json declares engines.bun
-  # >= 1.0.0) via scripts/bun-runner.js, which resolves the interpreter from PATH and
-  # only then falls back to $HOME/.bun/bin/bun. Neither this script nor the plugin ever
-  # installed it, so on a fresh machine every claude-mem hook died with "Bun not found".
-  if have bun; then
-    skip "bun already present ($(command -v bun))"
-    return 0
-  fi
-  # No distro ships a bun package, so there is no as_root path here: bun's own installer
-  # is per-user and writes $HOME/.bun/bin/bun, which is bun-runner's fallback location.
-  # npm -g is preferred when present because it keeps bun on the same PATH as node.
-  if have npm; then
-    npm install -g bun || return 1
-  elif have curl; then
-    curl -fsSL https://bun.sh/install | bash || return 1
-  else
-    warn "neither npm nor curl found - install bun manually (https://bun.sh) or claude-mem's hooks will fail."
-    return 1
-  fi
-  export PATH="$HOME/.bun/bin:$PATH"
-  if ! have bun && [ ! -x "$HOME/.bun/bin/bun" ]; then
-    warn "bun still not found after installing - open a new shell and re-run."
-    return 1
-  fi
-  COUNT_INSTALLED=$((COUNT_INSTALLED+1))
-  ok "installed bun $(bun --version 2>/dev/null)"
-}
-
-if is_selected "claude-mem"; then
-  # Bun is the one dependency claude-mem's own hooks cannot install for themselves.
-  run_step "Install Bun (claude-mem worker runtime)" install_bun
-  run_step "Marketplace: thedotmack/claude-mem" add_marketplace "thedotmack/claude-mem" "thedotmack"
-  run_step "Plugin: claude-mem@thedotmack" install_plugin "claude-mem@thedotmack"
-  run_step "Configure claude-mem worker port" set_claude_mem_worker_port "37790"
-fi
-
-# --- 10. VoltAgent subagents -------------------------------------------------
-# The repo publishes itself as the 'voltagent-subagents' marketplace, with its 154
-# subagents split across ten category plugins. Installing them as plugins replaces the
-# old 'git clone + bash install-agents.sh' path, which needed an interactive TTY and a
-# writable ~/repos checkout. The ten are VOLTAGENT_KEYS next to the menu, so -> on the
-# row (or --voltagent) takes a subset - most people want two or three categories, not
-# all 154 agents.
-if is_selected "voltagent"; then
-  if [ "$(group_selected_count VOLTAGENT)" -eq 0 ]; then
-    warn "no VoltAgent packs selected - nothing installed for this item, and no marketplace registered."
-  fi
-  install_group VOLTAGENT
-fi
-
-# --- 11-14. Optional MCP servers ---------------------------------------------
+# --- 9-12. Optional MCP servers ----------------------------------------------
 # Warm the cache before the first add_mcp_server call so duplicate detection works.
 load_mcp_servers
 
@@ -2221,7 +2034,7 @@ if is_selected "obsidian-mcp"; then
 fi
 
 
-# --- 15. Supabase ------------------------------------------------------------
+# --- 13. Supabase -------------------------------------------------------------
 # Ships inside anthropics/claude-plugins-official, the same marketplace items 6 and 7
 # register - add_marketplace is a no-op when it is already there, so this item stands
 # on its own. install_plugin does the "already installed?" check.
@@ -2232,7 +2045,7 @@ if is_selected "supabase"; then
     install_plugin "supabase@claude-plugins-official"
 fi
 
-# --- 16. Context7 ------------------------------------------------------------
+# --- 14. Context7 -------------------------------------------------------------
 install_context7() {
   # 'ctx7 setup' writes the Context7 MCP/skill config for whichever agents it finds.
   # It is interactive, so it gets the terminal explicitly: under 'curl | bash' fd 0 is
@@ -2253,7 +2066,7 @@ if is_selected "context7"; then
   run_step "Configure Context7 (npx ctx7 setup)" install_context7
 fi
 
-# --- 17. Playwright CLI ------------------------------------------------------
+# --- 15. Playwright CLI -------------------------------------------------------
 install_playwright_cli() {
   # Detection is on the binary the package provides ('playwright-cli'), which is what
   # a user actually cares about - the package can also arrive via another manager.
@@ -2280,7 +2093,7 @@ if is_selected "playwright-cli"; then
   run_step "Install Playwright CLI (@playwright/cli)" install_playwright_cli
 fi
 
-# --- 18. SkillUI -------------------------------------------------------------
+# --- 16. SkillUI --------------------------------------------------------------
 skillui_quick_start() {
   printf '\n\033[36m    SkillUI quick start\033[0m  https://github.com/amaancoderx/npxskillui\n'
   printf '    1. Extract a design system from any URL:\n'
@@ -2325,7 +2138,7 @@ if is_selected "skillui"; then
   run_step "Install SkillUI (+ Playwright and Chromium)" install_skillui
 fi
 
-# --- 19. Strix ---------------------------------------------------------------
+# --- 17. Strix ----------------------------------------------------------------
 strix_next_steps() {
   printf '\n\033[33m    Strix needs two more things before its first scan:\033[0m\n'
   printf '    1. Docker running - the first scan pulls the sandbox image.\n'
@@ -2369,7 +2182,7 @@ if is_selected "strix"; then
   run_step "Install Strix AI pentesting CLI" install_strix
 fi
 
-# --- 20. Obsidian + claude-obsidian ------------------------------------------
+# --- 18. Obsidian + claude-obsidian -------------------------------------------
 obsidian_next_steps() {
   echo ""
   printf '\033[33m    Obsidian is installed, but the vault is a separate step:\033[0m\n'
@@ -2412,7 +2225,7 @@ if is_selected "obsidian"; then
   run_step "Install Obsidian desktop + claude-obsidian and obsidian-skills plugins" install_obsidian
 fi
 
-# --- 21. This repo's own plugins ---------------------------------------------
+# --- 19. This repo's own plugins ----------------------------------------------
 # Same marketplace as item 3, so add_marketplace is a no-op when item 3 already ran -
 # this item stands on its own. install_plugin does the "already installed?" check.
 # crew vendors its own narrowly-triggered find-skills copy (Task 12 narrowed its
@@ -2461,7 +2274,7 @@ if is_selected "repo-plugins"; then
   fi
 fi
 
-# --- 22. graphify --------------------------------------------------------------
+# --- 20. graphify -------------------------------------------------------------
 # graphifyy on PyPI (double-y) provides two executables: 'graphify' and
 # 'graphify-mcp'. Other 'graphify*' packages on PyPI are unaffiliated - installing the
 # wrong one fails silently, so the double-y package is named explicitly below and in

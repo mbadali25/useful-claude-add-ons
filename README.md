@@ -55,9 +55,9 @@ The menu is a cursor picker — **↑/↓ to move, Space to tick, Enter to start
   → on a row marked > picks the individual items inside it
 ```
 
-`A` ticks everything, `N` clears it, `D` restores the default set, `Q` or Escape cancels without installing. Every row that installs **more than one thing** is marked `>`, and **→ opens a second picker for the items inside it** — so you can take three skills instead of all twenty-five, two VoltAgent packs instead of all ten, or one team plugin instead of three; ← or Enter comes back to the main menu, and `Q` there discards just that sub-selection. The row's label keeps a live count (`3 of 25`), and opening a sub-picker ticks its parent row so a careful selection can't be lost to an unticked parent.
+`A` ticks everything, `N` clears it, `D` restores the default set, `Q` or Escape cancels without installing. Every row that installs **more than one thing** is marked `>`, and **→ opens a second picker for the items inside it** — so you can take three skills instead of all twenty-five, or one team plugin instead of three; ← or Enter comes back to the main menu, and `Q` there discards just that sub-selection. The row's label keeps a live count (`3 of 25`), and opening a sub-picker ticks its parent row so a careful selection can't be lost to an unticked parent.
 
-Terminals that can't read a key press one at a time — no `stty`, `TERM=dumb`, PowerShell ISE, a redirected console, a window under ten lines — fall back to the original numbered prompt automatically: `[x]` marks the default set, and you answer `A`, `D` (or Enter), `N`, or numbers like `1,3,7-9`. Item keys work in `--select` either way, so `--select supabase,claude-mem` saves counting rows.
+Terminals that can't read a key press one at a time — no `stty`, `TERM=dumb`, PowerShell ISE, a redirected console, a window under ten lines — fall back to the original numbered prompt automatically: `[x]` marks the default set, and you answer `A`, `D` (or Enter), `N`, or numbers like `1,3,7-9`. Item keys work in `--select` either way, so `--select supabase,strix` saves counting rows.
 
 |  # | Item | Default |
 |---:|---|:---:|
@@ -69,20 +69,18 @@ Terminals that can't read a key press one at a time — no `stty`, `TERM=dumb`, 
 | 6 | Community marketplaces + plugins — **→ picks which** (adhd-output-style, azure-tools, anthropic-office-skills, agent-browser, ppt-master) | x |
 | 7 | `claude-code-setup` plugin | x |
 | 8 | `task-observer` skill | x |
-| 9 | claude-mem — installs **Bun** (its worker runtime) and sets `CLAUDE_MEM_WORKER_PORT` in `settings.json` | x |
-| 10 | VoltAgent subagents (10 plugins, 154 agents) — **→ picks which packs** | x |
-| 11 | MCP server — AWS (`awslabs.aws-api-mcp-server`) | |
-| 12 | MCP server — Azure (`@azure/mcp`) | |
-| 13 | MCP server — Playwright (`@playwright/mcp`) | |
-| 14 | MCP server — Obsidian vault server (Local REST API over an SSH tunnel) | |
-| 15 | Supabase plugin (`supabase@claude-plugins-official`) | |
-| 16 | Context7 — up-to-date library docs (`npx ctx7 setup`) | |
-| 17 | Playwright CLI (`@playwright/cli`) | |
-| 18 | SkillUI + Playwright/Chromium — design system from a URL | |
-| 19 | Strix — AI pentesting CLI (needs Docker + an LLM API key) | |
-| 20 | Obsidian desktop + `claude-obsidian` and `obsidian-skills` plugins | |
-| 21 | This repo's plugins — `crew` (agents, commands, **hooks**) — **→ picks which** | |
-| 22 | `graphify` code graph (`uv tool install graphifyy`; per-repo, not global) | |
+| 9 | MCP server — AWS (`awslabs.aws-api-mcp-server`) | |
+| 10 | MCP server — Azure (`@azure/mcp`) | |
+| 11 | MCP server — Playwright (`@playwright/mcp`) | |
+| 12 | MCP server — Obsidian vault server (Local REST API over an SSH tunnel) | |
+| 13 | Supabase plugin (`supabase@claude-plugins-official`) | |
+| 14 | Context7 — up-to-date library docs (`npx ctx7 setup`) | |
+| 15 | Playwright CLI (`@playwright/cli`) | |
+| 16 | SkillUI + Playwright/Chromium — design system from a URL | |
+| 17 | Strix — AI pentesting CLI (needs Docker + an LLM API key) | |
+| 18 | Obsidian desktop + `claude-obsidian` and `obsidian-skills` plugins | |
+| 19 | This repo's plugins — `crew` (agents, commands, **hooks**) — **→ picks which** | |
+| 20 | `graphify` code graph (`uv tool install graphifyy`; per-repo, not global) | |
 
 Menu numbers are identical on Windows and Linux, and an already-registered MCP server, marketplace, or plugin is reported and skipped rather than re-added. Numbers can shift as items are added, so scripted runs should prefer the stable keys (`--select supabase,strix`) over positions.
 
@@ -90,27 +88,26 @@ A few items need a word of explanation:
 
 - **Claude Code CLI** (2) also checks for an update when `claude` is *already* installed: it compares the local version against the npm registry and runs `npm install -g @anthropic-ai/claude-code@latest` only when they differ. `--no-update` / `-NoUpdate` reports the installed version and skips the check.
 - **The `notify` skill** (in the item 3 sub-picker) is the one skill that needs machine-level setup, so when it's ticked the script prints its prerequisites — Python 3.8+, a `@BotFather` bot token, your `chat_id`, `TELEGRAM_BOT_TOKEN` exported, and a config file — then asks whether to scaffold `~/.config/notify/config.json` for you. `--notify-setup` / `-NotifySetup` answers yes without being asked. It never writes the bot token anywhere; an existing config is left alone. For the guided version, run `/notify-setup` in a Claude session.
-- **claude-mem** (9) appends `"CLAUDE_MEM_WORKER_PORT": "37790"` after the `CLAUDE_MEM_PROVIDER` line in `~/.claude/settings.json`, backing the file up first and restoring it if the result doesn't parse — without the port the worker silently binds somewhere else.
-- **Context7** (16) runs `npx ctx7 setup`, which is an interactive wizard — the script hands it the terminal explicitly, and where there is no terminal (CI, a redirected console) it prints the command instead of hanging.
-- **SkillUI** (18) installs the CLI, Playwright, and the Chromium build Playwright drives. Playwright goes in **globally** (`npm install -g playwright`) rather than into whatever directory you ran the script from. It asks up front whether to print the quick start when it's done; `--skillui-guide` / `-SkillUIGuide` answers yes without being asked.
-- **Strix** (19) is a security tool, not a Claude Code plugin: it installs via upstream's own shell installer (`curl -sSL https://strix.ai/install | bash`). **It cannot run straight after installing** — it needs Docker running and an LLM API key (`STRIX_LLM` + `LLM_API_KEY`), which the script prints as next steps every time. On Windows the installer is POSIX-only, so the script runs it through WSL, falls back to Git Bash, and warns with the manual command if neither is present.
+- **Context7** (14) runs `npx ctx7 setup`, which is an interactive wizard — the script hands it the terminal explicitly, and where there is no terminal (CI, a redirected console) it prints the command instead of hanging.
+- **SkillUI** (16) installs the CLI, Playwright, and the Chromium build Playwright drives. Playwright goes in **globally** (`npm install -g playwright`) rather than into whatever directory you ran the script from. It asks up front whether to print the quick start when it's done; `--skillui-guide` / `-SkillUIGuide` answers yes without being asked.
+- **Strix** (17) is a security tool, not a Claude Code plugin: it installs via upstream's own shell installer (`curl -sSL https://strix.ai/install | bash`). **It cannot run straight after installing** — it needs Docker running and an LLM API key (`STRIX_LLM` + `LLM_API_KEY`), which the script prints as next steps every time. On Windows the installer is POSIX-only, so the script runs it through WSL, falls back to Git Bash, and warns with the manual command if neither is present.
 
-- **The Obsidian vault-server MCP endpoint** (14) registers an HTTP MCP server rather than launching a command: the endpoint is the `obsidian-local-rest-api` plugin already running inside the vault-server container, listening on that **server's** loopback, so the URL is normally a port you forwarded over SSH. The API key is per-deployment and can't be baked in, so without `--obsidian-mcp-key` / `-ObsidianMcpKey` the item prints how to obtain one (`sudo ./obsidian-vault-server.sh apikey`) and skips instead of failing. See the [`obsidian-vault-server`](skills/obsidian-vault-server/) skill for the whole setup.
+- **The Obsidian vault-server MCP endpoint** (12) registers an HTTP MCP server rather than launching a command: the endpoint is the `obsidian-local-rest-api` plugin already running inside the vault-server container, listening on that **server's** loopback, so the URL is normally a port you forwarded over SSH. The API key is per-deployment and can't be baked in, so without `--obsidian-mcp-key` / `-ObsidianMcpKey` the item prints how to obtain one (`sudo ./obsidian-vault-server.sh apikey`) and skips instead of failing. See the [`obsidian-vault-server`](skills/obsidian-vault-server/) skill for the whole setup.
 
-- **Obsidian** (20) is a desktop app, not a plugin, so it comes from a package manager: Chocolatey first on Windows (falling back to winget), flatpak first on Linux (falling back to snap) — distro repos generally don't carry it. Chocolatey needs an elevated prompt; without one the app is skipped and the two plugins still install. It then adds the `claude-obsidian` vault engine and [`kepano/obsidian-skills`](https://github.com/kepano/obsidian-skills), Obsidian's own upstream skills for Markdown, Bases, JSON Canvas, the Obsidian CLI, and Defuddle. **The app and plugins are all this item does** — creating the vault is a separate, deliberately reviewed step, which the item prints as its next step and [`claude-obsidian-setup/`](claude-obsidian-setup/) performs. `--obsidian-repo-root` / `-ObsidianRepoRoot` changes the root it suggests (default `C:\repos` on Windows, `~/repos` on Linux).
+- **Obsidian** (18) is a desktop app, not a plugin, so it comes from a package manager: Chocolatey first on Windows (falling back to winget), flatpak first on Linux (falling back to snap) — distro repos generally don't carry it. Chocolatey needs an elevated prompt; without one the app is skipped and the two plugins still install. It then adds the `claude-obsidian` vault engine and [`kepano/obsidian-skills`](https://github.com/kepano/obsidian-skills), Obsidian's own upstream skills for Markdown, Bases, JSON Canvas, the Obsidian CLI, and Defuddle. **The app and plugins are all this item does** — creating the vault is a separate, deliberately reviewed step, which the item prints as its next step and [`claude-obsidian-setup/`](claude-obsidian-setup/) performs. `--obsidian-repo-root` / `-ObsidianRepoRoot` changes the root it suggests (default `C:\repos` on Windows, `~/repos` on Linux).
 
-- **This repo's plugins** (21) installs [`plugin/crew`](plugin/crew) from this same marketplace — so it works whether or not item 3 ran. It is **off by default, deliberately**: unlike a skill, `crew` registers **hooks**, and a hook is not advisory. Its `PreToolUse` hook blocks `terraform apply`/`destroy`, destructive DDL, force push, hard reset, and any command that would print a secret into the transcript; its `Stop` hooks run the checks your changed paths map to (failing the turn on red) and watch context use; a `PreCompact`/`SessionStart` pair carries a handoff note across compaction, and that same `SessionStart` also runs a report-only PM brief — schema drift, a stale or missing code graph, review health — before you type anything. All of them start working the moment the plugin is enabled, so the item ends by printing the per-repository setup (`/crew:init`, `/crew:onboard`, `/crew:verify`) rather than leaving you to discover the gates by hitting them. This item also detects, but never removes, a separately-installed global copy of `find-skills` (item 5) that would collide with the one `crew` vendors. See [`plugin/README.md`](plugin/README.md) for the catalog and [`plugin/PLUGINS.md`](plugin/PLUGINS.md) for what each plugin actually contains.
+- **This repo's plugins** (19) installs [`plugin/crew`](plugin/crew) from this same marketplace — so it works whether or not item 3 ran. It is **off by default, deliberately**: unlike a skill, `crew` registers **hooks**, and a hook is not advisory. Its `PreToolUse` hook blocks `terraform apply`/`destroy`, destructive DDL, force push, hard reset, and any command that would print a secret into the transcript; its `Stop` hooks run the checks your changed paths map to (failing the turn on red) and watch context use; a `PreCompact`/`SessionStart` pair carries a handoff note across compaction, and that same `SessionStart` also runs a report-only PM brief — schema drift, a stale or missing code graph, review health — before you type anything. All of them start working the moment the plugin is enabled, so the item ends by printing the per-repository setup (`/crew:init`, `/crew:onboard`, `/crew:verify`) rather than leaving you to discover the gates by hitting them. This item also detects, but never removes, a separately-installed global copy of `find-skills` (item 5) that would collide with the one `crew` vendors. See [`plugin/README.md`](plugin/README.md) for the catalog and [`plugin/PLUGINS.md`](plugin/PLUGINS.md) for what each plugin actually contains.
 
-- **`graphify` code graph** (22) installs the third-party `graphify` CLI (`uv tool install graphifyy` — package `graphifyy`, double-y; the CLI it installs is `graphify`) and registers it **per-repository** with `graphify install --project`, never globally. Off by default, no new flag — it reuses `--select` / `-Select` like every other item. This is what `crew`'s `/crew:upgrade` and the `crew-graph` skill build on; installing it alone does nothing until `crew` (21) or another workflow calls it.
+- **`graphify` code graph** (20) installs the third-party `graphify` CLI (`uv tool install graphifyy` — package `graphifyy`, double-y; the CLI it installs is `graphify`) and registers it **per-repository** with `graphify install --project`, never globally. Off by default, no new flag — it reuses `--select` / `-Select` like every other item. This is what `crew`'s `/crew:upgrade` and the `crew-graph` skill build on; installing it alone does nothing until `crew` (19) or another workflow calls it.
 
-Everything that can be a plugin **is** installed as one, using the CLI's own `claude plugin marketplace add` / `claude plugin install` — there's no `npx claudepluginhub` wrapper and no `git clone` + shell-script step any more. That removes the Windows failure modes those introduced (the wrapper needed a writable per-repo checkout, and the VoltAgent installer needed Git Bash to run a `.sh`).
+Everything that can be a plugin **is** installed as one, using the CLI's own `claude plugin marketplace add` / `claude plugin install` — there's no `npx claudepluginhub` wrapper and no `git clone` + shell-script step any more. That removes the Windows failure modes those introduced (the wrapper needed a writable per-repo checkout).
 
 | Switch (Windows / Linux) | Effect |
 |---|---|
 | `-All` / `--all` | Select every menu item, no prompt. |
-| `-Select '1,3,7-9'` / `--select 1,3,7-9` | Select these menu items, no prompt. Item keys work too: `--select supabase,claude-mem`. |
+| `-Select '1,3,7-9'` / `--select 1,3,7-9` | Select these menu items, no prompt. Item keys work too: `--select supabase,strix`. |
 | `-Skills 'cloudflare,drata'` / `--skills cloudflare,drata` | Install only these of this repo's skills, no sub-picker. Also accepts `all`, `none`, and numbers (`1,4-6`). Composes with `-All` / `-NonInteractive`. |
-| `-Team` / `--team`, `-Community` / `--community`, `-VoltAgent` / `--voltagent`, `-Plugins` / `--plugins` | The same for the other multi-item rows — items 4, 6, 10 and 21. Each takes names, numbers, `all` or `none`, skips that row's sub-picker, and implies its parent item. Names match either the plugin key or the short label the picker shows, so `--voltagent infra,qa-sec` and `--voltagent voltagent-infra,voltagent-qa-sec` both work. |
+| `-Team` / `--team`, `-Community` / `--community`, `-Plugins` / `--plugins` | The same for the other multi-item rows — items 4, 6 and 19. Each takes names, numbers, `all` or `none`, skips that row's sub-picker, and implies its parent item. Names match either the plugin key or the short label the picker shows. |
 | `-NonInteractive` / `--non-interactive` | Select the default set, no prompt — for unattended or CI runs. |
 | `-SkillUIGuide` / `--skillui-guide` | Print the SkillUI quick start after installing it, without being asked. |
 | `-NotifySetup` / `--notify-setup` | Scaffold `~/.config/notify/config.json` after installing the `notify` skill, without being asked. The prerequisites are printed either way. |
@@ -119,9 +116,9 @@ Everything that can be a plugin **is** installed as one, using the CLI's own `cl
 | `-DryRun` / `--dry-run` | Work out the selection, print it, and stop — installs nothing. Useful for checking what a set of flags actually resolves to. |
 | `-SkipBootstrap` / `--skip-bootstrap` | Narrow whatever you selected down to the prerequisites and the Claude Code CLI. |
 | `-InstallScope` / `--scope` | Scope for every marketplace and plugin install: `user` (default), `project`, or `local`. Windows still accepts the old `-PluginHubScope` name as an alias. |
-| `-ObsidianRepoRoot` / `--obsidian-repo-root` | Root that item 20 suggests for the Obsidian vault — `C:\repos` on Windows, `~/repos` on Linux. Only affects the printed next step; the vault itself is created by [`claude-obsidian-setup/`](claude-obsidian-setup/). |
-| `-ObsidianMcpUrl` / `--obsidian-mcp-url` | MCP endpoint item 14 registers for the Obsidian vault server. Default `http://127.0.0.1:27123/mcp/` — loopback, because the endpoint is normally reached through an SSH tunnel. |
-| `-ObsidianMcpKey` / `--obsidian-mcp-key` | Local REST API key for item 14. Per-deployment, so there is no default: without it the item explains how to get one and skips. |
+| `-ObsidianRepoRoot` / `--obsidian-repo-root` | Root that item 18 suggests for the Obsidian vault — `C:\repos` on Windows, `~/repos` on Linux. Only affects the printed next step; the vault itself is created by [`claude-obsidian-setup/`](claude-obsidian-setup/). |
+| `-ObsidianMcpUrl` / `--obsidian-mcp-url` | MCP endpoint item 12 registers for the Obsidian vault server. Default `http://127.0.0.1:27123/mcp/` — loopback, because the endpoint is normally reached through an SSH tunnel. |
+| `-ObsidianMcpKey` / `--obsidian-mcp-key` | Local REST API key for item 12. Per-deployment, so there is no default: without it the item explains how to get one and skips. |
 
 > On Windows, run from an **elevated** prompt for the full setup. Without elevation the script skips menu item 1 (Chocolatey and its packages: git/awscli/nodejs/python) and runs everything else you selected.
 
@@ -151,20 +148,18 @@ For this repo's own skills, [`scripts/check-marketplace.py`](scripts/check-marke
 | 6 Community | `adhd-output-style`, `azure-tools`, `anthropic-office-skills`, `agent-browser`, `ppt-master` | 3 marketplaces (only the ones behind a ticked plugin) |
 | 7 claude-code-setup | Analyses a codebase and recommends hooks/skills/MCP servers | `anthropics/claude-plugins-official` |
 | 8 task-observer | Watches a session for reusable-skill opportunities | `rebelytics/one-skill-to-rule-them-all` |
-| 9 claude-mem | Cross-session memory, **Bun** (its worker runtime — Chocolatey on Windows, `npm -g` or `bun.sh` on Linux), plus `CLAUDE_MEM_WORKER_PORT` in `settings.json` | `thedotmack/claude-mem` |
-| 10 VoltAgent | 10 plugins, ~154 subagents across dev, infra, QA, data, business | `VoltAgent/awesome-claude-code-subagents` |
-| 11–13 MCP servers | AWS, Azure, Playwright | `claude mcp add` |
-| 14 Obsidian MCP | The `obsidian-server` HTTP MCP endpoint (`obsidian-local-rest-api`'s built-in MCP route), bearer-authenticated with `--obsidian-mcp-key` — skipped with instructions when no key is given | `claude mcp add` |
-| 15 Supabase | The `supabase` plugin — project, database, and edge-function tooling | `anthropics/claude-plugins-official` |
-| 16 Context7 | `ctx7 setup` — wires up version-accurate library docs for your agents | npx |
-| 17 Playwright CLI | `@playwright/cli` (`playwright-cli` on `PATH`) | npm |
-| 18 SkillUI | `skillui` + `playwright` + the Chromium browser build | npm |
-| 19 Strix | The `strix` pentesting CLI | `curl -sSL https://strix.ai/install \| bash` |
-| 20 Obsidian | The Obsidian desktop app (Chocolatey → winget on Windows, flatpak → snap on Linux), plus the `claude-obsidian` vault engine and [`kepano/obsidian-skills`](https://github.com/kepano/obsidian-skills) — Obsidian's own Markdown, Bases, JSON Canvas, CLI and Defuddle skills | choco/winget/flatpak/snap + 2 marketplaces |
-| 21 This repo's plugins | The `crew` plugin from [`plugin/`](plugin/) — 10 subagents, 18 slash commands, 16 bundled skills, and 16 hook entries (8 scripts × `.sh`/`.ps1`) across 5 events. Off by default because hooks execute whether or not Claude agrees with them | this repo |
-| 22 `graphify` | The `graphify` CLI (`graphifyy` on PyPI), registered per-repository with `graphify install --project`. Off by default; not installed globally | `uv tool install` |
+| 9–11 MCP servers | AWS, Azure, Playwright | `claude mcp add` |
+| 12 Obsidian MCP | The `obsidian-server` HTTP MCP endpoint (`obsidian-local-rest-api`'s built-in MCP route), bearer-authenticated with `--obsidian-mcp-key` — skipped with instructions when no key is given | `claude mcp add` |
+| 13 Supabase | The `supabase` plugin — project, database, and edge-function tooling | `anthropics/claude-plugins-official` |
+| 14 Context7 | `ctx7 setup` — wires up version-accurate library docs for your agents | npx |
+| 15 Playwright CLI | `@playwright/cli` (`playwright-cli` on `PATH`) | npm |
+| 16 SkillUI | `skillui` + `playwright` + the Chromium browser build | npm |
+| 17 Strix | The `strix` pentesting CLI | `curl -sSL https://strix.ai/install \| bash` |
+| 18 Obsidian | The Obsidian desktop app (Chocolatey → winget on Windows, flatpak → snap on Linux), plus the `claude-obsidian` vault engine and [`kepano/obsidian-skills`](https://github.com/kepano/obsidian-skills) — Obsidian's own Markdown, Bases, JSON Canvas, CLI and Defuddle skills | choco/winget/flatpak/snap + 2 marketplaces |
+| 19 This repo's plugins | The `crew` plugin from [`plugin/`](plugin/) — 10 subagents, 18 slash commands, 16 bundled skills, and 16 hook entries (8 scripts × `.sh`/`.ps1`) across 5 events. Off by default because hooks execute whether or not Claude agrees with them | this repo |
+| 20 `graphify` | The `graphify` CLI (`graphifyy` on PyPI), registered per-repository with `graphify install --project`. Off by default; not installed globally | `uv tool install` |
 
-Items 1–10 are the default set. Everything from 11 on is opt-in.
+Items 1–8 are the default set. Everything from 9 on is opt-in.
 
 Full walkthrough, verification steps, and troubleshooting: [`INSTALLATION.md`](INSTALLATION.md).
 
@@ -201,7 +196,7 @@ The same marketplace also carries this repo's own **plugins** — the ones under
 claude plugin install crew@useful-claude-add-ons
 ```
 
-Or take it from the bootstrap script as **item 21**, which is off by default:
+Or take it from the bootstrap script as **item 19**, which is off by default:
 
 ```bash
 ./scripts/install-prerequisites.sh --select repo-plugins
@@ -219,7 +214,7 @@ claude plugin uninstall aws-opensearch@useful-claude-add-ons   # remove a skill
 claude plugin marketplace remove useful-claude-add-ons        # stop tracking this marketplace
 ```
 
-Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for the lightweight path (clone the repo, point your own `.claude/skills/` at the folders you want). Full details, including the other marketplaces the team's install scripts wire up (`claude-plugins-official` for Superpowers, `frontend-design`, `excalidraw-generator`, the VoltAgent subagents, and the community set), are in [`MARKETPLACE.md`](MARKETPLACE.md).
+Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for the lightweight path (clone the repo, point your own `.claude/skills/` at the folders you want). Full details, including the other marketplaces the team's install scripts wire up (`claude-plugins-official` for Superpowers, `frontend-design`, `excalidraw-generator`, and the community set), are in [`MARKETPLACE.md`](MARKETPLACE.md).
 
 ## Documentation
 
@@ -234,12 +229,12 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 | [`SECURITY.md`](SECURITY.md) | Reporting a vulnerability, credential-handling policy, install-script trust boundary. |
 | [`CHANGELOG.md`](CHANGELOG.md) | Notable changes to this repo, dated. |
 | [`docs/HANDOFF.md`](docs/HANDOFF.md) | Session handoff notes — why things are built the way they are, what was verified, what's still open. |
-| [`claude-obsidian-setup/`](claude-obsidian-setup/) | **Obsidian knowledge-vault setup** for Windows (WSL) and Linux — the deeper version of menu item 20. |
+| [`claude-obsidian-setup/`](claude-obsidian-setup/) | **Obsidian knowledge-vault setup** for Windows (WSL) and Linux — the deeper version of menu item 18. |
 | [`vault-automation/`](vault-automation/) | **Self-feeding vault pipeline** — session-capture hooks, nightly gardener (headless Claude distillation), Dataview dashboard, Obsidian plugins, optional git layer. |
 
 ## Obsidian knowledge vault
 
-[**`claude-obsidian-setup/`**](claude-obsidian-setup/) sets up a source-cited Obsidian vault driven from Claude Code, identically on Windows and Linux. Menu item 20 of the bootstrap installs the app and the plugins; these scripts also **create and verify the vault**.
+[**`claude-obsidian-setup/`**](claude-obsidian-setup/) sets up a source-cited Obsidian vault driven from Claude Code, identically on Windows and Linux. Menu item 18 of the bootstrap installs the app and the plugins; these scripts also **create and verify the vault**.
 
 | Platform | Script |
 |---|---|
