@@ -340,6 +340,28 @@ def test_auto_resume_non_true_values_do_not_enable_it(tmp_path, monkeypatch,
         assert "additionalContext" not in out
 
 
+def test_auto_resume_handoff_with_non_ascii_stays_ascii_on_the_wire(
+    tmp_path, monkeypatch, capsys
+):
+    # The handoff template in crew-context/SKILL.md documents an em-dash --
+    # "file:line -- what is half-finished and why" -- so real handoff text
+    # is not ASCII. The JSON path is safe only because json.dumps defaults
+    # to ensure_ascii=True, escaping it to — rather than emitting the
+    # raw byte; that default is load-bearing here and worth pinning, since
+    # an em-dash took this hook out once already on the plain-text path.
+    config = dict(_BASE_CONFIG, context={"autoResume": True})
+    root = crew_fixtures.make_repo(tmp_path, config=config, graph=True)
+    (root / ".work" / "HANDOFF.md").write_text(
+        "# Handoff\n\n## Next action\n"
+        "file.py:12 — finish the retry loop\n",
+        encoding="utf-8",
+    )
+    out = _run(root, "sess-1", monkeypatch, capsys)
+    out.encode("ascii")  # raises UnicodeEncodeError if ensure_ascii regresses
+    parsed = json.loads(out)
+    assert "—" in parsed["hookSpecificOutput"]["additionalContext"]
+
+
 def test_auto_resume_second_call_in_one_session_prints_nothing(
     tmp_path, monkeypatch, capsys
 ):
