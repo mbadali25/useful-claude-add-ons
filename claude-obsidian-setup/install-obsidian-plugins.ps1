@@ -136,6 +136,7 @@ if ($Only.Count -gt 0) { $targets = $targets | Where-Object { $Only -contains $_
 
 $enabled = New-Object System.Collections.Generic.List[string]
 foreach ($p in $targets) {
+  if (-not $p.id) { continue }
   $enabled.Add($p.id) | Out-Null
   $dest = Join-Path $pluginRoot $p.id
   $manifest = Join-Path $dest 'manifest.json'
@@ -150,16 +151,25 @@ foreach ($p in $targets) {
 
   if (-not $Apply) { Fix $p.id "would install $($p.version) from $repo"; continue }
 
-  New-Item -ItemType Directory -Path $dest -Force | Out-Null
-  $tag = Get-PluginRelease -Id $p.id -Want $p.version -Repo $repo -Dest $dest
-  if ($tag) {
+  # Download into a staging directory first. An existing install (upgrade case)
+  # is only ever touched AFTER a full, validated download succeeds - a failed
+  # or partial download (404, rate limit, network blip) must leave it untouched
+  # rather than delete a working plugin.
+  $staging = Join-Path $pluginRoot ("$($p.id).new-{0}" -f ([guid]::NewGuid().ToString('N')))
+  New-Item -ItemType Directory -Path $staging -Force | Out-Null
+  $tag = Get-PluginRelease -Id $p.id -Want $p.version -Repo $repo -Dest $staging
+  $stagedManifest = Join-Path $staging 'manifest.json'
+  $stagedMain = Join-Path $staging 'main.js'
+  if ($tag -and (Test-Path $stagedManifest) -and (Test-Path $stagedMain)) {
+    if (Test-Path $dest) { Remove-Item $dest -Recurse -Force }
+    Move-Item $staging $dest -Force
     $got = (Get-Content $manifest -Raw | ConvertFrom-Json).version
     if ($tag -eq 'latest' -and $got -ne $p.version) { Fix $p.id "$got (pinned $($p.version) unavailable)" }
     else { Fix $p.id "installed $got" }
   }
   else {
-    Remove-Item $dest -Recurse -Force -ErrorAction SilentlyContinue
-    Fail $p.id "no downloadable release from $repo"
+    Remove-Item $staging -Recurse -Force -ErrorAction SilentlyContinue
+    Fail $p.id "no downloadable release from $repo - existing install left untouched"
   }
 }
 
