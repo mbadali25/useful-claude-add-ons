@@ -6,7 +6,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
-- **`crew` 0.5.0 — `/crew:emergency`, a time-boxed lane for when something is
+- **`crew` 0.5.1 — `/crew:emergency`, a time-boxed lane for when something is
   actually broken.** The gates that normally earn their keep are, during an
   outage, standing between you and the fix, and the honest options are to work
   around them silently or to make standing them down a decision with a record
@@ -52,7 +52,9 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
-- **`crew` 0.5.0 - findings from the Codex review pass, fixed before merge.**
+- **`crew` 0.5.1 - findings from the Codex review pass, fixed before merge.** 0.5.0
+  was set on the branch and never published; the released version is 0.5.1.
+
   - `crew_incident_active` in `_common.sh` pulled `expiresAtEpoch` out with
     `sed`, so `{ not json "expiresAtEpoch": 9999999999` stood every gate down in
     bash while the PowerShell twin's `ConvertFrom-Json` correctly rejected it -
@@ -78,7 +80,7 @@ All notable changes to this repository are documented here. Format follows [Keep
     is pre-existing and wrong rather than deliberate - the fix is to key it on
     the payload's `session_id`.
 
-- **`crew` 0.5.0 — the context watch no longer asks for a handoff with 200k
+- **`crew` 0.5.1 — the context watch no longer asks for a handoff with 200k
   tokens still free.** `context.warnAt` was tuned when every window was 200k,
   where 0.8 leaves 40k: about enough to finish a thought and write the note. The
   same 0.8 on a 1M window leaves 200,000 tokens unused and still asks you to
@@ -96,7 +98,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   `tests/test_context_watch.py` pin the no-regression case, the 1M case, the
   default, the `warnAt: 0` override, and full stderr parity between the two
   flavours on the new branch.
-- **`crew` 0.5.0 — the once-per-session handoff marker is now claimed
+- **`crew` 0.5.1 — the once-per-session handoff marker is now claimed
   atomically** (`noclobber` in bash, `FileMode::CreateNew` in PowerShell). On
   Windows with Git Bash installed both flavours of the `Stop` hook really do
   run, and a test-then-create let both through, so the same warning was emitted
@@ -104,7 +106,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   File]` resolves a relative one against `[Environment]::CurrentDirectory`,
   which `Set-Location` does not update, so the claim would have landed in
   whatever directory the hook was spawned from.
-- **`crew` 0.5.0 — `Resolve-CrewBash`'s PATH fallback could return an empty
+- **`crew` 0.5.1 — `Resolve-CrewBash`'s PATH fallback could return an empty
   interpreter.** A `bash` function or alias defined in a PowerShell profile is
   returned by `Get-Command bash -All` ahead of any `bash.exe` with an empty
   `.Source`; `.StartsWith()` on that throws and returning it handed
