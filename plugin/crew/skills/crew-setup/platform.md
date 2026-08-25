@@ -24,8 +24,22 @@ the same JSON shape. Record the result in `.crew/config.json`:
 }
 ```
 
-Detect once at setup, not on every run. Re-detect only when something breaks
-that used to work, or when the developer changes machines.
+**You no longer have to remember to re-detect.** A `SessionStart` hook
+(`hooks/scripts/platform-sync.{sh,ps1}`, both delegating to `crew_platform.py`)
+does it on every session start and repairs the block in place, because the block
+is committed and is therefore wrong for everybody who did not run `/crew:init` -
+and `windowsHostIp` is wrong for the same person after a reboot, since WSL2's
+gateway changes.
+
+It writes the seven derived facts above and nothing else. A preference this OS
+cannot honour - an `autoClear.method` that only exists on the other platform, a
+clone under `/mnt/`, CRLF in a committed `.sh` - is reported and left alone.
+Anything a human chose (`tracker`, `qa`, `roles`, `tier`, `notify`, `emergency`,
+the context thresholds) is never touched.
+
+Running `platform.sh` by hand is still useful for the `tools` inventory, which
+the hook does not record: what the machine *is* changes per clone, what is
+*installed* changes per machine and is worth a deliberate look.
 
 ## The four environments
 

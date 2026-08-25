@@ -122,6 +122,12 @@ the source of truth; this template is a copy of them, not the other way around.
 `qa.provider`: `auto` uses Codex when present and falls back to Claude, announcing
 which ran. Use `codex` to hard-fail instead of falling back, `claude` to force it.
 
+Leave `platform` as nulls. The `platform-sync` `SessionStart` hook fills it in
+on the first run and repairs it whenever the repo is opened on a different OS -
+it is the one block that is committed and is therefore wrong for everybody who
+did not run `/crew:init`. Do not hand-write values there; they will be
+overwritten, which is the point.
+
 ## 3b. Jira only — wire the MCP connector
 
 Only if the user chose Jira. Do NOT do this in files-mode repos.
