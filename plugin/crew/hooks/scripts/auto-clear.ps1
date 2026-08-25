@@ -36,6 +36,15 @@ param(
   [switch]$Force
 )
 
+# Native Windows only, and this check is not cosmetic. The send path is
+# System.Windows.Forms.SendKeys against a Win32 foreground window: on Linux or
+# macOS pwsh the Add-Type fails and there is no foreground window to check, so
+# without this the script runs every condition, claims the one-per-session
+# attempt, reports "sent", and delivers nothing. auto-clear.sh is the flavour
+# for those platforms - it is registered too, and tmux there is strictly better
+# than anything this file could do.
+if (-not $IsWindows) { exit 0 }
+
 $root = if ($env:CLAUDE_PROJECT_DIR) { $env:CLAUDE_PROJECT_DIR } else { "." }
 Set-Location $root -ErrorAction SilentlyContinue
 if (-not (Test-Path ".crew/config.json")) { exit 0 }

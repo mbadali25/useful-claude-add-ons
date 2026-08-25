@@ -35,7 +35,14 @@ _SH = (_ROOT + "/hooks/scripts/auto-clear.sh").replace("\\", "/")
 _PS1 = _ROOT + "/hooks/scripts/auto-clear.ps1"
 
 _BASH = shutil.which("bash")
-_PWSH = shutil.which("pwsh")
+# The .ps1 flavour is native Windows ONLY: its send path is
+# System.Windows.Forms.SendKeys against a Win32 foreground window, so on a Linux
+# runner with pwsh installed (the CI job has one) the script now stands down
+# immediately - and a test that expected it to refuse for some *other* reason
+# would pass for the wrong reason, while one expecting it to send would fail.
+# Both happened on the first CI run: it claimed the one-per-session attempt and
+# reported "sent" on a platform where it cannot type anything.
+_PWSH = shutil.which("pwsh") if sys.platform.startswith("win") else None
 FLAVORS = [f for f, have in (("sh", _BASH), ("ps1", _PWSH)) if have]
 
 by_flavor = pytest.mark.parametrize("flavor", FLAVORS)
@@ -347,3 +354,28 @@ def test_the_windows_flavour_points_tmux_users_at_the_bash_one(tmp_path):
                                        "windowTitle": "x"})
     result = _run("ps1", root)
     assert "auto-clear.sh" in result.stderr
+
+
+_PWSH_ANY = shutil.which("pwsh")
+
+
+@pytest.mark.skipif(_PWSH_ANY is None or sys.platform.startswith("win"),
+                    reason="the point of this case is a NON-Windows pwsh")
+def test_the_windows_flavour_stands_down_entirely_off_windows(tmp_path):
+    """On Linux/macOS pwsh, auto-clear.ps1 must do nothing at all.
+
+    Its send path is SendKeys against a Win32 foreground window. Without the
+    $IsWindows guard it ran every condition, claimed the one-per-session
+    attempt, and reported "sent" while delivering no keystroke - which is worse
+    than failing, because the log then says it worked. auto-clear.sh is the
+    flavour for those platforms and is registered alongside it.
+    """
+    root = _repo(tmp_path, auto_clear={"enabled": True, "windowTitle": "x"})
+    result = subprocess.run(
+        [_PWSH_ANY, "-NoProfile", "-NonInteractive", "-File", _PS1],
+        cwd=str(root), env=dict(os.environ, CLAUDE_PROJECT_DIR=str(root)),
+        stdin=subprocess.DEVNULL, capture_output=True, text=True, check=False)
+    assert result.returncode == 0
+    assert result.stdout.strip() == ""
+    assert not (root / ".crew" / ".autoclear-sent").exists()
+    assert not (root / ".crew" / ".autoclear.log").exists()

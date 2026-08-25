@@ -6,7 +6,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
-- **`crew` 0.6.0 - `context.autoClear`, experimental, off by default.** A matched
+- **`crew` 0.6.1 - `context.autoClear`, experimental, off by default.** A matched
   pair of scripts that type `/clear` into the terminal once the handoff note is
   written. This does **not** contradict the standing correction that a hook
   cannot clear its own session - it does not touch the conversation. It drives
@@ -42,6 +42,15 @@ All notable changes to this repository are documented here. Format follows [Keep
     a keystroke to the machine running it. Sabotage-tested three ways: moving the
     claim back into the conditions block (5 red), dropping the CR strip (12 red),
     and allowing a focus-based method with no window title (1 red).
+  - A third bug, found by CI rather than by me: on a Linux runner with pwsh
+    installed, `auto-clear.ps1` ran every condition, claimed the
+    one-per-session attempt and reported "sent" - on a platform where its
+    SendKeys path cannot type anything. Reporting success while delivering
+    nothing is worse than failing, because the log then says it worked. It now
+    exits immediately unless `$IsWindows`, the suite treats that flavour as
+    native-Windows-only, and a new case pins the stand-down on a non-Windows
+    pwsh. 0.6.0 was set on the branch and never published; the released version
+    is 0.6.1.
   - Two bugs found by running it rather than reading it, both now covered. The
     config was read as tab-separated fields with a tab as the field separator,
     and a tab is IFS *whitespace*, so bash collapsed consecutive separators and
