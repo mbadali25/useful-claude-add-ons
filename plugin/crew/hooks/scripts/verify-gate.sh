@@ -26,7 +26,11 @@ fi
 MATCHED=$(python3 - "$CHANGED" << 'PY'
 import json,sys,fnmatch
 changed=[l for l in sys.argv[1].split("\n") if l.strip()]
-cfg=json.load(open(".crew/verify.json"))
+try:
+    cfg=json.load(open(".crew/verify.json"))
+except (OSError, ValueError) as e:
+    print(f"PARSE_ERROR: {e}", file=sys.stderr)
+    sys.exit(3)
 cmds, why, unmatched = [], [], []
 for f in changed:
     hit=False
@@ -43,6 +47,11 @@ print("\x1e".join(cmds))
 print("\x1e".join(unmatched))
 PY
 )
+PY_STATUS=$?
+if [ "$PY_STATUS" -ne 0 ]; then
+  echo "VERIFY GATE: .crew/verify.json could not be parsed. Verification did NOT run. Work is not complete." >&2
+  exit 2
+fi
 CMDS=$(echo "$MATCHED" | sed -n 1p | tr '\036' '\n')
 UNMAPPED=$(echo "$MATCHED" | sed -n 2p | tr '\036' '\n')
 

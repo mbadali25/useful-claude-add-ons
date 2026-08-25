@@ -32,7 +32,13 @@ if (-not (Test-Path .crew/verify.json)) {
   exit 0
 }
 
-$vm = Get-Content .crew/verify.json -Raw | ConvertFrom-Json
+try {
+  $vm = Get-Content .crew/verify.json -Raw | ConvertFrom-Json -ErrorAction Stop
+} catch {
+  [Console]::Error.WriteLine("VERIFY GATE: .crew/verify.json could not be parsed. Verification did NOT run. Work is not complete.")
+  [Console]::Error.WriteLine($_.Exception.Message)
+  exit 2
+}
 $cmds = [System.Collections.ArrayList]@()
 $unmapped = [System.Collections.ArrayList]@()
 
