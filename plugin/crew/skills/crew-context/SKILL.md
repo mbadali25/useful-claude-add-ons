@@ -38,6 +38,18 @@ stays quiet afterwards; `SessionStart` clears the marker. Without that gate a
 `Stop` hook returning exit 2 will fire on every turn and trap the session in a
 loop.
 
+The claim is taken atomically - `set -o noclobber` in bash, `FileMode::CreateNew`
+in PowerShell - because on Windows with Git Bash installed **both** flavours
+really do run on the same `Stop`, and a test-then-create lets both through and
+prints the warning twice.
+
+**The marker is per repository, not per session.** Two sessions open in the same
+repo share it: the first to cross the threshold claims it and the second is not
+warned, and either one's `SessionStart` clears it for both. That is pre-existing
+behaviour and it is wrong, not deliberate - the fix is to key the marker on the
+hook payload's `session_id`. Worth knowing before concluding the watcher is
+broken in a two-terminal workflow.
+
 ## The handoff note
 
 Write it to `.work/HANDOFF.md`. Keep it short, and prefer **pointers over
@@ -120,6 +132,7 @@ be injected twice.
   "enabled": true,
   "warnAt": 0.8,
   "budgetTokens": null,
+  "reserveTokens": 100000,
   "handoffPath": ".work/HANDOFF.md",
   "autoWrapUp": false,
   "autoResume": false,
@@ -151,6 +164,37 @@ to `<session>/subagents/*.jsonl`, which the watcher never opens; the main
 window only ever sees the agent's returned summary, and that summary is
 already inside the main transcript's usage figure. Older builds wrote subagent
 turns inline flagged `isSidechain`; those are skipped too.
+
+### The threshold is the later of two rules
+
+```
+percentage  warnAt * budget        what this always did
+headroom    budget - reserveTokens never nag while this much is still free
+fires at    max(the two)
+```
+
+`warnAt` was tuned when every window was 200k, where 0.8 leaves 40k - about
+enough to finish a thought and write the note. The same 0.8 on a 1M window
+leaves 200,000 tokens free and still asks for a handoff, which throws away a
+fifth of the window and is the "it ends earlier than it should" complaint. A
+percentage cannot fix that, because the right amount of headroom is an absolute
+number.
+
+Taking the **later** of the two rules is what makes this safe to default on:
+the reserve can only ever push the warning later, never earlier. On a 200k
+window the percentage still wins (40k < 100k) and nothing changes; on 1M the
+floor wins and the gate moves from 80% to 90%.
+
+Two edges worth knowing:
+
+- `reserveTokens: 0` or `null` turns the floor off and restores the pure
+  percentage.
+- `warnAt: 0` still means "fire immediately". It is the documented override, and
+  a floor that quietly outranked it would make that a lie - so the floor is
+  skipped entirely when `warnAt <= 0`.
+
+The warning prints which rule fired and both figures, so a threshold behaving
+oddly is visible rather than mysterious.
 
 ### The budget works itself out
 

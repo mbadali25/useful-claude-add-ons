@@ -31,6 +31,16 @@ $warnAt     = if ($null -ne $cfg.warnAt) { [double]$cfg.warnAt } else { 0.8 }
 $configured = if ($cfg.budgetTokens) { [long]$cfg.budgetTokens } else { 0 }
 $handoff    = if ($cfg.handoffPath) { $cfg.handoffPath } else { ".work/HANDOFF.md" }
 $autoWrapUp = $cfg.autoWrapUp -eq $true
+# reserveTokens: absolute headroom floor, in tokens. Absent -> 100k. null or
+# <=0 -> off, i.e. the old pure-percentage behaviour. See the threshold below.
+# PSObject.Properties, not truthiness: an explicit 0 means "off", and a missing
+# key means 100k, and $cfg.reserveTokens is 0-ish for both.
+[long]$reserve = 100000
+if ($cfg.PSObject.Properties['reserveTokens']) {
+  $rt = $cfg.reserveTokens
+  [long]$reserve = if ($null -eq $rt) { 0 } else { [long]$rt }
+  if ($reserve -lt 0) { $reserve = 0 }
+}
 
 $marker = ".crew/.handoff-requested"
 if (Test-Path $marker) { exit 0 }
@@ -121,14 +131,56 @@ if ($configured -gt 0) {
 # session passed 950k, and the gate then never fired at all.
 if ($peak -gt $budget) { $budget = Next-Tier $peak; $how = "$how+observed" }
 
-if ($budget -le 0 -or ($used / $budget) -lt $warnAt) { exit 0 }
+if ($budget -le 0) { exit 0 }
 
-New-Item -ItemType File -Path $marker -Force | Out-Null
+# The threshold is the LATER of two rules, and the second one is why a 1M
+# session is no longer cut short.
+#
+#   percentage: warnAt * budget      - what this always did
+#   headroom:   budget - reserve     - never nag while this much is still free
+#
+# warnAt was tuned when every window was 200k, where 0.8 leaves 40k - about
+# enough to finish a thought and write a handoff. The same 0.8 on a 1M window
+# leaves 200k, a whole 200k session's worth of room, and asking for a handoff
+# there throws away a fifth of the window. Taking the later of the two rules
+# means the reserve can only ever push the warning LATER, never earlier: on a
+# 200k window the percentage still wins (40k < 100k) and nothing changes, while
+# on 1M the floor wins and the gate moves from 80% to 90%.
+#
+# warnAt <= 0 stays an unconditional "fire now" - it is the documented override
+# and a floor that quietly outranked it would make it a lie.
+if ($warnAt -le 0) {
+  [long]$threshold = 0
+} else {
+  [long]$threshold = [math]::Floor($budget * $warnAt)
+  if ($reserve -gt 0 -and ($budget - $reserve) -gt $threshold) {
+    [long]$threshold = $budget - $reserve
+  }
+}
+if ($used -lt $threshold) { exit 0 }
+
+# Claim the once-per-session gate ATOMICALLY. Both flavours are registered for
+# Stop and, on Windows with Git Bash installed, both actually run - a
+# test-then-create would let both pass the check and emit the same warning
+# twice. CreateNew throws for whichever loses.
+# Absolute path deliberately: [System.IO.File] resolves a relative path against
+# [Environment]::CurrentDirectory, which Set-Location does NOT update, so a
+# relative claim would land in whatever directory the hook was spawned from.
+try {
+  $claimPath = Join-Path (Get-Location).Path $marker
+  $claim = [System.IO.File]::Open($claimPath, [System.IO.FileMode]::CreateNew)
+  $claim.Close()
+} catch { exit 0 }
+
 # Truncate, not round, to match the bash flavour's int().
 $pctH    = [math]::Floor($used / $budget * 100)
 $inv     = [Globalization.CultureInfo]::InvariantCulture
 $usedH   = $used.ToString("N0", $inv)
 $budgetH = $budget.ToString("N0", $inv)
+$remainH = ([long][math]::Max(0, $budget - $used)).ToString("N0", $inv)
+$threshH = $threshold.ToString("N0", $inv)
+$reserveH = $reserve.ToString("N0", $inv)
+$warnPct = [long][math]::Floor($warnAt * 100)
 
 try { & "$PSScriptRoot/notify.ps1" waiting "context $pctH% - writing handoff" 2>$null | Out-Null } catch { }
 
@@ -166,6 +218,21 @@ no usage record was found yet. It reads high after a compaction.
 "@
 }
 
+# Name the rule that fired. A percentage alone cannot explain why an 800k
+# reading on a 1M window said nothing and 900k did.
+if ($reserve -le 0) {
+  $threshNote = @"
+Threshold: $threshH tokens - warnAt $warnPct% of the window.
+context.reserveTokens is off, so no headroom floor applies.
+"@.TrimEnd()
+} else {
+  $threshNote = @"
+Threshold: $threshH tokens - the later of warnAt $warnPct% and the
+last $reserveH tokens (context.reserveTokens), so a large window is not cut
+short by a percentage tuned for a small one.
+"@.TrimEnd()
+}
+
 if ($autoWrapUp) {
 [Console]::Error.WriteLine(@"
 You are at roughly $pctH% of the context budget. Reach a stopping point
@@ -176,9 +243,11 @@ ready to clear. Do not start new work.
 } else {
 [Console]::Error.WriteLine(@"
 Context: $usedH of $budgetH tokens ($pctH%), read from the transcript's
-last usage record.$note
+last usage record. Headroom left: $remainH tokens.$note
 
 Budget source: $how.$budgetNote
+
+$threshNote
 
 Before ending this turn, write the handoff note to $handoff following the
 crew-context skill. Keep it to pointers and one short "next action" - do not

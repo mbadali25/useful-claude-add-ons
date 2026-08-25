@@ -141,6 +141,16 @@ estimated, and that the window is derived from the model (Claude 5 family 1M,
 Haiku and 4.x 200k) and corrected by the session's peak. Leave `budgetTokens`
 at `null` unless `/context` and the warning disagree.
 
+The warning fires at the **later** of `warnAt` and `reserveTokens` of remaining
+headroom (default 100k), so a 1M session is not asked to wrap up with 200k still
+free while a 200k one still fires at 80%. Leave both at their defaults unless
+they have a reason.
+
+Mention `/crew:emergency` once, briefly: when an environment is broken it
+declares a time-boxed incident, the verify and promote gates stand down and
+record what they skipped, and it expires on its own. Set
+`emergency.standDown: false` if this repository must never skip a gate.
+
 Add `.crew/transcripts/` to `.gitignore` — raw transcripts contain everything
 the session saw, including any secret that reached it.
 

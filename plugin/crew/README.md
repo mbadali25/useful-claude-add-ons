@@ -32,8 +32,9 @@ Built for the awkward case: several repositories, mixed stacks, legacy code, and
 21. [AWS and Azure MCP](#21-aws-and-azure-mcp)
 22. [Growing the crew](#22-growing-the-crew)
 23. [Promotion: development to qa to production](#23-promotion-development-to-qa-to-production)
-24. [Command and agent reference](#24-command-and-agent-reference)
-25. [Troubleshooting](#25-troubleshooting)
+24. [The emergency lane](#24-the-emergency-lane)
+25. [Command and agent reference](#25-command-and-agent-reference)
+26. [Troubleshooting](#26-troubleshooting)
 
 ---
 
@@ -599,10 +600,12 @@ Everything reads `.crew/config.json`:
     "enabled": true,
     "warnAt": 0.8,
     "budgetTokens": null,
+    "reserveTokens": 100000,
     "handoffPath": ".work/HANDOFF.md",
     "autoWrapUp": false,
     "autoResume": false
   },
+  "emergency": { "standDown": true, "ttlMinutes": 120, "maxTtlMinutes": 480 },
   "notify": {
     "provider": "none",
     "events": ["gate", "review", "waiting"],
@@ -629,7 +632,11 @@ omit the block and assume.
 | `context.enabled` | `true`, `false` | The `Stop` context watch. **Absent block = off.** |
 | `context.warnAt` | `0.0`–`1.0` | Fraction of budget at which the handoff is requested. Default `0.8`. |
 | `context.budgetTokens` | integer or `null` | `null` (the default) works the window out from the model id and this session's own peak usage. Set a number to pin it. |
+| `context.reserveTokens` | integer (default `100000`), or `0`/`null` for off | Headroom floor. The warning fires at the **later** of `warnAt` and this many tokens remaining, so it can only ever delay it. Without this, 0.8 of a 1M window asks for a handoff with 200k still free. See §16. |
 | `context.handoffPath` | path | Where the handoff note lives. Default `.work/HANDOFF.md`. |
+| `emergency.standDown` | `true` (default), `false` | Whether `/crew:emergency` may stand the `verify` and `promote` gates down. `false` keeps them gating; the incident is still declared, recorded and briefed. The command guard never stands down either way. See §24. |
+| `emergency.ttlMinutes` | integer (default `120`) | How long a declared incident lasts before it expires on its own and the gates come back. |
+| `emergency.maxTtlMinutes` | integer (default `480`) | Ceiling on one `extend`, measured from now, so repeated extensions cannot drift into a permanent state. |
 | `notify.provider` | `teams`, `telegram`, `none` | Outbound notifications. **Absent block = off.** Credentials come from env vars, never config. |
 | `notify.events` | subset of `phase`, `gate`, `review`, `waiting`, `done` | Which events send. Empty or absent sends everything; a channel that pings constantly gets muted within a week. |
 | `notify.urlEnv` / `notify.tokenEnv` | env var **name** | The name of the variable holding the webhook URL or bot token — never the value itself. |
@@ -853,7 +860,36 @@ transcripts live in separate files and are never counted. `budgetTokens` stays
 
 It fires **once per session**, gated by a marker file that `SessionStart`
 clears. Without that gate, a `Stop` hook returning exit 2 fires every turn and
-traps the session in a loop.
+traps the session in a loop. The marker is claimed atomically (`noclobber` in
+bash, `FileMode::CreateNew` in PowerShell) because on Windows with Git Bash
+installed both flavours really do run on the same `Stop`, and a
+test-then-create lets both through.
+
+### Two rules, and the later one wins
+
+`warnAt` alone was tuned when every window was 200k, where 0.8 leaves 40k — about
+enough to finish a thought and write the note. The same 0.8 on a 1M window
+leaves **200,000 tokens** unused and still asks you to wrap up: a whole 200k
+session's worth of room thrown away. That is the "it ends a bit earlier than it
+should" complaint, and a percentage cannot fix it, because the right amount of
+headroom is an absolute number, not a fraction.
+
+So the threshold is the **later** of:
+
+| Rule | Threshold | Wins on |
+|---|---|---|
+| percentage | `warnAt × budget` | small windows — 0.8 of 200k = 160k, leaving 40k |
+| headroom | `budget − reserveTokens` | large windows — 1M − 100k = 900k, i.e. 90% |
+
+Taking the later of the two means `reserveTokens` can only ever push the
+warning **later**, never earlier. A 200k repo behaves exactly as it did; a 1M
+session gets the extra 100k it was being denied. Set
+`context.reserveTokens: 0` for the old pure-percentage behaviour, and note that
+`warnAt: 0` still means "fire immediately" — the floor does not outrank the
+one explicit override.
+
+The warning names which rule fired, with absolute numbers on both, so a
+threshold that behaves oddly is visible rather than mysterious.
 
 ### Pointers, not narrative
 
@@ -1346,7 +1382,113 @@ Most legacy repos have a deploy script and no post-deploy proof at all. Build it
 
 ---
 
-## 24. Command and agent reference
+## 24. The emergency lane
+
+Something is broken in an environment right now. The gates that normally earn
+their keep — the `Stop` gate running the changed-files checks, the deploy gate
+demanding an all-pass row for this sha — are, for the next twenty minutes,
+standing between you and a fix. The honest options are to work around them
+silently, or to make standing them down a decision with a record and a clock on
+it.
+
+```bash
+/crew:emergency prod checkout returning 500 since the 14:02 deploy
+/crew:emergency status
+/crew:emergency extend 45
+/crew:emergency end
+```
+
+### What stands down, and what does not
+
+| | During an incident |
+|---|---|
+| `verify-gate` (`Stop`) | Does not run the checks at all. Records "stop gate stood down with N changed file(s) unverified". |
+| `verify-gate`'s deploy-record check | Stands down. Records the deploy that has no `PROMOTIONS.md` row. |
+| `promote-gate` (`PreToolUse`) | Still computes every precondition — they are file reads, not test suites — records each one that failed, then allows the deploy. |
+| `guard` (`PreToolUse`) | **Unchanged. Still blocks.** |
+
+The guard's exemption from all of this is the point rather than an oversight.
+Standing down a check that tells you a change is wrong is a trade you can make
+at 03:00; standing down the one that stops a change being *unrecoverable* — a
+force push, a destructive Terraform verb, a history rewrite, a secret read into
+the transcript — is not a trade, it is just removing the thing you most need
+while tired. If the guard is genuinely in the way, run that one command by hand
+outside the session.
+
+### It expires on its own
+
+`emergency.ttlMinutes` (default 120) sets the window. Past it, the gates gate
+again: they compare an integer epoch, so nothing has to run and no file has to
+be touched for normal service to resume. That matters because the realistic
+failure here is not declaring an incident when you should not have — nobody does
+that during an outage — it is **forgetting to close one afterwards**, and this
+design makes that recoverable by default.
+
+`extend` is capped by `emergency.maxTtlMinutes` (default 480) and measured from
+now each time, so four extensions cannot compound into a permanently ungated
+repository. Eight hours is one shift; past that, the environment is not in an
+incident any more, it is in its new normal, and the checks should be back on.
+
+Two honest limits on that clock. It is **wall time**: a machine whose clock is
+moved backwards extends the window until real time catches up, which matters for
+a badly-skewed VM and not much else - anyone who wants the gates off can set
+`verifyGate: false` and not have to be clever about it. And the bash flavour's
+stand-down needs a python (`python3`, `python`, or `py`) to parse the state file
+strictly - the state has to be *valid JSON*, not merely contain a future epoch,
+or `{ not json "expiresAtEpoch": 9999999999` would switch every gate off. With
+no python at all it reports no incident and the gates keep gating, which is the
+safe direction, but it does mean the lane does nothing on a python-less machine
+where the `.sh` half is what runs.
+
+### The debt list is the deliverable
+
+Every skipped gate goes to `.crew/incident-skips.log`, one row per gate and
+reason — not one per turn, because the same unrun check is one debt however many
+times the gate declined to run it. `/crew:emergency end` turns that into
+`.work/INCIDENT-<id>.md`: what did not run, what is owed, and what to verify
+before trusting the list. The record is archived under `.crew/incidents/` and
+the state file is deleted, which is what puts the gates back.
+
+Then pay it: run the checks that did not run, add the missing `PROMOTIONS.md`
+row, and open a ticket per remaining item. A debt list nobody has a ticket for
+is a debt nobody pays.
+
+While an incident is open — and after it expires unclosed — every session start
+says so. `incidentActive` and `incidentUnclosed` are the two highest-priority PM
+triggers, above `upgradeNeeded`, and the line sits in the brief's quiet lines so
+no line cap can truncate it away. A session that does not know the gates are off
+is a session about to merge unverified work believing it was checked.
+
+### The lanes
+
+Declaring also fans out **read-only** investigation lanes in parallel, each
+briefed with the symptom and nothing else:
+
+| Lane | Agent | Question |
+|---|---|---|
+| change | `explorer` | What shipped in the window before the symptom — commits, deploys, config, flags, migrations? |
+| blast radius | `explorer` | What else calls the failing path or shares the resource, and is already broken without knowing? |
+| cause | `analyst` | The two or three most probable causes, each with the cheapest observation that would kill it |
+| exposure | `security` | Only when the symptom might be an incident of a different kind — auth, data exposure, an unexpected 200 |
+| data | `dba` | Only when a database is in the picture — locks, a long transaction, a migration mid-flight, replica lag |
+
+They investigate; they do not fix. Two plausible fixes that both need trying get
+a worktree each, so a half-applied one cannot land on top of the other.
+
+### When this is the wrong tool
+
+- **Enforcement is session-local.** An incident stands the hooks down for
+  sessions in this repository on this machine. It does nothing to CI, to a
+  colleague's machine, or to a branch protection rule. If CI is what blocks the
+  fix, this will not help.
+- **Some repositories should never do this.** `emergency.standDown: false`
+  keeps every gate gating. The incident is still declared, recorded and briefed,
+  and the lanes still run — you get the investigation and the paper trail
+  without the exemption.
+
+---
+
+## 25. Command and agent reference
 
 ### Commands
 
@@ -1370,8 +1512,9 @@ Most legacy repos have a deploy script and no post-deploy proof at all. Build it
 | `/crew:jira-sync <KEY> [--push]` | Sync one issue with the local cache |
 | `/crew:pm [onboard\|offboard <role>]` | Crew-manager status, or add/remove a role — see §22 |
 | `/crew:upgrade [--force]` | Bring a pre-schema-2 (`v1`) setup forward — see §11 |
+| `/crew:emergency <what is broken>` | Declare a time-boxed incident: gates stand down and record what they skipped, lanes investigate in parallel — see §24. `status`, `extend [min]`, `end` |
 
-18 commands.
+19 commands.
 
 ### Agents
 
@@ -1398,11 +1541,11 @@ registered on its own matcher or event — 16 entries total.
 | Script | Event | Behavior |
 |---|---|---|
 | `guard.sh` / `guard.ps1` | `PreToolUse` on Bash / PowerShell | Blocks `terraform apply`/`destroy`, destructive DDL, force push, hard reset, prod-targeted commands, and any command that would print a secret value into the transcript |
-| `promote-gate.sh` / `.ps1` | `PreToolUse` on Bash / PowerShell | Refuses a declared `deploy` command unless the upstream environment has an all-pass row for **this sha**, the rollback runbook is verified inside 90 days, `requireHuman` is approved, and the tree is clean |
+| `promote-gate.sh` / `.ps1` | `PreToolUse` on Bash / PowerShell | Refuses a declared `deploy` command unless the upstream environment has an all-pass row for **this sha**, the rollback runbook is verified inside 90 days, `requireHuman` is approved, and the tree is clean. During an emergency lane it records each unmet precondition and allows the deploy (§24) |
 | `handoff-read.sh` / `.ps1` | `SessionStart` | Injects the handoff after clear, compact, or resume |
 | `pm-brief.sh` / `.ps1` | `SessionStart` | Runs `crew_state.py`, prints the prioritized PM brief (triggers, health, knowledge, graph freshness) — report-only, changes nothing |
-| `verify-gate.sh` / `.ps1` | `Stop` | Runs the checks the changed paths map to; fails the turn on red, on a changed path with no rule, or on a deploy that recorded no promotion row |
-| `context-watch.sh` / `.ps1` | `Stop` | Estimates context use; asks for a handoff once per session, or instructs a wrap-up if `context.autoWrapUp` is on |
+| `verify-gate.sh` / `.ps1` | `Stop` | Runs the checks the changed paths map to; fails the turn on red, on a changed path with no rule, or on a deploy that recorded no promotion row. Stands down while an emergency lane is open (§24), recording what did not run |
+| `context-watch.sh` / `.ps1` | `Stop` | Measures window occupancy from the transcript; asks for a handoff once per session at the later of `warnAt` and `reserveTokens` remaining, or instructs a wrap-up if `context.autoWrapUp` is on |
 | `handoff-write.sh` / `.ps1` | `PreCompact` | Snapshots the transcript, writes a skeleton handoff |
 | `notify.sh` / `.ps1` | `Notification`, plus called by commands | Outbound one-line message to Teams or Telegram. Never reads. |
 
@@ -1428,12 +1571,13 @@ broken.
 
 Hooks are deterministic. That is their whole value — a hook cannot be argued out of blocking `terraform apply`, and an agent can.
 
-### Three suites, and what each can actually prove
+### Four suites, and what each can actually prove
 
 ```bash
-bash   hooks/scripts/_test/run-tests.sh           # 50 cases - the hooks
+bash   hooks/scripts/_test/run-tests.sh           # 77 cases - the hooks
 bash   hooks/scripts/_test/setup-walkthrough.sh   # 32 cases - the setup scripts
-python hooks/scripts/_test/validate-prompts.py    # 91 checks - command/agent structure
+python hooks/scripts/_test/validate-prompts.py    # 106 checks - command/agent structure
+pytest tests/                                     # 234 cases - the python modules and both hook flavours
 ```
 
 | Suite | Proves | Cannot prove |
@@ -1441,18 +1585,20 @@ python hooks/scripts/_test/validate-prompts.py    # 91 checks - command/agent st
 | `run-tests.sh` | Every gate blocks and allows what it should | - |
 | `setup-walkthrough.sh` | Phases 0-8 scripts run against a real mixed-stack repo and produce their artifacts | that a human would like the result |
 | `validate-prompts.py` | Frontmatter parses, tools are real, referenced agents and paths exist, read-only agents hold no write tools, commands that spawn subagents are permitted to | **whether the prompts produce good work** |
+| `pytest tests/` | The python modules, and that the `.sh` and `.ps1` flavours of `context-watch`, `verify-gate` and `promote-gate` agree - including the emergency lane's expiry, which is the one property that keeps a forgotten incident from ungating a repo forever | anything on a platform the suite is not running on; the Windows-only cases skip elsewhere |
 
-That last gap is real and no test closes it. The 18 commands and 10 agents are
+That last gap is real and no test closes it. The 19 commands and 10 agents are
 instructions to a model; only a live session running a real ticket exercises
 them. Setup Phase 7 exists for exactly that, and it is the one thing here that
 has to be done by hand.
 
-All three are sabotage-tested - reintroduce a bug each is meant to catch and it
+All four are sabotage-tested - reintroduce a bug each is meant to catch and it
 goes red. If you add a rule, add the case that proves it, then break it once.
 
-`run-tests.sh` is 50 cases: 20 the guard must block, 14 it must allow, 12 for the
-promotion gate, plus the verify gate's root-level glob matching and its
-`stop_hook_active` exit. `guard.sh` produced two
+`run-tests.sh` is 77 cases: 20 the guard must block, 14 it must allow, 12 for the
+promotion gate, 15 for the emergency lane (including that the guard still blocks
+during one, and that an expired incident gates again), plus the verify gate's
+root-level glob matching and its `stop_hook_active` exit. `guard.sh` produced two
 real regressions in two review passes — a substring `prod` match that blocked
 `s3://my-product-images`, and a secret rule that exempted `> file` so writing a
 secret to disk passed while printing one blocked. Both were found by running it,
@@ -1484,7 +1630,7 @@ Two things worth knowing:
 
 ---
 
-## 25. Troubleshooting
+## 26. Troubleshooting
 
 | Symptom | Likely cause |
 |---|---|
@@ -1511,7 +1657,10 @@ Two things worth knowing:
 | Migration passed, production broke | The rule covered apply but not the round trip. Add all three DB checks. |
 | `_verify` checks never run | Nothing maps to them. Add a rule in `.crew/verify.json` naming the directory. |
 | Handoff prompt fires every turn | The marker file is not being cleared. Check that the `SessionStart` hook is registered. |
-| Warning arrives too late | `budgetTokens` is set too high for the real window. Calibrate against `/context`. |
+| Warning arrives too late | `budgetTokens` is set too high for the real window, or `reserveTokens` is larger than the headroom you actually want. Calibrate against `/context`. |
+| Warning still fires early on a 1M model | The `Threshold:` line in the warning says which rule fired. `warnAt 80%` on a 1M window is 800k; set `context.reserveTokens` (default 100000) to the headroom you want kept and the later rule wins. |
+| Gates stopped blocking and nobody said why | An emergency lane is open - the session brief names it at every session start. `/crew:emergency status`, then `end`. It also expires on its own; see 24. |
+| An incident will not stand the gates down | `emergency.standDown` is `false` in `.crew/config.json`, or the incident has expired. Both are reported by `/crew:emergency status`. |
 | Warning fires far too early on a 1M model | `.crew/config.json` still carries `"budgetTokens": 200000` from an older `/crew:init`. Set it to `null`; the warning's `Budget source:` line says `configured` when this is the cause. |
 | Old handoff keeps reappearing | It was never deleted. Remove `.work/HANDOFF.md` when the work is done. |
 | `mmdc` fails in a container | Headless Chromium needs `--no-sandbox`. The render script passes it; a direct `mmdc` call will not. |

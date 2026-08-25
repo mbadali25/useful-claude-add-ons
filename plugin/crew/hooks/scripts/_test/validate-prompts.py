@@ -107,7 +107,12 @@ def check_commands():
 
         check_plugin_paths(name, body)
 
-        if re.search(rf"crew:({SPAWNABLE})", body):
+        # (?<!/) excludes a SLASH-COMMAND reference: `/crew:pm` is an
+        # instruction to the human or a pointer to another command, not a
+        # subagent dispatch. Several names are both an agent and a command
+        # (pm, plan, review), so without this a file that only mentions
+        # `/crew:pm` is told to declare the Agent tool it never uses.
+        if re.search(rf"(?<!/)crew:({SPAWNABLE})", body):
             if "Agent" not in tools:
                 bad(f"{name}: spawns a subagent but allowed-tools has no Agent")
             else:

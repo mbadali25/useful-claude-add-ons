@@ -12,6 +12,7 @@ import os
 import re
 import sys
 
+import crew_incident
 import crew_state
 import hook_once
 
@@ -74,6 +75,19 @@ def _knowledge_line(state):
 # One finding and exactly one next action per trigger. One action because a
 # brief that lists three is a brief nobody acts on.
 FINDINGS = {
+    # The only findings whose text carries live numbers; see _incident_fields.
+    "incidentActive": (
+        "EMERGENCY LANE OPEN - {id} ({summary}), {minutesLeft}m left, "
+        "{skips} gate(s) skipped so far. The verify and promote gates are "
+        "standing down: nothing this session writes is being checked",
+        "close it with /crew:emergency end the moment the environment is "
+        "stable - that writes the report and puts the gates back",
+    ),
+    "incidentUnclosed": (
+        "{id} expired without being closed, leaving {skips} skipped gate(s) "
+        "unaccounted for. The gates are back on already",
+        "run /crew:emergency end to write the debt list before it is lost",
+    ),
     "upgradeNeeded": (
         "this setup predates the PM and the code graph (config has no schema)",
         "run /crew:upgrade - it backs up the codemap first and reports "
@@ -114,6 +128,37 @@ _AUTHORITY_NOTE = (
 _TRUNCATED = "More findings than fit here - run /crew:pm for the full report."
 
 
+def _incident_fields(state):
+    """Values the incident findings interpolate. Always every key.
+
+    A missing key would raise KeyError inside .format() and take out the whole
+    brief, which runs from SessionStart -- so the defaults are supplied here
+    rather than trusted from state.
+    """
+    incident = crew_state.dict_or_empty(state.get("incident"))
+    summary = str(incident.get("summary") or "no summary given")
+    return {
+        "id": incident.get("id") or "an incident",
+        # A one-line brief is not the place for a paragraph someone typed at
+        # 03:00 under pressure.
+        "summary": summary if len(summary) <= 60 else summary[:57] + "...",
+        "minutesLeft": incident.get("minutesLeft", 0),
+        "skips": incident.get("skips", 0),
+    }
+
+
+def _fill(text, fields):
+    """`text` with {placeholders} substituted. Returns it unchanged if it has
+    none, or if it has one this does not know -- a finding that renders as a
+    literal brace is ugly, and a brief that raises is invisible."""
+    if "{" not in text:
+        return text
+    try:
+        return text.format(**fields)
+    except (KeyError, IndexError, ValueError):
+        return text
+
+
 def render(state):
     """The brief's lines. Empty list means print nothing at all."""
     if not state.get("isCrew"):
@@ -129,6 +174,14 @@ def render(state):
         _knowledge_line(state),
     ]
 
+    # An incident goes FIRST, and in the quiet lines rather than the findings,
+    # so it survives both `pm.mode: quiet` and every line cap. The findings
+    # below can be truncated away; "the gates are currently off" cannot be the
+    # thing that got truncated.
+    incident = crew_state.dict_or_empty(state.get("incident"))
+    if incident.get("present"):
+        quiet.insert(0, "## incident - " + crew_incident.format_status(incident))
+
     triggers = state.get("triggers") or []
     if pm.get("mode") != "adaptive" or not triggers:
         return quiet[: max(1, int(pm.get("quietLines", 8)))]
@@ -136,13 +189,14 @@ def render(state):
     # A finding and its action are one unit. Truncation cuts between units,
     # never inside one: a finding whose action was dropped names a problem and
     # says nothing about it, which is worse than omitting it entirely.
+    fields = _incident_fields(state)
     pairs = []
     for name in triggers:
         entry = FINDINGS.get(name)
         if not entry:
             continue
         finding, action = entry
-        pairs.append((f"- {finding}", f"  -> {action}"))
+        pairs.append((f"- {_fill(finding, fields)}", f"  -> {_fill(action, fields)}"))
 
     cap = max(2, int(pm.get("maxLines", 40)))
     tail = ["", _AUTHORITY_NOTE]

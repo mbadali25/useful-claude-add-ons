@@ -4,6 +4,142 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added
+
+- **`crew` 0.5.1 — `/crew:emergency`, a time-boxed lane for when something is
+  actually broken.** The gates that normally earn their keep are, during an
+  outage, standing between you and the fix, and the honest options are to work
+  around them silently or to make standing them down a decision with a record
+  and a clock on it. `/crew:emergency <what is broken>` writes
+  `.crew/incident.json`; while it exists and its `expiresAtEpoch` is in the
+  future, `verify-gate` exits 0 without running the checks and `promote-gate`
+  computes its preconditions, records the ones that failed, and allows the
+  deploy. `status`, `extend [minutes]` and `end` are the rest of the surface.
+  Declaring also fans out read-only investigation lanes in parallel — what
+  changed in the window before the symptom, what shares the failing path, the
+  most probable causes with the cheapest observation that would kill each, plus
+  `security` and `dba` lanes when the symptom calls for them.
+  - **It expires on its own.** The gates compare an integer epoch, so nothing
+    runs and no file is touched to re-gate. Forgetting to close an incident is
+    the realistic failure — nobody forgets to declare one during an outage — and
+    it cannot leave a repository permanently ungated. `emergency.ttlMinutes`
+    defaults to 120; `extend` is capped by `emergency.maxTtlMinutes` (480) and
+    measured from *now* each time, so repeated extensions cannot compound.
+  - **The command guard never stands down.** `guard.sh` / `guard.ps1` has no
+    incident branch and must not get one. Standing down a check that says a
+    change is wrong is a trade; standing down the one that stops a change being
+    unrecoverable — a force push, a destructive Terraform verb, a history
+    rewrite, a secret read into the transcript — is not, and an incident is
+    precisely when someone is tired enough to need it.
+  - **The debt list is the deliverable.** Every skipped gate is recorded to
+    `.crew/incident-skips.log`, one row per gate and reason rather than one per
+    turn, and `end` turns it into `.work/INCIDENT-<id>.md` plus an archived
+    record under `.crew/incidents/`. Deleting the state file is what puts the
+    gates back, and it happens only after the archive is on disk.
+  - **Every session start says so.** `incidentActive` and `incidentUnclosed`
+    are the two highest-priority PM triggers, above `upgradeNeeded`, and the
+    incident line sits in the brief's quiet lines so no line cap can truncate
+    it away. A session that does not know the gates are off is a session about
+    to merge unverified work believing it was checked.
+  - **A repository can forbid the whole thing.** `emergency.standDown: false`
+    keeps every gate gating; the incident is still declared, recorded, briefed,
+    and still spawns its lanes.
+  - Covered by `tests/test_incident.py` (24 cases), 15 new cases in
+    `hooks/scripts/_test/run-tests.sh` — including that the guard still blocks
+    during an incident and that an expired one gates again — and
+    `tests/test_gates_powershell.py`, which runs the same scenarios against the
+    `.ps1` gates. All sabotage-tested in both flavours.
+
+### Fixed
+
+- **`crew` 0.5.1 - findings from the Codex review pass, fixed before merge.** 0.5.0
+  was set on the branch and never published; the released version is 0.5.1.
+
+  - `crew_incident_active` in `_common.sh` pulled `expiresAtEpoch` out with
+    `sed`, so `{ not json "expiresAtEpoch": 9999999999` stood every gate down in
+    bash while the PowerShell twin's `ConvertFrom-Json` correctly rejected it -
+    a gate switchable off by a typo, and a flavour disagreement in the
+    fail-*open* direction. It now parses the document in full and treats every
+    failure, including no python at all, as "no incident". Two regression cases
+    cover it, and the old implementation demonstrably read that epoch.
+  - Skip-log rows are deduplicated on read as well as on write, so a race
+    between the two hook flavours can no longer inflate the count of what is
+    owed, and tabs, carriage returns and newlines are normalised out of gate
+    names and details in all three implementations - a `rollbackReason` with a
+    newline in it would otherwise forge a row.
+  - `end()` re-reads the state file and refuses to close an incident whose id
+    changed underneath it, before writing anything: a declaration landing mid
+    close would otherwise be archived under the previous id and deleted,
+    re-gating a repository someone had just declared an incident for.
+  - `_write_state` uses a pid-unique temp file, so two writers cannot interleave
+    into one and publish a torn document.
+  - Documented rather than fixed, both in `crew/README.md` 24: the expiry is
+    wall-clock, so a machine whose clock moves backwards extends the window; and
+    the `.crew/.handoff-requested` marker is per repository rather than per
+    session, so two sessions in one repo share one context warning. The second
+    is pre-existing and wrong rather than deliberate - the fix is to key it on
+    the payload's `session_id`.
+
+- **`crew` 0.5.1 — the context watch no longer asks for a handoff with 200k
+  tokens still free.** `context.warnAt` was tuned when every window was 200k,
+  where 0.8 leaves 40k: about enough to finish a thought and write the note. The
+  same 0.8 on a 1M window leaves 200,000 tokens unused and still asks you to
+  wrap up, which is a whole 200k session's worth of room thrown away — and no
+  percentage fixes it, because the right amount of headroom is an absolute
+  number. The threshold is now the **later** of `warnAt * budget` and
+  `budget - context.reserveTokens` (new, default 100000), so the floor can only
+  ever push the warning later: a 200k window still fires at exactly 80% (40k
+  < 100k, so the percentage wins) and a 1M session moves from 80% to 90%.
+  `reserveTokens: 0` or `null` restores the pure percentage, and `warnAt: 0`
+  still fires immediately — the floor is skipped entirely for it rather than
+  quietly outranking the one explicit override. The warning now names which rule
+  fired, with both figures and the remaining headroom, so a threshold behaving
+  oddly is visible instead of mysterious. New cases in
+  `tests/test_context_watch.py` pin the no-regression case, the 1M case, the
+  default, the `warnAt: 0` override, and full stderr parity between the two
+  flavours on the new branch.
+- **`crew` 0.5.1 — the once-per-session handoff marker is now claimed
+  atomically** (`noclobber` in bash, `FileMode::CreateNew` in PowerShell). On
+  Windows with Git Bash installed both flavours of the `Stop` hook really do
+  run, and a test-then-create let both through, so the same warning was emitted
+  twice. The PowerShell side also had to take the absolute path: `[System.IO.
+  File]` resolves a relative one against `[Environment]::CurrentDirectory`,
+  which `Set-Location` does not update, so the claim would have landed in
+  whatever directory the hook was spawned from.
+- **`crew` 0.5.1 — `Resolve-CrewBash`'s PATH fallback could return an empty
+  interpreter.** A `bash` function or alias defined in a PowerShell profile is
+  returned by `Get-Command bash -All` ahead of any `bash.exe` with an empty
+  `.Source`; `.StartsWith()` on that throws and returning it handed
+  `& $bashExe` nothing, so the gate reported a smoke failure that was really a
+  resolution failure. Tier b now takes `Application` entries only — the same
+  guard the git walk-up already had.
+- **`validate-prompts.py` counted a slash-command reference as a subagent
+  dispatch.** `/crew:pm` in a command's prose is a pointer to another command,
+  not an `Agent` call, but several names are both an agent and a command — so
+  `scale.md`, which only mentions `/crew:pm`, was told to declare a tool it
+  never uses. The check now excludes the slashed form.
+
+### Changed
+
+- **`scripts/check-powershell.ps1` now checks every tracked `.ps1`, not just the
+  installer.** It defaulted to `install-prerequisites.ps1` alone, which left the
+  crew plugin's hook scripts — the ones that run from a hook on someone else's
+  machine, where a thrown exception is invisible — completely unguarded by the
+  one check that catches a call to a function that does not exist. All 18 files
+  pass; sabotage-tested by mis-naming a call in `verify-gate.ps1`, which the old
+  default would not have caught. `-Path` still checks a single file. The first
+  CI run of the wider check immediately earned it, by failing on the
+  `ScheduledTasks` cmdlets in `vault-automation/setup-vault-automation.ps1`:
+  that module ships with Windows and does not exist on the Linux runner, so
+  those calls resolve for a developer and not for CI. They are in the
+  `$externallyProvided` allowlist by exact name rather than by a
+  `*-ScheduledTask*` pattern, so a typo in one of them is still caught -
+  verified by introducing one.
+- **CI runs the crew hook regression suite and the prompt validator.** Both were
+  committed, documented as the safety net for hooks that can block a turn, and
+  run only when somebody remembered to. A gate that stops gating still exits 0,
+  which is exactly the kind of regression a suite nobody runs cannot catch.
+
 ### Fixed
 
 - **`crew` 0.4.5 — the Windows `Stop` hook ran the verify smoke inside WSL.**

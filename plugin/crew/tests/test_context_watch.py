@@ -87,8 +87,12 @@ def _transcript(root, num_bytes):
     return path
 
 
-def _config(auto_wrap_up=None, budget=100):
-    cfg = {"warnAt": 0.8, "budgetTokens": budget, "handoffPath": ".work/HANDOFF.md"}
+def _config(auto_wrap_up=None, budget=100, reserve=0):
+    """`reserve` defaults to 0 (headroom floor OFF) so the cases written
+    against the pure-percentage threshold keep testing exactly that. The
+    shipped default is 100k; the tests that own the floor set it explicitly."""
+    cfg = {"warnAt": 0.8, "budgetTokens": budget, "handoffPath": ".work/HANDOFF.md",
+           "reserveTokens": reserve}
     if auto_wrap_up is not None:
         cfg["autoWrapUp"] = auto_wrap_up
     return {"context": cfg}
@@ -268,6 +272,104 @@ def test_claude5_model_at_960k_still_fires_against_1m(flavor, tmp_path):
     assert "Budget source: auto:claude-opus-5." in result.stderr
 
 
+# --- The headroom floor (context.reserveTokens) ---------------------------
+#
+# warnAt was tuned when every window was 200k, where 0.8 leaves 40k. The same
+# 0.8 on a 1M window leaves 200k free and still asks for a handoff, which is
+# the "ends a bit earlier than it should" complaint. The threshold is now the
+# LATER of warnAt * budget and budget - reserveTokens, so the floor can only
+# ever delay the warning, never bring it forward.
+
+
+@by_flavor
+def test_reserve_floor_defers_the_warning_on_a_large_window(flavor, tmp_path):
+    # 850k is 85% of 1M and would have fired on the percentage alone, with
+    # 150,000 tokens still free - more than a whole 200k session's worth.
+    root = crew_fixtures.make_repo(
+        tmp_path, config=_config(budget=None, reserve=100_000), git=False)
+    transcript = _usage_transcript(root, "claude-opus-5", used=850_000)
+    result = _run(flavor, root, transcript)
+    assert result.returncode == 0, result.stderr
+    assert result.stderr.strip() == "", result.stderr
+    assert not (root / ".crew" / ".handoff-requested").exists()
+
+
+@by_flavor
+def test_reserve_floor_fires_once_the_headroom_is_gone(flavor, tmp_path):
+    root = crew_fixtures.make_repo(
+        tmp_path, config=_config(budget=None, reserve=100_000), git=False)
+    transcript = _usage_transcript(root, "claude-opus-5", used=910_000)
+    result = _run(flavor, root, transcript)
+    assert result.returncode == 2, result.stderr
+    assert "910,000 of 1,000,000 tokens (91%)" in result.stderr
+    assert "Headroom left: 90,000 tokens" in result.stderr
+    assert "Threshold: 900,000 tokens" in result.stderr
+    assert "the later of warnAt 80%" in result.stderr
+
+
+@by_flavor
+def test_reserve_floor_leaves_a_200k_window_exactly_where_it_was(flavor, tmp_path):
+    # 0.8 of 200k leaves 40k, which is under the 100k floor, so the percentage
+    # is the later rule and wins. This is the no-regression case: every repo on
+    # a 200k model must keep firing at 80%.
+    root = crew_fixtures.make_repo(
+        tmp_path, config=_config(budget=200_000, reserve=100_000), git=False)
+    transcript = _usage_transcript(root, "claude-haiku-4-5-20251001", used=160_000)
+    result = _run(flavor, root, transcript)
+    assert result.returncode == 2, result.stderr
+    assert "160,000 of 200,000 tokens (80%)" in result.stderr
+    assert "Threshold: 160,000 tokens" in result.stderr
+
+
+@by_flavor
+def test_reserve_floor_can_never_fire_earlier_than_warn_at(flavor, tmp_path):
+    # A reserve larger than the whole window makes budget - reserve negative.
+    # max() must keep the percentage, not fire on turn one.
+    root = crew_fixtures.make_repo(
+        tmp_path, config=_config(budget=200_000, reserve=5_000_000), git=False)
+    transcript = _usage_transcript(root, "claude-haiku-4-5-20251001", used=100_000)
+    result = _run(flavor, root, transcript)
+    assert result.returncode == 0, result.stderr
+    assert result.stderr.strip() == "", result.stderr
+
+
+@by_flavor
+def test_reserve_tokens_defaults_to_100k_when_the_key_is_absent(flavor, tmp_path):
+    # The shipped default. An existing config that predates reserveTokens must
+    # get the floor without being edited -- which is the whole point, since the
+    # complaint came from repos whose config nobody is going to revisit.
+    cfg = _config(budget=None)
+    del cfg["context"]["reserveTokens"]
+    root = crew_fixtures.make_repo(tmp_path, config=cfg, git=False)
+    transcript = _usage_transcript(root, "claude-opus-5", used=850_000)
+    result = _run(flavor, root, transcript)
+    assert result.returncode == 0, result.stderr
+    assert result.stderr.strip() == "", result.stderr
+
+
+@by_flavor
+def test_reserve_tokens_zero_restores_the_pure_percentage_threshold(flavor, tmp_path):
+    root = crew_fixtures.make_repo(
+        tmp_path, config=_config(budget=None, reserve=0), git=False)
+    transcript = _usage_transcript(root, "claude-opus-5", used=850_000)
+    result = _run(flavor, root, transcript)
+    assert result.returncode == 2, result.stderr
+    assert "context.reserveTokens is off" in result.stderr
+
+
+@by_flavor
+def test_warn_at_zero_still_beats_the_reserve_floor(flavor, tmp_path):
+    # warnAt 0 is the documented "always fire" override. A floor that quietly
+    # outranked it would make that a lie.
+    cfg = _config(budget=None, reserve=100_000)
+    cfg["context"]["warnAt"] = 0
+    root = crew_fixtures.make_repo(tmp_path, config=cfg, git=False)
+    transcript = _usage_transcript(root, "claude-opus-5", used=10_000)
+    result = _run(flavor, root, transcript)
+    assert result.returncode == 2, result.stderr
+    assert "10,000 of 1,000,000 tokens (1%)" in result.stderr
+
+
 @by_flavor
 def test_haiku_at_170k_fires_against_200k(flavor, tmp_path):
     root = crew_fixtures.make_repo(tmp_path, config=_config(budget=None), git=False)
@@ -358,6 +460,24 @@ def test_measured_warning_is_identical_across_flavors(tmp_path):
         assert result.returncode == 2, (flavor, result.stderr)
         assert "450,001 of 500,000 tokens (90%)" in result.stderr
         assert "+observed" in result.stderr
+        texts[flavor] = result.stderr.replace("\r\n", "\n").strip()
+    assert texts["sh"] == texts["ps1"]
+
+
+def test_headroom_floor_warning_is_identical_across_flavors(tmp_path):
+    # The floor adds its own text to both scripts; the parity check above runs
+    # with the floor off, so without this case the two could drift on exactly
+    # the branch this feature owns.
+    if not (_HAS_BASH and _HAS_PWSH):
+        pytest.skip("need both bash and pwsh on PATH to compare flavors")
+    texts = {}
+    for flavor in ("sh", "ps1"):
+        root = crew_fixtures.make_repo(
+            tmp_path / flavor, config=_config(budget=None, reserve=100_000),
+            git=False)
+        transcript = _usage_transcript(root, "claude-opus-5", used=910_000)
+        result = _run(flavor, root, transcript)
+        assert result.returncode == 2, (flavor, result.stderr)
         texts[flavor] = result.stderr.replace("\r\n", "\n").strip()
     assert texts["sh"] == texts["ps1"]
 

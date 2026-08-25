@@ -77,6 +77,52 @@ if ($PrintBash) {
   exit 0
 }
 
+# --- Emergency lane -------------------------------------------------------
+#
+# Twin of crew_incident_active / crew_incident_log in _common.sh. Inline
+# rather than dot-sourced from a shared _common.ps1 on purpose: PowerShell
+# resolves command names at call time, so a function that arrives by
+# dot-source is invisible to scripts/check-powershell.ps1's static check -
+# and that check exists because a mis-named function once shipped and killed
+# every menu on Windows. Ten duplicated lines is the cheaper mistake.
+#
+# See hooks/scripts/crew_incident.py for the file format.
+function Test-CrewIncidentActive {
+  if (-not (Test-Path ".crew/incident.json")) { return $false }
+  try {
+    $c = Get-Content .crew/config.json -Raw -ErrorAction Stop | ConvertFrom-Json
+    if ($c.emergency -and $c.emergency.standDown -eq $false) { return $false }
+  } catch { }
+  try { $inc = Get-Content .crew/incident.json -Raw -ErrorAction Stop | ConvertFrom-Json }
+  catch { return $false }
+  if (-not $inc.expiresAtEpoch) { return $false }
+  return ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds() -lt [long]$inc.expiresAtEpoch)
+}
+
+function Write-CrewIncidentSkip([string]$Gate, [string]$Detail) {
+  if (-not (Test-Path ".crew")) { New-Item -ItemType Directory -Path ".crew" -Force | Out-Null }
+  $log = ".crew/incident-skips.log"
+  # The log is tab-separated and line-oriented, and a detail can carry an
+  # environment name, a rollback path or a rollbackReason straight out of
+  # .crew/verify.json - a tab or a newline in one would forge a row. _common.sh
+  # and crew_incident.py normalise the same way.
+  $Gate = $Gate -replace "[`t`r`n]", " "
+  $Detail = $Detail -replace "[`t`r`n]", " "
+  $row = "$Gate`t$Detail"
+  # One row per gate+detail per incident, not per turn. Stop fires every turn
+  # and on Windows BOTH flavours of this hook run on the same Stop, so without
+  # this a ten-turn incident reports forty skipped gates - a number that
+  # measures the incident's length, not what is owed. _common.sh matches.
+  if (Test-Path $log) {
+    foreach ($line in (Get-Content $log -ErrorAction SilentlyContinue)) {
+      $parts = $line -split "`t", 2
+      if ($parts.Count -eq 2 -and $parts[1] -eq $row) { return }
+    }
+  }
+  $epoch = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+  Add-Content -Path $log -Value "$epoch`t$row" -Encoding utf8
+}
+
 $raw = [Console]::In.ReadToEnd()
 
 # Claude Code re-fires Stop after a blocking Stop hook. Without this check the
@@ -89,6 +135,19 @@ Set-Location $root
 if (Test-Path .crew/config.json) {
   $cfg = Get-Content .crew/config.json -Raw | ConvertFrom-Json
   if ($cfg.verifyGate -eq $false) { exit 0 }
+}
+
+# Emergency lane. An incident is open, so this turn is not blocked and the
+# checks do not run - that is the entire point of declaring one, since these
+# are the checks that take minutes. What would have run is written down
+# instead, and /crew:emergency end reports the debt.
+if (Test-CrewIncidentActive) {
+  $n = @(
+    (git diff --name-only HEAD 2>$null)
+    (git ls-files --others --exclude-standard 2>$null)
+  ) | Where-Object { $_ -and $_.Trim() }
+  Write-CrewIncidentSkip "verify" "stop gate stood down with $($n.Count) changed file(s) unverified"
+  exit 0
 }
 
 $changed = @()

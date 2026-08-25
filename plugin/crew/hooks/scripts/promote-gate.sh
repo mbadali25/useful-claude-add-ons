@@ -57,7 +57,19 @@ PY
 )
 [ -z "$ENVNAME" ] && exit 0
 
-block() { echo "PROMOTION BLOCKED ($ENVNAME): $1" >&2; exit 2; }
+# Emergency lane: an open incident turns every block into a recorded skip.
+# Deliberately here rather than at the top of the script, so the checks still
+# RUN during an incident - they are file reads, not test suites, and the debt
+# list is worth far more when it names the precondition that was unmet than
+# when it says only "the promote gate stood down".
+block() {
+  if crew_incident_active; then
+    crew_incident_log promote "$ENVNAME at ${SHA:-unknown-sha}: $1"
+    exit 0
+  fi
+  echo "PROMOTION BLOCKED ($ENVNAME): $1" >&2
+  exit 2
+}
 
 SHA=$(git rev-parse --short HEAD 2>/dev/null)
 [ -z "$SHA" ] && block "not a git repository - cannot establish what is being deployed."
@@ -136,6 +148,19 @@ if cfg.get("requireHuman"):
 print("\x1e".join(out))
 PY
 )
+
+if [ -n "$VERDICT" ] && crew_incident_active; then
+  # Every unmet precondition, one row each, so the closing report names them.
+  # printf '%s\n', not '%s': VERDICT has no trailing newline (it comes from a
+  # command substitution, which strips it), and `read` does not run the loop
+  # body for a final line with no terminator - so the single-reason case, the
+  # commonest one, logged nothing at all.
+  printf '%s\n' "$VERDICT" | tr '\036' '\n' | while IFS= read -r reason; do
+    [ -z "$reason" ] && continue
+    crew_incident_log promote "$ENVNAME at $SHA: $reason"
+  done
+  VERDICT=""
+fi
 
 if [ -n "$VERDICT" ]; then
   echo "PROMOTION BLOCKED ($ENVNAME, sha $SHA):" >&2

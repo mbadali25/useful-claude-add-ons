@@ -306,6 +306,15 @@ development  ->  qa  ->  production
 No skipping. Code reaches production only by having passed the same artifact
 through qa. A hotfix is not an exception - it is the same path, run faster.
 
+**The one exception, and it is not really one.** `/crew:emergency` can stand the
+gates down for a declared, time-boxed incident: the checks do not run, the
+preconditions are recorded rather than enforced, and the deploy is allowed. That
+does not make the path optional - it defers it. Every gate that did not run is
+written to the incident's skip log, the lane expires on its own (default 120
+minutes), and closing it produces a debt list to work through. The order above
+still applies to everything after the environment is stable, and a repository
+that must never do this sets `emergency.standDown: false`.
+
 ### The four gates, per environment
 
 Each promotion runs these in order, and **stops at the first failure**:
