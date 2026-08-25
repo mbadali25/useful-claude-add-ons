@@ -46,7 +46,7 @@ _VERIFY_JSON = {
 
 def _git(root, *args):
     subprocess.run(("git",) + args, cwd=root, check=True,
-                   capture_output=True, text=True)
+                   capture_output=True, text=True, stdin=subprocess.DEVNULL)
 
 
 def _repo(tmp_path, config=None):
@@ -67,6 +67,35 @@ def _repo(tmp_path, config=None):
     _git(root, "add", "-A")
     _git(root, "commit", "-q", "-m", "fixture")
     return root
+
+
+def test_git_helper_never_inherits_the_parent_stdin(tmp_path, monkeypatch):
+    """This file's own _git() must pin stdin, same as crew_fixtures._git.
+
+    An inherited stdin handle is torn down and rebuilt by pytest's fd
+    capturing on every test, and on Windows that makes subprocess.Popen fail
+    intermittently with "OSError: [WinError 6] The handle is invalid" (the
+    exact failure ANEWINF-758 chased through crew_fixtures.py). This module
+    grew its own local _git() helper instead of reusing crew_fixtures, so it
+    needs the same fix independently.
+    """
+    calls = []
+    real_run = subprocess.run
+
+    def recording_run(*args, **kwargs):
+        calls.append(kwargs)
+        return real_run(*args, **kwargs)  # pylint: disable=subprocess-run-check
+
+    monkeypatch.setattr(subprocess, "run", recording_run)
+
+    _repo(tmp_path)
+
+    assert calls, "expected _repo to have called subprocess.run via _git"
+    for kwargs in calls:
+        assert kwargs.get("stdin") == subprocess.DEVNULL, (
+            "a git subprocess.run call is missing stdin=subprocess.DEVNULL "
+            f"-- kwargs were: {kwargs}"
+        )
 
 
 def _incident(root, seconds_from_now):
