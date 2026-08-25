@@ -11,6 +11,14 @@
 $ErrorActionPreference = 'Continue'
 $vault = '__VAULT_PATH__'
 $claudeExe = '__CLAUDE_EXE__'
+# Consent to the git layer (git add -A && commit && push) is decided ONCE, at
+# `setup-vault-automation.ps1 -UseGit` time, and baked in here. It must never be
+# re-derived at nightly run time: if this vault later becomes a git repo (or grows
+# a remote) for reasons unrelated to this pipeline, that alone must not turn on an
+# unattended `git add -A && push`, since -A stages untracked files that were never
+# meant to be committed. Runtime checks below may only narrow this (still skip
+# push if there is in fact no repo/remote), never widen it.
+$gitEnabled = __GIT_ENABLED__
 $logDir = Join-Path $vault '.claude\gardener-logs'
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 $log = Join-Path $logDir ("gardener-{0}.log" -f (Get-Date -Format 'yyyyMMdd-HHmmss'))
@@ -19,9 +27,12 @@ Get-ChildItem $logDir -Filter 'gardener-*.log' |
     Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-60) } |
     Remove-Item -Force -ErrorAction SilentlyContinue
 
-# Git is optional: Obsidian Sync users may have no repo and no remote.
+# Git is optional: Obsidian Sync users may have no repo and no remote. $gitEnabled
+# (baked in above) is the consent gate; the Test-Path/remote checks below can only
+# narrow it further, e.g. -UseGit was set but this particular vault isn't (yet) a
+# repo, never widen it beyond what was consented to at setup time.
 Set-Location $vault
-$hasGit = Test-Path (Join-Path $vault '.git')
+$hasGit = $gitEnabled -and (Test-Path (Join-Path $vault '.git'))
 $hasRemote = $false
 if ($hasGit) {
     git remote get-url origin 2>$null | Out-Null
@@ -48,7 +59,7 @@ $gitStep
 Be economical: this is maintenance, not research. Summarize what you did in your final message.
 "@
 
-"[$(Get-Date -Format s)] gardener start (git=$hasGit remote=$hasRemote)" | Out-File $log -Encoding utf8
+"[$(Get-Date -Format s)] gardener start (gitEnabled=$gitEnabled git=$hasGit remote=$hasRemote)" | Out-File $log -Encoding utf8
 & $claudeExe -p $prompt --dangerously-skip-permissions --max-turns 80 2>&1 |
     Out-File $log -Append -Encoding utf8
 "[$(Get-Date -Format s)] gardener done (claude exit: $LASTEXITCODE)" | Out-File $log -Append -Encoding utf8

@@ -205,8 +205,12 @@ if (-not $SkipGardener) {
         Write-Host "   task:   $(if ($t) { 'present - will re-register' } else { 'WILL REGISTER' })"
     } {
         New-Item -ItemType Directory -Force -Path (Split-Path $gardener) | Out-Null
+        # $gitEnabled is baked in from -UseGit as consented HERE, at setup time - the
+        # installed gardener must never re-derive push consent from runtime repo state.
+        $gitEnabledLiteral = if ($UseGit) { '$true' } else { '$false' }
         (Get-Content (Join-Path $here 'gardener-template.ps1') -Raw).
-            Replace('__VAULT_PATH__', $VaultPath).Replace('__CLAUDE_EXE__', $claudeExe) |
+            Replace('__VAULT_PATH__', $VaultPath).Replace('__CLAUDE_EXE__', $claudeExe).
+            Replace('__GIT_ENABLED__', $gitEnabledLiteral) |
             Set-Content $gardener -Encoding utf8
         $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$gardener`""
         $trigger = New-ScheduledTaskTrigger -Daily -At $GardenerTime
