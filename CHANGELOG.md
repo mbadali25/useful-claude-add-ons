@@ -4,6 +4,40 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Fixed
+
+- **`crew` 0.4.3 — the context watch no longer ends Windows sessions on turn one,
+  and knows that Claude 5 models have a 1M window.** Three causes, all in the
+  `Stop` hook pair `hooks/scripts/context-watch.{sh,ps1}`:
+  - `context-watch.ps1` still estimated occupancy from transcript file size
+    (`bytes/4*0.75`) against a hardcoded 200k. The transcript is cumulative, so on
+    real sessions that read 158%, 195% and 664% — the handoff prompt fired on the
+    first turn of every Windows session. It now reads the transcript's last
+    `message.usage` record exactly as the bash flavour does, with the same model
+    table, the same observed-peak correction, and byte-identical output.
+  - The model table in both flavours said `opus`, `sonnet` and `fable` are 200k.
+    `claude-opus-5`, `claude-sonnet-5` and `claude-fable-5` ship with 1M; the
+    observed-peak self-correction only rescued that past 190k, so the 160k–190k
+    band fired falsely on every Claude 5 session. The table now carries the 1M
+    entries above the generic 200k ones. The observed-peak correction also went
+    the other way: it tripped at 95% of the table figure, so a Claude 5 session
+    that legitimately passed 950k of a correct 1M entry was bumped to the 2M
+    tier and the gate never fired. It now triggers only on a peak the window
+    could not have held.
+  - A pinned `context.budgetTokens` the session has already exceeded (an older
+    `/crew:init` wrote `200000` into every config) is now overridden by the
+    observed peak and reported as `configured+observed`. A stale pin the session
+    is still *under* cannot be detected; set it to `null`.
+  - Subagent turns were never counted — Claude Code writes them to
+    `<session>/subagents/*.jsonl`, which the watch does not open — and that is
+    now stated in the docs and pinned by a test; inline `isSidechain` records from
+    older builds are skipped explicitly.
+  - `tests/test_context_watch.py` previously fed both flavours a byte blob with
+    no usage record, so the PowerShell drift was invisible. It now feeds real
+    usage transcripts for every branch (Claude 5 at 170k must not fire, Haiku at
+    170k must, stale pin override, subagent exclusion) and compares the two
+    flavours' full stderr on the measured path.
+
 ### Removed
 
 - **The `claude-mem` and VoltAgent menu items are gone from both install scripts.**

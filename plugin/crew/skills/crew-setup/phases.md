@@ -123,9 +123,10 @@ Say plainly that **you cannot clear the session yourself** — a hook runs as a
 child process and cannot reset its parent. The `/clear` stays manual, which is
 the right place for it to stay.
 
-Tell them the threshold is an estimate from transcript size, not a token count,
-and that they should calibrate once against `/context` and adjust
-`budgetTokens`. Being early is fine; being late defeats the purpose.
+Tell them the threshold is read from the transcript's own usage records, not
+estimated, and that the window is derived from the model (Claude 5 family 1M,
+Haiku and 4.x 200k) and corrected by the session's peak. Leave `budgetTokens`
+at `null` unless `/context` and the warning disagree.
 
 Add `.crew/transcripts/` to `.gitignore` — raw transcripts contain everything
 the session saw, including any secret that reached it.

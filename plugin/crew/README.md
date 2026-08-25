@@ -839,13 +839,17 @@ So: crew tells you it's time, you type `/clear`, and the next session opens
 already holding the note. The one manual step is the `/clear` — which is the
 step that should stay manual.
 
-### The threshold is an estimate
+### The threshold is a measurement
 
-No hook reports token count. `context-watch.sh` measures the JSONL transcript
-that hooks receive as `transcript_path`. Bytes aren't tokens and the file carries
-JSON scaffolding the model never sees, so **calibrate once**: run `/context`,
-compare, adjust `context.budgetTokens`. Being 20% early is fine; being late
-defeats the purpose.
+No hook input reports token count, but the JSONL transcript that hooks receive
+as `transcript_path` carries `message.usage` on every assistant turn, and the
+last one is the real prompt size. Both `context-watch` flavours read that. The
+window comes from the model id (Claude 5 family 1M, Haiku and the 4.x
+generation 200k) and is corrected upward by the session's own peak usage, so a
+`[1m]` variant that recorded its base id still gets the right budget. Subagent
+transcripts live in separate files and are never counted. `budgetTokens` stays
+`null` unless you have a reason to pin it - a stale `200000` from an older
+`/crew:init` is the one thing that still makes the gate fire early.
 
 It fires **once per session**, gated by a marker file that `SessionStart`
 clears. Without that gate, a `Stop` hook returning exit 2 fires every turn and
@@ -1497,6 +1501,7 @@ Two things worth knowing:
 | `_verify` checks never run | Nothing maps to them. Add a rule in `.crew/verify.json` naming the directory. |
 | Handoff prompt fires every turn | The marker file is not being cleared. Check that the `SessionStart` hook is registered. |
 | Warning arrives too late | `budgetTokens` is set too high for the real window. Calibrate against `/context`. |
+| Warning fires far too early on a 1M model | `.crew/config.json` still carries `"budgetTokens": 200000` from an older `/crew:init`. Set it to `null`; the warning's `Budget source:` line says `configured` when this is the cause. |
 | Old handoff keeps reappearing | It was never deleted. Remove `.work/HANDOFF.md` when the work is done. |
 | `mmdc` fails in a container | Headless Chromium needs `--no-sandbox`. The render script passes it; a direct `mmdc` call will not. |
 | Rendered PNG unreadable in Teams | Transparent background on dark mode. Render with `-b white` for chat and print. |

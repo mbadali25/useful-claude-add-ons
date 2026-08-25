@@ -24,16 +24,14 @@ So the flow is: crew tells you it is time, you type `/clear` or `/compact`, and
 the next session opens already holding the handoff. The one manual step is the
 `/clear` itself, which is the step that should stay manual anyway.
 
-## Estimating usage
+## Measuring usage
 
-There is no hook that reports token count. `context-watch.sh` estimates from the
-size of the JSONL transcript, which hooks receive as `transcript_path`.
-
-**This is a proxy, not a measurement.** Bytes are not tokens, the file carries
-JSON scaffolding the model never sees, and compaction resets the relationship.
-Calibrate once: run `/context` at some point, compare to what the watcher
-estimates, and adjust `context.budgetTokens` until they roughly agree. Being
-20% early is fine; being late defeats the purpose.
+No hook input reports token count, but the JSONL transcript that hooks receive
+as `transcript_path` does: every assistant turn carries `message.usage`, and
+the last one is the real prompt size. `context-watch.sh` and its PowerShell
+twin read that - see "How the reading is taken" below. `/context` should agree
+with the watcher to within a turn; if it does not, the budget is wrong, not
+the reading, and the warning prints both numbers so you can see which.
 
 The watcher fires **once per session**. It writes `.crew/.handoff-requested` and
 stays quiet afterwards; `SessionStart` clears the marker. Without that gate a
@@ -140,28 +138,45 @@ The `Stop` watch reads the transcript's **last `message.usage` record** and adds
 the actual prompt size - the window occupancy, measured by the thing that filled
 it, not inferred.
 
-It used to estimate from transcript file size (`bytes / 4 * 0.75`). That reads
-high, because the transcript is cumulative: it keeps every turn ever written,
-including ones a compaction already discarded. On a real session it read 45%
-high - 950k estimated against 654k actual - which on a 200k budget is the
-difference between firing at 80% and firing on turn one, every turn.
+Both flavours used to estimate from transcript file size (`bytes / 4 * 0.75`).
+That reads high, because the transcript is cumulative: it keeps every turn ever
+written, including ones a compaction already discarded. Measured on real
+sessions it read 158%, 195% and 664% of a 200k budget - it fired on turn one,
+every session. The PowerShell flavour kept that heuristic for a release after
+the bash one dropped it, so Windows sessions were cut short while Linux ones
+were not; the test suite now feeds real usage records to both.
+
+**Subagent turns are not counted.** Claude Code writes Agent-tool transcripts
+to `<session>/subagents/*.jsonl`, which the watcher never opens; the main
+window only ever sees the agent's returned summary, and that summary is
+already inside the main transcript's usage figure. Older builds wrote subagent
+turns inline flagged `isSidechain`; those are skipped too.
 
 ### The budget works itself out
 
 `budgetTokens` defaults to `null`, meaning "derive it". The transcript records
-the model on every turn, so the window comes from a lookup - and then gets
-corrected by what this session has actually held.
+the model on every turn, so the window comes from a lookup: the Claude 5 family
+(`claude-fable-5`, `claude-opus-5`, `claude-sonnet-5`) is 1M, Haiku 4.5 and the
+4.x generation are 200k unless the id carries a `[1m]` suffix. Then the lookup
+gets corrected by what this session has actually held: observed usage cannot
+exceed the real window, so once a session has held *more* than the table claims,
+the budget is raised to the smallest standard tier that fits. That is what
+catches a `[1m]` variant that recorded its base id, and a model the table has
+never heard of. Only a peak the window could not hold triggers it - an earlier
+95% margin bumped a correct 1M entry to 2M once a session passed 950k, and the
+gate then never fired.
 
-That correction is the part that matters. A 1M-context model reports its **base**
-id: this session runs `claude-opus-5[1m]` and the transcript says
-`claude-opus-5`. Read the id alone and you conclude 200k, then fire the gate on
-turn one, every turn, forever. But observed usage cannot exceed the real window -
-so once a session has held 668k tokens, the window is provably not 200k, and the
-budget is raised to the smallest standard tier that fits.
+The same correction applies to a pinned `budgetTokens`. An older `/crew:init`
+wrote `200000` into every config, and that figure outlived the move to 1M
+models: a session that has already held 300k tokens overrides the pin and says
+so (`configured+observed`). It cannot help a session that is *under* the stale
+pin, though - a Claude 5 session at 170k is 17% full and a `200000` pin makes
+it 85% - so set the value to `null` if a config predates this.
 
-The warning names its source (`auto:claude-opus-5+observed`, or `configured`) and
-prints absolute token counts beside the percentage, so a wrong budget is visible
-rather than just making the gate behave oddly.
+The warning names its source (`auto:claude-opus-5`, `auto:...+observed`,
+`configured`, `configured+observed`) and prints absolute token counts beside the
+percentage, so a wrong budget is visible rather than just making the gate behave
+oddly.
 
 `PreCompact` keeps the last few raw transcripts under `.crew/transcripts/`.
 Gitignore that directory — transcripts contain everything the session saw,
