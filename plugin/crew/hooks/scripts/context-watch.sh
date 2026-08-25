@@ -47,7 +47,14 @@ read -r WARN_AT BUDGET HANDOFF ENABLED AUTO_WRAP_UP RESERVE <<< "$CFG"
 
 # Loop safety: fire once per session until SessionStart clears the marker.
 MARKER=".crew/.handoff-requested"
-[ -f "$MARKER" ] && exit 0
+if [ -f "$MARKER" ]; then
+  # The nag already happened. This is the turn on which the handoff may have
+  # just been written, which is the only moment auto-clear is interested in.
+  # It is off unless context.autoClear.enabled is true, and it decides for
+  # itself whether the note is complete enough to act on.
+  bash "$(dirname "${BASH_SOURCE[0]}")/auto-clear.sh" 2>/dev/null
+  exit 0
+fi
 
 # Read the ACTUAL window occupancy, not a guess at it.
 #

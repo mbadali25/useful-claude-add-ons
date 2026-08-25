@@ -604,6 +604,7 @@ Everything reads `.crew/config.json`:
     "budgetTokens": null,
     "reserveTokens": 100000,
     "handoffPath": ".work/HANDOFF.md",
+    "autoClear": { "enabled": false, "method": "auto", "windowTitle": null, "command": "/clear", "delaySeconds": 3, "minHandoffLines": 5 },
     "autoWrapUp": false,
     "autoResume": false
   },
@@ -653,6 +654,12 @@ omit the block and assume.
 | `tier` / `roles` | see §22 | Which agents are in play. Managed by `/crew:scale`. |
 | `context.autoWrapUp` | `true`, `false` (default `false`) | At `warnAt`, instructs the session to reach a stopping point and write the handoff, instead of just asking. The `/clear` itself stays manual either way — no hook can trigger one. See §16. |
 | `context.autoResume` | `true`, `false` (default `false`) | Opens the next `SessionStart` already holding the last handoff as `additionalContext`. See §16 — read the limitation before enabling it. |
+| `context.autoClear.enabled` | `true`, `false` (default `false`) | **Experimental.** Types `/clear` into the terminal once the handoff is written. Read §16's "Auto-clear" before enabling — it presses a key on your behalf. |
+| `context.autoClear.method` | `auto`, `tmux`, `xdotool`, `wtype`, `windows`, `none` | How the keystroke is delivered. `tmux` is the only one that targets its destination exactly; the rest depend on window focus. |
+| `context.autoClear.windowTitle` | string or `null` | Required for every method except `tmux`. Without it those methods refuse rather than typing into an unidentified window. |
+| `context.autoClear.command` | string (default `/clear`) | What gets typed. `/compact` is the other sensible value. |
+| `context.autoClear.delaySeconds` | integer (default `3`) | How long to wait for the prompt to come back before typing. |
+| `context.autoClear.minHandoffLines` | integer (default `5`) | Refuse to clear if the handoff has fewer non-blank lines than this. A stub note is worse than no clear. |
 | `pm.enabled` / `mode` / `quietLines` / `maxLines` | see `crew-pm` skill | Whether and how verbosely the `SessionStart` PM brief speaks. `authority` is always `report-only` — the PM never edits `config.json` on its own, regardless of this block. |
 | `graph.out` | path (default `graphify-out`) | Where `graphify` wrote `graph.json`. Freshness is read from graphify's own `built_at_commit` field in that file, never a timestamp. |
 | `graph.obsidian.confirmed` | `true`, `false` (default `false`) | Consent gate for exporting the graph into an Obsidian vault. Only explicit consent given in session sets this — `/crew:upgrade` never grants it. See `crew-graph`'s Obsidian section. |
@@ -962,6 +969,89 @@ telling you it's ready. **Either way, the `/clear` itself stays manual**,
 because no hook can trigger one: hooks run as child processes, and a child
 cannot reset its parent's conversation. `autoWrapUp` bounds what happens
 before you clear; it does not remove the clear.
+
+### Auto-clear (experimental, off by default)
+
+The correction at the top of this section stands: a hook cannot clear the
+conversation, because a hook is a child process and a child cannot reset its
+parent. `context.autoClear` does not contradict that. It does something else —
+it drives the **terminal**, typing `/clear` at the prompt the way you would.
+
+That is why it can work, and also why it is experimental: typing into a terminal
+is only safe if you know *which* terminal, and the available methods answer that
+question with very different confidence.
+
+| Method | How it finds the target | Confidence |
+|---|---|---|
+| `tmux` | `$TMUX_PANE`, by pane id | **Exact.** No focus involved. Use this if you can. |
+| `xdotool` | window title, then activates it | Steals focus. Right window if the title is right. |
+| `wtype` | types into whatever has focus | None. Wayland offers no way to check. Needs `unsafeFocus: true`. |
+| `windows` | SendKeys, title-checked at send time | Right window *if it still has focus* when the delay expires. |
+
+```json
+"context": {
+  "autoClear": {
+    "enabled": false,
+    "method": "auto",
+    "windowTitle": null,
+    "command": "/clear",
+    "delaySeconds": 3,
+    "minHandoffLines": 5
+  }
+}
+```
+
+**In tmux this needs no configuration beyond `enabled: true`.** Everywhere else
+it needs `windowTitle`, and refuses without it rather than guessing.
+
+#### What has to be true before it types anything
+
+1. `context.autoClear.enabled` is exactly `true`. The string `"true"` is not.
+2. `context-watch` actually asked for a handoff this session.
+3. The handoff file exists and is **newer** than that request — a leftover note
+   from a previous session is not this session's note.
+4. It has at least `minHandoffLines` non-blank lines. Clearing on a two-line
+   placeholder loses the session's work and leaves a note that says "continue
+   the work", which is the worst of both outcomes.
+5. Nothing has claimed the one-per-session attempt yet.
+
+Fail any of those and it writes a line to `.crew/.autoclear.log` saying which,
+and does nothing. That log exists because a `Stop` hook's stderr is invisible
+when it exits 0, so without it "nothing happened" is indistinguishable from
+"the feature is broken".
+
+#### The delay, and why it is not zero
+
+The hook runs *while the turn is still ending*, so the prompt does not exist yet
+and typing immediately types into nothing. The keystroke is handed to a detached
+child that sleeps first. Three seconds is usually enough; raise it on a slow
+machine. The parent exits 0 straight away so the turn is not held up.
+
+#### Two ways it can go wrong, stated plainly
+
+- **On Windows, focus is the whole mechanism.** SendKeys goes to the foreground
+  window. The child re-checks the title immediately before typing, so alt-tabbing
+  during the delay means nothing is sent — but if you alt-tab to *another window
+  with a matching title*, that is where `/clear` lands. Keep the title specific.
+- **A `/clear` is not undoable.** With `minHandoffLines` set too low, or a
+  handoff the session wrote badly, you lose the context and keep a note that does
+  not replace it. Watch the first few, and read `.work/HANDOFF.md` before
+  trusting the next session to resume from it.
+
+#### Try it without risking anything
+
+```bash
+bash   ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/auto-clear.sh --dry-run --force
+pwsh -File ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/auto-clear.ps1 -DryRun -Force
+```
+
+`--dry-run` prints the method, target, command and delay it *would* use and sends
+nothing. `--force` skips the handoff conditions so you can see the plan without
+being deep into a session. Neither consumes the one-per-session attempt.
+
+If you run Claude Code in a tmux pane inside WSL, prefer the `.sh` flavour: it
+addresses a pane by id and never touches focus, which is strictly safer than
+anything the Windows side can do.
 
 ### Auto-resume is off by default
 

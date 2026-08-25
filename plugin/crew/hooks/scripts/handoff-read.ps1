@@ -6,6 +6,10 @@ $cwd = if ($d.cwd) { $d.cwd } elseif ($env:CLAUDE_PROJECT_DIR) { $env:CLAUDE_PRO
 Set-Location $cwd -ErrorAction SilentlyContinue
 
 Remove-Item ".crew/.handoff-requested" -ErrorAction SilentlyContinue
+# Auto-clear's own once-per-session claim. Without this reset it fires once per
+# repository rather than once per session, which for a /clear is the difference
+# between a feature and a one-shot.
+Remove-Item ".crew/.autoclear-sent" -ErrorAction SilentlyContinue
 
 # SessionStart fires once per SOURCE EVENT (startup, clear, compact, resume,
 # fork), not once per session -- claiming on session id alone would let the

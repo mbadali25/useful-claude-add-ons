@@ -8,6 +8,7 @@ SOURCE=$(read_json source); CWD=$(read_json cwd); SESSION=$(read_json session_id
 cd "${CWD:-${CLAUDE_PROJECT_DIR:-.}}" 2>/dev/null || exit 0
 
 rm -f .crew/.handoff-requested   # reset the once-per-session gate
+rm -f .crew/.autoclear-sent      # ditto for auto-clear's own once-per-session claim
 rm -f .crew/.deploy-in-flight    # a deploy from a dead session cannot be recorded now
 
 # SessionStart fires once per SOURCE EVENT (startup, clear, compact, resume,
