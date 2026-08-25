@@ -86,6 +86,27 @@ def test_work_reads_ticket_and_handoff(tmp_path):
     assert got["handoffPending"] is True
 
 
+def test_work_recognises_an_sdp_local_key(tmp_path):
+    """`tracker: "sdp"` keys tickets `SDP-<request id>` rather than by the bare
+    integer the desk returns, precisely so the rest of crew can see them: a
+    ticket is recognised by its LETTERS-digits shape, and `40219` matches
+    nothing. If this ever fails, the session brief silently reports "no ticket
+    open" for every ServiceDesk Plus repo.
+    """
+    root = crew_fixtures.make_repo(tmp_path, work_ticket="SDP-40219")
+    assert crew_state.read_work(str(root))["ticket"] == "SDP-40219"
+
+
+def test_work_ignores_a_bare_request_number(tmp_path):
+    # The other half of the same claim, so the convention is pinned rather than
+    # assumed: a bare desk id in the index is invisible, which is why
+    # /crew:sdp-sync rewrites it.
+    root = crew_fixtures.make_repo(tmp_path)
+    (root / ".work" / "INDEX.md").write_text(
+        "# Work\n\n- 40219 - in progress\n", encoding="utf-8")
+    assert crew_state.read_work(str(root))["ticket"] is None
+
+
 def test_work_absent_is_none_and_false(tmp_path):
     root = crew_fixtures.make_repo(tmp_path)
     got = crew_state.read_work(str(root))

@@ -6,6 +6,35 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
+- **`crew` 0.5.2 - ServiceDesk Plus as a third tracker.** `tracker: "sdp"` plus
+  `/crew:sdp-sync <REQUEST-ID> [--push]`, mirroring the Jira path rather than
+  inventing a second shape: pull keeps id, subject, status, requester, priority,
+  category and the last three notes and discards the rest, `/crew:work` reads
+  that cache instead of the API, and sync happens at pickup and completion only.
+  `/crew:ticket` and `/crew:work` both learned the mode, and `/crew:init` offers
+  it as the third answer to the tracker question - **only when the `sdp_*` tools
+  are actually reachable**, since a repo configured for an API nobody can call
+  stops every later command on the same missing precondition.
+  - **The local key is `SDP-<id>`, not the bare request number.** SDP ids are
+    plain integers and the rest of crew recognises a ticket by its
+    `LETTERS-digits` shape, so a bare `40219` is invisible to the session brief,
+    to `/crew:work` and to the index. Both halves of that claim are now pinned by
+    tests, because the failure mode is silence: every SDP repo would report "no
+    ticket open" forever.
+  - Three things the command has to get right that Jira does not have: notes are
+    **requester-visible** unless private (`sdp.noteVisibility` defaults to
+    `private`, and that is not a substitute for scrubbing), a bad field value
+    **rejects the whole write** rather than partially applying it (resolve
+    against `sdp_list_metadata` first), and **closing is not crew's decision** -
+    `sdp.closeOnDone` defaults to `false`, so push transitions a request and
+    leaves closure to whoever owns the queue.
+  - No `.mcp.json` ships for it, deliberately: the SDP connector is normally
+    registered at user or session scope, and a per-repo one would prompt for
+    approval in every repository where the plugin is enabled.
+  - New config block `"sdp": { "portal": null, "noteVisibility": "private",
+    "closeOnDone": false }`. Documented in `crew/README.md` 13b, the
+    configuration table, `PLUGINS.md`, and both setup docs.
+
 - **`crew` 0.5.1 — `/crew:emergency`, a time-boxed lane for when something is
   actually broken.** The gates that normally earn their keep are, during an
   outage, standing between you and the fix, and the honest options are to work

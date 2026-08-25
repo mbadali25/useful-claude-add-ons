@@ -112,7 +112,7 @@ Enforcement is session-local, like every other gate here: an incident stands
 the hooks down for sessions in this repository on this machine. It does nothing
 to CI or to branch protection.
 
-### Commands — 19, all explicit
+### Commands — 20, all explicit
 
 | Command | Purpose |
 |---|---|
@@ -133,6 +133,7 @@ to CI or to branch protection.
 | `/crew:handoff` | Write the handoff note before clearing |
 | `/crew:diagram <type>` | Architecture, data-flow, process, and sequence diagrams |
 | `/crew:jira-sync <KEY> [--push]` | Sync one issue with the local cache |
+| `/crew:sdp-sync <REQUEST-ID> [--push]` | Sync one ServiceDesk Plus request with the local cache: pull the forty tokens that matter out of a several-thousand-token payload, push one note and a transition |
 | `/crew:pm [onboard\|offboard <role>]` | Talk to the crew's manager: status with no argument, or add/remove a role with explicit yes/no confirmation before either touches `.crew/config.json` |
 | `/crew:upgrade [--force]` | Bring a pre-schema-2 (`v1`) setup forward: backs up the codemap first, builds the graph if missing, reconciles derived facts per subsystem, and reports contradictions and stale-on-purpose anchors rather than resolving them |
 
