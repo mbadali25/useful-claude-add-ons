@@ -422,9 +422,9 @@ MENU_KEYS=(
   "claude-code-setup" "task-observer" "claude-mem" "voltagent"
   "aws-mcp" "azure-mcp" "playwright-mcp" "obsidian-mcp"
   "supabase" "context7" "playwright-cli" "skillui" "strix" "obsidian"
-  "repo-plugins"
+  "repo-plugins" "graphify"
 )
-MENU_DEFAULT=(1 1 1 1 1 1 1 1 1 1 0 0 0 0 0 0 0 0 0 0 0)
+MENU_DEFAULT=(1 1 1 1 1 1 1 1 1 1 0 0 0 0 0 0 0 0 0 0 0 0)
 MENU_NAME=(
   "Prerequisites: git, nodejs, npm, python3, pip3 (needs root or sudo)"
   "Claude Code CLI (@anthropic-ai/claude-code) + PATH export + update check"
@@ -447,6 +447,7 @@ MENU_NAME=(
   "Strix AI pentesting CLI (needs Docker + an LLM API key)"
   "Obsidian desktop + claude-obsidian + obsidian-skills plugins"
   "This repo's plugins: crew (agents, commands, hooks)"
+  "graphify code graph (uv tool install graphifyy; per-repo, not global)"
 )
 
 SELECTED=""
@@ -1879,6 +1880,24 @@ fi
 # --- 21. This repo's own plugins ---------------------------------------------
 # Same marketplace as item 3, so add_marketplace is a no-op when item 3 already ran -
 # this item stands on its own. install_plugin does the "already installed?" check.
+# crew vendors its own narrowly-triggered find-skills copy (Task 12 narrowed its
+# description so it stops competing with crew's other skills). A *global* find-skills
+# install (menu item 5, or a prior 'npx skills add') is a second, separate copy with the
+# old broad trigger, and the two can both fire on the same prompt. Detect and explain it;
+# never delete it - it is the user's own global Claude Code config, not this repo's.
+check_global_find_skills_collision() {
+  local dir
+  dir="$(claude_skills_dir)/find-skills"
+  user_skill_installed "find-skills" || return 0
+  warn "global find-skills skill found at $dir"
+  echo "      This is vercel-labs/skills' find-skills (installed by menu item 5, or by"
+  echo "      'npx skills add vercel-labs/skills --skill find-skills' directly) - a"
+  echo "      separate, global copy from the one crew vendors internally. Two active"
+  echo "      copies can both trigger on the same prompt."
+  echo "      This script will not remove it for you. To remove the global copy yourself:"
+  echo "        rm -rf \"$dir\""
+}
+
 crew_next_steps() {
   echo ""
   step "crew: next steps"
@@ -1903,9 +1922,65 @@ if is_selected "repo-plugins"; then
     run_step "Plugin: ${plugin}@useful-claude-add-ons" install_plugin "${plugin}@useful-claude-add-ons"
   done
 
+  check_global_find_skills_collision
   crew_next_steps
 fi
 
+# --- 22. graphify --------------------------------------------------------------
+# graphifyy on PyPI (double-y) provides two executables: 'graphify' and
+# 'graphify-mcp'. Other 'graphify*' packages on PyPI are unaffiliated - installing the
+# wrong one fails silently, so the double-y package is named explicitly below and in
+# every message this step prints.
+graphify_next_steps() {
+  echo ""
+  step "graphify: next steps"
+  echo "  Build the code graph for a repo (--code-only is required whenever the repo"
+  echo "  has any docs in it - without it graphify errors instead of skipping them):"
+  echo "    cd <your repo> && graphify . --no-viz --code-only"
+  echo "  graphify-mcp is installed alongside it if you want to wire it up as an MCP server."
+}
+
+install_graphify() {
+  if have graphify; then
+    skip "graphify already installed ($(command -v graphify))"
+  else
+    if ! have uv && ! have uvx; then
+      if have pip3; then
+        pip3 install --user uv
+      elif have pip; then
+        pip install --user uv
+      else
+        warn "pip not found - install python3-pip first, then re-run to install graphify."
+        return 1
+      fi
+      export PATH="$HOME/.local/bin:$PATH"
+    fi
+    if ! have uv; then
+      warn "uv still not found after attempting to install it - install it manually (https://docs.astral.sh/uv) and re-run."
+      return 1
+    fi
+    uv tool install graphifyy || return 1
+    export PATH="$HOME/.local/bin:$PATH"
+    if ! have graphify; then
+      warn "graphify (from graphifyy) installed but not resolvable in this shell - uv tool installs land in ~/.local/bin; run 'source ~/.bashrc' and re-run."
+      return 1
+    fi
+    COUNT_INSTALLED=$((COUNT_INSTALLED+1))
+    ok "graphify installed at $(command -v graphify) (graphify-mcp alongside it)"
+  fi
+
+  # Registered per-repo, never globally: a global graphify registration is the same
+  # broad-global-skill collision Task 12 fixed by narrowing find-skills, above.
+  if graphify install --project; then
+    ok "registered graphify for this repo (--project)"
+  else
+    warn "'graphify install --project' failed - run it by hand from inside the target repo."
+  fi
+  graphify_next_steps
+}
+if is_selected "graphify"; then
+  run_step "Install graphify (uv tool install graphifyy; registers --project)" install_graphify
+fi
 
 # --- Summary -----------------------------------------------------------------
 echo ""

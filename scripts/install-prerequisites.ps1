@@ -471,6 +471,7 @@ $script:Catalog = @(
     [pscustomobject]@{ Key = 'strix';             Default = $false; Name = 'Strix AI pentesting CLI (needs Docker + an LLM API key)' }
     [pscustomobject]@{ Key = 'obsidian';          Default = $false; Name = 'Obsidian desktop + claude-obsidian + obsidian-skills plugins' }
     [pscustomobject]@{ Key = 'repo-plugins';      Default = $false; Name = "This repo's plugins: crew (agents, commands, hooks)" }
+    [pscustomobject]@{ Key = 'graphify';          Default = $false; Name = 'graphify code graph (uv tool install graphifyy; per-repo, not global)' }
 )
 
 $script:Selected = @{}
@@ -1822,6 +1823,23 @@ if (Test-Selected 'obsidian') {
 # Same marketplace as item 3, so Add-ClaudeMarketplace is a no-op when item 3 already
 # ran - this item stands on its own. Install-ClaudePlugin does the "already installed?"
 # check.
+# crew vendors its own narrowly-triggered find-skills copy (Task 12 narrowed its
+# description so it stops competing with crew's other skills). A *global* find-skills
+# install (menu item 5, or a prior 'npx skills add') is a second, separate copy with the
+# old broad trigger, and the two can both fire on the same prompt. Detect and explain it;
+# never delete it - it is the user's own global Claude Code config, not this repo's.
+function Test-GlobalFindSkillsCollision {
+    $dir = Join-Path (Get-ClaudeSkillsDir) 'find-skills'
+    if (-not (Test-UserSkillInstalled 'find-skills')) { return }
+    Write-Warn2 "global find-skills skill found at $dir"
+    Write-Host "      This is vercel-labs/skills' find-skills (installed by menu item 5, or by"
+    Write-Host "      'npx skills add vercel-labs/skills --skill find-skills' directly) - a"
+    Write-Host "      separate, global copy from the one crew vendors internally. Two active"
+    Write-Host "      copies can both trigger on the same prompt."
+    Write-Host "      This script will not remove it for you. To remove the global copy yourself:"
+    Write-Host "        Remove-Item -Recurse -Force '$dir'"
+}
+
 function Show-CrewNextSteps {
     Write-Host ""
     Write-Step "crew: next steps"
@@ -1849,9 +1867,62 @@ if (Test-Selected 'repo-plugins') {
         }
     }
 
+    Test-GlobalFindSkillsCollision
     Show-CrewNextSteps
 }
 
+# --- 22. graphify --------------------------------------------------------------
+# graphifyy on PyPI (double-y) provides two executables: 'graphify' and
+# 'graphify-mcp'. Other 'graphify*' packages on PyPI are unaffiliated - installing the
+# wrong one fails silently, so the double-y package is named explicitly below and in
+# every message this step prints.
+function Show-GraphifyNextSteps {
+    Write-Host ""
+    Write-Step "graphify: next steps"
+    Write-Host "  Build the code graph for a repo (--code-only is required whenever the repo"
+    Write-Host "  has any docs in it - without it graphify errors instead of skipping them):"
+    Write-Host "    cd <your repo>; graphify . --no-viz --code-only"
+    Write-Host "  graphify-mcp is installed alongside it if you want to wire it up as an MCP server."
+}
+
+if (Test-Selected 'graphify') {
+    Invoke-Step "Install graphify (uv tool install graphifyy; registers --project)" {
+        $existing = Get-Command graphify -ErrorAction SilentlyContinue
+        if ($existing) {
+            Write-Skip "graphify already installed ($($existing.Source))"
+        } else {
+            if (-not (Get-Command uv -ErrorAction SilentlyContinue) -and -not (Get-Command uvx -ErrorAction SilentlyContinue)) {
+                if (-not (Get-Command pip -ErrorAction SilentlyContinue)) {
+                    throw "pip not found - install Python first (choco install python), then re-run to install graphify."
+                }
+                pip install --user uv
+                Sync-SessionEnvironment
+            }
+            if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
+                throw "uv still not found after attempting to install it - install it manually (https://docs.astral.sh/uv) and re-run."
+            }
+            uv tool install graphifyy
+            if ($LASTEXITCODE -ne 0) { throw "'uv tool install graphifyy' failed - see the output above." }
+            Sync-SessionEnvironment
+            $cmd = Get-Command graphify -ErrorAction SilentlyContinue
+            if (-not $cmd) {
+                throw "graphify (from graphifyy) installed but not resolvable in this session - uv tool installs land under your user profile; open a new shell and re-run."
+            }
+            $script:Summary.Installed++
+            Write-Ok "graphify installed at $($cmd.Source) (graphify-mcp alongside it)"
+        }
+
+        # Registered per-repo, never globally: a global graphify registration is the
+        # same broad-global-skill collision Task 12 fixed by narrowing find-skills, above.
+        graphify install --project
+        if ($LASTEXITCODE -eq 0) {
+            Write-Ok "registered graphify for this repo (--project)"
+        } else {
+            Write-Warn2 "'graphify install --project' failed - run it by hand from inside the target repo."
+        }
+        Show-GraphifyNextSteps
+    }
+}
 
 # --- Summary -----------------------------------------------------------------
 Write-Host ""
