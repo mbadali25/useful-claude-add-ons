@@ -22,23 +22,46 @@ param(
 # check reports "command not found" on a tree that is actually fine.
 # ANEWINF-756.
 function Resolve-CrewBash {
-  $gitCmd = Get-Command git -ErrorAction SilentlyContinue
-  if ($gitCmd) {
-    # git.exe's Source is `...\Git\cmd\git.exe` or `...\Git\mingw64\bin\git.exe`
-    # depending on install/PATH shape; bash.exe sits at `Git\bin\bash.exe` or
-    # `Git\usr\bin\bash.exe` either way. Walk up from git.exe's directory
-    # (bounded) rather than assume a fixed depth.
-    $dir = Split-Path $gitCmd.Source -Parent
-    for ($i = 0; $i -le 3; $i++) {
-      foreach ($rel in @('bin\bash.exe', 'usr\bin\bash.exe')) {
-        $candidate = Join-Path $dir $rel
-        if (Test-Path $candidate) { return $candidate }
+  # A git wrapper defined as a PowerShell function/alias (real in corporate
+  # profiles) has no usable .exe path -- Get-Command still returns it ahead
+  # of any git.exe on PATH, but its .Source is empty (or, for an alias,
+  # points at whatever the alias targets). Only trust .Source when it is a
+  # real Application entry, and wrap the whole walk-up in try/catch so any
+  # surprise (e.g. Split-Path on an unexpected value) falls through to the
+  # PATH-based fallback below instead of throwing out of the hook entirely.
+  # A git wrapper defined as a PowerShell function/alias (real in corporate
+  # profiles) has no usable .exe path -- Get-Command still returns it ahead
+  # of any git.exe on PATH, but its .Source is empty (or, for an alias,
+  # points at whatever the alias targets). Only trust .Source when it is a
+  # real Application entry, and wrap the whole walk-up in try/catch so any
+  # surprise (e.g. Split-Path on an unexpected value) falls through to the
+  # PATH-based fallback below instead of throwing out of the hook entirely.
+  # A git wrapper defined as a PowerShell function/alias (real in corporate
+  # profiles) has no usable .exe path -- Get-Command still returns it ahead
+  # of any git.exe on PATH, but its .Source is empty (or, for an alias,
+  # points at whatever the alias targets). Only trust .Source when it is a
+  # real Application entry, and wrap the whole walk-up in try/catch so any
+  # surprise (e.g. Split-Path on an unexpected value) falls through to the
+  # PATH-based fallback below instead of throwing out of the hook entirely.
+  try {
+    $gitCmd = Get-Command git -ErrorAction SilentlyContinue
+    if ($gitCmd -and $gitCmd.CommandType -eq 'Application' -and $gitCmd.Source) {
+      # git.exe's Source is `...\Git\cmd\git.exe` or `...\Git\mingw64\bin\git.exe`
+      # depending on install/PATH shape; bash.exe sits at `Git\bin\bash.exe` or
+      # `Git\usr\bin\bash.exe` either way. Walk up from git.exe's directory
+      # (bounded) rather than assume a fixed depth.
+      $dir = Split-Path $gitCmd.Source -Parent
+      for ($i = 0; $i -le 3; $i++) {
+        foreach ($rel in @('bin\bash.exe', 'usr\bin\bash.exe')) {
+          $candidate = Join-Path $dir $rel
+          if (Test-Path $candidate) { return $candidate }
+        }
+        $parent = Split-Path $dir -Parent
+        if (-not $parent -or $parent -eq $dir) { break }
+        $dir = $parent
       }
-      $parent = Split-Path $dir -Parent
-      if (-not $parent -or $parent -eq $dir) { break }
-      $dir = $parent
     }
-  }
+  } catch { }
 
   # No usable git, or no bash found near it: fall back to PATH, filtering out
   # the WSL launcher and the WindowsApps App Execution Alias shim.
@@ -144,6 +167,9 @@ $bashExe = $null
 $failed = $false
 foreach ($c in $cmds) {
   $run = $c
+  # Only resolves a leading literal `bash` token. A rule written as
+  # `cd x && bash y.sh` (or any other form where `bash` isn't the first
+  # word) skips this substitution entirely and still resolves bash via PATH.
   if ($c -match '^bash(\s|$)') {
     if (-not $bashExe) { $bashExe = Resolve-CrewBash }
     $run = "& '$bashExe'" + $c.Substring(4)

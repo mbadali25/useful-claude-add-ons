@@ -102,6 +102,51 @@ def test_walks_up_from_a_mingw64_style_git_exe_too(tmp_path):
     assert resolved == str(real_bash)
 
 
+def test_falls_through_when_git_is_a_powershell_function(tmp_path):
+    """A git wrapper defined as a PowerShell function (real in corporate
+    profiles that shim git) has no .exe -- Get-Command still returns it
+    ahead of any git.exe on PATH, but its .Source is an empty string, not a
+    path. Resolve-CrewBash must not call Split-Path on that empty .Source
+    (that throws a terminating error which escapes the whole hook -- a
+    crash where the old unconditional `& bash` at least attempted
+    something); it must fall through to the PATH-based fallback (tier b)
+    instead, and must not throw."""
+    wsl_dir = tmp_path / "Windows" / "System32"
+    _touch(str(wsl_dir / "bash.exe"))
+
+    real_dir = tmp_path / "Git" / "bin"
+    real_bash = real_dir / "bash.exe"
+    _touch(str(real_bash))
+
+    env = os.environ.copy()
+    # A System32-style bash sits first on PATH, exactly like the real-bug
+    # shape in the other tests -- the real bash.exe comes later on PATH,
+    # reachable only through the tier-b fallback since `git` here is a
+    # function with nothing for the tier-a walk-up to use. Tier b's
+    # System32 filter compares against $env:SystemRoot, not path text, so
+    # SystemRoot has to point at this fake tree for the filter to apply.
+    env["SystemRoot"] = str(tmp_path / "Windows")
+    env["PATH"] = os.pathsep.join([str(wsl_dir), str(real_dir)])
+    command = "function git { }\n& '%s' -PrintBash" % _PS1
+    result = subprocess.run(
+        [_PWSH, "-NoProfile", "-NonInteractive", "-Command", command],
+        env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, "stderr: %s" % result.stderr
+    resolved = result.stdout.strip()
+    assert resolved == str(real_bash)
+    assert "System32" not in resolved
+    # Without the CommandType/Source guard, Split-Path on the function's
+    # empty .Source still resolves correctly by accident (the parameter-
+    # binding error is non-terminating under this script's default
+    # $ErrorActionPreference, so execution falls through to tier b anyway)
+    # -- but it does so noisily. A clean run must not touch Split-Path at
+    # all for a non-Application git, so stderr must be empty.
+    assert result.stderr == "", "unexpected stderr: %s" % result.stderr
+
+
 def test_falls_back_to_path_excluding_windowsapps_when_no_git_found(tmp_path):
     """No git resolvable at all (tier b of the resolver): filter
     `Get-Command bash -All`, dropping the WindowsApps App Execution Alias
