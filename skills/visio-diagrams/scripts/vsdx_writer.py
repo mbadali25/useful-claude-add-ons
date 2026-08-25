@@ -19,9 +19,10 @@ Usage:
 from __future__ import annotations
 
 import math
+import os
 import zipfile
 from datetime import datetime, timezone
-from xml.sax.saxutils import escape
+from xml.sax.saxutils import escape, quoteattr
 
 NS = "http://schemas.microsoft.com/office/visio/2012/main"
 R_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
@@ -48,8 +49,15 @@ DEFAULT_TEXT = "#000000"
 
 def _cell(n, v, f=None):
     if f:
-        return f'<Cell N="{n}" V="{v}" F="{escape(f)}"/>'
-    return f'<Cell N="{n}" V="{v}"/>'
+        return (f'<Cell N={quoteattr(str(n))} '
+                f'V={quoteattr(str(v))} '
+                f'F={quoteattr(str(f))}/>')
+    # quoteattr, not escape: escape() covers &, < and > but NOT the quote
+    # character, and these are attribute values. A colour or label holding a
+    # double quote - which a user-authored spec can easily carry - would close
+    # the attribute early and produce a .vsdx Visio refuses to open.
+    # quoteattr supplies its own surrounding quotes, hence none written here.
+    return f'<Cell N={quoteattr(str(n))} V={quoteattr(str(v))}/>'
 
 
 class Shape:
@@ -393,7 +401,7 @@ class VisioDocument:
             '</Properties>'
         )
 
-    def save(self, path):
+    def save(self, path, overwrite=False):
         if not self.pages:
             raise ValueError("document has no pages")
         parts = {
@@ -409,6 +417,14 @@ class VisioDocument:
         }
         for i, p in enumerate(self.pages):
             parts[f"visio/pages/page{i + 1}.xml"] = p.contents_xml()
+
+        # zipfile "w" truncates. Pointing this at a hand-edited .vsdx would
+        # destroy it with no warning, and the tool would report success.
+        if os.path.exists(path) and not overwrite:
+            raise FileExistsError(
+                f"{path} already exists. Writing would replace it entirely - a "
+                f"hand-edited diagram would be lost. Pass --overwrite if that "
+                f"is what you want, or choose another output path.")
 
         with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
             # [Content_Types].xml must be the first entry in an OPC package.

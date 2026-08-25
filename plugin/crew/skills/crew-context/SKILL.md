@@ -121,12 +121,47 @@ be injected twice.
 "context": {
   "enabled": true,
   "warnAt": 0.8,
-  "budgetTokens": 200000,
+  "budgetTokens": null,
   "handoffPath": ".work/HANDOFF.md",
+  "autoWrapUp": false,
   "autoResume": false,
   "keepTranscripts": 5
 }
 ```
+
+`keepTranscripts` is honoured by `PreCompact`: that many `.jsonl` snapshots are
+kept under `.crew/transcripts/` and older ones are deleted. `autoWrapUp` and
+`autoResume` are both off by default - see above.
+
+## How the reading is taken
+
+The `Stop` watch reads the transcript's **last `message.usage` record** and adds
+`input_tokens + cache_read_input_tokens + cache_creation_input_tokens`. That is
+the actual prompt size - the window occupancy, measured by the thing that filled
+it, not inferred.
+
+It used to estimate from transcript file size (`bytes / 4 * 0.75`). That reads
+high, because the transcript is cumulative: it keeps every turn ever written,
+including ones a compaction already discarded. On a real session it read 45%
+high - 950k estimated against 654k actual - which on a 200k budget is the
+difference between firing at 80% and firing on turn one, every turn.
+
+### The budget works itself out
+
+`budgetTokens` defaults to `null`, meaning "derive it". The transcript records
+the model on every turn, so the window comes from a lookup - and then gets
+corrected by what this session has actually held.
+
+That correction is the part that matters. A 1M-context model reports its **base**
+id: this session runs `claude-opus-5[1m]` and the transcript says
+`claude-opus-5`. Read the id alone and you conclude 200k, then fire the gate on
+turn one, every turn, forever. But observed usage cannot exceed the real window -
+so once a session has held 668k tokens, the window is provably not 200k, and the
+budget is raised to the smallest standard tier that fits.
+
+The warning names its source (`auto:claude-opus-5+observed`, or `configured`) and
+prints absolute token counts beside the percentage, so a wrong budget is visible
+rather than just making the gate behave oddly.
 
 `PreCompact` keeps the last few raw transcripts under `.crew/transcripts/`.
 Gitignore that directory — transcripts contain everything the session saw,

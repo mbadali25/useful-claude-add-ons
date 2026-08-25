@@ -1,9 +1,17 @@
 #!/usr/bin/env bash
-# Stop hook. Estimates context usage from the transcript and, once past the
+. "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+# Stop hook. Reads how full the context window actually is and, once past the
 # threshold, asks Claude to write a handoff note before ending the turn.
 # Exit 2 sends control back to the model with the reason on stderr.
+#
+# NOTHING HERE RUNS until a repository has .crew/config.json - crew is
+# per-repository and its hooks are inert until `/crew:init`. That is deliberate
+# (a gate that fires in every repo you open would be hostile), but it does mean
+# installing the plugin is not enough on its own.
 INPUT=$(cat)
-read_json() { python3 -c 'import sys,json;d=json.load(sys.stdin);print(d.get(sys.argv[1],""))' "$1" <<< "$INPUT" 2>/dev/null; }
+
+PY=$(crew_py) || { echo "crew context-watch: no usable python - context warnings are OFF" >&2; exit 0; }
+read_json() { "$PY" -c 'import sys,json;d=json.load(sys.stdin);print(d.get(sys.argv[1],""))' "$1" <<< "$INPUT" 2>/dev/null; }
 TRANSCRIPT=$(read_json transcript_path)
 CWD=$(read_json cwd)
 STOP_HOOK_ACTIVE=$(read_json stop_hook_active)
@@ -22,11 +30,11 @@ cd "${CWD:-${CLAUDE_PROJECT_DIR:-.}}" 2>/dev/null || exit 0
 # .crew/.handoff-requested marker below is the real once-per-session gate for
 # this hook, reset by handoff-read.sh at the next SessionStart -- that stays.
 
-CFG=$(python3 - << 'PY' 2>/dev/null
+CFG=$("$PY" - << 'PY' 2>/dev/null
 import json
 try: c=json.load(open(".crew/config.json")).get("context",{})
 except Exception: c={}
-print(c.get("warnAt",0.8), c.get("budgetTokens",200000), c.get("handoffPath",".work/HANDOFF.md"), str(c.get("enabled",True)).lower(), str(c.get("autoWrapUp",False)).lower())
+print(c.get("warnAt",0.8), c.get("budgetTokens") or 0, c.get("handoffPath",".work/HANDOFF.md"), str(c.get("enabled",True)).lower(), str(c.get("autoWrapUp",False)).lower())
 PY
 )
 [ -z "$CFG" ] && exit 0
@@ -37,19 +45,124 @@ read -r WARN_AT BUDGET HANDOFF ENABLED AUTO_WRAP_UP <<< "$CFG"
 MARKER=".crew/.handoff-requested"
 [ -f "$MARKER" ] && exit 0
 
-BYTES=$(wc -c < "$TRANSCRIPT" 2>/dev/null || echo 0)
-# Rough proxy: JSONL transcript bytes -> tokens. ~4 chars/token, and the file
-# carries JSON scaffolding the model never sees, so we discount it.
-# This is an ESTIMATE. Calibrate against /context once and adjust budgetTokens.
-EST=$(python3 -c "print(int($BYTES/4*0.75))")
-PCT=$(python3 -c "print(round($EST/$BUDGET,3))")
-OVER=$(python3 -c "print(1 if $PCT >= $WARN_AT else 0)")
-[ "$OVER" -eq 0 ] && exit 0
+# Read the ACTUAL window occupancy, not a guess at it.
+#
+# Every assistant turn in the transcript carries message.usage, and the last one
+# holds the real prompt size: input + cache_read + cache_creation. That IS the
+# context window, measured by the thing that filled it.
+#
+# This replaced a file-size heuristic (bytes/4*0.75). The transcript is
+# cumulative - it keeps every turn ever written, including ones a compaction
+# already discarded - so file size measures how much a session has produced,
+# not how full the window is. Measured on a real session the heuristic read 45%
+# high (950k estimated against 654k actual), which on a 200k budget is the
+# difference between "fire at 80%" and "fire on turn one, every turn".
+READ=$("$PY" - "$TRANSCRIPT" "$BUDGET" << 'PY' 2>/dev/null
+import json, os, sys
+
+path = sys.argv[1]
+configured = int(sys.argv[2] or 0)
+
+# Known context windows. A "[1m]" suffix on the id means the 1M variant, but the
+# transcript often records the base id without it - so this table is a starting
+# point, not the last word. The observed high-water mark below corrects it.
+WINDOWS = (
+    ("[1m]", 1_000_000),
+    ("haiku", 200_000),
+    ("sonnet", 200_000),
+    ("opus", 200_000),
+    ("fable", 200_000),
+)
+TIERS = (200_000, 500_000, 1_000_000, 2_000_000)
+
+last, model, peak = None, "", 0
+try:
+    with open(path, encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line or '"usage"' not in line:
+                continue
+            try:
+                rec = json.loads(line)
+            except ValueError:
+                continue
+            msg = rec.get("message") or {}
+            usage = msg.get("usage")
+            if not isinstance(usage, dict) or "cache_read_input_tokens" not in usage:
+                continue
+            last = usage
+            if msg.get("model"):
+                model = msg["model"]
+            peak = max(peak, usage.get("input_tokens", 0)
+                       + usage.get("cache_read_input_tokens", 0)
+                       + usage.get("cache_creation_input_tokens", 0))
+except OSError:
+    pass
+
+if last:
+    used = (last.get("input_tokens", 0)
+            + last.get("cache_read_input_tokens", 0)
+            + last.get("cache_creation_input_tokens", 0))
+    source = "exact"
+else:
+    try:
+        size = os.path.getsize(path)
+    except OSError:
+        size = 0
+    used, source = int(size / 4 * 0.75), "estimated"
+
+if configured > 0:
+    budget, how = configured, "configured"
+else:
+    low = model.lower()
+    budget = next((w for key, w in WINDOWS if key in low), 200_000)
+    how = f"auto:{model or 'unknown'}"
+    # Self-correct. If this session has already held more tokens than the
+    # table claims the window is, the table is wrong for this model - a "[1m]"
+    # variant records its base id, so the suffix is not always there to read.
+    # Observed usage cannot exceed the real window, so it is the better source.
+    if peak >= budget * 0.95:
+        budget = next((t for t in TIERS if t > peak * 1.05), peak * 2)
+        how = f"auto:{model or 'unknown'}+observed"
+
+print(used, source, budget, how)
+PY
+)
+[ -z "$READ" ] && exit 0
+read -r USED SOURCE BUDGET HOW <<< "$READ"
+[ -z "$USED" ] || [ -z "$BUDGET" ] && exit 0
+
+OVER=$("$PY" -c "print(1 if $BUDGET > 0 and $USED/$BUDGET >= $WARN_AT else 0)" 2>/dev/null)
+[ "${OVER:-0}" -eq 0 ] && exit 0
 
 touch "$MARKER"
-PCT_H=$(python3 -c "print(int($PCT*100))")
+PCT_H=$("$PY" -c "print(int($USED/$BUDGET*100))")
+USED_H=$("$PY" -c "print(format($USED, ',d'))")
+BUDGET_H=$("$PY" -c "print(format(int($BUDGET), ',d'))")
 
-bash "$(dirname "$0")/notify.sh" waiting "context ~${PCT_H}% - writing handoff" 2>/dev/null
+bash "$(dirname "$0")/notify.sh" waiting "context ${PCT_H}% - writing handoff" 2>/dev/null
+
+# Report the absolute numbers, not only the percentage. A budgetTokens that does
+# not match the model in use is otherwise invisible - it just makes the gate
+# fire early forever, and a warning that is always on is one nobody reads.
+BUDGET_NOTE=" Set context.budgetTokens in .crew/config.json to pin it."
+case "$HOW" in
+  *+observed)
+    BUDGET_NOTE=" The model's id said a smaller window, but this session has
+already held more than that - and observed usage cannot exceed the real window,
+so the larger figure wins. A 1M variant reports its base model id, which is why
+the id alone is not trusted. Pin it with context.budgetTokens if you prefer." ;;
+  configured)
+    BUDGET_NOTE=" That came from .crew/config.json. Remove it to let crew work the
+window out from the model and this session's own usage." ;;
+esac
+
+NOTE=""
+if [ "$SOURCE" = "estimated" ]; then
+  NOTE="
+This figure is a fallback estimate from transcript size, not a measurement -
+no usage record was found yet. It reads high after a compaction."
+fi
 
 if [ "$AUTO_WRAP_UP" = "true" ]; then
 cat >&2 << MSG
@@ -60,7 +173,10 @@ ready to clear. Do not start new work.
 MSG
 else
 cat >&2 << MSG
-Context is at roughly ${PCT_H}% of budget (estimated from transcript size).
+Context: ${USED_H} of ${BUDGET_H} tokens (${PCT_H}%), read from the transcript's
+last usage record.${NOTE}
+
+Budget source: ${HOW}.${BUDGET_NOTE}
 
 Before ending this turn, write the handoff note to ${HANDOFF} following the
 crew-context skill. Keep it to pointers and one short "next action" - do not

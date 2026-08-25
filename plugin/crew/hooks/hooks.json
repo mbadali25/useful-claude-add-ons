@@ -10,7 +10,11 @@
       { "matcher": "Bash",
         "hooks": [{ "type": "command", "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/guard.sh", "timeout": 10 }] },
       { "matcher": "PowerShell",
-        "hooks": [{ "type": "command", "shell": "powershell", "command": "& '${CLAUDE_PLUGIN_ROOT}/hooks/scripts/guard.ps1'", "timeout": 10 }] }
+        "hooks": [{ "type": "command", "shell": "powershell", "command": "& '${CLAUDE_PLUGIN_ROOT}/hooks/scripts/guard.ps1'", "timeout": 10 }] },
+      { "matcher": "Bash",
+        "hooks": [{ "type": "command", "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/promote-gate.sh", "timeout": 20 }] },
+      { "matcher": "PowerShell",
+        "hooks": [{ "type": "command", "shell": "powershell", "command": "& '${CLAUDE_PLUGIN_ROOT}/hooks/scripts/promote-gate.ps1'", "timeout": 20 }] }
     ],
     "PreCompact": [
       { "hooks": [{ "type": "command", "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/handoff-write.sh", "timeout": 30 }] },

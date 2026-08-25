@@ -26,11 +26,11 @@ import requests
 from auth import AuthError
 from graph import GraphClient, GraphError
 
-# Common report names. Not exhaustive — the Learn page above is authoritative,
+# Common report names. Not exhaustive - the Learn page above is authoritative,
 # and available reports change over time.
 COMMON_REPORTS = {
     "Devices": "Core device inventory (one row per device)",
-    "DevicesWithInventory": "Devices plus hardware inventory — serial, storage, memory",
+    "DevicesWithInventory": "Devices plus hardware inventory - serial, storage, memory",
     "DeviceCompliance": "Per-device compliance state",
     "DeviceNonCompliance": "Non-compliant devices only",
     "DevicesStatusBySettingReport": "Which setting failed on which device",
@@ -38,7 +38,7 @@ COMMON_REPORTS = {
     "AppInstallStatusAggregate": "Install success/failure counts per app",
     "DeviceInstallStatusByApp": "Per-device install status for one app (needs filter)",
     "ActiveMalware": "Defender malware detections",
-    "ComanagedDeviceWorkloads": "SCCM/Intune workload split — useful for co-management migrations",
+    "ComanagedDeviceWorkloads": "SCCM/Intune workload split - useful for co-management migrations",
     "AllDeviceCertificates": "Certificates deployed to devices",
     "ChromeOSDevices": "ChromeOS device inventory",
 }
@@ -78,7 +78,7 @@ def run_export(g, report, fmt="csv", filter=None, select=None, localization=None
 
 
 def _download(url, report, out_dir):
-    """The URL is a pre-signed blob link — no auth header, and it expires."""
+    """The URL is a pre-signed blob link - no auth header, and it expires."""
     os.makedirs(out_dir, exist_ok=True)
     r = requests.get(url, timeout=300)
     r.raise_for_status()

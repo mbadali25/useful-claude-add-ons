@@ -12,6 +12,28 @@ Cloudflare v4 accepts two auth methods. **Always prefer a scoped API token.**
 
 Never send both on one request. The client picks the token if both are set.
 
+## Set the ids too, not just the token
+
+```bash
+export CLOUDFLARE_API_TOKEN=...
+export CLOUDFLARE_ACCOUNT_ID=...     # optional but usually necessary
+export CLOUDFLARE_ZONE_ID=...        # optional
+```
+
+**A scoped token often cannot enumerate the things it has access to.** Listing
+`/accounts` needs an account-level read that a narrowly scoped token will not
+have, so `account-id "My Org"` comes back 403 or with an empty array - while the
+very same token works perfectly against
+`/accounts/{that_id}/...`. The failure looks like a bad token and is not one.
+
+Find the ids in the dashboard: the account id is in the URL after
+`dash.cloudflare.com/`, and the zone id is on the zone's **Overview** page in
+the right-hand **API** panel. With them exported, no lookup happens at all and
+`zone-id` / `account-id` return them directly.
+
+The name-based lookup remains for credentials that *can* enumerate. With exactly
+one visible zone or account, the name may be omitted.
+
 ## Verify before doing anything
 
 The single fastest way to catch a bad key, expired token, or wrong scope:
@@ -22,8 +44,15 @@ python scripts/cloudflare_client.py verify        # GET /user/tokens/verify
 ```
 
 A healthy token returns `{"result": {"id": "...", "status": "active"}, "success": true}`.
-The Global API Key has no `verify` endpoint; test it with a cheap read such as
-`get /zones --params per_page=1` instead.
+
+The Global API Key has no `verify` endpoint. `verify` detects this and falls
+back to a cheap `GET /zones` read, labelling the result
+`active (legacy Global API Key)` so a pass is never mistaken for a real token
+check that did not happen.
+
+**`verify` passing does not mean the token can do your work.** It confirms the
+token exists and is active - nothing about its scope. A token with no
+permissions verifies happily and then 403s on the first real call.
 
 ## Creating and scoping a token
 

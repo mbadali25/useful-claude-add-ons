@@ -90,13 +90,18 @@ repo also has:
 
 1. `.crew/verify.json` — run `/crew:verify`. Which checks a change requires is
    the part that prevents mistakes; the description only helps you find things.
-2. `.crew/secrets.md` — record where test credentials come from and which env
+2. `docs/reference/` — run `/crew:reference`. The codemap answers "where does
+   this live"; the reference answers "what can this system do, and how do I call
+   it". Those are different questions and the second does not fall out of the
+   first. Endpoints, scheduled jobs, queue consumers, CLI commands, feature
+   flags, integrations — each anchored to a file and line.
+3. `.crew/secrets.md` — record where test credentials come from and which env
    var each lands in. Names and retrieval commands only, never values. See the
    `crew-verification` skill.
-3. `e2e/` specs if this repo has a UI — delegate to `crew:browser-tester`.
+4. `e2e/` specs if this repo has a UI — delegate to `crew:browser-tester`.
 
-Report which of the three are missing when you finish. A codemap on its own is
-the least useful of the four artifacts.
+Report which of the four are missing when you finish. A codemap on its own is
+the least useful of the five artifacts.
 
 ## `--refresh <subsystem>`
 

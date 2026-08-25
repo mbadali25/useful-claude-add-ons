@@ -43,7 +43,8 @@ param(
     [Parameter(Mandatory)][string]$OutputPath,
     [string]$Stencil = "BASIC_U.VSSX",
     [switch]$AutoLayout,
-    [switch]$Visible
+    [switch]$Visible,
+    [switch]$Overwrite
 )
 
 $ErrorActionPreference = 'Stop'
@@ -83,7 +84,11 @@ try {
 
     $stencilDoc = $visio.Documents.OpenEx($Stencil, $OPEN_FLAGS)
     $connStencil = $visio.Documents.OpenEx("CONNEC_U.VSSX", $OPEN_FLAGS)
-    $connMaster  = $connStencil.Masters.ItemU("Dynamic connector")
+    $connMaster = $null
+    try { $connMaster = $connStencil.Masters.ItemU("Dynamic connector") } catch { }
+    if (-not $connMaster) {
+        throw "CONNEC_U.VSSX has no 'Dynamic connector' master. Connectors cannot be drawn; check the Visio install."
+    }
 
     $shapes = @{}
     $i = 0
@@ -93,8 +98,21 @@ try {
                 else { 'box' }
         $masterName = if ($KindToMaster.ContainsKey($kind)) { $KindToMaster[$kind] } else { 'Rectangle' }
 
-        try   { $master = $stencilDoc.Masters.ItemU($masterName) }
-        catch { throw "Master '$masterName' not in $Stencil. List available names with: `$stencilDoc.Masters | Select NameU" }
+        # ItemU looks up the UNIVERSAL name, which does not change with the UI
+        # language - so a non-English Visio is not the problem here. What is:
+        # a stencil that genuinely lacks the master. Fall back to Rectangle
+        # (present in every basic stencil) and say so, rather than throwing
+        # mid-run and discarding the whole partial document in `finally`.
+        $master = $null
+        try { $master = $stencilDoc.Masters.ItemU($masterName) } catch { }
+        if (-not $master -and $masterName -ne 'Rectangle') {
+            Write-Warning "Master '$masterName' (kind '$kind') is not in $Stencil - using Rectangle."
+            try { $master = $stencilDoc.Masters.ItemU('Rectangle') } catch { }
+        }
+        if (-not $master) {
+            $have = ($stencilDoc.Masters | ForEach-Object { $_.NameU }) -join ', '
+            throw "Neither '$masterName' nor 'Rectangle' is in $Stencil. Available: $have"
+        }
 
         # Placeholder grid; overwritten by AutoLayout or by explicit spec coords.
         $x = if ($null -ne $node.x) { [double]$node.x } else { 2 + ($i % 4) * 2.5 }
@@ -129,7 +147,18 @@ try {
         $page.ResizeToFitContents() | Out-Null
     }
 
+    # AlertResponse = 7 above answers Visio's own "overwrite?" dialog with No,
+    # so SaveAs over an existing file fails SILENTLY unless we look. Check the
+    # file first, and check that it actually appeared afterwards.
+    if ((Test-Path $OutputPath) -and -not $Overwrite) {
+        throw "$OutputPath already exists. Pass -Overwrite to replace it, or choose another path."
+    }
+    if (Test-Path $OutputPath) { Remove-Item $OutputPath -Force }
+
     $doc.SaveAs($OutputPath)
+    if (-not (Test-Path $OutputPath)) {
+        throw "SaveAs reported no error but $OutputPath was not written. Visio's alerts are suppressed, so the reason is not shown - check the path is writable and not open in another process."
+    }
     Write-Host "Wrote $OutputPath ($($shapes.Count) shapes, $($spec.edges.Count) connectors)"
 }
 finally {

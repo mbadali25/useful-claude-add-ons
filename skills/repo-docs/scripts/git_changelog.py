@@ -80,6 +80,19 @@ def collect(repo: Path, rev_range: str, limit: int):
               "--date=short", f"-n{limit}")
     if not raw:
         return []
+
+    # -n{limit} truncates silently. A changelog that quietly stops at 500
+    # commits looks complete and is not, and nothing downstream can tell the
+    # difference. Count what was actually in range and say so.
+    total = git(repo, "rev-list", "--count", "--no-merges", rev_range) or ""
+    try:
+        total = int(total.strip())
+    except ValueError:
+        total = 0
+    if total > limit:
+        print(f"WARNING: {rev_range} holds {total} commits; this changelog "
+              f"covers only the most recent {limit}. Raise --limit to "
+              f"{total} for the full range.", file=sys.stderr)
     commits = []
     for record in raw.split("\x1f"):
         record = record.strip("\n")
@@ -140,7 +153,7 @@ def build(repo: Path, rev_range: str, limit: int, keep_noise: bool):
 
 def render(grouped, skipped, total, rev_range, show_sha) -> str:
     out = ["## [Unreleased]", ""]
-    out.insert(0, f"<!-- draft from `git log {rev_range}` — {total} commits examined; "
+    out.insert(0, f"<!-- draft from `git log {rev_range}` - {total} commits examined; "
                   f"rewrite in user-facing language before committing -->")
     any_entries = False
     for category in CATEGORIES:
@@ -163,7 +176,7 @@ def render(grouped, skipped, total, rev_range, show_sha) -> str:
         for e in skipped[:25]:
             out.append(f"     {e['sha']} {e['original'][:90]}")
         if len(skipped) > 25:
-            out.append(f"     … {len(skipped)-25} more")
+            out.append(f"     ... {len(skipped)-25} more")
         out.append("-->")
     return "\n".join(out)
 

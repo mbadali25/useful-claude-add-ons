@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
+. "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 # PreCompact hook. Snapshots the transcript and makes sure a handoff exists
 # before compaction discards detail.
 INPUT=$(cat)
-read_json() { python3 -c 'import sys,json;d=json.load(sys.stdin);print(d.get(sys.argv[1],""))' "$1" <<< "$INPUT" 2>/dev/null; }
+read_json() { crew_json_field "$INPUT" "$1"; }
 TRANSCRIPT=$(read_json transcript_path); TRIGGER=$(read_json trigger); CWD=$(read_json cwd)
 cd "${CWD:-${CLAUDE_PROJECT_DIR:-.}}" 2>/dev/null || exit 0
 [ -f .crew/config.json ] || exit 0
@@ -15,11 +16,15 @@ cd "${CWD:-${CLAUDE_PROJECT_DIR:-.}}" 2>/dev/null || exit 0
 mkdir -p .crew/transcripts .work
 if [ -f "$TRANSCRIPT" ]; then
   cp "$TRANSCRIPT" ".crew/transcripts/$(date +%Y%m%d-%H%M%S)-${TRIGGER:-auto}.jsonl" 2>/dev/null
-  # keep the last 5 only
-  ls -1t .crew/transcripts/*.jsonl 2>/dev/null | tail -n +6 | xargs -r rm -f
+  KEEP=5
+  if PY=$(crew_py); then
+    K=$("$PY" -c 'import json;print(json.load(open(".crew/config.json")).get("context",{}).get("keepTranscripts",5))' 2>/dev/null)
+    case "$K" in ''|*[!0-9]*) ;; *) KEEP="$K" ;; esac
+  fi
+  ls -1t .crew/transcripts/*.jsonl 2>/dev/null | tail -n +$((KEEP+1)) | xargs -r rm -f
 fi
 
-HANDOFF=$(python3 -c 'import json;print(json.load(open(".crew/config.json")).get("context",{}).get("handoffPath",".work/HANDOFF.md"))' 2>/dev/null)
+PY=$(crew_py) && HANDOFF=$("$PY" -c 'import json;print(json.load(open(".crew/config.json")).get("context",{}).get("handoffPath",".work/HANDOFF.md"))' 2>/dev/null)
 HANDOFF="${HANDOFF:-.work/HANDOFF.md}"
 
 # If no handoff exists, write a factual skeleton from the repo, not from memory.
@@ -27,7 +32,7 @@ if [ ! -f "$HANDOFF" ]; then
   {
     echo "# Handoff"
     echo "written: $(date -u +%Y-%m-%dT%H:%M:%SZ) (auto, at ${TRIGGER:-auto} compact)"
-    echo "branch: $(git branch --show-current 2>/dev/null)"
+    echo "branch: $(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
     echo "head: $(git rev-parse --short HEAD 2>/dev/null)"
     echo
     echo "## Changed files"

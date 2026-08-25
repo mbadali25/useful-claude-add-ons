@@ -9,7 +9,7 @@ if ($wsl -eq "available") {
 }
 
 $crlf = "false"
-foreach ($f in @("scripts/smoke.sh")) {
+foreach ($f in @("_verify/smoke.sh", "_verify/run-all.sh", "scripts/smoke.sh")) {
   if (Test-Path $f) {
     $bytes = [IO.File]::ReadAllBytes((Resolve-Path $f))
     if ($bytes -contains 13) { $crlf = "true" }

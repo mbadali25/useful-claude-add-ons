@@ -345,7 +345,7 @@ def scan_secrets(paths) -> list:
                     continue
                 findings.append({
                     "file": str(path), "line": lineno, "kind": label,
-                    "preview": snippet[:12] + "…[redacted]",
+                    "preview": snippet[:12] + "...[redacted]",
                 })
                 break
     return findings
@@ -370,7 +370,7 @@ def human(data: dict) -> str:
           f"{'  last tag ' + g['last_tag'] if g.get('last_tag') else '  (no tags)'}")
         a(f"            {g['commits_since_tag']} commits since tag, "
           f"{len(g['uncommitted_files'])} uncommitted files")
-        a(f"            active {g.get('first_commit_date')} → {g.get('last_commit_date')}")
+        a(f"            active {g.get('first_commit_date')} -> {g.get('last_commit_date')}")
     else:
         a("Git:        not a git repository")
 
@@ -381,7 +381,7 @@ def human(data: dict) -> str:
             for i in items[:limit]:
                 a(f"  - {i}")
             if len(items) > limit:
-                a(f"  … {len(items)-limit} more")
+                a(f"  ... {len(items)-limit} more")
 
     section("Entry points", data["entry_points"])
     section("Manifests", data["manifests"])
@@ -411,7 +411,7 @@ def human(data: dict) -> str:
         for m in data["work_markers"][:15]:
             a(f"  {m['file']}:{m['line']}  {m['kind']}: {m['text']}")
         if len(data["work_markers"]) > 15:
-            a(f"  … {len(data['work_markers'])-15} more")
+            a(f"  ... {len(data['work_markers'])-15} more")
 
     c = data.get("since_last_docs_run", {})
     a("")
@@ -424,7 +424,7 @@ def human(data: dict) -> str:
         elif c.get("note"):
             a(f"  {c['note']}")
     else:
-        a("Last docs run: none recorded (docs/.repo-docs.json absent) — bootstrap mode")
+        a("Last docs run: none recorded (docs/.repo-docs.json absent) - bootstrap mode")
 
     return "\n".join(o)
 

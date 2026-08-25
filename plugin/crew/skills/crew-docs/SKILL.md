@@ -1,6 +1,6 @@
 ---
 name: crew-docs
-description: Keep CHANGELOG.md, README.md, SECURITY.md, TODO.md, ADRs and generated docs current as work lands. Use when the user says update the changelog, keep the docs in sync, update the README, maintain TODO, or asks which docs a change should touch.
+description: Keep CHANGELOG.md, README.md, SECURITY.md, TODO.md, ADRs, generated docs, and the API and feature reference current as work lands. Use when the user says update the changelog, keep the docs in sync, update the README, maintain TODO, document the API, list the endpoints or features, or asks which docs a change should touch.
 ---
 
 # Document maintenance
@@ -110,3 +110,57 @@ window requires set-based operations" is.
 `--audit` is worth running monthly. It checks generated blocks are current,
 anchors still resolve, and CHANGELOG `[Unreleased]` is not months old — and it
 reports rather than fixes, because bulk doc edits are unreviewable.
+
+---
+
+## References: API and features
+
+`/crew:reference` writes these; `crew:docs-writer` does the writing. They are
+separate from everything above because they are **enumerations**, not narratives
+- the value is in being complete and anchored, not in being well written.
+
+| File | Answers |
+|---|---|
+| `docs/reference/api.md` | What can I call, with what, and what does it do to the system |
+| `docs/reference/features.md` | What can this system do, including the parts with no UI |
+
+### Why the codemap does not cover this
+
+`.crew/codemap/` answers "where does this live" for an agent about to change
+code. A reference answers "what exists" for a human who has to use or operate
+the thing. A subsystem note saying `orders: handles order lifecycle, entry
+src/Orders/` is a good codemap entry and tells you nothing about the eleven
+endpoints under it.
+
+### The two rules
+
+1. **Anchor every entry to `file:line`.** Unanchored, it cannot be re-verified,
+   so it rots silently and keeps being trusted. This is the same reason codemap
+   notes carry anchors.
+2. **Enumerate from code, never from the existing docs.** The existing docs are
+   the thing being checked. A reference regenerated from a stale reference is
+   just a stale reference with a newer date on it.
+
+### What is actually worth writing down
+
+For an endpoint, the signature is the guessable part. Spend the effort on:
+
+- **Side effects** - what it writes, what it emits, what it calls out to
+- **Error responses** - the status codes and what causes each
+- **Idempotency** - what a retry does. This is the one that causes incidents
+
+For features, the headless ones are the ones nobody documents and everybody
+needs: scheduled jobs (and what happens when one is missed), queue consumers,
+admin scripts, feature flags and the config keys behind them.
+
+### Keeping it honest
+
+`/crew:reference --audit` reports drift in both directions: endpoints in the
+code with no entry, and entries whose anchor no longer holds. Wire a rule into
+`.crew/verify.json` on the route and job paths so a change to them is a prompt
+to run the audit.
+
+Mark anything you could not confirm as `undocumented - needs a human` and leave
+it visible. A reference that admits a gap is useful; one that implies full
+coverage while missing a third of the endpoints is worse than no reference,
+because the absence of an endpoint reads as proof it does not exist.

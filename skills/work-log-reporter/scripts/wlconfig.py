@@ -362,9 +362,10 @@ def date_range_label(agg: dict) -> str:
     start, end = agg.get("first_start"), agg.get("last_end")
     if not start:
         return "No dated activity"
+    # No "%-d": that modifier is glibc-only and raises ValueError on Windows.
     if not end or start.date() == end.date():
-        return start.strftime("%A, %B %-d, %Y")
-    return f"{start.strftime('%b %-d')} – {end.strftime('%b %-d, %Y')}"
+        return f"{start:%A, %B} {start.day}, {start.year}"
+    return f"{start:%b} {start.day} - {end:%b} {end.day}, {end.year}"
 
 
 def utc_stamp() -> str:

@@ -13,13 +13,14 @@ Built for the awkward case: several repositories, mixed stacks, legacy code, and
 3. [Requirements and platforms](#3-requirements-and-platforms)
 4. [Install](#4-install)
 5. [Set up your first repository](#5-set-up-your-first-repository)
-6. [Build the smoke harness](#6-build-the-smoke-harness--do-not-skip-this)
+6. [Build the smoke harness](#6-build-the-smoke-harness-do-not-skip-this)
 7. [Teach it the codebase](#7-teach-it-the-codebase)
+7b. [The API and feature reference](#7b-the-api-and-feature-reference)
 8. [Verification, secrets, and browser tests](#8-verification-secrets-and-browser-tests)
 9. [Research and gap analysis](#9-research-and-gap-analysis)
 10. [The daily loop](#10-the-daily-loop)
 11. [Configuration reference](#11-configuration-reference)
-12. [Optional: Codex as reviewer](#12-optional-codex-as-reviewer)
+12. [Optional: Codex as reviewer](#12-optional-codex-as-reviewer-gemini-as-design-partner)
 13. [Optional: Jira via MCP](#13-optional-jira-via-mcp)
 14. [Optional: Obsidian for memory](#14-optional-obsidian-for-memory)
 15. [Optional: Teams and Telegram notifications](#15-optional-teams-and-telegram-notifications)
@@ -30,8 +31,9 @@ Built for the awkward case: several repositories, mixed stacks, legacy code, and
 20. [Diagrams](#20-diagrams)
 21. [AWS and Azure MCP](#21-aws-and-azure-mcp)
 22. [Growing the crew](#22-growing-the-crew)
-23. [Command and agent reference](#23-command-and-agent-reference)
-24. [Troubleshooting](#24-troubleshooting)
+23. [Promotion: development to qa to production](#23-promotion-development-to-qa-to-production)
+24. [Command and agent reference](#24-command-and-agent-reference)
+25. [Troubleshooting](#25-troubleshooting)
 
 ---
 
@@ -81,10 +83,11 @@ else, and records the result in `.crew/config.json`. It distinguishes native
 Linux, macOS, WSL1, WSL2, Git Bash on Windows, and native Windows, and reports
 which toolchains are actually present.
 
-Both hook sets ship. The bash hooks match the `Bash` tool; the PowerShell hooks
-match the `PowerShell` tool and carry `shell: powershell`. The bash hooks also
-stand down if they detect MSYS or Cygwin, so the two sets cannot both act on the
-same command.
+Every hook is registered once, as bash, so `bash` must be on `PATH` — Git Bash
+satisfies that. Only the `PreToolUse` guards branch, and they branch on which
+**tool** the command came from rather than on the OS, so a `Bash` call is judged
+by bash rules even on Windows. See
+[How the Windows half works](#how-the-windows-half-works).
 
 **If WSL is available, run Claude Code inside it.** One shell, one code path, and
 the harness matches CI. Native Windows works but doubles the surface area for no
@@ -115,6 +118,37 @@ Full detail, including a bash-to-PowerShell command translation table, is in
 `skills/crew-setup/platform.md`.
 
 ---
+
+### Resolving the toolchain
+
+Detection tells you what you are on. It does not tell you whether the commands
+in your verification map can actually run:
+
+```
+bash ${CLAUDE_PLUGIN_ROOT}/skills/crew-setup/scripts/resolve-tools.sh
+```
+
+With no arguments it reads `.crew/verify.json`, extracts the first word of every
+command in every `run`, `always`, `default` and environment list, and reports
+each as **native**, **wsl only**, or **MISSING**.
+
+That middle case is the one that wastes a day. A bare `terraform validate` in a
+rule, on a machine where terraform lives only inside WSL, fails with "command not
+found" - and the gate reports that as a *failed check*, not a missing tool. You
+then debug a config problem that does not exist.
+
+Resolve once at setup and write the resolved form into the map: `terraform` if
+native, `wsl.exe -e terraform` if WSL-only. Never branch at runtime; a check that
+means something different depending on which shell launched it is a check nobody
+can reason about.
+
+Before you wrap anything in `wsl.exe -e`, two things bite:
+
+- **Paths cross, slowly.** WSL sees `C:\repos\x` as `/mnt/c/repos/x`, and
+  `/mnt/c` is dramatically slower. Moving the clone inside WSL removes the
+  problem instead of papering over it.
+- **Credentials do not cross.** A Windows `aws` is not the WSL `aws`; they read
+  different `~/.aws` directories.
 
 ## 4. Install
 
@@ -161,7 +195,7 @@ Then run the guided setup:
 /crew:init
 ```
 
-This walks eight phases, **stopping after each one** so you can check the result
+This walks nine phases, **stopping after each one** so you can check the result
 before the next thing is built on it. It is resumable — `/crew:init --status`
 shows where you are, and it picks up from the first incomplete phase.
 
@@ -170,7 +204,7 @@ shows where you are, and it picks up from the first incomplete phase.
 | 0 | Platform | OS/WSL detection, CRLF and filesystem fixes |
 | 1 | Config | `.crew/`, `.work/`, a filled-in `CLAUDE.md` |
 | 2 | Providers | Codex and Gemini verified by a real call |
-| 3 | Smoke harness | `scripts/smoke.sh` green from a clean checkout |
+| 3 | Smoke harness | `_verify/` created and documented; `_verify/smoke.sh` green from a clean checkout |
 | 4 | Code map | `.crew/codemap/` with anchors |
 | 5 | Verification map | `.crew/verify.json`, each pairing proven |
 | 6 | Browser tests | `e2e/` specs, or `n/a` |
@@ -198,18 +232,48 @@ The skill will:
 
 1. Run a detection script and report your stack, existing tests, CI, whether `codex` is on your `PATH`, and whether the repo is already configured
 2. Ask exactly three questions — reviewer, ticket tracker, memory location
-3. Create `.crew/`, `.work/`, `scripts/smoke.sh`, `docs/adr/`, and a `CLAUDE.md` if none exists
+3. Create `.crew/`, `.work/`, `_verify/`, `docs/adr/`, and a `CLAUDE.md` if none exists
 4. Tell you plainly that the setup is not yet usable
 
 Commit all of it. `.work/` belongs in version control — it is the shared memory between sessions, and a session that cannot read it starts blind.
+
+**Triage your rules before writing them.** Most rules people want in CLAUDE.md
+belong in `.crew/verify.json` instead — where a hook enforces them and they are
+not re-paid on every delegation. The test is: *could a command decide this?*
+
+| Rule | Goes in |
+|---|---|
+| Playwright on CSS changes | `verify.json` |
+| tflint + terraform-docs on `.tf` | `verify.json` |
+| Fresh apply + rollback + round trip on migrations | `verify.json` |
+| Production needs a verified rollback | CLAUDE.md |
+| Check error logs after deploy | CLAUDE.md + runbook |
+| Don't fix what you notice nearby | CLAUDE.md |
+
+Worked examples ship in `skills/crew-setup/examples/` — a Terraform
+`CLAUDE.md` and the matching `verify.json`.
 
 **Fill in the `CLAUDE.md`.** The template leaves blanks on purpose: build and test commands, where the entry point lives, which directories are off limits, and the landmine that breaks every time someone touches it. Thirty lines beats three hundred, because every line is re-read on every delegation.
 
 ---
 
-## 6. Build the smoke harness — do not skip this
+## 6. Build the smoke harness (do not skip this)
 
-At this point `scripts/smoke.sh` exists but contains no checks, so the gate passes vacuously. The crew has no safety net.
+Checks live in **`_verify/`**. Setup looks for it first, along with `qa/`, `spec/` and `_test*/`; if the repo already has one of those it is adopted rather than duplicated. If none exists, `/crew:init` creates `_verify/` from the bundled template:
+
+```
+_verify/
+  README.md       # what each check covers, and when it was last sabotage-tested
+  smoke.sh        # fast and shallow: does it respond
+  run-all.sh      # the regression suite: does everything else still work
+  cases/          # one file per concern, called by the two runners
+```
+
+`_verify/README.md` is part of the deliverable. Its layout table says what each script covers and its status table records when each check last proved it could fail. `/crew:verify` cross-checks that README against `.crew/verify.json` and reports drift in either direction — a script with no rule never runs, and a rule pointing at a script the README does not list is a check nobody knows about.
+
+A repo that already has a working `scripts/smoke.sh` keeps it. The gate checks `_verify/smoke.sh` first and falls back, so there is no reason to migrate a harness that works.
+
+At this point `_verify/smoke.sh` exists but contains no checks, so the gate passes vacuously. The crew has no safety net.
 
 ```
 @crew:smoke-author build the smoke harness for this repo
@@ -264,6 +328,56 @@ Re-map a single area after major surgery with `/crew:onboard --refresh <subsyste
 
 ---
 
+## 7b. The API and feature reference
+
+```
+/crew:reference                # both, whole repo
+/crew:reference --api          # endpoints only
+/crew:reference --features     # jobs, consumers, CLI, flags, integrations
+/crew:reference --audit        # report drift, change nothing
+```
+
+The code map and the reference answer different questions, and the second does not fall out of the first. `.crew/codemap/orders.md` saying *"handles order lifecycle, entry `src/Orders/`"* is a good codemap entry and tells you nothing about the eleven endpoints underneath it.
+
+| Document | Audience | Question |
+|---|---|---|
+| `.crew/codemap/` | an agent about to change code | where does this live |
+| `docs/reference/api.md` | a human calling the thing | what can I call, and what does it do to the system |
+| `docs/reference/features.md` | a human operating the thing | what can it do, including the parts with no UI |
+
+### The two rules
+
+**Every entry is anchored to `file:line`.** Unanchored, it cannot be re-verified, so it rots silently and keeps being trusted. Same reason codemap notes carry anchors.
+
+**Enumerate from the code, never from the existing docs.** The existing docs are what you are checking. A reference regenerated from a stale reference is a stale reference with a newer date.
+
+### What is worth the effort
+
+For an endpoint the signature is the guessable part. The valuable half is underneath it:
+
+```
+### POST /api/orders/{id}/ship
+`src/Controllers/OrderController.cs:142`
+
+Auth: bearer token, role `fulfilment`  (`Attributes/RequireRole.cs:20`)
+Body: `{ carrier: string, tracking: string }`
+Returns: 200 `{ shipmentId }` | 404 unknown order | 409 already shipped
+Side effects: writes `shipments`, emits `order.shipped`, calls ShipStation
+Notes: not idempotent - a retry creates a second shipment
+```
+
+Side effects, error responses, and idempotency. That last line is the one that causes incidents.
+
+For features, the headless ones are what nobody documents and everybody needs: scheduled jobs and what happens when one is missed, queue consumers, admin scripts, feature flags and the config keys behind them.
+
+### Keeping it honest
+
+`--audit` reports drift both ways - endpoints in the code with no entry, and entries whose anchor no longer holds - and changes nothing. A reference quietly rewritten is indistinguishable from one that was right all along.
+
+Anything unconfirmed is written as `undocumented - needs a human` and left visible. A reference that admits a gap is useful; one that implies full coverage while missing a third of the endpoints is worse than none, because a missing endpoint reads as proof it does not exist.
+
+---
+
 ## 8. Verification, secrets, and browser tests
 
 A code map describes the codebase. It does not verify anything. These three
@@ -281,11 +395,11 @@ those paths require:
 ```json
 {
   "rules": [
-    { "paths": ["src/Api/**"], "run": ["dotnet test tests/Api", "./scripts/smoke.sh"],
+    { "paths": ["src/Api/**"], "run": ["dotnet test tests/Api", "./_verify/smoke.sh"],
       "why": "Domain changes break API contracts" },
     { "paths": ["**/*.css", "src/components/**"], "run": ["npx playwright test --grep @visual"],
       "why": "Style changes are invisible to API tests" },
-    { "paths": ["migrations/**"], "run": ["./scripts/_smoke/migrate-fresh.sh"],
+    { "paths": ["migrations/**"], "run": ["./_verify/cases/migrate-fresh.sh"],
       "agents": ["dba"], "why": "Fresh-apply catches ordering bugs" }
   ],
   "always": ["npm run lint"],
@@ -481,28 +595,59 @@ Everything reads `.crew/config.json`:
   "jira": { "cloudId": null, "project": null },
   "memory": { "mode": "repo", "vaultPath": null },
   "verifyGate": true,
-  "context": { "warnAt": 0.8, "budgetTokens": 200000, "autoWrapUp": false, "autoResume": false },
+  "context": {
+    "enabled": true,
+    "warnAt": 0.8,
+    "budgetTokens": null,
+    "handoffPath": ".work/HANDOFF.md",
+    "autoWrapUp": false,
+    "autoResume": false
+  },
+  "notify": {
+    "provider": "none",
+    "events": ["gate", "review", "waiting"],
+    "urlEnv": "CREW_TEAMS_WEBHOOK",
+    "tokenEnv": "CREW_TELEGRAM_TOKEN",
+    "chatId": null
+  },
   "pm": { "enabled": true, "mode": "adaptive", "quietLines": 8, "maxLines": 40, "authority": "report-only" },
   "graph": { "out": "graphify-out", "obsidian": { "confirmed": false } }
 }
 ```
 
+**The `context` and `notify` blocks are not optional decoration.** Four of the
+six hooks read them, and each treats an absent block as "switched off" rather
+than as an error — so a config without them produces a session where the context
+watch never fires and no notification is ever sent, with nothing saying so. If
+you do not want notifications, write `"provider": "none"` and mean it; do not
+omit the block and assume.
+
 | Key | Values | Effect |
 |---|---|---|
 | `schema` | integer | Config layout version. Absent means a pre-PM (`v1`) setup — `/crew:upgrade` brings it to the current schema (2). Never hand-edit this; `/crew:upgrade` sets it. |
-| `notify.provider` | `teams`, `telegram`, `none` | Outbound notifications. Credentials come from env vars, never config. |
+| `verifyGate` | `true`, `false` | Whether the `Stop` hook blocks on failed checks. Set `false` only while first building the harness. |
+| `context.enabled` | `true`, `false` | The `Stop` context watch. **Absent block = off.** |
+| `context.warnAt` | `0.0`–`1.0` | Fraction of budget at which the handoff is requested. Default `0.8`. |
+| `context.budgetTokens` | integer or `null` | `null` (the default) works the window out from the model id and this session's own peak usage. Set a number to pin it. |
+| `context.handoffPath` | path | Where the handoff note lives. Default `.work/HANDOFF.md`. |
+| `notify.provider` | `teams`, `telegram`, `none` | Outbound notifications. **Absent block = off.** Credentials come from env vars, never config. |
+| `notify.events` | subset of `phase`, `gate`, `review`, `waiting`, `done` | Which events send. Empty or absent sends everything; a channel that pings constantly gets muted within a week. |
+| `notify.urlEnv` / `notify.tokenEnv` | env var **name** | The name of the variable holding the webhook URL or bot token — never the value itself. |
+| `notify.chatId` | string | Telegram only. Group ids are negative; that is normal. |
 | `secondOpinion.provider` | `gemini`, `local`, `none` | Design partner. `sendsCode` stays `false` on any free tier. |
 | `qa.provider` | `auto`, `codex`, `claude` | `auto` prefers Codex, falls back to Claude, announces which ran. `codex` fails loudly instead of falling back. |
 | `tracker` | `files`, `jira` | Where tickets live. Jira additionally requires the MCP connector. |
 | `memory.mode` | `repo`, `obsidian` | Where the code map lives. `obsidian` also needs `vaultPath`. |
-| `verifyGate` | `true`, `false` | Whether the `Stop` hook blocks on failed checks. Set `false` only while first building the harness. |
 | `tier` / `roles` | see §22 | Which agents are in play. Managed by `/crew:scale`. |
-| `context.warnAt` / `budgetTokens` | fraction, integer | When and against what estimate the `Stop` hook nags for a handoff. See §16. |
 | `context.autoWrapUp` | `true`, `false` (default `false`) | At `warnAt`, instructs the session to reach a stopping point and write the handoff, instead of just asking. The `/clear` itself stays manual either way — no hook can trigger one. See §16. |
 | `context.autoResume` | `true`, `false` (default `false`) | Opens the next `SessionStart` already holding the last handoff as `additionalContext`. See §16 — read the limitation before enabling it. |
 | `pm.enabled` / `mode` / `quietLines` / `maxLines` | see `crew-pm` skill | Whether and how verbosely the `SessionStart` PM brief speaks. `authority` is always `report-only` — the PM never edits `config.json` on its own, regardless of this block. |
 | `graph.out` | path (default `graphify-out`) | Where `graphify` wrote `graph.json`. Freshness is read from graphify's own `built_at_commit` field in that file, never a timestamp. |
 | `graph.obsidian.confirmed` | `true`, `false` (default `false`) | Consent gate for exporting the graph into an Obsidian vault. Only explicit consent given in session sets this — `/crew:upgrade` never grants it. See `crew-graph`'s Obsidian section. |
+
+The promotion sequence lives in `.crew/verify.json`, not here — see §23. Config
+holds preferences; `verify.json` holds the checks, so that one file answers "what
+runs when" for both a working tree and a deployed environment.
 
 ---
 
@@ -813,7 +958,9 @@ change the source — the `/** */` header at the top of `main.tf`, `footer.md`, 
 the `description` on each variable and output. Hand-written prose lives *above*
 the marker.
 
-Put `terraform-docs .` in the gate. That way a variable added without a
+Put `terraform-docs markdown table . --output-file README.md --output-check` in the gate - the `--output-check` form, which fails on a stale
+README rather than rewriting it mid-gate and tripping `unmapped: fail` on its own
+edit. That way a variable added without a
 `description` shows up as a README diff in the pull request, so undocumented
 inputs become visible instead of accumulating quietly.
 
@@ -1083,7 +1230,108 @@ explicit yes, no matter how obvious the recommendation looks — see the
 
 ---
 
-## 23. Command and agent reference
+## 23. Promotion: development to qa to production
+
+A merge is not a deploy, a deploy is not a working application, and a green pipeline says only that the pipeline is green. Section 8 gates a *working tree*; this gates a *running environment*.
+
+```
+/crew:promote qa
+/crew:promote production --dry-run
+/crew:promote --status
+```
+
+### Five gates, in order, stopping at the first failure
+
+| # | Gate | Answers |
+|---|---|---|
+| 1 | Pre-deploy | Is the source environment green, and is this the artifact it proved? |
+| 2 | Deploy | Did the deployment mechanism report success? |
+| 3 | Smoke | Does the deployed thing respond at all, in this environment? |
+| 4 | Regression | Does everything that worked yesterday still work? |
+| 5 | Verify | Are the environment's own signals clean — error logs, alarms, queues? |
+
+Gate 2 is the weakest evidence in the list and the one most often mistaken for the whole set. A successful deploy proves bytes moved. Gates 3 to 5 are what prove the application works.
+
+Smoke and regression are deliberately separate. Smoke passing tells you the deploy landed; it says nothing about the module three directories over that just broke. A promotion that only smoke-tests has skipped the gate that catches regressions, which is the gate that catches the expensive ones.
+
+### Declared, not remembered
+
+The sequence lives in the `environments` block of `.crew/verify.json`, beside the path rules:
+
+```json
+"environments": {
+  "qa": {
+    "requires":     ["development"],
+    "deploy":       ["./scripts/deploy.sh qa"],
+    "smoke":        ["./_verify/smoke.sh --env qa"],
+    "regression":   ["./_verify/run-all.sh --env qa", "npx playwright test --grep @flow"],
+    "verify":       ["./_verify/check-logs.sh qa --since 10m"],
+    "soakMinutes":  10,
+    "promotesTo":   "production"
+  },
+  "production": {
+    "requires":     ["qa"],
+    "deploy":       ["./scripts/deploy.sh prod"],
+    "smoke":        ["./_verify/smoke.sh --env prod"],
+    "regression":   ["./_verify/run-all.sh --env prod --read-only"],
+    "verify":       ["./_verify/check-logs.sh prod --since 15m", "./_verify/check-alarms.sh prod"],
+    "soakMinutes":  15,
+    "rollback":     "docs/runbooks/rollback.md",
+    "requireHuman": true
+  }
+}
+```
+
+`/crew:init` Phase 8 builds this by asking, per environment, what actually deploys it and what actually proves it worked. It fills in only what exists. A block with `deploy` and `smoke` and nothing else is honest; one with five aspirational commands nobody has run is worse than an empty file, because it reads as coverage.
+
+### The promotion record
+
+Every promotion appends a row to `.work/PROMOTIONS.md`, failures included:
+
+```
+| when (UTC) | env | sha | smoke | regression | verify | by |
+|---|---|---|---|---|---|---|
+| 2026-08-23T14:02Z | qa | a1b2c3d | pass | pass | pass | mbadali |
+```
+
+`requires` reads this file. It is also the only honest answer to "is production running what qa signed off on" — compare the shas, not the branch names. A promotions log with no failures in it is a log nobody is writing to.
+
+### What a hook enforces, and what it cannot
+
+`promote-gate.sh` fires on `PreToolUse` and refuses any command matching a
+declared `deploy` entry unless, for the sha at HEAD:
+
+- every environment in `requires` has an **all-pass** row in `.work/PROMOTIONS.md`
+- the `rollback` runbook exists and carries `last verified: YYYY-MM-DD` inside 90 days
+- `requireHuman` has an approval marker at `.crew/.approved-<env>-<sha>`
+- the working tree is clean - you cannot deploy a sha plus uncommitted changes
+
+`verify-gate.sh` then refuses to end a turn that deployed and recorded nothing.
+
+What no hook can enforce: that `smoke`, `regression` and `verify` actually ran,
+against the right environment, after the soak. A hook fires before a command and
+after a turn; it cannot watch the middle. The row you append is a claim - which
+is exactly why it must record failures too.
+
+Two setup consequences: `.gitignore` must cover `.crew/` and `.work/`, or the
+gate's own marker dirties the tree and blocks the next deploy; and the rollback
+runbook needs a literal `last verified: YYYY-MM-DD` line, because that is what
+the hook greps for.
+
+### Rules with no override
+
+- **The sha must match across environments.** A rebuild between qa and production is a different artifact, and qa proved nothing about it.
+- **`verify` runs after the soak.** Errors surface on the first real traffic, which arrives after the deploy finishes, not during it.
+- **Production needs a rollback runbook verified inside 90 days.** No verified rollback, no deploy.
+- **A failed gate is a stop.** Roll back or fix forward, then run the whole sequence again from gate 1. Never resume mid-sequence.
+
+### Starting from nothing
+
+Most legacy repos have a deploy script and no post-deploy proof at all. Build it in payoff order, not all at once: `smoke` for the environment you deploy to most; then `verify`, where even `grep -c ERROR` over the last ten minutes beats nothing because it turns "looks fine" into a number; then `regression` last, being the most expensive to build and the least useful until the first two are trustworthy.
+
+---
+
+## 24. Command and agent reference
 
 ### Commands
 
@@ -1093,20 +1341,22 @@ explicit yes, no matter how obvious the recommendation looks — see the
 | `/crew:work <id>` | Work one ticket end to end |
 | `/crew:review` | Independent QA — Codex or Claude fallback |
 | `/crew:onboard [--refresh <area>]` | Build or refresh the code map |
+| `/crew:reference [--api\|--features\|--audit]` | Enumerate the API and features into `docs/reference/`, anchored to `file:line` |
 | `/crew:init` | Guided phased setup, resumable |
 | `/crew:plan <decision>` | Independent design opinion before building |
 | `/crew:runbook <name\|--audit\|--verify>` | Write, verify, or audit operational runbooks |
 | `/crew:docs [--audit]` | Update the documents this change should touch |
 | `/crew:handoff` | Write the handoff note before clearing |
 | `/crew:diagram <type>` | Architecture, data-flow, process and sequence diagrams |
-| `/crew:verify` | Build or refresh the change-to-check map |
+| `/crew:verify` | Build or refresh the change-to-check map; creates `_verify/` if the repo has no check directory |
+| `/crew:promote <env> [--dry-run\|--status]` | Promote development -> qa -> production with deploy, smoke, regression and post-soak verification as separate gates |
 | `/crew:survey [area]` | Research gaps, produce ranked findings with options |
 | `/crew:scale` | Evidence-based crew sizing |
 | `/crew:jira-sync <KEY> [--push]` | Sync one issue with the local cache |
 | `/crew:pm [onboard\|offboard <role>]` | Crew-manager status, or add/remove a role — see §22 |
 | `/crew:upgrade [--force]` | Bring a pre-schema-2 (`v1`) setup forward — see §11 |
 
-16 commands.
+18 commands.
 
 ### Agents
 
@@ -1127,41 +1377,107 @@ explicit yes, no matter how obvious the recommendation looks — see the
 
 ### Hooks
 
-Seven scripts across five events, each with a `.sh` and a `.ps1` twin
-registered on its own event — 14 entries total.
+Eight scripts across five events, each with a `.sh` and a `.ps1` twin
+registered on its own matcher or event — 16 entries total.
 
 | Script | Event | Behavior |
 |---|---|---|
 | `guard.sh` / `guard.ps1` | `PreToolUse` on Bash / PowerShell | Blocks `terraform apply`/`destroy`, destructive DDL, force push, hard reset, prod-targeted commands, and any command that would print a secret value into the transcript |
+| `promote-gate.sh` / `.ps1` | `PreToolUse` on Bash / PowerShell | Refuses a declared `deploy` command unless the upstream environment has an all-pass row for **this sha**, the rollback runbook is verified inside 90 days, `requireHuman` is approved, and the tree is clean |
 | `handoff-read.sh` / `.ps1` | `SessionStart` | Injects the handoff after clear, compact, or resume |
 | `pm-brief.sh` / `.ps1` | `SessionStart` | Runs `crew_state.py`, prints the prioritized PM brief (triggers, health, knowledge, graph freshness) — report-only, changes nothing |
+| `verify-gate.sh` / `.ps1` | `Stop` | Runs the checks the changed paths map to; fails the turn on red, on a changed path with no rule, or on a deploy that recorded no promotion row |
+| `context-watch.sh` / `.ps1` | `Stop` | Estimates context use; asks for a handoff once per session, or instructs a wrap-up if `context.autoWrapUp` is on |
 | `handoff-write.sh` / `.ps1` | `PreCompact` | Snapshots the transcript, writes a skeleton handoff |
 | `notify.sh` / `.ps1` | `Notification`, plus called by commands | Outbound one-line message to Teams or Telegram. Never reads. |
-| `verify-gate.sh` / `.ps1` | `Stop` | Runs the checks the changed paths map to; fails the turn on red, or on a changed path with no rule |
-| `context-watch.sh` / `.ps1` | `Stop` | Estimates context use; asks for a handoff once per session, or instructs a wrap-up if `context.autoWrapUp` is on |
 
 Both flavours are registered **on every event, on purpose** — not because
 each fires everywhere, but because `hooks.json` cannot know which shell a
 given machine has. On Windows, the `.sh` side can fail outright depending on
 which `bash` resolves first on `PATH`: measured, Git for Windows' `usr/bin/bash.exe`
 exits 127 on these scripts where its own `bin/bash.exe` runs them fine. The
-`.ps1` twin is what actually gates the machine when that happens — one
-flavour failing there is expected, not a bug. The reverse gap — no `bash` at
-all — is why the pairing exists in the first place. What is **not** verified
-is real hook-runner behavior with no `pwsh` on Linux; that combination was
-never exercised, so treat it as unconfirmed rather than assumed fine.
+`.ps1` twin — registered with a `shell: powershell` field, which Claude Code
+documents and does read — is what actually gates the machine when that
+happens; one flavour failing there is expected, not a bug. The reverse gap —
+no `bash` at all — is why the pairing exists in the first place. What is
+**not** verified is real hook-runner behavior with no `pwsh` on Linux; that
+combination was never exercised, so treat it as unconfirmed rather than
+assumed fine.
+
+**Every hook is inert until a repository has `.crew/config.json`.** Installing the
+plugin arms nothing; `/crew:init` in a given repo is what turns the gates on there.
+That is deliberate - a gate that fired in every repository you opened would be
+hostile - but it does mean "I installed crew and nothing happened" is the expected
+first experience, not a fault. Check with `ls .crew/` before concluding a hook is
+broken.
 
 Hooks are deterministic. That is their whole value — a hook cannot be argued out of blocking `terraform apply`, and an agent can.
 
+### Three suites, and what each can actually prove
+
+```bash
+bash   hooks/scripts/_test/run-tests.sh           # 50 cases - the hooks
+bash   hooks/scripts/_test/setup-walkthrough.sh   # 32 cases - the setup scripts
+python hooks/scripts/_test/validate-prompts.py    # 91 checks - command/agent structure
+```
+
+| Suite | Proves | Cannot prove |
+|---|---|---|
+| `run-tests.sh` | Every gate blocks and allows what it should | - |
+| `setup-walkthrough.sh` | Phases 0-8 scripts run against a real mixed-stack repo and produce their artifacts | that a human would like the result |
+| `validate-prompts.py` | Frontmatter parses, tools are real, referenced agents and paths exist, read-only agents hold no write tools, commands that spawn subagents are permitted to | **whether the prompts produce good work** |
+
+That last gap is real and no test closes it. The 18 commands and 10 agents are
+instructions to a model; only a live session running a real ticket exercises
+them. Setup Phase 7 exists for exactly that, and it is the one thing here that
+has to be done by hand.
+
+All three are sabotage-tested - reintroduce a bug each is meant to catch and it
+goes red. If you add a rule, add the case that proves it, then break it once.
+
+`run-tests.sh` is 50 cases: 20 the guard must block, 14 it must allow, 12 for the
+promotion gate, plus the verify gate's root-level glob matching and its
+`stop_hook_active` exit. `guard.sh` produced two
+real regressions in two review passes — a substring `prod` match that blocked
+`s3://my-product-images`, and a secret rule that exempted `> file` so writing a
+secret to disk passed while printing one blocked. Both were found by running it,
+not by reading it.
+
+The suite has been sabotage-tested: reintroducing each of those bugs turns it
+red (3 failures, 3 failures, and 1 for the stop-loop check). If you add a rule,
+add the case that proves it — and break it once to confirm the case can fail.
+
+### How the Windows half works
+
+Every event is registered **twice** in `hooks.json`, once per flavour, with `shell: powershell` on the PowerShell side — a field Claude Code documents and does read; setting it runs that entry via PowerShell on Windows without needing `CLAUDE_CODE_USE_POWERSHELL_TOOL`, since hooks spawn the interpreter directly. `guard.sh`/`guard.ps1` and `promote-gate.sh`/`promote-gate.ps1` are additionally registered on separate `Bash` / `PowerShell` matchers at `PreToolUse`, so the branch is **which tool Claude used**, not which OS is running:
+
+```json
+{ "matcher": "Bash",       "hooks": [{ "type": "command", "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/guard.sh", "timeout": 10 }] },
+{ "matcher": "PowerShell", "hooks": [{ "type": "command", "shell": "powershell", "command": "& '${CLAUDE_PLUGIN_ROOT}/hooks/scripts/guard.ps1'", "timeout": 10 }] }
+```
+
+That distinction is load-bearing. A `Bash` tool call is bash syntax *even on Windows*, so judging it with PowerShell rules gets it backwards in both directions: it blocks the correct capture form (`DB_PASS=$(...)`) and misses the wrong one. Branch on the tool and each command is judged by the rules of the language it is written in. (`hooks/scripts/_common.sh` also ships a `crew_tool_dispatch` helper for judging a command from inside a single bash-registered script — a valid alternative shape — but it is unused here in favour of the explicit dual-matcher registration above.)
+
+The other six hooks judge no command, so both flavours are simply wired to their event with no branch: `verify-gate.sh`/`.ps1`, `context-watch.sh`/`.ps1`, `handoff-read.sh`/`.ps1`, `handoff-write.sh`/`.ps1`, `pm-brief.sh`/`.ps1`, and `notify.sh`/`.ps1` are all registered in `hooks.json`, one entry per flavour per event.
+
+Two things worth knowing:
+
+- **`hooks.json` has no way to know in advance which shell a given machine actually has**, so both flavours are wired and one is expected to fail — that is by design, not a bug. On Windows this is measured, not hypothetical: Git for Windows ships two `bash.exe` binaries, and `usr/bin/bash.exe` exits 127 running these scripts where `bin/bash.exe` runs them fine, so which one resolves first on `PATH` decides whether the `.sh` side works at all. The `.ps1` twin is what actually gates the machine when it doesn't.
+- **A bare `command` string with no `shell` field still goes to Git Bash on Windows** (PowerShell only when Git Bash isn't installed), not to whatever `bash` a non-MSYS parent process might resolve to. Versions of this plugin before 0.2.0 relied on the `.sh` side deferring to a `.ps1` twin that was never actually invoked, so on Windows the command guard blocked nothing and the `Stop` gate ran nothing — fixed by registering both flavours explicitly instead of assuming one would pick up the other's slack.
+
+`python3` is not required. Every script resolves `python3`, then `python`, then `py`, and `guard.sh` prefers `jq` when present. With none available the hook says so on stderr and exits 0 — loudly inert rather than silently passing.
+
 ---
 
-## 24. Troubleshooting
+## 25. Troubleshooting
 
 | Symptom | Likely cause |
 |---|---|
 | Commands do not appear | Plugin not installed, or needs `/reload-plugins`. Check `/help`. |
 | Agents ignore `CLAUDE.md` rules | The built-in Explore and Plan agents skip `CLAUDE.md` by design. Restate critical constraints in the delegation prompt. |
-| Smoke gate never fires | `scripts/smoke.sh` is not executable, has no checks, or `smokeGate` is `false`. |
+| Smoke gate never fires | `_verify/smoke.sh` has no checks, or `verifyGate` is `false` in `.crew/config.json`. |
+| Gate blocks on a file it edited | A `run` command writes to the tree - almost always `terraform-docs .` without `--output-check`. Use the checking form. |
+| Promotion says qa passed but prod broke | Compare the shas in `.work/PROMOTIONS.md`. A rebuild between environments means qa proved nothing about what prod got. |
 | Review always returns CLEAN | Empty diff, wrong base branch, or `codex` silently missing. Check which reviewer the command reported. |
 | Jira connection fails | Using the retired `/v1/sse` endpoint, or the server was never approved via `/mcp`. |
 | Context fills fast anyway | `CLAUDE.md` has grown. Every line is multiplied across every delegation. Cut it back to a routing table. |

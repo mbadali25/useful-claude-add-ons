@@ -4,6 +4,27 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Changed
+
+- **Re-pinned the README's one-liner install URLs** from `f59faf1` to `7059ede`, per the
+  rule in `CLAUDE.md`. The old pin predated everything below, so the documented one-liner
+  was still handing people the installer with the broken `claude plugin update` call.
+
+### Fixed
+
+- **Every installed skill was frozen at whatever it looked like on the day it was first
+  published.** `claude plugin update` decides whether to re-copy a plugin by comparing
+  declared versions, and no skill in this marketplace had ever had its `version` bumped -
+  all 25 sat at `1.0.0` from the day they were added. Nineteen of them had had real
+  content changes since. The CLI answered every update with "already at the latest
+  version (1.0.0)" and copied nothing, so anyone who ran the installer once was still
+  running the original text of every skill, with no indication anything was wrong. The
+  matching `claude plugin update` bug (below) had been masking it behind a warning that
+  looked like the real explanation. The 18 skills whose files had changed since their
+  version was set are now `1.1.0`; `crew` goes to `0.3.0` (its `0.2.0` was declared a
+  commit before the Windows hook fix landed, and two further changes landed after that).
+  The seven skills whose files genuinely had not changed are left at `1.0.0`.
+
 ### Added
 
 - **`crew` 0.3.0 — a report-only project manager, a code graph, and a v1→v2
@@ -49,18 +70,18 @@ All notable changes to this repository are documented here. Format follows [Keep
   `.crew/config.json` gains `schema`, a `pm` block (`enabled`, `mode`,
   `quietLines`, `maxLines`, `authority` — always `report-only`), and a
   `graph` block (`out`, `obsidian.confirmed`) — see `plugin/crew/README.md`
-  §11. The plugin now registers 10 subagents, 16 slash commands, and 16
+  §11. The plugin now registers 10 subagents, 18 slash commands, and 16
   bundled skills, up from 9/14/14.
 - **Both `.sh` and `.ps1` are now wired for every hook event, not just
   `PreToolUse`.** `verify-gate.ps1`, `context-watch.ps1`, and
   `handoff-read.ps1` existed on disk but were never referenced in
-  `hooks.json`; `handoff-write.ps1` and `notify.ps1` are new. 7 scripts × 2
-  flavours = 14 hook entries across the same 5 events, registered
-  unconditionally — one flavour is expected to fail per machine, and that is
-  by design, not a regression. On Windows this closes the gap the 0.2.0
-  entry below flagged as a known, documented-not-fixed limitation; on Linux
-  with no `pwsh`, the real hook-runner behaviour remains unverified rather
-  than assumed fine.
+  `hooks.json`; `handoff-write.ps1` and `notify.ps1` are new. 8 scripts × 2
+  flavours = 16 hook entries across the same 5 events (including the
+  `promote-gate.sh`/`.ps1` pair added below), registered unconditionally —
+  one flavour is expected to fail per machine, and that is by design, not a
+  regression. On Windows this closes the gap the 0.2.0 entry below flagged
+  as a known, documented-not-fixed limitation; on Linux with no `pwsh`, the
+  real hook-runner behaviour remains unverified rather than assumed fine.
 - **The `repo-plugins` install item (21) now detects a global `find-skills`
   collision instead of only documenting it.** If
   `~/.claude/skills/find-skills` exists — from menu item 5, or a direct
@@ -74,9 +95,242 @@ All notable changes to this repository are documented here. Format follows [Keep
   Reuses `--select` / `-Select` like every other item. Installing it alone
   does nothing; `crew`'s `crew-graph` skill and `/crew:upgrade` are what call
   it.
+- **`--dry-run` / `-DryRun`.** Settles the selection, prints it, and stops without
+  installing anything - the quickest way to see what a set of flags actually resolves
+  to, and what `scripts/_test/menu-groups.sh` uses so a test run cannot reach `apt-get`
+  or `npm install -g`.
+- **Every menu row that installs more than one thing now has a sub-picker.** Only the
+  repo's own skills row did; the team, community, VoltAgent and repo-plugin rows were
+  all-or-nothing, so wanting one of the three team plugins, or two of the ten VoltAgent
+  packs (154 subagents), meant taking the lot or editing the script. All five rows are
+  now marked `>` in the menu, open their own picker on the right arrow, and carry a live
+  `N of M` count. New flags for the non-interactive path, matching `--skills`:
+  `--team` / `-Team`, `--community` / `-Community`, `--voltagent` / `-VoltAgent`,
+  `--plugins` / `-Plugins`, each taking names, numbers, `all` or `none`. A name matches
+  the plugin key or the short label the picker shows, so `--voltagent infra` and
+  `--voltagent voltagent-infra` are the same thing. Naming items inside a row also
+  selects that row - which is what makes `--plugins crew` work at all, since that row is
+  off by default - but never overrides a choice made at the menu. Only the marketplaces behind a ticked plugin are registered now, so
+  `--team excalidraw-generator` adds one marketplace instead of three. The five catalogs
+  are the single source for the menu label, the picker, the flag and the install loop,
+  so a row cannot say "3 of 3" and then install something else - all five, including the
+  skills, go through one `install_group` / `Install-Group`. That also fixed a smaller
+  thing: a marketplace behind several ticked plugins is registered once rather than once
+  per plugin, so the community row no longer re-clones `claude-settings` three times.
+
+- **Content-drift detection in both install scripts.** A version bump fixes today's
+  staleness; this stops it recurring silently. For an already-installed plugin the
+  scripts compare the commit its marketplace is on against the commit Claude Code
+  recorded at install time, and then ask git whether *that plugin's* files changed
+  between the two - one commit anywhere in a marketplace moves `HEAD` for everything it
+  publishes, so this also keeps unrelated commits off the slow path. If the files did
+  change and `claude plugin update` still copies nothing, that is the unbumped-version
+  case, and the scripts now say so plainly instead of reporting the plugin as current.
+  New `--force-refresh` / `-ForceRefresh` reinstalls such a plugin (`claude plugin
+  uninstall --keep-data` then install), which is the only way to make the CLI re-copy it.
+  Anything the check cannot answer - no `git`, no history, a commit pruned by a
+  force-push - falls back to the previous CLI path. Regression suite:
+  `scripts/_test/drift-detection.sh` (15 assertions over 7 scenarios, asserting on the
+  bytes on disk and not only on what the script printed; sabotage-tested by
+  reintroducing both original bugs).
+- **`scripts/check-marketplace.py` + a `Marketplace` CI workflow.** Fails when a skill's
+  files have changed since its version was last set - the bug above, caught in the repo
+  instead of on users' machines - and checks every registration rule in `CLAUDE.md`:
+  directories registered in `marketplace.json` and vice versa, required fields, `source`
+  paths, no nested `marketplace.json`, `SKILL.md` frontmatter names matching their
+  directories, `plugin.json` versions agreeing with the marketplace, the `SKILL_KEYS` /
+  `SkillCatalog` catalogs in both install scripts matching in content and order, and a
+  table row in each of the three catalog docs. Sabotage-tested against eight
+  reintroduced faults. It also holds the two install scripts to `CLAUDE.md`'s rule
+  that they are a matched pair: same menu keys, same order, same default flags, and
+  the same entries in every sub-picker group - a mismatch there makes `--select 3,7`
+  mean different things on Windows and Linux and silently invalidates every doc that
+  names an item by number.
+- **`scripts/check-powershell.ps1` + `scripts/_test/menu-groups.sh`.** The PowerShell
+  script is Windows-only end to end, so a call to a function that does not exist parses
+  cleanly, is never reached on a CI runner, and only fails on the one platform that
+  matters - which is how a mis-named picker call got through review here and would have
+  killed every sub-picker on Windows. `check-powershell.ps1` resolves every `Verb-Noun`
+  call against the script's own functions and the available cmdlets, with a short,
+  justified allowlist for names a runtime `Import-Module` supplies. `menu-groups.sh`
+  covers the sub-picker catalogs, the `--<group>` spec parser and the parent-implication
+  rule (32 assertions). Both were sabotage-tested; the menu suite caught a weakness in
+  its own first draft, which asserted on the message a flag printed rather than on the
+  row actually being installed.
+
+### Fixed
+
+- **Install scripts — installing this repo's skills took minutes, and every re-run
+  warned about all of them.** Two problems compounded. First, `claude plugin update`
+  was called with a bare plugin name; the CLI only accepts `name@marketplace` and
+  rejects a bare name with `Plugin "<name>" not found`, so *every* update in a re-run
+  failed and printed `'claude plugin update <name>' failed - keeping the installed
+  version.` — 25 spawned CLI processes that could not have succeeded, plus 25 warnings
+  that read like real breakage. Second, both scripts reloaded the entire plugin list
+  (`claude plugin list --json`) after every single install, doubling the CLI spawns on
+  a fresh run. `install_plugin` / `Install-ClaudePlugin` now compare the marketplace
+  clone's HEAD commit against the commit Claude Code recorded for the installed copy
+  (`installed_plugins.json`) and skip the update spawn entirely when they match, pass
+  the fully qualified `name@marketplace` when they do not, and add a freshly installed
+  plugin to the in-memory cache instead of re-reading the whole list. Both SHA lookups
+  are file reads, and either one being unavailable (no `git`, an unreadable state file,
+  a plugin installed from a different marketplace) reports "cannot tell" and falls back
+  to the old CLI path. Measured on the 25-skill item: re-run 38.5s -> 5.8s, fresh
+  install 51s -> 32s, and no spurious warnings.
+
+- **`crew` 0.2.0 — the Windows hooks never ran.** `guard.sh` and `verify-gate.sh` exited 0
+  on MSYS/MINGW to "defer" to `.ps1` twins, and the twins were registered with a
+  `shell: powershell` field that Claude Code does not read — `verify-gate.ps1`,
+  `context-watch.ps1` and `handoff-read.ps1` were referenced by nothing at all, and
+  `handoff-write.ps1` did not exist. The net effect on Windows was a command guard that
+  blocked nothing and a `Stop` gate that ran nothing, which reads as "the gate passed"
+  rather than "the gate never ran". Each hook is now registered once as bash and hands
+  control to its twin from inside the script (`crew_win_dispatch` in
+  `hooks/scripts/_common.sh`, `exec` so stdin passes through); `handoff-write.ps1` has
+  been written. Verified by test: `terraform apply -auto-approve` now exits 2 on Windows.
+- **`crew` — the verification map silently skipped every root-level file.** `fnmatch` and
+  PowerShell's `-like` both let `*` span `/`, so a `**/*.tf` rule demanded a literal slash
+  and never matched `main.tf` — exactly the file a Terraform module keeps at its root.
+  With `"unmapped": "fail"` that meant editing `main.tf` failed the gate *and* skipped
+  fmt, validate and tflint. Both gate implementations now also test the `**/`-stripped
+  form.
+- **`crew` — a failing `Stop` check could pin the session.** `verify-gate.sh` never read
+  stdin, so it could not see `stop_hook_active` and blocked its own retry. Both
+  implementations now honour it.
+- **`crew` — `python3` was a hard dependency** of five hook scripts, and Git Bash ships
+  without it. They now resolve `python3`, then `python`, then `py`; `guard.sh` prefers
+  `jq`. With none available the hook says so on stderr instead of failing open silently.
+- **`crew` — `terraform-docs .` in the gate edited the tree it was gating.** The writing
+  form rewrites `README.md`, making it a changed file with no rule on the next run, which
+  trips `unmapped: fail` on the gate's own edit. Every example now uses
+  `--output-check`, which fails on a stale README and writes nothing.
+- **`crew` — `$LASTEXITCODE` was read after `Invoke-Expression`** in `verify-gate.ps1`.
+  A cmdlet leaves the previous value in place, so a stale 0 read as a pass. It is now
+  reset before each command and `$?` is checked alongside it.
+- **`crew` — dead agent frontmatter.** `effort: high` (2 files) and `memory: project`
+  (6 files) are not part of the subagent schema and were silently ignored, so
+  `qa-reviewer` was not running at the high effort its file claimed. Removed.
+
+- **`crew` — the command guard was judging bash with PowerShell rules on Windows.**
+  Found by the second QA pass, and introduced by the first: dispatch branched on the
+  OS, so a `Bash` tool call on Windows was handed to `guard.ps1`. That inverted the
+  secret rule in both directions - it blocked the correct capture form
+  (`DB_PASS=$(...)`) and let `vault kv get ... > secret.txt` through. Dispatch now
+  branches on `tool_name`, which is what actually determines the language a command is
+  written in. The other five hooks judge no command, are reached through `bash`, and
+  no longer branch at all.
+- **`crew` — the secret rule treated persistence as an exemption.** A `>` redirect or a
+  `| tee` marked a command safe, so writing a secret to disk passed while printing one
+  blocked - and the block message recommended a form the guard itself rejected. Both
+  now block; the only exemption is assigning to a variable.
+- **`crew` — the production guard matched `prod` as a substring**, blocking
+  `aws s3 ls s3://my-product-images`, `select * from products` and
+  `reproducible-builds`. Now a whole-token match. A guard people route around is not a
+  guard.
+- **`crew` — an ERE portability bug made the capture allowlist match nothing.** `\(`
+  is a literal paren in POSIX ERE but a group opener in some greps ("Unmatched ( or
+  \("). Bracket expressions are used instead.
+- **`crew` — the verify loop could eat its own command list.** `eval "$c"` shared stdin
+  with the `while read` over the here-string, so a check that reads stdin silently
+  consumed the remaining checks. Now `</dev/null`.
+- **`crew` — `context-watch.sh` called `python3` directly in six places**, every one
+  suppressed with `2>/dev/null`, so on a host with only `python` the context warning
+  silently never fired. It resolves once through `crew_py` and says so on stderr if
+  there is none.
+- **`crew` — `claude-md-audit.sh` required bash 4.** `declare -A` is a parse error on
+  macOS's stock bash 3.2. Rewritten without associative arrays or process substitution.
+- **`crew` — `_verify/run-all.sh --read-only` used a denylist.** An unmarked case ran
+  against production; only a self-declared `# writes: yes` skipped it. It is now an
+  allowlist - a case runs under `--read-only` only if it declares `# readonly: yes`,
+  and skips are reported.
+- **`crew` — `git branch --show-current` needs git 2.22+**, and the `|| echo 'not a git
+  repo'` fallback made an older git look like a missing repo. Uses `rev-parse
+  --abbrev-ref HEAD`.
+
+- **`crew` — `/crew:reference`, the API and feature reference.** The code map answers
+  "where does this live"; nothing answered "what can this system do, and how do I call
+  it". `docs/reference/api.md` enumerates every endpoint with its auth, body, returns,
+  **side effects, error responses and idempotency** - the parts that are not guessable
+  from the name - and `docs/reference/features.md` covers the headless capabilities
+  nobody documents: scheduled jobs and what a missed run does, queue consumers, admin
+  scripts, feature flags. Every entry is anchored to `file:line` so it can be
+  re-verified, `--audit` reports drift in both directions without rewriting anything,
+  and unconfirmed entries are left visible as `undocumented - needs a human`. Wired
+  into `/crew:onboard` as the second of four artifacts and owned by `crew:docs-writer`.
+
+- **`crew` — promotion is now enforced by a hook, not by instructions.**
+  `promote-gate.sh` (`PreToolUse`) fires on any command matching a declared `deploy`
+  entry and refuses it unless, for the sha at HEAD, every `requires` environment has an
+  all-pass row in `.work/PROMOTIONS.md`, the `rollback` runbook exists with
+  `last verified` inside 90 days, `requireHuman` has an approval marker, and the tree is
+  clean. `verify-gate.sh` additionally refuses to end a turn after a deploy that wrote
+  no promotion row. What a hook still cannot see is the middle - that smoke, regression
+  and verify actually ran after the deploy - and `/crew:promote` now says so explicitly
+  rather than implying coverage.
+- **`crew` — `resolve-tools.sh`: platform detection that adapts instead of just
+  reporting.** It reads `.crew/verify.json`, extracts the first word of every command,
+  and reports each tool as native, WSL-only, or missing. The WSL-only case is the
+  expensive one: a bare `terraform validate` on a machine where terraform lives only
+  inside WSL fails with "command not found", and the gate reports that as a *failed
+  check* rather than a missing tool. Resolve once at setup, write `wsl.exe -e terraform`
+  into the map, never branch at runtime.
+- **`crew` — two more committed suites.** `setup-walkthrough.sh` builds a mixed-stack
+  scratch repo and runs every script phases 0-8 invoke (32 assertions);
+  `validate-prompts.py` checks all 16 commands, 9 agents and 14 skills for frontmatter
+  that parses, tools that exist, referenced agents and paths that resolve, read-only
+  agents that hold no write tools, and subagent-spawning commands that are permitted to
+  (91 checks). Both sabotage-tested. Neither proves the prompts produce good work -
+  only a live session on a real ticket does that.
+
+- **`crew` — a committed regression suite for the hooks**,
+  `hooks/scripts/_test/run-tests.sh`. 38 cases: 20 the command guard must block, 14 it
+  must allow, plus the verify gate's root-level glob matching and its
+  `stop_hook_active` exit. `guard.sh` shipped two real regressions in two review
+  passes and both were found by running it rather than reading it, so the suite is
+  itself sabotage-tested — reintroducing the substring `prod` match, the `>`-as-
+  exemption secret bug, or removing the stop-loop check each turns it red.
+
+### Removed
+
+- **`crew` — `skills/crew-setup/templates/smoke.sh`**, orphaned by the `_verify/`
+  restructuring and diverging from the new `--env`-aware interface.
+- **`crew` — four duplicate trees.** `docs/README.md` was byte-identical to `README.md`;
+  `examples/` was byte-identical to `skills/crew-setup/` and referenced by nothing;
+  `docs/crew-howto.pdf` was a third copy of the README in an undiffable format; and
+  `plugin/crew/.claude-plugin/marketplace.json` was a stub naming a nonexistent source,
+  which this repo's `CLAUDE.md` already forbids. ~380 KB, no functional change.
+
+### Added
+
+- **`crew` — `/crew:promote <development|qa|production>`, with `--dry-run` and
+  `--status`.** Promotion runs as five separate gates — pre-deploy, deploy, smoke,
+  regression, post-soak verify — stopping at the first failure. Smoke and regression are
+  deliberately distinct: smoke passing tells you the deploy landed and says nothing about
+  the module three directories over that just broke. The sequence is declared in an
+  `environments` block in `.crew/verify.json` rather than remembered, production requires
+  a rollback runbook verified inside 90 days and explicit human approval, and every
+  promotion appends a row — failures included — to `.work/PROMOTIONS.md`, which is the
+  only honest answer to "is production running what qa signed off on". New setup Phase 8
+  builds the block by asking what actually deploys each environment and what actually
+  proves it worked.
+- **`crew` — `_verify/` as the canonical home for checks.** Setup looks for `_verify/`
+  first (then `qa/`, `spec/`, `_test*/`) and adopts an existing convention rather than
+  duplicating it; where none exists it creates `_verify/` from a template carrying
+  `README.md`, `smoke.sh`, `run-all.sh` and `cases/`. The README is part of the
+  deliverable: a layout table for what each check covers and a status table for when each
+  last proved it could fail. `/crew:verify` cross-checks it against `.crew/verify.json`
+  and reports drift both ways — a script with no rule never runs, and a rule naming a
+  script the README omits is a check nobody knows about. `scripts/smoke.sh` is still
+  honoured; the gate checks `_verify/smoke.sh` first and falls back.
+- **`crew` — promotion discipline in the CLAUDE.md templates.** Both the generic and the
+  Terraform template now carry the judgment half: the fixed `development -> qa ->
+  production` order, the same sha through all three, smoke *and* regression *and*
+  post-soak verification after every deploy, no production deploy without a verified
+  rollback, and a failed gate restarting the whole sequence rather than resuming.
+
 - **A `plugin/` tree, and the `crew` plugin in it — the repo's first entry that is a
   plugin rather than a skill.** `crew` 0.2.0 is a virtual dev team for multi-repo legacy
-  work: 9 context-isolated subagents, 14 slash commands, 14 bundled skills, and 7 hooks
+  work: 9 context-isolated subagents, 16 slash commands, 14 bundled skills, and 7 hooks
   across 5 events (`PreToolUse`, `Stop`, `PreCompact`, `SessionStart`, `Notification`).
   Beyond the safety gates it now carries a handoff note across a `/clear` or an
   auto-compact, and watches context use. Roles

@@ -15,6 +15,7 @@ import argparse
 import base64
 import json
 import os
+import shutil
 import stat
 import sys
 import time
@@ -77,9 +78,15 @@ def _save_cache(key, token, expires_in):
     except (OSError, ValueError):
         blob = {}
     blob[key] = {"access_token": token, "expires_at": time.time() + int(expires_in)}
-    with open(CACHE_PATH, "w", encoding="utf-8") as f:
+    # Create the file already private rather than writing it world-readable
+    # and chmod'ing after - the gap between the two is a live bearer token on
+    # disk at the default umask. On Windows this is cosmetic (ACLs, not mode
+    # bits), so the cache still should not live on a shared machine.
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+    fd = os.open(CACHE_PATH, flags, stat.S_IRUSR | stat.S_IWUSR)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
         json.dump(blob, f)
-    os.chmod(CACHE_PATH, stat.S_IRUSR | stat.S_IWUSR)  # 0600 — it's a bearer token
+    os.chmod(CACHE_PATH, stat.S_IRUSR | stat.S_IWUSR)  # 0600 - it's a bearer token
 
 
 def _post_token(tenant, data):
@@ -104,7 +111,7 @@ def _client_credentials():
         raise AuthError(
             "Certificate auth requires assembling a signed JWT assertion. Install msal "
             "(`pip install msal`) and use ConfidentialClientApplication with "
-            "client_credential={'thumbprint':..., 'private_key':...} — see "
+            "client_credential={'thumbprint':..., 'private_key':...} - see "
             "references/auth-setup.md, 'Certificate auth'."
         )
 
@@ -159,16 +166,38 @@ def _device_code(quiet=False):
     raise AuthError("Device code flow timed out waiting for sign-in.")
 
 
+def _find_az():
+    """Locate the az launcher.
+
+    On Windows az ships as az.cmd, and CreateProcess does not apply PATHEXT -
+    so subprocess.run(["az", ...]) raises FileNotFoundError even when az is
+    installed and on PATH. shutil.which does apply PATHEXT. Without this the
+    error below blames PATH for a problem that is not PATH, and you go looking
+    for an install that is already there.
+    """
+    for name in ("az", "az.cmd", "az.bat", "az.exe"):
+        found = shutil.which(name)
+        if found:
+            return found
+    return None
+
+
 def _azure_cli():
+    az = _find_az()
+    if not az:
+        raise AuthError(
+            "azure_cli mode needs the `az` CLI. It was not found via PATH "
+            "(including PATHEXT on Windows, where az is az.cmd). Install it, or "
+            "use --mode client_credentials / device_code.")
     try:
         out = subprocess.run(
-            ["az", "account", "get-access-token", "--resource", "https://graph.microsoft.com", "-o", "json"],
+            [az, "account", "get-access-token", "--resource", "https://graph.microsoft.com", "-o", "json"],
             capture_output=True, text=True, timeout=60, check=False,
         )
-    except FileNotFoundError as exc:
-        raise AuthError("azure_cli mode needs the `az` CLI on PATH.") from exc
+    except OSError as exc:
+        raise AuthError(f"Could not run {az}: {exc}") from exc
     if out.returncode != 0:
-        raise AuthError(f"az get-access-token failed — run `az login` first.\n{out.stderr[:400]}")
+        raise AuthError(f"az get-access-token failed - run `az login` first.\n{out.stderr[:400]}")
     tok = json.loads(out.stdout)
     return tok["accessToken"], 3599, "azcli"
 
@@ -197,7 +226,7 @@ def get_token(mode=None, use_cache=True):
             if hit:
                 return hit["access_token"]
         except AuthError:
-            pass  # missing env vars — let the handler raise the useful message
+            pass  # missing env vars - let the handler raise the useful message
 
     token, expires_in, key = handlers[mode]()
     if use_cache:
@@ -206,7 +235,7 @@ def get_token(mode=None, use_cache=True):
 
 
 def decode_claims(token):
-    """Decode the JWT payload. Inspection only — no signature verification."""
+    """Decode the JWT payload. Inspection only - no signature verification."""
     payload = token.split(".")[1]
     payload += "=" * (-len(payload) % 4)
     return json.loads(base64.urlsafe_b64decode(payload))
@@ -220,20 +249,20 @@ def _check(mode):
     print(f"Type:      {'application (app-only)' if not c.get('upn') else 'delegated (user)'}")
     print(f"Expires:   {time.strftime('%H:%M:%S', time.localtime(c.get('exp', 0)))}")
     scopes = c.get("roles") or (c.get("scp", "").split() if c.get("scp") else [])
-    print(f"Scopes:    {', '.join(sorted(scopes)) if scopes else '(none — this token can do nothing)'}")
+    print(f"Scopes:    {', '.join(sorted(scopes)) if scopes else '(none - this token can do nothing)'}")
 
     r = requests.get(
         "https://graph.microsoft.com/v1.0/deviceManagement/managedDevices?$top=1",
         headers={"Authorization": f"Bearer {token}"}, timeout=30,
     )
     if r.status_code == 200:
-        print("Intune:    OK — managedDevices readable")
+        print("Intune:    OK - managedDevices readable")
     elif r.status_code == 403:
-        print("Intune:    403 — token is valid but lacks DeviceManagementManagedDevices.*")
+        print("Intune:    403 - token is valid but lacks DeviceManagementManagedDevices.*")
         print("           App-only tokens need APPLICATION permissions, not delegated ones,")
         print("           plus admin consent. See references/auth-setup.md.")
     else:
-        print(f"Intune:    {r.status_code} — {r.text[:200]}")
+        print(f"Intune:    {r.status_code} - {r.text[:200]}")
     return 0 if r.status_code == 200 else 1
 
 
@@ -241,7 +270,7 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="Acquire/inspect a Graph token for Intune.")
     ap.add_argument("--mode", choices=["client_credentials", "device_code", "azure_cli"])
     ap.add_argument("--check", action="store_true", help="Print token identity + scopes and test Intune access")
-    ap.add_argument("--print-token", action="store_true", help="Print raw token (avoid — it's a live credential)")
+    ap.add_argument("--print-token", action="store_true", help="Print raw token (avoid - it's a live credential)")
     a = ap.parse_args()
     try:
         if a.check:

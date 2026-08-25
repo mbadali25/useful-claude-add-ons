@@ -34,6 +34,7 @@ updated: <date>
 | 5 | Verification map  | todo    | |
 | 6 | Browser tests     | n/a     | no UI in this repo |
 | 7 | First ticket      | todo    | |
+| 8 | Promotion gates   | todo    | |
 ```
 
 States: `todo`, `in progress`, `partial`, `blocked`, `done`, `n/a`.
@@ -48,8 +49,29 @@ Run `platform.sh` (or `platform.ps1` on native Windows). Record the `platform`
 block in `.crew/config.json`. Act on `windows-mount` and `crlfDetected` per
 `crew-setup/platform.md`, and ask before re-cloning anything.
 
-**Done when:** platform recorded, and any CRLF or filesystem issue either fixed
-or explicitly accepted by me.
+**Then resolve the toolchain**, which is the half that actually blocks work:
+
+```
+bash ${CLAUDE_PLUGIN_ROOT}/skills/crew-setup/scripts/resolve-tools.sh <tools>
+```
+
+Knowing you are on WSL2 is not useful on its own. Knowing that `terraform` is
+not on this shell's PATH but does exist inside WSL is, because a bare
+`terraform validate` in a rule then fails with "command not found" and the gate
+reports that as a **failed check** rather than a missing tool - and someone
+spends an afternoon on a config bug that does not exist.
+
+Write the resolved form into config, and later into `.crew/verify.json`:
+`terraform` if native, `wsl.exe -e terraform` if it only lives in WSL. Resolve
+once here; never branch at runtime. If a tool is WSL-only, say the two things
+that bite - `/mnt/c` is dramatically slower than the WSL filesystem, and
+credentials do not cross the boundary (a Windows `aws` is not the WSL `aws`) -
+and offer moving the clone inside WSL, which removes the problem rather than
+wrapping it.
+
+**Done when:** platform recorded, every tool the repo needs resolved to a form
+that runs on this machine, and any CRLF or filesystem issue either fixed or
+explicitly accepted by me.
 
 ## Phase 1 — Config and structure
 
@@ -59,12 +81,36 @@ requests, and offer to remove it. Never delete it yourself — it is the user's
 own global configuration.
 
 Ask the three questions (reviewer, tracker, memory). Create
-`.crew/`, `.work/`, `docs/adr/`, `scripts/smoke.sh` from template, gitignore
+`.crew/`, `.work/`, `docs/adr/`, `_verify/` from template (README.md, smoke.sh,
+run-all.sh, cases/), gitignore
 entries for secrets, and a `CLAUDE.md` if absent.
 
-Then **fill in the CLAUDE.md with me**, do not leave the template blanks. Ask
-for the build command, the run command, the do-not-touch paths, and the landmine
-that breaks every time. Thirty lines, no more.
+**The CLAUDE.md, whether or not one already exists.** Run:
+
+```
+bash ${CLAUDE_PLUGIN_ROOT}/skills/crew-setup/scripts/claude-md-audit.sh
+```
+
+It compares the repo's CLAUDE.md against the template section by section and
+prints what is missing, what is extra, the line count against the 60-line
+ceiling, and how many template placeholders are still unfilled.
+
+- **No CLAUDE.md:** create it from `repo-claude-template.md` and fill it in with
+  me.
+- **One already exists:** **append the missing sections, never regenerate.** Most
+  legacy repos already have a CLAUDE.md, and the repo's own sections are the
+  valuable part - the template only supplies headings the repo has not thought
+  about yet. Show me the audit output and ask which missing sections to add.
+  Silently skipping this is how a repo ends up crew-managed with no promotion
+  discipline and no stop-and-ask list.
+- **Over 60 lines:** say so and propose what to move into `.crew/verify.json`.
+  Every line loads into every subagent on every delegation.
+
+Read `examples/terraform-CLAUDE.md` and `examples/verify-terraform.json` first —
+they show the split between judgment (CLAUDE.md) and mechanism (verify.json),
+which is the decision that matters most here. Adapt the shape; never copy the
+specifics. Ask for the build command, the run command, the do-not-touch paths,
+and the landmine that breaks every time. Forty lines, no more.
 
 **Context handling.** Write the `context` block into config and explain the cycle
 in one breath, per the `crew-context` skill:
@@ -84,7 +130,8 @@ and that they should calibrate once against `/context` and adjust
 Add `.crew/transcripts/` to `.gitignore` — raw transcripts contain everything
 the session saw, including any secret that reached it.
 
-**Done when:** `.crew/config.json` is complete, `CLAUDE.md` has no placeholders,
+**Done when:** `.crew/config.json` is complete, `claude-md-audit.sh` reports no
+missing sections and no remaining placeholders,
 and `.gitignore` covers secrets and transcripts.
 
 ## Phase 2 — Providers and notifications
@@ -129,17 +176,34 @@ if notifications are on, a test message has actually arrived. Not when something
 is found on PATH or a URL is pasted — those are different things, and the
 difference shows up later as a gate that never fires.
 
-## Phase 3 — Smoke harness
+## Phase 3 — Smoke harness in `_verify/`
 
-Delegate to `crew:smoke-author`. Nothing else happens in this repo until
-`./scripts/smoke.sh` runs green from a clean checkout.
+Checks live in `_verify/`. Look for it first, along with `qa/`, `spec/` and
+`_test*/`. If the repo already has one of those, adopt it — do not build a
+second home for checks beside an existing one.
+
+If none exists, create `_verify/` from `templates/_verify/`: `README.md`,
+`smoke.sh`, `run-all.sh`, and an empty `cases/`. Then delegate to
+`crew:smoke-author` to fill it. Nothing else happens in this repo until
+`bash _verify/smoke.sh` runs green from a clean checkout.
+
+`_verify/README.md` is part of the deliverable, not an afterthought. Its layout
+table lists what each script covers and its status table records when each check
+was last sabotage-tested. Update both as checks are added; a check with no row is
+a check nobody knows about.
+
+`scripts/smoke.sh` is still honoured if a repo already has one — the gate checks
+`_verify/smoke.sh` first and falls back. Do not migrate a working harness just
+to move it.
 
 If it cannot reach green — missing fixtures, prod-only dependencies — mark the
 phase `blocked`, write the reasons into `.work/SMOKE-GAPS.md`, and bring them to
 me. Do not proceed to Phase 4 with a red or vacuous harness. A gate that passes
 because it checks nothing is worse than no gate.
 
-**Done when:** green from a clean checkout, under ~90 seconds, 5–9 real checks.
+**Done when:** `_verify/` exists with a current `README.md`, and
+`bash _verify/smoke.sh` is green from a clean checkout, under ~90 seconds, 5–9
+real checks.
 
 ## Phase 4 — Code map
 
@@ -159,18 +223,38 @@ them is half the value of this phase.
 
 **Also in this phase:**
 
-- **Repo conventions.** Search for `_verify/`, `qa/`, `spec/` and similar. If one
-  exists, ask what runs it and give it a rule. This is the most commonly missed
-  step and the most valuable one.
+- **Repo conventions.** Map every script in `_verify/` (and any `qa/`, `spec/`
+  equivalent) to a rule. A script in `_verify/` that no rule names never runs,
+  which is the exact failure this directory was meant to prevent. Cross-check
+  against `_verify/README.md`: anything in the layout table with no rule, or any
+  rule pointing at a script the README does not list, is drift — fix both.
 - **Linters.** Per the `crew-lint` skill, add path-scoped rules for the languages
   actually present. Baseline existing findings so the gate starts green — a gate
   that starts red never becomes a gate.
 - **Terraform.** If there are `.tf` files, set up terraform-docs and tflint per
-  `crew-terraform`, and put `terraform-docs .` in the gate so an undocumented
-  variable shows up as a README diff in the pull request.
+  `crew-terraform`. Put the **`--output-check`** form in the gate, never the
+  writing form: `terraform-docs markdown table . --output-file README.md
+  --output-check` fails when the README is stale instead of rewriting it. The
+  writing form mutates the tree mid-gate, which makes `README.md` a changed file
+  on the next run and trips `unmapped: fail` in a loop. Run the writing form by
+  hand, or from `/crew:docs`.
+
+**Re-run the resolver once the map exists**, because now it can read the map
+rather than being told:
+
+```
+bash ${CLAUDE_PLUGIN_ROOT}/skills/crew-setup/scripts/resolve-tools.sh
+```
+
+With no arguments it extracts the first word of every command in every `run`,
+`always`, `default` and environment list, and reports each as native, WSL-only,
+or missing. Any `MISSING` row is a rule that will fail at the gate on the turn
+someone needed it. Fix them now, or delete the rule and record in
+`.crew/STATUS.md` that you did.
 
 **Done when:** rules cover the hot paths, each is verified, `"unmapped": "fail"`,
-and linters run green on the current tree.
+`resolve-tools.sh` reports no MISSING tool, and linters run green on the current
+tree.
 
 ## Phase 6 — Browser tests
 
@@ -190,6 +274,54 @@ for the pages that matter. Tag `@visual` and `@flow`, then add the rules to
 `verify.json`.
 
 **Done when:** `npx playwright test` passes with no agent attached.
+
+## Phase 8 — Promotion gates
+
+Read `crew-verification` section 4 first. Add the `environments` block to
+`.crew/verify.json` so `development -> qa -> production` is declared rather than
+remembered.
+
+Ask me, per environment, and do not guess any of it:
+
+- What actually deploys it? The command, not the concept.
+- What proves it responded — the `smoke` command against **that** environment.
+- What proves nothing else broke — the `regression` command. This is a separate
+  gate from smoke and it is the one that catches the module three directories
+  over. A setup with only smoke has skipped it.
+- What signals do we read afterwards — error logs, alarms, queue depth — and how
+  long do we wait first (`soakMinutes`).
+- Where is the rollback runbook, and when was it last verified?
+
+Fill in only what exists. An `environments` block with `deploy` and `smoke` and
+nothing else is honest. One with five aspirational commands nobody has run is
+worse than an empty file, because it reads as coverage.
+
+Set `requireHuman: true` on production. Create `.work/PROMOTIONS.md` with its
+header row. Then run `/crew:promote development --dry-run` and read the sequence
+back to me before anything real is deployed.
+
+**Two of these are enforced by a hook, not by good intentions.** `promote-gate.sh`
+runs on `PreToolUse` and refuses a command matching a declared `deploy` entry
+unless, for the sha at HEAD:
+
+- every environment in `requires` has an **all-pass** row in `.work/PROMOTIONS.md`
+- the `rollback` runbook exists and carries `last verified: YYYY-MM-DD` inside 90 days
+- `requireHuman` has an approval marker at `.crew/.approved-<env>-<sha>`
+- the working tree is clean
+
+And `verify-gate.sh` will not let the turn end after a deploy that wrote no
+`.work/PROMOTIONS.md` row. So the log is not paperwork - it is the thing the next
+promotion reads.
+
+**Two consequences to set up now.** `.gitignore` must cover `.crew/` and `.work/`,
+or the gate's own marker file dirties the tree and blocks the next deploy. And
+the rollback runbook needs a literal `last verified: YYYY-MM-DD` line, because
+that is what the hook greps for.
+
+**Done when:** the `environments` block matches how this repo genuinely ships,
+`.work/PROMOTIONS.md` exists with its header, production has a `rollback` path
+pointing at a runbook that carries a fresh `last verified` line, `.gitignore`
+covers `.crew/` and `.work/`, and `--dry-run` prints a sequence I recognise.
 
 ## Phase 7 — First real ticket
 

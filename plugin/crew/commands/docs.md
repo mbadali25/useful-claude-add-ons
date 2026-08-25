@@ -32,6 +32,13 @@ Report only, change nothing:
 - ADRs referencing files that no longer exist
 - TODO entries whose stated unblock condition has already happened
 - README commands that no longer match `.crew/verify.json` or the build files
+- **CLAUDE.md drift.** Run
+  `bash ${CLAUDE_PLUGIN_ROOT}/skills/crew-setup/scripts/claude-md-audit.sh` and
+  report any missing template section, any remaining placeholder, and any breach
+  of the 60-line ceiling. The template gains sections over time and nothing
+  propagates them into a repo automatically, so this is the only place the drift
+  is ever caught. Report it; do not silently append - which sections a repo wants
+  is the user's call.
 
 Present as a list with a suggested action each. Do not fix in bulk — a large
 documentation diff is unreviewable, which means it gets approved unread.

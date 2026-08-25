@@ -14,8 +14,8 @@ Read the **Hooks** section of any plugin before installing it. Commands and agen
 | **Version** | 0.3.0 |
 | **Install** | `claude plugin install crew@useful-claude-add-ons` |
 | **Menu item** | 21, `repo-plugins` — **off by default**. Menu item 22, `graphify`, is a separate, also-off-by-default install of the `graphify` CLI this plugin's graph feature depends on — see **The code graph** below. |
-| **Registers** | 10 agents, 16 commands, 16 skills, 14 hook entries (7 scripts × `.sh`/`.ps1`) across 5 events |
-| **Upstream guide** | [`crew/README.md`](crew/README.md) — 24 sections, the authoritative version |
+| **Registers** | 10 agents, 18 commands, 16 skills, 16 hook entries (8 scripts × `.sh`/`.ps1`) across 5 events |
+| **Upstream guide** | [`crew/README.md`](crew/README.md) — 25 sections, the authoritative version |
 
 Built for the awkward case: several repositories, mixed stacks, legacy code, and almost no test coverage. The workflow is file-backed tickets, one implementation session, an independent reviewer, and deterministic gates that block on failure rather than offering an opinion.
 
@@ -23,27 +23,36 @@ Its central design claim is worth repeating, because it is the opposite of how m
 
 ### Hooks — the part that runs without being asked
 
-Seven scripts across five events, each shipped as a `.sh`/`.ps1` pair
-registered on its own event — 14 hook entries. **These are why menu item 21
-is unticked by default.**
+Eight scripts across five events, each shipped as a `.sh`/`.ps1` pair
+registered on its own matcher or event — 16 hook entries. **These are why
+menu item 21 is unticked by default.**
 
 | Script | Event | What it does |
 |---|---|---|
 | `guard.sh` / `.ps1` | `PreToolUse` on the Bash / PowerShell tool | Blocks `terraform apply`/`destroy`, destructive DDL, force push, hard reset, prod-targeted commands, and any command that would print a secret value into the transcript |
+| `promote-gate.sh` / `.ps1` | `PreToolUse` on the Bash / PowerShell tool | Refuses a declared `deploy` command unless the `requires` environment has an all-pass row for this sha, the rollback runbook is verified inside 90 days, `requireHuman` is approved, and the tree is clean |
 | `handoff-read.sh` / `.ps1` | `SessionStart` | Injects the prior handoff back after a clear, compact, or resume |
 | `pm-brief.sh` / `.ps1` | `SessionStart` | Runs `crew_state.py` and prints a prioritized brief — schema currency, a stale or missing code graph, a pending handoff, review health, ticket sizing. Report-only: it never writes anything |
-| `verify-gate.sh` / `.ps1` | `Stop` | Runs the checks the changed paths map to; **fails the turn** on red, or on a changed path with no rule |
+| `verify-gate.sh` / `.ps1` | `Stop` | Runs the checks the changed paths map to; **fails the turn** on red, on a changed path with no rule, or on a deploy that wrote no promotion row. Honours `stop_hook_active`, so a red check cannot pin the session |
 | `context-watch.sh` / `.ps1` | `Stop` | Estimates context use and asks for a handoff once per session; instructs a full wrap-up instead if `context.autoWrapUp` is `true` |
 | `handoff-write.sh` / `.ps1` | `PreCompact` | Snapshots the transcript and writes a skeleton handoff before compaction discards it |
 | `notify.sh` / `.ps1` | `Notification`, and called directly by commands | One outbound line to Teams or Telegram. Never reads, never accepts instructions |
 
 **This is what "the moment the plugin is enabled" means in practice: a `SessionStart` hook now fires on every session's `startup`, unconditionally, in a repository with `.crew/config.json` present.** `handoff-read` and `pm-brief` both run before you type anything — the PM brief in particular is new in 0.3.0 and is the first thing a reader needs to know exists, because it means enabling the plugin changes what the very first turn of every session looks like, not just what later tool calls are allowed to do.
 
+Every event is registered twice, once per flavour, each with the matching `shell` field on the PowerShell side — a `shell: powershell` entry is documented and Claude Code does read it, running that entry via PowerShell without needing `CLAUDE_CODE_USE_POWERSHELL_TOOL`. `guard.sh` / `guard.ps1` and `promote-gate.sh` / `promote-gate.ps1` additionally branch on `tool_name` at the `PreToolUse` matcher — a `PowerShell` tool call goes to the `.ps1`, a `Bash` tool call is judged by the `.sh` — because that is which language the command is actually written in, not which OS is running. Branching on the OS instead would judge bash commands with PowerShell rules on Windows, which blocks the correct secret-capture form and misses the wrong one. The other hooks judge no command, so both flavours are simply wired to their event with no branch. `hooks/scripts/_common.sh` also ships a `crew_tool_dispatch` helper for judging a command from inside a single bash-registered script; it is unused here in favour of the explicit dual-matcher registration above, but stays available for a hook that wants that shape instead.
+
 A hook cannot be argued out of blocking `terraform apply`; an agent can. That is the entire value, and also the reason a bootstrap run should not install one without the box being ticked.
 
-**The `Stop` gate is inert until you build its map.** `verify-gate.sh` reads `.crew/verify.json`; with no such file there is nothing to run. `/crew:verify` builds it. Set `verifyGate: false` in `.crew/config.json` to disable the gate without uninstalling.
+Three committed suites, all sabotage-tested: `hooks/scripts/_test/run-tests.sh` (50 cases across the three gates), `setup-walkthrough.sh` (32 cases running every setup-phase script against a real mixed-stack scratch repo), and `validate-prompts.py` (91 structural checks over the commands, agents and skills). What none of them proves is whether the prompts produce good work — that needs a live session on a real ticket, which is what setup Phase 7 is for.
 
-**Both flavours are registered on every matcher-less event on purpose**, not because each one fires — `hooks.json` has no way to know in advance which shell a given machine actually has, so both are wired and one is expected to fail. On Windows this is not hypothetical: measured, Git for Windows' `usr/bin/bash.exe` exits 127 running these scripts where its own `bin/bash.exe` runs them fine, so which `bash` resolves first on `PATH` decides whether the `.sh` side works at all. On the machine this was measured on it is neither of those: from a non-MSYS parent — which is what spawns a hook — `bash` resolved to `C:\Windows\System32\bash.exe`, the WSL launcher, which cannot open a Windows path at all and exits 127 on every one of these scripts while the `.ps1` twin exits 0. The `.ps1` twin is what actually gates the machine in that case. **One flavour failing is expected behavior, not a bug** — it is not evidence the hook itself didn't run. What is genuinely unverified is the opposite combination, real hook-runner behavior with **no `pwsh` on Linux**; that was never exercised, so treat it as unconfirmed rather than assumed fine.
+**Every hook is inert until the repository has `.crew/config.json`.** Installing the plugin arms nothing - `/crew:init` in a repo is what turns the gates on there. A gate firing in every repository you opened would be hostile, so this is deliberate; it does mean "installed it, nothing happened" is expected rather than broken.
+
+**The `Stop` gate is additionally inert until you build its map.** `verify-gate.sh` reads `.crew/verify.json`; with no such file there is nothing to run. `/crew:verify` builds it. Set `verifyGate: false` in `.crew/config.json` to disable the gate without uninstalling.
+
+**Windows — fixed in 0.2.0, corrected in 0.3.0.** In 0.2.0 `guard.sh` and `verify-gate.sh` exited 0 on MSYS/MINGW to "defer" to `.ps1` twins that nothing ever invoked, so on Windows the command guard blocked nothing and the `Stop` gate ran nothing — which reads as "the gate passed" rather than "the gate never ran". 0.3.0 registers **both flavours on every matcher-less event on purpose**, not because each one fires — `hooks.json` has no way to know in advance which shell a given machine actually has, so both are wired and one is expected to fail; `PreToolUse` is the exception, where `guard.sh`/`guard.ps1` and `promote-gate.sh`/`promote-gate.ps1` are registered on separate `Bash` and `PowerShell` matchers instead, so the branch is by *which tool Claude used*, not by OS. The PowerShell side carries `shell: powershell`, a field Claude Code documents and reads — it runs that entry via PowerShell without needing `CLAUDE_CODE_USE_POWERSHELL_TOOL`. What is not configurable is the *default* interpreter for a bare `command` string with no `shell` field: that goes to `sh -c` on macOS/Linux and to **Git Bash** on Windows (PowerShell only when Git Bash isn't installed) — so a `bash` resolved from some non-MSYS parent process is not necessarily what runs it. On Windows this is measured, not hypothetical: Git for Windows ships two `bash.exe` binaries, and `usr/bin/bash.exe` exits 127 running these scripts where `bin/bash.exe` runs them fine, so which one resolves first on `PATH` decides whether the `.sh` side works at all; on a machine where a non-MSYS parent process resolved `bash` to the WSL launcher, the `.sh` side exited 127 on every script while the `.ps1` twin exited 0. **One flavour failing is expected behavior, not a bug** — it is not evidence the hook itself didn't run. What is genuinely unverified is the opposite combination, real hook-runner behavior with **no `pwsh` on Linux**; that was never exercised, so treat it as unconfirmed rather than assumed fine. The remaining requirement on Windows is that Git Bash (or WSL) is on `PATH` for the `.sh` half to have any chance; without any bash at all, that half never fires, and the plugin does not pretend otherwise.
+
+**`python3` is no longer required.** The scripts resolve `python3`, then `python`, then `py`, and `guard.sh` prefers `jq` when it is present. With none of them available the affected hook says so on stderr and exits 0 rather than failing open in silence.
 
 **`context.autoWrapUp` and `context.autoResume`** (both default `false`) change what happens around the handoff, not whether it happens:
 - `autoWrapUp` changes what `context-watch` tells the session to do at `warnAt` — reach a stopping point and write the handoff, instead of just asking for one. **The `/clear` itself stays manual regardless of this setting, because no hook can trigger one** — a hook runs as a child process and cannot reset its parent's conversation. Without stating that plainly, the feature reads as broken (why doesn't it actually clear?) rather than as what it is: bounded by a real constraint.
@@ -63,13 +72,15 @@ repository containing docs, rather than skipping them. Exporting the graph
 into Obsidian is gated on `graph.obsidian.confirmed` being set explicitly by
 the user in `.crew/config.json`; `/crew:upgrade` never sets that flag itself.
 
-### Commands — 16, all explicit
+### Commands — 18, all explicit
 
 | Command | Purpose |
 |---|---|
 | `/crew:init` | Guided phased setup, resumable |
 | `/crew:onboard [--refresh <area>]` | Build or refresh the code map |
-| `/crew:verify` | Build or refresh the change-to-check map the `Stop` gate reads |
+| `/crew:reference [--api\|--features\|--audit]` | Enumerate endpoints, jobs, consumers, CLI commands and feature flags into `docs/reference/`, each anchored to `file:line` |
+| `/crew:verify` | Build or refresh the change-to-check map the `Stop` gate reads, creating `_verify/` if the repo has no check directory |
+| `/crew:promote <env> [--dry-run\|--status]` | Promote development -> qa -> production, running deploy, smoke, regression, and post-soak verification as separate gates |
 | `/crew:ticket <description>` | Scope a request into a ticket |
 | `/crew:work <id>` | Work one ticket end to end |
 | `/crew:review` | Independent QA — Codex, or the `qa-reviewer` agent as fallback |
@@ -111,10 +122,10 @@ These are ordinary skills, scoped to `crew`'s own workflow. They work on every C
 
 | Skill | What it covers |
 |---|---|
-| `crew-setup` | Platform detection, phased setup, provider wiring, the repo `CLAUDE.md` template |
-| `crew-verification` | The change-to-check map, secrets handling, browser-test policy |
+| `crew-setup` | Platform detection **and toolchain resolution**, nine phased setup steps, provider wiring, and reconciling an existing repo `CLAUDE.md` against the template section by section |
+| `crew-verification` | The change-to-check map, the `_verify/` layout, secrets handling, browser-test policy, and the five promotion gates for development -> qa -> production |
 | `crew-context` | Context exhaustion — warn near the limit, write handoffs, resume after a clear or compact |
-| `crew-docs` | Keeping `CHANGELOG.md`, `README.md`, `SECURITY.md`, `TODO.md`, and ADRs current as work lands |
+| `crew-docs` | Keeping `CHANGELOG.md`, `README.md`, `SECURITY.md`, `TODO.md` and ADRs current as work lands, plus the anchored API and feature reference under `docs/reference/` |
 | `crew-lint` | Linters and formatters for PowerShell, PHP, Python, Terraform, and JavaScript, wired into the gate |
 | `crew-terraform` | `terraform-docs` and `tflint` for a module — header block, `footer.md`, README injection |
 | `crew-runbooks` | Writing, indexing, and maintaining operational runbooks |
@@ -127,6 +138,34 @@ These are ordinary skills, scoped to `crew`'s own workflow. They work on every C
 | `crew-pm` | Field meanings and the report-only authority rule behind `/crew:pm` and the `pm-brief` hook |
 | `crew-graph` | Building and querying the `graphify` code graph, the reconcile shape `/crew:upgrade` reads, and the Obsidian export consent gate |
 | `find-skills` | Discovering and installing other skills |
+
+### What it creates in a repository
+
+Setup is nine resumable phases (`/crew:init`), and every artifact it writes is a file you can read and delete.
+
+| Path | Written by | Holds |
+|---|---|---|
+| `.crew/config.json` | phase 1 | Provider, tracker, memory, context and notification settings |
+| `.crew/verify.json` | phase 5 | Which checks a changed path requires, which specialist reviews it, and the promotion sequence per environment |
+| `.crew/codemap/` | phase 4 | One note per subsystem, every claim anchored to `file:line` and a sha |
+| `_verify/` | phase 3 | `smoke.sh`, `run-all.sh`, `cases/`, and a `README.md` recording what each check covers and when it last proved it could fail |
+| `docs/reference/` | `/crew:reference` | Every endpoint and every headless capability, anchored |
+| `.work/` | as work happens | Tickets, findings, the handoff note, and `PROMOTIONS.md` |
+| `CLAUDE.md` | phase 1 | Created if absent; if present, missing sections are **appended, never overwritten** |
+
+`.crew/` and `.work/` must be gitignored - the deploy gate writes a marker there, and an ungitignored marker dirties the tree and blocks the next deploy.
+
+### Testing
+
+Three committed suites under `plugin/crew/hooks/scripts/_test/`, all sabotage-tested:
+
+| Suite | Cases | Covers |
+|---|---|---|
+| `run-tests.sh` | 50 | Every gate: what the command guard blocks and allows, root-level glob matching, the stop-loop exit, and all four promotion preconditions |
+| `setup-walkthrough.sh` | 32 | Builds a mixed-stack scratch repo and runs every script phases 0-8 invoke |
+| `validate-prompts.py` | 91 | Frontmatter, tool names, referenced agents and paths, read-only agents holding no write tools |
+
+What none of them proves is whether the prompts produce good work. The 18 commands and 10 agents are instructions to a model; only a live session on a real ticket exercises those, which is what setup phase 7 is for.
 
 ### Optional integrations
 

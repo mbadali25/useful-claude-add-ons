@@ -9,13 +9,13 @@ One-line bootstrap — no `git clone` needed. Pulls the prerequisite installer s
 **Windows** (elevated PowerShell):
 
 ```powershell
-irm 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/f59faf13d749f3140a2aa1b782bad0a099d04d12/scripts/install-prerequisites.ps1' | iex
+irm 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/7059edec18043aa96e00cbcaf3f55219166c4b9f/scripts/install-prerequisites.ps1' | iex
 ```
 
 **Linux**:
 
 ```bash
-curl -fsSL 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/f59faf13d749f3140a2aa1b782bad0a099d04d12/scripts/install-prerequisites.sh' | bash
+curl -fsSL 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/7059edec18043aa96e00cbcaf3f55219166c4b9f/scripts/install-prerequisites.sh' | bash
 ```
 
 Both links are pinned to a specific commit SHA rather than `main`, so the exact script you're running is fixed and auditable — it can't silently change between when you review it and when you run it. **Update the SHA above whenever `scripts/install-prerequisites.*` changes**: after merging to `main`, run `git rev-parse HEAD` and swap it into both URLs.
@@ -37,7 +37,7 @@ cd useful-claude-add-ons
 ./scripts/install-prerequisites.sh
 ```
 
-Both scripts are idempotent and **detect before they install** — an already-present Chocolatey package, marketplace, or plugin is reported and skipped rather than reinstalled. Re-running is cheap and safe. Each run ends with an `Installed / Updated / Already present` summary.
+Both scripts are idempotent and **detect before they install** — an already-present Chocolatey package, marketplace, or plugin is reported and skipped rather than reinstalled. Re-running is cheap and safe: a plugin whose marketplace has not moved since it was installed is skipped without launching `claude` at all, so a no-op re-run of the 25-skill item takes seconds rather than minutes. Each run ends with an `Installed / Updated / Already present` summary.
 
 Both open with a **menu of everything they can install**, so you pick once up front and the rest of the run is unattended.
 
@@ -52,10 +52,10 @@ The menu is a cursor picker — **↑/↓ to move, Space to tick, Enter to start
     [x] Team plugins: superpowers, frontend-design, excalidraw-generator
     ...
   ↑↓ move   Space toggle   Enter start   A all   N none   D defaults   Q cancel
-  → on the repo row picks individual skills
+  → on a row marked > picks the individual items inside it
 ```
 
-`A` ticks everything, `N` clears it, `D` restores the default set, `Q` or Escape cancels without installing. On the repo's own row, **→ opens a second picker for the individual skills** so you can take three of them instead of all twenty-five; ← or Enter comes back to the main menu.
+`A` ticks everything, `N` clears it, `D` restores the default set, `Q` or Escape cancels without installing. Every row that installs **more than one thing** is marked `>`, and **→ opens a second picker for the items inside it** — so you can take three skills instead of all twenty-five, two VoltAgent packs instead of all ten, or one team plugin instead of three; ← or Enter comes back to the main menu, and `Q` there discards just that sub-selection. The row's label keeps a live count (`3 of 25`), and opening a sub-picker ticks its parent row so a careful selection can't be lost to an unticked parent.
 
 Terminals that can't read a key press one at a time — no `stty`, `TERM=dumb`, PowerShell ISE, a redirected console, a window under ten lines — fall back to the original numbered prompt automatically: `[x]` marks the default set, and you answer `A`, `D` (or Enter), `N`, or numbers like `1,3,7-9`. Item keys work in `--select` either way, so `--select supabase,claude-mem` saves counting rows.
 
@@ -64,13 +64,13 @@ Terminals that can't read a key press one at a time — no `stty`, `TERM=dumb`, 
 | 1 | Prerequisites — Chocolatey / `apt` etc. + git, node, python | x |
 | 2 | Claude Code CLI + PATH export + **update check** | x |
 | 3 | This repo's marketplace + its skills — **→ picks individual skills** (`notify` asks about setup) | x |
-| 4 | Team plugins — superpowers, frontend-design, excalidraw-generator | x |
+| 4 | Team plugins — superpowers, frontend-design, excalidraw-generator — **→ picks which** | x |
 | 5 | `find-skills` skill | x |
-| 6 | Community marketplaces + plugins | x |
+| 6 | Community marketplaces + plugins — **→ picks which** (adhd-output-style, azure-tools, anthropic-office-skills, agent-browser, ppt-master) | x |
 | 7 | `claude-code-setup` plugin | x |
 | 8 | `task-observer` skill | x |
 | 9 | claude-mem — installs **Bun** (its worker runtime) and sets `CLAUDE_MEM_WORKER_PORT` in `settings.json` | x |
-| 10 | VoltAgent subagents (10 plugins, 154 agents) | x |
+| 10 | VoltAgent subagents (10 plugins, 154 agents) — **→ picks which packs** | x |
 | 11 | MCP server — AWS (`awslabs.aws-api-mcp-server`) | |
 | 12 | MCP server — Azure (`@azure/mcp`) | |
 | 13 | MCP server — Playwright (`@playwright/mcp`) | |
@@ -81,7 +81,7 @@ Terminals that can't read a key press one at a time — no `stty`, `TERM=dumb`, 
 | 18 | SkillUI + Playwright/Chromium — design system from a URL | |
 | 19 | Strix — AI pentesting CLI (needs Docker + an LLM API key) | |
 | 20 | Obsidian desktop + `claude-obsidian` and `obsidian-skills` plugins | |
-| 21 | This repo's plugins — `crew` (agents, commands, **hooks**) | |
+| 21 | This repo's plugins — `crew` (agents, commands, **hooks**) — **→ picks which** | |
 | 22 | `graphify` code graph (`uv tool install graphifyy`; per-repo, not global) | |
 
 Menu numbers are identical on Windows and Linux, and an already-registered MCP server, marketplace, or plugin is reported and skipped rather than re-added. Numbers can shift as items are added, so scripted runs should prefer the stable keys (`--select supabase,strix`) over positions.
@@ -110,10 +110,13 @@ Everything that can be a plugin **is** installed as one, using the CLI's own `cl
 | `-All` / `--all` | Select every menu item, no prompt. |
 | `-Select '1,3,7-9'` / `--select 1,3,7-9` | Select these menu items, no prompt. Item keys work too: `--select supabase,claude-mem`. |
 | `-Skills 'cloudflare,drata'` / `--skills cloudflare,drata` | Install only these of this repo's skills, no sub-picker. Also accepts `all`, `none`, and numbers (`1,4-6`). Composes with `-All` / `-NonInteractive`. |
+| `-Team` / `--team`, `-Community` / `--community`, `-VoltAgent` / `--voltagent`, `-Plugins` / `--plugins` | The same for the other multi-item rows — items 4, 6, 10 and 21. Each takes names, numbers, `all` or `none`, skips that row's sub-picker, and implies its parent item. Names match either the plugin key or the short label the picker shows, so `--voltagent infra,qa-sec` and `--voltagent voltagent-infra,voltagent-qa-sec` both work. |
 | `-NonInteractive` / `--non-interactive` | Select the default set, no prompt — for unattended or CI runs. |
 | `-SkillUIGuide` / `--skillui-guide` | Print the SkillUI quick start after installing it, without being asked. |
 | `-NotifySetup` / `--notify-setup` | Scaffold `~/.config/notify/config.json` after installing the `notify` skill, without being asked. The prerequisites are printed either way. |
 | `-NoUpdate` / `--no-update` | Report already-installed plugins but never update them. |
+| `-ForceRefresh` / `--force-refresh` | Reinstall a plugin whose files changed in its marketplace but whose declared version did not. Without it such a plugin is reported and left alone — see [Content drift](#content-drift) below. |
+| `-DryRun` / `--dry-run` | Work out the selection, print it, and stop — installs nothing. Useful for checking what a set of flags actually resolves to. |
 | `-SkipBootstrap` / `--skip-bootstrap` | Narrow whatever you selected down to the prerequisites and the Claude Code CLI. |
 | `-InstallScope` / `--scope` | Scope for every marketplace and plugin install: `user` (default), `project`, or `local`. Windows still accepts the old `-PluginHubScope` name as an alias. |
 | `-ObsidianRepoRoot` / `--obsidian-repo-root` | Root that item 20 suggests for the Obsidian vault — `C:\repos` on Windows, `~/repos` on Linux. Only affects the printed next step; the vault itself is created by [`claude-obsidian-setup/`](claude-obsidian-setup/). |
@@ -122,6 +125,20 @@ Everything that can be a plugin **is** installed as one, using the CLI's own `cl
 
 > On Windows, run from an **elevated** prompt for the full setup. Without elevation the script skips menu item 1 (Chocolatey and its packages: git/awscli/nodejs/python) and runs everything else you selected.
 
+### Content drift
+
+`claude plugin update` decides whether to re-copy a plugin by comparing **declared versions**. A marketplace that edits a skill without bumping its `version` therefore leaves every already-installed copy silently stale: the CLI reports *"already at the latest version"* and copies nothing.
+
+Both scripts detect this. For an installed plugin they compare the commit its marketplace is on now against the commit Claude Code recorded when it was installed, and:
+
+- **same commit** — nothing to do, and no `claude` process is launched at all.
+- **different commit, but this plugin's own files are unchanged** — also nothing to do. One commit anywhere in a marketplace moves `HEAD` for every plugin it publishes, so this is the common case.
+- **this plugin's files changed** — run `claude plugin update`. If the version moved, it updates normally. If it did not, the script says so plainly instead of reporting the plugin as current, and `--force-refresh` / `-ForceRefresh` reinstalls it (`--keep-data`, so the plugin's persistent data survives).
+
+If `git` is missing, the marketplace was added from somewhere without history, or the recorded commit has been pruned by a force-push, the check reports "cannot tell" and falls back to asking the CLI about every plugin — correct, just slower.
+
+For this repo's own skills, [`scripts/check-marketplace.py`](scripts/check-marketplace.py) fails CI when a skill's files change without a version bump, so the drift never reaches anyone's machine in the first place.
+
 ### What each item actually installs
 
 | Item | Pulls in | Source |
@@ -129,9 +146,9 @@ Everything that can be a plugin **is** installed as one, using the CLI's own `cl
 | 1 Prerequisites | Chocolatey + git, awscli, nodejs, python (Windows) / git, nodejs, npm, python3, pip3 via apt/dnf/yum/pacman/zypper/apk (Linux) | package manager |
 | 2 Claude Code CLI | `@anthropic-ai/claude-code`, a persistent `PATH` entry for the npm global bin, and an update to the latest published version if one already exists | npm |
 | 3 This repo | The `useful-claude-add-ons` marketplace and, by default, all 25 skills in [`skills/`](skills/) — narrow it with → in the menu or `--skills` | this repo |
-| 4 Team plugins | `superpowers`, `frontend-design`, `excalidraw-generator` | 3 marketplaces |
+| 4 Team plugins | `superpowers`, `frontend-design`, `excalidraw-generator` | 3 marketplaces (only the ones behind a ticked plugin) |
 | 5 find-skills | The `find-skills` skill, into the user skills dir | `vercel-labs/skills` |
-| 6 Community | `adhd-output-style`, `azure-tools`, `anthropic-office-skills`, `agent-browser`, `ppt-master` | 4 marketplaces |
+| 6 Community | `adhd-output-style`, `azure-tools`, `anthropic-office-skills`, `agent-browser`, `ppt-master` | 3 marketplaces (only the ones behind a ticked plugin) |
 | 7 claude-code-setup | Analyses a codebase and recommends hooks/skills/MCP servers | `anthropics/claude-plugins-official` |
 | 8 task-observer | Watches a session for reusable-skill opportunities | `rebelytics/one-skill-to-rule-them-all` |
 | 9 claude-mem | Cross-session memory, **Bun** (its worker runtime — Chocolatey on Windows, `npm -g` or `bun.sh` on Linux), plus `CLAUDE_MEM_WORKER_PORT` in `settings.json` | `thedotmack/claude-mem` |
@@ -144,7 +161,7 @@ Everything that can be a plugin **is** installed as one, using the CLI's own `cl
 | 18 SkillUI | `skillui` + `playwright` + the Chromium browser build | npm |
 | 19 Strix | The `strix` pentesting CLI | `curl -sSL https://strix.ai/install \| bash` |
 | 20 Obsidian | The Obsidian desktop app (Chocolatey → winget on Windows, flatpak → snap on Linux), plus the `claude-obsidian` vault engine and [`kepano/obsidian-skills`](https://github.com/kepano/obsidian-skills) — Obsidian's own Markdown, Bases, JSON Canvas, CLI and Defuddle skills | choco/winget/flatpak/snap + 2 marketplaces |
-| 21 This repo's plugins | The `crew` plugin from [`plugin/`](plugin/) — 10 subagents, 16 slash commands, 16 bundled skills, and 14 hook entries (7 scripts × `.sh`/`.ps1`) across 5 events. Off by default because hooks execute whether or not Claude agrees with them | this repo |
+| 21 This repo's plugins | The `crew` plugin from [`plugin/`](plugin/) — 10 subagents, 18 slash commands, 16 bundled skills, and 16 hook entries (8 scripts × `.sh`/`.ps1`) across 5 events. Off by default because hooks execute whether or not Claude agrees with them | this repo |
 | 22 `graphify` | The `graphify` CLI (`graphifyy` on PyPI), registered per-repository with `graphify install --project`. Off by default; not installed globally | `uv tool install` |
 
 Items 1–10 are the default set. Everything from 11 on is opt-in.
@@ -333,7 +350,7 @@ Each subdirectory in [`plugin/`](plugin/) is a self-contained [Claude Code plugi
 
 | Plugin | Category | What it does | Use cases | Provides |
 |---|---|---|---|---|
-| [`crew`](plugin/crew) | Workflow / QA | A virtual dev team for multi-repo legacy work — file-backed tickets, one implementation session, an independent reviewer, and deterministic gates that block on failure instead of offering an opinion. Roles exist only where they buy an isolated context window, a restricted tool set, or genuinely independent eyes; project management is a report-only agent and a command, not something with write access. Codex QA, Jira, Obsidian memory, a code graph, and Teams/Telegram notifications are all optional. | Several repositories, mixed stacks, legacy code, and almost no test coverage; a change that needs review by something that did not write it; wanting `terraform apply`, force-push, and destructive DDL blocked by a hook rather than by good intentions; a turn that should fail when the checks its changed paths map to go red; losing the thread across a `/clear` or an auto-compact; a session-start brief on schema drift, a stale graph, or an unhealthy review rate. | 10 agents, 16 commands, 16 skills, 14 hook entries |
+| [`crew`](plugin/crew) | Workflow / QA | A virtual dev team for multi-repo legacy work — file-backed tickets, one implementation session, an independent reviewer, and deterministic gates that block on failure instead of offering an opinion. Hooks enforce unsafe commands, unverified turns, and unearned production deploys. Roles exist only where they buy an isolated context window, a restricted tool set, or genuinely independent eyes; project management is a report-only agent and a command, not something with write access, and BA/architecture stay files and commands too. Codex QA, Jira, Obsidian memory, a code graph, and Teams/Telegram notifications are all optional. | Several repositories, mixed stacks, legacy code, and almost no test coverage; a change that needs review by something that did not write it; wanting `terraform apply`, force-push, and destructive DDL blocked by a hook rather than by good intentions; a turn that should fail when the checks its changed paths map to go red; a production deploy that should be refused unless qa signed off on **that exact sha** and the rollback runbook is still verified; wanting to know what every endpoint and scheduled job actually does; losing the thread across a `/clear` or an auto-compact; a session-start brief on schema drift, a stale graph, or an unhealthy review rate. | 10 agents, 18 commands, 16 skills, 16 hook entries |
 
 **Provides** counts what the plugin registers with Claude Code. The per-item breakdown — every command, agent, bundled skill, and hook event — is in [`plugin/PLUGINS.md`](plugin/PLUGINS.md); the authoritative upstream guide is [`plugin/crew/README.md`](plugin/crew/README.md).
 
@@ -346,7 +363,7 @@ Bundled **skills** work in Claude Code, Claude chat, Claude Desktop's Chat tab, 
 Same four-place rule the skills follow, plus a couple. Full checklist in [`plugin/README.md`](plugin/README.md); the short version:
 
 1. Create `plugin/<plugin-name>/.claude-plugin/plugin.json` — kebab-case directory name matching the `name` field exactly. No `marketplace.json` inside a plugin directory; the repo root's is the only marketplace here.
-2. Ship hook scripts in **both** flavours — a `.sh` and a `.ps1` registered with `shell: powershell` — and **wire both in `hooks.json`**. A `.ps1` on disk that nothing references is dead code, and a bash-only hook is silently inert on Windows.
+2. Think about the shell before registering a hook. A `hooks.json` entry's `shell` field (`"bash"` or `"powershell"`) is documented and Claude Code does read it, but a bare `command` with no `shell` field still goes to Git Bash on Windows by default (PowerShell only when Git Bash isn't installed) — so don't assume some other `bash` on `PATH` is what runs it. A hook that judges a *command* branches on `tool_name`, not OS. A blocking hook also needs a committed, sabotage-tested regression suite.
 3. Register it in [`.claude-plugin/marketplace.json`](.claude-plugin/marketplace.json) (`source` is `./plugin/<name>`), the table above, [`plugin/README.md`](plugin/README.md), [`plugin/PLUGINS.md`](plugin/PLUGINS.md), and both install scripts (`PLUGIN_KEYS` / `PLUGIN_NAME` in the `.sh`, `$script:PluginCatalog` in the `.ps1`).
 4. Default its menu item to **off** if it registers hooks.
 

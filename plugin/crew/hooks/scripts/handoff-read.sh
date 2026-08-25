@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
+. "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 # SessionStart hook. On clear / compact / resume, prints the handoff note.
 # stdout from SessionStart is injected into the new session's context.
 INPUT=$(cat)
-read_json() { python3 -c 'import sys,json;d=json.load(sys.stdin);print(d.get(sys.argv[1],""))' "$1" <<< "$INPUT" 2>/dev/null; }
+read_json() { crew_json_field "$INPUT" "$1"; }
 SOURCE=$(read_json source); CWD=$(read_json cwd); SESSION=$(read_json session_id)
 cd "${CWD:-${CLAUDE_PROJECT_DIR:-.}}" 2>/dev/null || exit 0
 
 rm -f .crew/.handoff-requested   # reset the once-per-session gate
+rm -f .crew/.deploy-in-flight    # a deploy from a dead session cannot be recorded now
 
 # SessionStart fires once per SOURCE EVENT (startup, clear, compact, resume,
 # fork), not once per session -- claiming on session id alone would let the
@@ -23,14 +25,16 @@ PY=$(command -v python3 || command -v python) || exit 0
 
 [ -f .crew/config.json ] || exit 0
 
+PY=$(crew_py) || exit 0
+
 # When context.autoResume is exactly true, pm_brief._resume_context() owns
 # the handoff in this mode: it folds the same text plus the extracted next
 # action into its additionalContext payload. Standing down here keeps the
 # handoff to a single emitter -- printing it here too would inject it twice.
-AUTO_RESUME=$(python3 -c 'import json;print(json.load(open(".crew/config.json")).get("context",{}).get("autoResume") is True)' 2>/dev/null)
+AUTO_RESUME=$("$PY" -c 'import json;print(json.load(open(".crew/config.json")).get("context",{}).get("autoResume") is True)' 2>/dev/null)
 [ "$AUTO_RESUME" = "True" ] && exit 0
 
-HANDOFF=$(python3 -c 'import json;print(json.load(open(".crew/config.json")).get("context",{}).get("handoffPath",".work/HANDOFF.md"))' 2>/dev/null)
+HANDOFF=$("$PY" -c 'import json;print(json.load(open(".crew/config.json")).get("context",{}).get("handoffPath",".work/HANDOFF.md"))' 2>/dev/null)
 HANDOFF="${HANDOFF:-.work/HANDOFF.md}"
 [ -f "$HANDOFF" ] || exit 0
 

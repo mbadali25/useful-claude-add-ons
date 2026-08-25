@@ -79,7 +79,7 @@ This is one of the few cases where WSL1 is simpler.
 
 ### 3. Line endings break shell scripts silently
 
-If `git` checked out `scripts/smoke.sh` with CRLF endings, bash fails with
+If `git` checked out `_verify/smoke.sh` with CRLF endings, bash fails with
 `bad interpreter: /usr/bin/env bash^M` — a message that looks like a missing
 interpreter rather than a line-ending problem, which is why it costs people an
 hour.
@@ -116,16 +116,37 @@ what ships with Windows. Do not assume it.
 
 ## Hooks
 
-The plugin registers both. The bash hooks match the `Bash` tool; the PowerShell
-hooks match the `PowerShell` tool and carry `shell: powershell`. Under WSL, Git
-Bash, Linux, and macOS the bash hooks run and the PowerShell ones never match.
+**Every hook is registered twice in `hooks.json`, once per flavour.** The
+`shell` field (`"bash"` or `"powershell"`) is documented and Claude Code does
+read it — the PowerShell side carries `shell: powershell` so it runs via
+PowerShell without needing `CLAUDE_CODE_USE_POWERSHELL_TOOL`. What is *not*
+configurable is the default for a bare `command` string with no `shell` field:
+that goes to Git Bash on Windows (PowerShell only if Git Bash isn't installed),
+so `bash` on `PATH` still matters for the `.sh` half to have a chance — Git Bash
+satisfies that.
 
-The bash hooks also exit immediately if `uname` reports MSYS or Cygwin, so on a
-native Windows session with Git Bash present the two sets cannot both act on the
-same command.
+The `PreToolUse` guards additionally branch on **which tool the command came
+from**, via separate `Bash` / `PowerShell` matchers, not on which OS is
+running:
 
-If you add your own hooks on Windows, write them in PowerShell and add
-`shell: powershell` to the entry — a bash hook path will not resolve.
+```json
+{ "matcher": "Bash",       "hooks": [{ "type": "command", "command": "bash .../guard.sh" }] },
+{ "matcher": "PowerShell", "hooks": [{ "type": "command", "shell": "powershell", "command": "& '.../guard.ps1'" }] }
+```
+
+That distinction matters. A `Bash` tool call is bash syntax *even on Windows*, so
+judging it with PowerShell rules gets it wrong in both directions — it blocks the
+correct secret-capture form and misses the wrong one.
+
+The remaining hooks judge no command, so both flavours are simply wired to their
+event with no branch — `hooks.json` has no way to know in advance which shell a
+given machine actually has, so one flavour failing is expected, not a bug.
+(`hooks/scripts/_common.sh` also ships a `crew_tool_dispatch` helper for judging
+a command from inside a single bash-registered script, if you'd rather dispatch
+that way for a hook you add yourself.)
+
+If you add your own hook, follow the same shape: register both flavours (or
+dispatch from one), and branch on the tool, never the OS.
 
 ## Docker
 

@@ -6,8 +6,16 @@ allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent
 
 Build `.crew/verify.json` — the map from changed paths to the checks they require.
 
-1. **Look for the repo's own convention first** — `_verify/`, `qa/`, `spec/`,
-   `_test*/` and similar. If one exists, read it and ask me what runs it and
+1. **Look for `_verify/` first**, then the repo's other conventions — `qa/`,
+   `spec/`, `_test*/`. If `_verify/` exists, read its `README.md` and the scripts
+   in it, and map every one of them into a rule. If **none** of them exists,
+   create `_verify/` from
+   `${CLAUDE_PLUGIN_ROOT}/skills/crew-setup/templates/_verify/` — `README.md`,
+   `smoke.sh`, `run-all.sh`, and a `cases/` directory — then fill in that
+   README's layout and status tables with what this repo actually needs. Do not
+   leave the template's commented-out examples as the whole file: either write
+   real checks or say plainly that the directory is a scaffold with none in it
+   yet. If a convention does exist, read it and ask me what runs it and
    when. It will not be discovered for you, and it is usually the most valuable
    thing in the repo for this purpose.
 2. Inventory what exists: test directories, test scripts in `package.json` /

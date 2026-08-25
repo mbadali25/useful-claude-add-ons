@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-telegram_get_chat_id.py — find your chat_id so notify.py knows where to message.
+telegram_get_chat_id.py - find your chat_id so notify.py knows where to message.
 
 Steps:
   1. Create a bot: message @BotFather on Telegram, send /newbot, follow prompts,

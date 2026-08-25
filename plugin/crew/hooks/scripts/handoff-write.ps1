@@ -4,58 +4,53 @@ $raw = [Console]::In.ReadToEnd()
 try { $d = $raw | ConvertFrom-Json } catch { exit 0 }
 $cwd = if ($d.cwd) { $d.cwd } elseif ($env:CLAUDE_PROJECT_DIR) { $env:CLAUDE_PROJECT_DIR } else { "." }
 Set-Location $cwd -ErrorAction SilentlyContinue
+if (-not (Test-Path ".crew/config.json")) { exit 0 }
 
 # No hook_once claim here on purpose: PreCompact can fire more than once per
 # session, and both writes below are idempotent (the transcript copy is
 # timestamped, the handoff skeleton only gets written if one doesn't already
 # exist) -- duplication is safe, suppression of the only handoff is not.
-if (-not (Test-Path ".crew/config.json")) { exit 0 }
 
 $trigger = if ($d.trigger) { $d.trigger } else { "auto" }
-$transcript = $d.transcript_path
+New-Item -ItemType Directory -Path ".crew/transcripts", ".work" -Force | Out-Null
 
-New-Item -ItemType Directory -Force -Path ".crew/transcripts", ".work" | Out-Null
-if ($transcript -and (Test-Path $transcript)) {
+if ($d.transcript_path -and (Test-Path $d.transcript_path)) {
   $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
-  Copy-Item $transcript ".crew/transcripts/$stamp-$trigger.jsonl" -ErrorAction SilentlyContinue
-  # keep the last 5 only
+  Copy-Item $d.transcript_path ".crew/transcripts/$stamp-$trigger.jsonl" -ErrorAction SilentlyContinue
+  $keep = 5
+  try {
+    $k = (Get-Content .crew/config.json -Raw | ConvertFrom-Json).context.keepTranscripts
+    if ($k -is [int] -and $k -ge 0) { $keep = $k }
+  } catch { }
   Get-ChildItem ".crew/transcripts/*.jsonl" -ErrorAction SilentlyContinue |
-    Sort-Object LastWriteTime -Descending |
-    Select-Object -Skip 5 |
-    Remove-Item -ErrorAction SilentlyContinue
+    Sort-Object LastWriteTime -Descending | Select-Object -Skip $keep |
+    Remove-Item -Force -ErrorAction SilentlyContinue
 }
 
-$cfg = Get-Content .crew/config.json -Raw | ConvertFrom-Json
+$cfg  = Get-Content .crew/config.json -Raw | ConvertFrom-Json
 $path = if ($cfg.context.handoffPath) { $cfg.context.handoffPath } else { ".work/HANDOFF.md" }
+if (Test-Path $path) { exit 0 }
 
 # If no handoff exists, write a factual skeleton from the repo, not from memory.
-if (-not (Test-Path $path)) {
-  $branch = (git branch --show-current 2>$null)
-  $head = (git rev-parse --short HEAD 2>$null)
-  $changed = @()
-  $changed += (git diff --name-only HEAD 2>$null) | Select-Object -First 30
-  $changed += (git ls-files --others --exclude-standard 2>$null) | Select-Object -First 10
-  $tickets = if (Test-Path .work/INDEX.md) {
-    Select-String -Path .work/INDEX.md -Pattern '\| open \|' | Select-Object -First 5 | ForEach-Object { $_.Line }
-  } else { $null }
-  if (-not $tickets) { $tickets = "(none recorded)" }
+$branch = (git rev-parse --abbrev-ref HEAD 2>$null)
+$head   = (git rev-parse --short HEAD 2>$null)
+$lines  = New-Object System.Collections.Generic.List[string]
+$lines.Add("# Handoff")
+$lines.Add("written: $((Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')) (auto, at $trigger compact)")
+$lines.Add("branch: $branch")
+$lines.Add("head: $head")
+$lines.Add("")
+$lines.Add("## Changed files")
+(git diff --name-only HEAD 2>$null)                  | Select-Object -First 30 | ForEach-Object { $lines.Add($_) }
+(git ls-files --others --exclude-standard 2>$null)   | Select-Object -First 10 | ForEach-Object { $lines.Add($_) }
+$lines.Add("")
+$lines.Add("## Open tickets")
+$open = if (Test-Path .work/INDEX.md) { Select-String -Path .work/INDEX.md -Pattern '\| open \|' | Select-Object -First 5 } else { $null }
+if ($open) { $open | ForEach-Object { $lines.Add($_.Line) } } else { $lines.Add("(none recorded)") }
+$lines.Add("")
+$lines.Add("## Next action")
+$lines.Add("UNKNOWN - this skeleton was written automatically at compaction.")
+$lines.Add("Verify against the diff before continuing.")
 
-  $lines = @(
-    "# Handoff"
-    "written: $(Get-Date -AsUTC -Format 'yyyy-MM-ddTHH:mm:ssZ') (auto, at $trigger compact)"
-    "branch: $branch"
-    "head: $head"
-    ""
-    "## Changed files"
-  ) + $changed + @(
-    ""
-    "## Open tickets"
-    $tickets
-    ""
-    "## Next action"
-    "UNKNOWN - this skeleton was written automatically at compaction."
-    "Verify against the diff before continuing."
-  )
-  $lines | Set-Content $path
-}
+Set-Content -Path $path -Value $lines -Encoding UTF8
 exit 0

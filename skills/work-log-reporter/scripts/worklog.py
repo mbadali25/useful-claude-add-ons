@@ -68,7 +68,7 @@ def write_notes(session: dict, root: Path) -> Path:
     """
     def fmt(value, pattern):
         dt = parse_iso(value)
-        return dt.strftime(pattern) if dt else "—"
+        return dt.strftime(pattern) if dt else "-"
 
     lines = [
         f"# {session.get('title') or session['session_id']}",
@@ -97,7 +97,7 @@ def write_notes(session: dict, root: Path) -> Path:
         stamp = fmt(entry.get("timestamp"), "%-I:%M %p")
         lines.append(f"### {number}. {entry.get('summary', '')}")
         lines.append("")
-        lines.append(f"`{stamp}` · {entry.get('status', 'done')}")
+        lines.append(f"`{stamp}` | {entry.get('status', 'done')}")
         lines.append("")
         if entry.get("detail"):
             lines += [entry["detail"], ""]
@@ -161,9 +161,9 @@ def build_subject(cfg: dict, sessions: list[dict], label: str) -> str:
     agg = aggregate(sessions)
     when = date_range_label(agg)
     if len(sessions) == 1 and sessions[0].get("title"):
-        core = f"{project} — {sessions[0]['title']} ({when})"
+        core = f"{project} - {sessions[0]['title']} ({when})"
     else:
-        core = f"{project} — {agg['session_count']} session(s), {when}"
+        core = f"{project} - {agg['session_count']} session(s), {when}"
     return f"{prefix} {core}".strip()
 
 
@@ -212,7 +212,7 @@ def cmd_init(args) -> int:
         created = True
 
     # Sessions and config are committed so the log is shared history. Local
-    # bookkeeping and generated PDFs are not — they are per-machine and would
+    # bookkeeping and generated PDFs are not - they are per-machine and would
     # only produce merge conflicts and repo bloat.
     gitignore = base / ".gitignore"
     if not gitignore.exists():
@@ -260,7 +260,7 @@ def cmd_start(args) -> int:
     state["current_session"] = session["session_id"]
     save_state(state, root)
 
-    print(f"Started {session['session_id']} — {session['title']}")
+    print(f"Started {session['session_id']} - {session['title']}")
     print(f"  {session_dir(session['session_id'], root)}")
     return 0
 
@@ -278,7 +278,7 @@ def cmd_log(args) -> int:
         state["current_session"] = session["session_id"]
         save_state(state, root)
         session_id = session["session_id"]
-        print(f"(no open session — started {session_id})")
+        print(f"(no open session - started {session_id})")
 
     session = load_session(session_id, root)
 
@@ -347,12 +347,12 @@ def cmd_end(args) -> int:
         return 0
     if reporting.get("mode") != "per_session":
         pending = len(unreported_session_ids(root))
-        print(f"Mode is end_of_day — holding this session. "
+        print(f"Mode is end_of_day - holding this session. "
               f"{pending} session(s) waiting. Send with: "
               f"python scripts/worklog.py send")
         return 0
 
-    print("Auto-email is on and mode is per_session — sending now.")
+    print("Auto-email is on and mode is per_session - sending now.")
     return _do_send(root, cfg, [session_id], f"session {session_id}",
                     args.headline or "", None, dry_run=False)
 
@@ -361,10 +361,10 @@ def cmd_status(args) -> int:
     root = find_root()
     base = worklog_dir(root)
     print(f"Repo root       {root}")
-    print(f"Work log        {base} {'' if base.exists() else '(missing — run init)'}")
+    print(f"Work log        {base} {'' if base.exists() else '(missing - run init)'}")
 
     if not config_path(root).exists():
-        print("Config          missing — run: python scripts/worklog.py init")
+        print("Config          missing - run: python scripts/worklog.py init")
         return 0
 
     cfg = load_config(root)
@@ -383,13 +383,13 @@ def cmd_status(args) -> int:
     print(f"To              {', '.join(cfg['email'].get('to') or []) or '(none)'}")
     print(f"Cc              {', '.join(cfg['email'].get('cc') or []) or '(none)'}")
     print(f"Auto-email      {'on' if reporting.get('auto_email_enabled') else 'off'}"
-          f" · mode={reporting.get('mode')}")
+          f" | mode={reporting.get('mode')}")
 
     state = load_state(root)
     print(f"Open session    {state.get('current_session') or 'none'}")
     print(f"Last report     {state.get('last_report_sent_at') or 'never'}")
     pending = unreported_session_ids(root)
-    print(f"Unreported      {len(pending)}" + (f" → {', '.join(pending)}" if pending else ""))
+    print(f"Unreported      {len(pending)}" + (f" -> {', '.join(pending)}" if pending else ""))
 
     problems = validate_config(cfg)
     if problems:
@@ -448,7 +448,7 @@ def _do_send(root: Path, cfg: dict, ids: list[str], label: str,
         print(f"warning: {out['pdf_error']}")
 
     if dry_run:
-        print("DRY RUN — nothing sent.")
+        print("DRY RUN - nothing sent.")
         print(f"  Subject     {subject}")
         print(f"  Recipients  {', '.join(recipients(cfg))}")
         print(f"  Preview     {out['html_path']}")
@@ -465,7 +465,7 @@ def _do_send(root: Path, cfg: dict, ids: list[str], label: str,
     state["last_report_sent_at"] = now_iso()
     save_state(state, root)
 
-    print(f"Sent “{subject}”")
+    print(f'Sent "{subject}"')
     print(f"  to          {sent_to}")
     print(f"  covering    {len(sessions)} session(s): {', '.join(s['session_id'] for s in sessions)}")
     print(f"  attachment  {out['pdf_path'].name if out['pdf_path'] else 'none'}")

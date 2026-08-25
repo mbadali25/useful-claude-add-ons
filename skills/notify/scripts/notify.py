@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-notify.py — notify a Claude session/job via Telegram and/or email.
+notify.py - notify a Claude session/job via Telegram and/or email.
 
 Telegram routing:
   * Dispatcher mode (dispatcher.enabled, or telegram.mode == "topics"): the client
@@ -96,7 +96,9 @@ def poll_into_inbox(cfg, root, seconds):
     topics = {}
     try:
         topics = json.loads((root / "state" / "topics.json").read_text())
-    except Exception:
+    except (OSError, ValueError):
+        # Absent or corrupt topics.json means "no topics", not a crash. Any
+        # other exception is a real bug and should surface.
         pass
     offset = inbox.load_offset(root)
     deadline = time.time() + max(0, seconds)
@@ -164,7 +166,7 @@ def via_dispatcher(cfg, subject, body, event, job_id, want_reply, buttons, timeo
     hb = root / "state" / "heartbeat"
     fresh = hb.exists() and (int(time.time()) - int(hb.read_text() or 0) < 10)
     if want_reply and not fresh:
-        die("dispatcher not running — start it with `python notifyd.py` "
+        die("dispatcher not running - start it with `python notifyd.py` "
             "(needed for topics and for waiting on replies).", 2)
     tmp = root / "requests" / (req_id + ".json.tmp")
     tmp.write_text(json.dumps(req)); os.replace(tmp, root / "requests" / (req_id + ".json"))
@@ -238,6 +240,16 @@ def direct_telegram(cfg, subject, body, want_reply, buttons, timeout, dry):
                     m = u["message"]
                     if str((m.get("chat") or {}).get("id")) == str(chat_id) and m.get("text"):
                         print(json.dumps({"reply": m["text"], "via": "text"})); sys.exit(0)
+                    # Not our answer - but the offset has already advanced past
+                    # it, so dropping it here loses it for good. Only the
+                    # pre-loop drain captured; this branch did not, which
+                    # reintroduced exactly the message loss inbox.py exists to
+                    # prevent.
+                    if m.get("text"):
+                        try:
+                            inbox.capture(root, m)
+                        except Exception as exc:   # pylint: disable=broad-except
+                            eprint(f"inbox capture failed: {exc}")
         except Exception as e:
             eprint(f"getUpdates: {e}"); time.sleep(2)
     print(json.dumps({"reply": None, "timed_out": True})); sys.exit(5)

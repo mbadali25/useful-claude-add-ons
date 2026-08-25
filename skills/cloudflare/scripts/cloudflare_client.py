@@ -52,14 +52,27 @@ class CloudflareError(SystemExit):
 
 class CloudflareClient:
     def __init__(self, token=None, email=None, api_key=None,
-                 read_only=None, timeout=30):
+                 read_only=None, timeout=30,
+                 account_id=None, zone_id=None):
         self.token = token or os.environ.get("CLOUDFLARE_API_TOKEN")
         self.email = email or os.environ.get("CLOUDFLARE_EMAIL")
         self.api_key = api_key or os.environ.get("CLOUDFLARE_API_KEY")
+        # Ids can come straight from the environment. A scoped token often
+        # cannot list /accounts or /zones at all, so resolving an id by name is
+        # the wrong default - see account_id() below.
+        self.default_account_id = account_id or os.environ.get("CLOUDFLARE_ACCOUNT_ID")
+        self.default_zone_id = zone_id or os.environ.get("CLOUDFLARE_ZONE_ID")
         if not self.token and not (self.email and self.api_key):
             raise CloudflareError(
-                "Missing credentials: set CLOUDFLARE_API_TOKEN (preferred), "
-                "or CLOUDFLARE_EMAIL + CLOUDFLARE_API_KEY (legacy)."
+                "Missing credentials. Set a scoped token:\n"
+                "    export CLOUDFLARE_API_TOKEN=...\n"
+                "and optionally, to skip a lookup a scoped token may not be "
+                "allowed to make:\n"
+                "    export CLOUDFLARE_ACCOUNT_ID=...\n"
+                "    export CLOUDFLARE_ZONE_ID=...\n"
+                "The legacy Global API Key (CLOUDFLARE_EMAIL + "
+                "CLOUDFLARE_API_KEY) still works but is root-equivalent over "
+                "the whole account and cannot be scoped. Prefer a token."
             )
         if read_only is None:
             read_only = os.environ.get("CLOUDFLARE_READ_ONLY", "") not in ("", "0", "false", "False")
@@ -129,28 +142,70 @@ class CloudflareClient:
     # ---------- convenience ----------
 
     def verify(self):
-        """GET /user/tokens/verify - fastest way to confirm the token is good."""
-        return self._request("GET", "/user/tokens/verify")
+        """Confirm the credential works.
 
-    def zone_id(self, name):
-        body = self._request("GET", "/zones", params={"name": name})
+        /user/tokens/verify only exists for scoped tokens. The Global API Key
+        has no verify endpoint, so a cheap read stands in - otherwise this
+        would report success without having checked anything.
+        """
+        if self.token:
+            return self._request("GET", "/user/tokens/verify")
+        body = self._request("GET", "/zones", params={"per_page": 1})
+        return {"result": {"status": "active (legacy Global API Key)"},
+                "note": "No verify endpoint exists for the Global API Key; "
+                        "a GET /zones succeeded instead.",
+                "zones_visible": len(body.get("result") or [])}
+
+    def _resolve(self, kind, name, env_var, preset):
+        """Resolve a zone or account id: env var, then an explicit name, then
+        the only one visible. A scoped token is frequently NOT permitted to
+        list /zones or /accounts, so a lookup failing here says nothing about
+        whether the token is good for the work you actually want to do.
+        """
+        if preset:
+            return preset
+        params = {"name": name} if name else {}
+        try:
+            body = self._request("GET", f"/{kind}s", params=params)
+        except CloudflareError as exc:
+            raise CloudflareError(
+                f"Could not list {kind}s: {exc}\n"
+                f"A scoped API token often cannot enumerate {kind}s even when it "
+                f"has full access to the one you want. Set {env_var} to the id "
+                f"directly (Cloudflare dashboard -> the {kind} -> the id in the "
+                f"URL or the right-hand sidebar) and this lookup is skipped."
+            ) from exc
         result = body.get("result") or []
         if not result:
-            raise CloudflareError(f"No zone found matching name '{name}'")
+            if name:
+                raise CloudflareError(
+                    f"No {kind} found matching name '{name}'. If the token is "
+                    f"scoped, the list can come back empty rather than 403 - "
+                    f"set {env_var} to the id directly."
+                )
+            raise CloudflareError(
+                f"No {kind}s visible to this credential. Set {env_var} to the "
+                f"id directly."
+            )
         if len(result) > 1:
-            names = ", ".join(z.get("name", "?") for z in result)
-            raise CloudflareError(f"Ambiguous zone name '{name}' matched: {names}")
+            if not name:
+                names = ", ".join(r.get("name", "?") for r in result[:8])
+                raise CloudflareError(
+                    f"{len(result)} {kind}s are visible ({names}). Pass a name, "
+                    f"or set {env_var} to the id."
+                )
+            names = ", ".join(r.get("name", "?") for r in result)
+            raise CloudflareError(f"Ambiguous {kind} name '{name}' matched: {names}")
         return result[0]["id"]
 
-    def account_id(self, name):
-        body = self._request("GET", "/accounts", params={"name": name})
-        result = body.get("result") or []
-        if not result:
-            raise CloudflareError(f"No account found matching name '{name}'")
-        if len(result) > 1:
-            names = ", ".join(a.get("name", "?") for a in result)
-            raise CloudflareError(f"Ambiguous account name '{name}' matched: {names}")
-        return result[0]["id"]
+    def zone_id(self, name=None):
+        """Zone id from $CLOUDFLARE_ZONE_ID, a name, or the only visible zone."""
+        return self._resolve("zone", name, "CLOUDFLARE_ZONE_ID", self.default_zone_id)
+
+    def account_id(self, name=None):
+        """Account id from $CLOUDFLARE_ACCOUNT_ID, a name, or the only account."""
+        return self._resolve("account", name, "CLOUDFLARE_ACCOUNT_ID",
+                             self.default_account_id)
 
     def get(self, path, params=None):
         return self._request("GET", path, params=params)
@@ -214,6 +269,8 @@ def _parse_params(pairs):
 def main():
     ap = argparse.ArgumentParser(description="Cloudflare v4 API CLI (stdlib only)")
     ap.add_argument("--token", help="scoped API token (else $CLOUDFLARE_API_TOKEN)")
+    ap.add_argument("--account-id", help="account id (else $CLOUDFLARE_ACCOUNT_ID)")
+    ap.add_argument("--zone-id", help="zone id (else $CLOUDFLARE_ZONE_ID)")
     ap.add_argument("--email", help="legacy account email (else $CLOUDFLARE_EMAIL)")
     ap.add_argument("--api-key", help="legacy Global API Key (else $CLOUDFLARE_API_KEY)")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -221,9 +278,11 @@ def main():
     sub.add_parser("verify", help="GET /user/tokens/verify")
 
     p = sub.add_parser("zone-id", help="resolve a zone name to its 32-char id")
-    p.add_argument("name")
+    p.add_argument("name", nargs="?",
+                   help="optional - the id from the env var is used when omitted")
     p = sub.add_parser("account-id", help="resolve an account name to its id")
-    p.add_argument("name")
+    p.add_argument("name", nargs="?",
+                   help="optional - the id from the env var is used when omitted")
 
     for verb in ("get", "get-all"):
         p = sub.add_parser(verb)
@@ -243,7 +302,9 @@ def main():
     p.add_argument("--dry-run", action="store_true", help="print request, do not send")
 
     args = ap.parse_args()
-    c = CloudflareClient(token=args.token, email=args.email, api_key=args.api_key)
+    c = CloudflareClient(token=args.token, email=args.email, api_key=args.api_key,
+                         account_id=getattr(args, "account_id", None),
+                         zone_id=getattr(args, "zone_id", None))
 
     if args.cmd == "verify":
         out = c.verify()

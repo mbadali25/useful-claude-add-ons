@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# bb.sh — minimal Bitbucket Cloud REST API 2.0 wrapper
+# bb.sh - minimal Bitbucket Cloud REST API 2.0 wrapper
 # Usage:
 #   bb.sh GET  "repositories/{workspace}/{repo}/pullrequests?state=OPEN"
 #   bb.sh POST "repositories/{workspace}/{repo}/pullrequests" '{"title":"..."}'
@@ -49,7 +49,7 @@ if [[ "$HTTP_CODE" -ge 400 ]]; then
   case "$HTTP_CODE" in
     401) echo "Hint: check BITBUCKET_EMAIL (must be Atlassian account email, not username) and token validity/expiry." >&2 ;;
     403) echo "Hint: token likely missing a required scope for this endpoint." >&2 ;;
-    410) echo "Hint: app-password era credential — replace with an API token." >&2 ;;
+    410) echo "Hint: app-password era credential - replace with an API token." >&2 ;;
   esac
   exit 1
 fi

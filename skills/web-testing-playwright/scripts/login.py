@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Log in to a site and save the authenticated session for reuse.
 
-Credentials come from environment variables only — never from arguments, which
+Credentials come from environment variables only - never from arguments, which
 would land in shell history and process listings. The saved storage-state file
 lets every later run start already logged in, which is both faster and kinder
 to the login endpoint.
@@ -20,7 +20,7 @@ Then reuse the session:
 
     python3 audit_page.py https://app.example.com/settings --storage-state ./auth.json
 
-The state file contains live session cookies — treat it like a password.
+The state file contains live session cookies - treat it like a password.
 Add it to .gitignore and delete it when you're done.
 """
 
@@ -121,6 +121,9 @@ def main():
     ap.add_argument("--user-selector", help="override username field detection")
     ap.add_argument("--password-selector", help="override password field detection")
     ap.add_argument("--submit-selector", help="override submit button detection")
+    ap.add_argument("--next-selector",
+                    help="selector for the first-screen Next button on a "
+                         "two-step login; falls back to --submit-selector")
     ap.add_argument("--success-url", help="URL glob expected after login, e.g. '**/dashboard'")
     ap.add_argument("--success-selector",
                     help="selector that only exists when logged in, e.g. '[data-testid=avatar]'")
@@ -132,7 +135,7 @@ def main():
     ap.add_argument("--browser", default="chromium",
                     choices=["chromium", "firefox", "webkit"])
     ap.add_argument("--headed", action="store_true",
-                    help="watch it happen — useful when detection misfires")
+                    help="watch it happen - useful when detection misfires")
     ap.add_argument("--pause-for-mfa", type=int, default=0, metavar="SECONDS",
                     help="hold the browser open this long so a human can complete MFA "
                          "(requires --headed)")
@@ -182,7 +185,12 @@ def main():
         print(f"   filled username from ${args.user_env}")
 
         if args.two_step:
-            nxt = resolve(page, SUBMIT_CANDIDATES, args.submit_selector, "submit")
+            # --next-selector, not --submit-selector: on a real two-screen login
+            # the "Next" and "Sign in" buttons rarely share markup, and reusing
+            # one selector for both means either the first click misses or the
+            # second one does.
+            nxt = resolve(page, SUBMIT_CANDIDATES,
+                          args.next_selector or args.submit_selector, "next")
             if nxt:
                 nxt.click()
                 page.wait_for_load_state("domcontentloaded")
@@ -196,7 +204,7 @@ def main():
 
         submit = resolve(page, SUBMIT_CANDIDATES, args.submit_selector, "submit")
         if submit is None:
-            print("   no submit button found — pressing Enter instead")
+            print("   no submit button found - pressing Enter instead")
             pw_field.press("Enter")
         else:
             submit.click()
@@ -221,7 +229,7 @@ def main():
                 detail.append(
                     f"never reached the glob {args.success_url} "
                     f"(still at {redact(page.url)}). If the real URL looks right, the glob "
-                    "may be too strict — a query string needs a trailing '*'."
+                    "may be too strict - a query string needs a trailing '*'."
                 )
 
         if args.success_selector:
@@ -237,15 +245,15 @@ def main():
             # Weak heuristic: a visible password field usually means we're still stuck.
             still_there = page.locator("input[type='password']").count() > 0
             ok = not still_there
-            detail.append("password field still on screen — probably rejected"
-                          if still_there else "password field gone — probably accepted")
+            detail.append("password field still on screen - probably rejected"
+                          if still_there else "password field gone - probably accepted")
 
         print(f"   final URL: {redact(page.url)}")
         for d in detail:
             print(f"   {d}")
 
         if password in page.url or quote_plus_safe(password) in page.url:
-            print("   WARNING: the password appears in the URL — this login form uses "
+            print("   WARNING: the password appears in the URL - this login form uses "
                   "method=GET, which writes credentials into browser history, server "
                   "logs, and Referer headers. Worth reporting as a security bug.")
 
@@ -259,7 +267,7 @@ def main():
                 os.chmod(args.save_state, 0o600)
             except OSError:
                 pass
-            print(f"\nLOGIN OK — session saved to {args.save_state}")
+            print(f"\nLOGIN OK - session saved to {args.save_state}")
             print("Reuse it with:  --storage-state " + args.save_state)
             print("This file holds live session cookies. Gitignore it; delete when done.")
         else:

@@ -37,7 +37,19 @@ One script per OS. Both are idempotent (safe to re-run) and, by default, also bo
 | `A` / `N` / `D` | Tick all / clear all / restore the default set |
 | `Q` or Escape | Cancel — nothing is installed |
 
-**The per-skill picker** (→ on row 3) lists all 25 skills in this repo with the same controls. All 25 start ticked; untick the ones you don't want and press Enter or ← to go back. Opening it also ticks the parent row, so a careful sub-selection can't be lost to an unticked parent.
+**Sub-pickers.** Every row that installs more than one thing is marked `>` and opens its own picker on →, with the same controls. Everything inside starts ticked; untick what you don't want and press Enter or ← to go back (`Q` there discards just that sub-selection). Opening one also ticks the parent row, so a careful sub-selection can't be lost to an unticked parent, and the parent's label keeps a live count.
+
+| Row | What → picks | Non-interactive equivalent |
+|---|---|---|
+| 3 | the 25 skills in this repo | `--skills` / `-Skills` |
+| 4 | superpowers, frontend-design, excalidraw-generator | `--team` / `-Team` |
+| 6 | the 5 community plugins | `--community` / `-Community` |
+| 10 | the 10 VoltAgent packs | `--voltagent` / `-VoltAgent` |
+| 21 | this repo's own plugins (`crew`) | `--plugins` / `-Plugins` |
+
+Each flag takes names, numbers, `all` or `none` — `--voltagent infra,qa-sec`, `--team 1,3`, `--community none`. A name matches either the plugin key or the short label the picker shows, so `--voltagent infra` and `--voltagent voltagent-infra` are the same thing. Naming items inside a row also selects that row, which matters for the ones that are off by default (`--plugins crew`); it never overrides a choice you made at the menu. Only the marketplaces behind a ticked plugin get registered, so `--team excalidraw-generator` adds one marketplace rather than three.
+
+`--dry-run` / `-DryRun` settles the selection, prints it, and stops without installing anything — the quickest way to see what a set of flags resolves to.
 
 **When the picker isn't available**, both scripts fall back to the original numbered prompt — same items, same defaults, answered with `A`, `D`, `N`, or `1,3,7-9`. That happens when there is no usable terminal (`curl | bash` with no `/dev/tty`, CI), no `stty`, `TERM=dumb`, PowerShell ISE, a redirected console, or a window under ten lines. Nothing about the install differs; only how you choose.
 
@@ -232,7 +244,9 @@ Six more rows, also off by default. None of them are MCP servers.
 
 ### Optional: this repo's own plugins
 
-- **This repo's plugins** (21) - installs everything under [`plugin/`](plugin/) from this repo's own marketplace. Today that is one plugin, [`crew`](plugin/crew): 10 subagents, 16 slash commands, 16 bundled skills, and 14 hook entries (7 scripts, each shipped as a `.sh`/`.ps1` pair) across 5 events. It adds the marketplace itself first, so the item works whether or not item 3 ran; both steps are no-ops when they are already present.
+- **This repo's plugins** (21) - installs everything under [`plugin/`](plugin/) from this repo's own marketplace. Today that is one plugin, [`crew`](plugin/crew): 10 subagents, 18 slash commands, 16 bundled skills, and 16 hook entries (8 scripts, each shipped as a `.sh`/`.ps1` pair) across 5 events. It adds the marketplace itself first, so the item works whether or not item 3 ran; both steps are no-ops when they are already present.
+
+  This item also detects a global `find-skills` collision: if `~/.claude/skills/find-skills` exists (from menu item 5, or a direct `npx skills add`), it warns that two active copies can both trigger on the same prompt and prints the manual removal command. Detection only; it never deletes anything.
 
   ```bash
   claude plugin marketplace add mbadali25/useful-claude-add-ons
@@ -244,6 +258,7 @@ Six more rows, also off by default. None of them are MCP servers.
   | Script | Event | What it does the moment the plugin is enabled |
   |---|---|---|
   | `guard.sh` / `.ps1` | `PreToolUse` on Bash and PowerShell | Blocks `terraform apply`/`destroy`, destructive DDL, force push, hard reset, prod-targeted commands, and any command that would print a secret into the transcript |
+  | `promote-gate.sh` / `.ps1` | `PreToolUse` on Bash and PowerShell | Refuses a command matching a declared `deploy` entry unless every `requires` environment has an all-pass row in `.work/PROMOTIONS.md`, the rollback runbook is verified inside 90 days, `requireHuman` is approved, and the tree is clean |
   | `handoff-read.sh` / `.ps1` | `SessionStart` | Injects the last handoff back after a clear, compact, or resume |
   | `pm-brief.sh` / `.ps1` | `SessionStart` | Runs `crew_state.py` and prints a prioritized, **report-only** brief — schema drift, a stale or missing code graph, a pending handoff, review health — before you type anything |
   | `verify-gate.sh` / `.ps1` | `Stop` | Runs the checks the changed paths map to and **fails the turn** on red, or on a changed path with no rule |
@@ -260,7 +275,7 @@ Six more rows, also off by default. None of them are MCP servers.
   /crew:verify       # build the change-to-check map the Stop gate needs
   ```
 
-  **Both flavours are registered on every matcher-less event on purpose**, not because each one fires. `PreToolUse` above is different — there the branch is chosen by *which tool Claude used*, not by OS. On the other four events, `hooks.json` has no way to know in advance which shell a given machine actually has, so both are wired and one failing is expected, not a bug. On Windows this is measured, not theoretical — Git for Windows ships two `bash.exe` binaries, and `usr/bin/bash.exe` exits 127 on these scripts where `bin/bash.exe` runs them fine, so which one resolves first on `PATH` decides whether the `.sh` side works at all. The `.ps1` twin is what actually gates the machine when it doesn't. What is genuinely **unverified** is real hook-runner behavior with no `pwsh` on Linux — that combination has not been exercised, so treat it as unconfirmed rather than assumed fine.
+  **Both flavours are registered on every matcher-less event on purpose**, not because each one fires. `PreToolUse` above is different — there the branch is chosen by *which tool Claude used*, not by OS. On the other four events, `hooks.json` has no way to know in advance which shell a given machine actually has, so both are wired and one failing is expected, not a bug. On Windows this is measured, not theoretical — Git for Windows ships two `bash.exe` binaries, and `usr/bin/bash.exe` exits 127 on these scripts where `bin/bash.exe` runs them fine, so which one resolves first on `PATH` decides whether the `.sh` side works at all. The `.ps1` twin, registered with a `shell: powershell` field — which Claude Code does read and honour — is what actually gates the machine when it doesn't. (Before 0.2.0 the guards stood down on Windows instead of being registered this way, so the command guard blocked nothing and the `Stop` gate ran nothing there. Fixed.) What is genuinely **unverified** is real hook-runner behavior with no `pwsh` on Linux — that combination has not been exercised, so treat it as unconfirmed rather than assumed fine.
 
   Two settings worth knowing before they surprise you, both default `false` in `.crew/config.json`'s `context` block: **`autoWrapUp`** changes what `context-watch` tells the session to do at the warning threshold (reach a stopping point and write the handoff, vs. just asking), but **the `/clear` itself always stays manual — no hook can trigger one**, since a hook is a child process and cannot reset its parent's conversation. **`autoResume`** opens the next session already holding the last handoff (as `additionalContext`, confirmed to work in an interactive session, rather than `initialUserMessage`, which is only confirmed for non-interactive `-p` runs) — it puts the note in view, it does not start the session working on its own.
 
@@ -362,7 +377,24 @@ claude plugin marketplace update useful-claude-add-ons
 claude plugin update <skill-name>@useful-claude-add-ons
 ```
 
+Note the `@useful-claude-add-ons` suffix — `claude plugin update` rejects a bare plugin
+name with `Plugin "<name>" not found`.
+
 Or just re-run the OS install script — it's idempotent and will skip anything already installed.
+To decide that cheaply it compares the commit its marketplace clone is on against the commit
+Claude Code recorded when each plugin was installed, then asks git whether that plugin's own files
+changed between the two. Only the ones that actually changed cost a `claude plugin update`; a run
+where nothing has moved upstream launches the CLI once for the marketplace refresh and not at all
+per plugin. If `git` is missing, the marketplace has no history, or the recorded commit was pruned
+by a force-push, it falls back to asking the CLI about every plugin — correct, just slower.
+`--no-update` / `-NoUpdate` skips the update check entirely.
+
+**When a skill changes but its version does not.** `claude plugin update` compares declared
+versions, so an edit without a version bump copies nothing and the installed copy stays stale. The
+scripts report that case rather than calling the plugin current, and `--force-refresh` /
+`-ForceRefresh` reinstalls it (`--keep-data`, so the plugin's persistent data survives). For this
+repo's own skills it should never happen: `scripts/check-marketplace.py` fails CI on a skill whose
+files changed without a bump.
 
 ## Troubleshooting
 
