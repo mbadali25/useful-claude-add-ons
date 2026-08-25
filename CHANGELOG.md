@@ -6,6 +6,74 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
+- **`crew` 0.3.0 — a report-only project manager, a code graph, and a v1→v2
+  upgrade path.** Three connected pieces, all off by default in what they can
+  do to `.crew/config.json`:
+  - **The PM.** `/crew:pm` (status with no argument; `onboard <role>` /
+    `offboard <role>` with explicit yes/no confirmation before either touches
+    config) and the `crew:pm` subagent, which holds no `Write` tool at all —
+    it reads `crew_state.py`'s output, correlates the full metrics history or
+    audits every codemap anchor when that would cost more context in the main
+    session than the answer is worth, and returns a report plus one
+    recommendation, under 200 words. It never applies anything; the session
+    that invoked it acts, or not. A new `SessionStart` hook, `pm-brief.sh` /
+    `.ps1`, runs the same state read at the start of every session and prints
+    a prioritized brief — schema drift, a stale or missing code graph, a
+    pending handoff, review health — before you type anything. Two related
+    `context` settings, both default `false`: `autoWrapUp` changes what the
+    `Stop` hook tells the session to do at the warning threshold (reach a
+    stopping point and write the handoff, rather than just ask), and
+    `autoResume` opens the next session already holding the last handoff as
+    `additionalContext` — `initialUserMessage` was ruled out because it is
+    confirmed only for non-interactive `-p` runs. Neither setting makes
+    `/clear` itself automatic; no hook can trigger one.
+  - **The code graph.** The `crew-graph` skill wraps the third-party
+    `graphify` CLI (PyPI package `graphifyy`, double-y) to build and query a
+    code graph at `graph.out` (default `graphify-out/graph.json`), gated on
+    `--no-viz --code-only` for a keyless build. Freshness is read from
+    `graphify`'s own `built_at_commit` field in
+    `graph.json`, never a file timestamp — a `git pull` that predates the
+    last build now correctly reports as stale instead of falsely current.
+    Exporting into Obsidian needs an explicit `graph.obsidian.confirmed` set
+    by hand; nothing sets it for you.
+  - **The upgrade path.** `/crew:upgrade` brings a pre-schema config (no
+    `schema` key, now `schema: 1`) forward to `schema: 2`: backs up
+    `.crew/codemap/` before any other write, builds the graph if it's
+    missing or stale, derives `Entry points` / `Owns data` / `Calls out to`
+    per subsystem from the graph, and writes `.crew/codemap/UPGRADE.md`
+    reporting contradictions and stale-on-purpose anchors rather than
+    resolving either automatically. `## Does`, `## Landmines`, and
+    `## Unverified` pass through byte-identical, always. An anchor only
+    bumps on a section actually re-verified this run.
+
+  `.crew/config.json` gains `schema`, a `pm` block (`enabled`, `mode`,
+  `quietLines`, `maxLines`, `authority` — always `report-only`), and a
+  `graph` block (`out`, `obsidian.confirmed`) — see `plugin/crew/README.md`
+  §11. The plugin now registers 10 subagents, 16 slash commands, and 16
+  bundled skills, up from 9/14/14.
+- **Both `.sh` and `.ps1` are now wired for every hook event, not just
+  `PreToolUse`.** `verify-gate.ps1`, `context-watch.ps1`, and
+  `handoff-read.ps1` existed on disk but were never referenced in
+  `hooks.json`; `handoff-write.ps1` and `notify.ps1` are new. 7 scripts × 2
+  flavours = 14 hook entries across the same 5 events, registered
+  unconditionally — one flavour is expected to fail per machine, and that is
+  by design, not a regression. On Windows this closes the gap the 0.2.0
+  entry below flagged as a known, documented-not-fixed limitation; on Linux
+  with no `pwsh`, the real hook-runner behaviour remains unverified rather
+  than assumed fine.
+- **The `repo-plugins` install item (21) now detects a global `find-skills`
+  collision instead of only documenting it.** If
+  `~/.claude/skills/find-skills` exists — from menu item 5, or a direct
+  `npx skills add vercel-labs/skills --skill find-skills` — the step warns
+  that two active copies of `find-skills` can both trigger on the same
+  prompt and prints the manual `rm -rf` to remove the global one. Detection
+  only; it never deletes anything itself.
+- **Menu item 22, `graphify` — off by default, no new flag.** Installs the
+  `graphify` CLI (`uv tool install graphifyy`) and registers it
+  **per-repository**, never globally, with `graphify install --project`.
+  Reuses `--select` / `-Select` like every other item. Installing it alone
+  does nothing; `crew`'s `crew-graph` skill and `/crew:upgrade` are what call
+  it.
 - **A `plugin/` tree, and the `crew` plugin in it — the repo's first entry that is a
   plugin rather than a skill.** `crew` 0.2.0 is a virtual dev team for multi-repo legacy
   work: 9 context-isolated subagents, 14 slash commands, 14 bundled skills, and 7 hooks

@@ -140,7 +140,7 @@ Then inside Claude Code:
 /plugin install crew@my-marketplace
 ```
 
-Verify with `/help` — you should see `/crew:ticket`, `/crew:work`, `/crew:review`, `/crew:onboard`, `/crew:scale`, and `/crew:jira-sync`.
+Verify with `/help` — you should see `/crew:ticket`, `/crew:work`, `/crew:review`, `/crew:onboard`, `/crew:scale`, `/crew:pm`, `/crew:upgrade`, and `/crew:jira-sync`.
 
 Plugin components other than skills are cached at load time. After editing agents, hooks, or `.mcp.json`, run `/reload-plugins` or restart.
 
@@ -472,6 +472,7 @@ Everything reads `.crew/config.json`:
 
 ```json
 {
+  "schema": 2,
   "tier": 0,
   "roles": ["explorer", "qa-reviewer"],
   "qa": { "provider": "auto" },
@@ -479,12 +480,16 @@ Everything reads `.crew/config.json`:
   "tracker": "files",
   "jira": { "cloudId": null, "project": null },
   "memory": { "mode": "repo", "vaultPath": null },
-  "verifyGate": true
+  "verifyGate": true,
+  "context": { "warnAt": 0.8, "budgetTokens": 200000, "autoWrapUp": false, "autoResume": false },
+  "pm": { "enabled": true, "mode": "adaptive", "quietLines": 8, "maxLines": 40, "authority": "report-only" },
+  "graph": { "out": "graphify-out", "obsidian": { "confirmed": false } }
 }
 ```
 
 | Key | Values | Effect |
 |---|---|---|
+| `schema` | integer | Config layout version. Absent means a pre-PM (`v1`) setup — `/crew:upgrade` brings it to the current schema (2). Never hand-edit this; `/crew:upgrade` sets it. |
 | `notify.provider` | `teams`, `telegram`, `none` | Outbound notifications. Credentials come from env vars, never config. |
 | `secondOpinion.provider` | `gemini`, `local`, `none` | Design partner. `sendsCode` stays `false` on any free tier. |
 | `qa.provider` | `auto`, `codex`, `claude` | `auto` prefers Codex, falls back to Claude, announces which ran. `codex` fails loudly instead of falling back. |
@@ -492,6 +497,12 @@ Everything reads `.crew/config.json`:
 | `memory.mode` | `repo`, `obsidian` | Where the code map lives. `obsidian` also needs `vaultPath`. |
 | `verifyGate` | `true`, `false` | Whether the `Stop` hook blocks on failed checks. Set `false` only while first building the harness. |
 | `tier` / `roles` | see §22 | Which agents are in play. Managed by `/crew:scale`. |
+| `context.warnAt` / `budgetTokens` | fraction, integer | When and against what estimate the `Stop` hook nags for a handoff. See §16. |
+| `context.autoWrapUp` | `true`, `false` (default `false`) | At `warnAt`, instructs the session to reach a stopping point and write the handoff, instead of just asking. The `/clear` itself stays manual either way — no hook can trigger one. See §16. |
+| `context.autoResume` | `true`, `false` (default `false`) | Opens the next `SessionStart` already holding the last handoff as `additionalContext`. See §16 — read the limitation before enabling it. |
+| `pm.enabled` / `mode` / `quietLines` / `maxLines` | see `crew-pm` skill | Whether and how verbosely the `SessionStart` PM brief speaks. `authority` is always `report-only` — the PM never edits `config.json` on its own, regardless of this block. |
+| `graph.out` | path (default `graphify-out`) | Where `graphify` wrote `graph.json`. Freshness is read from graphify's own `built_at_commit` field in that file, never a timestamp. |
+| `graph.obsidian.confirmed` | `true`, `false` (default `false`) | Consent gate for exporting the graph into an Obsidian vault. Only explicit consent given in session sets this — `/crew:upgrade` never grants it. See `crew-graph`'s Obsidian section. |
 
 ---
 
@@ -713,13 +724,29 @@ at once, and that's the real finding.
 
 Anything uncertain goes under **Verify first** rather than being asserted as done.
 
+### Auto-wrap-up is off by default
+
+`context.autoWrapUp` changes what the `Stop` hook says at `warnAt`, not
+whether it fires. Off (the default), it just asks you to write the handoff.
+On, it instructs the session to reach a stopping point — finish or safely
+abandon the change in flight, write the handoff, update the ticket — before
+telling you it's ready. **Either way, the `/clear` itself stays manual**,
+because no hook can trigger one: hooks run as child processes, and a child
+cannot reset its parent's conversation. `autoWrapUp` bounds what happens
+before you clear; it does not remove the clear.
+
 ### Auto-resume is off by default
 
-`SessionStart` can return an `initialUserMessage` to start the next session
-working with no human turn. `context.autoResume` enables it, and I'd leave it
-off. It removes the one moment where a human reads what the previous session
-claimed before more work is built on top of it — and if a handoff is subtly
-wrong, that's how the error compounds unattended.
+`context.autoResume` opens the next `SessionStart` already holding the last
+handoff, and I'd leave it off. It is implemented as `additionalContext`, not
+`initialUserMessage` — `initialUserMessage` is confirmed only for
+non-interactive `-p` invocations, and could not be proven to behave the same
+way in an interactive session, so the safer, universally-confirmed field was
+used instead. That means enabling it puts the handoff in view at the start of
+the next session; **it does not make the session start working on its own.**
+A human still reads the note and gives the first turn — which is the one
+moment where a subtly wrong handoff gets caught before more work is built on
+top of it.
 
 ### Housekeeping
 
@@ -1028,6 +1055,32 @@ Every added role costs a full context load plus the `CLAUDE.md` hierarchy on eve
 
 A scaling review that concludes "this is the right size" is a successful review.
 
+### Onboarding and offboarding a role
+
+```
+/crew:pm onboard <role>
+/crew:pm offboard <role>
+```
+
+Growing the crew is a decision, not a command that just runs: `/crew:pm
+onboard <role>` names the specific defect class the role closes and confirms
+`.crew/metrics.md` actually supports adding it, then stops and asks yes/no
+before touching `.crew/config.json` or recomputing `tier`.
+
+Offboarding is the same shape in reverse, and checks a precondition first: the
+role has to actually be on the crew. `/crew:pm offboard <role>` reads `roles`
+from `crew_state.py`'s output before doing anything else — running the
+procedure for a role that was never active would append a real `offboarded
+<role>` line to `.crew/metrics.md` for coverage that never existed, and that
+file is what `/crew:scale` reads to decide whether the crew is catching
+anything. If the role is on the crew, it walks the removal, then states —
+out loud, every time — which failure mode the removal leaves uncovered. That
+sentence is the point of the command, not a courtesy.
+
+Neither direction ever changes `config.json` on its own. Both need your
+explicit yes, no matter how obvious the recommendation looks — see the
+`crew:pm` agent's authority rule below.
+
 ---
 
 ## 23. Command and agent reference
@@ -1050,6 +1103,10 @@ A scaling review that concludes "this is the right size" is a successful review.
 | `/crew:survey [area]` | Research gaps, produce ranked findings with options |
 | `/crew:scale` | Evidence-based crew sizing |
 | `/crew:jira-sync <KEY> [--push]` | Sync one issue with the local cache |
+| `/crew:pm [onboard\|offboard <role>]` | Crew-manager status, or add/remove a role — see §22 |
+| `/crew:upgrade [--force]` | Bring a pre-schema-2 (`v1`) setup forward — see §11 |
+
+16 commands.
 
 ### Agents
 
@@ -1064,18 +1121,35 @@ A scaling review that concludes "this is the right size" is a successful review.
 | `planner` | read-only | 2 | Design second opinion from an abstracted brief |
 | `dba` | read-only | 2 | Migrations, locks, online safety |
 | `docs-writer` | read/write | 2 | Architecture and data flow from real code |
+| `pm` | read-only (no `Write`) | — | Heavy crew-management analysis in its own context; report-and-recommend only, never applies a change |
+
+10 agents. `pm` sits outside the tier ladder — it is not sized in or out by `/crew:scale`, it is invoked directly by `/crew:pm` when the analysis (correlating the whole metrics history, auditing every codemap anchor, building a tier-change evidence chain) would cost more context in the main session than the answer is worth.
 
 ### Hooks
 
-| Hook | Event | Behavior |
+Seven scripts across five events, each with a `.sh` and a `.ps1` twin
+registered on its own event — 14 entries total.
+
+| Script | Event | Behavior |
 |---|---|---|
-| `guard.sh` | `PreToolUse` on Bash | Blocks `terraform apply`/`destroy`, destructive DDL, force push, hard reset, prod-targeted commands, and any command that would print a secret value into the transcript |
-| `verify-gate.sh` | `Stop` | Runs the checks the changed paths map to; fails the turn on red, or on a changed path with no rule |
-| `guard.ps1` / `verify-gate.ps1` | same events, `PowerShell` tool | Native Windows equivalents, registered with `shell: powershell` |
-| `context-watch.sh` | `Stop` | Estimates context use; asks for a handoff once per session |
-| `handoff-write.sh` | `PreCompact` | Snapshots the transcript, writes a skeleton handoff |
-| `handoff-read.sh` | `SessionStart` | Injects the handoff after clear, compact, or resume |
-| `notify.sh` | `Notification`, plus called by commands | Outbound one-line message to Teams or Telegram. Never reads. |
+| `guard.sh` / `guard.ps1` | `PreToolUse` on Bash / PowerShell | Blocks `terraform apply`/`destroy`, destructive DDL, force push, hard reset, prod-targeted commands, and any command that would print a secret value into the transcript |
+| `handoff-read.sh` / `.ps1` | `SessionStart` | Injects the handoff after clear, compact, or resume |
+| `pm-brief.sh` / `.ps1` | `SessionStart` | Runs `crew_state.py`, prints the prioritized PM brief (triggers, health, knowledge, graph freshness) — report-only, changes nothing |
+| `handoff-write.sh` / `.ps1` | `PreCompact` | Snapshots the transcript, writes a skeleton handoff |
+| `notify.sh` / `.ps1` | `Notification`, plus called by commands | Outbound one-line message to Teams or Telegram. Never reads. |
+| `verify-gate.sh` / `.ps1` | `Stop` | Runs the checks the changed paths map to; fails the turn on red, or on a changed path with no rule |
+| `context-watch.sh` / `.ps1` | `Stop` | Estimates context use; asks for a handoff once per session, or instructs a wrap-up if `context.autoWrapUp` is on |
+
+Both flavours are registered **on every event, on purpose** — not because
+each fires everywhere, but because `hooks.json` cannot know which shell a
+given machine has. On Windows, the `.sh` side can fail outright depending on
+which `bash` resolves first on `PATH`: measured, Git for Windows' `usr/bin/bash.exe`
+exits 127 on these scripts where its own `bin/bash.exe` runs them fine. The
+`.ps1` twin is what actually gates the machine when that happens — one
+flavour failing there is expected, not a bug. The reverse gap — no `bash` at
+all — is why the pairing exists in the first place. What is **not** verified
+is real hook-runner behavior with no `pwsh` on Linux; that combination was
+never exercised, so treat it as unconfirmed rather than assumed fine.
 
 Hooks are deterministic. That is their whole value — a hook cannot be argued out of blocking `terraform apply`, and an agent can.
 
@@ -1118,7 +1192,8 @@ Hooks are deterministic. That is their whole value — a hook cannot be argued o
 | `bad interpreter: ...^M` | CRLF line endings. Add `.gitattributes` with `* text=auto eol=lf` and `git add --renormalize .`. |
 | Tests connect fine on Windows, time out in WSL | WSL2 — the service is on the Windows host, not `localhost`. Use the gateway IP from `.crew/config.json`. |
 | Smoke suite takes minutes instead of seconds | Repo is on `/mnt/c`. Re-clone inside WSL. |
-| Hooks do not fire on Windows | Native Windows uses the `.ps1` hooks via the `PowerShell` tool. A bash hook path will not resolve. |
+| One hook flavour errors, the other runs | Expected on a matcher-less event (`SessionStart`, `PreCompact`, `Notification`, `Stop`) — both `.sh` and `.ps1` are registered unconditionally there, and only one shell is actually on the machine. Check which one succeeded before assuming a real failure. |
+| No hook fires at all on Windows | No `bash` and no PowerShell resolve, or the wrong `bash.exe` is first on `PATH` — Git for Windows ships two, and only `bin/bash.exe` runs these scripts reliably. |
 | Code map contradicts the code | The map is stale. Code wins. Re-run `/crew:onboard --refresh <area>` and delete what cannot be verified. |
 
 ---
@@ -1140,6 +1215,15 @@ requests, and selection gets worse as more broadly-scoped skills load. If
 `crew-setup` stops firing on "set up crew," disable this for one session and see
 whether the problem goes away. `BUNDLING-NOTE.md` beside it has a narrowed
 description you can swap in that keeps the capability and removes the collision.
+
+This is now checked for you, not just documented. The `repo-plugins` install
+step detects a **separate**, globally-installed copy at
+`~/.claude/skills/find-skills` — the one `find-skills` (menu item 5) or
+`npx skills add vercel-labs/skills --skill find-skills` puts there — and warns
+that two active copies can both trigger on the same prompt. The check is
+detection-only: it never deletes anything, it just prints the collision and
+the manual `rm -rf` to remove the global copy if you want crew's vendored one
+to be the only one loaded.
 
 ---
 
