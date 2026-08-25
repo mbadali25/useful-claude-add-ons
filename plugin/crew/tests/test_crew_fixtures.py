@@ -6,6 +6,7 @@ exist so make_repo/head_sha/commit_with_date are proven to work before five
 later tasks build on them, and so this harness lands with a green pytest run
 instead of "no tests collected" (pytest exit code 5).
 """
+import json
 import re
 
 import context  # noqa: F401  pylint: disable=unused-import
@@ -80,30 +81,34 @@ def test_make_repo_no_handoff_by_default(tmp_path):
 
 def test_make_repo_graph_sha_head_matches_real_head(tmp_path):
     root = crew_fixtures.make_repo(tmp_path, graph=True, graph_sha="head")
-    sidecar = root / "graphify-out" / ".crew-graph-sha"
-    assert sidecar.read_text(encoding="utf-8").strip() == crew_fixtures.head_sha(
-        root)
+    graph = json.loads(
+        (root / "graphify-out" / "graph.json").read_text(encoding="utf-8"))
+    assert graph["built_at_commit"] == crew_fixtures.head_sha(root, length=40)
 
 
 def test_make_repo_graph_sha_literal_is_stamped_verbatim(tmp_path):
     root = crew_fixtures.make_repo(tmp_path, graph=True, graph_sha="deadbee")
-    sidecar = root / "graphify-out" / ".crew-graph-sha"
-    assert sidecar.read_text(encoding="utf-8").strip() == "deadbee"
+    graph = json.loads(
+        (root / "graphify-out" / "graph.json").read_text(encoding="utf-8"))
+    assert graph["built_at_commit"] == "deadbee"
 
 
-def test_make_repo_graph_sha_none_writes_no_sidecar(tmp_path):
+def test_make_repo_graph_sha_none_omits_built_at_commit(tmp_path):
     root = crew_fixtures.make_repo(tmp_path, graph=True, graph_sha=None)
-    assert (root / "graphify-out" / "graph.json").exists()
-    assert not (root / "graphify-out" / ".crew-graph-sha").exists()
+    graph = json.loads(
+        (root / "graphify-out" / "graph.json").read_text(encoding="utf-8"))
+    assert "built_at_commit" not in graph
 
 
-def test_make_repo_graph_without_git_writes_no_sidecar(tmp_path):
+def test_make_repo_graph_without_git_omits_built_at_commit(tmp_path):
     # graph_sha defaults to "head", but with git=False there is no HEAD to
-    # stamp -- the "head" branch requires git, so no sidecar is written at
+    # stamp -- the "head" branch requires git, so no field is written at
     # all. A test for a fresh, stamped graph must pass git=True (the
     # default) alongside graph=True.
     root = crew_fixtures.make_repo(tmp_path, graph=True, git=False)
-    assert not (root / "graphify-out" / ".crew-graph-sha").exists()
+    graph = json.loads(
+        (root / "graphify-out" / "graph.json").read_text(encoding="utf-8"))
+    assert "built_at_commit" not in graph
 
 
 def test_head_sha_length(tmp_path):

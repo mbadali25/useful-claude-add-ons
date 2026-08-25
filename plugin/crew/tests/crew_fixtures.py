@@ -64,17 +64,16 @@ def make_repo(tmp_path, config=None, metrics=None, codemap=None,
     if graph:
         out = root / "graphify-out"
         out.mkdir()
-        (out / "graph.json").write_text('{"nodes": [], "edges": []}',
-                                        encoding="utf-8")
-        # graph_sha: "head" stamps the sidecar with the real HEAD (a fresh
-        # graph), a literal sha stamps that (a stale one), None writes no
-        # sidecar (a graph built outside crew).
+        # graph_sha: "head" stamps built_at_commit with the real, full HEAD
+        # sha (a fresh graph) -- graphify records the full sha, not a short
+        # one. A literal sha stamps that verbatim (a stale graph). None omits
+        # the field entirely (a graph built outside crew, unknown provenance).
+        body = {"nodes": [], "links": []}
         if graph_sha == "head" and git:
-            (out / ".crew-graph-sha").write_text(head_sha(root) + "\n",
-                                                 encoding="utf-8")
+            body["built_at_commit"] = head_sha(root, length=40)
         elif graph_sha and graph_sha != "head":
-            (out / ".crew-graph-sha").write_text(graph_sha + "\n",
-                                                 encoding="utf-8")
+            body["built_at_commit"] = graph_sha
+        (out / "graph.json").write_text(json.dumps(body), encoding="utf-8")
 
     return root
 
