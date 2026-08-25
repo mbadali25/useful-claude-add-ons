@@ -29,20 +29,6 @@ function Resolve-CrewBash {
   # real Application entry, and wrap the whole walk-up in try/catch so any
   # surprise (e.g. Split-Path on an unexpected value) falls through to the
   # PATH-based fallback below instead of throwing out of the hook entirely.
-  # A git wrapper defined as a PowerShell function/alias (real in corporate
-  # profiles) has no usable .exe path -- Get-Command still returns it ahead
-  # of any git.exe on PATH, but its .Source is empty (or, for an alias,
-  # points at whatever the alias targets). Only trust .Source when it is a
-  # real Application entry, and wrap the whole walk-up in try/catch so any
-  # surprise (e.g. Split-Path on an unexpected value) falls through to the
-  # PATH-based fallback below instead of throwing out of the hook entirely.
-  # A git wrapper defined as a PowerShell function/alias (real in corporate
-  # profiles) has no usable .exe path -- Get-Command still returns it ahead
-  # of any git.exe on PATH, but its .Source is empty (or, for an alias,
-  # points at whatever the alias targets). Only trust .Source when it is a
-  # real Application entry, and wrap the whole walk-up in try/catch so any
-  # surprise (e.g. Split-Path on an unexpected value) falls through to the
-  # PATH-based fallback below instead of throwing out of the hook entirely.
   try {
     $gitCmd = Get-Command git -ErrorAction SilentlyContinue
     if ($gitCmd -and $gitCmd.CommandType -eq 'Application' -and $gitCmd.Source) {
