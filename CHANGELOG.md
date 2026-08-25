@@ -81,6 +81,29 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`crew` 0.5.4 - ANEWINF-758: the `plugin/crew` pytest suite was
+  nondeterministic, 87-97 of ~182 tests passing on identical code across
+  consecutive runs.** Every `git` `subprocess.run` call in the suite - and
+  two in production code - left `stdin` at its default, so `git` inherited
+  whatever OS handle the parent process's stdin currently pointed at.
+  pytest's fd-based output capturing tears down and rebuilds file descriptor
+  0 on every test's setup/teardown, so an inherited handle can go stale
+  mid-suite; on Windows that surfaces as `OSError: [WinError 6] The handle
+  is invalid` inside `subprocess._make_inheritable`, and the documented
+  equivalent on a CI runner whose own stdin is a pipe is `EBADF`. A second,
+  quieter instance of the same bug lived in `crew_state.py`'s `git_out()`
+  and `crew_upgrade.py`'s `_head()`: both wrap their `subprocess.run` call in
+  `except (OSError, subprocess.SubprocessError): return None`, written to
+  turn "git is absent" into a soft `None` - which also silently swallowed
+  the transient handle-invalid error and returned a wrong-but-non-crashing
+  `None` on an unpredictable subset of runs. All eight call sites (four in
+  `tests/crew_fixtures.py`, one each in `tests/test_crew_fixtures.py` and
+  `tests/test_gates_powershell.py`, plus the two production sites) now pin
+  `stdin=subprocess.DEVNULL`, removing the dependency on the inherited
+  handle entirely. Proven with five consecutive full-suite runs reporting
+  an identical pass count and exit 0 each time; before the fix, five
+  consecutive runs ranged from 74 failed/113 passed to all passing with no
+  code change in between.
 - **`crew` 0.5.3 - a comment, from an advisory review.** `read_skips` now
   dedupes on `(gate, detail)`, which made the per-gate loop in `report()`
   look like a redundant second dedupe worth deleting. It is not: what it does

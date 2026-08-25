@@ -153,6 +153,7 @@ def _head(root):
         done = subprocess.run(
             ("git", "rev-parse", "--short=7", "HEAD"), cwd=root,
             capture_output=True, text=True, timeout=10, check=False,
+            stdin=subprocess.DEVNULL,
         )
     except (OSError, subprocess.SubprocessError):
         return None

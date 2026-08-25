@@ -1,7 +1,41 @@
 """Tests for the crew state reader."""
+import subprocess
+
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_fixtures
 import crew_state
+
+
+def test_git_out_never_inherits_the_parent_stdin(tmp_path, monkeypatch):
+    """git_out must pin stdin rather than inherit the caller's handle.
+
+    An inherited stdin handle is torn down and rebuilt by pytest's fd
+    capturing on every test, and on Windows (WinError 6) or a CI runner
+    whose stdin is a pipe (EBADF on Linux) that makes subprocess.Popen fail
+    intermittently. git_out's except clause is designed to turn "git is
+    absent" into a soft None -- but it also swallows that transient OSError
+    and silently returns a wrong None instead of the real HEAD, which is
+    exactly the nondeterminism this suite chases. Pinning stdin=DEVNULL
+    removes the transient failure at the source.
+    """
+    calls = []
+    real_run = subprocess.run
+
+    def recording_run(*args, **kwargs):
+        calls.append(kwargs)
+        return real_run(*args, **kwargs)  # pylint: disable=subprocess-run-check
+
+    monkeypatch.setattr(crew_state.subprocess, "run", recording_run)
+
+    root = crew_fixtures.make_repo(tmp_path)
+    assert crew_state.git_out(str(root), "rev-parse", "--short=7", "HEAD")
+
+    assert calls, "expected git_out to have called subprocess.run"
+    for kwargs in calls:
+        assert kwargs.get("stdin") == subprocess.DEVNULL, (
+            "git_out's subprocess.run call is missing stdin=subprocess.DEVNULL "
+            f"-- kwargs were: {kwargs}"
+        )
 
 
 def test_missing_config_is_empty_dict(tmp_path):
