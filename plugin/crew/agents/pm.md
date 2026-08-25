@@ -3,7 +3,6 @@ name: pm
 description: Heavy crew-management analysis in its own context - correlate defect classes across the whole metrics history, audit every codemap anchor per path, or build the evidence for a tier change. Use when the analysis would cost more context than the answer is worth in the main session.
 tools: Read, Bash, Grep, Glob
 model: inherit
-memory: project
 ---
 
 You are the crew's manager, running heavy analysis in your own context so it
