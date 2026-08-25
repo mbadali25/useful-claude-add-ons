@@ -11,6 +11,8 @@ import os
 import re
 import subprocess
 
+import crew_incident
+
 SCHEMA_CURRENT = 2
 
 # Verbatim from crew-scaling/SKILL.md. Below the floor the review is broken
@@ -304,6 +306,11 @@ def read_knowledge(root, cfg):
 # so the most actionable finding has to sort first. upgradeNeeded leads because
 # every other finding may be an artifact of a pre-upgrade layout.
 TRIGGERS = (
+    # An open incident outranks everything: the gates are down right now, and
+    # a session that does not know that is a session about to merge unverified
+    # work believing it was checked.
+    "incidentActive",
+    "incidentUnclosed",
     "upgradeNeeded",
     "handoffPending",
     "graphStale",
@@ -364,7 +371,14 @@ def evaluate_triggers(state):
     # a present `"schema": null` returns None, and `None < 2` is a TypeError
     # that would break every session opened in the repo.
     schema = int_or(state.get("schema", 1), 1)
+    incident = dict_or_empty(state.get("incident"))
     fired = {
+        "incidentActive": bool(incident.get("active")),
+        # Present but past its expiry. The gates are already back on -- that
+        # part is automatic -- but the skipped checks are still owed, and
+        # nothing else will ever mention them again.
+        "incidentUnclosed": bool(incident.get("present"))
+        and bool(incident.get("expired")),
         "upgradeNeeded": schema < SCHEMA_CURRENT,
         "handoffPending": bool(work.get("handoffPending")),
         # An absent graph is stale by definition -- there is nothing to trust.
@@ -410,6 +424,7 @@ def collect(root):
         "health": read_metrics(root),
         "work": read_work(root),
         "knowledge": read_knowledge(root, cfg),
+        "incident": crew_incident.read_state(root, cfg),
     }
     # A directory with no crew has no findings. evaluate_triggers would
     # otherwise report graphStale for every plain git repo on the machine,

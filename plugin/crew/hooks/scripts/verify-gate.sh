@@ -19,6 +19,24 @@ case "$INPUT" in *'"stop_hook_active": true'*|*'"stop_hook_active":true'*) exit 
 cd "${CLAUDE_PROJECT_DIR:-.}" || exit 0
 grep -q '"verifyGate"[[:space:]]*:[[:space:]]*false' .crew/config.json 2>/dev/null && exit 0
 
+# Emergency lane. An incident is open, so this turn is not blocked and the
+# checks do not run - that is the entire point of declaring one, since these
+# are the checks that take minutes. What would have run is written down
+# instead, and /crew:emergency end reports the debt.
+#
+# The deploy-record check below stands down too, deliberately: an incident is
+# exactly when a deploy goes out ahead of its paperwork. It is recorded as
+# owed rather than enforced now.
+if crew_incident_active; then
+  CHANGED_N=$( { git diff --name-only HEAD 2>/dev/null; git ls-files --others --exclude-standard 2>/dev/null; } | grep -c . )
+  crew_incident_log verify "stop gate stood down with $CHANGED_N changed file(s) unverified"
+  if [ -f .crew/.deploy-in-flight ]; then
+    read -r DENV DSHA < .crew/.deploy-in-flight
+    crew_incident_log verify "deploy of $DENV at $DSHA has no row in .work/PROMOTIONS.md"
+  fi
+  exit 0
+fi
+
 # A deploy ran this turn (promote-gate.sh let it through and left a marker).
 # It does not get to end without a row in the promotions log. A deploy nobody
 # wrote down is a deploy nobody can audit, and "is prod running what qa signed

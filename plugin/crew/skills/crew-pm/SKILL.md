@@ -33,7 +33,15 @@ The shape that matters:
 | `work.ticket` / `work.handoffPending` | What is open and whether a handoff note is waiting to be read. |
 | `knowledge.subsystems` / `knowledge.behind` | Codemap file count, and which of those files' anchors are not HEAD. |
 | `knowledge.graph.present` / `.current` | Whether a graphify graph exists and was built at HEAD. |
+| `incident.present` / `.active` / `.expired` | An emergency lane. Three separate questions: a state file exists, it is unexpired and permitted to stand gates down, it is past its expiry. Never collapse them — `present and not active` is the case that still owes a debt list. |
+| `incident.skips` / `.minutesLeft` | How many distinct gates went unrun, and how long is left before the gates come back on their own. |
 | `triggers` | The hook's own list of reasons to speak up, already prioritized. Report these first. |
+
+**An active incident is reported before anything else, always.** `incidentActive`
+and `incidentUnclosed` sort above `upgradeNeeded` for a reason: every other
+finding is about work quality, and this one is about whether the checks that
+judge quality are currently running at all. Do not paraphrase it into something
+softer than "the verify and promote gates are standing down right now".
 
 ## Authority: report and recommend only
 

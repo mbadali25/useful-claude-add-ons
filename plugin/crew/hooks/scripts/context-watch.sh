@@ -34,11 +34,15 @@ CFG=$("$PY" - << 'PY' 2>/dev/null
 import json
 try: c=json.load(open(".crew/config.json")).get("context",{})
 except Exception: c={}
-print(c.get("warnAt",0.8), c.get("budgetTokens") or 0, c.get("handoffPath",".work/HANDOFF.md"), str(c.get("enabled",True)).lower(), str(c.get("autoWrapUp",False)).lower())
+# reserveTokens: absolute headroom floor, in tokens. Absent -> 100k. null or
+# <=0 -> off, i.e. the old pure-percentage behaviour. See the threshold below.
+try: reserve = max(0, int(c.get("reserveTokens", 100_000) or 0))
+except (TypeError, ValueError): reserve = 100_000
+print(c.get("warnAt",0.8), c.get("budgetTokens") or 0, c.get("handoffPath",".work/HANDOFF.md"), str(c.get("enabled",True)).lower(), str(c.get("autoWrapUp",False)).lower(), reserve)
 PY
 )
 [ -z "$CFG" ] && exit 0
-read -r WARN_AT BUDGET HANDOFF ENABLED AUTO_WRAP_UP <<< "$CFG"
+read -r WARN_AT BUDGET HANDOFF ENABLED AUTO_WRAP_UP RESERVE <<< "$CFG"
 [ "$ENABLED" = "false" ] && exit 0
 
 # Loop safety: fire once per session until SessionStart clears the marker.
@@ -57,11 +61,13 @@ MARKER=".crew/.handoff-requested"
 # not how full the window is. Measured on a real session the heuristic read 45%
 # high (950k estimated against 654k actual), which on a 200k budget is the
 # difference between "fire at 80%" and "fire on turn one, every turn".
-READ=$("$PY" - "$TRANSCRIPT" "$BUDGET" << 'PY' 2>/dev/null
+READ=$("$PY" - "$TRANSCRIPT" "$BUDGET" "$WARN_AT" "$RESERVE" << 'PY' 2>/dev/null
 import json, re, sys
 
 path = sys.argv[1]
 configured = int(sys.argv[2] or 0)
+warn_at = float(sys.argv[3])
+reserve = int(sys.argv[4])
 
 # Known context windows, first match wins, so the specific keys sit above the
 # generic ones. The Claude 5 family (fable, opus-5, sonnet-5) ships with 1M
@@ -143,20 +149,48 @@ if peak > budget:
     budget = next((t for t in TIERS if t > peak * 1.05), peak * 2)
     how = f"{how}+observed"
 
-print(used, source, budget, how)
+# The threshold is the LATER of two rules, and the second one is why a 1M
+# session is no longer cut short.
+#
+#   percentage: warnAt * budget      - what this always did
+#   headroom:   budget - reserve     - never nag while this much is still free
+#
+# warnAt was tuned when every window was 200k, where 0.8 leaves 40k - about
+# enough to finish a thought and write a handoff. The same 0.8 on a 1M window
+# leaves 200k, a whole 200k session's worth of room, and asking for a handoff
+# there throws away a fifth of the window. Taking the later of the two rules
+# means the reserve can only ever push the warning LATER, never earlier: on a
+# 200k window the percentage still wins (40k < 100k) and nothing changes, while
+# on 1M the floor wins and the gate moves from 80% to 90%.
+#
+# warnAt <= 0 stays an unconditional "fire now" - it is the documented override
+# and a floor that quietly outranked it would make it a lie.
+if warn_at <= 0:
+    threshold = 0
+else:
+    threshold = budget * warn_at
+    if reserve > 0:
+        threshold = max(threshold, budget - reserve)
+threshold = int(threshold)
+
+over = 1 if budget > 0 and used >= threshold else 0
+pct = int(used / budget * 100) if budget > 0 else 0
+fmt = lambda n: format(int(n), ",d")  # noqa: E731  pylint: disable=unnecessary-lambda-assignment
+print(used, source, budget, how, over, pct, fmt(used), fmt(budget),
+      fmt(max(0, budget - used)), fmt(threshold), int(warn_at * 100),
+      fmt(reserve))
 PY
 )
 [ -z "$READ" ] && exit 0
-read -r USED SOURCE BUDGET HOW <<< "$READ"
+read -r USED SOURCE BUDGET HOW OVER PCT_H USED_H BUDGET_H REMAIN_H THRESH_H WARN_PCT RESERVE_H <<< "$READ"
 [ -z "$USED" ] || [ -z "$BUDGET" ] && exit 0
-
-OVER=$("$PY" -c "print(1 if $BUDGET > 0 and $USED/$BUDGET >= $WARN_AT else 0)" 2>/dev/null)
 [ "${OVER:-0}" -eq 0 ] && exit 0
 
-touch "$MARKER"
-PCT_H=$("$PY" -c "print(int($USED/$BUDGET*100))")
-USED_H=$("$PY" -c "print(format($USED, ',d'))")
-BUDGET_H=$("$PY" -c "print(format(int($BUDGET), ',d'))")
+# Claim the once-per-session gate ATOMICALLY. Both flavours are registered for
+# Stop and, on Windows with Git Bash installed, both actually run - a
+# test-then-touch would let both pass the check and emit the same warning
+# twice. noclobber makes the create fail for whichever loses.
+( set -o noclobber; : > "$MARKER" ) 2>/dev/null || exit 0
 
 bash "$(dirname "$0")/notify.sh" waiting "context ${PCT_H}% - writing handoff" 2>/dev/null
 
@@ -187,6 +221,17 @@ This figure is a fallback estimate from transcript size, not a measurement -
 no usage record was found yet. It reads high after a compaction."
 fi
 
+# Name the rule that fired. A percentage alone cannot explain why an 800k
+# reading on a 1M window said nothing and 900k did.
+if [ "$RESERVE_H" = "0" ]; then
+  THRESH_NOTE="Threshold: ${THRESH_H} tokens - warnAt ${WARN_PCT}% of the window.
+context.reserveTokens is off, so no headroom floor applies."
+else
+  THRESH_NOTE="Threshold: ${THRESH_H} tokens - the later of warnAt ${WARN_PCT}% and the
+last ${RESERVE_H} tokens (context.reserveTokens), so a large window is not cut
+short by a percentage tuned for a small one."
+fi
+
 if [ "$AUTO_WRAP_UP" = "true" ]; then
 cat >&2 << MSG
 You are at roughly ${PCT_H}% of the context budget. Reach a stopping point
@@ -197,9 +242,11 @@ MSG
 else
 cat >&2 << MSG
 Context: ${USED_H} of ${BUDGET_H} tokens (${PCT_H}%), read from the transcript's
-last usage record.${NOTE}
+last usage record. Headroom left: ${REMAIN_H} tokens.${NOTE}
 
 Budget source: ${HOW}.${BUDGET_NOTE}
+
+${THRESH_NOTE}
 
 Before ending this turn, write the handoff note to ${HANDOFF} following the
 crew-context skill. Keep it to pointers and one short "next action" - do not

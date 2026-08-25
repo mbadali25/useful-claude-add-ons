@@ -250,6 +250,114 @@ printf '| when | env | sha | smoke | regression | verify | by |\n|---|---|---|--
 echo '{}' | bash "$SCRIPTS/verify-gate.sh" >/dev/null 2>&1
 [ ! -f "$PD/.crew/.deploy-in-flight" ] && pass || fail "verify-gate: a recorded deploy must clear .deploy-in-flight"
 
+echo "== emergency lane: the gates stand down, the guard does not =="
+# Writes .crew/incident.json expiring $1 seconds from now. Negative = expired.
+# The gates read expiresAtEpoch and nothing else; see crew_incident.py.
+inc() {
+  "$PY" - "$PD/.crew/incident.json" "$1" <<'PYEOF'
+import json, sys, time
+json.dump({"id": "INC-TEST", "summary": "suite", "standDown": True,
+           "expiresAtEpoch": int(time.time()) + int(sys.argv[2])},
+          open(sys.argv[1], "w"))
+PYEOF
+}
+SKIPS="$PD/.crew/incident-skips.log"
+
+# An incident must NOT make the guard permissive. It is the hook that refuses
+# force pushes, history rewrites and secret reads - and an incident is exactly
+# when someone is tired enough to need it. Standing down the checks that say a
+# change is wrong is a trade; standing down the ones that stop it being
+# unrecoverable is not.
+inc 3600
+expect 2 'git push --force origin main'
+expect 2 'git reset --hard HEAD~3'
+expect 2 'terraform destroy'
+expect 2 'cat .env'
+
+# promote-gate: a deploy that must block with no incident is allowed with one,
+# and every unmet precondition is written down instead.
+rm -f "$PD/.crew/.deploy-in-flight" "$SKIPS" "$ROW"
+pexpect 0 './scripts/deploy.sh prod' 'incident open: a deploy with no qa row must be ALLOWED'
+grep -q 'promote' "$SKIPS" 2>/dev/null && pass \
+  || fail "emergency: an allowed-but-ungated deploy must be recorded in incident-skips.log"
+grep -q 'no all-pass row' "$SKIPS" 2>/dev/null && pass \
+  || fail "emergency: the skip row must name the precondition that was unmet, not just the gate"
+
+# verify-gate: the deploy-record check stands down too - an incident is exactly
+# when a deploy goes out ahead of its paperwork - and records what is owed.
+printf 'production %s\n' "$SHA" > "$PD/.crew/.deploy-in-flight"
+rm -f "$ROW"
+echo '{}' | bash "$SCRIPTS/verify-gate.sh" >/dev/null 2>&1
+[ "$?" = "0" ] && pass || fail "emergency: an open incident must not block the turn"
+grep -q 'no row in .work/PROMOTIONS.md' "$SKIPS" 2>/dev/null && pass \
+  || fail "emergency: an unrecorded deploy must be logged as owed"
+
+# One turn, one row. Both flavours of the hook run on the same Stop on Windows,
+# and Stop fires every turn, so an immediate repeat has to be dropped or a
+# ten-turn incident reports twenty skipped gates.
+BEFORE=$(wc -l < "$SKIPS")
+echo '{}' | bash "$SCRIPTS/verify-gate.sh" >/dev/null 2>&1
+AFTER=$(wc -l < "$SKIPS")
+[ "$BEFORE" = "$AFTER" ] && pass \
+  || fail "emergency: an identical consecutive skip must not be logged twice ($BEFORE -> $AFTER)"
+
+# THE safety property. An expired incident is inert: no command is run and no
+# file is touched to re-gate, the clock alone does it. Forgetting to close an
+# incident is the realistic failure mode, and it must not leave a repository
+# permanently ungated.
+inc -60
+echo '{}' | bash "$SCRIPTS/verify-gate.sh" >/dev/null 2>&1
+[ "$?" = "2" ] && pass || fail "emergency: an EXPIRED incident must gate again"
+pexpect 2 './scripts/deploy.sh prod' 'expired incident: promote-gate must block again'
+
+# A repo can forbid stand-downs outright: the incident is still declared, still
+# recorded, still briefed - and the gates still gate.
+inc 3600
+printf '{"emergency":{"standDown":false}}\n' > "$PD/.crew/config.json"
+echo '{}' | bash "$SCRIPTS/verify-gate.sh" >/dev/null 2>&1
+[ "$?" = "2" ] && pass || fail "emergency: standDown false must keep the verify gate blocking"
+pexpect 2 './scripts/deploy.sh prod' 'standDown false: promote-gate must block anyway'
+
+# A malformed state file must fail CLOSED. A gate that cannot read its own
+# state and assumes an incident is a gate that can be switched off with a typo.
+printf '{ not json\n' > "$PD/.crew/incident.json"
+echo '{}' > "$PD/.crew/config.json"
+echo '{}' | bash "$SCRIPTS/verify-gate.sh" >/dev/null 2>&1
+[ "$?" = "2" ] && pass || fail "emergency: an unparseable incident file must gate, not stand down"
+
+# The same, with a FUTURE EPOCH inside the garbage. This is the case a grep or
+# sed for the number gets wrong and ConvertFrom-Json gets right, so the two
+# flavours disagreed and the bash one stood every gate down for a file that is
+# not an incident at all. Codex review finding.
+printf '{ not json "expiresAtEpoch": 9999999999 \n' > "$PD/.crew/incident.json"
+echo '{}' | bash "$SCRIPTS/verify-gate.sh" >/dev/null 2>&1
+[ "$?" = "2" ] && pass || fail "emergency: a future epoch inside INVALID json must not stand a gate down"
+pexpect 2 './scripts/deploy.sh prod' 'a future epoch inside invalid json must not allow a deploy'
+
+# Valid JSON, but the epoch is a string rather than a number. int() of "abc"
+# must not throw its way into standing the gate down either.
+printf '{"id":"INC-X","expiresAtEpoch":"not-a-number"}\n' > "$PD/.crew/incident.json"
+echo '{}' | bash "$SCRIPTS/verify-gate.sh" >/dev/null 2>&1
+[ "$?" = "2" ] && pass || fail "emergency: a non-numeric expiry must gate"
+
+# A detail carrying a newline must not forge a second row in the skip log.
+inc 3600
+rm -f "$SKIPS"
+"$PY" - "$PD/.crew/verify.json" <<'PYEOF'
+import json, sys
+cfg = json.load(open(sys.argv[1]))
+cfg["environments"]["production"]["rollback"] = "none"
+cfg["environments"]["production"]["rollbackReason"] = ""
+json.dump(cfg, open(sys.argv[1], "w"))
+PYEOF
+pexpect 0 './scripts/deploy.sh prod' 'incident open: still allowed with a broken rollback declaration'
+ROWS=$(wc -l < "$SKIPS")
+FIELDS=$(awk -F'\t' 'NF!=3 {c++} END {print c+0}' "$SKIPS")
+[ "$FIELDS" = "0" ] && pass \
+  || fail "emergency: every skip row must have exactly 3 tab-separated fields (got $ROWS rows, $FIELDS malformed)"
+
+rm -f "$PD/.crew/incident.json" "$SKIPS" "$PD/.crew/.deploy-in-flight"
+
 unset CLAUDE_PROJECT_DIR
 
 echo "== claude-md-audit.sh =="

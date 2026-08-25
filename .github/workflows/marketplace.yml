@@ -24,9 +24,22 @@ jobs:
       # Claude Code CLI.
       - name: Sub-picker group regression suite
         run: ./scripts/_test/menu-groups.sh
-      # Not just a parse: the PowerShell script is Windows-only end to end, so a call to
-      # a function that does not exist parses cleanly and only fails on the one platform
-      # nothing here can run. check-powershell.ps1 resolves every Verb-Noun call.
+      # The crew hooks can BLOCK a turn, so their regression suite is the one check
+      # here whose absence is invisible: a gate that stops gating still exits 0. It
+      # builds throwaway git repos under mktemp and installs nothing.
+      - name: crew hook regression suite
+        run: bash plugin/crew/hooks/scripts/_test/run-tests.sh
+      # Frontmatter, tool permissions and every ${CLAUDE_PLUGIN_ROOT} path referenced
+      # by a command, agent or skill. A command that names a script that does not
+      # exist fails at the worst possible moment - when somebody runs it.
+      - name: crew prompt validation
+        run: python3 hooks/scripts/_test/validate-prompts.py
+        working-directory: plugin/crew
+      # Not just a parse: every .ps1 here is Windows-only end to end, so a call to a
+      # function that does not exist parses cleanly and only fails on the one platform
+      # nothing here can run. check-powershell.ps1 resolves every Verb-Noun call in
+      # every tracked .ps1 - the crew hook scripts included, since those run from a
+      # hook on someone else's machine where a thrown exception is invisible.
       - name: PowerShell static checks
         shell: pwsh
         run: ./scripts/check-powershell.ps1

@@ -33,8 +33,8 @@ menu item 21 is unticked by default.**
 | `promote-gate.sh` / `.ps1` | `PreToolUse` on the Bash / PowerShell tool | Refuses a declared `deploy` command unless the `requires` environment has an all-pass row for this sha, the rollback runbook is verified inside 90 days, `requireHuman` is approved, and the tree is clean |
 | `handoff-read.sh` / `.ps1` | `SessionStart` | Injects the prior handoff back after a clear, compact, or resume |
 | `pm-brief.sh` / `.ps1` | `SessionStart` | Runs `crew_state.py` and prints a prioritized brief — schema currency, a stale or missing code graph, a pending handoff, review health, ticket sizing. Report-only: it never writes anything |
-| `verify-gate.sh` / `.ps1` | `Stop` | Runs the checks the changed paths map to; **fails the turn** on red, on a changed path with no rule, or on a deploy that wrote no promotion row. Honours `stop_hook_active`, so a red check cannot pin the session |
-| `context-watch.sh` / `.ps1` | `Stop` | Estimates context use and asks for a handoff once per session; instructs a full wrap-up instead if `context.autoWrapUp` is `true` |
+| `verify-gate.sh` / `.ps1` | `Stop` | Runs the checks the changed paths map to; **fails the turn** on red, on a changed path with no rule, or on a deploy that wrote no promotion row. Honours `stop_hook_active`, so a red check cannot pin the session. Stands down while an emergency lane is open, recording what did not run |
+| `context-watch.sh` / `.ps1` | `Stop` | Reads actual window occupancy from the transcript's last `message.usage` record and asks for a handoff once per session, at the later of `context.warnAt` and `context.reserveTokens` of remaining headroom; instructs a full wrap-up instead if `context.autoWrapUp` is `true` |
 | `handoff-write.sh` / `.ps1` | `PreCompact` | Snapshots the transcript and writes a skeleton handoff before compaction discards it |
 | `notify.sh` / `.ps1` | `Notification`, and called directly by commands | One outbound line to Teams or Telegram. Never reads, never accepts instructions |
 
@@ -44,7 +44,7 @@ Every event is registered twice, once per flavour, each with the matching `shell
 
 A hook cannot be argued out of blocking `terraform apply`; an agent can. That is the entire value, and also the reason a bootstrap run should not install one without the box being ticked.
 
-Three committed suites, all sabotage-tested: `hooks/scripts/_test/run-tests.sh` (50 cases across the three gates), `setup-walkthrough.sh` (32 cases running every setup-phase script against a real mixed-stack scratch repo), and `validate-prompts.py` (91 structural checks over the commands, agents and skills). What none of them proves is whether the prompts produce good work — that needs a live session on a real ticket, which is what setup Phase 7 is for.
+Committed suites, all sabotage-tested: `hooks/scripts/_test/run-tests.sh` (77 cases across the three gates and the emergency lane), `setup-walkthrough.sh` (32 cases running every setup-phase script against a real mixed-stack scratch repo), `validate-prompts.py` (106 structural checks over the commands, agents and skills), and `tests/` under pytest (234 cases, including both flavours of `context-watch` and of the two gates that stand down). All but the pytest suite's Windows-only cases run in CI. What none of them proves is whether the prompts produce good work — that needs a live session on a real ticket, which is what setup Phase 7 is for.
 
 **Every hook is inert until the repository has `.crew/config.json`.** Installing the plugin arms nothing - `/crew:init` in a repo is what turns the gates on there. A gate firing in every repository you opened would be hostile, so this is deliberate; it does mean "installed it, nothing happened" is expected rather than broken.
 
@@ -72,7 +72,47 @@ repository containing docs, rather than skipping them. Exporting the graph
 into Obsidian is gated on `graph.obsidian.confirmed` being set explicitly by
 the user in `.crew/config.json`; `/crew:upgrade` never sets that flag itself.
 
-### Commands — 18, all explicit
+### The emergency lane
+
+`/crew:emergency` is a time-boxed, recorded decision to stop gating while
+something is actually broken. `.crew/incident.json` is the whole mechanism:
+while it exists and its `expiresAtEpoch` is in the future, `verify-gate` exits 0
+without running the checks and `promote-gate` computes its preconditions,
+records the ones that failed, and allows the deploy anyway. Everything skipped
+goes to `.crew/incident-skips.log`, one row per gate and reason, and
+`/crew:emergency end` turns that into `.work/INCIDENT-<id>.md` plus an archived
+record under `.crew/incidents/`.
+
+Three properties are worth stating, because they are what make this safe enough
+to ship:
+
+- **It expires on its own.** The gates compare an integer epoch; no command runs
+  and no file is touched to re-gate. Forgetting to close an incident - the
+  realistic failure, since nobody forgets to declare one during an outage -
+  cannot leave a repository permanently ungated. `emergency.ttlMinutes`
+  defaults to 120 and `extend` is capped at `emergency.maxTtlMinutes` (480),
+  measured from *now* each time, so repeated extensions cannot drift.
+- **The command guard never stands down.** `guard.sh` / `guard.ps1` has no
+  incident branch and must not get one: standing down the checks that say a
+  change is wrong is a trade, and standing down the ones that stop it being
+  unrecoverable - a force push, a destructive Terraform verb, a history
+  rewrite, a secret read - is not. An incident is precisely when someone is
+  tired enough to need that hook.
+- **A repo can forbid it.** `emergency.standDown: false` in `.crew/config.json`
+  keeps every gate gating; the incident is still declared, recorded, and named
+  in the session brief. For a repository where skipping verification is not a
+  decision anyone local gets to make.
+
+Every session start says so while an incident is open, and keeps saying so
+after it expires unclosed - `incidentActive` and `incidentUnclosed` are the two
+highest-priority PM triggers, above `upgradeNeeded`, and the incident line sits
+in the brief's quiet lines so no line cap can truncate it away.
+
+Enforcement is session-local, like every other gate here: an incident stands
+the hooks down for sessions in this repository on this machine. It does nothing
+to CI or to branch protection.
+
+### Commands — 19, all explicit
 
 | Command | Purpose |
 |---|---|
@@ -81,6 +121,7 @@ the user in `.crew/config.json`; `/crew:upgrade` never sets that flag itself.
 | `/crew:reference [--api\|--features\|--audit]` | Enumerate endpoints, jobs, consumers, CLI commands and feature flags into `docs/reference/`, each anchored to `file:line` |
 | `/crew:verify` | Build or refresh the change-to-check map the `Stop` gate reads, creating `_verify/` if the repo has no check directory |
 | `/crew:promote <env> [--dry-run\|--status]` | Promote development -> qa -> production, running deploy, smoke, regression, and post-soak verification as separate gates |
+| `/crew:emergency <what is broken>\|status\|extend [min]\|end` | Declare a time-boxed incident: the `verify` and `promote` gates stand down and record what they skipped, parallel read-only lanes investigate the cause at once, and `end` writes the debt list. The command guard does **not** stand down |
 | `/crew:ticket <description>` | Scope a request into a ticket |
 | `/crew:work <id>` | Work one ticket end to end |
 | `/crew:review` | Independent QA — Codex, or the `qa-reviewer` agent as fallback |
