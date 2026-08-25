@@ -11,7 +11,9 @@ Build it from the repository, not from recollection:
 1. `git status --short` and `git diff --stat` — what actually changed
 2. The ticket file, if one is in flight
 3. The last verification result — did the gate pass or fail, and on what
-4. `.work/review-out.txt` if a review ran
+4. The most recent `.work/review/*/out.txt` if a review ran (review scratch
+   directories are ticket- and session-scoped, so there may be several - use
+   the newest by mtime)
 
 Then add the two things only you know: the **next action** in one concrete
 sentence, and any **dead ends** already tried so the next session does not repeat

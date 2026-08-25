@@ -57,6 +57,9 @@ expect 2 'TRUNCATE TABLE audit_log'
 expect 2 'psql -h prod-db.internal -c "select 1"'
 expect 2 'aws s3 rm s3://bucket/key --profile prod'
 expect 2 'az sql db show --resource-group prod-rg'
+# D5 true positive: the environment name as the leading segment of an actual
+# resource argument to a real infra CLI - must still block.
+expect 2 'aws s3 rm s3://prod-backups/2026-08-24.tar.gz --recursive'
 # secrets: printing, persisting, and the tee variant all block
 expect 2 'vault kv get secret/db'
 expect 2 'vault kv get secret/db > /tmp/s.txt'
@@ -79,6 +82,14 @@ expect 0 'aws s3 ls s3://anew-product-images'
 expect 0 'aws s3 ls s3://reproducible-builds'
 expect 0 'psql -c "select * from products"'
 expect 0 'grep -r productivity src/'
+# D5 false positives: the environment name in a quoted value, a commit
+# message, a -m argument, a URL, and prose must NOT trigger the guard - only
+# an actual argument position on a real infra CLI does.
+expect 0 'aws s3 cp notes.txt "s3://bucket/prod team meeting notes.txt"'
+expect 0 'git commit -m "redeploy prod after aws outage"'
+expect 0 'aws sns publish --topic-arn arn:aws:sns:us-east-1:123:t -m prod-status-update'
+expect 0 'aws ssm put-parameter --name /docs/link --value https://runbooks.example.com/prod --type String'
+expect 0 'gh pr comment 42 --body "This fixes the prod outage from yesterday, see aws docs for details"'
 # the sanctioned way to handle a secret: capture, never render
 expect 0 'DB_PASS=$(aws secretsmanager get-secret-value --secret-id db --query SecretString --output text)'
 expect 0 'export DB_PASS=$(vault kv get -field=pass secret/db)'
@@ -130,7 +141,9 @@ trap 'rm -rf "$D" "$PD"' EXIT
   cat > .crew/verify.json <<'EOF'
 {"version":1,"rules":[],"always":[],"default":[],"unmapped":"warn",
  "environments":{
-   "qa":{"deploy":["./scripts/deploy.sh qa"],"smoke":["true"],"promotesTo":"production"},
+   "qa":{"deploy":["./scripts/deploy.sh qa"],"smoke":["true"],
+         "rollback":"none","rollbackReason":"qa is rebuilt on every push","promotesTo":"production"},
+   "staging":{"deploy":["./scripts/deploy.sh staging"],"smoke":["true"]},
    "production":{"requires":["qa"],"deploy":["./scripts/deploy.sh prod"],
                  "rollback":"docs/runbooks/rollback.md","requireHuman":true}}}
 EOF
@@ -156,7 +169,33 @@ qa_row() {  # write an all-pass qa row for $1
 }
 
 pexpect 0 'npm test'                 'an unrelated command must pass straight through'
-pexpect 0 './scripts/deploy.sh qa'   'qa has no requires and no rollback - allowed'
+pexpect 0 './scripts/deploy.sh qa'   'qa has no requires and an explicit rollback:none+reason - allowed'
+rm -f "$PD/.crew/.deploy-in-flight"
+
+# D1: an absent 'rollback' key must fail CLOSED, not open. "staging" declares
+# no rollback key at all.
+pexpect 2 './scripts/deploy.sh staging' 'no rollback key at all - must block, not silently allow'
+
+# D1: rollback:"none" with no rollbackReason is still not an opt-out.
+"$PY" - "$PD/.crew/verify.json" <<'PY'
+import json, sys
+p = sys.argv[1]
+cfg = json.load(open(p))
+cfg["environments"]["staging"]["rollback"] = "none"
+json.dump(cfg, open(p, "w"))
+PY
+pexpect 2 './scripts/deploy.sh staging' 'rollback:none with no rollbackReason - must still block'
+
+# D1: rollback:"none" plus a stated rollbackReason IS a valid opt-out.
+"$PY" - "$PD/.crew/verify.json" <<'PY'
+import json, sys
+p = sys.argv[1]
+cfg = json.load(open(p))
+cfg["environments"]["staging"]["rollbackReason"] = "staging has no user traffic; redeploying dev is the rollback"
+json.dump(cfg, open(p, "w"))
+PY
+pexpect 0 './scripts/deploy.sh staging' 'rollback:none with a stated rollbackReason - allowed'
+rm -f "$PD/.crew/.deploy-in-flight"
 
 # Each precondition proven in isolation: start from all-satisfied, break one.
 printf 'last verified: %s\n' "$(date +%Y-%m-%d)" > "$RB"
@@ -225,6 +264,31 @@ if [ -f "$A" ]; then
   case "$OUT" in *"MISSING  ## Promotion"*) pass ;;
     *) fail "claude-md-audit: a legacy file should report the Promotion section missing" ;; esac
 fi
+
+echo "== resolve-tools.sh: bash <script> resolution =="
+RD=$(mktemp -d) || exit 1
+(
+  cd "$RD" || exit 1
+  mkdir -p .crew _verify
+  # Three call shapes the ticket named: bash script.sh, bash -x script.sh, and
+  # a quoted path. Each script shells out to a tool that is invisible unless
+  # resolve-tools.sh looks inside it.
+  printf '#!/bin/sh\nterraform validate\nruff check .\n' > _verify/smoke.sh
+  printf '#!/bin/sh\nsqlcmd -Q "select 1"\n' > "_verify/has space.sh"
+  cat > .crew/verify.json <<'EOF'
+{"version":1,"rules":[
+  {"paths":["**/*.tf"],"run":["bash _verify/smoke.sh"],"why":"smoke wraps terraform+ruff"},
+  {"paths":["sql/**"],"run":["bash -x \"_verify/has space.sh\""],"why":"quoted, flagged"}
+ ],"always":[],"default":[],"unmapped":"warn"}
+EOF
+)
+export CLAUDE_PROJECT_DIR="$RD"
+OUT=$(bash "$PLUGIN/skills/crew-setup/scripts/resolve-tools.sh" 2>&1)
+unset CLAUDE_PROJECT_DIR
+echo "$OUT" | grep -qE '^terraform ' && pass || fail "resolve-tools: bash _verify/smoke.sh should surface terraform  ($OUT)"
+echo "$OUT" | grep -qE '^ruff '      && pass || fail "resolve-tools: bash _verify/smoke.sh should surface ruff      ($OUT)"
+echo "$OUT" | grep -qE '^sqlcmd '    && pass || fail "resolve-tools: bash -x \"quoted path\" should surface sqlcmd  ($OUT)"
+rm -rf "$RD"
 
 echo
 echo "RESULT: $PASS passed, $FAIL failed"

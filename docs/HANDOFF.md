@@ -6,6 +6,105 @@ that does not survive in a diff.
 
 ---
 
+## 2026-08-23 — crew 0.2.0 and a full QA pass over `skills/` (PRs #28, #29, #30)
+
+### What changed
+
+Three PRs, ~45 defects. The through-line: almost none of these were visible by
+reading the code. They were found by running it, on Windows, with real inputs.
+
+**PR #28 — `plugin/crew` 0.2.0.** The Windows hooks had never run. `guard.sh` and
+`verify-gate.sh` exited 0 on MSYS/MINGW to "defer" to `.ps1` twins that
+`hooks.json` registered with a `shell: powershell` field Claude Code does not
+read. So on Windows the command guard blocked nothing and the `Stop` gate ran
+nothing — silently. Also fixed: the verify map skipped every root-level file
+(`fnmatch`'s `*` spans `/`, so `**/*.tf` never matched `main.tf`); a failing
+`Stop` check could pin the session; `python3` was a hard dependency of six
+scripts with every call suppressed. Added `/crew:promote` with a `PreToolUse`
+gate that refuses a deploy without an upstream all-pass row **for that sha**,
+`/crew:reference`, `_verify/` as the canonical check directory, and three
+committed sabotage-tested suites (50 hook cases, 32 setup-script cases, 91
+structural checks).
+
+**PR #29 — `skills/` QA.** Two live-infrastructure BLOCKs: `cisco-meraki`'s
+`batch_commit` could destroy config with no confirmation while the module
+docstring promised snapshot→diff→confirm as "control flow, not a rule someone
+has to remember"; `intune-graph` exposed device wipe from a one-liner with no
+guard of any kind. Plus a secret-redaction denylist that missed every Meraki
+pre-shared-key field name, an SMTP path that mailed the password in cleartext on
+a `security: "tls"` typo, and `work-log-reporter` being unable to render at all
+on Windows (`strftime("%-I")` is glibc-only and raises rather than degrading).
+
+**PR #30 — the deferred items.** `notify`'s inbox lost messages under
+concurrency; the daemon could run twice against one bot token.
+
+### Why this way
+
+**The guard branches on `tool_name`, not the OS.** The first fix branched on the
+OS, which made Windows *worse*: a `Bash` tool call is bash syntax even on
+Windows, so `guard.ps1` judged it with PowerShell rules — blocking the correct
+secret-capture form (`DB_PASS=$(...)`) while allowing `vault kv get > file`. A
+guard that is wrong is more dangerous than one that is absent, because it gets
+trusted. Only the `PreToolUse` guards branch at all now; the other hooks judge no
+command, are reached through `bash`, and a `.ps1` beside them would be
+unreachable code.
+
+**Secret redaction is substring, not exact-match.** An exact list only redacts
+the names someone thought of. The bias is set deliberately: over-redaction costs
+detail in a diff, under-redaction publishes a credential into a diff, a ticket,
+and a snapshot file on disk.
+
+**`--read-only` is an allowlist.** A case runs under `run-all.sh --read-only`
+only if it declares `# readonly: yes`. It was a denylist, where an unmarked case
+ran against production. The cost of guessing wrong is asymmetric.
+
+**The context watch reads `message.usage`, not file size.** The transcript is
+cumulative — it keeps every turn ever written, including ones a compaction
+discarded — so file size measures what a session produced, not what the window
+holds. It read 45% high (950k against 654k actual). `budgetTokens` now defaults
+to `null` and derives itself from the model id **corrected by observed peak
+usage**, because a 1M variant reports its base id (`claude-opus-5[1m]` records as
+`claude-opus-5`). Observed usage cannot exceed the real window, so 668k of held
+tokens proves the window is not 200k.
+
+**Every gate that can block now has a committed, sabotage-tested suite.** Not
+"tests exist" — tests that were *verified to go red* when the bug is
+reintroduced. `guard.sh` shipped two real regressions in two review passes, both
+caught only by running it.
+
+### What was verified
+
+- 137 tests passing (133 `cisco-meraki`, 4 new `notify` concurrency)
+- crew: 50/50 hook cases, 91/91 structural checks, 32/32 setup-script cases
+- pylint exit 0 with zero messages across the repo; zero non-ASCII in any script
+- The inbox race, reproduced and fixed: 4 of 240 messages lost per run before,
+  0 of 240 across 8 runs after
+- `az` resolution, the Meraki redaction, the Intune gate, the Visio overwrite
+  refusal, and the email render all exercised against real inputs on Windows
+
+### Still open
+
+- **The crew prompts are unproven.** 16 commands and 9 agents. Their *structure*
+  is validated — frontmatter parses, tools exist, referenced agents and paths
+  resolve, read-only agents hold no write tools. Their *judgement* is not, and no
+  test can close that. It needs `/crew:init` in a real repository and one ticket
+  run end to end, which is setup Phase 7.
+- **crew's hooks are inert until `/crew:init` runs in a repo.** This is
+  deliberate and now documented in three places, but it is the first thing to
+  check when someone reports a gate not firing. `ls .crew/` before debugging.
+- **`/crew:promote` is only partly enforceable.** The pre-deploy conditions are
+  hook-enforced. That smoke, regression and verify actually ran *after* the
+  deploy is a claim in `.work/PROMOTIONS.md`, not a measurement — a hook fires
+  before a command and after a turn, never during. Documented as such rather than
+  implied as coverage.
+- **`platform.sh` detects but does not adapt.** `resolve-tools.sh` now reports a
+  tool as native, WSL-only, or missing, but nothing auto-wraps a command in
+  `wsl.exe -e`. Resolution is written into the map at setup, by hand.
+- `/reload-plugins` reported 55 load errors on this machine. Unexamined — run
+  `/plugin` to see them.
+
+---
+
 ## 2026-08-15 — `vault-automation/`: the vault that feeds itself
 
 ### What changed

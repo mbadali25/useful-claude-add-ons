@@ -9,7 +9,9 @@
 # What it enforces, before the deploy runs:
 #   1. `requires` - the upstream environment has a PASS row in
 #      .work/PROMOTIONS.md for THIS sha. Not "a pass row" - this sha.
-#   2. `rollback` - the runbook exists and its `last verified` is inside 90 days.
+#   2. `rollback` - required for every gated environment. Either a runbook path
+#      that exists and whose `last verified` is inside 90 days, or the literal
+#      "none" plus a `rollbackReason`. An absent key blocks the deploy.
 #   3. `requireHuman` - refuses unless an explicit approval marker for this sha
 #      was written this session.
 #   4. A clean tree - you cannot deploy a sha that is not what is committed.
@@ -93,9 +95,27 @@ for upstream in cfg.get("requires", []):
         out.append(f"'{upstream}' has no all-pass row for sha {sha} in .work/PROMOTIONS.md. "
                    f"Run /crew:promote {upstream} first, and let it record the result.")
 
-rb = cfg.get("rollback")
-if rb:
-    if not os.path.exists(rb):
+# Fail CLOSED: an absent "rollback" key used to mean "no rollback needed".
+# It now means "nobody said". The only way to deploy with no rollback plan is
+# an explicit rollback: "none" plus a rollbackReason explaining why.
+if "rollback" not in cfg:
+    out.append(f"'{env}' has no 'rollback' key in .crew/verify.json. Add rollback: "
+               f"\"<path to a runbook>\", or rollback: \"none\" plus a rollbackReason "
+               f"string explaining why {env} does not need one. Fix: edit the "
+               f"'{env}' block in .crew/verify.json.")
+else:
+    rb = cfg.get("rollback")
+    if rb == "none":
+        reason = str(cfg.get("rollbackReason") or "").strip()
+        if not reason:
+            out.append(f"'{env}' sets rollback: \"none\" but has no rollbackReason. "
+                       f"State why {env} does not need a rollback plan. Fix: add a "
+                       f"rollbackReason string next to rollback in .crew/verify.json.")
+    elif not rb:
+        out.append(f"'{env}' has rollback: {rb!r}, which is not a valid runbook path. "
+                   f"Fix: set rollback to a runbook path, or to the literal string "
+                   f"\"none\" plus a rollbackReason.")
+    elif not os.path.exists(rb):
         out.append(f"the rollback runbook '{rb}' does not exist. No verified rollback, no deploy.")
     else:
         txt = open(rb, encoding="utf-8", errors="replace").read()

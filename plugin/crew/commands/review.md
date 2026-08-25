@@ -5,7 +5,23 @@ allowed-tools: Bash, Read, Agent
 
 Run independent review of the working diff.
 
-**Step 0 — which specialists does this diff require?** Read `.crew/verify.json`.
+**Step 0a - claim a scratch directory.** A fixed `.work/review-*.txt` path
+collides: two concurrent reviews - a second ticket, or a second session on the
+same branch - clobber each other's diff and output mid-run. Claim one that is
+scoped to both:
+
+```bash
+SCRATCH=$(mktemp -d ".work/review/$(git rev-parse --abbrev-ref HEAD 2>/dev/null | tr -c 'A-Za-z0-9._-' '-')-XXXXXX")
+echo "SCRATCH=$SCRATCH"
+```
+
+`mktemp`'s branch-prefixed, randomly-suffixed directory is ticket-scoped (the
+branch name) and session-scoped (no other process can be handed the same
+path). Record the printed `SCRATCH` value and use that exact path everywhere
+`$SCRATCH` appears below - do not recompute it partway through, or step 3 will
+read a different review than the one that ran.
+
+**Step 0b - which specialists does this diff require?** Read `.crew/verify.json`.
 For every rule whose `paths` match a changed file, collect its `agents` list.
 Those subagents review **in addition to** the general reviewer below, each in its
 own context, and each gets only the files its rule matched - not the whole diff.
@@ -27,19 +43,19 @@ rather than a gate-time one. If no matched rule names an agent, skip to step 1.
 
 **Step 2a — Codex.**
 ```
-git diff $(git merge-base HEAD "$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|origin/||' || echo main)")...HEAD > .work/review-diff.txt
-codex exec --skip-git-repo-check "Review .work/review-diff.txt as a hostile QA engineer.
+git diff $(git merge-base HEAD "$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|origin/||' || echo main)")...HEAD > $SCRATCH/diff.txt
+codex exec --skip-git-repo-check "Review $SCRATCH/diff.txt as a hostile QA engineer.
 Output one line per defect: SEVERITY|file:line|what breaks|how to reproduce.
 SEVERITY is BLOCK, FIX, or NIT. Check: unintended behavior changes, unhandled
 error paths, boundary and empty-collection cases, concurrency, and anything the
 change makes reachable that was not before. Output nothing but those lines.
-If no defects, output exactly: CLEAN" > .work/review-out.txt 2>&1
+If no defects, output exactly: CLEAN" > $SCRATCH/out.txt 2>&1
 ```
-Read ONLY `.work/review-out.txt`. Never load the diff back into your context.
+Read ONLY `$SCRATCH/out.txt`. Never load the diff back into your context.
 
 **Step 2b — Claude fallback.** Invoke the `crew:qa-reviewer` subagent. It reviews
 in its own context so it has not seen your reasoning for writing the code.
-Write its output to `.work/review-out.txt` in the same format.
+Write its output to `$SCRATCH/out.txt` in the same format.
 
 The fallback is genuinely weaker than Codex: same model family reviewing itself
 finds fewer defects. Tell me when it is what ran, so I review harder myself.

@@ -24,7 +24,7 @@ if [ -z "$TOOLS" ]; then
   if [ -f .crew/verify.json ] && [ -n "$PY" ]; then
     # First bare word of every command in every `run` / environment list.
     TOOLS=$("$PY" - <<'PY' 2>/dev/null
-import json, re, shlex
+import json, os, re, shlex
 seen, out = set(), []
 try: cfg = json.load(open(".crew/verify.json"))
 except Exception: raise SystemExit
@@ -33,16 +33,40 @@ for r in cfg.get("rules", []): cmds += r.get("run", [])
 cmds += cfg.get("always", []) + cfg.get("default", [])
 for e in cfg.get("environments", {}).values():
     for k in ("deploy", "smoke", "regression", "verify"): cmds += e.get(k, [])
-for c in cmds:
-    for part in re.split(r'&&|\|\||[|;]', c):
+
+# `bash some/script.sh` (or `sh`) resolves only "bash" itself, which tells you
+# nothing about what the script calls. Look inside it too, so a rule that
+# reads `["bash ./_verify/smoke.sh"]` still surfaces terraform, ruff, psql,
+# whatever the script actually shells out to.
+scripts_seen = set()
+
+def scan(cmd_str):
+    for part in re.split(r'&&|\|\||[|;]', cmd_str):
         part = part.strip()
         if not part: continue
-        try: word = shlex.split(part)[0]
-        except ValueError: word = part.split()[0]
+        try: toks = shlex.split(part)
+        except ValueError: toks = part.split()
+        if not toks: continue
+        word = toks[0]
+        if word in ("bash", "sh"):
+            script = next((t for t in toks[1:] if not t.startswith("-")), None)
+            if script and script not in scripts_seen and os.path.isfile(script):
+                scripts_seen.add(script)
+                try:
+                    with open(script, encoding="utf-8", errors="replace") as f:
+                        for line in f:
+                            line = line.split("#", 1)[0].strip()
+                            if line: scan(line)
+                except OSError:
+                    pass
+            continue
         if word.startswith(("./", "/", "$")) or "=" in word: continue
-        if word in ("true", "false", "echo", "cd", "npx", "bash", "sh"): continue
+        if word in ("true", "false", "echo", "cd", "npx"): continue
         if word not in seen:
             seen.add(word); out.append(word)
+
+for c in cmds:
+    scan(c)
 print(" ".join(out))
 PY
 )

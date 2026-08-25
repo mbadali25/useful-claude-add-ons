@@ -1,0 +1,6 @@
+# Local bookkeeping: which sessions this machine has already emailed.
+.worklog-state.json
+
+# Generated report artifacts. Delete these two lines if you want
+# the PDFs committed alongside the notes.
+reports/

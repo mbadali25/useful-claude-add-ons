@@ -336,6 +336,8 @@ the checks are declared, not remembered.
       "smoke":      ["./_verify/smoke.sh --env dev"],
       "regression": ["npm test"],
       "verify":     ["./scripts/check-logs.sh dev --since 10m"],
+      "rollback":       "none",
+      "rollbackReason": "dev is rebuilt on every push; there is nothing to roll back to",
       "promotesTo": "qa"
     },
     "qa": {
@@ -345,6 +347,8 @@ the checks are declared, not remembered.
       "regression": ["npm test", "npx playwright test --grep @flow"],
       "verify":     ["./scripts/check-logs.sh qa --since 10m"],
       "soakMinutes": 10,
+      "rollback":       "none",
+      "rollbackReason": "qa is rebuilt from the latest development deploy; there is nothing to roll back to",
       "promotesTo": "production"
     },
     "production": {
@@ -370,8 +374,19 @@ the checks are declared, not remembered.
 | `regression` | Does everything else still work - the slow, broad suite |
 | `verify` | The environment's own signals: logs, alarms, queues, dashboards |
 | `soakMinutes` | Wait this long after deploy before running `verify` |
-| `rollback` | Path to the runbook. Production will not promote without one |
+| `rollback` | Path to the runbook, or the literal `"none"` plus a `rollbackReason`. Required - an absent key blocks the deploy |
+| `rollbackReason` | Required alongside `rollback: "none"`. Why this environment does not need a rollback plan |
 | `requireHuman` | Stop and get explicit approval before deploying |
+
+**Limitation: this file is data, not enforcement by itself.** `promote-gate.sh`
+reads `.crew/verify.json` and blocks a matching `deploy` command - but that
+hook only runs inside a Claude Code session that has the crew plugin active.
+A fresh session without it (a teammate who never installed crew, a different
+machine, any tool other than Claude Code) can run the same `deploy` command
+straight through, `requires`/`rollback`/`requireHuman` and all, because none
+of those checks live in this file - they live in the hook that reads it. This
+`.crew/verify.json` is the same, unguarded JSON in every session; only the
+plugin being active turns it into a gate.
 
 ### The promotion record
 
@@ -399,8 +414,10 @@ is actually writing to.
   A run that only smoke-tests has skipped the gate that catches regressions.
 - **`verify` runs after the soak, not immediately.** Errors surface on the first
   real traffic, which arrives after the deploy finishes, not during it.
-- **Production needs a rollback runbook verified inside 90 days.** No verified
-  rollback, no deploy. This is the one gate with no override.
+- **Every gated environment declares a rollback plan, or says explicitly why
+  it does not need one.** A verified runbook inside 90 days, or
+  `rollback: "none"` plus a `rollbackReason` - never a silently absent key.
+  Production without a verified runbook is the one case with no override.
 - **A failed gate is a stop, not a note.** Roll back or fix forward, then run the
   whole sequence again from gate 1. Do not resume mid-sequence.
 
