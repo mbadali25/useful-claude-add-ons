@@ -87,11 +87,55 @@ def _transcript(root, num_bytes):
     return path
 
 
-def _config(auto_wrap_up=None):
-    cfg = {"warnAt": 0.8, "budgetTokens": 100, "handoffPath": ".work/HANDOFF.md"}
+def _config(auto_wrap_up=None, budget=100):
+    cfg = {"warnAt": 0.8, "budgetTokens": budget, "handoffPath": ".work/HANDOFF.md"}
     if auto_wrap_up is not None:
         cfg["autoWrapUp"] = auto_wrap_up
     return {"context": cfg}
+
+
+def _usage_record(model, total, sidechain=False):
+    """One assistant turn as Claude Code writes it: message.usage carries the
+    prompt size split across input / cache_read / cache_creation."""
+    rec = {
+        "type": "assistant",
+        "message": {
+            "role": "assistant",
+            "model": model,
+            "usage": {
+                "input_tokens": total // 10,
+                "cache_read_input_tokens": total - total // 10 - 1000,
+                "cache_creation_input_tokens": 1000,
+                "output_tokens": 50,
+            },
+        },
+    }
+    if sidechain:
+        rec["isSidechain"] = True
+    return json.dumps(rec)
+
+
+def _usage_transcript(root, model, used, peak=None, sidechain_total=None,
+                      subagent_total=None):
+    """A transcript whose LAST usage record holds `used` tokens. `peak` adds an
+    earlier, larger turn (a session that has already been deeper than it is
+    now). `sidechain_total` adds an inline isSidechain record; `subagent_total`
+    writes a separate <session>/subagents/agent-x.jsonl beside the transcript,
+    which is where Claude Code keeps Agent-tool transcripts."""
+    lines = ['{"type":"user","message":{"role":"user","content":"hi"}}']
+    if peak is not None:
+        lines.append(_usage_record(model, peak))
+    if sidechain_total is not None:
+        lines.append(_usage_record(model, sidechain_total, sidechain=True))
+    lines.append(_usage_record(model, used))
+    path = root / "session-1.jsonl"
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    if subagent_total is not None:
+        sub = root / "session-1" / "subagents"
+        sub.mkdir(parents=True)
+        (sub / "agent-abc.jsonl").write_text(
+            _usage_record(model, subagent_total) + "\n", encoding="utf-8")
+    return path
 
 
 def test_flavors_are_discoverable():
@@ -173,6 +217,149 @@ def test_once_per_session_marker_still_gates_repeats(flavor, tmp_path):
     second = _run(flavor, root, transcript)
     assert second.returncode == 0, second.stderr
     assert second.stderr.strip() == "", second.stderr
+
+
+# --- Real usage records: the path a live session actually takes -----------
+#
+# Everything above feeds a byte blob with no usage record, which exercises only
+# the file-size fallback. Both flavours looked identical on that path while the
+# PowerShell one had never learned to read usage at all - it fired on turn one
+# of every real Windows session. These cases feed what Claude Code writes.
+
+CLAUDE5 = ["claude-opus-5", "claude-fable-5", "claude-sonnet-5"]
+
+
+@by_flavor
+@pytest.mark.parametrize("model", CLAUDE5)
+def test_claude5_model_at_170k_does_not_fire(flavor, model, tmp_path):
+    # 170k is 85% of 200k but 17% of the 1M window these models ship with.
+    # The old table said 200k and only self-corrected past 190k, so the
+    # 160k-190k band fired falsely on every Claude 5 session.
+    root = crew_fixtures.make_repo(tmp_path, config=_config(budget=None), git=False)
+    transcript = _usage_transcript(root, model, used=170_000)
+    result = _run(flavor, root, transcript)
+    assert result.returncode == 0, result.stderr
+    assert result.stderr.strip() == "", result.stderr
+    assert not (root / ".crew" / ".handoff-requested").exists()
+
+
+@by_flavor
+def test_claude5_model_at_850k_fires_against_1m(flavor, tmp_path):
+    root = crew_fixtures.make_repo(tmp_path, config=_config(budget=None), git=False)
+    transcript = _usage_transcript(root, "claude-fable-5", used=850_000)
+    result = _run(flavor, root, transcript)
+    assert result.returncode == 2, result.stderr
+    assert "850,000 of 1,000,000 tokens (85%)" in result.stderr
+    assert "auto:claude-fable-5" in result.stderr
+    assert "estimate" not in result.stderr  # this is a measurement, say so
+
+
+@by_flavor
+def test_claude5_model_at_960k_still_fires_against_1m(flavor, tmp_path):
+    # A real Opus 5 session on this machine held 995,862 tokens. A self-correct
+    # that trips at 95% of a *correct* 1M table entry would bump the budget to
+    # the 2M tier and the gate would never fire; only a peak the window cannot
+    # hold proves the table wrong.
+    root = crew_fixtures.make_repo(tmp_path, config=_config(budget=None), git=False)
+    transcript = _usage_transcript(root, "claude-opus-5", used=960_000)
+    result = _run(flavor, root, transcript)
+    assert result.returncode == 2, result.stderr
+    assert "960,000 of 1,000,000 tokens (96%)" in result.stderr
+    assert "Budget source: auto:claude-opus-5." in result.stderr
+
+
+@by_flavor
+def test_haiku_at_170k_fires_against_200k(flavor, tmp_path):
+    root = crew_fixtures.make_repo(tmp_path, config=_config(budget=None), git=False)
+    transcript = _usage_transcript(root, "claude-haiku-4-5-20251001", used=170_000)
+    result = _run(flavor, root, transcript)
+    assert result.returncode == 2, result.stderr
+    assert "170,000 of 200,000 tokens (85%)" in result.stderr
+
+
+@by_flavor
+def test_observed_peak_overrides_smaller_configured_budget(flavor, tmp_path):
+    # A stale `budgetTokens: 200000` pinned by an older /crew:init. The session
+    # has already held 300k, so 200k is provably not the window.
+    root = crew_fixtures.make_repo(
+        tmp_path, config=_config(budget=200_000), git=False)
+    transcript = _usage_transcript(
+        root, "claude-opus-5", used=250_000, peak=300_000)
+    result = _run(flavor, root, transcript)
+    assert result.returncode == 0, result.stderr
+    assert result.stderr.strip() == "", result.stderr
+
+
+@by_flavor
+def test_configured_budget_still_wins_when_observed_fits_inside_it(flavor, tmp_path):
+    root = crew_fixtures.make_repo(
+        tmp_path, config=_config(budget=200_000), git=False)
+    transcript = _usage_transcript(root, "claude-opus-5", used=170_000)
+    result = _run(flavor, root, transcript)
+    assert result.returncode == 2, result.stderr
+    assert "170,000 of 200,000 tokens (85%)" in result.stderr
+    assert "Budget source: configured." in result.stderr
+
+
+@by_flavor
+def test_subagent_usage_is_not_counted(flavor, tmp_path):
+    # Agent-tool transcripts live in <session>/subagents/*.jsonl and, in older
+    # Claude Code builds, as isSidechain records inline. Neither is main-window
+    # occupancy: the main window only ever sees the agent's returned summary.
+    root = crew_fixtures.make_repo(tmp_path, config=_config(budget=None), git=False)
+    transcript = _usage_transcript(
+        root, "claude-fable-5", used=100_000,
+        sidechain_total=950_000, subagent_total=950_000)
+    result = _run(flavor, root, transcript)
+    assert result.returncode == 0, result.stderr
+    assert result.stderr.strip() == "", result.stderr
+
+
+@by_flavor
+def test_sidechain_only_transcript_does_not_feed_the_size_fallback(flavor, tmp_path):
+    # No main-thread usage record at all, only inline subagent records: the
+    # size fallback must not count their bytes either. Codex review finding.
+    root = crew_fixtures.make_repo(tmp_path, config=_config(budget=100), git=False)
+    path = root / "session-1.jsonl"
+    path.write_text(
+        "\n".join(_usage_record("claude-fable-5", 900_000, sidechain=True)
+                  for _ in range(20)) + "\n", encoding="utf-8")
+    result = _run(flavor, root, path)
+    assert result.returncode == 0, result.stderr
+    assert result.stderr.strip() == "", result.stderr
+
+
+@by_flavor
+def test_warn_at_zero_means_always_fire(flavor, tmp_path):
+    # 0 is falsy in PowerShell; a truthiness test silently turned it into 0.8.
+    cfg = _config(budget=None)
+    cfg["context"]["warnAt"] = 0
+    root = crew_fixtures.make_repo(tmp_path, config=cfg, git=False)
+    transcript = _usage_transcript(root, "claude-fable-5", used=10_000)
+    result = _run(flavor, root, transcript)
+    assert result.returncode == 2, result.stderr
+    assert "10,000 of 1,000,000 tokens (1%)" in result.stderr
+
+
+def test_measured_warning_is_identical_across_flavors(tmp_path):
+    # Full-stderr parity on the measured path, digits included: both flavours
+    # truncate the percentage and format thousands the same way.
+    if not (_HAS_BASH and _HAS_PWSH):
+        pytest.skip("need both bash and pwsh on PATH to compare flavors")
+    texts = {}
+    for flavor in ("sh", "ps1"):
+        root = crew_fixtures.make_repo(
+            tmp_path / flavor, config=_config(budget=None), git=False)
+        # Haiku's table entry is 200k; a 451k peak forces the +observed
+        # branch (tier 500k), so the longest note in the script is compared.
+        transcript = _usage_transcript(
+            root, "claude-haiku-4-5-20251001", used=450_001, peak=451_000)
+        result = _run(flavor, root, transcript)
+        assert result.returncode == 2, (flavor, result.stderr)
+        assert "450,001 of 500,000 tokens (90%)" in result.stderr
+        assert "+observed" in result.stderr
+        texts[flavor] = result.stderr.replace("\r\n", "\n").strip()
+    assert texts["sh"] == texts["ps1"]
 
 
 def test_auto_wrap_up_instruction_is_identical_across_flavors(tmp_path):

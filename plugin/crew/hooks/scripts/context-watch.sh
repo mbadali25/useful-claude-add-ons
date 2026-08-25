@@ -58,29 +58,47 @@ MARKER=".crew/.handoff-requested"
 # high (950k estimated against 654k actual), which on a 200k budget is the
 # difference between "fire at 80%" and "fire on turn one, every turn".
 READ=$("$PY" - "$TRANSCRIPT" "$BUDGET" << 'PY' 2>/dev/null
-import json, os, sys
+import json, re, sys
 
 path = sys.argv[1]
 configured = int(sys.argv[2] or 0)
 
-# Known context windows. A "[1m]" suffix on the id means the 1M variant, but the
-# transcript often records the base id without it - so this table is a starting
-# point, not the last word. The observed high-water mark below corrects it.
+# Known context windows, first match wins, so the specific keys sit above the
+# generic ones. The Claude 5 family (fable, opus-5, sonnet-5) ships with 1M
+# natively; the 4.x generation is 200k unless the id carries a "[1m]" suffix -
+# and the transcript often records the base id without it, so this table is a
+# starting point, not the last word. The observed high-water mark below
+# corrects it. The mismatch that matters is the other way round: a 1M model
+# read as 200k fires the gate at 160k, which is 16% of the real window.
 WINDOWS = (
     ("[1m]", 1_000_000),
+    ("fable", 1_000_000),
+    ("opus-5", 1_000_000),
+    ("sonnet-5", 1_000_000),
     ("haiku", 200_000),
-    ("sonnet", 200_000),
     ("opus", 200_000),
-    ("fable", 200_000),
+    ("sonnet", 200_000),
 )
 TIERS = (200_000, 500_000, 1_000_000, 2_000_000)
 
-last, model, peak = None, "", 0
+SIDECHAIN = re.compile(r'"isSidechain"\s*:\s*true')
+last, model, peak, main_bytes = None, "", 0, 0
 try:
     with open(path, encoding="utf-8", errors="replace") as fh:
         for line in fh:
             line = line.strip()
-            if not line or '"usage"' not in line:
+            if not line:
+                continue
+            # Subagent turns are not main-window occupancy: the main window
+            # only ever sees the agent's returned summary. Current builds keep
+            # them in <session>/subagents/*.jsonl, which this never opens;
+            # older builds wrote them inline flagged isSidechain. Skip those -
+            # from the byte count too, so the size fallback below does not
+            # count them either.
+            if SIDECHAIN.search(line):
+                continue
+            main_bytes += len(line.encode("utf-8")) + 1
+            if '"usage"' not in line:
                 continue
             try:
                 rec = json.loads(line)
@@ -91,7 +109,7 @@ try:
             if not isinstance(usage, dict) or "cache_read_input_tokens" not in usage:
                 continue
             last = usage
-            if msg.get("model"):
+            if msg.get("model") and not msg["model"].startswith("<"):
                 model = msg["model"]
             peak = max(peak, usage.get("input_tokens", 0)
                        + usage.get("cache_read_input_tokens", 0)
@@ -105,11 +123,7 @@ if last:
             + last.get("cache_creation_input_tokens", 0))
     source = "exact"
 else:
-    try:
-        size = os.path.getsize(path)
-    except OSError:
-        size = 0
-    used, source = int(size / 4 * 0.75), "estimated"
+    used, source = int(main_bytes / 4 * 0.75), "estimated"
 
 if configured > 0:
     budget, how = configured, "configured"
@@ -117,13 +131,17 @@ else:
     low = model.lower()
     budget = next((w for key, w in WINDOWS if key in low), 200_000)
     how = f"auto:{model or 'unknown'}"
-    # Self-correct. If this session has already held more tokens than the
-    # table claims the window is, the table is wrong for this model - a "[1m]"
-    # variant records its base id, so the suffix is not always there to read.
-    # Observed usage cannot exceed the real window, so it is the better source.
-    if peak >= budget * 0.95:
-        budget = next((t for t in TIERS if t > peak * 1.05), peak * 2)
-        how = f"auto:{model or 'unknown'}+observed"
+
+# Self-correct. If this session has already held more tokens than the budget
+# claims the window is, the budget is wrong: a "[1m]" variant records its base
+# id, and an older /crew:init pinned budgetTokens: 200000 into every config
+# before the 1M models arrived. Observed usage cannot exceed the real window,
+# so it is the better source - but ONLY a peak the window could not hold proves
+# that. An earlier 95% margin bumped a correct 1M entry to the 2M tier once a
+# session passed 950k, and the gate then never fired at all.
+if peak > budget:
+    budget = next((t for t in TIERS if t > peak * 1.05), peak * 2)
+    how = f"{how}+observed"
 
 print(used, source, budget, how)
 PY
@@ -147,7 +165,12 @@ bash "$(dirname "$0")/notify.sh" waiting "context ${PCT_H}% - writing handoff" 2
 # fire early forever, and a warning that is always on is one nobody reads.
 BUDGET_NOTE=" Set context.budgetTokens in .crew/config.json to pin it."
 case "$HOW" in
-  *+observed)
+  configured+observed)
+    BUDGET_NOTE=" context.budgetTokens in .crew/config.json says a smaller window,
+but this session has already held more than that - and observed usage cannot
+exceed the real window, so the larger figure wins. That pin is stale; set it to
+null to let crew work the window out from the model." ;;
+  auto:*+observed)
     BUDGET_NOTE=" The model's id said a smaller window, but this session has
 already held more than that - and observed usage cannot exceed the real window,
 so the larger figure wins. A 1M variant reports its base model id, which is why
