@@ -80,9 +80,10 @@ def emergency_config(cfg):
     ttl = _int_or(block.get("ttlMinutes"), DEFAULT_TTL_MINUTES)
     if ttl <= 0:
         ttl = DEFAULT_TTL_MINUTES
-    max_ttl = _int_or(block.get("maxTtlMinutes"), MAX_TTL_MINUTES)
-    if max_ttl < ttl:
-        max_ttl = ttl
+    # A ceiling below the default window would make every declaration shorter
+    # than asked for without saying so; the larger of the two is the honest
+    # reading of "cap it at this".
+    max_ttl = max(_int_or(block.get("maxTtlMinutes"), MAX_TTL_MINUTES), ttl)
     return {
         # standDown false = an incident is still declared, recorded and briefed,
         # and the gates keep gating. For a repo where skipping verification is

@@ -125,7 +125,14 @@ All notable changes to this repository are documented here. Format follows [Keep
   machine, where a thrown exception is invisible — completely unguarded by the
   one check that catches a call to a function that does not exist. All 18 files
   pass; sabotage-tested by mis-naming a call in `verify-gate.ps1`, which the old
-  default would not have caught. `-Path` still checks a single file.
+  default would not have caught. `-Path` still checks a single file. The first
+  CI run of the wider check immediately earned it, by failing on the
+  `ScheduledTasks` cmdlets in `vault-automation/setup-vault-automation.ps1`:
+  that module ships with Windows and does not exist on the Linux runner, so
+  those calls resolve for a developer and not for CI. They are in the
+  `$externallyProvided` allowlist by exact name rather than by a
+  `*-ScheduledTask*` pattern, so a typo in one of them is still caught -
+  verified by introducing one.
 - **CI runs the crew hook regression suite and the prompt validator.** Both were
   committed, documented as the safety net for hooks that can block a turn, and
   run only when somebody remembered to. A gate that stops gating still exits 0,

@@ -66,6 +66,17 @@ $externallyProvided = @{
     # Chocolatey's helpers\chocolateyProfile.psm1, Import-Module'd a few lines above the
     # call and wrapped in try/catch for exactly the case where it is absent.
     'Update-SessionEnvironment' = 'chocolateyProfile.psm1'
+    # The ScheduledTasks module ships with Windows and does not exist on Linux, so
+    # these resolve for a developer running this check and not for the CI runner.
+    # Listed by exact name rather than by a '*-ScheduledTask*' pattern, so a typo
+    # in one of them is still caught. vault-automation/setup-vault-automation.ps1.
+    'Get-ScheduledTask'             = 'ScheduledTasks (Windows-only)'
+    'New-ScheduledTaskAction'       = 'ScheduledTasks (Windows-only)'
+    'New-ScheduledTaskTrigger'      = 'ScheduledTasks (Windows-only)'
+    'New-ScheduledTaskPrincipal'    = 'ScheduledTasks (Windows-only)'
+    'New-ScheduledTaskSettingsSet'  = 'ScheduledTasks (Windows-only)'
+    'Register-ScheduledTask'        = 'ScheduledTasks (Windows-only)'
+    'Start-ScheduledTask'           = 'ScheduledTasks (Windows-only)'
 }
 
 $problems = @()
