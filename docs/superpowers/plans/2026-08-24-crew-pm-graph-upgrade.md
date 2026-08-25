@@ -1896,7 +1896,7 @@ FINDINGS = {
     ),
     "graphStale": (
         "the code graph is missing or older than HEAD",
-        "run /crew:onboard, or graphify . --no-viz to refresh it",
+        "run /crew:onboard, or graphify . --no-viz --code-only to refresh it",
     ),
     "knowledgeBehind": (
         "some codemap anchors are behind HEAD, so those notes may describe "
