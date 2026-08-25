@@ -121,6 +121,9 @@ if ($UseGit) {
         Write-Host "   $(if (Test-Path $ogData) { 'present - will leave as-is' } else { 'WILL WRITE' })"
     } {
         if (-not (Test-Path $ogData)) {
+            # The plugin's own directory may not exist yet - normally step 1 creates it,
+            # but -SkipPlugins skips step 1 entirely, so create it here too.
+            New-Item -ItemType Directory -Force -Path (Split-Path $ogData) | Out-Null
             @{
                 commitMessage = 'vault auto-backup: {{date}}'; commitDateFormat = 'YYYY-MM-DD HH:mm:ss'
                 autoSaveInterval = 15; autoPushInterval = 15; autoPullInterval = 0
@@ -183,9 +186,11 @@ Step 'HOME.md dashboard + inbox/pending-reflect.md' {
     Write-Host "   HOME.md: $(if (Test-Path (Join-Path $VaultPath 'HOME.md')) { 'present - skip' } else { 'WILL WRITE' })"
     Write-Host "   inbox:   $(if (Test-Path (Join-Path $VaultPath 'inbox\pending-reflect.md')) { 'present - skip' } else { 'WILL WRITE' })"
 } {
-    $home = Join-Path $VaultPath 'HOME.md'
-    if (-not (Test-Path $home)) {
-        Copy-Item (Join-Path $here 'HOME-template.md') $home
+    # Not $home - that collides with PowerShell's read-only $HOME automatic variable
+    # and throws on every -Apply run before this step (and everything after it) runs.
+    $homeNote = Join-Path $VaultPath 'HOME.md'
+    if (-not (Test-Path $homeNote)) {
+        Copy-Item (Join-Path $here 'HOME-template.md') $homeNote
         Write-Host '   HOME.md written'
     }
     $inbox = Join-Path $VaultPath 'inbox\pending-reflect.md'
@@ -205,8 +210,12 @@ if (-not $SkipGardener) {
         Write-Host "   task:   $(if ($t) { 'present - will re-register' } else { 'WILL REGISTER' })"
     } {
         New-Item -ItemType Directory -Force -Path (Split-Path $gardener) | Out-Null
+        # $gitEnabled is baked in from -UseGit as consented HERE, at setup time - the
+        # installed gardener must never re-derive push consent from runtime repo state.
+        $gitEnabledLiteral = if ($UseGit) { '$true' } else { '$false' }
         (Get-Content (Join-Path $here 'gardener-template.ps1') -Raw).
-            Replace('__VAULT_PATH__', $VaultPath).Replace('__CLAUDE_EXE__', $claudeExe) |
+            Replace('__VAULT_PATH__', $VaultPath).Replace('__CLAUDE_EXE__', $claudeExe).
+            Replace('__GIT_ENABLED__', $gitEnabledLiteral) |
             Set-Content $gardener -Encoding utf8
         $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$gardener`""
         $trigger = New-ScheduledTaskTrigger -Daily -At $GardenerTime

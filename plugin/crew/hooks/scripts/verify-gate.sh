@@ -4,6 +4,12 @@
 
 # End-of-turn gate. Runs the checks that the CHANGED FILES actually require,
 # from .crew/verify.json. Exit 2 = the work is not done.
+#
+# No hook_once claim here on purpose: Stop fires once per TURN against a
+# stable session id, so a session-scoped claim taken on turn 1 would suppress
+# every later turn's gate -- a 600-second gate that silently never runs again
+# reads as "the work passed", which is worse than the double-run a claim
+# would prevent. Both flavours run every Stop; that is correct here.
 INPUT=$(cat 2>/dev/null)
 
 # Claude Code re-fires Stop after a blocking Stop hook. Without this check the
@@ -51,7 +57,11 @@ PY=$(crew_py) || { echo "crew verify-gate: no python - cannot read .crew/verify.
 MATCHED=$("$PY" - "$CHANGED" << 'PY'
 import json,sys,fnmatch
 changed=[l for l in sys.argv[1].split("\n") if l.strip()]
-cfg=json.load(open(".crew/verify.json"))
+try:
+    cfg=json.load(open(".crew/verify.json"))
+except (OSError, ValueError) as e:
+    print(f"PARSE_ERROR: {e}", file=sys.stderr)
+    sys.exit(3)
 
 def matches(path, pat):
     # fnmatch's * spans '/', so '**/*.tf' demands a literal slash and silently
@@ -78,6 +88,11 @@ print("\x1e".join(cmds))
 print("\x1e".join(unmatched))
 PY
 )
+PY_STATUS=$?
+if [ "$PY_STATUS" -ne 0 ]; then
+  echo "VERIFY GATE: .crew/verify.json could not be parsed. Verification did NOT run. Work is not complete." >&2
+  exit 2
+fi
 CMDS=$(echo "$MATCHED" | sed -n 1p | tr '\036' '\n')
 UNMAPPED=$(echo "$MATCHED" | sed -n 2p | tr '\036' '\n')
 

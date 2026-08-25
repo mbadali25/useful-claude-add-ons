@@ -75,7 +75,12 @@ explicitly accepted by me.
 
 ## Phase 1 — Config and structure
 
-Run `detect.sh`. Ask the three questions (reviewer, tracker, memory). Create
+Run `detect.sh`. If it reports a global `~/.claude/skills/find-skills`, say so:
+its trigger competes with `crew-setup` and `crew-verification` for ordinary
+requests, and offer to remove it. Never delete it yourself — it is the user's
+own global configuration.
+
+Ask the three questions (reviewer, tracker, memory). Create
 `.crew/`, `.work/`, `docs/adr/`, `_verify/` from template (README.md, smoke.sh,
 run-all.sh, cases/), gitignore
 entries for secrets, and a `CLAUDE.md` if absent.

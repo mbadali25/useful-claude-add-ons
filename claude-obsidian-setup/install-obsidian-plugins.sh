@@ -139,8 +139,16 @@ while IFS=$'\t' read -r id version repo; do
 
   if [ "$APPLY" -eq 0 ]; then fixx "$id" "would install $version from $repo"; continue; fi
 
-  mkdir -p "$dest"
-  if tag="$(get_release "$version" "$repo" "$dest")"; then
+  # Download into a staging directory first. An existing install (upgrade case)
+  # is only ever touched AFTER a full, validated download succeeds - a failed
+  # or partial download (404, rate limit, network blip) must leave it untouched
+  # rather than delete a working plugin.
+  mkdir -p "$PLUGIN_ROOT"
+  staging="$(mktemp -d "${TMPDIR:-/tmp}/obs-plugin-${id}-XXXXXX")"
+  if tag="$(get_release "$version" "$repo" "$staging")" \
+      && [ -f "$staging/manifest.json" ] && [ -f "$staging/main.js" ]; then
+    rm -rf "$dest"
+    mv "$staging" "$dest"
     got="$(jq -r '.version // "?"' "$dest/manifest.json")"
     if [ "$tag" = "latest" ] && [ "$got" != "$version" ]; then
       fixx "$id" "$got (pinned $version unavailable)"
@@ -148,8 +156,8 @@ while IFS=$'\t' read -r id version repo; do
       fixx "$id" "installed $got"
     fi
   else
-    rm -rf "$dest"
-    faill "$id" "no downloadable release from $repo"
+    rm -rf "$staging"
+    faill "$id" "no downloadable release from $repo - existing install left untouched"
   fi
   # tr -d '\r': jq built for Windows writes CRLF, which would otherwise leave a
   # carriage return on the last field and silently corrupt every URL built from

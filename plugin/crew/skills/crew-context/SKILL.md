@@ -18,6 +18,7 @@ You do not need it to. The lifecycle already provides the whole cycle:
 | Approaching the limit | `Stop` | Estimate usage; ask for a handoff note before the turn ends |
 | Auto-compaction about to run | `PreCompact` | Snapshot the transcript, write a skeleton handoff if none exists |
 | After `/clear`, `/compact`, or resume | `SessionStart` | Print the handoff — its stdout is injected as context |
+| Any session start, including plain `startup` | `SessionStart` | `pm-brief` prints the PM's brief (triggers like `upgradeNeeded`, `handoffPending`, `graphStale`) so crew says something even on a fresh session, not only after a clear or compact |
 
 So the flow is: crew tells you it is time, you type `/clear` or `/compact`, and
 the next session opens already holding the handoff. The one manual step is the
@@ -89,18 +90,30 @@ want here.
 
 ### Auto-resume
 
-`SessionStart` can in principle return JSON with an `initialUserMessage` to start
-the new session working immediately, with no human turn.
+`SessionStart` can return JSON with an `additionalContext` payload. With
+`context.autoResume: true` and a handoff on disk, `pm_brief` folds the
+handoff text plus its extracted next action into `additionalContext`, so the
+new session opens already holding that context — the human presses Enter
+rather than typing. It does not start working on its own.
 
-**crew does not implement this.** `handoff-read.sh` prints the note as plain
-context and stops. `context.autoResume` is accepted in config and read by
-nothing; setting it to `true` changes no behaviour.
+`SessionStart` can also return `initialUserMessage`, which starts the new
+session working with no human turn at all. It is confirmed working only for
+non-interactive `claude -p` sessions (tested against Claude Code 2.1.243); no
+PTY was available to prove it in an interactive session, so interactive
+behavior is unproven. Crew does not use it. Reproduce the `-p` test before
+relying on it interactively.
 
-That is deliberate. Auto-resume removes the one moment where a human reads what
-the previous session claimed before work continues on top of it, and if a handoff
-is subtly wrong that is how the error compounds unattended. If you want it, it is
-a change to `handoff-read.sh` and its `.ps1` twin - not a config flag that is
-already wired.
+Off by default, and it should stay off unless you have a specific reason. It
+removes the one moment where a human reads what the previous session claimed
+before work continues on top of it. If a handoff is subtly wrong, auto-resume is
+how that error compounds unattended.
+
+Turn it on with `context.autoResume: true` only after you have watched a dozen
+handoffs and trust their accuracy.
+
+When it is on, `handoff-read` stands down on `clear`/`compact`/`resume`/`fork`
+so `pm_brief` is the handoff's only emitter — otherwise the same handoff would
+be injected twice.
 
 ## Configuration
 
@@ -110,13 +123,15 @@ already wired.
   "warnAt": 0.8,
   "budgetTokens": null,
   "handoffPath": ".work/HANDOFF.md",
+  "autoWrapUp": false,
+  "autoResume": false,
   "keepTranscripts": 5
 }
 ```
 
 `keepTranscripts` is honoured by `PreCompact`: that many `.jsonl` snapshots are
-kept under `.crew/transcripts/` and older ones are deleted. `autoResume` is
-accepted and ignored - see above.
+kept under `.crew/transcripts/` and older ones are deleted. `autoWrapUp` and
+`autoResume` are both off by default - see above.
 
 ## How the reading is taken
 

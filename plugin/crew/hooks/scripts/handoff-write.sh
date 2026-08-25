@@ -8,6 +8,11 @@ TRANSCRIPT=$(read_json transcript_path); TRIGGER=$(read_json trigger); CWD=$(rea
 cd "${CWD:-${CLAUDE_PROJECT_DIR:-.}}" 2>/dev/null || exit 0
 [ -f .crew/config.json ] || exit 0
 
+# No hook_once claim here on purpose: PreCompact can fire more than once per
+# session, and both writes below are idempotent (the transcript copy is
+# timestamped, the handoff skeleton only gets written if one doesn't already
+# exist) -- duplication is safe, suppression of the only handoff is not.
+
 mkdir -p .crew/transcripts .work
 if [ -f "$TRANSCRIPT" ]; then
   cp "$TRANSCRIPT" ".crew/transcripts/$(date +%Y%m%d-%H%M%S)-${TRIGGER:-auto}.jsonl" 2>/dev/null

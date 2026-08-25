@@ -21,7 +21,8 @@ One script per OS. Both are idempotent (safe to re-run) and, by default, also bo
     [ ] Strix AI pentesting CLI (needs Docker + an LLM API key)
     [ ] Obsidian desktop + claude-obsidian + obsidian-skills plugins
     [ ] This repo's plugins: crew (agents, commands, hooks)
-  showing 1-21 of 21
+    [ ] graphify code graph (uv tool install graphifyy; per-repo, not global)
+  showing 1-22 of 22
   ↑↓ move   Space toggle   Enter start   A all   N none   D defaults   Q cancel
   → on the repo row picks individual skills
 ```
@@ -243,7 +244,9 @@ Six more rows, also off by default. None of them are MCP servers.
 
 ### Optional: this repo's own plugins
 
-- **This repo's plugins** (21) - installs everything under [`plugin/`](plugin/) from this repo's own marketplace. Today that is one plugin, [`crew`](plugin/crew): 9 subagents, 14 slash commands, 14 bundled skills, and 7 hooks across 5 events. It adds the marketplace itself first, so the item works whether or not item 3 ran; both steps are no-ops when they are already present.
+- **This repo's plugins** (21) - installs everything under [`plugin/`](plugin/) from this repo's own marketplace. Today that is one plugin, [`crew`](plugin/crew): 10 subagents, 18 slash commands, 16 bundled skills, and 16 hook entries (8 scripts, each shipped as a `.sh`/`.ps1` pair) across 5 events. It adds the marketplace itself first, so the item works whether or not item 3 ran; both steps are no-ops when they are already present.
+
+  This item also detects a global `find-skills` collision: if `~/.claude/skills/find-skills` exists (from menu item 5, or a direct `npx skills add`), it warns that two active copies can both trigger on the same prompt and prints the manual removal command. Detection only; it never deletes anything.
 
   ```bash
   claude plugin marketplace add mbadali25/useful-claude-add-ons
@@ -252,14 +255,16 @@ Six more rows, also off by default. None of them are MCP servers.
 
   **It is off by default on purpose, and it is the only item here where that matters for safety.** Every other row installs something Claude *may* use. `crew` installs hooks, which the harness runs on its own:
 
-  | Hook | Event | What it does the moment the plugin is enabled |
+  | Script | Event | What it does the moment the plugin is enabled |
   |---|---|---|
-  | `guard.sh` / `guard.ps1` | `PreToolUse` on Bash and PowerShell | Blocks `terraform apply`/`destroy`, destructive DDL, force push, hard reset, prod-targeted commands, and any command that would print a secret into the transcript |
-  | `verify-gate.sh` | `Stop` | Runs the checks the changed paths map to and **fails the turn** on red, or on a changed path with no rule |
-  | `context-watch.sh` | `Stop` | Estimates context use and asks for a handoff once per session |
-  | `handoff-write.sh` | `PreCompact` | Snapshots the transcript and writes a skeleton handoff before compaction discards it |
-  | `handoff-read.sh` | `SessionStart` | Injects that handoff back after a clear, compact, or resume |
-  | `notify.sh` | `Notification` | Sends a one-line outbound message to Teams or Telegram, if configured. Never reads |
+  | `guard.sh` / `.ps1` | `PreToolUse` on Bash and PowerShell | Blocks `terraform apply`/`destroy`, destructive DDL, force push, hard reset, prod-targeted commands, and any command that would print a secret into the transcript |
+  | `promote-gate.sh` / `.ps1` | `PreToolUse` on Bash and PowerShell | Refuses a command matching a declared `deploy` entry unless every `requires` environment has an all-pass row in `.work/PROMOTIONS.md`, the rollback runbook is verified inside 90 days, `requireHuman` is approved, and the tree is clean |
+  | `handoff-read.sh` / `.ps1` | `SessionStart` | Injects the last handoff back after a clear, compact, or resume |
+  | `pm-brief.sh` / `.ps1` | `SessionStart` | Runs `crew_state.py` and prints a prioritized, **report-only** brief — schema drift, a stale or missing code graph, a pending handoff, review health — before you type anything |
+  | `verify-gate.sh` / `.ps1` | `Stop` | Runs the checks the changed paths map to and **fails the turn** on red, or on a changed path with no rule |
+  | `context-watch.sh` / `.ps1` | `Stop` | Estimates context use and asks for a handoff once per session; instructs a full wrap-up instead of just asking if `context.autoWrapUp` is `true` |
+  | `handoff-write.sh` / `.ps1` | `PreCompact` | Snapshots the transcript and writes a skeleton handoff before compaction discards it |
+  | `notify.sh` / `.ps1` | `Notification` | Sends a one-line outbound message to Teams or Telegram, if configured. Never reads |
 
   A hook cannot be argued out of blocking something - that is the point of it, and it is also why a bootstrap run should not add one to a machine without the box being ticked. The `Stop` gate in particular is a no-op until you build the change-to-check map, so the item finishes by printing the per-repository setup:
 
@@ -270,11 +275,25 @@ Six more rows, also off by default. None of them are MCP servers.
   /crew:verify       # build the change-to-check map the Stop gate needs
   ```
 
-  **Windows needs `bash` on `PATH`.** Every hook is registered once as bash; Git Bash or WSL satisfies it. Only the `PreToolUse` guards branch to a PowerShell twin, and they branch on which *tool* the command came from rather than on the OS, so a `Bash` call is judged by bash rules even on Windows. With no bash at all, no hook fires - the plugin does not pretend otherwise. (Before 0.2.0 the guards stood down on Windows and the twins were registered with a `shell: powershell` field Claude Code does not read, so the command guard blocked nothing and the `Stop` gate ran nothing. Fixed.)
+  **Both flavours are registered on every matcher-less event on purpose**, not because each one fires. `PreToolUse` above is different — there the branch is chosen by *which tool Claude used*, not by OS. On the other four events, `hooks.json` has no way to know in advance which shell a given machine actually has, so both are wired and one failing is expected, not a bug. On Windows this is measured, not theoretical — Git for Windows ships two `bash.exe` binaries, and `usr/bin/bash.exe` exits 127 on these scripts where `bin/bash.exe` runs them fine, so which one resolves first on `PATH` decides whether the `.sh` side works at all. The `.ps1` twin, registered with a `shell: powershell` field — which Claude Code does read and honour — is what actually gates the machine when it doesn't. (Before 0.2.0 the guards stood down on Windows instead of being registered this way, so the command guard blocked nothing and the `Stop` gate ran nothing there. Fixed.) What is genuinely **unverified** is real hook-runner behavior with no `pwsh` on Linux — that combination has not been exercised, so treat it as unconfirmed rather than assumed fine.
+
+  Two settings worth knowing before they surprise you, both default `false` in `.crew/config.json`'s `context` block: **`autoWrapUp`** changes what `context-watch` tells the session to do at the warning threshold (reach a stopping point and write the handoff, vs. just asking), but **the `/clear` itself always stays manual — no hook can trigger one**, since a hook is a child process and cannot reset its parent's conversation. **`autoResume`** opens the next session already holding the last handoff (as `additionalContext`, confirmed to work in an interactive session, rather than `initialUserMessage`, which is only confirmed for non-interactive `-p` runs) — it puts the note in view, it does not start the session working on its own.
 
   Uninstall with `claude plugin uninstall crew@useful-claude-add-ons`; the hooks go with it. To keep the plugin but stop the `Stop` gate, set `verifyGate: false` in the repository's `.crew/config.json`. Full guide: [`plugin/crew/README.md`](plugin/crew/README.md), with [`plugin/README.md`](plugin/README.md) for how plugins differ from skills here and [`plugin/PLUGINS.md`](plugin/PLUGINS.md) for the per-component breakdown.
 
-Before running either script on a machine you don't fully control, note that these steps run third-party code from npm, from `strix.ai`, and from Chocolatey/flatpak/snap — see [`SECURITY.md`](SECURITY.md)'s install-script trust boundary.
+### Optional: the `graphify` code graph
+
+- **`graphify`** (22) - installs the third-party `graphify` CLI via `uv tool install graphifyy` (the PyPI package is `graphifyy`, double-y; it installs a `graphify` executable) and registers it **per-repository**, never globally, with `graphify install --project`. Off by default; no new flag, since it reuses `--select` / `-Select` like every other item.
+
+  ```bash
+  cd <your repo> && graphify . --no-viz --code-only
+  ```
+
+  Both flags matter: `--code-only` skips docs, papers, and images — omit it against a repo that has any of those and `graphify` errors instead of skipping them. `--no-viz` skips the HTML visualization, which is effectively unopenable past a modest repo size.
+
+  This item installs the CLI only; it does nothing on its own until something calls it. [`crew`](plugin/crew) (item 21) is the thing that does — its `crew-graph` skill builds and queries the graph, and `/crew:upgrade` reads it to bring a pre-schema-2 crew setup forward. Freshness is tracked from `graphify`'s own `built_at_commit` field in `graph.json`, never a file timestamp, so a `git pull` that predates the last build still reports correctly as stale. Exporting the graph into an Obsidian vault needs a separate, explicit opt-in — `graph.obsidian.confirmed` set by hand in `.crew/config.json` — which an upgrade never sets for you.
+
+Before running either script on a machine you don't fully control, note that these steps run third-party code from npm, from `strix.ai`, from `uv`, and from Chocolatey/flatpak/snap — see [`SECURITY.md`](SECURITY.md)'s install-script trust boundary.
 
 ### Optional: the Obsidian knowledge vault
 

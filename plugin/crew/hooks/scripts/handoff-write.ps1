@@ -1,11 +1,15 @@
-# PreCompact hook (native Windows). Mirrors handoff-write.sh. Snapshots the
+# PreCompact hook (native Windows). Mirrors handoff-write.sh: snapshots the
 # transcript and makes sure a handoff exists before compaction discards detail.
 $raw = [Console]::In.ReadToEnd()
 try { $d = $raw | ConvertFrom-Json } catch { exit 0 }
-
 $cwd = if ($d.cwd) { $d.cwd } elseif ($env:CLAUDE_PROJECT_DIR) { $env:CLAUDE_PROJECT_DIR } else { "." }
 Set-Location $cwd -ErrorAction SilentlyContinue
 if (-not (Test-Path ".crew/config.json")) { exit 0 }
+
+# No hook_once claim here on purpose: PreCompact can fire more than once per
+# session, and both writes below are idempotent (the transcript copy is
+# timestamped, the handoff skeleton only gets written if one doesn't already
+# exist) -- duplication is safe, suppression of the only handoff is not.
 
 $trigger = if ($d.trigger) { $d.trigger } else { "auto" }
 New-Item -ItemType Directory -Path ".crew/transcripts", ".work" -Force | Out-Null
@@ -27,7 +31,7 @@ $cfg  = Get-Content .crew/config.json -Raw | ConvertFrom-Json
 $path = if ($cfg.context.handoffPath) { $cfg.context.handoffPath } else { ".work/HANDOFF.md" }
 if (Test-Path $path) { exit 0 }
 
-# No handoff exists. Write a factual skeleton from the repo, not from memory.
+# If no handoff exists, write a factual skeleton from the repo, not from memory.
 $branch = (git rev-parse --abbrev-ref HEAD 2>$null)
 $head   = (git rev-parse --short HEAD 2>$null)
 $lines  = New-Object System.Collections.Generic.List[string]

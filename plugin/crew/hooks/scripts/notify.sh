@@ -7,6 +7,9 @@ cd "${CLAUDE_PROJECT_DIR:-.}" || exit 0
 EVENT="${1:-info}"; shift 2>/dev/null; MSG="$*"
 [ -f .crew/config.json ] || exit 0
 
+# No hook_once claim here on purpose: Notification can fire many times per
+# session, and a duplicate ping is a safe failure -- a suppressed one is not.
+
 CREW_PY=$(crew_py) || exit 0
 read_cfg() { "$CREW_PY" - "$1" << 'PY' 2>/dev/null
 import json,sys

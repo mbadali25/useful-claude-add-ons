@@ -116,30 +116,37 @@ what ships with Windows. Do not assume it.
 
 ## Hooks
 
-**Every hook is registered once, as bash.** `hooks.json` has no `shell` field —
-Claude Code does not read one, and a hook registered with `shell: powershell` is
-silently inert, which reads as "the gate passed" rather than "the gate never
-ran". So `bash` must be on `PATH`; Git Bash satisfies that on Windows.
+**Every hook is registered twice in `hooks.json`, once per flavour.** The
+`shell` field (`"bash"` or `"powershell"`) is documented and Claude Code does
+read it — the PowerShell side carries `shell: powershell` so it runs via
+PowerShell without needing `CLAUDE_CODE_USE_POWERSHELL_TOOL`. What is *not*
+configurable is the default for a bare `command` string with no `shell` field:
+that goes to Git Bash on Windows (PowerShell only if Git Bash isn't installed),
+so `bash` on `PATH` still matters for the `.sh` half to have a chance — Git Bash
+satisfies that.
 
-Only the `PreToolUse` guards branch, and they branch on **which tool the command
-came from**, not on which OS is running:
+The `PreToolUse` guards additionally branch on **which tool the command came
+from**, via separate `Bash` / `PowerShell` matchers, not on which OS is
+running:
 
-```bash
-INPUT=$(cat)
-crew_tool_dispatch guard.ps1 "$INPUT"   # tool_name == PowerShell -> PowerShell rules
+```json
+{ "matcher": "Bash",       "hooks": [{ "type": "command", "command": "bash .../guard.sh" }] },
+{ "matcher": "PowerShell", "hooks": [{ "type": "command", "shell": "powershell", "command": "& '.../guard.ps1'" }] }
 ```
 
 That distinction matters. A `Bash` tool call is bash syntax *even on Windows*, so
 judging it with PowerShell rules gets it wrong in both directions — it blocks the
 correct secret-capture form and misses the wrong one.
 
-The remaining hooks judge no command. They are reached through `bash`, so if they
-run at all bash is present and can do the work; a `.ps1` beside them would be
-unreachable. The twins exist for anyone wiring crew's hooks into a
-PowerShell-only harness by hand, and `hooks.json` does not reference them.
+The remaining hooks judge no command, so both flavours are simply wired to their
+event with no branch — `hooks.json` has no way to know in advance which shell a
+given machine actually has, so one flavour failing is expected, not a bug.
+(`hooks/scripts/_common.sh` also ships a `crew_tool_dispatch` helper for judging
+a command from inside a single bash-registered script, if you'd rather dispatch
+that way for a hook you add yourself.)
 
-If you add your own hook, follow the same shape: register it as bash, and branch
-inside the script if it needs to.
+If you add your own hook, follow the same shape: register both flavours (or
+dispatch from one), and branch on the tool, never the OS.
 
 ## Docker
 

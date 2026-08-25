@@ -105,23 +105,34 @@ Register it in all five, with `source` pointing at `./plugin/<name>`:
 5. Both install scripts — `PLUGIN_KEYS` / `PLUGIN_NAME` in the `.sh`,
    `$script:PluginCatalog` in the `.ps1`.
 
-Four rules that apply to plugins and not to skills:
+Three rules that apply to plugins and not to skills:
 
 - **A plugin that registers hooks defaults to OFF in the menu.** A hook is not
   advisory — it runs whether or not Claude agrees with it — so a bootstrap run must not
   add one to someone's machine without the box being ticked.
-- **Register each hook once, as bash, and branch inside the script.** There is no
-  `shell` field in a `hooks.json` entry - Claude Code does not read one, so a hook
-  registered with `shell: powershell` is silently inert, which reads as "the gate
-  passed" rather than "the gate never ran". `crew` shipped exactly that bug for a
-  release; see `plugin/crew/hooks/scripts/_common.sh` for the working pattern.
+- **Think about the shell before registering a hook.** A `hooks.json` entry's
+  `shell` field (`"bash"` or `"powershell"`) is documented and Claude Code does read
+  it: setting `"powershell"` runs that entry via PowerShell on Windows, without
+  needing `CLAUDE_CODE_USE_POWERSHELL_TOOL`, since hooks spawn the interpreter
+  directly. `crew` shipped a release where the guard stood down on Windows instead of
+  being registered this way, so the command guard blocked nothing there — see
+  `plugin/crew/hooks/hooks.json` and `plugin/crew/hooks/scripts/_common.sh` for the
+  fixed pattern: each event registered once per flavour, `shell: powershell` on the
+  PowerShell side.
+  - **What is not configurable is the shell form's default.** A bare `command`
+    string (no `args`) is passed to a shell: `sh -c` on macOS/Linux, **Git Bash** on
+    Windows, or PowerShell only when Git Bash isn't installed. A `bash` resolved from
+    some non-MSYS parent process is not necessarily what actually runs it — verify on
+    the machine you're targeting rather than assuming.
   - **Branch on the tool, not the OS.** A hook that judges a *command* (a `PreToolUse`
-    guard) must dispatch on `tool_name`: a `Bash` tool call is bash syntax even on
-    Windows, and judging it with PowerShell rules gets it wrong in both directions.
-  - **A hook that judges no command needs no twin.** It is reached through `bash`, so
-    if it runs at all bash is present and can do the work; a `.ps1` beside it is
-    unreachable code. Ship one only for someone wiring the hooks in by hand, and say
-    in the docs that `hooks.json` does not reference it.
+    guard) must dispatch on `tool_name`, either via separate matchers per tool (each
+    with its matching `shell` field) or from inside one script to its twin: a `Bash`
+    tool call is bash syntax even on Windows, and judging it with PowerShell rules
+    gets it wrong in both directions.
+  - **A hook that judges no command still needs a real answer for both shells** —
+    either register both flavours (one is expected to fail on a given machine, which
+    is fine) or dispatch from inside a single registered script. A `.ps1` sitting on
+    disk that `hooks.json` never references is dead code either way.
   - **Assume nothing about the interpreter.** Git Bash ships without `python3`. Resolve
     `python3`/`python`/`py` and fail loudly on stderr rather than suppressing the error
     and exiting 0.

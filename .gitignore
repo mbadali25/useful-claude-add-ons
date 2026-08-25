@@ -262,6 +262,11 @@ __marimo__/
 # briefs, review packages) - workflow state, not project content
 .superpowers/
 
+# Crew's per-repo working directory. In a consuming repo this holds
+# HANDOFF.md and the work index; in THIS repo it is only ever scratch --
+# review diffs and QA output, which is where the 2.2 MB came from.
+.work/
+
 # Cisco Meraki skill — config snapshots and bootstrap cache (may contain
 # network config and shared secrets; never commit)
 .meraki-snapshots/

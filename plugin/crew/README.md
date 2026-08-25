@@ -174,7 +174,7 @@ Then inside Claude Code:
 /plugin install crew@my-marketplace
 ```
 
-Verify with `/help` — you should see `/crew:ticket`, `/crew:work`, `/crew:review`, `/crew:onboard`, `/crew:scale`, and `/crew:jira-sync`.
+Verify with `/help` — you should see `/crew:ticket`, `/crew:work`, `/crew:review`, `/crew:onboard`, `/crew:scale`, `/crew:pm`, `/crew:upgrade`, and `/crew:jira-sync`.
 
 Plugin components other than skills are cached at load time. After editing agents, hooks, or `.mcp.json`, run `/reload-plugins` or restart.
 
@@ -586,6 +586,7 @@ Everything reads `.crew/config.json`:
 
 ```json
 {
+  "schema": 2,
   "tier": 0,
   "roles": ["explorer", "qa-reviewer"],
   "qa": { "provider": "auto" },
@@ -598,7 +599,9 @@ Everything reads `.crew/config.json`:
     "enabled": true,
     "warnAt": 0.8,
     "budgetTokens": null,
-    "handoffPath": ".work/HANDOFF.md"
+    "handoffPath": ".work/HANDOFF.md",
+    "autoWrapUp": false,
+    "autoResume": false
   },
   "notify": {
     "provider": "none",
@@ -606,7 +609,9 @@ Everything reads `.crew/config.json`:
     "urlEnv": "CREW_TEAMS_WEBHOOK",
     "tokenEnv": "CREW_TELEGRAM_TOKEN",
     "chatId": null
-  }
+  },
+  "pm": { "enabled": true, "mode": "adaptive", "quietLines": 8, "maxLines": 40, "authority": "report-only" },
+  "graph": { "out": "graphify-out", "obsidian": { "confirmed": false } }
 }
 ```
 
@@ -619,6 +624,7 @@ omit the block and assume.
 
 | Key | Values | Effect |
 |---|---|---|
+| `schema` | integer | Config layout version. Absent means a pre-PM (`v1`) setup — `/crew:upgrade` brings it to the current schema (2). Never hand-edit this; `/crew:upgrade` sets it. |
 | `verifyGate` | `true`, `false` | Whether the `Stop` hook blocks on failed checks. Set `false` only while first building the harness. |
 | `context.enabled` | `true`, `false` | The `Stop` context watch. **Absent block = off.** |
 | `context.warnAt` | `0.0`–`1.0` | Fraction of budget at which the handoff is requested. Default `0.8`. |
@@ -633,6 +639,11 @@ omit the block and assume.
 | `tracker` | `files`, `jira` | Where tickets live. Jira additionally requires the MCP connector. |
 | `memory.mode` | `repo`, `obsidian` | Where the code map lives. `obsidian` also needs `vaultPath`. |
 | `tier` / `roles` | see §22 | Which agents are in play. Managed by `/crew:scale`. |
+| `context.autoWrapUp` | `true`, `false` (default `false`) | At `warnAt`, instructs the session to reach a stopping point and write the handoff, instead of just asking. The `/clear` itself stays manual either way — no hook can trigger one. See §16. |
+| `context.autoResume` | `true`, `false` (default `false`) | Opens the next `SessionStart` already holding the last handoff as `additionalContext`. See §16 — read the limitation before enabling it. |
+| `pm.enabled` / `mode` / `quietLines` / `maxLines` | see `crew-pm` skill | Whether and how verbosely the `SessionStart` PM brief speaks. `authority` is always `report-only` — the PM never edits `config.json` on its own, regardless of this block. |
+| `graph.out` | path (default `graphify-out`) | Where `graphify` wrote `graph.json`. Freshness is read from graphify's own `built_at_commit` field in that file, never a timestamp. |
+| `graph.obsidian.confirmed` | `true`, `false` (default `false`) | Consent gate for exporting the graph into an Obsidian vault. Only explicit consent given in session sets this — `/crew:upgrade` never grants it. See `crew-graph`'s Obsidian section. |
 
 The promotion sequence lives in `.crew/verify.json`, not here — see §23. Config
 holds preferences; `verify.json` holds the checks, so that one file answers "what
@@ -858,18 +869,29 @@ at once, and that's the real finding.
 
 Anything uncertain goes under **Verify first** rather than being asserted as done.
 
-### Auto-resume: not implemented, and deliberately so
+### Auto-wrap-up is off by default
 
-`SessionStart` can in principle return an `initialUserMessage` to start the next
-session working with no human turn. **crew does not do this.** `handoff-read.sh`
-prints the note as plain context and stops there; the `context.autoResume` key is
-accepted in config and read by nothing.
+`context.autoWrapUp` changes what the `Stop` hook says at `warnAt`, not
+whether it fires. Off (the default), it just asks you to write the handoff.
+On, it instructs the session to reach a stopping point — finish or safely
+abandon the change in flight, write the handoff, update the ticket — before
+telling you it's ready. **Either way, the `/clear` itself stays manual**,
+because no hook can trigger one: hooks run as child processes, and a child
+cannot reset its parent's conversation. `autoWrapUp` bounds what happens
+before you clear; it does not remove the clear.
 
-That is the intended behaviour, not an oversight. Auto-resume removes the one
-moment where a human reads what the previous session claimed before more work is
-built on top of it, and if a handoff is subtly wrong that is exactly how the
-error compounds unattended. The key is kept so an existing config does not break;
-setting it to `true` changes nothing.
+### Auto-resume is off by default
+
+`context.autoResume` opens the next `SessionStart` already holding the last
+handoff, and I'd leave it off. It is implemented as `additionalContext`, not
+`initialUserMessage` — `initialUserMessage` is confirmed only for
+non-interactive `-p` invocations, and could not be proven to behave the same
+way in an interactive session, so the safer, universally-confirmed field was
+used instead. That means enabling it puts the handoff in view at the start of
+the next session; **it does not make the session start working on its own.**
+A human still reads the note and gives the first turn — which is the one
+moment where a subtly wrong handoff gets caught before more work is built on
+top of it.
 
 ### Housekeeping
 
@@ -1180,6 +1202,32 @@ Every added role costs a full context load plus the `CLAUDE.md` hierarchy on eve
 
 A scaling review that concludes "this is the right size" is a successful review.
 
+### Onboarding and offboarding a role
+
+```
+/crew:pm onboard <role>
+/crew:pm offboard <role>
+```
+
+Growing the crew is a decision, not a command that just runs: `/crew:pm
+onboard <role>` names the specific defect class the role closes and confirms
+`.crew/metrics.md` actually supports adding it, then stops and asks yes/no
+before touching `.crew/config.json` or recomputing `tier`.
+
+Offboarding is the same shape in reverse, and checks a precondition first: the
+role has to actually be on the crew. `/crew:pm offboard <role>` reads `roles`
+from `crew_state.py`'s output before doing anything else — running the
+procedure for a role that was never active would append a real `offboarded
+<role>` line to `.crew/metrics.md` for coverage that never existed, and that
+file is what `/crew:scale` reads to decide whether the crew is catching
+anything. If the role is on the crew, it walks the removal, then states —
+out loud, every time — which failure mode the removal leaves uncovered. That
+sentence is the point of the command, not a courtesy.
+
+Neither direction ever changes `config.json` on its own. Both need your
+explicit yes, no matter how obvious the recommendation looks — see the
+`crew:pm` agent's authority rule below.
+
 ---
 
 ## 23. Promotion: development to qa to production
@@ -1305,6 +1353,10 @@ Most legacy repos have a deploy script and no post-deploy proof at all. Build it
 | `/crew:survey [area]` | Research gaps, produce ranked findings with options |
 | `/crew:scale` | Evidence-based crew sizing |
 | `/crew:jira-sync <KEY> [--push]` | Sync one issue with the local cache |
+| `/crew:pm [onboard\|offboard <role>]` | Crew-manager status, or add/remove a role — see §22 |
+| `/crew:upgrade [--force]` | Bring a pre-schema-2 (`v1`) setup forward — see §11 |
+
+18 commands.
 
 ### Agents
 
@@ -1319,18 +1371,38 @@ Most legacy repos have a deploy script and no post-deploy proof at all. Build it
 | `planner` | read-only | 2 | Design second opinion from an abstracted brief |
 | `dba` | read-only | 2 | Migrations, locks, online safety |
 | `docs-writer` | read/write | 2 | Architecture and data flow from real code |
+| `pm` | read-only (no `Write`) | — | Heavy crew-management analysis in its own context; report-and-recommend only, never applies a change |
+
+10 agents. `pm` sits outside the tier ladder — it is not sized in or out by `/crew:scale`, it is invoked directly by `/crew:pm` when the analysis (correlating the whole metrics history, auditing every codemap anchor, building a tier-change evidence chain) would cost more context in the main session than the answer is worth.
 
 ### Hooks
 
-| Hook | Event | Behavior |
+Eight scripts across five events, each with a `.sh` and a `.ps1` twin
+registered on its own matcher or event — 16 entries total.
+
+| Script | Event | Behavior |
 |---|---|---|
-| `guard.sh` | `PreToolUse` on `Bash\|PowerShell` | Blocks `terraform apply`/`destroy`, destructive DDL, force push, hard reset, prod-targeted commands, and any command that would print a secret value into the transcript |
-| `promote-gate.sh` | `PreToolUse` on `Bash\|PowerShell` | Refuses a declared `deploy` command unless the upstream environment has an all-pass row for **this sha**, the rollback runbook is verified inside 90 days, `requireHuman` is approved, and the tree is clean |
-| `verify-gate.sh` | `Stop` | Runs the checks the changed paths map to; fails the turn on red, on a changed path with no rule, or on a deploy that recorded no promotion row |
-| `context-watch.sh` | `Stop` | Estimates context use; asks for a handoff once per session |
-| `handoff-write.sh` | `PreCompact` | Snapshots the transcript, writes a skeleton handoff |
-| `handoff-read.sh` | `SessionStart` | Injects the handoff after clear, compact, or resume |
-| `notify.sh` | `Notification`, plus called by commands | Outbound one-line message to Teams or Telegram. Never reads. |
+| `guard.sh` / `guard.ps1` | `PreToolUse` on Bash / PowerShell | Blocks `terraform apply`/`destroy`, destructive DDL, force push, hard reset, prod-targeted commands, and any command that would print a secret value into the transcript |
+| `promote-gate.sh` / `.ps1` | `PreToolUse` on Bash / PowerShell | Refuses a declared `deploy` command unless the upstream environment has an all-pass row for **this sha**, the rollback runbook is verified inside 90 days, `requireHuman` is approved, and the tree is clean |
+| `handoff-read.sh` / `.ps1` | `SessionStart` | Injects the handoff after clear, compact, or resume |
+| `pm-brief.sh` / `.ps1` | `SessionStart` | Runs `crew_state.py`, prints the prioritized PM brief (triggers, health, knowledge, graph freshness) — report-only, changes nothing |
+| `verify-gate.sh` / `.ps1` | `Stop` | Runs the checks the changed paths map to; fails the turn on red, on a changed path with no rule, or on a deploy that recorded no promotion row |
+| `context-watch.sh` / `.ps1` | `Stop` | Estimates context use; asks for a handoff once per session, or instructs a wrap-up if `context.autoWrapUp` is on |
+| `handoff-write.sh` / `.ps1` | `PreCompact` | Snapshots the transcript, writes a skeleton handoff |
+| `notify.sh` / `.ps1` | `Notification`, plus called by commands | Outbound one-line message to Teams or Telegram. Never reads. |
+
+Both flavours are registered **on every event, on purpose** — not because
+each fires everywhere, but because `hooks.json` cannot know which shell a
+given machine has. On Windows, the `.sh` side can fail outright depending on
+which `bash` resolves first on `PATH`: measured, Git for Windows' `usr/bin/bash.exe`
+exits 127 on these scripts where its own `bin/bash.exe` runs them fine. The
+`.ps1` twin — registered with a `shell: powershell` field, which Claude Code
+documents and does read — is what actually gates the machine when that
+happens; one flavour failing there is expected, not a bug. The reverse gap —
+no `bash` at all — is why the pairing exists in the first place. What is
+**not** verified is real hook-runner behavior with no `pwsh` on Linux; that
+combination was never exercised, so treat it as unconfirmed rather than
+assumed fine.
 
 **Every hook is inert until a repository has `.crew/config.json`.** Installing the
 plugin arms nothing; `/crew:init` in a given repo is what turns the gates on there.
@@ -1355,7 +1427,7 @@ python hooks/scripts/_test/validate-prompts.py    # 91 checks - command/agent st
 | `setup-walkthrough.sh` | Phases 0-8 scripts run against a real mixed-stack repo and produce their artifacts | that a human would like the result |
 | `validate-prompts.py` | Frontmatter parses, tools are real, referenced agents and paths exist, read-only agents hold no write tools, commands that spawn subagents are permitted to | **whether the prompts produce good work** |
 
-That last gap is real and no test closes it. The 16 commands and 9 agents are
+That last gap is real and no test closes it. The 18 commands and 10 agents are
 instructions to a model; only a live session running a real ticket exercises
 them. Setup Phase 7 exists for exactly that, and it is the one thing here that
 has to be done by hand.
@@ -1377,21 +1449,21 @@ add the case that proves it — and break it once to confirm the case can fail.
 
 ### How the Windows half works
 
-Each hook is registered **once**, as bash. Only the `PreToolUse` guard branches, and it branches on **which tool Claude used**, not on which OS is running:
+Every event is registered **twice** in `hooks.json`, once per flavour, with `shell: powershell` on the PowerShell side — a field Claude Code documents and does read; setting it runs that entry via PowerShell on Windows without needing `CLAUDE_CODE_USE_POWERSHELL_TOOL`, since hooks spawn the interpreter directly. `guard.sh`/`guard.ps1` and `promote-gate.sh`/`promote-gate.ps1` are additionally registered on separate `Bash` / `PowerShell` matchers at `PreToolUse`, so the branch is **which tool Claude used**, not which OS is running:
 
-```bash
-INPUT=$(cat)
-crew_tool_dispatch guard.ps1 "$INPUT"   # tool_name == PowerShell -> PowerShell rules
+```json
+{ "matcher": "Bash",       "hooks": [{ "type": "command", "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/guard.sh", "timeout": 10 }] },
+{ "matcher": "PowerShell", "hooks": [{ "type": "command", "shell": "powershell", "command": "& '${CLAUDE_PLUGIN_ROOT}/hooks/scripts/guard.ps1'", "timeout": 10 }] }
 ```
 
-That distinction is load-bearing. A `Bash` tool call is bash syntax *even on Windows*, so judging it with PowerShell rules gets it backwards in both directions: it blocks the correct capture form (`DB_PASS=$(...)`) and misses the wrong one. Branch on the tool and each command is judged by the rules of the language it is written in.
+That distinction is load-bearing. A `Bash` tool call is bash syntax *even on Windows*, so judging it with PowerShell rules gets it backwards in both directions: it blocks the correct capture form (`DB_PASS=$(...)`) and misses the wrong one. Branch on the tool and each command is judged by the rules of the language it is written in. (`hooks/scripts/_common.sh` also ships a `crew_tool_dispatch` helper for judging a command from inside a single bash-registered script — a valid alternative shape — but it is unused here in favour of the explicit dual-matcher registration above.)
 
-The other five hooks judge no command and have no branch. They are reached through `bash`, so if they run at all bash is present and can do the work; a `.ps1` twin would be unreachable code. `verify-gate.ps1`, `context-watch.ps1`, `handoff-read.ps1` and `handoff-write.ps1` are kept for anyone wiring crew's hooks into a PowerShell-only harness by hand, and are not registered by `hooks.json`.
+The other six hooks judge no command, so both flavours are simply wired to their event with no branch: `verify-gate.sh`/`.ps1`, `context-watch.sh`/`.ps1`, `handoff-read.sh`/`.ps1`, `handoff-write.sh`/`.ps1`, `pm-brief.sh`/`.ps1`, and `notify.sh`/`.ps1` are all registered in `hooks.json`, one entry per flavour per event.
 
 Two things worth knowing:
 
-- **There is no `shell: powershell` field.** Claude Code does not read one. A hook registered with it looks configured and never runs. Versions of this plugin before 0.2.0 did exactly that, and on Windows the command guard blocked nothing while the `Stop` gate ran nothing.
-- **`bash` must be on `PATH` on Windows.** Git Bash satisfies it. The bash script is the entry point even when the PowerShell twin does the work, so with no bash at all no hook fires.
+- **`hooks.json` has no way to know in advance which shell a given machine actually has**, so both flavours are wired and one is expected to fail — that is by design, not a bug. On Windows this is measured, not hypothetical: Git for Windows ships two `bash.exe` binaries, and `usr/bin/bash.exe` exits 127 running these scripts where `bin/bash.exe` runs them fine, so which one resolves first on `PATH` decides whether the `.sh` side works at all. The `.ps1` twin is what actually gates the machine when it doesn't.
+- **A bare `command` string with no `shell` field still goes to Git Bash on Windows** (PowerShell only when Git Bash isn't installed), not to whatever `bash` a non-MSYS parent process might resolve to. Versions of this plugin before 0.2.0 relied on the `.sh` side deferring to a `.ps1` twin that was never actually invoked, so on Windows the command guard blocked nothing and the `Stop` gate ran nothing — fixed by registering both flavours explicitly instead of assuming one would pick up the other's slack.
 
 `python3` is not required. Every script resolves `python3`, then `python`, then `py`, and `guard.sh` prefers `jq` when present. With none available the hook says so on stderr and exits 0 — loudly inert rather than silently passing.
 
@@ -1436,7 +1508,8 @@ Two things worth knowing:
 | `bad interpreter: ...^M` | CRLF line endings. Add `.gitattributes` with `* text=auto eol=lf` and `git add --renormalize .`. |
 | Tests connect fine on Windows, time out in WSL | WSL2 — the service is on the Windows host, not `localhost`. Use the gateway IP from `.crew/config.json`. |
 | Smoke suite takes minutes instead of seconds | Repo is on `/mnt/c`. Re-clone inside WSL. |
-| Hooks do not fire on Windows | Native Windows uses the `.ps1` hooks via the `PowerShell` tool. A bash hook path will not resolve. |
+| One hook flavour errors, the other runs | Expected on a matcher-less event (`SessionStart`, `PreCompact`, `Notification`, `Stop`) — both `.sh` and `.ps1` are registered unconditionally there, and only one shell is actually on the machine. Check which one succeeded before assuming a real failure. |
+| No hook fires at all on Windows | No `bash` and no PowerShell resolve, or the wrong `bash.exe` is first on `PATH` — Git for Windows ships two, and only `bin/bash.exe` runs these scripts reliably. |
 | Code map contradicts the code | The map is stale. Code wins. Re-run `/crew:onboard --refresh <area>` and delete what cannot be verified. |
 
 ---
@@ -1458,6 +1531,15 @@ requests, and selection gets worse as more broadly-scoped skills load. If
 `crew-setup` stops firing on "set up crew," disable this for one session and see
 whether the problem goes away. `BUNDLING-NOTE.md` beside it has a narrowed
 description you can swap in that keeps the capability and removes the collision.
+
+This is now checked for you, not just documented. The `repo-plugins` install
+step detects a **separate**, globally-installed copy at
+`~/.claude/skills/find-skills` — the one `find-skills` (menu item 5) or
+`npx skills add vercel-labs/skills --skill find-skills` puts there — and warns
+that two active copies can both trigger on the same prompt. The check is
+detection-only: it never deletes anything, it just prints the collision and
+the manual `rm -rf` to remove the global copy if you want crew's vendored one
+to be the only one loaded.
 
 ---
 

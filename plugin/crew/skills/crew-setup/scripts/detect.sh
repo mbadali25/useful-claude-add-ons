@@ -39,3 +39,4 @@ say "playwright:" "$([ -f playwright.config.js ] || [ -f playwright.config.ts ] 
 say "mermaid:" "$(command -v mmdc >/dev/null && echo 'mmdc found' || echo 'npm i -g @mermaid-js/mermaid-cli')"
 say "cloud:" "$(command -v aws >/dev/null && printf 'aws '; command -v az >/dev/null && printf 'az '; command -v uvx >/dev/null && printf 'uvx '; echo)"
 say "branch:" "$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo 'not a git repo')"
+say "find-skills:" "$([ -d "$HOME/.claude/skills/find-skills" ] && echo 'installed globally - see crew-setup, its trigger competes with crew skills' || echo 'not global')"

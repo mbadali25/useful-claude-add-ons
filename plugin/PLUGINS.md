@@ -13,9 +13,9 @@ Read the **Hooks** section of any plugin before installing it. Commands and agen
 | **Source** | [`crew/`](crew) |
 | **Version** | 0.3.0 |
 | **Install** | `claude plugin install crew@useful-claude-add-ons` |
-| **Menu item** | 21, `repo-plugins` — **off by default** |
-| **Registers** | 9 agents, 16 commands, 14 skills, 7 hooks across 5 events |
-| **Upstream guide** | [`crew/README.md`](crew/README.md) — 20 sections, the authoritative version |
+| **Menu item** | 21, `repo-plugins` — **off by default**. Menu item 22, `graphify`, is a separate, also-off-by-default install of the `graphify` CLI this plugin's graph feature depends on — see **The code graph** below. |
+| **Registers** | 10 agents, 18 commands, 16 skills, 16 hook entries (8 scripts × `.sh`/`.ps1`) across 5 events |
+| **Upstream guide** | [`crew/README.md`](crew/README.md) — 25 sections, the authoritative version |
 
 Built for the awkward case: several repositories, mixed stacks, legacy code, and almost no test coverage. The workflow is file-backed tickets, one implementation session, an independent reviewer, and deterministic gates that block on failure rather than offering an opinion.
 
@@ -23,19 +23,24 @@ Its central design claim is worth repeating, because it is the opposite of how m
 
 ### Hooks — the part that runs without being asked
 
-Seven hook entries across five events. **These are why menu item 21 is unticked by default.**
+Eight scripts across five events, each shipped as a `.sh`/`.ps1` pair
+registered on its own matcher or event — 16 hook entries. **These are why
+menu item 21 is unticked by default.**
 
 | Script | Event | What it does |
 |---|---|---|
-| `guard.sh` | `PreToolUse` on `Bash\|PowerShell` | Blocks `terraform apply`/`destroy`, destructive DDL, force push, hard reset, prod-targeted commands, and any command that would print a secret value into the transcript |
-| `promote-gate.sh` | `PreToolUse` on `Bash\|PowerShell` | Refuses a declared `deploy` command unless the `requires` environment has an all-pass row for this sha, the rollback runbook is verified inside 90 days, `requireHuman` is approved, and the tree is clean |
-| `verify-gate.sh` | `Stop` | Runs the checks the changed paths map to; **fails the turn** on red, on a changed path with no rule, or on a deploy that wrote no promotion row. Honours `stop_hook_active`, so a red check cannot pin the session |
-| `context-watch.sh` | `Stop` | Estimates context use and asks for a handoff once per session |
-| `handoff-write.sh` | `PreCompact` | Snapshots the transcript and writes a skeleton handoff before compaction discards it |
-| `handoff-read.sh` | `SessionStart` | Injects that handoff back after a clear, compact, or resume |
-| `notify.sh` | `Notification`, and called directly by commands | One outbound line to Teams or Telegram. Never reads, never accepts instructions |
+| `guard.sh` / `.ps1` | `PreToolUse` on the Bash / PowerShell tool | Blocks `terraform apply`/`destroy`, destructive DDL, force push, hard reset, prod-targeted commands, and any command that would print a secret value into the transcript |
+| `promote-gate.sh` / `.ps1` | `PreToolUse` on the Bash / PowerShell tool | Refuses a declared `deploy` command unless the `requires` environment has an all-pass row for this sha, the rollback runbook is verified inside 90 days, `requireHuman` is approved, and the tree is clean |
+| `handoff-read.sh` / `.ps1` | `SessionStart` | Injects the prior handoff back after a clear, compact, or resume |
+| `pm-brief.sh` / `.ps1` | `SessionStart` | Runs `crew_state.py` and prints a prioritized brief — schema currency, a stale or missing code graph, a pending handoff, review health, ticket sizing. Report-only: it never writes anything |
+| `verify-gate.sh` / `.ps1` | `Stop` | Runs the checks the changed paths map to; **fails the turn** on red, on a changed path with no rule, or on a deploy that wrote no promotion row. Honours `stop_hook_active`, so a red check cannot pin the session |
+| `context-watch.sh` / `.ps1` | `Stop` | Estimates context use and asks for a handoff once per session; instructs a full wrap-up instead if `context.autoWrapUp` is `true` |
+| `handoff-write.sh` / `.ps1` | `PreCompact` | Snapshots the transcript and writes a skeleton handoff before compaction discards it |
+| `notify.sh` / `.ps1` | `Notification`, and called directly by commands | One outbound line to Teams or Telegram. Never reads, never accepts instructions |
 
-Each of the six is registered **once**, as bash. Only `guard.sh` branches, via `crew_tool_dispatch` in `hooks/scripts/_common.sh`, and it branches on `tool_name` — a `PowerShell` tool call goes to `guard.ps1`, a `Bash` tool call is judged by bash rules. Branching on the OS instead would judge bash commands with PowerShell rules on Windows, which blocks the correct secret-capture form and misses the wrong one. The other five hooks judge no command, are reached through `bash`, and have no branch. There is no `shell: powershell` anywhere: it is not a field Claude Code reads, and a hook registered with it is silently inert.
+**This is what "the moment the plugin is enabled" means in practice: a `SessionStart` hook now fires on every session's `startup`, unconditionally, in a repository with `.crew/config.json` present.** `handoff-read` and `pm-brief` both run before you type anything — the PM brief in particular is new in 0.3.0 and is the first thing a reader needs to know exists, because it means enabling the plugin changes what the very first turn of every session looks like, not just what later tool calls are allowed to do.
+
+Every event is registered twice, once per flavour, each with the matching `shell` field on the PowerShell side — a `shell: powershell` entry is documented and Claude Code does read it, running that entry via PowerShell without needing `CLAUDE_CODE_USE_POWERSHELL_TOOL`. `guard.sh` / `guard.ps1` and `promote-gate.sh` / `promote-gate.ps1` additionally branch on `tool_name` at the `PreToolUse` matcher — a `PowerShell` tool call goes to the `.ps1`, a `Bash` tool call is judged by the `.sh` — because that is which language the command is actually written in, not which OS is running. Branching on the OS instead would judge bash commands with PowerShell rules on Windows, which blocks the correct secret-capture form and misses the wrong one. The other hooks judge no command, so both flavours are simply wired to their event with no branch. `hooks/scripts/_common.sh` also ships a `crew_tool_dispatch` helper for judging a command from inside a single bash-registered script; it is unused here in favour of the explicit dual-matcher registration above, but stays available for a hook that wants that shape instead.
 
 A hook cannot be argued out of blocking `terraform apply`; an agent can. That is the entire value, and also the reason a bootstrap run should not install one without the box being ticked.
 
@@ -45,11 +50,29 @@ Three committed suites, all sabotage-tested: `hooks/scripts/_test/run-tests.sh` 
 
 **The `Stop` gate is additionally inert until you build its map.** `verify-gate.sh` reads `.crew/verify.json`; with no such file there is nothing to run. `/crew:verify` builds it. Set `verifyGate: false` in `.crew/config.json` to disable the gate without uninstalling.
 
-**Windows dispatch — fixed in 0.2.0.** Previously only `PreToolUse` had a Windows branch, and it was registered with a `shell: powershell` field that Claude Code does not read. `guard.sh` and `verify-gate.sh` additionally exited 0 on MSYS/MINGW to "defer" to twins nothing invoked, so on Windows the command guard blocked nothing and the `Stop` gate ran nothing — which reads as "the gate passed" rather than "the gate never ran". The guard now dispatches on `tool_name` from inside the bash script, the other hooks simply do their work in bash, and `handoff-write.ps1` has been written. The remaining requirement on Windows is that **`bash` is on `PATH`** — Git Bash satisfies it. Without any bash at all, no hook fires; the plugin does not pretend otherwise.
+**Windows — fixed in 0.2.0, corrected in 0.3.0.** In 0.2.0 `guard.sh` and `verify-gate.sh` exited 0 on MSYS/MINGW to "defer" to `.ps1` twins that nothing ever invoked, so on Windows the command guard blocked nothing and the `Stop` gate ran nothing — which reads as "the gate passed" rather than "the gate never ran". 0.3.0 registers **both flavours on every matcher-less event on purpose**, not because each one fires — `hooks.json` has no way to know in advance which shell a given machine actually has, so both are wired and one is expected to fail; `PreToolUse` is the exception, where `guard.sh`/`guard.ps1` and `promote-gate.sh`/`promote-gate.ps1` are registered on separate `Bash` and `PowerShell` matchers instead, so the branch is by *which tool Claude used*, not by OS. The PowerShell side carries `shell: powershell`, a field Claude Code documents and reads — it runs that entry via PowerShell without needing `CLAUDE_CODE_USE_POWERSHELL_TOOL`. What is not configurable is the *default* interpreter for a bare `command` string with no `shell` field: that goes to `sh -c` on macOS/Linux and to **Git Bash** on Windows (PowerShell only when Git Bash isn't installed) — so a `bash` resolved from some non-MSYS parent process is not necessarily what runs it. On Windows this is measured, not hypothetical: Git for Windows ships two `bash.exe` binaries, and `usr/bin/bash.exe` exits 127 running these scripts where `bin/bash.exe` runs them fine, so which one resolves first on `PATH` decides whether the `.sh` side works at all; on a machine where a non-MSYS parent process resolved `bash` to the WSL launcher, the `.sh` side exited 127 on every script while the `.ps1` twin exited 0. **One flavour failing is expected behavior, not a bug** — it is not evidence the hook itself didn't run. What is genuinely unverified is the opposite combination, real hook-runner behavior with **no `pwsh` on Linux**; that was never exercised, so treat it as unconfirmed rather than assumed fine. The remaining requirement on Windows is that Git Bash (or WSL) is on `PATH` for the `.sh` half to have any chance; without any bash at all, that half never fires, and the plugin does not pretend otherwise.
 
 **`python3` is no longer required.** The scripts resolve `python3`, then `python`, then `py`, and `guard.sh` prefers `jq` when it is present. With none of them available the affected hook says so on stderr and exits 0 rather than failing open in silence.
 
-### Commands — 16, all explicit
+**`context.autoWrapUp` and `context.autoResume`** (both default `false`) change what happens around the handoff, not whether it happens:
+- `autoWrapUp` changes what `context-watch` tells the session to do at `warnAt` — reach a stopping point and write the handoff, instead of just asking for one. **The `/clear` itself stays manual regardless of this setting, because no hook can trigger one** — a hook runs as a child process and cannot reset its parent's conversation. Without stating that plainly, the feature reads as broken (why doesn't it actually clear?) rather than as what it is: bounded by a real constraint.
+- `autoResume` makes the next `SessionStart` open already holding the last handoff, emitted as `additionalContext` rather than `initialUserMessage` — the latter is confirmed only for non-interactive `-p` invocations, and could not be confirmed to behave the same way in an interactive session, so the safer field was used. That means the session opens **with the handoff in view**; it does not start working unattended. A human still gives the first turn.
+
+### The code graph
+
+`crew-graph` (below) wraps the third-party `graphify` CLI to build a code
+graph at `graph.out` (default `graphify-out/graph.json`, configurable in
+`.crew/config.json`), and `/crew:upgrade` (next) uses it to bring an older
+setup forward. Neither is a hook — nothing here runs on its own — but both assume
+`graphify` is on `PATH`, which is a **separate, off-by-default install**:
+menu item 22 (`uv tool install graphifyy` — the PyPI package is `graphifyy`,
+double-y; the CLI it installs is `graphify`). A keyless build needs both
+`--no-viz` and `--code-only`: without `--code-only`, `graphify` errors on any
+repository containing docs, rather than skipping them. Exporting the graph
+into Obsidian is gated on `graph.obsidian.confirmed` being set explicitly by
+the user in `.crew/config.json`; `/crew:upgrade` never sets that flag itself.
+
+### Commands — 18, all explicit
 
 | Command | Purpose |
 |---|---|
@@ -69,10 +92,12 @@ Three committed suites, all sabotage-tested: `hooks/scripts/_test/run-tests.sh` 
 | `/crew:handoff` | Write the handoff note before clearing |
 | `/crew:diagram <type>` | Architecture, data-flow, process, and sequence diagrams |
 | `/crew:jira-sync <KEY> [--push]` | Sync one issue with the local cache |
+| `/crew:pm [onboard\|offboard <role>]` | Talk to the crew's manager: status with no argument, or add/remove a role with explicit yes/no confirmation before either touches `.crew/config.json` |
+| `/crew:upgrade [--force]` | Bring a pre-schema-2 (`v1`) setup forward: backs up the codemap first, builds the graph if missing, reconciles derived facts per subsystem, and reports contradictions and stale-on-purpose anchors rather than resolving them |
 
 First run in a new repository: `/crew:init`, then `/crew:onboard`, then `/crew:verify`.
 
-### Agents — 9, tiered
+### Agents — 10, tiered plus one report-only
 
 Tier 0 installs with everyone; tiers 1 and 2 are added as the work demands. `/crew:scale` decides from evidence rather than taste.
 
@@ -87,10 +112,11 @@ Tier 0 installs with everyone; tiers 1 and 2 are added as the work demands. `/cr
 | `planner` | read-only | 2 | Design second opinion from an abstracted brief |
 | `dba` | read-only | 2 | Migrations, locks, online safety |
 | `docs-writer` | read/write | 2 | Architecture and data flow from real code |
+| `pm` | Read, Bash, Grep, Glob — **no `Write`** | — (outside the ladder) | Heavy crew-management analysis in its own context: correlates defect classes across `.crew/metrics.md`, audits codemap anchors, assembles tier-change evidence. Report-and-recommend only |
 
-`explorer`, `qa-reviewer`, `security`, `analyst`, `planner`, and `dba` are read-only — a restricted tool set is one of the three things that earns a role its place.
+`explorer`, `qa-reviewer`, `security`, `analyst`, `planner`, `dba`, and `pm` are read-only — a restricted tool set is one of the three things that earns a role its place. `pm` is deliberately more restricted than that: it holds no `Write` tool at all, so in practice it writes nothing — not `config.json`, not `metrics.md`, not even a report file. Its final message is the report. Role and tier changes always need the user's explicit yes in the session that invoked it; the agent itself is structurally incapable of applying one.
 
-### Bundled skills — 14
+### Bundled skills — 16
 
 These are ordinary skills, scoped to `crew`'s own workflow. They work on every Claude surface, including chat, unlike the hooks and agents.
 
@@ -109,6 +135,8 @@ These are ordinary skills, scoped to `crew`'s own workflow. They work on every C
 | `crew-notify` | Teams and Telegram payload discipline |
 | `crew-cloud` | AWS and Azure MCP |
 | `crew-scaling` | Evidence for growing or shrinking the crew |
+| `crew-pm` | Field meanings and the report-only authority rule behind `/crew:pm` and the `pm-brief` hook |
+| `crew-graph` | Building and querying the `graphify` code graph, the reconcile shape `/crew:upgrade` reads, and the Obsidian export consent gate |
 | `find-skills` | Discovering and installing other skills |
 
 ### What it creates in a repository
@@ -137,7 +165,7 @@ Three committed suites under `plugin/crew/hooks/scripts/_test/`, all sabotage-te
 | `setup-walkthrough.sh` | 32 | Builds a mixed-stack scratch repo and runs every script phases 0-8 invoke |
 | `validate-prompts.py` | 91 | Frontmatter, tool names, referenced agents and paths, read-only agents holding no write tools |
 
-What none of them proves is whether the prompts produce good work. The 16 commands and 9 agents are instructions to a model; only a live session on a real ticket exercises those, which is what setup phase 7 is for.
+What none of them proves is whether the prompts produce good work. The 18 commands and 10 agents are instructions to a model; only a live session on a real ticket exercises those, which is what setup phase 7 is for.
 
 ### Optional integrations
 

@@ -55,6 +55,14 @@ scripts with a misleading error.
 
 Report what it found and what you propose to create. Wait for approval.
 
+**Global `find-skills`.** If `detect.sh` reports one installed at
+`~/.claude/skills/find-skills`, say so by name: its trigger fires on almost any
+"how do I" question, which competes with `crew-setup` and `crew-verification`
+for ordinary requests in this session. Offer to remove it. Never delete it
+yourself, with or without asking — it is the user's own global configuration,
+and a setup skill that quietly reaches into `~/.claude` is worse than the
+collision it fixes.
+
 ## 2. Ask exactly three things
 
 Do not ask more. Everything else has a sane default and can change later.
@@ -84,6 +92,7 @@ CLAUDE.md                  # created if absent; if present, sections APPENDED, n
 `config.json`:
 ```json
 {
+  "schema": 2,
   "tier": 0,
   "roles": ["explorer", "qa-reviewer"],
   "qa": { "provider": "auto" },
@@ -94,9 +103,16 @@ CLAUDE.md                  # created if absent; if present, sections APPENDED, n
   "verifyGate": true,
   "context": { "enabled": true, "warnAt": 0.8, "budgetTokens": null, "handoffPath": ".work/HANDOFF.md", "keepTranscripts": 5 },
   "notify": { "provider": "none", "urlEnv": null, "tokenEnv": null, "chatId": null, "events": ["phase", "gate", "waiting"] },
-  "platform": { "os": null, "wsl": null, "shell": null, "windowsHostIp": null }
+  "platform": { "os": null, "wsl": null, "shell": null, "windowsHostIp": null },
+  "pm": { "enabled": true, "mode": "adaptive", "quietLines": 8, "maxLines": 40, "authority": "report-only" },
+  "graph": { "enabled": true, "tool": "graphify", "out": "graphify-out", "mode": "code-only", "commitHook": false, "obsidian": { "enabled": false, "dir": null, "confirmed": false } }
 }
 ```
+
+`schema: 2` — this repo is born current. It never trips `upgradeNeeded`, which fires only
+when a config predates the `pm` and `graph` blocks. The `pm` and `graph` blocks above must
+match `crew_state.PM_DEFAULTS` and `crew_upgrade.GRAPH_BLOCK` exactly — those modules are
+the source of truth; this template is a copy of them, not the other way around.
 `qa.provider`: `auto` uses Codex when present and falls back to Claude, announcing
 which ran. Use `codex` to hard-fail instead of falling back, `claude` to force it.
 
@@ -144,9 +160,12 @@ Act on what it found, and say why:
 
 ## 3c. Gitignore secrets before any exist
 
-Append `.env`, `.env.*`, `!.env.example`, and `.crew/*.local` to `.gitignore`
-during setup. Doing this before the first secret exists is the only time it is
-free.
+Append `.env`, `.env.*`, `!.env.example`, `.crew/*.local`, `.crew/.hook-*`, and
+`.crew/transcripts/` to `.gitignore` during setup. Doing this before the first
+secret exists is the only time it is free. `.crew/.hook-*` is the once-per-session
+claim marker (see `hooks/scripts/hook_once.py`) — a repo that commits `.crew/`,
+which crew's own design encourages, collects one of these per claimed hook per
+session and shows them in every `git status` if they are not ignored.
 
 ## 4. Write the repo CLAUDE.md
 

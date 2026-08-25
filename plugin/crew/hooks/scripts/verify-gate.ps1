@@ -1,5 +1,11 @@
 # PowerShell end-of-turn gate for native Windows. Mirrors verify-gate.sh.
 # Runs the checks the CHANGED FILES require, from .crew/verify.json. Exit 2 = not done.
+#
+# No hook_once claim here on purpose: Stop fires once per TURN against a
+# stable session id, so a session-scoped claim taken on turn 1 would suppress
+# every later turn's gate -- a 600-second gate that silently never runs again
+# reads as "the work passed", which is worse than the double-run a claim
+# would prevent. Both flavours run every Stop; that is correct here.
 $raw = [Console]::In.ReadToEnd()
 
 # Claude Code re-fires Stop after a blocking Stop hook. Without this check the
@@ -46,7 +52,13 @@ function Test-CrewPath([string]$Path, [string]$Pattern) {
   return $false
 }
 
-$vm = Get-Content .crew/verify.json -Raw | ConvertFrom-Json
+try {
+  $vm = Get-Content .crew/verify.json -Raw | ConvertFrom-Json -ErrorAction Stop
+} catch {
+  [Console]::Error.WriteLine("VERIFY GATE: .crew/verify.json could not be parsed. Verification did NOT run. Work is not complete.")
+  [Console]::Error.WriteLine($_.Exception.Message)
+  exit 2
+}
 $cmds = [System.Collections.ArrayList]@()
 $unmapped = [System.Collections.ArrayList]@()
 
