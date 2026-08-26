@@ -81,6 +81,20 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`crew` 0.5.5 - the Stop hook's verify gate ran twice on any machine with
+  both shells installed.** `hooks.json` registers verify-gate.sh AND
+  verify-gate.ps1 for every Stop so a single-shell machine always gets
+  exactly one gate run - the whole reason both are registered. Most Windows
+  dev boxes have both, since Git for Windows ships bash.exe alongside native
+  PowerShell, so both ran the full smoke/verify gate on every turn: duplicate
+  work up to the 600s hook timeout, and two processes racing on the same
+  scratch files (the tf_validate JSON race fixed separately). verify-gate.ps1
+  now reuses its own `Resolve-CrewBash` resolver (ANEWINF-756) before doing
+  any work - when it finds a real bash.exe (not the WSL launcher or the
+  WindowsApps shim), it defers entirely to verify-gate.sh instead of
+  redoing the same checks. A machine with only PowerShell (Resolve-CrewBash
+  finds nothing and falls back to the literal `bash`) is unaffected and
+  still runs the gate itself.
 - **`crew` 0.5.4 - ANEWINF-758: the `plugin/crew` pytest suite was
   nondeterministic, 87-97 of ~182 tests passing on identical code across
   consecutive runs.** Every `git` `subprocess.run` call in the suite - and

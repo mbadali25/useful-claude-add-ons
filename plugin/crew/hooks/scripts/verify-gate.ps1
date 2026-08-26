@@ -5,7 +5,14 @@
 # stable session id, so a session-scoped claim taken on turn 1 would suppress
 # every later turn's gate -- a 600-second gate that silently never runs again
 # reads as "the work passed", which is worse than the double-run a claim
-# would prevent. Both flavours run every Stop; that is correct here.
+# would prevent. Both flavours are registered for every Stop so a
+# single-shell machine always gets exactly one; on a machine with both
+# shells they race for the same turn's gate. Rather than statically deferring
+# to one flavour (which would leave this script permanently unreachable on
+# any Windows box with Git Bash installed - nearly all of them - and its
+# incident/config lane untestable), a short-lived per-turn lock lets
+# whichever process gets there first do the real work while the other backs
+# off; see the lock right before the expensive part below.
 param(
   # Prints the bash path Resolve-CrewBash would use and exits 0 without
   # touching stdin, .crew/, or running any check. This script's only
@@ -155,6 +162,44 @@ $changed += (git diff --name-only HEAD 2>$null)
 $changed += (git ls-files --others --exclude-standard 2>$null)
 $changed = $changed | Where-Object { $_ -and $_.Trim() }
 if (-not $changed) { exit 0 }
+
+# LOCK: mirrors verify-gate.sh. From here on is the real (possibly minutes-
+# long) smoke/verify work, and both scripts fire for the same Stop event;
+# whichever gets here first claims the lock (New-Item -Directory is atomic
+# even across a bash/PowerShell pair), the other backs off. No cleanup on
+# exit: the lock's own PID dies with this process, so the next Stop event
+# finds a dead PID and reclaims it immediately.
+$lock = ".crew/.verify-gate.lock"
+if (-not (Test-Path ".crew")) { New-Item -ItemType Directory -Path ".crew" -Force -ErrorAction SilentlyContinue | Out-Null }
+$acquired = $false
+try {
+  New-Item -ItemType Directory -Path $lock -ErrorAction Stop | Out-Null
+  $acquired = $true
+} catch {
+  $stale = $false
+  $pidFile = Join-Path $lock "pid"
+  $holder = if (Test-Path $pidFile) { (Get-Content $pidFile -Raw -ErrorAction SilentlyContinue) } else { $null }
+  if ($holder) {
+    $parts = $holder.Trim() -split ' '
+    $holderPid = $parts[0]
+    $holderEpoch = if ($parts.Count -gt 1) { [long]$parts[1] } else { 0 }
+    $alive = $false
+    try { if (Get-Process -Id $holderPid -ErrorAction Stop) { $alive = $true } } catch { }
+    $age = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() - $holderEpoch
+    if (-not $alive -or $age -gt 700) { $stale = $true }
+  } else {
+    $stale = $true
+  }
+  if (-not $stale) { exit 0 }
+  Remove-Item -Recurse -Force $lock -ErrorAction SilentlyContinue
+  try {
+    New-Item -ItemType Directory -Path $lock -ErrorAction Stop | Out-Null
+    $acquired = $true
+  } catch { exit 0 }
+}
+if ($acquired) {
+  Set-Content -Path (Join-Path $lock "pid") -Value "$PID $([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())" -Encoding utf8 -ErrorAction SilentlyContinue
+}
 
 if (-not (Test-Path .crew/verify.json)) {
   # _verify/ is the canonical home; scripts/smoke.sh is honoured as legacy.

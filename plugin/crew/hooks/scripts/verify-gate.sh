@@ -9,7 +9,11 @@
 # stable session id, so a session-scoped claim taken on turn 1 would suppress
 # every later turn's gate -- a 600-second gate that silently never runs again
 # reads as "the work passed", which is worse than the double-run a claim
-# would prevent. Both flavours run every Stop; that is correct here.
+# would prevent. Both flavours are registered for every Stop so a
+# single-shell machine always gets exactly one; on a machine with both
+# shells they race for the same turn's gate, and a short-lived per-turn lock
+# right before the expensive part lets whichever gets there first do the
+# real work while the other backs off (see LOCK below).
 INPUT=$(cat 2>/dev/null)
 
 # Claude Code re-fires Stop after a blocking Stop hook. Without this check the
@@ -58,6 +62,38 @@ fi
 
 CHANGED=$(git diff --name-only HEAD 2>/dev/null; git ls-files --others --exclude-standard 2>/dev/null)
 [ -z "$CHANGED" ] && exit 0
+
+# LOCK: from here on is the real (possibly minutes-long) smoke/verify work,
+# and both this script and verify-gate.ps1 are firing for the same Stop
+# event. `mkdir` is atomic even across a bash/PowerShell pair on the same
+# filesystem, so whichever of the two gets here first claims the lock; the
+# other backs off (exit 0) instead of redoing the work -- the winner's exit
+# code still governs the turn either way. No cleanup on exit: the lock's own
+# PID dies with this process, so the very next Stop event (this turn's
+# retry, or next turn) finds a dead PID and reclaims it immediately; a lock
+# whose holder is still alive and under 700s old (comfortably above the
+# hook's own 600s timeout) is the one real concurrent case, and that is
+# exactly when backing off is correct.
+LOCK=".crew/.verify-gate.lock"
+mkdir -p .crew 2>/dev/null
+if ! mkdir "$LOCK" 2>/dev/null; then
+  HOLDER=$(cat "$LOCK/pid" 2>/dev/null)
+  HOLDER_PID=${HOLDER%% *}
+  HOLDER_EPOCH=${HOLDER#* }
+  NOW=$(date +%s)
+  STALE=0
+  if [ -z "$HOLDER_PID" ] || ! kill -0 "$HOLDER_PID" 2>/dev/null; then
+    STALE=1
+  elif [ -n "$HOLDER_EPOCH" ] && [ $((NOW - HOLDER_EPOCH)) -gt 700 ] 2>/dev/null; then
+    STALE=1
+  fi
+  if [ "$STALE" -eq 0 ]; then
+    exit 0
+  fi
+  rm -rf "$LOCK" 2>/dev/null
+  mkdir "$LOCK" 2>/dev/null || exit 0
+fi
+echo "$$ $(date +%s)" > "$LOCK/pid" 2>/dev/null
 
 if [ ! -f .crew/verify.json ]; then
   # _verify/ is the canonical home; scripts/smoke.sh is honoured as legacy.
