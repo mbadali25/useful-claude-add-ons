@@ -45,8 +45,15 @@ It can also be imported (`from sophos_client import SophosClient`) when building
 | Auth, whoami, partner/org tenant enumeration | `id.sophos.com`, `/whoami/v1`, `/partner/v1`, `/organization/v1` | `references/auth.md` |
 | Endpoints: list/search, isolate, scan, tamper protection, delete, groups, allowed/blocked items, exclusions | `/endpoint/v1` | `references/endpoint-api.md` |
 | Alerts (list, search, take actions), directory users/groups, admins, roles | `/common/v1` | `references/common-api.md` |
+| **MDR cases and their detections (with MITRE ATT&CK mapping)** | `/cases/v1` | `references/cases-api.md` |
 | SIEM event/alert export, XDR Data Lake queries, Live Discover (EDR queries on live devices) | `/siem/v1`, `/xdr-query/v1`, `/live-discover/v1` | `references/siem-xdr.md` |
 | Firewalls managed by Central: inventory, groups, firmware, actions | `/firewall/v1` | `references/firewall-api.md` |
+
+**If the tenant is MDR-managed, the alert feeds are empty by design** and every
+finding is a case instead — `/siem/v1/alerts` and `/common/v1/alerts` both return
+zero forever, with no error. Whenever someone reports a Sophos integration that
+runs cleanly but returns almost no data, check `/cases/v1/cases` before anything
+else; see `references/cases-api.md`.
 
 Read the relevant reference file before writing calls — they contain the exact endpoints, filters, action enums, and pagination style for each API.
 
