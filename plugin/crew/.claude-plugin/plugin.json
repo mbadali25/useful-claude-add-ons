@@ -1,6 +1,6 @@
 {
   "name": "crew",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "A small, honest virtual dev team: context-isolated agents, deterministic gates, file-backed work state. Optional Codex QA, optional Jira, optional Obsidian memory.",
   "author": {
     "name": "Matthew Badali",

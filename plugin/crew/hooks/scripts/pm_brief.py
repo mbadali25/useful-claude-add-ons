@@ -72,6 +72,28 @@ def _knowledge_line(state):
     return f"knowledge: {maps}; {graph_part}"
 
 
+def _diagrams_line(state):
+    """The diagrams state line, or None to omit it entirely.
+
+    Omitted when there are no diagrams at all, and that is not cosmetic. Every
+    quiet line is permanent -- it survives truncation while findings do not --
+    so a line that always prints costs a FINDING slot at a tight `maxLines`.
+    Measured: adding an unconditional line pushed the highest-priority finding
+    out of a `maxLines: 7` brief entirely, which is the one thing render()'s
+    truncation is built to prevent.
+
+    "diagrams: none" also says nothing actionable. When having none matters,
+    `diagramsMissing` fires and says so with a fix attached.
+    """
+    diagrams = crew_state.dict_or_empty(state.get("diagrams"))
+    total = diagrams.get("total", 0)
+    if not total:
+        return None
+    behind = diagrams.get("behind") or []
+    fresh = "anchors current" if not behind else f"{len(behind)} behind HEAD"
+    return f"diagrams: {total} drawn, {fresh}"
+
+
 # One finding and exactly one next action per trigger. One action because a
 # brief that lists three is a brief nobody acts on.
 FINDINGS = {
@@ -107,6 +129,17 @@ FINDINGS = {
         "code that has since changed",
         "run /crew:onboard --refresh <subsystem> before relying on them",
     ),
+    "diagramsStale": (
+        "{staleCount} diagram(s) are anchored behind HEAD ({staleNames}), so "
+        "they draw code that has since moved",
+        "run /crew:diagram refresh - it re-verifies anchors and rewrites only "
+        "the diagrams whose code actually changed",
+    ),
+    "diagramsMissing": (
+        "no {missingNames} diagram for a repo whose subsystems are already "
+        "mapped",
+        "run /crew:diagram <kind> to draw it from the codemap",
+    ),
     "reviewNotWorking": (
         "review is finding almost nothing, which usually means it is broken "
         "rather than that the code is clean",
@@ -121,8 +154,10 @@ FINDINGS = {
 }
 
 _AUTHORITY_NOTE = (
-    "The manager reports and recommends; it does not change roles, tier, or "
-    "delete anything without being asked."
+    "The manager acts on these itself - it dispatches crew roles and refreshes "
+    "diagrams without being asked. Say what you want prioritised and that wins "
+    "over its own ordering. It still asks before removing a role or deleting "
+    "anything."
 )
 
 _TRUNCATED = "More findings than fit here - run /crew:pm for the full report."
@@ -147,6 +182,37 @@ def _incident_fields(state):
     }
 
 
+def _names(items, limit=3):
+    """`items` as a short comma list, with an overflow count. Never empty.
+
+    A finding that names every one of nine stale diagrams is a finding nobody
+    reads, and the brief has a hard line cap it would blow through besides.
+    """
+    items = [str(i) for i in items if str(i).strip()]
+    if not items:
+        return "none"
+    if len(items) <= limit:
+        return ", ".join(items)
+    return ", ".join(items[:limit]) + f" +{len(items) - limit} more"
+
+
+def _diagram_fields(state):
+    """Values the diagram findings interpolate. Always every key.
+
+    Same contract as _incident_fields: a missing key raises KeyError inside
+    .format() and takes out the whole brief.
+    """
+    diagrams = crew_state.dict_or_empty(state.get("diagrams"))
+    behind = diagrams.get("behind") or []
+    missing = diagrams.get("missing") or []
+    return {
+        "staleCount": len(behind),
+        "staleNames": _names(behind),
+        "missingNames": _names(missing),
+        "diagramsDir": diagrams.get("dir") or "docs/diagrams",
+    }
+
+
 def _fill(text, fields):
     """`text` with {placeholders} substituted. Returns it unchanged if it has
     none, or if it has one this does not know -- a finding that renders as a
@@ -167,12 +233,13 @@ def render(state):
     if not pm.get("enabled", True):
         return []
 
-    quiet = [
+    quiet = [line for line in (
         _crew_line(state),
         _health_line(state),
         _work_line(state),
         _knowledge_line(state),
-    ]
+        _diagrams_line(state),
+    ) if line]
 
     # An incident goes FIRST, and in the quiet lines rather than the findings,
     # so it survives both `pm.mode: quiet` and every line cap. The findings
@@ -189,7 +256,8 @@ def render(state):
     # A finding and its action are one unit. Truncation cuts between units,
     # never inside one: a finding whose action was dropped names a problem and
     # says nothing about it, which is worse than omitting it entirely.
-    fields = _incident_fields(state)
+    fields = dict(_incident_fields(state))
+    fields.update(_diagram_fields(state))
     pairs = []
     for name in triggers:
         entry = FINDINGS.get(name)

@@ -34,6 +34,38 @@ Every source file starts with a provenance comment:
 Anchors are the same idea as the code map: a diagram nobody can re-verify is a
 diagram that rots into confident inaccuracy.
 
+**The header is machine-read, so its shape matters.** `crew_state.read_diagrams`
+parses the short sha out of that first line to decide whether a diagram is
+current, and the PM acts on the answer. A source file with no parseable
+provenance counts as *behind*, not as *unknown* — unknown resolving to stale is
+the honest direction, and it is the same call `_read_graph` makes about a graph
+with no `built_at_commit`. The cost of being wrong that way is one unnecessary
+redraw; the cost of the other way is a diagram that lies and looks fresh.
+
+## The PM refreshes these on its own
+
+Diagrams are the one documentation artifact the crew regenerates without being
+asked. That is not a general licence to rewrite documentation — it is specific
+to artifacts with a machine-checkable anchor, where "is this still true" has a
+real answer rather than a judgement call. Prose docs keep `crew-docs`'s
+deliberate *do not touch* default for exactly that reason.
+
+Two triggers drive it, and they mean different things:
+
+- `diagramsStale` — a source's anchor is not HEAD. The picture exists and the
+  code under it moved. Re-verify, then update.
+- `diagramsMissing` — one of architecture / data-flow / process has no file at
+  all, in a repo whose subsystems are already mapped. Draw it. This one stays
+  quiet until there is a code map, because a repo that has not decided what its
+  subsystems are has nothing to draw from yet.
+
+**Always re-verify before redrawing.** Send `crew:explorer` first and check its
+anchors against HEAD. A diagram regenerated from a code map that is itself
+behind is stale output wearing a fresh anchor — strictly worse than the stale
+diagram it replaced, because that one at least advertised its age. This is why
+`graphStale` and `knowledgeBehind` sort above `diagramsStale` in the trigger
+order: fix the input before regenerating the output.
+
 ## Picking the diagram type
 
 | Need | Mermaid type |

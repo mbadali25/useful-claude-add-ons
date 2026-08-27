@@ -272,6 +272,39 @@ def test_truncation_keeps_the_highest_priority_finding():
     assert "/crew:upgrade" in out
 
 
+def test_diagrams_line_is_omitted_when_there_are_none():
+    """A quiet line survives truncation while findings do not, so an
+    always-present line costs a FINDING slot at a tight maxLines. This
+    regressed once: an unconditional "diagrams: none" pushed the
+    highest-priority finding out of a maxLines=7 brief entirely. Having no
+    diagrams is reported by the diagramsMissing TRIGGER, which comes with a
+    fix attached -- the quiet line is for state worth carrying, not for zero.
+    """
+    out = pm_brief.render(dict(HEALTHY, diagrams={"total": 0, "behind": [],
+                                                  "missing": []}))
+    assert not any(line.startswith("diagrams:") for line in out)
+
+
+def test_diagrams_line_appears_once_there_are_diagrams():
+    out = "\n".join(pm_brief.render(dict(
+        HEALTHY, diagrams={"total": 3, "behind": ["architecture"],
+                           "missing": []})))
+    assert "diagrams: 3 drawn, 1 behind HEAD" in out
+
+
+def test_diagram_findings_name_the_stale_files():
+    """The finding interpolates live values, so a missing field would raise
+    KeyError inside .format() and take out the whole brief -- the same failure
+    _incident_fields exists to prevent.
+    """
+    out = "\n".join(pm_brief.render(dict(
+        HEALTHY, triggers=["diagramsStale"],
+        diagrams={"total": 2, "behind": ["architecture", "data-flow-orders"],
+                  "missing": []})))
+    assert "architecture" in out
+    assert "/crew:diagram refresh" in out
+
+
 def test_quiet_mode_config_never_expands():
     state = dict(HEALTHY, schema=1, triggers=["upgradeNeeded"],
                  pm=dict(HEALTHY["pm"], mode="quiet"))

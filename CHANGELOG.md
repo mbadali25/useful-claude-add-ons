@@ -15,6 +15,78 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
+- **`crew` 0.8.0 - the PM assigns work, and re-engages itself when state
+  changes.** Three related gaps, reported together: the PM only ever spoke at
+  session start, so a session that opened clean and then closed a ticket or
+  broke a gate heard nothing; the `pm` agent was structurally unable to act on
+  what it found, holding no `Write` tool and returning a report that the user
+  then had to act on themselves; and architecture, process and data-flow
+  diagrams had no staleness signal at all, so nothing ever noticed they had
+  drifted.
+
+  - **New `pm-pulse` `Stop` hook.** Re-engages the PM when the project's state
+    actually transitioned - a ticket closed, a gate broke, diagrams fell behind
+    HEAD. The gate is a **state fingerprint, not the event**: `Stop` fires once
+    per turn, and a brief on every turn is the noise that makes people switch
+    the PM off, at which point they get nothing. Turns that change nothing stay
+    silent.
+
+    It blocks (exit 2) to hand its findings back to the model, because stdout
+    on `Stop` reaches the user but never the session - a PM that cannot be
+    heard by the thing doing the work cannot assign any. Three loop guards:
+    `stop_hook_active` is honoured first and unconditionally, the fingerprint
+    marker means one state can only interrupt once, and the hook stands down
+    after 12 pulses in a session rather than becoming the thing you disable.
+
+    `hook_once` is deliberately **not** used - its own module docstring says
+    why. Its marker is keyed on `(hook, session)` and never cleared, so a claim
+    taken on turn 1 silences the hook for the rest of the session, which is
+    exactly what this hook must not do. Keying the marker on the fingerprint
+    instead de-duplicates the `.sh`/`.ps1` pair and gates on state change with
+    one mechanism.
+
+  - **The `pm` agent now dispatches.** It gains `Write`, `Edit` and `Agent`,
+    and a dispatch table mapping each trigger to the role that closes it. A
+    manager whose only output is a recommendation is a manager the user has to
+    manage. Three bounds keep it honest: a **stated user priority outranks**
+    the PM's trigger ordering, and it says so when it re-orders; **removal and
+    deletion still need an explicit yes** - offboarding, deleting a codemap or
+    diagram, rewriting `metrics.md` - because adding capability is reversible
+    and removing it destroys the evidence that would say whether removing it
+    was right; and a multi-agent run is **announced before** it happens. Writes
+    stay scoped to `.crew/` and `docs/diagrams/`. `/crew:pm assign` is the
+    manual entry point.
+
+  - **Diagram freshness is now a tracked fact.** `crew_state.py` reads
+    `docs/diagrams/*.mmd`, parses the short sha out of the documented
+    `%% Generated from <repo>@<sha>` header, and reports `diagrams.behind` and
+    `diagrams.missing`. Two new triggers, `diagramsStale` and `diagramsMissing`,
+    sort **below** `graphStale` and `knowledgeBehind` on purpose: a diagram
+    regenerated from a code map that is itself behind HEAD is stale output
+    wearing a fresh anchor, which is worse than the diagram it replaced because
+    it no longer advertises its age. `diagramsMissing` stays quiet until there
+    is a codemap, so a fresh setup is not nagged about three diagrams on
+    session one.
+
+    Diagrams are the **only** documentation artifact the crew regenerates
+    unasked. That is not a general licence: they carry a machine-checkable
+    anchor, so "is this still true" has a real answer. Prose docs keep
+    `crew-docs`'s deliberate *do not touch* default, because whether a change
+    deserves a CHANGELOG entry is a judgement about what users can observe and
+    no sha answers it.
+
+  - Found while writing the tests: reusing the codemap's `_ANCHOR_RE` for
+    diagrams reads **every** correctly-anchored diagram as stale. That regex
+    requires the line to start with `anchor:`, which is a syntax error in a
+    Mermaid source - provenance there has to live inside a `%%` comment. The
+    bug looks like the feature working, right up until nothing is ever current.
+    `_DIAGRAM_ANCHOR_RE` handles the documented header and the hand-written
+    `%% anchor:` form.
+
+  - 40 new cases in `run-tests.sh` (50 -> 90), sabotage-tested both ways:
+    removing the `stop_hook_active` guard and reverting the anchor regex each
+    turn the suite red.
+
 - **`crew` 0.7.0 - the `platform` block repairs itself at session start.** It is
   the one block in `.crew/config.json` that is committed and is therefore wrong
   for everybody who did not run `/crew:init` - and `windowsHostIp` is wrong for

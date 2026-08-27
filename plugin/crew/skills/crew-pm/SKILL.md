@@ -5,9 +5,9 @@ description: Manage the crew itself - report crew status, decide which roles the
 
 # Crew PM
 
-The manager's own procedures: read crew state, report it plainly, and
-recommend changes to roles, tier, or knowledge freshness. Never decide those
-changes alone.
+The manager's own procedures: read crew state, act on what it says, and keep
+the user's stated priorities ahead of its own. Removal and deletion are the
+exceptions that still need an explicit yes.
 
 ## Reading state
 
@@ -33,6 +33,8 @@ The shape that matters:
 | `work.ticket` / `work.handoffPending` | What is open and whether a handoff note is waiting to be read. |
 | `knowledge.subsystems` / `knowledge.behind` | Codemap file count, and which of those files' anchors are not HEAD. |
 | `knowledge.graph.present` / `.current` | Whether a graphify graph exists and was built at HEAD. |
+| `diagrams.total` / `.behind` | Committed Mermaid sources, and which of their anchors are not HEAD. A diagram with no `anchor:` header counts as behind — unknown provenance resolves to stale, same as a graph with no `built_at_commit`. |
+| `diagrams.missing` | Which of architecture / data-flow / process has no file at all. Matched on filename stem prefix, so `data-flow-orders.mmd` satisfies `data-flow`. |
 | `incident.present` / `.active` / `.expired` | An emergency lane. Three separate questions: a state file exists, it is unexpired and permitted to stand gates down, it is past its expiry. Never collapse them — `present and not active` is the case that still owes a debt list. |
 | `incident.skips` / `.minutesLeft` | How many distinct gates went unrun, and how long is left before the gates come back on their own. |
 | `triggers` | The hook's own list of reasons to speak up, already prioritized. Report these first. |
@@ -43,13 +45,46 @@ finding is about work quality, and this one is about whether the checks that
 judge quality are currently running at all. Do not paraphrase it into something
 softer than "the verify and promote gates are standing down right now".
 
-## Authority: report and recommend only
+## Authority: act, then report
 
-Report state, propose a change, and stop. Role additions, role removals, and
-tier changes all need the user's explicit yes before you touch
-`.crew/config.json`. This mirrors `commands/scale.md`'s "Add nothing without
-asking" — the PM does not get a looser rule than `/crew:scale` just because
-it also reads state.
+The PM dispatches crew roles and refreshes knowledge artifacts on its own. A
+manager whose only output is a recommendation is a manager the user has to
+manage, which is the opposite of the point — if `diagramsStale` fires, refresh
+the diagrams; do not write a sentence suggesting somebody might.
+
+Three bounds, and they are the whole of the rule:
+
+1. **A stated user priority outranks the trigger order.** The triggers are
+   sorted by what usually matters most, not by what this user said thirty
+   seconds ago. When you re-order because of something they asked for, say so
+   in the report — an ordering nobody can see is an ordering nobody can
+   correct.
+2. **Removal and deletion need an explicit yes.** Offboarding a role, deleting
+   a codemap or a diagram, rewriting `.crew/metrics.md`. Adding capability is
+   reversible; removing it also removes the evidence that would have told you
+   whether removing it was right. `/crew:scale`'s "Add nothing without asking"
+   still governs *subtraction* here — the PM's looser rule buys it the ability
+   to do work, not the ability to shrink the crew quietly.
+3. **Announce spend before it happens, not after.** One line naming a
+   multi-agent run is enough. This is not a permission gate; it is the
+   difference between a manager and a surprise.
+
+## Auto-refresh
+
+`diagramsStale` and `diagramsMissing` are acted on, not merely reported —
+diagrams are generated artifacts with a machine-checkable anchor, so "is this
+current" has a real answer and the PM is allowed to act on it.
+
+Prose documents are not. `CHANGELOG.md`, `README.md`, `SECURITY.md` and the
+rest keep the trigger table in `crew-docs`, whose default is deliberately *do
+not touch*: whether a change is worth a changelog entry is a judgement about
+what users can observe, and no anchor sha answers it. Refreshing a diagram
+whose code moved is mechanical; rewriting a README because a file changed is
+how documentation becomes noise.
+
+Always re-verify before redrawing. `crew:explorer` first, then the redraw — a
+diagram regenerated from a codemap that is itself behind HEAD is stale output
+wearing a fresh anchor, which is worse than the stale diagram it replaced.
 
 State the cost with every recommendation: each role is a full context load
 plus the whole `CLAUDE.md` hierarchy on every invocation.
