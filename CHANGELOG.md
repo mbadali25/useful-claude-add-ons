@@ -4,6 +4,15 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Fixed
+
+- **`infra-work-ticketing` 1.1.1 - dropped a stray `.claude/settings.local.json`
+  that shipped with the skill.** It registered a `SessionStart` hook pointing at
+  `C:/Users/d3ade/.local/bin/headroom.EXE`, a binary on one machine. Anyone who
+  installed the skill and opened a session inside its directory got
+  `No such file or directory` from a hook they never configured. Nothing else in
+  the skill used it.
+
 ### Added
 
 - **`crew` 0.7.0 - the `platform` block repairs itself at session start.** It is

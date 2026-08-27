@@ -83,7 +83,7 @@
       "name": "infra-work-ticketing",
       "source": "./skills/infra-work-ticketing",
       "description": "Infrastructure work ticketing for Zoho ServiceDesk Plus Cloud and Jira Cloud - confirm a ticket exists, log work notes as the work happens, or open a ticket.",
-      "version": "1.1.0"
+      "version": "1.1.1"
     },
     {
       "name": "intune-graph",
