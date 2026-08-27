@@ -1,6 +1,6 @@
 ---
-description: Talk to the crew's manager - status, assign work, onboarding, offboarding
-argument-hint: [assign | onboard <role> | offboard <role>]
+description: Talk to the crew's manager - status, assign work, set its authority, onboarding, offboarding
+argument-hint: [assign | authority [report-only|act] | onboard <role> | offboard <role>]
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent
 ---
 
@@ -37,6 +37,26 @@ it. Pass along anything the user has said about priorities in this session —
 that ordering outranks the trigger order, and the subagent cannot see the
 conversation you are in.
 
+Typing `assign` **is** the explicit instruction, so it acts even where
+`pm.authority` is `report-only`. Say so in one line when that applies ("acting
+this once; config still says report-only"), so a user who wanted it permanent
+knows there is a setting, and a user who did not is not surprised twice.
+
+**`authority [report-only|act]`.**
+With no value, report the current setting and what it means in one line each.
+
+With a value, set `pm.authority` in `.crew/config.json` and confirm. This is
+the one config write this command makes without a yes/no prompt — it is the
+user typing the setting they want, not the PM deciding to widen its own
+permissions, and refusing to honour a direct instruction would be its own kind
+of wrong. Reject anything that is not one of the two values rather than writing
+it: a config carrying `"acr"` silently behaves as `report-only` forever.
+
+Say what changes. Moving to `act` means the PM will dispatch agents on its own
+from the next session-start brief and the next state-change pulse; moving to
+`report-only` means it stops and waits. Neither is reversible by accident, but
+both should be visible.
+
 Its dispatch table lives in `agents/pm.md`; do not restate a shorter version
 here. Two rules from it that this command must not loosen: inputs before
 outputs (`graphStale` and `knowledgeBehind` are fixed before anything that
@@ -70,10 +90,11 @@ procedure ends with naming, out loud, the failure mode this removal leaves
 uncovered — that sentence is the actual point, not optional polish.
 
 **Anything else.**
-An argument that is not empty, `assign`, `onboard <role>`, or `offboard
-<role>` is unrecognised. Do not fall through to the status form and do not
-stay silent either — list the four supported forms and stop. A command that
-does nothing on a typo is indistinguishable from one that did the work.
+An argument that is not empty, `assign`, `authority [value]`, `onboard
+<role>`, or `offboard <role>` is unrecognised. Do not fall through to the
+status form and do not stay silent either — list the five supported forms and
+stop. A command that does nothing on a typo is indistinguishable from one that
+did the work.
 
 Never offboard a role, delete a codemap or a diagram, or rewrite
 `.crew/metrics.md` without my explicit yes, no matter how obvious the

@@ -436,7 +436,12 @@ PD=$(mktemp -d) || exit 1
 mkdir -p "$PD/.crew"
 # schema 2 keeps upgradeNeeded quiet; the absent graph is what fires graphStale,
 # which is a real, non-quiet trigger and therefore a legitimate reason to block.
-printf '{"schema":2,"tier":1,"roles":["explorer"]}\n' > "$PD/.crew/config.json"
+#
+# authority=act because the stderr-content assertions below are about the
+# work-order directive specifically. The exit-code cases above it are
+# authority-agnostic -- both directives block -- so this does not weaken them.
+printf '{"schema":2,"tier":1,"roles":["explorer"],"pm":{"authority":"act"}}\n' \
+  > "$PD/.crew/config.json"
 
 # MUST ALLOW: the loop guard. Same state that blocks below, but on a turn that
 # only exists because a Stop hook already blocked -- blocking again never ends.
@@ -482,6 +487,46 @@ grep -q 'priorit' "$PERR" && pass \
   || fail "pm_pulse: stderr must carry the user-priority override"
 grep -q 'graph' "$PERR" && pass \
   || fail "pm_pulse: stderr must carry the actual finding, not just the directive"
+
+# pm.authority gates what the pulse TELLS the model to do. Leaking the `act`
+# directive into a report-only repo makes the switch a lie: config says "ask
+# me", hook says "go". Asserted through the wrapper, on real config files.
+AD=$(mktemp -d); mkdir -p "$AD/.crew"
+printf '{"schema":2,"pm":{"authority":"act"}}\n' > "$AD/.crew/config.json"
+pulse_payload "$AD" auth-act false | bash "$SCRIPTS/pm-pulse.sh" \
+  >/dev/null 2>"$AD/err.txt"
+grep -q 'Act on them' "$AD/err.txt" && pass \
+  || fail "pm_pulse: authority=act must send the work-order directive"
+grep -qv 'do NOT dispatch' "$AD/err.txt" && pass \
+  || fail "pm_pulse: authority=act must not send the report-only directive"
+
+RD2=$(mktemp -d); mkdir -p "$RD2/.crew"
+printf '{"schema":2,"pm":{"authority":"report-only"}}\n' > "$RD2/.crew/config.json"
+pulse_payload "$RD2" auth-ro false | bash "$SCRIPTS/pm-pulse.sh" \
+  >/dev/null 2>"$RD2/err.txt"
+grep -q 'do NOT dispatch' "$RD2/err.txt" && pass \
+  || fail "pm_pulse: authority=report-only must forbid dispatching"
+grep -q 'Act on them in the order given' "$RD2/err.txt" \
+  && fail "pm_pulse: report-only leaked the act directive" || pass
+
+# A config with NO authority key at all must behave as report-only -- this is
+# the upgrade path, where an existing install gains the pulse without ever
+# having opted into autonomy.
+UD=$(mktemp -d); mkdir -p "$UD/.crew"
+printf '{"schema":2,"tier":1}\n' > "$UD/.crew/config.json"
+pulse_payload "$UD" auth-absent false | bash "$SCRIPTS/pm-pulse.sh" \
+  >/dev/null 2>"$UD/err.txt"
+grep -q 'do NOT dispatch' "$UD/err.txt" && pass \
+  || fail "pm_pulse: absent authority must default to report-only"
+
+# And a typo must fail closed rather than widening permissions.
+TD=$(mktemp -d); mkdir -p "$TD/.crew"
+printf '{"schema":2,"pm":{"authority":"acr"}}\n' > "$TD/.crew/config.json"
+pulse_payload "$TD" auth-typo false | bash "$SCRIPTS/pm-pulse.sh" \
+  >/dev/null 2>"$TD/err.txt"
+grep -q 'do NOT dispatch' "$TD/err.txt" && pass \
+  || fail "pm_pulse: a typo'd authority must fail closed to report-only"
+rm -rf "$AD" "$RD2" "$UD" "$TD"
 
 # The cap is a backstop against a repo whose state oscillates every turn. If
 # `pulses_taken`'s marker prefix ever drifts it silently returns 0 forever and

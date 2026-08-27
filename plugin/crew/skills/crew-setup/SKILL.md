@@ -110,7 +110,7 @@ CLAUDE.md                  # created if absent; if present, sections APPENDED, n
   "emergency": { "standDown": true, "ttlMinutes": 120, "maxTtlMinutes": 480 },
   "notify": { "provider": "none", "urlEnv": null, "tokenEnv": null, "chatId": null, "events": ["phase", "gate", "waiting"] },
   "platform": { "os": null, "wsl": null, "shell": null, "windowsHostIp": null },
-  "pm": { "enabled": true, "mode": "adaptive", "quietLines": 8, "maxLines": 40, "authority": "report-only" },
+  "pm": { "enabled": true, "mode": "adaptive", "quietLines": 8, "maxLines": 40, "authority": "report-only", "maxDispatches": 3 },
   "graph": { "enabled": true, "tool": "graphify", "out": "graphify-out", "mode": "code-only", "commitHook": false, "obsidian": { "enabled": false, "dir": null, "confirmed": false } }
 }
 ```

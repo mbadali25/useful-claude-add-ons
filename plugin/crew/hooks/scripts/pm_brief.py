@@ -153,12 +153,31 @@ FINDINGS = {
     ),
 }
 
-_AUTHORITY_NOTE = (
-    "The manager acts on these itself - it dispatches crew roles and refreshes "
-    "diagrams without being asked. Say what you want prioritised and that wins "
-    "over its own ordering. It still asks before removing a role or deleting "
-    "anything."
-)
+# One per authority. The brief has to say which mode is in effect, because the
+# same list of findings means two different things: "here is what I am about to
+# do" and "here is what I would do if you said so". A reader who cannot tell
+# them apart either expects work that never happens, or is surprised by work
+# they thought they were being asked about.
+_AUTHORITY_NOTES = {
+    "report-only": (
+        "The manager reports and recommends; it does not act on these on its "
+        "own. Say the word, or run /crew:pm assign, to have it do the work. "
+        "Set pm.authority to \"act\" in .crew/config.json to make that the "
+        "default."
+    ),
+    "act": (
+        "The manager acts on these itself - it dispatches crew roles and "
+        "refreshes diagrams without being asked. Say what you want prioritised "
+        "and that wins over its own ordering. It still asks before removing a "
+        "role or deleting anything."
+    ),
+}
+
+
+def _authority_note(state):
+    pm = crew_state.dict_or_empty(state.get("pm"))
+    authority = crew_state.normalise_authority(pm.get("authority"))
+    return _AUTHORITY_NOTES[authority]
 
 _TRUNCATED = "More findings than fit here - run /crew:pm for the full report."
 
@@ -267,7 +286,7 @@ def render(state):
         pairs.append((f"- {_fill(finding, fields)}", f"  -> {_fill(action, fields)}"))
 
     cap = max(2, int(pm.get("maxLines", 40)))
-    tail = ["", _AUTHORITY_NOTE]
+    tail = ["", _authority_note(state)]
     flat = [line for pair in pairs for line in pair]
 
     if len(quiet) + len(flat) + len(tail) <= cap:

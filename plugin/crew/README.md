@@ -660,7 +660,7 @@ Everything reads `.crew/config.json`:
     "tokenEnv": "CREW_TELEGRAM_TOKEN",
     "chatId": null
   },
-  "pm": { "enabled": true, "mode": "adaptive", "quietLines": 8, "maxLines": 40, "authority": "report-only" },
+  "pm": { "enabled": true, "mode": "adaptive", "quietLines": 8, "maxLines": 40, "authority": "report-only", "maxDispatches": 3 },
   "graph": { "out": "graphify-out", "obsidian": { "confirmed": false } }
 }
 ```
@@ -704,7 +704,9 @@ omit the block and assume.
 | `context.autoClear.command` | string (default `/clear`) | What gets typed. `/compact` is the other sensible value. |
 | `context.autoClear.delaySeconds` | integer (default `3`) | How long to wait for the prompt to come back before typing. |
 | `context.autoClear.minHandoffLines` | integer (default `5`) | Refuse to clear if the handoff has fewer non-blank lines than this. A stub note is worse than no clear. |
-| `pm.enabled` / `mode` / `quietLines` / `maxLines` | see `crew-pm` skill | Whether and how verbosely the `SessionStart` PM brief speaks. `authority` is always `report-only` — the PM never edits `config.json` on its own, regardless of this block. |
+| `pm.enabled` / `mode` / `quietLines` / `maxLines` | see `crew-pm` skill | Whether and how verbosely the `SessionStart` PM brief speaks, and whether the `Stop` pulse re-engages it at all. |
+| `pm.authority` | `report-only` (default), `act` | What the PM does about what it finds. `report-only` recommends and stops. `act` lets it dispatch crew roles and refresh diagrams on its own — see the `crew-pm` skill for the guardrails that bound it. An unrecognised value resolves to `report-only`: a typo in a permissions field must fail closed. |
+| `pm.maxDispatches` | integer (default `3`) | Roles the PM may dispatch in one pass under `act`. Blockers it hits mid-task do not count against it. |
 | `graph.out` | path (default `graphify-out`) | Where `graphify` wrote `graph.json`. Freshness is read from graphify's own `built_at_commit` field in that file, never a timestamp. |
 | `graph.obsidian.confirmed` | `true`, `false` (default `false`) | Consent gate for exporting the graph into an Obsidian vault. Only explicit consent given in session sets this — `/crew:upgrade` never grants it. See `crew-graph`'s Obsidian section. |
 

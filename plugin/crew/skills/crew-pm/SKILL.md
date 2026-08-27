@@ -38,6 +38,8 @@ The shape that matters:
 | `incident.present` / `.active` / `.expired` | An emergency lane. Three separate questions: a state file exists, it is unexpired and permitted to stand gates down, it is past its expiry. Never collapse them — `present and not active` is the case that still owes a debt list. |
 | `incident.skips` / `.minutesLeft` | How many distinct gates went unrun, and how long is left before the gates come back on their own. |
 | `triggers` | The hook's own list of reasons to speak up, already prioritized. Report these first. |
+| `pm.authority` | `report-only` or `act` — already normalised, so an unknown value never reaches you. Decides whether this run ends in work or in a recommendation. Read it before anything else. |
+| `pm.maxDispatches` | Roles the PM may dispatch in one pass under `act`. Default 3. |
 
 **An active incident is reported before anything else, always.** `incidentActive`
 and `incidentUnclosed` sort above `upgradeNeeded` for a reason: every other
@@ -45,14 +47,34 @@ finding is about work quality, and this one is about whether the checks that
 judge quality are currently running at all. Do not paraphrase it into something
 softer than "the verify and promote gates are standing down right now".
 
-## Authority: act, then report
+## Authority: a switch, not a stance
 
-The PM dispatches crew roles and refreshes knowledge artifacts on its own. A
-manager whose only output is a recommendation is a manager the user has to
-manage, which is the opposite of the point — if `diagramsStale` fires, refresh
-the diagrams; do not write a sentence suggesting somebody might.
+`pm.authority` in `.crew/config.json` decides what the PM does about what it
+finds. Two values, normalised before any consumer sees them:
 
-Three bounds, and they are the whole of the rule:
+| Value | Behaviour |
+|---|---|
+| `report-only` | **The shipped default.** Report and recommend, name the role each finding needs, and stop. |
+| `act` | Dispatch the roles and do the work, then report. |
+
+`report-only` ships as the default deliberately. A plugin update must not turn
+someone's PM autonomous underneath them — consent to install is not consent to
+delegate. Turning it on is one line:
+
+```json
+{ "pm": { "authority": "act" } }
+```
+
+An unrecognised value resolves to `report-only`. That direction is not
+arbitrary: for a field that grants permissions, a typo has to fail closed, and
+`"Act"` / `"ACT"` / `" act "` are accepted as `act` because those are the same
+intent typed carelessly rather than a different one.
+
+An explicit instruction from the user always outranks the setting. Asked to act
+in a `report-only` repo, act — and say the config still reads `report-only`, so
+they can change it if they meant it permanently.
+
+### Under `act`, three bounds — the whole of the rule
 
 1. **A stated user priority outranks the trigger order.** The triggers are
    sorted by what usually matters most, not by what this user said thirty
@@ -68,6 +90,26 @@ Three bounds, and they are the whole of the rule:
 3. **Announce spend before it happens, not after.** One line naming a
    multi-agent run is enough. This is not a permission gate; it is the
    difference between a manager and a surprise.
+
+### Scope discipline under `act`
+
+Autonomy's failure mode is not doing the wrong thing — it is doing too many
+things. The PM fixes a problem it stumbles on **only when that problem blocks
+a finding it was already working**: the build is broken, the harness will not
+run, the migration under review does not parse. Unblocking the current job is
+finishing the job.
+
+Everything else is recorded and left alone — ticketed if `tracker` is set in
+`.crew/config.json`, appended to `TODO.md` with its reason if not. Creating
+`TODO.md` when it is absent is correct; a deferred finding with no reason
+written down is indistinguishable later from one nobody noticed.
+
+`pm.maxDispatches` (default 3) caps roles per pass. Blockers found mid-task do
+not count against it.
+
+The report must state what was deferred and where it went, every time. A
+guardrail whose effects are invisible reads as the PM having found nothing,
+and the next person to look will "fix" the guardrail.
 
 ## Auto-refresh
 

@@ -1,9 +1,13 @@
 """Tests for the PM brief renderer."""
 import io
 import json
+import os
+
+import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_fixtures
+import crew_state
 import pm_brief
 
 HEALTHY = {
@@ -214,6 +218,71 @@ def test_each_trigger_has_a_finding_and_an_action():
 def test_expanded_brief_states_report_only_authority():
     out = "\n".join(pm_brief.render(_with("upgradeNeeded", schema=1))).lower()
     assert "recommend" in out or "report" in out
+
+
+# -- pm.authority ------------------------------------------------------------
+#
+# The switch is a permissions field, so the tests that matter are the ones
+# proving it fails CLOSED. A bug that leaks `act` behaviour into a report-only
+# repo dispatches agents the user never agreed to.
+
+def _authority(value):
+    state = dict(_with("upgradeNeeded", schema=1))
+    state["pm"] = dict(state["pm"], authority=value)
+    return "\n".join(pm_brief.render(state)).lower()
+
+
+def test_report_only_brief_does_not_claim_to_act():
+    out = _authority("report-only")
+    assert "does not act on these on its own" in out
+    assert "dispatches crew roles" not in out
+
+
+def test_act_brief_says_it_will_act():
+    out = _authority("act")
+    assert "acts on these itself" in out
+
+
+@pytest.mark.parametrize("value", ["Act", "ACT", "  act  "])
+def test_authority_accepts_carelessly_typed_act(value):
+    """Same intent, typed sloppily -- not a different intent."""
+    assert crew_state.normalise_authority(value) == "act"
+
+
+@pytest.mark.parametrize(
+    "value", ["acr", "report only", "", None, True, 1, [], {}, "yes", "true"])
+def test_unknown_authority_fails_closed(value):
+    """A typo in a permissions field must never widen permissions."""
+    assert crew_state.normalise_authority(value) == "report-only"
+
+
+def test_can_act_reads_the_normalised_field():
+    assert crew_state.can_act({"pm": {"authority": "act"}})
+    assert not crew_state.can_act({"pm": {"authority": "report-only"}})
+    # Absent block, absent field, and wrong-typed block all fail closed.
+    assert not crew_state.can_act({})
+    assert not crew_state.can_act({"pm": {}})
+    assert not crew_state.can_act({"pm": "nonsense"})
+
+
+def test_collect_normalises_authority_once():
+    """Downstream consumers must never see a raw value. If this stops holding,
+    every reader has to re-decide what a typo means, and they will disagree."""
+    import json as _json
+    import tempfile as _tempfile
+    root = _tempfile.mkdtemp()
+    os.makedirs(os.path.join(root, ".crew"))
+    with open(os.path.join(root, ".crew", "config.json"), "w",
+              encoding="utf-8") as handle:
+        _json.dump({"schema": 2, "pm": {"authority": "ACT"}}, handle)
+    assert crew_state.collect(root)["pm"]["authority"] == "act"
+
+
+def test_default_authority_is_report_only():
+    """The shipped default. A plugin update must not turn someone's PM
+    autonomous underneath them -- consent to install is not consent to
+    delegate."""
+    assert crew_state.PM_DEFAULTS["authority"] == "report-only"
 
 
 def test_healthy_state_stays_quiet():

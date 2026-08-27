@@ -15,6 +15,56 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
+- **`crew` 0.9.0 - PM autonomy is now a switch, with guardrails.** 0.8.0 gave
+  the PM assign authority unconditionally, which is the right behaviour for
+  someone who asked for it and the wrong default for everyone else. It is now
+  `pm.authority` in `.crew/config.json`.
+
+  - **`report-only` (default) vs `act`.** `report-only` recommends and stops;
+    `act` dispatches roles and refreshes diagrams on its own. The default is
+    deliberate: a plugin update must not turn someone's PM autonomous
+    underneath them, because consent to install is not consent to delegate.
+    The field already existed in `PM_DEFAULTS`, in the config templates and in
+    `README.md` - documented as "always `report-only`" and read by nothing.
+    It is now the actual switch.
+
+  - **It fails closed.** An unrecognised value resolves to `report-only`
+    rather than raising or guessing, because for a field that grants
+    permissions the failure direction has to be the restrictive one. `"Act"`,
+    `"ACT"` and `" act "` are accepted as `act` - same intent typed carelessly,
+    not a different one. Normalisation happens once in `collect()`, so no
+    consumer downstream ever re-decides what a typo means and they cannot
+    disagree.
+
+  - **The pulse says different things.** Under `act` the `Stop` hook emits a
+    work order; under `report-only` it emits recommendations and explicitly
+    forbids dispatching. Sending the wrong one would make the setting a lie -
+    config saying "ask me" while the hook said "go".
+
+  - **The rabbit-hole rule.** Autonomy's failure mode is not doing the wrong
+    thing, it is doing too many things: refresh a diagram, notice a bug, fix
+    it, notice thin tests, write tests, and the diagram is still stale. So a
+    problem the PM stumbles on is fixed **only when it blocks a finding it was
+    already working** - build broken, harness will not run, migration will not
+    parse. Unblocking the current job is finishing the job. Everything else is
+    recorded and left alone: a ticket when `tracker` is set, otherwise a
+    `TODO.md` line with the reason it was deferred. The report must say what
+    was deferred and where it went, because a guardrail whose effects are
+    invisible reads as the PM having found nothing.
+
+  - **`pm.maxDispatches`** (default 3) caps roles per pass. Blockers found
+    mid-task do not count against it.
+
+  - **`/crew:pm authority [report-only|act]`** reads or sets it, and
+    `/crew:init` now asks as its fourth setup question, defaulting to
+    `report-only` on any hesitation. `/crew:pm assign` still acts anywhere -
+    typing it *is* the explicit instruction - and says when the config
+    disagrees, so a user who wanted it permanent learns there is a setting.
+
+  - 24 new cases (shell suite 95 -> 101, pytest 306 -> 324), sabotage-tested:
+    making an unknown authority widen to `act` instead of failing closed turns
+    both suites red.
+
 - **`crew` 0.8.0 - the PM assigns work, and re-engages itself when state
   changes.** Three related gaps, reported together: the PM only ever spoke at
   session start, so a session that opened clean and then closed a ticket or

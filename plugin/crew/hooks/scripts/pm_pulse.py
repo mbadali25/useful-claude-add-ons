@@ -165,16 +165,37 @@ def should_pulse(state):
     return bool(triggers)
 
 
-# Appended to the findings so the model treats the pulse as work to do rather
-# than as a status line to echo back at the user. The priority sentence is the
-# user's standing override: it is what makes "full assign authority" tolerable.
-_DIRECTIVE = (
-    "Crew PM: the project state changed and these are now outstanding. Act on "
-    "them in the order given, using the crew role that fits each one, and "
-    "report what you did when finished. If the user has already said what they "
-    "want prioritised, that ordering wins over this one. Do not ask permission "
-    "to start; do ask before removing a role or deleting anything."
-)
+# Prepended to the findings so the model knows what the pulse IS. One per
+# authority, and the difference is the whole point of the setting: under `act`
+# this is a work order, under `report-only` it is something to put in front of
+# the user and then stop. Sending the `act` text to a report-only repo would
+# make the switch a lie -- the config would say "ask me" while the hook said
+# "go" -- so the text is selected from the same normalised field every other
+# consumer reads.
+_DIRECTIVES = {
+    "act": (
+        "Crew PM: the project state changed and these are now outstanding. Act "
+        "on them in the order given, using the crew role that fits each one, "
+        "and report what you did when finished. If the user has already said "
+        "what they want prioritised, that ordering wins over this one. Do not "
+        "ask permission to start; do ask before removing a role or deleting "
+        "anything. Stay on these findings: fix an unrelated problem only when "
+        "it BLOCKS one of them, and ticket or TODO the rest rather than "
+        "following it."
+    ),
+    "report-only": (
+        "Crew PM: the project state changed and these are now outstanding. "
+        "Present them to the user as recommendations, shortest useful form, "
+        "and stop -- do NOT dispatch agents or start fixing them. This repo "
+        "has pm.authority set to report-only. If the user wants the work done, "
+        "they will say so, or run /crew:pm assign."
+    ),
+}
+
+
+def directive(state):
+    pm = crew_state.dict_or_empty(state.get("pm"))
+    return _DIRECTIVES[crew_state.normalise_authority(pm.get("authority"))]
 
 _STOOD_DOWN = (
     "Crew PM: state has changed more than "
@@ -190,7 +211,7 @@ def render(state):
     lines = pm_brief.render(state)
     if not lines:
         return None
-    return _DIRECTIVE + "\n\n" + "\n".join(lines)
+    return directive(state) + "\n\n" + "\n".join(lines)
 
 
 def main(argv=None):

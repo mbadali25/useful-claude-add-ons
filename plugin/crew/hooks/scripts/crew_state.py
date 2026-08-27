@@ -427,13 +427,52 @@ TRIGGERS = (
     "ticketsTooLarge",
 )
 
+# What the PM is allowed to do about what it finds.
+#
+# `report-only` recommends and stops -- the shipped default, because a fresh
+# install must not start dispatching agents on someone who has not asked for
+# that. `act` lets it dispatch crew roles and refresh diagrams on its own.
+#
+# Anything else is a typo. An unknown value resolves to `report-only` rather
+# than raising or guessing: config is hand-edited, and the failure direction
+# for a permissions field has to be the restrictive one. `"Act"`, `"ACT"` and
+# `" act "` are accepted as `act` -- those are the same intent typed carelessly,
+# not a different one.
+AUTHORITIES = ("report-only", "act")
+AUTHORITY_DEFAULT = "report-only"
+
 PM_DEFAULTS = {
     "enabled": True,
     "mode": "adaptive",
     "quietLines": 8,
     "maxLines": 40,
-    "authority": "report-only",
+    "authority": AUTHORITY_DEFAULT,
+    # Guardrail. The PM stops dispatching after this many roles in one pass and
+    # says what it did not get to, rather than working a queue until the context
+    # runs out. Blockers found mid-task do not count against it -- see the
+    # crew-pm skill; unblocking the current job is finishing the job, not new
+    # work.
+    "maxDispatches": 3,
 }
+
+
+def normalise_authority(value):
+    """`value` as a known authority, else the restrictive default."""
+    if isinstance(value, str):
+        cleaned = value.strip().lower()
+        if cleaned in AUTHORITIES:
+            return cleaned
+    return AUTHORITY_DEFAULT
+
+
+def can_act(state):
+    """True when the PM may act on its findings rather than just report them.
+
+    Reads from a full state dict so callers cannot disagree about where the
+    field lives or what an absent one means.
+    """
+    pm = dict_or_empty(state.get("pm"))
+    return normalise_authority(pm.get("authority")) == "act"
 
 
 def dict_or_empty(value):
@@ -523,8 +562,13 @@ def collect(root):
     # These come from a hand-edited JSON file: the types are whatever someone
     # typed, and an unguarded comparison against one is a TypeError that takes
     # out every session in the repo.
-    for key, default in (("quietLines", 8), ("maxLines", 40)):
+    for key, default in (("quietLines", 8), ("maxLines", 40),
+                         ("maxDispatches", 3)):
         pm[key] = int_or(pm.get(key, default), default)
+    # Normalised once, here, for the same reason as the numbers: every consumer
+    # downstream then reads a value that is guaranteed to be one of AUTHORITIES,
+    # and none of them has to re-decide what a typo means.
+    pm["authority"] = normalise_authority(pm.get("authority"))
 
     tier = cfg.get("tier")
     roles = cfg.get("roles")

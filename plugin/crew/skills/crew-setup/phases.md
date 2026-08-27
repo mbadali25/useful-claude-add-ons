@@ -96,7 +96,25 @@ own global configuration.
 Ask the three questions (reviewer, tracker, memory). The tracker choice is
 files, Jira, or ServiceDesk Plus - offer the last two only when their MCP tools
 are actually reachable, since a repo configured for an API nobody can call stops
-every later command on the same missing precondition. Create
+every later command on the same missing precondition.
+
+**Then ask the fourth: how much authority the PM gets in this repo.** Default
+`report-only` on any hesitation - a repo that gets autonomy by accident is worse
+than one that has to be asked twice.
+
+> The crew manager can either recommend work and wait for you, or dispatch the
+> crew itself when it spots something. Which do you want here?
+> - `report-only` (default) - it tells you what it would do, you decide.
+> - `act` - it dispatches roles and refreshes diagrams on its own, reports
+>   after. It stays on the findings it was working: a problem it stumbles on
+>   gets fixed only if it BLOCKS one of them, and anything else becomes a ticket
+>   or a `TODO.md` line rather than a detour.
+
+Write the answer to `pm.authority`. Say that `/crew:pm authority <value>`
+changes it later, so this is not a decision they are stuck with - and that
+either way removal and deletion always stop for a yes.
+
+Create
 `.crew/`, `.work/`, `docs/adr/`, `_verify/` from template (README.md, smoke.sh,
 run-all.sh, cases/), gitignore
 entries for secrets, and a `CLAUDE.md` if absent.
