@@ -222,11 +222,18 @@ claude mcp add mcp-o365-admin -- npx -y @mbadali/mcp-o365-admin@latest
 ```
 
 Same command on Windows and Linux -- `npx` resolves the right platform build itself.
-**This does not work yet** -- see "Publishing" immediately below for what has to
-happen first. Once it has, this replaces both options above; there is no reason to
-keep a local clone around just to run these servers.
+**This does not work yet** -- see "Publishing" immediately below, and the full
+step-by-step in [`PUBLISHING.md`](PUBLISHING.md), for what has to happen first. Once
+it has, this replaces both options above; there is no reason to keep a local clone
+around just to run these servers.
 
 ## Publishing
+
+Summary below; [`PUBLISHING.md`](PUBLISHING.md) is the full walkthrough -- npm account
+and `@mbadali` scope setup, generating and setting the CI token, the tag-and-push
+release flow, the manual fallback, bumping versions for an update, verifying the first
+publish actually worked, and troubleshooting (`402`, `403`, `ENEEDAUTH`, a stale `npx`
+cache).
 
 [`.github/workflows/publish-mcp-servers.yml`](../.github/workflows/publish-mcp-servers.yml)
 publishes all five packages -- `@mbadali/mcp-ms-core` first, then the four servers,
