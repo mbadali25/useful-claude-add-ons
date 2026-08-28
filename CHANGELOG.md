@@ -6,6 +6,27 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
+- **`crew` 0.11.0 - `.crew/config.json` recreates itself when it goes missing
+  or stops parsing.** The `platform-sync` `SessionStart` hook, which already
+  repaired the `platform` block, now also recreates the whole file: missing
+  or empty gets fresh defaults straight away, a present-but-malformed file
+  gets copied aside to `config.json.broken` first (never overwriting an
+  earlier `.broken` from a prior bad session), and anything that already
+  parses as an object is left alone byte for byte. **Guard: only where
+  `.crew/` already exists** - a plain git repo with no crew setup is never
+  colonized just because a session opened in it. Recreating the file resets
+  every human choice - `tracker`, `roles`, `tier`, and the rest - back to
+  defaults, and the one-line report says so and points at `/crew:init` to
+  re-record them.
+
+  - **One source for the defaults, not three.** `hooks/scripts/crew_config.py`
+    is the new module that owns `default_config()`, built from
+    `crew_state.PM_DEFAULTS`, `crew_upgrade.GRAPH_BLOCK`, and
+    `crew_state.SCHEMA_CURRENT` rather than a fourth hand-copied literal. The
+    committed template `templates/config.template.json` - what `/crew:init`
+    writes - and the heal path both call it, and a test asserts the template
+    equals its output byte-for-byte so the two can never quietly drift apart.
+
 - **`crew` 0.10.0 - an Obsidian Kanban board is now a fourth ticket tracker,
   alongside `files`, `jira` and `sdp`.** Set `tracker: "obsidian"` and point
   `obsidian.vaultPath` at a vault. The board is a markdown file the

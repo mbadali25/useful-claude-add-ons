@@ -166,6 +166,47 @@ and the `.sh`/`.ps1` pair here has drifted for a whole release before.
 A read-only checkout, or no python at all, means it says what it *would* have
 changed and changes nothing.
 
+### The config heals itself
+
+The same hook also recreates `.crew/config.json` itself, not just its
+`platform` block, when the file has gone missing or stopped parsing —
+a half-finished merge, a bad rebase, or an edit interrupted mid-save all
+leave a repo that *looks* like a crew repo (the `.crew/` directory is right
+there) but whose switchboard is gone or unreadable.
+
+**CRITICAL GUARD: this only ever acts where `.crew/` already exists.** A
+plain git repository that happens to be open when the hook runs is not
+touched — `.crew/` absent means "not a crew repo," full stop, and the hook
+must never create one just because a session started there.
+
+Given a `.crew/` directory, three cases:
+
+| `.crew/config.json` | What happens |
+|---|---|
+| Missing, or present but empty | Written fresh from the same template `/crew:init` uses. No backup — there is nothing to lose. |
+| Present, non-empty, but does not parse as a config object | Copied aside to `config.json.broken` first (a previous `.broken` file from an earlier bad session is never overwritten — the first failure is still the best chance at recovery), then written fresh. |
+| Present and parses as an object, however unusual | Untouched, byte for byte. This heals a config that **is not one** — it does not validate or judge one that already is. |
+
+Either way the session says so, in one line:
+
+```
+## config - .crew/config.json was malformed; backed it up to .crew/config.json.broken and wrote defaults - tracker, roles, and every other choice are back to defaults; run /crew:init to re-record them
+```
+
+**Recreating the file means every human choice in it is gone** — `tracker`,
+`roles`, `tier`, whichever Jira project or Obsidian vault was configured, all
+of it, back to defaults. `platform-sync` cannot know what those choices were;
+only `/crew:init` can put them back, which is why the message says to run it.
+This trades a working-but-defaulted repo for a broken one, not a perfectly
+restored one.
+
+The default config itself has one source: `hooks/scripts/crew_config.py`'s
+`default_config()`. `templates/config.template.json` (what `/crew:init`
+copies down) and this heal path both call it, and a committed test asserts
+the template equals its output byte-for-byte — so the two can never quietly
+drift apart the way a hand-maintained template and a hand-maintained heal
+path eventually would.
+
 ### Resolving the toolchain
 
 Detection tells you what you are on. It does not tell you whether the commands
@@ -629,7 +670,10 @@ You open the pull request. The crew stops at the boundary of your judgment.
 
 ## 11. Configuration reference
 
-Everything reads `.crew/config.json`:
+Everything reads `.crew/config.json`. If it goes missing or stops parsing,
+`platform-sync` recreates it from `templates/config.template.json` the next
+time the repo is opened — see "The config heals itself" in §3; this is the
+same shape that produces:
 
 ```json
 {
@@ -1802,7 +1846,7 @@ registered on its own matcher or event — 16 entries total.
 | `promote-gate.sh` / `.ps1` | `PreToolUse` on Bash / PowerShell | Refuses a declared `deploy` command unless the upstream environment has an all-pass row for **this sha**, the rollback runbook is verified inside 90 days, `requireHuman` is approved, and the tree is clean. During an emergency lane it records each unmet precondition and allows the deploy (§24) |
 | `handoff-read.sh` / `.ps1` | `SessionStart` | Injects the handoff after clear, compact, or resume |
 | `pm-brief.sh` / `.ps1` | `SessionStart` | Runs `crew_state.py`, prints the prioritized PM brief (triggers, health, knowledge, graph freshness) — report-only, changes nothing |
-| `platform-sync.sh` / `.ps1` | `SessionStart` | Detects this machine and repairs the `platform` block in `.crew/config.json` — see §3b. The only hook that writes config, and only the seven derived facts |
+| `platform-sync.sh` / `.ps1` | `SessionStart` | Detects this machine and repairs the `platform` block in `.crew/config.json` — see §3b. The only hook that writes config: the seven derived facts, plus recreating the whole file from defaults when it is missing or malformed (backing up a malformed one first) — never when `.crew/` itself does not exist. See "The config heals itself" in §3 |
 | `verify-gate.sh` / `.ps1` | `Stop` | Runs the checks the changed paths map to; fails the turn on red, on a changed path with no rule, or on a deploy that recorded no promotion row. Stands down while an emergency lane is open (§24), recording what did not run |
 | `context-watch.sh` / `.ps1` | `Stop` | Measures window occupancy from the transcript; asks for a handoff once per session at the later of `warnAt` and `reserveTokens` remaining, or instructs a wrap-up if `context.autoWrapUp` is on |
 | `handoff-write.sh` / `.ps1` | `PreCompact` | Snapshots the transcript, writes a skeleton handoff |

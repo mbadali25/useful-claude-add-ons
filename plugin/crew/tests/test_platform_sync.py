@@ -15,6 +15,7 @@ import json
 import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
+import crew_config
 import crew_fixtures
 import crew_platform
 
@@ -245,14 +246,16 @@ def test_only_derived_keys_are_writable():
         "windowsHostIp"}
 
 
-def test_an_unparseable_config_is_left_entirely_alone(tmp_path):
+def test_an_unparseable_config_is_left_alone_by_load(tmp_path):
+    """`load()` itself is pure -- it only ever reports, never writes. Whether
+    a config this broken gets RECREATED is `heal_config`'s decision, covered
+    in the "Recreating a missing or broken config" section below; `load()`
+    on its own must not guess at what the human was in the middle of."""
     root = crew_fixtures.make_repo(tmp_path, config=BASE, git=False)
     path = root / ".crew" / "config.json"
     path.write_text("{ not json, half-edited", encoding="utf-8")
     cfg, _ = crew_platform.load(str(root))
     assert cfg == {}
-    # main() returns before claiming or writing when the config will not parse:
-    # repairing it would mean guessing what the human was in the middle of.
     assert path.read_text(encoding="utf-8") == "{ not json, half-edited"
 
 
@@ -364,6 +367,180 @@ def test_crlf_is_not_reported_on_native_windows(tmp_path, monkeypatch):
     _fake(monkeypatch, "Windows")
     cfg, _ = crew_platform.load(str(root))
     assert not crew_platform.concerns(cfg, crew_platform.detect(str(root)))
+
+
+# --- Recreating a missing or broken config --------------------------------
+
+
+def _no_crew_dir(tmp_path):
+    """A directory that is not a crew repo at all -- no `.crew/`."""
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / "README.md").write_text("just a repo\n", encoding="utf-8")
+    return root
+
+
+def test_heal_config_does_nothing_without_a_crew_dir(tmp_path):
+    """CRITICAL GUARD. A plain repo must not be colonized just because a
+    session happened to open in it."""
+    root = _no_crew_dir(tmp_path)
+    cfg, message = crew_platform.heal_config(str(root))
+    assert cfg is None
+    assert message is None
+    assert not (root / ".crew").exists()
+
+
+def test_heal_config_recreates_a_missing_config(tmp_path):
+    root = crew_fixtures.make_repo(tmp_path, config=None, git=False)
+    assert not (root / ".crew" / "config.json").exists()
+
+    cfg, message = crew_platform.heal_config(str(root))
+
+    assert cfg == crew_config.default_config()
+    assert "missing" in message
+    assert "/crew:init" in message
+    written = json.loads((root / ".crew" / "config.json").read_text(encoding="utf-8"))
+    assert written == crew_config.default_config()
+    assert not (root / ".crew" / "config.json.broken").exists()
+
+
+def test_heal_config_treats_an_empty_file_like_a_missing_one(tmp_path):
+    """Nothing to preserve in a zero-byte file -- no backup is worth taking."""
+    root = crew_fixtures.make_repo(tmp_path, config=None, git=False)
+    path = root / ".crew" / "config.json"
+    path.write_text("   \n", encoding="utf-8")
+
+    cfg, message = crew_platform.heal_config(str(root))
+
+    assert cfg == crew_config.default_config()
+    assert "missing" in message
+    assert not (root / ".crew" / "config.json.broken").exists()
+
+
+def test_heal_config_backs_up_a_malformed_config_before_recreating(tmp_path):
+    root = crew_fixtures.make_repo(tmp_path, config=None, git=False)
+    path = root / ".crew" / "config.json"
+    broken_text = "{ not json, half-edited"
+    path.write_text(broken_text, encoding="utf-8")
+
+    cfg, message = crew_platform.heal_config(str(root))
+
+    assert cfg == crew_config.default_config()
+    assert "malformed" in message
+    assert "config.json.broken" in message
+    backup = root / ".crew" / "config.json.broken"
+    assert backup.read_text(encoding="utf-8") == broken_text
+    written = json.loads(path.read_text(encoding="utf-8"))
+    assert written == crew_config.default_config()
+
+
+def test_heal_config_backs_up_valid_json_that_is_not_an_object(tmp_path):
+    """`[]` and `"oops"` both parse, and neither is a usable config -- the
+    same rule crew_state.load_config applies for the read side."""
+    root = crew_fixtures.make_repo(tmp_path, config=None, git=False)
+    path = root / ".crew" / "config.json"
+    path.write_text("[1, 2, 3]", encoding="utf-8")
+
+    cfg, message = crew_platform.heal_config(str(root))
+
+    assert cfg == crew_config.default_config()
+    assert "malformed" in message
+    assert (root / ".crew" / "config.json.broken").read_text(
+        encoding="utf-8") == "[1, 2, 3]"
+
+
+def test_heal_config_leaves_a_healthy_config_untouched_byte_for_byte(tmp_path):
+    """A parseable dict is not this function's business, however unusual --
+    it repairs a config that IS NOT ONE, not one it merely disagrees with."""
+    root = crew_fixtures.make_repo(tmp_path, config=None, git=False)
+    path = root / ".crew" / "config.json"
+    odd_but_valid = '{"tracker":"jira","roles":["explorer"]}'
+    path.write_bytes(odd_but_valid.encode("utf-8"))
+    before = path.read_bytes()
+
+    cfg, message = crew_platform.heal_config(str(root))
+
+    assert cfg is None
+    assert message is None
+    assert path.read_bytes() == before
+    assert not (root / ".crew" / "config.json.broken").exists()
+
+
+def test_a_previous_broken_backup_is_not_overwritten(tmp_path):
+    """Two bad sessions in a row must not clobber the first bad file with the
+    second -- the first is still the human's best chance at recovery."""
+    root = crew_fixtures.make_repo(tmp_path, config=None, git=False)
+    path = root / ".crew" / "config.json"
+    backup = root / ".crew" / "config.json.broken"
+    backup.write_text("first broken attempt", encoding="utf-8")
+    path.write_text("{ second broken attempt", encoding="utf-8")
+
+    crew_platform.heal_config(str(root))
+
+    assert backup.read_text(encoding="utf-8") == "first broken attempt"
+
+
+# --- Recreating a missing or broken config, end to end via main() ---------
+
+
+def _payload(root, session="s1", source="startup"):
+    return json.dumps({"cwd": str(root), "session_id": session,
+                       "source": source})
+
+
+def test_main_recreates_a_missing_config_and_reports_it(
+        tmp_path, monkeypatch, capsys):
+    root = crew_fixtures.make_repo(tmp_path, config=None, git=False)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("CLAUDE_PROJECT_DIR", raising=False)
+    monkeypatch.setattr("sys.stdin", _Stdin(_payload(root)))
+
+    assert crew_platform.main() == 0
+
+    out = capsys.readouterr().out
+    assert "missing" in out
+    assert "/crew:init" in out
+    written = _cfg(root)
+    # platform-sync runs in the same pass, so platform is no longer all-null
+    # by the time the file is read back -- everything else must still match
+    # the defaults heal_config wrote.
+    default = crew_config.default_config()
+    for key in default:
+        if key == "platform":
+            continue
+        assert written[key] == default[key], key
+
+
+def test_main_does_not_create_crew_in_a_plain_repo(tmp_path, monkeypatch, capsys):
+    root = _no_crew_dir(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("CLAUDE_PROJECT_DIR", raising=False)
+    monkeypatch.setattr("sys.stdin", _Stdin(_payload(root)))
+
+    assert crew_platform.main() == 0
+
+    assert not (root / ".crew").exists()
+    assert capsys.readouterr().out == ""
+
+
+def test_main_backs_up_and_recreates_a_malformed_config(
+        tmp_path, monkeypatch, capsys):
+    root = crew_fixtures.make_repo(tmp_path, config=None, git=False)
+    (root / ".crew" / "config.json").write_text(
+        "{ not json, half-edited", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("CLAUDE_PROJECT_DIR", raising=False)
+    monkeypatch.setattr("sys.stdin", _Stdin(_payload(root)))
+
+    assert crew_platform.main() == 0
+
+    out = capsys.readouterr().out
+    assert "malformed" in out
+    assert (root / ".crew" / "config.json.broken").read_text(
+        encoding="utf-8") == "{ not json, half-edited"
+    written = _cfg(root)
+    assert written["tracker"] == "files"
+    assert written["schema"] == 2
 
 
 # --- The brief line ------------------------------------------------------
