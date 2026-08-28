@@ -101,7 +101,7 @@ A few items need a word of explanation:
 
 - **`graphify` code graph** (20) installs the third-party `graphify` CLI (`uv tool install graphifyy` — package `graphifyy`, double-y; the CLI it installs is `graphify`) and registers it **per-repository** with `graphify install --project`, never globally. Off by default, no new flag — it reuses `--select` / `-Select` like every other item. This is what `crew`'s `/crew:upgrade` and the `crew-graph` skill build on; installing it alone does nothing until `crew` (19) or another workflow calls it.
 
-- **Microsoft MCP servers** (21) is not one server but four — `mcp-msgraph`, `mcp-intune`, `mcp-o365-admin`, `mcp-o365-user` — built from [`mcp-servers/`](mcp-servers/) in this repo. Unlike items 9–12 these aren't published to npm yet, so this item can't just `npx -y <pkg>@latest`: it requires running the script **from inside a clone** of this repo (see the two install modes above) with `mcp-servers/` present, and it needs real Azure AD app registrations first — `MS_ADMIN_TENANT_ID`/`MS_ADMIN_CLIENT_ID`/`MS_ADMIN_CLIENT_SECRET` (app-only, tenant-wide — registers `mcp-msgraph`, `mcp-intune`, `mcp-o365-admin`) and/or `MS_USER_CLIENT_ID` (delegated device-code — registers `mcp-o365-user`). Without a local clone or without any of those set, the item explains what's missing and skips rather than failing. Registration is bare — the item never writes a secret into `~/.claude.json`, so the same env vars must also be set wherever the `claude` process itself gets launched, or the registered servers will fail to authenticate. Every tool in all four servers is read-only until `MCP_MS_ALLOW_WRITES=1` is also set there. Full auth model, env vars, and the gated-tool list: [`mcp-servers/README.md`](mcp-servers/README.md).
+- **Microsoft MCP servers** (21) is not one server but four — `mcp-msgraph`, `mcp-intune`, `mcp-o365-admin`, `mcp-o365-user` — built from [`mcp-servers/`](mcp-servers/) in this repo. Unlike items 9–12 these aren't published to npm yet, so this item can't just `npx -y <pkg>@latest`: it requires running the script **from inside a clone** of this repo (see the two install modes above) with `mcp-servers/` present, and it needs real Azure AD app registrations first — `MS_ADMIN_TENANT_ID`/`MS_ADMIN_CLIENT_ID`/`MS_ADMIN_CLIENT_SECRET` (app-only, tenant-wide — registers `mcp-msgraph`, `mcp-intune`, `mcp-o365-admin`) and/or `MS_USER_CLIENT_ID` (delegated device-code — registers `mcp-o365-user`). Without a local clone or without any of those set, the item explains what's missing and skips rather than failing. It builds the workspace, then runs `npm install -g .` inside each server package it has credentials for and registers the resulting global bin name (`mcp-msgraph`, etc.) — bare, no `--env`, so no secret is ever written into `~/.claude.json`; the same env vars must also be set wherever the `claude` process itself gets launched, or the registered servers will fail to authenticate. Every tool in all four servers is read-only until `MCP_MS_ALLOW_WRITES=1` is also set there. Once these packages are published to npm (a tagged `mcp-servers-v*` push runs [`.github/workflows/publish-mcp-servers.yml`](.github/workflows/publish-mcp-servers.yml)), the step prints the `npx -y @mbadali/<pkg>@latest` one-liners so you can swap to those by hand — see [`mcp-servers/README.md`](mcp-servers/README.md) for the full auth model, env vars, and the gated-tool list.
 
 Everything that can be a plugin **is** installed as one, using the CLI's own `claude plugin marketplace add` / `claude plugin install` — there's no `npx claudepluginhub` wrapper and no `git clone` + shell-script step any more. That removes the Windows failure modes those introduced (the wrapper needed a writable per-repo checkout).
 
@@ -161,7 +161,7 @@ For this repo's own skills, [`scripts/check-marketplace.py`](scripts/check-marke
 | 18 Obsidian | The Obsidian desktop app (Chocolatey → winget on Windows, flatpak → snap on Linux), plus the `claude-obsidian` vault engine and [`kepano/obsidian-skills`](https://github.com/kepano/obsidian-skills) — Obsidian's own Markdown, Bases, JSON Canvas, CLI and Defuddle skills | choco/winget/flatpak/snap + 2 marketplaces |
 | 19 This repo's plugins | The `crew` plugin from [`plugin/`](plugin/) — 10 subagents, 18 slash commands, 16 bundled skills, and 16 hook entries (8 scripts × `.sh`/`.ps1`) across 5 events. Off by default because hooks execute whether or not Claude agrees with them | this repo |
 | 20 `graphify` | The `graphify` CLI (`graphifyy` on PyPI), registered per-repository with `graphify install --project`. Off by default; not installed globally | `uv tool install` |
-| 21 Microsoft MCP servers | Builds `mcp-servers/` (`npm install && npm run build`) and registers up to 4 servers — `mcp-msgraph`, `mcp-intune`, `mcp-o365-admin` (app-only, needs `MS_ADMIN_*`), `mcp-o365-user` (delegated device-code, needs `MS_USER_CLIENT_ID`). Not on npm yet, so requires a local clone; skipped with instructions otherwise | this repo (`mcp-servers/`) + `claude mcp add` |
+| 21 Microsoft MCP servers | Builds `mcp-servers/` (`npm install && npm run build`), then `npm install -g` up to 4 servers — `mcp-msgraph`, `mcp-intune`, `mcp-o365-admin` (app-only, needs `MS_ADMIN_*`), `mcp-o365-user` (delegated device-code, needs `MS_USER_CLIENT_ID`) — and registers each global bin name. Not on npm yet, so requires a local clone; skipped with instructions otherwise | this repo (`mcp-servers/`) + `npm install -g` + `claude mcp add` |
 
 Items 1–8 are the default set. Everything from 9 on is opt-in.
 
@@ -297,11 +297,16 @@ present in the environment.
 
 Azure Resource Manager is deliberately **not** one of the four: the official
 [`@azure/mcp`](https://www.npmjs.com/package/@azure/mcp) (menu item 10) already covers
-ARM comprehensively, so this repo doesn't duplicate it. See
+ARM comprehensively, so this repo doesn't duplicate it. None of the five packages
+(the shared core plus the four servers) are published to npm yet — the installer's
+interim path is `npm install -g` from this clone, and
+[`.github/workflows/publish-mcp-servers.yml`](.github/workflows/publish-mcp-servers.yml)
+publishes all five, core first, on a tagged `mcp-servers-v*` push once the `@mbadali`
+npm scope and an `NPM_TOKEN` repo secret exist. See
 [`mcp-servers/README.md`](mcp-servers/README.md) for that decision, the full auth model
 (delegated vs. app-only, and why they're separate credentials), every environment
 variable, the write/destructive tools gated behind `MCP_MS_ALLOW_WRITES=1` +
-`confirm: true`, and registration one-liners for both platforms.
+`confirm: true`, and registration one-liners for both platforms — interim and future.
 
 ## Skills
 

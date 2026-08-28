@@ -29,11 +29,32 @@ All notable changes to this repository are documented here. Format follows [Keep
   Unlike the item 9–12 MCP servers, none of these four are on npm yet, so the
   item can't `npx -y <pkg>@latest` them: it detects `mcp-servers/package.json`
   under the current directory (this script never resolves its own location),
-  builds it with `npm install && npm run build`, and registers whichever of
-  `mcp-msgraph`/`mcp-intune`/`mcp-o365-admin` (needs `MS_ADMIN_TENANT_ID` +
-  `MS_ADMIN_CLIENT_ID` + `MS_ADMIN_CLIENT_SECRET`) and `mcp-o365-user` (needs
-  `MS_USER_CLIENT_ID`) it has credentials for, printing what's missing and
-  skipping rather than failing otherwise.
+  builds it with `npm install && npm run build`, then runs `npm install -g .`
+  inside each server package it has credentials for and registers the
+  resulting global bin name (`mcp-msgraph`, `mcp-intune`, `mcp-o365-admin` —
+  need `MS_ADMIN_TENANT_ID` + `MS_ADMIN_CLIENT_ID` + `MS_ADMIN_CLIENT_SECRET`;
+  `mcp-o365-user` — needs `MS_USER_CLIENT_ID`), printing what's missing and
+  skipping rather than failing otherwise. The global install works pre-publish
+  because these are npm workspace members — it symlinks rather than
+  reinstalling, so the dependency on `@mbadali/mcp-ms-core` still resolves
+  through the workspace's hoisted `node_modules` instead of 404ing against the
+  registry.
+
+  **The npx path is now real, not just documented.** Five packages carry
+  `publishConfig`/`files`/`bin` shaped for `npm publish`: `files` is scoped to
+  `dist/src` only (no compiled test output in the tarball — verified with
+  `npm pack --dry-run` per package), and each server's `build` script chmods
+  its compiled `cli.js` to `0o755` so the `#!/usr/bin/env node` shebang is
+  executable on Linux (Windows needs neither — npm's own `.cmd`/`.ps1` shims
+  handle it there). `.github/workflows/publish-mcp-servers.yml` publishes all
+  five — core first, since the four servers pin an exact
+  `"@mbadali/mcp-ms-core": "0.1.0"` dependency — on a pushed `mcp-servers-v*`
+  tag, via `npm publish --provenance --access public` authenticated with an
+  `NPM_TOKEN` repository secret. Until the `@mbadali` npm scope exists and
+  that secret is set and a tag is actually published, `npx -y @mbadali/<pkg>`
+  cannot resolve anything — `mcp-servers/README.md` says so plainly and
+  documents `npm install -g` (Option B, what the installer now uses) and the
+  direct-path form (Option A) as the two working interim installs.
 
 - **`crew` 0.10.0 - an Obsidian Kanban board is now a fourth ticket tracker,
   alongside `files`, `jira` and `sdp`.** Set `tracker: "obsidian"` and point

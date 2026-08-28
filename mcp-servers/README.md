@@ -13,11 +13,12 @@ local clone or, once published, via `npx`.
 | `@mbadali/mcp-o365-user` | The signed-in user's own mail, calendar, files | delegated (device code) |
 | `@mbadali/mcp-o365-admin` | Tenant mailboxes, licenses, password reset, user deletion | app-only (tenant-wide) |
 
-All four sit on `@mbadali/mcp-ms-core`, an npm workspace package published to the
-registry alongside them (so `npx`-installing a server resolves its dependency the normal
-way): one `GraphClient` HTTP wrapper, one `getUserCredential` / `getAdminCredential`
-pair, one write-gate, one `doctor` implementation. No server reimplements auth or HTTP.
-Source: `mcp-servers/packages/`.
+All four sit on `@mbadali/mcp-ms-core`, an npm workspace package meant to be published
+to the registry alongside them (so once that's done, `npx`-installing a server resolves
+its dependency the normal way -- see "Publishing" below for what that actually requires
+and why it hasn't happened yet): one `GraphClient` HTTP wrapper, one `getUserCredential`
+/ `getAdminCredential` pair, one write-gate, one `doctor` implementation. No server
+reimplements auth or HTTP. Source: `mcp-servers/packages/`.
 
 ## Azure: use the official server, not a new one
 
@@ -131,9 +132,14 @@ node packages/intune/dist/src/cli.js doctor
 node packages/o365-user/dist/src/cli.js doctor   # prompts a device-code sign-in
 ```
 
+If you registered via Option B or `npx` below, the global/published command name works
+the same way: `mcp-intune doctor`, `npx -y @mbadali/mcp-intune@latest doctor`.
+
 ## Install and register
 
-### From this local clone (works today, before anything is published)
+Nothing here is on the npm registry yet (see "Publishing" below), so today there are
+two ways to run these servers from a local clone -- pick one per server, they are not
+mutually exclusive. Once published, a third, simpler way (`npx`) replaces both.
 
 ```bash
 cd mcp-servers
@@ -142,6 +148,12 @@ npm run build
 ```
 
 That builds `packages/core` first, then all four servers into `packages/<name>/dist/`.
+Both options below assume this has already been run.
+
+### Option A: direct path (no global install)
+
+Register the compiled entry point directly. Nothing touches your global npm
+install; the registered command is this exact file.
 
 **Linux/macOS:**
 
@@ -161,11 +173,44 @@ claude mcp add mcp-o365-user -- node C:\path\to\mcp-servers\packages\o365-user\d
 claude mcp add mcp-o365-admin -- node C:\path\to\mcp-servers\packages\o365-admin\dist\src\cli.js
 ```
 
-These one-liners register the server bare -- no `--env`, so no secret gets written
-into `~/.claude.json`. The credentials still have to reach the process at runtime,
-which means they must be exported wherever `claude` itself gets launched (shell
-profile, service manager, etc.), not just in the shell you happened to run
-`claude mcp add` from.
+### Option B: `npm install -g` from this clone (what the installer script uses)
+
+Installs a global command (`mcp-msgraph`, `mcp-intune`, `mcp-o365-user`,
+`mcp-o365-admin`) so the registration line matches what it will look like after
+publishing -- only the command changes, not the shape of the `claude mcp add` call.
+Run once per server you want, from inside `mcp-servers/`:
+
+```bash
+(cd packages/graph && npm install -g .)
+(cd packages/intune && npm install -g .)
+(cd packages/o365-user && npm install -g .)
+(cd packages/o365-admin && npm install -g .)
+```
+
+Same commands on Windows (PowerShell resolves `.` the same way; no path changes
+needed). Then, same on both platforms:
+
+```bash
+claude mcp add mcp-msgraph -- mcp-msgraph
+claude mcp add mcp-intune -- mcp-intune
+claude mcp add mcp-o365-user -- mcp-o365-user
+claude mcp add mcp-o365-admin -- mcp-o365-admin
+```
+
+This works pre-publish because these are npm **workspace** members: `npm install -g .`
+on a workspace member symlinks it globally rather than reinstalling it fresh, so its
+`require("@mbadali/mcp-ms-core")` still resolves through `mcp-servers/node_modules`
+(hoisted there by the `npm install` above) instead of hitting the registry, where it
+would 404 today. The trade-off: the global command only keeps working as long as this
+clone stays where it is -- moving or deleting `mcp-servers/` breaks it, the same
+caveat as `npm link`. This is exactly the mechanism menu item 21 of the install
+scripts (`scripts/install-prerequisites.sh` / `.ps1`) uses.
+
+Both options register the server bare -- no `--env`, so no secret gets written into
+`~/.claude.json`. The credentials still have to reach the process at runtime, which
+means they must be exported wherever `claude` itself gets launched (shell profile,
+service manager, etc.), not just in the shell you happened to run `claude mcp add`
+from.
 
 ### Via npx (once published to npm under the `@mbadali` scope)
 
@@ -177,6 +222,35 @@ claude mcp add mcp-o365-admin -- npx -y @mbadali/mcp-o365-admin@latest
 ```
 
 Same command on Windows and Linux -- `npx` resolves the right platform build itself.
+**This does not work yet** -- see "Publishing" immediately below for what has to
+happen first. Once it has, this replaces both options above; there is no reason to
+keep a local clone around just to run these servers.
+
+## Publishing
+
+[`.github/workflows/publish-mcp-servers.yml`](../.github/workflows/publish-mcp-servers.yml)
+publishes all five packages -- `@mbadali/mcp-ms-core` first, then the four servers,
+since each server's `package.json` pins `"@mbadali/mcp-ms-core": "0.1.0"` and npm
+needs that version resolvable on the registry before it will install a server that
+depends on it. It fires on a pushed tag matching `mcp-servers-v*` (e.g.
+`mcp-servers-v0.1.0`) and runs `npm publish --provenance --access public` for each
+package, authenticated with `NPM_TOKEN` from repository secrets.
+
+Two things have to be true before that tag push does anything useful, and neither is
+true yet in this repo:
+
+1. **The `@mbadali` scope has to exist on npmjs.com** and be owned by an account that
+   can grant the token below publish rights to it. `--access public` only controls
+   whether the *published package* is public within that scope -- it does not create
+   the scope itself.
+2. **An `NPM_TOKEN` repository secret** (an npm "Automation" or "Granular Access"
+   token with publish rights to that scope) has to be set in this repo's GitHub
+   Actions secrets.
+
+**Until both exist and a `mcp-servers-v*` tag has actually been pushed and published
+successfully, `npx -y @mbadali/<pkg>@latest` cannot resolve anything** -- npm will
+report a 404 for an unscoped-nonexistent or unpublished package. Use Option A or
+Option B above until then.
 
 ### Verify a registration
 

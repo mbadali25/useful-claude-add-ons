@@ -2337,11 +2337,19 @@ fi
 # path; run it from inside a checkout, see README.md's two install modes) plus real
 # Azure AD app registrations. See mcp-servers/README.md for the whole auth model.
 #
-# Registration is deliberately bare ('-- node <path>', no --env): claude mcp add
-# --env persists the value into ~/.claude.json, and this repo's rule is secrets
-# from env only, never written anywhere by this script. So these servers only work
-# once MS_ADMIN_*/MS_USER_* are exported wherever the 'claude' process itself gets
-# launched (shell profile, service manager, etc.) - this step just prints that.
+# Interim form, works today: 'npm install -g .' inside each server package. Because
+# these are npm workspace members, that global install is a symlink back into this
+# clone whose module resolution still finds @mbadali/mcp-ms-core and every dependency
+# via mcp-servers/node_modules (hoisted there by the 'npm install' below) - it does
+# NOT try to fetch mcp-ms-core from the registry, which would 404 pre-publish. That
+# also means the global bin only keeps working as long as this clone stays put; it is
+# a dev-workspace link, not a real package install. Once published, item 21 (this same
+# menu key, on a future run) switches to 'npx -y @mbadali/<pkg>@latest' - registration
+# is bare either way ('-- <command>', no --env): claude mcp add --env persists the
+# value into ~/.claude.json, and this repo's rule is secrets from env only, never
+# written anywhere by this script. So these servers only work once MS_ADMIN_*/MS_USER_*
+# are exported wherever the 'claude' process itself gets launched (shell profile,
+# service manager, etc.) - this step just prints that.
 install_ms_mcp() {
   local have_admin=0 have_user=0
   if [ -n "${MS_ADMIN_TENANT_ID:-}" ] && [ -n "${MS_ADMIN_CLIENT_ID:-}" ] && [ -n "${MS_ADMIN_CLIENT_SECRET:-}" ]; then
@@ -2378,18 +2386,22 @@ install_ms_mcp() {
 
   local root; root="$(pwd)/mcp-servers"
   if [ "$have_admin" -eq 1 ]; then
-    add_mcp_server "mcp-msgraph" "-" node "$root/packages/graph/dist/src/cli.js"
-    add_mcp_server "mcp-intune" "-" node "$root/packages/intune/dist/src/cli.js"
-    add_mcp_server "mcp-o365-admin" "-" node "$root/packages/o365-admin/dist/src/cli.js"
+    ( cd "$root/packages/graph" && npm install -g . ) || { warn "'npm install -g' failed for mcp-msgraph - see output above."; return 1; }
+    ( cd "$root/packages/intune" && npm install -g . ) || { warn "'npm install -g' failed for mcp-intune - see output above."; return 1; }
+    ( cd "$root/packages/o365-admin" && npm install -g . ) || { warn "'npm install -g' failed for mcp-o365-admin - see output above."; return 1; }
+    add_mcp_server "mcp-msgraph" "-" mcp-msgraph
+    add_mcp_server "mcp-intune" "-" mcp-intune
+    add_mcp_server "mcp-o365-admin" "-" mcp-o365-admin
   else
     skip "mcp-msgraph/mcp-intune/mcp-o365-admin: no MS_ADMIN_* credentials given"
   fi
   if [ "$have_user" -eq 1 ]; then
-    add_mcp_server "mcp-o365-user" "-" node "$root/packages/o365-user/dist/src/cli.js"
+    ( cd "$root/packages/o365-user" && npm install -g . ) || { warn "'npm install -g' failed for mcp-o365-user - see output above."; return 1; }
+    add_mcp_server "mcp-o365-user" "-" mcp-o365-user
   else
     skip "mcp-o365-user: no MS_USER_CLIENT_ID given"
   fi
-  ok "Registered bare - no secrets were written to ~/.claude.json. Export MS_ADMIN_TENANT_ID/MS_ADMIN_CLIENT_ID/MS_ADMIN_CLIENT_SECRET and/or MS_USER_CLIENT_ID (+ optional MS_USER_TENANT_ID) in the shell/profile that launches 'claude' itself, or these servers will fail to authenticate. Every server is read-only until MCP_MS_ALLOW_WRITES=1 is also set there. Run 'node <dist/src/cli.js> doctor' to verify auth."
+  ok "Registered via 'npm install -g' (global bin names mcp-msgraph/mcp-intune/mcp-o365-admin/mcp-o365-user) - no secrets were written to ~/.claude.json. Export MS_ADMIN_TENANT_ID/MS_ADMIN_CLIENT_ID/MS_ADMIN_CLIENT_SECRET and/or MS_USER_CLIENT_ID (+ optional MS_USER_TENANT_ID) in the shell/profile that launches 'claude' itself, or these servers will fail to authenticate. Every server is read-only until MCP_MS_ALLOW_WRITES=1 is also set there. Run '<name> doctor' (e.g. 'mcp-msgraph doctor') to verify auth. After these packages are published, swap the registered command for 'npx -y @mbadali/<pkg>@latest' - see mcp-servers/README.md."
 }
 if is_selected "ms-mcp"; then
   run_step "Register Microsoft MCP servers (mcp-servers/)" install_ms_mcp

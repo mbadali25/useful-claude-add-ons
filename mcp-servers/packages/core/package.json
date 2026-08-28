@@ -9,7 +9,7 @@
     ".": "./dist/src/index.js"
   },
   "files": [
-    "dist"
+    "dist/src"
   ],
   "publishConfig": {
     "access": "public"
