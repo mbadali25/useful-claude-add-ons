@@ -12,7 +12,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   app-only, tenant-wide), and `mcp-o365-user` (the signed-in user's own
   mail/calendar/files, delegated device-code sign-in). Not marketplace
   plugins — npm packages under `mcp-servers/packages/`, npm-workspace-linked
-  against `@mbadali/mcp-ms-core`, built with the official
+  against `@badali404/mcp-ms-core`, built with the official
   `@modelcontextprotocol/sdk`. Every write/destructive tool is gated behind
   **both** `MCP_MS_ALLOW_WRITES=1` and a per-call `confirm: true`; every
   server ships a `doctor` subcommand that acquires a real token and prints
@@ -36,7 +36,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   `mcp-o365-user` — needs `MS_USER_CLIENT_ID`), printing what's missing and
   skipping rather than failing otherwise. The global install works pre-publish
   because these are npm workspace members — it symlinks rather than
-  reinstalling, so the dependency on `@mbadali/mcp-ms-core` still resolves
+  reinstalling, so the dependency on `@badali404/mcp-ms-core` still resolves
   through the workspace's hoisted `node_modules` instead of 404ing against the
   registry.
 
@@ -48,10 +48,10 @@ All notable changes to this repository are documented here. Format follows [Keep
   executable on Linux (Windows needs neither — npm's own `.cmd`/`.ps1` shims
   handle it there). `.github/workflows/publish-mcp-servers.yml` publishes all
   five — core first, since the four servers pin an exact
-  `"@mbadali/mcp-ms-core": "0.1.0"` dependency — on a pushed `mcp-servers-v*`
+  `"@badali404/mcp-ms-core": "0.1.0"` dependency — on a pushed `mcp-servers-v*`
   tag, via `npm publish --provenance --access public` authenticated with an
-  `NPM_TOKEN` repository secret. Until the `@mbadali` npm scope exists and
-  that secret is set and a tag is actually published, `npx -y @mbadali/<pkg>`
+  `NPM_TOKEN` repository secret. Until the `@badali404` npm scope exists and
+  that secret is set and a tag is actually published, `npx -y @badali404/<pkg>`
   cannot resolve anything — `mcp-servers/README.md` says so plainly and
   documents `npm install -g` (Option B, what the installer now uses) and the
   direct-path form (Option A) as the two working interim installs.

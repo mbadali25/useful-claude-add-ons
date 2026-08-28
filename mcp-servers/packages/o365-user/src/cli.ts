@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { runDoctor, printDoctorResult, getUserCredential, logToStderr } from "@mbadali/mcp-ms-core";
+import { runDoctor, printDoctorResult, getUserCredential, logToStderr } from "@badali404/mcp-ms-core";
 import { createServer, USER_SCOPES } from "./index.js";
 
 async function main(): Promise<void> {

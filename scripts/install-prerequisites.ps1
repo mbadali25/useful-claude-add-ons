@@ -2209,12 +2209,12 @@ if (Test-Selected 'graphify') {
 #
 # Interim form, works today: 'npm install -g .' inside each server package. Because
 # these are npm workspace members, that global install is a symlink back into this
-# clone whose module resolution still finds @mbadali/mcp-ms-core and every dependency
+# clone whose module resolution still finds @badali404/mcp-ms-core and every dependency
 # via mcp-servers\node_modules (hoisted there by the 'npm install' below) - it does
 # NOT try to fetch mcp-ms-core from the registry, which would 404 pre-publish. That
 # also means the global bin only keeps working as long as this clone stays put; it is
 # a dev-workspace link, not a real package install. Once published, item 21 (this same
-# menu key, on a future run) switches to 'npx -y @mbadali/<pkg>@latest' - registration
+# menu key, on a future run) switches to 'npx -y @badali404/<pkg>@latest' - registration
 # is bare either way (no -EnvVars): Add-McpServer's -EnvVars persists the value into
 # ~/.claude.json, and this repo's rule is secrets from env only, never written anywhere
 # by this script. So these servers only work once MS_ADMIN_*/MS_USER_* are set wherever
@@ -2285,7 +2285,7 @@ if (Test-Selected 'ms-mcp') {
         } else {
             Write-Skip "mcp-o365-user: no MS_USER_CLIENT_ID given"
         }
-        Write-Ok "Registered via 'npm install -g' (global bin names mcp-msgraph/mcp-intune/mcp-o365-admin/mcp-o365-user) - no secrets were written to ~/.claude.json. Set MS_ADMIN_TENANT_ID/MS_ADMIN_CLIENT_ID/MS_ADMIN_CLIENT_SECRET and/or MS_USER_CLIENT_ID (+ optional MS_USER_TENANT_ID) in `$PROFILE or wherever 'claude' itself gets launched, or these servers will fail to authenticate. Every server is read-only until MCP_MS_ALLOW_WRITES=1 is also set there. Run '<name> doctor' (e.g. 'mcp-msgraph doctor') to verify auth. After these packages are published, swap the registered command for 'npx -y @mbadali/<pkg>@latest' - see mcp-servers/README.md."
+        Write-Ok "Registered via 'npm install -g' (global bin names mcp-msgraph/mcp-intune/mcp-o365-admin/mcp-o365-user) - no secrets were written to ~/.claude.json. Set MS_ADMIN_TENANT_ID/MS_ADMIN_CLIENT_ID/MS_ADMIN_CLIENT_SECRET and/or MS_USER_CLIENT_ID (+ optional MS_USER_TENANT_ID) in `$PROFILE or wherever 'claude' itself gets launched, or these servers will fail to authenticate. Every server is read-only until MCP_MS_ALLOW_WRITES=1 is also set there. Run '<name> doctor' (e.g. 'mcp-msgraph doctor') to verify auth. After these packages are published, swap the registered command for 'npx -y @badali404/<pkg>@latest' - see mcp-servers/README.md."
     }
 }
 

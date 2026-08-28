@@ -92,10 +92,10 @@ your back.
 Full detail in [`mcp-servers/PUBLISHING.md`](../mcp-servers/PUBLISHING.md).
 The short path:
 
-1. **Own the scope.** If your npm username is `mbadali`, done. Otherwise
-   npmjs.com → avatar → Add Organization → `mbadali` → free tier.
+1. **Own the scope.** If your npm username is `badali404`, done. Otherwise
+   npmjs.com → avatar → Add Organization → `badali404` → free tier.
 2. **Token.** npmjs.com → Access Tokens → Generate New Token → Granular
-   (Read+Write on `@mbadali`) or Automation (bypasses 2FA in CI). Then:
+   (Read+Write on `@badali404`) or Automation (bypasses 2FA in CI). Then:
 
    ```bash
    gh secret set NPM_TOKEN --repo mbadali25/useful-claude-add-ons
@@ -113,8 +113,8 @@ The short path:
 4. **Verify.**
 
    ```bash
-   npm view @mbadali/mcp-ms-core version
-   npx -y @mbadali/mcp-msgraph@latest doctor
+   npm view @badali404/mcp-ms-core version
+   npx -y @badali404/mcp-msgraph@latest doctor
    ```
 
    Reaching doctor's "missing MS_ADMIN_*" error proves npx resolved the
@@ -183,7 +183,7 @@ New registration, e.g. `mcp-ms-admin`, single tenant:
 ### 3c. Verify each server before trusting it
 
 ```bash
-mcp-msgraph doctor      # or: npx -y @mbadali/mcp-msgraph@latest doctor
+mcp-msgraph doctor      # or: npx -y @badali404/mcp-msgraph@latest doctor
 mcp-o365-user doctor
 ```
 
@@ -214,7 +214,7 @@ A server that starts is not a server that authenticates.
 - [ ] `/obsidian-vault:doctor` reports all vaults green, vault has a real
       `.git` with a remote, CLAUDE.md matches reality
 - [ ] Gardener scheduled; a fresh log appears tomorrow
-- [ ] `npm view @mbadali/mcp-ms-core version` returns a version
-- [ ] `npx -y @mbadali/mcp-msgraph@latest doctor` authenticates
+- [ ] `npm view @badali404/mcp-ms-core version` returns a version
+- [ ] `npx -y @badali404/mcp-msgraph@latest doctor` authenticates
 - [ ] `mcp-o365-user` device-code sign-in completes; a calendar read works
 - [ ] `MCP_MS_ALLOW_WRITES` is **not** set anywhere persistent

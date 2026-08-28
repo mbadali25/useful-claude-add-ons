@@ -31,28 +31,28 @@ jobs:
         run: npm test
       # Core has to land on the registry before any server, or `npm publish`
       # for graph/intune/o365-user/o365-admin can't resolve their pinned
-      # "@mbadali/mcp-ms-core": "0.1.0" dependency from the registry.
-      - name: Publish @mbadali/mcp-ms-core
+      # "@badali404/mcp-ms-core": "0.1.0" dependency from the registry.
+      - name: Publish @badali404/mcp-ms-core
         working-directory: mcp-servers/packages/core
         run: npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-      - name: Publish @mbadali/mcp-msgraph
+      - name: Publish @badali404/mcp-msgraph
         working-directory: mcp-servers/packages/graph
         run: npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-      - name: Publish @mbadali/mcp-intune
+      - name: Publish @badali404/mcp-intune
         working-directory: mcp-servers/packages/intune
         run: npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-      - name: Publish @mbadali/mcp-o365-user
+      - name: Publish @badali404/mcp-o365-user
         working-directory: mcp-servers/packages/o365-user
         run: npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-      - name: Publish @mbadali/mcp-o365-admin
+      - name: Publish @badali404/mcp-o365-admin
         working-directory: mcp-servers/packages/o365-admin
         run: npm publish --provenance --access public
         env:

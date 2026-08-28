@@ -7,7 +7,7 @@ import {
   textResult,
   pagedResult,
   withToolErrorHandling,
-} from "@mbadali/mcp-ms-core";
+} from "@badali404/mcp-ms-core";
 
 let _client: GraphClient | undefined;
 /** Lazily built so importing this module (e.g. for tests) never requires env vars. */

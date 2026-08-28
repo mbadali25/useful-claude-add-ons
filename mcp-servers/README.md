@@ -8,19 +8,19 @@ local clone or, once published, via `npx`.
 
 | Package | What it does | Auth |
 |---|---|---|
-| `@mbadali/mcp-msgraph` | Tenant directory: users, groups, membership | app-only (tenant-wide) |
-| `@mbadali/mcp-intune` | Intune device management, compliance, config profiles | app-only (tenant-wide) |
-| `@mbadali/mcp-o365-user` | The signed-in user's own mail, calendar, files | delegated (device code) |
-| `@mbadali/mcp-o365-admin` | Tenant mailboxes, licenses, password reset, user deletion | app-only (tenant-wide) |
+| `@badali404/mcp-msgraph` | Tenant directory: users, groups, membership | app-only (tenant-wide) |
+| `@badali404/mcp-intune` | Intune device management, compliance, config profiles | app-only (tenant-wide) |
+| `@badali404/mcp-o365-user` | The signed-in user's own mail, calendar, files | delegated (device code) |
+| `@badali404/mcp-o365-admin` | Tenant mailboxes, licenses, password reset, user deletion | app-only (tenant-wide) |
 
-All four sit on `@mbadali/mcp-ms-core`, an npm workspace package meant to be published
+All four sit on `@badali404/mcp-ms-core`, an npm workspace package meant to be published
 to the registry alongside them (so once that's done, `npx`-installing a server resolves
 its dependency the normal way -- see "Publishing" below for what that actually requires
 and why it hasn't happened yet): one `GraphClient` HTTP wrapper, one `getUserCredential`
 / `getAdminCredential` pair, one write-gate, one `doctor` implementation. No server
 reimplements auth or HTTP. Source: `mcp-servers/packages/`.
 
-Each server pins an **exact** version of core (`"@mbadali/mcp-ms-core": "0.1.0"`, not a
+Each server pins an **exact** version of core (`"@badali404/mcp-ms-core": "0.1.0"`, not a
 range) rather than `^0.1.0` or `workspace:*`. That is deliberate -- it means a core-only
 change can never silently ship to a server that hasn't been tested against it -- but it
 also means **a core-only version bump has no effect on npm until all four servers are
@@ -44,7 +44,7 @@ generator/installer, among many more) -- comprehensively covering ARM. Writing a
 thinner ARM server here would duplicate that surface for no benefit, so **this repo does
 not ship an `azure` package**. If a genuine gap shows up later (something ARM-shaped that
 `@azure/mcp` doesn't cover), add `packages/azure` then, scoped to exactly that gap, on
-top of the same `@mbadali/mcp-ms-core` package the other four servers use.
+top of the same `@badali404/mcp-ms-core` package the other four servers use.
 
 That leaves four thin server packages -- Intune, Graph, and Office 365 (user and admin)
 -- which is what `packages/` actually contains.
@@ -140,7 +140,7 @@ node packages/o365-user/dist/src/cli.js doctor   # prompts a device-code sign-in
 ```
 
 If you registered via Option B or `npx` below, the global/published command name works
-the same way: `mcp-intune doctor`, `npx -y @mbadali/mcp-intune@latest doctor`.
+the same way: `mcp-intune doctor`, `npx -y @badali404/mcp-intune@latest doctor`.
 
 ## Install and register
 
@@ -206,7 +206,7 @@ claude mcp add mcp-o365-admin -- mcp-o365-admin
 
 This works pre-publish because these are npm **workspace** members: `npm install -g .`
 on a workspace member symlinks it globally rather than reinstalling it fresh, so its
-`require("@mbadali/mcp-ms-core")` still resolves through `mcp-servers/node_modules`
+`require("@badali404/mcp-ms-core")` still resolves through `mcp-servers/node_modules`
 (hoisted there by the `npm install` above) instead of hitting the registry, where it
 would 404 today. The trade-off: the global command only keeps working as long as this
 clone stays where it is -- moving or deleting `mcp-servers/` breaks it, the same
@@ -219,13 +219,13 @@ means they must be exported wherever `claude` itself gets launched (shell profil
 service manager, etc.), not just in the shell you happened to run `claude mcp add`
 from.
 
-### Via npx (once published to npm under the `@mbadali` scope)
+### Via npx (once published to npm under the `@badali404` scope)
 
 ```bash
-claude mcp add mcp-msgraph -- npx -y @mbadali/mcp-msgraph@latest
-claude mcp add mcp-intune -- npx -y @mbadali/mcp-intune@latest
-claude mcp add mcp-o365-user -- npx -y @mbadali/mcp-o365-user@latest
-claude mcp add mcp-o365-admin -- npx -y @mbadali/mcp-o365-admin@latest
+claude mcp add mcp-msgraph -- npx -y @badali404/mcp-msgraph@latest
+claude mcp add mcp-intune -- npx -y @badali404/mcp-intune@latest
+claude mcp add mcp-o365-user -- npx -y @badali404/mcp-o365-user@latest
+claude mcp add mcp-o365-admin -- npx -y @badali404/mcp-o365-admin@latest
 ```
 
 Same command on Windows and Linux -- `npx` resolves the right platform build itself.
@@ -237,14 +237,14 @@ around just to run these servers.
 ## Publishing
 
 Summary below; [`PUBLISHING.md`](PUBLISHING.md) is the full walkthrough -- npm account
-and `@mbadali` scope setup, generating and setting the CI token, the tag-and-push
+and `@badali404` scope setup, generating and setting the CI token, the tag-and-push
 release flow, the manual fallback, bumping versions for an update, verifying the first
 publish actually worked, and troubleshooting (`402`, `403`, `ENEEDAUTH`, a stale `npx`
 cache).
 
 [`.github/workflows/publish-mcp-servers.yml`](../.github/workflows/publish-mcp-servers.yml)
-publishes all five packages -- `@mbadali/mcp-ms-core` first, then the four servers,
-since each server's `package.json` pins `"@mbadali/mcp-ms-core": "0.1.0"` and npm
+publishes all five packages -- `@badali404/mcp-ms-core` first, then the four servers,
+since each server's `package.json` pins `"@badali404/mcp-ms-core": "0.1.0"` and npm
 needs that version resolvable on the registry before it will install a server that
 depends on it. It fires on a pushed tag matching `mcp-servers-v*` (e.g.
 `mcp-servers-v0.1.0`) and runs `npm publish --provenance --access public` for each
@@ -253,7 +253,7 @@ package, authenticated with `NPM_TOKEN` from repository secrets.
 Two things have to be true before that tag push does anything useful, and neither is
 true yet in this repo:
 
-1. **The `@mbadali` scope has to exist on npmjs.com** and be owned by an account that
+1. **The `@badali404` scope has to exist on npmjs.com** and be owned by an account that
    can grant the token below publish rights to it. `--access public` only controls
    whether the *published package* is public within that scope -- it does not create
    the scope itself.
@@ -262,7 +262,7 @@ true yet in this repo:
    Actions secrets.
 
 **Until both exist and a `mcp-servers-v*` tag has actually been pushed and published
-successfully, `npx -y @mbadali/<pkg>@latest` cannot resolve anything** -- npm will
+successfully, `npx -y @badali404/<pkg>@latest` cannot resolve anything** -- npm will
 report a 404 for an unscoped-nonexistent or unpublished package. Use Option A or
 Option B above until then.
 

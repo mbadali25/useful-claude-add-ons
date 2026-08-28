@@ -1,7 +1,7 @@
 import { test, describe, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import type { TokenCredential } from "@azure/identity";
-import { GraphClient } from "@mbadali/mcp-ms-core";
+import { GraphClient } from "@badali404/mcp-ms-core";
 import { createServer } from "../src/index.js";
 
 const fakeCredential: TokenCredential = {

@@ -7,7 +7,7 @@ import {
   textResult,
   pagedResult,
   withToolErrorHandling,
-} from "@mbadali/mcp-ms-core";
+} from "@badali404/mcp-ms-core";
 
 let _client: GraphClient | undefined;
 export function getClient(): GraphClient {

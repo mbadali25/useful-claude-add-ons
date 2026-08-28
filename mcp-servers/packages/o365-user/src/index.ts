@@ -7,7 +7,7 @@ import {
   textResult,
   pagedResult,
   withToolErrorHandling,
-} from "@mbadali/mcp-ms-core";
+} from "@badali404/mcp-ms-core";
 
 /**
  * Delegated permissions requested from the signed-in user via device code.
