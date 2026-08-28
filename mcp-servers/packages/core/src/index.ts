@@ -1,4 +1,4 @@
-export { getUserCredential, buildDeviceCodeCredential, logToStderr, ConfigError } from "./auth.js";
+export { getUserCredential, buildDeviceCodeCredential, deviceCodePrompt, logToStderr, ConfigError } from "./auth.js";
 export {
   buildAdminCredential,
   AdminCredentialChain,

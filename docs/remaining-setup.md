@@ -170,15 +170,18 @@ secret, no env vars. Just register and run:
 mcp-msgraph doctor      # or: npx -y @badali404/mcp-msgraph@latest doctor
 ```
 
-`doctor` should report `auth method: cli`, `token type: delegated`. As
-Global Admin, the token you get carries your own directory role, which is
-typically broader than the tool-by-tool scope list in the README — that's
-expected, not a bug (see "Admin auth chain, in detail" there). What you
-don't get at this tier: any Graph permission the "Microsoft Azure CLI" app
-itself hasn't been consented for in this tenant (some tenants exclude Intune
-scopes from it), and any endpoint that flatly requires an app-only token
-regardless of your role. If `doctor` authenticates but a specific tool call
-403s, that's tier 2 or 3.
+`doctor` should report `auth method: cli`, `token type: delegated`. What you
+actually get is bounded by what the "Microsoft Azure CLI" app itself is
+consented for in this tenant, intersected with your own role — being Global
+Admin does not add scopes that app was never granted; Graph's delegated model
+is the *more restrictive* of the two, not their union. In many tenants that
+app's own consented set is broad (well beyond the tool-by-tool scope list in
+the README), which is why this tier often works for more than it looks like
+it should — but it's the app's consent doing that, not your role alone. What
+you don't get at this tier: any Graph permission that app hasn't been
+consented for (some tenants exclude Intune scopes from it), and any endpoint
+that flatly requires an app-only token regardless of who's signed in. If
+`doctor` authenticates but a specific tool call 403s, that's tier 2 or 3.
 
 ### 3c. Admin-scope servers — tier 2: device code with a public-client app (no secret)
 
@@ -227,11 +230,15 @@ New registration, e.g. `mcp-ms-admin`, single tenant:
      `DeviceManagementConfiguration.ReadWrite.All`
    - o365-admin reads: `User.Read.All`, `MailboxSettings.Read`; writes add
      `User.ReadWrite.All`
-   - If you also want audit-log or other Global-Admin-territory Graph
-     endpoints available specifically through this app-only identity (not
-     just implicitly via your own role at tiers 1-2), add scopes like
-     `AuditLog.Read.All` here explicitly and consent them — app-only mode
-     only ever gets what's listed on the app registration, unlike tiers 1-2.
+   - If you also want audit-log or other admin-territory Graph endpoints,
+     add scopes like `AuditLog.Read.All` here explicitly and consent them.
+     App-only mode gets exactly what's admin-consented on this registration —
+     nothing more, nothing tied to who (if anyone) is signed in. At tiers 1-2
+     the equivalent is whatever delegated scope the app you signed in
+     through (the Azure CLI's own app, or your tier-2 registration) is
+     itself consented for — your Global Admin role does not add scopes that
+     app was never granted; it only matters within whatever the app already
+     has.
 3. Set the env vars:
 
    ```powershell

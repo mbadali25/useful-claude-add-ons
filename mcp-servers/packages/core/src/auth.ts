@@ -26,18 +26,28 @@ function requireEnv(name: string): string {
 }
 
 /**
+ * The exact callback @azure/identity's DeviceCodeCredential invokes with the
+ * "go to https://microsoft.com/devicelogin and enter code XXX-XXX" prompt.
+ * Exported (not inlined below) so a test can call it directly and assert it
+ * never touches stdout -- stdout is the MCP protocol channel and a stray
+ * line there corrupts framing. `info` is typed loosely here rather than
+ * imported from @azure/identity's DeviceCodeInfo to keep this file's public
+ * surface small; only `.message` is ever read.
+ */
+export function deviceCodePrompt(info: { message: string }): void {
+  logToStderr(`\n${info.message}\n`);
+}
+
+/**
  * Shared by getUserCredential() below (o365-user, always device code) and
  * adminAuth.ts's device-code chain link (the admin servers' last-resort
- * fallback) -- one place prints the sign-in prompt to stderr, never stdout,
- * since stdout is the MCP protocol channel and a stray line corrupts framing.
+ * fallback) -- one place prints the sign-in prompt to stderr, never stdout.
  */
 export function buildDeviceCodeCredential(clientId: string, tenantId: string): TokenCredential {
   return new DeviceCodeCredential({
     clientId,
     tenantId,
-    userPromptCallback: (info) => {
-      logToStderr(`\n${info.message}\n`);
-    },
+    userPromptCallback: deviceCodePrompt,
   });
 }
 

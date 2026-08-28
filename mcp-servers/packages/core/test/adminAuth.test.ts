@@ -2,7 +2,7 @@ import { test, describe, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import type { TokenCredential } from "@azure/identity";
 import { AdminCredentialChain, buildAdminCredential, type ChainLink } from "../src/adminAuth.js";
-import { ConfigError, logToStderr } from "../src/auth.js";
+import { ConfigError, deviceCodePrompt } from "../src/auth.js";
 import { runDoctor } from "../src/doctor.js";
 
 function fakeJwt(payload: Record<string, unknown>): string {
@@ -212,7 +212,7 @@ describe("buildAdminCredential -- MS_ADMIN_AUTH mode selection (env-only, never 
 });
 
 describe("device-code prompt goes to stderr, never stdout", () => {
-  test("logToStderr -- the exact function buildDeviceCodeCredential's userPromptCallback delegates to -- never writes stdout", () => {
+  test("deviceCodePrompt -- the actual userPromptCallback DeviceCodeCredential is constructed with -- never writes stdout", () => {
     const originalStdoutWrite = process.stdout.write;
     const originalStderrWrite = process.stderr.write;
     const stdoutChunks: string[] = [];
@@ -227,7 +227,11 @@ describe("device-code prompt goes to stderr, never stdout", () => {
     }) as typeof process.stderr.write;
 
     try {
-      logToStderr("To sign in, use a web browser to open https://microsoft.com/devicelogin and enter the code ABC-123");
+      // Same shape @azure/identity hands this callback (DeviceCodeInfo): only
+      // .message is ever read by deviceCodePrompt.
+      deviceCodePrompt({
+        message: "To sign in, use a web browser to open https://microsoft.com/devicelogin and enter the code ABC-123",
+      });
     } finally {
       process.stdout.write = originalStdoutWrite;
       process.stderr.write = originalStderrWrite;

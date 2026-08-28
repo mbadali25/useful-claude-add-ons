@@ -162,15 +162,17 @@ delegated, so you never have to guess which one fired.
   The fix is link 3 with a real public-client app registration (`MS_ADMIN_CLIENT_ID` set,
   `MS_ADMIN_CLIENT_SECRET` unset) that has been granted and consented for exactly the
   scopes you need.
-- **A delegated token (links 2-3) carries the signed-in user's own directory role, not
-  just the app's consented scope list.** If you sign in as a Global Administrator, Graph
-  evaluates each call against the union of what the app requested *and* what your role
-  otherwise allows -- so `cli`/`device` mode as a Global Admin can end up more permissive
-  than the minimal per-tool scopes listed above imply, including endpoints like audit logs
-  (`AuditLog.Read.All`) that no tool here explicitly requests. The scope lists above are
-  what each tool asks for, not a ceiling on what a Global Admin's token can reach; app-only
-  mode (link 1) is the one that's actually bounded by exactly what was admin-consented on
-  the app registration.
+- **A delegated token (links 2-3) is bounded by the *intersection* of two things: what the
+  app you signed in through is consented for, and what your account's role in the tenant
+  allows.** Being a Global Administrator does not add scopes an app was never granted --
+  Microsoft's delegated-permission model is the more restrictive of the two, not their
+  union. What it does mean in practice: the "Microsoft Azure CLI" first-party app (link 2)
+  is broadly consented in many tenants, well beyond the minimal per-tool scope lists above,
+  so `cli` mode as a Global Admin can still reach more than those lists imply -- because
+  that app's own consented set is broad, not because your role widens anything past it. The
+  scope lists above are what each tool *asks* for at link 1 (app-only, where they're an
+  exact ceiling); links 2-3 may grant more or less depending entirely on what's consented
+  for the app you're actually signed in through.
 
 **Token caching:** each server's `getClient()` builds the credential chain once and keeps
 it for the process lifetime, and the chain itself only re-attempts higher-priority links
@@ -231,9 +233,11 @@ the same way: `mcp-intune doctor`, `npx -y @badali404/mcp-intune@latest doctor`.
 
 ## Install and register
 
-Nothing here is on the npm registry yet (see "Publishing" below), so today there are
-two ways to run these servers from a local clone -- pick one per server, they are not
-mutually exclusive. Once published, a third, simpler way (`npx`) replaces both.
+All five packages are published on npm under `@badali404`, so the standard path is
+`npx` -- see "Via npx" below, no clone or build required. The two options right below
+(direct path, `npm install -g` from a clone) remain for developing against a local
+checkout instead of the published packages; pick one per server, they are not mutually
+exclusive with each other or with npx.
 
 ```bash
 cd mcp-servers
@@ -337,8 +341,8 @@ install a server that depends on it. It fires on a pushed tag matching `mcp-serv
 (e.g. `mcp-servers-v0.2.0`) and runs `npm publish --provenance --access public` for each
 package, authenticated with `NPM_TOKEN` from repository secrets.
 
-Two things have to be true before that tag push does anything useful, and neither is
-true yet in this repo:
+Two things have to be true before that tag push does anything useful -- both are, as of
+the first publish (all five packages live under `@badali404` since 2026-08-28):
 
 1. **The `@badali404` scope has to exist on npmjs.com** and be owned by an account that
    can grant the token below publish rights to it. `--access public` only controls
@@ -348,10 +352,10 @@ true yet in this repo:
    token with publish rights to that scope) has to be set in this repo's GitHub
    Actions secrets.
 
-**Until both exist and a `mcp-servers-v*` tag has actually been pushed and published
-successfully, `npx -y @badali404/<pkg>@latest` cannot resolve anything** -- npm will
-report a 404 for an unscoped-nonexistent or unpublished package. Use Option A or
-Option B above until then.
+If either one is ever missing again on a fresh setup (a new scope, a rotated token),
+`npx -y @badali404/<pkg>@latest` cannot resolve anything -- npm reports a 404 for an
+unscoped-nonexistent or unpublished package. Option A or Option B above still work in
+that case, or for developing against a local checkout regardless.
 
 ### Verify a registration
 
