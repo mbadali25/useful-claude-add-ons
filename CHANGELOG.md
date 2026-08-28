@@ -6,6 +6,27 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
+- **`crew` 0.11.1 - config becomes two layers: an optional machine-global
+  file plus the per-repo one.** `~/.claude/crew/config.json`, written by
+  hand (no command creates it), sets defaults for every crew repo on the
+  machine; the repo's own `.crew/config.json` still wins where both set the
+  same thing. Merged one level deep with the same policy `/crew:upgrade`
+  already used to bring a v1 config's `pm` and `graph` blocks forward - now
+  named `crew_state.merge_defaults` and shared by both, instead of a second
+  implementation that could quietly diverge. A malformed global file is
+  treated exactly like an absent one and never touched. Two things
+  deliberately skip this layering: `schema`, which is a fact about the repo
+  file's own version and would otherwise look current the moment any global
+  file exists; and the heal path plus `platform-sync`, which write only the
+  repo file, always.
+
+  - **crew-graph's Obsidian export gets a configurable target layout.**
+    `graph.obsidian.layout` is `"flat"` (default, unchanged behaviour -
+    `graph.obsidian.dir` is the export target verbatim) or `"org/repo"`
+    (`dir` is a per-org folder and the skill appends `/<repo>` under it, for
+    a vault laid out as `<vault>/<org>/<repo>/`). The export subcommand
+    syntax and the `graph.obsidian.confirmed` consent gate are unchanged.
+
 - **`crew` 0.11.0 - `.crew/config.json` recreates itself when it goes missing
   or stops parsing.** The `platform-sync` `SessionStart` hook, which already
   repaired the `platform` block, now also recreates the whole file: missing
