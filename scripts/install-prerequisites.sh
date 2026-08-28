@@ -2335,24 +2335,18 @@ if is_selected "graphify"; then
 fi
 
 # --- 21. Microsoft MCP servers (mcp-servers/) ---------------------------------
-# Not published to npm yet, so unlike the item-9-12 MCP servers this cannot just
-# 'npx -y <pkg>@latest' - it needs a local clone (this script never resolves its own
-# path; run it from inside a checkout, see README.md's two install modes) plus real
-# Azure AD app registrations. See mcp-servers/README.md for the whole auth model.
+# Published to npm under @badali404 (2026-08-28), so like the item-9-12 MCP servers
+# this registers the npx form - no clone, no build, no global install; npx resolves
+# and caches the package on the server's first launch. What it still needs is real
+# Azure AD app registrations: see mcp-servers/README.md for the whole auth model.
 #
-# Interim form, works today: 'npm install -g .' inside each server package. Because
-# these are npm workspace members, that global install is a symlink back into this
-# clone whose module resolution still finds @badali404/mcp-ms-core and every dependency
-# via mcp-servers/node_modules (hoisted there by the 'npm install' below) - it does
-# NOT try to fetch mcp-ms-core from the registry, which would 404 pre-publish. That
-# also means the global bin only keeps working as long as this clone stays put; it is
-# a dev-workspace link, not a real package install. Once published, item 21 (this same
-# menu key, on a future run) switches to 'npx -y @badali404/<pkg>@latest' - registration
-# is bare either way ('-- <command>', no --env): claude mcp add --env persists the
+# Registration is bare ('-- <command>', no --env): claude mcp add --env persists the
 # value into ~/.claude.json, and this repo's rule is secrets from env only, never
 # written anywhere by this script. So these servers only work once MS_ADMIN_*/MS_USER_*
 # are exported wherever the 'claude' process itself gets launched (shell profile,
-# service manager, etc.) - this step just prints that.
+# service manager, etc.) - this step just prints that. Developing against a local
+# clone instead: mcp-servers/README.md keeps the 'npm install -g' workspace-link
+# option documented.
 install_ms_mcp() {
   local have_admin=0 have_user=0
   if [ -n "${MS_ADMIN_TENANT_ID:-}" ] && [ -n "${MS_ADMIN_CLIENT_ID:-}" ] && [ -n "${MS_ADMIN_CLIENT_SECRET:-}" ]; then
@@ -2373,38 +2367,26 @@ install_ms_mcp() {
     warn "claude not found on PATH in this shell - run 'source ~/.bashrc' and re-run this script."
     return 1
   fi
-  if [ ! -f "./mcp-servers/package.json" ]; then
-    skip "Microsoft MCP servers: mcp-servers/ not found under the current directory"
-    printf '        Not published to npm yet - run this from inside a clone of the repo:\n'
-    printf '          git clone https://github.com/mbadali25/useful-claude-add-ons\n'
-    printf '          cd useful-claude-add-ons\n'
-    printf '          ./scripts/install-prerequisites.sh --select ms-mcp\n'
-    return 0
-  fi
   if ! have node; then
     warn "node not found on PATH - install Node.js first (item 1), then re-run."
     return 1
   fi
-  ( cd mcp-servers && npm install && npm run build ) || { warn "mcp-servers build failed - see output above."; return 1; }
-
-  local root; root="$(pwd)/mcp-servers"
+  # Published on npm under @badali404 since 2026-08-28, so registration is the
+  # npx form and needs no clone, no build, and no global install. npx resolves
+  # and caches the package on the server's first launch.
   if [ "$have_admin" -eq 1 ]; then
-    ( cd "$root/packages/graph" && npm install -g . ) || { warn "'npm install -g' failed for mcp-msgraph - see output above."; return 1; }
-    ( cd "$root/packages/intune" && npm install -g . ) || { warn "'npm install -g' failed for mcp-intune - see output above."; return 1; }
-    ( cd "$root/packages/o365-admin" && npm install -g . ) || { warn "'npm install -g' failed for mcp-o365-admin - see output above."; return 1; }
-    add_mcp_server "mcp-msgraph" "-" mcp-msgraph
-    add_mcp_server "mcp-intune" "-" mcp-intune
-    add_mcp_server "mcp-o365-admin" "-" mcp-o365-admin
+    add_mcp_server "mcp-msgraph" "-" npx -y "@badali404/mcp-msgraph@latest"
+    add_mcp_server "mcp-intune" "-" npx -y "@badali404/mcp-intune@latest"
+    add_mcp_server "mcp-o365-admin" "-" npx -y "@badali404/mcp-o365-admin@latest"
   else
     skip "mcp-msgraph/mcp-intune/mcp-o365-admin: no MS_ADMIN_* credentials given"
   fi
   if [ "$have_user" -eq 1 ]; then
-    ( cd "$root/packages/o365-user" && npm install -g . ) || { warn "'npm install -g' failed for mcp-o365-user - see output above."; return 1; }
-    add_mcp_server "mcp-o365-user" "-" mcp-o365-user
+    add_mcp_server "mcp-o365-user" "-" npx -y "@badali404/mcp-o365-user@latest"
   else
     skip "mcp-o365-user: no MS_USER_CLIENT_ID given"
   fi
-  ok "Registered via 'npm install -g' (global bin names mcp-msgraph/mcp-intune/mcp-o365-admin/mcp-o365-user) - no secrets were written to ~/.claude.json. Export MS_ADMIN_TENANT_ID/MS_ADMIN_CLIENT_ID/MS_ADMIN_CLIENT_SECRET and/or MS_USER_CLIENT_ID (+ optional MS_USER_TENANT_ID) in the shell/profile that launches 'claude' itself, or these servers will fail to authenticate. Every server is read-only until MCP_MS_ALLOW_WRITES=1 is also set there. Run '<name> doctor' (e.g. 'mcp-msgraph doctor') to verify auth. After these packages are published, swap the registered command for 'npx -y @badali404/<pkg>@latest' - see mcp-servers/README.md."
+  ok "Registered via 'npx -y @badali404/<pkg>@latest' - no secrets were written to ~/.claude.json. Export MS_ADMIN_TENANT_ID/MS_ADMIN_CLIENT_ID/MS_ADMIN_CLIENT_SECRET and/or MS_USER_CLIENT_ID (+ optional MS_USER_TENANT_ID) in the shell/profile that launches 'claude' itself, or these servers will fail to authenticate. Every server is read-only until MCP_MS_ALLOW_WRITES=1 is also set there. Verify auth with 'npx -y @badali404/mcp-msgraph@latest doctor' (same pattern per server). Developing against a local clone instead? See mcp-servers/README.md's npm-install-g option."
 }
 if is_selected "ms-mcp"; then
   run_step "Register Microsoft MCP servers (mcp-servers/)" install_ms_mcp

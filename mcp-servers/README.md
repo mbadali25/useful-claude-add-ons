@@ -219,7 +219,7 @@ means they must be exported wherever `claude` itself gets launched (shell profil
 service manager, etc.), not just in the shell you happened to run `claude mcp add`
 from.
 
-### Via npx (once published to npm under the `@badali404` scope)
+### Via npx (the standard path -- published on npm under `@badali404`)
 
 ```bash
 claude mcp add mcp-msgraph -- npx -y @badali404/mcp-msgraph@latest
@@ -228,11 +228,11 @@ claude mcp add mcp-o365-user -- npx -y @badali404/mcp-o365-user@latest
 claude mcp add mcp-o365-admin -- npx -y @badali404/mcp-o365-admin@latest
 ```
 
-Same command on Windows and Linux -- `npx` resolves the right platform build itself.
-**This does not work yet** -- see "Publishing" immediately below, and the full
-step-by-step in [`PUBLISHING.md`](PUBLISHING.md), for what has to happen first. Once
-it has, this replaces both options above; there is no reason to keep a local clone
-around just to run these servers.
+Same command on Windows and Linux -- `npx` resolves the right platform build itself,
+and downloads/caches the package on the server's first launch. This is the standard
+install; the two local options above remain only for developing against a clone.
+Releasing a new version: "Publishing" below, full step-by-step in
+[`PUBLISHING.md`](PUBLISHING.md).
 
 ## Publishing
 
