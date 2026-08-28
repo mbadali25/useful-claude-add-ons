@@ -1,0 +1,22 @@
+{
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/bridge-status.sh\"", "timeout": 10 }] },
+      { "hooks": [{ "type": "command", "shell": "powershell", "command": "& \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/bridge-status.ps1\"; exit $LASTEXITCODE", "timeout": 10 }] }
+    ],
+    "PostToolUse": [
+      { "matcher": "Edit|Write|MultiEdit",
+        "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/vault-guard.sh\"", "timeout": 15 }] },
+      { "matcher": "Edit|Write|MultiEdit",
+        "hooks": [{ "type": "command", "shell": "powershell", "command": "& \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/vault-guard.ps1\"; exit $LASTEXITCODE", "timeout": 15 }] }
+    ],
+    "SessionEnd": [
+      { "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/vault-capture.sh\" session-end", "timeout": 15 }] },
+      { "hooks": [{ "type": "command", "shell": "powershell", "command": "& \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/vault-capture.ps1\" -Trigger session-end; exit $LASTEXITCODE", "timeout": 15 }] }
+    ],
+    "PreCompact": [
+      { "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/vault-capture.sh\" pre-compact", "timeout": 15 }] },
+      { "hooks": [{ "type": "command", "shell": "powershell", "command": "& \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/vault-capture.ps1\" -Trigger pre-compact; exit $LASTEXITCODE", "timeout": 15 }] }
+    ]
+  }
+}
