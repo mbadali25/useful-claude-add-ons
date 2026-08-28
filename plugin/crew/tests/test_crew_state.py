@@ -1,7 +1,9 @@
 """Tests for the crew state reader."""
+import json
 import subprocess
 
 import context  # noqa: F401  pylint: disable=unused-import
+import crew_config
 import crew_fixtures
 import crew_state
 
@@ -526,3 +528,67 @@ def test_collect_reads_pm_block_defaults(tmp_path):
     assert pm["mode"] == "adaptive"
     assert pm["quietLines"] == 8
     assert pm["maxLines"] == 40
+
+
+# --- Global config layering (crew_config.resolve_config, applied here) ----
+
+
+def _global(tmp_path, monkeypatch, contents):
+    path = tmp_path / "global-config.json"
+    path.write_text(json.dumps(contents), encoding="utf-8")
+    monkeypatch.setattr(crew_config, "GLOBAL_CONFIG_PATH", str(path))
+    return path
+
+
+def test_collect_applies_a_global_override_for_a_crew_repo(tmp_path, monkeypatch):
+    _global(tmp_path, monkeypatch, {"pm": {"maxDispatches": 9}})
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"schema": 2, "tier": 0, "roles": []})
+
+    got = crew_state.collect(str(root))
+
+    assert got["isCrew"] is True
+    assert got["pm"]["maxDispatches"] == 9
+
+
+def test_collect_never_lets_a_global_file_make_a_plain_repo_crew(
+        tmp_path, monkeypatch):
+    """A global config existing on the machine must not make every git repo
+    without a .crew/ of its own look crew-managed, or pick up crew-repo
+    settings it never opted into."""
+    _global(tmp_path, monkeypatch, {"tracker": "jira", "pm": {"maxDispatches": 9}})
+    plain = tmp_path / "plain"
+    plain.mkdir()
+
+    got = crew_state.collect(str(plain))
+
+    assert got["isCrew"] is False
+    assert got["tracker"] is None
+    assert got["triggers"] == []
+
+
+def test_collect_schema_is_not_masked_by_the_global_layer(tmp_path, monkeypatch):
+    """schema is a fact about the repo file's own layout, not a setting --
+    resolve_config's built-in-defaults layer always supplies SCHEMA_CURRENT,
+    so reading `schema` from the merged config would hide an unmigrated v1
+    repo the moment any global file exists at all."""
+    _global(tmp_path, monkeypatch, {"pm": {"maxDispatches": 9}})
+    root = crew_fixtures.make_repo(tmp_path, config={"tier": 0, "roles": []})
+
+    got = crew_state.collect(str(root))
+
+    assert got["schema"] == 1
+    assert "upgradeNeeded" in got["triggers"]
+
+
+def test_collect_survives_a_malformed_global_file(tmp_path, monkeypatch):
+    path = tmp_path / "global-config.json"
+    path.write_text("{ not json", encoding="utf-8")
+    monkeypatch.setattr(crew_config, "GLOBAL_CONFIG_PATH", str(path))
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"schema": 2, "tier": 0, "roles": []})
+
+    got = crew_state.collect(str(root))
+
+    assert got["isCrew"] is True
+    assert got["pm"]["maxDispatches"] == 3  # built-in default, global ignored

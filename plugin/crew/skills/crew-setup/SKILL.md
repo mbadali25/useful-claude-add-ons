@@ -105,7 +105,15 @@ from `crew_state.PM_DEFAULTS` and `crew_upgrade.GRAPH_BLOCK` rather than
 duplicating them a third time. A committed test asserts the template equals
 `default_config()`'s output byte-for-byte, so this file drifting from either
 one fails CI instead of shipping quietly. Copy the template, not this prose,
-when actually creating `config.json`:
+when actually creating `config.json`.
+
+`/crew:init` writes this file; it never writes the optional machine-global
+one at `~/.claude/crew/config.json`. If that file exists it sets defaults for
+every crew repo on this machine, with the repo file you are about to write
+taking precedence over it — see "Global config, and how it layers with the
+repo file" in `README.md` §11. Nothing in setup creates the global file; a
+user who wants one writes it by hand.
+
 ```json
 {
   "schema": 2,
@@ -124,7 +132,7 @@ when actually creating `config.json`:
   "notify": { "provider": "none", "urlEnv": null, "tokenEnv": null, "chatId": null, "events": ["phase", "gate", "waiting"] },
   "platform": { "os": null, "wsl": null, "shell": null, "windowsHostIp": null },
   "pm": { "enabled": true, "mode": "adaptive", "quietLines": 8, "maxLines": 40, "authority": "report-only", "maxDispatches": 3 },
-  "graph": { "enabled": true, "tool": "graphify", "out": "graphify-out", "mode": "code-only", "commitHook": false, "obsidian": { "enabled": false, "dir": null, "confirmed": false } }
+  "graph": { "enabled": true, "tool": "graphify", "out": "graphify-out", "mode": "code-only", "commitHook": false, "obsidian": { "enabled": false, "dir": null, "layout": "flat", "confirmed": false } }
 }
 ```
 

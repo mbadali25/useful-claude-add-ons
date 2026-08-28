@@ -675,6 +675,46 @@ Everything reads `.crew/config.json`. If it goes missing or stops parsing,
 time the repo is opened — see "The config heals itself" in §3; this is the
 same shape that produces:
 
+### Global config, and how it layers with the repo file
+
+An optional machine-global file at `~/.claude/crew/config.json` sets defaults
+for every crew repo on this machine, without hand-editing each one. Three
+layers, lowest precedence first:
+
+| Layer | Source | Written by |
+|---|---|---|
+| Built-in defaults | `hooks/scripts/crew_config.py`'s `default_config()` | Nothing — this is code, not a file |
+| Global | `~/.claude/crew/config.json` | **Nobody.** No command creates or edits it. Write it by hand, or with a one-liner: `mkdir -p ~/.claude/crew && echo '{"pm":{"authority":"report-only"}}' > ~/.claude/crew/config.json` |
+| Repo | `.crew/config.json` | `/crew:init` (first write); `platform-sync` (the `platform` block, and the whole file when it heals — see §3) |
+
+Repo overrides global overrides built-in defaults, merged one level deep with
+`crew_state.merge_defaults` — the same policy `/crew:upgrade` uses to bring a
+v1 config's `pm` and `graph` blocks forward: a nested override wins, a scalar
+where a dict belongs is discarded rather than corrupting the block under it.
+`crew_config.resolve_config(root)` is the one place that computes this; every
+reader that wants *effective settings* calls it rather than reading
+`.crew/config.json` directly.
+
+Two things never go through this layering, on purpose:
+
+- **`schema`** is a fact about the repo file's own layout version, not a
+  setting — it is read straight from `.crew/config.json`, never merged. The
+  built-in-defaults layer always reports the current schema, so merging it
+  would make an unmigrated `v1` repo (no `schema` key at all) look current
+  the moment *any* global file exists on the machine.
+- **The `platform` block and the heal path both write only the repo file.**
+  `platform-sync` never reads or writes the global file, and recreating a
+  missing or broken `.crew/config.json` always writes plain built-in
+  defaults — never a merge that could smuggle a global preference into a
+  file every teammate who clones the repo will also read.
+
+A global file that is missing, empty, or fails to parse is treated exactly
+like an absent one — the same reasoning `_read_config_strict` documents for
+the repo side — so a typo in your global config degrades one repo's settings
+to defaults rather than breaking every session on the machine.
+
+This is the same shape that produces:
+
 ```json
 {
   "schema": 2,
@@ -718,7 +758,7 @@ same shape that produces:
     "chatId": null
   },
   "pm": { "enabled": true, "mode": "adaptive", "quietLines": 8, "maxLines": 40, "authority": "report-only", "maxDispatches": 3 },
-  "graph": { "out": "graphify-out", "obsidian": { "confirmed": false } }
+  "graph": { "out": "graphify-out", "obsidian": { "dir": null, "layout": "flat", "confirmed": false } }
 }
 ```
 
@@ -769,6 +809,8 @@ omit the block and assume.
 | `pm.authority` | `report-only` (default), `act` | What the PM does about what it finds. `report-only` recommends and stops. `act` lets it dispatch crew roles and refresh diagrams on its own — see the `crew-pm` skill for the guardrails that bound it. An unrecognised value resolves to `report-only`: a typo in a permissions field must fail closed. |
 | `pm.maxDispatches` | integer (default `3`) | Roles the PM may dispatch in one pass under `act`. Blockers it hits mid-task do not count against it. |
 | `graph.out` | path (default `graphify-out`) | Where `graphify` wrote `graph.json`. Freshness is read from graphify's own `built_at_commit` field in that file, never a timestamp. |
+| `graph.obsidian.dir` | path or `null` | Export target directory. What it means depends on `graph.obsidian.layout` — see `crew-graph`'s Obsidian section. |
+| `graph.obsidian.layout` | `flat` (default), `org/repo` | How the skill asks you to structure `graph.obsidian.dir`. `flat`: `dir` is the export target verbatim, e.g. `<vault>/codegraphs/<repo>/` — unchanged from before this key existed. `org/repo`: `dir` is a per-org folder, e.g. `<vault>/<org>`, and the skill appends `/<repo>`. |
 | `graph.obsidian.confirmed` | `true`, `false` (default `false`) | Consent gate for exporting the graph into an Obsidian vault. Only explicit consent given in session sets this — `/crew:upgrade` never grants it. See `crew-graph`'s Obsidian section. |
 
 The promotion sequence lives in `.crew/verify.json`, not here — see §23. Config

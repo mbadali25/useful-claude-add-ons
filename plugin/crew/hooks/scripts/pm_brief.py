@@ -12,6 +12,7 @@ import os
 import re
 import sys
 
+import crew_config
 import crew_incident
 import crew_state
 import hook_once
@@ -440,8 +441,13 @@ def main(argv=None):
         pass
 
     try:
-        lines = render(crew_state.collect(root))
-        cfg = crew_state.load_config(root)
+        state = crew_state.collect(root)
+        lines = render(state)
+        # Layered (repo overrides global overrides defaults) settings, but
+        # only for a repo collect() already recognised as crew-managed --
+        # never for a plain git repo with no .crew/, which must not inherit
+        # autoResume or a handoff path from someone's global config.
+        cfg = crew_config.resolve_config(root) if state.get("isCrew") else {}
         resume = _resume_context(root, cfg, lines)
         if resume is not None:
             # The whole of stdout must be valid JSON here -- there is no

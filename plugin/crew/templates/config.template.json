@@ -88,6 +88,7 @@
     "obsidian": {
       "enabled": false,
       "dir": null,
+      "layout": "flat",
       "confirmed": false
     }
   }
