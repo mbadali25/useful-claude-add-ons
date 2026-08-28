@@ -6,7 +6,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
-- **`crew` 0.11.1 - config becomes two layers: an optional machine-global
+- **`crew` 0.11.2 - config becomes two layers: an optional machine-global
   file plus the per-repo one.** `~/.claude/crew/config.json`, written by
   hand (no command creates it), sets defaults for every crew repo on the
   machine; the repo's own `.crew/config.json` still wins where both set the
@@ -26,6 +26,14 @@ All notable changes to this repository are documented here. Format follows [Keep
     (`dir` is a per-org folder and the skill appends `/<repo>` under it, for
     a vault laid out as `<vault>/<org>/<repo>/`). The export subcommand
     syntax and the `graph.obsidian.confirmed` consent gate are unchanged.
+  - **0.11.1 -> 0.11.2:** CI caught a pylint `consider-using-dict-items` in
+    a test, and fixing it exposed a real cyclic import between
+    `crew_state` and `crew_config` (the first draft of this layering had
+    `crew_state.collect` reach back into `crew_config` to resolve the
+    global layer). `collect()` now takes the resolved config as a plain
+    `cfg_override` argument; `crew_config.layered_state(root)` is the new
+    composition point that supplies one. `pylint $(git ls-files '*.py')`
+    exits `0`.
 
 - **`crew` 0.11.0 - `.crew/config.json` recreates itself when it goes missing
   or stops parsing.** The `platform-sync` `SessionStart` hook, which already
