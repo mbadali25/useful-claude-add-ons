@@ -722,9 +722,9 @@ MENU_KEYS=(
   "claude-code-setup" "task-observer"
   "aws-mcp" "azure-mcp" "playwright-mcp" "obsidian-mcp"
   "supabase" "context7" "playwright-cli" "skillui" "strix" "obsidian"
-  "repo-plugins" "graphify"
+  "repo-plugins" "graphify" "ms-mcp"
 )
-MENU_DEFAULT=(1 1 1 1 1 1 1 1 0 0 0 0 0 0 0 0 0 0 0 0)
+MENU_DEFAULT=(1 1 1 1 1 1 1 1 0 0 0 0 0 0 0 0 0 0 0 0 0)
 MENU_NAME=(
   "Prerequisites: git, nodejs, npm, python3, pip3 (needs root or sudo)"
   "Claude Code CLI (@anthropic-ai/claude-code) + PATH export + update check"
@@ -746,6 +746,7 @@ MENU_NAME=(
   "Obsidian desktop + claude-obsidian + obsidian-skills plugins"
   "This repo's plugins: crew, obsidian-vault (agents, commands, hooks)"
   "graphify code graph (uv tool install graphifyy; per-repo, not global)"
+  "Microsoft MCP servers (mcp-servers/): Graph, Intune, Office 365 user/admin - needs tenant credentials"
 )
 
 SELECTED=""
@@ -2331,6 +2332,82 @@ install_graphify() {
 }
 if is_selected "graphify"; then
   run_step "Install graphify (uv tool install graphifyy; registers --project)" install_graphify
+fi
+
+# --- 21. Microsoft MCP servers (mcp-servers/) ---------------------------------
+# Not published to npm yet, so unlike the item-9-12 MCP servers this cannot just
+# 'npx -y <pkg>@latest' - it needs a local clone (this script never resolves its own
+# path; run it from inside a checkout, see README.md's two install modes) plus real
+# Azure AD app registrations. See mcp-servers/README.md for the whole auth model.
+#
+# Interim form, works today: 'npm install -g .' inside each server package. Because
+# these are npm workspace members, that global install is a symlink back into this
+# clone whose module resolution still finds @mbadali/mcp-ms-core and every dependency
+# via mcp-servers/node_modules (hoisted there by the 'npm install' below) - it does
+# NOT try to fetch mcp-ms-core from the registry, which would 404 pre-publish. That
+# also means the global bin only keeps working as long as this clone stays put; it is
+# a dev-workspace link, not a real package install. Once published, item 21 (this same
+# menu key, on a future run) switches to 'npx -y @mbadali/<pkg>@latest' - registration
+# is bare either way ('-- <command>', no --env): claude mcp add --env persists the
+# value into ~/.claude.json, and this repo's rule is secrets from env only, never
+# written anywhere by this script. So these servers only work once MS_ADMIN_*/MS_USER_*
+# are exported wherever the 'claude' process itself gets launched (shell profile,
+# service manager, etc.) - this step just prints that.
+install_ms_mcp() {
+  local have_admin=0 have_user=0
+  if [ -n "${MS_ADMIN_TENANT_ID:-}" ] && [ -n "${MS_ADMIN_CLIENT_ID:-}" ] && [ -n "${MS_ADMIN_CLIENT_SECRET:-}" ]; then
+    have_admin=1
+  fi
+  [ -n "${MS_USER_CLIENT_ID:-}" ] && have_user=1
+
+  if [ "$have_admin" -eq 0 ] && [ "$have_user" -eq 0 ]; then
+    skip "Microsoft MCP servers: no MS_ADMIN_* or MS_USER_CLIENT_ID in the environment"
+    printf '        These need real Azure AD app registrations first - see mcp-servers/README.md.\n'
+    printf '        Then export the credentials this shell will pass through and re-run:\n'
+    printf '          export MS_ADMIN_TENANT_ID=... MS_ADMIN_CLIENT_ID=... MS_ADMIN_CLIENT_SECRET=...  # msgraph/intune/o365-admin\n'
+    printf '          export MS_USER_CLIENT_ID=...                                                     # o365-user (device code)\n'
+    printf '          ./install-prerequisites.sh --select ms-mcp\n'
+    return 0
+  fi
+  if ! have claude; then
+    warn "claude not found on PATH in this shell - run 'source ~/.bashrc' and re-run this script."
+    return 1
+  fi
+  if [ ! -f "./mcp-servers/package.json" ]; then
+    skip "Microsoft MCP servers: mcp-servers/ not found under the current directory"
+    printf '        Not published to npm yet - run this from inside a clone of the repo:\n'
+    printf '          git clone https://github.com/mbadali25/useful-claude-add-ons\n'
+    printf '          cd useful-claude-add-ons\n'
+    printf '          ./scripts/install-prerequisites.sh --select ms-mcp\n'
+    return 0
+  fi
+  if ! have node; then
+    warn "node not found on PATH - install Node.js first (item 1), then re-run."
+    return 1
+  fi
+  ( cd mcp-servers && npm install && npm run build ) || { warn "mcp-servers build failed - see output above."; return 1; }
+
+  local root; root="$(pwd)/mcp-servers"
+  if [ "$have_admin" -eq 1 ]; then
+    ( cd "$root/packages/graph" && npm install -g . ) || { warn "'npm install -g' failed for mcp-msgraph - see output above."; return 1; }
+    ( cd "$root/packages/intune" && npm install -g . ) || { warn "'npm install -g' failed for mcp-intune - see output above."; return 1; }
+    ( cd "$root/packages/o365-admin" && npm install -g . ) || { warn "'npm install -g' failed for mcp-o365-admin - see output above."; return 1; }
+    add_mcp_server "mcp-msgraph" "-" mcp-msgraph
+    add_mcp_server "mcp-intune" "-" mcp-intune
+    add_mcp_server "mcp-o365-admin" "-" mcp-o365-admin
+  else
+    skip "mcp-msgraph/mcp-intune/mcp-o365-admin: no MS_ADMIN_* credentials given"
+  fi
+  if [ "$have_user" -eq 1 ]; then
+    ( cd "$root/packages/o365-user" && npm install -g . ) || { warn "'npm install -g' failed for mcp-o365-user - see output above."; return 1; }
+    add_mcp_server "mcp-o365-user" "-" mcp-o365-user
+  else
+    skip "mcp-o365-user: no MS_USER_CLIENT_ID given"
+  fi
+  ok "Registered via 'npm install -g' (global bin names mcp-msgraph/mcp-intune/mcp-o365-admin/mcp-o365-user) - no secrets were written to ~/.claude.json. Export MS_ADMIN_TENANT_ID/MS_ADMIN_CLIENT_ID/MS_ADMIN_CLIENT_SECRET and/or MS_USER_CLIENT_ID (+ optional MS_USER_TENANT_ID) in the shell/profile that launches 'claude' itself, or these servers will fail to authenticate. Every server is read-only until MCP_MS_ALLOW_WRITES=1 is also set there. Run '<name> doctor' (e.g. 'mcp-msgraph doctor') to verify auth. After these packages are published, swap the registered command for 'npx -y @mbadali/<pkg>@latest' - see mcp-servers/README.md."
+}
+if is_selected "ms-mcp"; then
+  run_step "Register Microsoft MCP servers (mcp-servers/)" install_ms_mcp
 fi
 
 # --- Summary -----------------------------------------------------------------

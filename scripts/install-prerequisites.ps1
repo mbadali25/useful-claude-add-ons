@@ -768,6 +768,7 @@ $script:Catalog = @(
     [pscustomobject]@{ Key = 'obsidian';          Default = $false; Name = 'Obsidian desktop + claude-obsidian + obsidian-skills plugins' }
     [pscustomobject]@{ Key = 'repo-plugins';      Default = $false; Name = "This repo's plugins: crew, obsidian-vault (agents, commands, hooks)" }
     [pscustomobject]@{ Key = 'graphify';          Default = $false; Name = 'graphify code graph (uv tool install graphifyy; per-repo, not global)' }
+    [pscustomobject]@{ Key = 'ms-mcp';            Default = $false; Name = 'Microsoft MCP servers (mcp-servers/): Graph, Intune, Office 365 user/admin - needs tenant credentials' }
 )
 
 $script:Selected = @{}
@@ -2197,6 +2198,94 @@ if (Test-Selected 'graphify') {
             Write-Warn2 "'graphify install --project' failed - run it by hand from inside the target repo."
         }
         Show-GraphifyNextSteps
+    }
+}
+
+# --- 21. Microsoft MCP servers (mcp-servers/) ---------------------------------
+# Not published to npm yet, so unlike the item-9-12 MCP servers this cannot just
+# 'npx -y <pkg>@latest' - it needs a local clone (this script never resolves its own
+# path; run it from inside a checkout, see README.md's two install modes) plus real
+# Azure AD app registrations. See mcp-servers/README.md for the whole auth model.
+#
+# Interim form, works today: 'npm install -g .' inside each server package. Because
+# these are npm workspace members, that global install is a symlink back into this
+# clone whose module resolution still finds @mbadali/mcp-ms-core and every dependency
+# via mcp-servers\node_modules (hoisted there by the 'npm install' below) - it does
+# NOT try to fetch mcp-ms-core from the registry, which would 404 pre-publish. That
+# also means the global bin only keeps working as long as this clone stays put; it is
+# a dev-workspace link, not a real package install. Once published, item 21 (this same
+# menu key, on a future run) switches to 'npx -y @mbadali/<pkg>@latest' - registration
+# is bare either way (no -EnvVars): Add-McpServer's -EnvVars persists the value into
+# ~/.claude.json, and this repo's rule is secrets from env only, never written anywhere
+# by this script. So these servers only work once MS_ADMIN_*/MS_USER_* are set wherever
+# the 'claude' process itself gets launched ($PROFILE, service manager, etc.) - this
+# step just prints that.
+if (Test-Selected 'ms-mcp') {
+    Invoke-Step "Register Microsoft MCP servers (mcp-servers/)" {
+        $haveAdmin = [bool]($env:MS_ADMIN_TENANT_ID -and $env:MS_ADMIN_CLIENT_ID -and $env:MS_ADMIN_CLIENT_SECRET)
+        $haveUser = [bool]$env:MS_USER_CLIENT_ID
+
+        if (-not $haveAdmin -and -not $haveUser) {
+            Write-Skip "Microsoft MCP servers: no MS_ADMIN_* or MS_USER_CLIENT_ID in the environment"
+            Write-Host "        These need real Azure AD app registrations first - see mcp-servers/README.md."
+            Write-Host "        Then set the credentials this session will pass through and re-run:"
+            Write-Host "          `$env:MS_ADMIN_TENANT_ID='...'; `$env:MS_ADMIN_CLIENT_ID='...'; `$env:MS_ADMIN_CLIENT_SECRET='...'  # msgraph/intune/o365-admin"
+            Write-Host "          `$env:MS_USER_CLIENT_ID='...'                                                                     # o365-user (device code)"
+            Write-Host "          .\install-prerequisites.ps1 -Select ms-mcp"
+            return
+        }
+        if (-not (Test-ClaudeAvailable)) {
+            throw "claude not found on PATH in this session - open a new shell and re-run this script."
+        }
+        if (-not (Test-Path './mcp-servers/package.json')) {
+            Write-Skip "Microsoft MCP servers: mcp-servers/ not found under the current directory"
+            Write-Host "        Not published to npm yet - run this from inside a clone of the repo:"
+            Write-Host "          git clone https://github.com/mbadali25/useful-claude-add-ons"
+            Write-Host "          cd useful-claude-add-ons"
+            Write-Host "          .\scripts\install-prerequisites.ps1 -Select ms-mcp"
+            return
+        }
+        if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+            throw "node not found on PATH - install Node.js first (item 1), then re-run."
+        }
+
+        Push-Location mcp-servers
+        try {
+            npm install
+            if ($LASTEXITCODE -ne 0) { throw "'npm install' failed in mcp-servers/ - see the output above." }
+            npm run build
+            if ($LASTEXITCODE -ne 0) { throw "'npm run build' failed in mcp-servers/ - see the output above." }
+        } finally {
+            Pop-Location
+        }
+
+        $root = Join-Path (Get-Location) 'mcp-servers'
+        function Install-MsMcpGlobal([string]$PkgDir, [string]$BinName) {
+            Push-Location (Join-Path $root $PkgDir)
+            try {
+                npm install -g .
+                if ($LASTEXITCODE -ne 0) { throw "'npm install -g' failed for $BinName - see the output above." }
+            } finally {
+                Pop-Location
+            }
+        }
+        if ($haveAdmin) {
+            Install-MsMcpGlobal 'packages\graph' 'mcp-msgraph'
+            Install-MsMcpGlobal 'packages\intune' 'mcp-intune'
+            Install-MsMcpGlobal 'packages\o365-admin' 'mcp-o365-admin'
+            Add-McpServer -Name 'mcp-msgraph' -CommandArgs @('mcp-msgraph')
+            Add-McpServer -Name 'mcp-intune' -CommandArgs @('mcp-intune')
+            Add-McpServer -Name 'mcp-o365-admin' -CommandArgs @('mcp-o365-admin')
+        } else {
+            Write-Skip "mcp-msgraph/mcp-intune/mcp-o365-admin: no MS_ADMIN_* credentials given"
+        }
+        if ($haveUser) {
+            Install-MsMcpGlobal 'packages\o365-user' 'mcp-o365-user'
+            Add-McpServer -Name 'mcp-o365-user' -CommandArgs @('mcp-o365-user')
+        } else {
+            Write-Skip "mcp-o365-user: no MS_USER_CLIENT_ID given"
+        }
+        Write-Ok "Registered via 'npm install -g' (global bin names mcp-msgraph/mcp-intune/mcp-o365-admin/mcp-o365-user) - no secrets were written to ~/.claude.json. Set MS_ADMIN_TENANT_ID/MS_ADMIN_CLIENT_ID/MS_ADMIN_CLIENT_SECRET and/or MS_USER_CLIENT_ID (+ optional MS_USER_TENANT_ID) in `$PROFILE or wherever 'claude' itself gets launched, or these servers will fail to authenticate. Every server is read-only until MCP_MS_ALLOW_WRITES=1 is also set there. Run '<name> doctor' (e.g. 'mcp-msgraph doctor') to verify auth. After these packages are published, swap the registered command for 'npx -y @mbadali/<pkg>@latest' - see mcp-servers/README.md."
     }
 }
 

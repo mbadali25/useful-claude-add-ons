@@ -74,6 +74,7 @@ It shows the menu, asks the SkillUI quick-start question up front, then installs
 4. **Team plugins, community plugins, `find-skills`, `claude-code-setup`, `task-observer`** — each is its own menu row; `-SkipBootstrap` narrows any selection back down to items 1 and 2.
 5. **MCP servers** — AWS, Azure, Playwright. Off by default; see [Optional: MCP servers](#optional-mcp-servers).
 6. **Supabase, Context7, Playwright CLI, SkillUI, Strix** — off by default; see [Optional: extra tooling](#optional-extra-tooling).
+7. **Microsoft MCP servers** — Graph, Intune, Office 365 user/admin, built from `mcp-servers/` in this repo. Off by default and needs tenant credentials; see [Optional: Microsoft MCP servers](#optional-microsoft-mcp-servers).
 
 If `claude` isn't recognized immediately after the script finishes, open a new PowerShell window — the `PATH` change is written to the registry but doesn't retroactively apply to whichever shell you're still in from before Node.js/npm existed.
 
@@ -93,6 +94,7 @@ Runs as your current user, escalating to `sudo` (or `root` directly if already r
 4. **Team plugins, community plugins, `find-skills`, `claude-code-setup`, `task-observer`** — each is its own menu row; `--skip-bootstrap` narrows any selection back down to items 1 and 2.
 5. **MCP servers** — AWS, Azure, Playwright. Off by default; see [Optional: MCP servers](#optional-mcp-servers).
 6. **Supabase, Context7, Playwright CLI, SkillUI, Strix** — off by default; see [Optional: extra tooling](#optional-extra-tooling).
+7. **Microsoft MCP servers** — Graph, Intune, Office 365 user/admin, built from `mcp-servers/` in this repo. Off by default and needs tenant credentials; see [Optional: Microsoft MCP servers](#optional-microsoft-mcp-servers).
 
 Under the piped one-liner (`curl -fsSL … | bash`) the script itself arrives on stdin, so the menu reads the terminal through its own file descriptor. Where there is no terminal at all, it takes the default set rather than blocking.
 
@@ -288,6 +290,27 @@ Six more rows, also off by default. None of them are MCP servers.
   Both flags matter: `--code-only` skips docs, papers, and images — omit it against a repo that has any of those and `graphify` errors instead of skipping them. `--no-viz` skips the HTML visualization, which is effectively unopenable past a modest repo size.
 
   This item installs the CLI only; it does nothing on its own until something calls it. [`crew`](plugin/crew) (item 19) is the thing that does — its `crew-graph` skill builds and queries the graph, and `/crew:upgrade` reads it to bring a pre-schema-2 crew setup forward. Freshness is tracked from `graphify`'s own `built_at_commit` field in `graph.json`, never a file timestamp, so a `git pull` that predates the last build still reports correctly as stale. Exporting the graph into an Obsidian vault needs a separate, explicit opt-in — `graph.obsidian.confirmed` set by hand in `.crew/config.json` — which an upgrade never sets for you.
+
+### Optional: Microsoft MCP servers
+
+- **Microsoft MCP servers** (21) — registers up to four local, stdio MCP servers built from [`mcp-servers/`](mcp-servers/): `mcp-msgraph` (tenant directory), `mcp-intune` (device management), `mcp-o365-admin` (mailboxes/licenses, app-only, tenant-wide), and `mcp-o365-user` (the signed-in user's own mail/calendar/files, delegated device-code sign-in). Full auth model and every environment variable: [`mcp-servers/README.md`](mcp-servers/README.md).
+
+  Unlike items 9–12, none of these four are published to npm yet, so the item cannot just `npx -y <pkg>@latest` them. It needs **both**:
+
+  1. **A local clone with `mcp-servers/` present.** This script never resolves its own location (it supports both the piped one-liner and running from inside a clone), so it checks for `mcp-servers/package.json` under the current directory. Missing it prints the clone command and skips rather than failing.
+  2. **Real Azure AD app registrations**, checked as environment variables in the item's own shell, purely to decide which servers to register — see the note below on what actually happens with them:
+
+     ```bash
+     export MS_ADMIN_TENANT_ID=...  MS_ADMIN_CLIENT_ID=...  MS_ADMIN_CLIENT_SECRET=...  # msgraph, intune, o365-admin
+     export MS_USER_CLIENT_ID=...                                                       # o365-user (device code)
+     ./scripts/install-prerequisites.sh --select ms-mcp
+     ```
+
+     `MS_ADMIN_*` (all three, app-only/client-credentials) registers `mcp-msgraph`, `mcp-intune`, and `mcp-o365-admin`; `MS_USER_CLIENT_ID` (delegated device-code, `MS_USER_TENANT_ID` optional) registers `mcp-o365-user` on its own. Either group alone is enough to proceed — the item registers whichever group has its credentials present and skips the other with an explanation, rather than requiring both.
+
+  With both present it runs `npm install && npm run build` inside `mcp-servers/`, then, for each server it has credentials for, `npm install -g .` inside that server's package directory, then `claude mcp add <name> -- <name>` against the resulting **global bin name** (`mcp-msgraph`, `mcp-intune`, `mcp-o365-admin`, `mcp-o365-user`) — **bare**, with no `--env`, so no secret is ever written into `~/.claude.json`. That means the same `MS_ADMIN_*`/`MS_USER_*` vars must also be set wherever the `claude` process itself gets launched (shell profile, service manager, etc.), or a registered server will fail to authenticate — registering it here is necessary but not sufficient. Every tool across all four servers is also **read-only** until `MCP_MS_ALLOW_WRITES=1` is set there too. Verify with `<name> doctor` (e.g. `mcp-msgraph doctor`), which acquires a real token and prints exactly what was granted.
+
+  This `npm install -g` is an **interim, dev-workspace install** — none of the five packages (the shared core plus these four servers) are on the npm registry yet. Because they're npm workspace members, the global install is a symlink back into this clone whose module resolution still finds `@mbadali/mcp-ms-core` via `mcp-servers/node_modules` (hoisted there by the `npm install` step above) rather than fetching it from the registry, where it would 404. That also means the global command only keeps working as long as this clone stays where it is — moving or deleting it breaks the link, same caveat as `npm link`. Once the packages are published (a tagged `mcp-servers-v*` push runs [`.github/workflows/publish-mcp-servers.yml`](.github/workflows/publish-mcp-servers.yml), which needs the `@mbadali` npm scope to exist and an `NPM_TOKEN` repository secret), the step's closing message prints the `npx -y @mbadali/<pkg>@latest` one-liners so you can swap the registered command by hand — see [`mcp-servers/README.md`](mcp-servers/README.md) for those exact commands.
 
 Before running either script on a machine you don't fully control, note that these steps run third-party code from npm, from `strix.ai`, from `uv`, and from Chocolatey/flatpak/snap — see [`SECURITY.md`](SECURITY.md)'s install-script trust boundary.
 

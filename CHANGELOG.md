@@ -6,6 +6,89 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
+- **`mcp-servers/` — four local Microsoft MCP servers on one shared auth/HTTP
+  workspace package.** `mcp-msgraph` (tenant directory), `mcp-intune` (device
+  management), `mcp-o365-admin` (mailboxes/licenses/password reset — all
+  app-only, tenant-wide), and `mcp-o365-user` (the signed-in user's own
+  mail/calendar/files, delegated device-code sign-in). Not marketplace
+  plugins — npm packages under `mcp-servers/packages/`, npm-workspace-linked
+  against `@mbadali/mcp-ms-core`, built with the official
+  `@modelcontextprotocol/sdk`. Every write/destructive tool is gated behind
+  **both** `MCP_MS_ALLOW_WRITES=1` and a per-call `confirm: true`; every
+  server ships a `doctor` subcommand that acquires a real token and prints
+  the scopes/roles actually granted. Offline test suite (mocked `fetch`, no
+  live tenant) via `npm test`; wired into
+  `.github/workflows/mcp-servers.yml`.
+
+  Azure Resource Manager is deliberately not a fifth server: the official
+  `@azure/mcp` already covers ARM comprehensively (dozens of service-scoped
+  tool groups, plus generic `arm` CRUD), so this repo does not duplicate it —
+  see `mcp-servers/README.md` for the reasoning.
+
+  **Menu item 21, `ms-mcp` — off by default, needs tenant credentials.**
+  Unlike the item 9–12 MCP servers, none of these four are on npm yet, so the
+  item can't `npx -y <pkg>@latest` them: it detects `mcp-servers/package.json`
+  under the current directory (this script never resolves its own location),
+  builds it with `npm install && npm run build`, then runs `npm install -g .`
+  inside each server package it has credentials for and registers the
+  resulting global bin name (`mcp-msgraph`, `mcp-intune`, `mcp-o365-admin` —
+  need `MS_ADMIN_TENANT_ID` + `MS_ADMIN_CLIENT_ID` + `MS_ADMIN_CLIENT_SECRET`;
+  `mcp-o365-user` — needs `MS_USER_CLIENT_ID`), printing what's missing and
+  skipping rather than failing otherwise. The global install works pre-publish
+  because these are npm workspace members — it symlinks rather than
+  reinstalling, so the dependency on `@mbadali/mcp-ms-core` still resolves
+  through the workspace's hoisted `node_modules` instead of 404ing against the
+  registry.
+
+  **The npx path is now real, not just documented.** Five packages carry
+  `publishConfig`/`files`/`bin` shaped for `npm publish`: `files` is scoped to
+  `dist/src` only (no compiled test output in the tarball — verified with
+  `npm pack --dry-run` per package), and each server's `build` script chmods
+  its compiled `cli.js` to `0o755` so the `#!/usr/bin/env node` shebang is
+  executable on Linux (Windows needs neither — npm's own `.cmd`/`.ps1` shims
+  handle it there). `.github/workflows/publish-mcp-servers.yml` publishes all
+  five — core first, since the four servers pin an exact
+  `"@mbadali/mcp-ms-core": "0.1.0"` dependency — on a pushed `mcp-servers-v*`
+  tag, via `npm publish --provenance --access public` authenticated with an
+  `NPM_TOKEN` repository secret. Until the `@mbadali` npm scope exists and
+  that secret is set and a tag is actually published, `npx -y @mbadali/<pkg>`
+  cannot resolve anything — `mcp-servers/README.md` says so plainly and
+  documents `npm install -g` (Option B, what the installer now uses) and the
+  direct-path form (Option A) as the two working interim installs.
+
+### Fixed
+
+- **`mcp-servers/` QA pass: a merge-blocking `npm publish --provenance`
+  failure, a status-vs-parse ordering bug, and no throttling handling.** All
+  five `package.json` now carry `"repository"` (type/url/directory) —
+  `--provenance` refuses to publish without it, which would have killed the
+  publish workflow's very first step. `GraphClient`'s `request()` and
+  `getAllPages()` used to call `JSON.parse` before checking `res.ok`; a
+  non-JSON error body (a WAF's HTML, a plain-text 5xx from an intermediate
+  proxy) threw a `SyntaxError` and lost the real status code. Both now read
+  the body first, parse it as JSON only if it looks like JSON, and fall back
+  to the raw text inside a proper `GraphApiError` that still carries the
+  status. Neither method handled `429` at all — Graph throttles routinely in
+  real tenants — so both now share a bounded retry (max 3 attempts) that
+  honors `Retry-After` (seconds or an HTTP date) and caps the wait at 30s.
+  `getAllPages()` also used to truncate silently at `maxPages`, presenting a
+  partial list as if it were complete; it now returns `{ items, truncated }`,
+  and every server's list tool (`pagedResult()`, new in
+  `packages/core/src/toolResult.ts`) appends a plain-text note to the tool
+  result when truncated, so the model knows more data may exist. `post`/
+  `patch`/`put`/`delete` on `GraphClient` now carry a doc comment stating they
+  perform no write-gating themselves — every caller routes through
+  `assertWriteAllowed` by convention, not by the type system. 12 call sites
+  across all four servers and 2 in `packages/core/test/graphClient.test.ts`
+  updated for the new return shape; new tests cover a non-JSON 500/502/503, a
+  204 and an empty-200 body, a 429 that retries then succeeds, a 429 that
+  exhausts its retry budget, a capped wait, and both `truncated: true` and
+  `truncated: false`. `Install-MsMcpGlobal` (defined nested inside an
+  `Invoke-Step` scriptblock in `install-prerequisites.ps1`, unlike this
+  script's other helpers) was sabotage-tested against
+  `scripts/check-powershell.ps1` — a typo'd call is caught (the checker's AST
+  walk recurses into nested scriptblocks) — so it was left in place rather
+  than moved to the top level.
 - **New plugin `obsidian-vault` 0.1.1 - one or more Obsidian vaults as Claude
   Code's durable, token-efficient memory.** Cross-platform
   (Windows/Linux/macOS), no vault path hardcoded, and **multi-vault by
