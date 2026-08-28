@@ -1,0 +1,95 @@
+{
+  "schema": 2,
+  "tier": 0,
+  "roles": [
+    "explorer",
+    "qa-reviewer"
+  ],
+  "qa": {
+    "provider": "auto"
+  },
+  "secondOpinion": {
+    "provider": "none",
+    "mode": "cli",
+    "model": null,
+    "keyEnv": "GEMINI_API_KEY",
+    "sendsCode": false
+  },
+  "tracker": "files",
+  "jira": {
+    "project": null
+  },
+  "sdp": {
+    "portal": null,
+    "noteVisibility": "private",
+    "closeOnDone": false
+  },
+  "obsidian": {
+    "vaultPath": null,
+    "boardDir": null,
+    "board": "Board.md",
+    "columns": {
+      "backlog": "Backlog",
+      "ready": "Ready",
+      "inProgress": "In Progress",
+      "review": "Review",
+      "done": "Done"
+    }
+  },
+  "memory": {
+    "mode": "repo",
+    "vaultPath": null
+  },
+  "verifyGate": true,
+  "context": {
+    "enabled": true,
+    "warnAt": 0.8,
+    "budgetTokens": null,
+    "reserveTokens": 100000,
+    "handoffPath": ".work/HANDOFF.md",
+    "keepTranscripts": 5
+  },
+  "emergency": {
+    "standDown": true,
+    "ttlMinutes": 120,
+    "maxTtlMinutes": 480
+  },
+  "notify": {
+    "provider": "none",
+    "urlEnv": null,
+    "tokenEnv": null,
+    "chatId": null,
+    "events": [
+      "phase",
+      "gate",
+      "waiting"
+    ]
+  },
+  "platform": {
+    "os": null,
+    "wsl": null,
+    "shell": null,
+    "windowsHostIp": null
+  },
+  "pm": {
+    "enabled": true,
+    "mode": "adaptive",
+    "quietLines": 8,
+    "maxLines": 40,
+    "authority": "report-only",
+    "maxDispatches": 3
+  },
+  "graph": {
+    "enabled": true,
+    "tool": "graphify",
+    "out": "graphify-out",
+    "mode": "code-only",
+    "commitHook": false,
+    "obsidian": {
+      "enabled": false,
+      "dir": null,
+      "layout": "flat",
+      "confirmed": false
+    }
+  }
+}

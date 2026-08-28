@@ -526,3 +526,55 @@ def test_collect_reads_pm_block_defaults(tmp_path):
     assert pm["mode"] == "adaptive"
     assert pm["quietLines"] == 8
     assert pm["maxLines"] == 40
+
+
+# --- collect()'s cfg_override (crew_config.layered_state builds this) -----
+#
+# These test collect()'s own mechanic in isolation, with a plain dict passed
+# directly -- no crew_config import here at all. crew_state must not depend
+# on crew_config (which itself depends on crew_state for PM_DEFAULTS and
+# SCHEMA_CURRENT), or the two modules import each other -- a real cyclic
+# import, not a stylistic one. End-to-end coverage of the actual global-file
+# layering lives in test_crew_config.py, against crew_config.layered_state.
+
+
+def test_collect_cfg_override_replaces_settings_for_a_crew_repo(tmp_path):
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"schema": 2, "tier": 0, "roles": []})
+
+    got = crew_state.collect(str(root), cfg_override={"pm": {"maxDispatches": 9}})
+
+    assert got["isCrew"] is True
+    assert got["pm"]["maxDispatches"] == 9
+
+
+def test_collect_ignores_cfg_override_for_a_non_crew_directory(tmp_path):
+    """An override must never make a plain git repo with no .crew/ of its
+    own look crew-managed, or pick up settings it never opted into."""
+    plain = tmp_path / "plain"
+    plain.mkdir()
+
+    got = crew_state.collect(
+        str(plain), cfg_override={"tracker": "jira", "pm": {"maxDispatches": 9}})
+
+    assert got["isCrew"] is False
+    assert got["tracker"] is None
+    assert got["triggers"] == []
+
+
+def test_collect_schema_is_not_affected_by_cfg_override(tmp_path):
+    """schema is a fact about the repo file's own layout, not a setting --
+    an override supplying one (as a fully-merged effective config always
+    would) must not hide an unmigrated v1 repo."""
+    root = crew_fixtures.make_repo(tmp_path, config={"tier": 0, "roles": []})
+
+    got = crew_state.collect(str(root), cfg_override={"schema": 2, "pm": {}})
+
+    assert got["schema"] == 1
+    assert "upgradeNeeded" in got["triggers"]
+
+
+def test_collect_with_no_override_behaves_as_before(tmp_path):
+    root = crew_fixtures.make_repo(tmp_path, config={"schema": 2})
+    assert crew_state.collect(str(root)) == crew_state.collect(
+        str(root), cfg_override=None)

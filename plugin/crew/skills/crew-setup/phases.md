@@ -120,7 +120,11 @@ either way removal and deletion always stop for a yes.
 Create
 `.crew/`, `.work/`, `docs/adr/`, `_verify/` from template (README.md, smoke.sh,
 run-all.sh, cases/), gitignore
-entries for secrets, and a `CLAUDE.md` if absent.
+entries for secrets, and a `CLAUDE.md` if absent. Write `.crew/config.json` by
+copying `${CLAUDE_PLUGIN_ROOT}/templates/config.template.json` and filling in
+the answers above — do not hand-write the JSON; that file (and the heal path
+that recreates it if it ever goes missing) both come from the same
+`crew_config.py`, and a hand-typed copy is a fourth place for it to drift.
 
 **The CLAUDE.md, whether or not one already exists.** Run:
 

@@ -6,6 +6,67 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
+- **`crew` 0.11.3 - config becomes two layers: an optional machine-global
+  file plus the per-repo one.** `~/.claude/crew/config.json`, written by
+  hand (no command creates it), sets defaults for every crew repo on the
+  machine; the repo's own `.crew/config.json` still wins where both set the
+  same thing. Merged one level deep with the same policy `/crew:upgrade`
+  already used to bring a v1 config's `pm` and `graph` blocks forward - now
+  named `crew_state.merge_defaults` and shared by both, instead of a second
+  implementation that could quietly diverge. A malformed global file is
+  treated exactly like an absent one and never touched. Two things
+  deliberately skip this layering: `schema`, which is a fact about the repo
+  file's own version and would otherwise look current the moment any global
+  file exists; and the heal path plus `platform-sync`, which write only the
+  repo file, always.
+
+  - **crew-graph's Obsidian export gets a configurable target layout.**
+    `graph.obsidian.layout` is `"flat"` (default, unchanged behaviour -
+    `graph.obsidian.dir` is the export target verbatim) or `"org/repo"`
+    (`dir` is a per-org folder and the skill appends `/<repo>` under it, for
+    a vault laid out as `<vault>/<org>/<repo>/`). The export subcommand
+    syntax and the `graph.obsidian.confirmed` consent gate are unchanged.
+  - **0.11.1 -> 0.11.2:** CI caught a pylint `consider-using-dict-items` in
+    a test, and fixing it exposed a real cyclic import between
+    `crew_state` and `crew_config` (the first draft of this layering had
+    `crew_state.collect` reach back into `crew_config` to resolve the
+    global layer). `collect()` now takes the resolved config as a plain
+    `cfg_override` argument; `crew_config.layered_state(root)` is the new
+    composition point that supplies one. `pylint $(git ls-files '*.py')`
+    exits `0`.
+  - **0.11.2 -> 0.11.3, three QA guard gaps:** `hook_once.claim()` no
+    longer fails open when `session_id` is absent - it derives a
+    calendar-day fallback key instead, so the `.sh`/`.ps1` pair can no
+    longer race a duplicate write when the payload happens to carry no
+    session id. `resolve_config()` now exempts `schema` structurally
+    rather than by caller discipline - a global file carrying one can no
+    longer leak into an unmigrated v1 repo's resolved config. And the
+    template-drift test now also covers the inline JSON copy in
+    `crew-setup/SKILL.md`, extracted and compared parsed rather than
+    byte-wise, so a field added to `default_config()` and forgotten in
+    the doc fails CI too.
+
+- **`crew` 0.11.0 - `.crew/config.json` recreates itself when it goes missing
+  or stops parsing.** The `platform-sync` `SessionStart` hook, which already
+  repaired the `platform` block, now also recreates the whole file: missing
+  or empty gets fresh defaults straight away, a present-but-malformed file
+  gets copied aside to `config.json.broken` first (never overwriting an
+  earlier `.broken` from a prior bad session), and anything that already
+  parses as an object is left alone byte for byte. **Guard: only where
+  `.crew/` already exists** - a plain git repo with no crew setup is never
+  colonized just because a session opened in it. Recreating the file resets
+  every human choice - `tracker`, `roles`, `tier`, and the rest - back to
+  defaults, and the one-line report says so and points at `/crew:init` to
+  re-record them.
+
+  - **One source for the defaults, not three.** `hooks/scripts/crew_config.py`
+    is the new module that owns `default_config()`, built from
+    `crew_state.PM_DEFAULTS`, `crew_upgrade.GRAPH_BLOCK`, and
+    `crew_state.SCHEMA_CURRENT` rather than a fourth hand-copied literal. The
+    committed template `templates/config.template.json` - what `/crew:init`
+    writes - and the heal path both call it, and a test asserts the template
+    equals its output byte-for-byte so the two can never quietly drift apart.
+
 - **`crew` 0.10.0 - an Obsidian Kanban board is now a fourth ticket tracker,
   alongside `files`, `jira` and `sdp`.** Set `tracker: "obsidian"` and point
   `obsidian.vaultPath` at a vault. The board is a markdown file the

@@ -43,34 +43,29 @@ GRAPH_BLOCK = {
     "out": crew_state.GRAPH_OUT_DEFAULT,
     "mode": "code-only",
     "commitHook": False,
-    "obsidian": {"enabled": False, "dir": None, "confirmed": False},
+    # "layout" governs how crew-graph's Obsidian export SKILL documents the
+    # target directory it asks the user to confirm -- it does not compute a
+    # path in code, since the export itself is a manual, consent-gated CLI
+    # invocation the skill drives, never something crew runs unattended.
+    # "flat": `dir` is the export target verbatim, e.g. `<vault>/codegraphs/
+    # <repo>/` -- the only layout that existed before this key, kept as the
+    # default so an existing config's behaviour does not change underneath
+    # it. "org/repo": `dir` is a per-org folder (e.g. `<vault>/<org>`) and
+    # the skill appends `/<repo>` under it -- see crew-graph/SKILL.md.
+    "obsidian": {"enabled": False, "dir": None, "layout": "flat",
+                 "confirmed": False},
 }
 
 _ANCHOR_LINE_RE = re.compile(r"^(anchor:\s*\S*@?)([0-9a-f]{7,40})",
                              re.MULTILINE | re.IGNORECASE)
 
 
-def _merged(defaults, supplied):
-    """defaults, overlaid with anything already present. Recurses one level.
-
-    Where the default is a dict, a non-dict override is DISCARDED rather than
-    applied. The caller indexes into these blocks afterwards, so letting a
-    hand-edited `"obsidian": "yes"` replace the dict raises TypeError partway
-    through an upgrade -- and `run()` has already written the config by then.
-    A scalar where the schema wants a block is a mistake, and the default is
-    the honest fallback. A legitimate nested override still wins.
-    """
-    out = dict(defaults)
-    if not isinstance(supplied, dict):
-        return out
-    for key, value in supplied.items():
-        if isinstance(out.get(key), dict):
-            if isinstance(value, dict):
-                out[key] = _merged(out[key], value)
-            # else: keep the default; see the docstring.
-        else:
-            out[key] = value
-    return out
+# The merge policy itself moved to crew_state.merge_defaults so
+# crew_config.resolve_config's global/repo layering uses the exact same
+# rule as this module's v1->v2 upgrade does, rather than a second
+# implementation that could quietly diverge. Kept as a module-level name
+# here since both call sites below predate the move and read cleanly as-is.
+_merged = crew_state.merge_defaults
 
 
 def upgrade_config(cfg):
