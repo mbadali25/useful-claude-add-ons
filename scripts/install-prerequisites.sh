@@ -744,7 +744,7 @@ MENU_NAME=(
   "SkillUI (npm) + Playwright/Chromium - extract a design system from a URL"
   "Strix AI pentesting CLI (needs Docker + an LLM API key)"
   "Obsidian desktop + claude-obsidian + obsidian-skills plugins"
-  "This repo's plugins: crew (agents, commands, hooks)"
+  "This repo's plugins: crew, obsidian-vault (agents, commands, hooks)"
   "graphify code graph (uv tool install graphifyy; per-repo, not global)"
 )
 

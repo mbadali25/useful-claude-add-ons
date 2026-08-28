@@ -79,7 +79,7 @@ Terminals that can't read a key press one at a time — no `stty`, `TERM=dumb`, 
 | 16 | SkillUI + Playwright/Chromium — design system from a URL | |
 | 17 | Strix — AI pentesting CLI (needs Docker + an LLM API key) | |
 | 18 | Obsidian desktop + `claude-obsidian` and `obsidian-skills` plugins | |
-| 19 | This repo's plugins — `crew` (agents, commands, **hooks**) — **→ picks which** | |
+| 19 | This repo's plugins — `crew`, `obsidian-vault` (agents, commands, **hooks**) — **→ picks which** | |
 | 20 | `graphify` code graph (`uv tool install graphifyy`; per-repo, not global) | |
 
 Menu numbers are identical on Windows and Linux, and an already-registered MCP server, marketplace, or plugin is reported and skipped rather than re-added. Numbers can shift as items are added, so scripted runs should prefer the stable keys (`--select supabase,strix`) over positions.
@@ -156,7 +156,7 @@ For this repo's own skills, [`scripts/check-marketplace.py`](scripts/check-marke
 | 16 SkillUI | `skillui` + `playwright` + the Chromium browser build | npm |
 | 17 Strix | The `strix` pentesting CLI | `curl -sSL https://strix.ai/install \| bash` |
 | 18 Obsidian | The Obsidian desktop app (Chocolatey → winget on Windows, flatpak → snap on Linux), plus the `claude-obsidian` vault engine and [`kepano/obsidian-skills`](https://github.com/kepano/obsidian-skills) — Obsidian's own Markdown, Bases, JSON Canvas, CLI and Defuddle skills | choco/winget/flatpak/snap + 2 marketplaces |
-| 19 This repo's plugins | The `crew` plugin from [`plugin/`](plugin/) — 10 subagents, 18 slash commands, 16 bundled skills, and 16 hook entries (8 scripts × `.sh`/`.ps1`) across 5 events. Off by default because hooks execute whether or not Claude agrees with them | this repo |
+| 19 This repo's plugins | The `crew` plugin from [`plugin/`](plugin/) — 10 subagents, 21 slash commands, 16 bundled skills, and 20 hook entries (10 scripts × `.sh`/`.ps1`) across 5 events — and `obsidian-vault` — 2 agents, 8 slash commands, 3 skills, and 8 hook entries (4 scripts × `.sh`/`.ps1`). Off by default because hooks execute whether or not Claude agrees with them | this repo |
 | 20 `graphify` | The `graphify` CLI (`graphifyy` on PyPI), registered per-repository with `graphify install --project`. Off by default; not installed globally | `uv tool install` |
 
 Items 1–8 are the default set. Everything from 9 on is opt-in.
