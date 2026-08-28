@@ -126,6 +126,20 @@ plainly rather than buried in a script comment.
 - `obsidian-scheduling` - cross-platform scheduling reference. This plugin
   never installs a scheduled task itself.
 
+## Companions
+
+`/obsidian-vault:init` ends by offering three companion plugins, each its own
+yes/no, never a batched install:
+
+| Companion | What it adds | Install |
+|---|---|---|
+| [`obsidian@obsidian-skills`](https://github.com/kepano/obsidian-skills) | Kepano's workflow skills for working *inside* Obsidian - markdown conventions, Bases, JSON Canvas, templates. Complementary to this plugin's infrastructure (bridge, multi-vault MCP, memory contract, automation), not overlapping - it's the plugin whose name this one was renamed to avoid colliding with (install item 18 in this repo's own install script) | `claude plugin marketplace add kepano/obsidian-skills` (if not already added), then `claude plugin install obsidian@obsidian-skills` |
+| `graphify` CLI | `/obsidian-vault:graph` depends on it directly | `uv tool install graphifyy` then `graphify install --project` (this repo's own install item 20) |
+| `crew@useful-claude-add-ons` | Only mentioned when the vault holds ticket boards or code-graph output: crew 0.10+ has the Obsidian Kanban tracker, 0.11+ exports graphs into an org/repo-layout vault | `claude plugin install crew@useful-claude-add-ons` |
+
+`/obsidian-vault:doctor` reports which of these are missing (once, not per
+vault); it never installs one itself.
+
 ## Related - read before assuming this replaces something
 
 This repo already has several other pieces of Obsidian tooling. This plugin

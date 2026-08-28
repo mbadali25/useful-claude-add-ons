@@ -66,6 +66,39 @@ file does not repeat. In outline, so you know the shape before you load it:
 7. **Probe end to end**, the way `/obsidian-vault:doctor` does, for every vault
    just configured, and report the result plainly rather than assuming the
    wiring worked because the steps ran.
+8. **Companions.** Offer each of the following as its own yes/no - never a
+   batched "install all three." State what it adds and the exact command
+   before asking; skip an item with a one-line note if its check fails (e.g.
+   its marketplace is unreachable), and never add a marketplace or install a
+   plugin without that item's own yes.
+   - **`obsidian@obsidian-skills`** (kepano's plugin - install item 18 in this
+     repo's own install script; the plugin this one is named `obsidian-vault`
+     specifically to avoid colliding with). Check `claude plugin marketplace
+     list` for `obsidian-skills` and `claude plugin list` for
+     `obsidian@obsidian-skills` before offering; skip with a note if the
+     marketplace list itself fails (unreachable). Say exactly: "Ours is
+     infrastructure (bridge, multi-vault MCP, memory contract, automation);
+     his is workflow skills for working inside Obsidian (markdown
+     conventions, bases, canvas JSON, templates) - complementary, not
+     overlapping." If accepted:
+     ```
+     claude plugin marketplace add kepano/obsidian-skills
+     claude plugin install obsidian@obsidian-skills
+     ```
+     (skip the `marketplace add` if it is already listed).
+   - **`graphify`** - `/obsidian-vault:graph` depends on it and cannot run
+     without it. Check `graphify --version`; if missing, offer to install it
+     the way this repo's own install script does (item 20): `uv tool install
+     graphifyy` (package is `graphifyy`, double-y; the CLI it installs is
+     `graphify`), then `graphify install --project` from inside the target
+     repo.
+   - **`crew@useful-claude-add-ons`** - mention only when the vault being
+     configured will hold ticket boards or code-graph output (a `layout` was
+     just set, or the user said as much). One line, not a pitch: "crew 0.10+
+     has the Obsidian Kanban tracker, and 0.11+ exports graphs into an
+     org/repo-layout vault." If accepted: `claude plugin install
+     crew@useful-claude-add-ons` (same marketplace as this plugin, so no
+     `marketplace add` step).
 
 Never overwrite an existing `~/.claude/obsidian/config.json` silently - read it
 first, show what would change, and confirm before writing over a value the

@@ -64,6 +64,23 @@ vault - the capture hook and gardener are wired to it, not to every vault. A
 second vault with no `inbox/pending-reflect.md` at all simply has nothing to
 be stale.
 
+## 6. Companion plugins - report only, never install
+
+Doctor never installs anything; it only says what is missing and points at
+`/obsidian-vault:init`'s Companions step to fix it. Check once, not per vault:
+- `obsidian@obsidian-skills` present via `claude plugin list`? If not, and its
+  marketplace (`kepano/obsidian-skills`) is reachable via `claude plugin
+  marketplace list`, report it missing with the one-sentence reason it is
+  complementary (infrastructure here vs. workflow skills there), not a
+  duplicate. If the marketplace itself is unreachable, say that instead of
+  "missing."
+- `graphify --version` resolves? If not and any configured vault has
+  `"layout": "org/repo"` (i.e. a codegraphs vault exists), report it missing -
+  `/obsidian-vault:graph` cannot run without it.
+- `crew@useful-claude-add-ons` installed, only worth checking when a vault
+  holds ticket boards or code-graph output? Report missing in one line if so;
+  say nothing about it for a memory-only vault.
+
 ## Report format
 
 Group by vault, then one line per check: OK / WARN / FAIL, plus the fix
