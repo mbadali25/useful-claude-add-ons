@@ -18,19 +18,22 @@ import sys
 import tempfile
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-import obsidian_common  # noqa: E402
+import obsidian_common  # noqa: E402  pylint: disable=wrong-import-position
 
 FAILURES = []
 
 
-def check(desc, got, want):
+def _norm(v):
     # Paths may differ only in separator style ("/" from the {tmp}-substituted
     # config vs os.path.join's native separator) - normalize before comparing,
     # since that difference is an artifact of this test's own string building,
     # not a real result to catch.
-    norm = lambda v: os.path.normpath(v) if isinstance(v, str) else v
-    if norm(got) != norm(want):
-        FAILURES.append("%s: got %r, want %r" % (desc, got, want))
+    return os.path.normpath(v) if isinstance(v, str) else v
+
+
+def check(desc, got, want):
+    if _norm(got) != _norm(want):
+        FAILURES.append(f"{desc}: got {got!r}, want {want!r}")
 
 
 def with_config(config, vault_dirs, fn):
@@ -199,7 +202,7 @@ with_config(
     _t7,
 )
 
-print("RESULT: %d failed" % len(FAILURES))
+print(f"RESULT: {len(FAILURES)} failed")
 for f in FAILURES:
     print("FAIL:", f)
 sys.exit(1 if FAILURES else 0)

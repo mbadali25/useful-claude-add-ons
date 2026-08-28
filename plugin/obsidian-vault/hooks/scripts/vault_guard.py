@@ -30,7 +30,7 @@ import sys
 from datetime import date
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import obsidian_common  # noqa: E402
+import obsidian_common  # noqa: E402  pylint: disable=wrong-import-position
 
 # CLAUDE.md itself must show the real characters, so it is exempt by design
 # whenever asciiOnly is on.
@@ -101,11 +101,12 @@ def check_ascii(path, text, issues):
     parts = []
     for ch, line in sorted(bad.items(), key=lambda kv: kv[1])[:8]:
         sub = ASCII_MAP.get(ch)
-        parts.append("  near line %d: U+%04X -> %s"
-                     % (line, ord(ch), ("'%s'" % sub) if sub else "drop it"))
+        replacement = f"'{sub}'" if sub else "drop it"
+        parts.append(f"  near line {line}: U+{ord(ch):04X} -> {replacement}")
+    plural = "" if len(bad) == 1 else "s"
     issues.append(
-        "NON-ASCII introduced into a vault configured as ASCII-only "
-        "(%d distinct char%s):\n%s" % (len(bad), "" if len(bad) == 1 else "s", "\n".join(parts))
+        f"NON-ASCII introduced into a vault configured as ASCII-only "
+        f"({len(bad)} distinct char{plural}):\n" + "\n".join(parts)
     )
 
 
@@ -149,8 +150,8 @@ def check_note(path, text, issues, advisory, six_keys, type_keys, root, notes_gl
     ntype = (ntype if isinstance(ntype, str) else "").strip().strip('"')
     absent = [k for k in type_keys.get(ntype, []) if k not in fm]
     if absent:
-        advisory.append("type: %s has no %s"
-                        % (ntype, ", ".join("'%s:'" % k for k in absent)))
+        missing_keys = ", ".join(f"'{k}:'" for k in absent)
+        advisory.append(f"type: {ntype} has no {missing_keys}")
 
     def scalar(k):
         v = fm.get(k)
@@ -159,19 +160,19 @@ def check_note(path, text, issues, advisory, six_keys, type_keys, root, notes_gl
     title = scalar("title")
     stem = os.path.splitext(os.path.basename(path))[0]
     if title and title != stem:
-        issues.append("title: %r does not match filename %r - they must be identical" % (title, stem))
+        issues.append(f"title: {title!r} does not match filename {stem!r} - they must be identical")
 
     today = date.today().isoformat()
     upd = scalar("updated")
     if upd and upd != today:
-        issues.append("updated: %s but you just edited it - bump to %s" % (upd, today))
+        issues.append(f"updated: {upd} but you just edited it - bump to {today}")
 
 
 def check_canvas(path, text, issues, advisory, root):
     try:
         data = json.loads(text)
     except Exception as e:
-        issues.append("CANVAS DOES NOT PARSE AS JSON (%s). It will open blank with no error." % e)
+        issues.append(f"CANVAS DOES NOT PARSE AS JSON ({e}). It will open blank with no error.")
         return
     nodes = data.get("nodes") or []
     ids = [n.get("id") for n in nodes]
@@ -182,12 +183,11 @@ def check_canvas(path, text, issues, advisory, root):
     for e in data.get("edges") or []:
         for end in ("fromNode", "toNode"):
             if e.get(end) and e[end] not in idset:
-                issues.append("edge %s references missing node id %r" % (e.get("id", "?"), e[end]))
+                issues.append(f"edge {e.get('id', '?')} references missing node id {e[end]!r}")
     for n in nodes:
         if n.get("type") == "file" and n.get("file"):
             if not os.path.exists(os.path.join(root, n["file"].replace("/", os.sep))):
-                advisory.append("file node %s points at a missing note: %s"
-                                % (n.get("id", "?"), n["file"]))
+                advisory.append(f"file node {n.get('id', '?')} points at a missing note: {n['file']}")
     advisory.append("a canvas holds no facts - anything stated only here needs a note")
 
 

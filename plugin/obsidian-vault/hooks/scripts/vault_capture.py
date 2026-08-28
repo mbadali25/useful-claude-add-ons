@@ -19,7 +19,7 @@ import datetime
 import pathlib
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-import obsidian_common  # noqa: E402
+import obsidian_common  # noqa: E402  pylint: disable=wrong-import-position
 
 HEADER = (
     "# Pending reflection queue\n\n"
@@ -84,7 +84,7 @@ def main():
         # instead of eating it silently, or a permissions/disk problem here
         # goes unnoticed until the inbox turns out to have been empty for
         # weeks.
-        print("obsidian-vault vault-capture.py: %s: %s" % (type(e).__name__, e), file=sys.stderr)
+        print(f"obsidian-vault vault-capture.py: {type(e).__name__}: {e}", file=sys.stderr)
 
 
 if __name__ == "__main__":

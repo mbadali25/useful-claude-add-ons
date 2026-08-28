@@ -113,7 +113,7 @@
       "name": "obsidian-vault",
       "source": "./plugin/obsidian-vault",
       "description": "Make one or more Obsidian vaults Claude Code's durable, token-efficient memory - cross-platform, multi-vault setup and health checks for the Local REST API bridge (one MCP server per vault), an off-by-default vault contract guard, gardening and reflection agents, canvas and map-of-content generation, and graphify wiring into a separate codegraphs vault.",
-      "version": "0.1.1"
+      "version": "0.1.2"
     },
     {
       "name": "obsidian-vault-server",

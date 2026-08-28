@@ -145,14 +145,14 @@ def _valid_port(value, context):
     """
     if isinstance(value, bool) or not isinstance(value, int):
         print(
-            "obsidian-vault config: %s is not an integer (%r) - using default port %d"
-            % (context, value, DEFAULT_PORT), file=sys.stderr,
+            f"obsidian-vault config: {context} is not an integer ({value!r}) - "
+            f"using default port {DEFAULT_PORT}", file=sys.stderr,
         )
         return DEFAULT_PORT
-    if not (1 <= value <= 65535):
+    if not 1 <= value <= 65535:
         print(
-            "obsidian-vault config: %s is out of range (%r) - using default port %d"
-            % (context, value, DEFAULT_PORT), file=sys.stderr,
+            f"obsidian-vault config: {context} is out of range ({value!r}) - "
+            f"using default port {DEFAULT_PORT}", file=sys.stderr,
         )
         return DEFAULT_PORT
     return value
@@ -181,7 +181,7 @@ def list_vaults():
                 continue
             out[name] = {
                 "path": entry["path"],
-                "port": _valid_port(entry.get("port", DEFAULT_PORT), "vaults.%s.port" % name),
+                "port": _valid_port(entry.get("port", DEFAULT_PORT), f"vaults.{name}.port"),
                 "layout": entry.get("layout"),
                 "default": entry.get("default") is True,
             }
@@ -233,7 +233,7 @@ def _declared_default_entry():
     cfg = read_config()
     raw = cfg.get("vaults")
     if isinstance(raw, dict) and raw:
-        for name, entry in raw.items():
+        for entry in raw.values():
             if isinstance(entry, dict) and entry.get("default") is True:
                 return entry
         first = next(iter(raw.values()), None)
