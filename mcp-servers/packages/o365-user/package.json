@@ -1,0 +1,34 @@
+{
+  "name": "@mbadali/mcp-o365-user",
+  "version": "0.1.0",
+  "description": "MCP server for Office 365 in the signed-in user's own delegated scope (mail, calendar, files) -- device code auth",
+  "type": "module",
+  "bin": {
+    "mcp-o365-user": "./dist/src/cli.js"
+  },
+  "main": "./dist/src/index.js",
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepublishOnly": "npm run build",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "test": "node --test \"dist/test/**/*.test.js\""
+  },
+  "dependencies": {
+    "@mbadali/mcp-ms-core": "0.1.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3",
+    "@types/node": "^22.10.5"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

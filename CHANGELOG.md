@@ -6,6 +6,35 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
+- **`mcp-servers/` — four local Microsoft MCP servers on one shared auth/HTTP
+  workspace package.** `mcp-msgraph` (tenant directory), `mcp-intune` (device
+  management), `mcp-o365-admin` (mailboxes/licenses/password reset — all
+  app-only, tenant-wide), and `mcp-o365-user` (the signed-in user's own
+  mail/calendar/files, delegated device-code sign-in). Not marketplace
+  plugins — npm packages under `mcp-servers/packages/`, npm-workspace-linked
+  against `@mbadali/mcp-ms-core`, built with the official
+  `@modelcontextprotocol/sdk`. Every write/destructive tool is gated behind
+  **both** `MCP_MS_ALLOW_WRITES=1` and a per-call `confirm: true`; every
+  server ships a `doctor` subcommand that acquires a real token and prints
+  the scopes/roles actually granted. Offline test suite (mocked `fetch`, no
+  live tenant) via `npm test`; wired into
+  `.github/workflows/mcp-servers.yml`.
+
+  Azure Resource Manager is deliberately not a fifth server: the official
+  `@azure/mcp` already covers ARM comprehensively (dozens of service-scoped
+  tool groups, plus generic `arm` CRUD), so this repo does not duplicate it —
+  see `mcp-servers/README.md` for the reasoning.
+
+  **Menu item 21, `ms-mcp` — off by default, needs tenant credentials.**
+  Unlike the item 9–12 MCP servers, none of these four are on npm yet, so the
+  item can't `npx -y <pkg>@latest` them: it detects `mcp-servers/package.json`
+  under the current directory (this script never resolves its own location),
+  builds it with `npm install && npm run build`, and registers whichever of
+  `mcp-msgraph`/`mcp-intune`/`mcp-o365-admin` (needs `MS_ADMIN_TENANT_ID` +
+  `MS_ADMIN_CLIENT_ID` + `MS_ADMIN_CLIENT_SECRET`) and `mcp-o365-user` (needs
+  `MS_USER_CLIENT_ID`) it has credentials for, printing what's missing and
+  skipping rather than failing otherwise.
+
 - **`crew` 0.10.0 - an Obsidian Kanban board is now a fourth ticket tracker,
   alongside `files`, `jira` and `sdp`.** Set `tracker: "obsidian"` and point
   `obsidian.vaultPath` at a vault. The board is a markdown file the

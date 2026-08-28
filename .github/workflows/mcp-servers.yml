@@ -1,0 +1,30 @@
+name: MCP servers (Microsoft)
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: mcp-servers
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # Every package's test script passes an explicit glob
+          # ("dist/test/**/*.test.js") rather than a bare directory path to
+          # node --test, deliberately -- a bare directory argument has behaved
+          # inconsistently across Node versions. The glob form has been verified
+          # locally on Node 26; 22 is this repo's documented LTS floor.
+          node-version: "22"
+      - name: Install workspace dependencies
+        run: npm ci
+      # Every test mocks fetch and passes a fake TokenCredential -- no live
+      # tenant or network access is used or required.
+      - name: Build and run offline tests
+        run: npm test

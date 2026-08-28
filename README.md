@@ -81,6 +81,7 @@ Terminals that can't read a key press one at a time — no `stty`, `TERM=dumb`, 
 | 18 | Obsidian desktop + `claude-obsidian` and `obsidian-skills` plugins | |
 | 19 | This repo's plugins — `crew` (agents, commands, **hooks**) — **→ picks which** | |
 | 20 | `graphify` code graph (`uv tool install graphifyy`; per-repo, not global) | |
+| 21 | Microsoft MCP servers (`mcp-servers/`) — Graph, Intune, Office 365 user/admin — **needs tenant credentials** | |
 
 Menu numbers are identical on Windows and Linux, and an already-registered MCP server, marketplace, or plugin is reported and skipped rather than re-added. Numbers can shift as items are added, so scripted runs should prefer the stable keys (`--select supabase,strix`) over positions.
 
@@ -99,6 +100,8 @@ A few items need a word of explanation:
 - **This repo's plugins** (19) installs [`plugin/crew`](plugin/crew) from this same marketplace — so it works whether or not item 3 ran. It is **off by default, deliberately**: unlike a skill, `crew` registers **hooks**, and a hook is not advisory. Its `PreToolUse` hook blocks `terraform apply`/`destroy`, destructive DDL, force push, hard reset, and any command that would print a secret into the transcript; its `Stop` hooks run the checks your changed paths map to (failing the turn on red) and watch context use; a `PreCompact`/`SessionStart` pair carries a handoff note across compaction, and that same `SessionStart` also runs a report-only PM brief — schema drift, a stale or missing code graph, review health — before you type anything. All of them start working the moment the plugin is enabled, so the item ends by printing the per-repository setup (`/crew:init`, `/crew:onboard`, `/crew:verify`) rather than leaving you to discover the gates by hitting them. This item also detects, but never removes, a separately-installed global copy of `find-skills` (item 5) that would collide with the one `crew` vendors. See [`plugin/README.md`](plugin/README.md) for the catalog and [`plugin/PLUGINS.md`](plugin/PLUGINS.md) for what each plugin actually contains.
 
 - **`graphify` code graph** (20) installs the third-party `graphify` CLI (`uv tool install graphifyy` — package `graphifyy`, double-y; the CLI it installs is `graphify`) and registers it **per-repository** with `graphify install --project`, never globally. Off by default, no new flag — it reuses `--select` / `-Select` like every other item. This is what `crew`'s `/crew:upgrade` and the `crew-graph` skill build on; installing it alone does nothing until `crew` (19) or another workflow calls it.
+
+- **Microsoft MCP servers** (21) is not one server but four — `mcp-msgraph`, `mcp-intune`, `mcp-o365-admin`, `mcp-o365-user` — built from [`mcp-servers/`](mcp-servers/) in this repo. Unlike items 9–12 these aren't published to npm yet, so this item can't just `npx -y <pkg>@latest`: it requires running the script **from inside a clone** of this repo (see the two install modes above) with `mcp-servers/` present, and it needs real Azure AD app registrations first — `MS_ADMIN_TENANT_ID`/`MS_ADMIN_CLIENT_ID`/`MS_ADMIN_CLIENT_SECRET` (app-only, tenant-wide — registers `mcp-msgraph`, `mcp-intune`, `mcp-o365-admin`) and/or `MS_USER_CLIENT_ID` (delegated device-code — registers `mcp-o365-user`). Without a local clone or without any of those set, the item explains what's missing and skips rather than failing. Every tool in all four servers is read-only until `MCP_MS_ALLOW_WRITES=1` is also set. Full auth model, env vars, and the gated-tool list: [`mcp-servers/README.md`](mcp-servers/README.md).
 
 Everything that can be a plugin **is** installed as one, using the CLI's own `claude plugin marketplace add` / `claude plugin install` — there's no `npx claudepluginhub` wrapper and no `git clone` + shell-script step any more. That removes the Windows failure modes those introduced (the wrapper needed a writable per-repo checkout).
 
@@ -158,6 +161,7 @@ For this repo's own skills, [`scripts/check-marketplace.py`](scripts/check-marke
 | 18 Obsidian | The Obsidian desktop app (Chocolatey → winget on Windows, flatpak → snap on Linux), plus the `claude-obsidian` vault engine and [`kepano/obsidian-skills`](https://github.com/kepano/obsidian-skills) — Obsidian's own Markdown, Bases, JSON Canvas, CLI and Defuddle skills | choco/winget/flatpak/snap + 2 marketplaces |
 | 19 This repo's plugins | The `crew` plugin from [`plugin/`](plugin/) — 10 subagents, 18 slash commands, 16 bundled skills, and 16 hook entries (8 scripts × `.sh`/`.ps1`) across 5 events. Off by default because hooks execute whether or not Claude agrees with them | this repo |
 | 20 `graphify` | The `graphify` CLI (`graphifyy` on PyPI), registered per-repository with `graphify install --project`. Off by default; not installed globally | `uv tool install` |
+| 21 Microsoft MCP servers | Builds `mcp-servers/` (`npm install && npm run build`) and registers up to 4 servers — `mcp-msgraph`, `mcp-intune`, `mcp-o365-admin` (app-only, needs `MS_ADMIN_*`), `mcp-o365-user` (delegated device-code, needs `MS_USER_CLIENT_ID`). Not on npm yet, so requires a local clone; skipped with instructions otherwise | this repo (`mcp-servers/`) + `claude mcp add` |
 
 Items 1–8 are the default set. Everything from 9 on is opt-in.
 
@@ -279,6 +283,25 @@ Once a vault exists, [**`vault-automation/`**](vault-automation/) installs the l
 ```
 
 Run the gardener on **one machine only**; details and safety notes in [`vault-automation/README.md`](vault-automation/README.md).
+
+## Microsoft MCP servers
+
+[**`mcp-servers/`**](mcp-servers/) is four local, stdio-based MCP servers for Microsoft
+365 and Intune — `mcp-msgraph` (tenant directory), `mcp-intune` (device management),
+`mcp-o365-admin` (mailboxes, licenses, password reset), and `mcp-o365-user` (the
+signed-in user's own mail/calendar/files via device-code sign-in). They are **not**
+marketplace plugins; they're npm packages built from one shared auth/HTTP workspace
+package and registered with `claude mcp add`. Menu item 21 of the bootstrap installer
+builds and registers them, off by default and gated on real Azure AD credentials being
+present in the environment.
+
+Azure Resource Manager is deliberately **not** one of the four: the official
+[`@azure/mcp`](https://www.npmjs.com/package/@azure/mcp) (menu item 10) already covers
+ARM comprehensively, so this repo doesn't duplicate it. See
+[`mcp-servers/README.md`](mcp-servers/README.md) for that decision, the full auth model
+(delegated vs. app-only, and why they're separate credentials), every environment
+variable, the write/destructive tools gated behind `MCP_MS_ALLOW_WRITES=1` +
+`confirm: true`, and registration one-liners for both platforms.
 
 ## Skills
 
