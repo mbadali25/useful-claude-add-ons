@@ -89,6 +89,17 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`crew` 0.11.4 — `crew:pm` could fail to dispatch with "Teammates cannot
+  spawn other teammates."** `pm.md` (the only crew role with the `Agent` tool)
+  had no guidance on whether to pass a `name` when dispatching a role, so it
+  could end up spawning dispatched roles as named, addressable teammates. The
+  runtime's team roster is flat -- a teammate (which the PM itself may be,
+  depending on how it was invoked) cannot spawn further named teammates, only
+  plain subagents. `pm.md`'s "Dispatching" section now says explicitly: never
+  pass `name` to the Agent tool when dispatching a role. Every dispatched role
+  is read and reported on within the same turn it was sent, so none of them
+  ever needed to be individually addressable afterward.
+
 - **`mcp-servers/` QA pass: a merge-blocking `npm publish --provenance`
   failure, a status-vs-parse ordering bug, and no throttling handling.** All
   five `package.json` now carry `"repository"` (type/url/directory) —
