@@ -8,7 +8,7 @@ Build or refresh the Map of Content for: $ARGUMENTS.
 
 A map is a **note**, not a canvas - a curated, prose-and-links index into an
 area of the vault, living in `wiki/maps/` (or wherever this vault's own
-`CLAUDE.md` says maps live). Where `/obsidian:canvas` is spatial, a map is
+`CLAUDE.md` says maps live). Where `/obsidian-vault:canvas` is spatial, a map is
 structured and readable top to bottom.
 
 1. Gather every note relevant to $ARGUMENTS: `Grep` the term across frontmatter

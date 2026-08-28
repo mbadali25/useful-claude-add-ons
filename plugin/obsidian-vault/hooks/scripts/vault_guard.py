@@ -6,7 +6,7 @@ one vault's own contract. The checks below are the same mechanics, but every
 one is now a config toggle under ~/.claude/obsidian/config.json -> "guard",
 because a vault's frontmatter contract, ASCII rule and tag vocabulary are that
 vault's decision, not this plugin's. Defaults are all OFF: a fresh install must
-not suddenly reject edits against rules a different vault chose. /obsidian:init
+not suddenly reject edits against rules a different vault chose. /obsidian-vault:init
 turns a toggle on only when it finds the matching rule stated in the target
 vault's own CLAUDE.md, and says so when it does.
 

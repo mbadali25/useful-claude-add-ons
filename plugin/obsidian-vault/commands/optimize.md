@@ -41,7 +41,7 @@ it) so the yes is informed.
 ## 4. Installs, same rule
 
 A plugin recommended for a vault this size (e.g. suggesting `obsidian-git` be
-either configured with real intervals or disabled once `/obsidian:doctor` finds
+either configured with real intervals or disabled once `/obsidian-vault:doctor` finds
 it half-configured; suggesting a lighter search alternative if Omnisearch's
 index is large relative to the vault) gets proposed with the same one-at-a-time
 confirmation as a removal, because installing something also changes what a
@@ -57,7 +57,7 @@ vault depends on.
 - **Graphify output must stay outside the vault.** If any `codegraphs/`-style
   folder holds full generated graphs rather than stub notes pointing outward,
   flag it - that is the single largest inflation risk this session's own vault
-  investigation found, and the fix (`/obsidian:graph`) already does it right.
+  investigation found, and the fix (`/obsidian-vault:graph`) already does it right.
 - **`.obsidian` index bloat.** Report total size of `.obsidian/plugins/*/`
   caches versus the vault's own content size as a ratio - useful context for
   whether Omnisearch or text-extractor need reindexing settings tightened.

@@ -1,6 +1,6 @@
 ---
-name: obsidian:gardener
-description: Distills queued Claude Code sessions into concept, decision and daily notes in an Obsidian vault, with provenance. Use when the inbox has unchecked entries, on a schedule (see the obsidian-scheduling skill), or via /obsidian:garden for an on-demand run.
+name: obsidian-vault:gardener
+description: Distills queued Claude Code sessions into concept, decision and daily notes in an Obsidian vault, with provenance. Use when the inbox has unchecked entries, on a schedule (see the obsidian-scheduling skill), or via /obsidian-vault:garden for an on-demand run.
 tools: Read, Write, Edit, Grep, Glob, Bash
 skills: obsidian-memory-contract
 ---
@@ -12,9 +12,11 @@ questions no one is there to answer.
 
 # Steps
 
-1. **Resolve the vault.** Read `~/.claude/obsidian/config.json` for
-   `vaultPath`. If unset, stop and say `/obsidian:init` has not been run - do
-   not guess a path.
+1. **Resolve the default vault.** Read `~/.claude/obsidian/config.json` for
+   the default entry under `vaults` (or the legacy `vaultPath`). If unset, stop
+   and say `/obsidian-vault:init` has not been run - do not guess a path. You
+   garden the default vault only - a second configured vault (a machine-
+   generated code-graph vault, typically) is never gardened the same way.
 2. **Read the vault's own `CLAUDE.md`.** It is the source of truth for
    frontmatter contract, tag vocabulary, and folder layout in THIS vault. The
    `obsidian-memory-contract` skill teaches the general shape; the vault's own
@@ -40,7 +42,7 @@ questions no one is there to answer.
      previously believed.
 5. **Check off each processed entry** in `pending-reflect.md`.
 6. **Structural pass.** If distilled work changed something a canvas or map
-   depicts, update it via the same rules `/obsidian:canvas` and `/obsidian:map`
+   depicts, update it via the same rules `/obsidian-vault:canvas` and `/obsidian-vault:map`
    follow - surgical edits, not regeneration.
 7. **Provenance pass.** Up to 5 concepts with empty `sources:` whose subject
    matches an existing session note: link them. Promote `status: developing`
@@ -51,7 +53,7 @@ questions no one is there to answer.
    `<vault>/.git` before touching git at all - a vault relying on Obsidian Sync
    alone has no `.git`, and this step does nothing there. If `.git` exists,
    `git add -A && git commit`; push only if a remote is configured. Never
-   `git init` here - that is `/obsidian:doctor`'s call to make, with
+   `git init` here - that is `/obsidian-vault:doctor`'s call to make, with
    confirmation, not this agent's to decide silently on a nightly run.
 
 # What you must never do

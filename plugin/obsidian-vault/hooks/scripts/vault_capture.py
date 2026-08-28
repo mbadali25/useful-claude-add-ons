@@ -24,7 +24,7 @@ import obsidian_common  # noqa: E402
 HEADER = (
     "# Pending reflection queue\n\n"
     "Appended automatically by vault_capture.py (SessionEnd/PreCompact hooks).\n"
-    "The obsidian:gardener agent processes unchecked entries and checks them off.\n"
+    "The obsidian-vault:gardener agent processes unchecked entries and checks them off.\n"
 )
 
 

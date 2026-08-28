@@ -76,9 +76,43 @@ introduces it.
 A `.canvas` file is a spatial arrangement of `file` nodes (references to
 notes) and `edge`s, plus text nodes that only label a grouping. **Anything
 stated only inside a canvas and nowhere in a note does not exist as far as
-recall is concerned** - `/obsidian:reflect` and the gardener both read notes,
-not canvas contents. `/obsidian:canvas` enforces this mechanically; hold to it
+recall is concerned** - `/obsidian-vault:reflect` and the gardener both read notes,
+not canvas contents. `/obsidian-vault:canvas` enforces this mechanically; hold to it
 by hand too.
+
+## Multiple vaults: the contract applies per vault, not globally
+
+A machine can have more than one configured vault (see `obsidian-setup`) - a
+hand-curated memory vault plus a separate, machine-generated one (a graphify
+code-graph export, for example). **Do not apply one vault's contract to
+another.** A code-graph vault's notes are generated, not authored - there is
+no human choosing `sources:`, no tag vocabulary to protect, and enforcing the
+six-key frontmatter contract there would just reject graphify's own output
+format. Read the vault's own `CLAUDE.md` (if it has one) or its `layout`
+metadata in config before assuming which rules apply.
+
+## Performance at scale: filesystem over MCP, past a point
+
+**This is the single most important rule on a large vault, and it applies
+regardless of which contract the vault follows.** A vault of a few hundred to
+a couple thousand notes works fine through Obsidian's MCP bridge -
+`search_query`, `vault_get_document_map`, and friends are often the right
+tool there. Past roughly 50,000 notes - a code-graph export vault commonly
+runs into the hundreds of thousands - **Omnisearch indexing and backlink
+resolution get slow enough that MCP calls stop being the fast path.**
+
+At that scale:
+- **Prefer plain filesystem `Read`/`Grep`/`Glob` for finding and reading
+  notes.** This works with zero setup and does not depend on the REST bridge
+  being up at all.
+- **Reserve MCP calls for what only the running app can do** - a plugin
+  command, a live backlink view in the Obsidian UI, frontmatter search via
+  `search_query`'s JsonLogic when a targeted filesystem grep genuinely cannot
+  express the query.
+- **Do not default to MCP out of habit** just because it worked well on a
+  smaller vault. The two vaults on the same machine can call for opposite
+  defaults, and a session that does not check which one it is in will reach
+  for the slow tool on the big vault.
 
 ## ASCII, if the vault requires it
 

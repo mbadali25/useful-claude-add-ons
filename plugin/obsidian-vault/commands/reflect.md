@@ -4,7 +4,7 @@ argument-hint: <topic>
 allowed-tools: Agent
 ---
 
-Dispatch the `obsidian:reflector` subagent on: $ARGUMENTS.
+Dispatch the `obsidian-vault:reflector` subagent on: $ARGUMENTS.
 
 Pass the topic through unchanged. Report its findings, including any
 contradiction it surfaces between notes - a contradiction is the useful

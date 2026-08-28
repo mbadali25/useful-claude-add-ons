@@ -6,28 +6,44 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
-- **New plugin `obsidian` 0.1.0 - an Obsidian vault as Claude Code's durable,
-  token-efficient memory.** Cross-platform (Windows/Linux/macOS), no vault
-  path hardcoded: `/obsidian:init` sets up the Local REST API bridge and MCP
-  registration; `bridge-status`, `vault-guard`, and `vault-capture` hooks
-  (each a `.sh`/`.ps1` pair sharing one Python module) probe the bridge at
-  session start, enforce a configurable vault contract on edit (every check
-  OFF by default - a fresh install must not reject edits against a different
-  vault's house rules), and queue sessions for gardening. `obsidian:gardener`
-  and `obsidian:reflector` agents distill and recall, with an explicit rule
-  against fabricating a citation. `/obsidian:canvas`, `/obsidian:map`, and
-  `/obsidian:graph` generate structural aids while keeping generated code
-  graphs outside the vault. Ships with a committed, sabotage-tested regression
-  suite for the one blocking hook (12 cases; the ASCII check was disabled once
-  during development to confirm the suite goes red).
+- **New plugin `obsidian-vault` 0.1.0 - one or more Obsidian vaults as Claude
+  Code's durable, token-efficient memory.** Cross-platform
+  (Windows/Linux/macOS), no vault path hardcoded, and **multi-vault by
+  design**: `~/.claude/obsidian/config.json` models named vaults
+  (`vaults: { memory: {...}, codegraphs: {...} }`) because a machine-generated
+  vault (a `graphify` code-graph export) commonly runs into the hundreds of
+  thousands of notes on the same machine as a hand-curated one, on its own
+  Local REST API port - so this plugin registers one MCP server per vault,
+  never one server juggling two, and applies the frontmatter/ASCII/canvas
+  contract guard only to the default vault.
 
-  **Known overlap, not resolved in this change** - see
-  `plugin/obsidian/README.md`'s "Related" section: a third-party plugin also
-  named `obsidian` (from the `obsidian-skills` marketplace) is already wired
-  into `scripts/install-prerequisites.sh` item 18, and this repo's own
-  `claude-obsidian-setup/` and `vault-automation/` directories already cover
-  parts of the same job for one specific vault. This plugin was built and
-  verified standalone; reconciling it with the existing tooling is a followup.
+  `/obsidian-vault:init` sets up the Local REST API bridge and per-vault MCP
+  registration; `bridge-status`, `vault-guard`, and `vault-capture` hooks
+  (each a `.sh`/`.ps1` pair sharing one Python module) probe every configured
+  vault's bridge at session start, enforce the configurable contract on edit
+  (every check OFF by default), and queue sessions for gardening.
+  `obsidian-vault:gardener` and `obsidian-vault:reflector` agents distill and
+  recall, with an explicit rule against fabricating a citation.
+  `/obsidian-vault:canvas` and `/obsidian-vault:map` generate structural aids;
+  `/obsidian-vault:graph` builds (`graphify . --no-viz --code-only`) and
+  exports (`graphify export obsidian`, a separate subcommand - `--obsidian` on
+  the build command is silently ignored) into a dedicated codegraphs vault
+  laid out `<org>/<repo>/`, with a stub note left in the default vault. Ships
+  with a committed, sabotage-tested regression suite for the one blocking hook
+  (12 cases; the ASCII check was disabled once during development to confirm
+  the suite goes red).
+
+  **Named `obsidian-vault`, not `obsidian`**, specifically to avoid colliding
+  with a third-party plugin already named plainly `obsidian` (from the
+  `obsidian-skills` marketplace, wired into `install-prerequisites.sh` item
+  18). `vault-automation/` (Windows-only prior art for the same
+  capture/gardener idea) is marked superseded in its own README pointing here,
+  but its scripts are left in place because the root `README.md` still
+  documents them as a runnable quickstart. `claude-obsidian-setup/` targets a
+  different thing - vault creation for the third-party `claude-obsidian`
+  plugin's own conventions - and was left untouched. See
+  `plugin/obsidian-vault/README.md`'s "Related" section for the full
+  accounting.
 
 - **`crew` 0.10.0 - an Obsidian Kanban board is now a fourth ticket tracker,
   alongside `files`, `jira` and `sdp`.** Set `tracker: "obsidian"` and point

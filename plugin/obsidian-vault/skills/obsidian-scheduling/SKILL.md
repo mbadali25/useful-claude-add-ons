@@ -1,6 +1,6 @@
 ---
 name: obsidian-scheduling
-description: How to schedule the obsidian:gardener and obsidian:reflector agents to run unattended on Windows and Linux. Use when the user wants nightly gardening, a recurring reflection pass, or asks why the gardener only ran when they typed /obsidian:garden.
+description: How to schedule the obsidian-vault:gardener and obsidian-vault:reflector agents to run unattended on Windows and Linux. Use when the user wants nightly gardening, a recurring reflection pass, or asks why the gardener only ran when they typed /obsidian-vault:garden.
 ---
 
 # Scheduling the gardener and reflector
@@ -17,7 +17,7 @@ or scripting it once with informed consent.
 A headless Claude Code call:
 
 ```
-claude -p "<the gardener's own steps, or: run the obsidian:gardener agent>" \
+claude -p "<the gardener's own steps, or: run the obsidian-vault:gardener agent>" \
   --dangerously-skip-permissions --max-turns 80
 ```
 
@@ -34,7 +34,7 @@ Once nightly is normally enough; twice is rarely useful.
 
 ```powershell
 $action = New-ScheduledTaskAction -Execute (Get-Command claude).Source `
-    -Argument '-p "run the obsidian:gardener agent now" --dangerously-skip-permissions --max-turns 80' `
+    -Argument '-p "run the obsidian-vault:gardener agent now" --dangerously-skip-permissions --max-turns 80' `
     -WorkingDirectory '<vault path>'
 $trigger = New-ScheduledTaskTrigger -Daily -At '02:23'
 Register-ScheduledTask -TaskName 'Obsidian Gardener' -Action $action -Trigger $trigger `
@@ -52,7 +52,7 @@ useful looks identical to Task Scheduler.
 cron, simplest:
 
 ```
-23 2 * * * cd '<vault path>' && claude -p "run the obsidian:gardener agent now" \
+23 2 * * * cd '<vault path>' && claude -p "run the obsidian-vault:gardener agent now" \
   --dangerously-skip-permissions --max-turns 80 >> <vault path>/.claude/gardener.log 2>&1
 ```
 
@@ -67,7 +67,7 @@ Description=Obsidian vault gardener
 [Service]
 Type=oneshot
 WorkingDirectory=%h/vault-path
-ExecStart=claude -p "run the obsidian:gardener agent now" --dangerously-skip-permissions --max-turns 80
+ExecStart=claude -p "run the obsidian-vault:gardener agent now" --dangerously-skip-permissions --max-turns 80
 ```
 
 ```ini
@@ -89,7 +89,7 @@ while the machine was off fires once it is back. Enable with
 If the vault syncs across machines (Obsidian Sync, or a synced folder), two
 scheduled gardeners on two machines distill the same `inbox/pending-reflect.md`
 queue independently and produce duplicate concepts. Pick one machine for the
-schedule; the others can still run `/obsidian:garden` on demand without
+schedule; the others can still run `/obsidian-vault:garden` on demand without
 conflict, since an on-demand run processes whatever is left in the queue at
 that moment rather than racing a concurrent one.
 

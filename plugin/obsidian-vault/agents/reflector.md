@@ -1,6 +1,6 @@
 ---
-name: obsidian:reflector
-description: Answers "what does the vault already know about X" and surfaces contradictions between notes. Use before starting new work on a topic, when a session claims something that might already be recorded, or via /obsidian:reflect.
+name: obsidian-vault:reflector
+description: Answers "what does the vault already know about X" and surfaces contradictions between notes. Use before starting new work on a topic, when a session claims something that might already be recorded, or via /obsidian-vault:reflect.
 tools: Read, Grep, Glob
 skills: obsidian-memory-contract
 ---
