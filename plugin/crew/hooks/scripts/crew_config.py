@@ -32,19 +32,21 @@ at `GLOBAL_CONFIG_PATH` (`~/.claude/crew/config.json`), and the repo's own
 merged one level deep with `crew_state.merge_defaults`, the same policy
 `crew_upgrade.upgrade_config` uses.
 
-Only readers that want SETTINGS should call `resolve_config`. Two things
-deliberately read the repo file directly instead:
+Only readers that want SETTINGS should call `resolve_config`; use
+`crew_config.layered_state`, below, for a full crew-state read.
 
-  * `crew_state.collect`'s `schema` field is a fact about the repo file's own
-    layout version, not a setting -- merging it would make an unmigrated v1
-    repo (no `schema` key at all) look current the moment any global file
-    exists, since the built-in default layer always supplies the current
-    schema number.
-  * `crew_platform.heal_config` and the `platform-sync` writer touch only the
-    repo file, always -- the global file is never read for a decision about
-    what to WRITE, and this module never writes it at all. There is no
-    command that creates it either; a user who wants one writes
-    `~/.claude/crew/config.json` by hand.
+`schema` is exempted STRUCTURALLY inside `resolve_config` itself, not by
+caller discipline -- see that function's docstring. It is a fact about the
+repo file's own layout version, not a setting: merging it would make an
+unmigrated v1 repo (no `schema` key at all) look current the moment any
+global file exists, since both the built-in-defaults layer and a careless
+global file can carry the current schema number.
+
+`crew_platform.heal_config` and the `platform-sync` writer are the other
+thing that bypasses this module's layering -- they touch only the repo file,
+always. The global file is never read for a decision about what to WRITE,
+and this module never writes it at all. There is no command that creates it
+either; a user who wants one writes `~/.claude/crew/config.json` by hand.
 """
 
 import copy
@@ -174,15 +176,32 @@ def read_global_config(path=None):
 def resolve_config(root):
     """The effective config for the repo at `root` -- see the module
     docstring's "Global + repo config layering" section for the precedence
-    rule and the two callers that deliberately bypass this.
+    rule.
+
+    `schema` is exempted STRUCTURALLY, not by caller discipline: it always
+    comes from the repo file's own raw value, present or absent, exactly as
+    `crew_state.load_config` reports it -- global can never supply it, and
+    neither can the built-in-defaults layer, which otherwise always carries
+    `SCHEMA_CURRENT`. Reading `schema` from an earlier draft of this
+    function's result meant a global config carrying `{"schema": 2}` would
+    leak into an unmigrated v1 repo's resolved config and hide the fact that
+    it needs `/crew:upgrade` -- correct only for as long as every caller
+    remembered to read the repo file directly instead. This function now
+    enforces it once, here, so no caller can get it wrong.
 
     Never raises: `crew_state.load_config` and `read_global_config` each
     already collapse "malformed" to "absent" on their own, so a broken file
     at either layer contributes nothing to the merge rather than failing the
     whole resolution.
     """
+    repo_cfg = crew_state.load_config(root)
     merged = crew_state.merge_defaults(default_config(), read_global_config())
-    return crew_state.merge_defaults(merged, crew_state.load_config(root))
+    merged = crew_state.merge_defaults(merged, repo_cfg)
+    if "schema" in repo_cfg:
+        merged["schema"] = repo_cfg["schema"]
+    else:
+        merged.pop("schema", None)
+    return merged
 
 
 def layered_state(root):

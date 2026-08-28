@@ -1,14 +1,16 @@
 """Tests for crew_config: the single source of truth for a fresh config.
 
-Three things must never disagree: `default_config()`, the committed template
-`templates/config.template.json` (what `/crew:init` writes), and the `pm` /
-`graph` blocks owned by `crew_state` and `crew_upgrade` respectively. The
-template-drift test is the one that actually protects that -- everything
-else here is ordinary unit coverage.
+Four things must never disagree: `default_config()`, the committed template
+`templates/config.template.json` (what `/crew:init` writes), the inline JSON
+copy in `skills/crew-setup/SKILL.md` (prose for a human reading the skill),
+and the `pm` / `graph` blocks owned by `crew_state` and `crew_upgrade`
+respectively. The two drift tests are what actually protect that --
+everything else here is ordinary unit coverage.
 """
 import copy
 import json
 import os
+import re
 
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_config
@@ -20,6 +22,10 @@ import crew_upgrade
 _TEMPLATE_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), os.pardir,
     "templates", "config.template.json",
+)
+_SKILL_MD_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), os.pardir,
+    "skills", "crew-setup", "SKILL.md",
 )
 
 
@@ -35,6 +41,30 @@ def test_default_config_matches_the_committed_template():
     with open(_TEMPLATE_PATH, encoding="utf-8") as handle:
         actual = handle.read()
     assert actual == expected
+
+
+def test_default_config_matches_crew_setup_skill_md_inline_copy():
+    """The inline JSON in crew-setup/SKILL.md is prose for a human reading
+    the skill, not a second definition -- crew_config's own module docstring
+    says so. Compared PARSED, not byte-wise: the doc renders every nested
+    object on one line for readability, which `json.dumps(..., indent=2)`
+    would not reproduce, and a formatting difference is not drift. A field
+    added to `default_config()` and forgotten here is drift, and this is
+    the test that catches it -- the template-drift test above only covers
+    `templates/config.template.json`, a file most people editing the skill
+    will never open.
+    """
+    with open(_SKILL_MD_PATH, encoding="utf-8") as handle:
+        text = handle.read()
+    fences = re.findall(r"```json\n(.*?)\n```", text, re.DOTALL)
+    assert len(fences) == 1, (
+        "expected exactly one ```json fence in crew-setup/SKILL.md (the "
+        f"config.json copy) -- found {len(fences)}. If the skill now "
+        "legitimately has more than one, make this test find the right one "
+        "rather than deleting the check."
+    )
+    doc_config = json.loads(fences[0])
+    assert doc_config == crew_config.default_config()
 
 
 def test_default_config_pm_block_matches_crew_state():
@@ -98,7 +128,17 @@ def _global(tmp_path, monkeypatch, contents=None):
 def test_resolve_config_with_neither_layer_is_just_defaults(tmp_path, monkeypatch):
     _global(tmp_path, monkeypatch, contents=None)  # no global file at all
     root = crew_fixtures.make_repo(tmp_path, config=None, git=False)
-    assert crew_config.resolve_config(str(root)) == crew_config.default_config()
+
+    resolved = crew_config.resolve_config(str(root))
+
+    # Every key except `schema` matches the built-in default exactly.
+    expected = crew_config.default_config()
+    del expected["schema"]
+    assert {k: v for k, v in resolved.items() if k != "schema"} == expected
+    # No repo config at all means no repo `schema` key either -- absent, not
+    # the built-in default's current value. See test_resolve_config_schema_*
+    # below for the structural guarantee this protects.
+    assert "schema" not in resolved
 
 
 def test_resolve_config_global_only(tmp_path, monkeypatch):
@@ -165,7 +205,34 @@ def test_resolve_config_global_that_is_a_json_array_is_ignored(tmp_path, monkeyp
     monkeypatch.setattr(crew_config, "GLOBAL_CONFIG_PATH", str(path))
     root = crew_fixtures.make_repo(tmp_path, config=None, git=False)
 
-    assert crew_config.resolve_config(str(root)) == crew_config.default_config()
+    resolved = crew_config.resolve_config(str(root))
+    expected = crew_config.default_config()
+    del expected["schema"]
+    assert {k: v for k, v in resolved.items() if k != "schema"} == expected
+    assert "schema" not in resolved
+
+
+# --- resolve_config's structural schema exemption --------------------------
+
+
+def test_resolve_config_schema_never_comes_from_the_global_layer(
+        tmp_path, monkeypatch):
+    """The exact case CI caught: a global config carrying `schema` must not
+    leak into a repo that does not have its own -- an unmigrated v1 repo
+    must not read as current just because someone's global file says 2."""
+    _global(tmp_path, monkeypatch, contents={"schema": 1})
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"tier": 0, "roles": []}, git=False)  # no schema key
+
+    resolved = crew_config.resolve_config(str(root))
+
+    assert "schema" not in resolved
+    assert resolved.get("schema") != 1
+
+
+def test_resolve_config_schema_comes_from_the_repo_file_when_present(tmp_path):
+    root = crew_fixtures.make_repo(tmp_path, config={"schema": 2}, git=False)
+    assert crew_config.resolve_config(str(root))["schema"] == 2
 
 
 def test_heal_writes_the_repo_file_not_the_global_one(tmp_path, monkeypatch):
