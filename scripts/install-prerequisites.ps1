@@ -768,7 +768,7 @@ $script:Catalog = @(
     [pscustomobject]@{ Key = 'obsidian';          Default = $false; Name = 'Obsidian desktop + claude-obsidian + obsidian-skills plugins' }
     [pscustomobject]@{ Key = 'repo-plugins';      Default = $false; Name = "This repo's plugins: crew, obsidian-vault (agents, commands, hooks)" }
     [pscustomobject]@{ Key = 'graphify';          Default = $false; Name = 'graphify code graph (uv tool install graphifyy; per-repo, not global)' }
-    [pscustomobject]@{ Key = 'ms-mcp';            Default = $false; Name = 'Microsoft MCP servers (mcp-servers/): Graph, Intune, Office 365 user/admin - needs tenant credentials' }
+    [pscustomobject]@{ Key = 'ms-mcp';            Default = $false; Name = 'Microsoft MCP servers (mcp-servers/): Graph, Intune, Office 365 user/admin - needs az login or tenant credentials' }
 )
 
 $script:Selected = @{}
@@ -2202,32 +2202,48 @@ if (Test-Selected 'graphify') {
 }
 
 # --- 21. Microsoft MCP servers (mcp-servers/) ---------------------------------
-# Not published to npm yet, so unlike the item-9-12 MCP servers this cannot just
-# 'npx -y <pkg>@latest' - it needs a local clone (this script never resolves its own
-# path; run it from inside a checkout, see README.md's two install modes) plus real
-# Azure AD app registrations. See mcp-servers/README.md for the whole auth model.
-#
 # Published to npm under @badali404 (2026-08-28), so like the item-9-12 MCP servers
 # this registers the npx form - no clone, no build, no global install; npx resolves
-# and caches the package on the server's first launch. What it still needs is real
-# Azure AD app registrations: see mcp-servers/README.md for the whole auth model.
+# and caches the package on the server's first launch. The admin servers now
+# authenticate through a chain (secret -> az CLI -> device code, see
+# mcp-servers/README.md's "Admin auth chain, in detail"), so a real Azure AD app
+# registration is no longer required to register them here - a signed-in
+# 'az login' session is sufficient, checked below via 'az account show'.
 #
 # Registration is bare (no -EnvVars): Add-McpServer's -EnvVars persists the value into
 # ~/.claude.json, and this repo's rule is secrets from env only, never written anywhere
-# by this script. So these servers only work once MS_ADMIN_*/MS_USER_* are set wherever
+# by this script. So MS_ADMIN_*/MS_USER_* (when used) still have to be set wherever
 # the 'claude' process itself gets launched ($PROFILE, service manager, etc.) - this
 # step just prints that. Developing against a local clone instead:
 # mcp-servers/README.md keeps the 'npm install -g' workspace-link option documented.
 if (Test-Selected 'ms-mcp') {
     Invoke-Step "Register Microsoft MCP servers (mcp-servers/)" {
-        $haveAdmin = [bool]($env:MS_ADMIN_TENANT_ID -and $env:MS_ADMIN_CLIENT_ID -and $env:MS_ADMIN_CLIENT_SECRET)
+        $haveAdminSecret = [bool]($env:MS_ADMIN_TENANT_ID -and $env:MS_ADMIN_CLIENT_ID -and $env:MS_ADMIN_CLIENT_SECRET)
+
+        # 'az account show' reads the CLI's own cached session; it fails fast (no
+        # network call) when 'az' is missing or nobody has run 'az login'. Sufficient
+        # on its own to register the admin servers now that they fall back to it.
+        $haveAdminCli = $false
+        if (Get-Command az -ErrorAction SilentlyContinue) {
+            try {
+                az account show *> $null
+                if ($LASTEXITCODE -eq 0) { $haveAdminCli = $true }
+            } catch {
+                $haveAdminCli = $false
+            }
+        }
+
+        $haveAdmin = $haveAdminSecret -or $haveAdminCli
         $haveUser = [bool]$env:MS_USER_CLIENT_ID
 
         if (-not $haveAdmin -and -not $haveUser) {
-            Write-Skip "Microsoft MCP servers: no MS_ADMIN_* or MS_USER_CLIENT_ID in the environment"
-            Write-Host "        These need real Azure AD app registrations first - see mcp-servers/README.md."
-            Write-Host "        Then set the credentials this session will pass through and re-run:"
+            Write-Skip "Microsoft MCP servers: no MS_ADMIN_* creds, no 'az login' session, and no MS_USER_CLIENT_ID"
+            Write-Host "        mcp-msgraph/mcp-intune/mcp-o365-admin now also work with just an existing"
+            Write-Host "        Azure CLI session - no app registration needed. Either:"
+            Write-Host "          az login                                                                   # then re-run this item"
+            Write-Host "        or:"
             Write-Host "          `$env:MS_ADMIN_TENANT_ID='...'; `$env:MS_ADMIN_CLIENT_ID='...'; `$env:MS_ADMIN_CLIENT_SECRET='...'  # msgraph/intune/o365-admin"
+            Write-Host "        mcp-o365-user always needs its own app registration:"
             Write-Host "          `$env:MS_USER_CLIENT_ID='...'                                                                     # o365-user (device code)"
             Write-Host "          .\install-prerequisites.ps1 -Select ms-mcp"
             return
@@ -2243,15 +2259,19 @@ if (Test-Selected 'ms-mcp') {
             Add-McpServer -Name 'mcp-msgraph' -CommandArgs @('npx', '-y', '@badali404/mcp-msgraph@latest')
             Add-McpServer -Name 'mcp-intune' -CommandArgs @('npx', '-y', '@badali404/mcp-intune@latest')
             Add-McpServer -Name 'mcp-o365-admin' -CommandArgs @('npx', '-y', '@badali404/mcp-o365-admin@latest')
+            if (-not $haveAdminSecret) {
+                Write-Host "        Registered via the Azure CLI fallback (no MS_ADMIN_* set) - each server will"
+                Write-Host "        authenticate as whoever is signed in with 'az login' wherever it actually runs."
+            }
         } else {
-            Write-Skip "mcp-msgraph/mcp-intune/mcp-o365-admin: no MS_ADMIN_* credentials given"
+            Write-Skip "mcp-msgraph/mcp-intune/mcp-o365-admin: no MS_ADMIN_* credentials and no 'az login' session"
         }
         if ($haveUser) {
             Add-McpServer -Name 'mcp-o365-user' -CommandArgs @('npx', '-y', '@badali404/mcp-o365-user@latest')
         } else {
             Write-Skip "mcp-o365-user: no MS_USER_CLIENT_ID given"
         }
-        Write-Ok "Registered via 'npx -y @badali404/<pkg>@latest' - no secrets were written to ~/.claude.json. Set MS_ADMIN_TENANT_ID/MS_ADMIN_CLIENT_ID/MS_ADMIN_CLIENT_SECRET and/or MS_USER_CLIENT_ID (+ optional MS_USER_TENANT_ID) in `$PROFILE or wherever 'claude' itself gets launched, or these servers will fail to authenticate. Every server is read-only until MCP_MS_ALLOW_WRITES=1 is also set there. Verify auth with 'npx -y @badali404/mcp-msgraph@latest doctor' (same pattern per server). Developing against a local clone instead? See mcp-servers/README.md's npm-install-g option."
+        Write-Ok "Registered via 'npx -y @badali404/<pkg>@latest' - no secrets were written to ~/.claude.json. If not relying on 'az login', set MS_ADMIN_TENANT_ID/MS_ADMIN_CLIENT_ID/MS_ADMIN_CLIENT_SECRET and/or MS_USER_CLIENT_ID (+ optional MS_USER_TENANT_ID) in `$PROFILE or wherever 'claude' itself gets launched, or the servers relying on them will fail to authenticate. Every server is read-only until MCP_MS_ALLOW_WRITES=1 is also set there. Verify auth with 'npx -y @badali404/mcp-msgraph@latest doctor' (same pattern per server) - it reports which auth chain link actually authenticated. Developing against a local clone instead? See mcp-servers/README.md's npm-install-g option."
     }
 }
 

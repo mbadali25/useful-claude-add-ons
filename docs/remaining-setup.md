@@ -128,10 +128,16 @@ The short path:
 
 ---
 
-## 3. Entra app registrations and credentials for the MCP servers
+## 3. Auth for the MCP servers
 
-Two app registrations — the user/admin split is structural, so they must stay
-separate apps.
+`mcp-o365-user` (your own mail/calendar/files) is unchanged and always needs
+its own app registration — 3a below. The other three
+(`mcp-msgraph`/`mcp-intune`/`mcp-o365-admin`) now authenticate through a
+chain (`packages/core/src/adminAuth.ts`): client secret, then `az login`,
+then device code, tried in that order and controllable with `MS_ADMIN_AUTH`.
+Pick the tier below that matches what you're doing — they aren't mutually
+exclusive, and you can start at tier 1 today and add tier 3 later without
+touching anything you've already set up.
 
 ### 3a. User-scope app (for `mcp-o365-user` — your own mail/calendar/files)
 
@@ -153,7 +159,60 @@ Entra ID → App registrations → New registration:
 5. First tool call triggers a device-code sign-in — you approve it in a
    browser as yourself.
 
-### 3b. Admin-scope app (for `mcp-msgraph`, `mcp-intune`, `mcp-o365-admin`)
+### 3b. Admin-scope servers — tier 1: nothing but `az login` (fastest)
+
+If you're already signed in with the Azure CLI (`az login`) as a Global
+Administrator or with equivalent Graph access, `mcp-msgraph`, `mcp-intune`,
+and `mcp-o365-admin` need **no setup at all** — no app registration, no
+secret, no env vars. Just register and run:
+
+```bash
+mcp-msgraph doctor      # or: npx -y @badali404/mcp-msgraph@latest doctor
+```
+
+`doctor` should report `auth method: cli`, `token type: delegated`. As
+Global Admin, the token you get carries your own directory role, which is
+typically broader than the tool-by-tool scope list in the README — that's
+expected, not a bug (see "Admin auth chain, in detail" there). What you
+don't get at this tier: any Graph permission the "Microsoft Azure CLI" app
+itself hasn't been consented for in this tenant (some tenants exclude Intune
+scopes from it), and any endpoint that flatly requires an app-only token
+regardless of your role. If `doctor` authenticates but a specific tool call
+403s, that's tier 2 or 3.
+
+### 3c. Admin-scope servers — tier 2: device code with a public-client app (no secret)
+
+One step up from tier 1, still no client secret to manage. Use this when
+tier 1's Azure CLI app doesn't have the Graph scopes a tool needs, but you
+still don't want a confidential-client app with a secret sitting in your
+environment.
+
+1. Entra ID → App registrations → New registration, e.g. `mcp-ms-admin-device`,
+   single tenant.
+2. Authentication → **Allow public client flows: Yes**.
+3. API permissions → Microsoft Graph → **Delegated** — grant exactly the
+   scopes the tools you'll use need (the same names as the Application
+   permissions listed in tier 3 below, but as Delegated), then **Grant
+   admin consent**.
+4. Record the Application (client) ID, then set:
+
+   ```powershell
+   setx MS_ADMIN_CLIENT_ID "<app id>"
+   setx MS_ADMIN_TENANT_ID "<tenant id>"   # optional; defaults to 'organizations'
+   # do NOT set MS_ADMIN_CLIENT_SECRET -- its absence is what selects this tier
+   ```
+
+5. `doctor` now falls through tier 1's `cli` link (unless you're signed in
+   with `az login` too, in which case that still wins — see the chain order
+   in the README) to `device`, prompting a one-time sign-in per process
+   launch.
+
+### 3d. Admin-scope servers — tier 3: full app-only registration (unattended/automation)
+
+The tier to use for anything unattended, scheduled, or where you want the
+server's access bounded by exactly what was consented — independent of
+which human is signed in. This was the only option before the auth chain
+existed, and still works exactly as before.
 
 New registration, e.g. `mcp-ms-admin`, single tenant:
 
@@ -168,6 +227,11 @@ New registration, e.g. `mcp-ms-admin`, single tenant:
      `DeviceManagementConfiguration.ReadWrite.All`
    - o365-admin reads: `User.Read.All`, `MailboxSettings.Read`; writes add
      `User.ReadWrite.All`
+   - If you also want audit-log or other Global-Admin-territory Graph
+     endpoints available specifically through this app-only identity (not
+     just implicitly via your own role at tiers 1-2), add scopes like
+     `AuditLog.Read.All` here explicitly and consent them — app-only mode
+     only ever gets what's listed on the app registration, unlike tiers 1-2.
 3. Set the env vars:
 
    ```powershell
@@ -176,19 +240,27 @@ New registration, e.g. `mcp-ms-admin`, single tenant:
    setx MS_ADMIN_CLIENT_SECRET "<secret>"
    ```
 
+   With all three set, this tier always wins the chain — it's tried first,
+   before `cli` or `device` — so setting these doesn't require unsetting
+   anything from tier 1/2.
 4. **Leave `MCP_MS_ALLOW_WRITES` unset.** Every server stays read-only until
    you set it to exactly `1` — and even then each destructive call needs
    `confirm: true`. Set it per-session when you mean it, not globally.
 
-### 3c. Verify each server before trusting it
+Force a specific tier regardless of what else is configured with
+`MS_ADMIN_AUTH=secret|cli|device` (see the README's admin auth chain table);
+leave it unset for the automatic secret → cli → device fallback used above.
+
+### 3e. Verify each server before trusting it
 
 ```bash
 mcp-msgraph doctor      # or: npx -y @badali404/mcp-msgraph@latest doctor
 mcp-o365-user doctor
 ```
 
-Doctor proves auth end-to-end and prints the scopes actually granted.
-A server that starts is not a server that authenticates.
+Doctor proves auth end-to-end and prints which chain link authenticated,
+whether the token is app-only or delegated, and the scopes/roles actually
+granted. A server that starts is not a server that authenticates.
 
 ---
 
@@ -215,6 +287,8 @@ A server that starts is not a server that authenticates.
       `.git` with a remote, CLAUDE.md matches reality
 - [ ] Gardener scheduled; a fresh log appears tomorrow
 - [ ] `npm view @badali404/mcp-ms-core version` returns a version
-- [ ] `npx -y @badali404/mcp-msgraph@latest doctor` authenticates
+- [ ] `npx -y @badali404/mcp-msgraph@latest doctor` authenticates (reports
+      which tier/link authenticated — `cli` is fine, no app registration
+      required for it)
 - [ ] `mcp-o365-user` device-code sign-in completes; a calendar read works
 - [ ] `MCP_MS_ALLOW_WRITES` is **not** set anywhere persistent

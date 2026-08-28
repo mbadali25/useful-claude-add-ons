@@ -1,14 +1,18 @@
 #!/usr/bin/env node
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { runDoctor, printDoctorResult, getAdminCredential, logToStderr } from "@badali404/mcp-ms-core";
-import { createServer } from "./index.js";
+import { runDoctor, printDoctorResult, buildAdminCredential, logToStderr } from "@badali404/mcp-ms-core";
+import { createServer, delegatedScopes } from "./index.js";
 
 async function main(): Promise<void> {
   const [subcommand] = process.argv.slice(2);
 
   if (subcommand === "doctor") {
-    const credential = getAdminCredential();
-    const result = await runDoctor(credential, "app-only");
+    const credential = buildAdminCredential(delegatedScopes());
+    const result = await runDoctor(
+      credential,
+      () => ({ authMode: credential.usedMode ?? "none (all methods failed)", tokenType: credential.usedTokenType ?? "app-only" }),
+      delegatedScopes()
+    );
     printDoctorResult("mcp-intune", result);
     process.exit(result.ok ? 0 : 1);
   }

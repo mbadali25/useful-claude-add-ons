@@ -8,24 +8,50 @@ local clone or, once published, via `npx`.
 
 | Package | What it does | Auth |
 |---|---|---|
-| `@badali404/mcp-msgraph` | Tenant directory: users, groups, membership | app-only (tenant-wide) |
-| `@badali404/mcp-intune` | Intune device management, compliance, config profiles | app-only (tenant-wide) |
-| `@badali404/mcp-o365-user` | The signed-in user's own mail, calendar, files | delegated (device code) |
-| `@badali404/mcp-o365-admin` | Tenant mailboxes, licenses, password reset, user deletion | app-only (tenant-wide) |
+| `@badali404/mcp-msgraph` | Tenant directory: users, groups, membership | app-only OR delegated, via the auth chain below |
+| `@badali404/mcp-intune` | Intune device management, compliance, config profiles | app-only OR delegated, via the auth chain below |
+| `@badali404/mcp-o365-user` | The signed-in user's own mail, calendar, files | delegated (device code, unchanged) |
+| `@badali404/mcp-o365-admin` | Tenant mailboxes, licenses, password reset, user deletion | app-only OR delegated, via the auth chain below |
 
 All four sit on `@badali404/mcp-ms-core`, an npm workspace package meant to be published
 to the registry alongside them (so once that's done, `npx`-installing a server resolves
 its dependency the normal way -- see "Publishing" below for what that actually requires
 and why it hasn't happened yet): one `GraphClient` HTTP wrapper, one `getUserCredential`
-/ `getAdminCredential` pair, one write-gate, one `doctor` implementation. No server
-reimplements auth or HTTP. Source: `mcp-servers/packages/`.
+helper, one admin credential chain (`buildAdminCredential`), one write-gate, one `doctor`
+implementation. No server reimplements auth or HTTP. Source: `mcp-servers/packages/`.
 
-Each server pins an **exact** version of core (`"@badali404/mcp-ms-core": "0.1.0"`, not a
-range) rather than `^0.1.0` or `workspace:*`. That is deliberate -- it means a core-only
+Each server pins an **exact** version of core (`"@badali404/mcp-ms-core": "0.2.0"`, not a
+range) rather than `^0.2.0` or `workspace:*`. That is deliberate -- it means a core-only
 change can never silently ship to a server that hasn't been tested against it -- but it
 also means **a core-only version bump has no effect on npm until all four servers are
 re-published with their pin updated to match**. See
 [`PUBLISHING.md`](PUBLISHING.md#5-releasing-an-update) for the exact steps.
+
+## Quickstart: minimum setup is just `az login`
+
+The three admin-scope servers (`mcp-msgraph`, `mcp-intune`, `mcp-o365-admin`) need **no
+app registration and no client secret** if you already have the Azure CLI installed and
+have run:
+
+```bash
+az login
+```
+
+Each one authenticates through a credential chain (details below) that tries a client
+secret first, then falls back to your existing Azure CLI session, then to an interactive
+device-code sign-in as a last resort. With only `az login` done and no `MS_ADMIN_*`
+variables set at all, register a server as usual (see "Install and register" below) and
+confirm it with `doctor`:
+
+```bash
+node packages/graph/dist/src/cli.js doctor
+```
+
+`doctor` prints `auth method: cli` and `token type: delegated` when this path is what
+authenticated. See "Admin auth chain, in detail" below for what you get -- and don't
+get -- with no app registration at all, and when you need one. `mcp-o365-user` already
+worked this way (device code, no client secret) before this chain existed, and is
+unaffected by it; see "User-scope vs admin-scope" below.
 
 ## Azure: use the official server, not a new one
 
@@ -57,9 +83,13 @@ That leaves four thin server packages -- Intune, Graph, and Office 365 (user and
   OneDrive. It cannot see anyone else's data, and it cannot see tenant-wide data, because
   the token it holds is delegated to your account and whatever your admin has consented to.
 - **`mcp-intune`**, **`mcp-msgraph`**, and **`mcp-o365-admin`** authenticate as an Azure AD
-  app registration via `ClientSecretCredential`, using **application** (not delegated)
-  Graph permissions granted tenant-wide admin consent. These see and can change data for
-  the whole tenant.
+  identity via the admin auth chain below -- by default app-only via a client secret (if
+  configured), delegated via your Azure CLI session, or delegated via device code, tried
+  in that order. All three modes can see and change data for the whole tenant, subject to
+  whatever's actually been consented for the identity that signed in -- see the caveats in
+  "Admin auth chain, in detail" below. `mcp-o365-user`'s device-code path is deliberately
+  **not** part of this chain and is not touched by it: it stays scoped to `/me` only, with
+  no Azure CLI fallback, so it can never widen into tenant-wide access by accident.
 
 They use **different environment variables on purpose** (`MS_USER_*` vs `MS_ADMIN_*`), so
 a Claude Code session wired up for "read my calendar" literally has no credential that can
@@ -72,10 +102,17 @@ mean to grant a session both kinds of access.
 |---|---|---|---|
 | `MS_USER_CLIENT_ID` | `mcp-o365-user` | yes | App registration (public client, "Allow public client flows" / device code enabled) |
 | `MS_USER_TENANT_ID` | `mcp-o365-user` | no | Defaults to `organizations`. Set to your tenant ID/domain to restrict sign-in to one tenant |
-| `MS_ADMIN_TENANT_ID` | `mcp-intune`, `mcp-msgraph`, `mcp-o365-admin` | yes | Directory (tenant) ID |
-| `MS_ADMIN_CLIENT_ID` | `mcp-intune`, `mcp-msgraph`, `mcp-o365-admin` | yes | App registration (confidential client) with admin-consented application permissions |
-| `MS_ADMIN_CLIENT_SECRET` | `mcp-intune`, `mcp-msgraph`, `mcp-o365-admin` | yes | Client secret for the above app registration |
+| `MS_ADMIN_AUTH` | `mcp-intune`, `mcp-msgraph`, `mcp-o365-admin` | no | `secret` \| `cli` \| `device` \| `auto` (default). Forces one link of the chain instead of trying them in order -- see below |
+| `MS_ADMIN_TENANT_ID` | `mcp-intune`, `mcp-msgraph`, `mcp-o365-admin` | no | Directory (tenant) ID. Required together with `MS_ADMIN_CLIENT_ID`/`_SECRET` for the `secret` link; optional hint for `cli`/`device` (defaults to your default CLI tenant / `organizations`) |
+| `MS_ADMIN_CLIENT_ID` | `mcp-intune`, `mcp-msgraph`, `mcp-o365-admin` | no | With `MS_ADMIN_CLIENT_SECRET`: app registration for the `secret` link. Alone (no secret): the public-client app id used for the `device` link, in place of the Azure CLI's own well-known client id |
+| `MS_ADMIN_CLIENT_SECRET` | `mcp-intune`, `mcp-msgraph`, `mcp-o365-admin` | no | Client secret for `MS_ADMIN_CLIENT_ID`. When all three `MS_ADMIN_TENANT_ID`/`_CLIENT_ID`/`_CLIENT_SECRET` are set, the chain always tries this first |
 | `MCP_MS_ALLOW_WRITES` | all four | no | Set to exactly `1` to allow write/destructive tools. Unset or any other value keeps every server read-only |
+
+None of `MS_ADMIN_TENANT_ID`/`MS_ADMIN_CLIENT_ID`/`MS_ADMIN_CLIENT_SECRET` is required
+anymore -- with all three unset, the three admin servers fall straight to the Azure CLI
+and device-code links. They remain the way to get an **app-only** token (the first link
+in the chain), which is still what you want for unattended/automation use -- see "Admin
+auth chain, in detail" below.
 
 No server reads these from `~/.claude.json` or any other config file, and none of them
 ever print secret values -- set them in the environment that launches the process (your
@@ -93,6 +130,56 @@ Grant only what the tools you intend to use need, then admin-consent in Entra ID
   `DeviceManagementConfiguration.ReadWrite.All` (write tools)
 - `mcp-o365-admin`: `User.Read.All`, `MailboxSettings.Read` (read tools);
   `User.ReadWrite.All` (write tools)
+
+### Admin auth chain, in detail
+
+`mcp-intune`, `mcp-msgraph`, and `mcp-o365-admin` each build their credential with
+`buildAdminCredential()` (`packages/core/src/adminAuth.ts`), which tries these links in
+order and remembers whichever one first returns a token -- later calls reuse that same
+credential for the life of the process, so you're never re-prompted mid-session:
+
+| # | Link | Token type | Triggered by | Notes |
+|---|---|---|---|---|
+| 1 | `secret` | app-only | `MS_ADMIN_TENANT_ID`, `MS_ADMIN_CLIENT_ID`, `MS_ADMIN_CLIENT_SECRET` all set | Unchanged from before this chain existed. Requests the resource `.default` scope; grants exactly what's admin-consented on that app registration |
+| 2 | `cli` | delegated | `az login` already run (`AzureCliCredential`) | Zero prompts. Also requests `.default` -- it inherits whatever Graph permissions are consented for Microsoft's own "Microsoft Azure CLI" app in your tenant, which you cannot widen per-call |
+| 3 | `device` | delegated | last resort, always available | Prints a "go to https://microsoft.com/devicelogin and enter code XXX-XXX" prompt to **stderr only** (never stdout -- stdout is the MCP JSON-RPC channel and a stray line there corrupts the protocol). Uses `MS_ADMIN_CLIENT_ID` as a public-client app id if set (no secret needed for this), else falls back to the same well-known Azure CLI client id (`04b07795-8ddb-461a-bbee-02f9e1bf7b46`) as link 2. Unlike links 1-2, this link CAN negotiate the server's actual named delegated scopes (e.g. Intune's `DeviceManagementManagedDevices.Read.All`), not just `.default` -- but only if the app id it's using has been granted and consented for those scopes |
+
+`MS_ADMIN_AUTH=secret|cli|device` forces exactly one link and skips the rest (and fails
+outright if that link's requirements aren't met, rather than falling back); unset or
+`MS_ADMIN_AUTH=auto` runs the table above in order. `doctor` (see below) always reports
+which link actually authenticated and whether the resulting token is app-only or
+delegated, so you never have to guess which one fired.
+
+**Two caveats, confirmed against the SDK/API behavior above, not against a live tenant:**
+
+- **Some endpoints require app-only permissions and reject delegated tokens outright**,
+  regardless of which scopes the delegated token carries. If a tool call fails with a
+  permissions error under `cli` or `device` mode but the same call works under `secret`,
+  this is why -- that tool needs link 1.
+- **The Azure CLI's consented Graph permissions vary by tenant.** Some tenants' admin
+  consent for the "Microsoft Azure CLI" app does not include Intune management scopes (or
+  others), in which case link 2 will authenticate but then fail on the actual Graph call.
+  The fix is link 3 with a real public-client app registration (`MS_ADMIN_CLIENT_ID` set,
+  `MS_ADMIN_CLIENT_SECRET` unset) that has been granted and consented for exactly the
+  scopes you need.
+- **A delegated token (links 2-3) carries the signed-in user's own directory role, not
+  just the app's consented scope list.** If you sign in as a Global Administrator, Graph
+  evaluates each call against the union of what the app requested *and* what your role
+  otherwise allows -- so `cli`/`device` mode as a Global Admin can end up more permissive
+  than the minimal per-tool scopes listed above imply, including endpoints like audit logs
+  (`AuditLog.Read.All`) that no tool here explicitly requests. The scope lists above are
+  what each tool asks for, not a ceiling on what a Global Admin's token can reach; app-only
+  mode (link 1) is the one that's actually bounded by exactly what was admin-consented on
+  the app registration.
+
+**Token caching:** each server's `getClient()` builds the credential chain once and keeps
+it for the process lifetime, and the chain itself only re-attempts higher-priority links
+if it has never yet resolved. `@azure/identity`'s optional persistent (disk) token cache
+was deliberately **not** enabled here -- it requires a separate native-dependency plugin
+package (`@azure/identity-cache-persistence`) that this workspace does not install, to
+avoid an install that can fail on a platform without prebuilt native bindings. The
+practical effect: a `device`-link sign-in is a per-process-launch prompt, not a
+persisted-across-restarts one. That's an accepted trade-off, not a bug.
 
 ### Delegated permissions to consent for `MS_USER_*`
 
@@ -244,10 +331,10 @@ cache).
 
 [`.github/workflows/publish-mcp-servers.yml`](../.github/workflows/publish-mcp-servers.yml)
 publishes all five packages -- `@badali404/mcp-ms-core` first, then the four servers,
-since each server's `package.json` pins `"@badali404/mcp-ms-core": "0.1.0"` and npm
-needs that version resolvable on the registry before it will install a server that
-depends on it. It fires on a pushed tag matching `mcp-servers-v*` (e.g.
-`mcp-servers-v0.1.0`) and runs `npm publish --provenance --access public` for each
+since each server's `package.json` pins `"@badali404/mcp-ms-core"` to an exact version
+(currently `0.2.0`) and npm needs that version resolvable on the registry before it will
+install a server that depends on it. It fires on a pushed tag matching `mcp-servers-v*`
+(e.g. `mcp-servers-v0.2.0`) and runs `npm publish --provenance --access public` for each
 package, authenticated with `NPM_TOKEN` from repository secrets.
 
 Two things have to be true before that tag push does anything useful, and neither is
