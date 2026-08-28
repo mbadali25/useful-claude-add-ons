@@ -235,3 +235,109 @@ claude plugin uninstall crew@useful-claude-add-ons
 ```
 
 The hooks go with it. To keep the plugin but stop the `Stop` gate, set `verifyGate: false` in the repository's `.crew/config.json`.
+
+---
+
+## `obsidian` — Obsidian vault as Claude Code memory
+
+| | |
+|---|---|
+| **Source** | [`obsidian/`](obsidian) |
+| **Version** | 0.1.0 |
+| **Install** | `claude plugin install obsidian@useful-claude-add-ons` |
+| **Registers** | 2 agents, 7 commands, 3 skills, 8 hook entries (4 scripts × `.sh`/`.ps1`) across 4 events |
+| **Upstream guide** | [`obsidian/README.md`](obsidian/README.md) |
+
+Makes an Obsidian vault Claude Code's durable, token-efficient memory: code
+choices, decisions, architecture, links between code, and patterns - captured
+automatically at session end, gardened into concepts, recalled cheaply, and
+mapped visually. No vault path is hardcoded; it resolves from an env var, a
+config file, or Obsidian's own vault registry, in that order.
+
+### Hooks — the part that runs without being asked
+
+Four scripts across four events, each a `.sh`/`.ps1` pair delegating to one
+shared Python module per script, so the two flavours cannot drift - 8 hook
+entries.
+
+| Script | Event | What it does |
+|---|---|---|
+| `bridge-status.sh`/`.ps1` | `SessionStart` | Probes the Local REST API bridge on `127.0.0.1:27123`/`:27124` and states plainly whether `mcp__obsidian__*` will work this session, with the specific fix for each failure mode (not running, wrong port enabled, rejected key). Never blocks - a `SessionStart` hook cannot, and "the bridge is down" is information, not a reason to refuse a turn. Claims the session once via a lock file so both interpreters firing (normal on Windows) does not print the context twice. |
+| `vault-guard.sh`/`.ps1` | `PostToolUse` on `Edit`/`Write`/`MultiEdit` | Enforces the configured vault's frontmatter contract, ASCII-only rule, and canvas well-formedness. **All three checks ship OFF** in `~/.claude/obsidian/config.json` - a fresh install must not reject edits against a different vault's house rules. `/obsidian:init` turns a toggle on only when it finds the matching rule stated in the target vault's own `CLAUDE.md`. Can block (exit 2) with the specific violation and fix on stderr. |
+| `vault-capture.sh`/`.ps1` | `SessionEnd`, `PreCompact` | Appends one line (session id, cwd, transcript path) to `<vault>/inbox/pending-reflect.md` for the gardener to process later. Costs nothing, never raises - a capture miss must not break a session. |
+
+**This is what "the moment the plugin is enabled" means in practice:**
+`bridge-status` fires on every session start once a vault resolves, and
+`vault-guard` fires on every edit to a file inside that vault - but with every
+guard check off by default, a fresh install changes nothing about what you can
+write until `/obsidian:init` or you turn a toggle on deliberately.
+
+**`vault-guard` is the one hook that can block**, and ships a committed,
+sabotage-tested regression suite: `obsidian/hooks/scripts/_test/run-tests.sh`
+(12 cases - 6 must-block, 5 must-allow, 1 proving the off-by-default toggles
+actually gate the checks). Sabotage-tested means exactly that: the ASCII check
+was disabled once during development to confirm the suite goes red rather than
+staying green, per this repo's rule that a hook allowed to block needs proof
+its suite can catch a real regression, not just that the suite exists.
+
+### Commands — 7
+
+| Command | Does |
+|---|---|
+| `/obsidian:init [vault-path]` | Install/configure Obsidian, the REST bridge, and this plugin's config - see the `obsidian-setup` skill for the full steps |
+| `/obsidian:doctor` | Diagnose the bridge, a git-configured-but-not-a-git-repo vault (Obsidian Git firing into the void on a timer), `CLAUDE.md` drift against what the filesystem actually shows, gardener staleness, and empty structural folders - proposes fixes, applies none without confirmation |
+| `/obsidian:optimize` | Reports per-plugin cost on a large vault (index size, what depends on it); every install or removal proposed and confirmed one at a time, never batched behind a single yes |
+| `/obsidian:canvas <topic>` | Builds/refreshes a `.canvas` from a topic's wikilink neighborhood - delegates to the `obsidian-canvas` skill for the JSON Canvas mechanics where that skill is installed |
+| `/obsidian:map <area>` | Builds/refreshes a Map-of-Content note, grouped by the vault's own taxonomy |
+| `/obsidian:graph [repo]` | Wraps `graphify` for a repo's code graph, installing it first if missing; output stays **outside** the vault, with only a stub note pointing to it |
+| `/obsidian:garden` / `/obsidian:reflect <topic>` | On-demand dispatch of the two agents below |
+
+### Agents — 2
+
+| Agent | Role |
+|---|---|
+| `obsidian:gardener` | Distills queued sessions (`inbox/pending-reflect.md`) into concept/decision/daily notes with populated provenance. Never invents a locator, quote, date, hash, or confidence score - `authority: unknown` is a correct value, a guessed one is not. Writes corrections as visible passages, never silent overwrites. Touches git only if the vault already has it - never runs `git init` itself. |
+| `obsidian:reflector` | Read-only. Answers "what does the vault know about X" and explicitly surfaces contradictions between notes rather than smoothing them over. Never writes. |
+
+Neither is scheduled by this plugin - see the `obsidian-scheduling` skill for
+wiring one to Task Scheduler, cron, or a systemd user timer, including the
+unattended-permissions tradeoff (`--dangerously-skip-permissions` is what
+makes an unattended run possible at all) stated plainly rather than left in a
+script comment.
+
+### Bundled skills — 3
+
+| Skill | For |
+|---|---|
+| `obsidian-setup` | The full per-OS install, Local REST API configuration, and MCP registration steps `/obsidian:init` follows, plus the port-27123-not-27124 and "Obsidian looks up but isn't" troubleshooting that a wrong guess here silently breaks |
+| `obsidian-memory-contract` | The six-key frontmatter contract, evidence rules, tag discipline, and canvas-holds-no-facts rule for a vault that has no established contract of its own yet. Yields to a vault-specific skill (this repo ships `claude-memories-vault`/`claude-memories-canvas` for one particular vault) or the vault's own `CLAUDE.md` wherever either exists |
+| `obsidian-scheduling` | Cross-platform reference for scheduling the gardener/reflector unattended - Task Scheduler, cron, systemd user timers |
+
+### What it creates
+
+`~/.claude/obsidian/config.json` - user-level, not per-repo: a vault is one
+resource shared across every project's sessions, unlike crew's
+`.crew/config.json`. Never commit this file to a project repo.
+
+### Testing
+
+`obsidian/hooks/scripts/_test/run-tests.sh` covers `vault-guard.py` as
+described above. What it does not prove: whether the commands and agents
+produce good gardening or good canvases - those are prompts to a model, and
+only a live session against a real vault exercises them.
+
+### Optional integrations
+
+Obsidian itself and `graphify` are both installed by `/obsidian:init`/
+`/obsidian:graph` only if missing, and only with confirmation for anything
+that writes outside `~/.claude/`. The plugin works against an already-set-up
+vault with none of its own install steps run.
+
+### Uninstall
+
+```bash
+claude plugin uninstall obsidian@useful-claude-add-ons
+```
+
+The hooks go with it. `~/.claude/obsidian/config.json` is left in place;
+delete it by hand for no trace.

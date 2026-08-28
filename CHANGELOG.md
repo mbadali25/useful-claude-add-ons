@@ -6,6 +6,29 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
+- **New plugin `obsidian` 0.1.0 - an Obsidian vault as Claude Code's durable,
+  token-efficient memory.** Cross-platform (Windows/Linux/macOS), no vault
+  path hardcoded: `/obsidian:init` sets up the Local REST API bridge and MCP
+  registration; `bridge-status`, `vault-guard`, and `vault-capture` hooks
+  (each a `.sh`/`.ps1` pair sharing one Python module) probe the bridge at
+  session start, enforce a configurable vault contract on edit (every check
+  OFF by default - a fresh install must not reject edits against a different
+  vault's house rules), and queue sessions for gardening. `obsidian:gardener`
+  and `obsidian:reflector` agents distill and recall, with an explicit rule
+  against fabricating a citation. `/obsidian:canvas`, `/obsidian:map`, and
+  `/obsidian:graph` generate structural aids while keeping generated code
+  graphs outside the vault. Ships with a committed, sabotage-tested regression
+  suite for the one blocking hook (12 cases; the ASCII check was disabled once
+  during development to confirm the suite goes red).
+
+  **Known overlap, not resolved in this change** - see
+  `plugin/obsidian/README.md`'s "Related" section: a third-party plugin also
+  named `obsidian` (from the `obsidian-skills` marketplace) is already wired
+  into `scripts/install-prerequisites.sh` item 18, and this repo's own
+  `claude-obsidian-setup/` and `vault-automation/` directories already cover
+  parts of the same job for one specific vault. This plugin was built and
+  verified standalone; reconciling it with the existing tooling is a followup.
+
 - **`crew` 0.10.0 - an Obsidian Kanban board is now a fourth ticket tracker,
   alongside `files`, `jira` and `sdp`.** Set `tracker: "obsidian"` and point
   `obsidian.vaultPath` at a vault. The board is a markdown file the

@@ -104,6 +104,12 @@
       "version": "1.1.0"
     },
     {
+      "name": "obsidian",
+      "source": "./plugin/obsidian",
+      "description": "Make an Obsidian vault Claude Code's durable, token-efficient memory - cross-platform setup and health checks for the Local REST API bridge, an off-by-default vault contract guard, gardening and reflection agents, canvas and map-of-content generation, and graphify wiring outside the vault.",
+      "version": "0.1.0"
+    },
+    {
       "name": "obsidian-canvas",
       "source": "./skills/obsidian-canvas",
       "description": "Create and edit Obsidian Canvas (.canvas) files directly as JSON Canvas - architecture maps, decision trees, and boards with embedded live notes, groups, and labeled arrows; no plugin or REST bridge required.",

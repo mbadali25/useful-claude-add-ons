@@ -1,0 +1,9 @@
+{
+  "name": "obsidian",
+  "version": "0.1.0",
+  "description": "Make an Obsidian vault Claude Code's durable, token-efficient memory: setup and health checks for the Local REST API bridge, a vault contract guard, gardening and reflection agents, canvas and map-of-content generation, and graphify wiring - cross-platform, no vault path hardcoded.",
+  "author": {
+    "name": "Matthew Badali",
+    "url": "https://github.com/mbadali25/useful-claude-add-ons"
+  }
+}

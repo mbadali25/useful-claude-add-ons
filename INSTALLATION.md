@@ -20,7 +20,7 @@ One script per OS. Both are idempotent (safe to re-run) and, by default, also bo
     ...
     [ ] Strix AI pentesting CLI (needs Docker + an LLM API key)
     [ ] Obsidian desktop + claude-obsidian + obsidian-skills plugins
-    [ ] This repo's plugins: crew (agents, commands, hooks)
+    [ ] This repo's plugins: crew, obsidian (agents, commands, hooks)
     [ ] graphify code graph (uv tool install graphifyy; per-repo, not global)
   showing 1-22 of 22
   ↑↓ move   Space toggle   Enter start   A all   N none   D defaults   Q cancel
@@ -238,7 +238,9 @@ Six more rows, also off by default. None of them are MCP servers.
 
 ### Optional: this repo's own plugins
 
-- **This repo's plugins** (19) - installs everything under [`plugin/`](plugin/) from this repo's own marketplace. Today that is one plugin, [`crew`](plugin/crew): 10 subagents, 18 slash commands, 16 bundled skills, and 16 hook entries (8 scripts, each shipped as a `.sh`/`.ps1` pair) across 5 events. It adds the marketplace itself first, so the item works whether or not item 3 ran; both steps are no-ops when they are already present.
+- **This repo's plugins** (19) - installs everything under [`plugin/`](plugin/) from this repo's own marketplace: [`crew`](plugin/crew) (10 subagents, 21 slash commands, 16 bundled skills, 20 hook entries across 5 events) and [`obsidian`](plugin/obsidian) (2 subagents, 7 slash commands, 3 bundled skills, 8 hook entries across 4 events). It adds the marketplace itself first, so the item works whether or not item 3 ran; both steps are no-ops when they are already present.
+
+  **`obsidian` (this repo's plugin) is a different thing from item 18** below, which installs Obsidian the desktop app plus two *third-party* marketplace plugins also touching Obsidian (`claude-obsidian@agricidaniel-claude-obsidian`, and a plugin literally named `obsidian` from the `obsidian-skills` marketplace). The two are meant to be complementary - item 18 gets Obsidian itself and upstream syntax skills onto the machine, this repo's `obsidian` plugin is the memory/gardening layer on top - but the name overlap is confusing enough that it is worth reading [`plugin/obsidian/README.md`](plugin/obsidian/README.md)'s "Related" section before assuming either one supersedes the other, or before assuming this plugin replaces [`claude-obsidian-setup/`](claude-obsidian-setup/) or [`vault-automation/`](vault-automation/), both of which already do parts of the same job for one specific vault.
 
   This item also detects a global `find-skills` collision: if `~/.claude/skills/find-skills` exists (from menu item 5, or a direct `npx skills add`), it warns that two active copies can both trigger on the same prompt and prints the manual removal command. Detection only; it never deletes anything.
 

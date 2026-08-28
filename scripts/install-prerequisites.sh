@@ -850,12 +850,15 @@ unset _i
 # Parallel arrays for the same reason SKILL_KEYS uses them - stable order.
 PLUGIN_KEYS=(
   "crew"
+  "obsidian"
 )
 PLUGIN_NAME=(
-  "crew                    - Virtual dev team: 9 agents, 16 commands, safety hooks"
+  "crew                    - Virtual dev team: 10 agents, 21 commands, safety hooks"
+  "obsidian                - Vault as memory: gardener/reflector agents, bridge+guard hooks"
 )
 PLUGIN_SPEC=(
   "crew@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons"
+  "obsidian@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons"
 )
 PLUGIN_STATE=()
 for _i in "${!PLUGIN_KEYS[@]}"; do PLUGIN_STATE+=(1); done
@@ -919,7 +922,7 @@ GROUP_LABEL=(
   "This repo's marketplace + %s of %s skills  >"
   "Team plugins: %s of %s (superpowers, frontend-design, excalidraw)  >"
   "Community marketplaces + %s of %s plugins  >"
-  "This repo's plugins: %s of %s (crew - agents, commands, hooks)  >"
+  "This repo's plugins: %s of %s (crew, obsidian - agents, commands, hooks)  >"
 )
 GROUP_TITLE=(
   "Pick individual skills from this repo"
