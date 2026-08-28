@@ -165,5 +165,11 @@ def main():
 if __name__ == "__main__":
     try:
         sys.exit(main())
-    except Exception:
+    except Exception as e:
+        # This hook never blocks a session either way, but silently eating
+        # every exception here (as this used to) hid a real bug: a
+        # non-integer config port reaching `http_port + 1` above raised
+        # TypeError and vanished without a trace. Say what broke, then still
+        # exit 0 - a broken bridge probe is not a reason to refuse the turn.
+        print("obsidian-vault bridge-status.py: %s: %s" % (type(e).__name__, e), file=sys.stderr)
         sys.exit(0)

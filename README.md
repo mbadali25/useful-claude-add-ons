@@ -156,7 +156,7 @@ For this repo's own skills, [`scripts/check-marketplace.py`](scripts/check-marke
 | 16 SkillUI | `skillui` + `playwright` + the Chromium browser build | npm |
 | 17 Strix | The `strix` pentesting CLI | `curl -sSL https://strix.ai/install \| bash` |
 | 18 Obsidian | The Obsidian desktop app (Chocolatey → winget on Windows, flatpak → snap on Linux), plus the `claude-obsidian` vault engine and [`kepano/obsidian-skills`](https://github.com/kepano/obsidian-skills) — Obsidian's own Markdown, Bases, JSON Canvas, CLI and Defuddle skills | choco/winget/flatpak/snap + 2 marketplaces |
-| 19 This repo's plugins | The `crew` plugin from [`plugin/`](plugin/) — 10 subagents, 21 slash commands, 16 bundled skills, and 20 hook entries (10 scripts × `.sh`/`.ps1`) across 5 events — and `obsidian-vault` — 2 agents, 8 slash commands, 3 skills, and 8 hook entries (4 scripts × `.sh`/`.ps1`). Off by default because hooks execute whether or not Claude agrees with them | this repo |
+| 19 This repo's plugins | The `crew` plugin from [`plugin/`](plugin/) — 10 subagents, 21 slash commands, 16 bundled skills, and 20 hook entries (10 scripts × `.sh`/`.ps1`) across 5 events — and `obsidian-vault` — 2 agents, 8 slash commands, 3 skills, and 8 hook entries (3 scripts × `.sh`/`.ps1`). Off by default because hooks execute whether or not Claude agrees with them | this repo |
 | 20 `graphify` | The `graphify` CLI (`graphifyy` on PyPI), registered per-repository with `graphify install --project`. Off by default; not installed globally | `uv tool install` |
 
 Items 1–8 are the default set. Everything from 9 on is opt-in.

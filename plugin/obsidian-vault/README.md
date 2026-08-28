@@ -65,7 +65,7 @@ just left to be discovered.
 | Commands | 8: `init`, `doctor`, `optimize`, `canvas`, `map`, `graph`, `garden`, `reflect` |
 | Agents | 2: `obsidian-vault:gardener`, `obsidian-vault:reflector` |
 | Skills | 3: `obsidian-setup`, `obsidian-memory-contract`, `obsidian-scheduling` |
-| Hooks | 8 entries (4 scripts x `.sh`/`.ps1`) across `SessionStart`, `PostToolUse`, `SessionEnd`, `PreCompact` |
+| Hooks | 8 entries (3 scripts x `.sh`/`.ps1`) across `SessionStart`, `PostToolUse`, `SessionEnd`, `PreCompact` |
 
 **Read the Hooks section below before installing.** Commands and agents wait
 to be asked; hooks do not.

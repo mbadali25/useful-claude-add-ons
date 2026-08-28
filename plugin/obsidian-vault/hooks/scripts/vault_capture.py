@@ -79,8 +79,12 @@ def main():
             return  # one queue entry per session, whichever trigger fires first
         with inbox.open("a", encoding="utf-8") as f:
             f.write(line)
-    except Exception:
-        pass  # never break the session over a capture miss
+    except Exception as e:
+        # Never break the session over a capture miss - but say what broke
+        # instead of eating it silently, or a permissions/disk problem here
+        # goes unnoticed until the inbox turns out to have been empty for
+        # weeks.
+        print("obsidian-vault vault-capture.py: %s: %s" % (type(e).__name__, e), file=sys.stderr)
 
 
 if __name__ == "__main__":

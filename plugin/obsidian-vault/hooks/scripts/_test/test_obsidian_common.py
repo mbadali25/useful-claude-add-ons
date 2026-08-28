@@ -125,10 +125,18 @@ def _t4(tmp):
     default_got = obsidian_common.resolve_vault()
     check("env var DOES override the default vault",
           default_got["path"], os.path.join(tmp, "memory"))
+    # Codex QA finding: the env var overrides *where* the default vault lives,
+    # not *what port it runs on* - a default vault configured on a
+    # non-standard port must keep that port when only the path is overridden.
+    check("env var override still uses the configured port, not DEFAULT_PORT",
+          default_got["port"], 27177)
+    check("env var override still carries the configured layout",
+          default_got["layout"], "daily-notes")
 
 with_config(
     {"vaults": {
-        "memory": {"path": "{tmp}/memory-configured", "default": True},
+        "memory": {"path": "{tmp}/memory-configured", "port": 27177,
+                   "layout": "daily-notes", "default": True},
         "codegraphs": {"path": "{tmp}/codegraphs", "layout": "org/repo"},
     }},
     ["memory", "memory-configured", "codegraphs"],
@@ -149,6 +157,46 @@ with_config(
     }},
     ["memory"],
     _t5,
+)
+
+# --- A malformed config port never reaches bridge_status.py's http_port+1 --
+# Codex QA finding: an unvalidated string/negative port used to raise
+# TypeError there, swallowed silently by an outer `except Exception:
+# sys.exit(0)`. list_vaults() must coerce it to DEFAULT_PORT instead of
+# passing the bad value through.
+
+def _t6(tmp):
+    vaults = obsidian_common.list_vaults()
+    check("string port falls back to DEFAULT_PORT", vaults["stringport"]["port"], 27123)
+    check("negative port falls back to DEFAULT_PORT", vaults["negport"]["port"], 27123)
+    check("out-of-range port falls back to DEFAULT_PORT", vaults["hugeport"]["port"], 27123)
+    check("valid port is used as-is", vaults["goodport"]["port"], 27200)
+
+with_config(
+    {"vaults": {
+        "stringport": {"path": "{tmp}/stringport", "port": "27123"},
+        "negport": {"path": "{tmp}/negport", "port": -1},
+        "hugeport": {"path": "{tmp}/hugeport", "port": 99999},
+        "goodport": {"path": "{tmp}/goodport", "port": 27200, "default": True},
+    }},
+    ["stringport", "negport", "hugeport", "goodport"],
+    _t6,
+)
+
+# --- A malformed port on the vault the env var overrides still falls back --
+
+def _t7(tmp):
+    os.environ["OBSIDIAN_VAULT_PATH"] = os.path.join(tmp, "memory")
+    got = obsidian_common.resolve_vault()
+    check("env override with an invalid configured port falls back to DEFAULT_PORT",
+          got["port"], 27123)
+
+with_config(
+    {"vaults": {
+        "memory": {"path": "{tmp}/memory-configured", "port": "not-a-port", "default": True},
+    }},
+    ["memory", "memory-configured"],
+    _t7,
 )
 
 print("RESULT: %d failed" % len(FAILURES))

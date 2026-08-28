@@ -43,6 +43,7 @@ for exactly one machine and wrong for everyone else who installs the plugin.
 import json
 import os
 import platform
+import sys
 
 
 def _home():
@@ -131,6 +132,32 @@ def detect_vault_from_app():
 DEFAULT_PORT = 27123
 
 
+def _valid_port(value, context):
+    """A config `port` value is untrusted input from a hand-edited JSON file.
+
+    A string, a float, or an out-of-range int reaching bridge_status.py's
+    `https_port = http_port + 1` raises TypeError, which an outer
+    `except Exception: sys.exit(0)` then swallows completely silently - a
+    hook that reports nothing is worse than one that reports the wrong thing.
+    Validate once, here, at load: on failure, print the defect to stderr
+    (visible in the transcript even for a hook that must still exit 0) and
+    fall back to DEFAULT_PORT rather than letting the bad value propagate.
+    """
+    if isinstance(value, bool) or not isinstance(value, int):
+        print(
+            "obsidian-vault config: %s is not an integer (%r) - using default port %d"
+            % (context, value, DEFAULT_PORT), file=sys.stderr,
+        )
+        return DEFAULT_PORT
+    if not (1 <= value <= 65535):
+        print(
+            "obsidian-vault config: %s is out of range (%r) - using default port %d"
+            % (context, value, DEFAULT_PORT), file=sys.stderr,
+        )
+        return DEFAULT_PORT
+    return value
+
+
 def list_vaults():
     """Every configured vault as {name: {path, port, layout, default}}.
 
@@ -154,7 +181,7 @@ def list_vaults():
                 continue
             out[name] = {
                 "path": entry["path"],
-                "port": entry.get("port", DEFAULT_PORT),
+                "port": _valid_port(entry.get("port", DEFAULT_PORT), "vaults.%s.port" % name),
                 "layout": entry.get("layout"),
                 "default": entry.get("default") is True,
             }
@@ -192,6 +219,28 @@ def default_vault_name():
     return next(iter(vaults), None)
 
 
+def _declared_default_entry():
+    """The raw config entry for the default vault, ignoring whether its own
+    configured `path` currently resolves on disk.
+
+    Used only by the OBSIDIAN_VAULT_PATH override below: the env var replaces
+    *where* the default vault lives, not *what port it runs on* - if it also
+    reset the port to DEFAULT_PORT, a default vault configured on a
+    non-standard port would silently probe the wrong port the moment someone
+    set the env var, which is a worse bug than the one the env var exists to
+    solve.
+    """
+    cfg = read_config()
+    raw = cfg.get("vaults")
+    if isinstance(raw, dict) and raw:
+        for name, entry in raw.items():
+            if isinstance(entry, dict) and entry.get("default") is True:
+                return entry
+        first = next(iter(raw.values()), None)
+        return first if isinstance(first, dict) else None
+    return None
+
+
 def resolve_vault(name=None):
     """The full {path, port, layout} dict for a named vault, or None.
 
@@ -205,7 +254,9 @@ def resolve_vault(name=None):
     if is_default:
         env = os.environ.get("OBSIDIAN_VAULT_PATH")
         if env and os.path.isdir(env):
-            return {"path": env, "port": DEFAULT_PORT, "layout": None, "default": True}
+            declared = _declared_default_entry() or {}
+            port = _valid_port(declared.get("port", DEFAULT_PORT), "vaults default port (env override)")
+            return {"path": env, "port": port, "layout": declared.get("layout"), "default": True}
 
     target = name or default_vault_name()
     entry = vaults.get(target)

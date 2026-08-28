@@ -3,8 +3,11 @@
 param([string]$Trigger = 'unknown')
 $ErrorActionPreference = 'SilentlyContinue'
 $dir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$py = (Get-Command python3, python -ErrorAction SilentlyContinue |
+$py = (Get-Command python3, python, py -ErrorAction SilentlyContinue |
        Select-Object -First 1).Source
-if (-not $py) { exit 0 }
+if (-not $py) {
+    [Console]::Error.WriteLine("obsidian-vault vault-capture.ps1: no python3/python/py interpreter found on PATH - session capture skipped.")
+    exit 0
+}
 & $py (Join-Path $dir 'vault_capture.py') $Trigger
 exit 0

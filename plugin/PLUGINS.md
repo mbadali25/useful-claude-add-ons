@@ -245,7 +245,7 @@ The hooks go with it. To keep the plugin but stop the `Stop` gate, set `verifyGa
 | **Source** | [`obsidian-vault/`](obsidian-vault) |
 | **Version** | 0.1.0 |
 | **Install** | `claude plugin install obsidian-vault@useful-claude-add-ons` |
-| **Registers** | 2 agents, 8 commands, 3 skills, 8 hook entries (4 scripts × `.sh`/`.ps1`) across 4 events |
+| **Registers** | 2 agents, 8 commands, 3 skills, 8 hook entries (3 scripts × `.sh`/`.ps1`) across 4 events |
 | **Upstream guide** | [`obsidian-vault/README.md`](obsidian-vault/README.md) |
 
 Makes one or more Obsidian vaults Claude Code's durable, token-efficient
@@ -265,7 +265,8 @@ per vault, never one server juggling two.
 
 ### Hooks — the part that runs without being asked
 
-Four scripts across four events, each a `.sh`/`.ps1` pair delegating to one
+Three scripts across four events (`vault-capture` is registered twice, for
+`SessionEnd` and `PreCompact`), each a `.sh`/`.ps1` pair delegating to one
 shared Python module per script, so the two flavours cannot drift - 8 hook
 entries.
 
