@@ -5,6 +5,7 @@ import {
   getUserCredential,
   assertWriteAllowed,
   textResult,
+  pagedResult,
   withToolErrorHandling,
 } from "@mbadali/mcp-ms-core";
 
@@ -58,11 +59,11 @@ export function createServer(client: GraphClient = getClient()): CreatedServer {
       },
     },
     withToolErrorHandling(async ({ folder, top }) => {
-      const messages = await client.getAllPages(`/me/mailFolders/${folder ?? "inbox"}/messages`, {
+      const page = await client.getAllPages(`/me/mailFolders/${folder ?? "inbox"}/messages`, {
         query: { $top: top ?? 25, $select: "id,subject,from,receivedDateTime,isRead" },
         maxPages: 2,
       });
-      return textResult(messages);
+      return pagedResult(page);
     })
   );
 
@@ -88,11 +89,11 @@ export function createServer(client: GraphClient = getClient()): CreatedServer {
       inputSchema: { top: z.number().int().min(1).max(200).optional() },
     },
     withToolErrorHandling(async ({ top }) => {
-      const events = await client.getAllPages("/me/events", {
+      const page = await client.getAllPages("/me/events", {
         query: { $top: top ?? 25, $orderby: "start/dateTime" },
         maxPages: 2,
       });
-      return textResult(events);
+      return pagedResult(page);
     })
   );
 
@@ -103,8 +104,8 @@ export function createServer(client: GraphClient = getClient()): CreatedServer {
       inputSchema: {},
     },
     withToolErrorHandling(async () => {
-      const files = await client.getAllPages("/me/drive/root/children", { maxPages: 2 });
-      return textResult(files);
+      const page = await client.getAllPages("/me/drive/root/children", { maxPages: 2 });
+      return pagedResult(page);
     })
   );
 

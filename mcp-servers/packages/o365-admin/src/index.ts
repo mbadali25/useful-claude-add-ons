@@ -5,6 +5,7 @@ import {
   getAdminCredential,
   assertWriteAllowed,
   textResult,
+  pagedResult,
   withToolErrorHandling,
 } from "@mbadali/mcp-ms-core";
 
@@ -35,11 +36,11 @@ export function createServer(client: GraphClient = getClient()): CreatedServer {
       inputSchema: { top: z.number().int().min(1).max(999).optional() },
     },
     withToolErrorHandling(async ({ top }) => {
-      const users = await client.getAllPages("/users", {
+      const page = await client.getAllPages("/users", {
         query: { $top: top ?? 25, $select: "id,displayName,mail,userPrincipalName,accountEnabled" },
         maxPages: 4,
       });
-      return textResult(users);
+      return pagedResult(page);
     })
   );
 
@@ -62,8 +63,8 @@ export function createServer(client: GraphClient = getClient()): CreatedServer {
       inputSchema: {},
     },
     withToolErrorHandling(async () => {
-      const skus = await client.getAllPages("/subscribedSkus", { maxPages: 2 });
-      return textResult(skus);
+      const page = await client.getAllPages("/subscribedSkus", { maxPages: 2 });
+      return pagedResult(page);
     })
   );
 

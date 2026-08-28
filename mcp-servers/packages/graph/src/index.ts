@@ -5,6 +5,7 @@ import {
   getAdminCredential,
   assertWriteAllowed,
   textResult,
+  pagedResult,
   withToolErrorHandling,
 } from "@mbadali/mcp-ms-core";
 
@@ -41,7 +42,7 @@ export function createServer(client: GraphClient = getClient()): CreatedServer {
       },
     },
     withToolErrorHandling(async ({ top, filter, select }) => {
-      const users = await client.getAllPages("/users", {
+      const page = await client.getAllPages("/users", {
         query: {
           $top: top ?? 25,
           $filter: filter,
@@ -49,7 +50,7 @@ export function createServer(client: GraphClient = getClient()): CreatedServer {
         },
         maxPages: 4,
       });
-      return textResult(users);
+      return pagedResult(page);
     })
   );
 
@@ -75,11 +76,11 @@ export function createServer(client: GraphClient = getClient()): CreatedServer {
       },
     },
     withToolErrorHandling(async ({ top, filter }) => {
-      const groups = await client.getAllPages("/groups", {
+      const page = await client.getAllPages("/groups", {
         query: { $top: top ?? 25, $filter: filter, $select: "id,displayName,mail,description" },
         maxPages: 4,
       });
-      return textResult(groups);
+      return pagedResult(page);
     })
   );
 
@@ -90,8 +91,8 @@ export function createServer(client: GraphClient = getClient()): CreatedServer {
       inputSchema: { groupId: z.string() },
     },
     withToolErrorHandling(async ({ groupId }) => {
-      const members = await client.getAllPages(`/groups/${encodeURIComponent(groupId)}/members`, { maxPages: 4 });
-      return textResult(members);
+      const page = await client.getAllPages(`/groups/${encodeURIComponent(groupId)}/members`, { maxPages: 4 });
+      return pagedResult(page);
     })
   );
 
@@ -103,7 +104,7 @@ export function createServer(client: GraphClient = getClient()): CreatedServer {
     },
     withToolErrorHandling(async ({ query }) => {
       const escaped = query.replace(/'/g, "''");
-      const users = await client.getAllPages("/users", {
+      const page = await client.getAllPages("/users", {
         query: {
           $filter: `startswith(displayName,'${escaped}') or startswith(mail,'${escaped}')`,
           $select: "id,displayName,mail,userPrincipalName",
@@ -111,7 +112,7 @@ export function createServer(client: GraphClient = getClient()): CreatedServer {
         },
         maxPages: 2,
       });
-      return textResult(users);
+      return pagedResult(page);
     })
   );
 

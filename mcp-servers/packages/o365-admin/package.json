@@ -2,6 +2,11 @@
   "name": "@mbadali/mcp-o365-admin",
   "version": "0.1.0",
   "description": "MCP server for Office 365 tenant administration (users, mailbox settings, licenses) -- app-only, tenant-wide",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mbadali25/useful-claude-add-ons.git",
+    "directory": "mcp-servers/packages/o365-admin"
+  },
   "type": "module",
   "bin": {
     "mcp-o365-admin": "./dist/src/cli.js"

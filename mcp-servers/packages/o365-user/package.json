@@ -2,6 +2,11 @@
   "name": "@mbadali/mcp-o365-user",
   "version": "0.1.0",
   "description": "MCP server for Office 365 in the signed-in user's own delegated scope (mail, calendar, files) -- device code auth",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mbadali25/useful-claude-add-ons.git",
+    "directory": "mcp-servers/packages/o365-user"
+  },
   "type": "module",
   "bin": {
     "mcp-o365-user": "./dist/src/cli.js"

@@ -56,6 +56,40 @@ All notable changes to this repository are documented here. Format follows [Keep
   documents `npm install -g` (Option B, what the installer now uses) and the
   direct-path form (Option A) as the two working interim installs.
 
+### Fixed
+
+- **`mcp-servers/` QA pass: a merge-blocking `npm publish --provenance`
+  failure, a status-vs-parse ordering bug, and no throttling handling.** All
+  five `package.json` now carry `"repository"` (type/url/directory) —
+  `--provenance` refuses to publish without it, which would have killed the
+  publish workflow's very first step. `GraphClient`'s `request()` and
+  `getAllPages()` used to call `JSON.parse` before checking `res.ok`; a
+  non-JSON error body (a WAF's HTML, a plain-text 5xx from an intermediate
+  proxy) threw a `SyntaxError` and lost the real status code. Both now read
+  the body first, parse it as JSON only if it looks like JSON, and fall back
+  to the raw text inside a proper `GraphApiError` that still carries the
+  status. Neither method handled `429` at all — Graph throttles routinely in
+  real tenants — so both now share a bounded retry (max 3 attempts) that
+  honors `Retry-After` (seconds or an HTTP date) and caps the wait at 30s.
+  `getAllPages()` also used to truncate silently at `maxPages`, presenting a
+  partial list as if it were complete; it now returns `{ items, truncated }`,
+  and every server's list tool (`pagedResult()`, new in
+  `packages/core/src/toolResult.ts`) appends a plain-text note to the tool
+  result when truncated, so the model knows more data may exist. `post`/
+  `patch`/`put`/`delete` on `GraphClient` now carry a doc comment stating they
+  perform no write-gating themselves — every caller routes through
+  `assertWriteAllowed` by convention, not by the type system. 12 call sites
+  across all four servers and 2 in `packages/core/test/graphClient.test.ts`
+  updated for the new return shape; new tests cover a non-JSON 500/502/503, a
+  204 and an empty-200 body, a 429 that retries then succeeds, a 429 that
+  exhausts its retry budget, a capped wait, and both `truncated: true` and
+  `truncated: false`. `Install-MsMcpGlobal` (defined nested inside an
+  `Invoke-Step` scriptblock in `install-prerequisites.ps1`, unlike this
+  script's other helpers) was sabotage-tested against
+  `scripts/check-powershell.ps1` — a typo'd call is caught (the checker's AST
+  walk recurses into nested scriptblocks) — so it was left in place rather
+  than moved to the top level.
+
 - **`crew` 0.10.0 - an Obsidian Kanban board is now a fourth ticket tracker,
   alongside `files`, `jira` and `sdp`.** Set `tracker: "obsidian"` and point
   `obsidian.vaultPath` at a vault. The board is a markdown file the

@@ -2,6 +2,11 @@
   "name": "@mbadali/mcp-intune",
   "version": "0.1.0",
   "description": "MCP server for Microsoft Intune device management -- app-only, tenant-wide",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mbadali25/useful-claude-add-ons.git",
+    "directory": "mcp-servers/packages/intune"
+  },
   "type": "module",
   "bin": {
     "mcp-intune": "./dist/src/cli.js"

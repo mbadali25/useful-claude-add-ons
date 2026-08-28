@@ -2,6 +2,11 @@
   "name": "@mbadali/mcp-msgraph",
   "version": "0.1.0",
   "description": "MCP server for Microsoft Graph directory data (users, groups) -- app-only, tenant-wide",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mbadali25/useful-claude-add-ons.git",
+    "directory": "mcp-servers/packages/graph"
+  },
   "type": "module",
   "bin": {
     "mcp-msgraph": "./dist/src/cli.js"

@@ -20,6 +20,13 @@ and why it hasn't happened yet): one `GraphClient` HTTP wrapper, one `getUserCre
 / `getAdminCredential` pair, one write-gate, one `doctor` implementation. No server
 reimplements auth or HTTP. Source: `mcp-servers/packages/`.
 
+Each server pins an **exact** version of core (`"@mbadali/mcp-ms-core": "0.1.0"`, not a
+range) rather than `^0.1.0` or `workspace:*`. That is deliberate -- it means a core-only
+change can never silently ship to a server that hasn't been tested against it -- but it
+also means **a core-only version bump has no effect on npm until all four servers are
+re-published with their pin updated to match**. See
+[`PUBLISHING.md`](PUBLISHING.md#5-releasing-an-update) for the exact steps.
+
 ## Azure: use the official server, not a new one
 
 Azure Resource Manager is already covered by Microsoft's own

@@ -2,6 +2,11 @@
   "name": "@mbadali/mcp-ms-core",
   "version": "0.1.0",
   "description": "Shared auth, HTTP, and write-gate helpers for the Microsoft MCP server family (Graph, Intune, Office 365 user/admin)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mbadali25/useful-claude-add-ons.git",
+    "directory": "mcp-servers/packages/core"
+  },
   "type": "module",
   "main": "./dist/src/index.js",
   "types": "./dist/src/index.d.ts",

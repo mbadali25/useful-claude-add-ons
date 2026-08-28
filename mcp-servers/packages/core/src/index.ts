@@ -5,8 +5,15 @@ export {
   GRAPH_BASE,
   GRAPH_DEFAULT_SCOPE,
   type GraphRequestOptions,
+  type GraphPage,
 } from "./graphClient.js";
 export { assertWriteAllowed, WriteNotAllowedError, type WriteGateArgs } from "./writeGate.js";
 export { decodeJwtPayload } from "./jwt.js";
 export { runDoctor, printDoctorResult, type DoctorResult } from "./doctor.js";
-export { textResult, errorResult, withToolErrorHandling, type ToolResult } from "./toolResult.js";
+export {
+  textResult,
+  errorResult,
+  pagedResult,
+  withToolErrorHandling,
+  type ToolResult,
+} from "./toolResult.js";

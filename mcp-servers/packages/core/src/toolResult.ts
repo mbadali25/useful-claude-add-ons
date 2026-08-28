@@ -14,6 +14,24 @@ export function textResult(data: unknown): ToolResult {
   return { content: [{ type: "text", text }] };
 }
 
+/** Renders a GraphClient.getAllPages() result. The items are the primary JSON
+ * payload (unchanged shape from before pagination reported truncation); when
+ * the page cap was hit, appends a plain-text note so the model doesn't present
+ * a partial result as if it were the whole answer. */
+export function pagedResult<T>(page: { items: T[]; truncated: boolean }): ToolResult {
+  const result = textResult(page.items);
+  if (page.truncated) {
+    result.content.push({
+      type: "text",
+      text:
+        "Note: this result was truncated at the page cap -- more data may exist on the " +
+        "server than is shown above. Narrow the query (e.g. add a $filter) or tell the " +
+        "user the list may be incomplete.",
+    });
+  }
+  return result;
+}
+
 export function errorResult(err: unknown): ToolResult {
   const message = err instanceof Error ? err.message : String(err);
   return { content: [{ type: "text", text: `Error: ${message}` }], isError: true };
