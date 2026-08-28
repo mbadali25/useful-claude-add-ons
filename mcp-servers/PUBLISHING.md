@@ -17,10 +17,14 @@ Windows and Linux, no OS-specific variants.
 
 ## 2. Token for CI
 
-1. npmjs.com → avatar → **Access Tokens** → **Generate New Token** → **Granular
-   Access Token**, Read+Write scoped to `@badali404`. An **Automation** token also works
-   and additionally bypasses OTP/2FA on publish, which matters because CI can't answer
-   a 2FA prompt.
+1. npmjs.com → avatar → **Access Tokens** → **Generate New Token** →
+   **Classic Token → Automation** — it bypasses OTP/2FA on publish by design,
+   which matters because CI can't answer a 2FA prompt. A **Granular** token
+   (Read+Write on `@badali404`) works only if you also enable its **"Bypass
+   two-factor authentication"** option; created without it, the publish fails
+   with `403 ... Two-factor authentication or granular access token with
+   bypass 2fa enabled is required` — the tarball builds and provenance signs,
+   then the registry PUT is refused, so it looks like it almost worked.
 2. Copy it now — npm shows it once. Then:
 
    ```bash
@@ -112,8 +116,12 @@ claude mcp add mcp-o365-admin -- npx -y @badali404/mcp-o365-admin@latest
 
 - **`402 Payment Required`** — missing `--access public` on a scoped package. Add it.
 - **`403 Forbidden`** — token lacks publish rights to `@badali404`, or 2FA is blocking a
-  non-interactive publish. Use a Granular token scoped to `@badali404` (Read+Write) or an
-  Automation token, which bypasses 2FA.
+  non-interactive publish (the exact text is `Two-factor authentication or granular
+  access token with bypass 2fa enabled is required`). Use a Classic **Automation**
+  token, or a Granular token with the "Bypass two-factor authentication" option
+  enabled — Read+Write alone is not enough. Re-set the secret, then rerun the same
+  tag's workflow: `gh run rerun <run-id>` — nothing publishes on a 403, so no
+  version bump is needed.
 - **`ENEEDAUTH` in CI** — the `NPM_TOKEN` secret is missing or misnamed. Check with
   `gh secret list --repo mbadali25/useful-claude-add-ons` and re-set it (§2).
 - **Publish succeeds but `npx` runs the old version** — it cached. Pin `@latest`
