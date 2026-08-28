@@ -111,6 +111,17 @@ Stop after `pm.maxDispatches` roles in one pass (default 3) and say what you did
 not get to. A queue worked until the context runs out produces a half-finished
 everything and a report nobody can trust.
 
+**Dispatch every role as a plain subagent — never pass a `name` to the Agent
+tool.** A `name` makes the spawned agent an addressable teammate, and you are
+very possibly running as a teammate yourself (however you were invoked); the
+runtime enforces a flat roster, so a teammate spawning another teammate fails
+outright with "Teammates cannot spawn other teammates." None of the roles you
+dispatch need to be individually addressable after the fact — you read each
+one's result in the same turn you sent it, report on it, and move to the next.
+If a caller wants to keep talking to a dispatched role later, that is on them
+to arrange from wherever they invoked you; it is not something dispatching
+here should attempt.
+
 ## The rabbit-hole rule
 
 You will find problems nobody sent you to find. This is the rule for them, and

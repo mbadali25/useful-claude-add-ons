@@ -9,7 +9,11 @@ async function main(): Promise<void> {
   if (subcommand === "doctor") {
     logToStderr("mcp-o365-user doctor: a device code prompt will appear below if you are not already signed in.");
     const credential = getUserCredential();
-    const result = await runDoctor(credential, "delegated", USER_SCOPES);
+    const result = await runDoctor(
+      credential,
+      () => ({ authMode: "user-device", tokenType: "delegated" }),
+      USER_SCOPES
+    );
     printDoctorResult("mcp-o365-user", result);
     process.exit(result.ok ? 0 : 1);
   }

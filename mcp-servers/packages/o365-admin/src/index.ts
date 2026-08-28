@@ -2,16 +2,31 @@ import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import {
   GraphClient,
-  getAdminCredential,
+  buildAdminCredential,
   assertWriteAllowed,
   textResult,
   pagedResult,
   withToolErrorHandling,
 } from "@badali404/mcp-ms-core";
 
+/**
+ * Delegated Graph permissions this server needs -- only used by the admin
+ * credential chain's device-code fallback (the secret and Azure CLI links
+ * always request the resource .default scope instead; see
+ * @badali404/mcp-ms-core's adminAuth.ts for why). Widens to include the write
+ * scopes only when MCP_MS_ALLOW_WRITES=1, read at server startup.
+ */
+export function delegatedScopes(): string[] {
+  const scopes = ["https://graph.microsoft.com/User.Read.All", "https://graph.microsoft.com/MailboxSettings.Read"];
+  if (process.env.MCP_MS_ALLOW_WRITES === "1") {
+    scopes.push("https://graph.microsoft.com/User.ReadWrite.All");
+  }
+  return scopes;
+}
+
 let _client: GraphClient | undefined;
 export function getClient(): GraphClient {
-  if (!_client) _client = new GraphClient(getAdminCredential());
+  if (!_client) _client = new GraphClient(buildAdminCredential(delegatedScopes()), undefined, delegatedScopes());
   return _client;
 }
 

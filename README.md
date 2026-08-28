@@ -81,7 +81,7 @@ Terminals that can't read a key press one at a time — no `stty`, `TERM=dumb`, 
 | 18 | Obsidian desktop + `claude-obsidian` and `obsidian-skills` plugins | |
 | 19 | This repo's plugins — `crew`, `obsidian-vault` (agents, commands, **hooks**) — **→ picks which** | |
 | 20 | `graphify` code graph (`uv tool install graphifyy`; per-repo, not global) | |
-| 21 | Microsoft MCP servers (`mcp-servers/`) — Graph, Intune, Office 365 user/admin — **needs tenant credentials** | |
+| 21 | Microsoft MCP servers (`mcp-servers/`) — Graph, Intune, Office 365 user/admin — **needs `az login` or tenant credentials** | |
 
 Menu numbers are identical on Windows and Linux, and an already-registered MCP server, marketplace, or plugin is reported and skipped rather than re-added. Numbers can shift as items are added, so scripted runs should prefer the stable keys (`--select supabase,strix`) over positions.
 
@@ -161,7 +161,7 @@ For this repo's own skills, [`scripts/check-marketplace.py`](scripts/check-marke
 | 18 Obsidian | The Obsidian desktop app (Chocolatey → winget on Windows, flatpak → snap on Linux), plus the `claude-obsidian` vault engine and [`kepano/obsidian-skills`](https://github.com/kepano/obsidian-skills) — Obsidian's own Markdown, Bases, JSON Canvas, CLI and Defuddle skills | choco/winget/flatpak/snap + 2 marketplaces |
 | 19 This repo's plugins | The `crew` plugin from [`plugin/`](plugin/) — 10 subagents, 21 slash commands, 16 bundled skills, and 20 hook entries (10 scripts × `.sh`/`.ps1`) across 5 events — and `obsidian-vault` — 2 agents, 8 slash commands, 3 skills, and 8 hook entries (3 scripts × `.sh`/`.ps1`). Off by default because hooks execute whether or not Claude agrees with them | this repo |
 | 20 `graphify` | The `graphify` CLI (`graphifyy` on PyPI), registered per-repository with `graphify install --project`. Off by default; not installed globally | `uv tool install` |
-| 21 Microsoft MCP servers | Registers up to 4 servers via npx — `mcp-msgraph`, `mcp-intune`, `mcp-o365-admin` (app-only, needs `MS_ADMIN_*`), `mcp-o365-user` (delegated device-code, needs `MS_USER_CLIENT_ID`). Skipped with instructions when no credentials are set | npm (`@badali404/mcp-*`) + `claude mcp add` |
+| 21 Microsoft MCP servers | Registers up to 4 servers via npx — `mcp-msgraph`, `mcp-intune`, `mcp-o365-admin` (app-only via `MS_ADMIN_*`, OR delegated via an existing `az login` session, checked with `az account show` — no app registration required for the latter), `mcp-o365-user` (delegated device-code, needs `MS_USER_CLIENT_ID`). Skipped with instructions when neither an `az login` session nor credentials are found | npm (`@badali404/mcp-*`) + `claude mcp add` |
 
 Items 1–8 are the default set. Everything from 9 on is opt-in.
 
@@ -294,8 +294,9 @@ Run the gardener on **one machine only**; details and safety notes in [`vault-au
 signed-in user's own mail/calendar/files via device-code sign-in). They are **not**
 marketplace plugins; they're npm packages built from one shared auth/HTTP workspace
 package and registered with `claude mcp add`. Menu item 21 of the bootstrap installer
-builds and registers them, off by default and gated on real Azure AD credentials being
-present in the environment.
+builds and registers them, off by default. The three admin-scope servers register with
+just an existing `az login` session (no app registration needed) or with `MS_ADMIN_*`
+credentials; `mcp-o365-user` always needs its own `MS_USER_CLIENT_ID` app registration.
 
 Azure Resource Manager is deliberately **not** one of the four: the official
 [`@azure/mcp`](https://www.npmjs.com/package/@azure/mcp) (menu item 10) already covers

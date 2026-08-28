@@ -746,7 +746,7 @@ MENU_NAME=(
   "Obsidian desktop + claude-obsidian + obsidian-skills plugins"
   "This repo's plugins: crew, obsidian-vault (agents, commands, hooks)"
   "graphify code graph (uv tool install graphifyy; per-repo, not global)"
-  "Microsoft MCP servers (mcp-servers/): Graph, Intune, Office 365 user/admin - needs tenant credentials"
+  "Microsoft MCP servers (mcp-servers/): Graph, Intune, Office 365 user/admin - needs az login or tenant credentials"
 )
 
 SELECTED=""
@@ -2337,28 +2337,43 @@ fi
 # --- 21. Microsoft MCP servers (mcp-servers/) ---------------------------------
 # Published to npm under @badali404 (2026-08-28), so like the item-9-12 MCP servers
 # this registers the npx form - no clone, no build, no global install; npx resolves
-# and caches the package on the server's first launch. What it still needs is real
-# Azure AD app registrations: see mcp-servers/README.md for the whole auth model.
+# and caches the package on the server's first launch. The admin servers now
+# authenticate through a chain (secret -> az CLI -> device code, see
+# mcp-servers/README.md's "Admin auth chain, in detail"), so a real Azure AD app
+# registration is no longer required to register them here - a signed-in
+# 'az login' session is sufficient, checked below via 'az account show'.
 #
 # Registration is bare ('-- <command>', no --env): claude mcp add --env persists the
 # value into ~/.claude.json, and this repo's rule is secrets from env only, never
-# written anywhere by this script. So these servers only work once MS_ADMIN_*/MS_USER_*
-# are exported wherever the 'claude' process itself gets launched (shell profile,
+# written anywhere by this script. So MS_ADMIN_*/MS_USER_* (when used) still have to
+# be exported wherever the 'claude' process itself gets launched (shell profile,
 # service manager, etc.) - this step just prints that. Developing against a local
 # clone instead: mcp-servers/README.md keeps the 'npm install -g' workspace-link
 # option documented.
 install_ms_mcp() {
-  local have_admin=0 have_user=0
+  local have_admin_secret=0 have_admin_cli=0 have_admin=0 have_user=0
   if [ -n "${MS_ADMIN_TENANT_ID:-}" ] && [ -n "${MS_ADMIN_CLIENT_ID:-}" ] && [ -n "${MS_ADMIN_CLIENT_SECRET:-}" ]; then
+    have_admin_secret=1
+  fi
+  # 'az account show' reads the CLI's own cached session; it fails fast (no
+  # network call) when 'az' is missing or nobody has run 'az login'. Sufficient
+  # on its own to register the admin servers now that they fall back to it.
+  if have az && az account show >/dev/null 2>&1; then
+    have_admin_cli=1
+  fi
+  if [ "$have_admin_secret" -eq 1 ] || [ "$have_admin_cli" -eq 1 ]; then
     have_admin=1
   fi
   [ -n "${MS_USER_CLIENT_ID:-}" ] && have_user=1
 
   if [ "$have_admin" -eq 0 ] && [ "$have_user" -eq 0 ]; then
-    skip "Microsoft MCP servers: no MS_ADMIN_* or MS_USER_CLIENT_ID in the environment"
-    printf '        These need real Azure AD app registrations first - see mcp-servers/README.md.\n'
-    printf '        Then export the credentials this shell will pass through and re-run:\n'
+    skip "Microsoft MCP servers: no MS_ADMIN_* creds, no 'az login' session, and no MS_USER_CLIENT_ID"
+    printf '        mcp-msgraph/mcp-intune/mcp-o365-admin now also work with just an existing\n'
+    printf '        Azure CLI session - no app registration needed. Either:\n'
+    printf '          az login                                                                   # then re-run this item\n'
+    printf '        or:\n'
     printf '          export MS_ADMIN_TENANT_ID=... MS_ADMIN_CLIENT_ID=... MS_ADMIN_CLIENT_SECRET=...  # msgraph/intune/o365-admin\n'
+    printf '        mcp-o365-user always needs its own app registration:\n'
     printf '          export MS_USER_CLIENT_ID=...                                                     # o365-user (device code)\n'
     printf '          ./install-prerequisites.sh --select ms-mcp\n'
     return 0
@@ -2378,15 +2393,19 @@ install_ms_mcp() {
     add_mcp_server "mcp-msgraph" "-" npx -y "@badali404/mcp-msgraph@latest"
     add_mcp_server "mcp-intune" "-" npx -y "@badali404/mcp-intune@latest"
     add_mcp_server "mcp-o365-admin" "-" npx -y "@badali404/mcp-o365-admin@latest"
+    if [ "$have_admin_secret" -eq 0 ]; then
+      printf '        Registered via the Azure CLI fallback (no MS_ADMIN_* set) - each server will\n'
+      printf '        authenticate as whoever is signed in with "az login" wherever it actually runs.\n'
+    fi
   else
-    skip "mcp-msgraph/mcp-intune/mcp-o365-admin: no MS_ADMIN_* credentials given"
+    skip "mcp-msgraph/mcp-intune/mcp-o365-admin: no MS_ADMIN_* credentials and no 'az login' session"
   fi
   if [ "$have_user" -eq 1 ]; then
     add_mcp_server "mcp-o365-user" "-" npx -y "@badali404/mcp-o365-user@latest"
   else
     skip "mcp-o365-user: no MS_USER_CLIENT_ID given"
   fi
-  ok "Registered via 'npx -y @badali404/<pkg>@latest' - no secrets were written to ~/.claude.json. Export MS_ADMIN_TENANT_ID/MS_ADMIN_CLIENT_ID/MS_ADMIN_CLIENT_SECRET and/or MS_USER_CLIENT_ID (+ optional MS_USER_TENANT_ID) in the shell/profile that launches 'claude' itself, or these servers will fail to authenticate. Every server is read-only until MCP_MS_ALLOW_WRITES=1 is also set there. Verify auth with 'npx -y @badali404/mcp-msgraph@latest doctor' (same pattern per server). Developing against a local clone instead? See mcp-servers/README.md's npm-install-g option."
+  ok "Registered via 'npx -y @badali404/<pkg>@latest' - no secrets were written to ~/.claude.json. If not relying on 'az login', export MS_ADMIN_TENANT_ID/MS_ADMIN_CLIENT_ID/MS_ADMIN_CLIENT_SECRET and/or MS_USER_CLIENT_ID (+ optional MS_USER_TENANT_ID) in the shell/profile that launches 'claude' itself, or the servers relying on them will fail to authenticate. Every server is read-only until MCP_MS_ALLOW_WRITES=1 is also set there. Verify auth with 'npx -y @badali404/mcp-msgraph@latest doctor' (same pattern per server) - it reports which auth chain link actually authenticated. Developing against a local clone instead? See mcp-servers/README.md's npm-install-g option."
 }
 if is_selected "ms-mcp"; then
   run_step "Register Microsoft MCP servers (mcp-servers/)" install_ms_mcp

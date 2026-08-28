@@ -6,6 +6,37 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
+- **`mcp-servers` 0.2.0 — the three admin-scope servers authenticate with no
+  app registration at all, if you're already signed in with `az login`.**
+  `@badali404/mcp-ms-core`'s new `buildAdminCredential()` (replacing
+  `getAdminCredential()`) tries a credential chain in order: (1) client
+  secret via `ClientSecretCredential`, app-only, unchanged — used whenever
+  all three `MS_ADMIN_TENANT_ID`/`_CLIENT_ID`/`_CLIENT_SECRET` are set; (2)
+  `AzureCliCredential`, delegated, zero prompts against an existing
+  `az login` session; (3) `DeviceCodeCredential`, delegated, an interactive
+  one-time-per-process sign-in as the last resort — using
+  `MS_ADMIN_CLIENT_ID` as a public-client app id if set, else the Azure
+  CLI's own well-known client id. `MS_ADMIN_AUTH=secret|cli|device` forces
+  one link instead of the auto fallback. Device-code prompts go to
+  **stderr only**, never stdout (the MCP JSON-RPC channel). Each server's
+  `doctor` subcommand now reports which link authenticated and whether the
+  resulting token is app-only or delegated, alongside the scopes/roles it
+  decodes from the token as before. `mcp-o365-user` is unaffected — its
+  device-code-only, `/me`-scoped auth is deliberately not part of this
+  chain and was not widened. `@azure/identity`'s persistent token cache was
+  evaluated and not enabled (it needs a separate native-dependency plugin
+  package); a device-code sign-in is a per-process-launch prompt, not
+  persisted across restarts, by design. 19 new offline tests
+  (`packages/core/test/adminAuth.test.ts`) cover the fallback order,
+  `MS_ADMIN_AUTH` forcing each mode, stderr-not-stdout for the device-code
+  prompt, and `doctor` reporting the resolved mode. All five packages
+  bumped `0.1.3` → `0.2.0` in lockstep (core pin updated in all four
+  servers); `mcp-servers/README.md`, `docs/remaining-setup.md` (now a
+  3-tier walkthrough: `az login` only / device code with a public-client
+  app / full app-only registration), `INSTALLATION.md`, and both install
+  scripts updated — the `ms-mcp` item now also checks `az account show` as
+  sufficient to register the admin servers, still writing no secrets.
+
 - **`mcp-servers/` — four local Microsoft MCP servers on one shared auth/HTTP
   workspace package.** `mcp-msgraph` (tenant directory), `mcp-intune` (device
   management), `mcp-o365-admin` (mailboxes/licenses/password reset — all
@@ -57,6 +88,17 @@ All notable changes to this repository are documented here. Format follows [Keep
   direct-path form (Option A) as the two working interim installs.
 
 ### Fixed
+
+- **`crew` 0.11.4 — `crew:pm` could fail to dispatch with "Teammates cannot
+  spawn other teammates."** `pm.md` (the only crew role with the `Agent` tool)
+  had no guidance on whether to pass a `name` when dispatching a role, so it
+  could end up spawning dispatched roles as named, addressable teammates. The
+  runtime's team roster is flat -- a teammate (which the PM itself may be,
+  depending on how it was invoked) cannot spawn further named teammates, only
+  plain subagents. `pm.md`'s "Dispatching" section now says explicitly: never
+  pass `name` to the Agent tool when dispatching a role. Every dispatched role
+  is read and reported on within the same turn it was sent, so none of them
+  ever needed to be individually addressable afterward.
 
 - **`mcp-servers/` QA pass: a merge-blocking `npm publish --provenance`
   failure, a status-vs-parse ordering bug, and no throttling handling.** All

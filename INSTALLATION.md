@@ -74,7 +74,7 @@ It shows the menu, asks the SkillUI quick-start question up front, then installs
 4. **Team plugins, community plugins, `find-skills`, `claude-code-setup`, `task-observer`** — each is its own menu row; `-SkipBootstrap` narrows any selection back down to items 1 and 2.
 5. **MCP servers** — AWS, Azure, Playwright. Off by default; see [Optional: MCP servers](#optional-mcp-servers).
 6. **Supabase, Context7, Playwright CLI, SkillUI, Strix** — off by default; see [Optional: extra tooling](#optional-extra-tooling).
-7. **Microsoft MCP servers** — Graph, Intune, Office 365 user/admin, built from `mcp-servers/` in this repo. Off by default and needs tenant credentials; see [Optional: Microsoft MCP servers](#optional-microsoft-mcp-servers).
+7. **Microsoft MCP servers** — Graph, Intune, Office 365 user/admin, built from `mcp-servers/` in this repo. Off by default and needs az login or tenant credentials; see [Optional: Microsoft MCP servers](#optional-microsoft-mcp-servers).
 
 If `claude` isn't recognized immediately after the script finishes, open a new PowerShell window — the `PATH` change is written to the registry but doesn't retroactively apply to whichever shell you're still in from before Node.js/npm existed.
 
@@ -94,7 +94,7 @@ Runs as your current user, escalating to `sudo` (or `root` directly if already r
 4. **Team plugins, community plugins, `find-skills`, `claude-code-setup`, `task-observer`** — each is its own menu row; `--skip-bootstrap` narrows any selection back down to items 1 and 2.
 5. **MCP servers** — AWS, Azure, Playwright. Off by default; see [Optional: MCP servers](#optional-mcp-servers).
 6. **Supabase, Context7, Playwright CLI, SkillUI, Strix** — off by default; see [Optional: extra tooling](#optional-extra-tooling).
-7. **Microsoft MCP servers** — Graph, Intune, Office 365 user/admin, built from `mcp-servers/` in this repo. Off by default and needs tenant credentials; see [Optional: Microsoft MCP servers](#optional-microsoft-mcp-servers).
+7. **Microsoft MCP servers** — Graph, Intune, Office 365 user/admin, built from `mcp-servers/` in this repo. Off by default and needs az login or tenant credentials; see [Optional: Microsoft MCP servers](#optional-microsoft-mcp-servers).
 
 Under the piped one-liner (`curl -fsSL … | bash`) the script itself arrives on stdin, so the menu reads the terminal through its own file descriptor. Where there is no terminal at all, it takes the default set rather than blocking.
 
@@ -293,19 +293,20 @@ Six more rows, also off by default. None of them are MCP servers.
 
 ### Optional: Microsoft MCP servers
 
-- **Microsoft MCP servers** (21) — registers up to four local, stdio MCP servers built from [`mcp-servers/`](mcp-servers/): `mcp-msgraph` (tenant directory), `mcp-intune` (device management), `mcp-o365-admin` (mailboxes/licenses, app-only, tenant-wide), and `mcp-o365-user` (the signed-in user's own mail/calendar/files, delegated device-code sign-in). Full auth model and every environment variable: [`mcp-servers/README.md`](mcp-servers/README.md).
+- **Microsoft MCP servers** (21) — registers up to four local, stdio MCP servers built from [`mcp-servers/`](mcp-servers/): `mcp-msgraph` (tenant directory), `mcp-intune` (device management), `mcp-o365-admin` (mailboxes/licenses, tenant-wide), and `mcp-o365-user` (the signed-in user's own mail/calendar/files, delegated device-code sign-in). Full auth model and every environment variable: [`mcp-servers/README.md`](mcp-servers/README.md).
 
-  All five packages (the shared core plus these four servers) are **published to npm under `@badali404`** (since 2026-08-28), so like items 9–12 this registers the npx form — no clone, no build, no global install. What it still needs is **real Azure AD app registrations**, checked as environment variables in the item's own shell, purely to decide which servers to register:
+  All five packages (the shared core plus these four servers) are **published to npm under `@badali404`** (since 2026-08-28), so like items 9–12 this registers the npx form — no clone, no build, no global install. The three admin-scope servers (`mcp-msgraph`/`mcp-intune`/`mcp-o365-admin`) authenticate through a chain — client secret, then an existing `az login` session, then device code — so **no app registration is required to register them anymore**: the item checks `az account show` as well as `MS_ADMIN_*` env vars to decide whether to register them:
 
   ```bash
-  export MS_ADMIN_TENANT_ID=...  MS_ADMIN_CLIENT_ID=...  MS_ADMIN_CLIENT_SECRET=...  # msgraph, intune, o365-admin
-  export MS_USER_CLIENT_ID=...                                                       # o365-user (device code)
+  az login                                                                             # sufficient on its own, OR:
+  export MS_ADMIN_TENANT_ID=...  MS_ADMIN_CLIENT_ID=...  MS_ADMIN_CLIENT_SECRET=...    # msgraph, intune, o365-admin
+  export MS_USER_CLIENT_ID=...                                                         # o365-user (device code) -- always needs its own app registration
   ./scripts/install-prerequisites.sh --select ms-mcp
   ```
 
-  `MS_ADMIN_*` (all three, app-only/client-credentials) registers `mcp-msgraph`, `mcp-intune`, and `mcp-o365-admin`; `MS_USER_CLIENT_ID` (delegated device-code, `MS_USER_TENANT_ID` optional) registers `mcp-o365-user` on its own. Either group alone is enough to proceed — the item registers whichever group has its credentials present and skips the other with an explanation, rather than requiring both.
+  An `az login` session **or** `MS_ADMIN_*` (all three, app-only/client-credentials) registers `mcp-msgraph`, `mcp-intune`, and `mcp-o365-admin`; `MS_USER_CLIENT_ID` (delegated device-code, `MS_USER_TENANT_ID` optional) registers `mcp-o365-user` on its own — it is not part of the admin chain and still needs its own app registration regardless. Any one of these three is enough to proceed — the item registers whichever group is satisfied and skips the rest with an explanation.
 
-  Each registration is `claude mcp add <name> -- npx -y @badali404/<pkg>@latest` — **bare**, with no `--env`, so no secret is ever written into `~/.claude.json`. That means the same `MS_ADMIN_*`/`MS_USER_*` vars must also be set wherever the `claude` process itself gets launched (shell profile, service manager, etc.), or a registered server will fail to authenticate — registering it here is necessary but not sufficient. Every tool across all four servers is also **read-only** until `MCP_MS_ALLOW_WRITES=1` is set there too. Verify with `npx -y @badali404/mcp-msgraph@latest doctor` (same pattern per server), which acquires a real token and prints exactly what was granted. npx downloads and caches the package on the server's first launch, so the very first Claude Code session after registering pays a one-time fetch.
+  Each registration is `claude mcp add <name> -- npx -y @badali404/<pkg>@latest` — **bare**, with no `--env`, so no secret is ever written into `~/.claude.json`. If you're relying on `az login` rather than `MS_ADMIN_*`, the server just needs the Azure CLI session to still be valid wherever `claude` actually runs; if you're using `MS_ADMIN_*`/`MS_USER_*`, those vars must be set wherever the `claude` process itself gets launched (shell profile, service manager, etc.), or a registered server will fail to authenticate — registering it here is necessary but not sufficient. Every tool across all four servers is also **read-only** until `MCP_MS_ALLOW_WRITES=1` is set there too. Verify with `npx -y @badali404/mcp-msgraph@latest doctor` (same pattern per server), which acquires a real token and prints which auth chain link authenticated, whether it's app-only or delegated, and exactly what was granted. npx downloads and caches the package on the server's first launch, so the very first Claude Code session after registering pays a one-time fetch.
 
   Developing against a local clone instead of the registry: [`mcp-servers/README.md`](mcp-servers/README.md) keeps the `npm install -g` workspace-link option documented. New versions publish via a tagged `mcp-servers-v*` push through [`.github/workflows/publish-mcp-servers.yml`](.github/workflows/publish-mcp-servers.yml) — walkthrough in [`mcp-servers/PUBLISHING.md`](mcp-servers/PUBLISHING.md).
 

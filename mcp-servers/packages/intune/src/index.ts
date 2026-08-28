@@ -2,16 +2,41 @@ import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import {
   GraphClient,
-  getAdminCredential,
+  buildAdminCredential,
   assertWriteAllowed,
   textResult,
   pagedResult,
   withToolErrorHandling,
 } from "@badali404/mcp-ms-core";
 
+/**
+ * Delegated Graph permissions this server needs -- only used by the admin
+ * credential chain's device-code fallback (the secret and Azure CLI links
+ * always request the resource .default scope instead; see
+ * @badali404/mcp-ms-core's adminAuth.ts for why). Widens to include the write
+ * scopes only when MCP_MS_ALLOW_WRITES=1, read at server startup. Intune
+ * management scopes are frequently NOT consented for the Azure CLI's own app
+ * registration in a tenant -- if the "cli" link resolves but tools 403, set
+ * MS_ADMIN_CLIENT_ID to a real public-client app registration with these
+ * delegated permissions consented, so the device-code link can get them.
+ */
+export function delegatedScopes(): string[] {
+  const scopes = [
+    "https://graph.microsoft.com/DeviceManagementManagedDevices.Read.All",
+    "https://graph.microsoft.com/DeviceManagementConfiguration.Read.All",
+  ];
+  if (process.env.MCP_MS_ALLOW_WRITES === "1") {
+    scopes.push(
+      "https://graph.microsoft.com/DeviceManagementManagedDevices.PrivilegedOperations.All",
+      "https://graph.microsoft.com/DeviceManagementConfiguration.ReadWrite.All"
+    );
+  }
+  return scopes;
+}
+
 let _client: GraphClient | undefined;
 export function getClient(): GraphClient {
-  if (!_client) _client = new GraphClient(getAdminCredential());
+  if (!_client) _client = new GraphClient(buildAdminCredential(delegatedScopes()), undefined, delegatedScopes());
   return _client;
 }
 
