@@ -11,10 +11,10 @@ Read the **Hooks** section of any plugin before installing it. Commands and agen
 | | |
 |---|---|
 | **Source** | [`crew/`](crew) |
-| **Version** | 0.9.0 |
+| **Version** | 0.10.0 |
 | **Install** | `claude plugin install crew@useful-claude-add-ons` |
 | **Menu item** | 21, `repo-plugins` — **off by default**. Menu item 22, `graphify`, is a separate, also-off-by-default install of the `graphify` CLI this plugin's graph feature depends on — see **The code graph** below. |
-| **Registers** | 10 agents, 20 commands, 16 skills, 20 hook entries (10 scripts × `.sh`/`.ps1`) across 5 events |
+| **Registers** | 10 agents, 21 commands, 16 skills, 20 hook entries (10 scripts × `.sh`/`.ps1`) across 5 events |
 | **Upstream guide** | [`crew/README.md`](crew/README.md) — 25 sections, the authoritative version |
 
 Built for the awkward case: several repositories, mixed stacks, legacy code, and almost no test coverage. The workflow is file-backed tickets, one implementation session, an independent reviewer, and deterministic gates that block on failure rather than offering an opinion.
@@ -51,7 +51,7 @@ Every event is registered twice, once per flavour, each with the matching `shell
 
 A hook cannot be argued out of blocking `terraform apply`; an agent can. That is the entire value, and also the reason a bootstrap run should not install one without the box being ticked.
 
-Committed suites, all sabotage-tested: `hooks/scripts/_test/run-tests.sh` (101 cases across the three gates, the emergency lane, and the PM pulse), `setup-walkthrough.sh` (32 cases running every setup-phase script against a real mixed-stack scratch repo), `validate-prompts.py` (108 structural checks over the commands, agents and skills), and `tests/` under pytest (324 cases, including both flavours of `context-watch` and of the two gates that stand down). All but the pytest suite's Windows-only cases run in CI. What none of them proves is whether the prompts produce good work — that needs a live session on a real ticket, which is what setup Phase 7 is for.
+Committed suites, all sabotage-tested: `hooks/scripts/_test/run-tests.sh` (101 cases across the three gates, the emergency lane, and the PM pulse), `setup-walkthrough.sh` (32 cases running every setup-phase script against a real mixed-stack scratch repo), `validate-prompts.py` (110 structural checks over the commands, agents and skills), and `tests/` under pytest (324 cases, including both flavours of `context-watch` and of the two gates that stand down). All but the pytest suite's Windows-only cases run in CI. What none of them proves is whether the prompts produce good work — that needs a live session on a real ticket, which is what setup Phase 7 is for.
 
 **Every hook is inert until the repository has `.crew/config.json`.** Installing the plugin arms nothing - `/crew:init` in a repo is what turns the gates on there. A gate firing in every repository you opened would be hostile, so this is deliberate; it does mean "installed it, nothing happened" is expected rather than broken.
 
@@ -119,7 +119,7 @@ Enforcement is session-local, like every other gate here: an incident stands
 the hooks down for sessions in this repository on this machine. It does nothing
 to CI or to branch protection.
 
-### Commands — 20, all explicit
+### Commands — 21, all explicit
 
 | Command | Purpose |
 |---|---|
@@ -141,6 +141,7 @@ to CI or to branch protection.
 | `/crew:diagram <type>` | Architecture, data-flow, process, and sequence diagrams |
 | `/crew:jira-sync <KEY> [--push]` | Sync one issue with the local cache |
 | `/crew:sdp-sync <REQUEST-ID> [--push]` | Sync one ServiceDesk Plus request with the local cache: pull the forty tokens that matter out of a several-thousand-token payload, push one note and a transition |
+| `/crew:obsidian-sync <T-####> [--push]` | Sync one Obsidian Kanban card with the local cache: pull reads the card's lane as the status, push moves the card and appends one note. Edits the board in place — the `kanban-plugin` frontmatter, the trailing `%% kanban:settings` block and the `**Complete**` marker are load-bearing, and a regenerated board silently stops rendering as one |
 | `/crew:pm [assign\|authority [value]\|onboard\|offboard <role>]` | Talk to the crew's manager: status with no argument, `assign` to let it decide and dispatch the next work itself, `authority report-only\|act` to read or set how much it may do unprompted, or add/remove a role. Offboarding still needs an explicit yes before it touches `.crew/config.json` |
 | `/crew:upgrade [--force]` | Bring a pre-schema-2 (`v1`) setup forward: backs up the codemap first, builds the graph if missing, reconciles derived facts per subsystem, and reports contradictions and stale-on-purpose anchors rather than resolving them |
 
@@ -218,14 +219,14 @@ Four committed suites, all sabotage-tested - three under `plugin/crew/hooks/scri
 |---|---|---|
 | `run-tests.sh` | 101 | Every gate: what the command guard blocks and allows, root-level glob matching, the stop-loop exit, all four promotion preconditions, and the PM pulse — that `stop_hook_active` never blocks, that an unchanged state cannot interrupt twice, and that diagram freshness is read from the anchor rather than an mtime |
 | `setup-walkthrough.sh` | 32 | Builds a mixed-stack scratch repo and runs every script phases 0-8 invoke |
-| `validate-prompts.py` | 108 | Frontmatter, tool names, referenced agents and paths, read-only agents holding no write tools |
+| `validate-prompts.py` | 110 | Frontmatter, tool names, referenced agents and paths, read-only agents holding no write tools |
 | `tests/` (pytest, one level up) | 324 | The Python behind the hooks: `crew_state`, `pm_brief`, `pm_pulse`, both flavours of `context-watch`, and the two gates that stand down. Run it — it is the suite that catches renderer regressions the shell suite cannot see, such as a new brief line squeezing the top finding out of a capped brief |
 
-What none of them proves is whether the prompts produce good work. The 18 commands and 10 agents are instructions to a model; only a live session on a real ticket exercises those, which is what setup phase 7 is for.
+What none of them proves is whether the prompts produce good work. The 21 commands and 10 agents are instructions to a model; only a live session on a real ticket exercises those, which is what setup phase 7 is for.
 
 ### Optional integrations
 
-All off unless configured: Codex as an independent reviewer, Gemini as a design partner, Jira over MCP, Obsidian for memory, and Teams or Telegram for notifications. `crew` works with none of them.
+All off unless configured: Codex as an independent reviewer, Gemini as a design partner, Jira or ServiceDesk Plus over MCP, an Obsidian Kanban board for tickets, Obsidian for memory, and Teams or Telegram for notifications. `crew` works with none of them. The Kanban tracker is the one integration with nothing to connect to — its precondition is a vault directory that exists, not a connector that authenticates.
 
 ### Uninstall
 

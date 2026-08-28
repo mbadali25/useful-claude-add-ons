@@ -4,6 +4,51 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added
+
+- **`crew` 0.10.0 - an Obsidian Kanban board is now a fourth ticket tracker,
+  alongside `files`, `jira` and `sdp`.** Set `tracker: "obsidian"` and point
+  `obsidian.vaultPath` at a vault. The board is a markdown file the
+  [Kanban plugin](https://github.com/mgmeyers/obsidian-kanban) round-trips, so
+  crew writes files and Obsidian draws a board.
+
+  - **No connector, and therefore a different precondition.** Jira and SDP are
+    offered during setup only when their MCP tools answer. Obsidian has nothing
+    to probe, so what has to resolve is a vault directory that exists on this
+    machine. Bolting that onto the MCP sentence would have produced a tracker
+    that looks configured and is not.
+  - **The vault is the remote, exactly as Jira is.** Ticket notes and the board
+    live in the vault; `.work/cache/T-####.md` is the terse local mirror
+    `/crew:work` reads, so the vault is touched at pickup and completion only.
+    The key keeps its `T-####` shape, so nothing that recognises a ticket by its
+    `LETTERS-digits` form needed changing — no Python moved for this release.
+    It is also the reason this mode, alone among the non-file trackers, keeps
+    `.work/INDEX.md`: the session brief finds the open ticket by reading that
+    file, and `SDP-40219` was never going to be in it while `T-0042` can be. So
+    the Obsidian tracker closes a blind spot Jira and SDP still have.
+  - **Five lanes, and dragging a card is how status changes.** Backlog, Ready,
+    In Progress, Review, Done, renameable via `obsidian.columns`. On pull the
+    card's lane wins for status and the note wins for content; on push crew
+    writes both. That rule is stated because both sides here are local markdown
+    and both look equally authoritative, which makes the divergence hazard
+    *worse* than Jira's rather than absent. `/crew:obsidian-sync` refuses to
+    fall back to file tickets for the same reason `/crew:jira-sync` does.
+  - **The board is edited in place, never regenerated.** Three parts are
+    load-bearing and a naive rewrite destroys all three, after which the file
+    silently opens as plain text instead of a board: the `kanban-plugin: board`
+    frontmatter, the trailing `%% kanban:settings` block, and the `**Complete**`
+    marker in the done lane. An archive sits below a `***` break under
+    `## Archive` and is left alone. Format verified against the plugin's own
+    parser at 2.0.51, not reconstructed from memory.
+  - **New command `/crew:obsidian-sync <T-####> [--push]`**, argument shape
+    identical to the other two syncs. 21 commands now; `validate-prompts.py` is
+    at 110 checks.
+
+  Two things the docs say plainly rather than leaving to be discovered: the
+  vault lives outside the repo, so ticket state does not travel with a branch
+  and is not on a colleague's machine — that is the trade for a board you can
+  drag cards on. And crew never commits the vault.
+
 ### Fixed
 
 - **`crew` 0.9.1 - two test-suite defects, both found by CI rather than by

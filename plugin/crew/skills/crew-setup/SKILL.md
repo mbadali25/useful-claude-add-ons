@@ -68,11 +68,15 @@ collision it fixes.
 Do not ask more. Everything else has a sane default and can change later.
 
 1. **QA reviewer:** Codex (detected/not detected) or Claude fallback?
-2. **Tickets:** local files, Jira, or ServiceDesk Plus? Offer the last two only
-   when their MCP tools are actually reachable - `mcp__atlassian__*` /
-   `sdp_*`. Offering a tracker that cannot connect produces a repo configured
-   for an API nobody can call, and every later command stops on the same
-   missing precondition.
+2. **Tickets:** local files, Jira, ServiceDesk Plus, or an Obsidian Kanban
+   board? Offer Jira and ServiceDesk Plus only when their MCP tools are
+   actually reachable - `mcp__atlassian__*` / `sdp_*`. Offering a tracker that
+   cannot connect produces a repo configured for an API nobody can call, and
+   every later command stops on the same missing precondition.
+   Obsidian has a different gate and needs a different question: there is no
+   connector to probe, so what has to resolve is a **vault directory on this
+   machine**. Offer it only when the user can name one, and check it exists
+   before writing it down.
 3. **Memory:** repo-local `.crew/` or an Obsidian vault path?
 
 ## 3. Create
@@ -81,9 +85,9 @@ Do not ask more. Everything else has a sane default and can change later.
 .crew/config.json          # the switchboard — every command reads this
 .crew/metrics.md           # header row only; /crew:review appends
 .crew/codemap/INDEX.md     # empty until /crew:onboard runs
-.work/INDEX.md             # files mode
+.work/INDEX.md             # files and obsidian modes
 .work/tickets/             # files mode
-.work/cache/               # jira and sdp modes
+.work/cache/               # jira, sdp and obsidian modes
 _verify/                   # from template, NOT filled in
   README.md                # layout + status tables
   smoke.sh                 # fast and shallow
@@ -104,6 +108,7 @@ CLAUDE.md                  # created if absent; if present, sections APPENDED, n
   "tracker": "files",
   "jira": { "project": null },
   "sdp": { "portal": null, "noteVisibility": "private", "closeOnDone": false },
+  "obsidian": { "vaultPath": null, "boardDir": null, "board": "Board.md", "columns": { "backlog": "Backlog", "ready": "Ready", "inProgress": "In Progress", "review": "Review", "done": "Done" } },
   "memory": { "mode": "repo", "vaultPath": null },
   "verifyGate": true,
   "context": { "enabled": true, "warnAt": 0.8, "budgetTokens": null, "reserveTokens": 100000, "handoffPath": ".work/HANDOFF.md", "keepTranscripts": 5 },
@@ -177,6 +182,75 @@ Only if the user chose ServiceDesk Plus.
 Tell them the local key is `SDP-<id>`, not the bare request number: the rest of
 crew - the session brief, `/crew:work`, the index - recognises a ticket by its
 `LETTERS-digits` shape, and a bare number is invisible to all of it.
+
+## 3d. Obsidian Kanban only — resolve the vault, then create the board
+
+Only if the user chose an Obsidian Kanban board. There is no connector to probe
+here, so the setup work is different in kind: it is proving a directory exists
+and creating one file correctly.
+
+1. Resolve the vault. Ask for the path, then confirm it exists and contains a
+   `.obsidian/` directory. A path that is merely a folder of markdown files
+   works for `memory`, but a Kanban board needs the plugin, which lives in the
+   vault. If `.obsidian/plugins/obsidian-kanban/` is absent, say so - the board
+   file will still be written correctly, it will just render as plain markdown
+   until they install the plugin from Community Plugins.
+2. Write `obsidian.vaultPath`. Leave it `null` only if it is the same vault as
+   `memory.vaultPath`, which the sync command falls back to.
+3. Write `obsidian.boardDir` as `Boards/<repo-name>` unless the user wants
+   somewhere else. One folder per repo, holding the board and its ticket notes,
+   so cards can be `[[T-0042]]` wikilinks that resolve and the graph view is
+   useful. A single shared board across repos is possible and is not the
+   default - lanes get crowded and cross-repo tickets mix.
+4. Create the board file, `<boardDir>/<board>`, with the five lanes. Get the
+   format right the first time; the three load-bearing parts are the
+   frontmatter, the trailing settings block, and the `**Complete**` marker:
+
+````markdown
+---
+
+kanban-plugin: board
+
+---
+
+## Backlog
+
+
+## Ready
+
+
+## In Progress
+
+
+## Review
+
+
+## Done
+
+**Complete**
+
+
+
+
+%% kanban:settings
+```
+{"kanban-plugin":"board"}
+```
+%%
+````
+
+5. Set `tracker: "obsidian"` and create `.work/cache/`.
+
+Say two things plainly before finishing:
+
+- **The vault is the remote, and crew does not commit it.** The board and the
+  ticket notes live outside the repo, so ticket state does not travel with a
+  branch and is not on a colleague's machine. That is the trade for being able
+  to drag a card. If the vault is its own git repo, its history is theirs to
+  manage.
+- **Dragging a card is how status changes.** On pull the lane wins; on push
+  crew writes the lane. `/crew:obsidian-sync` is the only thing that should
+  touch the board, and only at pickup and completion.
 
 ## 3a. Record the platform
 

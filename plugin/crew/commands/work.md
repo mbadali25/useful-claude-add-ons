@@ -12,13 +12,18 @@ send one line - this is the `done` event:
 Only after the checks pass. "Done" that means "I stopped typing" is the reason
 nobody trusts a notification channel.
 
-1. Read the ticket. Files mode: `.work/tickets/$1.md`. Jira and ServiceDesk Plus
-   mode: `.work/cache/$1.md`, and if it is missing run `/crew:jira-sync $1` or
-   `/crew:sdp-sync $1` first. Do NOT read INDEX.md or any other ticket.
+1. Read the ticket. Files mode: `.work/tickets/$1.md`. Jira, ServiceDesk Plus
+   and Obsidian Kanban mode: `.work/cache/$1.md`, and if it is missing run
+   `/crew:jira-sync $1`, `/crew:sdp-sync $1` or `/crew:obsidian-sync $1` first.
+   Do NOT read INDEX.md or any other ticket.
 2. If Scope is unclear or "Done when" is not observable, stop and ask me.
 3. Use the `crew:explorer` subagent to locate the code. Do not grep yourself.
 4. Plan mode. Show me the plan before editing.
-5. Implement the smallest change that satisfies Done.
+5. Implement the smallest change that satisfies Done. In Obsidian Kanban mode,
+   set `status: in-progress` in `.work/cache/$1.md` and run
+   `/crew:obsidian-sync $1 --push` first — that command reads the status from
+   the cache and moves the card, and a board nobody moves is a board nobody
+   trusts.
 6. Verify. If `.crew/verify.json` exists, run the checks your changed paths map
    to (the Stop hook enforces this anyway; running it yourself is faster feedback).
    Otherwise `./_verify/smoke.sh`. On failure, fix and rerun. Never proceed past
@@ -44,7 +49,12 @@ nobody trusts a notification channel.
 12. Update ticket status and a one-line Result. Files mode: edit the ticket and
     its INDEX line. Jira mode: `/crew:jira-sync $1 --push`. ServiceDesk Plus mode:
     `/crew:sdp-sync $1 --push` - which writes one note and transitions the
-    request, and does not close it unless `sdp.closeOnDone` says to.
+    request, and does not close it unless `sdp.closeOnDone` says to. Obsidian
+    Kanban mode: set `status: done` in `.work/cache/$1.md`, then
+    `/crew:obsidian-sync $1 --push` - which moves the card to the done lane and
+    appends one note to the ticket note in the vault - and then edit the INDEX
+    line too, the way files mode does. Obsidian mode keeps an INDEX because its
+    keys are `T-####`, which the session brief can read.
 
 13. Delete `.work/HANDOFF.md` if it exists. A stale handoff gets injected into
     every later session as though it were current, and that session has no way

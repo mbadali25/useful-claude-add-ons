@@ -6,7 +6,7 @@
 #
 # This proves the MECHANISM end to end - detection, scaffolding, the CLAUDE.md
 # audit, the smoke and regression runners, tool resolution, and all three gates.
-# It does NOT prove the prompts: the 18 commands and 10 agents are instructions
+# It does NOT prove the prompts: the 21 commands and 10 agents are instructions
 # to a model, and only a live session exercises those. validate-prompts.py
 # checks their structure; nothing here checks their judgement.
 set -uo pipefail

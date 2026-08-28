@@ -129,6 +129,10 @@ sent to review does not parse. Unblocking the current job is finishing the job.
 | A tracker configured (`tracker` is set in `.crew/config.json`) | A ticket — `/crew:ticket <description>` |
 | No tracker | A line in `TODO.md`, with the reason it was deferred |
 
+Under `tracker: "obsidian"` the ticket goes to the `backlog` lane rather than
+`ready`: you deferred it, so it is not scoped and nobody should pick it up as
+though it were.
+
 If `TODO.md` does not exist, create it. A deferred finding with no reason
 recorded is indistinguishable from one nobody noticed, and in three weeks
 neither of you will remember which it was.
