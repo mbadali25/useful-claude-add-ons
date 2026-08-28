@@ -64,8 +64,8 @@
     {
       "name": "crew",
       "source": "./plugin/crew",
-      "description": "Virtual dev team for multi-repo legacy work - 10 context-isolated agents, 21 slash commands, 16 bundled skills, and deterministic hooks that block unsafe commands, gate unverified turns, brief the PM at session start, re-engage it to assign work when project state changes, and carry a handoff across compaction.",
-      "version": "0.10.0"
+      "description": "Virtual dev team for multi-repo legacy work - 10 context-isolated agents, 21 slash commands, 16 bundled skills, and deterministic hooks that block unsafe commands, gate unverified turns, brief the PM at session start, re-engage it to assign work when project state changes, carry a handoff across compaction, recreate a missing or broken .crew/config.json from a single-source template, and layer an optional machine-global config under the per-repo one.",
+      "version": "0.11.3"
     },
     {
       "name": "drata",
@@ -108,6 +108,12 @@
       "source": "./skills/obsidian-canvas",
       "description": "Create and edit Obsidian Canvas (.canvas) files directly as JSON Canvas - architecture maps, decision trees, and boards with embedded live notes, groups, and labeled arrows; no plugin or REST bridge required.",
       "version": "1.1.0"
+    },
+    {
+      "name": "obsidian-vault",
+      "source": "./plugin/obsidian-vault",
+      "description": "Make one or more Obsidian vaults Claude Code's durable, token-efficient memory - cross-platform, multi-vault setup and health checks for the Local REST API bridge (one MCP server per vault), an off-by-default vault contract guard, gardening and reflection agents, canvas and map-of-content generation, and graphify wiring into a separate codegraphs vault.",
+      "version": "0.1.2"
     },
     {
       "name": "obsidian-vault-server",

@@ -97,7 +97,23 @@ docs/adr/0001-adopt-crew.md
 CLAUDE.md                  # created if absent; if present, sections APPENDED, never overwritten
 ```
 
-`config.json`:
+`config.json` — this JSON is a COPY, kept here for a human reading the skill.
+It is not the source of truth: `${CLAUDE_PLUGIN_ROOT}/templates/config.template.json`
+is, and that file is generated from `hooks/scripts/crew_config.py`'s
+`default_config()`, which in turn pulls the `pm` and `graph` blocks straight
+from `crew_state.PM_DEFAULTS` and `crew_upgrade.GRAPH_BLOCK` rather than
+duplicating them a third time. A committed test asserts the template equals
+`default_config()`'s output byte-for-byte, so this file drifting from either
+one fails CI instead of shipping quietly. Copy the template, not this prose,
+when actually creating `config.json`.
+
+`/crew:init` writes this file; it never writes the optional machine-global
+one at `~/.claude/crew/config.json`. If that file exists it sets defaults for
+every crew repo on this machine, with the repo file you are about to write
+taking precedence over it — see "Global config, and how it layers with the
+repo file" in `README.md` §11. Nothing in setup creates the global file; a
+user who wants one writes it by hand.
+
 ```json
 {
   "schema": 2,
@@ -116,16 +132,19 @@ CLAUDE.md                  # created if absent; if present, sections APPENDED, n
   "notify": { "provider": "none", "urlEnv": null, "tokenEnv": null, "chatId": null, "events": ["phase", "gate", "waiting"] },
   "platform": { "os": null, "wsl": null, "shell": null, "windowsHostIp": null },
   "pm": { "enabled": true, "mode": "adaptive", "quietLines": 8, "maxLines": 40, "authority": "report-only", "maxDispatches": 3 },
-  "graph": { "enabled": true, "tool": "graphify", "out": "graphify-out", "mode": "code-only", "commitHook": false, "obsidian": { "enabled": false, "dir": null, "confirmed": false } }
+  "graph": { "enabled": true, "tool": "graphify", "out": "graphify-out", "mode": "code-only", "commitHook": false, "obsidian": { "enabled": false, "dir": null, "layout": "flat", "confirmed": false } }
 }
 ```
 
 `schema: 2` — this repo is born current. It never trips `upgradeNeeded`, which fires only
-when a config predates the `pm` and `graph` blocks. The `pm` and `graph` blocks above must
-match `crew_state.PM_DEFAULTS` and `crew_upgrade.GRAPH_BLOCK` exactly — those modules are
-the source of truth; this template is a copy of them, not the other way around.
+when a config predates the `pm` and `graph` blocks.
 `qa.provider`: `auto` uses Codex when present and falls back to Claude, announcing
 which ran. Use `codex` to hard-fail instead of falling back, `claude` to force it.
+
+If `.crew/` exists but `config.json` went missing or stopped parsing, you do not
+need to recreate it by hand — the `platform-sync` `SessionStart` hook already
+does, using this same template, the next time the repo is opened. See
+"The config heals itself" in `README.md` §3.
 
 Leave `platform` as nulls. The `platform-sync` `SessionStart` hook fills it in
 on the first run and repairs it whenever the repo is opened on a different OS -

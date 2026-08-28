@@ -89,6 +89,104 @@ All notable changes to this repository are documented here. Format follows [Keep
   `scripts/check-powershell.ps1` — a typo'd call is caught (the checker's AST
   walk recurses into nested scriptblocks) — so it was left in place rather
   than moved to the top level.
+- **New plugin `obsidian-vault` 0.1.1 - one or more Obsidian vaults as Claude
+  Code's durable, token-efficient memory.** Cross-platform
+  (Windows/Linux/macOS), no vault path hardcoded, and **multi-vault by
+  design**: `~/.claude/obsidian/config.json` models named vaults
+  (`vaults: { memory: {...}, codegraphs: {...} }`) because a machine-generated
+  vault (a `graphify` code-graph export) commonly runs into the hundreds of
+  thousands of notes on the same machine as a hand-curated one, on its own
+  Local REST API port - so this plugin registers one MCP server per vault,
+  never one server juggling two, and applies the frontmatter/ASCII/canvas
+  contract guard only to the default vault.
+
+  `/obsidian-vault:init` sets up the Local REST API bridge and per-vault MCP
+  registration; `bridge-status`, `vault-guard`, and `vault-capture` hooks
+  (each a `.sh`/`.ps1` pair sharing one Python module) probe every configured
+  vault's bridge at session start, enforce the configurable contract on edit
+  (every check OFF by default), and queue sessions for gardening.
+  `obsidian-vault:gardener` and `obsidian-vault:reflector` agents distill and
+  recall, with an explicit rule against fabricating a citation.
+  `/obsidian-vault:canvas` and `/obsidian-vault:map` generate structural aids;
+  `/obsidian-vault:graph` builds (`graphify . --no-viz --code-only`) and
+  exports (`graphify export obsidian`, a separate subcommand - `--obsidian` on
+  the build command is silently ignored) into a dedicated codegraphs vault
+  laid out `<org>/<repo>/`, with a stub note left in the default vault. Ships
+  with a committed, sabotage-tested regression suite for the one blocking hook
+  (12 cases; the ASCII check was disabled once during development to confirm
+  the suite goes red).
+
+  **Named `obsidian-vault`, not `obsidian`**, specifically to avoid colliding
+  with a third-party plugin already named plainly `obsidian` (from the
+  `obsidian-skills` marketplace, wired into `install-prerequisites.sh` item
+  18). `vault-automation/` (Windows-only prior art for the same
+  capture/gardener idea) is marked superseded in its own README pointing here,
+  but its scripts are left in place because the root `README.md` still
+  documents them as a runnable quickstart. `claude-obsidian-setup/` targets a
+  different thing - vault creation for the third-party `claude-obsidian`
+  plugin's own conventions - and was left untouched. See
+  `plugin/obsidian-vault/README.md`'s "Related" section for the full
+  accounting.
+- **`crew` 0.11.3 - config becomes two layers: an optional machine-global
+  file plus the per-repo one.** `~/.claude/crew/config.json`, written by
+  hand (no command creates it), sets defaults for every crew repo on the
+  machine; the repo's own `.crew/config.json` still wins where both set the
+  same thing. Merged one level deep with the same policy `/crew:upgrade`
+  already used to bring a v1 config's `pm` and `graph` blocks forward - now
+  named `crew_state.merge_defaults` and shared by both, instead of a second
+  implementation that could quietly diverge. A malformed global file is
+  treated exactly like an absent one and never touched. Two things
+  deliberately skip this layering: `schema`, which is a fact about the repo
+  file's own version and would otherwise look current the moment any global
+  file exists; and the heal path plus `platform-sync`, which write only the
+  repo file, always.
+
+  - **crew-graph's Obsidian export gets a configurable target layout.**
+    `graph.obsidian.layout` is `"flat"` (default, unchanged behaviour -
+    `graph.obsidian.dir` is the export target verbatim) or `"org/repo"`
+    (`dir` is a per-org folder and the skill appends `/<repo>` under it, for
+    a vault laid out as `<vault>/<org>/<repo>/`). The export subcommand
+    syntax and the `graph.obsidian.confirmed` consent gate are unchanged.
+  - **0.11.1 -> 0.11.2:** CI caught a pylint `consider-using-dict-items` in
+    a test, and fixing it exposed a real cyclic import between
+    `crew_state` and `crew_config` (the first draft of this layering had
+    `crew_state.collect` reach back into `crew_config` to resolve the
+    global layer). `collect()` now takes the resolved config as a plain
+    `cfg_override` argument; `crew_config.layered_state(root)` is the new
+    composition point that supplies one. `pylint $(git ls-files '*.py')`
+    exits `0`.
+  - **0.11.2 -> 0.11.3, three QA guard gaps:** `hook_once.claim()` no
+    longer fails open when `session_id` is absent - it derives a
+    calendar-day fallback key instead, so the `.sh`/`.ps1` pair can no
+    longer race a duplicate write when the payload happens to carry no
+    session id. `resolve_config()` now exempts `schema` structurally
+    rather than by caller discipline - a global file carrying one can no
+    longer leak into an unmigrated v1 repo's resolved config. And the
+    template-drift test now also covers the inline JSON copy in
+    `crew-setup/SKILL.md`, extracted and compared parsed rather than
+    byte-wise, so a field added to `default_config()` and forgotten in
+    the doc fails CI too.
+
+- **`crew` 0.11.0 - `.crew/config.json` recreates itself when it goes missing
+  or stops parsing.** The `platform-sync` `SessionStart` hook, which already
+  repaired the `platform` block, now also recreates the whole file: missing
+  or empty gets fresh defaults straight away, a present-but-malformed file
+  gets copied aside to `config.json.broken` first (never overwriting an
+  earlier `.broken` from a prior bad session), and anything that already
+  parses as an object is left alone byte for byte. **Guard: only where
+  `.crew/` already exists** - a plain git repo with no crew setup is never
+  colonized just because a session opened in it. Recreating the file resets
+  every human choice - `tracker`, `roles`, `tier`, and the rest - back to
+  defaults, and the one-line report says so and points at `/crew:init` to
+  re-record them.
+
+  - **One source for the defaults, not three.** `hooks/scripts/crew_config.py`
+    is the new module that owns `default_config()`, built from
+    `crew_state.PM_DEFAULTS`, `crew_upgrade.GRAPH_BLOCK`, and
+    `crew_state.SCHEMA_CURRENT` rather than a fourth hand-copied literal. The
+    committed template `templates/config.template.json` - what `/crew:init`
+    writes - and the heal path both call it, and a test asserts the template
+    equals its output byte-for-byte so the two can never quietly drift apart.
 
 - **`crew` 0.10.0 - an Obsidian Kanban board is now a fourth ticket tracker,
   alongside `files`, `jira` and `sdp`.** Set `tracker: "obsidian"` and point

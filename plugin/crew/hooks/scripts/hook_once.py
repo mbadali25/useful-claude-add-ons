@@ -60,11 +60,22 @@ def claim(root, hook, session):
     Returns True when there is nowhere to put a marker -- a repo with no
     .crew/ is not a crew repo, and the caller will no-op on its own. Failing
     open here keeps the decision in one place.
+
+    A missing `session` does NOT fail open. An earlier version of this
+    returned True unconditionally when `session` was falsy, on the theory
+    that running twice is bad but never running is worse -- but "no scope"
+    is not the same as "no guarantee". The .sh and .ps1 flavours of a hook
+    both fire for the same event, and if the payload happens to carry no
+    session id, failing open let both of them race a write with nothing to
+    stop it -- exactly the double-fire this module exists to prevent. A
+    calendar-day key is used instead: coarser than a real session id (two
+    genuinely separate no-session invocations on the same day only get the
+    first one), but it still lets the FIRST caller through and still runs
+    again on the next day, rather than going silent forever the way a
+    single persistent fallback key would.
     """
     if not session:
-        # No session id means no way to scope the claim. Running twice is bad;
-        # never running is worse, so let it through.
-        return True
+        session = "nosession-" + time.strftime("%Y%m%d")
     dirpath = os.path.join(root, ".crew")
     if not os.path.isdir(dirpath):
         return True
