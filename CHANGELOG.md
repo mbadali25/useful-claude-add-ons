@@ -6,7 +6,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
-- **`crew` 0.11.2 - config becomes two layers: an optional machine-global
+- **`crew` 0.11.3 - config becomes two layers: an optional machine-global
   file plus the per-repo one.** `~/.claude/crew/config.json`, written by
   hand (no command creates it), sets defaults for every crew repo on the
   machine; the repo's own `.crew/config.json` still wins where both set the
@@ -34,6 +34,17 @@ All notable changes to this repository are documented here. Format follows [Keep
     `cfg_override` argument; `crew_config.layered_state(root)` is the new
     composition point that supplies one. `pylint $(git ls-files '*.py')`
     exits `0`.
+  - **0.11.2 -> 0.11.3, three QA guard gaps:** `hook_once.claim()` no
+    longer fails open when `session_id` is absent - it derives a
+    calendar-day fallback key instead, so the `.sh`/`.ps1` pair can no
+    longer race a duplicate write when the payload happens to carry no
+    session id. `resolve_config()` now exempts `schema` structurally
+    rather than by caller discipline - a global file carrying one can no
+    longer leak into an unmigrated v1 repo's resolved config. And the
+    template-drift test now also covers the inline JSON copy in
+    `crew-setup/SKILL.md`, extracted and compared parsed rather than
+    byte-wise, so a field added to `default_config()` and forgotten in
+    the doc fails CI too.
 
 - **`crew` 0.11.0 - `.crew/config.json` recreates itself when it goes missing
   or stops parsing.** The `platform-sync` `SessionStart` hook, which already
