@@ -1,9 +1,7 @@
 """Tests for the crew state reader."""
-import json
 import subprocess
 
 import context  # noqa: F401  pylint: disable=unused-import
-import crew_config
 import crew_fixtures
 import crew_state
 
@@ -530,65 +528,53 @@ def test_collect_reads_pm_block_defaults(tmp_path):
     assert pm["maxLines"] == 40
 
 
-# --- Global config layering (crew_config.resolve_config, applied here) ----
+# --- collect()'s cfg_override (crew_config.layered_state builds this) -----
+#
+# These test collect()'s own mechanic in isolation, with a plain dict passed
+# directly -- no crew_config import here at all. crew_state must not depend
+# on crew_config (which itself depends on crew_state for PM_DEFAULTS and
+# SCHEMA_CURRENT), or the two modules import each other -- a real cyclic
+# import, not a stylistic one. End-to-end coverage of the actual global-file
+# layering lives in test_crew_config.py, against crew_config.layered_state.
 
 
-def _global(tmp_path, monkeypatch, contents):
-    path = tmp_path / "global-config.json"
-    path.write_text(json.dumps(contents), encoding="utf-8")
-    monkeypatch.setattr(crew_config, "GLOBAL_CONFIG_PATH", str(path))
-    return path
-
-
-def test_collect_applies_a_global_override_for_a_crew_repo(tmp_path, monkeypatch):
-    _global(tmp_path, monkeypatch, {"pm": {"maxDispatches": 9}})
+def test_collect_cfg_override_replaces_settings_for_a_crew_repo(tmp_path):
     root = crew_fixtures.make_repo(
         tmp_path, config={"schema": 2, "tier": 0, "roles": []})
 
-    got = crew_state.collect(str(root))
+    got = crew_state.collect(str(root), cfg_override={"pm": {"maxDispatches": 9}})
 
     assert got["isCrew"] is True
     assert got["pm"]["maxDispatches"] == 9
 
 
-def test_collect_never_lets_a_global_file_make_a_plain_repo_crew(
-        tmp_path, monkeypatch):
-    """A global config existing on the machine must not make every git repo
-    without a .crew/ of its own look crew-managed, or pick up crew-repo
-    settings it never opted into."""
-    _global(tmp_path, monkeypatch, {"tracker": "jira", "pm": {"maxDispatches": 9}})
+def test_collect_ignores_cfg_override_for_a_non_crew_directory(tmp_path):
+    """An override must never make a plain git repo with no .crew/ of its
+    own look crew-managed, or pick up settings it never opted into."""
     plain = tmp_path / "plain"
     plain.mkdir()
 
-    got = crew_state.collect(str(plain))
+    got = crew_state.collect(
+        str(plain), cfg_override={"tracker": "jira", "pm": {"maxDispatches": 9}})
 
     assert got["isCrew"] is False
     assert got["tracker"] is None
     assert got["triggers"] == []
 
 
-def test_collect_schema_is_not_masked_by_the_global_layer(tmp_path, monkeypatch):
+def test_collect_schema_is_not_affected_by_cfg_override(tmp_path):
     """schema is a fact about the repo file's own layout, not a setting --
-    resolve_config's built-in-defaults layer always supplies SCHEMA_CURRENT,
-    so reading `schema` from the merged config would hide an unmigrated v1
-    repo the moment any global file exists at all."""
-    _global(tmp_path, monkeypatch, {"pm": {"maxDispatches": 9}})
+    an override supplying one (as a fully-merged effective config always
+    would) must not hide an unmigrated v1 repo."""
     root = crew_fixtures.make_repo(tmp_path, config={"tier": 0, "roles": []})
 
-    got = crew_state.collect(str(root))
+    got = crew_state.collect(str(root), cfg_override={"schema": 2, "pm": {}})
 
     assert got["schema"] == 1
     assert "upgradeNeeded" in got["triggers"]
 
 
-def test_collect_survives_a_malformed_global_file(tmp_path, monkeypatch):
-    path = tmp_path / "global-config.json"
-    path.write_text("{ not json", encoding="utf-8")
-    monkeypatch.setattr(crew_config, "GLOBAL_CONFIG_PATH", str(path))
-    root = crew_fixtures.make_repo(
-        tmp_path, config={"schema": 2, "tier": 0, "roles": []})
-
-    got = crew_state.collect(str(root))
-
-    assert got["isCrew"] is True
-    assert got["pm"]["maxDispatches"] == 3  # built-in default, global ignored
+def test_collect_with_no_override_behaves_as_before(tmp_path):
+    root = crew_fixtures.make_repo(tmp_path, config={"schema": 2})
+    assert crew_state.collect(str(root)) == crew_state.collect(
+        str(root), cfg_override=None)

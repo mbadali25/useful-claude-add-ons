@@ -186,3 +186,77 @@ def test_heal_writes_the_repo_file_not_the_global_one(tmp_path, monkeypatch):
     # The repo file gets built-in defaults, NOT the global tracker override --
     # heal_config calls default_config(), never resolve_config().
     assert written["tracker"] == "files"
+
+
+# --- layered_state: the collect() + resolve_config composition point ------
+#
+# crew_state.collect takes a plain cfg_override argument rather than
+# importing this module itself -- crew_config already imports crew_state,
+# so the reverse would be a real cyclic import. layered_state is where the
+# two are actually wired together; these tests exercise that end to end,
+# the way pm_brief.py's SessionStart brief does.
+
+
+def test_layered_state_applies_a_global_override_for_a_crew_repo(tmp_path, monkeypatch):
+    _global(tmp_path, monkeypatch, contents={"pm": {"maxDispatches": 9}})
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"schema": 2, "tier": 0, "roles": []})
+
+    got = crew_config.layered_state(str(root))
+
+    assert got["isCrew"] is True
+    assert got["pm"]["maxDispatches"] == 9
+
+
+def test_layered_state_never_lets_a_global_file_make_a_plain_repo_crew(
+        tmp_path, monkeypatch):
+    _global(tmp_path, monkeypatch,
+           contents={"tracker": "jira", "pm": {"maxDispatches": 9}})
+    plain = tmp_path / "plain"
+    plain.mkdir()
+
+    got = crew_config.layered_state(str(plain))
+
+    assert got["isCrew"] is False
+    assert got["tracker"] is None
+    assert got["triggers"] == []
+
+
+def test_layered_state_schema_is_not_masked_by_the_global_layer(tmp_path, monkeypatch):
+    """resolve_config's built-in-defaults layer always supplies
+    SCHEMA_CURRENT, so schema must come from the raw repo file regardless --
+    an unmigrated v1 repo must not read as current just because a global
+    file exists on the machine."""
+    _global(tmp_path, monkeypatch, contents={"pm": {"maxDispatches": 9}})
+    root = crew_fixtures.make_repo(tmp_path, config={"tier": 0, "roles": []})
+
+    got = crew_config.layered_state(str(root))
+
+    assert got["schema"] == 1
+    assert "upgradeNeeded" in got["triggers"]
+
+
+def test_layered_state_survives_a_malformed_global_file(tmp_path, monkeypatch):
+    path = tmp_path / "global-config.json"
+    path.write_text("{ not json", encoding="utf-8")
+    monkeypatch.setattr(crew_config, "GLOBAL_CONFIG_PATH", str(path))
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"schema": 2, "tier": 0, "roles": []})
+
+    got = crew_config.layered_state(str(root))
+
+    assert got["isCrew"] is True
+    assert got["pm"]["maxDispatches"] == 3  # built-in default, global ignored
+
+
+def test_layered_state_fills_in_a_built_in_default_the_raw_repo_file_omits(
+        tmp_path):
+    """With no global file, layered_state still differs from plain
+    crew_state.collect for a repo config that omits a key -- resolve_config
+    fills it from the built-in default, where raw collect() would report
+    None. That is the layering working, not a bug to reconcile away."""
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"schema": 2, "tier": 0, "roles": []})  # no tracker
+
+    assert crew_state.collect(str(root))["tracker"] is None
+    assert crew_config.layered_state(str(root))["tracker"] == "files"

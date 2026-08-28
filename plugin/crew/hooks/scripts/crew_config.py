@@ -183,3 +183,25 @@ def resolve_config(root):
     """
     merged = crew_state.merge_defaults(default_config(), read_global_config())
     return crew_state.merge_defaults(merged, crew_state.load_config(root))
+
+
+def layered_state(root):
+    """`crew_state.collect(root)`, with settings layered per `resolve_config`
+    wherever the repo is already crew-managed.
+
+    Composing "what is the repo's raw state" (`crew_state.collect`, which
+    this module already depends on for `PM_DEFAULTS` and `SCHEMA_CURRENT`)
+    with "what is the effective config" (`resolve_config`, above) has to
+    happen up here, not inside `crew_state.collect` itself -- `crew_state`
+    must not import this module, or the two modules import each other, a
+    real cyclic import rather than a stylistic one. `collect` takes the
+    resolved config as a plain `cfg_override` argument instead; it ignores
+    the override for anything it does not recognise as crew-managed, so
+    computing `resolve_config` here unconditionally costs nothing on a plain
+    repo and needs no `isCrew` check of its own.
+
+    Every caller that wants a config-layered brief -- `pm_brief.py`, and
+    anything else that would otherwise call `crew_state.collect` directly --
+    should call this instead.
+    """
+    return crew_state.collect(root, cfg_override=resolve_config(root))

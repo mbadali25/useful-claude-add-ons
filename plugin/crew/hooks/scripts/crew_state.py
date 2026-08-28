@@ -578,29 +578,31 @@ def evaluate_triggers(state):
     return [name for name in TRIGGERS if fired[name]]
 
 
-def collect(root):
-    """Full crew state for a repository. Never raises."""
+def collect(root, cfg_override=None):
+    """Full crew state for a repository. Never raises.
+
+    `cfg_override`, when given, replaces the config used for every SETTING
+    below -- `pm`, `tier`, `roles`, `tracker`, `knowledge`, `diagrams` -- but
+    never for `schema` or `isCrew`, both facts about the repo's own
+    `.crew/config.json` that must not change depending on what is layered on
+    top of it. Ignored entirely for a directory this function does not
+    recognise as crew-managed: a plain git repo with no `.crew/` must not
+    pick up crew-repo settings (a global `graph.out`, say) it never opted
+    into, no matter what the caller passes.
+
+    This module has no knowledge of where an override comes from. That is
+    deliberate: `crew_config.layered_state` is what supplies one, built from
+    `crew_config.resolve_config` (repo overrides global overrides built-in
+    defaults) -- and `crew_config` already imports THIS module for
+    `PM_DEFAULTS` and `SCHEMA_CURRENT`. If this function reached back into
+    `crew_config` itself to build its own override, the two modules would
+    import each other, which is a real cyclic import, not a stylistic one --
+    pylint's `cyclic-import` check flags exactly this. Taking the override as
+    a plain argument keeps the dependency one-directional.
+    """
     raw_cfg = load_config(root)
     is_crew = bool(raw_cfg)
-    cfg = raw_cfg
-    if is_crew:
-        # Layer in a machine-global config, if any -- crew_config owns that
-        # resolution (repo overrides global overrides built-in defaults).
-        # Only for a repo that already has its own config: a global file
-        # must never make a plain git repo with no .crew/ look crew-managed,
-        # or apply crew-repo settings (a global graph.out, say) to one that
-        # never opted in.
-        #
-        # Imported lazily rather than at module level to avoid a circular
-        # import -- crew_config imports THIS module for PM_DEFAULTS and
-        # SCHEMA_CURRENT -- and guarded because this module runs from a
-        # SessionStart hook that must never raise: a broken global layer or
-        # a broken import degrades to the repo file alone, never the session.
-        try:
-            import crew_config  # pylint: disable=import-outside-toplevel
-            cfg = crew_config.resolve_config(root)
-        except Exception:  # pylint: disable=broad-except
-            cfg = raw_cfg
+    cfg = cfg_override if (is_crew and cfg_override is not None) else raw_cfg
     pm = dict(PM_DEFAULTS)
     supplied = cfg.get("pm")
     if isinstance(supplied, dict):

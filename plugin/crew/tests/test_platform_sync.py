@@ -505,10 +505,10 @@ def test_main_recreates_a_missing_config_and_reports_it(
     # by the time the file is read back -- everything else must still match
     # the defaults heal_config wrote.
     default = crew_config.default_config()
-    for key in default:
+    for key, value in default.items():
         if key == "platform":
             continue
-        assert written[key] == default[key], key
+        assert written[key] == value, key
 
 
 def test_main_does_not_create_crew_in_a_plain_repo(tmp_path, monkeypatch, capsys):

@@ -441,12 +441,11 @@ def main(argv=None):
         pass
 
     try:
-        state = crew_state.collect(root)
+        # layered_state applies the global config layer only for a repo it
+        # recognises as crew-managed -- never for a plain git repo with no
+        # .crew/, which must not inherit settings from someone's global file.
+        state = crew_config.layered_state(root)
         lines = render(state)
-        # Layered (repo overrides global overrides defaults) settings, but
-        # only for a repo collect() already recognised as crew-managed --
-        # never for a plain git repo with no .crew/, which must not inherit
-        # autoResume or a handoff path from someone's global config.
         cfg = crew_config.resolve_config(root) if state.get("isCrew") else {}
         resume = _resume_context(root, cfg, lines)
         if resume is not None:
