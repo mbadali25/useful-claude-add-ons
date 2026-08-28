@@ -398,6 +398,290 @@ echo "$OUT" | grep -qE '^ruff '      && pass || fail "resolve-tools: bash _verif
 echo "$OUT" | grep -qE '^sqlcmd '    && pass || fail "resolve-tools: bash -x \"quoted path\" should surface sqlcmd  ($OUT)"
 rm -rf "$RD"
 
+# ---------------------------------------------------------------------------
+# pm_pulse.py -- a BLOCKING Stop hook, so it owes must-block/must-allow cases.
+#
+# The failure that matters most is not a missed finding, it is a LOOP: a Stop
+# hook that blocks unconditionally never lets a turn end, and the user cannot
+# fix it from inside the session. stop_hook_active is tested first for that
+# reason.
+#
+# SABOTAGE-TEST: delete the `if payload.get("stop_hook_active")` guard in
+# pm_pulse.py and confirm the first case below goes red.
+# ---------------------------------------------------------------------------
+echo "== pm_pulse.py: Stop hook =="
+
+pulse_payload() {  # $1 = cwd, $2 = session id, $3 = stop_hook_active (true/false)
+  "$PY" - "$1" "$2" "$3" <<'PYEOF'
+import sys, json
+print(json.dumps({
+    "cwd": sys.argv[1],
+    "session_id": sys.argv[2],
+    "stop_hook_active": sys.argv[3] == "true",
+}))
+PYEOF
+}
+
+pulse() {  # $1 = cwd, $2 = session, $3 = active -> echoes exit code
+  pulse_payload "$1" "$2" "$3" | "$PY" "$SCRIPTS/pm_pulse.py" >/dev/null 2>&1
+  echo $?
+}
+
+expect_pulse() {  # $1 = wanted exit, $2..$4 = cwd session active, $5 = label
+  local got; got=$(pulse "$2" "$3" "$4")
+  if [ "$got" = "$1" ]; then pass; else fail "pm_pulse: want=$1 got=$got  $5"; fi
+}
+
+PD=$(mktemp -d) || exit 1
+mkdir -p "$PD/.crew"
+# schema 2 keeps upgradeNeeded quiet; the absent graph is what fires graphStale,
+# which is a real, non-quiet trigger and therefore a legitimate reason to block.
+#
+# authority=act because the stderr-content assertions below are about the
+# work-order directive specifically. The exit-code cases above it are
+# authority-agnostic -- both directives block -- so this does not weaken them.
+printf '{"schema":2,"tier":1,"roles":["explorer"],"pm":{"authority":"act"}}\n' \
+  > "$PD/.crew/config.json"
+
+# MUST ALLOW: the loop guard. Same state that blocks below, but on a turn that
+# only exists because a Stop hook already blocked -- blocking again never ends.
+expect_pulse 0 "$PD" sess-loop true "stop_hook_active must never block"
+
+# MUST BLOCK: a crew repo with a real finding, first time this state is seen.
+expect_pulse 2 "$PD" sess-a false "graphStale should block once"
+
+# MUST ALLOW: the identical state a second time. This is the state-change gate
+# AND the cross-flavour de-duplicator -- .sh and .ps1 both fire on Stop, and
+# exactly one of them may speak per changed state.
+expect_pulse 0 "$PD" sess-a false "unchanged state must not block twice"
+
+# MUST ALLOW: not a crew repo at all. Every plain git checkout on the machine
+# would otherwise block on graphStale, because there is genuinely no graph.
+ND=$(mktemp -d) || exit 1
+expect_pulse 0 "$ND" sess-b false "non-crew directory must not block"
+rm -rf "$ND"
+
+# MUST ALLOW: the PM switched off in config. An off switch that still blocks
+# the end of every turn is not an off switch.
+DD=$(mktemp -d) || exit 1
+mkdir -p "$DD/.crew"
+printf '{"schema":2,"pm":{"enabled":false}}\n' > "$DD/.crew/config.json"
+expect_pulse 0 "$DD" sess-c false "pm.enabled false must not block"
+rm -rf "$DD"
+
+# MUST ALLOW: no session id. claim() fails CLOSED here (unlike hook_once), so
+# an unkeyable pulse stays silent rather than blocking every turn forever.
+expect_pulse 0 "$PD" "" false "missing session id must not block"
+
+# A block with empty stderr is a block that says nothing: the turn fails and
+# the model is told to continue with no reason. Exit code alone cannot catch
+# that, so assert the content -- through the WRAPPER, which is the path
+# hooks.json actually uses and the only one that proves `exec` propagates the 2.
+PERR="$PD/pulse-stderr.txt"
+pulse_payload "$PD" sess-stderr false | bash "$SCRIPTS/pm-pulse.sh" \
+  >/dev/null 2>"$PERR"
+PRC=$?
+[ "$PRC" = 2 ] && pass || fail "pm_pulse: wrapper must propagate exit 2 (got $PRC)"
+grep -q 'Crew PM' "$PERR" && pass || fail "pm_pulse: blocking stderr must name the PM"
+grep -q 'priorit' "$PERR" && pass \
+  || fail "pm_pulse: stderr must carry the user-priority override"
+grep -q 'graph' "$PERR" && pass \
+  || fail "pm_pulse: stderr must carry the actual finding, not just the directive"
+
+# pm.authority gates what the pulse TELLS the model to do. Leaking the `act`
+# directive into a report-only repo makes the switch a lie: config says "ask
+# me", hook says "go". Asserted through the wrapper, on real config files.
+AD=$(mktemp -d); mkdir -p "$AD/.crew"
+printf '{"schema":2,"pm":{"authority":"act"}}\n' > "$AD/.crew/config.json"
+pulse_payload "$AD" auth-act false | bash "$SCRIPTS/pm-pulse.sh" \
+  >/dev/null 2>"$AD/err.txt"
+grep -q 'Act on them' "$AD/err.txt" && pass \
+  || fail "pm_pulse: authority=act must send the work-order directive"
+grep -qv 'do NOT dispatch' "$AD/err.txt" && pass \
+  || fail "pm_pulse: authority=act must not send the report-only directive"
+
+RD2=$(mktemp -d); mkdir -p "$RD2/.crew"
+printf '{"schema":2,"pm":{"authority":"report-only"}}\n' > "$RD2/.crew/config.json"
+pulse_payload "$RD2" auth-ro false | bash "$SCRIPTS/pm-pulse.sh" \
+  >/dev/null 2>"$RD2/err.txt"
+grep -q 'do NOT dispatch' "$RD2/err.txt" && pass \
+  || fail "pm_pulse: authority=report-only must forbid dispatching"
+grep -q 'Act on them in the order given' "$RD2/err.txt" \
+  && fail "pm_pulse: report-only leaked the act directive" || pass
+
+# A config with NO authority key at all must behave as report-only -- this is
+# the upgrade path, where an existing install gains the pulse without ever
+# having opted into autonomy.
+UD=$(mktemp -d); mkdir -p "$UD/.crew"
+printf '{"schema":2,"tier":1}\n' > "$UD/.crew/config.json"
+pulse_payload "$UD" auth-absent false | bash "$SCRIPTS/pm-pulse.sh" \
+  >/dev/null 2>"$UD/err.txt"
+grep -q 'do NOT dispatch' "$UD/err.txt" && pass \
+  || fail "pm_pulse: absent authority must default to report-only"
+
+# And a typo must fail closed rather than widening permissions.
+TD=$(mktemp -d); mkdir -p "$TD/.crew"
+printf '{"schema":2,"pm":{"authority":"acr"}}\n' > "$TD/.crew/config.json"
+pulse_payload "$TD" auth-typo false | bash "$SCRIPTS/pm-pulse.sh" \
+  >/dev/null 2>"$TD/err.txt"
+grep -q 'do NOT dispatch' "$TD/err.txt" && pass \
+  || fail "pm_pulse: a typo'd authority must fail closed to report-only"
+rm -rf "$AD" "$RD2" "$UD" "$TD"
+
+# The cap is a backstop against a repo whose state oscillates every turn. If
+# `pulses_taken`'s marker prefix ever drifts it silently returns 0 forever and
+# the cap stops existing -- which is invisible without a test.
+"$PY" - "$SCRIPTS" "$PD" <<'PYEOF' && pass || fail "pm_pulse: session cap"
+import os, sys
+sys.path.insert(0, sys.argv[1])
+root = sys.argv[2]
+import pm_pulse
+
+before = pm_pulse.pulses_taken(root, "cap-sess")
+for i in range(3):
+    pm_pulse.claim(root, "cap-sess", f"{i:016x}")
+after = pm_pulse.pulses_taken(root, "cap-sess")
+if before != 0 or after != 3:
+    print(f"  unit FAIL: pulses_taken {before} -> {after}, want 0 -> 3")
+    sys.exit(1)
+# A marker for a different session must not be counted against this one.
+pm_pulse.claim(root, "other-sess", "ffffffffffffffff")
+if pm_pulse.pulses_taken(root, "cap-sess") != 3:
+    print("  unit FAIL: another session's markers leaked into the count")
+    sys.exit(1)
+# The same digest twice is one pulse, not two -- this is the de-duplicator.
+if pm_pulse.claim(root, "cap-sess", "0000000000000000"):
+    print("  unit FAIL: re-claiming the same digest must return False")
+    sys.exit(1)
+sys.exit(0)
+PYEOF
+
+# Pure-function cases: cheaper and sharper than driving the hook for each.
+"$PY" - "$SCRIPTS" <<'PYEOF' && pass || fail "pm_pulse: unit cases"
+import sys
+sys.path.insert(0, sys.argv[1])
+import pm_pulse
+
+ok = True
+
+def check(cond, label):
+    global ok
+    if not cond:
+        print(f"  unit FAIL: {label}")
+        ok = False
+
+# A finding that is a standing condition is not worth interrupting a turn for.
+check(not pm_pulse.should_pulse({
+    "isCrew": True, "triggers": ["ticketsTooLarge", "reviewNotWorking"]}),
+    "quiet-only triggers must not pulse")
+# ...but a real one alongside them is.
+check(pm_pulse.should_pulse({
+    "isCrew": True, "triggers": ["ticketsTooLarge", "graphStale"]}),
+    "a real trigger alongside quiet ones must pulse")
+# A healthy crew says nothing.
+check(not pm_pulse.should_pulse({"isCrew": True, "triggers": []}),
+    "no triggers must not pulse")
+
+# The fingerprint is the state-change gate: equal states must agree, and a
+# changed trigger set must not. If this stops holding, the hook either never
+# fires again or fires every turn.
+a = {"isCrew": True, "triggers": ["graphStale"],
+     "work": {"ticket": "T-1"}, "health": {"verdict": "ok"}}
+b = dict(a, triggers=["graphStale", "diagramsStale"])
+c = dict(a, work={"ticket": "T-2"})
+check(pm_pulse.fingerprint(a) == pm_pulse.fingerprint(dict(a)),
+      "same state must fingerprint equal")
+check(pm_pulse.fingerprint(a) != pm_pulse.fingerprint(b),
+      "changed triggers must fingerprint differently")
+check(pm_pulse.fingerprint(a) != pm_pulse.fingerprint(c),
+      "changed ticket must fingerprint differently")
+# health.rate deliberately excluded -- it moves on every review and would fire
+# the hook on changes nobody asked to hear about.
+check(pm_pulse.fingerprint(a) == pm_pulse.fingerprint(
+      dict(a, health={"verdict": "ok", "rate": 1.7})),
+      "health.rate must not move the fingerprint")
+
+sys.exit(0 if ok else 1)
+PYEOF
+rm -rf "$PD"
+
+# ---------------------------------------------------------------------------
+# crew_state.py -- diagram freshness. Anchor-based, never mtime-based.
+# ---------------------------------------------------------------------------
+echo "== crew_state.py: diagrams =="
+"$PY" - "$SCRIPTS" <<'PYEOF' && pass || fail "crew_state: diagram cases"
+import os, subprocess, sys, tempfile
+sys.path.insert(0, sys.argv[1])
+import crew_state
+
+ok = True
+
+def check(cond, label):
+    global ok
+    if not cond:
+        print(f"  unit FAIL: {label}")
+        ok = False
+
+root = tempfile.mkdtemp()
+run = lambda *a: subprocess.run(a, cwd=root, capture_output=True, text=True)
+run("git", "init", "-q")
+run("git", "config", "user.email", "t@t")
+run("git", "config", "user.name", "t")
+os.makedirs(os.path.join(root, "docs", "diagrams"))
+open(os.path.join(root, "seed.txt"), "w").write("x")
+run("git", "add", "-A")
+run("git", "commit", "-qm", "seed")
+head = run("git", "rev-parse", "--short=7", "HEAD").stdout.strip()
+
+d = os.path.join(root, "docs", "diagrams")
+# Current: anchored at HEAD, in the exact header crew-diagrams documents. A
+# bare `anchor:` line is invalid Mermaid, so this is the form that must work.
+open(os.path.join(d, "architecture.mmd"), "w").write(
+    f"%% Generated from myrepo@{head} on 2026-08-27. Verify before trusting.\n"
+    "%% Anchors: src/api/orders.ts\ngraph TD\n")
+# Behind: anchored at something else. Hand-written `%% anchor:` form, which is
+# accepted on purpose -- provenance that is right there in the text must not
+# read as absent.
+open(os.path.join(d, "data-flow-orders.mmd"), "w").write(
+    "%% anchor: 0000000\ngraph TD\n")
+# Unanchored counts as behind -- unknown provenance resolves to stale.
+open(os.path.join(d, "process-refund.mmd"), "w").write("graph TD\n")
+
+got = crew_state.read_diagrams(root, {})
+check(got["total"] == 3, f"total should be 3, got {got['total']}")
+check("architecture" not in got["behind"], "anchored-at-HEAD must not be behind")
+check("data-flow-orders" in got["behind"], "wrong anchor must be behind")
+check("process-refund" in got["behind"], "missing anchor must be behind")
+# Prefix matching: data-flow-orders.mmd satisfies the data-flow KIND.
+check(got["missing"] == [], f"all three kinds present, got missing={got['missing']}")
+
+# A directory with no diagrams at all reports every kind missing, and must not
+# raise on the absent directory.
+empty = crew_state.read_diagrams(tempfile.mkdtemp(), {})
+check(empty["total"] == 0, "absent diagrams dir must read as zero, not raise")
+check(set(empty["missing"]) == set(crew_state.DIAGRAM_KINDS),
+      f"absent dir must report all kinds missing, got {empty['missing']}")
+
+# diagramsMissing must stay quiet until there is a codemap to draw from --
+# otherwise every fresh setup is nagged about three diagrams on session one.
+check("diagramsMissing" not in crew_state.evaluate_triggers({
+    "isCrew": True, "knowledge": {"subsystems": 0},
+    "diagrams": {"missing": ["architecture"]}}),
+    "diagramsMissing must not fire without a codemap")
+check("diagramsMissing" in crew_state.evaluate_triggers({
+    "isCrew": True, "knowledge": {"subsystems": 3},
+    "diagrams": {"missing": ["architecture"]}}),
+    "diagramsMissing must fire once subsystems are mapped")
+check("diagramsStale" in crew_state.evaluate_triggers({
+    "isCrew": True, "diagrams": {"behind": ["architecture"]}}),
+    "diagramsStale must fire on a behind anchor")
+# Wrong-typed config must not raise -- this runs from SessionStart.
+check(crew_state.read_diagrams(root, {"docs": "nonsense"})["total"] == 3,
+      "wrong-typed docs config must fall back, not raise")
+
+sys.exit(0 if ok else 1)
+PYEOF
+
 echo
 echo "RESULT: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ] || exit 1

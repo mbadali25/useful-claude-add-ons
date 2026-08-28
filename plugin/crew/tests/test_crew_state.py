@@ -433,8 +433,13 @@ def test_a_hand_edited_schema_does_not_crash_collect(tmp_path):
     .get(key, default) substitutes the default only when the KEY IS ABSENT, so
     a present `"schema": null` returns None and `None < 2` raises TypeError.
     """
-    for bad in (None, "two", [], {}, True):
-        root = crew_fixtures.make_repo(tmp_path / f"s{abs(hash(str(bad))) % 9999}",
+    # Named by index, not by hash(). Python randomises string hashing per
+    # process, so `abs(hash(str(bad))) % 9999` collides between two of these
+    # values on some seeds and make_repo then dies on FileExistsError -- a test
+    # that fails a few runs in a hundred, for a reason having nothing to do
+    # with what it checks. Observed failing locally on exactly that collision.
+    for i, bad in enumerate((None, "two", [], {}, True)):
+        root = crew_fixtures.make_repo(tmp_path / f"s{i}",
                                       config={"schema": bad, "tier": 0})
         got = crew_state.collect(str(root))
         assert isinstance(got["schema"], int), bad

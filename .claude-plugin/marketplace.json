@@ -64,8 +64,8 @@
     {
       "name": "crew",
       "source": "./plugin/crew",
-      "description": "Virtual dev team for multi-repo legacy work - 10 context-isolated agents, 18 slash commands, 16 bundled skills, and deterministic hooks that block unsafe commands, gate unverified turns, brief a report-only PM at session start, and carry a handoff across compaction.",
-      "version": "0.7.0"
+      "description": "Virtual dev team for multi-repo legacy work - 10 context-isolated agents, 20 slash commands, 16 bundled skills, and deterministic hooks that block unsafe commands, gate unverified turns, brief the PM at session start, re-engage it to assign work when project state changes, and carry a handoff across compaction.",
+      "version": "0.9.1"
     },
     {
       "name": "drata",
@@ -83,7 +83,7 @@
       "name": "infra-work-ticketing",
       "source": "./skills/infra-work-ticketing",
       "description": "Infrastructure work ticketing for Zoho ServiceDesk Plus Cloud and Jira Cloud - confirm a ticket exists, log work notes as the work happens, or open a ticket.",
-      "version": "1.1.0"
+      "version": "1.1.1"
     },
     {
       "name": "intune-graph",

@@ -14,6 +14,13 @@ sprint stops being trusted because nobody can tell what actually changed.
 So each document has a **trigger condition**, and if the condition is not met,
 the document is left alone and that is the correct outcome.
 
+**Diagrams are the exception, and only diagrams.** `docs/diagrams/*.mmd` carry
+an anchor sha, so whether one is current is a fact rather than a judgement —
+the PM refreshes those itself when `diagramsStale` or `diagramsMissing` fires
+(see `crew-diagrams`). Nothing in the table below works that way. Whether a
+change deserves a CHANGELOG entry depends on whether a user can observe it, and
+no sha answers that, which is why these stay manual.
+
 | Document | Update when | Never |
 |---|---|---|
 | `CHANGELOG.md` | Behaviour users or callers can observe changed | Refactors, formatting, internal renames |

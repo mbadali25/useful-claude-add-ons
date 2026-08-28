@@ -4,7 +4,154 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Fixed
+
+- **`crew` 0.9.1 - two test-suite defects, both found by CI rather than by
+  reading.** `test_pm_brief.py` re-imported `json` inside a function that
+  already had it at module scope; pylint reported W0404 and exited 4 while
+  still printing "rated at 10.00/10", which is exactly why this repo's rule is
+  to judge pylint by its EXIT CODE and never by the rating line.
+
+  The second was pre-existing and latent: `test_a_hand_edited_schema_does_not_
+  crash_collect` named its scratch directories `s{abs(hash(str(bad))) % 9999}`.
+  Python randomises string hashing per process, so on some seeds two of the
+  five values collide, `make_repo` dies on `FileExistsError`, and the suite
+  fails for a reason having nothing to do with what the test checks. Observed
+  failing locally on that collision, then confirmed fixed across five explicit
+  `PYTHONHASHSEED` values. Named by index now.
+
+### Fixed
+
+- **`infra-work-ticketing` 1.1.1 - dropped a stray `.claude/settings.local.json`
+  that shipped with the skill.** It registered a `SessionStart` hook pointing at
+  `C:/Users/d3ade/.local/bin/headroom.EXE`, a binary on one machine. Anyone who
+  installed the skill and opened a session inside its directory got
+  `No such file or directory` from a hook they never configured. Nothing else in
+  the skill used it.
+
 ### Added
+
+- **`crew` 0.9.0 - PM autonomy is now a switch, with guardrails.** 0.8.0 gave
+  the PM assign authority unconditionally, which is the right behaviour for
+  someone who asked for it and the wrong default for everyone else. It is now
+  `pm.authority` in `.crew/config.json`.
+
+  - **`report-only` (default) vs `act`.** `report-only` recommends and stops;
+    `act` dispatches roles and refreshes diagrams on its own. The default is
+    deliberate: a plugin update must not turn someone's PM autonomous
+    underneath them, because consent to install is not consent to delegate.
+    The field already existed in `PM_DEFAULTS`, in the config templates and in
+    `README.md` - documented as "always `report-only`" and read by nothing.
+    It is now the actual switch.
+
+  - **It fails closed.** An unrecognised value resolves to `report-only`
+    rather than raising or guessing, because for a field that grants
+    permissions the failure direction has to be the restrictive one. `"Act"`,
+    `"ACT"` and `" act "` are accepted as `act` - same intent typed carelessly,
+    not a different one. Normalisation happens once in `collect()`, so no
+    consumer downstream ever re-decides what a typo means and they cannot
+    disagree.
+
+  - **The pulse says different things.** Under `act` the `Stop` hook emits a
+    work order; under `report-only` it emits recommendations and explicitly
+    forbids dispatching. Sending the wrong one would make the setting a lie -
+    config saying "ask me" while the hook said "go".
+
+  - **The rabbit-hole rule.** Autonomy's failure mode is not doing the wrong
+    thing, it is doing too many things: refresh a diagram, notice a bug, fix
+    it, notice thin tests, write tests, and the diagram is still stale. So a
+    problem the PM stumbles on is fixed **only when it blocks a finding it was
+    already working** - build broken, harness will not run, migration will not
+    parse. Unblocking the current job is finishing the job. Everything else is
+    recorded and left alone: a ticket when `tracker` is set, otherwise a
+    `TODO.md` line with the reason it was deferred. The report must say what
+    was deferred and where it went, because a guardrail whose effects are
+    invisible reads as the PM having found nothing.
+
+  - **`pm.maxDispatches`** (default 3) caps roles per pass. Blockers found
+    mid-task do not count against it.
+
+  - **`/crew:pm authority [report-only|act]`** reads or sets it, and
+    `/crew:init` now asks as its fourth setup question, defaulting to
+    `report-only` on any hesitation. `/crew:pm assign` still acts anywhere -
+    typing it *is* the explicit instruction - and says when the config
+    disagrees, so a user who wanted it permanent learns there is a setting.
+
+  - 24 new cases (shell suite 95 -> 101, pytest 306 -> 324), sabotage-tested:
+    making an unknown authority widen to `act` instead of failing closed turns
+    both suites red.
+
+- **`crew` 0.8.0 - the PM assigns work, and re-engages itself when state
+  changes.** Three related gaps, reported together: the PM only ever spoke at
+  session start, so a session that opened clean and then closed a ticket or
+  broke a gate heard nothing; the `pm` agent was structurally unable to act on
+  what it found, holding no `Write` tool and returning a report that the user
+  then had to act on themselves; and architecture, process and data-flow
+  diagrams had no staleness signal at all, so nothing ever noticed they had
+  drifted.
+
+  - **New `pm-pulse` `Stop` hook.** Re-engages the PM when the project's state
+    actually transitioned - a ticket closed, a gate broke, diagrams fell behind
+    HEAD. The gate is a **state fingerprint, not the event**: `Stop` fires once
+    per turn, and a brief on every turn is the noise that makes people switch
+    the PM off, at which point they get nothing. Turns that change nothing stay
+    silent.
+
+    It blocks (exit 2) to hand its findings back to the model, because stdout
+    on `Stop` reaches the user but never the session - a PM that cannot be
+    heard by the thing doing the work cannot assign any. Three loop guards:
+    `stop_hook_active` is honoured first and unconditionally, the fingerprint
+    marker means one state can only interrupt once, and the hook stands down
+    after 12 pulses in a session rather than becoming the thing you disable.
+
+    `hook_once` is deliberately **not** used - its own module docstring says
+    why. Its marker is keyed on `(hook, session)` and never cleared, so a claim
+    taken on turn 1 silences the hook for the rest of the session, which is
+    exactly what this hook must not do. Keying the marker on the fingerprint
+    instead de-duplicates the `.sh`/`.ps1` pair and gates on state change with
+    one mechanism.
+
+  - **The `pm` agent now dispatches.** It gains `Write`, `Edit` and `Agent`,
+    and a dispatch table mapping each trigger to the role that closes it. A
+    manager whose only output is a recommendation is a manager the user has to
+    manage. Three bounds keep it honest: a **stated user priority outranks**
+    the PM's trigger ordering, and it says so when it re-orders; **removal and
+    deletion still need an explicit yes** - offboarding, deleting a codemap or
+    diagram, rewriting `metrics.md` - because adding capability is reversible
+    and removing it destroys the evidence that would say whether removing it
+    was right; and a multi-agent run is **announced before** it happens. Writes
+    stay scoped to `.crew/` and `docs/diagrams/`. `/crew:pm assign` is the
+    manual entry point.
+
+  - **Diagram freshness is now a tracked fact.** `crew_state.py` reads
+    `docs/diagrams/*.mmd`, parses the short sha out of the documented
+    `%% Generated from <repo>@<sha>` header, and reports `diagrams.behind` and
+    `diagrams.missing`. Two new triggers, `diagramsStale` and `diagramsMissing`,
+    sort **below** `graphStale` and `knowledgeBehind` on purpose: a diagram
+    regenerated from a code map that is itself behind HEAD is stale output
+    wearing a fresh anchor, which is worse than the diagram it replaced because
+    it no longer advertises its age. `diagramsMissing` stays quiet until there
+    is a codemap, so a fresh setup is not nagged about three diagrams on
+    session one.
+
+    Diagrams are the **only** documentation artifact the crew regenerates
+    unasked. That is not a general licence: they carry a machine-checkable
+    anchor, so "is this still true" has a real answer. Prose docs keep
+    `crew-docs`'s deliberate *do not touch* default, because whether a change
+    deserves a CHANGELOG entry is a judgement about what users can observe and
+    no sha answers it.
+
+  - Found while writing the tests: reusing the codemap's `_ANCHOR_RE` for
+    diagrams reads **every** correctly-anchored diagram as stale. That regex
+    requires the line to start with `anchor:`, which is a syntax error in a
+    Mermaid source - provenance there has to live inside a `%%` comment. The
+    bug looks like the feature working, right up until nothing is ever current.
+    `_DIAGRAM_ANCHOR_RE` handles the documented header and the hand-written
+    `%% anchor:` form.
+
+  - 40 new cases in `run-tests.sh` (50 -> 90), sabotage-tested both ways:
+    removing the `stop_hook_active` guard and reverting the anchor regex each
+    turn the suite red.
 
 - **`crew` 0.7.0 - the `platform` block repairs itself at session start.** It is
   the one block in `.crew/config.json` that is committed and is therefore wrong

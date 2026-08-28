@@ -1,9 +1,14 @@
 """Tests for the PM brief renderer."""
 import io
 import json
+import os
+import tempfile
+
+import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_fixtures
+import crew_state
 import pm_brief
 
 HEALTHY = {
@@ -216,6 +221,69 @@ def test_expanded_brief_states_report_only_authority():
     assert "recommend" in out or "report" in out
 
 
+# -- pm.authority ------------------------------------------------------------
+#
+# The switch is a permissions field, so the tests that matter are the ones
+# proving it fails CLOSED. A bug that leaks `act` behaviour into a report-only
+# repo dispatches agents the user never agreed to.
+
+def _authority(value):
+    state = dict(_with("upgradeNeeded", schema=1))
+    state["pm"] = dict(state["pm"], authority=value)
+    return "\n".join(pm_brief.render(state)).lower()
+
+
+def test_report_only_brief_does_not_claim_to_act():
+    out = _authority("report-only")
+    assert "does not act on these on its own" in out
+    assert "dispatches crew roles" not in out
+
+
+def test_act_brief_says_it_will_act():
+    out = _authority("act")
+    assert "acts on these itself" in out
+
+
+@pytest.mark.parametrize("value", ["Act", "ACT", "  act  "])
+def test_authority_accepts_carelessly_typed_act(value):
+    """Same intent, typed sloppily -- not a different intent."""
+    assert crew_state.normalise_authority(value) == "act"
+
+
+@pytest.mark.parametrize(
+    "value", ["acr", "report only", "", None, True, 1, [], {}, "yes", "true"])
+def test_unknown_authority_fails_closed(value):
+    """A typo in a permissions field must never widen permissions."""
+    assert crew_state.normalise_authority(value) == "report-only"
+
+
+def test_can_act_reads_the_normalised_field():
+    assert crew_state.can_act({"pm": {"authority": "act"}})
+    assert not crew_state.can_act({"pm": {"authority": "report-only"}})
+    # Absent block, absent field, and wrong-typed block all fail closed.
+    assert not crew_state.can_act({})
+    assert not crew_state.can_act({"pm": {}})
+    assert not crew_state.can_act({"pm": "nonsense"})
+
+
+def test_collect_normalises_authority_once():
+    """Downstream consumers must never see a raw value. If this stops holding,
+    every reader has to re-decide what a typo means, and they will disagree."""
+    root = tempfile.mkdtemp()
+    os.makedirs(os.path.join(root, ".crew"))
+    with open(os.path.join(root, ".crew", "config.json"), "w",
+              encoding="utf-8") as handle:
+        json.dump({"schema": 2, "pm": {"authority": "ACT"}}, handle)
+    assert crew_state.collect(root)["pm"]["authority"] == "act"
+
+
+def test_default_authority_is_report_only():
+    """The shipped default. A plugin update must not turn someone's PM
+    autonomous underneath them -- consent to install is not consent to
+    delegate."""
+    assert crew_state.PM_DEFAULTS["authority"] == "report-only"
+
+
 def test_healthy_state_stays_quiet():
     out = pm_brief.render(HEALTHY)
     assert len(out) <= HEALTHY["pm"]["quietLines"]
@@ -270,6 +338,39 @@ def test_truncation_keeps_the_highest_priority_finding():
                  pm=dict(HEALTHY["pm"], maxLines=7))
     out = "\n".join(pm_brief.render(state))
     assert "/crew:upgrade" in out
+
+
+def test_diagrams_line_is_omitted_when_there_are_none():
+    """A quiet line survives truncation while findings do not, so an
+    always-present line costs a FINDING slot at a tight maxLines. This
+    regressed once: an unconditional "diagrams: none" pushed the
+    highest-priority finding out of a maxLines=7 brief entirely. Having no
+    diagrams is reported by the diagramsMissing TRIGGER, which comes with a
+    fix attached -- the quiet line is for state worth carrying, not for zero.
+    """
+    out = pm_brief.render(dict(HEALTHY, diagrams={"total": 0, "behind": [],
+                                                  "missing": []}))
+    assert not any(line.startswith("diagrams:") for line in out)
+
+
+def test_diagrams_line_appears_once_there_are_diagrams():
+    out = "\n".join(pm_brief.render(dict(
+        HEALTHY, diagrams={"total": 3, "behind": ["architecture"],
+                           "missing": []})))
+    assert "diagrams: 3 drawn, 1 behind HEAD" in out
+
+
+def test_diagram_findings_name_the_stale_files():
+    """The finding interpolates live values, so a missing field would raise
+    KeyError inside .format() and take out the whole brief -- the same failure
+    _incident_fields exists to prevent.
+    """
+    out = "\n".join(pm_brief.render(dict(
+        HEALTHY, triggers=["diagramsStale"],
+        diagrams={"total": 2, "behind": ["architecture", "data-flow-orders"],
+                  "missing": []})))
+    assert "architecture" in out
+    assert "/crew:diagram refresh" in out
 
 
 def test_quiet_mode_config_never_expands():
