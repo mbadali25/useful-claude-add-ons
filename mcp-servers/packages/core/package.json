@@ -1,6 +1,6 @@
 {
   "name": "@badali404/mcp-ms-core",
-  "version": "0.1.0",
+  "version": "0.1.3",
   "description": "Shared auth, HTTP, and write-gate helpers for the Microsoft MCP server family (Graph, Intune, Office 365 user/admin)",
   "repository": {
     "type": "git",
