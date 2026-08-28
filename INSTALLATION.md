@@ -296,7 +296,7 @@ Six more rows, also off by default. None of them are MCP servers.
   Unlike items 9–12, none of these four are published to npm yet, so the item cannot just `npx -y <pkg>@latest` them. It needs **both**:
 
   1. **A local clone with `mcp-servers/` present.** This script never resolves its own location (it supports both the piped one-liner and running from inside a clone), so it checks for `mcp-servers/package.json` under the current directory. Missing it prints the clone command and skips rather than failing.
-  2. **Real Azure AD app registrations**, passed as environment variables the item reads and forwards with `--env`:
+  2. **Real Azure AD app registrations**, checked as environment variables in the item's own shell, purely to decide which servers to register — see the note below on what actually happens with them:
 
      ```bash
      export MS_ADMIN_TENANT_ID=...  MS_ADMIN_CLIENT_ID=...  MS_ADMIN_CLIENT_SECRET=...  # msgraph, intune, o365-admin
@@ -306,7 +306,7 @@ Six more rows, also off by default. None of them are MCP servers.
 
      `MS_ADMIN_*` (all three, app-only/client-credentials) registers `mcp-msgraph`, `mcp-intune`, and `mcp-o365-admin`; `MS_USER_CLIENT_ID` (delegated device-code, `MS_USER_TENANT_ID` optional) registers `mcp-o365-user` on its own. Either group alone is enough to proceed — the item registers whichever group has its credentials present and skips the other with an explanation, rather than requiring both.
 
-  With both present it runs `npm install && npm run build` inside `mcp-servers/`, then `claude mcp add` for each server it has credentials for. Every tool across all four servers is **read-only** until `MCP_MS_ALLOW_WRITES=1` is also set in the server's own environment (a separate gate from these registration credentials) — see the write/destructive tool list in `mcp-servers/README.md`. Verify a registration with `node mcp-servers/packages/<name>/dist/src/cli.js doctor`, which acquires a real token and prints exactly what was granted.
+  With both present it runs `npm install && npm run build` inside `mcp-servers/`, then `claude mcp add` for each server it has credentials for — **bare**, with no `--env`, so no secret is ever written into `~/.claude.json`. That means the same `MS_ADMIN_*`/`MS_USER_*` vars must also be set wherever the `claude` process itself gets launched (shell profile, service manager, etc.), or a registered server will fail to authenticate — registering it here is necessary but not sufficient. Every tool across all four servers is also **read-only** until `MCP_MS_ALLOW_WRITES=1` is set there too. Verify with `node mcp-servers/packages/<name>/dist/src/cli.js doctor`, which acquires a real token and prints exactly what was granted.
 
 Before running either script on a machine you don't fully control, note that these steps run third-party code from npm, from `strix.ai`, from `uv`, and from Chocolatey/flatpak/snap — see [`SECURITY.md`](SECURITY.md)'s install-script trust boundary.
 

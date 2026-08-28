@@ -161,11 +161,11 @@ claude mcp add mcp-o365-user -- node C:\path\to\mcp-servers\packages\o365-user\d
 claude mcp add mcp-o365-admin -- node C:\path\to\mcp-servers\packages\o365-admin\dist\src\cli.js
 ```
 
-Set the env vars for a server either in your shell before running `claude mcp add`
-(`claude mcp add` captures the current environment for stdio servers you register this
-way is client-dependent -- check your client's docs) or, more reliably, in the MCP
-client's own config for that server (Claude Code writes servers to `~/.claude.json`; add
-an `env` block under the server entry there if your flow needs it).
+These one-liners register the server bare -- no `--env`, so no secret gets written
+into `~/.claude.json`. The credentials still have to reach the process at runtime,
+which means they must be exported wherever `claude` itself gets launched (shell
+profile, service manager, etc.), not just in the shell you happened to run
+`claude mcp add` from.
 
 ### Via npx (once published to npm under the `@mbadali` scope)
 
