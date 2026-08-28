@@ -2386,13 +2386,24 @@ install_ms_mcp() {
     warn "node not found on PATH - install Node.js first (item 1), then re-run."
     return 1
   fi
+  # MCP_MS_ALLOW_WRITES is not a secret (it is a boolean gate, not a credential),
+  # so unlike MS_ADMIN_*/MS_USER_* it is fine to bake into the registration via
+  # 'claude mcp add --env' rather than requiring it in the launching shell too -
+  # scoped to just these servers, same as any other -e KEY=value here. Detected
+  # the same way everything else in this step is: present and '1' in the shell
+  # running the installer means "yes, enable it." A write tool still separately
+  # requires 'confirm: true' per call no matter how this flag got set.
+  local env_spec="-"
+  if [ "${MCP_MS_ALLOW_WRITES:-}" = "1" ]; then
+    env_spec="MCP_MS_ALLOW_WRITES=1"
+  fi
   # Published on npm under @badali404 since 2026-08-28, so registration is the
   # npx form and needs no clone, no build, and no global install. npx resolves
   # and caches the package on the server's first launch.
   if [ "$have_admin" -eq 1 ]; then
-    add_mcp_server "mcp-msgraph" "-" npx -y "@badali404/mcp-msgraph@latest"
-    add_mcp_server "mcp-intune" "-" npx -y "@badali404/mcp-intune@latest"
-    add_mcp_server "mcp-o365-admin" "-" npx -y "@badali404/mcp-o365-admin@latest"
+    add_mcp_server "mcp-msgraph" "$env_spec" npx -y "@badali404/mcp-msgraph@latest"
+    add_mcp_server "mcp-intune" "$env_spec" npx -y "@badali404/mcp-intune@latest"
+    add_mcp_server "mcp-o365-admin" "$env_spec" npx -y "@badali404/mcp-o365-admin@latest"
     if [ "$have_admin_secret" -eq 0 ]; then
       printf '        Registered via the Azure CLI fallback (no MS_ADMIN_* set) - each server will\n'
       printf '        authenticate as whoever is signed in with "az login" wherever it actually runs.\n'
@@ -2401,11 +2412,20 @@ install_ms_mcp() {
     skip "mcp-msgraph/mcp-intune/mcp-o365-admin: no MS_ADMIN_* credentials and no 'az login' session"
   fi
   if [ "$have_user" -eq 1 ]; then
-    add_mcp_server "mcp-o365-user" "-" npx -y "@badali404/mcp-o365-user@latest"
+    add_mcp_server "mcp-o365-user" "$env_spec" npx -y "@badali404/mcp-o365-user@latest"
   else
     skip "mcp-o365-user: no MS_USER_CLIENT_ID given"
   fi
-  ok "Registered via 'npx -y @badali404/<pkg>@latest' - no secrets were written to ~/.claude.json. If not relying on 'az login', export MS_ADMIN_TENANT_ID/MS_ADMIN_CLIENT_ID/MS_ADMIN_CLIENT_SECRET and/or MS_USER_CLIENT_ID (+ optional MS_USER_TENANT_ID) in the shell/profile that launches 'claude' itself, or the servers relying on them will fail to authenticate. Every server is read-only until MCP_MS_ALLOW_WRITES=1 is also set there. Verify auth with 'npx -y @badali404/mcp-msgraph@latest doctor' (same pattern per server) - it reports which auth chain link actually authenticated. Developing against a local clone instead? See mcp-servers/README.md's npm-install-g option."
+  if [ "$env_spec" = "-" ]; then
+    printf '        Every server registered read-only. To enable write/destructive tools:\n'
+    printf '          export MCP_MS_ALLOW_WRITES=1 && ./scripts/install-prerequisites.sh --select ms-mcp\n'
+    printf '        or per-server by hand: claude mcp remove <name> && claude mcp add <name> -e MCP_MS_ALLOW_WRITES=1 -- npx -y @badali404/<pkg>@latest\n'
+  else
+    printf '        Registered with MCP_MS_ALLOW_WRITES=1 baked in - write/destructive tools are\n'
+    printf '        enabled on every server registered by this run. Each call still separately\n'
+    printf '        requires confirm: true; the flag alone never lets a tool write.\n'
+  fi
+  ok "Registered via 'npx -y @badali404/<pkg>@latest' - no secrets were written to ~/.claude.json. If not relying on 'az login', export MS_ADMIN_TENANT_ID/MS_ADMIN_CLIENT_ID/MS_ADMIN_CLIENT_SECRET and/or MS_USER_CLIENT_ID (+ optional MS_USER_TENANT_ID) in the shell/profile that launches 'claude' itself, or the servers relying on them will fail to authenticate. Verify auth with 'npx -y @badali404/mcp-msgraph@latest doctor' (same pattern per server) - it reports which auth chain link actually authenticated and whether writes are enabled."
 }
 if is_selected "ms-mcp"; then
   run_step "Register Microsoft MCP servers (mcp-servers/)" install_ms_mcp

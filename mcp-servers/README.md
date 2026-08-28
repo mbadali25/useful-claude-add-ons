@@ -369,6 +369,29 @@ that case, or for developing against a local checkout regardless.
    environment and re-verify a write tool with `confirm: true` against a throwaway test
    object -- never against production data on the first try.
 
+### Where to actually set `MCP_MS_ALLOW_WRITES=1`
+
+Unlike `MS_ADMIN_*`/`MS_USER_*`, this is a boolean gate rather than a credential, so it
+is fine to bake it into the server's own registration instead of the launching shell:
+
+```bash
+claude mcp remove mcp-intune
+claude mcp add mcp-intune -e MCP_MS_ALLOW_WRITES=1 -- npx -y @badali404/mcp-intune@latest
+```
+
+That writes it into `mcp-intune`'s own entry in `~/.claude.json` -- scoped to that one
+server, not every process on the machine. Repeat per server you want writes on.
+`scripts/install-prerequisites.*`'s `ms-mcp` item does the same thing automatically: run
+it with `MCP_MS_ALLOW_WRITES=1` already exported (`$env:MCP_MS_ALLOW_WRITES='1'` on
+Windows), and every server it registers in that run gets the flag baked in the same way.
+
+The alternative is setting it globally instead -- `export MCP_MS_ALLOW_WRITES=1` in
+`~/.bashrc`/`~/.zshrc`, or `setx MCP_MS_ALLOW_WRITES 1` on Windows -- which enables
+writes for every MCP process launched from that shell/profile, not just these four
+servers. Prefer the per-server form above; it can't silently widen an unrelated tool.
+Either way, `confirm: true` on the call is still required -- the flag alone never lets a
+tool write.
+
 ## Tests
 
 Offline, no live tenant needed -- every test mocks `global.fetch` and passes a fake

@@ -6,6 +6,20 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
+- **`mcp-servers` install scripts can now enable write access at registration
+  time.** `MCP_MS_ALLOW_WRITES` is a boolean gate, not a credential, so unlike
+  `MS_ADMIN_*`/`MS_USER_*` it is safe to bake into a server's own `claude mcp
+  add --env` rather than requiring it in the launching shell too — scoped to
+  that server, not every process on the machine. Set it in the shell running
+  `install-prerequisites.sh`/`.ps1` before the `ms-mcp` item runs and every
+  server it registers gets writes enabled; left unset, every server registers
+  read-only and the item prints the exact per-server one-liner to flip it
+  later. `mcp-servers/README.md` gained a section spelling out both the
+  per-server and global ways to set it, since the answer wasn't written down
+  anywhere before now — only its meaning was.
+
+### Added
+
 - **`mcp-servers` 0.2.0 — the three admin-scope servers authenticate with no
   app registration at all, if you're already signed in with `az login`.**
   `@badali404/mcp-ms-core`'s new `buildAdminCredential()` (replacing

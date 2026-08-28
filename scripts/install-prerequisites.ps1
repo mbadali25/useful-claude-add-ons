@@ -2255,10 +2255,21 @@ if (Test-Selected 'ms-mcp') {
             throw "node not found on PATH - install Node.js first (item 1), then re-run."
         }
 
+        # MCP_MS_ALLOW_WRITES is not a secret (a boolean gate, not a credential), so
+        # unlike MS_ADMIN_*/MS_USER_* it is fine to bake into the registration via
+        # -EnvVars rather than requiring it in the launching shell too - scoped to
+        # just these servers. Detected the same way everything else in this step
+        # is: present and '1' in the session running the installer means enable it.
+        # A write tool still separately requires 'confirm: true' per call regardless
+        # of how this flag got set.
+        $envVars = $null
+        $writesEnabled = $env:MCP_MS_ALLOW_WRITES -eq '1'
+        if ($writesEnabled) { $envVars = @{ MCP_MS_ALLOW_WRITES = '1' } }
+
         if ($haveAdmin) {
-            Add-McpServer -Name 'mcp-msgraph' -CommandArgs @('npx', '-y', '@badali404/mcp-msgraph@latest')
-            Add-McpServer -Name 'mcp-intune' -CommandArgs @('npx', '-y', '@badali404/mcp-intune@latest')
-            Add-McpServer -Name 'mcp-o365-admin' -CommandArgs @('npx', '-y', '@badali404/mcp-o365-admin@latest')
+            Add-McpServer -Name 'mcp-msgraph' -CommandArgs @('npx', '-y', '@badali404/mcp-msgraph@latest') -EnvVars $envVars
+            Add-McpServer -Name 'mcp-intune' -CommandArgs @('npx', '-y', '@badali404/mcp-intune@latest') -EnvVars $envVars
+            Add-McpServer -Name 'mcp-o365-admin' -CommandArgs @('npx', '-y', '@badali404/mcp-o365-admin@latest') -EnvVars $envVars
             if (-not $haveAdminSecret) {
                 Write-Host "        Registered via the Azure CLI fallback (no MS_ADMIN_* set) - each server will"
                 Write-Host "        authenticate as whoever is signed in with 'az login' wherever it actually runs."
@@ -2267,11 +2278,20 @@ if (Test-Selected 'ms-mcp') {
             Write-Skip "mcp-msgraph/mcp-intune/mcp-o365-admin: no MS_ADMIN_* credentials and no 'az login' session"
         }
         if ($haveUser) {
-            Add-McpServer -Name 'mcp-o365-user' -CommandArgs @('npx', '-y', '@badali404/mcp-o365-user@latest')
+            Add-McpServer -Name 'mcp-o365-user' -CommandArgs @('npx', '-y', '@badali404/mcp-o365-user@latest') -EnvVars $envVars
         } else {
             Write-Skip "mcp-o365-user: no MS_USER_CLIENT_ID given"
         }
-        Write-Ok "Registered via 'npx -y @badali404/<pkg>@latest' - no secrets were written to ~/.claude.json. If not relying on 'az login', set MS_ADMIN_TENANT_ID/MS_ADMIN_CLIENT_ID/MS_ADMIN_CLIENT_SECRET and/or MS_USER_CLIENT_ID (+ optional MS_USER_TENANT_ID) in `$PROFILE or wherever 'claude' itself gets launched, or the servers relying on them will fail to authenticate. Every server is read-only until MCP_MS_ALLOW_WRITES=1 is also set there. Verify auth with 'npx -y @badali404/mcp-msgraph@latest doctor' (same pattern per server) - it reports which auth chain link actually authenticated. Developing against a local clone instead? See mcp-servers/README.md's npm-install-g option."
+        if ($writesEnabled) {
+            Write-Host "        Registered with MCP_MS_ALLOW_WRITES=1 baked in - write/destructive tools"
+            Write-Host "        are enabled on every server registered by this run. Each call still"
+            Write-Host "        separately requires confirm: true; the flag alone never lets a tool write."
+        } else {
+            Write-Host "        Every server registered read-only. To enable write/destructive tools:"
+            Write-Host "          `$env:MCP_MS_ALLOW_WRITES='1'; .\install-prerequisites.ps1 -Select ms-mcp"
+            Write-Host "        or per-server by hand: claude mcp remove <name>; claude mcp add <name> -e MCP_MS_ALLOW_WRITES=1 -- npx -y @badali404/<pkg>@latest"
+        }
+        Write-Ok "Registered via 'npx -y @badali404/<pkg>@latest' - no secrets were written to ~/.claude.json. If not relying on 'az login', set MS_ADMIN_TENANT_ID/MS_ADMIN_CLIENT_ID/MS_ADMIN_CLIENT_SECRET and/or MS_USER_CLIENT_ID (+ optional MS_USER_TENANT_ID) in `$PROFILE or wherever 'claude' itself gets launched, or the servers relying on them will fail to authenticate. Verify auth with 'npx -y @badali404/mcp-msgraph@latest doctor' (same pattern per server) - it reports which auth chain link actually authenticated and whether writes are enabled."
     }
 }
 
