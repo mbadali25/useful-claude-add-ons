@@ -6,6 +6,22 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`crew` 0.9.1 - two test-suite defects, both found by CI rather than by
+  reading.** `test_pm_brief.py` re-imported `json` inside a function that
+  already had it at module scope; pylint reported W0404 and exited 4 while
+  still printing "rated at 10.00/10", which is exactly why this repo's rule is
+  to judge pylint by its EXIT CODE and never by the rating line.
+
+  The second was pre-existing and latent: `test_a_hand_edited_schema_does_not_
+  crash_collect` named its scratch directories `s{abs(hash(str(bad))) % 9999}`.
+  Python randomises string hashing per process, so on some seeds two of the
+  five values collide, `make_repo` dies on `FileExistsError`, and the suite
+  fails for a reason having nothing to do with what the test checks. Observed
+  failing locally on that collision, then confirmed fixed across five explicit
+  `PYTHONHASHSEED` values. Named by index now.
+
+### Fixed
+
 - **`infra-work-ticketing` 1.1.1 - dropped a stray `.claude/settings.local.json`
   that shipped with the skill.** It registered a `SessionStart` hook pointing at
   `C:/Users/d3ade/.local/bin/headroom.EXE`, a binary on one machine. Anyone who

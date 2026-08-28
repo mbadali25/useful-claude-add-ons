@@ -2,6 +2,7 @@
 import io
 import json
 import os
+import tempfile
 
 import pytest
 
@@ -268,13 +269,11 @@ def test_can_act_reads_the_normalised_field():
 def test_collect_normalises_authority_once():
     """Downstream consumers must never see a raw value. If this stops holding,
     every reader has to re-decide what a typo means, and they will disagree."""
-    import json as _json
-    import tempfile as _tempfile
-    root = _tempfile.mkdtemp()
+    root = tempfile.mkdtemp()
     os.makedirs(os.path.join(root, ".crew"))
     with open(os.path.join(root, ".crew", "config.json"), "w",
               encoding="utf-8") as handle:
-        _json.dump({"schema": 2, "pm": {"authority": "ACT"}}, handle)
+        json.dump({"schema": 2, "pm": {"authority": "ACT"}}, handle)
     assert crew_state.collect(root)["pm"]["authority"] == "act"
 
 
