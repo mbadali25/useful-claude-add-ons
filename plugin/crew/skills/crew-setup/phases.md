@@ -94,9 +94,12 @@ requests, and offer to remove it. Never delete it yourself — it is the user's
 own global configuration.
 
 Ask the three questions (reviewer, tracker, memory). The tracker choice is
-files, Jira, or ServiceDesk Plus - offer the last two only when their MCP tools
-are actually reachable, since a repo configured for an API nobody can call stops
-every later command on the same missing precondition.
+files, Jira, ServiceDesk Plus, or an Obsidian Kanban board - offer Jira and
+ServiceDesk Plus only when their MCP tools are actually reachable, since a repo
+configured for an API nobody can call stops every later command on the same
+missing precondition. Obsidian's gate is a vault directory that exists on this
+machine rather than a connector, so ask for the path and check it before
+offering the option.
 
 **Then ask the fourth: how much authority the PM gets in this repo.** Default
 `report-only` on any hesitation - a repo that gets autonomy by accident is worse

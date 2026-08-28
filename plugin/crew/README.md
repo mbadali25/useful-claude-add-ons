@@ -23,6 +23,7 @@ Built for the awkward case: several repositories, mixed stacks, legacy code, and
 12. [Optional: Codex as reviewer](#12-optional-codex-as-reviewer-gemini-as-design-partner)
 13. [Optional: Jira via MCP](#13-optional-jira-via-mcp)
 13b. [Optional: ServiceDesk Plus via MCP](#13b-optional-servicedesk-plus-via-mcp)
+13c. [Optional: an Obsidian Kanban board](#13c-optional-an-obsidian-kanban-board)
 14. [Optional: Obsidian for memory](#14-optional-obsidian-for-memory)
 15. [Optional: Teams and Telegram notifications](#15-optional-teams-and-telegram-notifications)
 16. [Context handoff](#16-context-handoff)
@@ -640,6 +641,18 @@ Everything reads `.crew/config.json`:
   "tracker": "files",
   "jira": { "cloudId": null, "project": null },
   "sdp": { "portal": null, "noteVisibility": "private", "closeOnDone": false },
+  "obsidian": {
+    "vaultPath": null,
+    "boardDir": null,
+    "board": "Board.md",
+    "columns": {
+      "backlog": "Backlog",
+      "ready": "Ready",
+      "inProgress": "In Progress",
+      "review": "Review",
+      "done": "Done"
+    }
+  },
   "memory": { "mode": "repo", "vaultPath": null },
   "verifyGate": true,
   "context": {
@@ -690,7 +703,11 @@ omit the block and assume.
 | `notify.chatId` | string | Telegram only. Group ids are negative; that is normal. |
 | `secondOpinion.provider` | `gemini`, `local`, `none` | Design partner. `sendsCode` stays `false` on any free tier. |
 | `qa.provider` | `auto`, `codex`, `claude` | `auto` prefers Codex, falls back to Claude, announces which ran. `codex` fails loudly instead of falling back. |
-| `tracker` | `files`, `jira`, `sdp` | Where tickets live. `jira` and `sdp` each additionally require their MCP connector; without it every ticket command stops on the same missing precondition. |
+| `tracker` | `files`, `jira`, `sdp`, `obsidian` | Where tickets live. `jira` and `sdp` each additionally require their MCP connector; without it every ticket command stops on the same missing precondition. `obsidian` requires no connector — its precondition is a vault directory that exists on this machine. |
+| `obsidian.vaultPath` | path or `null` | The vault holding the board. `null` falls back to `memory.vaultPath`, so one vault needs one setting. |
+| `obsidian.boardDir` | path relative to the vault | Where the board and its ticket notes live. `Boards/<repo>` by default — one folder per repo, so cards can be `[[T-0042]]` wikilinks that resolve. |
+| `obsidian.board` | filename (default `Board.md`) | The board file inside `boardDir`. |
+| `obsidian.columns` | five lane names | Maps crew's statuses to the board's headings. Rename lanes here rather than on the board, so an existing board keeps working. A named lane that is absent is a setup error, not a lane to create. |
 | `sdp.noteVisibility` | `private` (default), `public` | Whether the push note lands on the requester-visible thread. Private by default because a requester is often not an engineer. |
 | `sdp.closeOnDone` | `true`, `false` (default) | Whether completing a ticket closes the request or only transitions it. `false` leaves closure to whoever owns the queue. |
 | `sdp.portal` | string or `null` | Only needed where the connector serves more than one SDP instance. |
@@ -829,6 +846,66 @@ and the last three notes, and `/crew:work` reads that file instead of the API.
 The writes act as the signed-in user, so the desk's audit trail names a person
 rather than "an automation". `sdp_whoami` tells you which person, and is the
 cheapest way to prove the connector is live before configuring a repo around it.
+
+---
+
+## 13c. Optional: an Obsidian Kanban board
+
+The fourth tracker, and the only one with nothing to connect to. `tracker:
+"obsidian"` plus a vault path that exists. The board is a markdown file the
+[Kanban plugin](https://github.com/mgmeyers/obsidian-kanban) round-trips, so
+crew writes files and Obsidian draws a board — there is no API, no auth, and no
+payload to amortise.
+
+```
+vault/
+  Boards/<repo>/
+    Board.md          # kanban-plugin: board
+    T-0042.md         # the ticket note
+    T-0041.md
+```
+
+The vault is the remote, exactly as Jira is: `.work/cache/T-####.md` is a terse
+local mirror that `/crew:work` reads, and `/crew:obsidian-sync` touches the
+vault at pickup and completion only. The key keeps the `T-####` shape, so
+nothing else in crew needed a new format to recognise.
+
+**Unlike Jira and ServiceDesk Plus, this mode also keeps `.work/INDEX.md`.**
+The session brief finds the open ticket by reading that file, and a key shaped
+`SDP-40219` was never going to be in it — `T-0042` can be. So the board is the
+human's view of the work and `INDEX.md` is the session's, which costs one line
+per ticket and is why the brief names a real ticket here rather than nothing.
+
+**Five lanes, and dragging a card is how status changes.**
+
+| Lane | Means |
+|---|---|
+| Backlog | Deferred or untriaged. Where the PM parks a non-blocking finding. |
+| Ready | Scoped by `/crew:ticket` and pickup-able. |
+| In Progress | `/crew:work` has it. |
+| Review | Implementation done, `/crew:review` outstanding. |
+| Done | Complete and verified. Carries the `**Complete**` marker. |
+
+On pull the card's lane wins for status and the note wins for content; on push
+the cache's `status:` names the lane — `--push` takes no lane argument and
+infers nothing, so a card cannot land in Done because the turn went well. That rule exists because both sides here are local markdown
+and both look equally authoritative — which makes the divergence hazard *worse*
+than Jira's, not absent. A silent fallback to file tickets is therefore refused
+the same way `/crew:jira-sync` refuses it.
+
+**The board file has three load-bearing parts** and a naive rewrite destroys all
+three, after which the file silently opens as plain text instead of a board: the
+`kanban-plugin: board` frontmatter, the trailing `%% kanban:settings` block, and
+the `**Complete**` marker in the done lane. An archive, when one exists, sits
+below a `***` break under `## Archive` and is nobody's business but Obsidian's.
+So the board is edited in place, one card or one lane at a time, never
+regenerated from the cache.
+
+**Two things to accept before choosing this.** The vault lives outside the repo,
+so ticket state does not travel with a branch and is not on a colleague's
+machine — that is the trade for a board you can drag cards on. And crew never
+commits the vault; if it is versioned, its history is yours to manage, and a
+board edited in two places at once conflicts the way any markdown file does.
 
 ---
 
@@ -1690,11 +1767,12 @@ a worktree each, so a half-applied one cannot land on top of the other.
 | `/crew:scale` | Evidence-based crew sizing |
 | `/crew:jira-sync <KEY> [--push]` | Sync one issue with the local cache |
 | `/crew:sdp-sync <REQUEST-ID> [--push]` | Sync one ServiceDesk Plus request with the local cache — see §13b |
+| `/crew:obsidian-sync <T-####> [--push]` | Sync one Obsidian Kanban card with the local cache — see §13c |
 | `/crew:pm [onboard\|offboard <role>]` | Crew-manager status, or add/remove a role — see §22 |
 | `/crew:upgrade [--force]` | Bring a pre-schema-2 (`v1`) setup forward — see §11 |
 | `/crew:emergency <what is broken>` | Declare a time-boxed incident: gates stand down and record what they skipped, lanes investigate in parallel — see §24. `status`, `extend [min]`, `end` |
 
-20 commands.
+21 commands.
 
 ### Agents
 
@@ -1757,7 +1835,7 @@ Hooks are deterministic. That is their whole value — a hook cannot be argued o
 ```bash
 bash   hooks/scripts/_test/run-tests.sh           # 77 cases - the hooks
 bash   hooks/scripts/_test/setup-walkthrough.sh   # 32 cases - the setup scripts
-python hooks/scripts/_test/validate-prompts.py    # 106 checks - command/agent structure
+python hooks/scripts/_test/validate-prompts.py    # 110 checks - command/agent structure
 pytest tests/                                     # 234 cases - the python modules and both hook flavours
 ```
 
@@ -1768,7 +1846,7 @@ pytest tests/                                     # 234 cases - the python modul
 | `validate-prompts.py` | Frontmatter parses, tools are real, referenced agents and paths exist, read-only agents hold no write tools, commands that spawn subagents are permitted to | **whether the prompts produce good work** |
 | `pytest tests/` | The python modules, and that the `.sh` and `.ps1` flavours of `context-watch`, `verify-gate` and `promote-gate` agree - including the emergency lane's expiry, which is the one property that keeps a forgotten incident from ungating a repo forever | anything on a platform the suite is not running on; the Windows-only cases skip elsewhere |
 
-That last gap is real and no test closes it. The 20 commands and 10 agents are
+That last gap is real and no test closes it. The 21 commands and 10 agents are
 instructions to a model; only a live session running a real ticket exercises
 them. Setup Phase 7 exists for exactly that, and it is the one thing here that
 has to be done by hand.
