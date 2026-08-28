@@ -35,6 +35,14 @@ block says windows and you are on linux" every session, forever, would be worse
 than fixing it.
 
 It still says what it changed. A silent config edit would be indefensible.
+
+## Recreating a missing or broken config
+
+This module also heals `.crew/config.json` itself, not just its `platform`
+block, for the same reason: a session opened in a crew repo whose config
+disappeared or got corrupted should not sit there inert. `heal_config` is the
+second thing this hook may write, and it gets the same restrictive guard as
+everything else here -- see its docstring for the exact rule.
 """
 
 import json
@@ -45,9 +53,11 @@ import shutil
 import subprocess
 import sys
 
+import crew_config
 import hook_once
 
 CONFIG_PATH = ".crew/config.json"
+CONFIG_BROKEN_SUFFIX = ".broken"
 
 # The only keys this module may write. Everything else in the file is somebody's
 # decision. Adding to this list is a deliberate act - if a key could ever be
@@ -164,10 +174,109 @@ def load(root):
     try:
         data = json.loads(raw)
     except ValueError:
-        # A malformed config is not this module's business to repair. Rewriting
-        # it would mean guessing at what the human meant and losing the rest.
+        # A malformed config is not THIS function's business to repair -- it
+        # only reports what it read. heal_config, below, is what decides
+        # whether a config this broken gets recreated.
         return {}, raw
     return (data if isinstance(data, dict) else {}), raw
+
+
+def heal_config(root):
+    """Recreate `.crew/config.json` when it is missing, empty, or unparseable.
+
+    Returns (cfg, message): `cfg` is None and `message` is None when there is
+    nothing to heal -- either `.crew/` does not exist, or `config.json` is
+    already a readable dict, in which case this function changes nothing and
+    the caller falls through to its normal "not ours to touch" path.
+
+    CRITICAL GUARD: a directory with no `.crew/` is not a crew repository and
+    must not be colonized. This check runs before anything else here, and
+    unlike `diff`/`apply_changes` above -- which only ever touch a `platform`
+    block that already exists -- this function can create the whole file, so
+    the guard matters even more here than it does there.
+
+    Three cases, matching `_read_config_strict` in `crew_upgrade.py`:
+
+      * Missing, or present but empty/whitespace-only (nothing to lose):
+        write `crew_config.default_config()` straight away.
+      * Present, non-empty, but not a parseable JSON object (something IS
+        there and failed to parse -- a real file, not "nothing configured"):
+        back it up to `config.json.broken` first, so the original survives
+        for hand recovery, then write defaults.
+      * Present and a parseable JSON object, however incomplete or unusual:
+        untouched. This function repairs a config that IS NOT ONE; it does
+        not validate or merge defaults into one that already parses -- that
+        is a different, much larger claim about what "healthy" means, and
+        making it here would silently overwrite hand-edits nobody asked to
+        have judged.
+    """
+    if not os.path.isdir(os.path.join(root, ".crew")):
+        return None, None
+
+    path = os.path.join(root, CONFIG_PATH)
+    try:
+        with open(path, encoding="utf-8-sig", errors="replace") as handle:
+            raw = handle.read()
+    except OSError:
+        raw = None  # missing
+
+    backed_up = False
+    if raw is not None and raw.strip():
+        try:
+            parsed = json.loads(raw)
+        except ValueError:
+            parsed = None
+        if isinstance(parsed, dict):
+            return None, None  # healthy; not this function's problem
+        # Present, non-empty, and not a usable config -- back it up.
+        backup_path = path + CONFIG_BROKEN_SUFFIX
+        backed_up = True
+        if not os.path.exists(backup_path):
+            # A previous broken session already took one; do not overwrite it
+            # with a second failure -- the first is still the human's best
+            # chance at recovery. Same rule as crew_upgrade.backup_config.
+            try:
+                shutil.copy2(path, backup_path)
+            except OSError:
+                # Could not back it up (read-only checkout?). Do not destroy
+                # the original by writing over it blind -- report and stop.
+                return None, (
+                    f"## config - {CONFIG_PATH} is malformed and could NOT "
+                    f"be backed up before rewriting - is the checkout "
+                    f"read-only? Left it untouched"
+                )
+
+    cfg = crew_config.default_config()
+    text = json.dumps(cfg, indent=2) + "\n"
+    tmp = f"{path}.{os.getpid()}.tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8", newline="") as handle:
+            handle.write(text)
+        os.replace(tmp, path)
+    except OSError:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        return None, (
+            f"## config - {CONFIG_PATH} is missing or malformed, and "
+            f"defaults could NOT be written - is the checkout read-only?"
+        )
+
+    if backed_up:
+        message = (
+            f"## config - {CONFIG_PATH} was malformed; backed it up to "
+            f"{CONFIG_PATH}{CONFIG_BROKEN_SUFFIX} and wrote defaults - "
+            f"tracker, roles, and every other choice are back to defaults; "
+            f"run /crew:init to re-record them"
+        )
+    else:
+        message = (
+            f"## config - {CONFIG_PATH} was missing; wrote defaults - "
+            f"tracker, roles, and every other choice are back to defaults; "
+            f"run /crew:init to re-record them"
+        )
+    return cfg, message
 
 
 def diff(cfg, facts):
@@ -343,8 +452,22 @@ def main(argv=None):
         if cfg:
             root = candidate
             break
-    if not cfg or root is None:
-        # No crew here, or an unreadable config. Either way, not ours to touch.
+
+    if root is None:
+        # No candidate has a *readable* config -- but one of them may still
+        # be a crew repo whose config is missing or broken, which is exactly
+        # what heal_config exists to fix. Resolving `root` from bare .crew/
+        # presence (rather than calling heal_config here) means the actual
+        # write stays gated behind the once-per-session claim below, same as
+        # every other write this module makes -- two processes racing (the
+        # .sh and .ps1 flavours both fire) must not both recreate the file.
+        for candidate in candidates:
+            if candidate and os.path.isdir(os.path.join(candidate, ".crew")):
+                root = candidate
+                break
+
+    if root is None:
+        # No crew here at all. Not ours to touch.
         return 0
 
     # Keyed on session+source for the same reason pm_brief is: SessionStart
@@ -361,6 +484,25 @@ def main(argv=None):
     except (AttributeError, ValueError, OSError):
         pass
 
+    heal_message = None
+    if not cfg:
+        try:
+            healed, heal_message = heal_config(root)
+        except Exception:  # pylint: disable=broad-except
+            # heal_config must not be able to break a session either.
+            healed, heal_message = None, None
+        if healed is not None:
+            cfg = healed
+            raw = json.dumps(healed, indent=2) + "\n"
+
+    if not cfg:
+        # Unreadable and could not be healed (or nothing to heal at all --
+        # heal_config's own guard covers the "not actually a crew repo" case
+        # too, since root here may have resolved from bare .crew/ presence).
+        if heal_message:
+            print(heal_message)
+        return 0
+
     try:
         facts = detect(root)
         changes = diff(cfg, facts)
@@ -371,9 +513,14 @@ def main(argv=None):
                 lines = report(changes, concerns(cfg, facts), facts)
                 if lines:
                     lines[0] += " (could NOT be written - is it read-only?)"
+                if heal_message:
+                    lines = [heal_message] + lines
+                if lines:
                     print("\n".join(lines))
                 return 0
         lines = report(changes, concerns(cfg, facts), facts)
+        if heal_message:
+            lines = [heal_message] + lines
         if lines:
             print("\n".join(lines))
     except Exception:  # pylint: disable=broad-except

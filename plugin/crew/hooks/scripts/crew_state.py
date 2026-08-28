@@ -475,6 +475,34 @@ def can_act(state):
     return normalise_authority(pm.get("authority")) == "act"
 
 
+def merge_defaults(defaults, supplied):
+    """`defaults`, overlaid with anything already present. Recurses one level.
+
+    Shared by `crew_upgrade.upgrade_config` (bringing a v1 config's `pm` and
+    `graph` blocks forward) and `crew_config.resolve_config` (layering repo
+    over global over built-in defaults) -- one merge policy, used everywhere
+    a config value can come from more than one place.
+
+    Where the default is a dict, a non-dict override is DISCARDED rather than
+    applied. Callers index into these blocks afterwards, so letting a
+    hand-edited `"obsidian": "yes"` replace the dict raises `TypeError`
+    partway through, sometimes after the result has already been written.
+    A scalar where the schema wants a block is a mistake, and the default is
+    the honest fallback. A legitimate nested override still wins.
+    """
+    out = dict(defaults)
+    if not isinstance(supplied, dict):
+        return out
+    for key, value in supplied.items():
+        if isinstance(out.get(key), dict):
+            if isinstance(value, dict):
+                out[key] = merge_defaults(out[key], value)
+            # else: keep the default; see the docstring.
+        else:
+            out[key] = value
+    return out
+
+
 def dict_or_empty(value):
     """`value` when it is genuinely a dict, else `{}`.
 
@@ -550,9 +578,31 @@ def evaluate_triggers(state):
     return [name for name in TRIGGERS if fired[name]]
 
 
-def collect(root):
-    """Full crew state for a repository. Never raises."""
-    cfg = load_config(root)
+def collect(root, cfg_override=None):
+    """Full crew state for a repository. Never raises.
+
+    `cfg_override`, when given, replaces the config used for every SETTING
+    below -- `pm`, `tier`, `roles`, `tracker`, `knowledge`, `diagrams` -- but
+    never for `schema` or `isCrew`, both facts about the repo's own
+    `.crew/config.json` that must not change depending on what is layered on
+    top of it. Ignored entirely for a directory this function does not
+    recognise as crew-managed: a plain git repo with no `.crew/` must not
+    pick up crew-repo settings (a global `graph.out`, say) it never opted
+    into, no matter what the caller passes.
+
+    This module has no knowledge of where an override comes from. That is
+    deliberate: `crew_config.layered_state` is what supplies one, built from
+    `crew_config.resolve_config` (repo overrides global overrides built-in
+    defaults) -- and `crew_config` already imports THIS module for
+    `PM_DEFAULTS` and `SCHEMA_CURRENT`. If this function reached back into
+    `crew_config` itself to build its own override, the two modules would
+    import each other, which is a real cyclic import, not a stylistic one --
+    pylint's `cyclic-import` check flags exactly this. Taking the override as
+    a plain argument keeps the dependency one-directional.
+    """
+    raw_cfg = load_config(root)
+    is_crew = bool(raw_cfg)
+    cfg = cfg_override if (is_crew and cfg_override is not None) else raw_cfg
     pm = dict(PM_DEFAULTS)
     supplied = cfg.get("pm")
     if isinstance(supplied, dict):
@@ -574,9 +624,14 @@ def collect(root):
     roles = cfg.get("roles")
 
     state = {
-        "isCrew": bool(cfg),
-        # No `schema` key means a config written before schema tracking: v1.
-        "schema": int_or(cfg.get("schema", 1), 1) if cfg else SCHEMA_CURRENT,
+        "isCrew": is_crew,
+        # `schema` is a fact about the REPO FILE's own layout version, never
+        # a setting to inherit -- resolve_config's built-in-defaults layer
+        # always supplies the CURRENT schema number, so reading it from the
+        # merged `cfg` would make an unmigrated v1 repo (no `schema` key at
+        # all) read as current the moment any global config file exists.
+        # Read from raw_cfg, exactly what /crew:upgrade itself reads.
+        "schema": int_or(raw_cfg.get("schema", 1), 1) if raw_cfg else SCHEMA_CURRENT,
         "tier": tier if isinstance(tier, int) and not isinstance(tier, bool) else None,
         "roles": roles if isinstance(roles, list) else [],
         "tracker": cfg.get("tracker"),
