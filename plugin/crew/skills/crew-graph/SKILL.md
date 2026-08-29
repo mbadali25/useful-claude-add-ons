@@ -124,17 +124,35 @@ Two conditions, both required, before any export runs:
    against a vault the user actually cares about.
 
 If either condition is unmet, **refuse the export and ask** — don't run it
-"just this once" or treat a missing scratch-run as good enough. Default
-target when both conditions hold: `<vault>/codegraphs/<repo>/`.
+"just this once" or treat a missing scratch-run as good enough.
+
+**Target directory is configurable, via `graph.obsidian.dir` and
+`graph.obsidian.layout`.** Two layouts:
+
+- `layout: "flat"` (the default — unchanged behaviour for a config written
+  before this key existed): `graph.obsidian.dir` IS the export target,
+  verbatim. The documented convention is `<vault>/codegraphs/<repo>/`, but
+  the field is used as-is, whatever it is set to.
+- `layout: "org/repo"`: `graph.obsidian.dir` is a per-org folder — e.g. a
+  vault laid out as `<vault>/<org>/<repo>/` (`solomon/aws-managed-services`,
+  `anew/*`, `personal/*`) sets `dir` to `<vault>/<org>` — and the skill
+  appends `/<repo>` under it to get the actual export target. Ask which org
+  this repo belongs to before writing `dir`; it is not something either
+  layout can derive from the repo alone.
+
+Confirm which layout and which `dir` are in effect before running an export
+that has not run in this repo before — do not assume `flat` just because it
+is the default, and do not assume a `dir` written for one layout still means
+the same thing if `layout` has since changed.
 
 **CLI syntax:** the export is its own subcommand, not a flag on the build
 command. `graphify . --obsidian --obsidian-dir <path>` is silently ignored —
 those flags don't exist on the default build/extract command, and an
 unrecognized flag there produces no error, so it looks like it worked. The
-real invocation is:
+real invocation, with the target resolved per the layout above:
 
 ```
-graphify export obsidian --graph <repo>/graphify-out/graph.json --dir <vault-target>
+graphify export obsidian --graph <repo>/graphify-out/graph.json --dir <resolved-target>
 ```
 
 ### Verified behaviour (graphify 0.9.49, checked 2026-08-24)
@@ -212,7 +230,8 @@ choice the user makes, not a side effect of building a graph.
 | `graph.mode` | Always `"code-only"` today. |
 | `graph.commitHook` | Whether `graphify hook install` has been run. |
 | `graph.obsidian.enabled` | Whether an Obsidian export is configured at all. |
-| `graph.obsidian.dir` | Export target, or `null`. |
+| `graph.obsidian.dir` | Export target, or `null` — its meaning depends on `layout`. |
+| `graph.obsidian.layout` | `"flat"` (default) or `"org/repo"` — see above. |
 | `graph.obsidian.confirmed` | The consent gate above — never set by an upgrade. |
 
 ## Refreshing an existing codemap

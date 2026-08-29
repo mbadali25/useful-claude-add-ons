@@ -54,9 +54,16 @@ AGENTS = {os.path.basename(f)[:-3] for f in glob.glob("agents/*.md")}
 COMMANDS = {os.path.basename(f)[:-3] for f in glob.glob("commands/*.md")}
 SKILLS = {os.path.basename(os.path.dirname(f)) for f in glob.glob("skills/*/SKILL.md")}
 
+# Roles that are deliberately NOT on the default tier. Anything absent from this
+# map must declare `sonnet`; see check_agents for why each exception exists.
+MODEL_TIER = {"pm": "opus", "qa-reviewer": "opus"}
+
 KNOWN_TOOLS = {
     "Read", "Write", "Edit", "MultiEdit", "Bash", "PowerShell", "Grep", "Glob",
     "Agent", "Task", "Skill", "WebSearch", "WebFetch", "ToolSearch", "NotebookEdit",
+    # The standing PM is reached by name rather than respawned, which needs both
+    # of these: ListAgents to find it, SendMessage to continue it.
+    "ListAgents", "SendMessage",
 }
 SPAWNABLE = "|".join(sorted(AGENTS)) or "$^"
 PLUGIN_PATH = re.compile(r"\$\{CLAUDE_PLUGIN_ROOT\}/([A-Za-z0-9_\-./]+)")
@@ -155,10 +162,19 @@ def check_agents():
             ok(f"{name}: tools")
 
         model = fields.get("model", "inherit")
-        if model in ("inherit", "opus", "sonnet", "haiku"):
-            ok(f"{name}: model")
-        else:
+        if model not in ("inherit", "opus", "sonnet", "haiku"):
             bad(f"{name}: unrecognised model '{model}'")
+        elif model != MODEL_TIER.get(name[:-3], "sonnet"):
+            # The tiering is a design decision, not a default: the PM holds the
+            # project picture every dispatch derives from, qa-reviewer is the
+            # same-family fallback and the model tier is the only compensation
+            # left when Codex is absent, and every other role has a narrow brief
+            # a fast model does well. `inherit` is not an option for any of them
+            # - it silently makes the tier depend on whoever spawned the agent.
+            bad(f"{name}: model '{model}' should be "
+                f"'{MODEL_TIER.get(name[:-3], 'sonnet')}'")
+        else:
+            ok(f"{name}: model")
 
         readonly = "read-only" in fields.get("description", "").lower()
         if readonly or "Read-only" in body[:400]:

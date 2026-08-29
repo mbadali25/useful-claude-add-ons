@@ -94,12 +94,37 @@ requests, and offer to remove it. Never delete it yourself — it is the user's
 own global configuration.
 
 Ask the three questions (reviewer, tracker, memory). The tracker choice is
-files, Jira, or ServiceDesk Plus - offer the last two only when their MCP tools
-are actually reachable, since a repo configured for an API nobody can call stops
-every later command on the same missing precondition. Create
+files, Jira, ServiceDesk Plus, or an Obsidian Kanban board - offer Jira and
+ServiceDesk Plus only when their MCP tools are actually reachable, since a repo
+configured for an API nobody can call stops every later command on the same
+missing precondition. Obsidian's gate is a vault directory that exists on this
+machine rather than a connector, so ask for the path and check it before
+offering the option.
+
+**Then ask the fourth: how much authority the PM gets in this repo.** Default
+`report-only` on any hesitation - a repo that gets autonomy by accident is worse
+than one that has to be asked twice.
+
+> The crew manager can either recommend work and wait for you, or dispatch the
+> crew itself when it spots something. Which do you want here?
+> - `report-only` (default) - it tells you what it would do, you decide.
+> - `act` - it dispatches roles and refreshes diagrams on its own, reports
+>   after. It stays on the findings it was working: a problem it stumbles on
+>   gets fixed only if it BLOCKS one of them, and anything else becomes a ticket
+>   or a `TODO.md` line rather than a detour.
+
+Write the answer to `pm.authority`. Say that `/crew:pm authority <value>`
+changes it later, so this is not a decision they are stuck with - and that
+either way removal and deletion always stop for a yes.
+
+Create
 `.crew/`, `.work/`, `docs/adr/`, `_verify/` from template (README.md, smoke.sh,
 run-all.sh, cases/), gitignore
-entries for secrets, and a `CLAUDE.md` if absent.
+entries for secrets, and a `CLAUDE.md` if absent. Write `.crew/config.json` by
+copying `${CLAUDE_PLUGIN_ROOT}/templates/config.template.json` and filling in
+the answers above — do not hand-write the JSON; that file (and the heal path
+that recreates it if it ever goes missing) both come from the same
+`crew_config.py`, and a hand-typed copy is a fourth place for it to drift.
 
 **The CLAUDE.md, whether or not one already exists.** Run:
 

@@ -766,8 +766,9 @@ $script:Catalog = @(
     [pscustomobject]@{ Key = 'skillui';           Default = $false; Name = 'SkillUI (npm) + Playwright/Chromium - extract a design system from a URL' }
     [pscustomobject]@{ Key = 'strix';             Default = $false; Name = 'Strix AI pentesting CLI (needs Docker + an LLM API key)' }
     [pscustomobject]@{ Key = 'obsidian';          Default = $false; Name = 'Obsidian desktop + claude-obsidian + obsidian-skills plugins' }
-    [pscustomobject]@{ Key = 'repo-plugins';      Default = $false; Name = "This repo's plugins: crew (agents, commands, hooks)" }
+    [pscustomobject]@{ Key = 'repo-plugins';      Default = $false; Name = "This repo's plugins: crew, gizmoduck, obsidian-vault (agents, commands, hooks)" }
     [pscustomobject]@{ Key = 'graphify';          Default = $false; Name = 'graphify code graph (uv tool install graphifyy; per-repo, not global)' }
+    [pscustomobject]@{ Key = 'ms-mcp';            Default = $false; Name = 'Microsoft MCP servers (mcp-servers/): Graph, Intune, Office 365 user/admin - needs az login or tenant credentials' }
 )
 
 $script:Selected = @{}
@@ -839,7 +840,9 @@ foreach ($sk in $script:SkillCatalog) {
 # whether or not Claude agrees with it, so it is opted into explicitly. 'Spec' is
 # 'plugin@marketplace|marketplace-source|marketplace-name'.
 $script:PluginCatalog = @(
-    [pscustomobject]@{ Key = 'crew'; Selected = $true; Name = 'crew                    - Virtual dev team: 9 agents, 16 commands, safety hooks'; Spec = 'crew@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons' }
+    [pscustomobject]@{ Key = 'crew'; Selected = $true; Name = 'crew                    - Virtual dev team: 11 agents, 21 commands, safety hooks'; Spec = 'crew@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons' }
+    [pscustomobject]@{ Key = 'gizmoduck'; Selected = $true; Name = 'gizmoduck               - Nuclei scans: diff, triaged reports, SDP tickets. No hooks'; Spec = 'gizmoduck@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons' }
+    [pscustomobject]@{ Key = 'obsidian-vault'; Selected = $true; Name = 'obsidian-vault          - Multi-vault memory: gardener/reflector agents, bridge+guard hooks'; Spec = 'obsidian-vault@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons' }
 )
 
 # --- Team plugins (menu item 4) -----------------------------------------------
@@ -875,7 +878,7 @@ $script:Groups = @(
     [pscustomobject]@{ MenuKey = 'own-skills'; Single = 'skill';   Catalog = { $script:SkillCatalog };     Flag = '-Skills';    Noun = 'skills';            Title = 'Pick individual skills from this repo'; Label = "This repo's marketplace + {0} of {1} skills  >" }
     [pscustomobject]@{ MenuKey = 'team'; Single = 'team plugin';         Catalog = { $script:TeamCatalog };      Flag = '-Team';      Noun = 'team plugins';      Title = 'Pick team plugins';                     Label = 'Team plugins: {0} of {1} (superpowers, frontend-design, excalidraw)  >' }
     [pscustomobject]@{ MenuKey = 'community'; Single = 'community plugin';    Catalog = { $script:CommunityCatalog }; Flag = '-Community'; Noun = 'community plugins'; Title = 'Pick community plugins';                Label = 'Community marketplaces + {0} of {1} plugins  >' }
-    [pscustomobject]@{ MenuKey = 'repo-plugins'; Single = 'plugin'; Catalog = { $script:PluginCatalog };    Flag = '-Plugins';   Noun = 'plugins';           Title = "Pick plugins from this repo";           Label = "This repo's plugins: {0} of {1} (crew - agents, commands, hooks)  >" }
+    [pscustomobject]@{ MenuKey = 'repo-plugins'; Single = 'plugin'; Catalog = { $script:PluginCatalog };    Flag = '-Plugins';   Noun = 'plugins';           Title = "Pick plugins from this repo";           Label = "This repo's plugins: {0} of {1} (crew, gizmoduck, obsidian-vault)  >" }
 )
 
 function Get-Group {
@@ -2196,6 +2199,100 @@ if (Test-Selected 'graphify') {
             Write-Warn2 "'graphify install --project' failed - run it by hand from inside the target repo."
         }
         Show-GraphifyNextSteps
+    }
+}
+
+# --- 21. Microsoft MCP servers (mcp-servers/) ---------------------------------
+# Published to npm under @badali404 (2026-08-28), so like the item-9-12 MCP servers
+# this registers the npx form - no clone, no build, no global install; npx resolves
+# and caches the package on the server's first launch. The admin servers now
+# authenticate through a chain (secret -> az CLI -> device code, see
+# mcp-servers/README.md's "Admin auth chain, in detail"), so a real Azure AD app
+# registration is no longer required to register them here - a signed-in
+# 'az login' session is sufficient, checked below via 'az account show'.
+#
+# Registration is bare (no -EnvVars): Add-McpServer's -EnvVars persists the value into
+# ~/.claude.json, and this repo's rule is secrets from env only, never written anywhere
+# by this script. So MS_ADMIN_*/MS_USER_* (when used) still have to be set wherever
+# the 'claude' process itself gets launched ($PROFILE, service manager, etc.) - this
+# step just prints that. Developing against a local clone instead:
+# mcp-servers/README.md keeps the 'npm install -g' workspace-link option documented.
+if (Test-Selected 'ms-mcp') {
+    Invoke-Step "Register Microsoft MCP servers (mcp-servers/)" {
+        $haveAdminSecret = [bool]($env:MS_ADMIN_TENANT_ID -and $env:MS_ADMIN_CLIENT_ID -and $env:MS_ADMIN_CLIENT_SECRET)
+
+        # 'az account show' reads the CLI's own cached session; it fails fast (no
+        # network call) when 'az' is missing or nobody has run 'az login'. Sufficient
+        # on its own to register the admin servers now that they fall back to it.
+        $haveAdminCli = $false
+        if (Get-Command az -ErrorAction SilentlyContinue) {
+            try {
+                az account show *> $null
+                if ($LASTEXITCODE -eq 0) { $haveAdminCli = $true }
+            } catch {
+                $haveAdminCli = $false
+            }
+        }
+
+        $haveAdmin = $haveAdminSecret -or $haveAdminCli
+        $haveUser = [bool]$env:MS_USER_CLIENT_ID
+
+        if (-not $haveAdmin -and -not $haveUser) {
+            Write-Skip "Microsoft MCP servers: no MS_ADMIN_* creds, no 'az login' session, and no MS_USER_CLIENT_ID"
+            Write-Host "        mcp-msgraph/mcp-intune/mcp-o365-admin now also work with just an existing"
+            Write-Host "        Azure CLI session - no app registration needed. Either:"
+            Write-Host "          az login                                                                   # then re-run this item"
+            Write-Host "        or:"
+            Write-Host "          `$env:MS_ADMIN_TENANT_ID='...'; `$env:MS_ADMIN_CLIENT_ID='...'; `$env:MS_ADMIN_CLIENT_SECRET='...'  # msgraph/intune/o365-admin"
+            Write-Host "        mcp-o365-user always needs its own app registration:"
+            Write-Host "          `$env:MS_USER_CLIENT_ID='...'                                                                     # o365-user (device code)"
+            Write-Host "          .\install-prerequisites.ps1 -Select ms-mcp"
+            return
+        }
+        if (-not (Test-ClaudeAvailable)) {
+            throw "claude not found on PATH in this session - open a new shell and re-run this script."
+        }
+        if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+            throw "node not found on PATH - install Node.js first (item 1), then re-run."
+        }
+
+        # MCP_MS_ALLOW_WRITES is not a secret (a boolean gate, not a credential), so
+        # unlike MS_ADMIN_*/MS_USER_* it is fine to bake into the registration via
+        # -EnvVars rather than requiring it in the launching shell too - scoped to
+        # just these servers. Detected the same way everything else in this step
+        # is: present and '1' in the session running the installer means enable it.
+        # A write tool still separately requires 'confirm: true' per call regardless
+        # of how this flag got set.
+        $envVars = $null
+        $writesEnabled = $env:MCP_MS_ALLOW_WRITES -eq '1'
+        if ($writesEnabled) { $envVars = @{ MCP_MS_ALLOW_WRITES = '1' } }
+
+        if ($haveAdmin) {
+            Add-McpServer -Name 'mcp-msgraph' -CommandArgs @('npx', '-y', '@badali404/mcp-msgraph@latest') -EnvVars $envVars
+            Add-McpServer -Name 'mcp-intune' -CommandArgs @('npx', '-y', '@badali404/mcp-intune@latest') -EnvVars $envVars
+            Add-McpServer -Name 'mcp-o365-admin' -CommandArgs @('npx', '-y', '@badali404/mcp-o365-admin@latest') -EnvVars $envVars
+            if (-not $haveAdminSecret) {
+                Write-Host "        Registered via the Azure CLI fallback (no MS_ADMIN_* set) - each server will"
+                Write-Host "        authenticate as whoever is signed in with 'az login' wherever it actually runs."
+            }
+        } else {
+            Write-Skip "mcp-msgraph/mcp-intune/mcp-o365-admin: no MS_ADMIN_* credentials and no 'az login' session"
+        }
+        if ($haveUser) {
+            Add-McpServer -Name 'mcp-o365-user' -CommandArgs @('npx', '-y', '@badali404/mcp-o365-user@latest') -EnvVars $envVars
+        } else {
+            Write-Skip "mcp-o365-user: no MS_USER_CLIENT_ID given"
+        }
+        if ($writesEnabled) {
+            Write-Host "        Registered with MCP_MS_ALLOW_WRITES=1 baked in - write/destructive tools"
+            Write-Host "        are enabled on every server registered by this run. Each call still"
+            Write-Host "        separately requires confirm: true; the flag alone never lets a tool write."
+        } else {
+            Write-Host "        Every server registered read-only. To enable write/destructive tools:"
+            Write-Host "          `$env:MCP_MS_ALLOW_WRITES='1'; .\install-prerequisites.ps1 -Select ms-mcp"
+            Write-Host "        or per-server by hand: claude mcp remove <name>; claude mcp add <name> -e MCP_MS_ALLOW_WRITES=1 -- npx -y @badali404/<pkg>@latest"
+        }
+        Write-Ok "Registered via 'npx -y @badali404/<pkg>@latest' - no secrets were written to ~/.claude.json. If not relying on 'az login', set MS_ADMIN_TENANT_ID/MS_ADMIN_CLIENT_ID/MS_ADMIN_CLIENT_SECRET and/or MS_USER_CLIENT_ID (+ optional MS_USER_TENANT_ID) in `$PROFILE or wherever 'claude' itself gets launched, or the servers relying on them will fail to authenticate. Verify auth with 'npx -y @badali404/mcp-msgraph@latest doctor' (same pattern per server) - it reports which auth chain link actually authenticated and whether writes are enabled."
     }
 }
 

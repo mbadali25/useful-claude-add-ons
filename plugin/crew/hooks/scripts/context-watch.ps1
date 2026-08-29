@@ -43,7 +43,14 @@ if ($cfg.PSObject.Properties['reserveTokens']) {
 }
 
 $marker = ".crew/.handoff-requested"
-if (Test-Path $marker) { exit 0 }
+if (Test-Path $marker) {
+  # The nag already happened. This is the turn on which the handoff may have
+  # just been written, which is the only moment auto-clear is interested in. It
+  # is off unless context.autoClear.enabled is true, and it decides for itself
+  # whether the note is complete enough to act on.
+  try { & "$PSScriptRoot/auto-clear.ps1" 2>$null | Out-Null } catch { }
+  exit 0
+}
 
 # Read the ACTUAL window occupancy, not a guess at it.
 #

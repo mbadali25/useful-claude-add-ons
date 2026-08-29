@@ -9,13 +9,13 @@ One-line bootstrap — no `git clone` needed. Pulls the prerequisite installer s
 **Windows** (elevated PowerShell):
 
 ```powershell
-irm 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/ae58c216bb4bd9ff6c2c903aae7b8203ad96030f/scripts/install-prerequisites.ps1' | iex
+irm 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/963c51a0d085833002d16cf11d6c2056f0133633/scripts/install-prerequisites.ps1' | iex
 ```
 
 **Linux**:
 
 ```bash
-curl -fsSL 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/ae58c216bb4bd9ff6c2c903aae7b8203ad96030f/scripts/install-prerequisites.sh' | bash
+curl -fsSL 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/963c51a0d085833002d16cf11d6c2056f0133633/scripts/install-prerequisites.sh' | bash
 ```
 
 Both links are pinned to a specific commit SHA rather than `main`, so the exact script you're running is fixed and auditable — it can't silently change between when you review it and when you run it. **Update the SHA above whenever `scripts/install-prerequisites.*` changes**: after merging to `main`, run `git rev-parse HEAD` and swap it into both URLs.
@@ -79,8 +79,9 @@ Terminals that can't read a key press one at a time — no `stty`, `TERM=dumb`, 
 | 16 | SkillUI + Playwright/Chromium — design system from a URL | |
 | 17 | Strix — AI pentesting CLI (needs Docker + an LLM API key) | |
 | 18 | Obsidian desktop + `claude-obsidian` and `obsidian-skills` plugins | |
-| 19 | This repo's plugins — `crew` (agents, commands, **hooks**) — **→ picks which** | |
+| 19 | This repo's plugins — `crew`, `obsidian-vault` (agents, commands, **hooks**) — **→ picks which** | |
 | 20 | `graphify` code graph (`uv tool install graphifyy`; per-repo, not global) | |
+| 21 | Microsoft MCP servers (`mcp-servers/`) — Graph, Intune, Office 365 user/admin — **needs `az login` or tenant credentials** | |
 
 Menu numbers are identical on Windows and Linux, and an already-registered MCP server, marketplace, or plugin is reported and skipped rather than re-added. Numbers can shift as items are added, so scripted runs should prefer the stable keys (`--select supabase,strix`) over positions.
 
@@ -99,6 +100,8 @@ A few items need a word of explanation:
 - **This repo's plugins** (19) installs [`plugin/crew`](plugin/crew) from this same marketplace — so it works whether or not item 3 ran. It is **off by default, deliberately**: unlike a skill, `crew` registers **hooks**, and a hook is not advisory. Its `PreToolUse` hook blocks `terraform apply`/`destroy`, destructive DDL, force push, hard reset, and any command that would print a secret into the transcript; its `Stop` hooks run the checks your changed paths map to (failing the turn on red) and watch context use; a `PreCompact`/`SessionStart` pair carries a handoff note across compaction, and that same `SessionStart` also runs a report-only PM brief — schema drift, a stale or missing code graph, review health — before you type anything. All of them start working the moment the plugin is enabled, so the item ends by printing the per-repository setup (`/crew:init`, `/crew:onboard`, `/crew:verify`) rather than leaving you to discover the gates by hitting them. This item also detects, but never removes, a separately-installed global copy of `find-skills` (item 5) that would collide with the one `crew` vendors. See [`plugin/README.md`](plugin/README.md) for the catalog and [`plugin/PLUGINS.md`](plugin/PLUGINS.md) for what each plugin actually contains.
 
 - **`graphify` code graph** (20) installs the third-party `graphify` CLI (`uv tool install graphifyy` — package `graphifyy`, double-y; the CLI it installs is `graphify`) and registers it **per-repository** with `graphify install --project`, never globally. Off by default, no new flag — it reuses `--select` / `-Select` like every other item. This is what `crew`'s `/crew:upgrade` and the `crew-graph` skill build on; installing it alone does nothing until `crew` (19) or another workflow calls it.
+
+- **Microsoft MCP servers** (21) is not one server but four — `mcp-msgraph`, `mcp-intune`, `mcp-o365-admin`, `mcp-o365-user` — built from [`mcp-servers/`](mcp-servers/) in this repo and **published to npm under `@badali404`**, so like items 9–12 this registers the npx form: `claude mcp add <name> -- npx -y @badali404/<pkg>@latest`, no clone or build needed. What it needs first is real Azure AD app registrations — `MS_ADMIN_TENANT_ID`/`MS_ADMIN_CLIENT_ID`/`MS_ADMIN_CLIENT_SECRET` (app-only, tenant-wide — registers `mcp-msgraph`, `mcp-intune`, `mcp-o365-admin`) and/or `MS_USER_CLIENT_ID` (delegated device-code — registers `mcp-o365-user`). Without any of those set, the item explains what's missing and skips rather than failing. Registration is bare, no `--env`, so no secret is ever written into `~/.claude.json`; the same env vars must also be set wherever the `claude` process itself gets launched, or the registered servers will fail to authenticate. Every tool in all four servers is read-only until `MCP_MS_ALLOW_WRITES=1` is also set there. See [`mcp-servers/README.md`](mcp-servers/README.md) for the full auth model, env vars, and the gated-tool list, and [`mcp-servers/PUBLISHING.md`](mcp-servers/PUBLISHING.md) for releasing new versions.
 
 Everything that can be a plugin **is** installed as one, using the CLI's own `claude plugin marketplace add` / `claude plugin install` — there's no `npx claudepluginhub` wrapper and no `git clone` + shell-script step any more. That removes the Windows failure modes those introduced (the wrapper needed a writable per-repo checkout).
 
@@ -156,8 +159,9 @@ For this repo's own skills, [`scripts/check-marketplace.py`](scripts/check-marke
 | 16 SkillUI | `skillui` + `playwright` + the Chromium browser build | npm |
 | 17 Strix | The `strix` pentesting CLI | `curl -sSL https://strix.ai/install \| bash` |
 | 18 Obsidian | The Obsidian desktop app (Chocolatey → winget on Windows, flatpak → snap on Linux), plus the `claude-obsidian` vault engine and [`kepano/obsidian-skills`](https://github.com/kepano/obsidian-skills) — Obsidian's own Markdown, Bases, JSON Canvas, CLI and Defuddle skills | choco/winget/flatpak/snap + 2 marketplaces |
-| 19 This repo's plugins | The `crew` plugin from [`plugin/`](plugin/) — 10 subagents, 18 slash commands, 16 bundled skills, and 16 hook entries (8 scripts × `.sh`/`.ps1`) across 5 events. Off by default because hooks execute whether or not Claude agrees with them | this repo |
+| 19 This repo's plugins | The `crew` plugin from [`plugin/`](plugin/) — 11 subagents, 21 slash commands, 16 bundled skills, and 20 hook entries (10 scripts × `.sh`/`.ps1`) across 5 events — `obsidian-vault` — 2 agents, 8 slash commands, 3 skills, and 8 hook entries (3 scripts × `.sh`/`.ps1`) — and `gizmoduck` — 6 slash commands and 1 skill, no hooks, no agents. Off by default because hooks execute whether or not Claude agrees with them | this repo |
 | 20 `graphify` | The `graphify` CLI (`graphifyy` on PyPI), registered per-repository with `graphify install --project`. Off by default; not installed globally | `uv tool install` |
+| 21 Microsoft MCP servers | Registers up to 4 servers via npx — `mcp-msgraph`, `mcp-intune`, `mcp-o365-admin` (app-only via `MS_ADMIN_*`, OR delegated via an existing `az login` session, checked with `az account show` — no app registration required for the latter), `mcp-o365-user` (delegated device-code, needs `MS_USER_CLIENT_ID`). Skipped with instructions when neither an `az login` session nor credentials are found | npm (`@badali404/mcp-*`) + `claude mcp add` |
 
 Items 1–8 are the default set. Everything from 9 on is opt-in.
 
@@ -267,6 +271,8 @@ On Windows they also fix four things that otherwise break claude-obsidian silent
 
 ### Vault automation — the vault that feeds itself
 
+**New setups:** prefer the cross-platform [`obsidian-vault`](plugin/obsidian-vault) plugin (`claude plugin install obsidian-vault@useful-claude-add-ons`, then `/obsidian-vault:init`) over the Windows-only installer below - same capture/gardener idea as a proper plugin, with a committed test suite and no vault path baked in. The installer below still works and is documented here for anyone already using it.
+
 Once a vault exists, [**`vault-automation/`**](vault-automation/) installs the layer that makes it learn on its own: `SessionEnd`/`PreCompact` hooks queue every Claude session into the vault inbox, a nightly **gardener** task runs headless Claude to distill queued sessions into source-cited concept pages and daily digests, and a `HOME.md` Dataview dashboard surfaces what needs attention. Works with Obsidian Sync alone (no git required) or with an optional git history layer. Dry-run by default:
 
 ```powershell
@@ -279,6 +285,31 @@ Once a vault exists, [**`vault-automation/`**](vault-automation/) installs the l
 ```
 
 Run the gardener on **one machine only**; details and safety notes in [`vault-automation/README.md`](vault-automation/README.md).
+
+## Microsoft MCP servers
+
+[**`mcp-servers/`**](mcp-servers/) is four local, stdio-based MCP servers for Microsoft
+365 and Intune — `mcp-msgraph` (tenant directory), `mcp-intune` (device management),
+`mcp-o365-admin` (mailboxes, licenses, password reset), and `mcp-o365-user` (the
+signed-in user's own mail/calendar/files via device-code sign-in). They are **not**
+marketplace plugins; they're npm packages built from one shared auth/HTTP workspace
+package and registered with `claude mcp add`. Menu item 21 of the bootstrap installer
+builds and registers them, off by default. The three admin-scope servers register with
+just an existing `az login` session (no app registration needed) or with `MS_ADMIN_*`
+credentials; `mcp-o365-user` always needs its own `MS_USER_CLIENT_ID` app registration.
+
+Azure Resource Manager is deliberately **not** one of the four: the official
+[`@azure/mcp`](https://www.npmjs.com/package/@azure/mcp) (menu item 10) already covers
+ARM comprehensively, so this repo doesn't duplicate it. All five packages
+(the shared core plus the four servers) are published to npm under `@badali404`,
+so `npx -y @badali404/<pkg>@latest` is the install path — no clone needed.
+[`.github/workflows/publish-mcp-servers.yml`](.github/workflows/publish-mcp-servers.yml)
+publishes all five, core first, on a tagged `mcp-servers-v*` push
+([`mcp-servers/PUBLISHING.md`](mcp-servers/PUBLISHING.md) is the walkthrough). See
+[`mcp-servers/README.md`](mcp-servers/README.md) for that decision, the full auth model
+(delegated vs. app-only, and why they're separate credentials), every environment
+variable, the write/destructive tools gated behind `MCP_MS_ALLOW_WRITES=1` +
+`confirm: true`, and registration one-liners for both platforms.
 
 ## Skills
 
@@ -345,7 +376,9 @@ Each subdirectory in [`plugin/`](plugin/) is a self-contained [Claude Code plugi
 
 | Plugin | Category | What it does | Use cases | Provides |
 |---|---|---|---|---|
-| [`crew`](plugin/crew) | Workflow / QA | A virtual dev team for multi-repo legacy work — file-backed tickets, one implementation session, an independent reviewer, and deterministic gates that block on failure instead of offering an opinion. Hooks enforce unsafe commands, unverified turns, and unearned production deploys. Roles exist only where they buy an isolated context window, a restricted tool set, or genuinely independent eyes; project management is a report-only agent and a command, not something with write access, and BA/architecture stay files and commands too. Codex QA, Jira, Obsidian memory, a code graph, and Teams/Telegram notifications are all optional. | Several repositories, mixed stacks, legacy code, and almost no test coverage; a change that needs review by something that did not write it; wanting `terraform apply`, force-push, and destructive DDL blocked by a hook rather than by good intentions; a turn that should fail when the checks its changed paths map to go red; a production deploy that should be refused unless qa signed off on **that exact sha** and the rollback runbook is still verified; wanting to know what every endpoint and scheduled job actually does; losing the thread across a `/clear` or an auto-compact; a session-start brief on schema drift, a stale graph, or an unhealthy review rate. | 10 agents, 20 commands, 16 skills, 16 hook entries |
+| [`crew`](plugin/crew) | Workflow / QA | A virtual dev team for multi-repo legacy work — file-backed tickets, one implementation session, an independent reviewer, and deterministic gates that block on failure instead of offering an opinion. Hooks enforce unsafe commands, unverified turns, and unearned production deploys. Roles exist only where they buy an isolated context window, a restricted tool set, or genuinely independent eyes; the manager is the one role that can assign work rather than only reporting on it, opt-in via `pm.authority`, and BA/architecture stay files and commands. Codex QA, Jira or ServiceDesk Plus, an Obsidian Kanban board for tickets, Obsidian memory, a code graph, and Teams/Telegram notifications are all optional. | Several repositories, mixed stacks, legacy code, and almost no test coverage; a change that needs review by something that did not write it; wanting `terraform apply`, force-push, and destructive DDL blocked by a hook rather than by good intentions; a turn that should fail when the checks its changed paths map to go red; a production deploy that should be refused unless qa signed off on **that exact sha** and the rollback runbook is still verified; wanting to know what every endpoint and scheduled job actually does; losing the thread across a `/clear` or an auto-compact; wanting the crew to pick up the next thing itself when a ticket closes or the diagrams fall behind, instead of waiting to be asked — bounded so it fixes only what blocks the job and tickets the rest. | 11 agents, 21 commands, 16 skills, 20 hook entries |
+| [`gizmoduck`](plugin/gizmoduck) | Security | Runs [Nuclei](https://github.com/projectdiscovery/nuclei) vulnerability scans against hosts and websites you are authorised to test, then does the part that usually gets skipped: diffs the run against a previous baseline so you see what is genuinely new, renders a triaged report as Markdown, HTML or PDF, and opens or syncs ServiceDesk Plus tickets for Critical and High findings. Nuclei is MIT-licensed and self-hosted, so the whole loop runs locally with no export step and no API quota. Bootstrap scripts for WSL/Linux and Windows fetch the engine and the community template set; `/gizmoduck:doctor` tells you which half of the toolchain is missing rather than failing mid-scan. Registers no hooks and no agents — it is six commands over one Python CLI. | Wanting a scheduled external scan whose findings land in the ticket queue instead of a PDF nobody opens; needing to show an auditor what changed between this quarter's scan and last quarter's; a scan whose Critical and High findings should become tickets automatically while the Mediums stay in the report; re-rendering a report at a different severity floor without paying for another scan; a scanner that stops working on a new machine and you want to know whether it is `nuclei`, the templates, `python`, or `wkhtmltopdf`. | 6 commands, 1 skill |
+| [`obsidian-vault`](plugin/obsidian-vault) | Memory | Makes one or more Obsidian vaults Claude Code's durable, token-efficient memory. Cross-platform, multi-vault setup for the Local REST API bridge and MCP registration (one server per vault, never one juggling two), a vault-contract guard hook that ships every check off until a target vault's own `CLAUDE.md` says to turn it on, gardening and reflection agents with no fabricated citations, canvas and Map-of-Content generation, and `graphify` wiring into a separate, dedicated codegraphs vault. No vault path is hardcoded — it detects from Obsidian's own vault registry or a config file. Named `obsidian-vault`, not `obsidian`, so it cannot collide with a third-party plugin of that name. | Wanting Claude Code sessions to remember architecture decisions and patterns across `/clear` without re-explaining them; a second machine-generated vault (a code graph running past 100k notes) that needs different defaults than a hand-curated one; an Obsidian Git plugin auto-committing on a timer into a directory that turns out not to be a git repo; a vault whose own `CLAUDE.md` has drifted from what the filesystem actually shows; wanting a canvas or Map of Content that stays a spatial/structural aid rather than a second, driftable copy of facts already in notes. | 8 commands, 2 agents, 3 skills, 8 hook entries |
 
 **Provides** counts what the plugin registers with Claude Code. The per-item breakdown — every command, agent, bundled skill, and hook event — is in [`plugin/PLUGINS.md`](plugin/PLUGINS.md); the authoritative upstream guide is [`plugin/crew/README.md`](plugin/crew/README.md).
 

@@ -1,0 +1,20 @@
+{
+  "name": "mcp-servers-microsoft",
+  "private": true,
+  "description": "Local stdio MCP servers for Microsoft Graph (Intune, Graph, Office 365 user and admin scopes)",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build -w packages/core && npm run build --workspaces --if-present",
+    "test": "npm run build && npm run test --workspaces --if-present",
+    "clean": "npm run clean --workspaces --if-present"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3",
+    "@types/node": "^22.10.5"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

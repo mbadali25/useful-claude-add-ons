@@ -23,6 +23,7 @@ Built for the awkward case: several repositories, mixed stacks, legacy code, and
 12. [Optional: Codex as reviewer](#12-optional-codex-as-reviewer-gemini-as-design-partner)
 13. [Optional: Jira via MCP](#13-optional-jira-via-mcp)
 13b. [Optional: ServiceDesk Plus via MCP](#13b-optional-servicedesk-plus-via-mcp)
+13c. [Optional: an Obsidian Kanban board](#13c-optional-an-obsidian-kanban-board)
 14. [Optional: Obsidian for memory](#14-optional-obsidian-for-memory)
 15. [Optional: Teams and Telegram notifications](#15-optional-teams-and-telegram-notifications)
 16. [Context handoff](#16-context-handoff)
@@ -120,6 +121,91 @@ Full detail, including a bash-to-PowerShell command translation table, is in
 `skills/crew-setup/platform.md`.
 
 ---
+
+### The platform block fixes itself
+
+`.crew/config.json` is committed, and its `platform` block describes the machine
+that ran `/crew:init`. The moment it lands in git it is wrong for everybody else
+— and `windowsHostIp` is wrong for the same person after a reboot, because WSL2's
+gateway changes.
+
+So a `SessionStart` hook repairs it. Open the repo on Windows after someone
+committed it from WSL and the first thing the session says is:
+
+```
+## platform - config said linux, this is windows-bash; updated 5 field(s) in .crew/config.json
+- platform.distro: 'Ubuntu' -> ''
+- platform.os: 'linux' -> 'windows-bash'
+- platform.windowsHostIp: '172.24.16.1' -> ''
+- platform.wsl: 'yes' -> 'no'
+- platform.wslVersion: '2' -> ''
+```
+
+**One rule makes this safe: it writes derived facts and nothing else.**
+
+| | |
+|---|---|
+| Rewritten | `os`, `wsl`, `wslVersion`, `distro`, `shell`, `repoFilesystem`, `windowsHostIp` — every one an answer to "what machine is this", which nobody hand-edits usefully |
+| Reported, not changed | a preference this OS cannot honour: an `autoClear.method` that only exists on the other platform, a clone under `/mnt/`, CRLF in a committed `.sh` |
+| Never touched | everything else. `tracker`, `qa`, `roles`, `tier`, `notify`, `emergency`, the context thresholds, `verifyGate`. If a human chose it, it stays chosen |
+
+That split is the whole design, and it is why this hook is allowed to write when
+the PM is report-only. The PM's subject is *judgement* — whether a role earns its
+context is not a fact. `platform.os` is a fact, it is wrong on the other machine,
+and being asked about it once per clone would be worse than having it fixed.
+
+It never writes when nothing changed, so it does not dirty your tree on every
+session, and it preserves the file's existing line endings — rewriting a
+LF config as CRLF would show up as a whole-file diff for everyone else.
+
+**Both flavours delegate to one python module** (`hooks/scripts/crew_platform.py`)
+rather than reimplementing detection twice. For a hook that writes config, two
+implementations that disagree about what they write is the last thing you want —
+and the `.sh`/`.ps1` pair here has drifted for a whole release before.
+
+A read-only checkout, or no python at all, means it says what it *would* have
+changed and changes nothing.
+
+### The config heals itself
+
+The same hook also recreates `.crew/config.json` itself, not just its
+`platform` block, when the file has gone missing or stopped parsing —
+a half-finished merge, a bad rebase, or an edit interrupted mid-save all
+leave a repo that *looks* like a crew repo (the `.crew/` directory is right
+there) but whose switchboard is gone or unreadable.
+
+**CRITICAL GUARD: this only ever acts where `.crew/` already exists.** A
+plain git repository that happens to be open when the hook runs is not
+touched — `.crew/` absent means "not a crew repo," full stop, and the hook
+must never create one just because a session started there.
+
+Given a `.crew/` directory, three cases:
+
+| `.crew/config.json` | What happens |
+|---|---|
+| Missing, or present but empty | Written fresh from the same template `/crew:init` uses. No backup — there is nothing to lose. |
+| Present, non-empty, but does not parse as a config object | Copied aside to `config.json.broken` first (a previous `.broken` file from an earlier bad session is never overwritten — the first failure is still the best chance at recovery), then written fresh. |
+| Present and parses as an object, however unusual | Untouched, byte for byte. This heals a config that **is not one** — it does not validate or judge one that already is. |
+
+Either way the session says so, in one line:
+
+```
+## config - .crew/config.json was malformed; backed it up to .crew/config.json.broken and wrote defaults - tracker, roles, and every other choice are back to defaults; run /crew:init to re-record them
+```
+
+**Recreating the file means every human choice in it is gone** — `tracker`,
+`roles`, `tier`, whichever Jira project or Obsidian vault was configured, all
+of it, back to defaults. `platform-sync` cannot know what those choices were;
+only `/crew:init` can put them back, which is why the message says to run it.
+This trades a working-but-defaulted repo for a broken one, not a perfectly
+restored one.
+
+The default config itself has one source: `hooks/scripts/crew_config.py`'s
+`default_config()`. `templates/config.template.json` (what `/crew:init`
+copies down) and this heal path both call it, and a committed test asserts
+the template equals its output byte-for-byte — so the two can never quietly
+drift apart the way a hand-maintained template and a hand-maintained heal
+path eventually would.
 
 ### Resolving the toolchain
 
@@ -584,7 +670,50 @@ You open the pull request. The crew stops at the boundary of your judgment.
 
 ## 11. Configuration reference
 
-Everything reads `.crew/config.json`:
+Everything reads `.crew/config.json`. If it goes missing or stops parsing,
+`platform-sync` recreates it from `templates/config.template.json` the next
+time the repo is opened — see "The config heals itself" in §3; this is the
+same shape that produces:
+
+### Global config, and how it layers with the repo file
+
+An optional machine-global file at `~/.claude/crew/config.json` sets defaults
+for every crew repo on this machine, without hand-editing each one. Three
+layers, lowest precedence first:
+
+| Layer | Source | Written by |
+|---|---|---|
+| Built-in defaults | `hooks/scripts/crew_config.py`'s `default_config()` | Nothing — this is code, not a file |
+| Global | `~/.claude/crew/config.json` | **Nobody.** No command creates or edits it. Write it by hand, or with a one-liner: `mkdir -p ~/.claude/crew && echo '{"pm":{"authority":"report-only"}}' > ~/.claude/crew/config.json` |
+| Repo | `.crew/config.json` | `/crew:init` (first write); `platform-sync` (the `platform` block, and the whole file when it heals — see §3) |
+
+Repo overrides global overrides built-in defaults, merged one level deep with
+`crew_state.merge_defaults` — the same policy `/crew:upgrade` uses to bring a
+v1 config's `pm` and `graph` blocks forward: a nested override wins, a scalar
+where a dict belongs is discarded rather than corrupting the block under it.
+`crew_config.resolve_config(root)` is the one place that computes this; every
+reader that wants *effective settings* calls it rather than reading
+`.crew/config.json` directly.
+
+Two things never go through this layering, on purpose:
+
+- **`schema`** is a fact about the repo file's own layout version, not a
+  setting — it is read straight from `.crew/config.json`, never merged. The
+  built-in-defaults layer always reports the current schema, so merging it
+  would make an unmigrated `v1` repo (no `schema` key at all) look current
+  the moment *any* global file exists on the machine.
+- **The `platform` block and the heal path both write only the repo file.**
+  `platform-sync` never reads or writes the global file, and recreating a
+  missing or broken `.crew/config.json` always writes plain built-in
+  defaults — never a merge that could smuggle a global preference into a
+  file every teammate who clones the repo will also read.
+
+A global file that is missing, empty, or fails to parse is treated exactly
+like an absent one — the same reasoning `_read_config_strict` documents for
+the repo side — so a typo in your global config degrades one repo's settings
+to defaults rather than breaking every session on the machine.
+
+This is the same shape that produces:
 
 ```json
 {
@@ -596,6 +725,18 @@ Everything reads `.crew/config.json`:
   "tracker": "files",
   "jira": { "cloudId": null, "project": null },
   "sdp": { "portal": null, "noteVisibility": "private", "closeOnDone": false },
+  "obsidian": {
+    "vaultPath": null,
+    "boardDir": null,
+    "board": "Board.md",
+    "columns": {
+      "backlog": "Backlog",
+      "ready": "Ready",
+      "inProgress": "In Progress",
+      "review": "Review",
+      "done": "Done"
+    }
+  },
   "memory": { "mode": "repo", "vaultPath": null },
   "verifyGate": true,
   "context": {
@@ -604,6 +745,7 @@ Everything reads `.crew/config.json`:
     "budgetTokens": null,
     "reserveTokens": 100000,
     "handoffPath": ".work/HANDOFF.md",
+    "autoClear": { "enabled": false, "method": "auto", "windowTitle": null, "command": "/clear", "delaySeconds": 3, "minHandoffLines": 5 },
     "autoWrapUp": false,
     "autoResume": false
   },
@@ -615,8 +757,8 @@ Everything reads `.crew/config.json`:
     "tokenEnv": "CREW_TELEGRAM_TOKEN",
     "chatId": null
   },
-  "pm": { "enabled": true, "mode": "adaptive", "quietLines": 8, "maxLines": 40, "authority": "report-only" },
-  "graph": { "out": "graphify-out", "obsidian": { "confirmed": false } }
+  "pm": { "enabled": true, "mode": "adaptive", "quietLines": 8, "maxLines": 40, "authority": "report-only", "maxDispatches": 3 },
+  "graph": { "out": "graphify-out", "obsidian": { "dir": null, "layout": "flat", "confirmed": false } }
 }
 ```
 
@@ -645,7 +787,11 @@ omit the block and assume.
 | `notify.chatId` | string | Telegram only. Group ids are negative; that is normal. |
 | `secondOpinion.provider` | `gemini`, `local`, `none` | Design partner. `sendsCode` stays `false` on any free tier. |
 | `qa.provider` | `auto`, `codex`, `claude` | `auto` prefers Codex, falls back to Claude, announces which ran. `codex` fails loudly instead of falling back. |
-| `tracker` | `files`, `jira`, `sdp` | Where tickets live. `jira` and `sdp` each additionally require their MCP connector; without it every ticket command stops on the same missing precondition. |
+| `tracker` | `files`, `jira`, `sdp`, `obsidian` | Where tickets live. `jira` and `sdp` each additionally require their MCP connector; without it every ticket command stops on the same missing precondition. `obsidian` requires no connector — its precondition is a vault directory that exists on this machine. |
+| `obsidian.vaultPath` | path or `null` | The vault holding the board. `null` falls back to `memory.vaultPath`, so one vault needs one setting. |
+| `obsidian.boardDir` | path relative to the vault | Where the board and its ticket notes live. `Boards/<repo>` by default — one folder per repo, so cards can be `[[T-0042]]` wikilinks that resolve. |
+| `obsidian.board` | filename (default `Board.md`) | The board file inside `boardDir`. |
+| `obsidian.columns` | five lane names | Maps crew's statuses to the board's headings. Rename lanes here rather than on the board, so an existing board keeps working. A named lane that is absent is a setup error, not a lane to create. |
 | `sdp.noteVisibility` | `private` (default), `public` | Whether the push note lands on the requester-visible thread. Private by default because a requester is often not an engineer. |
 | `sdp.closeOnDone` | `true`, `false` (default) | Whether completing a ticket closes the request or only transitions it. `false` leaves closure to whoever owns the queue. |
 | `sdp.portal` | string or `null` | Only needed where the connector serves more than one SDP instance. |
@@ -653,8 +799,18 @@ omit the block and assume.
 | `tier` / `roles` | see §22 | Which agents are in play. Managed by `/crew:scale`. |
 | `context.autoWrapUp` | `true`, `false` (default `false`) | At `warnAt`, instructs the session to reach a stopping point and write the handoff, instead of just asking. The `/clear` itself stays manual either way — no hook can trigger one. See §16. |
 | `context.autoResume` | `true`, `false` (default `false`) | Opens the next `SessionStart` already holding the last handoff as `additionalContext`. See §16 — read the limitation before enabling it. |
-| `pm.enabled` / `mode` / `quietLines` / `maxLines` | see `crew-pm` skill | Whether and how verbosely the `SessionStart` PM brief speaks. `authority` is always `report-only` — the PM never edits `config.json` on its own, regardless of this block. |
+| `context.autoClear.enabled` | `true`, `false` (default `false`) | **Experimental.** Types `/clear` into the terminal once the handoff is written. Read §16's "Auto-clear" before enabling — it presses a key on your behalf. |
+| `context.autoClear.method` | `auto`, `tmux`, `xdotool`, `wtype`, `windows`, `none` | How the keystroke is delivered. `tmux` is the only one that targets its destination exactly; the rest depend on window focus. |
+| `context.autoClear.windowTitle` | string or `null` | Required for every method except `tmux`. Without it those methods refuse rather than typing into an unidentified window. |
+| `context.autoClear.command` | string (default `/clear`) | What gets typed. `/compact` is the other sensible value. |
+| `context.autoClear.delaySeconds` | integer (default `3`) | How long to wait for the prompt to come back before typing. |
+| `context.autoClear.minHandoffLines` | integer (default `5`) | Refuse to clear if the handoff has fewer non-blank lines than this. A stub note is worse than no clear. |
+| `pm.enabled` / `mode` / `quietLines` / `maxLines` | see `crew-pm` skill | Whether and how verbosely the `SessionStart` PM brief speaks, and whether the `Stop` pulse re-engages it at all. |
+| `pm.authority` | `report-only` (default), `act` | What the PM does about what it finds. `report-only` recommends and stops. `act` lets it dispatch crew roles and refresh diagrams on its own — see the `crew-pm` skill for the guardrails that bound it. An unrecognised value resolves to `report-only`: a typo in a permissions field must fail closed. |
+| `pm.maxDispatches` | integer (default `3`) | Roles the PM may dispatch in one pass under `act`. Blockers it hits mid-task do not count against it. |
 | `graph.out` | path (default `graphify-out`) | Where `graphify` wrote `graph.json`. Freshness is read from graphify's own `built_at_commit` field in that file, never a timestamp. |
+| `graph.obsidian.dir` | path or `null` | Export target directory. What it means depends on `graph.obsidian.layout` — see `crew-graph`'s Obsidian section. |
+| `graph.obsidian.layout` | `flat` (default), `org/repo` | How the skill asks you to structure `graph.obsidian.dir`. `flat`: `dir` is the export target verbatim, e.g. `<vault>/codegraphs/<repo>/` — unchanged from before this key existed. `org/repo`: `dir` is a per-org folder, e.g. `<vault>/<org>`, and the skill appends `/<repo>`. |
 | `graph.obsidian.confirmed` | `true`, `false` (default `false`) | Consent gate for exporting the graph into an Obsidian vault. Only explicit consent given in session sets this — `/crew:upgrade` never grants it. See `crew-graph`'s Obsidian section. |
 
 The promotion sequence lives in `.crew/verify.json`, not here — see §23. Config
@@ -669,7 +825,9 @@ A different model reviewing is real independent review. The same model family re
 
 Put `codex` on your `PATH` and set `qa.provider` to `auto` or `codex`. `/crew:review` writes the diff to a file, has Codex return one line per defect, and reads only the findings back — the diff never re-enters your context.
 
-Without Codex, the `qa-reviewer` agent runs instead, in its own context window so it has not seen the reasoning that produced the code. Its prompt tells it outright that it shares a model family with the author and must compensate: ask "what input makes this wrong" before "does this look correct." That is genuinely weaker than a different model, and the command says so every time it happens, so you know to review harder yourself.
+`auto` is the shipped default, so a machine with `codex` installed gets Codex review without configuring anything.
+
+Without Codex, the `qa-reviewer` agent runs instead — on `opus`, in its own context window, so it has at least not seen the reasoning that produced the code. Its prompt tells it outright that it shares a model family with the author and must compensate: ask "what input makes this wrong" before "does this look correct." That is genuinely weaker than a different family, and the command says so every time it happens, so you know to review harder yourself. It also says so itself if something dispatches it directly and skips the Codex check.
 
 ### Gemini for design
 
@@ -776,6 +934,66 @@ and the last three notes, and `/crew:work` reads that file instead of the API.
 The writes act as the signed-in user, so the desk's audit trail names a person
 rather than "an automation". `sdp_whoami` tells you which person, and is the
 cheapest way to prove the connector is live before configuring a repo around it.
+
+---
+
+## 13c. Optional: an Obsidian Kanban board
+
+The fourth tracker, and the only one with nothing to connect to. `tracker:
+"obsidian"` plus a vault path that exists. The board is a markdown file the
+[Kanban plugin](https://github.com/mgmeyers/obsidian-kanban) round-trips, so
+crew writes files and Obsidian draws a board — there is no API, no auth, and no
+payload to amortise.
+
+```
+vault/
+  Boards/<repo>/
+    Board.md          # kanban-plugin: board
+    T-0042.md         # the ticket note
+    T-0041.md
+```
+
+The vault is the remote, exactly as Jira is: `.work/cache/T-####.md` is a terse
+local mirror that `/crew:work` reads, and `/crew:obsidian-sync` touches the
+vault at pickup and completion only. The key keeps the `T-####` shape, so
+nothing else in crew needed a new format to recognise.
+
+**Unlike Jira and ServiceDesk Plus, this mode also keeps `.work/INDEX.md`.**
+The session brief finds the open ticket by reading that file, and a key shaped
+`SDP-40219` was never going to be in it — `T-0042` can be. So the board is the
+human's view of the work and `INDEX.md` is the session's, which costs one line
+per ticket and is why the brief names a real ticket here rather than nothing.
+
+**Five lanes, and dragging a card is how status changes.**
+
+| Lane | Means |
+|---|---|
+| Backlog | Deferred or untriaged. Where the PM parks a non-blocking finding. |
+| Ready | Scoped by `/crew:ticket` and pickup-able. |
+| In Progress | `/crew:work` has it. |
+| Review | Implementation done, `/crew:review` outstanding. |
+| Done | Complete and verified. Carries the `**Complete**` marker. |
+
+On pull the card's lane wins for status and the note wins for content; on push
+the cache's `status:` names the lane — `--push` takes no lane argument and
+infers nothing, so a card cannot land in Done because the turn went well. That rule exists because both sides here are local markdown
+and both look equally authoritative — which makes the divergence hazard *worse*
+than Jira's, not absent. A silent fallback to file tickets is therefore refused
+the same way `/crew:jira-sync` refuses it.
+
+**The board file has three load-bearing parts** and a naive rewrite destroys all
+three, after which the file silently opens as plain text instead of a board: the
+`kanban-plugin: board` frontmatter, the trailing `%% kanban:settings` block, and
+the `**Complete**` marker in the done lane. An archive, when one exists, sits
+below a `***` break under `## Archive` and is nobody's business but Obsidian's.
+So the board is edited in place, one card or one lane at a time, never
+regenerated from the cache.
+
+**Two things to accept before choosing this.** The vault lives outside the repo,
+so ticket state does not travel with a branch and is not on a colleague's
+machine — that is the trade for a board you can drag cards on. And crew never
+commits the vault; if it is versioned, its history is yours to manage, and a
+board edited in two places at once conflicts the way any markdown file does.
 
 ---
 
@@ -962,6 +1180,89 @@ telling you it's ready. **Either way, the `/clear` itself stays manual**,
 because no hook can trigger one: hooks run as child processes, and a child
 cannot reset its parent's conversation. `autoWrapUp` bounds what happens
 before you clear; it does not remove the clear.
+
+### Auto-clear (experimental, off by default)
+
+The correction at the top of this section stands: a hook cannot clear the
+conversation, because a hook is a child process and a child cannot reset its
+parent. `context.autoClear` does not contradict that. It does something else —
+it drives the **terminal**, typing `/clear` at the prompt the way you would.
+
+That is why it can work, and also why it is experimental: typing into a terminal
+is only safe if you know *which* terminal, and the available methods answer that
+question with very different confidence.
+
+| Method | How it finds the target | Confidence |
+|---|---|---|
+| `tmux` | `$TMUX_PANE`, by pane id | **Exact.** No focus involved. Use this if you can. |
+| `xdotool` | window title, then activates it | Steals focus. Right window if the title is right. |
+| `wtype` | types into whatever has focus | None. Wayland offers no way to check. Needs `unsafeFocus: true`. |
+| `windows` | SendKeys, title-checked at send time | Right window *if it still has focus* when the delay expires. |
+
+```json
+"context": {
+  "autoClear": {
+    "enabled": false,
+    "method": "auto",
+    "windowTitle": null,
+    "command": "/clear",
+    "delaySeconds": 3,
+    "minHandoffLines": 5
+  }
+}
+```
+
+**In tmux this needs no configuration beyond `enabled: true`.** Everywhere else
+it needs `windowTitle`, and refuses without it rather than guessing.
+
+#### What has to be true before it types anything
+
+1. `context.autoClear.enabled` is exactly `true`. The string `"true"` is not.
+2. `context-watch` actually asked for a handoff this session.
+3. The handoff file exists and is **newer** than that request — a leftover note
+   from a previous session is not this session's note.
+4. It has at least `minHandoffLines` non-blank lines. Clearing on a two-line
+   placeholder loses the session's work and leaves a note that says "continue
+   the work", which is the worst of both outcomes.
+5. Nothing has claimed the one-per-session attempt yet.
+
+Fail any of those and it writes a line to `.crew/.autoclear.log` saying which,
+and does nothing. That log exists because a `Stop` hook's stderr is invisible
+when it exits 0, so without it "nothing happened" is indistinguishable from
+"the feature is broken".
+
+#### The delay, and why it is not zero
+
+The hook runs *while the turn is still ending*, so the prompt does not exist yet
+and typing immediately types into nothing. The keystroke is handed to a detached
+child that sleeps first. Three seconds is usually enough; raise it on a slow
+machine. The parent exits 0 straight away so the turn is not held up.
+
+#### Two ways it can go wrong, stated plainly
+
+- **On Windows, focus is the whole mechanism.** SendKeys goes to the foreground
+  window. The child re-checks the title immediately before typing, so alt-tabbing
+  during the delay means nothing is sent — but if you alt-tab to *another window
+  with a matching title*, that is where `/clear` lands. Keep the title specific.
+- **A `/clear` is not undoable.** With `minHandoffLines` set too low, or a
+  handoff the session wrote badly, you lose the context and keep a note that does
+  not replace it. Watch the first few, and read `.work/HANDOFF.md` before
+  trusting the next session to resume from it.
+
+#### Try it without risking anything
+
+```bash
+bash   ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/auto-clear.sh --dry-run --force
+pwsh -File ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/auto-clear.ps1 -DryRun -Force
+```
+
+`--dry-run` prints the method, target, command and delay it *would* use and sends
+nothing. `--force` skips the handoff conditions so you can see the plan without
+being deep into a session. Neither consumes the one-per-session attempt.
+
+If you run Claude Code in a tmux pane inside WSL, prefer the `.sh` flavour: it
+addresses a pane by id and never touches focus, which is strictly safer than
+anything the Windows side can do.
 
 ### Auto-resume is off by default
 
@@ -1554,28 +1855,38 @@ a worktree each, so a half-applied one cannot land on top of the other.
 | `/crew:scale` | Evidence-based crew sizing |
 | `/crew:jira-sync <KEY> [--push]` | Sync one issue with the local cache |
 | `/crew:sdp-sync <REQUEST-ID> [--push]` | Sync one ServiceDesk Plus request with the local cache — see §13b |
+| `/crew:obsidian-sync <T-####> [--push]` | Sync one Obsidian Kanban card with the local cache — see §13c |
 | `/crew:pm [onboard\|offboard <role>]` | Crew-manager status, or add/remove a role — see §22 |
 | `/crew:upgrade [--force]` | Bring a pre-schema-2 (`v1`) setup forward — see §11 |
 | `/crew:emergency <what is broken>` | Declare a time-boxed incident: gates stand down and record what they skipped, lanes investigate in parallel — see §24. `status`, `extend [min]`, `end` |
 
-20 commands.
+21 commands.
 
 ### Agents
 
-| Agent | Tools | Tier | Role |
-|---|---|---|---|
-| `explorer` | read-only | 0 | Maps code, returns summaries not contents |
-| `qa-reviewer` | read-only | 0 | Hostile review; the Codex fallback |
-| `security` | read-only | 1 | Exploitable defects in the diff |
-| `smoke-author` | read/write | 1 | Builds and repairs the safety net |
-| `browser-tester` | read/write | 2 | Playwright specs, visual baselines, user flows |
-| `analyst` | read-only | 2 | Anchored findings and options, never tickets |
-| `planner` | read-only | 2 | Design second opinion from an abstracted brief |
-| `dba` | read-only | 2 | Migrations, locks, online safety |
-| `docs-writer` | read/write | 2 | Architecture and data flow from real code |
-| `pm` | read-only (no `Write`) | — | Heavy crew-management analysis in its own context; report-and-recommend only, never applies a change |
+| Agent | Tools | Model | Tier | Role |
+|---|---|---|---|---|
+| `explorer` | read-only | `sonnet` | 0 | Maps code, returns summaries not contents |
+| `qa-reviewer` | read-only | `opus` | 0 | Hostile review; the Codex fallback |
+| `security` | read-only | `sonnet` | 1 | Exploitable defects in the diff |
+| `smoke-author` | read/write | `sonnet` | 1 | Builds and repairs the safety net |
+| `developer` | read/write | `sonnet` | 1 | Implements one scoped change; never reviews it |
+| `browser-tester` | read/write | `sonnet` | 2 | Playwright specs, visual baselines, user flows |
+| `analyst` | read-only | `sonnet` | 2 | Anchored findings and options, never tickets |
+| `planner` | read-only | `sonnet` | 2 | Design second opinion from an abstracted brief |
+| `dba` | read-only | `sonnet` | 2 | Migrations, locks, online safety |
+| `docs-writer` | read/write | `sonnet` | 2 | Architecture and data flow from real code |
+| `pm` | read/write, scoped to `.crew/` and generated diagrams | `opus` | — | The standing manager: scope, onboarding, communication, ticket hygiene, and dispatch |
 
-10 agents. `pm` sits outside the tier ladder — it is not sized in or out by `/crew:scale`, it is invoked directly by `/crew:pm` when the analysis (correlating the whole metrics history, auditing every codemap anchor, building a tier-change evidence chain) would cost more context in the main session than the answer is worth.
+11 agents. `pm` sits outside the tier ladder — it is not sized in or out by `/crew:scale`, it is the thing doing the sizing.
+
+**Model tiers are part of the design, not a cost knob.** The PM runs on `opus` because it holds the whole project picture and every dispatch decision derives from it — a cheap manager makes cheap assignments and every role below inherits the mistake. Working roles run on `sonnet`: narrow brief, clean context, one deliverable. QA runs on Codex by default (`qa.provider` ships as `auto`), because a different model family is what makes review independent; when `codex` is not on `PATH` it falls back to `qa-reviewer` on `opus` — if you cannot have a different family, the strongest model in this one is the only compensation left.
+
+`opus` and `sonnet` here are tiers, not pinned versions. Agent frontmatter asks for a tier and gets whatever the session's strongest model at that tier is; there is no way to pin a point release from a plugin.
+
+**The PM is standing.** It is spawned once per session under the name `crew-pm` and stays addressable; `/crew:pm` reaches the existing one with a message rather than spawning a fresh one. That matters because the roles it dispatches each see one slice of the work and are gone — the PM is the only thing that remembers what was decided, what was deferred, who was onboarded, and why. A PM respawned per invocation knows the JSON and nothing else, and a PM that signs off when the queue empties has to be rehired at the cost of the entire project picture. It reports what is outstanding and waits.
+
+**One hat per role, the PM's included.** The PM manages: it assesses scope, onboards and offboards roles, communicates to you and to the crew, and keeps tickets current. It does not write application code, tests, docs, migrations, or reviews — implementation goes to `developer`, review goes through `/crew:review`, and everything else goes to the role that owns it. Its own writes are `.crew/` bookkeeping, ticket text, `TODO.md`, and the generated diagram artifacts its triggers name.
 
 ### Hooks
 
@@ -1588,6 +1899,7 @@ registered on its own matcher or event — 16 entries total.
 | `promote-gate.sh` / `.ps1` | `PreToolUse` on Bash / PowerShell | Refuses a declared `deploy` command unless the upstream environment has an all-pass row for **this sha**, the rollback runbook is verified inside 90 days, `requireHuman` is approved, and the tree is clean. During an emergency lane it records each unmet precondition and allows the deploy (§24) |
 | `handoff-read.sh` / `.ps1` | `SessionStart` | Injects the handoff after clear, compact, or resume |
 | `pm-brief.sh` / `.ps1` | `SessionStart` | Runs `crew_state.py`, prints the prioritized PM brief (triggers, health, knowledge, graph freshness) — report-only, changes nothing |
+| `platform-sync.sh` / `.ps1` | `SessionStart` | Detects this machine and repairs the `platform` block in `.crew/config.json` — see §3b. The only hook that writes config: the seven derived facts, plus recreating the whole file from defaults when it is missing or malformed (backing up a malformed one first) — never when `.crew/` itself does not exist. See "The config heals itself" in §3 |
 | `verify-gate.sh` / `.ps1` | `Stop` | Runs the checks the changed paths map to; fails the turn on red, on a changed path with no rule, or on a deploy that recorded no promotion row. Stands down while an emergency lane is open (§24), recording what did not run |
 | `context-watch.sh` / `.ps1` | `Stop` | Measures window occupancy from the transcript; asks for a handoff once per session at the later of `warnAt` and `reserveTokens` remaining, or instructs a wrap-up if `context.autoWrapUp` is on |
 | `handoff-write.sh` / `.ps1` | `PreCompact` | Snapshots the transcript, writes a skeleton handoff |
@@ -1620,7 +1932,7 @@ Hooks are deterministic. That is their whole value — a hook cannot be argued o
 ```bash
 bash   hooks/scripts/_test/run-tests.sh           # 77 cases - the hooks
 bash   hooks/scripts/_test/setup-walkthrough.sh   # 32 cases - the setup scripts
-python hooks/scripts/_test/validate-prompts.py    # 106 checks - command/agent structure
+python hooks/scripts/_test/validate-prompts.py    # 110 checks - command/agent structure
 pytest tests/                                     # 234 cases - the python modules and both hook flavours
 ```
 
@@ -1631,7 +1943,7 @@ pytest tests/                                     # 234 cases - the python modul
 | `validate-prompts.py` | Frontmatter parses, tools are real, referenced agents and paths exist, read-only agents hold no write tools, commands that spawn subagents are permitted to | **whether the prompts produce good work** |
 | `pytest tests/` | The python modules, and that the `.sh` and `.ps1` flavours of `context-watch`, `verify-gate` and `promote-gate` agree - including the emergency lane's expiry, which is the one property that keeps a forgotten incident from ungating a repo forever | anything on a platform the suite is not running on; the Windows-only cases skip elsewhere |
 
-That last gap is real and no test closes it. The 20 commands and 10 agents are
+That last gap is real and no test closes it. The 21 commands and 11 agents are
 instructions to a model; only a live session running a real ticket exercises
 them. Setup Phase 7 exists for exactly that, and it is the one thing here that
 has to be done by hand.

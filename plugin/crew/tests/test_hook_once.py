@@ -42,12 +42,31 @@ def test_the_claim_persists_within_a_session(tmp_path):
         assert hook_once.claim(str(root), "verify-gate", "s1") is False
 
 
-def test_no_session_id_fails_open(tmp_path):
-    # Nothing to scope a claim to. Running twice is bad; never running is worse.
+def test_no_session_id_still_blocks_a_concurrent_second_claim(tmp_path):
+    """No session id must not mean no guarantee. The .sh and .ps1 flavours of
+    a hook both fire for the same event; if the payload carries no session id
+    at all, the FIRST claim still has to win and the second still has to
+    lose -- otherwise both would race a write with nothing to stop it, which
+    is exactly the double-fire this module exists to prevent."""
     root = tmp_path / "repo"
     (root / ".crew").mkdir(parents=True)
     assert hook_once.claim(str(root), "pm-brief", None) is True
-    assert hook_once.claim(str(root), "pm-brief", "") is True
+    assert hook_once.claim(str(root), "pm-brief", None) is False
+    # "" is the same "no session id" case as None, not a distinct session.
+    assert hook_once.claim(str(root), "pm-brief", "") is False
+
+
+def test_no_session_id_runs_again_on_a_different_day(tmp_path, monkeypatch):
+    """The fallback key is a calendar day, not a single persistent value --
+    otherwise a repo that never gets a session id would only ever run the
+    hook once, forever."""
+    root = tmp_path / "repo"
+    (root / ".crew").mkdir(parents=True)
+    monkeypatch.setattr(hook_once.time, "strftime", lambda fmt: "20260101")
+    assert hook_once.claim(str(root), "pm-brief", None) is True
+    assert hook_once.claim(str(root), "pm-brief", None) is False
+    monkeypatch.setattr(hook_once.time, "strftime", lambda fmt: "20260102")
+    assert hook_once.claim(str(root), "pm-brief", None) is True
 
 
 def test_a_repo_with_no_crew_dir_fails_open(tmp_path):

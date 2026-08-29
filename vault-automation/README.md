@@ -1,5 +1,21 @@
 # vault-automation — a self-feeding Claude/Obsidian memory pipeline
 
+> **Superseded for new setups by the [`obsidian-vault`](../plugin/obsidian-vault)
+> plugin.** That plugin covers the same job - session-capture hooks, a
+> gardener agent, cross-platform scheduling guidance - as a proper Claude Code
+> plugin: cross-platform (this directory is Windows-only PowerShell), with a
+> committed, sabotage-tested test suite for its one blocking hook, and no
+> personal vault path baked in at install time. The one thing it does not yet
+> do that this directory's installer does is generate a `HOME.md` Dataview
+> dashboard; `/obsidian-vault:init` offers the same starter plugin set
+> (Dataview, Obsidian Git, Excalidraw, Omnisearch, Kanban) this installer
+> pre-enables. The scripts below are left in place rather than deleted,
+> because the root [`README.md`](../README.md) still documents them as a
+> runnable quickstart - retiring that path is a separate, deliberate change,
+> not a side effect of adding the plugin. If you have not already run this
+> installer, prefer `claude plugin install obsidian-vault@useful-claude-add-ons`
+> and `/obsidian-vault:init` instead.
+
 Installs the automation layer that makes an Obsidian vault **learn, grow, and
 document on its own** from Claude Code sessions:
 

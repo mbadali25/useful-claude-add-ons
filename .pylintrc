@@ -40,7 +40,7 @@
 # (reportlab.platypus, urllib3.exceptions) are covered too.
 ignored-modules=botocore,botocore.*,playwright,playwright.*,pytest,pytest.*,
                 reportlab,reportlab.*,requests,requests.*,urllib3,urllib3.*,
-                vsdx,vsdx.*,yaml,yaml.*
+                vsdx,vsdx.*,weasyprint,weasyprint.*,yaml,yaml.*
 
 [FORMAT]
 # 100 is tight for scripts that embed XML/SQL/URL literals which can't wrap.

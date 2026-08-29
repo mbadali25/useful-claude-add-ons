@@ -1,0 +1,39 @@
+{
+  "name": "@badali404/mcp-o365-user",
+  "version": "0.2.0",
+  "description": "MCP server for Office 365 in the signed-in user's own delegated scope (mail, calendar, files) -- device code auth",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mbadali25/useful-claude-add-ons.git",
+    "directory": "mcp-servers/packages/o365-user"
+  },
+  "type": "module",
+  "bin": {
+    "mcp-o365-user": "./dist/src/cli.js"
+  },
+  "main": "./dist/src/index.js",
+  "files": [
+    "dist/src"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node -e \"try{require('fs').chmodSync('dist/src/cli.js',0o755)}catch(e){}\"",
+    "prepublishOnly": "npm run build",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "test": "node --test \"dist/test/**/*.test.js\""
+  },
+  "dependencies": {
+    "@badali404/mcp-ms-core": "0.2.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3",
+    "@types/node": "^22.10.5"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

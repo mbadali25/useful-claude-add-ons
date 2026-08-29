@@ -68,11 +68,15 @@ collision it fixes.
 Do not ask more. Everything else has a sane default and can change later.
 
 1. **QA reviewer:** Codex (detected/not detected) or Claude fallback?
-2. **Tickets:** local files, Jira, or ServiceDesk Plus? Offer the last two only
-   when their MCP tools are actually reachable - `mcp__atlassian__*` /
-   `sdp_*`. Offering a tracker that cannot connect produces a repo configured
-   for an API nobody can call, and every later command stops on the same
-   missing precondition.
+2. **Tickets:** local files, Jira, ServiceDesk Plus, or an Obsidian Kanban
+   board? Offer Jira and ServiceDesk Plus only when their MCP tools are
+   actually reachable - `mcp__atlassian__*` / `sdp_*`. Offering a tracker that
+   cannot connect produces a repo configured for an API nobody can call, and
+   every later command stops on the same missing precondition.
+   Obsidian has a different gate and needs a different question: there is no
+   connector to probe, so what has to resolve is a **vault directory on this
+   machine**. Offer it only when the user can name one, and check it exists
+   before writing it down.
 3. **Memory:** repo-local `.crew/` or an Obsidian vault path?
 
 ## 3. Create
@@ -81,9 +85,9 @@ Do not ask more. Everything else has a sane default and can change later.
 .crew/config.json          # the switchboard — every command reads this
 .crew/metrics.md           # header row only; /crew:review appends
 .crew/codemap/INDEX.md     # empty until /crew:onboard runs
-.work/INDEX.md             # files mode
+.work/INDEX.md             # files and obsidian modes
 .work/tickets/             # files mode
-.work/cache/               # jira and sdp modes
+.work/cache/               # jira, sdp and obsidian modes
 _verify/                   # from template, NOT filled in
   README.md                # layout + status tables
   smoke.sh                 # fast and shallow
@@ -93,7 +97,23 @@ docs/adr/0001-adopt-crew.md
 CLAUDE.md                  # created if absent; if present, sections APPENDED, never overwritten
 ```
 
-`config.json`:
+`config.json` — this JSON is a COPY, kept here for a human reading the skill.
+It is not the source of truth: `${CLAUDE_PLUGIN_ROOT}/templates/config.template.json`
+is, and that file is generated from `hooks/scripts/crew_config.py`'s
+`default_config()`, which in turn pulls the `pm` and `graph` blocks straight
+from `crew_state.PM_DEFAULTS` and `crew_upgrade.GRAPH_BLOCK` rather than
+duplicating them a third time. A committed test asserts the template equals
+`default_config()`'s output byte-for-byte, so this file drifting from either
+one fails CI instead of shipping quietly. Copy the template, not this prose,
+when actually creating `config.json`.
+
+`/crew:init` writes this file; it never writes the optional machine-global
+one at `~/.claude/crew/config.json`. If that file exists it sets defaults for
+every crew repo on this machine, with the repo file you are about to write
+taking precedence over it — see "Global config, and how it layers with the
+repo file" in `README.md` §11. Nothing in setup creates the global file; a
+user who wants one writes it by hand.
+
 ```json
 {
   "schema": 2,
@@ -104,23 +124,33 @@ CLAUDE.md                  # created if absent; if present, sections APPENDED, n
   "tracker": "files",
   "jira": { "project": null },
   "sdp": { "portal": null, "noteVisibility": "private", "closeOnDone": false },
+  "obsidian": { "vaultPath": null, "boardDir": null, "board": "Board.md", "columns": { "backlog": "Backlog", "ready": "Ready", "inProgress": "In Progress", "review": "Review", "done": "Done" } },
   "memory": { "mode": "repo", "vaultPath": null },
   "verifyGate": true,
   "context": { "enabled": true, "warnAt": 0.8, "budgetTokens": null, "reserveTokens": 100000, "handoffPath": ".work/HANDOFF.md", "keepTranscripts": 5 },
   "emergency": { "standDown": true, "ttlMinutes": 120, "maxTtlMinutes": 480 },
   "notify": { "provider": "none", "urlEnv": null, "tokenEnv": null, "chatId": null, "events": ["phase", "gate", "waiting"] },
   "platform": { "os": null, "wsl": null, "shell": null, "windowsHostIp": null },
-  "pm": { "enabled": true, "mode": "adaptive", "quietLines": 8, "maxLines": 40, "authority": "report-only" },
-  "graph": { "enabled": true, "tool": "graphify", "out": "graphify-out", "mode": "code-only", "commitHook": false, "obsidian": { "enabled": false, "dir": null, "confirmed": false } }
+  "pm": { "enabled": true, "mode": "adaptive", "quietLines": 8, "maxLines": 40, "authority": "report-only", "maxDispatches": 3 },
+  "graph": { "enabled": true, "tool": "graphify", "out": "graphify-out", "mode": "code-only", "commitHook": false, "obsidian": { "enabled": false, "dir": null, "layout": "flat", "confirmed": false } }
 }
 ```
 
 `schema: 2` — this repo is born current. It never trips `upgradeNeeded`, which fires only
-when a config predates the `pm` and `graph` blocks. The `pm` and `graph` blocks above must
-match `crew_state.PM_DEFAULTS` and `crew_upgrade.GRAPH_BLOCK` exactly — those modules are
-the source of truth; this template is a copy of them, not the other way around.
+when a config predates the `pm` and `graph` blocks.
 `qa.provider`: `auto` uses Codex when present and falls back to Claude, announcing
 which ran. Use `codex` to hard-fail instead of falling back, `claude` to force it.
+
+If `.crew/` exists but `config.json` went missing or stopped parsing, you do not
+need to recreate it by hand — the `platform-sync` `SessionStart` hook already
+does, using this same template, the next time the repo is opened. See
+"The config heals itself" in `README.md` §3.
+
+Leave `platform` as nulls. The `platform-sync` `SessionStart` hook fills it in
+on the first run and repairs it whenever the repo is opened on a different OS -
+it is the one block that is committed and is therefore wrong for everybody who
+did not run `/crew:init`. Do not hand-write values there; they will be
+overwritten, which is the point.
 
 ## 3b. Jira only — wire the MCP connector
 
@@ -171,6 +201,75 @@ Only if the user chose ServiceDesk Plus.
 Tell them the local key is `SDP-<id>`, not the bare request number: the rest of
 crew - the session brief, `/crew:work`, the index - recognises a ticket by its
 `LETTERS-digits` shape, and a bare number is invisible to all of it.
+
+## 3d. Obsidian Kanban only — resolve the vault, then create the board
+
+Only if the user chose an Obsidian Kanban board. There is no connector to probe
+here, so the setup work is different in kind: it is proving a directory exists
+and creating one file correctly.
+
+1. Resolve the vault. Ask for the path, then confirm it exists and contains a
+   `.obsidian/` directory. A path that is merely a folder of markdown files
+   works for `memory`, but a Kanban board needs the plugin, which lives in the
+   vault. If `.obsidian/plugins/obsidian-kanban/` is absent, say so - the board
+   file will still be written correctly, it will just render as plain markdown
+   until they install the plugin from Community Plugins.
+2. Write `obsidian.vaultPath`. Leave it `null` only if it is the same vault as
+   `memory.vaultPath`, which the sync command falls back to.
+3. Write `obsidian.boardDir` as `Boards/<repo-name>` unless the user wants
+   somewhere else. One folder per repo, holding the board and its ticket notes,
+   so cards can be `[[T-0042]]` wikilinks that resolve and the graph view is
+   useful. A single shared board across repos is possible and is not the
+   default - lanes get crowded and cross-repo tickets mix.
+4. Create the board file, `<boardDir>/<board>`, with the five lanes. Get the
+   format right the first time; the three load-bearing parts are the
+   frontmatter, the trailing settings block, and the `**Complete**` marker:
+
+````markdown
+---
+
+kanban-plugin: board
+
+---
+
+## Backlog
+
+
+## Ready
+
+
+## In Progress
+
+
+## Review
+
+
+## Done
+
+**Complete**
+
+
+
+
+%% kanban:settings
+```
+{"kanban-plugin":"board"}
+```
+%%
+````
+
+5. Set `tracker: "obsidian"` and create `.work/cache/`.
+
+Say two things plainly before finishing:
+
+- **The vault is the remote, and crew does not commit it.** The board and the
+  ticket notes live outside the repo, so ticket state does not travel with a
+  branch and is not on a colleague's machine. That is the trade for being able
+  to drag a card. If the vault is its own git repo, its history is theirs to
+  manage.
+- **Dragging a card is how status changes.** On pull the lane wins; on push
+  crew writes the lane. `/crew:obsidian-sync` is the only thing that should
+  touch the board, and only at pickup and completion.
 
 ## 3a. Record the platform
 

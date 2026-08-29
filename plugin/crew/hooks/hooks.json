@@ -4,7 +4,9 @@
       { "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/handoff-read.sh\"", "timeout": 15 }] },
       { "hooks": [{ "type": "command", "shell": "powershell", "command": "& \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/handoff-read.ps1\"; exit $LASTEXITCODE", "timeout": 15 }] },
       { "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/pm-brief.sh\"", "timeout": 20 }] },
-      { "hooks": [{ "type": "command", "shell": "powershell", "command": "& \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/pm-brief.ps1\"; exit $LASTEXITCODE", "timeout": 20 }] }
+      { "hooks": [{ "type": "command", "shell": "powershell", "command": "& \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/pm-brief.ps1\"; exit $LASTEXITCODE", "timeout": 20 }] },
+      { "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/platform-sync.sh\"", "timeout": 20 }] },
+      { "hooks": [{ "type": "command", "shell": "powershell", "command": "& \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/platform-sync.ps1\"; exit $LASTEXITCODE", "timeout": 20 }] }
     ],
     "PreToolUse": [
       { "matcher": "Bash",
@@ -28,7 +30,9 @@
       { "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/verify-gate.sh\"", "timeout": 600 }] },
       { "hooks": [{ "type": "command", "shell": "powershell", "command": "& \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/verify-gate.ps1\"; exit $LASTEXITCODE", "timeout": 600 }] },
       { "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/context-watch.sh\"", "timeout": 20 }] },
-      { "hooks": [{ "type": "command", "shell": "powershell", "command": "& \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/context-watch.ps1\"; exit $LASTEXITCODE", "timeout": 20 }] }
+      { "hooks": [{ "type": "command", "shell": "powershell", "command": "& \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/context-watch.ps1\"; exit $LASTEXITCODE", "timeout": 20 }] },
+      { "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/pm-pulse.sh\"", "timeout": 20 }] },
+      { "hooks": [{ "type": "command", "shell": "powershell", "command": "& \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/pm-pulse.ps1\"; exit $LASTEXITCODE", "timeout": 20 }] }
     ]
   }
 }

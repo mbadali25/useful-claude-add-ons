@@ -4,7 +4,677 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Fixed
+
+- **`crew` 0.12.2: the `pm_pulse` stand-down now has the regression test it
+  always owed.** The repo's own rule is that a hook which can block ships with
+  must-block and must-allow cases, sabotage-tested — and 0.12.1 changed
+  `pm_pulse`'s blocking behaviour past the per-session cap while the suite
+  stayed at 101 passed, which said the suite did not cover the path, not that
+  the change was safe. Two cases added: the pulse that trips the cap blocks
+  once, and a genuinely new state afterwards does not block again.
+
+  The first draft of the second case passed under sabotage, for the wrong
+  reason — it changed `tier` and `roles`, which the fingerprint does not cover,
+  so the digest never moved and the case would have gone green against a broken
+  hook. It moves `handoffPending` now, which is one of the five fields the
+  fingerprint is actually built from. Sabotage-tested properly after that:
+  keying the over-cap claim back on `digest` turns it red, restoring the fixed
+  marker turns it green.
+
+- **`gizmoduck` 0.1.3: `diff` keeps its Low severity floor.** 0.1.2 moved
+  `--min-severity` from one global default to per-command resolution and swept
+  `diff` in with `report` and `tickets` at High. `commands/diff.md` passes
+  `${3:-low}`, so the command path never changed — but a hand-run
+  `gizmoduck.py diff old.jsonl new.jsonl` had its floor silently raised, on the
+  one question where a Medium appearing for the first time is the answer. The
+  floors are now explicit per command and match what each command file passes.
+
+- `plugin/PLUGINS.md`'s `obsidian-vault` version row read 0.1.0 against a
+  registered 0.1.2. `check-marketplace.py` compares `marketplace.json` history
+  to file changes and cannot see a stale version string in prose, so this kind
+  of drift passes CI silently.
+
 ### Added
+
+- **`gizmoduck` 0.1.0 — a third plugin under `plugin/`.** Runs
+  [Nuclei](https://github.com/projectdiscovery/nuclei) against hosts and
+  websites, diffs the run against a baseline so what is *new* is visible,
+  renders a triaged report as Markdown/HTML/PDF, and turns Critical and High
+  findings into ServiceDesk Plus tickets keyed on `[Nuclei <template-id>]` so a
+  second run adds a note instead of a duplicate. Six commands over one Python
+  CLI; **no hooks and no agents**, so nothing runs unless you type a command.
+  Registered in `marketplace.json`, `plugin/README.md`, `plugin/PLUGINS.md`,
+  the root `README.md`, and both install scripts — the repo-plugins picker now
+  offers three entries, and `menu-groups.sh` asserts against 3 rather than 2.
+  Nuclei is MIT-licensed and self-hosted, so no findings leave the machine;
+  only scan assets you own or have written permission to test.
+
+  Hardened before registering it, off the back of two Codex review passes. A
+  `nuclei` that fails — bad target, missing templates, no network — used to
+  write an empty findings file and exit 0, which is indistinguishable from a
+  clean scan and poisons the next run's baseline; it now fails loudly and
+  writes nothing. Exit 1 is the ambiguous case, since `-ec` uses it to mean
+  "findings exist" and it is also a plain failure code: findings on stdout
+  settle it, and exit 1 with an empty stdout is treated as the failure it is. Both bootstrap scripts fail when the template download fails,
+  for the same reason: an engine with no templates reports every target as
+  healthy. `update` checks its return codes instead of printing `done`. A
+  `wkhtmltopdf` that is installed but broken falls through to WeasyPrint
+  instead of taking the report command down with it. `--min-severity` now
+  resolves per command — High for `report`, `tickets`, and `diff`, everything
+  for `summary` and `parse` — so a hand-run `tickets` cannot quietly open a
+  ticket per Info finding. Missing positional arguments produce an argparse
+  error naming what is missing rather than a `TypeError`. The report's
+  "Hosts scanned" line said no such thing — it counts hosts *with findings* —
+  and now says so. Both bootstrap scripts pointed at a `/scan-site` command
+  that does not exist; it is `/gizmoduck:scan`.
+
+- **`crew` 0.12.0: `developer`, the eleventh agent.** Implements one scoped
+  change in its own context and returns a summary — never reviews its own diff,
+  never merges, pushes, or rewrites history. Tier 1 in `crew-scaling`'s ladder,
+  and the one role in `crew-pm/onboarding.md` justified by a delegation
+  decision rather than by a defect class in `.crew/metrics.md`: the question is
+  whether the PM is expected to take work from assigned to done on its own. A
+  PM with no developer either narrates or does the work itself. `onboarding.md`
+  also gained the full role roster, since a name in `config.json.roles` with no
+  `agents/<role>.md` behind it dispatches nothing and fails silently.
+
+### Changed
+
+- **`crew` 0.12.0: the PM is standing, and it wears one hat.** Three defects
+  fixed together, because they were the same defect seen from three angles.
+
+  *It kept disappearing.* The PM was spawned fresh per invocation, so it knew
+  the state JSON and nothing else — not what it dispatched an hour ago, not
+  what the user vetoed, not why a trigger was judged not worth acting on. It is
+  now spawned once per session under the name `crew-pm` and stays addressable;
+  `/crew:pm` calls `ListAgents` and messages the existing one rather than
+  spawning a second. It also no longer ends when the queue empties: it reports
+  what is outstanding and waits. The flat-roster limit still applies — a
+  session that is itself a teammate cannot spawn a named one, so that path
+  dispatches unnamed and says out loud that the PM will not persist.
+
+  *It did other people's jobs.* `agents/pm.md` now states the PM's own hat —
+  assess scope, onboard and offboard, communicate, keep tickets current — and
+  carries a routing table from kind-of-work to role: implementation to
+  `developer`, review through `/crew:review`, security/dba/docs/explorer/
+  planner/analyst/smoke-author/browser-tester to the role that owns each. Its
+  own writes stay scoped to `.crew/`, ticket text, `TODO.md`, and generated
+  diagrams.
+
+  *It narrated instead of dispatching.* Its characteristic failure was
+  producing a convincing plan — lanes, roles, an order — and ending the turn
+  without a single Agent call, which the relaying session then passed upward as
+  progress. `pm.md` now requires a real Agent call with a read result behind
+  every role named as dispatched, calls out future tense as the tell, and asks
+  for independent roles in one message so they actually run concurrently.
+  `/crew:pm` refuses to relay a report written in the future tense and sends it
+  back once instead.
+
+  Two more from the same Codex review. `/crew:pm`'s `allowed-tools` did not
+  grant `ListAgents` or `SendMessage`, so the command that is supposed to find
+  and continue the standing PM could do neither — both are now granted, and
+  `validate-prompts.py` knows the names. Separately, `pm_pulse`'s per-session
+  cap did not actually stand the hook down: past the cap, every *new*
+  fingerprint still claimed cleanly and blocked the turn to repeat the same
+  "standing down" line. The stand-down claim is now keyed on a fixed marker
+  rather than on the state, so it is said once and then the hook is genuinely
+  quiet.
+
+- **`crew` 0.12.0: model tiers are declared, not inherited.** Every agent used
+  to sit on `inherit` or an ad-hoc `opus`, which made the tier depend on
+  whoever spawned it. Now: `pm` on `opus`, because every dispatch decision
+  derives from the picture it holds and a bad assignment is inherited by every
+  role below; `qa-reviewer` on `opus`, because it shares a model family with
+  the author and the tier is the only compensation left when Codex is absent;
+  every working role on `sonnet` — narrow brief, clean context, one
+  deliverable. `validate-prompts.py` enforces the map and rejects `inherit`
+  outright; sabotage-tested by flipping `explorer` back to `inherit` and
+  confirming the suite goes red.
+
+  QA itself still defaults to **Codex** — `qa.provider` ships as `auto`, so a
+  machine with `codex` on `PATH` gets a different model family reviewing, and
+  `/crew:review` says which reviewer ran. `qa-reviewer` now says so too if
+  something dispatches it directly and skips that check, because skipping it
+  does not merely swap reviewers, it swaps a different family for the same one
+  that wrote the code and reports the result as though nothing changed.
+
+  These are model *tiers*, not pinned versions: an agent asks for a tier and
+  gets whatever the session's strongest model at that tier is. A plugin cannot
+  pin a point release, and the docs no longer imply one.
+
+### Added
+
+- **`mcp-servers` install scripts can now enable write access at registration
+  time.** `MCP_MS_ALLOW_WRITES` is a boolean gate, not a credential, so unlike
+  `MS_ADMIN_*`/`MS_USER_*` it is safe to bake into a server's own `claude mcp
+  add --env` rather than requiring it in the launching shell too — scoped to
+  that server, not every process on the machine. Set it in the shell running
+  `install-prerequisites.sh`/`.ps1` before the `ms-mcp` item runs and every
+  server it registers gets writes enabled; left unset, every server registers
+  read-only and the item prints the exact per-server one-liner to flip it
+  later. `mcp-servers/README.md` gained a section spelling out both the
+  per-server and global ways to set it, since the answer wasn't written down
+  anywhere before now — only its meaning was.
+
+### Added
+
+- **`mcp-servers` 0.2.0 — the three admin-scope servers authenticate with no
+  app registration at all, if you're already signed in with `az login`.**
+  `@badali404/mcp-ms-core`'s new `buildAdminCredential()` (replacing
+  `getAdminCredential()`) tries a credential chain in order: (1) client
+  secret via `ClientSecretCredential`, app-only, unchanged — used whenever
+  all three `MS_ADMIN_TENANT_ID`/`_CLIENT_ID`/`_CLIENT_SECRET` are set; (2)
+  `AzureCliCredential`, delegated, zero prompts against an existing
+  `az login` session; (3) `DeviceCodeCredential`, delegated, an interactive
+  one-time-per-process sign-in as the last resort — using
+  `MS_ADMIN_CLIENT_ID` as a public-client app id if set, else the Azure
+  CLI's own well-known client id. `MS_ADMIN_AUTH=secret|cli|device` forces
+  one link instead of the auto fallback. Device-code prompts go to
+  **stderr only**, never stdout (the MCP JSON-RPC channel). Each server's
+  `doctor` subcommand now reports which link authenticated and whether the
+  resulting token is app-only or delegated, alongside the scopes/roles it
+  decodes from the token as before. `mcp-o365-user` is unaffected — its
+  device-code-only, `/me`-scoped auth is deliberately not part of this
+  chain and was not widened. `@azure/identity`'s persistent token cache was
+  evaluated and not enabled (it needs a separate native-dependency plugin
+  package); a device-code sign-in is a per-process-launch prompt, not
+  persisted across restarts, by design. 19 new offline tests
+  (`packages/core/test/adminAuth.test.ts`) cover the fallback order,
+  `MS_ADMIN_AUTH` forcing each mode, stderr-not-stdout for the device-code
+  prompt, and `doctor` reporting the resolved mode. All five packages
+  bumped `0.1.3` → `0.2.0` in lockstep (core pin updated in all four
+  servers); `mcp-servers/README.md`, `docs/remaining-setup.md` (now a
+  3-tier walkthrough: `az login` only / device code with a public-client
+  app / full app-only registration), `INSTALLATION.md`, and both install
+  scripts updated — the `ms-mcp` item now also checks `az account show` as
+  sufficient to register the admin servers, still writing no secrets.
+
+- **`mcp-servers/` — four local Microsoft MCP servers on one shared auth/HTTP
+  workspace package.** `mcp-msgraph` (tenant directory), `mcp-intune` (device
+  management), `mcp-o365-admin` (mailboxes/licenses/password reset — all
+  app-only, tenant-wide), and `mcp-o365-user` (the signed-in user's own
+  mail/calendar/files, delegated device-code sign-in). Not marketplace
+  plugins — npm packages under `mcp-servers/packages/`, npm-workspace-linked
+  against `@badali404/mcp-ms-core`, built with the official
+  `@modelcontextprotocol/sdk`. Every write/destructive tool is gated behind
+  **both** `MCP_MS_ALLOW_WRITES=1` and a per-call `confirm: true`; every
+  server ships a `doctor` subcommand that acquires a real token and prints
+  the scopes/roles actually granted. Offline test suite (mocked `fetch`, no
+  live tenant) via `npm test`; wired into
+  `.github/workflows/mcp-servers.yml`.
+
+  Azure Resource Manager is deliberately not a fifth server: the official
+  `@azure/mcp` already covers ARM comprehensively (dozens of service-scoped
+  tool groups, plus generic `arm` CRUD), so this repo does not duplicate it —
+  see `mcp-servers/README.md` for the reasoning.
+
+  **Menu item 21, `ms-mcp` — off by default, needs tenant credentials.**
+  Unlike the item 9–12 MCP servers, none of these four are on npm yet, so the
+  item can't `npx -y <pkg>@latest` them: it detects `mcp-servers/package.json`
+  under the current directory (this script never resolves its own location),
+  builds it with `npm install && npm run build`, then runs `npm install -g .`
+  inside each server package it has credentials for and registers the
+  resulting global bin name (`mcp-msgraph`, `mcp-intune`, `mcp-o365-admin` —
+  need `MS_ADMIN_TENANT_ID` + `MS_ADMIN_CLIENT_ID` + `MS_ADMIN_CLIENT_SECRET`;
+  `mcp-o365-user` — needs `MS_USER_CLIENT_ID`), printing what's missing and
+  skipping rather than failing otherwise. The global install works pre-publish
+  because these are npm workspace members — it symlinks rather than
+  reinstalling, so the dependency on `@badali404/mcp-ms-core` still resolves
+  through the workspace's hoisted `node_modules` instead of 404ing against the
+  registry.
+
+  **The npx path is now real, not just documented.** Five packages carry
+  `publishConfig`/`files`/`bin` shaped for `npm publish`: `files` is scoped to
+  `dist/src` only (no compiled test output in the tarball — verified with
+  `npm pack --dry-run` per package), and each server's `build` script chmods
+  its compiled `cli.js` to `0o755` so the `#!/usr/bin/env node` shebang is
+  executable on Linux (Windows needs neither — npm's own `.cmd`/`.ps1` shims
+  handle it there). `.github/workflows/publish-mcp-servers.yml` publishes all
+  five — core first, since the four servers pin an exact
+  `"@badali404/mcp-ms-core": "0.1.0"` dependency — on a pushed `mcp-servers-v*`
+  tag, via `npm publish --provenance --access public` authenticated with an
+  `NPM_TOKEN` repository secret. Until the `@badali404` npm scope exists and
+  that secret is set and a tag is actually published, `npx -y @badali404/<pkg>`
+  cannot resolve anything — `mcp-servers/README.md` says so plainly and
+  documents `npm install -g` (Option B, what the installer now uses) and the
+  direct-path form (Option A) as the two working interim installs.
+
+### Fixed
+
+- **`crew` 0.11.4 — `crew:pm` could fail to dispatch with "Teammates cannot
+  spawn other teammates."** `pm.md` (the only crew role with the `Agent` tool)
+  had no guidance on whether to pass a `name` when dispatching a role, so it
+  could end up spawning dispatched roles as named, addressable teammates. The
+  runtime's team roster is flat -- a teammate (which the PM itself may be,
+  depending on how it was invoked) cannot spawn further named teammates, only
+  plain subagents. `pm.md`'s "Dispatching" section now says explicitly: never
+  pass `name` to the Agent tool when dispatching a role. Every dispatched role
+  is read and reported on within the same turn it was sent, so none of them
+  ever needed to be individually addressable afterward.
+
+- **`mcp-servers/` QA pass: a merge-blocking `npm publish --provenance`
+  failure, a status-vs-parse ordering bug, and no throttling handling.** All
+  five `package.json` now carry `"repository"` (type/url/directory) —
+  `--provenance` refuses to publish without it, which would have killed the
+  publish workflow's very first step. `GraphClient`'s `request()` and
+  `getAllPages()` used to call `JSON.parse` before checking `res.ok`; a
+  non-JSON error body (a WAF's HTML, a plain-text 5xx from an intermediate
+  proxy) threw a `SyntaxError` and lost the real status code. Both now read
+  the body first, parse it as JSON only if it looks like JSON, and fall back
+  to the raw text inside a proper `GraphApiError` that still carries the
+  status. Neither method handled `429` at all — Graph throttles routinely in
+  real tenants — so both now share a bounded retry (max 3 attempts) that
+  honors `Retry-After` (seconds or an HTTP date) and caps the wait at 30s.
+  `getAllPages()` also used to truncate silently at `maxPages`, presenting a
+  partial list as if it were complete; it now returns `{ items, truncated }`,
+  and every server's list tool (`pagedResult()`, new in
+  `packages/core/src/toolResult.ts`) appends a plain-text note to the tool
+  result when truncated, so the model knows more data may exist. `post`/
+  `patch`/`put`/`delete` on `GraphClient` now carry a doc comment stating they
+  perform no write-gating themselves — every caller routes through
+  `assertWriteAllowed` by convention, not by the type system. 12 call sites
+  across all four servers and 2 in `packages/core/test/graphClient.test.ts`
+  updated for the new return shape; new tests cover a non-JSON 500/502/503, a
+  204 and an empty-200 body, a 429 that retries then succeeds, a 429 that
+  exhausts its retry budget, a capped wait, and both `truncated: true` and
+  `truncated: false`. `Install-MsMcpGlobal` (defined nested inside an
+  `Invoke-Step` scriptblock in `install-prerequisites.ps1`, unlike this
+  script's other helpers) was sabotage-tested against
+  `scripts/check-powershell.ps1` — a typo'd call is caught (the checker's AST
+  walk recurses into nested scriptblocks) — so it was left in place rather
+  than moved to the top level.
+- **New plugin `obsidian-vault` 0.1.1 - one or more Obsidian vaults as Claude
+  Code's durable, token-efficient memory.** Cross-platform
+  (Windows/Linux/macOS), no vault path hardcoded, and **multi-vault by
+  design**: `~/.claude/obsidian/config.json` models named vaults
+  (`vaults: { memory: {...}, codegraphs: {...} }`) because a machine-generated
+  vault (a `graphify` code-graph export) commonly runs into the hundreds of
+  thousands of notes on the same machine as a hand-curated one, on its own
+  Local REST API port - so this plugin registers one MCP server per vault,
+  never one server juggling two, and applies the frontmatter/ASCII/canvas
+  contract guard only to the default vault.
+
+  `/obsidian-vault:init` sets up the Local REST API bridge and per-vault MCP
+  registration; `bridge-status`, `vault-guard`, and `vault-capture` hooks
+  (each a `.sh`/`.ps1` pair sharing one Python module) probe every configured
+  vault's bridge at session start, enforce the configurable contract on edit
+  (every check OFF by default), and queue sessions for gardening.
+  `obsidian-vault:gardener` and `obsidian-vault:reflector` agents distill and
+  recall, with an explicit rule against fabricating a citation.
+  `/obsidian-vault:canvas` and `/obsidian-vault:map` generate structural aids;
+  `/obsidian-vault:graph` builds (`graphify . --no-viz --code-only`) and
+  exports (`graphify export obsidian`, a separate subcommand - `--obsidian` on
+  the build command is silently ignored) into a dedicated codegraphs vault
+  laid out `<org>/<repo>/`, with a stub note left in the default vault. Ships
+  with a committed, sabotage-tested regression suite for the one blocking hook
+  (12 cases; the ASCII check was disabled once during development to confirm
+  the suite goes red).
+
+  **Named `obsidian-vault`, not `obsidian`**, specifically to avoid colliding
+  with a third-party plugin already named plainly `obsidian` (from the
+  `obsidian-skills` marketplace, wired into `install-prerequisites.sh` item
+  18). `vault-automation/` (Windows-only prior art for the same
+  capture/gardener idea) is marked superseded in its own README pointing here,
+  but its scripts are left in place because the root `README.md` still
+  documents them as a runnable quickstart. `claude-obsidian-setup/` targets a
+  different thing - vault creation for the third-party `claude-obsidian`
+  plugin's own conventions - and was left untouched. See
+  `plugin/obsidian-vault/README.md`'s "Related" section for the full
+  accounting.
+- **`crew` 0.11.3 - config becomes two layers: an optional machine-global
+  file plus the per-repo one.** `~/.claude/crew/config.json`, written by
+  hand (no command creates it), sets defaults for every crew repo on the
+  machine; the repo's own `.crew/config.json` still wins where both set the
+  same thing. Merged one level deep with the same policy `/crew:upgrade`
+  already used to bring a v1 config's `pm` and `graph` blocks forward - now
+  named `crew_state.merge_defaults` and shared by both, instead of a second
+  implementation that could quietly diverge. A malformed global file is
+  treated exactly like an absent one and never touched. Two things
+  deliberately skip this layering: `schema`, which is a fact about the repo
+  file's own version and would otherwise look current the moment any global
+  file exists; and the heal path plus `platform-sync`, which write only the
+  repo file, always.
+
+  - **crew-graph's Obsidian export gets a configurable target layout.**
+    `graph.obsidian.layout` is `"flat"` (default, unchanged behaviour -
+    `graph.obsidian.dir` is the export target verbatim) or `"org/repo"`
+    (`dir` is a per-org folder and the skill appends `/<repo>` under it, for
+    a vault laid out as `<vault>/<org>/<repo>/`). The export subcommand
+    syntax and the `graph.obsidian.confirmed` consent gate are unchanged.
+  - **0.11.1 -> 0.11.2:** CI caught a pylint `consider-using-dict-items` in
+    a test, and fixing it exposed a real cyclic import between
+    `crew_state` and `crew_config` (the first draft of this layering had
+    `crew_state.collect` reach back into `crew_config` to resolve the
+    global layer). `collect()` now takes the resolved config as a plain
+    `cfg_override` argument; `crew_config.layered_state(root)` is the new
+    composition point that supplies one. `pylint $(git ls-files '*.py')`
+    exits `0`.
+  - **0.11.2 -> 0.11.3, three QA guard gaps:** `hook_once.claim()` no
+    longer fails open when `session_id` is absent - it derives a
+    calendar-day fallback key instead, so the `.sh`/`.ps1` pair can no
+    longer race a duplicate write when the payload happens to carry no
+    session id. `resolve_config()` now exempts `schema` structurally
+    rather than by caller discipline - a global file carrying one can no
+    longer leak into an unmigrated v1 repo's resolved config. And the
+    template-drift test now also covers the inline JSON copy in
+    `crew-setup/SKILL.md`, extracted and compared parsed rather than
+    byte-wise, so a field added to `default_config()` and forgotten in
+    the doc fails CI too.
+
+- **`crew` 0.11.0 - `.crew/config.json` recreates itself when it goes missing
+  or stops parsing.** The `platform-sync` `SessionStart` hook, which already
+  repaired the `platform` block, now also recreates the whole file: missing
+  or empty gets fresh defaults straight away, a present-but-malformed file
+  gets copied aside to `config.json.broken` first (never overwriting an
+  earlier `.broken` from a prior bad session), and anything that already
+  parses as an object is left alone byte for byte. **Guard: only where
+  `.crew/` already exists** - a plain git repo with no crew setup is never
+  colonized just because a session opened in it. Recreating the file resets
+  every human choice - `tracker`, `roles`, `tier`, and the rest - back to
+  defaults, and the one-line report says so and points at `/crew:init` to
+  re-record them.
+
+  - **One source for the defaults, not three.** `hooks/scripts/crew_config.py`
+    is the new module that owns `default_config()`, built from
+    `crew_state.PM_DEFAULTS`, `crew_upgrade.GRAPH_BLOCK`, and
+    `crew_state.SCHEMA_CURRENT` rather than a fourth hand-copied literal. The
+    committed template `templates/config.template.json` - what `/crew:init`
+    writes - and the heal path both call it, and a test asserts the template
+    equals its output byte-for-byte so the two can never quietly drift apart.
+
+- **`crew` 0.10.0 - an Obsidian Kanban board is now a fourth ticket tracker,
+  alongside `files`, `jira` and `sdp`.** Set `tracker: "obsidian"` and point
+  `obsidian.vaultPath` at a vault. The board is a markdown file the
+  [Kanban plugin](https://github.com/mgmeyers/obsidian-kanban) round-trips, so
+  crew writes files and Obsidian draws a board.
+
+  - **No connector, and therefore a different precondition.** Jira and SDP are
+    offered during setup only when their MCP tools answer. Obsidian has nothing
+    to probe, so what has to resolve is a vault directory that exists on this
+    machine. Bolting that onto the MCP sentence would have produced a tracker
+    that looks configured and is not.
+  - **The vault is the remote, exactly as Jira is.** Ticket notes and the board
+    live in the vault; `.work/cache/T-####.md` is the terse local mirror
+    `/crew:work` reads, so the vault is touched at pickup and completion only.
+    The key keeps its `T-####` shape, so nothing that recognises a ticket by its
+    `LETTERS-digits` form needed changing — no Python moved for this release.
+    It is also the reason this mode, alone among the non-file trackers, keeps
+    `.work/INDEX.md`: the session brief finds the open ticket by reading that
+    file, and `SDP-40219` was never going to be in it while `T-0042` can be. So
+    the Obsidian tracker closes a blind spot Jira and SDP still have.
+  - **Five lanes, and dragging a card is how status changes.** Backlog, Ready,
+    In Progress, Review, Done, renameable via `obsidian.columns`. On pull the
+    card's lane wins for status and the note wins for content; on push crew
+    writes both. That rule is stated because both sides here are local markdown
+    and both look equally authoritative, which makes the divergence hazard
+    *worse* than Jira's rather than absent. `/crew:obsidian-sync` refuses to
+    fall back to file tickets for the same reason `/crew:jira-sync` does.
+  - **The board is edited in place, never regenerated.** Three parts are
+    load-bearing and a naive rewrite destroys all three, after which the file
+    silently opens as plain text instead of a board: the `kanban-plugin: board`
+    frontmatter, the trailing `%% kanban:settings` block, and the `**Complete**`
+    marker in the done lane. An archive sits below a `***` break under
+    `## Archive` and is left alone. Format verified against the plugin's own
+    parser at 2.0.51, not reconstructed from memory.
+  - **New command `/crew:obsidian-sync <T-####> [--push]`**, argument shape
+    identical to the other two syncs. 21 commands now; `validate-prompts.py` is
+    at 110 checks.
+
+  Two things the docs say plainly rather than leaving to be discovered: the
+  vault lives outside the repo, so ticket state does not travel with a branch
+  and is not on a colleague's machine — that is the trade for a board you can
+  drag cards on. And crew never commits the vault.
+
+### Fixed
+
+- **`crew` 0.9.1 - two test-suite defects, both found by CI rather than by
+  reading.** `test_pm_brief.py` re-imported `json` inside a function that
+  already had it at module scope; pylint reported W0404 and exited 4 while
+  still printing "rated at 10.00/10", which is exactly why this repo's rule is
+  to judge pylint by its EXIT CODE and never by the rating line.
+
+  The second was pre-existing and latent: `test_a_hand_edited_schema_does_not_
+  crash_collect` named its scratch directories `s{abs(hash(str(bad))) % 9999}`.
+  Python randomises string hashing per process, so on some seeds two of the
+  five values collide, `make_repo` dies on `FileExistsError`, and the suite
+  fails for a reason having nothing to do with what the test checks. Observed
+  failing locally on that collision, then confirmed fixed across five explicit
+  `PYTHONHASHSEED` values. Named by index now.
+
+### Fixed
+
+- **`infra-work-ticketing` 1.1.1 - dropped a stray `.claude/settings.local.json`
+  that shipped with the skill.** It registered a `SessionStart` hook pointing at
+  `C:/Users/d3ade/.local/bin/headroom.EXE`, a binary on one machine. Anyone who
+  installed the skill and opened a session inside its directory got
+  `No such file or directory` from a hook they never configured. Nothing else in
+  the skill used it.
+
+### Added
+
+- **`crew` 0.9.0 - PM autonomy is now a switch, with guardrails.** 0.8.0 gave
+  the PM assign authority unconditionally, which is the right behaviour for
+  someone who asked for it and the wrong default for everyone else. It is now
+  `pm.authority` in `.crew/config.json`.
+
+  - **`report-only` (default) vs `act`.** `report-only` recommends and stops;
+    `act` dispatches roles and refreshes diagrams on its own. The default is
+    deliberate: a plugin update must not turn someone's PM autonomous
+    underneath them, because consent to install is not consent to delegate.
+    The field already existed in `PM_DEFAULTS`, in the config templates and in
+    `README.md` - documented as "always `report-only`" and read by nothing.
+    It is now the actual switch.
+
+  - **It fails closed.** An unrecognised value resolves to `report-only`
+    rather than raising or guessing, because for a field that grants
+    permissions the failure direction has to be the restrictive one. `"Act"`,
+    `"ACT"` and `" act "` are accepted as `act` - same intent typed carelessly,
+    not a different one. Normalisation happens once in `collect()`, so no
+    consumer downstream ever re-decides what a typo means and they cannot
+    disagree.
+
+  - **The pulse says different things.** Under `act` the `Stop` hook emits a
+    work order; under `report-only` it emits recommendations and explicitly
+    forbids dispatching. Sending the wrong one would make the setting a lie -
+    config saying "ask me" while the hook said "go".
+
+  - **The rabbit-hole rule.** Autonomy's failure mode is not doing the wrong
+    thing, it is doing too many things: refresh a diagram, notice a bug, fix
+    it, notice thin tests, write tests, and the diagram is still stale. So a
+    problem the PM stumbles on is fixed **only when it blocks a finding it was
+    already working** - build broken, harness will not run, migration will not
+    parse. Unblocking the current job is finishing the job. Everything else is
+    recorded and left alone: a ticket when `tracker` is set, otherwise a
+    `TODO.md` line with the reason it was deferred. The report must say what
+    was deferred and where it went, because a guardrail whose effects are
+    invisible reads as the PM having found nothing.
+
+  - **`pm.maxDispatches`** (default 3) caps roles per pass. Blockers found
+    mid-task do not count against it.
+
+  - **`/crew:pm authority [report-only|act]`** reads or sets it, and
+    `/crew:init` now asks as its fourth setup question, defaulting to
+    `report-only` on any hesitation. `/crew:pm assign` still acts anywhere -
+    typing it *is* the explicit instruction - and says when the config
+    disagrees, so a user who wanted it permanent learns there is a setting.
+
+  - 24 new cases (shell suite 95 -> 101, pytest 306 -> 324), sabotage-tested:
+    making an unknown authority widen to `act` instead of failing closed turns
+    both suites red.
+
+- **`crew` 0.8.0 - the PM assigns work, and re-engages itself when state
+  changes.** Three related gaps, reported together: the PM only ever spoke at
+  session start, so a session that opened clean and then closed a ticket or
+  broke a gate heard nothing; the `pm` agent was structurally unable to act on
+  what it found, holding no `Write` tool and returning a report that the user
+  then had to act on themselves; and architecture, process and data-flow
+  diagrams had no staleness signal at all, so nothing ever noticed they had
+  drifted.
+
+  - **New `pm-pulse` `Stop` hook.** Re-engages the PM when the project's state
+    actually transitioned - a ticket closed, a gate broke, diagrams fell behind
+    HEAD. The gate is a **state fingerprint, not the event**: `Stop` fires once
+    per turn, and a brief on every turn is the noise that makes people switch
+    the PM off, at which point they get nothing. Turns that change nothing stay
+    silent.
+
+    It blocks (exit 2) to hand its findings back to the model, because stdout
+    on `Stop` reaches the user but never the session - a PM that cannot be
+    heard by the thing doing the work cannot assign any. Three loop guards:
+    `stop_hook_active` is honoured first and unconditionally, the fingerprint
+    marker means one state can only interrupt once, and the hook stands down
+    after 12 pulses in a session rather than becoming the thing you disable.
+
+    `hook_once` is deliberately **not** used - its own module docstring says
+    why. Its marker is keyed on `(hook, session)` and never cleared, so a claim
+    taken on turn 1 silences the hook for the rest of the session, which is
+    exactly what this hook must not do. Keying the marker on the fingerprint
+    instead de-duplicates the `.sh`/`.ps1` pair and gates on state change with
+    one mechanism.
+
+  - **The `pm` agent now dispatches.** It gains `Write`, `Edit` and `Agent`,
+    and a dispatch table mapping each trigger to the role that closes it. A
+    manager whose only output is a recommendation is a manager the user has to
+    manage. Three bounds keep it honest: a **stated user priority outranks**
+    the PM's trigger ordering, and it says so when it re-orders; **removal and
+    deletion still need an explicit yes** - offboarding, deleting a codemap or
+    diagram, rewriting `metrics.md` - because adding capability is reversible
+    and removing it destroys the evidence that would say whether removing it
+    was right; and a multi-agent run is **announced before** it happens. Writes
+    stay scoped to `.crew/` and `docs/diagrams/`. `/crew:pm assign` is the
+    manual entry point.
+
+  - **Diagram freshness is now a tracked fact.** `crew_state.py` reads
+    `docs/diagrams/*.mmd`, parses the short sha out of the documented
+    `%% Generated from <repo>@<sha>` header, and reports `diagrams.behind` and
+    `diagrams.missing`. Two new triggers, `diagramsStale` and `diagramsMissing`,
+    sort **below** `graphStale` and `knowledgeBehind` on purpose: a diagram
+    regenerated from a code map that is itself behind HEAD is stale output
+    wearing a fresh anchor, which is worse than the diagram it replaced because
+    it no longer advertises its age. `diagramsMissing` stays quiet until there
+    is a codemap, so a fresh setup is not nagged about three diagrams on
+    session one.
+
+    Diagrams are the **only** documentation artifact the crew regenerates
+    unasked. That is not a general licence: they carry a machine-checkable
+    anchor, so "is this still true" has a real answer. Prose docs keep
+    `crew-docs`'s deliberate *do not touch* default, because whether a change
+    deserves a CHANGELOG entry is a judgement about what users can observe and
+    no sha answers it.
+
+  - Found while writing the tests: reusing the codemap's `_ANCHOR_RE` for
+    diagrams reads **every** correctly-anchored diagram as stale. That regex
+    requires the line to start with `anchor:`, which is a syntax error in a
+    Mermaid source - provenance there has to live inside a `%%` comment. The
+    bug looks like the feature working, right up until nothing is ever current.
+    `_DIAGRAM_ANCHOR_RE` handles the documented header and the hand-written
+    `%% anchor:` form.
+
+  - 40 new cases in `run-tests.sh` (50 -> 90), sabotage-tested both ways:
+    removing the `stop_hook_active` guard and reverting the anchor regex each
+    turn the suite red.
+
+- **`crew` 0.7.0 - the `platform` block repairs itself at session start.** It is
+  the one block in `.crew/config.json` that is committed and is therefore wrong
+  for everybody who did not run `/crew:init` - and `windowsHostIp` is wrong for
+  the same person after a reboot, because WSL2's gateway changes. Open a repo on
+  Windows that was set up in WSL and the session now opens with
+  `## platform - config said linux, this is windows-bash; updated 5 field(s)`,
+  itemised, and the config already fixed.
+  - **One rule makes it safe: it writes derived facts and nothing else.** The
+    seven writable keys are `os`, `wsl`, `wslVersion`, `distro`, `shell`,
+    `repoFilesystem` and `windowsHostIp` - each an answer to "what machine is
+    this", which nobody hand-edits usefully. A test pins that list, because
+    adding a preference to it would turn the hook into something that overrules
+    people.
+  - **Preferences are reported, never rewritten:** an `autoClear.method` that
+    only exists on the other platform (which would otherwise make auto-clear
+    stand down silently), a clone under `/mnt/` where every file operation goes
+    through the Windows translation layer, CRLF in a committed `.sh` that bash
+    reports as "bad interpreter: ...^M". `tracker`, `qa`, `roles`, `tier`,
+    `notify`, `emergency`, the context thresholds and `verifyGate` are never
+    touched.
+  - This is why it may write when the PM may not: the PM's subject is
+    *judgement*, and whether a role earns its context is not a fact.
+    `platform.os` is a fact, it is wrong on the other machine, and being asked
+    about it once per clone would be worse than having it fixed. It still says
+    what it changed - a silent config edit would be indefensible.
+  - It does not write when nothing changed, so it never dirties a tree just by
+    opening a session, and it preserves the file's existing line endings - a
+    CRLF config rewritten as LF is a whole-file diff for whoever committed it.
+    A read-only checkout, or no python, reports what it *would* have changed.
+  - Detection covers native Linux, WSL1, WSL2 (including reading the gateway as
+    the Windows host address), macOS, native Windows, and Git Bash on Windows -
+    which `sys.platform` cannot distinguish from a cmd session, so `MSYSTEM`
+    decides whether crew should be writing bash or PowerShell here.
+  - Both flavours are thin wrappers over one python module
+    (`hooks/scripts/crew_platform.py`), the `pm-brief` pattern. For a hook that
+    writes config, two implementations that disagree about what they write is
+    the last thing anybody wants, and this plugin's `.sh`/`.ps1` pairs have
+    drifted for a whole release before.
+  - `tests/test_platform_sync.py`, 29 cases. The detection paths are exercised
+    by faking `platform.system()` and the `/proc` files WSL is recognised by,
+    because a suite that only covers the OS it runs on is how a cross-platform
+    bug survives.
+  - Found while writing it: reading the config in text mode let universal-newline
+    translation strip CRLF before anything could see it, so the
+    line-ending-preserving write silently rewrote a CRLF config as LF.
+
+- **`crew` 0.6.2 - `context.autoClear`, experimental, off by default.** A matched
+  pair of scripts that type `/clear` into the terminal once the handoff note is
+  written. This does **not** contradict the standing correction that a hook
+  cannot clear its own session - it does not touch the conversation. It drives
+  the *terminal*, typing at the prompt the way a human would, which is a
+  different mechanism with a different failure mode.
+  - That failure mode is why it is experimental: typing into a terminal is only
+    safe if you know which terminal. `tmux` targets `$TMUX_PANE` by id and never
+    touches focus, so in tmux this needs no configuration beyond
+    `enabled: true`. `xdotool`, `wtype` and the Windows `SendKeys` path all
+    depend on focus, so they **require** `context.autoClear.windowTitle` and
+    refuse rather than guessing; `wtype` additionally needs `unsafeFocus: true`,
+    because Wayland offers no way to check what has focus at all. The Windows
+    child re-checks the foreground window's title immediately before typing, so
+    alt-tabbing during the delay cancels the send rather than redirecting it.
+  - Five conditions before it types anything: `enabled` exactly `true` (the
+    string `"true"` is not), the handoff was actually requested this session,
+    the note exists and is **newer** than that request, it has at least
+    `minHandoffLines` non-blank lines (default 5 - clearing on a two-line
+    placeholder loses the work and leaves a note that says "continue the work"),
+    and nothing has claimed the one-per-session attempt.
+  - The attempt is claimed immediately **before** the send, not with the
+    conditions, so a misconfiguration does not burn the session's only try -
+    fixing `windowTitle` mid-session actually retries. A `--dry-run` does not
+    claim it either.
+  - Every refusal is written to `.crew/.autoclear.log`, because a `Stop` hook's
+    stderr is invisible when it exits 0 and without it "nothing happened" cannot
+    be told apart from "the feature is broken".
+  - `--dry-run` / `-DryRun` prints the method, target, command and delay it would
+    use and sends nothing; `--force` / `-Force` skips the handoff conditions so
+    the plan can be inspected outside a real session.
+  - `tests/test_auto_clear.py` - 32 cases across both flavours, every one either
+    `--dry-run` or against a fake `tmux`/`xdotool` on `PATH`, so no test can send
+    a keystroke to the machine running it. Sabotage-tested three ways: moving the
+    claim back into the conditions block (5 red), dropping the CR strip (12 red),
+    and allowing a focus-based method with no window title (1 red).
+  - A third bug, found by CI rather than by me: on a Linux runner with pwsh
+    installed, `auto-clear.ps1` ran every condition, claimed the
+    one-per-session attempt and reported "sent" - on a platform where its
+    SendKeys path cannot type anything. Reporting success while delivering
+    nothing is worse than failing, because the log then says it worked. It now
+    exits immediately unless `$IsWindows`, the suite treats that flavour as
+    native-Windows-only, and a new case pins the stand-down on a non-Windows
+    pwsh. 0.6.0 and 0.6.1 were set on the branch and never published; the
+    released version is 0.6.2, which also carries the ANEWINF-758 pytest
+    determinism fix this branch merged in from `main`.
+  - Two bugs found by running it rather than reading it, both now covered. The
+    config was read as tab-separated fields with a tab as the field separator,
+    and a tab is IFS *whitespace*, so bash collapsed consecutive separators and
+    an empty `windowTitle` - the default - shifted every later field left by
+    one. And python on Windows writes CR-LF, so every value arrived with a
+    trailing carriage return: the `enabled` comparison failed and the script
+    exited having done nothing. Both were invisible failures from a `Stop`
+    hook, which is the worst kind.
 
 - **`crew` 0.5.2 - ServiceDesk Plus as a third tracker.** `tracker: "sdp"` plus
   `/crew:sdp-sync <REQUEST-ID> [--push]`, mirroring the Jira path rather than

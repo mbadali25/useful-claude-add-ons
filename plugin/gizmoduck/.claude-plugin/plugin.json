@@ -1,0 +1,9 @@
+{
+  "name": "gizmoduck",
+  "version": "0.1.3",
+  "description": "Gizmoduck — run Nuclei vulnerability scans on websites and hosts, diff against previous scans, and turn findings into triaged reports and ServiceDesk Plus tickets. Runs on WSL/Linux and Windows.",
+  "author": {
+    "name": "Matt",
+    "email": "matt@anewbiz.net"
+  }
+}

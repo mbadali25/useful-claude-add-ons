@@ -1,0 +1,59 @@
+name: Publish MCP servers (Microsoft)
+
+# Fires on a tag like mcp-servers-v0.1.0. Nothing in mcp-servers/ is published
+# automatically on every push -- publishing to npm is a deliberate, tagged
+# release, not a side effect of merging.
+on:
+  push:
+    tags:
+      - "mcp-servers-v*"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mcp-servers
+    permissions:
+      # id-token:write is what lets `npm publish --provenance` mint the
+      # attestation via GitHub's OIDC token -- without it provenance fails.
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+      - name: Install workspace dependencies
+        run: npm ci
+      - name: Build and run the offline test suite before publishing anything
+        run: npm test
+      # Core has to land on the registry before any server, or `npm publish`
+      # for graph/intune/o365-user/o365-admin can't resolve their pinned
+      # "@badali404/mcp-ms-core": "0.1.0" dependency from the registry.
+      - name: Publish @badali404/mcp-ms-core
+        working-directory: mcp-servers/packages/core
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Publish @badali404/mcp-msgraph
+        working-directory: mcp-servers/packages/graph
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Publish @badali404/mcp-intune
+        working-directory: mcp-servers/packages/intune
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Publish @badali404/mcp-o365-user
+        working-directory: mcp-servers/packages/o365-user
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Publish @badali404/mcp-o365-admin
+        working-directory: mcp-servers/packages/o365-admin
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

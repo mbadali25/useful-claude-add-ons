@@ -20,7 +20,7 @@ One script per OS. Both are idempotent (safe to re-run) and, by default, also bo
     ...
     [ ] Strix AI pentesting CLI (needs Docker + an LLM API key)
     [ ] Obsidian desktop + claude-obsidian + obsidian-skills plugins
-    [ ] This repo's plugins: crew (agents, commands, hooks)
+    [ ] This repo's plugins: crew, gizmoduck, obsidian-vault (agents, commands, hooks)
     [ ] graphify code graph (uv tool install graphifyy; per-repo, not global)
   showing 1-22 of 22
   ↑↓ move   Space toggle   Enter start   A all   N none   D defaults   Q cancel
@@ -74,6 +74,7 @@ It shows the menu, asks the SkillUI quick-start question up front, then installs
 4. **Team plugins, community plugins, `find-skills`, `claude-code-setup`, `task-observer`** — each is its own menu row; `-SkipBootstrap` narrows any selection back down to items 1 and 2.
 5. **MCP servers** — AWS, Azure, Playwright. Off by default; see [Optional: MCP servers](#optional-mcp-servers).
 6. **Supabase, Context7, Playwright CLI, SkillUI, Strix** — off by default; see [Optional: extra tooling](#optional-extra-tooling).
+7. **Microsoft MCP servers** — Graph, Intune, Office 365 user/admin, built from `mcp-servers/` in this repo. Off by default and needs az login or tenant credentials; see [Optional: Microsoft MCP servers](#optional-microsoft-mcp-servers).
 
 If `claude` isn't recognized immediately after the script finishes, open a new PowerShell window — the `PATH` change is written to the registry but doesn't retroactively apply to whichever shell you're still in from before Node.js/npm existed.
 
@@ -93,6 +94,7 @@ Runs as your current user, escalating to `sudo` (or `root` directly if already r
 4. **Team plugins, community plugins, `find-skills`, `claude-code-setup`, `task-observer`** — each is its own menu row; `--skip-bootstrap` narrows any selection back down to items 1 and 2.
 5. **MCP servers** — AWS, Azure, Playwright. Off by default; see [Optional: MCP servers](#optional-mcp-servers).
 6. **Supabase, Context7, Playwright CLI, SkillUI, Strix** — off by default; see [Optional: extra tooling](#optional-extra-tooling).
+7. **Microsoft MCP servers** — Graph, Intune, Office 365 user/admin, built from `mcp-servers/` in this repo. Off by default and needs az login or tenant credentials; see [Optional: Microsoft MCP servers](#optional-microsoft-mcp-servers).
 
 Under the piped one-liner (`curl -fsSL … | bash`) the script itself arrives on stdin, so the menu reads the terminal through its own file descriptor. Where there is no terminal at all, it takes the default set rather than blocking.
 
@@ -238,7 +240,9 @@ Six more rows, also off by default. None of them are MCP servers.
 
 ### Optional: this repo's own plugins
 
-- **This repo's plugins** (19) - installs everything under [`plugin/`](plugin/) from this repo's own marketplace. Today that is one plugin, [`crew`](plugin/crew): 10 subagents, 18 slash commands, 16 bundled skills, and 16 hook entries (8 scripts, each shipped as a `.sh`/`.ps1` pair) across 5 events. It adds the marketplace itself first, so the item works whether or not item 3 ran; both steps are no-ops when they are already present.
+- **This repo's plugins** (19) - installs everything under [`plugin/`](plugin/) from this repo's own marketplace: [`crew`](plugin/crew) (11 subagents, 21 slash commands, 16 bundled skills, 20 hook entries across 5 events), [`gizmoduck`](plugin/gizmoduck) (6 slash commands, 1 bundled skill, no agents and no hooks), and [`obsidian-vault`](plugin/obsidian-vault) (2 subagents, 8 slash commands, 3 bundled skills, 8 hook entries across 4 events). It adds the marketplace itself first, so the item works whether or not item 3 ran; both steps are no-ops when they are already present.
+
+  **`obsidian-vault` (this repo's plugin) is a different thing from item 18** below, which installs Obsidian the desktop app plus two *third-party* marketplace plugins also touching Obsidian (`claude-obsidian@agricidaniel-claude-obsidian`, and a plugin literally named `obsidian` from the `obsidian-skills` marketplace) - it is named `obsidian-vault`, not `obsidian`, precisely so it does not collide with that third-party plugin's name. The two are meant to be complementary - item 18 gets Obsidian itself and upstream syntax skills onto the machine, this repo's `obsidian-vault` plugin is the memory/gardening layer on top, supporting multiple named vaults on one machine. Read [`plugin/obsidian-vault/README.md`](plugin/obsidian-vault/README.md)'s "Related" section before assuming either one supersedes the other, or before assuming this plugin replaces [`claude-obsidian-setup/`](claude-obsidian-setup/) (a different target: vault creation for the third-party `claude-obsidian` plugin's own conventions) or [`vault-automation/`](vault-automation/) (marked superseded in its own README, but not deleted - the quickstart above documents it as still runnable).
 
   This item also detects a global `find-skills` collision: if `~/.claude/skills/find-skills` exists (from menu item 5, or a direct `npx skills add`), it warns that two active copies can both trigger on the same prompt and prints the manual removal command. Detection only; it never deletes anything.
 
@@ -286,6 +290,25 @@ Six more rows, also off by default. None of them are MCP servers.
   Both flags matter: `--code-only` skips docs, papers, and images — omit it against a repo that has any of those and `graphify` errors instead of skipping them. `--no-viz` skips the HTML visualization, which is effectively unopenable past a modest repo size.
 
   This item installs the CLI only; it does nothing on its own until something calls it. [`crew`](plugin/crew) (item 19) is the thing that does — its `crew-graph` skill builds and queries the graph, and `/crew:upgrade` reads it to bring a pre-schema-2 crew setup forward. Freshness is tracked from `graphify`'s own `built_at_commit` field in `graph.json`, never a file timestamp, so a `git pull` that predates the last build still reports correctly as stale. Exporting the graph into an Obsidian vault needs a separate, explicit opt-in — `graph.obsidian.confirmed` set by hand in `.crew/config.json` — which an upgrade never sets for you.
+
+### Optional: Microsoft MCP servers
+
+- **Microsoft MCP servers** (21) — registers up to four local, stdio MCP servers built from [`mcp-servers/`](mcp-servers/): `mcp-msgraph` (tenant directory), `mcp-intune` (device management), `mcp-o365-admin` (mailboxes/licenses, tenant-wide), and `mcp-o365-user` (the signed-in user's own mail/calendar/files, delegated device-code sign-in). Full auth model and every environment variable: [`mcp-servers/README.md`](mcp-servers/README.md).
+
+  All five packages (the shared core plus these four servers) are **published to npm under `@badali404`** (since 2026-08-28), so like items 9–12 this registers the npx form — no clone, no build, no global install. The three admin-scope servers (`mcp-msgraph`/`mcp-intune`/`mcp-o365-admin`) authenticate through a chain — client secret, then an existing `az login` session, then device code — so **no app registration is required to register them anymore**: the item checks `az account show` as well as `MS_ADMIN_*` env vars to decide whether to register them:
+
+  ```bash
+  az login                                                                             # sufficient on its own, OR:
+  export MS_ADMIN_TENANT_ID=...  MS_ADMIN_CLIENT_ID=...  MS_ADMIN_CLIENT_SECRET=...    # msgraph, intune, o365-admin
+  export MS_USER_CLIENT_ID=...                                                         # o365-user (device code) -- always needs its own app registration
+  ./scripts/install-prerequisites.sh --select ms-mcp
+  ```
+
+  An `az login` session **or** `MS_ADMIN_*` (all three, app-only/client-credentials) registers `mcp-msgraph`, `mcp-intune`, and `mcp-o365-admin`; `MS_USER_CLIENT_ID` (delegated device-code, `MS_USER_TENANT_ID` optional) registers `mcp-o365-user` on its own — it is not part of the admin chain and still needs its own app registration regardless. Any one of these three is enough to proceed — the item registers whichever group is satisfied and skips the rest with an explanation.
+
+  Each registration is `claude mcp add <name> -- npx -y @badali404/<pkg>@latest`. `MS_ADMIN_*`/`MS_USER_*` are credentials, so they are **never** passed via `--env` — they must be set wherever the `claude` process itself gets launched (shell profile, service manager, etc.), or a registered server will fail to authenticate; if you're relying on `az login` instead, that session just needs to still be valid wherever `claude` actually runs. `MCP_MS_ALLOW_WRITES` is different — it's a boolean gate, not a credential, so the item **does** bake it in via `--env` when it is `1` in the shell running the installer: run with `export MCP_MS_ALLOW_WRITES=1` (or `$env:MCP_MS_ALLOW_WRITES='1'` on Windows) set first, and every server registered in that run gets write/destructive tools enabled, scoped to just those servers. Left unset (the default), every server registers read-only, and the item prints the exact `claude mcp remove` / `claude mcp add -e MCP_MS_ALLOW_WRITES=1` one-liner to flip a single server later. Either way, `confirm: true` is still required per call — the flag alone never lets a tool write. Verify with `npx -y @badali404/mcp-msgraph@latest doctor` (same pattern per server), which acquires a real token and prints which auth chain link authenticated, whether it's app-only or delegated, exactly what was granted, and whether writes are enabled. npx downloads and caches the package on the server's first launch, so the very first Claude Code session after registering pays a one-time fetch.
+
+  Developing against a local clone instead of the registry: [`mcp-servers/README.md`](mcp-servers/README.md) keeps the `npm install -g` workspace-link option documented. New versions publish via a tagged `mcp-servers-v*` push through [`.github/workflows/publish-mcp-servers.yml`](.github/workflows/publish-mcp-servers.yml) — walkthrough in [`mcp-servers/PUBLISHING.md`](mcp-servers/PUBLISHING.md).
 
 Before running either script on a machine you don't fully control, note that these steps run third-party code from npm, from `strix.ai`, from `uv`, and from Chocolatey/flatpak/snap — see [`SECURITY.md`](SECURITY.md)'s install-script trust boundary.
 

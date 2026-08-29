@@ -722,9 +722,9 @@ MENU_KEYS=(
   "claude-code-setup" "task-observer"
   "aws-mcp" "azure-mcp" "playwright-mcp" "obsidian-mcp"
   "supabase" "context7" "playwright-cli" "skillui" "strix" "obsidian"
-  "repo-plugins" "graphify"
+  "repo-plugins" "graphify" "ms-mcp"
 )
-MENU_DEFAULT=(1 1 1 1 1 1 1 1 0 0 0 0 0 0 0 0 0 0 0 0)
+MENU_DEFAULT=(1 1 1 1 1 1 1 1 0 0 0 0 0 0 0 0 0 0 0 0 0)
 MENU_NAME=(
   "Prerequisites: git, nodejs, npm, python3, pip3 (needs root or sudo)"
   "Claude Code CLI (@anthropic-ai/claude-code) + PATH export + update check"
@@ -744,8 +744,9 @@ MENU_NAME=(
   "SkillUI (npm) + Playwright/Chromium - extract a design system from a URL"
   "Strix AI pentesting CLI (needs Docker + an LLM API key)"
   "Obsidian desktop + claude-obsidian + obsidian-skills plugins"
-  "This repo's plugins: crew (agents, commands, hooks)"
+  "This repo's plugins: crew, gizmoduck, obsidian-vault (agents, commands, hooks)"
   "graphify code graph (uv tool install graphifyy; per-repo, not global)"
+  "Microsoft MCP servers (mcp-servers/): Graph, Intune, Office 365 user/admin - needs az login or tenant credentials"
 )
 
 SELECTED=""
@@ -850,12 +851,18 @@ unset _i
 # Parallel arrays for the same reason SKILL_KEYS uses them - stable order.
 PLUGIN_KEYS=(
   "crew"
+  "gizmoduck"
+  "obsidian-vault"
 )
 PLUGIN_NAME=(
-  "crew                    - Virtual dev team: 9 agents, 16 commands, safety hooks"
+  "crew                    - Virtual dev team: 11 agents, 21 commands, safety hooks"
+  "gizmoduck               - Nuclei scans: diff, triaged reports, SDP tickets. No hooks"
+  "obsidian-vault          - Multi-vault memory: gardener/reflector agents, bridge+guard hooks"
 )
 PLUGIN_SPEC=(
   "crew@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons"
+  "gizmoduck@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons"
+  "obsidian-vault@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons"
 )
 PLUGIN_STATE=()
 for _i in "${!PLUGIN_KEYS[@]}"; do PLUGIN_STATE+=(1); done
@@ -919,7 +926,7 @@ GROUP_LABEL=(
   "This repo's marketplace + %s of %s skills  >"
   "Team plugins: %s of %s (superpowers, frontend-design, excalidraw)  >"
   "Community marketplaces + %s of %s plugins  >"
-  "This repo's plugins: %s of %s (crew - agents, commands, hooks)  >"
+  "This repo's plugins: %s of %s (crew, gizmoduck, obsidian-vault)  >"
 )
 GROUP_TITLE=(
   "Pick individual skills from this repo"
@@ -2328,6 +2335,103 @@ install_graphify() {
 }
 if is_selected "graphify"; then
   run_step "Install graphify (uv tool install graphifyy; registers --project)" install_graphify
+fi
+
+# --- 21. Microsoft MCP servers (mcp-servers/) ---------------------------------
+# Published to npm under @badali404 (2026-08-28), so like the item-9-12 MCP servers
+# this registers the npx form - no clone, no build, no global install; npx resolves
+# and caches the package on the server's first launch. The admin servers now
+# authenticate through a chain (secret -> az CLI -> device code, see
+# mcp-servers/README.md's "Admin auth chain, in detail"), so a real Azure AD app
+# registration is no longer required to register them here - a signed-in
+# 'az login' session is sufficient, checked below via 'az account show'.
+#
+# Registration is bare ('-- <command>', no --env): claude mcp add --env persists the
+# value into ~/.claude.json, and this repo's rule is secrets from env only, never
+# written anywhere by this script. So MS_ADMIN_*/MS_USER_* (when used) still have to
+# be exported wherever the 'claude' process itself gets launched (shell profile,
+# service manager, etc.) - this step just prints that. Developing against a local
+# clone instead: mcp-servers/README.md keeps the 'npm install -g' workspace-link
+# option documented.
+install_ms_mcp() {
+  local have_admin_secret=0 have_admin_cli=0 have_admin=0 have_user=0
+  if [ -n "${MS_ADMIN_TENANT_ID:-}" ] && [ -n "${MS_ADMIN_CLIENT_ID:-}" ] && [ -n "${MS_ADMIN_CLIENT_SECRET:-}" ]; then
+    have_admin_secret=1
+  fi
+  # 'az account show' reads the CLI's own cached session; it fails fast (no
+  # network call) when 'az' is missing or nobody has run 'az login'. Sufficient
+  # on its own to register the admin servers now that they fall back to it.
+  if have az && az account show >/dev/null 2>&1; then
+    have_admin_cli=1
+  fi
+  if [ "$have_admin_secret" -eq 1 ] || [ "$have_admin_cli" -eq 1 ]; then
+    have_admin=1
+  fi
+  [ -n "${MS_USER_CLIENT_ID:-}" ] && have_user=1
+
+  if [ "$have_admin" -eq 0 ] && [ "$have_user" -eq 0 ]; then
+    skip "Microsoft MCP servers: no MS_ADMIN_* creds, no 'az login' session, and no MS_USER_CLIENT_ID"
+    printf '        mcp-msgraph/mcp-intune/mcp-o365-admin now also work with just an existing\n'
+    printf '        Azure CLI session - no app registration needed. Either:\n'
+    printf '          az login                                                                   # then re-run this item\n'
+    printf '        or:\n'
+    printf '          export MS_ADMIN_TENANT_ID=... MS_ADMIN_CLIENT_ID=... MS_ADMIN_CLIENT_SECRET=...  # msgraph/intune/o365-admin\n'
+    printf '        mcp-o365-user always needs its own app registration:\n'
+    printf '          export MS_USER_CLIENT_ID=...                                                     # o365-user (device code)\n'
+    printf '          ./install-prerequisites.sh --select ms-mcp\n'
+    return 0
+  fi
+  if ! have claude; then
+    warn "claude not found on PATH in this shell - run 'source ~/.bashrc' and re-run this script."
+    return 1
+  fi
+  if ! have node; then
+    warn "node not found on PATH - install Node.js first (item 1), then re-run."
+    return 1
+  fi
+  # MCP_MS_ALLOW_WRITES is not a secret (it is a boolean gate, not a credential),
+  # so unlike MS_ADMIN_*/MS_USER_* it is fine to bake into the registration via
+  # 'claude mcp add --env' rather than requiring it in the launching shell too -
+  # scoped to just these servers, same as any other -e KEY=value here. Detected
+  # the same way everything else in this step is: present and '1' in the shell
+  # running the installer means "yes, enable it." A write tool still separately
+  # requires 'confirm: true' per call no matter how this flag got set.
+  local env_spec="-"
+  if [ "${MCP_MS_ALLOW_WRITES:-}" = "1" ]; then
+    env_spec="MCP_MS_ALLOW_WRITES=1"
+  fi
+  # Published on npm under @badali404 since 2026-08-28, so registration is the
+  # npx form and needs no clone, no build, and no global install. npx resolves
+  # and caches the package on the server's first launch.
+  if [ "$have_admin" -eq 1 ]; then
+    add_mcp_server "mcp-msgraph" "$env_spec" npx -y "@badali404/mcp-msgraph@latest"
+    add_mcp_server "mcp-intune" "$env_spec" npx -y "@badali404/mcp-intune@latest"
+    add_mcp_server "mcp-o365-admin" "$env_spec" npx -y "@badali404/mcp-o365-admin@latest"
+    if [ "$have_admin_secret" -eq 0 ]; then
+      printf '        Registered via the Azure CLI fallback (no MS_ADMIN_* set) - each server will\n'
+      printf '        authenticate as whoever is signed in with "az login" wherever it actually runs.\n'
+    fi
+  else
+    skip "mcp-msgraph/mcp-intune/mcp-o365-admin: no MS_ADMIN_* credentials and no 'az login' session"
+  fi
+  if [ "$have_user" -eq 1 ]; then
+    add_mcp_server "mcp-o365-user" "$env_spec" npx -y "@badali404/mcp-o365-user@latest"
+  else
+    skip "mcp-o365-user: no MS_USER_CLIENT_ID given"
+  fi
+  if [ "$env_spec" = "-" ]; then
+    printf '        Every server registered read-only. To enable write/destructive tools:\n'
+    printf '          export MCP_MS_ALLOW_WRITES=1 && ./scripts/install-prerequisites.sh --select ms-mcp\n'
+    printf '        or per-server by hand: claude mcp remove <name> && claude mcp add <name> -e MCP_MS_ALLOW_WRITES=1 -- npx -y @badali404/<pkg>@latest\n'
+  else
+    printf '        Registered with MCP_MS_ALLOW_WRITES=1 baked in - write/destructive tools are\n'
+    printf '        enabled on every server registered by this run. Each call still separately\n'
+    printf '        requires confirm: true; the flag alone never lets a tool write.\n'
+  fi
+  ok "Registered via 'npx -y @badali404/<pkg>@latest' - no secrets were written to ~/.claude.json. If not relying on 'az login', export MS_ADMIN_TENANT_ID/MS_ADMIN_CLIENT_ID/MS_ADMIN_CLIENT_SECRET and/or MS_USER_CLIENT_ID (+ optional MS_USER_TENANT_ID) in the shell/profile that launches 'claude' itself, or the servers relying on them will fail to authenticate. Verify auth with 'npx -y @badali404/mcp-msgraph@latest doctor' (same pattern per server) - it reports which auth chain link actually authenticated and whether writes are enabled."
+}
+if is_selected "ms-mcp"; then
+  run_step "Register Microsoft MCP servers (mcp-servers/)" install_ms_mcp
 fi
 
 # --- Summary -----------------------------------------------------------------
