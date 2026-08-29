@@ -53,7 +53,7 @@ def cmd_scan(target, out, severity, extra):
     if extra:
         cmd += extra.split()
     print(f"# running: {' '.join(cmd)}", file=sys.stderr)
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+    proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
     lines = [ln for ln in proc.stdout.splitlines() if ln.strip().startswith("{")]
     # Do NOT write an output file for a failed scan. One that died - bad target,
     # missing templates, no network - produces no stdout, and writing that as an
@@ -72,6 +72,12 @@ def cmd_scan(target, out, severity, extra):
         fh.write("\n".join(lines) + ("\n" if lines else ""))
     print(f"wrote {len(lines)} findings to {out}")
     return out
+
+
+def write_text(path, text):
+    """Write `text` to `path` as UTF-8, closing the handle on the way out."""
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(text)
 
 
 def load(path):
@@ -145,7 +151,8 @@ def cmd_report(findings, min_sev, title):
         cvss = f["cvss"] or "n/a"
         cves = ", ".join(f["cve"]) if f["cve"] else "—"
         out.append(f"### {f['name']}  \n")
-        out.append(f"- **Template:** {f['template_id']}  |  **CVSS:** {cvss}  |  **CVE:** {cves}  |  **Type:** {f['type']}")
+        out.append(f"- **Template:** {f['template_id']}  |  **CVSS:** {cvss}  "
+                   f"|  **CVE:** {cves}  |  **Type:** {f['type']}")
         out.append(f"- **Affected ({f['instances']}):** {', '.join(f['affected'])}")
         if f["description"]:
             out.append(f"- **Detail:** {f['description'].strip()}")
@@ -162,7 +169,8 @@ def render_html(findings, min_sev, title):
     rows = "".join(f"<tr><td style='color:{SEV_COLOR[x]};font-weight:600'>{SEV_NAME[x]}</td>"
                    f"<td>{s['by_severity'][SEV_NAME[x]]}</td></tr>" for x in ORDER)
     body = [f"""<!doctype html><html><head><meta charset="utf-8"><title>{e(title)}</title><style>
-body{{font:14px/1.5 -apple-system,Segoe UI,Arial,sans-serif;color:#1a1a1a;max-width:900px;margin:2rem auto;padding:0 1rem}}
+body{{font:14px/1.5 -apple-system,Segoe UI,Arial,sans-serif;color:#1a1a1a;
+max-width:900px;margin:2rem auto;padding:0 1rem}}
 h1{{border-bottom:2px solid #ddd;padding-bottom:.3rem}} table{{border-collapse:collapse;margin:1rem 0}}
 td,th{{border:1px solid #ddd;padding:.35rem .7rem;text-align:left}}
 .finding{{border-left:4px solid #ccc;padding:.4rem 0 .4rem 1rem;margin:1rem 0}}
@@ -278,9 +286,11 @@ def cmd_doctor():
     exe = find_nuclei()
     if exe:
         try:
-            v = subprocess.run([exe, "-version"], capture_output=True, text=True)
-            ver = (v.stderr or v.stdout).strip().splitlines()[-1] if (v.stderr or v.stdout) else "unknown"
-        except Exception:
+            v = subprocess.run([exe, "-version"], capture_output=True, text=True,
+                               check=False)
+            raw = (v.stderr or v.stdout).strip()
+            ver = raw.splitlines()[-1] if raw else "unknown"
+        except OSError:
             ver = "unknown"
         line("nuclei", f"{exe} ({ver})")
     else:
@@ -373,10 +383,14 @@ def main():
     elif a.command == "report":
         if a.format == "md":
             md = cmd_report(findings, min_sev, a.title)
-            (open(a.out, "w", encoding="utf-8").write(md) and print(f"wrote {a.out}")) if a.out else print(md)
+            if a.out:
+                write_text(a.out, md)
+                print(f"wrote {a.out}")
+            else:
+                print(md)
         elif a.format == "html":
             out = a.out or "nuclei-report.html"
-            open(out, "w", encoding="utf-8").write(render_html(findings, min_sev, a.title))
+            write_text(out, render_html(findings, min_sev, a.title))
             print(f"wrote {out}")
         elif a.format == "pdf":
             out = a.out or "nuclei-report.pdf"
@@ -385,7 +399,7 @@ def main():
                 print(f"wrote {out}")
             else:
                 fb = os.path.splitext(out)[0] + ".html"
-                open(fb, "w", encoding="utf-8").write(doc)
+                write_text(fb, doc)
                 print(f"No PDF engine found. Wrote {fb} instead — install wkhtmltopdf "
                       f"or open the HTML and Print to PDF.", file=sys.stderr)
                 sys.exit(2)
