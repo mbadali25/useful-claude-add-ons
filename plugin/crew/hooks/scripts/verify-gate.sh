@@ -68,32 +68,56 @@ CHANGED=$(git diff --name-only HEAD 2>/dev/null; git ls-files --others --exclude
 # event. `mkdir` is atomic even across a bash/PowerShell pair on the same
 # filesystem, so whichever of the two gets here first claims the lock; the
 # other backs off (exit 0) instead of redoing the work -- the winner's exit
-# code still governs the turn either way. No cleanup on exit: the lock's own
-# PID dies with this process, so the very next Stop event (this turn's
-# retry, or next turn) finds a dead PID and reclaims it immediately; a lock
-# whose holder is still alive and under 700s old (comfortably above the
-# hook's own 600s timeout) is the one real concurrent case, and that is
-# exactly when backing off is correct.
+# code still governs the turn either way.
+#
+# The lock records a TIMESTAMP, never a PID. The two flavours do not share a
+# PID namespace on Windows: bash's $$ is an MSYS pid and PowerShell's $PID is
+# a Windows pid, and neither can test the other's for liveness -- `kill -0` on
+# a live Windows pid reports dead, `Get-Process -Id` on a live MSYS pid
+# reports dead. A PID-based lock therefore fails in exactly the cross-shell
+# case it exists for: each side calls the other's fresh lock stale and runs
+# anyway. It fails the other way too, since the two id spaces overlap
+# numerically -- a coincidental match reads as a live holder and the gate is
+# silently skipped, which is worse than the double-run (see the header).
+#
+# So: the holder REMOVES its own lock on exit (trap below), and age comes
+# from the lock DIRECTORY's own mtime, which `mkdir` stamps atomically as it
+# creates it. There is no separate timestamp file to be caught half-written,
+# and no window in which a lock exists with no age -- a crash between the
+# two would otherwise wedge the gate for every later turn. A lock older than
+# 700s (comfortably above the hook's own 600s timeout) is one whose holder
+# was hard-killed before its trap ran, and is reclaimed.
 LOCK=".crew/.verify-gate.lock"
+LOCK_TTL=700
+RECLAIMED=0
+# GNU stat and BSD stat spell this differently and neither accepts the
+# other's flag; `date -r` is not portable here either, since BSD `date -r`
+# reads its argument as epoch seconds rather than as a file.
+lock_mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null; }
 mkdir -p .crew 2>/dev/null
 if ! mkdir "$LOCK" 2>/dev/null; then
-  HOLDER=$(cat "$LOCK/pid" 2>/dev/null)
-  HOLDER_PID=${HOLDER%% *}
-  HOLDER_EPOCH=${HOLDER#* }
+  HOLDER_AT=$(lock_mtime "$LOCK" | tr -dc '0-9')
+  # Unreadable mtime: assume held rather than reclaim on a guess.
+  [ -z "$HOLDER_AT" ] && exit 0
   NOW=$(date +%s)
-  STALE=0
-  if [ -z "$HOLDER_PID" ] || ! kill -0 "$HOLDER_PID" 2>/dev/null; then
-    STALE=1
-  elif [ -n "$HOLDER_EPOCH" ] && [ $((NOW - HOLDER_EPOCH)) -gt 700 ] 2>/dev/null; then
-    STALE=1
-  fi
-  if [ "$STALE" -eq 0 ]; then
-    exit 0
-  fi
+  [ $((NOW - HOLDER_AT)) -le "$LOCK_TTL" ] 2>/dev/null && exit 0
   rm -rf "$LOCK" 2>/dev/null
   mkdir "$LOCK" 2>/dev/null || exit 0
+  RECLAIMED=1
 fi
-echo "$$ $(date +%s)" > "$LOCK/pid" 2>/dev/null
+# A token of our own, so a SECOND reclaimer that deleted our fresh lock and
+# took its own is detectable: whoever's token is on disk once both have
+# written owns the turn, and the other backs off instead of both running.
+LOCK_TOKEN="sh-$$-$(date +%s)-${RANDOM:-0}"
+trap 'if [ "$(cat "$LOCK/token" 2>/dev/null)" = "$LOCK_TOKEN" ]; then rm -rf "$LOCK" 2>/dev/null; fi' EXIT INT TERM
+printf '%s\n' "$LOCK_TOKEN" > "$LOCK/token" 2>/dev/null
+# Only the reclaim path can race another reclaimer; the plain-mkdir winner
+# cannot be clobbered, since its lock is far too young for anyone to reclaim.
+# Do not tax the common path with the settle wait.
+if [ "$RECLAIMED" -eq 1 ]; then
+  sleep 1
+  [ "$(cat "$LOCK/token" 2>/dev/null)" = "$LOCK_TOKEN" ] || exit 0
+fi
 
 if [ ! -f .crew/verify.json ]; then
   # _verify/ is the canonical home; scripts/smoke.sh is honoured as legacy.

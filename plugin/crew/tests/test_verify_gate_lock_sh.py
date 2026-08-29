@@ -1,39 +1,31 @@
-"""verify-gate.ps1's lock against its own concurrent bash twin.
+"""verify-gate.sh's lock against its own concurrent PowerShell twin.
 
-hooks.json registers both verify-gate.sh and verify-gate.ps1 for every Stop
-so a single-shell machine always gets exactly one gate run -- the whole
-reason both are registered. Most Windows dev boxes have both, since Git for
-Windows ships bash.exe alongside native PowerShell, so both fire for the
-same Stop event and ran the full smoke/verify gate twice: duplicate work up
-to the 600s hook timeout, and two processes racing on the same scratch
-files (the tf_validate JSON race fixed separately, crew-plugin FINDINGS
-F12/F15).
+The bash twin of `test_verify_gate_lock.py`. Both scripts take the same
+per-turn lock, and a hook that can block ships with a regression suite
+covering both flavours -- the `.sh` is the one that runs on POSIX *and* on
+every Windows box with Git for Windows, so leaving it uncovered would leave
+the more-travelled path untested.
 
-A static "defer to whichever shell is available" was rejected: on any
-Windows box with Git Bash (nearly all of them), Resolve-CrewBash always
-finds a real bash.exe, which would make this script permanently
-unreachable and its incident/config lane untestable. Each script takes a
-short-lived lock right before the expensive part instead.
+Two properties are load-bearing and each has a case here.
 
-**That lock records no PID**, and `test_the_lock_never_records_a_pid` guards
-it directly. A PID-based first draft was a no-op across the pair it exists
-for: `$PID` here is a Windows pid and `$$` in bash is an MSYS pid, and
-`Get-Process -Id` on a live MSYS pid reports dead just as `kill -0` on a live
-Windows pid does, so each side reclaimed the other's held lock and ran
-anyway. The two id spaces also overlap numerically, so a coincidental match
-read as a live holder and skipped the gate silently -- worse than the
-double-run, by this script's own header. Age comes from the lock directory's
-own creation stamp now, and the holder removes its own lock as the engine
-exits.
+**The lock records no PID.** The first version of this lock stored one, and
+that made it a no-op in the only situation it exists for: the two flavours do
+not share a PID namespace on Windows, so `kill -0` on the PowerShell holder's
+live Windows pid reports dead and the bash side reclaims a lock that is very
+much held. It fails the other way too -- the id spaces overlap numerically, so
+a coincidental match reads as a live holder and the gate is silently skipped.
+Age now comes from the lock directory's own mtime, which `mkdir` stamps as it
+creates it, so there is no half-written state and nothing to misread.
 
-Windows + pwsh only: POSIX has no sibling .ps1 to race against, so the lock
-is only reachable through this script there.
+**The lock sits after the emergency lane and the empty-changed-set exit.** A
+turn that does no work must not claim a lock, because the holder is what
+removes it.
 """
 import json
 import os
+import pathlib
 import shutil
 import subprocess
-import sys
 import time
 
 import pytest
@@ -41,16 +33,32 @@ import pytest
 import context  # noqa: F401  pylint: disable=unused-import
 
 _ROOT = context._ROOT  # pylint: disable=protected-access
-_VERIFY_PS1 = os.path.join(_ROOT, "hooks", "scripts", "verify-gate.ps1")
-_PWSH = shutil.which("pwsh")
+_VERIFY_SH = os.path.join(_ROOT, "hooks", "scripts", "verify-gate.sh")
 
-# Matches $lockTtl in verify-gate.ps1.
+# Matches LOCK_TTL in verify-gate.sh.
 _TTL = 700
 
-pytestmark = pytest.mark.skipif(
-    not sys.platform.startswith("win") or _PWSH is None,
-    reason="the .ps1 gate is the native-Windows flavour; needs Windows + pwsh",
-)
+
+def _resolve_bash():
+    """Prefer Git for Windows' bin/bash.exe shim over the raw usr/bin MSYS
+    binary, which cannot resolve its own mount table when launched from a
+    non-MSYS parent. Same resolver as `test_context_watch.py`."""
+    found = shutil.which("bash")
+    if not found:
+        return None
+    parts = pathlib.Path(found).parts
+    lower = [p.lower() for p in parts]
+    if "usr" in lower and "bin" in lower:
+        root = pathlib.Path(*parts[:lower.index("usr")])
+        shim = root / "bin" / "bash.exe"
+        if shim.exists():
+            return str(shim)
+    return found
+
+
+_BASH = _resolve_bash()
+
+pytestmark = pytest.mark.skipif(_BASH is None, reason="needs bash")
 
 
 def _git(root, *args):
@@ -62,7 +70,7 @@ def _repo(tmp_path):
     """A repo whose verify.json is deliberately unparseable, so a real
     (non-deferred) run fails loudly and distinctly (exit 2, "could not be
     parsed" on stderr) -- a signal that cannot be confused with the
-    lock-backoff exit 0, unlike an empty $changed set which also exits 0."""
+    lock-backoff exit 0, unlike an empty $CHANGED set which also exits 0."""
     root = tmp_path / "repo"
     (root / ".crew").mkdir(parents=True)
     _git(root, "init", "-q")
@@ -72,7 +80,7 @@ def _repo(tmp_path):
     _git(root, "add", "-A")
     _git(root, "commit", "-q", "-m", "fixture")
     # Untracked file so `git ls-files --others` reports a changed file --
-    # otherwise $changed is empty and the gate exits 0 before ever reaching
+    # otherwise $CHANGED is empty and the gate exits 0 before ever reaching
     # the lock, which would collide with the backoff signal.
     (root / "unverified.py").write_text("x = 1\n", encoding="utf-8")
     (root / ".crew" / "verify.json").write_text("{not valid json",
@@ -86,7 +94,7 @@ def _lock(root):
 
 def _seed_lock(root, age_seconds):
     """A lock as any other process would have left it: a bare directory,
-    aged by its own stamp. No PID, by design -- see the module docstring."""
+    aged by its own mtime. No PID, by design -- see the module docstring."""
     lock = _lock(root)
     lock.mkdir(parents=True)
     stamp = time.time() - age_seconds
@@ -96,7 +104,7 @@ def _seed_lock(root, age_seconds):
 
 def _run_verify(root):
     return subprocess.run(
-        [_PWSH, "-NoProfile", "-NonInteractive", "-File", _VERIFY_PS1],
+        [_BASH, _VERIFY_SH],
         input=json.dumps({}), cwd=str(root),
         env=dict(os.environ, CLAUDE_PROJECT_DIR=str(root)),
         capture_output=True, text=True, check=False,
@@ -119,11 +127,11 @@ def test_backs_off_when_a_fresh_lock_is_held(tmp_path):
 
 def test_backs_off_for_a_lock_it_did_not_write_and_cannot_attribute(tmp_path):
     """The regression that the PID-based first draft failed. A lock left by
-    the bash twin carries nothing this shell can interrogate -- and it must
-    not need to. Anything short of the age window is held, full stop."""
+    the PowerShell twin carries nothing this shell can interrogate -- and it
+    must not need to. Anything short of the age window is held, full stop."""
     root = _repo(tmp_path)
     lock = _seed_lock(root, age_seconds=_TTL - 60)
-    (lock / "token").write_text("sh-4242-1700000000-99\n", encoding="utf-8")
+    (lock / "token").write_text("ps1-4242-1700000000-99\n", encoding="utf-8")
 
     result = _run_verify(root)
 
@@ -132,8 +140,8 @@ def test_backs_off_for_a_lock_it_did_not_write_and_cannot_attribute(tmp_path):
 
 
 def test_reclaims_a_lock_older_than_the_ttl(tmp_path):
-    """A holder that was hard-killed before its exit handler ran leaves the
-    lock behind. Past the age window it is reclaimed, so a wedged lock cannot
+    """A holder that was hard-killed before its trap ran leaves the lock
+    behind. Past the age window it is reclaimed, so a wedged lock cannot
     silently skip the gate on every future turn."""
     root = _repo(tmp_path)
     _seed_lock(root, age_seconds=_TTL + 100)
@@ -177,21 +185,20 @@ def test_the_lock_never_records_a_pid(tmp_path):
     (root / ".crew" / "verify.json").unlink()
     (root / "_verify").mkdir()
     (root / "_verify" / "smoke.sh").write_text(
-        "sleep 5\necho 'SMOKE: ok'\n", encoding="utf-8")
+        "sleep 3\necho 'SMOKE: ok'\n", encoding="utf-8")
 
     proc = subprocess.Popen(  # pylint: disable=consider-using-with
-        [_PWSH, "-NoProfile", "-NonInteractive", "-File", _VERIFY_PS1],
-        stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+        [_BASH, _VERIFY_SH], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
         stderr=subprocess.PIPE, text=True, cwd=str(root),
         env=dict(os.environ, CLAUDE_PROJECT_DIR=str(root)),
     )
     try:
         proc.stdin.write(json.dumps({}))
         proc.stdin.close()
-        # Wait for the token, not just the directory: New-Item lands first
-        # and sampling between the two would read an empty lock and pass for
-        # the wrong reason.
-        deadline = time.time() + 20
+        # Wait for the token, not just the directory: mkdir lands first and
+        # sampling between the two would read an empty lock and pass for the
+        # wrong reason.
+        deadline = time.time() + 10
         while not (_lock(root) / "token").exists() and time.time() < deadline:
             time.sleep(0.05)
         assert (_lock(root) / "token").exists(), "the gate never took the lock"
@@ -209,7 +216,7 @@ def test_an_open_incident_stands_down_without_claiming_the_lock(tmp_path):
     removes the lock, so a turn that stands down without doing any work must
     not claim one -- it would sit there for the whole age window."""
     root = _repo(tmp_path)
-    # `Test-CrewIncidentActive` reads exactly one field: an unexpired
+    # `crew_incident_active` reads exactly one field: an unexpired
     # `expiresAtEpoch`. Anything else here would be decoration.
     (root / ".crew" / "incident.json").write_text(
         json.dumps({"id": "INC-1", "expiresAtEpoch": int(time.time()) + 3600}),

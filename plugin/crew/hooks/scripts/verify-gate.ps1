@@ -166,39 +166,55 @@ if (-not $changed) { exit 0 }
 # LOCK: mirrors verify-gate.sh. From here on is the real (possibly minutes-
 # long) smoke/verify work, and both scripts fire for the same Stop event;
 # whichever gets here first claims the lock (New-Item -Directory is atomic
-# even across a bash/PowerShell pair), the other backs off. No cleanup on
-# exit: the lock's own PID dies with this process, so the next Stop event
-# finds a dead PID and reclaims it immediately.
+# even across a bash/PowerShell pair), the other backs off.
+#
+# No PID is recorded, deliberately -- see the long note in verify-gate.sh.
+# The two flavours do not share a PID namespace on Windows ($PID here is a
+# Windows pid, $$ over there is an MSYS pid) and neither can test the other's
+# for liveness, so a PID-based lock fails in exactly the cross-shell case it
+# exists for, and fails silently the other way when the two id spaces happen
+# to collide. Age comes from the lock DIRECTORY's own creation stamp instead,
+# and the holder removes its own lock as the engine exits.
 $lock = ".crew/.verify-gate.lock"
+$lockTtl = 700
+$reclaimed = $false
 if (-not (Test-Path ".crew")) { New-Item -ItemType Directory -Path ".crew" -Force -ErrorAction SilentlyContinue | Out-Null }
-$acquired = $false
 try {
   New-Item -ItemType Directory -Path $lock -ErrorAction Stop | Out-Null
-  $acquired = $true
 } catch {
-  $stale = $false
-  $pidFile = Join-Path $lock "pid"
-  $holder = if (Test-Path $pidFile) { (Get-Content $pidFile -Raw -ErrorAction SilentlyContinue) } else { $null }
-  if ($holder) {
-    $parts = $holder.Trim() -split ' '
-    $holderPid = $parts[0]
-    $holderEpoch = if ($parts.Count -gt 1) { [long]$parts[1] } else { 0 }
-    $alive = $false
-    try { if (Get-Process -Id $holderPid -ErrorAction Stop) { $alive = $true } } catch { }
-    $age = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() - $holderEpoch
-    if (-not $alive -or $age -gt 700) { $stale = $true }
-  } else {
-    $stale = $true
-  }
-  if (-not $stale) { exit 0 }
+  $holderAt = $null
+  try { $holderAt = (Get-Item $lock -Force -ErrorAction Stop).LastWriteTimeUtc } catch { }
+  # Unreadable stamp: assume held rather than reclaim on a guess.
+  if ($null -eq $holderAt) { exit 0 }
+  $age = ([DateTimeOffset]::UtcNow - [DateTimeOffset]::new($holderAt, [TimeSpan]::Zero)).TotalSeconds
+  if ($age -le $lockTtl) { exit 0 }
   Remove-Item -Recurse -Force $lock -ErrorAction SilentlyContinue
   try {
     New-Item -ItemType Directory -Path $lock -ErrorAction Stop | Out-Null
-    $acquired = $true
   } catch { exit 0 }
+  $reclaimed = $true
 }
-if ($acquired) {
-  Set-Content -Path (Join-Path $lock "pid") -Value "$PID $([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())" -Encoding utf8 -ErrorAction SilentlyContinue
+# A token of our own, so a SECOND reclaimer that deleted our fresh lock and
+# took its own is detectable: whoever's token is on disk once both have
+# written owns the turn, and the other backs off instead of both running.
+$lockToken = "ps1-$PID-$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())-$(Get-Random)"
+$tokenFile = Join-Path $lock "token"
+# PowerShell.Exiting fires on `exit` from this script, which is every path
+# below; it does not fire on a hard kill, which is what the age window above
+# is for. Mirrors the sh trap on EXIT INT TERM.
+$null = Register-EngineEvent PowerShell.Exiting -Action ([scriptblock]::Create(@"
+  if ((Get-Content -Raw -ErrorAction SilentlyContinue '$tokenFile') -replace '\s','' -eq '$lockToken') {
+    Remove-Item -Recurse -Force '$lock' -ErrorAction SilentlyContinue
+  }
+"@))
+Set-Content -Path $tokenFile -Value $lockToken -Encoding utf8 -ErrorAction SilentlyContinue
+# Only the reclaim path can race another reclaimer; the plain-New-Item winner
+# cannot be clobbered, since its lock is far too young for anyone to reclaim.
+# Do not tax the common path with the settle wait.
+if ($reclaimed) {
+  Start-Sleep -Seconds 1
+  $onDisk = (Get-Content -Raw -ErrorAction SilentlyContinue $tokenFile) -replace '\s', ''
+  if ($onDisk -ne $lockToken) { exit 0 }
 }
 
 if (-not (Test-Path .crew/verify.json)) {
