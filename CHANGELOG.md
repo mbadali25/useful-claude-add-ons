@@ -6,6 +6,85 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
+- **`gizmoduck` 0.1.0 — a third plugin under `plugin/`.** Runs
+  [Nuclei](https://github.com/projectdiscovery/nuclei) against hosts and
+  websites, diffs the run against a baseline so what is *new* is visible,
+  renders a triaged report as Markdown/HTML/PDF, and turns Critical and High
+  findings into ServiceDesk Plus tickets keyed on `[Nuclei <template-id>]` so a
+  second run adds a note instead of a duplicate. Six commands over one Python
+  CLI; **no hooks and no agents**, so nothing runs unless you type a command.
+  Registered in `marketplace.json`, `plugin/README.md`, `plugin/PLUGINS.md`,
+  the root `README.md`, and both install scripts — the repo-plugins picker now
+  offers three entries, and `menu-groups.sh` asserts against 3 rather than 2.
+  Nuclei is MIT-licensed and self-hosted, so no findings leave the machine;
+  only scan assets you own or have written permission to test.
+
+- **`crew` 0.12.0: `developer`, the eleventh agent.** Implements one scoped
+  change in its own context and returns a summary — never reviews its own diff,
+  never merges, pushes, or rewrites history. Tier 1 in `crew-scaling`'s ladder,
+  and the one role in `crew-pm/onboarding.md` justified by a delegation
+  decision rather than by a defect class in `.crew/metrics.md`: the question is
+  whether the PM is expected to take work from assigned to done on its own. A
+  PM with no developer either narrates or does the work itself. `onboarding.md`
+  also gained the full role roster, since a name in `config.json.roles` with no
+  `agents/<role>.md` behind it dispatches nothing and fails silently.
+
+### Changed
+
+- **`crew` 0.12.0: the PM is standing, and it wears one hat.** Three defects
+  fixed together, because they were the same defect seen from three angles.
+
+  *It kept disappearing.* The PM was spawned fresh per invocation, so it knew
+  the state JSON and nothing else — not what it dispatched an hour ago, not
+  what the user vetoed, not why a trigger was judged not worth acting on. It is
+  now spawned once per session under the name `crew-pm` and stays addressable;
+  `/crew:pm` calls `ListAgents` and messages the existing one rather than
+  spawning a second. It also no longer ends when the queue empties: it reports
+  what is outstanding and waits. The flat-roster limit still applies — a
+  session that is itself a teammate cannot spawn a named one, so that path
+  dispatches unnamed and says out loud that the PM will not persist.
+
+  *It did other people's jobs.* `agents/pm.md` now states the PM's own hat —
+  assess scope, onboard and offboard, communicate, keep tickets current — and
+  carries a routing table from kind-of-work to role: implementation to
+  `developer`, review through `/crew:review`, security/dba/docs/explorer/
+  planner/analyst/smoke-author/browser-tester to the role that owns each. Its
+  own writes stay scoped to `.crew/`, ticket text, `TODO.md`, and generated
+  diagrams.
+
+  *It narrated instead of dispatching.* Its characteristic failure was
+  producing a convincing plan — lanes, roles, an order — and ending the turn
+  without a single Agent call, which the relaying session then passed upward as
+  progress. `pm.md` now requires a real Agent call with a read result behind
+  every role named as dispatched, calls out future tense as the tell, and asks
+  for independent roles in one message so they actually run concurrently.
+  `/crew:pm` refuses to relay a report written in the future tense and sends it
+  back once instead.
+
+- **`crew` 0.12.0: model tiers are declared, not inherited.** Every agent used
+  to sit on `inherit` or an ad-hoc `opus`, which made the tier depend on
+  whoever spawned it. Now: `pm` on `opus`, because every dispatch decision
+  derives from the picture it holds and a bad assignment is inherited by every
+  role below; `qa-reviewer` on `opus`, because it shares a model family with
+  the author and the tier is the only compensation left when Codex is absent;
+  every working role on `sonnet` — narrow brief, clean context, one
+  deliverable. `validate-prompts.py` enforces the map and rejects `inherit`
+  outright; sabotage-tested by flipping `explorer` back to `inherit` and
+  confirming the suite goes red.
+
+  QA itself still defaults to **Codex** — `qa.provider` ships as `auto`, so a
+  machine with `codex` on `PATH` gets a different model family reviewing, and
+  `/crew:review` says which reviewer ran. `qa-reviewer` now says so too if
+  something dispatches it directly and skips that check, because skipping it
+  does not merely swap reviewers, it swaps a different family for the same one
+  that wrote the code and reports the result as though nothing changed.
+
+  These are model *tiers*, not pinned versions: an agent asks for a tier and
+  gets whatever the session's strongest model at that tier is. A plugin cannot
+  pin a point release, and the docs no longer imply one.
+
+### Added
+
 - **`mcp-servers` install scripts can now enable write access at registration
   time.** `MCP_MS_ALLOW_WRITES` is a boolean gate, not a credential, so unlike
   `MS_ADMIN_*`/`MS_USER_*` it is safe to bake into a server's own `claude mcp

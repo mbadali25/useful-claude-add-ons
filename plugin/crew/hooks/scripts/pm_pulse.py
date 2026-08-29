@@ -181,7 +181,9 @@ _DIRECTIVES = {
         "ask permission to start; do ask before removing a role or deleting "
         "anything. Stay on these findings: fix an unrelated problem only when "
         "it BLOCKS one of them, and ticket or TODO the rest rather than "
-        "following it."
+        "following it. Dispatch by actually calling the Agent tool -- a "
+        "description of who you would send is not a dispatch, and a report "
+        "written in the future tense means nothing ran."
     ),
     "report-only": (
         "Crew PM: the project state changed and these are now outstanding. "

@@ -11,10 +11,10 @@ Read the **Hooks** section of any plugin before installing it. Commands and agen
 | | |
 |---|---|
 | **Source** | [`crew/`](crew) |
-| **Version** | 0.11.3 |
+| **Version** | 0.12.0 |
 | **Install** | `claude plugin install crew@useful-claude-add-ons` |
 | **Menu item** | 21, `repo-plugins` — **off by default**. Menu item 22, `graphify`, is a separate, also-off-by-default install of the `graphify` CLI this plugin's graph feature depends on — see **The code graph** below. |
-| **Registers** | 10 agents, 21 commands, 16 skills, 20 hook entries (10 scripts × `.sh`/`.ps1`) across 5 events |
+| **Registers** | 11 agents, 21 commands, 16 skills, 20 hook entries (10 scripts × `.sh`/`.ps1`) across 5 events |
 | **Upstream guide** | [`crew/README.md`](crew/README.md) — 25 sections, the authoritative version |
 
 Built for the awkward case: several repositories, mixed stacks, legacy code, and almost no test coverage. The workflow is file-backed tickets, one implementation session, an independent reviewer, and deterministic gates that block on failure rather than offering an opinion.
@@ -147,24 +147,31 @@ to CI or to branch protection.
 
 First run in a new repository: `/crew:init`, then `/crew:onboard`, then `/crew:verify`.
 
-### Agents — 10, tiered plus the manager
+### Agents — 11, tiered plus the manager
 
 Tier 0 installs with everyone; tiers 1 and 2 are added as the work demands. `/crew:scale` decides from evidence rather than taste.
 
-| Agent | Tools | Tier | Role |
-|---|---|---|---|
-| `explorer` | read-only | 0 | Maps code, returns summaries not contents |
-| `qa-reviewer` | read-only | 0 | Hostile review; the Codex fallback |
-| `security` | read-only | 1 | Exploitable defects in the diff |
-| `smoke-author` | read/write | 1 | Builds and repairs the safety net |
-| `browser-tester` | read/write | 2 | Playwright specs, visual baselines, user flows |
-| `analyst` | read-only | 2 | Anchored findings and options, never tickets |
-| `planner` | read-only | 2 | Design second opinion from an abstracted brief |
-| `dba` | read-only | 2 | Migrations, locks, online safety |
-| `docs-writer` | read/write | 2 | Architecture and data flow from real code |
-| `pm` | read/write + `Agent` | — (outside the ladder) | The manager. Reads state, decides what the crew does next, and — **when `pm.authority` is `act`** — dispatches the roles that do it. Under the default `report-only` it recommends and stops. Also does the heavy analysis that would cost more context in the main session than the answer is worth: correlating defect classes across `.crew/metrics.md`, auditing codemap anchors, assembling tier-change evidence |
+| Agent | Tools | Model | Tier | Role |
+|---|---|---|---|---|
+| `explorer` | read-only | `sonnet` | 0 | Maps code, returns summaries not contents |
+| `qa-reviewer` | read-only | `opus` | 0 | Hostile review; the Codex fallback |
+| `security` | read-only | `sonnet` | 1 | Exploitable defects in the diff |
+| `smoke-author` | read/write | `sonnet` | 1 | Builds and repairs the safety net |
+| `developer` | read/write | `sonnet` | 1 | Implements one scoped change and returns a summary; never reviews its own diff, never merges or pushes |
+| `browser-tester` | read/write | `sonnet` | 2 | Playwright specs, visual baselines, user flows |
+| `analyst` | read-only | `sonnet` | 2 | Anchored findings and options, never tickets |
+| `planner` | read-only | `sonnet` | 2 | Design second opinion from an abstracted brief |
+| `dba` | read-only | `sonnet` | 2 | Migrations, locks, online safety |
+| `docs-writer` | read/write | `sonnet` | 2 | Architecture and data flow from real code |
+| `pm` | read/write + `Agent` | `opus` | — (outside the ladder) | The standing manager. Reads state, decides what the crew does next, and — **when `pm.authority` is `act`** — dispatches the roles that do it. Under the default `report-only` it recommends and stops. Also does the heavy analysis that would cost more context in the main session than the answer is worth: correlating defect classes across `.crew/metrics.md`, auditing codemap anchors, assembling tier-change evidence |
 
 `explorer`, `qa-reviewer`, `security`, `analyst`, `planner`, and `dba` are read-only — a restricted tool set is one of the three things that earns a role its place.
+
+**Model tiers.** `opus` for the PM, because every dispatch decision derives from the project picture it holds and a bad assignment is inherited by every role below it. `opus` for `qa-reviewer`, because it is the same model family as the author and the tier is the only compensation left when Codex is absent. `sonnet` for the working roles: narrow brief, clean context, one deliverable. QA itself defaults to Codex — `qa.provider` ships as `auto`, so a machine with `codex` on `PATH` gets a different model family reviewing, and `/crew:review` says out loud which reviewer ran. These are tiers, not pinned versions; a plugin cannot pin a point release.
+
+**The PM is standing, and that is the point of it.** It is spawned once per session under the name `crew-pm` and stays addressable; `/crew:pm` messages the existing one rather than spawning a fresh one each time. The roles it dispatches each see one slice of the work and are gone — the PM is the only thing holding what was decided, what was deferred, who was onboarded, and why. A PM respawned per invocation knows the state JSON and nothing else. It also does not end when the queue empties: it reports what is outstanding and waits.
+
+**One hat per role, the PM's included.** The PM assesses scope, onboards and offboards roles, communicates, and keeps tickets current. It does not write application code, tests, docs, migrations, or reviews — implementation goes to `developer`, review goes through `/crew:review`, and its own writes are limited to `.crew/`, ticket text, `TODO.md`, and generated diagrams. `agents/pm.md` carries a routing table from kind-of-work to role, and an explicit rule that a dispatch is an Agent call rather than a sentence describing one — narrating a plan and calling it progress is this agent's characteristic failure, and `/crew:pm` refuses to relay a report written in the future tense.
 
 `pm` is the exception, and it is a deliberate one — but it is opt-in. A manager whose only output is a recommendation is a manager the user has to manage, so `pm.authority: "act"` lets this one assign work itself and report afterwards. It ships `report-only`.
 
@@ -235,6 +242,57 @@ claude plugin uninstall crew@useful-claude-add-ons
 ```
 
 The hooks go with it. To keep the plugin but stop the `Stop` gate, set `verifyGate: false` in the repository's `.crew/config.json`.
+
+---
+
+## `gizmoduck` — Nuclei scans, diffed and triaged into tickets
+
+| | |
+|---|---|
+| **Source** | [`gizmoduck/`](gizmoduck) |
+| **Version** | 0.1.0 |
+| **Install** | `claude plugin install gizmoduck@useful-claude-add-ons` |
+| **Registers** | 6 commands, 1 skill. **No agents, no hooks** — nothing runs unless you type a command |
+| **Upstream guide** | [`gizmoduck/README.md`](gizmoduck/README.md) |
+
+Runs [Nuclei](https://github.com/projectdiscovery/nuclei) against hosts and websites, then does the part that usually gets skipped: diffs the run against a baseline so you see what is genuinely new, renders a triaged report, and turns Critical and High findings into ServiceDesk Plus tickets. Nuclei is MIT-licensed and self-hosted, so the whole loop runs locally — no export step, no API quota, no findings leaving the machine.
+
+**Only scan assets you own or have written permission to test.** The bundled skill says so in its first paragraph and tells the session to confirm authorisation when a target does not look like the user's. That is a prompt, not an enforcement mechanism: nothing here can tell whose host an IP is, so the check is yours to actually make.
+
+### Commands — 6
+
+| Command | Does |
+|---|---|
+| `/gizmoduck:scan <target> [sev]` | Scan a URL, host, or a file of one target per line; summarise, report, and open tickets for Critical and High |
+| `/gizmoduck:report <findings.jsonl> [sev]` | Re-render a report from findings already captured — Markdown, HTML, or PDF — without paying for another scan |
+| `/gizmoduck:tickets <findings.jsonl> [sev]` | Open or sync ServiceDesk Plus tickets from a findings file |
+| `/gizmoduck:diff <old.jsonl> <new.jsonl> [sev]` | What is present in the new run and absent from the old, keyed on template plus location |
+| `/gizmoduck:update` | Update the Nuclei engine and the community template set |
+| `/gizmoduck:doctor` | Which half of the toolchain is missing — `nuclei`, templates, `python`, or the PDF renderer |
+
+`scan` defaults to `--severity critical,high,medium` and reports at High and above; both are overridable per invocation. The severity floor for *tickets* is separate from the floor for the *report*, which is the point — Mediums belong in the document, not in somebody's queue.
+
+### The CLI underneath
+
+Everything is one Python file, `scripts/gizmoduck.py`, with `scan`, `summary`, `report`, `tickets`, `diff`, `doctor`, and `update` subcommands. It is usable directly, which matters for scheduling: a cron job or a scheduled task can run the scan and the diff without a Claude session in the loop.
+
+`tickets` does not call ServiceDesk Plus itself. It emits one ticket payload per finding — subject prefixed `[Nuclei <template-id>]`, severity, CVSS, CVE, affected hosts, remediation — and the session opens or updates them through the ServiceDesk Plus tools it already has. The template-id prefix is what makes the second run idempotent: a finding whose ticket is still open gets a note instead of a duplicate.
+
+Findings are deduplicated by template and location before anything is reported or ticketed, so one misconfiguration across forty hosts is one finding with forty affected targets rather than forty findings.
+
+### What it needs installed
+
+`bootstrap.sh` (WSL/Linux) and `bootstrap.ps1` (Windows) fetch the prebuilt Nuclei binary and the community templates. PDF output needs `wkhtmltopdf` — `bootstrap.sh` installs it; on Windows it is `winget install wkhtmltopdf`. Markdown and HTML reports work without it, and `report --format pdf` degrades to saying so rather than producing a truncated file.
+
+Run `/gizmoduck:doctor` before assuming a scan failure is a scan failure. Most first-run problems are a missing template set or a `python` that is not on `PATH` under whichever shell the command landed in.
+
+### Uninstall
+
+```bash
+claude plugin uninstall gizmoduck@useful-claude-add-ons
+```
+
+Nothing keeps running afterwards — there were no hooks. The Nuclei binary and templates that `bootstrap` installed are outside the plugin and stay where they are.
 
 ---
 

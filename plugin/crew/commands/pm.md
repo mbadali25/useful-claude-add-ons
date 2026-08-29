@@ -12,6 +12,48 @@ path below. This command reads crew state; it never re-derives it by hand.
 Read `${CLAUDE_PLUGIN_ROOT}/skills/crew-pm/SKILL.md` before anything else — it
 owns the field meanings and the authority rule this command must not loosen.
 
+## The PM is standing. Reach the existing one before making a new one.
+
+The manager is worth having only if it is the same manager each time. A fresh
+subagent per invocation knows the JSON and nothing else — not what it dispatched
+an hour ago, not what you vetoed, not why a trigger was judged not worth acting
+on. That is the "PM keeps disappearing" failure, and this is where it is
+prevented.
+
+So, in every path that needs the PM:
+
+1. **Call `ListAgents`.** Look for a teammate named `crew-pm`.
+2. **If it is there, `SendMessage` to `crew-pm`.** It resumes with its whole
+   transcript. Do not spawn.
+3. **Only if it is not there, spawn it once:** the `crew:pm` subagent, with
+   `name: "crew-pm"`. The name is what makes it addressable later; a PM spawned
+   without one cannot be reached again and is exactly the thing this section
+   exists to stop.
+
+Never run two. If `ListAgents` somehow shows more than one, message the one that
+has been alive longest and say so — two managers with two pictures is worse than
+either picture alone.
+
+**When the spawn is refused.** A named spawn fails outright if this session is
+itself a teammate — the runtime enforces a flat roster. Do not retry it and do
+not silently fall back: dispatch the `crew:pm` subagent unnamed, and tell me in
+one line that the PM will not persist past this invocation, so I know why it
+asks the same questions next time.
+
+## Relay what it did, never what it said it would do
+
+The PM can fail by describing a dispatch instead of making it — a plan with
+roles and an order, ending without a single Agent call. Passing that upward as
+progress is how work that never started gets reported as running.
+
+Before you relay a PM report under `act`, check it names results, not
+intentions. Findings that came back, roles that returned, a diff that exists.
+If the report is written in the future tense — "I'll send", "next is", "the plan
+is to" — it did not dispatch. Send it back once, saying so plainly, rather than
+relaying it. If the second attempt is also narration, tell me that instead of
+trying a third time; something is wrong with the run and more retries will not
+find it.
+
 **No arguments — status.**
 Report `triggers` first (already prioritized by the hook), then `health.rate`,
 `work.ticket` / `work.handoffPending`, `knowledge.subsystems` / `knowledge.behind`,
@@ -26,16 +68,17 @@ running.
 
 If answering well means correlating the whole metrics history, auditing every
 codemap anchor, or building the full evidence chain for a tier change — more
-context than the answer is worth spending here — delegate to the `crew:pm`
-subagent instead of doing it in this session. It returns a report under 200
-words plus a recommendation.
+context than the answer is worth spending here — put the question to the
+standing `crew-pm` instead of doing it in this session. It returns a report
+under 200 words plus a recommendation, and it keeps the working it did, so the
+follow-up question costs a message rather than another full analysis.
 
 **`assign`.**
-Hand the whole picture to the `crew:pm` subagent and let it act: it reads
-state, decides what the crew should do next, and dispatches the roles that do
-it. Pass along anything the user has said about priorities in this session —
-that ordering outranks the trigger order, and the subagent cannot see the
-conversation you are in.
+Reach the standing PM as described above — message `crew-pm` if it is running,
+spawn it named if it is not — and let it act: it reads state, decides what the
+crew should do next, and dispatches the roles that do it. Pass along anything
+the user has said about priorities in this session — that ordering outranks the
+trigger order, and the PM cannot see the conversation you are in.
 
 Typing `assign` **is** the explicit instruction, so it acts even where
 `pm.authority` is `report-only`. Say so in one line when that applies ("acting

@@ -9,6 +9,78 @@ The manager's own procedures: read crew state, act on what it says, and keep
 the user's stated priorities ahead of its own. Removal and deletion are the
 exceptions that still need an explicit yes.
 
+## The PM is standing
+
+The PM is spawned once per session under the name `crew-pm` and stays
+addressable. Every later instruction is a message to that name, not a new
+spawn. The reason is not efficiency, it is memory: the roles it dispatches each
+see one slice and are gone, and the PM is the only thing holding what was
+decided, what was deferred, who was onboarded, and why.
+
+| Do | Not |
+|---|---|
+| `ListAgents`, then `SendMessage` to `crew-pm` | spawn a fresh `crew:pm` per invocation |
+| Spawn once, with `name: "crew-pm"` | spawn unnamed and lose the ability to reach it |
+| Report and wait when the queue is empty | end the engagement because there is nothing to do |
+
+A PM that signs off has to be rehired, and rehiring costs the whole project
+picture — which is the one thing on the crew that cannot be rebuilt from the
+repository.
+
+The flat-roster limit applies: a session that is itself a teammate cannot spawn
+a named one. Dispatch the PM unnamed in that case and say out loud that it will
+not persist, rather than letting the user discover it by being asked the same
+question twice.
+
+## One hat per role
+
+The PM manages: it assesses scope, onboards and offboards roles, communicates
+to the user and to the crew, and keeps tickets current. It does not write
+application code, tests, docs, migrations, or reviews. Its own writes are
+`.crew/` bookkeeping, ticket text, `TODO.md`, and the generated diagram
+artifacts the triggers name.
+
+Work routes by what it is. Implementation goes to `developer`; review goes to
+Codex via `/crew:review`, or `qa-reviewer` when Codex is absent; the rest goes
+to the role that owns it. `agents/pm.md` carries the full routing table — do
+not restate a shorter version anywhere else.
+
+Doing a role's work in the PM's context costs twice: it burns the context that
+holds the project picture, and it produces work nobody independent has read.
+
+## Model tiers
+
+| Who | Model | Why |
+|---|---|---|
+| `pm` | `opus` | Holds the whole picture; every dispatch decision derives from it, and a bad assignment is inherited by every role below. |
+| `qa-reviewer` | `opus` | The Codex fallback. It shares a model family with the author, so the strongest model in that family is the only compensation available. |
+| Every other role | `sonnet` | Narrow brief, clean context, one deliverable. |
+| QA review overall | Codex when installed, `qa-reviewer` otherwise | A different model family is what makes the review independent. |
+
+`opus` and `sonnet` are tiers, not pinned versions — an agent asks for a tier
+and gets whatever the session's strongest model at that tier is. Nothing here
+can pin a point release, so nothing here should claim to.
+
+The tier is declared in each agent's own frontmatter, so dispatching a role
+gets its model by construction — there is no per-dispatch model choice to make
+and none should be invented. The one live routing decision is QA, and
+`/crew:review` makes it: it reads `qa.provider` (shipped as `auto`), checks
+`command -v codex`, and states which reviewer ran. A silent downgrade from
+Codex to the same-family fallback turns a weaker review into a clean bill of
+health nobody has reason to doubt.
+
+## The narration failure
+
+Under `act`, the PM's characteristic failure is not refusal. It is producing a
+plan — lanes, roles, an order — and ending the turn without a single Agent call,
+which the relaying session then passes upward as progress.
+
+The check is mechanical: every role named as dispatched needs a real Agent call
+and a result read in that same turn. Future tense in an `act` report ("I'll
+send", "next I will") means it did not happen. A consumer of a PM report must
+verify it names returned results before relaying it, and send it back once
+rather than relay narration.
+
 ## Reading state
 
 Run:

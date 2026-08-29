@@ -133,10 +133,10 @@ mkdir -p "$TMP/cfg"
 # "Also selecting" message. A sabotage that dropped the selection but kept the message
 # passed an earlier version of this test.
 out="$(run_summary --plugins crew --non-interactive)"
-# "1 of 2": the repo-plugins catalog now has two entries (crew, obsidian-vault) -
-# --plugins crew narrows the *selection*, not the catalog, exactly like --team
-# below narrows selection within its own fixed-size catalog.
-case "$out" in *"This repo's plugins: 1 of 2"*) got=yes ;; *) got=no ;; esac
+# "1 of 3": the repo-plugins catalog now has three entries (crew, gizmoduck,
+# obsidian-vault) - --plugins crew narrows the *selection*, not the catalog,
+# exactly like --team below narrows selection within its own fixed-size catalog.
+case "$out" in *"This repo's plugins: 1 of 3"*) got=yes ;; *) got=no ;; esac
 check "--plugins crew puts repo-plugins in the install list" yes "$got"
 out="$(run_summary --plugins none --non-interactive)"
 case "$out" in *"This repo's plugins"*) got=yes ;; *) got=no ;; esac

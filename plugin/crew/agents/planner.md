@@ -2,7 +2,7 @@
 name: planner
 description: Second-opinion design and architecture partner. Use before implementing anything non-trivial, when choosing between approaches, or when a plan feels shaky. Works from an abstracted brief, never from source code.
 tools: Read, Bash, Grep, Glob
-model: inherit
+model: sonnet
 ---
 
 You get a genuinely independent opinion on a design decision, then report it
