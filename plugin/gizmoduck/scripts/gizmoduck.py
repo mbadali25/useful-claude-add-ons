@@ -353,10 +353,14 @@ def main():
     if a.command == "diff" and not a.baseline2:
         p.error("diff needs two findings files: <baseline.jsonl> <current.jsonl>")
 
-    # High and above for anything a person reads or acts on; everything for the
-    # two machine-readable dumps.
-    min_sev = SEV_NUM[a.min_severity or
-                      ("info" if a.command in ("summary", "parse") else "high")]
+    # Per command, matching what each command file passes, because one default
+    # cannot be right for all of them. `report` and `tickets` are High and above
+    # - a `tickets` run defaulting to Info would open a ticket per informational
+    # finding. `diff` is Low, because "what is new since last quarter" is the one
+    # question where a Medium appearing for the first time is the answer.
+    # `summary` and `parse` are the machine-readable dumps and take everything.
+    _FLOORS = {"report": "high", "tickets": "high", "diff": "low"}
+    min_sev = SEV_NUM[a.min_severity or _FLOORS.get(a.command, "info")]
 
     if a.command == "doctor":
         cmd_doctor()
