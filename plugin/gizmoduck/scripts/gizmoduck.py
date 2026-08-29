@@ -54,16 +54,20 @@ def cmd_scan(target, out, severity, extra):
         cmd += extra.split()
     print(f"# running: {' '.join(cmd)}", file=sys.stderr)
     proc = subprocess.run(cmd, capture_output=True, text=True)
-    if proc.returncode not in (0, 1):  # nuclei exits 1 when findings exist in some modes
-        # Do NOT write an output file here. A scan that died - bad target,
-        # missing templates, no network - produces no stdout, and writing that
-        # as an empty findings file is indistinguishable from a clean result:
-        # the report says nothing was found, the diff says nothing is new, and
-        # the baseline the next scan compares against is a lie. Fail loudly.
-        sys.stderr.write(proc.stderr)
-        sys.exit(f"nuclei exited {proc.returncode}; no findings file written "
-                 f"(a failed scan is not a clean scan)")
     lines = [ln for ln in proc.stdout.splitlines() if ln.strip().startswith("{")]
+    # Do NOT write an output file for a failed scan. One that died - bad target,
+    # missing templates, no network - produces no stdout, and writing that as an
+    # empty findings file is indistinguishable from a clean result: the report
+    # says nothing was found, the diff says nothing is new, and the baseline the
+    # next scan compares against is a lie.
+    #
+    # Exit 1 is the ambiguous one: with `-ec` nuclei uses it to mean "findings
+    # exist", but it is also a plain failure code. Findings on stdout settle it.
+    # Exit 1 with nothing on stdout is a failure, not a clean run.
+    if proc.returncode != 0 and not (proc.returncode == 1 and lines):
+        sys.stderr.write(proc.stderr)
+        sys.exit(f"nuclei exited {proc.returncode} with no findings on stdout; "
+                 f"no findings file written (a failed scan is not a clean scan)")
     with open(out, "w", encoding="utf-8") as fh:
         fh.write("\n".join(lines) + ("\n" if lines else ""))
     print(f"wrote {len(lines)} findings to {out}")
@@ -193,13 +197,16 @@ def html_to_pdf(html_str, out_path):
             t.write(html_str)
             tmp = t.name
         try:
-            # check=False, not check=True: a wkhtmltopdf that is installed but
-            # fails (a broken build, a sandboxed temp dir) would otherwise raise
-            # past the WeasyPrint fallback below and take the whole report
-            # command with it, when the fallback would have produced the file.
+            # check=False and OSError caught: a wkhtmltopdf that is installed
+            # but fails - a broken build, a sandboxed temp dir, a binary that
+            # will not launch at all - would otherwise raise past the WeasyPrint
+            # fallback below and take the whole report command with it, when the
+            # fallback would have produced the file.
             if subprocess.run([wk, "-q", "--enable-local-file-access", tmp, out_path],
                               check=False).returncode == 0:
                 return True
+        except OSError:
+            pass
         finally:
             os.unlink(tmp)
     try:

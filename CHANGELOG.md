@@ -19,11 +19,13 @@ All notable changes to this repository are documented here. Format follows [Keep
   Nuclei is MIT-licensed and self-hosted, so no findings leave the machine;
   only scan assets you own or have written permission to test.
 
-  Hardened before registering it, off the back of a Codex review. A `nuclei`
-  that exits non-zero — bad target, missing templates, no network — used to
+  Hardened before registering it, off the back of two Codex review passes. A
+  `nuclei` that fails — bad target, missing templates, no network — used to
   write an empty findings file and exit 0, which is indistinguishable from a
   clean scan and poisons the next run's baseline; it now fails loudly and
-  writes nothing. Both bootstrap scripts fail when the template download fails,
+  writes nothing. Exit 1 is the ambiguous case, since `-ec` uses it to mean
+  "findings exist" and it is also a plain failure code: findings on stdout
+  settle it, and exit 1 with an empty stdout is treated as the failure it is. Both bootstrap scripts fail when the template download fails,
   for the same reason: an engine with no templates reports every target as
   healthy. `update` checks its return codes instead of printing `done`. A
   `wkhtmltopdf` that is installed but broken falls through to WeasyPrint
