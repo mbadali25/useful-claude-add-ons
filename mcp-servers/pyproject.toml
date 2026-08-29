@@ -1,0 +1,19 @@
+[project]
+name = "mcp-servers-workspace"
+version = "0.0.0"
+description = "Workspace root only - not a published package. See README.md."
+requires-python = ">=3.11"
+
+[tool.uv.workspace]
+members = ["core", "intune", "graph-admin", "o365-user", "o365-admin"]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["core/tests", "intune/tests", "graph-admin/tests", "o365-user/tests", "o365-admin/tests"]
+# Every package's tests/ directory is a plain (non-package) folder named
+# "tests" with a "test_server.py" inside - importlib mode keys modules by
+# path instead of a bare name, so the four identically-named test_server.py
+# files (and conftest.py fixtures) don't collide in sys.modules.
+addopts = "--import-mode=importlib"

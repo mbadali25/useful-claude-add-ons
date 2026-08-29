@@ -1,0 +1,28 @@
+name: Pytest (mcp-servers)
+
+on: [push]
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        # Matches the workspace's requires-python floor.
+        python-version: ["3.11", "3.13"]
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install uv
+      uses: astral-sh/setup-uv@v3
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Sync the workspace (all four servers + core)
+      working-directory: mcp-servers
+      run: uv sync --all-packages
+    - name: Run mcp-servers tests
+      # No network access needed or used: the Graph HTTP layer is mocked with
+      # httpx.MockTransport and MSAL's application classes are monkeypatched -
+      # see mcp-servers/README.md#testing.
+      working-directory: mcp-servers
+      run: uv run pytest -q

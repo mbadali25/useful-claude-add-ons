@@ -1,0 +1,26 @@
+[project]
+name = "mcp-intune"
+version = "0.1.0"
+description = "Read-only-by-default MCP server for Intune device/compliance/app management over Microsoft Graph. App-only (admin-scope), tenant-wide."
+requires-python = ">=3.11"
+dependencies = [
+    "mcp-ms-core",
+    "mcp>=1.2,<2",
+]
+
+[tool.uv.sources]
+mcp-ms-core = { workspace = true }
+
+[dependency-groups]
+dev = ["pytest>=8,<9"]
+
+[project.scripts]
+mcp-intune = "mcp_intune.server:main"
+mcp-intune-doctor = "mcp_intune.doctor:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mcp_intune"]
