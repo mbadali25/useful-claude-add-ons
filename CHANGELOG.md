@@ -4,6 +4,37 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Fixed
+
+- **`crew` 0.12.2: the `pm_pulse` stand-down now has the regression test it
+  always owed.** The repo's own rule is that a hook which can block ships with
+  must-block and must-allow cases, sabotage-tested — and 0.12.1 changed
+  `pm_pulse`'s blocking behaviour past the per-session cap while the suite
+  stayed at 101 passed, which said the suite did not cover the path, not that
+  the change was safe. Two cases added: the pulse that trips the cap blocks
+  once, and a genuinely new state afterwards does not block again.
+
+  The first draft of the second case passed under sabotage, for the wrong
+  reason — it changed `tier` and `roles`, which the fingerprint does not cover,
+  so the digest never moved and the case would have gone green against a broken
+  hook. It moves `handoffPending` now, which is one of the five fields the
+  fingerprint is actually built from. Sabotage-tested properly after that:
+  keying the over-cap claim back on `digest` turns it red, restoring the fixed
+  marker turns it green.
+
+- **`gizmoduck` 0.1.3: `diff` keeps its Low severity floor.** 0.1.2 moved
+  `--min-severity` from one global default to per-command resolution and swept
+  `diff` in with `report` and `tickets` at High. `commands/diff.md` passes
+  `${3:-low}`, so the command path never changed — but a hand-run
+  `gizmoduck.py diff old.jsonl new.jsonl` had its floor silently raised, on the
+  one question where a Medium appearing for the first time is the answer. The
+  floors are now explicit per command and match what each command file passes.
+
+- `plugin/PLUGINS.md`'s `obsidian-vault` version row read 0.1.0 against a
+  registered 0.1.2. `check-marketplace.py` compares `marketplace.json` history
+  to file changes and cannot see a stale version string in prose, so this kind
+  of drift passes CI silently.
+
 ### Added
 
 - **`gizmoduck` 0.1.0 — a third plugin under `plugin/`.** Runs

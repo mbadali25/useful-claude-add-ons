@@ -473,6 +473,31 @@ rm -rf "$DD"
 # an unkeyable pulse stays silent rather than blocking every turn forever.
 expect_pulse 0 "$PD" "" false "missing session id must not block"
 
+# The per-session cap. Standing down has to MEAN standing down: the notice is
+# said once and then the hook is quiet, however many times the state changes
+# afterwards. Keying that claim on the state fingerprint instead of on a fixed
+# marker is the bug this pair exists to catch -- every later change would be a
+# new fingerprint, would claim cleanly, and would block the turn again to
+# repeat the same "standing down" line, which is not a cap.
+#
+# SABOTAGE-TEST: key the over-cap claim on `digest` in pm_pulse.py's main() and
+# confirm the second case below goes red.
+CAPS=sess-cap
+for _n in $(seq 1 12); do
+  : > "$PD/.crew/.pm-pulse-$CAPS-filler$_n"
+done
+# MUST BLOCK: the pulse that trips the cap says so, once.
+expect_pulse 2 "$PD" "$CAPS" false "over the cap, the stand-down notice is given"
+# MUST ALLOW: a genuinely new state afterwards. It has to move a field the
+# FINGERPRINT actually covers -- tier and roles are not among them, so a config
+# edit alone would leave the digest identical and the case would pass for the
+# wrong reason. A pending handoff is one of the five that count.
+mkdir -p "$PD/.work"
+: > "$PD/.work/HANDOFF.md"
+expect_pulse 0 "$PD" "$CAPS" false "past the cap, a new state must not block again"
+rm -rf "$PD/.work"
+rm -f "$PD/.crew/.pm-pulse-$CAPS-"*
+
 # A block with empty stderr is a block that says nothing: the turn fails and
 # the model is told to continue with no reason. Exit code alone cannot catch
 # that, so assert the content -- through the WRAPPER, which is the path
