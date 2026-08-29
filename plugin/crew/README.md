@@ -825,7 +825,9 @@ A different model reviewing is real independent review. The same model family re
 
 Put `codex` on your `PATH` and set `qa.provider` to `auto` or `codex`. `/crew:review` writes the diff to a file, has Codex return one line per defect, and reads only the findings back — the diff never re-enters your context.
 
-Without Codex, the `qa-reviewer` agent runs instead, in its own context window so it has not seen the reasoning that produced the code. Its prompt tells it outright that it shares a model family with the author and must compensate: ask "what input makes this wrong" before "does this look correct." That is genuinely weaker than a different model, and the command says so every time it happens, so you know to review harder yourself.
+`auto` is the shipped default, so a machine with `codex` installed gets Codex review without configuring anything.
+
+Without Codex, the `qa-reviewer` agent runs instead — on `opus`, in its own context window, so it has at least not seen the reasoning that produced the code. Its prompt tells it outright that it shares a model family with the author and must compensate: ask "what input makes this wrong" before "does this look correct." That is genuinely weaker than a different family, and the command says so every time it happens, so you know to review harder yourself. It also says so itself if something dispatches it directly and skips the Codex check.
 
 ### Gemini for design
 
@@ -1862,20 +1864,29 @@ a worktree each, so a half-applied one cannot land on top of the other.
 
 ### Agents
 
-| Agent | Tools | Tier | Role |
-|---|---|---|---|
-| `explorer` | read-only | 0 | Maps code, returns summaries not contents |
-| `qa-reviewer` | read-only | 0 | Hostile review; the Codex fallback |
-| `security` | read-only | 1 | Exploitable defects in the diff |
-| `smoke-author` | read/write | 1 | Builds and repairs the safety net |
-| `browser-tester` | read/write | 2 | Playwright specs, visual baselines, user flows |
-| `analyst` | read-only | 2 | Anchored findings and options, never tickets |
-| `planner` | read-only | 2 | Design second opinion from an abstracted brief |
-| `dba` | read-only | 2 | Migrations, locks, online safety |
-| `docs-writer` | read/write | 2 | Architecture and data flow from real code |
-| `pm` | read-only (no `Write`) | — | Heavy crew-management analysis in its own context; report-and-recommend only, never applies a change |
+| Agent | Tools | Model | Tier | Role |
+|---|---|---|---|---|
+| `explorer` | read-only | `sonnet` | 0 | Maps code, returns summaries not contents |
+| `qa-reviewer` | read-only | `opus` | 0 | Hostile review; the Codex fallback |
+| `security` | read-only | `sonnet` | 1 | Exploitable defects in the diff |
+| `smoke-author` | read/write | `sonnet` | 1 | Builds and repairs the safety net |
+| `developer` | read/write | `sonnet` | 1 | Implements one scoped change; never reviews it |
+| `browser-tester` | read/write | `sonnet` | 2 | Playwright specs, visual baselines, user flows |
+| `analyst` | read-only | `sonnet` | 2 | Anchored findings and options, never tickets |
+| `planner` | read-only | `sonnet` | 2 | Design second opinion from an abstracted brief |
+| `dba` | read-only | `sonnet` | 2 | Migrations, locks, online safety |
+| `docs-writer` | read/write | `sonnet` | 2 | Architecture and data flow from real code |
+| `pm` | read/write, scoped to `.crew/` and generated diagrams | `opus` | — | The standing manager: scope, onboarding, communication, ticket hygiene, and dispatch |
 
-10 agents. `pm` sits outside the tier ladder — it is not sized in or out by `/crew:scale`, it is invoked directly by `/crew:pm` when the analysis (correlating the whole metrics history, auditing every codemap anchor, building a tier-change evidence chain) would cost more context in the main session than the answer is worth.
+11 agents. `pm` sits outside the tier ladder — it is not sized in or out by `/crew:scale`, it is the thing doing the sizing.
+
+**Model tiers are part of the design, not a cost knob.** The PM runs on `opus` because it holds the whole project picture and every dispatch decision derives from it — a cheap manager makes cheap assignments and every role below inherits the mistake. Working roles run on `sonnet`: narrow brief, clean context, one deliverable. QA runs on Codex by default (`qa.provider` ships as `auto`), because a different model family is what makes review independent; when `codex` is not on `PATH` it falls back to `qa-reviewer` on `opus` — if you cannot have a different family, the strongest model in this one is the only compensation left.
+
+`opus` and `sonnet` here are tiers, not pinned versions. Agent frontmatter asks for a tier and gets whatever the session's strongest model at that tier is; there is no way to pin a point release from a plugin.
+
+**The PM is standing.** It is spawned once per session under the name `crew-pm` and stays addressable; `/crew:pm` reaches the existing one with a message rather than spawning a fresh one. That matters because the roles it dispatches each see one slice of the work and are gone — the PM is the only thing that remembers what was decided, what was deferred, who was onboarded, and why. A PM respawned per invocation knows the JSON and nothing else, and a PM that signs off when the queue empties has to be rehired at the cost of the entire project picture. It reports what is outstanding and waits.
+
+**One hat per role, the PM's included.** The PM manages: it assesses scope, onboards and offboards roles, communicates to you and to the crew, and keeps tickets current. It does not write application code, tests, docs, migrations, or reviews — implementation goes to `developer`, review goes through `/crew:review`, and everything else goes to the role that owns it. Its own writes are `.crew/` bookkeeping, ticket text, `TODO.md`, and the generated diagram artifacts its triggers name.
 
 ### Hooks
 
@@ -1932,7 +1943,7 @@ pytest tests/                                     # 234 cases - the python modul
 | `validate-prompts.py` | Frontmatter parses, tools are real, referenced agents and paths exist, read-only agents hold no write tools, commands that spawn subagents are permitted to | **whether the prompts produce good work** |
 | `pytest tests/` | The python modules, and that the `.sh` and `.ps1` flavours of `context-watch`, `verify-gate` and `promote-gate` agree - including the emergency lane's expiry, which is the one property that keeps a forgotten incident from ungating a repo forever | anything on a platform the suite is not running on; the Windows-only cases skip elsewhere |
 
-That last gap is real and no test closes it. The 21 commands and 10 agents are
+That last gap is real and no test closes it. The 21 commands and 11 agents are
 instructions to a model; only a live session running a real ticket exercises
 them. Setup Phase 7 exists for exactly that, and it is the one thing here that
 has to be done by hand.

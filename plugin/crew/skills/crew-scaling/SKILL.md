@@ -46,6 +46,7 @@ is a race condition with a job title.
 |---|---|---|
 | 0 | explorer, qa-reviewer | always start here |
 | 1 | + security, smoke-author | security findings reach review; coverage gaps cause regressions |
+| 1 | + developer | the PM is running work end to end and the main session should stop being the one that implements |
 | 2 | + dba, docs-writer, browser-tester | migrations are routine; a UI regression reached users; doc staleness costs real time |
 | 2 | + analyst | you are choosing what to work on, not just working the queue |
 | 2 | + planner | designs are being reworked after implementation started |
