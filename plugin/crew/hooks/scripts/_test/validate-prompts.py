@@ -61,6 +61,9 @@ MODEL_TIER = {"pm": "opus", "qa-reviewer": "opus"}
 KNOWN_TOOLS = {
     "Read", "Write", "Edit", "MultiEdit", "Bash", "PowerShell", "Grep", "Glob",
     "Agent", "Task", "Skill", "WebSearch", "WebFetch", "ToolSearch", "NotebookEdit",
+    # The standing PM is reached by name rather than respawned, which needs both
+    # of these: ListAgents to find it, SendMessage to continue it.
+    "ListAgents", "SendMessage",
 }
 SPAWNABLE = "|".join(sorted(AGENTS)) or "$^"
 PLUGIN_PATH = re.compile(r"\$\{CLAUDE_PLUGIN_ROOT\}/([A-Za-z0-9_\-./]+)")

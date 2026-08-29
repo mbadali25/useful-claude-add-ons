@@ -260,10 +260,20 @@ def main(argv=None):
         digest = fingerprint(state)
         # Count BEFORE claiming, so the claim that trips the cap is the one
         # that reports standing down rather than the one after it.
-        over_cap = pulses_taken(root, session) >= _MAX_PULSES_PER_SESSION
+        if pulses_taken(root, session) >= _MAX_PULSES_PER_SESSION:
+            # Standing down means standing down. Keying this claim on a fixed
+            # marker rather than on `digest` is what makes it once-per-session:
+            # keyed on the state, every later change would be a new fingerprint,
+            # would claim cleanly, and would block the turn again to repeat the
+            # same "I am standing down" line - which is not a cap, it is the
+            # noise the cap exists to stop, wearing an apology.
+            if not claim(root, session, "stood-down"):
+                return 0
+            sys.stderr.write(_STOOD_DOWN)
+            return 2
         if not claim(root, session, digest):
             return 0
-        sys.stderr.write(_STOOD_DOWN if over_cap else text)
+        sys.stderr.write(text)
         return 2
     except Exception:  # pylint: disable=broad-except
         return 0

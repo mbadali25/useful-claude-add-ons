@@ -38,7 +38,16 @@ if ($userPath -notlike "*$BinDir*") {
 $nuclei = Join-Path $BinDir "nuclei.exe"
 Write-Host ">> installed: $(& $nuclei -version 2>&1 | Select-Object -First 1)"
 Write-Host ">> downloading community templates..."
+# Not swallowed. Nuclei with no templates finds nothing and exits 0, which is
+# indistinguishable from a clean scan - so a bootstrap that ignores this leaves
+# behind a scanner that reports every target as healthy.
 & $nuclei -update-templates -silent
+if ($LASTEXITCODE -ne 0) {
+  Write-Host "!! template download failed. The engine is installed but has no templates," -ForegroundColor Red
+  Write-Host "!! so a scan would report zero findings on every target." -ForegroundColor Red
+  Write-Host "!! Re-run 'nuclei -update-templates' once the network allows it." -ForegroundColor Red
+  exit 1
+}
 
 # Prereq reminders for the reporting side
 if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
@@ -52,5 +61,5 @@ Write-Host ""
 Write-Host "------------------------------------------------------------"
 Write-Host " Nuclei is ready. Try:"
 Write-Host "   nuclei -u https://example.com -severity critical,high"
-Write-Host " Or drive it through the plugin:  /scan-site https://your-site.com high"
+Write-Host " Or drive it through the plugin:  /gizmoduck:scan https://your-site.com high"
 Write-Host "------------------------------------------------------------"

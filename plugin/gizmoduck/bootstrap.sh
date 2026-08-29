@@ -37,7 +37,15 @@ rm -rf "$TMP"
 
 echo ">> installed: $(nuclei -version 2>&1 | head -1)"
 echo ">> downloading community templates..."
-nuclei -update-templates -silent || true
+# Not `|| true`. Nuclei with no templates finds nothing and exits 0, which is
+# indistinguishable from a clean scan - so a bootstrap that swallows this
+# leaves behind a scanner that reports every target as healthy.
+if ! nuclei -update-templates -silent; then
+  echo "!! template download failed. The engine is installed but has no" >&2
+  echo "!! templates, so a scan would report zero findings on every target." >&2
+  echo "!! Re-run 'nuclei -update-templates' once the network allows it." >&2
+  exit 1
+fi
 
 cat <<'MSG'
 
@@ -46,6 +54,6 @@ cat <<'MSG'
    nuclei -u https://example.com -severity critical,high
 
  Or drive it through the plugin:
-   /scan-site https://your-new-site.com high
+   /gizmoduck:scan https://your-new-site.com high
 ------------------------------------------------------------
 MSG

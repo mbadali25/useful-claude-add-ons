@@ -19,6 +19,23 @@ All notable changes to this repository are documented here. Format follows [Keep
   Nuclei is MIT-licensed and self-hosted, so no findings leave the machine;
   only scan assets you own or have written permission to test.
 
+  Hardened before registering it, off the back of a Codex review. A `nuclei`
+  that exits non-zero — bad target, missing templates, no network — used to
+  write an empty findings file and exit 0, which is indistinguishable from a
+  clean scan and poisons the next run's baseline; it now fails loudly and
+  writes nothing. Both bootstrap scripts fail when the template download fails,
+  for the same reason: an engine with no templates reports every target as
+  healthy. `update` checks its return codes instead of printing `done`. A
+  `wkhtmltopdf` that is installed but broken falls through to WeasyPrint
+  instead of taking the report command down with it. `--min-severity` now
+  resolves per command — High for `report`, `tickets`, and `diff`, everything
+  for `summary` and `parse` — so a hand-run `tickets` cannot quietly open a
+  ticket per Info finding. Missing positional arguments produce an argparse
+  error naming what is missing rather than a `TypeError`. The report's
+  "Hosts scanned" line said no such thing — it counts hosts *with findings* —
+  and now says so. Both bootstrap scripts pointed at a `/scan-site` command
+  that does not exist; it is `/gizmoduck:scan`.
+
 - **`crew` 0.12.0: `developer`, the eleventh agent.** Implements one scoped
   change in its own context and returns a summary — never reviews its own diff,
   never merges, pushes, or rewrites history. Tier 1 in `crew-scaling`'s ladder,
@@ -60,6 +77,16 @@ All notable changes to this repository are documented here. Format follows [Keep
   for independent roles in one message so they actually run concurrently.
   `/crew:pm` refuses to relay a report written in the future tense and sends it
   back once instead.
+
+  Two more from the same Codex review. `/crew:pm`'s `allowed-tools` did not
+  grant `ListAgents` or `SendMessage`, so the command that is supposed to find
+  and continue the standing PM could do neither — both are now granted, and
+  `validate-prompts.py` knows the names. Separately, `pm_pulse`'s per-session
+  cap did not actually stand the hook down: past the cap, every *new*
+  fingerprint still claimed cleanly and blocked the turn to repeat the same
+  "standing down" line. The stand-down claim is now keyed on a fixed marker
+  rather than on the state, so it is said once and then the hook is genuinely
+  quiet.
 
 - **`crew` 0.12.0: model tiers are declared, not inherited.** Every agent used
   to sit on `inherit` or an ad-hoc `opus`, which made the tier depend on

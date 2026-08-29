@@ -55,7 +55,14 @@ def cmd_scan(target, out, severity, extra):
     print(f"# running: {' '.join(cmd)}", file=sys.stderr)
     proc = subprocess.run(cmd, capture_output=True, text=True)
     if proc.returncode not in (0, 1):  # nuclei exits 1 when findings exist in some modes
+        # Do NOT write an output file here. A scan that died - bad target,
+        # missing templates, no network - produces no stdout, and writing that
+        # as an empty findings file is indistinguishable from a clean result:
+        # the report says nothing was found, the diff says nothing is new, and
+        # the baseline the next scan compares against is a lie. Fail loudly.
         sys.stderr.write(proc.stderr)
+        sys.exit(f"nuclei exited {proc.returncode}; no findings file written "
+                 f"(a failed scan is not a clean scan)")
     lines = [ln for ln in proc.stdout.splitlines() if ln.strip().startswith("{")]
     with open(out, "w", encoding="utf-8") as fh:
         fh.write("\n".join(lines) + ("\n" if lines else ""))
@@ -117,7 +124,7 @@ def cmd_summary(findings):
 def cmd_report(findings, min_sev, title):
     uniq = sorted(dedupe(findings), key=lambda f: (-f["severity"], f["name"]))
     s = cmd_summary(findings)
-    out = [f"# {title}\n", f"**Hosts scanned:** {s['hosts']}  ",
+    out = [f"# {title}\n", f"**Hosts with findings:** {s['hosts']}  ",
            f"**Total finding instances:** {s['total_instances']}\n",
            "| Severity | Count |", "|---|---|"]
     out += [f"| {SEV_NAME[x]} | {s['by_severity'][SEV_NAME[x]]} |" for x in ORDER]
@@ -157,7 +164,7 @@ td,th{{border:1px solid #ddd;padding:.35rem .7rem;text-align:left}}
 .finding{{border-left:4px solid #ccc;padding:.4rem 0 .4rem 1rem;margin:1rem 0}}
 .meta{{color:#555;font-size:13px}} .rem{{background:#f6f8fa;padding:.5rem .8rem;border-radius:4px}}
 </style></head><body><h1>{e(title)}</h1>
-<p><b>Hosts scanned:</b> {s['hosts']} &nbsp;|&nbsp; <b>Total instances:</b> {s['total_instances']}</p>
+<p><b>Hosts with findings:</b> {s['hosts']} &nbsp;|&nbsp; <b>Total instances:</b> {s['total_instances']}</p>
 <table><tr><th>Severity</th><th>Count</th></tr>{rows}</table>"""]
     shown = [f for f in uniq if f["severity"] >= min_sev]
     if not shown:
@@ -186,8 +193,13 @@ def html_to_pdf(html_str, out_path):
             t.write(html_str)
             tmp = t.name
         try:
-            subprocess.run([wk, "-q", "--enable-local-file-access", tmp, out_path], check=True)
-            return True
+            # check=False, not check=True: a wkhtmltopdf that is installed but
+            # fails (a broken build, a sandboxed temp dir) would otherwise raise
+            # past the WeasyPrint fallback below and take the whole report
+            # command with it, when the fallback would have produced the file.
+            if subprocess.run([wk, "-q", "--enable-local-file-access", tmp, out_path],
+                              check=False).returncode == 0:
+                return True
         finally:
             os.unlink(tmp)
     try:
@@ -284,10 +296,15 @@ def cmd_update():
     exe = find_nuclei()
     if not exe:
         sys.exit("nuclei not found. Run bootstrap.sh (Linux/WSL) or bootstrap.ps1 (Windows) first.")
-    print(">> updating nuclei engine...")
-    subprocess.run([exe, "-update", "-silent"])
-    print(">> updating templates...")
-    subprocess.run([exe, "-update-templates", "-silent"])
+    failures = []
+    for label, flag in (("engine", "-update"), ("templates", "-update-templates")):
+        print(f">> updating nuclei {label}...")
+        if subprocess.run([exe, flag, "-silent"], check=False).returncode != 0:
+            failures.append(label)
+    if failures:
+        # "done." over a failed update is how a scan ends up running last
+        # quarter's templates against this quarter's CVEs.
+        sys.exit(f"update failed for: {', '.join(failures)}")
     print("done.")
 
 
@@ -297,13 +314,32 @@ def main():
                    choices=["scan", "summary", "parse", "report", "tickets", "diff", "doctor", "update"])
     p.add_argument("target", nargs="?", help="target/host/URL/file, or findings.jsonl")
     p.add_argument("baseline2", nargs="?", help="for diff: the newer findings.jsonl")
-    p.add_argument("--min-severity", default="info", choices=list(SEV_NUM))
+    # No default here. It is resolved per command below, because one default
+    # cannot be right for both: `parse`/`summary` want everything, while
+    # `report` and `tickets` are documented as High and above - and a `tickets`
+    # run that quietly defaulted to Info would open a ticket per informational
+    # finding, which is how the queue stops being read.
+    p.add_argument("--min-severity", default=None, choices=list(SEV_NUM))
     p.add_argument("--severity", default="", help="nuclei -severity filter for scan (e.g. critical,high)")
     p.add_argument("--extra", default="", help="extra args passed through to nuclei")
     p.add_argument("--title", default="Nuclei Vulnerability Report")
     p.add_argument("--format", default="md", choices=["md", "html", "pdf"])
     p.add_argument("--out", default=None)
     a = p.parse_args()
+
+    # `command` is positional and `target`/`baseline2` are not, so argparse
+    # accepts `scan` with no target and the failure surfaces later as a
+    # TypeError or a confusing open() error on None. Say what is missing.
+    if a.command not in ("doctor", "update") and not a.target:
+        p.error(f"{a.command} needs a "
+                f"{'target (URL, host, or a file of targets)' if a.command == 'scan' else 'findings.jsonl path'}")
+    if a.command == "diff" and not a.baseline2:
+        p.error("diff needs two findings files: <baseline.jsonl> <current.jsonl>")
+
+    # High and above for anything a person reads or acts on; everything for the
+    # two machine-readable dumps.
+    min_sev = SEV_NUM[a.min_severity or
+                      ("info" if a.command in ("summary", "parse") else "high")]
 
     if a.command == "doctor":
         cmd_doctor()
@@ -316,11 +352,10 @@ def main():
         return
     if a.command == "diff":
         title = a.title if a.title != "Nuclei Vulnerability Report" else "Scan Diff"
-        print(cmd_diff(a.target, a.baseline2, SEV_NUM[a.min_severity], title))
+        print(cmd_diff(a.target, a.baseline2, min_sev, title))
         return
 
     findings = load(a.target)
-    min_sev = SEV_NUM[a.min_severity]
 
     if a.command == "summary":
         print(json.dumps(cmd_summary(findings), indent=2))

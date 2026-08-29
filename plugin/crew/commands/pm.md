@@ -1,7 +1,7 @@
 ---
 description: Talk to the crew's manager - status, assign work, set its authority, onboarding, offboarding
 argument-hint: [assign | authority [report-only|act] | onboard <role> | offboard <role>]
-allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent
+allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, ListAgents, SendMessage
 ---
 
 Talk to the crew's manager. Arguments: $ARGUMENTS
