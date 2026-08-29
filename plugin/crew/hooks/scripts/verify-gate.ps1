@@ -5,7 +5,14 @@
 # stable session id, so a session-scoped claim taken on turn 1 would suppress
 # every later turn's gate -- a 600-second gate that silently never runs again
 # reads as "the work passed", which is worse than the double-run a claim
-# would prevent. Both flavours run every Stop; that is correct here.
+# would prevent. Both flavours are registered for every Stop so a
+# single-shell machine always gets exactly one; on a machine with both
+# shells they race for the same turn's gate. Rather than statically deferring
+# to one flavour (which would leave this script permanently unreachable on
+# any Windows box with Git Bash installed - nearly all of them - and its
+# incident/config lane untestable), a short-lived per-turn lock lets
+# whichever process gets there first do the real work while the other backs
+# off; see the lock right before the expensive part below.
 param(
   # Prints the bash path Resolve-CrewBash would use and exits 0 without
   # touching stdin, .crew/, or running any check. This script's only
@@ -155,6 +162,60 @@ $changed += (git diff --name-only HEAD 2>$null)
 $changed += (git ls-files --others --exclude-standard 2>$null)
 $changed = $changed | Where-Object { $_ -and $_.Trim() }
 if (-not $changed) { exit 0 }
+
+# LOCK: mirrors verify-gate.sh. From here on is the real (possibly minutes-
+# long) smoke/verify work, and both scripts fire for the same Stop event;
+# whichever gets here first claims the lock (New-Item -Directory is atomic
+# even across a bash/PowerShell pair), the other backs off.
+#
+# No PID is recorded, deliberately -- see the long note in verify-gate.sh.
+# The two flavours do not share a PID namespace on Windows ($PID here is a
+# Windows pid, $$ over there is an MSYS pid) and neither can test the other's
+# for liveness, so a PID-based lock fails in exactly the cross-shell case it
+# exists for, and fails silently the other way when the two id spaces happen
+# to collide. Age comes from the lock DIRECTORY's own creation stamp instead,
+# and the holder removes its own lock as the engine exits.
+$lock = ".crew/.verify-gate.lock"
+$lockTtl = 700
+$reclaimed = $false
+if (-not (Test-Path ".crew")) { New-Item -ItemType Directory -Path ".crew" -Force -ErrorAction SilentlyContinue | Out-Null }
+try {
+  New-Item -ItemType Directory -Path $lock -ErrorAction Stop | Out-Null
+} catch {
+  $holderAt = $null
+  try { $holderAt = (Get-Item $lock -Force -ErrorAction Stop).LastWriteTimeUtc } catch { }
+  # Unreadable stamp: assume held rather than reclaim on a guess.
+  if ($null -eq $holderAt) { exit 0 }
+  $age = ([DateTimeOffset]::UtcNow - [DateTimeOffset]::new($holderAt, [TimeSpan]::Zero)).TotalSeconds
+  if ($age -le $lockTtl) { exit 0 }
+  Remove-Item -Recurse -Force $lock -ErrorAction SilentlyContinue
+  try {
+    New-Item -ItemType Directory -Path $lock -ErrorAction Stop | Out-Null
+  } catch { exit 0 }
+  $reclaimed = $true
+}
+# A token of our own, so a SECOND reclaimer that deleted our fresh lock and
+# took its own is detectable: whoever's token is on disk once both have
+# written owns the turn, and the other backs off instead of both running.
+$lockToken = "ps1-$PID-$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())-$(Get-Random)"
+$tokenFile = Join-Path $lock "token"
+# PowerShell.Exiting fires on `exit` from this script, which is every path
+# below; it does not fire on a hard kill, which is what the age window above
+# is for. Mirrors the sh trap on EXIT INT TERM.
+$null = Register-EngineEvent PowerShell.Exiting -Action ([scriptblock]::Create(@"
+  if ((Get-Content -Raw -ErrorAction SilentlyContinue '$tokenFile') -replace '\s','' -eq '$lockToken') {
+    Remove-Item -Recurse -Force '$lock' -ErrorAction SilentlyContinue
+  }
+"@))
+Set-Content -Path $tokenFile -Value $lockToken -Encoding utf8 -ErrorAction SilentlyContinue
+# Only the reclaim path can race another reclaimer; the plain-New-Item winner
+# cannot be clobbered, since its lock is far too young for anyone to reclaim.
+# Do not tax the common path with the settle wait.
+if ($reclaimed) {
+  Start-Sleep -Seconds 1
+  $onDisk = (Get-Content -Raw -ErrorAction SilentlyContinue $tokenFile) -replace '\s', ''
+  if ($onDisk -ne $lockToken) { exit 0 }
+}
 
 if (-not (Test-Path .crew/verify.json)) {
   # _verify/ is the canonical home; scripts/smoke.sh is honoured as legacy.

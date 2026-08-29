@@ -6,6 +6,59 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`crew` 0.12.3: the Stop hook's verify gate ran twice on any machine with
+  both shells installed.** `hooks.json` registers `verify-gate.sh` AND
+  `verify-gate.ps1` for every Stop, so a single-shell machine always gets
+  exactly one gate run - that is the whole reason both are registered. Most
+  Windows dev boxes have both, since Git for Windows ships `bash.exe`
+  alongside native PowerShell, so both ran the full smoke/verify gate on every
+  turn: duplicate work up to the 600s hook timeout, and two processes racing
+  on the same scratch files.
+
+  Statically deferring to one flavour was rejected. `Resolve-CrewBash` finds a
+  real `bash.exe` on nearly every Windows box, so "defer when bash exists"
+  would leave `verify-gate.ps1` permanently unreachable and its incident and
+  config lanes untestable. Each script now takes a short-lived per-turn lock
+  at `.crew/.verify-gate.lock` immediately before the expensive part;
+  whichever process gets there first does the real work and the other backs
+  off, and the winner's exit code still governs the turn.
+
+  **The lock records a timestamp, never a PID.** A PID-based first draft of
+  this fix was a no-op in the one situation the lock exists for. The two
+  flavours do not share a PID namespace on Windows - `$PID` in PowerShell is a
+  Windows pid, `$$` in Git Bash is an MSYS pid - and neither can test the
+  other's for liveness: `kill -0` on a live Windows pid reports dead, and
+  `Get-Process -Id` on a live MSYS pid reports dead. Each side therefore
+  called the other's held lock stale, reclaimed it, and ran the gate anyway.
+  It failed the other way too, since the two id spaces overlap numerically: a
+  coincidental match reads as a live holder and the gate is silently skipped,
+  which this script's own header calls worse than the double-run. Age now
+  comes from the lock directory's own mtime, which `mkdir` stamps as it
+  creates the directory, so there is no half-written state to misread and no
+  window in which a lock exists with no age.
+
+  The holder removes its own lock as it exits (a bash `trap` on EXIT INT TERM,
+  `Register-EngineEvent PowerShell.Exiting` on the other side), so the 700s age
+  window - comfortably above the hook's own 600s timeout - is the backstop for
+  a hard-killed holder rather than the primary path. Two simultaneous
+  reclaimers of the same abandoned lock settle it with a token write and a
+  one-second re-read, on the reclaim path only, so the common path pays
+  nothing.
+
+  The lock sits deliberately AFTER the emergency lane and the empty-changed-set
+  exit: the holder is what removes the lock, so a turn that does no work must
+  not claim one.
+
+  Covered by `tests/test_verify_gate_lock.py` and `tests/test_verify_gate_lock_sh.py`
+  (seeded-lock cases per flavour, plus a direct assertion that the lock records
+  no PID) and by `tests/test_verify_gate_lock_concurrent.py`, which runs the
+  real bash/PowerShell pair against a smoke script that appends one line per
+  execution and counts the lines. That last one is the test the first draft
+  needed: both flavours passed their own seeded-lock suites while the lock did
+  nothing, because each seeded a lock in the shape its own shell writes.
+  Sabotage-tested - restoring the PID-based lock makes the concurrent case
+  report two smoke runs.
+
 - **`crew` 0.12.2: the `pm_pulse` stand-down now has the regression test it
   always owed.** The repo's own rule is that a hook which can block ships with
   must-block and must-allow cases, sabotage-tested — and 0.12.1 changed
