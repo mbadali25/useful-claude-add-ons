@@ -8,7 +8,9 @@ Usage:
   gizmoduck.py scan    <target|targets.txt> [--severity critical,high,medium] [--out findings.jsonl] [--extra "..."]
   gizmoduck.py summary <findings.jsonl>
   gizmoduck.py parse   <findings.jsonl> [--min-severity info|low|medium|high|critical]
-  gizmoduck.py report  <findings.jsonl> [--min-severity high] [--format md|html|pdf] [--out FILE] [--title "..."]
+  gizmoduck.py report  <findings.jsonl> [--min-severity medium] [--format md|html|pdf] [--out FILE] [--title "..."]
+                       # itemises Critical/High/Medium; Low and Info are counted only.
+                       # --min-severity raises that floor, never lowers it.
   gizmoduck.py tickets <findings.jsonl> [--min-severity high]
   gizmoduck.py diff    <baseline.jsonl> <current.jsonl> [--min-severity high]   # what's new since last scan
   gizmoduck.py update                                                            # update nuclei + templates
@@ -17,7 +19,6 @@ Usage:
 A "target" is a URL (https://site) or a host/IP; a targets file has one per line.
 """
 import argparse
-import html
 import json
 import os
 import shutil
@@ -30,6 +31,15 @@ SEV_NUM = {"critical": 4, "high": 3, "medium": 2, "low": 1, "info": 0, "unknown"
 SEV_NAME = {4: "Critical", 3: "High", 2: "Medium", 1: "Low", 0: "Info"}
 SEV_COLOR = {4: "#7a1616", 3: "#b3541e", 2: "#b59a00", 1: "#3a7a3a", 0: "#666"}
 ORDER = [4, 3, 2, 1, 0]
+
+# Reports itemise Critical, High and Medium only. Low and Info are counted in
+# the severity table and then deliberately dropped, because nobody works that
+# queue: a signature scanner's low/info output is inventory - version banners,
+# DNS records, "a form exists" - and listing it buries the findings somebody is
+# actually expected to fix. `--min-severity` can raise this floor (report only
+# High and above, say) but never lower it; a request for `info` still gets
+# counts rather than pages of noise.
+REPORT_DETAIL_FLOOR = 2  # Medium
 
 
 def find_nuclei():
@@ -97,6 +107,9 @@ def load(path):
                 "severity": sev,
                 "severity_name": SEV_NAME[sev],
                 "type": r.get("type", ""),
+                # Carried so a report regenerated later still names the date the
+                # scan ran, rather than the date it was printed.
+                "timestamp": r.get("timestamp", ""),
                 "host": r.get("host", ""),
                 "matched_at": r.get("matched-at", r.get("matched", "")),
                 "cve": cls.get("cve-id") or [],
@@ -112,10 +125,16 @@ def load(path):
 def dedupe(findings):
     groups = {}
     for f in findings:
-        g = groups.setdefault(f["template_id"], {**f, "affected": []})
+        g = groups.setdefault(f["template_id"], {**f, "affected": [], "raw_count": 0})
         g["affected"].append(f["matched_at"] or f["host"])
+        g["raw_count"] += 1
     for g in groups.values():
         g["affected"] = sorted(set(a for a in g["affected"] if a))
+        # `instances` counts distinct locations, not findings: one template can
+        # fire many times against a single URL (http-missing-security-headers
+        # fires once per absent header). Both numbers are kept because reporting
+        # only `instances` makes the per-severity totals look wrong - a summary
+        # saying 42 Info next to rows summing to 20 reads as a bug.
         g["instances"] = len(g["affected"])
     return list(groups.values())
 
@@ -131,71 +150,113 @@ def cmd_summary(findings):
             "by_severity": {SEV_NAME[s]: counts[s] for s in ORDER}}
 
 
+def detail_floor(min_sev):
+    """The severity at or above which findings are itemised.
+
+    Never below Medium - see REPORT_DETAIL_FLOOR. A caller asking for `info`
+    gets the counts it implies and none of the listing.
+    """
+    return max(min_sev, REPORT_DETAIL_FLOOR)
+
+
 def cmd_report(findings, min_sev, title):
+    floor = detail_floor(min_sev)
     uniq = sorted(dedupe(findings), key=lambda f: (-f["severity"], f["name"]))
     s = cmd_summary(findings)
-    out = [f"# {title}\n", f"**Hosts with findings:** {s['hosts']}  ",
-           f"**Total finding instances:** {s['total_instances']}\n",
-           "| Severity | Count |", "|---|---|"]
-    out += [f"| {SEV_NAME[x]} | {s['by_severity'][SEV_NAME[x]]} |" for x in ORDER]
+    counts = s["by_severity"]
+    shown = [f for f in uniq if f["severity"] >= floor]
+    suppressed = sum(counts[SEV_NAME[x]] for x in ORDER if x < floor)
+
+    out = [f"# {title}", ""]
+    out += [f"**Hosts with findings:** {s['hosts']}  ",
+            f"**Total finding instances:** {s['total_instances']}", ""]
+
+    out += ["| Severity | Count | In this report |", "|---|---:|---|"]
+    for x in ORDER:
+        state = "itemised" if x >= floor else "count only"
+        out.append(f"| {SEV_NAME[x]} | {counts[SEV_NAME[x]]} | {state} |")
     out.append("")
-    shown = [f for f in uniq if f["severity"] >= min_sev]
+
+    if suppressed:
+        noun = "finding" if suppressed == 1 else "findings"
+        out += [f"_{suppressed} {noun} below {SEV_NAME[floor]} were recorded and are "
+                f"not itemised. They are inventory - version banners, DNS records, the "
+                f"presence of a form - rather than remediation work. The full detail "
+                f"remains in the JSONL._", ""]
+
     if not shown:
-        out.append(f"_No findings at or above {SEV_NAME[min_sev]}._")
+        out += ["## No action required", "",
+                f"Nothing at or above {SEV_NAME[floor]}. "
+                f"Note that this reflects what a signature scanner can match, "
+                f"not an absence of vulnerabilities.", ""]
         return "\n".join(out)
-    cur = None
-    for f in shown:
-        if f["severity"] != cur:
-            cur = f["severity"]
-            out.append(f"\n## {SEV_NAME[cur]}\n")
+
+    out += [f"## Findings requiring action ({len(shown)})", ""]
+    for n, f in enumerate(shown, 1):
         cvss = f["cvss"] or "n/a"
-        cves = ", ".join(f["cve"]) if f["cve"] else "—"
-        out.append(f"### {f['name']}  \n")
-        out.append(f"- **Template:** {f['template_id']}  |  **CVSS:** {cvss}  "
-                   f"|  **CVE:** {cves}  |  **Type:** {f['type']}")
-        out.append(f"- **Affected ({f['instances']}):** {', '.join(f['affected'])}")
+        cves = ", ".join(f["cve"]) if f["cve"] else "-"
+        locations = f.get("instances", len(f.get("affected") or []))
+        raw = f.get("raw_count", locations)
+        hits = (f"{raw}" if raw == locations
+                else f"{raw} detections across {locations} location(s)")
+        out += [f"### {n}. {f['name']} - {SEV_NAME[f['severity']]}", ""]
+        out += ["| | |", "|---|---|",
+                f"| Template | `{f['template_id']}` |",
+                f"| Type | {f['type'] or '-'} |",
+                f"| CVSS | {cvss} |",
+                f"| CVE | {cves} |",
+                f"| Detections | {hits} |", ""]
         if f["description"]:
-            out.append(f"- **Detail:** {f['description'].strip()}")
+            out += ["**Detail**", "", f["description"].strip(), ""]
+        if f.get("affected"):
+            out += ["**Affected**", ""]
+            out += [f"- `{a}`" for a in f["affected"]]
+            out.append("")
         if f["remediation"]:
-            out.append(f"- **Remediation:** {f['remediation'].strip()}")
-        out.append("")
+            out += ["**Remediation**", "", f["remediation"].strip(), ""]
+        refs = [r for r in (f.get("reference") or []) if r][:4]
+        if refs:
+            out += ["**References**", ""] + [f"- {r}" for r in refs] + [""]
     return "\n".join(out)
 
 
+def _template_module():
+    """Load report_template.py, which sits beside this script.
+
+    A plain `import` works when gizmoduck.py is run directly, because its own
+    directory heads sys.path. The by-path fallback covers the case where it has
+    been imported as a module from elsewhere and that is no longer true.
+    """
+    try:
+        import report_template
+        return report_template
+    except ImportError:
+        import importlib.util
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            "report_template.py")
+        spec = importlib.util.spec_from_file_location("report_template", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+
+
 def render_html(findings, min_sev, title):
+    """Presentation lives in report_template.py; this stays the data prep.
+
+    dedupe() and cmd_summary() own what a finding *is*; the template module owns
+    only how it looks, and is handed the severity vocabulary rather than
+    redefining it.
+    """
     uniq = sorted(dedupe(findings), key=lambda f: (-f["severity"], f["name"]))
-    s = cmd_summary(findings)
-    e = html.escape
-    rows = "".join(f"<tr><td style='color:{SEV_COLOR[x]};font-weight:600'>{SEV_NAME[x]}</td>"
-                   f"<td>{s['by_severity'][SEV_NAME[x]]}</td></tr>" for x in ORDER)
-    body = [f"""<!doctype html><html><head><meta charset="utf-8"><title>{e(title)}</title><style>
-body{{font:14px/1.5 -apple-system,Segoe UI,Arial,sans-serif;color:#1a1a1a;
-max-width:900px;margin:2rem auto;padding:0 1rem}}
-h1{{border-bottom:2px solid #ddd;padding-bottom:.3rem}} table{{border-collapse:collapse;margin:1rem 0}}
-td,th{{border:1px solid #ddd;padding:.35rem .7rem;text-align:left}}
-.finding{{border-left:4px solid #ccc;padding:.4rem 0 .4rem 1rem;margin:1rem 0}}
-.meta{{color:#555;font-size:13px}} .rem{{background:#f6f8fa;padding:.5rem .8rem;border-radius:4px}}
-</style></head><body><h1>{e(title)}</h1>
-<p><b>Hosts with findings:</b> {s['hosts']} &nbsp;|&nbsp; <b>Total instances:</b> {s['total_instances']}</p>
-<table><tr><th>Severity</th><th>Count</th></tr>{rows}</table>"""]
-    shown = [f for f in uniq if f["severity"] >= min_sev]
-    if not shown:
-        body.append(f"<p><i>No findings at or above {SEV_NAME[min_sev]}.</i></p>")
-    cur = None
-    for f in shown:
-        if f["severity"] != cur:
-            cur = f["severity"]
-            body.append(f"<h2 style='color:{SEV_COLOR[cur]}'>{SEV_NAME[cur]}</h2>")
-        cvss = e(str(f["cvss"] or "n/a"))
-        cves = e(", ".join(f["cve"]) if f["cve"] else "—")
-        rem = f"<div class='rem'><b>Remediation:</b> {e(f['remediation'].strip())}</div>" if f["remediation"] else ""
-        det = f"<p>{e(f['description'].strip())}</p>" if f["description"] else ""
-        body.append(f"<div class='finding' style='border-left-color:{SEV_COLOR[f['severity']]}'>"
-                    f"<h3>{e(f['name'])}</h3><p class='meta'>Template {e(f['template_id'])} &nbsp;|&nbsp; "
-                    f"CVSS {cvss} &nbsp;|&nbsp; {cves} &nbsp;|&nbsp; {f['instances']} affected</p>"
-                    f"<p class='meta'>{e(', '.join(f['affected']))}</p>{det}{rem}</div>")
-    body.append("</body></html>")
-    return "\n".join(body)
+    return _template_module().render_report(
+        uniq=uniq,
+        summary=cmd_summary(findings),
+        min_sev=min_sev,
+        title=title,
+        sev_name=SEV_NAME,
+        order=ORDER,
+        findings=findings,
+    )
 
 
 def html_to_pdf(html_str, out_path):
@@ -359,7 +420,10 @@ def main():
     # finding. `diff` is Low, because "what is new since last quarter" is the one
     # question where a Medium appearing for the first time is the answer.
     # `summary` and `parse` are the machine-readable dumps and take everything.
-    _FLOORS = {"report": "high", "tickets": "high", "diff": "low"}
+    # `report` defaults to medium so the report itemises Critical/High/Medium -
+    # see REPORT_DETAIL_FLOOR. `tickets` stays at high on purpose: a Medium is
+    # worth reading in a report without being worth auto-opening a ticket for.
+    _FLOORS = {"report": "medium", "tickets": "high", "diff": "low"}
     min_sev = SEV_NUM[a.min_severity or _FLOORS.get(a.command, "info")]
 
     if a.command == "doctor":
