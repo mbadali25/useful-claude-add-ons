@@ -6,7 +6,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
-- **`gizmoduck` 0.2.0: reports itemise Critical/High/Medium and count the rest,
+- **`gizmoduck` 0.2.1: reports itemise Critical/High/Medium and count the rest,
   and rendering moves into its own module.** A scan of a healthy site returned 1
   Medium and 42 Info, and the report listed all 43 — so the one finding somebody
   was expected to fix sat underneath forty-two version banners, DNS records and

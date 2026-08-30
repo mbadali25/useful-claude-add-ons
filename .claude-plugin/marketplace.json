@@ -113,7 +113,7 @@
       "name": "gizmoduck",
       "source": "./plugin/gizmoduck",
       "description": "Nuclei vulnerability scans on hosts and websites, diffed against a baseline, rendered as triaged Markdown/HTML/PDF reports that itemise Critical/High/Medium and count the rest, and turned into ServiceDesk Plus tickets for Critical and High findings. No hooks, no agents.",
-      "version": "0.2.0"
+      "version": "0.2.1"
     },
     {
       "name": "obsidian-vault",
