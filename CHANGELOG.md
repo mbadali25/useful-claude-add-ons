@@ -4,6 +4,35 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added
+
+- **`crew` 0.12.4: an SOP and a SOC 2 policy for pre-deployment security
+  review.** Two cross-linked documents under `plugin/crew/docs/`. The rule they
+  state is that no website reaches production without both a peer security
+  review and an external vulnerability scan of the deployed hostname - the two
+  are not interchangeable, because the review reads the change while the scan
+  tests what is actually serving, and a reviewed change can still deploy onto a
+  host running an end-of-life web server.
+
+  Both are marked DRAFT with no owner, approver or effective date, and the
+  policy says outright that it is a template until those exist. The Trust
+  Services Criteria mapping is labelled provisional and says to confirm it with
+  the auditor. A policy is evidence because a named person approved it on a
+  date; shipping one that implies otherwise is the first thing an auditor pulls
+  on.
+
+  Three constraints are written in because they were learned rather than
+  reasoned about: scan the public hostname from outside rather than the origin,
+  since an edge that terminates TLS makes the origin's configuration invisible
+  to the internet; never commit raw scanner JSONL, which embeds full HTTP
+  responses and has twice captured live session tokens that keyword secret
+  scanning failed to detect; and state the limits alongside the result, because
+  a clean signature-based scan oversold is worse than no scan.
+
+  Reports are published to `<project>/docs/security/` in a monolith or
+  `docs/security/` at the root of a single-project repository, date-stamped so a
+  later run cannot overwrite the comparison point.
+
 ### Fixed
 
 - **`crew` 0.12.3: the Stop hook's verify gate ran twice on any machine with
