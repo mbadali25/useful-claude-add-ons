@@ -154,14 +154,14 @@ def _verdict(counts, sev_name):
     high = counts.get(sev_name[3], 0)
     med = counts.get(sev_name[2], 0)
     if crit:
-        return ("Critical exposure present. %d critical and %d high-risk finding(s) "
-                "require immediate remediation." % (crit, high))
+        return (f"Critical exposure present. {crit} critical and {high} high-risk "
+                f"finding(s) require immediate remediation.")
     if high:
-        return ("%d high-risk finding(s) require remediation. No critical exposure "
-                "was detected." % high)
+        return (f"{high} high-risk finding(s) require remediation. No critical "
+                f"exposure was detected.")
     if med:
-        return ("No critical or high-risk exposure detected. %d medium finding(s) "
-                "should be scheduled for remediation." % med)
+        return (f"No critical or high-risk exposure detected. {med} medium "
+                f"finding(s) should be scheduled for remediation.")
     return ("No critical, high or medium findings. Remaining items are hardening "
             "observations, not active exposure.")
 
@@ -169,17 +169,17 @@ def _verdict(counts, sev_name):
 def _cover(title, findings, summary, scan_date, e):
     hosts = _hosts_of(findings)
     uniq_n = len({f.get("template_id", "") for f in findings})
+    instances = summary.get("total_instances", 0)
     rows = [
         ("Scan date", e(scan_date)),
-        ("Hosts scanned", "%d" % (len(hosts) or summary.get("hosts", 0))),
-        ("Findings", "%d instances across %d unique checks"
-         % (summary.get("total_instances", 0), uniq_n)),
+        ("Hosts scanned", f"{len(hosts) or summary.get('hosts', 0)}"),
+        ("Findings", f"{instances} instances across {uniq_n} unique checks"),
         ("Method", "Unauthenticated external scan, signature-based (nuclei)"),
     ]
-    meta = "".join("<tr><td class='k'>%s</td><td class='v'>%s</td></tr>" % (k, v)
+    meta = "".join(f"<tr><td class='k'>{k}</td><td class='v'>{v}</td></tr>"
                    for k, v in rows)
-    return ("<div class='cover'><div class='eyebrow'>Security scan report</div>"
-            "<h1>%s</h1><table class='meta'>%s</table></div>" % (e(title), meta))
+    return (f"<div class='cover'><div class='eyebrow'>Security scan report</div>"
+            f"<h1>{e(title)}</h1><table class='meta'>{meta}</table></div>")
 
 
 def _posture(summary, sev_name, order, e, floor=ACTION_THRESHOLD):
@@ -197,29 +197,28 @@ def _posture(summary, sev_name, order, e, floor=ACTION_THRESHOLD):
         bg = (pal["bg"] if n else "#fafbfc") if itemised else "#fafbfc"
         edge = (pal["edge"] if n else "#e6e9ed") if itemised else "#e6e9ed"
         caption = "" if itemised else "<span class='co'>count only</span>"
-        cells.append("<td style='background:%s;border-color:%s'>"
-                     "<span class='n' style='color:%s'>%d</span>"
-                     "<span class='l'>%s</span>%s</td>"
-                     % (bg, edge, ink, n, e(name), caption))
-    return ("<table class='badges'><tr>%s</tr></table>"
-            "<p class='verdict'>%s</p>"
-            % ("".join(cells), e(_verdict(counts, sev_name))))
+        cells.append(f"<td style='background:{bg};border-color:{edge}'>"
+                     f"<span class='n' style='color:{ink}'>{n}</span>"
+                     f"<span class='l'>{e(name)}</span>{caption}</td>")
+    verdict = e(_verdict(counts, sev_name))
+    return (f"<table class='badges'><tr>{''.join(cells)}</tr></table>"
+            f"<p class='verdict'>{verdict}</p>")
 
 
 def _scope(findings, e):
     hosts = _hosts_of(findings)
-    items = "".join("<li>%s</li>" % e(h) for h in hosts) or "<li>none recorded</li>"
+    items = "".join(f"<li>{e(h)}</li>" for h in hosts) or "<li>none recorded</li>"
     return (
-        "<div class='section'><h2>Scope and limitations</h2>"
-        "<div class='blk'><h4>Targets assessed</h4>"
-        "<ul class='hosts'>%s</ul></div>"
-        "<div class='blk'><h4>Limitations</h4><p>"
-        "Signature-based detection only: findings are limited to checks a template "
-        "exists for. Business logic, authorisation and authenticated-session flaws "
-        "are out of scope and require separate testing. Content behind "
-        "authentication or a WAF challenge was not assessed. Absence of a finding "
-        "is not evidence of absence of a vulnerability."
-        "</p></div></div>" % items)
+        f"<div class='section'><h2>Scope and limitations</h2>"
+        f"<div class='blk'><h4>Targets assessed</h4>"
+        f"<ul class='hosts'>{items}</ul></div>"
+        f"<div class='blk'><h4>Limitations</h4><p>"
+        f"Signature-based detection only: findings are limited to checks a template "
+        f"exists for. Business logic, authorisation and authenticated-session flaws "
+        f"are out of scope and require separate testing. Content behind "
+        f"authentication or a WAF challenge was not assessed. Absence of a finding "
+        f"is not evidence of absence of a vulnerability."
+        f"</p></div></div>")
 
 
 def _card(f, sev_name, e, rank=None):
@@ -229,8 +228,8 @@ def _card(f, sev_name, e, rank=None):
     raw = f.get("raw_count", locations)
     # Spelled out rather than shown as a bare number: "20" next to 2 listed URLs
     # looks like a rendering fault unless the report says what each number counts.
-    hits = ("%d" % raw) if raw == locations else (
-        "%d detections across %d location(s)" % (raw, locations))
+    hits = f"{raw}" if raw == locations else (
+        f"{raw} detections across {locations} location(s)")
     kv = [
         ("Template", e(f.get("template_id", "") or "-")),
         ("Type", e(f.get("type", "") or "-")),
@@ -238,39 +237,42 @@ def _card(f, sev_name, e, rank=None):
         ("CVE", e(", ".join(f.get("cve") or []) or "-")),
         ("Detections", hits),
     ]
-    kv_html = "".join("<tr><th>%s</th><td>%s</td></tr>" % (k, v) for k, v in kv)
+    kv_html = "".join(f"<tr><th>{k}</th><td>{v}</td></tr>" for k, v in kv)
 
     affected = f.get("affected") or []
     shown = affected[:INLINE_AFFECTED_CAP]
-    lis = "".join("<li>%s</li>" % e(a) for a in shown)
+    lis = "".join(f"<li>{e(a)}</li>" for a in shown)
     if len(affected) > INLINE_AFFECTED_CAP:
-        lis += ("<li class='more'>+%d more - full list in Appendix A</li>"
-                % (len(affected) - INLINE_AFFECTED_CAP))
-    hosts_blk = ("<div class='blk'><h4>Affected</h4><ul class='hosts'>%s</ul></div>"
-                 % lis) if affected else ""
+        extra = len(affected) - INLINE_AFFECTED_CAP
+        lis += f"<li class='more'>+{extra} more - full list in Appendix A</li>"
+    hosts_blk = (f"<div class='blk'><h4>Affected</h4><ul class='hosts'>{lis}</ul></div>"
+                 if affected else "")
 
     desc = (f.get("description") or "").strip()
-    desc_blk = ("<div class='blk'><h4>Detail</h4><p>%s</p></div>" % e(desc)) if desc else ""
+    desc_blk = (f"<div class='blk'><h4>Detail</h4><p>{e(desc)}</p></div>"
+                if desc else "")
 
     rem = (f.get("remediation") or "").strip()
-    fix_blk = ("<div class='fix'><h4>Remediation</h4><p>%s</p></div>" % e(rem)) if rem else ""
+    fix_blk = (f"<div class='fix'><h4>Remediation</h4><p>{e(rem)}</p></div>"
+               if rem else "")
 
     refs = [r for r in (f.get("reference") or []) if r][:4]
-    refs_blk = ("<div class='refs'>%s</div>"
-                % "".join("<a href='%s'>%s</a>" % (e(r), e(r)) for r in refs)) if refs else ""
+    ref_links = "".join(f"<a href='{e(r)}'>{e(r)}</a>" for r in refs)
+    refs_blk = f"<div class='refs'>{ref_links}</div>" if refs else ""
 
     # The rank is real information here, not decoration: findings are sorted by
     # severity, so the number IS the remediation order.
-    rank_html = "<span class='rank'>%d</span>" % rank if rank else ""
+    rank_html = f"<span class='rank'>{rank}</span>" if rank else ""
 
-    return ("<div class='card' style='border-left-color:%s'>"
-            "<h3>%s<span class='pill' style='background:%s;color:%s'>%s</span>"
-            "<span class='cname'>%s</span></h3>"
-            "<table class='kv'>%s</table>%s%s%s%s</div>"
-            % (pal["ink"], rank_html, pal["bg"], pal["ink"],
-               e(sev_name.get(sev, "Info")),
-               e(f.get("name", "") or f.get("template_id", "")),
-               kv_html, desc_blk, hosts_blk, fix_blk, refs_blk))
+    label = e(sev_name.get(sev, "Info"))
+    name = e(f.get("name", "") or f.get("template_id", ""))
+    return (f"<div class='card' style='border-left-color:{pal['ink']}'>"
+            f"<h3>{rank_html}"
+            f"<span class='pill' style='background:{pal['bg']};color:{pal['ink']}'>"
+            f"{label}</span>"
+            f"<span class='cname'>{name}</span></h3>"
+            f"<table class='kv'>{kv_html}</table>"
+            f"{desc_blk}{hosts_blk}{fix_blk}{refs_blk}</div>")
 
 
 def _suppressed_note(summary, sev_name, order, floor, e):
@@ -284,28 +286,31 @@ def _suppressed_note(summary, sev_name, order, floor, e):
     if not n:
         return ""
     noun = "finding" if n == 1 else "findings"
-    return ("<p class='suppressed'><b>%d %s below %s</b> were recorded and are not "
-            "itemised here. They are inventory - version banners, DNS records, the "
-            "presence of a form - rather than remediation work, and listing them buries "
-            "what is meant to be acted on. The full detail remains in the JSONL.</p>"
-            % (n, noun, e(sev_name.get(floor, "Medium"))))
+    floor_name = e(sev_name.get(floor, "Medium"))
+    return (f"<p class='suppressed'><b>{n} {noun} below {floor_name}</b> were recorded "
+            f"and are not itemised here. They are inventory - version banners, DNS "
+            f"records, the presence of a form - rather than remediation work, and "
+            f"listing them buries what is meant to be acted on. The full detail "
+            f"remains in the JSONL.</p>")
 
 
 def _appendix(uniq, e):
-    groups = [f for f in uniq if (f.get("affected") or [])]
+    groups = [f for f in uniq if f.get("affected")]
     if not groups:
         return ""
     blocks = []
     for f in groups:
-        lis = "".join("<li>%s</li>" % e(a) for a in f.get("affected") or [])
-        blocks.append("<div class='apx-group'><h3>%s <span class='count'>(%d)</span></h3>"
-                      "<ul class='hosts'>%s</ul></div>"
-                      % (e(f.get("template_id", "")),
-                         f.get("instances", 0), lis))
-    return ("<div class='section appendix'><h2>Appendix A - full affected inventory</h2>"
-            "<p class='lead'>Every matched location, by check. This is the complete "
-            "evidence list the summary sections abbreviate.</p>%s</div>"
-            % "".join(blocks))
+        lis = "".join(f"<li>{e(a)}</li>" for a in f.get("affected") or [])
+        tid = e(f.get("template_id", ""))
+        n = f.get("instances", 0)
+        blocks.append(f"<div class='apx-group'><h3>{tid} "
+                      f"<span class='count'>({n})</span></h3>"
+                      f"<ul class='hosts'>{lis}</ul></div>")
+    return (f"<div class='section appendix'>"
+            f"<h2>Appendix A - full affected inventory</h2>"
+            f"<p class='lead'>Every matched location, by check. This is the complete "
+            f"evidence list the summary sections abbreviate.</p>"
+            f"{''.join(blocks)}</div>")
 
 
 def render_report(uniq, summary, min_sev, title, sev_name, order, findings=None):
@@ -325,34 +330,34 @@ def render_report(uniq, summary, min_sev, title, sev_name, order, findings=None)
     shown = [f for f in uniq if f.get("severity", 0) >= floor]
     scan_date = _scan_date(findings)
 
+    floor_name = e(sev_name.get(floor, "Medium"))
     if shown:
         body = "".join(_card(f, sev_name, e, n)
                        for n, f in enumerate(shown, 1))
-        heading = ("<div class='section'><h2>Findings requiring action "
-                   "<span class='count'>(%d)</span></h2>"
-                   "<p class='lead'>Ordered by severity. Each entry is one check, with "
-                   "every location it matched.</p>%s</div>" % (len(shown), body))
+        heading = (f"<div class='section'><h2>Findings requiring action "
+                   f"<span class='count'>({len(shown)})</span></h2>"
+                   f"<p class='lead'>Ordered by severity. Each entry is one check, "
+                   f"with every location it matched.</p>{body}</div>")
     else:
-        heading = ("<div class='section'><h2>Findings requiring action</h2>"
-                   "<p class='clear'>Nothing at or above %s. No remediation work "
-                   "follows from this scan.</p>"
-                   "<p class='lead'>That reflects what a signature scanner can match. "
-                   "It is not a statement that no vulnerability exists.</p></div>"
-                   % e(sev_name.get(floor, "Medium")))
+        heading = (f"<div class='section'><h2>Findings requiring action</h2>"
+                   f"<p class='clear'>Nothing at or above {floor_name}. No remediation "
+                   f"work follows from this scan.</p>"
+                   f"<p class='lead'>That reflects what a signature scanner can match. "
+                   f"It is not a statement that no vulnerability exists.</p></div>")
 
     parts = [
-        "<!doctype html><html><head><meta charset='utf-8'><title>%s</title>"
-        "<style>%s</style></head><body><div class='wrap'>" % (e(title), CSS),
+        f"<!doctype html><html><head><meta charset='utf-8'><title>{e(title)}</title>"
+        f"<style>{CSS}</style></head><body><div class='wrap'>",
         _cover(title, findings, summary, scan_date, e),
         _posture(summary, sev_name, order, e, floor),
         _suppressed_note(summary, sev_name, order, floor, e),
         _scope(findings, e),
         heading,
         _appendix(shown, e),
-        "<div class='foot'>Generated by gizmoduck from nuclei JSONL output. "
-        "Scan date %s. Critical, High and Medium findings are itemised; lower "
-        "severities are counted only. Only assets owned or explicitly authorised "
-        "for testing were assessed.</div>" % e(scan_date),
+        f"<div class='foot'>Generated by gizmoduck from nuclei JSONL output. "
+        f"Scan date {e(scan_date)}. Critical, High and Medium findings are itemised; "
+        f"lower severities are counted only. Only assets owned or explicitly "
+        f"authorised for testing were assessed.</div>",
         "</div></body></html>",
     ]
     return "\n".join(p for p in parts if p)

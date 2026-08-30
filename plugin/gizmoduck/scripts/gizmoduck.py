@@ -185,7 +185,7 @@ def cmd_report(findings, min_sev, title):
                 f"remains in the JSONL._", ""]
 
     if not shown:
-        out += [f"## No action required", "",
+        out += ["## No action required", "",
                 f"Nothing at or above {SEV_NAME[floor]}. "
                 f"Note that this reflects what a signature scanner can match, "
                 f"not an absence of vulnerabilities.", ""]
