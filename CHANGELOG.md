@@ -67,7 +67,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
-- **`crew` 0.13.0: the command guard's git rules were bypassed by every option
+- **`crew` 0.13.1: the command guard's git rules were bypassed by every option
   form.** `guard.sh` and `guard.ps1` both required the subcommand to sit
   immediately after `git`, so `git -C <path> push --force`, `git -c a=b push
   -f` and `git --git-dir=... reset --hard` walked past the force-push,
@@ -168,7 +168,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
-- **`crew` 0.13.0: six recurring failure shapes moved from "a lesson someone
+- **`crew` 0.13.1: six recurring failure shapes moved from "a lesson someone
   remembers" into the role and command instructions.**
   - `qa-reviewer` and `/crew:review` now treat any test, guard or assertion a
     diff adds as the primary subject of the review, with the shapes that stay
