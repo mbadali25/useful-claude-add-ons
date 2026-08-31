@@ -34,14 +34,32 @@ Runs on Linux/WSL and Windows. On Linux call the CLI with `python3`; on Windows 
    python3 ${CLAUDE_PLUGIN_ROOT}/scripts/gizmoduck.py summary findings.jsonl
    ```
 
-3. **Report.** Show Markdown inline (default High+), then write the file deliverables:
+3. **Report.** Show Markdown inline, then write the file deliverables:
    ```bash
-   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/gizmoduck.py report findings.jsonl --min-severity high --title "<target> scan <date>"
-   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/gizmoduck.py report findings.jsonl --format html --min-severity high --out <name>.html --title "..."
-   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/gizmoduck.py report findings.jsonl --format pdf  --min-severity high --out <name>.pdf  --title "..."
+   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/gizmoduck.py report findings.jsonl --title "<target> scan <date>"
+   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/gizmoduck.py report findings.jsonl --format html --out <name>.html --title "..."
+   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/gizmoduck.py report findings.jsonl --format pdf  --out <name>.pdf  --title "..."
    ```
-   Findings are deduped across targets by `template-id`. PDF needs `wkhtmltopdf`;
-   the tool falls back to HTML with a message if it's missing.
+   **Reports itemise Critical, High and Medium only.** Low and Info are counted in
+   the severity table and then dropped, because nobody works that queue - a
+   signature scanner's low/info output is inventory (version banners, DNS records,
+   "a form exists") and listing it buries what someone is expected to fix. The
+   report says how many were suppressed, so the omission is visible rather than
+   silent.
+
+   `--min-severity` can **raise** that floor (`--min-severity high` reports High and
+   Critical only) but never lower it. Passing `--min-severity info` gets you the
+   counts it implies, not pages of noise.
+
+   Findings are deduped across targets by `template-id` and numbered in severity
+   order, so the number is the remediation order. PDF needs `wkhtmltopdf`; the tool
+   falls back to HTML with a message if it's missing.
+
+   Rendering lives in `scripts/report_template.py`, which gizmoduck.py delegates to.
+   **Read its module docstring before touching the CSS** - wkhtmltopdf renders
+   through Qt WebKit 4.8, which predates flexbox, grid and custom properties, and
+   silently produces an unstyled column rather than an error. Verify any change in
+   the PDF, not just a browser.
 
 4. **Ticketing — one ticket per finding, auto-create Critical + High.** Get the
    SDP-ready records:
@@ -59,8 +77,9 @@ Runs on Linux/WSL and Windows. On Linux call the CLI with `python3`; on Windows 
    summary afterward. Medium/Low/Info never generate tickets.
 
 ## Notes
-- Severity: critical/high/medium/low/info map to Critical…Info; Info is excluded
-  from reports by default.
+- Severity: critical/high/medium/low/info map to Critical…Info. Reports itemise
+  Critical/High/Medium and count the rest; `summary`, `parse`, `diff` and
+  `tickets` are unaffected and still honour `--min-severity` in full.
 - Nuclei finds what a template exists for — it's a known-issue scanner, not a
   crawler-driven DAST. For custom app-logic flaws (auth journeys, business logic),
   note that a tool like OWASP ZAP is the right complement.

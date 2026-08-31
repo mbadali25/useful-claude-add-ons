@@ -4,6 +4,67 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added
+
+- **`crew` 0.12.4: an SOP and a SOC 2 policy for pre-deployment security
+  review.** Two cross-linked documents under `plugin/crew/docs/`. The rule they
+  state is that no website reaches production without both a peer security
+  review and an external vulnerability scan of the deployed hostname - the two
+  are not interchangeable, because the review reads the change while the scan
+  tests what is actually serving, and a reviewed change can still deploy onto a
+  host running an end-of-life web server.
+
+  Both are marked DRAFT with no owner, approver or effective date, and the
+  policy says outright that it is a template until those exist. The Trust
+  Services Criteria mapping is labelled provisional and says to confirm it with
+  the auditor. A policy is evidence because a named person approved it on a
+  date; shipping one that implies otherwise is the first thing an auditor pulls
+  on.
+
+  Three constraints are written in because they were learned rather than
+  reasoned about: scan the public hostname from outside rather than the origin,
+  since an edge that terminates TLS makes the origin's configuration invisible
+  to the internet; never commit raw scanner JSONL, which embeds full HTTP
+  responses and has twice captured live session tokens that keyword secret
+  scanning failed to detect; and state the limits alongside the result, because
+  a clean signature-based scan oversold is worse than no scan.
+
+  Reports are published to `<project>/docs/security/` in a monolith or
+  `docs/security/` at the root of a single-project repository, date-stamped so a
+  later run cannot overwrite the comparison point.
+
+- **`gizmoduck` 0.2.1: reports itemise Critical/High/Medium and count the rest,
+  and rendering moves into its own module.** A scan of a healthy site returned 1
+  Medium and 42 Info, and the report listed all 43 — so the one finding somebody
+  was expected to fix sat underneath forty-two version banners, DNS records and
+  "a form exists". Low and Info are now counted in the severity table and
+  dropped. The table labels each row `itemised` or `count only` and a line
+  states how many were suppressed, so the omission is visible rather than
+  looking like truncation.
+
+  `--min-severity` now raises that floor and never lowers it: `high` reports
+  High and Critical, while `info` gets the counts it implies rather than pages
+  of noise. `report`'s per-command default moved High -> Medium to match, which
+  is the bug the first cut shipped with — every test passed `--min-severity
+  info` explicitly, so the default path was never exercised and the Medium was
+  silently suppressed. Running it with no flags is what caught it. `tickets`
+  deliberately stays at High: a Medium is worth reading without being worth
+  auto-opening a ticket for.
+
+  New `scripts/report_template.py` owns HTML/PDF rendering; `gizmoduck.py` keeps
+  the data prep and delegates. Its module docstring carries the constraint that
+  matters: **wkhtmltopdf renders through Qt WebKit 4.8**, which predates
+  flexbox, grid and custom properties and silently produces an unstyled column
+  instead of an error, so every layout is built from tables and verified in the
+  PDF rather than a browser. Findings are numbered in severity order, since that
+  number is the remediation order.
+
+  `dedupe()` also gained `raw_count` alongside `instances`. `instances` counts
+  distinct locations, not detections — `http-missing-security-headers` fires
+  once per absent header — so a summary reading 42 Info beside rows summing to
+  20 looked like a rendering fault. Both numbers are now reported and labelled.
+  Additive: `tickets` and `diff` read `instances` and are unchanged.
+
 ### Fixed
 
 - **`crew` 0.13.0: the command guard's git rules were bypassed by every option
