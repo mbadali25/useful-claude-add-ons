@@ -39,7 +39,40 @@ with the error text verbatim.
   production promotion was, then wait for me to say go. Do not proceed on
   silence.
 
+**Gate 1b - reconcile the source tree against what the target is running.**
+Before deploying anywhere a human can reach, establish that the tree you are
+about to push is a superset of what is live. A branch that was never reconciled
+against production will happily roll it backwards: an on-box hotfix, a config
+value changed during an incident, a file someone edited in place - all of it is
+silently reverted by a deploy that reports success.
+
+List the deployed artifact and hash it against the same paths in the source
+tree, then classify **every** difference into exactly one of:
+
+- **roll-forward** - the source is newer and the change is intended;
+- **on-box edit** - the target has something the source does not, which this
+  deploy would clobber or delete;
+- **unexplained** - you cannot account for it.
+
+Any on-box edit or unexplained difference is a stop. Carry it back into the
+branch, or state explicitly that it is being discarded and get that agreed,
+before continuing. Do not classify a difference as roll-forward because the
+source is the branch you were told to deploy.
+
 **Gate 2 - deploy.** Run the `deploy` commands. A non-zero exit is a stop.
+
+Then assert on what actually happened, not on the wrapper:
+
+- **Check the job, not the run.** A pipeline whose deploy step is conditional
+  (path filters, `if:` guards, a changed-files check) reports a green *run*
+  while having deployed nothing. Read the status of the deploy job itself and
+  say whether it executed or was skipped.
+- **Check the artifact on the box, not the log.** Hash or line-count the
+  deployed file and compare it against the source. A run that resolved the
+  wrong ref, or fetched tooling from a different ref than the code, is green
+  and wrong; the only thing that distinguishes it is reading what landed.
+
+Green means the workflow finished. It does not mean anything shipped.
 
 **Gate 3 - smoke.** Run the `smoke` commands against the environment just
 deployed to. A smoke suite that passes against the wrong environment is the most
@@ -103,6 +136,8 @@ the hook enforces it, rather than in this sequence where it has to be remembered
 
 - Do not report a promotion complete on the strength of gate 2. A successful
   deploy proves bytes moved and nothing else.
+- Do not accept a green pipeline as proof of a deploy. Green, shipped and
+  healthy are three separate claims and each needs its own evidence.
 - Do not rebuild between environments. The artifact qa proved is the artifact
   production gets, or qa proved nothing.
 - Do not deploy to production because qa passed a week ago. Re-check the sha.

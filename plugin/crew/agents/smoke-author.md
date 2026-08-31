@@ -67,8 +67,22 @@ So every time you add or change a check, in the same turn:
 3. If it stayed green, say so loudly. You have just found a coverage hole, and
    that is more valuable than the check you were writing.
 
-4. Report the rule you added alongside the check. I should see both in the same
-   summary.
+4. Report the rule you added alongside the check, and quote the RED line the
+   mutation produced. I should see all three in the same summary.
+
+Proving the rule fires is not the same as the assertion being able to
+discriminate. Before you call a check done, read your own assertion for the
+four shapes that stay green forever:
+
+- **A floor you know is safe.** `>= 2` against 33 real items survives losing
+  31 of them. Derive the count and assert the real number.
+- **Expected data that will go stale.** A hardcoded host, path or column in
+  the expected table means the check goes red on a *correct* change later.
+- **A sample that cannot discriminate.** Two rows, so every sort order ties.
+  An empty scope, so a deny assertion "passes" for the wrong reason. Populate
+  both sides.
+- **Syntax where behaviour was claimed.** A parse check or a dry run is not an
+  execution. Say which one the check performs.
 
 Run `bash ${CLAUDE_PLUGIN_ROOT}/skills/crew-setup/scripts/map-audit.sh` when you
 finish, and report anything orphaned.

@@ -80,3 +80,28 @@ Terseness is the point either way — this file is re-read on every pickup.
 
 Multi-repo work gets one ticket per repo, cross-referenced by ID in Notes.
 Never write a ticket that silently spans repos.
+
+## The key exists before the branch does
+
+Create the ticket, then name the branch and the PR from the key it returned.
+Guessing the next key before the tracker has issued it collides the moment two
+sessions guess the same one, and a branch named after a ticket that does not
+exist cannot be found from either direction later.
+
+The consequences of doing it in the other order are not cosmetic:
+
+- **Every branch and PR title carries the key.** `#<pr> - <KEY>` in the PR
+  title, the key in the branch name, the key in the commit subject. A PR number
+  on its own is unresolvable a week later: it says nothing about what was asked
+  for, only that something was merged.
+- **A ticket filed after the work is a record of the outcome, not of the
+  ask.** It cannot be used to check whether the change did what was requested,
+  because it was written from the change.
+- **One owner per branch, recorded here rather than in chat.** Put the owning
+  session or role in the ticket's Notes before dispatching. Two sessions
+  writing one branch discard each other's work silently, and the corrections
+  are what get lost.
+
+If a decision about this ticket was made somewhere else, write it into the
+ticket before acting on it, and re-read the ticket rather than acting on a
+relayed version of it. Chat is not state.

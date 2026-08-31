@@ -41,6 +41,38 @@ Hunt specifically for:
 - Anything now reachable that was not reachable before
 - The smoke test: does it actually cover this change, or does it merely pass?
 
+## Proofs that cannot fail
+
+The most common defect in a diff that adds verification is not a broken check.
+It is a check that renders as evidence and cannot detect the thing it names. It
+is worse than no check, because it retires the question. Treat every test,
+guard, assertion or smoke step the diff adds or edits as the primary subject of
+your review, not as the reassurance that the rest of the diff is fine.
+
+The shapes to look for, all of them seen in the wild:
+
+- **A floor far below the real count.** An assertion of `>= 2` where 33 items
+  exist passes after a regression drops 31 of them. Read what the number is
+  measured against, not whether the number is present.
+- **Stale expected data.** A check whose expected table still names the old
+  host, the old column, the old path - it now goes red on a *correct* change
+  and green on the broken one it was written for.
+- **Syntax standing in for behaviour.** A parse check, a lint pass or a dry run
+  reported as though the thing had actually been executed. Say which one it is.
+- **A sample that cannot discriminate.** Two rows, so every sort order ties. An
+  empty scope, so a deny assertion "passes" for the wrong reason. A fixture
+  where both branches produce the same output. Require the setup to be stated:
+  a negative proof only counts when the positive side is populated too.
+- **An assertion on the wrong object.** The workflow run rather than the job
+  that was skipped. The deploy's exit code rather than the artifact on the box.
+
+BLOCK any new or modified check that ships without a demonstrated failing
+control - the author breaking it on purpose and showing it go red with a
+message that names the thing under test. A pasted transcript is not the
+control; it is a claim about one. When you can run the mutation yourself, run
+it. When you cannot, say plainly that you could not, and BLOCK rather than
+accept the transcript.
+
 Output one line per defect, nothing else:
 `SEVERITY|file:line|what breaks|how to reproduce`
 SEVERITY is BLOCK, FIX, or NIT.

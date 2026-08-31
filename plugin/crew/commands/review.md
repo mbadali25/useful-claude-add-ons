@@ -60,15 +60,40 @@ Write its output to `$SCRATCH/out.txt` in the same format.
 The fallback is genuinely weaker than Codex: same model family reviewing itself
 finds fewer defects. Tell me when it is what ran, so I review harder myself.
 
+**Step 2c — re-run the failing control, do not read about it.** If the diff
+adds or edits a test, guard, assertion or smoke step, the author is expected to
+have broken it on purpose and shown it go red. A pasted RED transcript is a
+claim about a mutation, not the mutation. Where the check is runnable here, run
+it yourself: revert the guard's condition (or delete the line it asserts on),
+run the check, confirm it fails with a message naming the thing under test,
+then restore. Report which controls you re-ran and which you could only take on
+the author's word. An unverified control is a BLOCK, not a NIT — a check that
+has never been shown to fail is the defect class this crew loses the most time
+to.
+
 **Step 3 — act.**
 1. Report every BLOCK and FIX line verbatim. Do not soften or argue before showing me.
 2. Fix all BLOCK items. Rerun `./_verify/smoke.sh`. Rerun this review once.
 3. If you disagree with a finding, say so explicitly and let me decide.
-4. If `notify.provider` is not `none`, send one line:
+4. **Land the verdict as a review, not a comment.** If the change is on a
+   GitHub PR, post the outcome with `gh pr review` so it exists as an artifact
+   that tooling and branch protection can see:
+
+   ```bash
+   gh pr review <PR> --request-changes --body-file "$SCRATCH/out.txt"   # any BLOCK
+   gh pr review <PR> --approve        --body "<reviewer>: CLEAN"        # no BLOCK
+   ```
+
+   A verdict posted as `gh pr comment` is invisible to every mechanism that
+   could act on it: nothing distinguishes approved from blocked from
+   never-reviewed without a human reading threads, and an unprotected branch
+   cannot refuse a merge on the strength of a comment. Say which form you used.
+   If the repo has no PR yet, say that instead of silently skipping the step.
+5. If `notify.provider` is not `none`, send one line:
    `bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notify.sh review "<n> BLOCK, <n> FIX (<reviewer>)"`
    Counts only. Never the findings themselves — those stay in the repo.
-5. Append the result to `.crew/metrics.md`: `<date> | <ticket> | <reviewer> | <n BLOCK> | <n FIX>`
-6. Name every specialist from step 0 that ran, and every one that a matched rule
+6. Append the result to `.crew/metrics.md`: `<date> | <ticket> | <reviewer> | <n BLOCK> | <n FIX>`
+7. Name every specialist from step 0 that ran, and every one that a matched rule
    asked for but you skipped. A review that quietly dropped the `dba` pass on a
    migration reads exactly like one that had nothing to find.
 
