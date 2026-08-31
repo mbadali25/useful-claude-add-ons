@@ -41,6 +41,28 @@ Hunt specifically for:
 - Anything now reachable that was not reachable before
 - The smoke test: does it actually cover this change, or does it merely pass?
 
+## Proofs that cannot fail
+
+The most common defect in a diff that adds verification is not a broken check.
+It is a check that renders as evidence and cannot detect the thing it names. It
+is worse than no check, because it retires the question. Treat every test,
+guard, assertion or smoke step the diff adds or edits as the primary subject of
+your review, not as the reassurance that the rest of the diff is fine.
+
+The shapes to look for are catalogued in the `crew-verification` skill, under
+"Every check ships a demonstrated failing control" — read that table and test
+the diff's checks against every row of it rather than working from memory.
+Short version: a floor far below the real count, stale expected data, a parse
+check reported as an execution, a sample too uniform to discriminate, and an
+assertion on the wrong object.
+
+BLOCK any new or modified check that ships without a demonstrated failing
+control - the author breaking it on purpose and showing it go red with a
+message that names the thing under test. A pasted transcript is not the
+control; it is a claim about one. When you can run the mutation yourself, run
+it. When you cannot, say plainly that you could not, and BLOCK rather than
+accept the transcript.
+
 Output one line per defect, nothing else:
 `SEVERITY|file:line|what breaks|how to reproduce`
 SEVERITY is BLOCK, FIX, or NIT.

@@ -130,6 +130,41 @@ It reports checks on disk that no rule invokes, and rules pointing at files that
 no longer exist. Run it at the end of any session that touched tests, and in
 `/crew:verify --sync`.
 
+### Every check ships a demonstrated failing control
+
+A check that has never failed has never been shown to be able to fail. Writing
+one and watching it go green proves only that green is reachable — and a check
+that can only be green is worse than no check, because it retires the question
+it appears to answer.
+
+So the check is not finished until you have broken the thing it watches and
+seen it go **red with a message that names what is wrong**. Delete the line it
+asserts on, invert the condition, drop a file it counts, hand it the bad input
+— whichever mutation corresponds to the defect the check exists for. Then
+restore, and record it: the `Last sabotage-tested` column in `_verify/README.md`
+is that record.
+
+The shapes that pass green forever, all of which have shipped:
+
+| Shape | What it looks like | What it misses |
+|---|---|---|
+| Floor far below the real count | `assert count >= 2` where 33 exist | a regression dropping 31 of them |
+| Stale expected data | the expected table still names the old host or column | goes red on a *correct* change, green on the broken one |
+| Syntax standing in for behaviour | a parse check, a lint pass, a dry run reported as "it runs" | everything that only happens at runtime |
+| A sample that cannot discriminate | two rows, so every sort ties; an empty scope, so a deny "passes" | the ordering or permission it claims to prove |
+| An assertion on the wrong object | the workflow run, not the job; the exit code, not the artifact | a step that was skipped, a deploy that shipped nothing |
+
+Two rules follow, and both are cheap:
+
+- **Assert against the real number, not a floor you know is safe.** If the
+  count is derived, derive it in the check.
+- **A negative proof needs a populated positive side.** "Access was denied"
+  means nothing against an empty scope. State the setup that makes the denial
+  discriminating, or the proof does not count.
+
+The reviewer's half of this is in `/crew:review`: re-run the mutation rather
+than reading a transcript of it.
+
 ### After database changes
 
 Code-level rules do not cover schema. A migration needs three checks, and the
@@ -143,6 +178,14 @@ rule runs all three:
 
 The third is the one people skip. A migration that applies cleanly and leaves a
 column nullable that the code assumes is populated will pass the first two.
+
+All three run against a **real database** — ephemeral, containerised, or dev.
+Parse-checking a migration is a lint pass, not an apply, and the defects that
+only appear at apply time are the expensive ones: a string literal overflowing
+its column's width, a lock taken on a table with rows in it, a changelog row
+that rolls back while the DDL beside it commits. A migration whose first real
+apply happens in production has no verification at all, however many people
+read it.
 
 ### `"unmapped": "fail"`
 
@@ -315,14 +358,14 @@ minutes), and closing it produces a debt list to work through. The order above
 still applies to everything after the environment is stable, and a repository
 that must never do this sets `emergency.standDown: false`.
 
-### The four gates, per environment
+### The five gates, per environment
 
 Each promotion runs these in order, and **stops at the first failure**:
 
 | # | Gate | Answers |
 |---|---|---|
-| 1 | Pre-deploy | Is the source environment still green, and is this the artifact it proved? |
-| 2 | Deploy | Did the deployment mechanism report success? |
+| 1 | Pre-deploy | Is the source environment still green, is this the artifact it proved, and is the tree reconciled with what the target is running? |
+| 2 | Deploy | Did the deploy *job* run, and is the artifact on the box the one we sent? |
 | 3 | Smoke | Does the deployed thing respond at all, in this environment? |
 | 4 | Regression | Does everything that worked yesterday still work? |
 | 5 | Verify | Are the environment's own signals clean - error logs, alarms, queue depth? |
@@ -330,6 +373,21 @@ Each promotion runs these in order, and **stops at the first failure**:
 Gate 2 is the weakest evidence in the list and the one most often mistaken for
 the whole set. A successful deploy proves bytes moved. Gates 3-5 are what prove
 the application works.
+
+Two ways gate 2 lies, and both are green:
+
+- **A conditional deploy step.** Path filters, `if:` guards and changed-file
+  checks make a workflow report success having deployed nothing. Read the
+  status of the deploy job, not of the run that contains it.
+- **The wrong ref.** A pipeline that resolved tooling from one ref and code
+  from another is green and wrong. Hash or line-count the file that landed and
+  compare it against the source; the log will not tell you.
+
+And one way gate 1 lies: a branch that was never reconciled against the live
+environment deploys *backwards*, silently reverting on-box hotfixes and config
+changed during an incident. Classify every difference between the live artifact
+and the source tree before deploying - roll-forward, on-box edit, or
+unexplained - and stop on the last two.
 
 ### The mechanism: an `environments` block
 

@@ -20,8 +20,17 @@ block() { echo "BLOCKED: $1" >&2; exit 2; }
 # --- destructive operations ----------------------------------------------
 echo "$CMD" | grep -qE '\bterraform[[:space:]]+(apply|destroy)' && block "terraform apply/destroy is manual. Run plan and show it."
 echo "$CMD" | grep -qiE '\b(DROP|TRUNCATE)[[:space:]]+(TABLE|DATABASE|SCHEMA)' && block "destructive DDL. Write a migration with a rollback."
-echo "$CMD" | grep -qE '\bgit[[:space:]]+push\b.*(--force|-f)\b' && block "force push."
-echo "$CMD" | grep -qE '\bgit[[:space:]]+(reset[[:space:]]+--hard|clean[[:space:]]+-[a-z]*f)' && block "destroys uncommitted work."
+# The git rules used to require the subcommand to sit immediately after `git`,
+# so every one of them was bypassed by the option forms people actually use in
+# a worktree-per-agent setup: `git -C /path push --force`, `git -c a=b push -f`,
+# `git --git-dir=... reset --hard`. GIT_PRE swallows any run of leading git
+# options (each optionally followed by its value token) between `git` and the
+# subcommand, so the rule matches the command rather than one spelling of it.
+GIT_PRE='\bgit[[:space:]]+(-[^[:space:]]+[[:space:]]+([^-][^[:space:]]*[[:space:]]+)?)*'
+echo "$CMD" | grep -qE "${GIT_PRE}push\b.*(--force|-f)\b" && block "force push."
+# `git push origin +main` is a force push with no --force token in it.
+echo "$CMD" | grep -qE "${GIT_PRE}push\b[^;&|]*[[:space:]]\+[^[:space:];&|]" && block "force push (leading-plus refspec)."
+echo "$CMD" | grep -qE "${GIT_PRE}(reset[[:space:]]+--hard|clean[[:space:]]+-[a-z]*f)" && block "destroys uncommitted work."
 echo "$CMD" | grep -qE '\brm[[:space:]]+-[a-z]*rf?[[:space:]]+/' && block "recursive delete from root."
 # Argument-position match, not substring presence. The old check matched
 # "prod"/"production" as a whole word ANYWHERE in the command text, plus one

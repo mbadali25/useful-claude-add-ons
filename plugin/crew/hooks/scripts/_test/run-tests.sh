@@ -50,8 +50,21 @@ expect 2 'terraform apply -auto-approve'
 expect 2 'terraform destroy'
 expect 2 'git push --force origin main'
 expect 2 'git push -f origin main'
+expect 2 'git push --force-with-lease origin main'
 expect 2 'git reset --hard HEAD~3'
 expect 2 'git clean -fd'
+# E4 from the 2026-08-31 retrospective: every git rule required the subcommand
+# to sit immediately after `git`, so the option forms a worktree-per-agent
+# setup uses bypassed the guard entirely. These are the forms that got through.
+expect 2 'git -C /work/app push --force'
+expect 2 'git -C /work/app push -f origin main'
+expect 2 'git -c user.name=agent push --force'
+expect 2 'git --git-dir=/repos/x/.git --work-tree=/repos/x push --force'
+expect 2 'git -C /work/app reset --hard origin/main'
+expect 2 'git -C /work/app clean -fdx'
+# A force push with no --force token at all.
+expect 2 'git push origin +main'
+expect 2 'git push origin +refs/heads/main:refs/heads/main'
 expect 2 'DROP TABLE users'
 expect 2 'TRUNCATE TABLE audit_log'
 expect 2 'psql -h prod-db.internal -c "select 1"'
@@ -77,6 +90,20 @@ expect 0 'terraform fmt -recursive -check'
 expect 0 'terraform validate'
 expect 0 'git push origin feature/x'
 expect 0 'git status'
+# The widened git prefix must not start matching ordinary git work. Note
+# --follow-tags contains the literal "-f" and must still be allowed.
+expect 0 'git push --follow-tags origin main'
+expect 0 'git -C /work/app push origin feature/x'
+expect 0 'git -C /work/app status'
+expect 0 'git commit -m "do not force push to main, use -f nowhere"'
+expect 0 'git push origin refs/heads/main:refs/heads/main'
+expect 0 'git clean -n'
+expect 0 'git stash push -m wip'
+expect 0 'git -C /work/app stash push -m wip'
+# The leading-plus rule looks for a token starting with "+" after `push`. A "+"
+# inside a token is not a force refspec and must stay allowed - without this
+# case, widening that rule later has no guardrail.
+expect 0 'git push origin main -o ci.variable=A+B'
 # "prod" as a substring of an ordinary word is not production
 expect 0 'aws s3 ls s3://anew-product-images'
 expect 0 'aws s3 ls s3://reproducible-builds'

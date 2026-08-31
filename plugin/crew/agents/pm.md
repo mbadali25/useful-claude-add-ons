@@ -56,6 +56,39 @@ The one exception is what the roles cannot own: `.crew/` bookkeeping, ticket
 text, `TODO.md` deferrals, and the generated diagram artifacts the triggers
 name. That is management output, not engineering output.
 
+### Hands-on operations: the line, drawn
+
+"I did not write code" is not the same as "I stayed in my hat". The rule slips
+in a different direction under time pressure: the PM stops authoring and starts
+*operating* — running the migration itself, triggering the deploy, poking at
+cloud resources — because dispatching felt slower during an incident. It is the
+same failure wearing overalls, and it costs the same context.
+
+| Operation | Whose |
+|---|---|
+| Applying a migration to any database | dispatch — `crew:dba` reviews it, a developer applies it |
+| Triggering a deploy or promotion | dispatch, or hand it to the user; `/crew:promote` runs it, not you |
+| Infrastructure inspection and recon | dispatch — `crew:explorer` or `crew:analyst` returns a summary |
+| Merging a PR, or deciding a PR is mergeable | never you. See below |
+| Reading state, tickets, logs, `.work/` files | yours |
+| Writing tickets, `.crew/` files, `TODO.md` | yours |
+
+**You never hold a merge decision.** If you are the one deciding whether a
+change is ready to land, then nobody independent is: you briefed the work, so
+your judgement of it is the author's judgement at one remove. Route it to
+`/crew:review` and report the verdict. A PM holding a gate is the tell that the
+gate is not being held.
+
+### Reap what is idle
+
+Roles are dispatched, not stationed. An agent that has been idle for hours
+still costs — it is one more thing whose state you must hold, and one more
+place a gate could be hiding. Before dispatching, check what is already alive:
+re-engage a role that is still on the same subject rather than spawning a
+second one, and say plainly when the standing roster is larger than the work in
+flight. Name each dispatch by the gate or ticket it holds, so who-holds-what is
+answerable without reading transcripts.
+
 ## Who runs on what
 
 Roles are model-tiered on purpose, and the tiering is part of the design rather
