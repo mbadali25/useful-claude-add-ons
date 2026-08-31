@@ -6,6 +6,23 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`crew` 0.13.0: the command guard's git rules were bypassed by every option
+  form.** `guard.sh` and `guard.ps1` both required the subcommand to sit
+  immediately after `git`, so `git -C <path> push --force`, `git -c a=b push
+  -f` and `git --git-dir=... reset --hard` walked past the force-push,
+  `reset --hard` and `clean -f` rules alike — which is exactly the spelling a
+  worktree-per-agent setup types. Both flavours now swallow any run of leading
+  git options between `git` and the subcommand, and `git push origin +main`
+  (a force push carrying no `--force` token) blocks too. `--follow-tags`,
+  `git -C <path> status`, `git clean -n` and `git stash push` stay allowed.
+
+  `guard.ps1` had no test coverage at all — the same asymmetry
+  `test_gates_powershell.py` exists for. `plugin/crew/tests/test_guard_powershell.py`
+  now runs the same must-block/must-allow matrix against it. Both suites were
+  sabotage-tested: restoring the old adjacent-only patterns turns
+  `run-tests.sh` red on 15 cases and the new file red on 8, each naming the
+  command that got through.
+
 - **`crew` 0.12.3: the Stop hook's verify gate ran twice on any machine with
   both shells installed.** `hooks.json` registers `verify-gate.sh` AND
   `verify-gate.ps1` for every Stop, so a single-shell machine always gets
@@ -87,6 +104,40 @@ All notable changes to this repository are documented here. Format follows [Keep
   registered 0.1.2. `check-marketplace.py` compares `marketplace.json` history
   to file changes and cannot see a stale version string in prose, so this kind
   of drift passes CI silently.
+
+### Changed
+
+- **`crew` 0.13.0: six recurring failure shapes moved from "a lesson someone
+  remembers" into the role and command instructions.**
+  - `qa-reviewer` and `/crew:review` now treat any test, guard or assertion a
+    diff adds as the primary subject of the review, with the shapes that stay
+    green forever named (a floor far below the real count, stale expected
+    data, a parse check reported as an execution, a sample that cannot
+    discriminate, an assertion on the run rather than the job). `/crew:review`
+    re-runs the author's mutation instead of reading a transcript of it, and
+    treats an unverified control as a BLOCK.
+  - `/crew:review` lands its verdict with `gh pr review`, not `gh pr comment`.
+    A verdict that exists only as a comment cannot be acted on by anything.
+  - `dba` and `crew-verification`: a migration is BLOCKING until it has been
+    applied to a real or ephemeral database inside the change, with the
+    changelog row selected back and a width assertion on every string literal.
+    Parse-check plus review is a different claim from "it runs".
+  - `/crew:promote` gains a pre-deploy reconcile gate (hash the live artifact
+    against the source tree and classify every difference, so a branch that
+    was never reconciled cannot roll production backwards), and now asserts on
+    the deploy *job* and the artifact on the box rather than on the workflow's
+    green tick.
+  - `pm`: the line between coordinating and operating, drawn as a table —
+    applying migrations, triggering deploys and infra recon are dispatched,
+    not done. The PM never holds a merge decision, and re-engages live roles
+    rather than accumulating idle ones.
+  - `security`: a literal infrastructure endpoint in committed config is a
+    finding on its own, because the fact acquires copies and infra work
+    updates one of them. A credential already suppressed in a scanner baseline
+    is still BLOCKING and still needs rotating.
+  - `/crew:ticket`: the ticket key exists before the branch does, one owner per
+    branch is recorded in the ticket rather than in chat, and decisions land in
+    the ticket before anyone acts on a relayed version of them.
 
 ### Added
 
