@@ -38,26 +38,18 @@ with the error text verbatim.
 - If `requireHuman` is set, show me the sha, the diff summary, and what the last
   production promotion was, then wait for me to say go. Do not proceed on
   silence.
-
-**Gate 1b - reconcile the source tree against what the target is running.**
-Before deploying anywhere a human can reach, establish that the tree you are
-about to push is a superset of what is live. A branch that was never reconciled
-against production will happily roll it backwards: an on-box hotfix, a config
-value changed during an incident, a file someone edited in place - all of it is
-silently reverted by a deploy that reports success.
-
-List the deployed artifact and hash it against the same paths in the source
-tree, then classify **every** difference into exactly one of:
-
-- **roll-forward** - the source is newer and the change is intended;
-- **on-box edit** - the target has something the source does not, which this
-  deploy would clobber or delete;
-- **unexplained** - you cannot account for it.
-
-Any on-box edit or unexplained difference is a stop. Carry it back into the
-branch, or state explicitly that it is being discarded and get that agreed,
-before continuing. Do not classify a difference as roll-forward because the
-source is the branch you were told to deploy.
+- **The source tree is reconciled against what the target is actually
+  running.** A branch that was never reconciled will roll the environment
+  backwards: an on-box hotfix, a config value changed during an incident, a
+  file edited in place - all of it silently reverted by a deploy that reports
+  success. List the deployed artifact, hash it against the same paths in the
+  source tree, and classify **every** difference as exactly one of:
+  *roll-forward* (the source is newer and the change is intended), *on-box
+  edit* (the target has something the source does not, which this deploy would
+  clobber or delete), or *unexplained*. Any on-box edit or unexplained
+  difference is a stop - carry it into the branch, or say explicitly that it is
+  being discarded and get that agreed. Do not call a difference roll-forward
+  because the source is the branch you were told to deploy.
 
 **Gate 2 - deploy.** Run the `deploy` commands. A non-zero exit is a stop.
 
@@ -122,7 +114,10 @@ deploy nobody can audit.
 
 **NOT enforced - this is on you and on me.** That `smoke`, `regression` and
 `verify` actually ran, that they ran against the environment just deployed to,
-and that the soak was really waited out. A hook fires before a command and after
+and that the soak was really waited out. The same goes for the two gate-1/gate-2
+checks added above: the hook cannot reconcile the source tree against the live
+artifact, and it cannot tell a green run from a green run that skipped its
+deploy job. Those are prose, and prose only holds if you run it. A hook fires before a command and after
 a turn; it cannot watch the middle. The row you append is a claim, and the only
 thing that makes it worth anything is that it is written honestly - **including
 the failures**. A promotions log with no failures in it is a log nobody is

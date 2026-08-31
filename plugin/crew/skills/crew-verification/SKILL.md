@@ -358,14 +358,14 @@ minutes), and closing it produces a debt list to work through. The order above
 still applies to everything after the environment is stable, and a repository
 that must never do this sets `emergency.standDown: false`.
 
-### The four gates, per environment
+### The five gates, per environment
 
 Each promotion runs these in order, and **stops at the first failure**:
 
 | # | Gate | Answers |
 |---|---|---|
-| 1 | Pre-deploy | Is the source environment still green, and is this the artifact it proved? |
-| 2 | Deploy | Did the deployment mechanism report success? |
+| 1 | Pre-deploy | Is the source environment still green, is this the artifact it proved, and is the tree reconciled with what the target is running? |
+| 2 | Deploy | Did the deploy *job* run, and is the artifact on the box the one we sent? |
 | 3 | Smoke | Does the deployed thing respond at all, in this environment? |
 | 4 | Regression | Does everything that worked yesterday still work? |
 | 5 | Verify | Are the environment's own signals clean - error logs, alarms, queue depth? |
@@ -373,6 +373,21 @@ Each promotion runs these in order, and **stops at the first failure**:
 Gate 2 is the weakest evidence in the list and the one most often mistaken for
 the whole set. A successful deploy proves bytes moved. Gates 3-5 are what prove
 the application works.
+
+Two ways gate 2 lies, and both are green:
+
+- **A conditional deploy step.** Path filters, `if:` guards and changed-file
+  checks make a workflow report success having deployed nothing. Read the
+  status of the deploy job, not of the run that contains it.
+- **The wrong ref.** A pipeline that resolved tooling from one ref and code
+  from another is green and wrong. Hash or line-count the file that landed and
+  compare it against the source; the log will not tell you.
+
+And one way gate 1 lies: a branch that was never reconciled against the live
+environment deploys *backwards*, silently reverting on-box hotfixes and config
+changed during an incident. Classify every difference between the live artifact
+and the source tree before deploying - roll-forward, on-box edit, or
+unexplained - and stop on the last two.
 
 ### The mechanism: an `environments` block
 

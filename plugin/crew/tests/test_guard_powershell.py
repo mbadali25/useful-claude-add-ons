@@ -71,6 +71,11 @@ _MUST_ALLOW = [
     "git push origin refs/heads/main:refs/heads/main",
     "git clean -n",
     "git stash push -m wip",
+    "git -C /work/app stash push -m wip",
+    # The leading-plus rule looks for a token starting with "+" after `push`. A
+    # "+" inside a token is not a force refspec and must stay allowed - without
+    # this case, widening that rule later has no guardrail.
+    "git push origin main -o ci.variable=A+B",
     "terraform plan",
     "npm test",
 ]

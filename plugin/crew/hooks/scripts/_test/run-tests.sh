@@ -99,6 +99,11 @@ expect 0 'git commit -m "do not force push to main, use -f nowhere"'
 expect 0 'git push origin refs/heads/main:refs/heads/main'
 expect 0 'git clean -n'
 expect 0 'git stash push -m wip'
+expect 0 'git -C /work/app stash push -m wip'
+# The leading-plus rule looks for a token starting with "+" after `push`. A "+"
+# inside a token is not a force refspec and must stay allowed - without this
+# case, widening that rule later has no guardrail.
+expect 0 'git push origin main -o ci.variable=A+B'
 # "prod" as a substring of an ordinary word is not production
 expect 0 'aws s3 ls s3://anew-product-images'
 expect 0 'aws s3 ls s3://reproducible-builds'
