@@ -9,8 +9,15 @@ function Block($msg) { [Console]::Error.WriteLine("BLOCKED: $msg"); exit 2 }
 # destructive operations
 if ($cmd -match '(?i)\bterraform\s+(apply|destroy)')            { Block "terraform apply/destroy is manual. Run plan and show it." }
 if ($cmd -match '(?i)\b(DROP|TRUNCATE)\s+(TABLE|DATABASE|SCHEMA)') { Block "destructive DDL. Write a migration with a rollback." }
-if ($cmd -match '(?i)\bgit\s+push\b.*(--force|-f)\b')            { Block "force push." }
-if ($cmd -match '(?i)\bgit\s+(reset\s+--hard|clean\s+-[a-z]*f)') { Block "destroys uncommitted work." }
+# Mirrors guard.sh: the git rules used to require the subcommand to sit
+# immediately after `git`, so `git -C /path push --force`, `git -c a=b push -f`
+# and `git --git-dir=... reset --hard` all sailed through. $gitPre swallows any
+# run of leading git options (each optionally followed by its value token).
+$gitPre = '(?i)\bgit\s+(-\S+\s+([^-]\S*\s+)?)*'
+if ($cmd -match "${gitPre}push\b.*(--force|-f)\b")               { Block "force push." }
+# `git push origin +main` is a force push with no --force token in it.
+if ($cmd -match "${gitPre}push\b[^;&|]*\s\+[^\s;&|]")            { Block "force push (leading-plus refspec)." }
+if ($cmd -match "${gitPre}(reset\s+--hard|clean\s+-[a-z]*f)")    { Block "destroys uncommitted work." }
 if ($cmd -match '(?i)Remove-Item\s+.*-Recurse.*-Force.*[A-Z]:\\?\s*$') { Block "recursive delete of a drive root." }
 # Argument-position match, not substring presence. Mirrors guard.sh: the old
 # check matched "prod"/"production" as a whole word ANYWHERE in the command
