@@ -4,6 +4,32 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Changed
+
+- **`crew` 0.14.3: enabling Copilot is a three-gate sequence, and crew now says
+  so before you pin a model.** Setting `qa.copilot.model` is the switch that turns
+  the Copilot rung on. While it is `null`, `/crew:review` skips Copilot and
+  announces the skip once per review; setting it on a Copilot that does not
+  actually work converts that clean message into a recurring error on a path the
+  user now believes is covered. The docs treated "install the CLI" as setup, which
+  clears exactly one of the three gates.
+
+  The gates, in order, because each one's failure is invisible until the previous
+  one passes: (1) the CLI must be allowed by **account policy** - readable at
+  `orgs/<org>/copilot/billing` -> `cli`, and settable only in a browser, since
+  Copilot exposes no policy write in REST or GraphQL; (2) the CLI must hold its
+  **own** token from `copilot login`, because a `GH_TOKEN`/`GITHUB_TOKEN`/
+  `COPILOT_GITHUB_TOKEN` silently outranks it; (3) one real call must return, judged
+  by **exit code**.
+
+  Gates 1 and 2 emit byte-identical errors, which is why the order is the fix
+  rather than the checklist. `providers.sh` now reports gate 2 from
+  `~/.copilot/config.json` and warns when a borrowed token would override it - both
+  free, no API call. Also documents `421 Misdirected Request` as *progress*: it
+  means the policy gate passed and the seat SKU is mid-propagation, handing the CLI
+  a `business` host for an `enterprise` plan. Waiting is the fix; reinstalling is
+  not.
+
 ### Fixed
 
 - **`crew` 0.14.2: the documented Kimi-through-Codex recipe could not have

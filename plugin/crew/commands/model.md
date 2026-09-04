@@ -101,6 +101,31 @@ That last row is deliberate. Do not add an allowlist of model names here — GPT
 and Sonnet 4 are already retired, and a command that refuses a model because it
 shipped before that model existed is worse than no validation.
 
+### Setting `qa.copilot.model` turns Copilot ON — check it works first
+
+This key is the switch. While it is `null`, `/crew:review` skips the Copilot rung
+and says so cleanly once per review. Setting it makes every review *attempt*
+Copilot, so setting it before Copilot actually works converts one clean skip
+message into a recurring error on a path the user believes is now covered.
+
+Copilot has three gates and installing the CLI clears only the first. Before
+writing this key, confirm all three and report which you actually checked:
+
+| Gate | Check | Failure |
+|---|---|---|
+| 1. Policy allows the CLI | `gh api orgs/<org>/copilot/billing --jq '.cli'` → `enabled` | account setting, no API can write it; enterprise policy overrides the org's |
+| 2. CLI holds its own token | `~/.copilot/config.json` has `lastLoggedInUser` | run `copilot login`; a set `GH_TOKEN`/`GITHUB_TOKEN`/`COPILOT_GITHUB_TOKEN` silently overrides it |
+| 3. A real call returns | `copilot -p "reply OK" -s; echo $?` → exit 0 | check the exit code, never a pipe's |
+
+Gates 1 and 2 produce the **same** error text, so check 1 before concluding 2.
+`bash ${CLAUDE_PLUGIN_ROOT}/skills/crew-setup/scripts/providers.sh` reports gate 2
+and both override hazards without making a call.
+
+If the user asks for Copilot and a gate fails, say which one and what unblocks it,
+then leave `qa.copilot.model` unset. A skipped provider that announces itself is
+strictly better than a configured one that errors — write the key when it works,
+not when it is wanted.
+
 ## Step 3 — the interlock, whenever `dev.provider` is not `claude`
 
 **The family that wrote the code may not review it.** After any change to

@@ -12,10 +12,34 @@ fi
 
 if command -v copilot >/dev/null 2>&1; then
   say "copilot:" "found ($(copilot --version 2>/dev/null | head -1))"
-  say "auth:" "run: copilot -p 'reply OK' -s  -  'Access denied by policy settings'"
-  say "" "means the org has Copilot CLI off, not that you lack a seat:"
-  say "" "org Settings > Copilot > Policies > 'Copilot in the CLI'"
-  say "model:" "qa.copilot.model MUST be set, and MUST NOT be a claude-* model."
+
+  # Gate 2, checked locally and for free: has `copilot login` ever run here?
+  # The token itself lives in the OS keychain; config.json records who owns it.
+  cop_cfg="$HOME/.copilot/config.json"
+  if [ -f "$cop_cfg" ] && grep -q '"lastLoggedInUser"' "$cop_cfg" 2>/dev/null; then
+    say "login:" "yes ($(sed -n 's/.*"login": *"\([^"]*\)".*/\1/p' "$cop_cfg" | head -1))"
+  else
+    say "login:" "NO -> run: copilot login   (gate 2 - the CLI needs its OWN token)"
+  fi
+
+  # A borrowed token silently outranks that login and is the classic false lead:
+  # it authenticates, then fails the policy check, which reads like a billing bug.
+  for v in COPILOT_GITHUB_TOKEN GH_TOKEN GITHUB_TOKEN; do
+    if [ -n "$(eval "printf '%s' \"\${$v:-}\"")" ]; then
+      say "WARNING:" "$v is set and OVERRIDES your copilot login."
+      say "" "If it lacks Copilot entitlement you get 'Access denied by"
+      say "" "policy settings' that no policy change will ever fix. Unset it."
+      break
+    fi
+  done
+
+  say "gate 1:" "policy must allow the CLI - this is an ACCOUNT setting, not local:"
+  say "" "gh api orgs/<org>/copilot/billing --jq '.cli'   # must be: enabled"
+  say "" "if greyed out in org settings, the enterprise policy overrides it:"
+  say "" "github.com/settings/enterprises > Policies > Copilot"
+  say "gate 3:" "copilot -p 'reply OK' -s; echo \$?   # check the EXIT CODE"
+  say "" "do not pipe to head/tail while reading \$? - you get the pipe's 0"
+  say "model:" "pin LAST, only after gate 3 returns. MUST NOT be a claude-* model."
   say "" "Copilot defaults to claude-sonnet-4.6 - the author's own family, so"
   say "" "an unpinned Copilot reviews its own family while looking independent."
   say "" "Pin gemini-3.1-pro-preview or mai-code-1-flash instead."

@@ -84,23 +84,63 @@ or Microsoft model on your diff without a second vendor account.
 command -v copilot && copilot --version
 ```
 
-### Set up
+### Set up — three gates, in this order
+
+Copilot has **three** independent gates, and installing the CLI clears only the
+first. Do them in order; each one's failure is invisible until the one before it
+passes, so skipping ahead just produces a confusing error from the wrong layer.
+
+**Gate 1 — the CLI must be allowed by policy.** This is a setting on the *account*,
+not on your machine, and no amount of local fixing touches it.
 
 ```bash
 npm install -g @github/copilot
+gh api orgs/<org>/copilot/billing --jq '.cli'   # must print: enabled
+```
+
+`unconfigured` or `disabled` means stop here — nothing downstream will work. Enable
+it at **org** Settings → Copilot → Policies → "Copilot in the CLI". If that toggle
+is greyed out, the org is under an enterprise and the enterprise policy overrides
+it: fix it at `github.com/settings/enterprises` → Policies → Copilot instead.
+
+There is no API for this, read or write. Verified against Copilot's REST surface
+(five endpoint groups: cloud-agent config, coding-agent management, content
+exclusion, usage metrics, user management — no settings or policies group) and
+against GraphQL (260 mutations, 16 of them `updateEnterprise*Setting`, none for
+Copilot). `PATCH`/`PUT` on the plausible paths all 404. The `cli` field above is
+readable and **not writable**. It is a browser task or it does not happen.
+
+**Gate 2 — the CLI must hold its own token.**
+
+```bash
 copilot login
 ```
 
-Copilot will silently borrow a `gh` token if one exists (precedence:
+Copilot silently borrows a `gh` token if one exists (precedence:
 `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN`). A `gh` token minted without
-Copilot entitlement authenticates fine and then fails at the policy check, which
-reads like a billing problem and is not one — run `copilot login` so the CLI holds
-its own token.
+Copilot entitlement authenticates fine and *then* fails at the policy check —
+producing the identical error to gate 1 being off. That collision is why the order
+matters: confirm `cli: enabled` first, so a denial after login means the token and
+not the policy.
 
-Then make one real call before trusting it:
+**Gate 3 — one real call must return.**
 
 ```bash
-copilot -p "reply with exactly: PROBE_OK" -s
+copilot -p "reply with exactly: PROBE_OK" -s; echo "exit=$?"
+```
+
+Check the **exit code**, not just the text. Copilot exits non-zero on policy denial,
+which is what lets `/crew:review` refuse to record a CLEAN verdict from a failed run.
+Never pipe this through `head`/`tail` while checking `$?` — you will read the exit
+code of the pipe and see 0 on a failed call, which is precisely the false green this
+whole provider table exists to prevent.
+
+Only after gate 3 returns should you pin the model. `qa.copilot.model` is what makes
+`/crew:review` *attempt* Copilot; setting it before the gates pass converts a clean
+"skipped, and here is why" into a per-review error.
+
+```bash
+/crew:model qa.copilot.model gemini-3.1-pro-preview
 ```
 
 ### Pin the model, always
@@ -137,9 +177,18 @@ review loop — an org that has opted into overage has no such brake.
 
 | Symptom | Cause |
 |---|---|
-| `Access denied by policy settings` | Copilot CLI policy is off. If the org's toggle is greyed out, the org is under an enterprise and the policy is set at **enterprise** level — fix it at `github.com/settings/enterprises`, not org settings |
-| Authenticates then refuses | A borrowed `gh` token without Copilot scope — run `copilot login` |
+| `Access denied by policy settings` | Gate 1 or gate 2 — indistinguishable from the error alone. Check `gh api orgs/<org>/copilot/billing --jq '.cli'` first; `enabled` there means it is the token, so run `copilot login` |
+| Toggle is greyed out in org settings | The org is under an enterprise, whose policy overrides it — fix at `github.com/settings/enterprises` → Policies → Copilot |
+| `Failed to load models` / `421 Misdirected Request` | **Progress, not a regression.** The policy gate passed and GitHub is mid-propagation: your seat SKU is flapping between `copilot_for_business_seat_quota` and `copilot_enterprise_seat_quota`, and the mismatched one hands the CLI `api.business.githubcopilot.com` for an enterprise plan. Wait 15–30 min and retry; do not reinstall or re-login |
 | Reviews agree with Claude suspiciously often | `qa.copilot.model` is a `claude-*` string; you have a same-family reviewer |
+
+For the 421 specifically, the cache is the evidence, not a guess. Read
+`~/AppData/Local/copilot/copilot-user-cache.json` (`~/.config` equivalent
+elsewhere) — it keys entries by token hash and each records `access_type_sku`
+alongside the `endpoints.api` host it was handed. A row whose SKU and host
+disagree is the 421. It is a disposable cache that regenerates, so deleting it
+forces a fresh fetch, but deleting it does **not** fix a mismatch the server is
+still producing.
 
 ---
 
