@@ -103,12 +103,13 @@ it at **org** Settings → Copilot → Policies → "Copilot in the CLI". If tha
 is greyed out, the org is under an enterprise and the enterprise policy overrides
 it: fix it at `github.com/settings/enterprises` → Policies → Copilot instead.
 
-There is no API for this, read or write. Verified against Copilot's REST surface
+The `cli` field is readable, exactly as shown above. There is no API to **write**
+it. Verified against Copilot's REST surface
 (five endpoint groups: cloud-agent config, coding-agent management, content
 exclusion, usage metrics, user management — no settings or policies group) and
 against GraphQL (260 mutations, 16 of them `updateEnterprise*Setting`, none for
-Copilot). `PATCH`/`PUT` on the plausible paths all 404. The `cli` field above is
-readable and **not writable**. It is a browser task or it does not happen.
+Copilot). `PATCH`/`PUT` on the plausible paths all 404. It is a browser task or
+it does not happen.
 
 **Gate 2 — the CLI must hold its own token.**
 
@@ -140,7 +141,7 @@ Only after gate 3 returns should you pin the model. `qa.copilot.model` is what m
 "skipped, and here is why" into a per-review error.
 
 ```bash
-/crew:model qa.copilot.model gemini-3.1-pro-preview
+/crew:model qa.copilot.model gemini-3.7-flash
 ```
 
 ### Pin the model, always
@@ -149,17 +150,24 @@ Only after gate 3 returns should you pin the model. `qa.copilot.model` is what m
 is unset, because the CLI's own default is `claude-sonnet-4.6` — the author's
 family. Pin a family neither the author nor Codex provides:
 
-| Model | Family | Credit multiplier |
+| Model | Family | Status |
 |---|---|---|
-| `gemini-3.1-pro-preview` | Google | 1x |
-| `mai-code-1-flash` | Microsoft MAI | low |
-| `gemini-3-flash` | Google | 0.33x |
+| `gemini-3.7-flash` | Google | confirmed working |
+| `gpt-*` | OpenAI | available, but same family as Codex — pick it only if Codex is not your other rung |
+| `claude-*` | Anthropic | **never** — this is the author's family |
 
-Do not hardcode any of these in a command. Model strings churn — GPT-5 and Sonnet
-4 are already retired — so keep the value in `.crew/config.json` and read it at
-call time. A call failing with a model-not-found error means the catalog moved;
-list current models with `copilot help` and update the config rather than
-debugging the request.
+That table is short on purpose. Model strings churn faster than this file: an
+earlier revision recommended `gemini-3.1-pro-preview` and `mai-code-1-flash`, and
+both now fail with `Model "<name>" from --model flag is not available`. Keep the
+value in `.crew/config.json` and read it at call time; never hardcode one in a
+command.
+
+**There is no `copilot` command that lists models.** `--model list` is rejected
+like any other bad name and `copilot help` does not enumerate them, so a previous
+version of this section sent you somewhere that does not exist. Two things that
+do work: read the model names in `~/.copilot/logs/*.log` from a successful
+session, or pass a candidate and read the rejection — a wrong name fails fast and
+loudly at startup, before any diff is sent.
 
 ### Costs
 
@@ -271,12 +279,21 @@ provider — a config recipe, not a code path. Nothing in `/crew:review` changes
 
 ```toml
 # ~/.codex/config.toml
+model_provider = "moonshot"          # SELECTS it - the block below only DEFINES it
+
 [model_providers.moonshot]
 name = "Moonshot"
 base_url = "https://api.moonshot.ai/v1"
 env_key = "MOONSHOT_API_KEY"
 wire_api = "responses"
 ```
+
+**The top-level `model_provider` line is not optional.** `[model_providers.moonshot]`
+declares the provider; it does not make Codex use it. Omit the selector and
+`/crew:review` sends a Kimi model name to OpenAI, which fails on a model nobody
+recognises — after the diff has already been uploaded. `/crew:review` passes
+`--model` but never `-c model_provider=`, deliberately: the provider is a property
+of the machine's Codex install, not of the repo's crew config.
 
 **`wire_api = "responses"` is load-bearing, and `"chat"` is not a fallback — it is a
 hard parse error.** Codex deprecated the `chat/completions` protocol in December 2025

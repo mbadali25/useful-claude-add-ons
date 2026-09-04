@@ -67,9 +67,16 @@ Apply this at review time, from the config as it currently reads. Do not rely on
 `qa.order` having been edited to match; the two keys are set at different times by
 different people, and the ordering is a preference while this is a rule.
 
-If striking the author's family leaves **no** candidate, stop and say so rather than
-reviewing anyway. A review by the author's own family, announced as a review, is
-worse than no review — it converts an unknown into a false negative.
+If striking the author's family leaves **no** candidate, fall back to step 2c and
+say **in the verdict itself** that this review is same-family and does not count as
+independent. Do not refuse to review: a repo with neither Codex nor Copilot still
+benefits from the weaker pass, and `README.md`, `agents/pm.md` and `crew-pm` all
+document `qa-reviewer` as the fallback — a step 1 that stopped instead would
+contradict all three.
+
+What is forbidden is letting a same-family review be *recorded* as an independent
+one. Announce it, and never write it to `.crew/metrics.md` as though a different
+family had looked.
 
 Then, if `qa.provider` names a provider (`codex`, `copilot`, `claude`), use that one
 and **hard-fail if its probe fails** — a pinned provider that cannot run is an error,
@@ -99,12 +106,30 @@ provider blocks below are literally runnable rather than prose about themselves:
 
 ```bash
 CFG=.crew/config.json
-QA_MODEL=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["qa"]["codex"].get("model") or "")' "$CFG")
-QA_EFFORT=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["qa"]["codex"].get("reasoningEffort") or "")' "$CFG")
-QA_COPILOT_MODEL=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["qa"]["copilot"].get("model") or "")' "$CFG")
+# .get() at EVERY level. A config written before these keys existed has no
+# qa.codex / qa.copilot block, and indexing it directly is a KeyError that kills
+# the review before it starts. Absent means "pass no flag", never "crash".
+q() { python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print((d.get("qa") or {}).get(sys.argv[2],{}).get(sys.argv[3]) or "")' "$CFG" "$1" "$2"; }
+QA_MODEL=$(q codex model)
+QA_EFFORT=$(q codex reasoningEffort)
+QA_COPILOT_MODEL=$(q copilot model)
 
 BASE=$(git merge-base HEAD "$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|origin/||' || echo main)")
 git diff "$BASE"...HEAD > "$SCRATCH/diff.txt"
+
+# Write the prompt HERE, before any provider block reads it. All three reviewers
+# get byte-identical instructions, so a defect count that differs between them is
+# a fact about the model and not about how you worded it. Unquoted heredoc marker
+# so $SCRATCH becomes the real path - a reviewer handed the literal string
+# "$SCRATCH/diff.txt" opens nothing and reports CLEAN on a file it never read.
+cat > "$SCRATCH/prompt.txt" <<EOF
+Review $SCRATCH/diff.txt as a hostile QA engineer.
+Output one line per defect: SEVERITY|file:line|what breaks|how to reproduce.
+SEVERITY is BLOCK, FIX, or NIT. Check: unintended behavior changes, unhandled
+error paths, boundary and empty-collection cases, concurrency, and anything the
+change makes reachable that was not before. Output nothing but those lines.
+If no defects, output exactly: CLEAN
+EOF
 ```
 
 **Step 2a — Codex.** Empty means "pass no flag", so an unconfigured repo invokes
@@ -149,22 +174,14 @@ The fallback is genuinely weaker than a different family: the same model family
 reviewing itself finds fewer defects. Tell me when it is what ran, so I review
 harder myself.
 
-**The shared prompt.** All three reviewers get byte-identical instructions, written
-once to `$SCRATCH/prompt.txt`, so a defect count differing between providers is a
-fact about the model and not about how you worded it:
-
-```
-Review $SCRATCH/diff.txt as a hostile QA engineer.
-Output one line per defect: SEVERITY|file:line|what breaks|how to reproduce.
-SEVERITY is BLOCK, FIX, or NIT. Check: unintended behavior changes, unhandled
-error paths, boundary and empty-collection cases, concurrency, and anything the
-change makes reachable that was not before. Output nothing but those lines.
-If no defects, output exactly: CLEAN
-```
+**The shared prompt is written in step 2**, before any provider block runs, because
+2a and 2b both `cat` it. Do not re-word it per provider: identical instructions are
+what make a differing defect count a fact about the model rather than about the
+prompt.
 
 Read ONLY `$SCRATCH/out.txt`. Never load the diff back into your context.
 
-**Step 2c — re-run the failing control, do not read about it.** If the diff
+**Step 2d — re-run the failing control, do not read about it.** If the diff
 adds or edits a test, guard, assertion or smoke step, the author is expected to
 have broken it on purpose and shown it go red. A pasted RED transcript is a
 claim about a mutation, not the mutation. Where the check is runnable here, run

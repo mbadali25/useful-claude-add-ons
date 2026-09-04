@@ -6,6 +6,48 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`crew` 0.14.5: the first real cross-family QA review found seven defects in
+  0.14.0-0.14.4, and this fixes them.** Copilot on `gemini-3.7-flash` reviewed the
+  branch - the first time crew's Copilot rung has ever run end to end - and caught
+  what four passes of self-review did not:
+
+  - **`review.md` crashed on the configs it was written for.** Step 2 read
+    `["qa"]["codex"]` by direct index, so any config predating those sub-blocks died
+    with `KeyError: 'codex'` before the review started. Reproduced against this
+    repo's own `.crew/config.json`. Now `.get()` at every level, and verified to
+    still *read* values rather than merely stop crashing.
+  - **Steps 2a/2b `cat` a prompt file that was only written after step 2c.** The
+    prompt is now written in step 2, before any provider block reads it, with an
+    unquoted heredoc so `$SCRATCH` expands - a reviewer handed the literal string
+    `$SCRATCH/diff.txt` opens nothing and reports CLEAN on a file it never read.
+  - **Step 1 told `/crew:review` to stop when no independent reviewer survives,
+    contradicting `README.md`, `agents/pm.md` and `crew-pm`,** which all document
+    `qa-reviewer` as the fallback. Resolved toward the documented behaviour: it
+    runs and is labelled same-family, and is never recorded as independent.
+  - **The Kimi recipe defined a Codex provider without selecting it.** Missing the
+    top-level `model_provider = "moonshot"`, the call goes to OpenAI with a Kimi
+    model name - after the diff is uploaded.
+  - **`/crew:model` reported the wrong reason for a real condition.** An unset
+    Copilot model collapsed to `"?"` on both sides of the family comparison, so
+    `dev.provider: copilot` with no model pinned reported `BARRED` instead of
+    `SKIPPED`. Now `None`, which never compares equal to itself here.
+  - Duplicate `Step 2c` heading; "there is no API for this, read or write" sitting
+    eight lines below the command that reads it; `21 slash commands` in the
+    marketplace description when there are 23.
+
+  **The model table recommended a model that does not exist.**
+  `gemini-3.1-pro-preview` and `mai-code-1-flash` both fail with `Model "<name>"
+  from --model flag is not available`; `gemini-3.7-flash` is what works. The
+  section also sent you to `copilot help` to list models, and no such listing
+  exists - `--model list` is rejected like any other bad name. Replaced with two
+  methods that work: read `~/.copilot/logs/*.log`, or pass a candidate and read the
+  rejection, which fails at startup before any diff is sent.
+
+  One finding was rejected: `--deny-tool write` is correct. `copilot help
+  permissions` documents `write(path?)` as matching "tools that create and modify
+  files", and the suggested `edit`/`create` tool names do not exist.
+### Fixed
+
 - **`crew` 0.14.4: the 421 guidance shipped a guess as a cause, and its advice was
   wrong.** 0.14.3 told you a `421 Misdirected Request` meant GitHub was
   mid-propagation on your seat SKU, and to wait 15-30 minutes. The propagation

@@ -30,7 +30,9 @@ def family(provider, blk):
     if provider == "claude": return "claude"
     if provider == "codex":  return "gpt"
     m = (blk.get("copilot") or {}).get("model") or ""
-    return m.split("-")[0] if m else "?"
+    # None, never a placeholder string: two unset Copilot models must not compare
+    # equal to each other and report BARRED when the real reason is "unset".
+    return m.split("-")[0] if m else None
 
 barred = family(dev_p, dev)
 
@@ -38,7 +40,7 @@ def describe(p, blk):
     sub = blk.get(p) if isinstance(blk.get(p), dict) else {}
     model = sub.get("model") or ("n/a (subagent)" if p == "claude" else "(cli default)")
     effort = sub.get("reasoningEffort") or "-"
-    if family(p, blk) == barred:
+    if barred is not None and family(p, blk) == barred:
         why = f"BARRED: dev.provider is {dev_p}, same family - cannot review itself"
     elif p == "claude":
         why = "eligible (in-session subagent, not a separate process)"
@@ -65,13 +67,13 @@ for p in cands:
 if pinned != "auto":
     print(f"\nqa.provider is PINNED to {pinned}. A failed probe here is an error, not a fallback.")
 if not ran:
-    print("\nNO ELIGIBLE REVIEWER - /crew:review will stop rather than let the author's "
-          "own family review it.")
+    print("\nNO INDEPENDENT REVIEWER - /crew:review falls back to qa-reviewer and labels "
+          "the result same-family. It runs; it does not count as an independent review.")
 
 dsub = dev.get(dev_p) if isinstance(dev.get(dev_p), dict) else {}
 dmodel = dsub.get("model") or ("n/a (subagent)" if dev_p == "claude" else "(cli default)")
 print(f"\ndev (implement): {dev_p}  model={dmodel}  effort={dsub.get('reasoningEffort') or '-'}")
-print(f"author family = {barred}  (this is what is struck from qa above)")
+print(f"author family = {barred or 'unknown (dev.copilot.model unset)'}  (struck from qa above)")
 for tool in ("codex", "copilot"):
     print(f"{tool:<10}{'on PATH' if shutil.which(tool) else 'NOT FOUND'}")
 PY
