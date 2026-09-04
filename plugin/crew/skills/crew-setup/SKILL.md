@@ -119,7 +119,17 @@ user who wants one writes it by hand.
   "schema": 2,
   "tier": 0,
   "roles": ["explorer", "qa-reviewer"],
-  "qa": { "provider": "auto" },
+  "qa": {
+    "provider": "auto",
+    "order": ["codex", "copilot", "claude"],
+    "codex": { "model": null, "reasoningEffort": null },
+    "copilot": { "model": null }
+  },
+  "dev": {
+    "provider": "claude",
+    "codex": { "model": null, "reasoningEffort": null },
+    "copilot": { "model": null }
+  },
   "secondOpinion": { "provider": "none", "mode": "cli", "model": null, "keyEnv": "GEMINI_API_KEY", "sendsCode": false },
   "tracker": "files",
   "jira": { "project": null },
@@ -138,8 +148,25 @@ user who wants one writes it by hand.
 
 `schema: 2` — this repo is born current. It never trips `upgradeNeeded`, which fires only
 when a config predates the `pm` and `graph` blocks.
-`qa.provider`: `auto` uses Codex when present and falls back to Claude, announcing
-which ran. Use `codex` to hard-fail instead of falling back, `claude` to force it.
+`qa.provider`: `auto` walks `qa.order` and uses the first provider that passes its
+probe, announcing which ran. Name a provider (`codex`, `copilot`, `claude`) to pin it
+and hard-fail instead of falling back.
+
+`qa.order`: the candidate sequence `auto` walks. A provider that is not on `PATH`, or
+whose block is not configured, is skipped out loud — never silently.
+
+`qa.codex.model` / `qa.codex.reasoningEffort`: both `null` means "pass no flag", i.e.
+whatever the Codex CLI itself defaults to. This is deliberate — it keeps an upgraded
+repo behaving exactly as it did before. Set `reasoningEffort` to `"high"` for a
+materially harder review at higher latency and cost; set `model` only to pin a
+specific Codex model. Read at call time, never hardcoded in the command.
+
+`qa.copilot.model`: **required before Copilot can run at all.** Copilot CLI defaults to
+`claude-sonnet-4.6`, the author's own family, which makes it a worse reviewer than the
+Claude fallback while looking like a stronger one. `/crew:review` therefore refuses an
+unpinned Copilot rather than quietly running a same-family review. Pin a model from a
+family that is neither the author's nor Codex's — `gemini-3.1-pro-preview` or
+`mai-code-1-flash` — so the review is actually independent.
 
 If `.crew/` exists but `config.json` went missing or stopped parsing, you do not
 need to recreate it by hand — the `platform-sync` `SessionStart` hook already

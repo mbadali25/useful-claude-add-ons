@@ -7,7 +7,20 @@ if command -v codex >/dev/null 2>&1; then
   say "codex:" "found ($(codex --version 2>/dev/null | head -1))"
   say "auth:" "run: codex exec --skip-git-repo-check 'reply OK'  -  must return without prompting"
 else
-  say "codex:" "NOT FOUND -> /crew:review falls back to the qa-reviewer agent"
+  say "codex:" "NOT FOUND -> /crew:review moves to the next provider in qa.order"
+fi
+
+if command -v copilot >/dev/null 2>&1; then
+  say "copilot:" "found ($(copilot --version 2>/dev/null | head -1))"
+  say "auth:" "run: copilot -p 'reply OK' -s  -  'Access denied by policy settings'"
+  say "" "means the org has Copilot CLI off, not that you lack a seat:"
+  say "" "org Settings > Copilot > Policies > 'Copilot in the CLI'"
+  say "model:" "qa.copilot.model MUST be set, and MUST NOT be a claude-* model."
+  say "" "Copilot defaults to claude-sonnet-4.6 - the author's own family, so"
+  say "" "an unpinned Copilot reviews its own family while looking independent."
+  say "" "Pin gemini-3.1-pro-preview or mai-code-1-flash instead."
+else
+  say "copilot:" "not found -> npm i -g @github/copilot (needs a Copilot seat)"
 fi
 
 echo

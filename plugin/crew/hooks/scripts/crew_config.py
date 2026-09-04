@@ -84,7 +84,17 @@ def default_config():
         "schema": crew_state.SCHEMA_CURRENT,
         "tier": 0,
         "roles": ["explorer", "qa-reviewer"],
-        "qa": {"provider": "auto"},
+        "qa": {
+            "provider": "auto",
+            "order": ["codex", "copilot", "claude"],
+            "codex": {"model": None, "reasoningEffort": None},
+            "copilot": {"model": None},
+        },
+        "dev": {
+            "provider": "claude",
+            "codex": {"model": None, "reasoningEffort": None},
+            "copilot": {"model": None},
+        },
         "secondOpinion": {
             "provider": "none",
             "mode": "cli",

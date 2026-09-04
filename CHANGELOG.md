@@ -6,6 +6,39 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
+- **`crew` 0.14.0: QA and implementation become a provider table, and the family
+  that wrote the code is barred from reviewing it.** `qa` grows an `order`
+  (`codex`, `copilot`, `claude`) plus a per-provider block, and a new `dev` block
+  lets Codex or Copilot write the change instead of `crew:developer`. Both are
+  additive: `merge_defaults` recurses one level, so an existing `schema: 2` config
+  picks up every new key with no migration and no schema bump.
+
+  GitHub Copilot is worth the rung because it is a gateway to families nothing
+  else here reaches - `gemini-*` (Google) and `mai-*` (Microsoft MAI). It is
+  **skipped unless `qa.copilot.model` is pinned away from `claude-*`**, because
+  Copilot's own default is `claude-sonnet-4.6`: an unpinned Copilot would be a
+  same-family review presented as an independent one, which is worse than the
+  `qa-reviewer` fallback that at least announces its own weakness.
+
+  The interlock is the load-bearing part. `/crew:review` reads `dev.provider` and
+  strikes the author's family from the walk at review time, without consulting
+  `qa.order` - and stops rather than reviewing when nothing independent is left.
+
+  `qa.codex.model` and `qa.codex.reasoningEffort` close a gap where crew hardcoded
+  nothing for Codex while its own providers skill said not to hardcode model
+  names. Both default to `null`, meaning "pass no flag", so an upgraded repo
+  invokes exactly the command it did before. `reasoningEffort` takes `none`,
+  `minimal`, `low`, `medium`, `high`, `xhigh`, `max`; a wrong value is rejected by
+  Codex with a 400 naming the supported set rather than silently ignored.
+
+- **`crew` 0.14.0: `/crew:model` and `/crew:roster`.** `/crew:model` reports which
+  model backs each role and probes that it answers, then sets `qa.*` / `dev.*`
+  keys with validation - refusing a `claude-*` Copilot reviewer and an invalid
+  reasoning effort, while deliberately *not* validating model names against an
+  allowlist, since catalogs churn. `/crew:roster` lists every role, which are
+  active in this repo versus available but off, and which are backed by an
+  external provider and so invisible in the agents table.
+
 - **`crew` 0.12.4: an SOP and a SOC 2 policy for pre-deployment security
   review.** Two cross-linked documents under `plugin/crew/docs/`. The rule they
   state is that no website reaches production without both a peer security

@@ -131,7 +131,9 @@ to CI or to branch protection.
 | `/crew:emergency <what is broken>\|status\|extend [min]\|end` | Declare a time-boxed incident: the `verify` and `promote` gates stand down and record what they skipped, parallel read-only lanes investigate the cause at once, and `end` writes the debt list. The command guard does **not** stand down |
 | `/crew:ticket <description>` | Scope a request into a ticket |
 | `/crew:work <id>` | Work one ticket end to end |
-| `/crew:review` | Independent QA — Codex, or the `qa-reviewer` agent as fallback |
+| `/crew:review` | Independent QA — walks `qa.order` (Codex, Copilot, `qa-reviewer`), striking the author's own model family first |
+| `/crew:model [key value]` | Show which model backs each role and probe it; set `qa.*` / `dev.*` keys with validation |
+| `/crew:roster` | List every role: active here, available but off, and which are backed by an external provider |
 | `/crew:plan <decision>` | Independent design opinion before building |
 | `/crew:survey [area]` | Research gaps, produce ranked findings with options |
 | `/crew:scale` | Evidence-based crew sizing |

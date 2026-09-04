@@ -1,5 +1,5 @@
 ---
-description: Independent QA review of the current diff (Codex if available, Claude if not)
+description: Independent QA review of the current diff (Codex, Copilot, or Claude - first that probes clean)
 allowed-tools: Bash, Read, Agent
 ---
 
@@ -35,30 +35,119 @@ by the generalist alone. This is the only thing that reads `agents`: the `Stop`
 hook cannot spawn a subagent, so the key is deliberately a review-time concern
 rather than a gate-time one. If no matched rule names an agent, skip to step 1.
 
-**Step 1 — pick the reviewer.** Read `.crew/config.json` -> `qa.provider`.
+**Step 1 — pick the reviewer.** Read `.crew/config.json` -> `qa` **and** `dev`.
 
-- `"codex"` or `"auto"`: check `command -v codex`. If found, use Codex (step 2a).
-- If not found, or provider is `"claude"`: use the fallback (step 2b).
-- Say which reviewer ran. Never silently downgrade.
+**First, disqualify the author's own family.** `dev.provider` says who wrote the
+code. Whichever family that is, strike it from the candidate list before choosing —
+a family reviewing its own output agrees with itself, and that is the exact failure
+this command exists to catch.
 
-**Step 2a — Codex.**
+| `dev.provider` | Struck from QA |
+|---|---|
+| `claude` (default) | `claude` — the `qa-reviewer` fallback |
+| `codex` | `codex` |
+| `copilot` | whichever family `dev.copilot.model` names — `gemini-*` strikes nothing here, `claude-*` strikes the fallback, `gpt-*` strikes Codex |
+
+Apply this at review time, from the config as it currently reads. Do not rely on
+`qa.order` having been edited to match; the two keys are set at different times by
+different people, and the ordering is a preference while this is a rule.
+
+If striking the author's family leaves **no** candidate, stop and say so rather than
+reviewing anyway. A review by the author's own family, announced as a review, is
+worse than no review — it converts an unknown into a false negative.
+
+Then, if `qa.provider` names a provider (`codex`, `copilot`, `claude`), use that one
+and **hard-fail if its probe fails** — a pinned provider that cannot run is an error,
+not a cue to fall back. If `qa.provider` is `auto`, walk `qa.order` and take the
+first surviving provider that passes its probe:
+
+| Provider | Probe | Runs |
+|---|---|---|
+| `codex` | `command -v codex` | step 2a |
+| `copilot` | `command -v copilot` **and** `qa.copilot.model` is set | step 2b |
+| `claude` | always passes | step 2c |
+
+Announce which reviewer ran **and every provider you skipped, with the reason**. A
+skipped provider is the single most dangerous silent failure here: a QA gate that
+quietly finds nothing looks exactly like a clean diff.
+
+**Why `copilot` needs a model set to be eligible at all.** Copilot CLI defaults to
+`claude-sonnet-4.6` — the author's own family. An unpinned Copilot is therefore a
+*same-family* reviewer wearing the costume of an independent one, which is strictly
+worse than step 2c, since 2c at least announces its own weakness. Skip it and say
+`copilot skipped: qa.copilot.model not set`. If the configured model string starts
+with `claude-`, run it but say plainly that this review is same-family and does not
+count as independent.
+
+**Step 2 — set up the run.** Extract the config values into the shell first, so the
+provider blocks below are literally runnable rather than prose about themselves:
+
+```bash
+CFG=.crew/config.json
+QA_MODEL=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["qa"]["codex"].get("model") or "")' "$CFG")
+QA_EFFORT=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["qa"]["codex"].get("reasoningEffort") or "")' "$CFG")
+QA_COPILOT_MODEL=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["qa"]["copilot"].get("model") or "")' "$CFG")
+
+BASE=$(git merge-base HEAD "$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|origin/||' || echo main)")
+git diff "$BASE"...HEAD > "$SCRATCH/diff.txt"
 ```
-git diff $(git merge-base HEAD "$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|origin/||' || echo main)")...HEAD > $SCRATCH/diff.txt
-codex exec --skip-git-repo-check "Review $SCRATCH/diff.txt as a hostile QA engineer.
+
+**Step 2a — Codex.** Empty means "pass no flag", so an unconfigured repo invokes
+exactly the command it always did.
+
+```bash
+codex exec --skip-git-repo-check \
+  ${QA_MODEL:+--model "$QA_MODEL"} \
+  ${QA_EFFORT:+-c model_reasoning_effort="$QA_EFFORT"} \
+  "$(cat "$SCRATCH/prompt.txt")" > "$SCRATCH/out.txt" 2>&1
+```
+
+`reasoningEffort` accepts `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`.
+A wrong value is safe to get wrong: Codex rejects it with an HTTP 400 naming the
+supported set, rather than silently ignoring it and returning a shallow review.
+
+**Step 2b — Copilot.** Same prompt, different family. Denying `write` and `shell` is
+not optional: a reviewer that can edit the code under review can "fix" a defect
+instead of reporting it, and you would never see the finding. Copilot's permission
+patterns are `kind(argument)` with the argument optional — a bare kind matches all
+of it. File reads need no grant; path access already defaults to the working
+directory and its subdirectories, which is where `$SCRATCH` lives.
+
+```bash
+copilot -p "$(cat "$SCRATCH/prompt.txt")" \
+  --model "$QA_COPILOT_MODEL" \
+  --deny-tool write --deny-tool shell \
+  -s > "$SCRATCH/out.txt" 2>&1
+```
+
+If this exits non-zero with `Access denied by policy settings`, Copilot CLI is
+disabled by org or enterprise policy — report that exact cause. It is the dangerous
+failure: auth succeeds, the call returns nothing, and an empty findings file is
+indistinguishable from a clean diff. Never record a CLEAN verdict from a run that
+exited non-zero.
+
+**Step 2c — Claude fallback.** Invoke the `crew:qa-reviewer` subagent. It reviews
+in its own context so it has not seen your reasoning for writing the code.
+Write its output to `$SCRATCH/out.txt` in the same format.
+
+The fallback is genuinely weaker than a different family: the same model family
+reviewing itself finds fewer defects. Tell me when it is what ran, so I review
+harder myself.
+
+**The shared prompt.** All three reviewers get byte-identical instructions, written
+once to `$SCRATCH/prompt.txt`, so a defect count differing between providers is a
+fact about the model and not about how you worded it:
+
+```
+Review $SCRATCH/diff.txt as a hostile QA engineer.
 Output one line per defect: SEVERITY|file:line|what breaks|how to reproduce.
 SEVERITY is BLOCK, FIX, or NIT. Check: unintended behavior changes, unhandled
 error paths, boundary and empty-collection cases, concurrency, and anything the
 change makes reachable that was not before. Output nothing but those lines.
-If no defects, output exactly: CLEAN" > $SCRATCH/out.txt 2>&1
+If no defects, output exactly: CLEAN
 ```
+
 Read ONLY `$SCRATCH/out.txt`. Never load the diff back into your context.
-
-**Step 2b — Claude fallback.** Invoke the `crew:qa-reviewer` subagent. It reviews
-in its own context so it has not seen your reasoning for writing the code.
-Write its output to `$SCRATCH/out.txt` in the same format.
-
-The fallback is genuinely weaker than Codex: same model family reviewing itself
-finds fewer defects. Tell me when it is what ran, so I review harder myself.
 
 **Step 2c — re-run the failing control, do not read about it.** If the diff
 adds or edits a test, guard, assertion or smoke step, the author is expected to

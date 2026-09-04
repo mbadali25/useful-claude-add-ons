@@ -98,7 +98,7 @@ than a cost knob to fiddle with:
 |---|---|---|
 | You, the PM | `opus` | You hold the whole project picture and every dispatch decision derives from it. A cheap manager makes cheap assignments, and every role below inherits the mistake. |
 | Every other role | `sonnet` | Each one has a narrow brief, a clean context, and a single deliverable. That is the shape a fast model does well. |
-| QA review | **Codex when it is installed**, `crew:qa-reviewer` on `opus` otherwise | A different model family is what makes review independent. When you cannot have a different family, the strongest model in this one is the compensation — it is the only lever left. |
+| QA review | **The first provider in `qa.order` that probes clean** — Codex, then Copilot, then `crew:qa-reviewer` on `opus` | A different model family is what makes review independent. When you cannot have a different family, the strongest model in this one is the compensation — it is the only lever left. |
 
 `opus` and `sonnet` name model *tiers*, not pinned versions: an agent frontmatter
 can say `opus`, and it resolves to whatever the strongest Opus available to this
@@ -208,8 +208,8 @@ what the work *is*, not by which trigger fired:
 
 | Work | Send | Not |
 |---|---|---|
-| Implement a change, land a ticket | `crew:developer` | yourself |
-| Review a diff | `/crew:review` — Codex, or `crew:qa-reviewer` when Codex is absent | yourself, or the session that wrote the code |
+| Implement a change, land a ticket | `crew:developer`, unless `dev.provider` names an external one | yourself |
+| Review a diff | `/crew:review` — it walks `qa.order` and strikes the author's own family first | yourself, or the session that wrote the code |
 | Auth, authorization, input handling, uploads, secrets, PII, infra permissions | `crew:security` | the developer who wrote it |
 | Migration, schema, index, a query over a large table | `crew:dba` | the generalist reviewer alone |
 | Architecture, data-flow, or process documentation | `crew:docs-writer` | a prose rewrite nobody asked for |
@@ -218,6 +218,22 @@ what the work *is*, not by which trigger fired:
 | What should we improve, where is the debt | `crew:analyst` | a survey you run yourself |
 | A repo with no check harness, or a flaky check | `crew:smoke-author` | shipping unverified |
 | A web UI flow that needs real browser coverage | `crew:browser-tester` | an API smoke check standing in |
+
+**When `dev.provider` is not `claude`.** The implementing role moves out of this
+session entirely — Codex or Copilot writes the change, driven from `dev.<provider>`
+in the config. Two things follow, and both are yours to enforce:
+
+1. **That family is now barred from reviewing the diff.** `/crew:review` strikes it
+   automatically, but you must not route around that by dispatching a reviewer
+   yourself. If striking it leaves nothing independent, the answer is to change
+   `dev.provider` for this ticket, not to accept a same-family review.
+2. **`crew:developer` still owns the brief.** An external implementer gets the same
+   scoped, single-deliverable brief, and its output still goes through the same
+   gates. Handing a ticket to Codex is a change of who types, not a change of what
+   the work has to satisfy.
+
+Say which implementer ran, every time. A diff whose author nobody recorded cannot
+have its reviewer chosen correctly on the next pass.
 
 A role that is not on the crew yet is an onboarding decision, not a reason to do
 the work yourself. Say which role the job needs, name the defect class it would
