@@ -488,7 +488,9 @@ those paths require:
     { "paths": ["**/*.css", "src/components/**"], "run": ["npx playwright test --grep @visual"],
       "why": "Style changes are invisible to API tests" },
     { "paths": ["migrations/**"], "run": ["./_verify/cases/migrate-fresh.sh"],
-      "agents": ["dba"], "why": "Fresh-apply catches ordering bugs" }
+      "agents": ["dba"], "why": "Fresh-apply catches ordering bugs" },
+    { "paths": ["**/*.ps1"], "run": ["pwsh -NoProfile -Command \"Invoke-ScriptAnalyzer -Path . -Recurse -EnableExit\""],
+      "agents": ["powershell-security-hardening"], "why": "runs with real privilege; a linter sees style, not blast radius" }
   ],
   "always": ["npm run lint"],
   "unmapped": "fail"
@@ -498,6 +500,22 @@ those paths require:
 This is a data file a hook reads, deliberately not knowledge an agent carries.
 Agent judgment about which tests to skip is exactly the judgment that skips the
 important one, confidently, on the turn it mattered.
+
+`agents` names **any installed subagent**, not only crew's eleven. That last rule
+names one crew does not ship. A bare name resolves to crew's own role first
+(`security` → `crew:security`), then to any other installed agent of that name;
+namespace it when you mean the other one. This is how a machine's domain
+specialists get pulled in *by path match* rather than when somebody remembers
+they exist — the change touches `.tf` under `iam/`, so the IAM auditor reviews it,
+every time, without being asked.
+
+The safeguard matters as much as the feature. `.crew/verify.json` is committed
+and travels between machines, so a rule naming an agent the author has and a
+teammate does not would quietly review less on the second machine while producing
+output that looks identical. `/crew:review` therefore reports a named-but-missing
+agent as a gap and logs it to `.crew/metrics.md`, so "this rule asked for
+`security-auditor` eleven times and never got it" becomes evidence for either
+installing it or deleting the rule.
 
 Each pairing is **verified when written**: break the code, run the mapped check,
 confirm it goes red, revert. An unverified mapping is a guess written in JSON —

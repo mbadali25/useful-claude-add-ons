@@ -35,6 +35,21 @@ by the generalist alone. This is the only thing that reads `agents`: the `Stop`
 hook cannot spawn a subagent, so the key is deliberately a review-time concern
 rather than a gate-time one. If no matched rule names an agent, skip to step 1.
 
+**A rule may name any installed subagent, not only crew's eleven.** Resolve a
+bare name as crew's own role first (`security` → `crew:security`), then as any
+other installed agent of that name; a namespaced name (`voltagent:security-auditor`)
+is taken literally. This is how a path match pulls in a domain specialist —
+`powershell-security-hardening` on `**/*.ps1`, `security-auditor` on `iam/**` —
+from evidence rather than from someone remembering.
+
+**An agent a matched rule named but that is not installed here is a GAP, and you
+report it in step 3 alongside the ones you skipped.** Never drop it silently.
+`.crew/verify.json` is committed and travels between machines, so a rule naming
+an agent that exists on the author's box and not on this one would otherwise
+review strictly less while producing output indistinguishable from a full pass.
+That is the same class of failure as a QA provider that authenticates and then
+returns nothing, and it gets the same treatment: say it out loud.
+
 **Step 1 — pick the reviewer.** Read `.crew/config.json` -> `qa` **and** `dev`.
 
 **First, disqualify the author's own family.** `dev.provider` says who wrote the
@@ -182,9 +197,17 @@ to.
    `bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notify.sh review "<n> BLOCK, <n> FIX (<reviewer>)"`
    Counts only. Never the findings themselves — those stay in the repo.
 6. Append the result to `.crew/metrics.md`: `<date> | <ticket> | <reviewer> | <n BLOCK> | <n FIX>`
-7. Name every specialist from step 0 that ran, and every one that a matched rule
-   asked for but you skipped. A review that quietly dropped the `dba` pass on a
-   migration reads exactly like one that had nothing to find.
+7. Name every specialist from step 0 that ran, every one that a matched rule
+   asked for but you skipped, and every one that a matched rule named but that
+   **is not installed on this machine**. A review that quietly dropped the `dba`
+   pass on a migration reads exactly like one that had nothing to find, and a
+   rule naming an agent this box does not have fails the same way while looking
+   even more normal — there is nothing to skip, so nothing feels skipped.
+
+   Record the not-installed ones in `.crew/metrics.md` too. `/crew:scale` reads
+   that file, and "this rule has asked for `security-auditor` eleven times and
+   never got it" is exactly the evidence that should drive either installing it
+   or deleting the rule.
 
 That metrics line is not bookkeeping. `/crew:scale` reads it to decide whether
 this setup is actually catching anything.

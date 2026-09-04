@@ -10,23 +10,68 @@ Argument: `$ARGUMENTS`. Empty means **report only** — never write on a bare
 
 ## Step 1 — report what is actually in effect
 
-Read `.crew/config.json`. Print the effective configuration as a table, and
-probe each provider rather than reporting what the file claims:
+Read `.crew/config.json`. Report **one row per QA candidate**, not one row for
+`qa`. `auto` is not a provider — it is an instruction to walk `qa.order` — so a
+single row reading `auto / (cli default)` names neither the model that would run
+nor the candidates that would be passed over, which is the one thing the reader
+came here to learn.
 
 ```bash
 CFG=.crew/config.json
 python3 - "$CFG" <<'PY'
-import json, shutil, subprocess, sys
+import json, shutil, sys
 cfg = json.load(open(sys.argv[1]))
 qa, dev = cfg.get("qa", {}), cfg.get("dev", {})
-print(f"{'role':<22}{'provider':<12}{'model':<28}{'effort'}")
-print(f"{'-'*22}{'-'*12}{'-'*28}{'-'*8}")
-for label, blk in (("qa (review)", qa), ("dev (implement)", dev)):
-    p = blk.get("provider", "?")
-    sub = blk.get(p, {}) if isinstance(blk.get(p), dict) else {}
-    print(f"{label:<22}{p:<12}{str(sub.get('model') or '(cli default)'):<28}"
-          f"{sub.get('reasoningEffort') or '-'}")
-print(f"\nqa.order: {qa.get('order')}")
+dev_p = dev.get("provider", "claude")
+
+def family(provider, blk):
+    """Which model family this provider would speak as. codex and a gpt-* Copilot
+    are one family, which is why dev.provider=codex bars both."""
+    if provider == "claude": return "claude"
+    if provider == "codex":  return "gpt"
+    m = (blk.get("copilot") or {}).get("model") or ""
+    return m.split("-")[0] if m else "?"
+
+barred = family(dev_p, dev)
+
+def describe(p, blk):
+    sub = blk.get(p) if isinstance(blk.get(p), dict) else {}
+    model = sub.get("model") or ("n/a (subagent)" if p == "claude" else "(cli default)")
+    effort = sub.get("reasoningEffort") or "-"
+    if family(p, blk) == barred:
+        why = f"BARRED: dev.provider is {dev_p}, same family - cannot review itself"
+    elif p == "claude":
+        why = "eligible (in-session subagent, not a separate process)"
+    elif not shutil.which(p):
+        why = "NOT on PATH - would be skipped"
+    elif p == "copilot" and not sub.get("model"):
+        why = "SKIPPED: qa.copilot.model unset, and unpinned Copilot is claude-*"
+    else:
+        why = "eligible"
+    return model, effort, why
+
+pinned = qa.get("provider", "auto")
+cands = qa.get("order", []) if pinned == "auto" else [pinned]
+print(f"{'qa candidate':<14}{'model':<26}{'effort':<8}status")
+print("-" * 92)
+ran = False
+for p in cands:
+    model, effort, why = describe(p, qa)
+    mark = ""
+    if not ran and why.startswith("eligible"):
+        mark, ran = "   <== would run", True
+    print(f"{p:<14}{model:<26}{effort:<8}{why}{mark}")
+
+if pinned != "auto":
+    print(f"\nqa.provider is PINNED to {pinned}. A failed probe here is an error, not a fallback.")
+if not ran:
+    print("\nNO ELIGIBLE REVIEWER - /crew:review will stop rather than let the author's "
+          "own family review it.")
+
+dsub = dev.get(dev_p) if isinstance(dev.get(dev_p), dict) else {}
+dmodel = dsub.get("model") or ("n/a (subagent)" if dev_p == "claude" else "(cli default)")
+print(f"\ndev (implement): {dev_p}  model={dmodel}  effort={dsub.get('reasoningEffort') or '-'}")
+print(f"author family = {barred}  (this is what is struck from qa above)")
 for tool in ("codex", "copilot"):
     print(f"{tool:<10}{'on PATH' if shutil.which(tool) else 'NOT FOUND'}")
 PY
