@@ -4,6 +4,28 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Fixed
+
+- **`crew` 0.14.4: the 421 guidance shipped a guess as a cause, and its advice was
+  wrong.** 0.14.3 told you a `421 Misdirected Request` meant GitHub was
+  mid-propagation on your seat SKU, and to wait 15-30 minutes. The propagation
+  observation was real - one account returned four entitlement states in eleven
+  minutes, occasionally pairing a SKU with the wrong API host - but it was
+  correlation reported as cause, and the remedy was then falsified: ten consecutive
+  failures across forty minutes.
+
+  One thing is genuinely established and is now all the skill claims: a 421 means
+  the **policy gate passed**, since it replaces `Access denied by policy settings`
+  rather than appearing with it. The cause is recorded as unknown.
+
+  The section now also lists what was ruled out by test rather than by reasoning -
+  fresh `copilot login`, deleting the user cache, token env vars, proxy and TLS
+  settings, a CLI upgrade, pinning `--model` to skip the model-list fetch, and
+  retrying - so the next person does not re-run forty minutes of the same
+  experiments. The action is a support ticket with a Request ID and the SKU/host
+  rows, and leaving `qa.copilot.model` unset meanwhile: a permanently-erroring
+  provider is worse than an absent one.
+
 ### Changed
 
 - **`crew` 0.14.3: enabling Copilot is a three-gate sequence, and crew now says

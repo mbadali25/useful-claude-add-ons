@@ -179,16 +179,45 @@ review loop — an org that has opted into overage has no such brake.
 |---|---|
 | `Access denied by policy settings` | Gate 1 or gate 2 — indistinguishable from the error alone. Check `gh api orgs/<org>/copilot/billing --jq '.cli'` first; `enabled` there means it is the token, so run `copilot login` |
 | Toggle is greyed out in org settings | The org is under an enterprise, whose policy overrides it — fix at `github.com/settings/enterprises` → Policies → Copilot |
-| `Failed to load models` / `421 Misdirected Request` | **Progress, not a regression.** The policy gate passed and GitHub is mid-propagation: your seat SKU is flapping between `copilot_for_business_seat_quota` and `copilot_enterprise_seat_quota`, and the mismatched one hands the CLI `api.business.githubcopilot.com` for an enterprise plan. Wait 15–30 min and retry; do not reinstall or re-login |
+| `Failed to load models` / `421 Misdirected Request` | Gate 1 and gate 2 have **passed** — this error replaces the policy denial, it does not accompany it. Cause beyond that is unknown; see below. Stop trying local fixes and open a support ticket |
 | Reviews agree with Claude suspiciously often | `qa.copilot.model` is a `claude-*` string; you have a same-family reviewer |
 
-For the 421 specifically, the cache is the evidence, not a guess. Read
-`~/AppData/Local/copilot/copilot-user-cache.json` (`~/.config` equivalent
-elsewhere) — it keys entries by token hash and each records `access_type_sku`
-alongside the `endpoints.api` host it was handed. A row whose SKU and host
-disagree is the 421. It is a disposable cache that regenerates, so deleting it
-forces a fresh fetch, but deleting it does **not** fix a mismatch the server is
-still producing.
+### The 421, and what is actually known about it
+
+Only one thing here is established: **a 421 means the policy gate passed.** It
+replaces `Access denied by policy settings` rather than appearing alongside it, so
+reaching it is progress. The cause is *not* known, and this section says so on
+purpose — an earlier revision of this skill confidently blamed entitlement
+propagation and told you to wait 15–30 minutes. That was correlation reported as
+cause, and the waiting advice was then falsified by ten failures over forty
+minutes. Do not reintroduce it.
+
+What is observed, and worth collecting for a ticket: repeated user-info fetches
+return **inconsistent entitlement**, and occasionally pair a SKU with the wrong
+API host. Read `~/AppData/Local/copilot/copilot-user-cache.json` (platform
+equivalent elsewhere); each entry records `access_type_sku` next to the
+`endpoints.api` it was handed:
+
+```
+copilot_for_business_seat_quota  -> api.business.githubcopilot.com
+copilot_enterprise_seat_quota    -> api.enterprise.githubcopilot.com
+free_limited_copilot             -> api.individual.githubcopilot.com    <- no seat at all
+copilot_for_business_seat_quota  -> api.individual.githubcopilot.com    <- SKU/host mismatch
+```
+
+Four states for one account inside eleven minutes. That is a server-side
+inconsistency you can hand to support; it is not a diagnosis of the 421.
+
+**Do not spend time on these — each was tested and none helped:** re-running
+`copilot login` for a fresh token, deleting the user cache, unsetting
+`GH_TOKEN`/`GITHUB_TOKEN`/`COPILOT_GITHUB_TOKEN` (already unset), proxy or TLS
+settings, upgrading the CLI, pinning `--model` to skip the model-list fetch (the
+list is fetched regardless), and simply retrying.
+
+Open a ticket with a **Request ID** from the error, the SKU/host rows above, and
+the fact that the seat is assigned and `orgs/<org>/copilot/billing` reports
+`cli: enabled`. Meanwhile leave `qa.copilot.model` unset so the rung skips
+cleanly — a permanently-erroring provider is worse than an absent one.
 
 ---
 
