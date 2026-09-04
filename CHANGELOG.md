@@ -4,7 +4,199 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Fixed
+
+- **`crew` 0.14.6: the re-review caught that 0.14.5 fixed a stale model name in
+  one file and left it in four.** Re-running the Copilot reviewer on the fixed diff
+  confirmed all seven original findings closed, then found the ripple I had not:
+  `gemini-3.1-pro-preview` still stood in `README.md`, `crew-setup/SKILL.md`,
+  `providers.sh` and `/crew:model`'s own worked example, all recommending a model
+  that fails at startup. Every occurrence now names `gemini-3.7-flash` and says to
+  verify the name rather than trust the doc.
+
+  Two more real BLOCKs, both in code I had touched that same pass:
+
+  - `BASE=$(git merge-base HEAD "$(git symbolic-ref ... | sed ... || echo main)")`
+    never falls back. `||` binds to the whole pipeline and `sed` exits 0 even when
+    `symbolic-ref` failed, so a clone without `refs/remotes/origin/HEAD` hands
+    `merge-base` an empty string. Now branches on the ref itself; verified to
+    resolve `main` in both cases where the old form gave `""`.
+  - `.get(key, {})` does not defend against a key that is **present and null** -
+    it returns `None`, and `.get` on `None` is an `AttributeError`. A config with
+    `"codex": null` crashed the extraction. Now `or {}` at every hop.
+
+  Also: `qa.order` absent made `/crew:model` report zero candidates and "no
+  independent reviewer" for a setup that reviews fine; `phases.md` told setup to
+  write `none` into `qa.provider`/`dev.provider`, which `/crew:model` rejects and
+  `/crew:review` cannot resolve to any rung; and three files still advertised 21
+  slash commands against an actual 23.
+
+  Rejected: the duplicate `### Fixed` heading in this changelog. One heading per
+  entry is this file's existing convention, 42 of them and counting.
+### Fixed
+
+- **`crew` 0.14.5: the first real cross-family QA review found seven defects in
+  0.14.0-0.14.4, and this fixes them.** Copilot on `gemini-3.7-flash` reviewed the
+  branch - the first time crew's Copilot rung has ever run end to end - and caught
+  what four passes of self-review did not:
+
+  - **`review.md` crashed on the configs it was written for.** Step 2 read
+    `["qa"]["codex"]` by direct index, so any config predating those sub-blocks died
+    with `KeyError: 'codex'` before the review started. Reproduced against this
+    repo's own `.crew/config.json`. Now `.get()` at every level, and verified to
+    still *read* values rather than merely stop crashing.
+  - **Steps 2a/2b `cat` a prompt file that was only written after step 2c.** The
+    prompt is now written in step 2, before any provider block reads it, with an
+    unquoted heredoc so `$SCRATCH` expands - a reviewer handed the literal string
+    `$SCRATCH/diff.txt` opens nothing and reports CLEAN on a file it never read.
+  - **Step 1 told `/crew:review` to stop when no independent reviewer survives,
+    contradicting `README.md`, `agents/pm.md` and `crew-pm`,** which all document
+    `qa-reviewer` as the fallback. Resolved toward the documented behaviour: it
+    runs and is labelled same-family, and is never recorded as independent.
+  - **The Kimi recipe defined a Codex provider without selecting it.** Missing the
+    top-level `model_provider = "moonshot"`, the call goes to OpenAI with a Kimi
+    model name - after the diff is uploaded.
+  - **`/crew:model` reported the wrong reason for a real condition.** An unset
+    Copilot model collapsed to `"?"` on both sides of the family comparison, so
+    `dev.provider: copilot` with no model pinned reported `BARRED` instead of
+    `SKIPPED`. Now `None`, which never compares equal to itself here.
+  - Duplicate `Step 2c` heading; "there is no API for this, read or write" sitting
+    eight lines below the command that reads it; `21 slash commands` in the
+    marketplace description when there are 23.
+
+  **The model table recommended a model that does not exist.**
+  `gemini-3.1-pro-preview` and `mai-code-1-flash` both fail with `Model "<name>"
+  from --model flag is not available`; `gemini-3.7-flash` is what works. The
+  section also sent you to `copilot help` to list models, and no such listing
+  exists - `--model list` is rejected like any other bad name. Replaced with two
+  methods that work: read `~/.copilot/logs/*.log`, or pass a candidate and read the
+  rejection, which fails at startup before any diff is sent.
+
+  One finding was rejected: `--deny-tool write` is correct. `copilot help
+  permissions` documents `write(path?)` as matching "tools that create and modify
+  files", and the suggested `edit`/`create` tool names do not exist.
+### Fixed
+
+- **`crew` 0.14.4: the 421 guidance shipped a guess as a cause, and its advice was
+  wrong.** 0.14.3 told you a `421 Misdirected Request` meant GitHub was
+  mid-propagation on your seat SKU, and to wait 15-30 minutes. The propagation
+  observation was real - one account returned four entitlement states in eleven
+  minutes, occasionally pairing a SKU with the wrong API host - but it was
+  correlation reported as cause, and the remedy was then falsified: ten consecutive
+  failures across forty minutes.
+
+  One thing is genuinely established and is now all the skill claims: a 421 means
+  the **policy gate passed**, since it replaces `Access denied by policy settings`
+  rather than appearing with it. The cause is recorded as unknown.
+
+  The section now also lists what was ruled out by test rather than by reasoning -
+  fresh `copilot login`, deleting the user cache, token env vars, proxy and TLS
+  settings, a CLI upgrade, pinning `--model` to skip the model-list fetch, and
+  retrying - so the next person does not re-run forty minutes of the same
+  experiments. The action is a support ticket with a Request ID and the SKU/host
+  rows, and leaving `qa.copilot.model` unset meanwhile: a permanently-erroring
+  provider is worse than an absent one.
+
+### Changed
+
+- **`crew` 0.14.3: enabling Copilot is a three-gate sequence, and crew now says
+  so before you pin a model.** Setting `qa.copilot.model` is the switch that turns
+  the Copilot rung on. While it is `null`, `/crew:review` skips Copilot and
+  announces the skip once per review; setting it on a Copilot that does not
+  actually work converts that clean message into a recurring error on a path the
+  user now believes is covered. The docs treated "install the CLI" as setup, which
+  clears exactly one of the three gates.
+
+  The gates, in order, because each one's failure is invisible until the previous
+  one passes: (1) the CLI must be allowed by **account policy** - readable at
+  `orgs/<org>/copilot/billing` -> `cli`, and settable only in a browser, since
+  Copilot exposes no policy write in REST or GraphQL; (2) the CLI must hold its
+  **own** token from `copilot login`, because a `GH_TOKEN`/`GITHUB_TOKEN`/
+  `COPILOT_GITHUB_TOKEN` silently outranks it; (3) one real call must return, judged
+  by **exit code**.
+
+  Gates 1 and 2 emit byte-identical errors, which is why the order is the fix
+  rather than the checklist. `providers.sh` now reports gate 2 from
+  `~/.copilot/config.json` and warns when a borrowed token would override it - both
+  free, no API call. Also documents `421 Misdirected Request` as *progress*: it
+  means the policy gate passed and the seat SKU is mid-propagation, handing the CLI
+  a `business` host for an `enterprise` plan. Waiting is the fix; reinstalling is
+  not.
+
+### Fixed
+
+- **`crew` 0.14.2: the documented Kimi-through-Codex recipe could not have
+  worked.** `crew-providers` shipped a `[model_providers.moonshot]` block with no
+  `wire_api`, written when Codex still spoke `chat/completions`. OpenAI deprecated
+  that protocol in December 2025 and removed it in early 2026; on Codex 0.146.0
+  `wire_api = "chat"` is a hard config-load error, not a fallback. The block now
+  sets `wire_api = "responses"`.
+
+  This looked like it killed the route, since Moonshot is normally described as a
+  chat/completions API. It does not - Moonshot serves `/v1/responses` as well,
+  confirmed by probe: `/v1/responses` and `/v1/chat/completions` both return 401
+  while `/v1/models` returns 404, and that 404 is the control that makes the 401s
+  mean something rather than being a gateway rejecting everything.
+
+  Also documents the `Model metadata ... not found. Defaulting to fallback
+  metadata` warning, because a wrong model name *warns and keeps going* rather
+  than failing - Codex then guesses the context window. That is the review-shaped
+  failure this skill exists to catch, so it is now named in the skill.
+
 ### Added
+
+- **`crew` 0.14.1: a `verify.json` rule can dispatch any installed subagent, not
+  just crew's eleven.** The `agents` key already pulled specialists into
+  `/crew:review` on a path match; it was limited to crew's own roles, which meant
+  a machine carrying two dozen domain specialists from other marketplaces could
+  not reach any of them from the gate. A bare name now resolves to crew's role
+  first (`security` -> `crew:security`) and then to any other installed agent;
+  namespace it when both exist and you mean the other one.
+
+  The value is dispatch *from evidence*: a change under `iam/` pulls in the IAM
+  auditor every time, rather than when somebody remembers that agent exists.
+
+  The safeguard is the load-bearing half. `.crew/verify.json` is committed and
+  travels between machines, so a rule naming an agent the author has and a
+  teammate does not would quietly review less on the second machine while
+  producing output indistinguishable from a full pass - the same failure class as
+  a QA provider that authenticates and then returns nothing. A named-but-missing
+  agent is therefore reported as a gap and logged to `.crew/metrics.md`, so
+  `/crew:scale` can see that a rule has asked for something eleven times and never
+  got it.
+
+- **`crew` 0.14.0: QA and implementation become a provider table, and the family
+  that wrote the code is barred from reviewing it.** `qa` grows an `order`
+  (`codex`, `copilot`, `claude`) plus a per-provider block, and a new `dev` block
+  lets Codex or Copilot write the change instead of `crew:developer`. Both are
+  additive: `merge_defaults` recurses one level, so an existing `schema: 2` config
+  picks up every new key with no migration and no schema bump.
+
+  GitHub Copilot is worth the rung because it is a gateway to families nothing
+  else here reaches - `gemini-*` (Google) and `mai-*` (Microsoft MAI). It is
+  **skipped unless `qa.copilot.model` is pinned away from `claude-*`**, because
+  Copilot's own default is `claude-sonnet-4.6`: an unpinned Copilot would be a
+  same-family review presented as an independent one, which is worse than the
+  `qa-reviewer` fallback that at least announces its own weakness.
+
+  The interlock is the load-bearing part. `/crew:review` reads `dev.provider` and
+  strikes the author's family from the walk at review time, without consulting
+  `qa.order` - and stops rather than reviewing when nothing independent is left.
+
+  `qa.codex.model` and `qa.codex.reasoningEffort` close a gap where crew hardcoded
+  nothing for Codex while its own providers skill said not to hardcode model
+  names. Both default to `null`, meaning "pass no flag", so an upgraded repo
+  invokes exactly the command it did before. `reasoningEffort` takes `none`,
+  `minimal`, `low`, `medium`, `high`, `xhigh`, `max`; a wrong value is rejected by
+  Codex with a 400 naming the supported set rather than silently ignored.
+
+- **`crew` 0.14.0: `/crew:model` and `/crew:roster`.** `/crew:model` reports which
+  model backs each role and probes that it answers, then sets `qa.*` / `dev.*`
+  keys with validation - refusing a `claude-*` Copilot reviewer and an invalid
+  reasoning effort, while deliberately *not* validating model names against an
+  allowlist, since catalogs churn. `/crew:roster` lists every role, which are
+  active in this repo versus available but off, and which are backed by an
+  external provider and so invisible in the agents table.
 
 - **`crew` 0.12.4: an SOP and a SOC 2 policy for pre-deployment security
   review.** Two cross-linked documents under `plugin/crew/docs/`. The rule they

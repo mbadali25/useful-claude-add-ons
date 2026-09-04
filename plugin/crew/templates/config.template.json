@@ -6,7 +6,29 @@
     "qa-reviewer"
   ],
   "qa": {
-    "provider": "auto"
+    "provider": "auto",
+    "order": [
+      "codex",
+      "copilot",
+      "claude"
+    ],
+    "codex": {
+      "model": null,
+      "reasoningEffort": null
+    },
+    "copilot": {
+      "model": null
+    }
+  },
+  "dev": {
+    "provider": "claude",
+    "codex": {
+      "model": null,
+      "reasoningEffort": null
+    },
+    "copilot": {
+      "model": null
+    }
   },
   "secondOpinion": {
     "provider": "none",

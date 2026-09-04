@@ -1,5 +1,5 @@
 {
-  "_note": "version, anchor and why are notes for humans - nothing executes them. paths/run/always/default/unmapped drive the Stop gate; agents drives /crew:review; environments drives /crew:promote.",
+  "_note": "version, anchor and why are notes for humans - nothing executes them. paths/run/always/default/unmapped drive the Stop gate; agents drives /crew:review; environments drives /crew:promote. agents may name ANY installed subagent, not only crew's own - a bare name resolves to crew's role first, then to any other installed agent. One this machine lacks is reported as a gap, never skipped silently.",
   "version": 1,
   "anchor": "REPO@SHA",
   "rules": [
@@ -28,8 +28,13 @@
 
     { "paths": ["iam/**", "**/policy*.json", "**/*iam*.tf"],
       "run": ["terraform validate", "trivy config ."],
-      "agents": ["security"],
-      "why": "permission changes need a scanner and a second pair of eyes, not just fmt" },
+      "agents": ["security", "security-auditor"],
+      "why": "permission changes need a scanner and a second pair of eyes, not just fmt. Two agents on purpose and they are not redundant: crew's security reads THIS diff for what it newly makes reachable, the domain auditor reads the resulting permission model for whether it is defensible at all. Drop the second name if it is not installed here - a rule that asks every time and never gets it is noise in metrics.md" },
+
+    { "paths": ["**/*.ps1", "**/*.psm1"],
+      "run": ["pwsh -NoProfile -Command \"Invoke-ScriptAnalyzer -Path . -Recurse -EnableExit\""],
+      "agents": ["powershell-security-hardening"],
+      "why": "these run with real privilege on domain-joined hosts, where a linter sees style and not blast radius. Example of naming a specialist crew does not ship - resolution falls through to any installed agent of that name" },
 
     { "paths": ["README.md", "footer.md", "docs/**", "_verify/README.md"],
       "run": [],

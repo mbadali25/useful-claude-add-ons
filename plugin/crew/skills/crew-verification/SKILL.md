@@ -103,12 +103,47 @@ without ever running.
 |---|---|
 | `paths`, `run`, `always`, `default`, `unmapped` | the `Stop` hook. These execute. |
 | `agents` | `/crew:review` - the hook cannot spawn a subagent, so specialist review is a review-time concern |
+| `agents`, continued | any installed subagent, not only crew's own. See below. |
 | `environments` and everything under it | `/crew:promote` |
 | `why`, `anchor`, `version` | **nothing.** They are notes for the next human. |
 
 `why` is worth writing anyway: a rule whose reason nobody remembers gets deleted
 the first time it is inconvenient. `anchor` records the sha the map was built
 against, so you can tell how stale it is. Neither changes what runs.
+
+### `agents` can name any installed subagent
+
+Crew ships eleven roles. A machine usually has many more — domain specialists
+from other marketplaces, and whatever the user wrote themselves. A rule may name
+any of them, and the point is that a path match dispatches the right expert
+*from evidence* instead of when somebody happens to remember it exists:
+
+```json
+{ "paths": ["**/*.ps1", "**/*.psm1"],
+  "agents": ["powershell-security-hardening"],
+  "why": "these run with real privilege on domain-joined hosts" },
+
+{ "paths": ["iam/**", "**/policy*.json", "**/*iam*.tf"],
+  "agents": ["security", "security-auditor"],
+  "why": "crew's reviewer for the diff, the domain auditor for the model" }
+```
+
+Resolution order for a bare name: crew's own role first (`security` →
+`crew:security`), then any other installed agent of that name. Namespace it
+(`crew:security`, `voltagent:security-auditor`) when both exist and you mean the
+other one.
+
+**A named agent that is not installed is a reported gap, never a silent skip.**
+This is the whole risk of the feature: `.crew/verify.json` is committed and
+shared, so a rule naming an agent that one machine has and another does not will
+quietly review less on the second machine, and nothing about the output looks
+different. `/crew:review` therefore lists every agent a matched rule asked for
+and could not find, and treats it exactly like a specialist that was skipped.
+
+Two agents, one job, is the failure mode on the other side. Naming `security`,
+`security-auditor` and `security-engineer` on the same rule buys three
+overlapping passes and three sets of duplicated findings to reconcile. Pick the
+one whose brief actually matches the change, and say in `why` why that one.
 
 ### The authoring contract
 

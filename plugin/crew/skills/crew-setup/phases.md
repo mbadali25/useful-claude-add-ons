@@ -192,10 +192,22 @@ Run `providers.sh`. Then, per the `crew-providers` skill:
 
 - **QA:** if `codex` is present, make one real call to prove auth works. If it is
   absent, tell me what the fallback costs and let me decide whether to install it.
+- **QA, second rung:** if `copilot` is present, make one real call too. A
+  `Access denied by policy settings` error means CLI policy is off at the org or
+  enterprise, not that I lack a seat — say so, rather than reporting it as absent.
+  If I want it, set `qa.copilot.model` to a non-`claude-*` model and explain that
+  leaving it unset makes crew skip Copilot on purpose.
 - **Design:** offer Gemini. Walk me through getting a key from AI Studio if I
   want it, and confirm the CLI's non-interactive flag rather than assuming.
   Write `secondOpinion` into config with `sendsCode: false`.
-- If I decline both, set them to `none` and say what that means for the loop.
+- **Dev:** leave `dev.provider` on `claude` unless I ask otherwise. If I do want
+  Codex writing code, set it and tell me plainly that Codex is then barred from
+  reviewing its own diff, so QA drops to the next family in `qa.order`.
+- If I decline them all: leave `qa.provider` on `auto` and `dev.provider` on
+  `claude`, and set `secondOpinion` to `none`. Do **not** write `none` into
+  `qa.provider` or `dev.provider` - `/crew:model` rejects it, and `/crew:review`
+  would find no rung by that name. Say what declining means for the loop: review
+  falls to the same-family `qa-reviewer`, announced as such every run.
 
 **Notifications.** Offer them, do not assume them. Per the `crew-notify` skill:
 

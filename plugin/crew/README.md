@@ -488,7 +488,9 @@ those paths require:
     { "paths": ["**/*.css", "src/components/**"], "run": ["npx playwright test --grep @visual"],
       "why": "Style changes are invisible to API tests" },
     { "paths": ["migrations/**"], "run": ["./_verify/cases/migrate-fresh.sh"],
-      "agents": ["dba"], "why": "Fresh-apply catches ordering bugs" }
+      "agents": ["dba"], "why": "Fresh-apply catches ordering bugs" },
+    { "paths": ["**/*.ps1"], "run": ["pwsh -NoProfile -Command \"Invoke-ScriptAnalyzer -Path . -Recurse -EnableExit\""],
+      "agents": ["powershell-security-hardening"], "why": "runs with real privilege; a linter sees style, not blast radius" }
   ],
   "always": ["npm run lint"],
   "unmapped": "fail"
@@ -498,6 +500,22 @@ those paths require:
 This is a data file a hook reads, deliberately not knowledge an agent carries.
 Agent judgment about which tests to skip is exactly the judgment that skips the
 important one, confidently, on the turn it mattered.
+
+`agents` names **any installed subagent**, not only crew's eleven. That last rule
+names one crew does not ship. A bare name resolves to crew's own role first
+(`security` → `crew:security`), then to any other installed agent of that name;
+namespace it when you mean the other one. This is how a machine's domain
+specialists get pulled in *by path match* rather than when somebody remembers
+they exist — the change touches `.tf` under `iam/`, so the IAM auditor reviews it,
+every time, without being asked.
+
+The safeguard matters as much as the feature. `.crew/verify.json` is committed
+and travels between machines, so a rule naming an agent the author has and a
+teammate does not would quietly review less on the second machine while producing
+output that looks identical. `/crew:review` therefore reports a named-but-missing
+agent as a gap and logs it to `.crew/metrics.md`, so "this rule asked for
+`security-auditor` eleven times and never got it" becomes evidence for either
+installing it or deleting the rule.
 
 Each pairing is **verified when written**: break the code, run the mapped check,
 confirm it goes red, revert. An unverified mapping is a guess written in JSON —
@@ -827,7 +845,13 @@ Put `codex` on your `PATH` and set `qa.provider` to `auto` or `codex`. `/crew:re
 
 `auto` is the shipped default, so a machine with `codex` installed gets Codex review without configuring anything.
 
-Without Codex, the `qa-reviewer` agent runs instead — on `opus`, in its own context window, so it has at least not seen the reasoning that produced the code. Its prompt tells it outright that it shares a model family with the author and must compensate: ask "what input makes this wrong" before "does this look correct." That is genuinely weaker than a different family, and the command says so every time it happens, so you know to review harder yourself. It also says so itself if something dispatches it directly and skips the Codex check.
+Without Codex, `/crew:review` walks `qa.order` — `["codex", "copilot", "claude"]` by default — and takes the first provider that probes clean, announcing every one it skipped and why.
+
+GitHub Copilot is the middle rung, and it earns its place for one reason: it is a gateway to model families nothing else here reaches. Pin `qa.copilot.model` to a Google model such as `gemini-3.7-flash` and the reviewer is genuinely independent of both the author and Codex. Confirm the name against Copilot's current catalog rather than copying one from documentation - the names churn, and a stale one fails at startup with `Model "<name>" from --model flag is not available`. Leave it unset and Copilot is **skipped entirely** — its own default is `claude-sonnet-4.6`, the author's family, so an unpinned Copilot would be a same-family review wearing an independent one's costume. That is worse than the fallback below, which at least admits what it is.
+
+Last is the `qa-reviewer` agent — on `opus`, in its own context window, so it has at least not seen the reasoning that produced the code. Its prompt tells it outright that it shares a model family with the author and must compensate: ask "what input makes this wrong" before "does this look correct." That is genuinely weaker than a different family, and the command says so every time it happens, so you know to review harder yourself. It also says so itself if something dispatches it directly and skips the provider walk.
+
+Two knobs on the Codex rung, both read at call time and both passing no flag when null, so an upgraded repo behaves exactly as it did before: `qa.codex.model` pins a model, and `qa.codex.reasoningEffort` takes `none`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max`. A wrong effort value is safe to get wrong — Codex rejects it with a 400 naming the supported set rather than quietly returning a shallower review.
 
 ### Gemini for design
 
@@ -1880,7 +1904,7 @@ a worktree each, so a half-applied one cannot land on top of the other.
 
 11 agents. `pm` sits outside the tier ladder — it is not sized in or out by `/crew:scale`, it is the thing doing the sizing.
 
-**Model tiers are part of the design, not a cost knob.** The PM runs on `opus` because it holds the whole project picture and every dispatch decision derives from it — a cheap manager makes cheap assignments and every role below inherits the mistake. Working roles run on `sonnet`: narrow brief, clean context, one deliverable. QA runs on Codex by default (`qa.provider` ships as `auto`), because a different model family is what makes review independent; when `codex` is not on `PATH` it falls back to `qa-reviewer` on `opus` — if you cannot have a different family, the strongest model in this one is the only compensation left.
+**Model tiers are part of the design, not a cost knob.** The PM runs on `opus` because it holds the whole project picture and every dispatch decision derives from it — a cheap manager makes cheap assignments and every role below inherits the mistake. Working roles run on `sonnet`: narrow brief, clean context, one deliverable. QA walks `qa.order` (`qa.provider` ships as `auto`) and takes the first provider that probes clean — Codex, then Copilot pinned to a non-Claude model, then `qa-reviewer` on `opus`. The ordering is not a preference ranking; it is a family-diversity ranking. A different model family is what makes review independent, so a provider that would land back on the author's own family is skipped rather than used, and if you cannot have a different family at all, the strongest model in this one is the only compensation left.
 
 `opus` and `sonnet` here are tiers, not pinned versions. Agent frontmatter asks for a tier and gets whatever the session's strongest model at that tier is; there is no way to pin a point release from a plugin.
 

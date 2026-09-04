@@ -53,9 +53,9 @@ holds the project picture, and it produces work nobody independent has read.
 | Who | Model | Why |
 |---|---|---|
 | `pm` | `opus` | Holds the whole picture; every dispatch decision derives from it, and a bad assignment is inherited by every role below. |
-| `qa-reviewer` | `opus` | The Codex fallback. It shares a model family with the author, so the strongest model in that family is the only compensation available. |
+| `qa-reviewer` | `opus` | The last resort in `qa.order`. It shares a model family with the author, so the strongest model in that family is the only compensation available. |
 | Every other role | `sonnet` | Narrow brief, clean context, one deliverable. |
-| QA review overall | Codex when installed, `qa-reviewer` otherwise | A different model family is what makes the review independent. |
+| QA review overall | The first provider in `qa.order` that probes clean: Codex, then Copilot, then `qa-reviewer` | A different model family is what makes the review independent. Copilot is skipped unless `qa.copilot.model` pins it away from `claude-*`, since its own default is the author's family. |
 
 `opus` and `sonnet` are tiers, not pinned versions — an agent asks for a tier
 and gets whatever the session's strongest model at that tier is. Nothing here
