@@ -197,7 +197,26 @@ provider — a config recipe, not a code path. Nothing in `/crew:review` changes
 name = "Moonshot"
 base_url = "https://api.moonshot.ai/v1"
 env_key = "MOONSHOT_API_KEY"
+wire_api = "responses"
 ```
+
+**`wire_api = "responses"` is load-bearing, and `"chat"` is not a fallback — it is a
+hard parse error.** Codex deprecated the `chat/completions` protocol in December 2025
+and removed it in early 2026; on 0.146.0 the string `wire_api = "chat"` fails config
+loading outright, naming the line and telling you to use `responses`. That is the good
+failure — it stops before the run rather than mid-review.
+
+This is the one fact that decides whether the route exists at all, because Moonshot is
+usually described as a *chat/completions* API. It serves both:
+
+```
+POST https://api.moonshot.ai/v1/responses        -> 401   (endpoint exists, needs auth)
+POST https://api.moonshot.ai/v1/chat/completions -> 401   (endpoint exists, needs auth)
+POST https://api.moonshot.ai/v1/models           -> 404   (control: a route that is absent)
+```
+
+The 404 control matters. Without it, a 401 on `/v1/responses` proves nothing — you
+cannot tell "exists but unauthenticated" from a gateway that 401s everything.
 
 ```json
 "qa": { "provider": "codex", "codex": { "model": "kimi-k2.7-code" } }
@@ -210,6 +229,13 @@ export MOONSHOT_API_KEY=...
 codex exec --skip-git-repo-check -c model_provider=moonshot \
   --model kimi-k2.7-code "reply with exactly: PROBE_OK"
 ```
+
+Expect `warning: Model metadata for <name> not found. Defaulting to fallback metadata`
+on any model Codex does not ship a profile for. That is not an error and the call still
+runs, but it does mean Codex is guessing context window and token limits — so confirm
+the model name against Moonshot's current catalog rather than trusting that the command
+returned. **Model names move; a wrong one warns rather than fails**, which is exactly
+the shape of failure this skill exists to catch.
 
 **Why bother.** Review independence is a function of model *family*, not leaderboard
 rank. Moonshot is a lineage that is neither the author's nor Codex's default, and

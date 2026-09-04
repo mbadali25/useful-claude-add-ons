@@ -4,7 +4,47 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Fixed
+
+- **`crew` 0.14.2: the documented Kimi-through-Codex recipe could not have
+  worked.** `crew-providers` shipped a `[model_providers.moonshot]` block with no
+  `wire_api`, written when Codex still spoke `chat/completions`. OpenAI deprecated
+  that protocol in December 2025 and removed it in early 2026; on Codex 0.146.0
+  `wire_api = "chat"` is a hard config-load error, not a fallback. The block now
+  sets `wire_api = "responses"`.
+
+  This looked like it killed the route, since Moonshot is normally described as a
+  chat/completions API. It does not - Moonshot serves `/v1/responses` as well,
+  confirmed by probe: `/v1/responses` and `/v1/chat/completions` both return 401
+  while `/v1/models` returns 404, and that 404 is the control that makes the 401s
+  mean something rather than being a gateway rejecting everything.
+
+  Also documents the `Model metadata ... not found. Defaulting to fallback
+  metadata` warning, because a wrong model name *warns and keeps going* rather
+  than failing - Codex then guesses the context window. That is the review-shaped
+  failure this skill exists to catch, so it is now named in the skill.
+
 ### Added
+
+- **`crew` 0.14.1: a `verify.json` rule can dispatch any installed subagent, not
+  just crew's eleven.** The `agents` key already pulled specialists into
+  `/crew:review` on a path match; it was limited to crew's own roles, which meant
+  a machine carrying two dozen domain specialists from other marketplaces could
+  not reach any of them from the gate. A bare name now resolves to crew's role
+  first (`security` -> `crew:security`) and then to any other installed agent;
+  namespace it when both exist and you mean the other one.
+
+  The value is dispatch *from evidence*: a change under `iam/` pulls in the IAM
+  auditor every time, rather than when somebody remembers that agent exists.
+
+  The safeguard is the load-bearing half. `.crew/verify.json` is committed and
+  travels between machines, so a rule naming an agent the author has and a
+  teammate does not would quietly review less on the second machine while
+  producing output indistinguishable from a full pass - the same failure class as
+  a QA provider that authenticates and then returns nothing. A named-but-missing
+  agent is therefore reported as a gap and logged to `.crew/metrics.md`, so
+  `/crew:scale` can see that a rule has asked for something eleven times and never
+  got it.
 
 - **`crew` 0.14.0: QA and implementation become a provider table, and the family
   that wrote the code is barred from reviewing it.** `qa` grows an `order`
