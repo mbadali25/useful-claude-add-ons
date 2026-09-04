@@ -53,7 +53,9 @@ def describe(p, blk):
     return model, effort, why
 
 pinned = qa.get("provider", "auto")
-cands = qa.get("order", []) if pinned == "auto" else [pinned]
+# A config predating qa.order has no list; defaulting to [] reports "no reviewer"
+# for a setup that reviews fine. Fall back to the same order default_config ships.
+cands = (qa.get("order") or ["codex", "copilot", "claude"]) if pinned == "auto" else [pinned]
 print(f"{'qa candidate':<14}{'model':<26}{'effort':<8}status")
 print("-" * 92)
 ran = False
@@ -160,7 +162,7 @@ a claim, not a change.
 ```
 /crew:model                                      # report only
 /crew:model qa.codex.reasoningEffort high        # harder reviews
-/crew:model qa.copilot.model gemini-3.1-pro-preview
+/crew:model qa.copilot.model gemini-3.7-flash
 /crew:model dev.provider codex                   # then read step 3 out loud
 /crew:model dev.codex.model gpt-5.6-sol
 ```

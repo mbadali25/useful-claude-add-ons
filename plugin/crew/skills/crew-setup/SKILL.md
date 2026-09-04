@@ -165,8 +165,9 @@ specific Codex model. Read at call time, never hardcoded in the command.
 `claude-sonnet-4.6`, the author's own family, which makes it a worse reviewer than the
 Claude fallback while looking like a stronger one. `/crew:review` therefore refuses an
 unpinned Copilot rather than quietly running a same-family review. Pin a model from a
-family that is neither the author's nor Codex's — `gemini-3.1-pro-preview` or
-`mai-code-1-flash` — so the review is actually independent.
+family that is neither the author's nor Codex's — a Google model such as
+`gemini-3.7-flash` — so the review is actually independent. Verify the name
+against the current catalog; a stale one fails at startup.
 
 If `.crew/` exists but `config.json` went missing or stopped parsing, you do not
 need to recreate it by hand — the `platform-sync` `SessionStart` hook already

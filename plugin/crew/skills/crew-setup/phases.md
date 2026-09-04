@@ -203,7 +203,11 @@ Run `providers.sh`. Then, per the `crew-providers` skill:
 - **Dev:** leave `dev.provider` on `claude` unless I ask otherwise. If I do want
   Codex writing code, set it and tell me plainly that Codex is then barred from
   reviewing its own diff, so QA drops to the next family in `qa.order`.
-- If I decline them all, set them to `none` and say what that means for the loop.
+- If I decline them all: leave `qa.provider` on `auto` and `dev.provider` on
+  `claude`, and set `secondOpinion` to `none`. Do **not** write `none` into
+  `qa.provider` or `dev.provider` - `/crew:model` rejects it, and `/crew:review`
+  would find no rung by that name. Say what declining means for the loop: review
+  falls to the same-family `qa-reviewer`, announced as such every run.
 
 **Notifications.** Offer them, do not assume them. Per the `crew-notify` skill:
 

@@ -6,6 +6,35 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`crew` 0.14.6: the re-review caught that 0.14.5 fixed a stale model name in
+  one file and left it in four.** Re-running the Copilot reviewer on the fixed diff
+  confirmed all seven original findings closed, then found the ripple I had not:
+  `gemini-3.1-pro-preview` still stood in `README.md`, `crew-setup/SKILL.md`,
+  `providers.sh` and `/crew:model`'s own worked example, all recommending a model
+  that fails at startup. Every occurrence now names `gemini-3.7-flash` and says to
+  verify the name rather than trust the doc.
+
+  Two more real BLOCKs, both in code I had touched that same pass:
+
+  - `BASE=$(git merge-base HEAD "$(git symbolic-ref ... | sed ... || echo main)")`
+    never falls back. `||` binds to the whole pipeline and `sed` exits 0 even when
+    `symbolic-ref` failed, so a clone without `refs/remotes/origin/HEAD` hands
+    `merge-base` an empty string. Now branches on the ref itself; verified to
+    resolve `main` in both cases where the old form gave `""`.
+  - `.get(key, {})` does not defend against a key that is **present and null** -
+    it returns `None`, and `.get` on `None` is an `AttributeError`. A config with
+    `"codex": null` crashed the extraction. Now `or {}` at every hop.
+
+  Also: `qa.order` absent made `/crew:model` report zero candidates and "no
+  independent reviewer" for a setup that reviews fine; `phases.md` told setup to
+  write `none` into `qa.provider`/`dev.provider`, which `/crew:model` rejects and
+  `/crew:review` cannot resolve to any rung; and three files still advertised 21
+  slash commands against an actual 23.
+
+  Rejected: the duplicate `### Fixed` heading in this changelog. One heading per
+  entry is this file's existing convention, 42 of them and counting.
+### Fixed
+
 - **`crew` 0.14.5: the first real cross-family QA review found seven defects in
   0.14.0-0.14.4, and this fixes them.** Copilot on `gemini-3.7-flash` reviewed the
   branch - the first time crew's Copilot rung has ever run end to end - and caught

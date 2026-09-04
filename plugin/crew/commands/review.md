@@ -109,12 +109,20 @@ CFG=.crew/config.json
 # .get() at EVERY level. A config written before these keys existed has no
 # qa.codex / qa.copilot block, and indexing it directly is a KeyError that kills
 # the review before it starts. Absent means "pass no flag", never "crash".
-q() { python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print((d.get("qa") or {}).get(sys.argv[2],{}).get(sys.argv[3]) or "")' "$CFG" "$1" "$2"; }
+# `or {}` at every hop, not .get(k, {}): a key PRESENT and null returns None,
+# which the default never covers, and .get on None is an AttributeError.
+q() { python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print((((d.get("qa") or {}).get(sys.argv[2]) or {}).get(sys.argv[3])) or "")' "$CFG" "$1" "$2"; }
 QA_MODEL=$(q codex model)
 QA_EFFORT=$(q codex reasoningEffort)
 QA_COPILOT_MODEL=$(q copilot model)
 
-BASE=$(git merge-base HEAD "$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|origin/||' || echo main)")
+# `... | sed ... || echo main` does NOT work: the || binds to the whole pipeline
+# and sed exits 0 even when symbolic-ref failed, so the fallback never fires and
+# merge-base is handed an empty string. Branch on the ref itself.
+DEFAULT_BRANCH=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null) || DEFAULT_BRANCH=""
+DEFAULT_BRANCH=${DEFAULT_BRANCH#origin/}
+: "${DEFAULT_BRANCH:=main}"
+BASE=$(git merge-base HEAD "$DEFAULT_BRANCH")
 git diff "$BASE"...HEAD > "$SCRATCH/diff.txt"
 
 # Write the prompt HERE, before any provider block reads it. All three reviewers

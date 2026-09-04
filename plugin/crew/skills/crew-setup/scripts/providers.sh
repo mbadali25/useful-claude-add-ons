@@ -42,7 +42,8 @@ if command -v copilot >/dev/null 2>&1; then
   say "model:" "pin LAST, only after gate 3 returns. MUST NOT be a claude-* model."
   say "" "Copilot defaults to claude-sonnet-4.6 - the author's own family, so"
   say "" "an unpinned Copilot reviews its own family while looking independent."
-  say "" "Pin gemini-3.1-pro-preview or mai-code-1-flash instead."
+  say "" "Pin a Google model such as gemini-3.7-flash instead. Names churn -"
+  say "" "a stale one fails at startup, before any diff is sent."
 else
   say "copilot:" "not found -> npm i -g @github/copilot (needs a Copilot seat)"
 fi

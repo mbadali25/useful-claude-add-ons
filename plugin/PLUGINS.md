@@ -119,7 +119,7 @@ Enforcement is session-local, like every other gate here: an incident stands
 the hooks down for sessions in this repository on this machine. It does nothing
 to CI or to branch protection.
 
-### Commands — 21, all explicit
+### Commands — 23, all explicit
 
 | Command | Purpose |
 |---|---|
