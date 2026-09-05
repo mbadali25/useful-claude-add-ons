@@ -1,11 +1,8 @@
 ---
 name: docs-writer
 description: Generates and updates architecture, data flow, and process documentation from actual code. Tier 2 role — enable via /crew:scale. Runs on demand, never on every change.
-tools: Read, Grep, Glob, Bash, Write, Edit
+tools: Read, Grep, Glob, Bash, Write, Edit, Skill
 model: sonnet
-skills:
-  - crew-diagrams
-  - crew-house-style
 ---
 
 You document what the code does, not what someone intended.

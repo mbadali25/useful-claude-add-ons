@@ -34,6 +34,7 @@ import argparse
 import re
 import sys
 from pathlib import Path
+from typing import NoReturn
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -122,7 +123,7 @@ def splice(text: str, marker: str, body: str, where: str) -> str:
     return text[: start + len(begin)] + f"\n\n{body}\n\n" + text[stop:]
 
 
-def fail(message: str) -> None:
+def fail(message: str) -> NoReturn:
     print(f"sync-updates: {message}", file=sys.stderr)
     raise SystemExit(2)
 

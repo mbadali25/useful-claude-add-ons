@@ -65,6 +65,24 @@ KNOWN_TOOLS = {
     # of these: ListAgents to find it, SendMessage to continue it.
     "ListAgents", "SendMessage",
 }
+
+# An MCP tool's name is `mcp__<server>__<tool>`, and which servers exist is a
+# property of the machine, not of this repository -- there is no list here to
+# check against. Validating the shape still catches the mistake this check is
+# for (a typo in a name, or a tool invented wholesale), while letting an agent
+# name a real MCP tool it needs. Refusing them outright would push authors to
+# describe the tool in prose instead, which produces exactly the failure this
+# suite exists to catch: an instruction with no route to execute.
+MCP_TOOL = re.compile(r"^mcp__[A-Za-z0-9_-]+__[A-Za-z0-9_-]+$")
+
+
+def unknown_tools(tools):
+    """The names in a comma-separated `tools:` value that nothing recognises."""
+    return [t.strip() for t in tools.split(",")
+            if t.strip() and t.strip() not in KNOWN_TOOLS
+            and not MCP_TOOL.match(t.strip())]
+
+
 SPAWNABLE = "|".join(sorted(AGENTS)) or "$^"
 PLUGIN_PATH = re.compile(r"\$\{CLAUDE_PLUGIN_ROOT\}/([A-Za-z0-9_\-./]+)")
 
@@ -99,8 +117,7 @@ def check_commands():
         if not tools:
             bad(f"{name}: no allowed-tools")
         else:
-            unknown = [t.strip() for t in tools.split(",")
-                       if t.strip() and t.strip() not in KNOWN_TOOLS]
+            unknown = unknown_tools(tools)
             if unknown:
                 bad(f"{name}: unknown tool(s) {unknown}")
             else:
@@ -154,8 +171,7 @@ def check_agents():
                 bad(f"{name}: unsupported frontmatter key '{key}' - silently ignored")
 
         tools = fields.get("tools", "")
-        unknown = [t.strip() for t in tools.split(",")
-                   if t.strip() and t.strip() not in KNOWN_TOOLS]
+        unknown = unknown_tools(tools)
         if unknown:
             bad(f"{name}: unknown tool(s) {unknown}")
         else:
