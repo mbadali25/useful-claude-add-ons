@@ -249,6 +249,18 @@ All notable changes to this repository are documented here. Format follows [Keep
   from the merged history, and this file is the only thing between a lost
   dispatch and a confident answer about it. It leaves when a human deletes it.
 
+- **`crew` 0.16.7: a record that named no author was treated as no record.**
+  An entry that parses and carries a `kind` but no `provider` was skipped in
+  silence, so a nameable dispatch on the same branch then answered `dispatch`
+  over it. Skipping it is right — something that is not evidence must not
+  spend a slot in the bound — but "it names no author, so it cannot BE the
+  author" is the same mistake in a fifth place: a record of someone this store
+  cannot name is not a record of nobody, it is `unknown`. It is skipped AND
+  reported now, in `_merge_history`, because that is the one funnel entry
+  files, the legacy `<kind>History` and the legacy slot all run through —
+  reporting it upstream would have closed the store and left the legacy path
+  silent.
+
 - **`crew` 0.16.7: the hook count in crew's README.** The prose said eight
   scripts and sixteen entries while the table directly beneath it already
   listed all ten across five events, 20 entries.

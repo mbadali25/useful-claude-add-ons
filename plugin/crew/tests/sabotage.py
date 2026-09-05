@@ -194,8 +194,8 @@ MUTATIONS = (
         # author, so it must not displace one that can.
         "an entry with no provider still spends a slot",
         STATE,
-        '        if not entry.get("provider"):\n            continue',
-        '        if False:\n            continue',
+        '        if not entry.get("provider"):',
+        "        if False:",
         ("tests/test_provider_table.py::"
          "test_an_entry_with_no_provider_cannot_evict_one_that_has_one"),
     ),
@@ -350,6 +350,18 @@ MUTATIONS = (
         "    protected.update([])",
         ("tests/test_provider_table.py::test_the_pruner_does_not_delete_"
          "the_evidence_that_evidence_was_lost"),
+    ),
+    (
+        # Round 10, High. Skipping a record that names no author is
+        # right; skipping it in SILENCE lets the next dispatch on the
+        # branch answer `dispatch` over a record nobody could read.
+        "a record naming no author is dropped in silence",
+        STATE,
+        '            _note_lost(lost, entry.get("_file") or '
+        'DISPATCH_PATH[-1])',
+        "            pass",
+        ("tests/test_provider_table.py::test_a_legacy_history_entry_"
+         "naming_no_author_is_not_silently_dropped"),
     ),
     (
         "bogus documented role",

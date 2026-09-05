@@ -1463,7 +1463,15 @@ def test_an_entry_with_no_provider_cannot_evict_one_that_has_one(tmp_path):
     spending a slot in the bound, so ten hand-edited or truncated files ahead
     of a real dispatch emptied the history of the family that wrote the diff.
 
-    Something that is not evidence must not displace something that is."""
+    Something that is not evidence must not displace something that is.
+
+    Codex round 10 then found the other half of the same line: skipping it in
+    SILENCE let a nameable dispatch on the same branch answer `dispatch` over
+    a record this store could not read. An entry that parses and carries a
+    `kind` is a record of someone unnameable, not a record of nobody. Both
+    claims are asserted here, and they pull in opposite directions on purpose
+    -- the real family is still struck AND still the only one, so nothing was
+    evicted; and the source is `unknown`, so nothing was certified."""
     root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=True)
     here = crew_state.current_branch(str(root))
     crew_state.record_dispatch(str(root), "dev", "developer", "codex",
@@ -1474,9 +1482,10 @@ def test_an_entry_with_no_provider_cannot_evict_one_that_has_one(tmp_path):
 
     authors, source = crew_state.author_families(str(root), PINNED)
 
-    assert source == "dispatch"
     assert authors == frozenset({"gpt"}), \
         "entries naming no author evicted the one that does"
+    assert source == "unknown", \
+        "a record this store could not read was dropped in silence"
 
 
 def test_another_branch_cannot_spend_this_branch_s_history(tmp_path):
@@ -1986,3 +1995,34 @@ def test_the_pruner_does_not_delete_the_evidence_that_evidence_was_lost(
         "the read stopped reporting the file the pruner spared"
     assert crew_state.author_families(str(root), cfg)[1] == "unknown", \
         "provenance was certified over a store that lost a file"
+
+
+def test_a_legacy_history_entry_naming_no_author_is_not_silently_dropped(
+        tmp_path):
+    """Codex round 10, High, on the path the store does not cover. A record
+    with no `provider` inside `dispatch.json`'s own history never passes
+    through `_dispatch_entries`, so noting the loss there would have closed
+    the store and left this silent. `_merge_history` is the one funnel both
+    sources run through, which is why the report is made there.
+
+    The config family is `swe`, so neither assertion can be satisfied by the
+    config fallback."""
+    cfg = copy.deepcopy(PINNED)
+    cfg["dev"]["roles"]["developer"] = {"provider": "windsurf",
+                                        "model": "swe-1"}
+    root = crew_fixtures.make_repo(tmp_path, config=cfg, git=True)
+    here = crew_state.current_branch(str(root))
+    path = os.path.join(str(root), *crew_state.DISPATCH_PATH)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump({"devHistory": [{"role": "developer", "branch": here,
+                                   "at": 10.0}]}, handle)
+    _seed_entry(root, role="developer", provider="claude", model=None,
+                branch=here, at=5000.0)
+
+    families, source = crew_state.author_families(str(root), cfg)
+
+    assert source == "unknown", \
+        "a legacy record naming no author was dropped in silence"
+    assert families == frozenset({"claude"}), \
+        "the family that provably ran stopped being struck"

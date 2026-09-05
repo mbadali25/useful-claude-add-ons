@@ -1141,7 +1141,7 @@ def _history_items(record, by_kind, kind):
     return items
 
 
-def _merge_history(items, pin=None):
+def _merge_history(items, pin=None, lost=None):
     """Newest first, deduplicated on what the guard reads, bounded.
 
     `items` is `(rank, entry)`, and `rank` is `(tier, sort key)`. The tier is
@@ -1203,6 +1203,19 @@ def _merge_history(items, pin=None):
     seen, kept, newest = set(), {}, {}
     for rank, entry in sorted(items, key=lambda pair: pair[0], reverse=True):
         if not entry.get("provider"):
+            # Skipped, and REPORTED. It still must not spend a slot in the
+            # bound -- something that is not evidence must not displace
+            # something that is -- but it is not nothing either: an entry
+            # that parses and carries a `kind` is a record whose author this
+            # store cannot name, and dropping it in silence let the next
+            # dispatch on the branch answer `dispatch` over it. A record of
+            # someone unnameable is not a record of nobody.
+            #
+            # Here rather than in `_dispatch_entries` because this is the one
+            # funnel both sources run through: entry files, the legacy
+            # `<kind>History`, and the legacy slot. Noting it upstream would
+            # have covered the store and left the legacy path silent.
+            _note_lost(lost, entry.get("_file") or DISPATCH_PATH[-1])
             continue
         branch = entry.get("branch")
         fam = family(entry.get("provider"), entry.get("model"))
@@ -1277,7 +1290,7 @@ def read_dispatch(root):
         # `_file` is bookkeeping for the pruner and is not part of the
         # record any reader is handed.
         history = [{k: v for k, v in entry.items() if k != "_file"}
-                   for entry in _merge_history(items, pin)]
+                   for entry in _merge_history(items, pin, lost)]
         record[f"{kind}History"] = history
         # The slot is the newest entry, recomputed rather than trusted: it is
         # written unlocked and best-effort, so a lost update there must cost
@@ -1603,14 +1616,17 @@ def _prune_dispatch_dir(root):
     lost = []
     for key, entry_kind, entry in _dispatch_entries(root, lost):
         by_kind.setdefault(entry_kind, []).append((key, entry))
-    protected.update(lost)
 
     for kind in DISPATCH_KINDS:
         for entry in _merge_history(_history_items(record, by_kind, kind),
-                                    pin):
+                                    pin, lost):
             token = entry.get("_file")
             if token:
                 protected.add(token)
+    # After the merge, because the merge adds to `lost` too -- an entry that
+    # parses and names no provider is reported there, and a file the report
+    # names has to survive long enough for someone to delete it.
+    protected.update(lost)
 
     aged = []
     for name in names:
