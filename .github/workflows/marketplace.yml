@@ -17,6 +17,12 @@ jobs:
           python-version: "3.13"
       - name: Check the marketplace is internally consistent
         run: python3 scripts/check-marketplace.py
+      # The UPDATE.md mirrors are generated, so the only thing keeping them
+      # honest is a gate that fails. Without this step the generator's --check
+      # mode is a check nobody runs, which is worse than no check: the blocks
+      # carry a "generated" comment that says they are current.
+      - name: UPDATE.md mirrors are current
+        run: python3 scripts/sync-updates.py --check
       - name: Shell syntax
         run: bash -n scripts/install-prerequisites.sh
       # Runs here because it needs nothing but bash: the end-to-end cases use --dry-run

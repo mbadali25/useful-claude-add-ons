@@ -1,7 +1,7 @@
 ---
 name: developer
 description: Implements one scoped change - a ticket, a fix, a refactor - in its own context and returns a summary of what it changed. Use when the PM has work that needs code written rather than reviewed, mapped, or planned. Never reviews its own diff.
-tools: Read, Write, Edit, Bash, Grep, Glob
+tools: Read, Write, Edit, Bash, Grep, Glob, Skill
 model: sonnet
 ---
 

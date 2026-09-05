@@ -1,7 +1,7 @@
 ---
 name: researcher
 description: External research only - library and framework docs, API and SDK behaviour, version and migration questions, vendor pricing and limits, standards, RFCs, prior art. Use when the answer lives outside this repository. Read-only; every claim carries its source.
-tools: Read, Glob, WebSearch, WebFetch, mcp__context7__resolve-library-id, mcp__context7__query-docs
+tools: Read, Glob, WebSearch, WebFetch, mcp__context7__resolve-library-id, mcp__context7__query-docs, Skill
 model: sonnet
 ---
 
