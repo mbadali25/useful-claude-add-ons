@@ -394,51 +394,6 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
-- **localgpu 0.1.6 -> 0.1.7: three more defects, found by a reviewer running
-  mutation tests against `anthropic_proxy.py` rather than reading it.**
-
-  **The context-window guard could fail open.** `resolve_num_ctx` folded "the
-  model really has this context window" and "the probe to find out failed"
-  into the same fallback number, and the caller cached whichever one it got
-  as if both were equally trustworthy. One slow `/api/show` probe - Ollama
-  loading another model, a cold start - pinned `DEFAULT_NUM_CTX` (32768) for
-  the rest of the process even against a model whose real window was 8192,
-  with every later request's budget computed from the wrong number and no
-  log line to say so. That is the exact silent-truncation bug this module
-  exists to prevent, reinstated by a network blip. `_probe_num_ctx` now
-  returns `None` on any failure instead of guessing a number, and only a
-  successful probe is cached — a failed one falls back for that one request
-  only and is retried, with a verbose-gated log line, on the next.
-
-  **The context guard measured base64 that would never be sent.**
-  `check_fits_context` estimated the request's size from the untranslated
-  Anthropic body, where a pasted image is still full base64; what actually
-  reaches Ollama is a ~30-character placeholder (`_blocks_to_text` replaces
-  every image block before translation). A 100 KB image estimated roughly
-  44,500 tokens against the ~29 the model would actually see, so the guard
-  refused a turn its own module docstring promises degrades gracefully
-  instead. `estimate_prompt_tokens` now measures the translated
-  (`to_ollama_messages`/`to_ollama_tools`) form.
-
-  **The same estimator over-counted non-English text.** `json.dumps` defaults
-  to `ensure_ascii=True`, escaping every CJK character as a six-character
-  `\uXXXX` sequence before the count was ever divided down — 4000 CJK
-  characters estimated roughly 8,010 tokens, refusing an ordinary non-English
-  conversation at a fraction of the model's real capacity.
-  `estimate_prompt_tokens` now serializes with `ensure_ascii=False`.
-  `_CHARS_PER_TOKEN_ESTIMATE` (3, deliberately conservative for dense code)
-  was left untouched — a prior attempt at this file changed the divisor alone
-  and made both over-counts worse instead of fixing which bytes were counted.
-
-  Every fix carries a regression test sabotaged individually: reverted,
-  confirmed red against the exact numbers above, restored, confirmed green.
-  Two existing tests were hollow in a way an independent reviewer proved by
-  running them against a `resolve_num_ctx` that was nothing but
-  `return default` — `test_num_ctx_is_auto_detected_end_to_end`'s fixture
-  advertised the same context length as `DEFAULT_NUM_CTX`, so it passed
-  whether or not the probe ran at all; its fixture now advertises a distinct
-  8192. 223 -> 227 tests; `_verify/smoke.sh` stayed 10/10.
-
 - **localgpu 0.1.2 -> 0.1.4: two independent reviewers found 1 BLOCK and 18
   FIX/NIT in code that had already passed 175 unit tests and 9 smoke checks,
   and a second pass over the fix found 6 more in the failure paths it added.**
