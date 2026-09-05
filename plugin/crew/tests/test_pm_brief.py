@@ -65,13 +65,25 @@ def test_quiet_brief_contains_no_imperative_framing():
         assert banned not in joined
 
 
-def test_main_exits_zero_on_garbage_stdin(monkeypatch, capsys):
+def test_main_exits_zero_on_garbage_stdin(tmp_path, monkeypatch, capsys):
+    # chdir is load-bearing. Unparseable stdin carries no `cwd`, so `main`
+    # falls back to the process's own directory -- which, running the suite
+    # from a checkout that has its own `.crew/`, is a real crew repo with real
+    # triggers, and the brief is correctly non-empty. The test then failed on
+    # the developer's machine and passed in CI, where nothing is checked out
+    # with a `.crew/`. Pin the fallback at a directory that is provably not a
+    # crew repo, so this asserts "garbage in, nothing out" and not "whoever
+    # ran me happened to stand somewhere quiet".
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setattr("sys.stdin", io.StringIO("{not json"))
     assert pm_brief.main([]) == 0
     assert capsys.readouterr().out == ""
 
 
-def test_main_exits_zero_on_empty_stdin(monkeypatch):
+def test_main_exits_zero_on_empty_stdin(tmp_path, monkeypatch):
+    # Same fallback, same reason -- pinned here too so that adding an output
+    # assertion later does not reintroduce the cwd dependency above.
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setattr("sys.stdin", io.StringIO(""))
     assert pm_brief.main([]) == 0
 

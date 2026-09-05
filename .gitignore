@@ -270,3 +270,26 @@ __marimo__/
 # Cisco Meraki skill — config snapshots and bootstrap cache (may contain
 # network config and shared secrets; never commit)
 .meraki-snapshots/
+
+# Per-repo crew state. Machine-specific by nature: obsidian.vaultPath and
+# boardDir are absolute paths that exist on one machine, and pm.authority is a
+# trust decision its owner makes, not one a clone should inherit. Treat it like
+# .vscode/settings.json. A fresh clone runs /crew:init to generate its own.
+.crew/
+
+# Written by the GitHub Copilot CLI when --model is passed; pins the model for
+# anyone running `copilot` in this repo. crew owns provider model choice
+# (qa.copilot.model / dev.copilot.model), so this file must not shadow it.
+.github/copilot/
+
+# graphify code graph. graph.json is deliberately NOT ignored: .gitattributes
+# registers a union merge driver for it, and a union driver only has something
+# to merge if both sides are tracked. Everything else here is rebuildable —
+# cache/ alone is 4.6 MB and churns on every commit via the post-commit hook.
+# Allowlist, not a denylist: a build drops cache/, .graphify_analysis.json,
+# .graphify_labels.json(.sig), .graphify_root, GRAPH_REPORT.md, manifest.json
+# and a 2.6 MB graph.html, and the set grows with the tool. Enumerating them
+# means the next new artifact lands untracked-but-visible and gets committed by
+# accident. Ignore the directory and re-admit the one file that must be tracked.
+graphify-out/*
+!graphify-out/graph.json

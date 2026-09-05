@@ -6,6 +6,55 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`crew` 0.14.7: two shipped agents told an agent to do something it could not
+  do, and gated a safety rail on the one path where it matters.**
+
+  `explorer.md` declared `tools: Read, Grep, Glob` and then ordered the agent to
+  "append durable findings to memory" — no `Write`, no `Edit`, no `Bash`, so no
+  route to do it at all. Every explorer run silently dropped the step, and step
+  1's "check your project memory first" read a store that nothing ever wrote: a
+  loop that never closed. The agent now returns the durable part in a
+  `**Durable:**` block for its caller to persist, and the prose says *why* it
+  cannot write, so the next reader does not "fix" this by adding `Bash` to a
+  deliberately read-only investigator. Step 1 now names `.crew/codemap/` and
+  carries `crew-memory`'s index-first rule and `anchor:` check, instead of
+  inviting the directory sweep that skill warns costs 40k tokens to answer a
+  400-token question.
+
+  `pm.md` said "Everything below the next heading applies **only under `act`**"
+  and then placed three `report-only` instructions below it — the state read on
+  "every invocation", the plan-as-deliverable rule, and "Under `report-only`,
+  the report *is* the deliverable". The serious half is that the three guards in
+  `## Acting` were gated off too: the user's priority outranking the PM's,
+  **removal and deletion needing an explicit yes**, and announcing an expensive
+  run. Because an explicit instruction can make the PM act in a `report-only`
+  repo, the rails were switched off on exactly the path where nobody had
+  reviewed a config to decide what the PM may destroy. The gate now covers
+  dispatching and nothing else, and says so.
+
+  `## Reading state` also moves above `## Authority`, closing a circularity: the
+  PM was told to read `pm.authority` first, while the instruction to run
+  `crew_state.py` — which is how it learns that value — sat below the gate keyed
+  on it.
+
+  Repo hygiene in the same change: `.crew/` is now gitignored (it holds
+  machine-specific absolute vault paths and a `pm.authority` trust decision no
+  clone should inherit), as is `.github/copilot/` (the Copilot CLI writes it on
+  `--model` and it silently shadows crew's own `qa.copilot.model`). The
+  `graphify-out/` rule became an allowlist after a Codex review found the
+  denylist missed four of the eight artifacts a build produces.
+
+  Gitignoring `.crew/` surfaced a test that had been passing for the wrong
+  reason. `test_pm_brief.py::test_main_exits_zero_on_garbage_stdin` asserts
+  that unparseable stdin produces no output, but unparseable stdin carries no
+  `cwd`, so `main` falls back to the process directory — and running the suite
+  from a checkout that has its own `.crew/` made that a real crew repo with
+  real triggers, so the brief was correctly non-empty and the test failed. It
+  passed in CI only because nothing there is checked out with a `.crew/`. Both
+  stdin-fallback tests now `monkeypatch.chdir(tmp_path)`, so they assert
+  "garbage in, nothing out" rather than "whoever ran me happened to stand
+  somewhere quiet". 410 passed, 1 skipped.
+
 - **`crew` 0.14.6: the re-review caught that 0.14.5 fixed a stale model name in
   one file and left it in four.** Re-running the Copilot reviewer on the fixed diff
   confirmed all seven original findings closed, then found the ripple I had not:
