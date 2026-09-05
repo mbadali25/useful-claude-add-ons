@@ -275,7 +275,20 @@ __marimo__/
 # boardDir are absolute paths that exist on one machine, and pm.authority is a
 # trust decision its owner makes, not one a clone should inherit. Treat it like
 # .vscode/settings.json. A fresh clone runs /crew:init to generate its own.
-.crew/
+#
+# `.crew/*` rather than `.crew/`: a trailing slash makes git refuse to descend
+# into the directory at all, and an un-entered directory cannot have anything
+# re-included from it. The glob lets the negation below work.
+.crew/*
+
+# ...except the code map, which is the one thing under .crew/ that is about the
+# CODE rather than about this machine. It holds prose and `path:line` citations
+# with an `anchor:` commit — nothing absolute, nothing a clone should not
+# inherit. Ignoring it meant every clone read `subsystems: 0` and rebuilt a map
+# that already existed, and the map's own findings reached nobody. Kept here
+# rather than copied to docs/ because crew_state.py:407 hardcodes this path,
+# and a second copy is a second thing to drift.
+!.crew/codemap/
 
 # Written by the GitHub Copilot CLI when --model is passed; pins the model for
 # anyone running `copilot` in this repo. crew owns provider model choice
@@ -293,6 +306,15 @@ __marimo__/
 # accident. Ignore the directory and re-admit the one file that must be tracked.
 graphify-out/*
 !graphify-out/graph.json
+
+# The second re-admission, and deliberately only the second. GRAPH_REPORT.md is
+# the human-readable half of the map — community hubs, freshness, the
+# EXTRACTED/INFERRED split — and it is what someone reads to orient in a repo
+# they did not build. graph.json is 7 MB of machine-readable nodes; nobody
+# reads it. 132 KB of markdown that regenerates on every commit is real diff
+# noise, and that is the price: without it the only map that travels is one no
+# human opens. graph.html stays ignored — 382 KB of generated viewer, not a map.
+!graphify-out/GRAPH_REPORT.md
 
 # --- crew local state ------------------------------------------------------
 # Raw transcripts contain everything the session saw, including any secret

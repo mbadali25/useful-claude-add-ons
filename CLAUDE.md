@@ -53,9 +53,24 @@ Quote failures exactly; never summarise a stack trace. Name which suites ran and
 
 ## Memory - where the code map and runbooks live
 
-`graphify-out/graph.json`, exported to the `claude-memories-codegraphs` vault under
-`personal/useful-claude-add-ons`; refresh with `graphify . --no-viz --code-only`. Decisions in
-`docs/adr/`; crew state in `.crew/`.
+Two maps, both **in this repo**, both tracked. No Obsidian vault — the graph used to be exported to
+one, which meant the map lived on one machine and reached nobody who cloned.
+
+- **`.crew/codemap/`** — the prose map: one file per subsystem, every claim marked DERIVED (with a
+  `path:line` to re-check) or JUDGEMENT, each carrying an `anchor:` commit. `INDEX.md` is the table
+  of contents. Refresh with `/crew:onboard --refresh <subsystem>`; **anchor with `git rev-parse
+  --short=7`** — `crew_state.py` compares at 7 while the regex accepts 7-40, so an 8-char anchor
+  parses fine and then never matches.
+- **`graphify-out/graph.json`** — the mechanical graph. Refresh with `graphify . --no-viz
+  --code-only`; a post-commit hook does it automatically.
+
+An `anchor:` behind HEAD means *re-check the claims*, not that they are wrong. Do the per-path check
+first — `git diff --name-only <anchor>..HEAD -- <paths the map documents>` — because a repo-wide
+version bump moves every anchor without invalidating a word. Empty output means current despite the
+lag. The same comparison for `graphify-out/` and `docs/diagrams/` can never come out current: they
+are tracked, so committing one advances HEAD past the sha it records.
+
+Decisions in `docs/adr/`; the rest of `.crew/` is machine-local and stays ignored.
 
 ## Landmines - every one of these has already shipped broken
 
