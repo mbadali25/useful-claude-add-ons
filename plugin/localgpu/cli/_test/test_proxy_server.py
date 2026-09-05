@@ -383,7 +383,17 @@ def test_num_ctx_is_auto_detected_end_to_end(showing_ollama):
     """No explicit num_ctx override, driven through the real server - proves
     _resolved_num_ctx actually gets called on the request path and its
     result reaches the /api/chat body, not just that resolve_num_ctx works
-    in isolation."""
+    in isolation.
+
+    The fixture's advertised context length (8192) is deliberately distinct
+    from DEFAULT_NUM_CTX (32768) - if it matched, this test would pass
+    identically whether the probe ran at all or the code fell straight
+    through to the default, and would certify a broken `_resolved_num_ctx`
+    just as happily as a working one.
+    """
+    showing_ollama.show_reply = {
+        "model_info": {"general.architecture": "qwen2", "qwen2.context_length": 8192}
+    }
     host, port = showing_ollama.server_address
     server = proxy.make_server("127.0.0.1", 0, f"http://{host}:{port}", "qwen-test")
     threading.Thread(target=server.serve_forever, daemon=True).start()
@@ -398,7 +408,69 @@ def test_num_ctx_is_auto_detected_end_to_end(showing_ollama):
     finally:
         server.shutdown()
         server.server_close()
-    assert showing_ollama.last_request["options"]["num_ctx"] == 32768
+    assert showing_ollama.last_request["options"]["num_ctx"] == 8192
+
+
+def _bound_handler(ollama_url: str, chat_model: str = "qwen-test", timeout: float = 5.0):
+    """A ProxyHandler subclass instance with no live socket behind it.
+
+    `_resolved_num_ctx` only touches `self.ollama_url`, `self.chat_model`,
+    `self.timeout_seconds`, `self.num_ctx`, `self.verbose` and
+    `self._num_ctx_cache` - none of which need a real connection -
+    `object.__new__` skips `BaseHTTPRequestHandler.__init__` (which reads
+    from a socket) so the caching behaviour can be driven directly, call by
+    call, instead of through a full HTTP round trip per probe.
+    """
+    cls = type("BoundHandler", (proxy.ProxyHandler,), {"_num_ctx_cache": {}})
+    handler = object.__new__(cls)
+    handler.ollama_url = ollama_url
+    handler.chat_model = chat_model
+    handler.timeout_seconds = timeout
+    handler.num_ctx = None
+    handler.verbose = False
+    return handler
+
+
+def test_resolved_num_ctx_does_not_cache_a_failed_probe_and_retries():
+    """Defect: a transient probe failure (Ollama unreachable, a cold start)
+    must not pin the fallback for the life of the process. Before the fix,
+    `_resolved_num_ctx` cached whatever `resolve_num_ctx` returned - success
+    or fallback alike - so one bad probe meant every later request silently
+    ran at DEFAULT_NUM_CTX even after Ollama would have answered normally.
+
+    Sabotage-tested: reverting `_resolved_num_ctx` to call `resolve_num_ctx`
+    and unconditionally cache its result makes this fail - the second call's
+    fallback gets cached exactly like the first, and
+    `handler._num_ctx_cache` ends up holding `{"value": DEFAULT_NUM_CTX}`
+    after the very first failed probe.
+    """
+    # Nothing listens on port 1 - every probe against it fails.
+    handler = _bound_handler("http://127.0.0.1:1")
+
+    first = handler._resolved_num_ctx()
+    assert first == proxy.DEFAULT_NUM_CTX
+    assert "value" not in handler._num_ctx_cache
+
+    # A second call must actually probe again, not just replay a cached
+    # fallback - nothing here can tell the two apart by return value alone,
+    # only by the fact that the cache is still empty.
+    second = handler._resolved_num_ctx()
+    assert second == proxy.DEFAULT_NUM_CTX
+    assert "value" not in handler._num_ctx_cache
+
+
+def test_resolved_num_ctx_caches_only_a_successful_probe(showing_ollama):
+    """The flip side: once a probe genuinely succeeds, that real answer -
+    not the fallback - is what gets cached and reused."""
+    showing_ollama.show_reply = {
+        "model_info": {"general.architecture": "qwen2", "qwen2.context_length": 8192}
+    }
+    host, port = showing_ollama.server_address
+    handler = _bound_handler(f"http://{host}:{port}")
+
+    got = handler._resolved_num_ctx()
+    assert got == 8192
+    assert handler._num_ctx_cache["value"] == 8192
 
 
 # --------------------------------------------------------------------------
@@ -502,6 +574,56 @@ def test_check_fits_context_catches_dense_code_a_looser_estimate_would_miss():
     num_ctx = 100 + loose_estimate + 5
     with pytest.raises(proxy.ProxyError):
         proxy.check_fits_context(body, num_ctx=num_ctx)
+
+
+def test_check_fits_context_measures_the_translated_form_not_raw_base64():
+    """Defect: `check_fits_context` used to estimate over the untranslated
+    Anthropic body, where a pasted image is still full base64. What actually
+    reaches Ollama is a ~30-character placeholder (`_blocks_to_text`) - the
+    module's own docstring promises an image "degrades to a visible
+    placeholder so the turn still makes sense," but the guard fired first
+    and refused a turn that would have translated down to a couple dozen
+    tokens.
+
+    Sabotage-tested: reverting `estimate_prompt_tokens` to size
+    `body.get("messages")`/`body.get("tools")` directly (the pre-fix
+    implementation) makes this raise `ProxyError` - the ~100 KB of base64
+    below estimates north of 30,000 tokens, comfortably over a 4096-token
+    window, even though the translated turn is a few dozen tokens long.
+    """
+    huge_image_data = "A" * 100_000  # stand-in for ~100 KB of base64 image data
+    body = {
+        "max_tokens": 100,
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image", "source": {"type": "base64", "data": huge_image_data}},
+                    {"type": "text", "text": "what is wrong with this screenshot?"},
+                ],
+            }
+        ],
+    }
+    proxy.check_fits_context(body, num_ctx=4096)  # must not raise
+
+
+def test_estimate_prompt_tokens_does_not_inflate_non_ascii_text():
+    """Defect: `json.dumps` defaults to `ensure_ascii=True`, so every CJK
+    character serialises as a 6-character `\\uXXXX` escape before this
+    module ever divides by `_CHARS_PER_TOKEN_ESTIMATE`. A 4000-character CJK
+    message then estimated around 8000 tokens - triple a character-based
+    estimate - refusing an ordinary non-English conversation at a fraction
+    of the model's real capacity.
+
+    Sabotage-tested: dropping `ensure_ascii=False` from
+    `estimate_prompt_tokens` (reverting to the default `ensure_ascii=True`)
+    makes this fail - the estimate jumps from roughly 1300 to roughly 8000,
+    well past the 3000 ceiling asserted below.
+    """
+    cjk_text = "你好世界" * 1000  # 4000 CJK characters
+    body = {"max_tokens": 100, "messages": [{"role": "user", "content": cjk_text}]}
+    estimated = proxy.estimate_prompt_tokens(body)
+    assert estimated < 3000
 
 
 def test_oversized_request_is_refused_before_reaching_ollama(endpoint, ollama):

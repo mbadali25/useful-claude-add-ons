@@ -8,7 +8,7 @@ only what is newly *possible*.
 Mirrored into [`plugin/README.md`](README.md) and the root
 [`README.md`](../README.md) by `scripts/sync-updates.py`. Edit here, then run it.
 
-## localgpu 0.1.6
+## localgpu 0.1.7
 
 A new plugin: the GPU in this machine, as a sidecar for one repository. Two
 halves - a semantic index the session you are already in can search, and a
