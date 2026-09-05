@@ -159,7 +159,7 @@ For this repo's own skills, [`scripts/check-marketplace.py`](scripts/check-marke
 | 16 SkillUI | `skillui` + `playwright` + the Chromium browser build | npm |
 | 17 Strix | The `strix` pentesting CLI | `curl -sSL https://strix.ai/install \| bash` |
 | 18 Obsidian | The Obsidian desktop app (Chocolatey → winget on Windows, flatpak → snap on Linux), plus the `claude-obsidian` vault engine and [`kepano/obsidian-skills`](https://github.com/kepano/obsidian-skills) — Obsidian's own Markdown, Bases, JSON Canvas, CLI and Defuddle skills | choco/winget/flatpak/snap + 2 marketplaces |
-| 19 This repo's plugins | The `crew` plugin from [`plugin/`](plugin/) — 11 subagents, 23 slash commands, 16 bundled skills, and 20 hook entries (10 scripts × `.sh`/`.ps1`) across 5 events — `obsidian-vault` — 2 agents, 8 slash commands, 3 skills, and 8 hook entries (3 scripts × `.sh`/`.ps1`) — and `gizmoduck` — 6 slash commands and 1 skill, no hooks, no agents. Off by default because hooks execute whether or not Claude agrees with them | this repo |
+| 19 This repo's plugins | The `crew` plugin from [`plugin/`](plugin/) — 14 subagents, 23 slash commands, 17 bundled skills, and 20 hook entries (10 scripts × `.sh`/`.ps1`) across 5 events — `obsidian-vault` — 2 agents, 8 slash commands, 3 skills, and 8 hook entries (3 scripts × `.sh`/`.ps1`) — and `gizmoduck` — 6 slash commands and 1 skill, no hooks, no agents. Off by default because hooks execute whether or not Claude agrees with them | this repo |
 | 20 `graphify` | The `graphify` CLI (`graphifyy` on PyPI), registered per-repository with `graphify install --project`. Off by default; not installed globally | `uv tool install` |
 | 21 Microsoft MCP servers | Registers up to 4 servers via npx — `mcp-msgraph`, `mcp-intune`, `mcp-o365-admin` (app-only via `MS_ADMIN_*`, OR delegated via an existing `az login` session, checked with `az account show` — no app registration required for the latter), `mcp-o365-user` (delegated device-code, needs `MS_USER_CLIENT_ID`). Skipped with instructions when neither an `az login` session nor credentials are found | npm (`@badali404/mcp-*`) + `claude mcp add` |
 
@@ -219,6 +219,91 @@ claude plugin marketplace remove useful-claude-add-ons        # stop tracking th
 ```
 
 Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for the lightweight path (clone the repo, point your own `.claude/skills/` at the folders you want). Full details, including the other marketplaces the team's install scripts wire up (`claude-plugins-official` for Superpowers, `frontend-design`, `excalidraw-generator`, and the community set), are in [`MARKETPLACE.md`](MARKETPLACE.md).
+
+## What's new in the plugins
+
+Generated from [`plugin/UPDATE.md`](plugin/UPDATE.md) by `scripts/sync-updates.py`. Edit that file, not this block.
+
+<!-- BEGIN plugin/UPDATE.md -->
+
+### crew 0.15.1
+
+Three new agents and a skill, taking crew to 14 agents and 17 bundled skills.
+
+| Added | What it does |
+|---|---|
+| `infrastructure-architect` | Designs and reviews AWS network and account architecture — VPCs, routing, connectivity, DNS, ingress, landing zones. Returns the design with its tradeoffs. Never applies anything to a live account. |
+| `scribe` | Keeps the durable record: ADRs, CHANGELOG entries, handoff notes, and what was tried and rejected. ADRs are append-only — a correction is a new ADR, never an edit to the old one. |
+| `researcher` | External research only — library and SDK docs at the version actually pinned, API behaviour, vendor limits, standards. Every claim carries its source; it refuses to answer a version, a limit, or an API surface from memory. |
+| `crew-house-style` skill | House style for documents a human will read: format choice, headings, capitalization, palette. Routes to the office and diagram skills rather than reimplementing generation. |
+
+Also in 0.15.0:
+
+- **`docs-writer` exports for humans.** Documentation a person will consume ships
+  as HTML, DOCX or PDF, not raw markdown. The markdown under `docs/` stays the
+  source of truth — the export is an additional artifact, so anything reading
+  those paths keeps working. Repo-native files (`CHANGELOG.md`, `README.md`,
+  `CLAUDE.md`, ADRs) stay markdown, because exporting one breaks the tool that
+  reads it. `docs-writer` also gained the return contract it never had.
+- **`dba` covers DynamoDB as its own model**, not as a row in a relational
+  checklist — access-pattern-first, single-table design, partition-key
+  cardinality, GSI backfill cost, the creation-time-only nature of LSIs, and the
+  400KB item limit. Relational review is now split by engine, because lock
+  behaviour under `ALTER TABLE` differs across Postgres, MySQL/InnoDB and SQL
+  Server, and the old text applied Postgres vocabulary to all three.
+- **`planner` asks what a decision forecloses** — whether it is one-way, what
+  undoing it costs later, and the cheapest experiment that would settle it before
+  committing.
+- **Agents can now load the skills they cite.** Eight agents referenced a crew
+  skill without declaring `skills:` frontmatter, so the reference was decoration:
+  naming a skill does not load it. `browser-tester`, `docs-writer`,
+  `infrastructure-architect`, `planner`, `pm`, `qa-reviewer`, `scribe` and
+  `smoke-author` now declare what they cite.
+- **`explorer` no longer orders a write it cannot perform.** It held
+  `Read, Grep, Glob` and was told to append findings to memory; it now returns a
+  `**Durable:**` block for its caller to persist.
+- **The PM's guards apply on every path.** Removal needing an explicit yes was
+  previously gated to `authority: act`, which switched it off exactly when a user
+  told a `report-only` PM to go ahead.
+
+<!-- END plugin/UPDATE.md -->
+
+## What's new in the skills
+
+Generated from [`skills/UPDATE.md`](skills/UPDATE.md) by `scripts/sync-updates.py`. Edit that file, not this block.
+
+<!-- BEGIN skills/UPDATE.md -->
+
+### Unreleased
+
+No standalone skills added this round. The 25 skills registered in
+`.claude-plugin/marketplace.json` are unchanged.
+
+<!-- END skills/UPDATE.md -->
+
+## What's new in the MCP servers
+
+Generated from [`mcp-servers/UPDATE.md`](mcp-servers/UPDATE.md) by `scripts/sync-updates.py`. Edit that file, not this block.
+
+<!-- BEGIN mcp-servers/UPDATE.md -->
+
+### Unreleased
+
+No new MCP servers this round.
+
+One operational note that costs an afternoon if you hit it cold: when several
+Obsidian vaults each run the Local REST API plugin, **every vault needs its own
+HTTPS port as well as its own HTTP port**. Two vaults declaring the same HTTPS
+port is not a partial failure — the second one to load fails to bind, and its
+plugin then serves neither protocol, so the HTTP port you actually configured
+goes silent too. The symptom looks like an auth or TLS problem and is not:
+the surviving vault answers on the shared port with *its* API key and *its*
+files. Compare `port` and `insecurePort` across every vault's
+`.obsidian/plugins/obsidian-local-rest-api/data.json` before touching anything
+else, and probe with `curl -k` on the HTTPS port, which works even where a
+Node client rejects the self-signed certificate.
+
+<!-- END mcp-servers/UPDATE.md -->
 
 ## Documentation
 
@@ -376,7 +461,7 @@ Each subdirectory in [`plugin/`](plugin/) is a self-contained [Claude Code plugi
 
 | Plugin | Category | What it does | Use cases | Provides |
 |---|---|---|---|---|
-| [`crew`](plugin/crew) | Workflow / QA | A virtual dev team for multi-repo legacy work — file-backed tickets, one implementation session, an independent reviewer, and deterministic gates that block on failure instead of offering an opinion. Hooks enforce unsafe commands, unverified turns, and unearned production deploys. Roles exist only where they buy an isolated context window, a restricted tool set, or genuinely independent eyes; the manager is the one role that can assign work rather than only reporting on it, opt-in via `pm.authority`, and BA/architecture stay files and commands. Codex QA, Jira or ServiceDesk Plus, an Obsidian Kanban board for tickets, Obsidian memory, a code graph, and Teams/Telegram notifications are all optional. | Several repositories, mixed stacks, legacy code, and almost no test coverage; a change that needs review by something that did not write it; wanting `terraform apply`, force-push, and destructive DDL blocked by a hook rather than by good intentions; a turn that should fail when the checks its changed paths map to go red; a production deploy that should be refused unless qa signed off on **that exact sha** and the rollback runbook is still verified; wanting to know what every endpoint and scheduled job actually does; losing the thread across a `/clear` or an auto-compact; wanting the crew to pick up the next thing itself when a ticket closes or the diagrams fall behind, instead of waiting to be asked — bounded so it fixes only what blocks the job and tickets the rest. | 11 agents, 21 commands, 16 skills, 20 hook entries |
+| [`crew`](plugin/crew) | Workflow / QA | A virtual dev team for multi-repo legacy work — file-backed tickets, one implementation session, an independent reviewer, and deterministic gates that block on failure instead of offering an opinion. Hooks enforce unsafe commands, unverified turns, and unearned production deploys. Roles exist only where they buy an isolated context window, a restricted tool set, or genuinely independent eyes; the manager is the one role that can assign work rather than only reporting on it, opt-in via `pm.authority`, and BA/architecture stay files and commands. Codex QA, Jira or ServiceDesk Plus, an Obsidian Kanban board for tickets, Obsidian memory, a code graph, and Teams/Telegram notifications are all optional. | Several repositories, mixed stacks, legacy code, and almost no test coverage; a change that needs review by something that did not write it; wanting `terraform apply`, force-push, and destructive DDL blocked by a hook rather than by good intentions; a turn that should fail when the checks its changed paths map to go red; a production deploy that should be refused unless qa signed off on **that exact sha** and the rollback runbook is still verified; wanting to know what every endpoint and scheduled job actually does; losing the thread across a `/clear` or an auto-compact; wanting the crew to pick up the next thing itself when a ticket closes or the diagrams fall behind, instead of waiting to be asked — bounded so it fixes only what blocks the job and tickets the rest. | 14 agents, 21 commands, 17 skills, 20 hook entries |
 | [`gizmoduck`](plugin/gizmoduck) | Security | Runs [Nuclei](https://github.com/projectdiscovery/nuclei) vulnerability scans against hosts and websites you are authorised to test, then does the part that usually gets skipped: diffs the run against a previous baseline so you see what is genuinely new, renders a triaged report as Markdown, HTML or PDF, and opens or syncs ServiceDesk Plus tickets for Critical and High findings. Nuclei is MIT-licensed and self-hosted, so the whole loop runs locally with no export step and no API quota. Bootstrap scripts for WSL/Linux and Windows fetch the engine and the community template set; `/gizmoduck:doctor` tells you which half of the toolchain is missing rather than failing mid-scan. Registers no hooks and no agents — it is six commands over one Python CLI. | Wanting a scheduled external scan whose findings land in the ticket queue instead of a PDF nobody opens; needing to show an auditor what changed between this quarter's scan and last quarter's; a scan whose Critical and High findings should become tickets automatically while the Mediums stay in the report; re-rendering a report at a different severity floor without paying for another scan; a scanner that stops working on a new machine and you want to know whether it is `nuclei`, the templates, `python`, or `wkhtmltopdf`. | 6 commands, 1 skill |
 | [`obsidian-vault`](plugin/obsidian-vault) | Memory | Makes one or more Obsidian vaults Claude Code's durable, token-efficient memory. Cross-platform, multi-vault setup for the Local REST API bridge and MCP registration (one server per vault, never one juggling two), a vault-contract guard hook that ships every check off until a target vault's own `CLAUDE.md` says to turn it on, gardening and reflection agents with no fabricated citations, canvas and Map-of-Content generation, and `graphify` wiring into a separate, dedicated codegraphs vault. No vault path is hardcoded — it detects from Obsidian's own vault registry or a config file. Named `obsidian-vault`, not `obsidian`, so it cannot collide with a third-party plugin of that name. | Wanting Claude Code sessions to remember architecture decisions and patterns across `/clear` without re-explaining them; a second machine-generated vault (a code graph running past 100k notes) that needs different defaults than a hand-curated one; an Obsidian Git plugin auto-committing on a timer into a directory that turns out not to be a git repo; a vault whose own `CLAUDE.md` has drifted from what the filesystem actually shows; wanting a canvas or Map of Content that stays a spatial/structural aid rather than a second, driftable copy of facts already in notes. | 8 commands, 2 agents, 3 skills, 8 hook entries |
 
@@ -396,6 +481,31 @@ Same four-place rule the skills follow, plus a couple. Full checklist in [`plugi
 4. Default its menu item to **off** if it registers hooks.
 
 <!-- END plugin/README.md -->
+
+## What's new
+
+Generated by `scripts/sync-updates.py` from each directory's `UPDATE.md`. Edit those, not this section.
+
+### skills
+
+From [`skills/UPDATE.md`](skills/UPDATE.md).
+
+<!-- BEGIN skills/UPDATE.md -->
+<!-- END skills/UPDATE.md -->
+
+### plugin
+
+From [`plugin/UPDATE.md`](plugin/UPDATE.md).
+
+<!-- BEGIN plugin/UPDATE.md -->
+<!-- END plugin/UPDATE.md -->
+
+### mcp-servers
+
+From [`mcp-servers/UPDATE.md`](mcp-servers/UPDATE.md).
+
+<!-- BEGIN mcp-servers/UPDATE.md -->
+<!-- END mcp-servers/UPDATE.md -->
 
 ## License
 

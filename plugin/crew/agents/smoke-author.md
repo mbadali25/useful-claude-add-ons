@@ -1,7 +1,7 @@
 ---
 name: smoke-author
 description: Writes and repairs smoke and regression checks in _verify/ for repos with little or no coverage. Use when a repo has no check harness, or when a check is flaky, wrong, or does not cover a change.
-tools: Read, Write, Edit, Bash, Grep, Glob
+tools: Read, Write, Edit, Bash, Grep, Glob, Skill
 model: sonnet
 ---
 

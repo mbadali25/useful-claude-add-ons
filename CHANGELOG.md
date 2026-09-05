@@ -4,7 +4,153 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added
+
+- **`UPDATE.md` per component directory, mirrored into the READMEs by a
+  generator that can fail CI.** `plugin/`, `skills/` and `mcp-servers/` each own
+  an `UPDATE.md` listing what is newly *possible* there — distinct from
+  `CHANGELOG.md`, which records everything including fixes. Each file's sections
+  are mirrored into that directory's `README.md` and into the root `README.md`
+  between `<!-- BEGIN <dir>/UPDATE.md -->` markers, reusing the convention the
+  root README already used for its folder mirrors rather than inventing a second
+  one.
+
+  The difference from those existing blocks is that these have
+  `scripts/sync-updates.py`. The older mirrors are maintained by hand and nothing
+  notices when the source moves on — survivable for a table that changes a few
+  times a year, not for a "what's new" list whose entire value is being current.
+  `--check` writes nothing and exits 1 when a block is stale, 2 on a structural
+  fault it will not paper over.
+
+  Two rules fall out of splicing one text into two directory depths, and both are
+  enforced rather than merely documented. Headings are demoted one level, since a
+  mirrored section always sits under a heading its host supplies. And relative
+  links are rejected outright: `../CHANGELOG.md` resolves from
+  `plugin/README.md` and 404s from the root, so no relative target can be correct
+  in both. That second rule was in the module docstring with nothing checking it,
+  and the very first `UPDATE.md` written against it shipped a
+  `../.claude-plugin/marketplace.json` link that had to be caught by eye — a rule
+  a generator states and does not check is worse than no rule, because it reads
+  as guaranteed. Sabotage-tested: injecting a relative link exits 2, removing it
+  exits 0.
+
 ### Fixed
+
+- **Eight crew agents cited a skill they had no way to load.** Naming a skill in
+  an agent's prose does not load it; the agent needs `skills:` frontmatter or the
+  `Skill` tool, and not one crew agent had either. So `browser-tester`,
+  `qa-reviewer` and `smoke-author` pointed at `crew-verification`, `pm` at
+  `crew-pm`, `planner` at `crew-diagrams` and `crew-providers`, `scribe` at
+  `crew-context` and `crew-memory`, `infrastructure-architect` at `crew-cloud`
+  and `crew-terraform`, and `docs-writer` at `crew-diagrams` and the
+  `crew-house-style` skill that defines its whole new export behaviour — and
+  every one of those references was decoration. Five of the eight predate this
+  release.
+
+  This is the same defect as the `explorer` write order fixed in 0.14.7: an
+  instruction with no route to execute, which fails silently and looks like the
+  model ignoring its brief. A reviewer found the `docs-writer` instance; the
+  ripple check across all fourteen agents found the other seven.
+
+- **`crew` 0.15.1: three new agents, a house-style skill, and a documentation
+  role that stops handing people raw markdown.**
+
+  `infrastructure-architect` designs and reviews AWS network and account
+  architecture — VPC and CIDR planning that survives growth, routing and egress,
+  Transit Gateway against peering against Direct Connect and when each is wrong,
+  security groups against NACLs, Route 53 split-horizon, ingress, landing-zone
+  shape, failure domains, and cost as a design constraint rather than an
+  afterthought. It is read-only and forbids `apply` in both its description and
+  its body: it holds `Bash` for `terraform validate` and describe-only calls, and
+  routes authoring to `crew:developer` and `crew-terraform`. The reference corpus
+  has an Azure equivalent and no AWS one, so this is written from scratch.
+
+  `scribe` keeps the durable record — ADRs, `CHANGELOG` entries, handoff notes,
+  and what was tried and rejected. Its seam against `docs-writer` is what a
+  reader can recover from source: `docs-writer` documents what the code does,
+  `scribe` records the alternatives that lost, the constraint that forced the
+  choice, and the condition that would reopen it. It never rewrites an existing
+  ADR or a released changelog section; corrections are new entries that
+  supersede, and say so.
+
+  `researcher` answers only what lives outside this repository — library and SDK
+  behaviour, version and migration questions, vendor limits, standards, prior
+  art. The seam is enforced by its tool set rather than by prose: it holds web
+  and Context7 tools and no `Grep`, because anything inside the repo belongs to
+  `explorer` or `analyst`. Every claim carries its source, and it refuses to
+  answer a version, limit or API-surface question from memory, since those rot.
+
+  `crew-house-style` owns house style for a document handed to a human — palette,
+  heading hierarchy, capitalization, and whether the artifact should be PDF,
+  DOCX, HTML or plain markdown. It deliberately owns no generation: it routes to
+  `anthropic-office-skills:docx`/`pdf`/`pptx`, `ppt-master` and `visio-diagrams`,
+  and where none of those is installed it falls back to markdown and says so in
+  the handoff rather than improvising a generator.
+
+  `docs-writer` gained the directive behind that skill and the return contract it
+  never had. A document a human consumes as a finished artifact ships as HTML,
+  DOCX or PDF; repo-native files the repo itself reads — `CHANGELOG.md`,
+  `README.md`, `CLAUDE.md`, ADRs — stay markdown. The export is **additional**:
+  the `docs/*.md` deliverables remain the source of truth, so everything that
+  reads those paths keeps reading them. It also stops claiming `docs/adr/`, which
+  is now `scribe`'s.
+
+  `dba` covered no engine in particular; it now names four. SQL Server, MySQL and
+  PostgreSQL are separated where they genuinely differ — what a DDL statement
+  locks, whether a failed migration leaves the database half-applied, which index
+  types exist, how each is asked for a plan — and stated once where they agree.
+  DynamoDB gets its own section rather than a row, because the review questions
+  are not the relational ones: partition key design and hot partitions, access
+  patterns preceding the schema, an LSI that cannot be added after creation,
+  eventual consistency on GSI reads, and why "add an index later" is a relational
+  habit that does not transfer.
+
+  `planner` gained a return contract, a "what you never do" section, and the
+  failure modes it was not naming: designing for a scale that does not exist,
+  the abstraction added for a second call site, reversibility as the tiebreak
+  when two options are close, and stating which assumption, if wrong, invalidates
+  the design. It also has to say when the proposed approach is fine and it has
+  nothing to add — a second opinion that always finds something is noise.
+
+  The three new agents ship **without a tier**. They dispatch normally when
+  named, but they are not rows in `crew-scaling`'s tier table, so `/crew:scale`
+  will not propose them and `/crew:pm` will not onboard them from evidence.
+
+- **`UPDATE.md` per component directory, with a generator behind it.**
+  `plugin/`, `skills/` and `mcp-servers/` each own an `UPDATE.md` listing what is
+  newly *possible* there, newest first — the counterpart to this file, which
+  records everything including fixes. Each one is mirrored into its own
+  `README.md` and into the repository `README.md` between
+  `<!-- BEGIN <dir>/UPDATE.md -->` markers, reusing the convention the existing
+  `skills/README.md` and `plugin/README.md` mirror blocks already use.
+
+  Those existing blocks are hand-maintained, which is why they drift.
+  `scripts/sync-updates.py` regenerates every `UPDATE` block from its source and
+  takes `--check`, which writes nothing and exits 1 naming the stale files. It is
+  dependency-free python3. Two rules fall out of rendering one text at two
+  directory depths and the script enforces both: headings are demoted one level,
+  because a mirrored section always sits under a heading its host supplies, and
+  the mirrored sections carry no relative links — `../CHANGELOG.md` is correct in
+  at most one of the two hosts, so links stay in the preamble above the first
+  `##` heading, which is never mirrored.
+
+### Fixed
+
+- **`crew` 0.15.0: eight agents cited a skill they had no way to load.** An
+  agent that names a `crew` skill does not thereby load it — that needs `skills:`
+  frontmatter — so the instruction silently did not happen, on every run, with
+  nothing in the transcript to say a step had been skipped. Codex caught it on
+  `docs-writer`, which the same release had just pointed at `crew-house-style`;
+  the ripple check found it was systemic. `browser-tester`, `docs-writer`,
+  `infrastructure-architect`, `planner`, `pm`, `qa-reviewer`, `scribe` and
+  `smoke-author` now declare what they cite, five of them fixing a defect that
+  predates this release.
+
+  This is the same defect class as 0.14.7's `explorer` bug, one layer up: an
+  agent told to do something the harness gives it no route to do. The tools an
+  agent holds and the skills it declares are both part of whether an instruction
+  in its prose can execute at all, and neither is checked by anything that reads
+  the file.
 
 - **`crew` 0.14.7: two shipped agents told an agent to do something it could not
   do, and gated a safety rail on the one path where it matters.**

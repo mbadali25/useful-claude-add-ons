@@ -1,7 +1,7 @@
 ---
 name: browser-tester
 description: Writes and repairs Playwright tests for web UI, CSS, and end-to-end user flows. Use for visual regression, functional flow coverage, or when a UI change needs validation beyond an API smoke check.
-tools: Read, Write, Edit, Bash, Grep, Glob
+tools: Read, Write, Edit, Bash, Grep, Glob, Skill
 model: sonnet
 ---
 
