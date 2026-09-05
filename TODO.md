@@ -285,3 +285,35 @@ than lucky: in any lane brief, mark which statements are verified and which are
 claims to check, and say explicitly that refuting the brief is a valid and valued
 outcome. A lane that believes its brief is a lane that can only find the bugs you
 already suspected.
+
+## The installer menu undersells crew by six agents and three commands
+
+`scripts/install-prerequisites.sh:859` and `scripts/install-prerequisites.ps1:843`
+both read:
+
+```
+crew                    - Virtual dev team: 11 agents, 21 commands, safety hooks
+```
+
+Actual on disk after the 0.16.10 merge: **17 agents, 24 commands.** The two
+scripts agree with each other, so the matched-pair rule is satisfied — they are
+consistently wrong, which is why no check catches it. `check-marketplace.py`
+compares the *menu keys* between the two scripts, not the descriptive text, and
+nothing compares that text against the plugin it describes.
+
+This is the first thing a user reads when deciding what to install, and it
+undersells the plugin by a third.
+
+**Not fixed in this PR deliberately, and the reason is process rather than
+scope.** `CLAUDE.md` requires that after a change to either install script,
+`scripts/_test/drift-detection.sh` is run by hand — it cannot run in CI — and the
+README's install URLs, which are pinned to a commit SHA, are re-pinned. PR #67
+has just been brought current with a verified drift run against its exact tip.
+A one-line label fix would invalidate that run and buy another manual pass plus a
+re-pin, for text that is wrong but harmless.
+
+Fix in a follow-up alongside the other deferred items. When it is done, consider
+whether the check that would have caught it is worth writing: the counts are
+derivable from `ls plugin/crew/agents/*.md` and `commands/*.md`, so a smoke check
+comparing the installer's advertised numbers against the directory contents is
+about ten lines and would cover every plugin's menu line, not just crew's.
