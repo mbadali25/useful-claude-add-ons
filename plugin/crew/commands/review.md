@@ -64,6 +64,7 @@ source everywhere you name the family — never the family alone:
 |---|---|---|
 | `author family: <f>  (recorded at dispatch)` | `.work/dispatch.json` holds the role, provider and model that actually ran, and the guard is judging what ran | `author: <f>, recorded dispatch <role>/<provider>/<model>` — the `last dev dispatch:` line printed right under it |
 | `author family: <f>  (READ FROM CONFIG - no dispatch recorded...)` | nothing was recorded in this checkout, so the report read `dev` out of the config | `author: <f>, READ FROM CONFIG - no dispatch recorded, so this is what the NEXT run would use and not who wrote this diff` |
+| `author family: unknown  (UNKNOWN - a dispatch was recorded...)` | a dispatch WAS recorded on this branch and its family cannot be determined -- an unpinned provider that hosts several families, so `family()` has nothing to answer with | `author: UNKNOWN - a dispatch was recorded but its family cannot be determined, so no reviewer can be proven independent of it`. **This is not a pass.** Nothing is struck, so every candidate looks eligible; the report sets `independentReviewer: false` for exactly that reason. Say the review is not certified independent, and say that pinning `dev.<provider>.model` is what fixes it |
 
 A recorded fact and a config-derived guess look identical once both are just the
 word `claude`. The label is the only thing that separates them, so a review that
@@ -83,10 +84,30 @@ DEFAULT_BRANCH=${DEFAULT_BRANCH#origin/}
 : "${DEFAULT_BRANCH:=main}"
 BASE=$(git merge-base HEAD "$DEFAULT_BRANCH")
 
-# The record carries a role, a provider and a model, and nothing else. It has no
-# timestamp of its own, so the file's mtime is the only clock there is, and a
-# missing python3 must not take the review down with it.
-REC_AT=$(python3 -c 'import os,sys;print(int(os.path.getmtime(sys.argv[1])))' .work/dispatch.json 2>/dev/null || echo 0)
+# The NEWEST of `.work/dispatch.json` and anything in `.work/dispatch.d/`.
+# Since 0.16.7 each dispatch writes its own file in that directory and the
+# shared `dispatch.json` slot is a best-effort convenience -- so a slot write
+# that lost a race, or failed outright, would report this branch as having no
+# record while the store holds several. Reading only the one file makes a
+# recorded dispatch look absent, which fails OPEN: the review falls back to
+# the config and clears whatever the config no longer names.
+#
+# A missing python3 must not take the review down with it, hence the `|| echo 0`.
+REC_AT=$(python3 -c '
+import os, sys
+stamps = []
+for path in (".work/dispatch.json", ".work/dispatch.d"):
+    try:
+        stamps.append(os.path.getmtime(path))
+    except OSError:
+        pass
+    for name in (os.listdir(path) if os.path.isdir(path) else []):
+        try:
+            stamps.append(os.path.getmtime(os.path.join(path, name)))
+        except OSError:
+            pass
+print(int(max(stamps)) if stamps else 0)
+' 2>/dev/null || echo 0)
 BASE_AT=$(git log -1 --format=%ct "$BASE" 2>/dev/null) || BASE_AT=0
 : "${BASE_AT:=0}"
 echo "record=$REC_AT base=$BASE_AT branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
@@ -103,7 +124,7 @@ fi
 
 | Reading | Means | Do |
 |---|---|---|
-| `REC_AT` is `0` | no record, or no `python3` | source is `config`; announce it in those words |
+| `REC_AT` is `0` | no record anywhere -- neither `.work/dispatch.json` nor `.work/dispatch.d/` -- or no `python3` | source is `config`; announce it in those words |
 | `REC_AT >= BASE_AT` | the record is no older than the point this branch left the trunk | trust it |
 | `REC_AT < BASE_AT` | **STALE** — the record predates every commit under review, so it cannot describe any of them | fail closed, below |
 
@@ -122,7 +143,7 @@ rung; under-barring costs the entire point of the guard. If striking both leaves
 no candidate, that is the same state as striking one and leaving none — step 2c
 runs and the verdict says same-family.
 
-**This test proves stale, and never proves fresh. Say so.** `.work/dispatch.json`
+**This test proves stale, and never proves fresh. Say so.** The dispatch record
 is one file per checkout with a single `dev` slot, and the record carries no
 branch and no ticket — so a dispatch made on another branch overwrites it and
 then reads as perfectly fresh here. Print the recorded `role`/`provider`/`model`

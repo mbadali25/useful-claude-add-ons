@@ -159,7 +159,7 @@ For this repo's own skills, [`scripts/check-marketplace.py`](scripts/check-marke
 | 16 SkillUI | `skillui` + `playwright` + the Chromium browser build | npm |
 | 17 Strix | The `strix` pentesting CLI | `curl -sSL https://strix.ai/install \| bash` |
 | 18 Obsidian | The Obsidian desktop app (Chocolatey → winget on Windows, flatpak → snap on Linux), plus the `claude-obsidian` vault engine and [`kepano/obsidian-skills`](https://github.com/kepano/obsidian-skills) — Obsidian's own Markdown, Bases, JSON Canvas, CLI and Defuddle skills | choco/winget/flatpak/snap + 2 marketplaces |
-| 19 This repo's plugins | The `crew` plugin from [`plugin/`](plugin/) — 14 subagents, 24 slash commands, 17 bundled skills, and 20 hook entries (10 scripts × `.sh`/`.ps1`) across 5 events — `obsidian-vault` — 2 agents, 11 slash commands, 3 skills, and 8 hook entries (3 scripts × `.sh`/`.ps1`) — and `gizmoduck` — 6 slash commands and 1 skill, no hooks, no agents. Off by default because hooks execute whether or not Claude agrees with them | this repo |
+| 19 This repo's plugins | The `crew` plugin from [`plugin/`](plugin/) — 17 subagents, 24 slash commands, 17 bundled skills, and 20 hook entries (10 scripts × `.sh`/`.ps1`) across 5 events — `obsidian-vault` — 2 agents, 11 slash commands, 3 skills, and 8 hook entries (3 scripts × `.sh`/`.ps1`) — and `gizmoduck` — 6 slash commands and 1 skill, no hooks, no agents. Off by default because hooks execute whether or not Claude agrees with them | this repo |
 | 20 `graphify` | The `graphify` CLI (`graphifyy` on PyPI), registered per-repository with `graphify install --project`. Off by default; not installed globally | `uv tool install` |
 | 21 Microsoft MCP servers | Registers up to 4 servers via npx — `mcp-msgraph`, `mcp-intune`, `mcp-o365-admin` (app-only via `MS_ADMIN_*`, OR delegated via an existing `az login` session, checked with `az account show` — no app registration required for the latter), `mcp-o365-user` (delegated device-code, needs `MS_USER_CLIENT_ID`). Skipped with instructions when neither an `az login` session nor credentials are found | npm (`@badali404/mcp-*`) + `claude mcp add` |
 
@@ -225,6 +225,69 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 Generated from [`plugin/UPDATE.md`](plugin/UPDATE.md) by `scripts/sync-updates.py`. Edit that file, not this block.
 
 <!-- BEGIN plugin/UPDATE.md -->
+
+### crew 0.16.7
+
+**Three domain specialists you can onboard per repo.**
+`sharepoint-developer`, `power-automate-specialist` and `node-developer` are
+full agents with their own refusal boundaries — a SharePoint change never
+breaks permission inheritance to make something work, and a Power Automate
+flow that already has a trigger is already live, so neither touches a
+production tenant unasked.
+
+They sit **off the tier ladder**, and no amount of scaling grants one. Every
+ladder role closes a defect class any repo can have, so `roles_for_tier` hands
+out every rung up to the declared tier — which is exactly how a repo with no
+database ends up holding `dba`. "This repo does SharePoint" is not a defect
+class; it is a fact about one checkout, knowable on day one. On the ladder,
+every tier-2 repo on the machine would get a SharePoint developer it will
+never dispatch.
+
+So you ask for one:
+
+```
+/crew:pm onboard node-developer
+```
+
+and it is justified from what is actually in the repo — a `package.json` with
+a server entry point, an SPFx `config/package-solution.json`, an exported flow
+definition — rather than from a pattern in `.crew/metrics.md`. Onboarding one
+leaves `tier` alone: the crew has specialised, not grown. `/crew:upgrade` no
+longer reports a deliberately-onboarded specialist as an unrecognised name.
+
+**The self-review guard stopped losing dispatches.** The guard's job is to
+know which model family wrote the diff, so that family cannot be handed its
+own work to review. It read `.work/dispatch.json` — one file that every
+dispatch read, modified and rewrote. Two dispatches doing that at once erased
+each other, and the PM dispatches up to three roles at a time. If the erased
+one was the family that wrote the code, it was cleared to review itself: the
+guard reported a pass, having lost the fact it was checking.
+
+Four review rounds went into trying to make that file safe, through an atomic
+write, then a lock, then a lock plus a self-verifying write. None of them
+close it. A lock has to be reclaimable or one killed dispatch wedges the repo
+forever, and reclaiming it is two calls against a pathname a rival can replace
+in between. A self-verifying write holds only for the writer that lands last.
+
+There is no shared file left to race. **Each dispatch now writes its own file
+under `.work/dispatch.d/`, and nothing ever rewrites one.** The reader merges
+the directory. Concurrency stopped being a correctness question, a malformed
+file costs one entry rather than the whole record, and a bookkeeping write
+that fails can no longer abort the dispatch it was recording.
+
+If you gitignore crew's working files by hand, **add `.work/dispatch.d/`** —
+ignoring `dispatch.json` alone now commits the actual record. `/crew:init`
+does both.
+
+**`/crew:model` and `/crew:review` stopped calling an unknown author proven.**
+An unpinned `copilot` has no determinable family: Copilot hosts several, and
+an unset model does not say which. A dispatch by one was reported as
+`recorded at dispatch` — "the guard is judging what actually ran" — with an
+empty author family, so nothing was struck and every reviewer read as
+eligible. It is now reported as `UNKNOWN`, and no review under it is
+certified independent. Pin `dev.copilot.model` and it resolves; nothing is
+barred on the unknown itself, because taking a real reviewer off a diff on a
+value nobody established is the same mistake pointing the other way.
 
 ### crew 0.16.6
 

@@ -109,3 +109,53 @@ def test_tier_for_roles_ignores_a_name_it_does_not_know():
     assert crew_state.tier_for_roles(["explorer", "not-a-real-role"]) == 0
     assert crew_state.tier_for_roles([]) == 0
     assert crew_state.tier_for_roles(["planner"]) == 2
+
+
+# --- domain specialists ----------------------------------------------------
+#
+# Off the ladder ON PURPOSE, which is the opposite of the 0.15.x bug directly
+# above: those three were general-purpose roles that had simply been forgotten,
+# and being unreachable was the defect. These are domain-specific, and being
+# unreachable-by-default is the feature.
+
+
+def test_specialists_are_not_on_the_tier_ladder():
+    """The whole point. `roles_for_tier` grants every rung up to the declared
+    tier, so putting a SharePoint developer on the ladder would hand one to
+    every tier-2 repo on the machine -- including the ones with no SharePoint.
+    That is already visible with `dba`: this repo has no database and was
+    granted one anyway."""
+    for name in crew_state.SPECIALIST_ROLES:
+        assert name not in crew_state.ROLE_TIERS, name
+
+
+def test_no_tier_ever_auto_grants_a_specialist():
+    """The rule stated against the function that would break it, rather than
+    against the data. A specialist added to ROLE_TIERS by mistake fails here
+    even if the set above is edited to match."""
+    for tier in range(0, crew_state.TIER_PARALLEL + 2):
+        granted = set(crew_state.roles_for_tier(tier))
+        assert not (granted & crew_state.SPECIALIST_ROLES), tier
+
+
+def test_every_specialist_has_an_agent_definition():
+    for name in crew_state.SPECIALIST_ROLES:
+        assert os.path.isfile(os.path.join(_AGENTS, f"{name}.md")), name
+
+
+def test_a_specialist_is_a_known_role_even_though_it_has_no_tier():
+    """`known_role` is what separates "off the ladder deliberately" from
+    "a name this release has never heard of". Without it a repo that onboards
+    a specialist gets it reported as unrecognised on every upgrade."""
+    for name in crew_state.SPECIALIST_ROLES:
+        assert crew_state.known_role(name) is True, name
+    for name in crew_state.ROLE_TIERS:
+        assert crew_state.known_role(name) is True, name
+    assert crew_state.known_role("wharrgarbl") is False
+
+
+def test_a_specialist_contributes_no_tier():
+    """It carries no evidence about how much crew a repo needs, so it must not
+    move the tier -- in either direction."""
+    assert crew_state.tier_for_roles(["node-developer"]) == 0
+    assert crew_state.tier_for_roles(["dba", "node-developer"]) == 2

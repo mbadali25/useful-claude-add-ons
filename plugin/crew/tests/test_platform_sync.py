@@ -418,6 +418,51 @@ def test_heal_config_treats_an_empty_file_like_a_missing_one(tmp_path):
     assert not (root / ".crew" / "config.json.broken").exists()
 
 
+def test_heal_config_recreates_an_empty_object(tmp_path):
+    """QA finding 4, Critical: `{}` parses, so the healthy branch adopted it
+    and left crew permanently switched off.
+
+    `crew_state.collect` derives `isCrew` from the truthiness of the parsed
+    config, so an empty object reads as "not a crew repo" -- every hook
+    stands down, the PM brief and pulse skip, and nothing ever says why. The
+    second face is worse: `schema` is read as SCHEMA_CURRENT when the config
+    is falsy, so `/crew:upgrade` reports "already current" forever and the
+    repo can never migrate out of it.
+
+    An empty object carries no hand-edits, which is the entire reason the
+    healthy branch exists -- so it belongs with the zero-byte file, not with
+    the config someone is in the middle of writing. No backup: there is
+    nothing in it to lose.
+    """
+    root = crew_fixtures.make_repo(tmp_path, config=None, git=False)
+    path = root / ".crew" / "config.json"
+    path.write_text("{}", encoding="utf-8")
+
+    cfg, message = crew_platform.heal_config(str(root))
+
+    assert cfg == crew_config.default_config()
+    assert "empty" in message
+    assert not (root / ".crew" / "config.json.broken").exists()
+    written = json.loads(path.read_text(encoding="utf-8"))
+    assert written == crew_config.default_config()
+
+
+def test_heal_config_recreates_an_object_that_is_only_whitespace_keys(tmp_path):
+    """The near-miss control: a dict with ANY key is a real config and is
+    left alone, however little it says. Only the wholly empty one is healed,
+    so this cannot grow into "heal anything that looks incomplete"."""
+    root = crew_fixtures.make_repo(tmp_path, config=None, git=False)
+    path = root / ".crew" / "config.json"
+    path.write_text('{"tracker": "files"}', encoding="utf-8")
+    before = path.read_bytes()
+
+    cfg, message = crew_platform.heal_config(str(root))
+
+    assert cfg is None
+    assert message is None
+    assert path.read_bytes() == before
+
+
 def test_heal_config_backs_up_a_malformed_config_before_recreating(tmp_path):
     root = crew_fixtures.make_repo(tmp_path, config=None, git=False)
     path = root / ".crew" / "config.json"
@@ -579,3 +624,51 @@ class _Stdin:  # pylint: disable=too-few-public-methods
 
     def read(self):
         return self._text
+
+
+def test_a_second_corruption_gets_its_own_backup(tmp_path):
+    """Codex finding 5, Medium.
+
+    Refusing to overwrite the first `.broken` was right; skipping the backup
+    and rewriting anyway was not. The sequence that loses work: an old
+    incident leaves `config.json.broken`, the human repairs `config.json` and
+    edits it for weeks, a second corruption truncates it -- and heal_config
+    sees the backup path taken, writes defaults over the current file, and
+    reports that it backed it up. Both halves are wrong: the weeks of edits
+    are gone and the message says they were saved.
+    """
+    root = crew_fixtures.make_repo(tmp_path, config=None, git=False)
+    path = root / ".crew" / "config.json"
+    (root / ".crew" / "config.json.broken").write_text(
+        "first incident", encoding="utf-8")
+    path.write_text('{"tracker": "jira", half-edited', encoding="utf-8")
+
+    cfg, message = crew_platform.heal_config(str(root))
+
+    assert cfg == crew_config.default_config()
+    assert (root / ".crew" / "config.json.broken").read_text(
+        encoding="utf-8") == "first incident", "the first backup is kept"
+    second = root / ".crew" / "config.json.broken.2"
+    assert second.read_text(encoding="utf-8") == \
+        '{"tracker": "jira", half-edited'
+    assert "config.json.broken.2" in message
+
+
+def test_heal_config_refuses_rather_than_destroy_an_unbackupable_config(
+        tmp_path):
+    """With every backup slot taken, the only honest move left is to stop.
+    Writing defaults over the original would destroy the one copy of it that
+    exists in exchange for a config the user did not ask for."""
+    root = crew_fixtures.make_repo(tmp_path, config=None, git=False)
+    path = root / ".crew" / "config.json"
+    path.write_text("{ the only copy", encoding="utf-8")
+    (root / ".crew" / "config.json.broken").write_text("a", encoding="utf-8")
+    for n in range(2, crew_platform.CONFIG_BROKEN_MAX + 1):
+        (root / ".crew" / f"config.json.broken.{n}").write_text(
+            "a", encoding="utf-8")
+
+    cfg, message = crew_platform.heal_config(str(root))
+
+    assert cfg is None
+    assert "could NOT be backed up" in message
+    assert path.read_text(encoding="utf-8") == "{ the only copy"

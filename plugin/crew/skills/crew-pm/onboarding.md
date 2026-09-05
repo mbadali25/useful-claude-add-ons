@@ -82,8 +82,49 @@ writing its agent definition first — a name in `config.json.roles` with no
 | `scribe` | decisions made and the reasoning gone by the time someone needs it | 2 |
 | `researcher` | external library, API and pricing answers recalled from memory instead of looked up | 2 |
 
+Domain specialists. These are real roles with real agent definitions, and no
+tier grants them — see below:
+
+| Specialist | Closes | Tier |
+|---|---|---|
+| `sharepoint-developer` | SharePoint work done as general web development, so permission inheritance, list schema and Graph throttling are learned in production | — |
+| `power-automate-specialist` | flows edited in the portal with no record of the change, and a trigger that was already live before anyone reviewed it | — |
+| `node-developer` | Node work where the async model, the module system or the dependency tree is the hard part, done by a generalist who reads it as ordinary JavaScript | — |
+
 `pm` is not on the ladder. It is not sized in or out by `/crew:scale` — it is
 the thing doing the sizing.
+
+### Domain specialists are justified by the stack, not by metrics
+
+The tier column is empty for the three specialists on purpose, and it is the
+only part of this file that overrides the evidence bar above.
+
+Every ladder role closes a defect class **any** repo can have, which is what
+makes "show me the pattern in `.crew/metrics.md`" the right question for it.
+`roles_for_tier` then grants every rung up to the declared tier — which is how
+a repo with no database at all ends up handed `dba` on upgrade.
+
+"This repo does SharePoint" is not a defect class. It is a fact about one
+checkout, and it is knowable on day one, before a single ticket has been
+written. Putting these on the ladder would hand a SharePoint developer to
+every tier-2 repo on the machine and the tier column would stop meaning
+anything at all.
+
+So the bar for a specialist is the same shape as `developer`'s — a question,
+not a metric: **does this repo's work actually run on that platform?** Answer
+it from what is in the repo, out loud, and name the file that says so: a
+`package.json` with a server entry point, an `.sppkg` or an SPFx
+`config/package-solution.json`, an exported flow definition or a solution zip.
+A specialist onboarded because someone expects to do that work *later* costs a
+context load per dispatch decision and closes nothing.
+
+Onboarding one changes `roles` and does **not** change `tier` — there is no
+rung to recompute, and moving the tier because a specialist joined would tell
+`/crew:scale` the crew had grown when it has only specialised. Say that to the
+user when you confirm, so a tier that did not move does not read as a bug.
+
+Offboarding is unchanged: `offboarding.md` applies as written, including
+naming what coverage is lost.
 
 ### `developer` is the one role justified by delegation, not by metrics
 

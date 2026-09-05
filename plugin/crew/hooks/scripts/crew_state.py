@@ -12,6 +12,8 @@ import os
 import re
 import subprocess
 import sys
+import time
+import uuid
 
 import crew_incident
 
@@ -179,6 +181,38 @@ _NOT_SUBSYSTEMS = frozenset({"INDEX.md", "UPGRADE.md", "MIGRATION.md"})
 
 # Where the graph lives when config does not say. Defined here rather than in
 # crew_upgrade because this module has to resolve it with no config at all.
+def contained_path(root, value, default):
+    """`root/value`, or `root/default` when `value` escapes the repository.
+
+    Config is hand-edited and, in a cloned repo, is written by whoever wrote
+    the repo. A relative path with `..`, an absolute path, or a UNC path all
+    resolve outside `root` -- and these values are used to READ files that
+    then reach the model's context (`context.handoffPath` under
+    `context.autoResume` injects the whole file at session start). A repo that
+    can name any file on the machine and have it read into a session is a repo
+    that can exfiltrate through the next thing the session says.
+
+    So: resolve, compare against the resolved root, and fall back to the
+    default rather than raising. A hook that dies on a bad config value is a
+    hook that stops every session in the repo; one that quietly reads the
+    right file instead is the behaviour anyone would have wanted.
+
+    `os.path.realpath` on both sides, so a symlink out of the tree is caught
+    too, and `os.path.commonpath` rather than `startswith` -- `/repo-evil`
+    starts with `/repo` and is not inside it.
+    """
+    if not isinstance(value, str) or not value.strip():
+        value = default
+    base = os.path.realpath(root)
+    candidate = os.path.realpath(os.path.join(base, value))
+    try:
+        inside = os.path.commonpath([base, candidate]) == base
+    except ValueError:
+        inside = False          # different drives on Windows
+    return candidate if inside else os.path.realpath(
+        os.path.join(base, default))
+
+
 GRAPH_OUT_DEFAULT = "graphify-out"
 
 # Where committed Mermaid sources live when config does not say. Matches the
@@ -304,7 +338,8 @@ def _read_graph(root, cfg):
     # passes dict_or_empty but `os.path.join` raises TypeError on a non-str.
     if not isinstance(out, str) or not out:
         out = GRAPH_OUT_DEFAULT
-    path = os.path.join(root, out, "graph.json")
+    path = os.path.join(contained_path(root, out, GRAPH_OUT_DEFAULT),
+                        "graph.json")
     if not os.path.exists(path):
         return {"present": False, "current": False, "builtAt": None,
                 "path": path}
@@ -379,7 +414,7 @@ def read_diagrams(root, cfg):
     so nothing is claimed either way, but presence is still knowable.
     """
     head = git_out(root, "rev-parse", "--short=7", "HEAD")
-    dirpath = os.path.join(root, _diagrams_dir(cfg))
+    dirpath = contained_path(root, _diagrams_dir(cfg), DIAGRAMS_DIR_DEFAULT)
     try:
         names = sorted(os.listdir(dirpath))
     except OSError:
@@ -556,6 +591,41 @@ ROLE_TIERS = {
 # keeps it. See `crew-scaling/SKILL.md`.
 TIER_PARALLEL = 3
 
+# Domain specialists: known roles with no tier, never granted automatically.
+#
+# Every ROLE_TIERS entry closes a defect class ANY repo can have, and its
+# "add when" is evidence-shaped -- "migrations are routine", "a UI regression
+# reached users". `roles_for_tier` then grants every rung up to the declared
+# tier, which is why a repo with no database is handed `dba` on upgrade.
+#
+# "This repo does SharePoint" is not a defect class; it is a fact about one
+# checkout. Putting these on the ladder would hand a SharePoint developer to
+# every tier-2 repo on the machine, and the tier table would stop meaning
+# anything. So they are opted into per repo -- `/crew:pm onboard <role>` --
+# and no tier ever grants one.
+#
+# This is the OPPOSITE of the 0.15.x bug that `infrastructure-architect`,
+# `scribe` and `researcher` had: those were general-purpose roles that had
+# simply been forgotten off the ladder, and being unreachable was the defect.
+# Here it is the design, which is why a test asserts it rather than a comment.
+SPECIALIST_ROLES = frozenset({
+    "sharepoint-developer",
+    "power-automate-specialist",
+    "node-developer",
+})
+
+
+def known_role(name):
+    """Is `name` a role this release ships, on the ladder or off it?
+
+    The distinction that needs a name: `tier_for_roles` and `roles_for_tier`
+    both key off `ROLE_TIERS`, so a specialist looks identical to a typo
+    there. Without this, a repo that deliberately onboarded `node-developer`
+    is told on every upgrade that crew does not recognise it -- which trains
+    people to ignore the line that exists to catch real typos.
+    """
+    return name in ROLE_TIERS or name in SPECIALIST_ROLES
+
 
 def roles_for_tier(tier):
     """Every ladder role at or below `tier`, in ladder order."""
@@ -663,11 +733,19 @@ def dict_or_empty(value):
 def family(provider, model=None):
     """Which model family `provider` speaks as, given the model it is pinned to.
 
-    Derived from `model.split("-")[0]`, verified 2026-09-05 against the ids in
-    use: `gpt-6-astra`, `gpt-5.6-sol` and `gpt-5.6-luna` all yield `gpt`, and
+    The leading run of letters, lowercased, after any `vendor/` prefix:
+    `gpt-6-astra`, `gpt-5.6-sol` and `gpt-5.6-luna` all yield `gpt`, and
     `kimi-k2.7-code` and `kimi-k3` both yield `kimi`. No id is special-cased,
     deliberately -- model catalogs churn, and a lookup table of names is a
     lookup table that goes stale without failing.
+
+    It was literally `model.split("-")[0]` until a QA sweep found the guard
+    bypassable by SPELLING: `GPT-5` differs from `gpt-6-astra` only in case,
+    produced `GPT`, compared unequal to `gpt`, and was therefore cleared to
+    review GPT-authored work. `gpt5` and `openai/gpt-5` did the same by
+    separator and by namespace. A guard a capital letter walks past is not a
+    guard, so normalisation happens here rather than at each call site --
+    there is no version of this that is safe to leave to the caller.
 
     `claude` is its own family whatever it is pinned to; it is an in-session
     subagent, not a separate CLI with a model flag. An unpinned `codex` is
@@ -680,7 +758,12 @@ def family(provider, model=None):
     if provider == "claude":
         return "claude"
     if isinstance(model, str) and model.strip():
-        return model.strip().split("-")[0]
+        # Namespace off first (`openai/gpt-5`), then the leading letters, so
+        # every separator convention collapses to the same token: `-`, `_`,
+        # `.`, and a bare digit boundary as in `gpt5`.
+        bare = model.strip().lower().rsplit("/", 1)[-1]
+        head = re.match(r"[a-z]+", bare)
+        return head.group() if head else bare
     if provider == "codex":
         return "gpt"
     return None
@@ -851,9 +934,136 @@ DISPATCH_PATH = (".work", "dispatch.json")
 # and just as invisible. Give a kind a reader and add it here, in one change.
 DISPATCH_KINDS = ("dev",)
 
+# How many distinct dispatches to remember. The guard reads the whole list, so
+# this bounds both the file and the strike set. Ten is well past the number of
+# FAMILIES anyone has -- and families are what it counts, which is the whole
+# point: keying the bound on `(provider, model)` let one provider cycling
+# through ten model ids fill the history by itself and evict the family that
+# actually wrote the diff, spending ten slots to carry one bit.
+DISPATCH_HISTORY_MAX = 10
 
-def read_dispatch(root):
-    """The last recorded dispatch, or `{}`. Never raises."""
+# How many BRANCHES the history remembers, newest-dispatched first.
+#
+# There is deliberately no bound on families WITHIN a branch. Any such bound
+# is the same defect: dispatch the family that writes the diff, then enough
+# newer dispatches with distinct families, and the one that wrote the code is
+# pushed out of its own branch's history -- after which the guard reports
+# proven provenance with the author missing and hands that family its own
+# work. Raising the number moves the input and keeps the failure. The
+# family-keyed dedup is the only bound a branch needs, because a family
+# appears at most once in one no matter how many model ids it walks through.
+#
+# Branches are the axis that actually grows, so branches are what is capped.
+# Dropping the fifty-first-oldest branch is not silent: a checkout with no
+# record falls through to `config` or `stale`, both of which say so.
+DISPATCH_BRANCHES_MAX = 50
+
+# One file per dispatch, under `.work/dispatch.d/`. THE store; everything
+# below reads from here.
+#
+# `dispatch.json` was a single shared file that every dispatch read, modified
+# and rewrote, and three review rounds went by trying to make that safe. It
+# cannot be made safe portably. A lock has to be reclaimable or one killed
+# dispatch wedges the repo forever, and a reclaimable lock is two `os` calls
+# against a pathname that a rival can replace between them -- Windows has no
+# inode to compare, so "remove this file only if it is still the one I looked
+# at" cannot be said. Verify-and-republish did not close it either: it holds
+# only for the writer that lands LAST, and a writer whose read predates a
+# rival's successful write still erases that rival afterward. Three writers
+# are enough to lose the middle one permanently, and if the lost one is the
+# family that wrote the diff, the guard clears it to review its own work.
+#
+# So there is no read-modify-write left to race. A dispatch creates a file
+# nothing else will ever write, under a name nothing else will ever pick, and
+# the reader merges what it finds. Concurrency stops being a correctness
+# question and a malformed file costs exactly one entry instead of all of
+# them.
+DISPATCH_DIR = (".work", "dispatch.d")
+
+# How many entry files may accumulate before the oldest are pruned. The read
+# bound is per kind and family-keyed, so this is only about not letting a
+# directory grow without limit in a long-lived checkout; it is deliberately
+# far above `DISPATCH_HISTORY_MAX` so pruning can never be what decides which
+# family is remembered.
+DISPATCH_FILES_MAX = 200
+
+
+def _entry_sort_key(entry, mtime=None):
+    """How recent an entry is. Newest sorts highest. Never raises.
+
+    `at` is what the writer said, and the file's own mtime is a second witness
+    to the same event. The larger of the two wins, which is what makes an
+    entry with a missing, hand-edited or non-numeric `at` still sort by when
+    it was actually written rather than falling to the bottom as a zero.
+
+    It does NOT make the ordering clock-independent -- a system clock that
+    steps backward moves `at` and mtime together, and nothing in a directory
+    of files can see that. What bounds the damage is that the bound is
+    family-keyed and per kind: it only ever bites once more than
+    `DISPATCH_HISTORY_MAX` DISTINCT families have been dispatched on one
+    branch, and over-keeping is the safe direction anyway.
+    """
+    stamps = [float_or(entry.get("at"), 0.0)]
+    if mtime is not None:
+        stamps.append(mtime)
+    return max(stamps)
+
+
+def _entry_rank(entry, key):
+    """`(tier, sort key)`. Tier 1 is a record this store wrote itself.
+
+    Tier 0 is everything whose timestamp came from outside it: the legacy
+    `dispatch.json`, and any record ADOPTED out of it. Adoption copies the
+    file's claim about when a dispatch happened, and a claim is exactly what
+    the tier exists not to trust -- an adopted entry carrying a far-future
+    `at` otherwise became the newest record in the repo and took the `<kind>`
+    slot that decides whether provenance is proven.
+
+    An adopted record predates the store by definition, so sorting it below
+    everything in the store is not a safety margin, it is the truth.
+    """
+    return (0 if entry.get("adopted") else 1, key)
+
+
+def _dispatch_entries(root):
+    """Every entry in `.work/dispatch.d/`, as `(sort key, kind, entry)`.
+
+    Never raises, and a file it cannot read costs exactly that file. A
+    half-written or hand-mangled entry is skipped and its neighbours survive
+    -- the property the single shared file did not have, where one malformed
+    byte collapsed the whole record to `{}` and the guard fell back to reading
+    the config.
+    """
+    directory = os.path.join(root, *DISPATCH_DIR)
+    try:
+        names = os.listdir(directory)
+    except OSError:
+        return []
+    out = []
+    for name in names:
+        if not name.endswith(".json"):
+            continue                    # a `.tmp` mid-write, or anything else
+        path = os.path.join(directory, name)
+        text = read_text(path)
+        if text is None:
+            continue
+        try:
+            entry = json.loads(text)
+        except ValueError:
+            continue
+        if not isinstance(entry, dict) or not entry.get("kind"):
+            continue
+        try:
+            mtime = os.path.getmtime(path)
+        except OSError:
+            mtime = None
+        entry["_file"] = name       # for `_prune_dispatch_dir` only
+        out.append((_entry_sort_key(entry, mtime), entry.pop("kind"), entry))
+    return out
+
+
+def _read_record_file(root):
+    """`dispatch.json` parsed, or `{}`. Never raises."""
     text = read_text(os.path.join(root, *DISPATCH_PATH))
     if text is None:
         return {}
@@ -862,6 +1072,178 @@ def read_dispatch(root):
     except ValueError:
         return {}
     return parsed if isinstance(parsed, dict) else {}
+
+
+def _history_items(record, by_kind, kind):
+    """The `(rank, entry)` input `_merge_history` takes, for one kind.
+
+    Exists so that `read_dispatch` and `_prune_dispatch_dir` cannot disagree
+    about what the history IS. They did: the pruner protected what the merge
+    returned but fed it the store alone, while the reader fed it the store and
+    the legacy `dispatch.json` together. A branch whose legacy record was
+    newer than its store entries then ranked inside the branch cap for the
+    reader and outside it for the pruner, which deleted every store file that
+    branch had -- and checking it out afterwards left a legacy record naming a
+    different family, reported as proven, with the family that wrote the diff
+    gone.
+
+    A pruner that has to be kept in agreement with a reader drifts the next
+    time either one changes. One function, two callers.
+    """
+    items = [(_entry_rank(entry, key), entry)
+             for key, entry in by_kind.get(kind) or []]
+    legacy = [h for h in record.get(f"{kind}History") or []
+              if isinstance(h, dict)]
+    slot = record.get(kind)
+    if isinstance(slot, dict) and slot.get("provider"):
+        legacy.append(slot)
+    items.extend(((0, _entry_sort_key(h)), h) for h in legacy)
+    return items
+
+
+def _merge_history(items, pin=None):
+    """Newest first, deduplicated on what the guard reads, bounded.
+
+    `items` is `(rank, entry)`, and `rank` is `(tier, sort key)`. The tier is
+    what makes the ordering independent of any clock: an entry from
+    `.work/dispatch.d/` is tier 1 and one read out of the legacy
+    `dispatch.json` is tier 0, so nothing written in the legacy file can
+    outrank the store no matter what its `at` says. A `dispatch.json` carrying
+    far-future timestamps -- a clock that ran ahead, a hand edit, a restored
+    backup -- otherwise evicted the dispatch that had just happened, which is
+    the same hazard the write path had and is why this is structural rather
+    than a comparison between two wall-clock values that step together.
+
+    The key is the FAMILY, not the model id,
+    because the family is the only thing `author_families` ever compares.
+    Keyed on the model, one provider walking through ten ids on one branch
+    filled the whole history by itself and evicted the family that wrote the
+    diff -- ten entries carrying one bit between them.
+
+    An UNKNOWN family (an unpinned copilot) keeps the provider and model in
+    its key instead: None must not compare equal to None here, or two
+    genuinely different unpinned providers collapse into one and the second is
+    dropped as a duplicate of the first.
+
+    Two rules about what a slot may be spent ON, both of which exist because
+    the bound evicting the wrong entry is the same failure as never recording
+    it.
+
+    **An entry with no `provider` spends nothing.** `author_families` skips
+    those -- they name no author, so they cannot BE the author -- and ten of
+    them ahead of a real dispatch emptied the history of the family that wrote
+    the diff. A hand-edited file, a truncated write, a future field: none of
+    them are evidence, and something that is not evidence must not displace
+    something that is.
+
+    **Nothing bounds the families within a branch, and nothing may.**
+    `author_families` filters to the current checkout AFTER this merge, so a
+    store-wide bound let other branches evict this one's only record -- and
+    then a PER-BRANCH bound did the same thing from inside: dispatch the
+    family that writes the diff, then enough newer dispatches with distinct
+    families, and the author is pushed out of its own branch's history while
+    the guard still reports proven provenance. Every finite cap has that
+    input. The dedup is the bound a branch gets, and it is enough: a family
+    appears at most once in one.
+
+    **Branches are what is capped**, at `DISPATCH_BRANCHES_MAX`, ranked by
+    each branch's newest entry. That is the axis that grows without limit,
+    and dropping the oldest of fifty is fail-loud -- a checkout with no record
+    reads as `config` or `stale`, and both say so out loud.
+
+    `pin` is a zero-argument callable naming a branch that is never a
+    candidate for eviction, and the caller passes one that resolves to the
+    CURRENT checkout. Without it the cap could drop the branch the reviewer is
+    standing on -- fifty branches dispatched more recently is all it takes,
+    and that is the same defect as evicting the family that wrote the diff,
+    one axis over. It is a callable and not a value because resolving it costs
+    a `git rev-parse`, and the cap does not bite at all in a repository with
+    fewer than fifty branches.
+    """
+    seen, kept, newest = set(), {}, {}
+    for rank, entry in sorted(items, key=lambda pair: pair[0], reverse=True):
+        if not entry.get("provider"):
+            continue
+        branch = entry.get("branch")
+        fam = family(entry.get("provider"), entry.get("model"))
+        key = ((fam, branch) if fam is not None
+               else (None, entry.get("provider"), entry.get("model"), branch))
+        if key in seen:
+            continue
+        seen.add(key)
+        kept.setdefault(branch, []).append((rank, entry))
+        # The branch's rank is set by the FIRST entry seen for it, which is
+        # its newest -- the loop is already in newest-first order.
+        newest.setdefault(branch, rank)
+
+    ranked = sorted(newest, key=lambda name: newest[name], reverse=True)
+    if len(ranked) > DISPATCH_BRANCHES_MAX:
+        here = pin() if pin else None
+        live = ranked[:DISPATCH_BRANCHES_MAX]
+        if here is not None and here in kept and here not in live:
+            live = live[:DISPATCH_BRANCHES_MAX - 1] + [here]
+    else:
+        live = ranked
+    out = [pair for branch in live for pair in kept[branch]]
+    # Newest-first overall, because that is the shape every reader has always
+    # been handed -- and on the RANK, which carries the tier, not on `at`
+    # alone. `read_dispatch` takes the `<kind>` slot from `out[0]` and
+    # `author_families` reads that slot's branch to decide whether provenance
+    # is proven, so re-sorting on the raw timestamp handed the slot to
+    # whatever the legacy file claimed the largest one for.
+    out.sort(key=lambda pair: pair[0], reverse=True)
+    return [entry for _rank, entry in out]
+
+
+def read_dispatch(root):
+    """Every dispatch this checkout recorded, merged. Never raises.
+
+    Returns the same shape it always did -- a `<kind>` slot holding the most
+    recent dispatch and a `<kind>History` list, newest first -- so
+    `author_families`, `/crew:review` and `/crew:model` did not have to change
+    when the store underneath did.
+
+    Three sources are unioned, in order of authority:
+
+      1. `.work/dispatch.d/`, one immutable file per dispatch. Authoritative.
+      2. `dispatch.json`'s `<kind>History`, if some older version wrote one.
+      3. `dispatch.json`'s `<kind>` slot itself, which is all a 0.16.6 record
+         has. A repo upgraded mid-branch must not lose the dispatch that is
+         already recorded there, so it is folded in rather than replaced.
+
+    A record that exists only in (2) or (3) is never rewritten into (1). It is
+    read where it lies until the bound ages it out, which is what makes this
+    an upgrade rather than a migration that can fail halfway.
+    """
+    record = _read_record_file(root)
+
+    by_kind = {}
+    for key, kind, entry in _dispatch_entries(root):
+        by_kind.setdefault(kind, []).append((key, entry))
+
+    # Resolved at most once per call, and only if the branch cap bites.
+    cached = []
+
+    def pin():
+        if not cached:
+            cached.append(current_branch(root))
+        return cached[0]
+
+    for kind in DISPATCH_KINDS:
+        items = _history_items(record, by_kind, kind)
+        if not items:
+            continue
+        # `_file` is bookkeeping for the pruner and is not part of the
+        # record any reader is handed.
+        history = [{k: v for k, v in entry.items() if k != "_file"}
+                   for entry in _merge_history(items, pin)]
+        record[f"{kind}History"] = history
+        # The slot is the newest entry, recomputed rather than trusted: it is
+        # written unlocked and best-effort, so a lost update there must cost
+        # nothing. `report["dispatch"]` and `/crew:review`'s mtime test are
+        # what still read the file itself.
+        record[kind] = history[0]
+    return record
 
 
 def current_branch(root):
@@ -939,15 +1321,227 @@ def record_dispatch(root, kind, role, provider, model=None, branch=None):
             f"recordable kinds are {', '.join(DISPATCH_KINDS)}")
     if branch is None:
         branch = current_branch(root)
-    record = dict(read_dispatch(root))
-    record[kind] = {"role": role, "provider": provider, "model": model,
-                    "branch": branch}
+    entry = {"role": role, "provider": provider, "model": model,
+             "branch": branch, "at": time.time()}
+
+    # One file, created once, never modified. There is nothing to race: no
+    # reader is mutated, no writer is overwritten, and a writer that fails
+    # takes only its own entry down with it. See `DISPATCH_DIR` for the three
+    # review rounds that went into learning that.
+    _append_dispatch(root, kind, entry)
+    # The slot is only overwritten once whatever it held is safely in the
+    # store. Making the adoption retryable does nothing on its own if the
+    # record it retries FROM was destroyed by the same call that failed:
+    # `_write_slot` would have replaced the pre-0.16.7 record with this
+    # dispatch, and the next run would find an empty slot and nothing to
+    # adopt. Skipping the slot write costs a stale display field and a stale
+    # mtime for one dispatch, both of which `read_dispatch` recomputes from
+    # the store anyway.
+    if _adopt_slot(root, kind):
+        _write_slot(root, kind, entry)
+    return read_dispatch(root)
+
+
+def _adopt_slot(root, kind):
+    """Get the slot's own record into the store. True if the slot may now be
+    overwritten. Never raises.
+
+    `_write_slot` is about to overwrite that slot, and on a repo upgraded
+    mid-branch it is the ONLY record of the family that wrote the code being
+    reviewed. Overwriting it clears that family to review its own diff --
+    the exact failure this whole subsystem exists to prevent, reintroduced by
+    the release that was meant to close it.
+
+    Runs whenever the slot's own record is not already in the store, which is
+    both idempotent and RETRYABLE. The gate was "the store is empty for this
+    kind" until round 4 found what that costs: the adoption's write fails
+    transiently, the dispatch that follows lands and fills the store, and
+    every later run then sees a non-empty store and declares there is nothing
+    to adopt -- while `_write_slot` has already overwritten the slot it was
+    supposed to save. One transient error and the family that wrote the branch
+    is gone permanently.
+
+    Idempotent by dedup rather than by coordination: two concurrent first
+    dispatches can both pass the gate and both copy it, and `_merge_history`
+    keys on the family, so the duplicate collapses. That is what makes it safe
+    on a path with no lock.
+    `adopted` marks where the entry came from, for anyone reading the
+    directory; nothing branches on it.
+    """
+    text = read_text(os.path.join(root, *DISPATCH_PATH))
+    if text is None:
+        return True                     # no file, so nothing to lose
+    try:
+        record = json.loads(text)
+    except ValueError:
+        return True                     # unreadable; a rewrite loses nothing
+    slot = dict_or_empty(record).get(kind)
+    if not isinstance(slot, dict) or not slot.get("provider"):
+        return True                     # no record in the slot
+    # Is THIS record already in the store? Not "is the store non-empty" --
+    # that gate closed permanently the first time the adoption's write failed
+    # transiently, because the dispatch that followed filled the store and
+    # every later run then declared there was nothing to adopt. The legacy
+    # slot was overwritten in the meantime and the family that wrote the
+    # branch was gone for good. Comparing the record itself makes the
+    # adoption retry on the next dispatch, which is the only version of this
+    # that survives a failure.
+    for _key, entry_kind, entry in _dispatch_entries(root):
+        if entry_kind != kind:
+            continue
+        if all(entry.get(field) == slot.get(field)
+               for field in ("provider", "model", "branch")):
+            return True                 # already in the store
+    return _append_dispatch(root, kind, dict(slot, adopted=True))
+
+
+def _append_dispatch(root, kind, entry):
+    """Write `entry` as its own file. True if it landed. Never raises.
+
+    A dispatch must not be aborted because its bookkeeping failed -- an
+    unwritable `.work/`, a full disk, a permission change mid-run. The review
+    that follows falls back to reading the config and SAYS so, which is a
+    worse answer than a record but a far better outcome than refusing to do
+    the work.
+
+    Written to a temp name and renamed into place, so a reader never sees a
+    half-written entry. The name carries the kind and the timestamp for a
+    human reading the directory, and a random token because that is what makes
+    it unique: two threads in one interpreter share a PID, and the timestamp
+    alone can repeat at the clock's resolution.
+    """
+    directory = os.path.join(root, *DISPATCH_DIR)
+    stamp = f"{entry.get('at') or 0.0:.6f}".replace(".", "")
+    base = os.path.join(directory, f"{kind}-{stamp}-{uuid.uuid4().hex[:12]}")
+    tmp_path = f"{base}.tmp"
+    try:
+        os.makedirs(directory, exist_ok=True)
+        with open(tmp_path, "w", encoding="utf-8") as handle:
+            json.dump(dict(entry, kind=kind), handle, indent=2,
+                      sort_keys=True)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp_path, f"{base}.json")
+    except OSError:
+        try:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+        except OSError:
+            pass
+        return False
+    _prune_dispatch_dir(root)
+    return True
+
+
+def _write_slot(root, kind, entry):
+    """Update `dispatch.json`'s `<kind>` slot. Best-effort. Never raises.
+
+    Unlocked, and that is now fine: `read_dispatch` recomputes the slot from
+    the directory, so losing this race costs a display field and a file mtime
+    rather than a record. It is still written because two things read the file
+    directly -- `/crew:review` takes its freshness from this file's mtime, and
+    `/crew:model` prints the last dispatch from the slot.
+    """
     path = os.path.join(root, *DISPATCH_PATH)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as handle:
-        json.dump(record, handle, indent=2, sort_keys=True)
-        handle.write("\n")
-    return record
+    record = {}
+    text = read_text(path)
+    if text is not None:
+        try:
+            parsed = json.loads(text)
+        except ValueError:
+            parsed = None
+        if isinstance(parsed, dict):
+            record = parsed
+    record[kind] = entry
+    tmp_path = f"{path}.{os.getpid()}.{uuid.uuid4().hex[:8]}.tmp"
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(tmp_path, "w", encoding="utf-8") as handle:
+            json.dump(record, handle, indent=2, sort_keys=True)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp_path, path)
+    except OSError:
+        try:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+        except OSError:
+            pass
+        return False
+    return True
+
+
+def _prune_dispatch_dir(root):
+    """Drop the oldest entry files once there are too many. Never raises.
+
+    Nothing else deletes them, and a long-lived checkout dispatches for
+    months. The bound is far above what the reader keeps, so this can never be
+    what decides which family is remembered -- and a deletion that fails is
+    ignored, because a directory that is larger than intended is not a
+    correctness problem.
+    """
+    directory = os.path.join(root, *DISPATCH_DIR)
+    try:
+        names = [n for n in os.listdir(directory) if n.endswith(".json")]
+    except OSError:
+        return
+    if len(names) <= DISPATCH_FILES_MAX:
+        return
+
+    # What the reader would keep, computed the same way the reader computes
+    # it. Counting raw files instead let a busy repo's other branches push
+    # this branch's ONLY record past the cap and delete it -- pruning
+    # deciding which family is remembered, which is precisely what the cap
+    # was documented as never doing.
+    protected = set()
+    cached = []
+
+    def pin():
+        if not cached:
+            cached.append(current_branch(root))
+        return cached[0]
+
+    record = _read_record_file(root)
+    by_kind = {}
+    for key, entry_kind, entry in _dispatch_entries(root):
+        by_kind.setdefault(entry_kind, []).append((key, entry))
+
+    for kind in DISPATCH_KINDS:
+        for entry in _merge_history(_history_items(record, by_kind, kind),
+                                    pin):
+            token = entry.get("_file")
+            if token:
+                protected.add(token)
+
+    aged = []
+    for name in names:
+        if name in protected:
+            continue
+        path = os.path.join(directory, name)
+        try:
+            aged.append((os.path.getmtime(path), path))
+        except OSError:
+            continue
+    aged.sort(reverse=True)
+    # The cap counts only what is NOT protected, so a repo whose live history
+    # legitimately exceeds it keeps every live entry and prunes nothing. A
+    # directory larger than intended is untidy; a missing author family is a
+    # guard that passes a diff to the model that wrote it.
+    #
+    # `protected` cannot grow without limit, which is what makes that safe to
+    # say: `_merge_history` keeps at most `DISPATCH_BRANCHES_MAX` branches and
+    # at most one entry per family within each, so the live set is bounded by
+    # the number of model families that exist. Everything outside it is
+    # deletable, and `keep` reaching zero means every deletable file goes --
+    # which is the correct answer, not a stall.
+    keep = max(0, DISPATCH_FILES_MAX - len(protected))
+    for _mtime, path in aged[keep:]:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
 
 
 def author_families(root, cfg, stale=False):
@@ -990,13 +1584,51 @@ def author_families(root, cfg, stale=False):
     comparison, and without a way to say so its answer never reached the
     resolved report that every later step reads.
     """
-    recorded = dict_or_empty(read_dispatch(root).get("dev"))
+    dispatch = read_dispatch(root)
+    recorded = dict_or_empty(dispatch.get("dev"))
     decided = resolve_role(cfg, "dev", "developer")
     if recorded.get("provider"):
-        recorded_family = family(recorded.get("provider"),
-                                 recorded.get("model"))
         here = current_branch(root)
         there = recorded.get("branch")
+        # Every family dispatched on THE BRANCH IN FRONT OF THE REVIEWER,
+        # not just the last one -- see record_dispatch for why one slot was
+        # not enough. A record from another branch is excluded: it did not
+        # write this diff, and barring it would over-bar permanently rather
+        # than by a rung.
+        #
+        # `here`, NOT `there`. They are the same value in the proven path, so
+        # filtering on the last record's branch looks equivalent -- and in
+        # the STALE path, which is the one that matters, it is not: codex
+        # writes the diff here, a claude dispatch on another branch
+        # overwrites the slot, and filtering on `there` then keeps only that
+        # claude record and forgets codex completely. That is the finding
+        # this history exists to close, reintroduced one line further down.
+        #
+        # And when `here` is None, keep EVERYTHING. A None branch has two
+        # completely different causes and only one of them is evidence: a
+        # directory that provably is not a repository has no branches to
+        # confuse, while a detached HEAD, a rebase in progress, or git failing
+        # to answer means the branch is unknown. Filtering on `== None` in the
+        # second case throws away every named-branch record -- so codex
+        # dispatches on `feature`, claude takes the slot on `main`, the
+        # reviewer opens the feature commit detached, and codex is handed its
+        # own diff to review. The absence of evidence is the state this guard
+        # fails closed on.
+        in_repo = in_git_repo(root)
+        keep_all = here is None and in_repo is not False
+        recorded_families = {
+            family(item.get("provider"), item.get("model"))
+            for item in dispatch.get("devHistory") or []
+            if isinstance(item, dict) and item.get("provider")
+            and (keep_all or item.get("branch") == here)
+        }
+        # The slot itself is always struck, wherever it was recorded: it is
+        # the one dispatch we know about with no history to corroborate it,
+        # and a record written by a version before `devHistory` existed has
+        # no history entry at all.
+        recorded_families.add(family(recorded.get("provider"),
+                                     recorded.get("model")))
+        recorded_families.discard(None)
         # Strike BOTH unless the record positively proves it is about this
         # branch. Three states reach here and only one of them is evidence:
         #   * branches known and different -- stale, plainly.
@@ -1033,12 +1665,36 @@ def author_families(root, cfg, stale=False):
         # record written while detached, a branch the record does not name --
         # is unprovable, and unprovable fails closed.
         proven = ((here is not None and here == there)
-                  or (there is None and in_git_repo(root) is False))
+                  or (there is None and in_repo is False))
         if stale or not proven:
             return frozenset(
-                f for f in (recorded_family, decided["family"]) if f
-            ), "stale"
-        return frozenset(f for f in (recorded_family,) if f), "dispatch"
+                recorded_families | {decided["family"]}
+            ) - {None}, "stale"
+        # A dispatch we can place on this branch, whose family nobody can
+        # name. An unpinned `copilot` is exactly this: Copilot hosts several
+        # families and an unset model does not say which, so `family()`
+        # answers None -- correctly, because None is the honest answer and a
+        # placeholder string would compare equal to the next unset one.
+        #
+        # `discard(None)` then empties the set, and the old return handed
+        # that back labelled `dispatch`: "the guard is judging what actually
+        # ran". Nothing is struck, every reviewer reads as eligible, and the
+        # report says the provenance was proven. That is this codebase's
+        # recurring bug in its purest form -- an unknown collapsing into the
+        # safe-looking value, wearing the label of a check that happened.
+        #
+        # There is no set to return here. Barring the config's family instead
+        # would be a guess about who wrote the diff, and barring everything
+        # would take a real reviewer off it on the strength of a value nobody
+        # established. So the answer is the honest one: a dispatch happened,
+        # its family is unknown, and NO reviewer can be proven independent of
+        # it. `crew_config.model_report` turns that into
+        # `independentReviewer: False`, which is what actually stops the
+        # review from being certified.
+        known = frozenset(recorded_families) - {None}
+        if not known:
+            return frozenset(), "unknown"
+        return known, "dispatch"
     # No record: read the config. `decided` above asked `resolve_role` for the
     # `developer` role rather than the `dev` block's own provider --
     # `dev.roles.developer` is a pin that OVERRIDES that default, so reading
@@ -1054,6 +1710,21 @@ def author_families(root, cfg, stale=False):
     # case, and a None leaking into the set would compare equal to another
     # unknown and bar a reviewer on the strength of two absences.
     return frozenset(f for f in (decided["family"],) if f), "config"
+
+
+def float_or(value, default):
+    """`value` as a float, or `default`. Same contract as `int_or`.
+
+    Timestamps come out of a hand-editable JSON file, so the type is whatever
+    someone typed, and an unguarded comparison against one is a TypeError that
+    takes out every session in the repository.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+        return default
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def int_or(value, default):

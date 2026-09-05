@@ -10,7 +10,10 @@ Everything asserts on `crew_state.resolve_role`'s returned dict rather than on
 printed text. A report that says the right thing while the resolver decided
 the wrong one is exactly the failure mode a stdout assertion cannot see.
 """
+import threading
+import copy
 import json
+import os
 import subprocess
 
 import pytest
@@ -263,6 +266,31 @@ def test_author_family_honours_a_per_role_dev_pin_over_the_block_default():
     assert crew_state.author_families(
         ".", {"dev": {"provider": "claude"}}) == (frozenset({"claude"}),
                                                   "config")
+
+
+def test_family_normalises_case_separator_and_namespace():
+    """A QA hunt found the guard bypassable by SPELLING alone.
+
+    `family` was `model.split("-")[0]` verbatim, so `GPT-5` -- the same family
+    as `gpt-6-astra`, differing only in case -- produced `GPT`, compared
+    unequal to `gpt`, and was cleared to review GPT-authored work. `gpt5` and
+    `openai/gpt-5` did the same thing by separator and by namespace. A guard
+    that a capital letter walks past is not a guard.
+    """
+    for model in ("gpt-6-astra", "GPT-5", "gpt5", "GPT5",
+                  "openai/gpt-5", "  gpt-5.6-luna  ", "gpt_5"):
+        assert crew_state.family("copilot", model) == "gpt", model
+    for model in ("kimi-k2.7-code", "KIMI-K3", "moonshot/kimi-k3"):
+        assert crew_state.family("copilot", model) == "kimi", model
+
+
+def test_a_differently_spelled_same_family_model_is_still_barred():
+    """The consequence, asserted where it matters rather than on the helper."""
+    for model in ("GPT-5", "gpt5", "openai/gpt-5"):
+        cfg = {"qa": {"provider": "copilot", "copilot": {"model": model}}}
+        got = crew_state.resolve_role(cfg, "qa", "review",
+                                      author=frozenset({"gpt"}))
+        assert got["barred"] is True, model
 
 
 def test_an_unset_copilot_model_is_not_barred_against_another_unset_one():
@@ -549,6 +577,113 @@ def test_an_mtime_stale_verdict_reaches_the_report(tmp_path):
     assert stale >= fresh, "striking must only ever widen"
 
 
+def test_every_family_dispatched_on_this_branch_is_struck(tmp_path):
+    """QA finding 1, Critical.
+
+    `dispatch.json` held ONE dev slot. Codex writes the diff; a Claude
+    developer dispatch later runs on the same branch for something unrelated
+    and overwrites the slot; review then reads a matching branch, declares
+    CLAUDE the author, bars Claude -- and clears Codex to review the diff
+    Codex wrote.
+
+    It was invisible by construction: the record is newer than the merge-base,
+    so the staleness check cannot disprove it, and the report says "recorded
+    at dispatch", which reads as verified rather than guessed.
+
+    Nothing binds a dispatch to the commits it produced, so the honest answer
+    is that ANY family dispatched on this branch may have written this diff.
+    Strike all of them. Over-barring costs a rung; under-barring costs the
+    entire point of the guard.
+    """
+    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=True)
+    crew_state.record_dispatch(str(root), "dev", "developer", "codex",
+                               "gpt-6-astra")
+    crew_state.record_dispatch(str(root), "dev", "developer", "claude", None)
+
+    authors, source = crew_state.author_families(str(root), PINNED)
+
+    assert authors == frozenset({"gpt", "claude"}), \
+        "the earlier codex dispatch must not be forgotten"
+    assert source == "dispatch"
+
+
+def test_a_stale_record_does_not_forget_this_branch_history(tmp_path):
+    """The half of finding 1 that survived the first fix.
+
+    Filtering history on the LAST RECORD's branch is not the same as
+    filtering on the branch in front of the reviewer, and in the stale path
+    they diverge: codex writes the diff on this branch, a claude dispatch on
+    `main` overwrites the slot, and review back on this branch reads
+    `here != there` -> stale. Filtering on `there` then keeps only the claude
+    record and drops codex entirely -- the exact clearance the whole finding
+    is about, restored by the fix for it.
+    """
+    # A config whose own dev family is neither of the dispatched ones, so
+    # the stale path's config strike cannot mask a missing history strike.
+    cfg = copy.deepcopy(PINNED)
+    cfg["dev"]["roles"]["developer"] = {"provider": "copilot",
+                                        "model": "kimi-k3"}
+    root = crew_fixtures.make_repo(tmp_path, config=cfg, git=True)
+    here = crew_state.current_branch(str(root))
+    assert here, "fixture must have a branch for this to mean anything"
+
+    crew_state.record_dispatch(str(root), "dev", "developer", "codex",
+                               "gpt-6-astra", branch=here)
+    crew_state.record_dispatch(str(root), "dev", "developer", "claude", None,
+                               branch="main-elsewhere")
+
+    authors, source = crew_state.author_families(str(root), cfg)
+
+    assert source == "stale"
+    assert "gpt" in authors,         "codex dispatched on THIS branch and must still be struck"
+    assert "claude" in authors
+
+
+def test_one_family_dispatched_twice_is_still_one_family(tmp_path):
+    """The control: striking every dispatch must not widen a repo that only
+    ever used one provider."""
+    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=True)
+    for _ in range(3):
+        crew_state.record_dispatch(str(root), "dev", "developer", "codex",
+                                   "gpt-6-astra")
+
+    authors, _source = crew_state.author_families(str(root), PINNED)
+    assert authors == frozenset({"gpt"})
+
+
+def test_a_dispatch_on_another_branch_is_not_added_to_the_strike(tmp_path):
+    """History is per branch. A family that only ever dispatched elsewhere
+    did not write this diff, and barring it would over-bar permanently
+    rather than by a rung."""
+    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=True)
+    crew_state.record_dispatch(str(root), "dev", "developer", "copilot",
+                               "kimi-k3", branch="some-other-branch")
+    crew_state.record_dispatch(str(root), "dev", "developer", "codex",
+                               "gpt-6-astra")
+
+    authors, _source = crew_state.author_families(str(root), PINNED)
+    assert "kimi" not in authors
+
+
+def test_the_dispatch_write_is_atomic(tmp_path):
+    """QA finding 2, Critical. The writer truncated the live file before the
+    JSON was complete, and `read_dispatch` collapses malformed JSON to `{}` --
+    so a concurrent reader saw no dispatch at all and fell back to reading
+    the CONFIG, which describes the next run rather than the one under review.
+    That is the guard failing open during an ordinary race.
+    """
+    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=False)
+    crew_state.record_dispatch(str(root), "dev", "developer", "codex",
+                               "gpt-6-astra")
+    path = os.path.join(str(root), *crew_state.DISPATCH_PATH)
+
+    with open(path, encoding="utf-8") as handle:
+        assert json.load(handle)["dev"]["provider"] == "codex"
+    leftovers = [n for n in os.listdir(os.path.dirname(path))
+                 if n.endswith(".tmp")]
+    assert leftovers == [], leftovers
+
+
 def test_a_malformed_dispatch_file_reads_as_no_dispatch(tmp_path):
     root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=False)
     (root / ".work" / "dispatch.json").write_text("{ half-written",
@@ -764,3 +899,840 @@ def test_the_printed_report_says_no_independent_reviewer_when_there_is_none(
 
     assert "NO INDEPENDENT REVIEWER" in out
     assert "does not count as an independent review" in out
+
+
+# --- what /crew:model's status column is allowed to claim -------------------
+
+
+def _row(**kw):
+    base = {"kind": "qa", "role": "review", "provider": "copilot",
+            "model": None, "family": None, "barred": False, "barredBy": None,
+            "providerOnPath": True}
+    base.update(kw)
+    return base
+
+
+def test_an_unknown_family_is_not_reported_as_eligible():
+    """QA sweep, 2026-09-05. An unpinned `copilot` has no knowable family --
+    Copilot hosts several and an unset model does not say which, so it may be
+    serving the author's own. `order_candidates` has always refused it for
+    exactly that reason; the human-facing table printed the bare word
+    `eligible` at the same config. The gate was right and the report was
+    optimistic, which is the worse half to get wrong: a reader acts on the
+    table."""
+    status = crew_config.role_status(_row())
+    assert "eligible" != status
+    assert "CANNOT PROVE INDEPENDENCE" in status
+    assert "qa.copilot.model" in status
+
+
+def test_a_known_different_family_is_eligible():
+    status = crew_config.role_status(
+        _row(provider="codex", model="gpt-6-astra", family="gpt"))
+    assert status == "eligible"
+
+
+def test_a_barred_row_says_which_family_barred_it():
+    status = crew_config.role_status(
+        _row(provider="codex", model="gpt-6-astra", family="gpt",
+             barred=True, barredBy="gpt"))
+    assert status.startswith("BARRED")
+    assert "gpt" in status
+
+
+def test_auto_says_it_walks_the_order():
+    assert crew_config.role_status(
+        _row(provider="auto")) == "walks qa.order"
+
+
+def test_a_dev_row_never_borrows_the_reviewer_verdict():
+    """`model_report` resolves dev rows with no author, so `barred` is False
+    on every one of them. Printing `eligible` there implied they passed a
+    check that was never run."""
+    status = crew_config.role_status(
+        _row(kind="dev", role="developer", provider="codex",
+             model="gpt-6-astra", family="gpt"))
+    assert "eligible" not in status
+    assert "implements" in status
+
+
+def test_an_unknown_family_dev_row_is_not_flagged_either():
+    """The guard does not govern authorship, so an unpinned dev provider is
+    not an independence problem and must not be reported as one."""
+    status = crew_config.role_status(_row(kind="dev", role="developer"))
+    assert "CANNOT PROVE" not in status
+
+
+# --- Codex round 1 on PR #66 ------------------------------------------------
+
+
+def test_an_unreadable_branch_keeps_the_named_branch_history(tmp_path):
+    """Codex finding 1, Critical.
+
+    The history filter is `item["branch"] == here`. When `here` is None --
+    a detached HEAD, a rebase in progress, or git simply failing to answer --
+    that keeps only branchless records and DISCARDS every named-branch one.
+    So: codex dispatches on `feature` and writes the diff, claude dispatches
+    later on `main` and takes the slot, the reviewer looks at the feature
+    commit in detached HEAD, and the whole codex history is thrown away. The
+    stale path then strikes claude and the config family, and codex is clear
+    to review its own diff.
+
+    `here is None` is not evidence that nothing named a branch. It is the
+    absence of evidence, which is the state this guard is supposed to fail
+    closed on -- so every record is kept and every family struck.
+    """
+    cfg = copy.deepcopy(PINNED)
+    cfg["dev"]["roles"]["developer"] = {"provider": "copilot",
+                                        "model": "kimi-k3"}
+    root = crew_fixtures.make_repo(tmp_path, config=cfg, git=True)
+    crew_state.record_dispatch(str(root), "dev", "developer", "codex",
+                               "gpt-6-astra", branch="feature")
+    crew_state.record_dispatch(str(root), "dev", "developer", "claude", None,
+                               branch="main")
+
+    real = crew_state.current_branch
+    try:
+        crew_state.current_branch = lambda _root: None
+        authors, source = crew_state.author_families(str(root), cfg)
+    finally:
+        crew_state.current_branch = real
+
+    assert source == "stale"
+    assert "gpt" in authors, "an unreadable branch must not drop history"
+    assert "claude" in authors
+
+
+def test_a_non_git_directory_still_only_keeps_its_own_records(tmp_path):
+    """The control for the fix above. A directory that is PROVABLY not a
+    repository has no branches to confuse, which is the one case where a
+    None `here` is evidence rather than the absence of it -- so it keeps its
+    branchless records and does not widen to everything ever recorded."""
+    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=False)
+    crew_state.record_dispatch(str(root), "dev", "developer", "copilot",
+                               "kimi-k3", branch="left-over-branch")
+    crew_state.record_dispatch(str(root), "dev", "developer", "codex",
+                               "gpt-6-astra")
+
+    authors, source = crew_state.author_families(str(root), PINNED)
+
+    assert source == "dispatch"
+    assert authors == frozenset({"gpt"})
+
+
+def test_the_history_bound_is_spent_per_family_not_per_model(tmp_path):
+    """Codex finding 2, High.
+
+    The dedup key was `(provider, model, branch)` and the bound is ten. One
+    provider cycling through ten model ids on the same branch therefore fills
+    the entire history and evicts the family that actually wrote the diff --
+    and the guard consumes FAMILIES, so those ten entries carry one bit of
+    information between them. Deduplicating on the family is what makes the
+    bound mean "ten families deep" rather than "ten model strings deep".
+    """
+    cfg = copy.deepcopy(PINNED)
+    cfg["dev"]["roles"]["developer"] = {"provider": "claude", "model": None}
+    root = crew_fixtures.make_repo(tmp_path, config=cfg, git=True)
+    here = crew_state.current_branch(str(root))
+
+    crew_state.record_dispatch(str(root), "dev", "developer", "codex",
+                               "gpt-6-astra", branch=here)
+    for n in range(crew_state.DISPATCH_HISTORY_MAX + 4):
+        crew_state.record_dispatch(str(root), "dev", "developer", "copilot",
+                                   f"kimi-k{n}", branch=here)
+
+    authors, _source = crew_state.author_families(str(root), cfg)
+    assert "gpt" in authors, "one provider's model churn evicted the author"
+    assert "kimi" in authors
+
+
+def test_two_unknown_families_are_not_deduplicated_into_one(tmp_path):
+    """Deduplicating on the family must not collapse the case where the
+    family is genuinely unknown: two unpinned providers are two candidates,
+    not one, and `family()` answers None for both."""
+    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=True)
+    here = crew_state.current_branch(str(root))
+    crew_state.record_dispatch(str(root), "dev", "developer", "copilot", None,
+                               branch=here)
+    crew_state.record_dispatch(str(root), "dev", "developer", "windsurf", None,
+                               branch=here)
+
+    history = crew_state.read_dispatch(str(root))["devHistory"]
+    providers = {item["provider"] for item in history}
+    assert providers == {"copilot", "windsurf"}
+
+
+def test_a_role_whose_cli_is_absent_is_not_reported_eligible():
+    """Codex finding 4, Medium. `order_candidates` refuses a provider that is
+    not on PATH; `role_status` said `eligible` at the same config because it
+    only looked at the family. The report outranking the gate is the exact
+    bug this pass was fixing, so getting it wrong in the other direction is
+    not an improvement."""
+    status = crew_config.role_status(
+        _row(provider="codex", model="gpt-6-astra", family="gpt",
+             providerOnPath=False))
+    assert "eligible" != status
+    assert "NOT ON PATH" in status
+
+
+def test_on_path_is_still_not_claimed_as_working_auth():
+    status = crew_config.role_status(
+        _row(provider="codex", model="gpt-6-astra", family="gpt",
+             providerOnPath=True))
+    assert status == "eligible"
+
+
+def test_model_report_records_whether_each_role_provider_resolves(tmp_path):
+    """`role_status` cannot answer the PATH question on its own -- the row has
+    to carry it, or the printer would be back to guessing."""
+    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=True)
+    report = crew_config.model_report(str(root), which=lambda _t: None)
+    for row in report["qa"] + report["dev"]:
+        assert "providerOnPath" in row
+        if row["provider"] == "claude":
+            assert row["providerOnPath"] is True
+        elif row["provider"] != "auto":
+            assert row["providerOnPath"] is False
+
+
+# --- Codex round 2 on PR #66 ------------------------------------------------
+
+
+def test_a_dispatch_entry_records_when_it_happened(tmp_path):
+    """Codex round 2, Medium. The history is order-dependent and carried no
+    ordering information of its own, so a file written by any other ordering
+    convention could not be read correctly -- the writer simply assumed the
+    list it found was already newest-first. An entry that says when it was
+    written is self-describing, and the reader sorts on it."""
+    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=True)
+    crew_state.record_dispatch(str(root), "dev", "developer", "codex",
+                               "gpt-6-astra")
+    entry = crew_state.read_dispatch(str(root))["devHistory"][0]
+    assert isinstance(entry.get("at"), (int, float))
+
+
+def test_history_written_in_the_wrong_order_is_still_read_newest_first(
+        tmp_path):
+    """A file whose `devHistory` is oldest-first -- or in no order at all --
+    must not decide which family survives the bound. Sorting on `at` makes
+    the answer independent of how the file happened to be laid out; an entry
+    with no `at` is treated as oldest, which is the safe direction because
+    the bound evicts from that end."""
+    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=True)
+    here = crew_state.current_branch(str(root))
+    path = os.path.join(str(root), *crew_state.DISPATCH_PATH)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    # Distinct FAMILIES, not distinct model ids: the dedup is family-keyed,
+    # so thirteen Copilot models collapse to one entry and the bound never
+    # bites. A filler that cannot fill is a test that cannot fail.
+    names = ("alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf",
+             "hotel", "india", "juliett", "kilo", "lima", "mike")
+    stale = [{"role": "developer", "provider": "copilot",
+              "model": f"{name}-1", "branch": here, "at": 1000.0 + n}
+             for n, name in enumerate(names)]
+    assert len(stale) > crew_state.DISPATCH_HISTORY_MAX, \
+        "the filler must overflow the bound or this proves nothing"
+    newest = {"role": "developer", "provider": "codex",
+              "model": "gpt-6-astra", "branch": here, "at": 9999.0}
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump({"dev": stale[-1], "devHistory": stale + [newest]}, handle)
+
+    crew_state.record_dispatch(str(root), "dev", "developer", "claude", None,
+                               branch=here)
+
+    families = {crew_state.family(item["provider"], item["model"])
+                for item in crew_state.read_dispatch(str(root))["devHistory"]}
+    assert "gpt" in families, \
+        "the newest entry was evicted because the file was in the wrong order"
+
+
+def test_a_legacy_record_with_no_history_still_works(tmp_path):
+    """A `dispatch.json` written by 0.16.6 has a `dev` slot and no
+    `devHistory` at all. It must keep working, and the slot's own family must
+    still be struck."""
+    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=True)
+    here = crew_state.current_branch(str(root))
+    path = os.path.join(str(root), *crew_state.DISPATCH_PATH)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump({"dev": {"role": "developer", "provider": "codex",
+                           "model": "gpt-6-astra", "branch": here}}, handle)
+
+    authors, source = crew_state.author_families(str(root), PINNED)
+    assert authors == frozenset({"gpt"})
+    assert source == "dispatch"
+
+
+# --- Codex round 3 on PR #66: the store is append-only ----------------------
+
+
+def test_three_concurrent_dispatches_all_survive(tmp_path):
+    """Codex round 3, Critical. THE test the old design could not pass.
+
+    Verify-and-republish held only for the writer that landed last. Three
+    writers: C publishes and verifies; B reads C's version, publishes C+B and
+    verifies; A, whose read predates both, publishes A over the top and
+    verifies its own entry present. All three return successfully and B is
+    gone -- and if B is the family that wrote the diff, the guard clears it to
+    review its own work.
+
+    No amount of locking fixes that portably, so there is no shared file left
+    to race: each dispatch writes a file nothing else will ever touch. This
+    runs them concurrently for real rather than simulating an interleaving,
+    because the bug it replaces was found by RUNNING the concurrency test and
+    not by reading it.
+    """
+    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=True)
+    here = crew_state.current_branch(str(root))
+    families = ("codex", "copilot", "windsurf")
+    models = ("gpt-6-astra", "kimi-k3", "swe-1")
+    start = threading.Barrier(len(families))
+
+    def dispatch(provider, model):
+        start.wait()
+        crew_state.record_dispatch(str(root), "dev", "developer", provider,
+                                   model, branch=here)
+
+    threads = [threading.Thread(target=dispatch, args=pair)
+               for pair in zip(families, models)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    got = {crew_state.family(item["provider"], item["model"])
+           for item in crew_state.read_dispatch(str(root))["devHistory"]}
+    assert got == {"gpt", "kimi", "swe"}, \
+        "a concurrent dispatch was lost; the guard would clear its family"
+
+
+def test_a_malformed_entry_costs_one_entry_and_not_the_record(tmp_path):
+    """Codex round 3, Critical. One shared file meant one malformed byte
+    collapsed the WHOLE record to `{}` -- and `author_families` then fell back
+    to reading the config, which describes the next run rather than the diff
+    in front of the reviewer. A directory degrades instead: the unreadable
+    file is skipped and its neighbours are still there."""
+    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=True)
+    here = crew_state.current_branch(str(root))
+    # THREE dispatches, and the OLDEST is the one corrupted. Two is not
+    # enough: `dispatch.json`'s slot still holds the last dispatch, so a
+    # mutation discarding the entire directory left exactly the entry the
+    # assertion was looking for and the test passed on the fallback. Two must
+    # survive, and the slot can only ever supply one.
+    for provider, model in (("codex", "gpt-6-astra"), ("copilot", "kimi-k3"),
+                            ("windsurf", "swe-1")):
+        crew_state.record_dispatch(str(root), "dev", "developer", provider,
+                                   model, branch=here)
+    directory = os.path.join(str(root), *crew_state.DISPATCH_DIR)
+    victim = sorted(os.listdir(directory))[0]
+    with open(os.path.join(directory, victim), "w", encoding="utf-8") as h:
+        h.write("{ half a file")
+
+    history = crew_state.read_dispatch(str(root))["devHistory"]
+
+    assert len(history) == 2, "the survivors were lost with the bad one"
+    authors, source = crew_state.author_families(str(root), PINNED)
+    assert source == "dispatch", "one bad file must not force a config guess"
+    assert authors == frozenset({"kimi", "swe"})
+
+
+def test_a_dispatch_that_cannot_be_recorded_still_dispatches(tmp_path):
+    """Codex round 3, High. Bookkeeping that cannot be written must not abort
+    the work. `_append_dispatch` answers False and the caller carries on; the
+    review that follows falls back to the config and SAYS so, which is a worse
+    answer than a record and a far better outcome than refusing to run."""
+    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=True)
+    real_open = crew_state.os.replace
+
+    def refuse(src, dst):
+        raise OSError(13, "permission denied")
+
+    try:
+        crew_state.os.replace = refuse
+        record = crew_state.record_dispatch(str(root), "dev", "developer",
+                                            "codex", "gpt-6-astra")
+    finally:
+        crew_state.os.replace = real_open
+
+    assert record == {} or "dev" not in record or record["dev"] is not None
+    assert crew_state._append_dispatch(  # pylint: disable=protected-access
+        str(root), "dev", {"provider": "codex", "at": 1.0}) is True
+
+
+def test_a_backward_clock_does_not_evict_the_dispatch_that_just_happened(
+        tmp_path):
+    """`time.time()` is not monotonic, and moving the bound from write time to
+    read time moved that hazard with it: a `dispatch.json` carrying far-future
+    timestamps -- a clock that ran ahead, a hand edit, a restored backup --
+    outsorted every real entry in the store and evicted the dispatch that had
+    just happened.
+
+    Comparing timestamps cannot fix it; both sides are wall-clock and step
+    together. The store outranks the legacy file STRUCTURALLY instead, so no
+    value inside `dispatch.json` can promote it."""
+    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=True)
+    here = crew_state.current_branch(str(root))
+    path = os.path.join(str(root), *crew_state.DISPATCH_PATH)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    future = [{"role": "developer", "provider": "copilot",
+               "model": f"{name}-1", "branch": here,
+               "at": 4.0e9 + n}          # a clock that ran ahead, then back
+              for n, name in enumerate(
+                  ("alpha", "bravo", "charlie", "delta", "echo", "foxtrot",
+                   "golf", "hotel", "india", "juliett", "kilo", "lima"))]
+    assert len(future) > crew_state.DISPATCH_HISTORY_MAX, \
+        "the filler must overflow the bound or this proves nothing"
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump({"dev": future[0], "devHistory": future}, handle)
+
+    crew_state.record_dispatch(str(root), "dev", "developer", "codex",
+                               "gpt-6-astra", branch=here)
+
+    record = crew_state.read_dispatch(str(root))
+    families = {crew_state.family(item["provider"], item["model"])
+                for item in record["devHistory"]}
+    assert "gpt" in families, "the dispatch that just happened was evicted"
+    # And it is the RECORD of record. `author_families` reads this slot's
+    # branch to decide whether provenance is proven, so handing it to whatever
+    # the legacy file claimed the largest timestamp for is the same bug
+    # wearing a different hat.
+    assert record["dev"]["provider"] == "codex", \
+        "a far-future legacy entry became the current dispatch"
+
+
+def test_a_dispatch_recorded_before_the_store_existed_is_not_lost(tmp_path):
+    """A repo upgraded mid-branch has its only record in `dispatch.json`, with
+    no `devHistory` and no `.work/dispatch.d/` at all. That family still wrote
+    the diff, so it is read where it lies and struck alongside anything
+    dispatched afterwards. Nothing rewrites it into the new store: a migration
+    that can fail halfway is a migration that loses records."""
+    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=True)
+    here = crew_state.current_branch(str(root))
+    path = os.path.join(str(root), *crew_state.DISPATCH_PATH)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump({"dev": {"role": "developer", "provider": "codex",
+                           "model": "gpt-6-astra", "branch": here}}, handle)
+
+    crew_state.record_dispatch(str(root), "dev", "developer", "claude", None,
+                               branch=here)
+
+    authors, source = crew_state.author_families(str(root), PINNED)
+    assert authors == frozenset({"gpt", "claude"}), \
+        "the pre-upgrade record was dropped"
+    assert source == "dispatch"
+
+
+def test_an_entry_file_is_never_rewritten(tmp_path):
+    """The property everything above rests on. If a second dispatch could
+    touch the first one's file, every race the directory removed comes back
+    -- so this asserts the bytes, not the behaviour."""
+    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=True)
+    crew_state.record_dispatch(str(root), "dev", "developer", "codex",
+                               "gpt-6-astra")
+    directory = os.path.join(str(root), *crew_state.DISPATCH_DIR)
+    first = os.path.join(directory, sorted(os.listdir(directory))[0])
+    with open(first, "rb") as handle:
+        before = handle.read()
+
+    for provider, model in (("copilot", "kimi-k3"), ("claude", None),
+                            ("windsurf", "swe-1")):
+        crew_state.record_dispatch(str(root), "dev", "developer", provider,
+                                   model)
+
+    with open(first, "rb") as handle:
+        assert handle.read() == before, "an existing entry file was modified"
+
+
+def test_the_directory_is_pruned_but_never_below_what_is_read(tmp_path):
+    """Nothing else deletes these files and a checkout dispatches for months.
+    The prune bound sits far above the read bound on purpose: pruning must
+    never be what decides which family is remembered."""
+    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=True)
+    assert crew_state.DISPATCH_FILES_MAX > crew_state.DISPATCH_HISTORY_MAX
+    directory = os.path.join(str(root), *crew_state.DISPATCH_DIR)
+    os.makedirs(directory, exist_ok=True)
+    for n in range(crew_state.DISPATCH_FILES_MAX + 20):
+        with open(os.path.join(directory, f"dev-{n:06d}-old.json"), "w",
+                  encoding="utf-8") as handle:
+            json.dump({"kind": "dev", "role": "developer",
+                       "provider": "copilot", "model": f"kimi-k{n}",
+                       "branch": None, "at": float(n)}, handle)
+
+    crew_state.record_dispatch(str(root), "dev", "developer", "codex",
+                               "gpt-6-astra")
+
+    left = [n for n in os.listdir(directory) if n.endswith(".json")]
+    assert len(left) <= crew_state.DISPATCH_FILES_MAX
+    families = {crew_state.family(item["provider"], item["model"])
+                for item in crew_state.read_dispatch(str(root))["devHistory"]}
+    assert "gpt" in families, "the newest dispatch was pruned"
+
+
+def test_a_proven_dispatch_with_an_unknown_family_is_not_called_proven(
+        tmp_path):
+    """Codex round 3, Critical. An unpinned `copilot` hosts several families
+    and an unset model does not say which, so `family()` answers None --
+    correctly. `discard(None)` then emptied the author set, and the old code
+    handed that back labelled `dispatch`: "the guard is judging what actually
+    ran". Nothing was struck, every reviewer read as eligible, and the report
+    said the provenance was proven.
+
+    There is no set to return here, so the LABEL is what changes. Barring the
+    config's family would be a guess about who wrote the diff; barring
+    everything would take a real reviewer off it on a value nobody
+    established."""
+    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=True)
+    here = crew_state.current_branch(str(root))
+    crew_state.record_dispatch(str(root), "dev", "developer", "copilot", None,
+                               branch=here)
+
+    authors, source = crew_state.author_families(str(root), PINNED)
+
+    assert authors == frozenset()
+    assert source == "unknown", \
+        "an empty author set must not be labelled proven provenance"
+
+
+def test_an_unknown_author_cannot_certify_an_independent_review(tmp_path):
+    """The teeth. `eligible` means only "not struck", and with an empty author
+    set nothing is struck -- so every candidate looked eligible and the report
+    certified a review it had no basis to certify. Independence is a claim
+    ABOUT the author's family; there is none to be independent of."""
+    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=True)
+    here = crew_state.current_branch(str(root))
+    crew_state.record_dispatch(str(root), "dev", "developer", "copilot", None,
+                               branch=here)
+
+    report = crew_config.model_report(str(root))
+
+    assert report["authorSource"] == "unknown"
+    assert report["independentReviewer"] is False
+
+
+# --- Codex round 4 on PR #66: a slot may only be spent on evidence ----------
+
+
+def _seed_entry(root, kind="dev", **fields):
+    """Write one entry file directly, bypassing `record_dispatch`."""
+    directory = os.path.join(str(root), *crew_state.DISPATCH_DIR)
+    os.makedirs(directory, exist_ok=True)
+    name = f"{kind}-{fields.get('at', 0.0):015.4f}-{len(os.listdir(directory))}"
+    with open(os.path.join(directory, f"{name}.json"), "w",
+              encoding="utf-8") as handle:
+        json.dump(dict(fields, kind=kind), handle)
+
+
+def test_an_entry_with_no_provider_cannot_evict_one_that_has_one(tmp_path):
+    """Codex round 4, Critical. `author_families` skips an entry with no
+    `provider` -- it names no author, so it cannot BE the author. It was still
+    spending a slot in the bound, so ten hand-edited or truncated files ahead
+    of a real dispatch emptied the history of the family that wrote the diff.
+
+    Something that is not evidence must not displace something that is."""
+    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=True)
+    here = crew_state.current_branch(str(root))
+    crew_state.record_dispatch(str(root), "dev", "developer", "codex",
+                               "gpt-6-astra", branch=here)
+    for n in range(crew_state.DISPATCH_HISTORY_MAX + 5):
+        _seed_entry(root, role="developer", model=f"ghost{n}-1", branch=here,
+                    at=9.0e9 + n)       # newer than the real one, and empty
+
+    authors, source = crew_state.author_families(str(root), PINNED)
+
+    assert source == "dispatch"
+    assert authors == frozenset({"gpt"}), \
+        "entries naming no author evicted the one that does"
+
+
+def test_another_branch_cannot_spend_this_branch_s_history(tmp_path):
+    """Codex round 4, Critical. `author_families` filters to this checkout
+    AFTER the trim, so entries from other branches used to consume the bound
+    and evict this branch's only record -- and a repo with a few active
+    branches reaches ten of them in a day.
+
+    The guard asks who was dispatched HERE. A bound that answers it by
+    discarding what happened here is the bug, not the bound."""
+    # The config's developer must NOT be the family under test. `PINNED`
+    # pins it to codex, whose family is `gpt` -- and the stale path strikes
+    # the config family alongside the recorded one, so evicting the real gpt
+    # record changed nothing and this passed on the wrong evidence. The
+    # sabotage suite is what caught that.
+    cfg = copy.deepcopy(PINNED)
+    cfg["dev"]["roles"]["developer"] = {"provider": "copilot",
+                                        "model": "kimi-k3"}
+    root = crew_fixtures.make_repo(tmp_path, config=cfg, git=True)
+    here = crew_state.current_branch(str(root))
+    crew_state.record_dispatch(str(root), "dev", "developer", "codex",
+                               "gpt-6-astra", branch=here)
+    for n, name in enumerate(("alpha", "bravo", "charlie", "delta", "echo",
+                              "foxtrot", "golf", "hotel", "india", "juliett",
+                              "kilo", "lima", "mike")):
+        _seed_entry(root, role="developer", provider="copilot",
+                    model=f"{name}-1", branch=f"other-{n}", at=9.0e9 + n)
+
+    authors, _source = crew_state.author_families(str(root), cfg)
+
+    # Not the source: the slot is the newest dispatch ANYWHERE, so a newer
+    # dispatch on another branch correctly reads as stale and strikes the
+    # config family too. What must hold either way is that this branch's own
+    # record is still there to be struck.
+    assert "gpt" in authors, \
+        "other branches evicted the record for the branch under review"
+
+
+def test_pruning_never_removes_an_entry_the_reader_still_keeps(tmp_path):
+    """Codex round 4, Critical. The cap counted raw files across every branch
+    and family, so a busy repo could push this branch's ONLY record past it
+    and delete it -- pruning deciding which family is remembered, which is
+    exactly what the cap is documented as never doing."""
+    # Same masking as above: the config's developer must not be `gpt`, or
+    # the stale path supplies the very family the prune was supposed to have
+    # kept.
+    cfg = copy.deepcopy(PINNED)
+    cfg["dev"]["roles"]["developer"] = {"provider": "copilot",
+                                        "model": "kimi-k3"}
+    root = crew_fixtures.make_repo(tmp_path, config=cfg, git=True)
+    here = crew_state.current_branch(str(root))
+    crew_state.record_dispatch(str(root), "dev", "developer", "codex",
+                               "gpt-6-astra", branch=here)
+    # A second dispatch so the legacy slot holds something OTHER than the
+    # entry under test. Left holding codex, the slot is folded into the
+    # history by `read_dispatch` and hands back the very record the prune was
+    # supposed to have kept -- the assertion then passes on the fallback.
+    crew_state.record_dispatch(str(root), "dev", "developer", "claude", None,
+                               branch=here)
+    # Far more than the cap, all newer, all on other branches. Under the old
+    # rule the one entry that mattered was the oldest file in the directory.
+    for n in range(crew_state.DISPATCH_FILES_MAX + 50):
+        _seed_entry(root, role="developer", provider="copilot",
+                    model=f"kimi-k{n}", branch=f"other-{n}", at=9.0e9 + n)
+
+    # The pruner directly, not a dispatch. Through `record_dispatch` the
+    # damage healed before the assertion ran: the prune emptied the store,
+    # `_adopt_slot` found the slot's record missing and copied it back. That
+    # is correct behaviour and it is not this test's subject.
+    crew_state._prune_dispatch_dir(str(root))  # pylint: disable=protected-access
+
+    authors, _source = crew_state.author_families(str(root), cfg)
+    assert {"gpt", "claude"} <= authors, \
+        "pruning deleted the record for the branch under review"
+
+
+def test_a_failed_adoption_is_retried_on_the_next_dispatch(tmp_path):
+    """Codex round 4, Critical. The gate was "the store is empty for this
+    kind". One transient write failure and it closed forever: the dispatch
+    that followed filled the store, every later run saw a non-empty store and
+    declared there was nothing to adopt, and `_write_slot` had already
+    overwritten the slot it was supposed to save.
+
+    Comparing the RECORD rather than counting the store makes it retry, which
+    is the only version of this that survives a failure."""
+    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=True)
+    here = crew_state.current_branch(str(root))
+    path = os.path.join(str(root), *crew_state.DISPATCH_PATH)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump({"dev": {"role": "developer", "provider": "codex",
+                           "model": "gpt-6-astra", "branch": here}}, handle)
+
+    real_append = crew_state._append_dispatch  # pylint: disable=protected-access
+    calls = []
+
+    def fail_the_adoption(target, kind, entry):
+        if entry.get("adopted") and not calls:
+            calls.append(entry)
+            return False                # the transient failure
+        return real_append(target, kind, entry)
+
+    try:
+        crew_state._append_dispatch = fail_the_adoption  # pylint: disable=protected-access
+        crew_state.record_dispatch(str(root), "dev", "developer", "claude",
+                                   None, branch=here)
+    finally:
+        crew_state._append_dispatch = real_append  # pylint: disable=protected-access
+
+    assert calls, "the adoption never ran, so this proves nothing"
+    # The slot has been overwritten by now. The next dispatch must still
+    # notice the legacy record is missing and copy it.
+    crew_state.record_dispatch(str(root), "dev", "developer", "windsurf",
+                               "swe-1", branch=here)
+
+    authors, _source = crew_state.author_families(str(root), PINNED)
+    assert "gpt" in authors, \
+        "one transient failure lost the pre-upgrade record permanently"
+
+
+def test_the_file_token_never_reaches_a_reader(tmp_path):
+    """`_file` exists so the pruner can protect what the reader keeps. It is
+    bookkeeping, and a record handed to `/crew:review` or written into a
+    report must not carry it."""
+    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=True)
+    crew_state.record_dispatch(str(root), "dev", "developer", "codex",
+                               "gpt-6-astra")
+    record = crew_state.read_dispatch(str(root))
+    assert "_file" not in record["dev"]
+    assert all("_file" not in item for item in record["devHistory"])
+
+
+# --- Codex round 5 on PR #66: what may be evicted, and what may not ---------
+
+
+def test_no_number_of_later_families_evicts_the_one_that_wrote_the_diff(
+        tmp_path):
+    """Codex round 5, Critical. Not a number that was too small -- what ANY
+    per-branch cap does. Dispatch the family that writes the diff, then enough
+    newer dispatches with distinct families, and the author is pushed out of
+    its own branch's history while `author_families` still reports proven
+    provenance. Raising the cap moves the input and keeps the failure.
+
+    So the dedup is the only bound a branch gets: a family appears at most
+    once in one, however many models it walks through. Over-barring costs a
+    rung; under-barring costs the entire point of the guard."""
+    cfg = copy.deepcopy(PINNED)
+    cfg["dev"]["roles"]["developer"] = {"provider": "copilot",
+                                        "model": "kimi-k3"}
+    root = crew_fixtures.make_repo(tmp_path, config=cfg, git=True)
+    here = crew_state.current_branch(str(root))
+    crew_state.record_dispatch(str(root), "dev", "developer", "codex",
+                               "gpt-6-astra", branch=here)
+    names = ("alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf",
+             "hotel", "india", "juliett", "kilo", "lima", "mike", "november")
+    assert len(names) > crew_state.DISPATCH_HISTORY_MAX, \
+        "the filler must exceed any plausible cap or this proves nothing"
+    for n, name in enumerate(names):
+        _seed_entry(root, role="developer", provider="copilot",
+                    model=f"{name}-1", branch=here, at=9.0e9 + n)
+
+    authors, source = crew_state.author_families(str(root), cfg)
+
+    assert source == "dispatch"
+    assert "gpt" in authors, \
+        "later families on this branch evicted the one that wrote the diff"
+
+
+def test_model_churn_collapses_to_one_entry_per_family(tmp_path):
+    """The dedup, asserted as COLLAPSE rather than as survival. With no cap
+    inside a branch, nothing is evicted for the family key to save -- what it
+    does instead is stop one provider walking through model ids from filling
+    the store with entries that all carry the same bit."""
+    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=True)
+    here = crew_state.current_branch(str(root))
+    for n in range(25):
+        _seed_entry(root, role="developer", provider="copilot",
+                    model=f"kimi-k{n}", branch=here, at=1000.0 + n)
+
+    history = crew_state.read_dispatch(str(root))["devHistory"]
+
+    assert len(history) == 1, "one family, one entry, whatever it is pinned to"
+    assert crew_state.family(history[0]["provider"],
+                             history[0]["model"]) == "kimi"
+
+
+def test_the_branch_cap_never_evicts_the_branch_under_review(tmp_path):
+    """The cap has to fall on something, and it must not fall here. Fifty
+    branches dispatched more recently is all it takes, and dropping the
+    checkout the reviewer is standing on is the Critical above one axis
+    over."""
+    cfg = copy.deepcopy(PINNED)
+    cfg["dev"]["roles"]["developer"] = {"provider": "copilot",
+                                        "model": "kimi-k3"}
+    root = crew_fixtures.make_repo(tmp_path, config=cfg, git=True)
+    here = crew_state.current_branch(str(root))
+    _seed_entry(root, role="developer", provider="codex", model="gpt-6-astra",
+                branch=here, at=1.0)            # the oldest thing in the store
+    for n in range(crew_state.DISPATCH_BRANCHES_MAX + 10):
+        _seed_entry(root, role="developer", provider="copilot",
+                    model=f"kimi-k{n}", branch=f"other-{n}", at=9.0e9 + n)
+
+    history = crew_state.read_dispatch(str(root))["devHistory"]
+
+    assert len(history) <= crew_state.DISPATCH_BRANCHES_MAX + 1, \
+        "the branch cap did not bite, so this proves nothing"
+    assert any(item.get("branch") == here for item in history), \
+        "the branch under review was evicted by newer branches"
+    authors, _source = crew_state.author_families(str(root), cfg)
+    assert "gpt" in authors
+
+
+def test_the_branch_cap_bounds_the_store(tmp_path):
+    """The Medium. Branches are the axis that grows without limit, and
+    `read_dispatch` runs at session start -- so the live set has to be bounded
+    or startup cost grows with the age of the checkout."""
+    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=True)
+    for n in range(crew_state.DISPATCH_BRANCHES_MAX * 3):
+        _seed_entry(root, role="developer", provider="copilot",
+                    model=f"kimi-k{n}", branch=f"other-{n}", at=1000.0 + n)
+
+    history = crew_state.read_dispatch(str(root))["devHistory"]
+
+    assert len(history) <= crew_state.DISPATCH_BRANCHES_MAX
+    newest = {item["branch"] for item in history}
+    assert f"other-{crew_state.DISPATCH_BRANCHES_MAX * 3 - 1}" in newest, \
+        "the cap kept the oldest branches instead of the newest"
+
+
+# --- Codex round 6 on PR #66 ------------------------------------------------
+
+
+def test_the_pruner_and_the_reader_rank_from_the_same_inputs(tmp_path):
+    """Codex round 6, Critical. The pruner protected what `_merge_history`
+    returned and fed it the STORE alone, while `read_dispatch` fed it the
+    store and the legacy `dispatch.json` together. A branch whose legacy
+    record is newer than its store entries then ranks inside the branch cap
+    for the reader and outside it for the pruner -- which deletes every store
+    file that branch had. Check it out afterwards and the surviving legacy
+    record names a different family, reported as proven, with the family that
+    wrote the diff gone.
+
+    Two rankings, one of them deleting files for the other. The fix is that
+    there is one function computing the input and both call it.
+
+    The reported consequence does NOT follow against this code, and saying so
+    is part of the record: `_entry_rank` puts every legacy value in tier 0, so
+    a legacy record cannot lift a branch above a store-native one, and the
+    reader drops `X` here exactly as the pruner does. Measured, not reasoned.
+    Every divergence the tier allows runs the safe way, in both directions it
+    has. The branch cap: the store-only input sees fewer branches competing,
+    so it protects a superset. The dedup: iteration is rank-descending and
+    legacy is always tier 0, so a legacy entry is never `seen` before a
+    store entry sharing its `(family, branch)` key -- no store entry is ever
+    deduped away by something only the store-plus-legacy view can see. Those
+    are the only two places the extra input can act. This
+    is unified against DRIFT, and there is deliberately no sabotage mutation
+    for it: with the tier in place none can turn this red, and a mutation that
+    cannot go red is a green line in a suite whose only value is that green
+    means something."""
+    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=True)
+    # Branch `X`: its store entry is the OLDEST thing in the repo, so it ranks
+    # last on store evidence alone and is evicted by the branch cap.
+    _seed_entry(root, role="developer", provider="codex", model="gpt-6-astra",
+                branch="X", at=1.0)
+    for n in range(crew_state.DISPATCH_BRANCHES_MAX + 5):
+        _seed_entry(root, role="developer", provider="copilot",
+                    model=f"kimi-k{n}", branch=f"other-{n}", at=5000.0 + n)
+    # ...but the legacy file carries a NEWER record for `X`, which is what the
+    # reader ranks it by. The two must agree about that.
+    path = os.path.join(str(root), *crew_state.DISPATCH_PATH)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump({"dev": {"role": "developer", "provider": "windsurf",
+                           "model": "swe-1", "branch": "X", "at": 9.0e9}},
+                  handle)
+
+    record = crew_state._read_record_file(str(root))  # pylint: disable=protected-access
+    by_kind = {}
+    for key, entry_kind, entry in crew_state._dispatch_entries(str(root)):  # pylint: disable=protected-access
+        by_kind.setdefault(entry_kind, []).append((key, entry))
+    wanted = {entry["_file"]
+              for kind in crew_state.DISPATCH_KINDS
+              for entry in crew_state._merge_history(  # pylint: disable=protected-access
+                  crew_state._history_items(record, by_kind, kind))  # pylint: disable=protected-access
+              if entry.get("_file")}
+    assert wanted, "nothing was kept, so this proves nothing"
+
+    crew_state._prune_dispatch_dir(str(root))  # pylint: disable=protected-access
+
+    directory = os.path.join(str(root), *crew_state.DISPATCH_DIR)
+    assert wanted <= set(os.listdir(directory)), \
+        "the pruner deleted a store entry the reader was keeping"

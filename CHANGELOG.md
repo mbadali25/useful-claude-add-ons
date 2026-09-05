@@ -6,6 +6,190 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
+- **`crew` 0.16.7: three domain specialists, and four more guard defects.**
+
+  `sharepoint-developer`, `power-automate-specialist` and `node-developer` join
+  as full agents with their own refusal boundaries — a SharePoint change never
+  breaks permission inheritance to make something work, and a Power Automate
+  flow that has a trigger is already live, so neither touches a production
+  tenant unasked.
+
+  They sit **off the tier ladder**, which is the design rather than an
+  oversight. Every ladder role closes a defect class any repo can have, so
+  `roles_for_tier` grants every rung up to the declared tier — which is exactly
+  how this repo, with no database and no UI, ended up holding `dba` and
+  `browser-tester`. "This repo does SharePoint" is not a defect class; it is a
+  fact about one checkout, knowable on day one. On the ladder, every tier-2
+  repo on the machine would be handed a SharePoint developer it will never
+  dispatch, and the tier column would stop meaning anything.
+
+  So `crew_state.SPECIALIST_ROLES` holds them, no tier ever grants one,
+  `known_role` stops `/crew:upgrade` reporting a deliberately-onboarded
+  specialist as an unrecognised name on every run, and `/crew:pm onboard`
+  justifies one from what is actually in the repo — a `package.json` with a
+  server entry point, an SPFx `config/package-solution.json`, an exported flow
+  definition — rather than from a pattern in `.crew/metrics.md`. Onboarding one
+  leaves `tier` alone: the crew has specialised, not grown.
+
+### Fixed
+
+- **`crew` 0.16.7: a later dispatch cleared the family that wrote the diff.**
+
+  `dispatch.json` held a single `dev` slot. Codex implements; a Claude
+  developer dispatch runs afterwards on the same branch for something
+  unrelated and overwrites the slot; `/crew:review` then reads a matching
+  branch, declares Claude the author, bars Claude — and clears **Codex** to
+  review the diff Codex wrote.
+
+  It was invisible by construction. The overwriting record is newer than the
+  merge-base, so the staleness check cannot disprove it, and the report says
+  `recorded at dispatch`, which reads as verified rather than guessed. Nothing
+  binds a dispatch to the commits it produced, so the honest answer is that any
+  family dispatched on the branch in front of the reviewer may have written
+  what is under review. All of them are now struck. Over-barring costs a rung;
+  under-barring costs the entire point of the guard.
+
+  The first fix reintroduced the same bug one line further down, by filtering
+  that new history on the *last record's* branch instead of the checkout's.
+  Those are the same value in the proven path and differ in the stale one,
+  which is the path that matters — so `tests/sabotage.py` now carries exactly
+  that mutation, because a suite that exercises only the proven path stays
+  green with the bug restored.
+
+- **`crew` 0.16.7: the dispatch record was written non-atomically.** Opening
+  the live file `"w"` truncates it before the JSON is complete, and
+  `read_dispatch` collapses malformed JSON to `{}` — so a concurrent reader saw
+  *no* dispatch and fell back to reading the config, which describes the next
+  run rather than the one under review. The guard failing open during an
+  ordinary race is the worst version of this, because nothing about it looks
+  like a failure. Sibling-then-rename with a PID-scoped temp, matching the
+  config writes.
+
+- **`crew` 0.16.7: a `.crew/config.json` of `{}` switched crew off
+  permanently.** It parses, so `heal_config` adopted it as healthy — and
+  `crew_state.collect` derives `isCrew` from the parsed config's truthiness, so
+  every hook stood down, the PM brief and pulse skipped, and nothing ever said
+  why. The second face is worse: `schema` reads as `SCHEMA_CURRENT` when the
+  config is falsy, so `/crew:upgrade` answered "already current" forever and
+  the repo could never migrate out of it. An empty object carries no
+  hand-edits, which is the whole reason the healthy branch exists, so it now
+  heals like a zero-byte file. No backup is taken: a backup of `{}` is a file
+  whose only content is the absence of content.
+
+- **`crew` 0.16.7: `/crew:model` printed `eligible` for a family it could not
+  name.** `order_candidates` has always refused an unpinned `copilot` — Copilot
+  hosts several families and an unset model does not say which, so it may be
+  serving the author's own family. The human-facing role table said `eligible`
+  at the same config. The gate was right and the report was optimistic, which
+  is the worse half to get wrong, because a reader acts on the table. The new
+  `crew_config.role_status` says `CANNOT PROVE INDEPENDENCE` instead, and `dev`
+  rows now say `implements` rather than borrowing a verdict from a check that
+  was never run on them — `model_report` resolves them with no author, on
+  purpose, because the guard governs who may review and not who may write.
+
+- **`crew` 0.16.7: two dispatch writers could both publish, and one would
+  lose.** `.work/dispatch.json` was a single file that every dispatch read,
+  modified and rewrote, so two dispatches each reading history H and
+  publishing `H + itself` erased one another — and if the erased one wrote the
+  diff, its family was never struck. The PM dispatches up to three roles at a
+  time. Writing atomically only stops a torn read. A lock does not close it
+  either: it has to be reclaimable, or one killed dispatch wedges the repo
+  forever, and reclaiming is two calls against a pathname that a rival can
+  replace in between — Windows has no inode, so "remove this only if it is
+  still the file I looked at" cannot be said. Verifying the write and
+  republishing does not close it either; that holds only for the writer that
+  lands last, and three writers lose the middle one permanently.
+
+  So there is no shared file left to race. Each dispatch writes its own
+  immutable file under `.work/dispatch.d/` and the reader merges the
+  directory. `dispatch.json` keeps a best-effort pointer to the most recent
+  one, because `/crew:review` reads its mtime and `/crew:model` prints it, and
+  losing that race now costs a display field rather than a record. **Both
+  paths are gitignored by `/crew:init`** — ignoring the file and not the
+  directory would commit the actual record.
+
+  Three properties fall out of the shape rather than out of care: a malformed
+  entry costs one entry instead of collapsing the whole record to `{}` and
+  sending the guard back to the config; a bookkeeping write that fails cannot
+  abort the dispatch; and a repo upgraded mid-branch has its pre-0.16.7 record
+  adopted into the store before the slot holding it is overwritten.
+
+- **`crew` 0.16.7: the dispatch history carried no ordering of its own.** The
+  reader assumed the list it found was already newest-first, so a file laid
+  out any other way decided which family survived the bound. Entries now
+  record `at`, and an entry's own file mtime is a second witness to the same
+  event. Neither is trusted to rank the store against the legacy file: a
+  `dispatch.json` carrying far-future timestamps — a clock that ran ahead, a
+  hand edit, a restored backup — would otherwise evict the dispatch that had
+  just happened. The store outranks the legacy file structurally, so no value
+  inside that file can promote it.
+
+- **`crew` 0.16.7: a slot in the dispatch history could be spent on
+  something that was not evidence.** The history is bounded, and the bound
+  evicting the wrong entry is the same failure as never recording it — the
+  family that wrote the diff is absent from `devHistory` and is cleared to
+  review its own work. Three ways in, all closed:
+
+  An entry with **no `provider`** named no author, so `author_families` always
+  skipped it — and it was still consuming a slot. Ten hand-edited or truncated
+  files ahead of a real dispatch emptied the history of the family that wrote
+  the code. Something that is not evidence cannot displace something that is.
+
+  The bound was **per store rather than per branch**, and the branch filter
+  runs after the trim. A repo with a few active branches reaches ten
+  dispatches in a day, and those evicted the record for the branch actually
+  under review. The guard's question is "who was dispatched HERE"; a bound
+  that answers it by discarding what happened here is the bug.
+
+  Moving it inside the branch was not enough, and the next review round said
+  why: **any** cap on families within a branch has the same input. Dispatch
+  the family that writes the diff, then enough newer dispatches with distinct
+  families, and the author is pushed out of its own branch's history while the
+  report still says the provenance was proven. Raising the number moves the
+  input and keeps the failure. So there is no cap there at all — the
+  family-keyed dedup is the whole bound a branch gets, and it is enough,
+  because a family appears at most once in one however many model ids it walks
+  through. What is capped is **branches**, the axis that actually grows, at
+  the fifty most recently dispatched — and never the branch currently checked
+  out, which is resolved lazily and only when the cap would otherwise bite.
+
+  **Pruning** counted raw files across every branch and family, so the same
+  busy repo could push its own only record past the hygiene cap and delete
+  it. The pruner now computes what the reader would keep, the same way the
+  reader computes it, and never removes one of those — a directory larger
+  than intended is untidy, a missing author family is a guard handing a diff
+  to the model that wrote it.
+
+  Records **adopted** out of a pre-0.16.7 `dispatch.json` carry that file's
+  claim about when they happened, so they rank below everything the store
+  wrote itself — a claim is what the tier exists not to trust. Adopted with
+  their stated timestamp, one carrying a far-future `at` became the newest
+  record in the repo and took the slot whose branch decides whether provenance
+  is proven.
+
+  A fourth, in the same family of mistake: adopting a pre-0.16.7 record was
+  gated on "the store is empty", which closed permanently the first time that
+  write failed transiently. It now compares the record itself, so it retries —
+  and the slot holding it is not overwritten until the copy has landed, since
+  a retry that reads from a record the failing call destroyed is not a retry.
+
+- **`crew` 0.16.7: an unknown author family was reported as proven
+  provenance.** A dispatch recorded on this branch by an unpinned `copilot`
+  has no determinable family — Copilot hosts several and an unset model does
+  not say which — so `family()` answers `None`, correctly. The author set was
+  then emptied and handed back labelled `dispatch`, documented as "the guard
+  is judging what actually ran": nothing struck, every reviewer eligible, and
+  a report claiming the provenance was proven. It is now its own source,
+  `unknown`, and `independentReviewer` is `false` whenever it applies —
+  independence is a claim about the author's family, and there is none to be
+  independent of. Nothing is barred on it, because barring a real reviewer on
+  a value nobody established is the opposite error. Pinning
+  `dev.copilot.model` is what resolves it.
+
+- **`crew` 0.16.7: the hook count in crew's README.** The prose said eight
+  scripts and sixteen entries while the table directly beneath it already
+  listed all ten across five events, 20 entries.
+
 - **`crew` 0.16.6: the machine-global config gets a template, a walkthrough,
   and a migration that finishes the job.**
 

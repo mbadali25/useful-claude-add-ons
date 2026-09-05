@@ -455,9 +455,19 @@ def _layer_supplies(layer, parts, defaults):
     Mirrors `crew_state.merge_defaults` rather than re-asking the merged
     result, because the merged result cannot tell you WHERE a value came
     from -- and "where is this coming from" is the question the `pm`
-    incident could not answer. The one rule that is easy to get wrong is
-    merge_defaults' discard: a scalar supplied where the default holds a
-    dict is thrown away, so the layer did NOT supply it.
+    incident could not answer.
+
+    Two rules are easy to get wrong, and both were:
+
+    * A scalar supplied where the default holds a dict is DISCARDED by
+      merge_defaults, so the layer did not supply it.
+    * An EMPTY DICT supplies nothing either. merge_defaults iterates
+      `supplied.items()`, so `{}` contributes no keys and whatever the layer
+      below holds survives intact. This one shipped: `/crew:upgrade` writes
+      `dev.roles: {}` into every repo it migrates, so every migrated repo
+      MENTIONED the key while supplying none of it, and the column credited
+      `repo` for pins that came from the machine-global file. Mentioning a
+      key is not deciding its value.
     """
     node_layer, node_def = layer, defaults
     for index, part in enumerate(parts):
@@ -466,8 +476,11 @@ def _layer_supplies(layer, parts, defaults):
         next_layer = node_layer[part]
         next_def = node_def.get(part) if isinstance(node_def, dict) else None
         if index == len(parts) - 1:
-            # Last hop: a scalar over a dict default is discarded.
-            return not (isinstance(next_def, dict) and not isinstance(next_layer, dict))
+            if isinstance(next_def, dict):
+                # A scalar over a dict default is discarded; an empty dict
+                # over one overlays nothing. Either way the layer below wins.
+                return isinstance(next_layer, dict) and bool(next_layer)
+            return True
         if not isinstance(next_def, dict):
             # No dict default here, so the layer replaced the whole subtree.
             return True
@@ -481,7 +494,10 @@ def explain_config(root, path=None):
     """Every globally-settable key, with its effective value and its source.
 
     Returns a list of `{"path", "value", "source"}` in template order, where
-    `source` is `"repo"`, `"global"` or `"default"`. Scoped to the keys
+    `source` is `"repo"`, `"global"`, `"repo+global"` or `"default"`.
+    `repo+global` appears only for a dict-valued key both layers put keys
+    into: their contents merge rather than one replacing the other, so
+    naming a single layer would understate the other's contribution. Scoped to the keys
     `default_global_config()` covers on purpose: those are exactly the keys a
     walkthrough can offer to write, and a full dump of forty leaves would bury
     the four that anyone is actually asking about.
@@ -500,13 +516,23 @@ def explain_config(root, path=None):
     rows = []
     for dotted in leaf_paths(default_global_config()):
         parts = tuple(dotted.split("."))
-        if _layer_supplies(repo_cfg, parts, defaults):
+        from_repo = _layer_supplies(repo_cfg, parts, defaults)
+        from_global = _layer_supplies(global_cfg, parts, defaults)
+        value = _dig(resolved, parts)
+        if from_repo and from_global and isinstance(value, dict):
+            # Merging two dicts is not a contest one of them wins -- the keys
+            # combine, so both layers really are deciding part of the value.
+            # Naming only the higher-precedence one hides the machine-global
+            # file's contribution, which is the failure this column exists to
+            # prevent. For a SCALAR the repo genuinely does win outright, and
+            # `repo` is the whole truth.
+            source = "repo+global"
+        elif from_repo:
             source = "repo"
-        elif _layer_supplies(global_cfg, parts, defaults):
+        elif from_global:
             source = "global"
         else:
             source = "default"
-        value = _dig(resolved, parts)
         rows.append({
             "path": dotted,
             "value": None if value is _MISSING else value,
@@ -729,6 +755,15 @@ def model_report(root, which=None, stale=False):
             row["display"] = (crew_state.display_model(row["model"])
                               or ("n/a (subagent)" if row["provider"] == "claude"
                                   else "(cli default)"))
+            # `claude` is an in-session subagent, not a CLI to look for, so it
+            # is always reachable; `auto` is an instruction rather than a
+            # provider and `order_candidates` answers the PATH question for
+            # the candidates it walks. Everything else is a real executable
+            # and gets asked about, so `role_status` never has to guess -- the
+            # guess is what made it disagree with the gate.
+            row["providerOnPath"] = (
+                True if row["provider"] in ("claude", "auto")
+                else bool(which(row["provider"])))
             out.append(row)
         return out
 
@@ -769,7 +804,16 @@ def model_report(root, which=None, stale=False):
         # run". `independentReviewerProbed` says which of those was measured,
         # so a caller never has to guess whether presence was mistaken for
         # capability.
-        "independentReviewer": any(c["eligible"] for c in candidates),
+        #
+        # An `unknown` author source forces this False. Independence is a
+        # claim ABOUT the author's family, so a candidate cannot be
+        # independent of a family nobody named -- the unpinned provider that
+        # wrote the diff may be serving the reviewer's own. `eligible` says
+        # only "not struck", and with an empty author set nothing is struck,
+        # so every candidate looked eligible and the report certified a review
+        # it had no basis to certify.
+        "independentReviewer": (author_source != "unknown"
+                                and any(c["eligible"] for c in candidates)),
         "independentReviewerProbed": all(c["probed"] for c in candidates)
                                      and bool(candidates),
     }
@@ -783,7 +827,60 @@ _ORIGINS = {
     # `crew_state.author_families` and `commands/review.md`.
     "stale": ("STALE RECORD - the dispatch was made on a different branch, "
               "so BOTH the recorded family and the config family are struck"),
+    # Nothing is struck and nothing is cleared. See
+    # `crew_state.author_families`.
+    "unknown": ("UNKNOWN - a dispatch was recorded on this branch and its "
+                "family cannot be determined (an unpinned provider that "
+                "hosts several), so no reviewer can be proven independent "
+                "of it"),
 }
+
+
+def role_status(row):
+    """The one-line verdict for a role row in `/crew:model`'s table. Pure.
+
+    Four states, and the last one is why this is a function rather than three
+    lines inside the printer:
+
+      * `BARRED` -- the resolved family is one that wrote this diff.
+      * `walks qa.order` -- `auto` is an instruction, not a provider; the
+        guard is applied to the candidates rather than to this row.
+      * `NOT ON PATH` -- the CLI that would run is not installed.
+        `order_candidates` has always refused such a candidate; this said
+        `eligible` at the same config, because it looked only at the family.
+        A report that outranks the gate is the bug this function was written
+        to fix, so getting it wrong in the other direction is not a fix.
+        Being on PATH is still not working auth -- `/crew:model` says to make
+        one real call before deciding anything on it -- so the positive
+        answer stays the weaker claim.
+      * `CANNOT PROVE INDEPENDENCE` -- the family is unknown, which is what an
+        unpinned `copilot` is: Copilot hosts several families and an unset
+        model does not say which, so it may be serving the author's own. This
+        printed as the bare word `eligible` until a QA sweep read it beside
+        `order_candidates`, which has always refused the same candidate with
+        "no model pinned, so its family is unknown". Two readers of one config
+        disagreeing is bad; the human-facing one being the optimistic half is
+        the recurring bug this codebase keeps finding -- an unknown collapsing
+        into the safe-looking value.
+      * `eligible` -- a known family, and not the author's.
+
+    `dev` rows never reach the guard at all: it governs who may REVIEW, and
+    `model_report` resolves them with no author for exactly that reason. So
+    they say `implements` rather than borrowing a word that would imply they
+    passed a check nobody ran on them.
+    """
+    if row["kind"] == "dev":
+        return "implements (the guard governs review, not authorship)"
+    if row["barred"]:
+        return f"BARRED - same `{row['barredBy']}` family as the author"
+    if row["provider"] == "auto":
+        return "walks qa.order"
+    if not row["providerOnPath"]:
+        return f"NOT ON PATH - `{row['provider']}` is not installed here"
+    if row["family"] is None:
+        return (f"CANNOT PROVE INDEPENDENCE - no `{row['kind']}."
+                f"{row['provider']}.model` pinned, so its family is unknown")
+    return "eligible"
 
 
 def _print_models(report):
@@ -801,11 +898,7 @@ def _print_models(report):
               f"{'family':<9}{'source':<14}status")
         print("-" * 118)
         for row in report[kind]:
-            status = "eligible"
-            if row["barred"]:
-                status = f"BARRED - same `{row['barredBy']}` family as the author"
-            elif row["provider"] == "auto":
-                status = "walks qa.order"
+            status = role_status(row)
             print(f"{row['role']:<28}{row['provider']:<10}"
                   f"{str(row['display']):<32}{str(row['family'] or '-'):<9}"
                   f"{row['source']:<14}{status}")
@@ -935,9 +1028,32 @@ def write_global_config(updates, path=None):
     parent = os.path.dirname(real_path)
     if parent:
         os.makedirs(parent, exist_ok=True)
-    with open(real_path, "w", encoding="utf-8") as handle:
-        json.dump(merged, handle, indent=2)
-        handle.write("\n")
+    # Sibling-then-rename, with the PID in the name. Two things go wrong with
+    # the obvious version, and this is the ONE file crew writes outside the
+    # repo, so both matter more here than anywhere else:
+    #
+    #   * opening the live file "w" truncates it before the JSON is complete,
+    #     and every reader collapses malformed global config to `{}` -- so an
+    #     interrupted write does not fail loudly, it silently drops every repo
+    #     on the machine back to built-in defaults.
+    #   * a fixed `.tmp` name races another `/crew:config` in a second
+    #     session: both write the same sibling, and one publishes the other's
+    #     bytes.
+    tmp_path = f"{real_path}.{os.getpid()}.tmp"
+    try:
+        with open(tmp_path, "w", encoding="utf-8") as handle:
+            json.dump(merged, handle, indent=2)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp_path, real_path)
+    except BaseException:
+        try:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+        except OSError:
+            pass                # a stray temp is the lesser problem
+        raise
     return merged, changes
 
 
