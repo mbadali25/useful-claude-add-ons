@@ -142,6 +142,37 @@ Fix shape when it is picked up: have `crew_py` execute each candidate
 first that resolves. Add a must-block case that runs with the stub first on
 PATH.
 
+### `CHANGELOG.md`'s "0.16.8: the machine-global config..." entries are mislabeled
+
+`CHANGELOG.md:420` and five more at 469-650, all `crew 0.16.8: ...`. That
+content actually shipped as **0.16.6**: `git show abe639ce:plugin/crew/.claude-plugin/plugin.json`
+reads `"version": "0.16.6"`, and `abe639ce` (PR #65) is a real ancestor of
+`origin/main` — so 0.16.6 is what anyone installing from `main` at that commit
+actually got. This branch's own history even carried an intermediate state at
+`4b92b518` (an earlier merge of `origin/main`) where `plugin.json` briefly read
+**0.16.7** for the same content, before a later local commit moved on to
+`0.16.8` for unrelated work (the PATH-scrub fix) and, at some point since, a
+local edit relabeled this already-shipped entry's text from 0.16.6 to 0.16.8.
+
+Found during the `origin/main` merge that brought in crew 0.16.7 (three
+specialists, four dispatch-guard defects) and bumped this branch to 0.16.10.
+The rule applied throughout that merge was: relabel a still-unreleased
+CHANGELOG entry to the version it actually ships under; never relabel one
+that already shipped. By that rule, 0.16.8 here is the mistake the rule
+forbids — it should read 0.16.6.
+
+Not fixed in that merge commit, on scope discipline: this divergence predates
+the merge, is already committed, and spans ~200 lines of long-shared
+CHANGELOG text that git did not flag as conflicting. `CLAUDE.md` is explicit
+that renumbering historical prose outside the change at hand falsifies the
+record in the other direction, and correcting it *approximately* inside an
+unrelated merge commit is how a record gets quietly worse rather than better.
+
+Fix shape when it is picked up: change the six `0.16.8:` labels at the lines
+above back to `0.16.6:`, and confirm no other file (`plugin/UPDATE.md`,
+`README.md`, `plugin/README.md`) repeats the same mislabel via its
+`scripts/sync-updates.py` mirror.
+
 ## Moved to CLAUDE.md: `pathlib.write_text` converts a `.sh` to CRLF on Windows
 
 Applied to `CLAUDE.md`'s Landmines list with the user's explicit yes. Kept as a
