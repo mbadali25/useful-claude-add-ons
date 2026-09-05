@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Regression suite for vault_guard.py, the one blocking hook this plugin ships.
+# Regression suite for this plugin's scripts: vault_guard.py (the one blocking
+# hook it ships) inline below, then the two Python suites that cover vault
+# resolution and the REST bridge's ports, collisions and identity.
 # Sabotage-tested: every case here was run once against a broken version of the
 # check it covers to confirm it actually goes red, not just that it exists.
 #
@@ -189,6 +191,31 @@ echo "== vault_guard.py: config-off means silent (sabotage: prove the toggle mat
 
 f=$(write_and_payload "wiki/concepts/no-frontmatter-2.md" "Still no frontmatter block.")
 check "all toggles off: the same broken note is allowed" 0 "$(run_guard "$f" "$home_off_win")"
+
+echo "== python suites (own temp HOME, no live Obsidian, no sockets) =="
+
+# Each of these is runnable on its own and exits non-zero on the first failed
+# assertion set; the whole file counts as one case here, with its output shown
+# only when it fails. They manage their own throwaway HOME internally, so no
+# winpath conversion is needed - the paths they build never cross the bash
+# boundary.
+py_suite() {
+  local desc="$1" script="$2" out rc
+  out="$("$PY" "$DIR/_test/$script" 2>&1)"
+  rc=$?
+  if [ "$rc" -eq 0 ]; then
+    PASS=$((PASS+1))
+  else
+    FAIL=$((FAIL+1))
+    echo "FAIL: $desc (exit $rc)"
+    echo "$out"
+  fi
+}
+
+py_suite "obsidian_common: multi-vault resolution" test_obsidian_common.py
+py_suite "ports, collisions, identity, vault_ops CLI" test_vault_ops.py
+py_suite "profiles: the three sets, detection, the 50k line, split breakage" test_vault_profiles.py
+py_suite "the four bridge states, told apart" test_bridge_states.py
 
 echo
 echo "RESULT: $PASS passed, $FAIL failed"

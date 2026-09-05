@@ -162,11 +162,13 @@ with_config(
     _t5,
 )
 
-# --- A malformed config port never reaches bridge_status.py's http_port+1 --
+# --- A malformed config port never reaches bridge_status.py ----------------
 # Codex QA finding: an unvalidated string/negative port used to raise
-# TypeError there, swallowed silently by an outer `except Exception:
-# sys.exit(0)`. list_vaults() must coerce it to DEFAULT_PORT instead of
-# passing the bad value through.
+# TypeError in that hook's port arithmetic, swallowed silently by an outer
+# `except Exception: sys.exit(0)`. list_vaults() must coerce it to
+# DEFAULT_PORT instead of passing the bad value through. (The arithmetic
+# itself is gone - see test_vault_ops.py - but a bad port still must not
+# escape config parsing.)
 
 def _t6(tmp):
     vaults = obsidian_common.list_vaults()

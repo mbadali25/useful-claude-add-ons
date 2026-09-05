@@ -19,11 +19,35 @@ nobody trusts a notification channel.
 2. If Scope is unclear or "Done when" is not observable, stop and ask me.
 3. Use the `crew:explorer` subagent to locate the code. Do not grep yourself.
 4. Plan mode. Show me the plan before editing.
-5. Implement the smallest change that satisfies Done. In Obsidian Kanban mode,
+5. Implement the smallest change that satisfies Done. Who types is not assumed:
+   read the effective dev table first with
+   `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_config.py --root . --models`
+   and dispatch whatever `dev.roles.developer` names, else `dev.provider`.
+   `claude` means the `crew:developer` subagent; `codex` or `copilot` means that
+   CLI writes the change. In Obsidian Kanban mode,
    set `status: in-progress` in `.work/cache/$1.md` and run
    `/crew:obsidian-sync $1 --push` first — that command reads the status from
    the cache and moves the card, and a board nobody moves is a board nobody
    trusts.
+
+   **Record the dispatch the moment it returns**, with the provider and model
+   that actually ran:
+
+   ```bash
+   python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_state.py --root . \
+     --record-dispatch dev --role developer --provider <provider> --model <model>
+   ```
+
+   Record what RAN, never the pin. If the pinned model was gone and
+   `dev.fallback` fired, the fallback is the value that goes in — a record naming
+   the pin after the fallback ran makes step 8 bar a family that did not write
+   this diff and clear the one that did, which is worse than no record at all.
+   Omit `--model` only for `claude`, an in-session subagent with no model flag.
+   Re-record on every later implementation pass, including the one that fixes
+   review findings: the last dispatch is the one that produced the diff being
+   reviewed. Unrecorded is not neutral — `/crew:review` then reads `dev` out of
+   the config, which describes the *next* run rather than this one, and has to
+   say so in its verdict.
 6. Verify. If `.crew/verify.json` exists, run the checks your changed paths map
    to (the Stop hook enforces this anyway; running it yourself is faster feedback).
    Otherwise `./_verify/smoke.sh`. On failure, fix and rerun. Never proceed past

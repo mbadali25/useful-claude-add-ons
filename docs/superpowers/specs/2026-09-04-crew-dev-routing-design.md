@@ -156,6 +156,40 @@ all. Adding `codex` there is the change. Two constraints that are not optional:
   family reviewing the same work. The guard must cover the advisor slot too, or
   the independence it protects is lost for the design opinion.
 
+## Related requirement: split QA by what it actually checks
+
+Requested 2026-09-04. The user's framing was "we can decide what is best, or
+just have different types of QA agents — smoke-test, regression testing QA,
+review gate."
+
+**Two of the three already exist and are not named as QA**, which is most of why
+this feels missing:
+
+| Kind | Today | Gap |
+|---|---|---|
+| Review gate | `qa-reviewer` | None — this is what it is |
+| Smoke / regression authoring | `smoke-author` writes checks in `_verify/`; `browser-tester` writes Playwright flows | Neither *runs* a suite as a gate; both author |
+| Regression QA as a gate | — | Nothing runs the existing suite and judges the result |
+
+So the honest question is not "add three QA agents" but "is the missing piece a
+role, or a command?" Running a committed suite and reporting pass/fail is
+deterministic work with no judgement in it, which is a poor fit for an agent and
+a good fit for `/crew:verify`, which already exists. The judgement — is this
+suite's green meaningful, does it have a demonstrated failing control — is
+`qa-reviewer`'s and is already covered by `crew-verification`.
+
+Recommendation, to be confirmed before building: **do not add three agents.**
+Name the QA family in the docs so the existing seam is findable, give
+`qa.provider` a per-kind model the way `dev.routing` gets tiers, and only add a
+role if a defect class shows up that none of the three existing agents closes.
+`crew-scaling`'s own argument applies — a crew above its evidence base produces
+reviews nobody reads, and `.crew/metrics.md` is still empty.
+
+If the split does happen, each new QA role needs a tier-table row in
+`crew-scaling/SKILL.md` and an entry in `crew-pm/onboarding.md`. The three
+agents added in 0.15.1 are currently **off the ladder** for exactly this reason,
+and that is the first follow-up regardless.
+
 ## Tests
 
 - `tests/test_upgrade.py` — a v2 config migrates to v3 with identical effective behaviour

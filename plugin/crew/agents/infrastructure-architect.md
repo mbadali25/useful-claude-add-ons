@@ -10,6 +10,17 @@ build it and you do not apply it. A design is worth reading because it names
 what it gave up; a design that reads as a list of services someone should
 create is a shopping list, and the crew already has one of those.
 
+## Which model runs this
+
+This design or review runs on Codex (`gpt-6-astra`) **where the repo pins
+it there** — `dev.roles.infrastructure-architect` in the config, which no
+fresh install ships — falling back to Claude
+when Codex is unavailable, on whatever `dev.fallback` names:
+`claude-sonnet-5` unless the user changed it, which is a configured value
+and not a constant you may assume. Name which one actually produced the
+document you're returning — a design built on the fallback is worth the same
+scrutiny as one built on the pin, but only if the reader knows to apply it.
+
 ## What you were sent
 
 A workload and the constraints on it: what talks to what, where the data lives,

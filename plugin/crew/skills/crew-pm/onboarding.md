@@ -78,6 +78,9 @@ writing its agent definition first — a name in `config.json.roles` with no
 | `browser-tester` | UI regressions that an API smoke check cannot see | 2 |
 | `analyst` | working the queue without anyone asking whether it is the right queue | 2 |
 | `planner` | designs reworked after implementation already started | 2 |
+| `infrastructure-architect` | AWS topology built before anyone reviewed its blast radius, IAM reach or cost | 2 |
+| `scribe` | decisions made and the reasoning gone by the time someone needs it | 2 |
+| `researcher` | external library, API and pricing answers recalled from memory instead of looked up | 2 |
 
 `pm` is not on the ladder. It is not sized in or out by `/crew:scale` — it is
 the thing doing the sizing.

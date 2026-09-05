@@ -6,7 +6,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
-- **`localgpu` 0.1.0 - a new plugin that puts the GPU in this machine behind a
+- **`localgpu` 0.1.5 - a new plugin that puts the GPU in this machine behind a
   repository.** Ollama serves `nomic-embed-text` and
   `qwen2.5-coder:7b-instruct-q4_K_M` on `127.0.0.1:11434`; an MCP server chunks a
   tree, embeds it into a vector store under `$LOCALGPU_HOME/index/`, and exposes
@@ -74,6 +74,276 @@ All notable changes to this repository are documented here. Format follows [Keep
   any `/crew:*` command run inside it. Nothing enforces that; a review written
   there is labelled exactly like any other, so the shell is for exploring and
   drafting and not for gates.
+
+- **`crew` 0.16.7: the machine-global config gets a template, a walkthrough,
+  and a migration that finishes the job.**
+
+  `~/.claude/crew/config.json` sets defaults for every crew repo on a machine,
+  and nothing in crew ever wrote it, asked about it, or said it existed.
+  `skills/crew-setup/SKILL.md` said so in as many words: "Nothing in setup
+  creates the global file; a user who wants one writes it by hand." Writing it
+  by hand required knowing the file existed, where it lived, which keys it
+  accepted, and how it layered.
+
+  Not hypothetical. On the author's machine that file carried `tier`, `roles`,
+  `qa` and `sdp` and had **no `pm` block at all**, so every crew repo resolved
+  to `pm.authority: report-only` while the user believed the PM was autonomous.
+  The global file was valid, the repos were valid, and the resulting behaviour
+  was a default nobody chose. It was found because someone opened the file for
+  an unrelated reason.
+
+  `templates/global.template.json` and `crew_config.default_global_config()`
+  are the shape, held byte-for-byte identical by the same committed test the
+  repo template has. It is deliberately not a copy of the repo template:
+  `tracker`, `jira.project`, `obsidian.boardDir`, `graph.out` and `platform.*`
+  are facts about one checkout, and shipping them globally invites a vault path
+  set once that every repo inherits. What is left is what is a property of the
+  machine or the person — `pm.authority`, the `qa` and `dev` provider tables,
+  `secondOpinion`, `notify`, `memory.vaultPath`. It carries no `schema`:
+  `resolve_config` exempts that key structurally so a global value can never
+  make an unmigrated repo look current, and a template shipping it would hand
+  every user the exact value that exemption exists to ignore.
+
+  `/crew:config` is the walkthrough, reachable standalone for a user with no
+  repo in mind and offered from `/crew:init` Phase 1. Its point is the
+  **source** column: `crew_config.py --explain` prints every globally-settable
+  key with its effective value and the layer that decided it — `repo`,
+  `global`, or `default` — which is precisely the question the incident above
+  could not answer. `--check-global` prints the findings.
+
+  Four properties the writer enforces in code rather than in prose, each with
+  a test that goes red when it is removed. It **merges**, so a key in an
+  existing global file that the walkthrough never asked about survives. It
+  **refuses** any path outside `default_global_config()`, by name, exit 2 —
+  which keeps repo facts out of a file every repo reads and makes
+  `graph.obsidian.confirmed` structurally un-grantable from a guided flow,
+  since that flag is consent to write outside the repo, not a capability. It
+  is a **dry run by default**; `--apply` is a second call. And it **marks a
+  widening of `pm.authority`** on both the plan and the write. `/crew:upgrade`
+  reports on the global file and fixes none of it, per `upgrade.md` §5 "Report
+  — do not resolve": it is the user's own configuration, outside the repo,
+  which is the strongest version of that rule this plugin has.
+
+- **`crew` 0.16.7: a per-role provider table, and the family guard made
+  visible in state (`schema` 2 → 3).**
+
+  `qa` and `dev` each gain a `roles` table and a `fallback`, so
+  `qa.roles.review` and `qa.roles.smoke` can be different models from
+  different families. Both arrive **empty**: the migration writes no pin
+  nobody chose, and an existing repo dispatches exactly as it did before it
+  ran. `/crew:init` and `/crew:upgrade` offer the recommended table rather
+  than leaving the user to find the keys.
+
+  `crew_config.model_report()` — what `crew_config.py --models` and
+  `/crew:model` print — carries two new keys alongside the per-role rows:
+
+  - **`qaFallThrough`** — the evidence. One entry per provider in `qa.order`,
+    in order, each with its `provider`, `model`, derived `family`, whether it
+    is on `PATH`, and, when it cannot review, the single reason: absent from
+    `PATH`, no `qa.<provider>.model` pinned so its family is unknowable, or
+    same family as the author.
+  - **`independentReviewer`** — the conclusion. `false` means every candidate
+    in `qa.order` is unreachable or speaks as the family that wrote the diff,
+    which is the one state `/crew:review` cannot fix by trying harder: it
+    falls back to the `qa-reviewer` subagent and labels the result
+    same-family. It runs; it does not count as an independent review.
+
+  **A fifth round found the probe itself failing open.** `in_git_repo`
+  returned a bool, so git being absent or timing out collapsed to False --
+  which the rule reads as the safe "no repository here" case, and therefore
+  as proof. It is tri-state now, and distinguishes git RUNNING and answering
+  no (an answer) from git failing to run at all (unknown); only an explicit
+  False proves anything. Also `sabotage.py` could restore from a backup
+  `shutil.copy` had only partly written: copy never touches the source, so a
+  failed copy leaves the original intact and restoring from the partial
+  backup is exactly what would corrupt it. The two failures are handled
+  separately now.
+
+  **A fourth round found the same guard wrong a second time.** Plain
+  inequality trusted a record written WHILE detached: that record stores
+  `branch: null`, so reading it from another detached state compared
+  None == None and read as proof. Branch values alone cannot decide this --
+  the harmless missing branch (a directory with no branches at all) and the
+  dangerous unreadable one look identical. `in_git_repo` separates them, and
+  provenance is now proven in exactly two shapes: a readable branch matching
+  the record's, or no repository paired with a record naming no branch.
+
+  **A third round gated the merge and found two more.** `current_branch`
+  returns None for a detached HEAD -- which is also the normal state during a
+  rebase -- and the staleness guard read that as "this checkout has no
+  branches" and trusted the record. Dispatch on `main`, detach, and only the
+  recorded family was struck while the configured one stayed clear to review
+  its own diff. The test is now plain inequality between the record's branch
+  and the checkout's: both absent is a real match (a non-git checkout has
+  nothing to switch between), one absent is not. And `sabotage.py` took its
+  backup outside the `try`, so a failed write could leave a truncated source
+  file behind; restoration is exception-safe and idempotent now.
+
+  **A second Codex round on the fix commit confirmed all eleven and found two
+  more, both about how stale provenance is represented.** A dispatch record
+  with no `branch` was TRUSTED -- written before 0.16's field existed, it
+  cannot prove which branch it came from, so striking only its family left
+  the configured one clear to review its own diff. It now fails closed, with
+  one exception that is not over-barring: a checkout with no branch at all has
+  nothing to switch between, so it keeps the record. And `/crew:review` can
+  judge a record stale by mtime, which only it can measure -- `--author-stale`
+  carries that verdict into the resolved report, so `authorFamilies` holds
+  both families and the command's own prose finally has data behind it. The
+  `AUTHORS` variable that reads it is now consumed rather than assigned and
+  abandoned, alongside `ELIGIBLE`, the report's own guard-applied candidate
+  list.
+
+  `plugin/crew/tests/sabotage.py` reintroduces three of these bugs and asserts
+  the suite goes red for each. A test that stays green with the behaviour
+  deleted is not coverage, and three of them shipped into this PR before Codex
+  named them.
+
+  **Codex gated this change on the PR and found eleven defects; all eleven are
+  fixed here.** The four that would have shipped working-looking behaviour:
+
+  - `upgrade_config` destroyed a wrong-typed NESTED value (`qa.codex: "human"`),
+    reported `unmigrated: []`, and stamped the schema current -- a migration
+    that ate a hand-written value and called itself clean. `merge_defaults`
+    now takes a `discarded` list, the block is left exactly as written, and
+    the schema is not stamped, so the next run retries it.
+  - `/crew:review` re-parsed `.crew/config.json` for the model to invoke, so
+    `qa.roles.review` and the entire machine-global layer were invisible to
+    the only command that runs a review: `/crew:model` reported the pinned
+    reviewer while `/crew:review` ran the block default. It now resolves
+    through `crew_config.py --models --json`, and the report grew `qaProviders`
+    so nothing has to reopen the repo file to find a provider's model.
+  - `author_family` read `dev.provider` and ignored `dev.roles.*`, so a repo
+    pinning `developer` to codex under a `claude` block reported the author as
+    `claude` -- striking claude and clearing CODEX to review a codex-written
+    diff. It is now `author_families`, returns a frozenset, and a record naming
+    a different branch fails closed by striking both.
+  - `independentReviewer` treated presence on `PATH` as an eligible reviewer,
+    so a logged-out CLI made it `true`. `order_candidates` now accepts a
+    `probe`, and `independentReviewerProbed` says whether capability was
+    measured or merely assumed.
+
+  Also: the config rewrite is atomic (`os.replace`) rather than a truncate in
+  place; three tests that would have passed with the behaviour deleted were
+  rewritten and sabotage-tested; `pm.maxDispatches` is globally settable again;
+  and the agent files no longer claim Codex runs "by default" when a fresh
+  install ships `dev.provider: "claude"` with an empty `dev.roles`.
+
+  Neither key is a new rule. The interlock — the family that wrote the code
+  may not review it, guard evaluated before any pin — is unchanged; what
+  changed is that its consequence is now in the report instead of being
+  something a reader had to infer from four `BARRED` rows. The author family
+  itself now comes from what was recorded at dispatch (`.work/dispatch.json`,
+  gitignored) and falls back to reading the config only when nothing has run
+  in the checkout — labelled as such, because that describes the next
+  dispatch rather than the diff in front of the reviewer.
+
+- **`crew` 0.16.7: `upgrade_config` migrated two blocks and claimed to have
+  migrated all of them.**
+
+  Reported by the user 2026-09-05: `/crew:upgrade` did not pick up the provider
+  and roles changes. The whole of the migration was `pm`, `graph`, and
+  `schema = SCHEMA_CURRENT` — stamped unconditionally. Its docstring still read
+  "v1 config -> v2": written for that one migration, never extended when 0.14.4
+  added the `qa`/`dev` provider table or when 0.15.x added three roles. So a
+  config predating 0.14.4 came out of an upgrade marked current while missing
+  `qa.order` and the entire `dev` block, and an absent `qa.order` made
+  `/crew:model` report zero candidates and "no independent reviewer" for a setup
+  that reviews fine.
+
+  `qa` and `dev` now migrate, from `crew_state.QA_DEFAULTS` and `DEV_DEFAULTS`
+  — moved there so a freshly created repo and a freshly upgraded one land on
+  identical values by construction, the same rule `PM_DEFAULTS` already
+  followed.
+
+  `roles` migrates by **adding**, not by reporting: a config already at tier N
+  gets every ladder role at or below N that it is missing. An upgrade that
+  reported the change and left the user to re-derive it would be the same
+  "a default nobody chose" failure. Two things that does not license, because
+  they are different decisions from adding capability: it cannot grow a crew
+  past the tier the config itself declares — moving up is `/crew:scale`, with
+  evidence — and it never removes anything, because removing a role destroys
+  the coverage that would have told you whether the removal was right, so
+  `/crew:pm offboard` keeps its explicit-yes gate. `tier` is recomputed
+  afterwards, and the run states the roles it added and the tier it moved from
+  and to, at the CLI and in `.crew/codemap/UPGRADE.md`, every run including
+  when the answer is none — a crew that silently grows is the thing
+  `/crew:scale` exists to catch.
+
+  `schema` is stamped only when every block actually migrated. A `pm`, `graph`,
+  `qa`, `dev` or `roles` value that arrived as the wrong type would have been
+  silently discarded by `merge_defaults`; it is now left exactly as written,
+  named in the report, and the status is `upgraded with unmigrated blocks`, so
+  the repo still reports an upgrade as needed rather than being marked done
+  with a block nobody migrated. `upgrade_config` returns `(config, notes)` for
+  this reason: what the run has to say is not optional decoration.
+
+- **`crew` 0.16.7: the three agents added in 0.15.x joined the tier ladder, and
+  the ladder moved into code.**
+
+  `infrastructure-architect`, `scribe` and `researcher` shipped as definitions
+  with no row in `crew-scaling`'s tier table, so `/crew:scale` would not propose
+  them and `/crew:pm` would not onboard them from evidence. All three are now
+  tier 2, beside `dba` and `docs-writer`: each closes a defect class that only
+  appears once a repo is doing enough of that kind of work to have the evidence.
+
+  The ladder itself is `crew_state.ROLE_TIERS`, because computing a tier from a
+  role list is arithmetic, and parsing a heading in a skill file to decide what
+  an upgrade writes would make the doc load-bearing and the code advisory.
+  `crew-scaling/SKILL.md` and `crew-pm/onboarding.md` still describe it for a
+  human, and `tests/test_role_ladder.py` asserts all three agree — a row added
+  to one and not the others fails CI.
+
+- **`crew` 0.16.7: `merge_defaults` said "recurses one level" and does not.**
+  It calls itself whenever both sides hold a dict, to whatever depth the
+  default has — which is why a supplied `qa` naming only `provider` still comes
+  out with `qa.codex.model`. The new `crew_config._layer_supplies`, which
+  mirrors this function to answer "which layer decided this value", depends on
+  the real behaviour, so a docstring describing something else stopped being
+  merely inaccurate. Two implementations of one merge policy drift silently --
+  the source column would name the wrong layer and every test would still
+  pass -- so `tests/test_crew_config.py` now pins them to each other by
+  running both over every settable key and over each of the three ways the
+  policy can branch, rather than by asserting the mirror in a comment.
+
+- **`crew` 0.16.7: stale reference tables in `plugin/crew/README.md`.** §25 said
+  21 commands and 11 agents, and listed neither `/crew:model`, `/crew:roster`,
+  nor the three agents 0.15.x added. `PLUGINS.md` had been updated and the
+  plugin's own README had not, which is the worse half to miss: it is the file
+  someone reads after installing. Both are now 24 and 14, and `PLUGINS.md`'s
+  own header count (`21 commands`) and `validate-prompts.py` check count (110)
+  were stale by the same release and are corrected too.
+
+- **`obsidian-vault` 0.3.0: vault profiles, note templates, and a bridge status
+  that tells four failures apart.**
+
+  A vault is either authored, where a person reads it, or generated, where only
+  Claude greps it. `hooks/scripts/vault_profiles.py` is the single definition of
+  what belongs in each, read by install, by the profile report, and by optimize —
+  install and strip are the same decision from two sides, and two lists would
+  have drifted. `vault_ops.py profile` reports the detected kind with the
+  evidence behind it, from note count, plugin count, a graphify manifest or the
+  `code-graph` plugin, and whether notes carry the contract's frontmatter. Never
+  a flag the user sets, always overridable.
+
+  The sets were read off working vaults rather than invented. `bridge` is
+  `obsidian-local-rest-api` alone — the floor, without which a vault is invisible
+  to Claude. `graph` adds `code-graph` and deliberately nothing else. `authored`
+  is the fuller human set, with omnisearch and text-extractor only below 50,000
+  notes. A bare `enable-plugin --apply` writes only the bridge floor; every
+  other plugin has to be named, because enabling a set behind one yes is the
+  blanket-confirmation this plugin's own optimize command already refuses. A
+  split stays the last resort, its seam is provenance rather than size, and the
+  report counts the wikilinks it would break.
+
+  `templates/` closes a gap that had been costing a retry on every note:
+  `vault_guard.py` enforced the six-key contract but nothing helped satisfy it,
+  so a conforming note was written by hand and fixed afterwards. Six templates —
+  `memory`, `concept`, `decision`, `session`, `source`, `design` — each verified
+  against the guard as the PostToolUse hook invokes it, passing on the first
+  write with no advisory. `/obsidian-vault:note` creates one. `design` ships as a
+  `type: concept` variant: the guard has no type enum, so a new type would have
+  passed while being invisible to the contract's type keys and to any Dataview
+  query built on them.
 
 - **`crew` 0.15.2: every agent can now reach a skill, and the UPDATE.md gate
   actually runs.** 0.15.1 gave the `Skill` tool to the eight agents that named a
@@ -227,6 +497,188 @@ All notable changes to this repository are documented here. Format follows [Keep
   checked. It fails if fewer than seven concerns are examined, so a broken extraction
   cannot report green over zero cases. Sabotage-tested: reintroducing the missing
   wildcard turns it red.
+
+- **`obsidian-vault` 0.3.0: `diagnose` printed a FAIL and exited 0.** A scoped
+  run prints every port collision on the machine - which is the point of a wide
+  diagnosis, since a collision the selected vault is not part of is often what
+  explains its symptoms - but the exit code counted only the selected vaults. So
+  `diagnose --vault memory` could print `[FAIL] port 27126 is claimed by ...` for
+  two unrelated vaults and then exit 0, contradicting itself and the exit-code
+  table in `doctor.md`.
+
+  Neither obvious fix was right. Hiding the out-of-scope collision would delete
+  the most useful line on the screen; counting it would tell someone who asked
+  about one vault that their question failed because two others clash. So the
+  label carries the scope instead: a collision involving the selection is
+  `[FAIL]` and moves the exit code, one elsewhere on the machine is still
+  printed as `[ELSEWHERE]`, names the vaults it belongs to, and does not. The
+  `--json` output carries the same distinction as `in_scope`, so a consumer
+  reading the collisions and the exit code cannot reach the contradiction
+  either. An unscoped run is unchanged: every collision is in scope.
+
+- **`obsidian-vault` 0.3.0: a mistyped `--port` became a working config for a
+  port nobody chose.** `add-vault --port` accepted any integer and wrote it;
+  a later read passed it through the config repairer, which substitutes the
+  default port and carries on, so `217123` silently became `27123` and looked
+  like it had worked. Both paths now ask one question, `port_in_range()`, and
+  answer it differently on purpose: a value already written in a config is still
+  repaired, because a hook that dies on a typo it did not make helps nobody,
+  while a value being *accepted from a person* is rejected. Repairing input at
+  the point of entry is what turns a typo into a silent wrong answer.
+
+  The stale "installs it, enables it" claim also outlived the rename in one more
+  place, `obsidian-setup/SKILL.md`. Grepped rather than spot-fixed; that was the
+  only survivor, and it now states the manual download prerequisite and the
+  reason for it.
+
+- **`obsidian-vault` 0.3.0: `fix-ports --vault X` edited X's neighbour.** The
+  same shape as writing to an unconfigured vault, one level up: `--vault` scoped
+  which collisions to act on but never constrained which vault moved, so
+  scoping to the vault holding the port wrote the *other* vault's `data.json`.
+  Being in config is consent to be managed by this plugin; it is not consent to
+  be edited by a command pointed at something else, and a scripted
+  `fix-ports --vault memory --apply` in a hook never reads a plan first. Moving
+  a vault the user did not name is now refused and names it, with the unscoped
+  run as the way to actually fix the collision - refused rather than silently
+  skipped, because the collision is real and the diagnosis just named it.
+
+  The refusal also carries the field that actually collides. It hardcoded
+  `port`, which the printer labels HTTPS, so a collision existing only on
+  `insecurePort` was refused for an HTTPS change nobody had contemplated. Both
+  refusal paths now derive the claimed keys the same way the move path does, so
+  a vault claiming one port on both protocols is refused for both.
+
+  A configured vault with no recorded path was also reported as one whose
+  directory had been deleted: the reason was decided from a display string that
+  is never empty, which made the no-path branch unreachable. It is decided from
+  whether a path was found.
+
+- **`obsidian-vault` 0.3.0: `fix-ports` could rewrite a vault nobody configured,
+  and an empty selection reported success.** Fencing `--all` off from
+  unconfigured vaults was done at the three commands that route through
+  `select()`. `fix-ports` is the one acting command that does not - it goes
+  straight from discovery into the planner - so it could still pick a
+  discovered-but-unconfigured vault as the mover and write that vault's own
+  `data.json`, a heavier write than the MCP config the earlier fix protected.
+
+  It now moves only configured vaults, and a collision whose mover is
+  unconfigured is **refused by name** rather than worked around. Silently
+  choosing a different mover would hide a real conflict and relocate a vault
+  that was not at fault, so the output says which vault has to `add-vault`
+  first. `scan` still sees everything, because a diagnosis that cannot see the
+  vault causing a collision cannot explain it, and `graph-health` reaches a
+  vault only through a configured `layout` or an explicit `--vault`.
+
+  Separately, filtering `--all` down to configured vaults could produce an empty
+  selection that exited 0 - a configured vault whose directory was deleted,
+  renamed, or sits on an unmounted drive is in config and not in discovery.
+  Reporting success for work nobody did is the failure this file's exit codes
+  exist to prevent, so every such vault is now named with its path and the
+  reason, and keeps the exit non-zero.
+
+  The `claude mcp get` parser also gained direct tests against real captured
+  output, and now treats a redaction marker as *unknown* rather than as a key.
+  As of 2026-09-05 this machine prints the token verbatim and no redaction
+  occurs; the guard is insurance against a format change, because that failure
+  would be silent and destructive - every run would rewrite a correct
+  registration and nothing would look wrong.
+
+- **`obsidian-vault` 0.3.0: a rotated key was never noticed, and `--all` reached
+  vaults nobody had configured.** `register` compared the registered URL to the
+  target and reported "already registered" when they matched. `claude mcp list`
+  prints name and URL only, so that was evidence about the URL and nothing else:
+  a rotated `apiKey` left the URL identical and the bridge permanently
+  unauthenticated, and the command documented as the fix for exactly that
+  reported success and did nothing, forever. `claude mcp get` does print the
+  stored header, so the key is now read back and compared. When it cannot be
+  read, the registration is rebuilt rather than assumed current - re-registering
+  a correct server costs one CLI call, and assuming a stale one is correct is
+  the failure this command exists to fix.
+
+  Separately, `--all` acted on every vault discovered on the machine rather than
+  every vault in config, so `register --all --apply` would write a user-scope MCP
+  server for a vault the user had never put under this plugin, and
+  `enable-plugin --all --apply` would edit its `community-plugins.json`. Both
+  now stop at the config. Discovery itself is unchanged and deliberately wide -
+  an unconfigured vault can still be the one causing a port collision, and a
+  diagnosis that cannot see it cannot explain it - but naming a vault with
+  `--vault` is consent and sharing a disk is not. Anything skipped is named in
+  the output rather than quietly dropped.
+
+  The profile detector's structural fallback also stopped asserting two things
+  it had not checked. Reaching that branch means both authored signals fell
+  *under* their thresholds, and under is not zero - so a vault with one enabled
+  authored plugin was told "no plugin from the authored set is enabled", after
+  which `optimize` could propose disabling the Dataview that renders its notes.
+  It now reports the counts it measured and marks the verdict unconfident when
+  any authored plugin is on.
+
+- **`obsidian-vault` 0.3.0: the install step did not install, and setup could
+  not name a new vault.** `install-plugin` enabled a plugin whose files were
+  already on disk. On a fresh vault - its primary scenario - it printed manual
+  UI steps and stopped, while `/obsidian-vault:install` and `init` presented it
+  as *the* installation step and everything downstream assumed it had happened.
+
+  It is now `enable-plugin`, which is what it does, with `install-plugin` kept
+  as an alias so nothing breaks mid-flight. The download stays a stated manual
+  prerequisite rather than becoming a fetch, and that is deliberate: an Obsidian
+  community plugin is unsigned `main.js` on a GitHub release, with no publisher
+  signature and no authoritative checksum, and it runs with Obsidian's own
+  privileges over every note in the vault. There is nothing to verify a download
+  against, and writing unverifiable executable code into someone's editor is not
+  an install worth automating. A vault missing the bridge now reports `NOT
+  DOWNLOADED`, the exact route through Obsidian's own installer, and - for the
+  Local REST API specifically - that the vault is invisible to Claude until it
+  is done.
+
+  Separately, a vault whose chosen name differed from its directory basename
+  could not be set up at all. An unconfigured vault is discovered under its
+  folder name, and the config entry that would make the chosen name resolvable
+  was written at the *end* of setup - after the enable, port and registration
+  steps had already tried to address it and failed with "unknown vault". The new
+  `add-vault` subcommand writes that entry, and `init` now runs it first. It
+  merges rather than replaces, and carries a legacy `vaultPath` config across
+  instead of silently unconfiguring the vault that was already working. Both produce a silent port, so both read as "down" — and one vault's
+  window exiting was indistinguishable from an unrelated port collision. The
+  hook now separates `NOT OPEN`, `NO SERVER`, `NOT ANSWERING YET` and `UP`. The
+  third is the one that was costing time: on a large vault a socket that accepts
+  without answering means indexing is still running, which is not a fault to
+  chase.
+
+  There is now a fifth verdict, `DOWN, CAUSE NOT DETERMINED`, and it is the
+  point of the change rather than a fallback. The previous diagnostic named a
+  cause with confidence and was wrong, sending its reader to the one file that
+  was already correct — a confident wrong answer costs more than an honest gap.
+  Guidance is derived only from evidence the script actually checked; where two
+  causes cannot be separated it says so and names the check that would separate
+  them; where a check could not run it says that rather than omitting it.
+
+  Process attribution is honest about its own limits. No Obsidian process names
+  its vault on any platform, so command lines are useless everywhere. Window
+  titles name it on Windows and are read in-process. On macOS and Linux the
+  script reports presence only and declares attribution undetermined rather than
+  guessing, and two vaults sharing a folder name are undetermined rather than a
+  coin flip.
+
+- **`obsidian-vault` 0.2.0: the plugin can repair a vault bridge instead of
+  describing how to.** Its connection handling was prose — `bridge_status.py`
+  probed and reported, the vault guard and capture hooks ran, and everything
+  else was a command file telling the session what to type. Nothing restarted a
+  server, nothing wrote `data.json`, and the codegraphs vault's own health was
+  never checked, only whether `graphify` existed.
+
+  `hooks/scripts/vault_ops.py` is the action layer: `scan`, `diagnose`,
+  `add-vault`, `fix-ports`, `reload`, `register`, `enable-plugin` and
+  `graph-health`.
+  Dry-run by default, writing only under `--apply`, `--json` on the read-only
+  subcommands, and exit 0 healthy, 1 problems found, 2 usage error.
+  `/obsidian-vault:repair` and `/obsidian-vault:install` are new and drive it;
+  `/obsidian-vault:doctor` stays read-only and now enforces that through its
+  tool list rather than asserting it in prose; `/obsidian-vault:graph` gained
+  the `graph-health` check. Every hand-typed procedure the script replaced —
+  the registry read, the plugin install, the `claude mcp add` block, the
+  end-to-end curl — was deleted from `init`, the `obsidian-setup` skill and the
+  plugin README rather than left standing beside it.
 
 - **Eight crew agents cited a skill they had no way to load.** Naming a skill in
   an agent's prose does not load it; the agent needs `skills:` frontmatter or the

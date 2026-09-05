@@ -85,3 +85,20 @@ itself), not for routine reading or searching. This is the opposite default
 from the memory vault, where MCP's `search_query`/`vault_get_document_map`
 are often the right tool - say so if a session starts reaching for MCP calls
 against a codegraphs-scale vault out of habit.
+
+## Checking the export afterward
+
+After a build, and any time the graph looks stale or wrong, run:
+
+```
+python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/vault_ops.py" graph-health --vault <name>
+```
+
+It reports the vault's `<org>/<repo>` layout, which repos have exports, and
+how old each one is. Add `--fix` only when its dry-run output says what it
+would remove - it removes empty export folders and nothing else.
+
+Run it *after* a build, never instead of one. It keys off note counts and
+modification times, so a vault that has just been initialised and never
+exported reports empty because it is empty - that is a correct reading of a
+vault with no graph in it, not a fault to chase.

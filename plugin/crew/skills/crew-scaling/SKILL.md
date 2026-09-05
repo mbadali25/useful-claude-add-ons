@@ -50,11 +50,22 @@ is a race condition with a job title.
 | 2 | + dba, docs-writer, browser-tester | migrations are routine; a UI regression reached users; doc staleness costs real time |
 | 2 | + analyst | you are choosing what to work on, not just working the queue |
 | 2 | + planner | designs are being reworked after implementation started |
+| 2 | + infrastructure-architect | AWS topology is being designed or changed and nobody reviews the blast radius before it is built |
+| 2 | + scribe | decisions are being made and the reasoning is not in the repo six weeks later |
+| 2 | + researcher | answers about external libraries, APIs and pricing are being invented from memory instead of looked up |
 | 3 | parallel sessions / worktrees / agent teams | every involved repo has green smoke |
 
 Tier 3 native coordination needs `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` and is
 experimental, with known limitations around session resumption and shutdown.
 Prefer plain parallel sessions across repos until that matters.
+
+This table is prose; `crew_state.ROLE_TIERS` is the ladder. A committed test
+asserts the two agree, so a row added here without the dict (or the reverse)
+fails CI. `/crew:upgrade` reads the dict, and adds any ladder role at or below
+the tier a config already declares — that is how a repo already at tier 2
+picks up a role a later release added at tier 2. It never moves a repo UP a
+tier; that is this skill's job, and it needs the three questions above
+answered first.
 
 Shrinking follows this table in reverse, but not by hand-editing `config.json`:
 run `/crew:pm offboard <role>` instead. That path requires naming the coverage
