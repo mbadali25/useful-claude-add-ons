@@ -1055,7 +1055,21 @@ def _dispatch_entries(root, lost=None):
     out = []
     for name in names:
         if not name.endswith(".json"):
-            continue                    # a `.tmp` mid-write, or anything else
+            # NOT a silent skip. `_append_dispatch` writes `<base>.tmp` and
+            # renames it, so a `.tmp` still sitting here is a write that was
+            # interrupted between the two -- a dispatch that may have landed
+            # and may not, which is the definition of evidence this store
+            # cannot read. Skipping it quietly let the next readable entry
+            # answer `dispatch` over it, which is round 9's finding wearing a
+            # different file extension.
+            #
+            # A dispatch running concurrently in another process shows up
+            # here for the moment between its write and its rename, and a
+            # reader that lands inside that window answers `unknown`. That is
+            # correct rather than unfortunate: a dispatch is in flight, so
+            # who wrote this branch is genuinely not settled yet.
+            _note_lost(lost, name)
+            continue
         path = os.path.join(directory, name)
         text = read_text(path)
         if text is None:
@@ -1114,7 +1128,7 @@ def _read_record_file(root, lost=None):
     return parsed
 
 
-def _history_items(record, by_kind, kind):
+def _history_items(record, by_kind, kind, lost=None):
     """The `(rank, entry)` input `_merge_history` takes, for one kind.
 
     Exists so that `read_dispatch` and `_prune_dispatch_dir` cannot disagree
@@ -1132,11 +1146,39 @@ def _history_items(record, by_kind, kind):
     """
     items = [(_entry_rank(entry, key), entry)
              for key, entry in by_kind.get(kind) or []]
-    legacy = [h for h in record.get(f"{kind}History") or []
-              if isinstance(h, dict)]
-    slot = record.get(kind)
-    if isinstance(slot, dict) and slot.get("provider"):
-        legacy.append(slot)
+
+    # Every drop below is REPORTED. This function runs before
+    # `_merge_history`, so anything it discards quietly is something the
+    # merge's own reporting never gets to see -- which is how round 10's fix
+    # came to be undone for the one record shape it was written for.
+    raw = record.get(f"{kind}History")
+    legacy = []
+    if isinstance(raw, list):
+        for entry in raw:
+            if isinstance(entry, dict):
+                legacy.append(entry)
+            else:
+                # A history whose members are not records is a mangled file,
+                # not an empty history.
+                _note_lost(lost, DISPATCH_PATH[-1])
+    elif raw is not None:
+        _note_lost(lost, DISPATCH_PATH[-1])
+
+    if kind in record:
+        slot = record.get(kind)
+        if isinstance(slot, dict):
+            # Passed through even with no provider, so `_merge_history` --
+            # the one funnel -- makes that call and reports it. The test used
+            # to be `slot.get("provider")` right here, which meant the legacy
+            # slot took the only path round 10 did not cover.
+            legacy.append(slot)
+        else:
+            # `_merge_history` cannot read a non-dict at all, so it is
+            # reported here instead. `None` in the slot lands here too: a key
+            # that is present and holds nothing is a record that was written
+            # and lost, not a record that was never made.
+            _note_lost(lost, DISPATCH_PATH[-1])
+
     items.extend(((0, _entry_sort_key(h)), h) for h in legacy)
     return items
 
@@ -1284,7 +1326,7 @@ def read_dispatch(root):
         return cached[0]
 
     for kind in DISPATCH_KINDS:
-        items = _history_items(record, by_kind, kind)
+        items = _history_items(record, by_kind, kind, lost)
         if not items:
             continue
         # `_file` is bookkeeping for the pruner and is not part of the
@@ -1618,8 +1660,8 @@ def _prune_dispatch_dir(root):
         by_kind.setdefault(entry_kind, []).append((key, entry))
 
     for kind in DISPATCH_KINDS:
-        for entry in _merge_history(_history_items(record, by_kind, kind),
-                                    pin, lost):
+        for entry in _merge_history(
+                _history_items(record, by_kind, kind, lost), pin, lost):
             token = entry.get("_file")
             if token:
                 protected.add(token)

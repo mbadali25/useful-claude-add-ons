@@ -2026,3 +2026,123 @@ def test_a_legacy_history_entry_naming_no_author_is_not_silently_dropped(
         "a legacy record naming no author was dropped in silence"
     assert families == frozenset({"claude"}), \
         "the family that provably ran stopped being struck"
+
+
+def test_an_interrupted_write_in_the_store_is_not_an_empty_directory(tmp_path):
+    """Codex round 11, High. `_append_dispatch` writes `<base>.tmp` and then
+    renames it. A crash between the two leaves a `.tmp` behind, and
+    `_dispatch_entries` skipped every name that did not end in `.json` --
+    silently, so the next readable entry answered `dispatch` over a dispatch
+    that may well have landed.
+
+    Round 9 taught the reader to distrust a file it could not read. This is
+    the same file wearing a different extension, and the suffix filter ran
+    before the distrust did.
+
+    The config family is `swe`, so no assertion here can be met by the config
+    fallback."""
+    cfg = copy.deepcopy(PINNED)
+    cfg["dev"]["roles"]["developer"] = {"provider": "windsurf",
+                                        "model": "swe-1"}
+    root = crew_fixtures.make_repo(tmp_path, config=cfg, git=True)
+    here = crew_state.current_branch(str(root))
+    _seed_entry(root, role="developer", provider="claude", model=None,
+                branch=here, at=5000.0)
+    directory = os.path.join(str(root), *crew_state.DISPATCH_DIR)
+    with open(os.path.join(directory, "dev-1-abcdef.tmp"), "w",
+              encoding="utf-8") as handle:
+        handle.write('{"kind": "dev", "provider": "codex"')
+
+    record = crew_state.read_dispatch(str(root))
+    families, source = crew_state.author_families(str(root), cfg)
+
+    assert record.get("unreadable") == ["dev-1-abcdef.tmp"], \
+        "an interrupted write was not reported"
+    assert source == "unknown", \
+        "provenance was certified over a dispatch that may have landed"
+    assert families == frozenset({"claude"}), \
+        "the family that provably ran stopped being struck"
+
+
+def test_a_mangled_legacy_history_member_is_not_silently_dropped(tmp_path):
+    """Codex round 11, High. `_history_items` filtered non-dict members of
+    `<kind>History` out before `_merge_history` -- the funnel round 10 put
+    the reporting in -- ever saw them. A fix in the funnel is worth nothing
+    if a filter upstream empties the pipe first.
+
+    A `<kind>History` that is not a list at all takes the same path."""
+    cfg = copy.deepcopy(PINNED)
+    cfg["dev"]["roles"]["developer"] = {"provider": "windsurf",
+                                        "model": "swe-1"}
+    root = crew_fixtures.make_repo(tmp_path, config=cfg, git=True)
+    here = crew_state.current_branch(str(root))
+    path = os.path.join(str(root), *crew_state.DISPATCH_PATH)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump({"devHistory": ["codex/gpt-6-astra"]}, handle)
+    _seed_entry(root, role="developer", provider="claude", model=None,
+                branch=here, at=5000.0)
+
+    families, source = crew_state.author_families(str(root), cfg)
+
+    assert source == "unknown", \
+        "a mangled legacy history member was dropped in silence"
+    assert families == frozenset({"claude"}), \
+        "the family that provably ran stopped being struck"
+
+
+def test_a_legacy_slot_that_names_no_author_reaches_the_funnel(tmp_path):
+    """Codex round 11, High, and a REGRESSION on round 10. That round put the
+    report for a provider-less record in `_merge_history`, the one funnel
+    every source runs through -- but `_history_items` appended the legacy slot
+    only `if isinstance(slot, dict) and slot.get("provider")`, so the legacy
+    slot was the single record shape that never reached the funnel at all.
+
+    The slot now goes through whatever it holds, and the no-provider call is
+    made in exactly one place. A slot that is not a dict cannot go through
+    `_merge_history` at all, so it is reported where it is dropped."""
+    cfg = copy.deepcopy(PINNED)
+    cfg["dev"]["roles"]["developer"] = {"provider": "windsurf",
+                                        "model": "swe-1"}
+    root = crew_fixtures.make_repo(tmp_path, config=cfg, git=True)
+    here = crew_state.current_branch(str(root))
+    path = os.path.join(str(root), *crew_state.DISPATCH_PATH)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump({"dev": {"role": "developer", "branch": here, "at": 10.0}},
+                  handle)
+    _seed_entry(root, role="developer", provider="claude", model=None,
+                branch=here, at=5000.0)
+
+    families, source = crew_state.author_families(str(root), cfg)
+
+    assert source == "unknown", \
+        "a legacy slot naming no author never reached the funnel"
+    assert families == frozenset({"claude"}), \
+        "the family that provably ran stopped being struck"
+
+
+def test_a_legacy_slot_holding_nothing_is_a_record_that_was_lost(tmp_path):
+    """The non-dict half of the same finding. `_merge_history` cannot read a
+    non-dict, so the report is made where the drop happens. A key present and
+    holding `null` is a record that was written and lost, not one that was
+    never made -- which is why the test is `kind in record` and not
+    `record.get(kind)`."""
+    cfg = copy.deepcopy(PINNED)
+    cfg["dev"]["roles"]["developer"] = {"provider": "windsurf",
+                                        "model": "swe-1"}
+    root = crew_fixtures.make_repo(tmp_path, config=cfg, git=True)
+    here = crew_state.current_branch(str(root))
+    path = os.path.join(str(root), *crew_state.DISPATCH_PATH)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump({"dev": None}, handle)
+    _seed_entry(root, role="developer", provider="claude", model=None,
+                branch=here, at=5000.0)
+
+    families, source = crew_state.author_families(str(root), cfg)
+
+    assert source == "unknown", \
+        "a slot that was written and lost read as a slot never written"
+    assert families == frozenset({"claude"}), \
+        "the family that provably ran stopped being struck"

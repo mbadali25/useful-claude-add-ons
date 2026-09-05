@@ -261,6 +261,22 @@ All notable changes to this repository are documented here. Format follows [Keep
   reporting it upstream would have closed the store and left the legacy path
   silent.
 
+- **`crew` 0.16.7: evidence is reported at the filter that drops it.** The two
+  fixes above put the report in the right place for the paths they could see —
+  `_dispatch_entries` for the store, `_merge_history` for everything reaching
+  the merge — and both were undone by a filter running *earlier* that discarded
+  the thing silently, so it never arrived to be reported. `_dispatch_entries`
+  skipped every non-`.json` name, so a `.tmp` left behind by a crash between
+  `_append_dispatch`'s write and its rename — a dispatch that may well have
+  landed — was passed over without a word, and the next readable entry answered
+  `dispatch` over it. `_history_items` did the same to non-dict members of a
+  legacy `<kind>History`, to a `<kind>History` that was not a list at all, and
+  to the legacy `<kind>` slot: it appended the slot only when the slot already
+  named a provider, which made it the one record shape the `_merge_history`
+  report above could never see. Each drop now says so, at the filter that makes
+  it, and the slot goes through whatever it holds so the no-provider call stays
+  in exactly one place.
+
 - **`crew` 0.16.7: the hook count in crew's README.** The prose said eight
   scripts and sixteen entries while the table directly beneath it already
   listed all ten across five events, 20 entries.

@@ -364,6 +364,57 @@ MUTATIONS = (
          "naming_no_author_is_not_silently_dropped"),
     ),
     (
+        # Round 11, High. A `.tmp` left by a crash between the write
+        # and the rename is a dispatch that may have landed. The suffix
+        # filter ran before the reader learned to distrust it.
+        "an interrupted write is skipped without a word",
+        STATE,
+        '            _note_lost(lost, name)\n            continue'
+        "\n        path = os.path.join(directory, name)",
+        "            continue\n        path = os.path.join(directory, name)",
+        ("tests/test_provider_table.py::test_an_interrupted_write_in_"
+         "the_store_is_not_an_empty_directory"),
+    ),
+    (
+        # Round 11, High. A filter upstream of the funnel empties the
+        # pipe before the funnel can report anything.
+        "a mangled legacy history member is filtered out in silence",
+        STATE,
+        "            else:\n                # A history whose members "
+        "are not records is a mangled file,",
+        "            elif False:\n                # A history whose "
+        "members are not records is a mangled file,",
+        ("tests/test_provider_table.py::test_a_mangled_legacy_history_"
+         "member_is_not_silently_dropped"),
+    ),
+    (
+        # Round 11, High, and a regression on round 10: the legacy slot
+        # was the one record shape that never reached the funnel.
+        "the legacy slot is filtered before it reaches the funnel",
+        STATE,
+        "        if isinstance(slot, dict):",
+        # Reproduces the SILENCE, not just the filter: a provider-less dict
+        # slot falls through with no report, exactly as it did before, while
+        # a non-dict still reaches the `else` that reports it. Mutating the
+        # condition alone was vacuous -- it rerouted the slot into the new
+        # `else` branch, which reports it by another road.
+        '        if isinstance(slot, dict) and not slot.get("provider"):\n'
+        "            pass\n"
+        "        elif isinstance(slot, dict):",
+        ("tests/test_provider_table.py::test_a_legacy_slot_that_names_"
+         "no_author_reaches_the_funnel"),
+    ),
+    (
+        # The non-dict half: a key present holding nothing is a record
+        # that was written and lost.
+        "a slot holding nothing reads as a slot never written",
+        STATE,
+        "    if kind in record:",
+        "    if record.get(kind) is not None:",
+        ("tests/test_provider_table.py::test_a_legacy_slot_holding_"
+         "nothing_is_a_record_that_was_lost"),
+    ),
+    (
         "bogus documented role",
         LADDER_DOC,
         "| 1 | + security",
