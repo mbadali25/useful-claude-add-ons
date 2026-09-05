@@ -268,6 +268,29 @@ check_stderr_has "and it is reported as an ASCII violation" \
 check_stderr_lacks "and not as a frontmatter one" \
   "NO FRONTMATTER" "$(guard_stderr "$f" "$home_on_win")"
 
+# Codex, on PR #68: the first version of this exemption skipped check_note
+# ENTIRELY, which also dropped the required-keys, title-matches-filename and
+# updated-date checks -- while the comment beside it claimed the exemption was
+# "frontmatter-only". For CLAUDE.md that difference is invisible: a file with no
+# frontmatter never reaches those checks anyway. It is visible exactly here -- a
+# genuine note that happens to be called README.md and DOES carry frontmatter
+# was silently excused from the entire contract.
+#
+# This case pins the narrow reading: under the broad implementation it exits 0
+# with nothing checked, so it is what keeps `fm_optional` honest.
+readme_note="---
+type: concept
+title: \"not-the-filename\"
+created: 2026-08-20
+updated: $today
+status: seed
+tags:
+  - concept
+---
+A real note that happens to be called README.md."
+f=$(write_and_payload "wiki/concepts/README.md" "$readme_note")
+check "an exempt basename WITH frontmatter is fully contract-checked" 2 "$(run_guard "$f" "$home_on_win")"
+
 echo "== vault_guard.py: config-off means silent (sabotage: prove the toggle matters) =="
 
 f=$(write_and_payload "wiki/concepts/no-frontmatter-2.md" "Still no frontmatter block.")
