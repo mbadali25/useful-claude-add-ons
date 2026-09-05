@@ -74,7 +74,15 @@ expect() {  # $1 = wanted exit, $2 = command
 JQ_BIN=$(command -v jq 2>/dev/null || true)
 FULL_PATH="$PATH"
 if [ -n "$JQ_BIN" ]; then
-  JQ_DIR="$(cd "$(dirname "$JQ_BIN")" && pwd)"
+  JQ_DIR="$(cd "$(dirname "$JQ_BIN")" && pwd -P)"
+  # Compare RESOLVED directories, not the strings PATH happens to hold. On a
+  # merged-/usr Linux - Ubuntu, Debian, Fedora, and every GitHub runner - /bin
+  # is a symlink to /usr/bin, so PATH lists both and they are the same
+  # directory. Dropping the literal "/usr/bin" left "/bin" behind, jq stayed
+  # reachable, and this suite refused to run at all on CI while passing on a
+  # Windows machine where the two paths are genuinely distinct. Resolving each
+  # entry with `cd ... && pwd -P` is what makes the two spellings compare equal.
+  #
   # Join with ":" BETWEEN fields, never after each one, and drop empty fields.
   # `ORS=":"` appended a trailing separator, and a trailing - or any empty -
   # PATH component means "the current directory" to every POSIX shell. So the
@@ -83,9 +91,17 @@ if [ -n "$JQ_BIN" ]; then
   # whatever directory the suite happened to be launched from - including one
   # committed by a pull request, executed the moment a maintainer runs the
   # suite, with the guard's real tool_input JSON on its stdin.
-  NOJQ_PATH=$(printf '%s' "$PATH" | awk -v d="$JQ_DIR" '
-    BEGIN{RS=":"; ORS=""}
-    $0!=d && $0!="" {printf "%s%s", (n++ ? ":" : ""), $0}')
+  NOJQ_PATH=""
+  _scrub_oldifs=$IFS
+  IFS=":"
+  for _scrub_dir in $PATH; do
+    [ -n "$_scrub_dir" ] || continue
+    _scrub_real=$(cd "$_scrub_dir" 2>/dev/null && pwd -P) || _scrub_real="$_scrub_dir"
+    [ "$_scrub_real" = "$JQ_DIR" ] && continue
+    NOJQ_PATH="${NOJQ_PATH:+$NOJQ_PATH:}$_scrub_dir"
+  done
+  IFS=$_scrub_oldifs
+  unset _scrub_oldifs _scrub_dir _scrub_real
 else
   NOJQ_PATH="$PATH"
 fi

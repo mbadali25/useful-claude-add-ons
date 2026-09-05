@@ -38,9 +38,33 @@
 #
 # Both the bare name and the `.*` glob are listed so submodule imports
 # (reportlab.platypus, urllib3.exceptions) are covered too.
-ignored-modules=botocore,botocore.*,playwright,playwright.*,pytest,pytest.*,
+ignored-modules=botocore,botocore.*,conftest,fcntl,mcp,mcp.*,msvcrt,
+                numpy,numpy.*,playwright,playwright.*,pytest,pytest.*,
                 reportlab,reportlab.*,requests,requests.*,urllib3,urllib3.*,
                 vsdx,vsdx.*,weasyprint,weasyprint.*,yaml,yaml.*
+# `mcp` and `numpy` arrived with the localgpu plugin and are exactly the
+# CI-only failure the regeneration script above warns about: both are installed
+# in localgpu's own venv, so a local run is clean while CI - which deliberately
+# installs no third-party deps - reports E0401 on correct code.
+#
+# `conftest` is not third-party at all - it is listed because pylint cannot
+# resolve it correctly here and never will. The repo has two conftest.py
+# (plugin/crew/tests/ and plugin/localgpu/mcp/_test/), neither in a package, so
+# the bare name is ambiguous: pylint binds `from conftest import TEST_DIM` to
+# whichever it reaches first and then reports the symbol missing. pytest has no
+# such problem - it resolves conftest by directory, which is why every one of
+# these suites passes while only the linter objects. Suppressing resolution is
+# honest about that; per-file disables would need adding to every new test.
+#
+# `msvcrt` and `fcntl` are the subtle pair and the script above cannot find
+# either. Both are stdlib, but each on only ONE platform: store.py imports
+# msvcrt on Windows and fcntl on POSIX, inside a platform branch, for the same
+# file lock. `sys.stdlib_module_names` reflects the interpreter running the
+# script, so a Windows run filters out msvcrt and reports fcntl, and a Linux
+# run does the exact opposite. Whichever machine you regenerate on, you get
+# half the answer and CI fails on the other half. Both belong here
+# permanently, and any future platform-conditional stdlib import (winreg,
+# termios, msilib) needs adding by hand for the same reason.
 
 [FORMAT]
 # 100 is tight for scripts that embed XML/SQL/URL literals which can't wrap.
@@ -85,6 +109,13 @@ disable=
     # Optional deps are imported at the call site so a missing package
     # degrades one subcommand instead of failing the whole script at import.
     import-outside-toplevel,
+    # localgpu's mcp/ and cli/ are flat sibling modules, not a package: both
+    # the MCP server and the CLI put their own directory on sys.path and then
+    # import `config`, `store`, `indexer` by bare name. The sys.path line has
+    # to run BEFORE those imports, so they are legitimately not at the top --
+    # the same reason each already carries `# noqa: E402` for flake8. Moving
+    # them up makes the modules unimportable.
+    wrong-import-position,
     # argparse handlers share one (client, args) signature for uniform
     # dispatch; some don't need args.
     unused-argument,
@@ -93,6 +124,16 @@ disable=
     broad-exception-caught,
     # Tests reach into internals to assert on them.
     protected-access,
+    # `assert hits == []` says more than `assert not hits`: it pins the type as
+    # well as the emptiness, so a function that starts returning None or 0
+    # fails the test instead of silently satisfying it. In assertions the
+    # explicit comparison is the stronger check, not a verbose one.
+    use-implicit-booleaness-not-comparison,
+    # How pytest fixtures work, not a mistake. A test that consumes a fixture
+    # takes a parameter with the fixture function's own name -- that IS the
+    # wiring -- so every fixture-consuming test in the repo reports this once
+    # per parameter. Renaming to silence it would break the injection.
+    redefined-outer-name,
 
     # --- Pure style -------------------------------------------------------
     # Short-lived script locals (fh, k, v, ns) read fine.

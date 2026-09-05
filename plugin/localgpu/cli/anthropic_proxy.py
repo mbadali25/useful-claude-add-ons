@@ -964,6 +964,10 @@ class ProxyHandler(BaseHTTPRequestHandler):
     num_ctx: int | None = None
     _num_ctx_cache: dict[str, int] = {}
 
+    # BaseHTTPRequestHandler names this parameter `format`, which shadows the
+    # builtin - hence `fmt` here and the noqa. Same arity, same call contract;
+    # only the name differs, which is what pylint is reporting.
+    # pylint: disable=arguments-differ
     def log_message(self, fmt: str, *args: Any) -> None:  # noqa: A003
         if self.verbose:
             super().log_message(fmt, *args)
@@ -1031,7 +1035,9 @@ class ProxyHandler(BaseHTTPRequestHandler):
         try:
             parsed = json.loads(raw.decode("utf-8"))
         except json.JSONDecodeError as exc:
-            raise ProxyError(f"Request body is not JSON: {exc}", 400, "invalid_request_error")
+            raise ProxyError(
+                f"Request body is not JSON: {exc}", 400, "invalid_request_error"
+            ) from exc
         if not isinstance(parsed, dict):
             raise ProxyError("Request body must be a JSON object", 400, "invalid_request_error")
         return parsed

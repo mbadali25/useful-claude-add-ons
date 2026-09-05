@@ -190,6 +190,10 @@ def index_refresh(root: str | None = None) -> dict[str, Any]:
     Args:
         root: Refresh only this path. Defaults to every configured root.
     """
+    # `with` blocks until the lock is free; this call must NOT block. A second
+    # concurrent refresh has to be told "busy" and returned immediately, not
+    # queued behind the first.
+    # pylint: disable=consider-using-with
     if not _refresh_lock.acquire(blocking=False):
         return {"status": "busy", "detail": "a refresh is already running"}
     try:
@@ -202,6 +206,10 @@ def index_refresh(root: str | None = None) -> dict[str, Any]:
             # stops two refreshes from compacting the same vectors.f16 at
             # once. See RefreshLock's docstring in store.py.
             cross_process_lock = RefreshLock(index_dir(Path(settings["home"])))
+            # The lock has to stay held past the end of this try/except, which
+            # a `with` cannot do: the block would exit and release it before
+            # the refresh runs. The matching __exit__ is in the finally below.
+            # pylint: disable=unnecessary-dunder-call
             cross_process_lock.__enter__()
         except RefreshBusy as exc:
             return {"status": "busy", "detail": str(exc)}

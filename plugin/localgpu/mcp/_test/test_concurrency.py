@@ -7,6 +7,13 @@ See the comment on `_process_locks` in store.py and RefreshLock's docstring
 for the two different mechanisms these tests cover.
 """
 
+# These tests acquire and release RefreshLock by hand rather than with `with`,
+# because the acquire/release SEQUENCE across interleaved holders is the thing
+# under test - a `with` block would hide exactly the interleaving being
+# checked. Module-level rather than per-call: an inline disable only applies
+# from its own line onward, so the three call sites would each need their own.
+# pylint: disable=unnecessary-dunder-call
+
 from __future__ import annotations
 
 import threading

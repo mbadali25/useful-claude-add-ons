@@ -162,6 +162,10 @@ def test_bad_json_is_400_not_500(endpoint):
         method="POST",
     )
     with pytest.raises(urllib.error.HTTPError) as caught:
+        # Not `with urlopen(...)`: this call is expected to RAISE, so there is
+        # no response object to manage. The context manager being suggested
+        # would never be entered.
+        # pylint: disable=consider-using-with
         urllib.request.urlopen(request, timeout=10)
     assert caught.value.code == 400
 

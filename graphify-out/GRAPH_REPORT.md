@@ -1,15 +1,16 @@
 # Graph Report - useful-claude-add-ons  (2026-09-05)
 
 ## Corpus Check
-- cluster-only mode — file stats not available
+- 500 files · ~695,809 words
+- Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 6476 nodes · 10074 edges · 612 communities (388 shown, 175 thin omitted)
+- 6499 nodes · 10096 edges · 613 communities (391 shown, 173 thin omitted)
 - Extraction: 97% EXTRACTED · 3% INFERRED · 0% AMBIGUOUS · INFERRED: 334 edges (avg confidence: 0.87)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `62b1c7ae`
+- Built from commit: `c30c6b8b`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -563,8 +564,8 @@
 - test_image_blocks_are_announced_not_dropped
 - test_tool_results_move_out_of_the_user_turn
 - bridge-status.sh script
-- collisions_for
-- describe_collision
+- crew
+- list_vaults
 - vault-capture.sh script
 - vault-guard.sh script
 - bb.sh
@@ -577,6 +578,7 @@
 - localgpu
 - RuntimeError
 - VectorStore
+- discover_vaults
 
 ## God Nodes (most connected - your core abstractions)
 1. `ok()` - 69 edges
@@ -605,7 +607,7 @@
 ## Import Cycles
 - None detected.
 
-## Communities (612 total, 175 thin omitted)
+## Communities (613 total, 173 thin omitted)
 
 ### Community 0 - "install-prerequisites.sh"
 Cohesion: 0.06
@@ -716,8 +718,8 @@ Cohesion: 0.08
 Nodes (31): MonkeyPatch, Hit, match_glob(), Forgiving glob match against a full path or its basename. ``*`` crosses…, Clock, embedder(), home(), fixture (+23 more)
 
 ### Community 29 - "obsidian_common.py"
-Cohesion: 0.09
-Nodes (34): config_path(), _declared_default_entry(), default_vault_name(), detect_vault_from_app(), discover_vaults(), _home(), identity_check(), list_app_vaults() (+26 more)
+Cohesion: 0.15
+Nodes (16): collisions_for(), config_path(), _declared_default_entry(), describe_collision(), _home(), list_app_vaults(), obsidian_app_json_path(), Shared vault resolution for every hook and command script in this plugin.… (+8 more)
 
 ### Community 30 - "localgpu/bootstrap.sh"
 Cohesion: 0.21
@@ -1060,8 +1062,8 @@ Cohesion: 0.12
 Nodes (16): Accessibility, Authentication and sessions, Contents, File uploads and downloads, Forms, Iframes and shadow DOM, MFA and CAPTCHA, Mobile and device emulation (+8 more)
 
 ### Community 117 - "CLAUDE.md"
-Cohesion: 0.12
-Nodes (15): 1. Install scripts change → update `README.md`, 2. Changing a skill or plugin → bump its `version`, 3. New skill under `skills/` → update `README.md`, 4. New plugin under `plugin/` → five places, plus two extra rules, Commands - build, test, verify, regression, promote, Conventions, Documentation rules — not optional, Landmines - every one of these has already shipped broken (+7 more)
+Cohesion: 0.20
+Nodes (8): Commands - build, test, verify, regression, promote, Landmines - every one of these has already shipped broken, Memory - where the code map and runbooks live, Promotion: development -> qa -> production, Reporting - errors verbatim, say what you did NOT verify, Scope discipline - fix the ticket, not what you notice nearby, Stop and ask - the conditions that should halt work, Where things are - entrypoints, logic, DO NOT TOUCH
 
 ### Community 118 - "read_diagrams"
 Cohesion: 0.14
@@ -2159,25 +2161,37 @@ Nodes (3): _no_machine_global(), fixture, Every test here resolves against the f
 Cohesion: 0.67
 Nodes (3): test_input_tokens_scale_with_prompt_size_on_a_real_model(), real_ollama, requires_real_ollama
 
+### Community 559 - "crew"
+Cohesion: 0.07
+Nodes (24): crew, `crew_state.py` and this very directory, Hooks, Inventory — and a stale description found while checking it, The 0.16.7 guard defects, and the dispatch.d rewrite that fixed the largest one, What this file does not cover, Code map — index, Files (+16 more)
+
+### Community 560 - "list_vaults"
+Cohesion: 0.19
+Nodes (13): default_vault_name(), detect_vault_from_app(), list_vaults(), port_in_range(), The vault Obsidian itself last had open, or the most recently touched one.…, One rule for what counts as a port, wherever a port is accepted. `_valid_port`…, A config `port` value is untrusted input from a hand-edited JSON file. A…, Every configured vault as {name: {path, port, layout, default}}. Normalizes the… (+5 more)
+
+### Community 612 - "discover_vaults"
+Cohesion: 0.22
+Nodes (9): discover_vaults(), identity_check(), _norm_path(), Every vault this machine knows about, configured or not. list_vaults() answers…, Top-level names Local REST API would list for a vault. Dotfiles (notably…, Does the root listing a server returned match the vault on disk? `served_files`…, Does an open window on this machine belong to THIS vault? Returns {"state":…, vault_window_state() (+1 more)
+
 ## Knowledge Gaps
-- **1860 isolated node(s):** `CreatedServer`, `CreatedServer`, `CreatedServer`, `CreatedServer`, `VALID_AUTH_MODES` (+1855 more)
-  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 3394 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
-- **175 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **1873 isolated node(s):** `Files`, `How to read these files`, `Inventory — and a stale description found while checking it`, `Hooks`, `The 0.16.7 guard defects, and the dispatch.d rewrite that fixed the largest one` (+1868 more)
+  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 3408 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+- **173 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `order_candidates()` connect `resolve_config` to `bridge_status.py`, `crew_config.py`, `check_env.py`?**
-  _High betweenness centrality (0.117) - this node is a cross-community bridge._
+  _High betweenness centrality (0.127) - this node is a cross-community bridge._
 - **Why does `probe()` connect `bridge_status.py` to `resolve_config`?**
-  _High betweenness centrality (0.117) - this node is a cross-community bridge._
+  _High betweenness centrality (0.126) - this node is a cross-community bridge._
 - **Why does `build_parser()` connect `worklog.py` to `localgpu_cli.py`?**
-  _High betweenness centrality (0.102) - this node is a cross-community bridge._
+  _High betweenness centrality (0.092) - this node is a cross-community bridge._
 - **Are the 31 inferred relationships involving `MerakiClient` (e.g. with `MerakiError` and `TestNetworkLookup`) actually correct?**
   _`MerakiClient` has 31 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 17 inferred relationships involving `MerakiError` (e.g. with `MerakiClient` and `ConfigTool`) actually correct?**
   _`MerakiError` has 17 INFERRED edges - model-reasoned connections that need verification._
-- **What connects `CreatedServer`, `CreatedServer`, `CreatedServer` to the rest of the system?**
-  _1860 weakly-connected nodes found - possible documentation gaps or missing edges._
+- **What connects `Files`, `How to read these files`, `Inventory — and a stale description found while checking it` to the rest of the system?**
+  _1873 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `install-prerequisites.sh` be split into smaller, more focused modules?**
   _Cohesion score 0.05694980694980695 - nodes in this community are weakly interconnected._

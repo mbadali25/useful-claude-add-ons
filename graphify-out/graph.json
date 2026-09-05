@@ -15195,6 +15195,18 @@
       "source_location": "L16"
     },
     {
+      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_collisions_for",
+      "label": "collisions_for()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 29,
+      "community_name": "obsidian_common.py",
+      "file_type": "code",
+      "norm_label": "collisions_for()",
+      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
+      "source_location": "L553"
+    },
+    {
       "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_community_plugins_path",
       "label": "community_plugins_path()",
       "_callable": true,
@@ -15231,40 +15243,16 @@
       "source_location": "L234"
     },
     {
-      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_default_vault_name",
-      "label": "default_vault_name()",
+      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_describe_collision",
+      "label": "describe_collision()",
       "_callable": true,
       "_origin": "ast",
       "community": 29,
       "community_name": "obsidian_common.py",
       "file_type": "code",
-      "norm_label": "default_vault_name()",
+      "norm_label": "describe_collision()",
       "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
-      "source_location": "L226"
-    },
-    {
-      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_detect_vault_from_app",
-      "label": "detect_vault_from_app()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 29,
-      "community_name": "obsidian_common.py",
-      "file_type": "code",
-      "norm_label": "detect_vault_from_app()",
-      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
-      "source_location": "L101"
-    },
-    {
-      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_discover_vaults",
-      "label": "discover_vaults()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 29,
-      "community_name": "obsidian_common.py",
-      "file_type": "code",
-      "norm_label": "discover_vaults()",
-      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
-      "source_location": "L445"
+      "source_location": "L558"
     },
     {
       "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_home",
@@ -15279,18 +15267,6 @@
       "source_location": "L50"
     },
     {
-      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_identity_check",
-      "label": "identity_check()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 29,
-      "community_name": "obsidian_common.py",
-      "file_type": "code",
-      "norm_label": "identity_check()",
-      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
-      "source_location": "L593"
-    },
-    {
       "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_list_app_vaults",
       "label": "list_app_vaults()",
       "_callable": true,
@@ -15301,30 +15277,6 @@
       "norm_label": "list_app_vaults()",
       "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
       "source_location": "L417"
-    },
-    {
-      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_list_vaults",
-      "label": "list_vaults()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 29,
-      "community_name": "obsidian_common.py",
-      "file_type": "code",
-      "norm_label": "list_vaults()",
-      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
-      "source_location": "L173"
-    },
-    {
-      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_norm_path",
-      "label": "_norm_path()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 29,
-      "community_name": "obsidian_common.py",
-      "file_type": "code",
-      "norm_label": "_norm_path()",
-      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
-      "source_location": "L411"
     },
     {
       "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_obsidian_app_json_path",
@@ -15339,18 +15291,6 @@
       "source_location": "L84"
     },
     {
-      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_port_in_range",
-      "label": "port_in_range()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 29,
-      "community_name": "obsidian_common.py",
-      "file_type": "code",
-      "norm_label": "port_in_range()",
-      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
-      "source_location": "L136"
-    },
-    {
       "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_read_config",
       "label": "read_config()",
       "_callable": true,
@@ -15361,66 +15301,6 @@
       "norm_label": "read_config()",
       "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
       "source_location": "L66"
-    },
-    {
-      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_resolve_vault",
-      "label": "resolve_vault()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 29,
-      "community_name": "obsidian_common.py",
-      "file_type": "code",
-      "norm_label": "resolve_vault()",
-      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
-      "source_location": "L256"
-    },
-    {
-      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_resolve_vault_path",
-      "label": "resolve_vault_path()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 29,
-      "community_name": "obsidian_common.py",
-      "file_type": "code",
-      "norm_label": "resolve_vault_path()",
-      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
-      "source_location": "L286"
-    },
-    {
-      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_valid_port",
-      "label": "_valid_port()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 29,
-      "community_name": "obsidian_common.py",
-      "file_type": "code",
-      "norm_label": "_valid_port()",
-      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
-      "source_location": "L149"
-    },
-    {
-      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_vault_window_state",
-      "label": "vault_window_state()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 29,
-      "community_name": "obsidian_common.py",
-      "file_type": "code",
-      "norm_label": "vault_window_state()",
-      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
-      "source_location": "L841"
-    },
-    {
-      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_visible_root_entries",
-      "label": "_visible_root_entries()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 29,
-      "community_name": "obsidian_common.py",
-      "file_type": "code",
-      "norm_label": "_visible_root_entries()",
-      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
-      "source_location": "L580"
     },
     {
       "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_write_config",
@@ -21999,18 +21879,6 @@
       "source_location": "L98"
     },
     {
-      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_collisions_for",
-      "label": "collisions_for()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 559,
-      "community_name": "collisions_for",
-      "file_type": "code",
-      "norm_label": "collisions_for()",
-      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
-      "source_location": "L553"
-    },
-    {
       "id": "plugin_crew_tests_test_verify_gate_lock_sh_git",
       "label": "_git()",
       "_callable": true,
@@ -22167,16 +22035,88 @@
       "source_location": "L178"
     },
     {
-      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_describe_collision",
-      "label": "describe_collision()",
+      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_default_vault_name",
+      "label": "default_vault_name()",
       "_callable": true,
       "_origin": "ast",
       "community": 560,
-      "community_name": "describe_collision",
+      "community_name": "list_vaults",
       "file_type": "code",
-      "norm_label": "describe_collision()",
+      "norm_label": "default_vault_name()",
       "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
-      "source_location": "L558"
+      "source_location": "L226"
+    },
+    {
+      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_detect_vault_from_app",
+      "label": "detect_vault_from_app()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 560,
+      "community_name": "list_vaults",
+      "file_type": "code",
+      "norm_label": "detect_vault_from_app()",
+      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
+      "source_location": "L101"
+    },
+    {
+      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_list_vaults",
+      "label": "list_vaults()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 560,
+      "community_name": "list_vaults",
+      "file_type": "code",
+      "norm_label": "list_vaults()",
+      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
+      "source_location": "L173"
+    },
+    {
+      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_port_in_range",
+      "label": "port_in_range()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 560,
+      "community_name": "list_vaults",
+      "file_type": "code",
+      "norm_label": "port_in_range()",
+      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
+      "source_location": "L136"
+    },
+    {
+      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_resolve_vault",
+      "label": "resolve_vault()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 560,
+      "community_name": "list_vaults",
+      "file_type": "code",
+      "norm_label": "resolve_vault()",
+      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
+      "source_location": "L256"
+    },
+    {
+      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_resolve_vault_path",
+      "label": "resolve_vault_path()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 560,
+      "community_name": "list_vaults",
+      "file_type": "code",
+      "norm_label": "resolve_vault_path()",
+      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
+      "source_location": "L286"
+    },
+    {
+      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_valid_port",
+      "label": "_valid_port()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 560,
+      "community_name": "list_vaults",
+      "file_type": "code",
+      "norm_label": "_valid_port()",
+      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
+      "source_location": "L149"
     },
     {
       "id": "skills_notify_scripts_telegram_get_chat_id_main",
@@ -23317,6 +23257,66 @@
       "norm_label": "test_unchanged_files_are_skipped_without_hashing()",
       "source_file": "plugin/localgpu/mcp/_test/test_incremental.py",
       "source_location": "L55"
+    },
+    {
+      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_discover_vaults",
+      "label": "discover_vaults()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 612,
+      "community_name": "discover_vaults",
+      "file_type": "code",
+      "norm_label": "discover_vaults()",
+      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
+      "source_location": "L445"
+    },
+    {
+      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_identity_check",
+      "label": "identity_check()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 612,
+      "community_name": "discover_vaults",
+      "file_type": "code",
+      "norm_label": "identity_check()",
+      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
+      "source_location": "L593"
+    },
+    {
+      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_norm_path",
+      "label": "_norm_path()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 612,
+      "community_name": "discover_vaults",
+      "file_type": "code",
+      "norm_label": "_norm_path()",
+      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
+      "source_location": "L411"
+    },
+    {
+      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_vault_window_state",
+      "label": "vault_window_state()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 612,
+      "community_name": "discover_vaults",
+      "file_type": "code",
+      "norm_label": "vault_window_state()",
+      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
+      "source_location": "L841"
+    },
+    {
+      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_visible_root_entries",
+      "label": "_visible_root_entries()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 612,
+      "community_name": "discover_vaults",
+      "file_type": "code",
+      "norm_label": "_visible_root_entries()",
+      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
+      "source_location": "L580"
     },
     {
       "id": "skills_cloudflare_scripts_cloudflare_client_cloudflareclient_account_id",
@@ -33364,52 +33364,16 @@
       "source_location": "L1"
     },
     {
-      "id": "claude_1_install_scripts_change_update_readme_md",
-      "label": "1. Install scripts change \u2192 update `README.md`",
+      "id": "claude_claude_md",
+      "label": "CLAUDE.md",
       "_origin": "ast",
       "community": 117,
       "community_name": "CLAUDE.md",
       "file_type": "document",
       "node_kind": "heading",
-      "norm_label": "1. install scripts change \u2192 update `readme.md`",
+      "norm_label": "claude.md",
       "source_file": "CLAUDE.md",
-      "source_location": "L15"
-    },
-    {
-      "id": "claude_2_changing_a_skill_or_plugin_bump_its_version",
-      "label": "2. Changing a skill or plugin \u2192 bump its `version`",
-      "_origin": "ast",
-      "community": 117,
-      "community_name": "CLAUDE.md",
-      "file_type": "document",
-      "node_kind": "heading",
-      "norm_label": "2. changing a skill or plugin \u2192 bump its `version`",
-      "source_file": "CLAUDE.md",
-      "source_location": "L36"
-    },
-    {
-      "id": "claude_3_new_skill_under_skills_update_readme_md",
-      "label": "3. New skill under `skills/` \u2192 update `README.md`",
-      "_origin": "ast",
-      "community": 117,
-      "community_name": "CLAUDE.md",
-      "file_type": "document",
-      "node_kind": "heading",
-      "norm_label": "3. new skill under `skills/` \u2192 update `readme.md`",
-      "source_file": "CLAUDE.md",
-      "source_location": "L77"
-    },
-    {
-      "id": "claude_4_new_plugin_under_plugin_five_places_plus_two_extra_rules",
-      "label": "4. New plugin under `plugin/` \u2192 five places, plus two extra rules",
-      "_origin": "ast",
-      "community": 117,
-      "community_name": "CLAUDE.md",
-      "file_type": "document",
-      "node_kind": "heading",
-      "norm_label": "4. new plugin under `plugin/` \u2192 five places, plus two extra rules",
-      "source_file": "CLAUDE.md",
-      "source_location": "L92"
+      "source_location": "L1"
     },
     {
       "id": "claude_commands_build_test_verify_regression_promote",
@@ -33424,30 +33388,6 @@
       "source_location": "L7"
     },
     {
-      "id": "claude_conventions",
-      "label": "Conventions",
-      "_origin": "ast",
-      "community": 117,
-      "community_name": "CLAUDE.md",
-      "file_type": "document",
-      "node_kind": "heading",
-      "norm_label": "conventions",
-      "source_file": "CLAUDE.md",
-      "source_location": "L163"
-    },
-    {
-      "id": "claude_documentation_rules_not_optional",
-      "label": "Documentation rules \u2014 not optional",
-      "_origin": "ast",
-      "community": 117,
-      "community_name": "CLAUDE.md",
-      "file_type": "document",
-      "node_kind": "heading",
-      "norm_label": "documentation rules \u2014 not optional",
-      "source_file": "CLAUDE.md",
-      "source_location": "L13"
-    },
-    {
       "id": "claude_landmines_every_one_of_these_has_already_shipped_broken",
       "label": "Landmines - every one of these has already shipped broken",
       "_origin": "ast",
@@ -33457,7 +33397,7 @@
       "node_kind": "heading",
       "norm_label": "landmines - every one of these has already shipped broken",
       "source_file": "CLAUDE.md",
-      "source_location": "L60"
+      "source_location": "L75"
     },
     {
       "id": "claude_memory_where_the_code_map_and_runbooks_live",
@@ -33518,18 +33458,6 @@
       "norm_label": "stop and ask - the conditions that should halt work",
       "source_file": "CLAUDE.md",
       "source_location": "L28"
-    },
-    {
-      "id": "claude_what_this_repo_is",
-      "label": "What this repo is",
-      "_origin": "ast",
-      "community": 117,
-      "community_name": "CLAUDE.md",
-      "file_type": "document",
-      "node_kind": "heading",
-      "norm_label": "what this repo is",
-      "source_file": "CLAUDE.md",
-      "source_location": "L5"
     },
     {
       "id": "claude_where_things_are_entrypoints_logic_do_not_touch",
@@ -53630,50 +53558,6 @@
       "source_location": "L1"
     },
     {
-      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_rationale_102",
-      "label": "The vault Obsidian itself last had open, or the most recently touched one.\u2026",
-      "_origin": "ast",
-      "community": 29,
-      "community_name": "obsidian_common.py",
-      "file_type": "rationale",
-      "norm_label": "the vault obsidian itself last had open, or the most recently touched one....",
-      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
-      "source_location": "L102"
-    },
-    {
-      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_rationale_137",
-      "label": "One rule for what counts as a port, wherever a port is accepted. `_valid_port`\u2026",
-      "_origin": "ast",
-      "community": 29,
-      "community_name": "obsidian_common.py",
-      "file_type": "rationale",
-      "norm_label": "one rule for what counts as a port, wherever a port is accepted. `_valid_port`...",
-      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
-      "source_location": "L137"
-    },
-    {
-      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_rationale_150",
-      "label": "A config `port` value is untrusted input from a hand-edited JSON file. A\u2026",
-      "_origin": "ast",
-      "community": 29,
-      "community_name": "obsidian_common.py",
-      "file_type": "rationale",
-      "norm_label": "a config `port` value is untrusted input from a hand-edited json file. a...",
-      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
-      "source_location": "L150"
-    },
-    {
-      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_rationale_174",
-      "label": "Every configured vault as {name: {path, port, layout, default}}. Normalizes the\u2026",
-      "_origin": "ast",
-      "community": 29,
-      "community_name": "obsidian_common.py",
-      "file_type": "rationale",
-      "norm_label": "every configured vault as {name: {path, port, layout, default}}. normalizes the...",
-      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
-      "source_location": "L174"
-    },
-    {
       "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_rationale_235",
       "label": "The raw config entry for the default vault, ignoring whether its own configured\u2026",
       "_origin": "ast",
@@ -53683,28 +53567,6 @@
       "norm_label": "the raw config entry for the default vault, ignoring whether its own configured...",
       "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
       "source_location": "L235"
-    },
-    {
-      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_rationale_257",
-      "label": "The full {path, port, layout} dict for a named vault, or None. `name=None`\u2026",
-      "_origin": "ast",
-      "community": 29,
-      "community_name": "obsidian_common.py",
-      "file_type": "rationale",
-      "norm_label": "the full {path, port, layout} dict for a named vault, or none. `name=none`...",
-      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
-      "source_location": "L257"
-    },
-    {
-      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_rationale_287",
-      "label": "The vault path this session should act on, or None. Detection is intentionally\u2026",
-      "_origin": "ast",
-      "community": 29,
-      "community_name": "obsidian_common.py",
-      "file_type": "rationale",
-      "norm_label": "the vault path this session should act on, or none. detection is intentionally...",
-      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
-      "source_location": "L287"
     },
     {
       "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_rationale_418",
@@ -53718,17 +53580,6 @@
       "source_location": "L418"
     },
     {
-      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_rationale_446",
-      "label": "Every vault this machine knows about, configured or not. list_vaults() answers\u2026",
-      "_origin": "ast",
-      "community": 29,
-      "community_name": "obsidian_common.py",
-      "file_type": "rationale",
-      "norm_label": "every vault this machine knows about, configured or not. list_vaults() answers...",
-      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
-      "source_location": "L446"
-    },
-    {
       "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_rationale_51",
       "label": "The user's home directory, HOME-first. os.path.expanduser(\"~\") reads\u2026",
       "_origin": "ast",
@@ -53740,37 +53591,26 @@
       "source_location": "L51"
     },
     {
-      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_rationale_581",
-      "label": "Top-level names Local REST API would list for a vault. Dotfiles (notably\u2026",
+      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_rationale_554",
+      "label": "The subset of find_port_collisions() output that involves one vault.",
       "_origin": "ast",
       "community": 29,
       "community_name": "obsidian_common.py",
       "file_type": "rationale",
-      "norm_label": "top-level names local rest api would list for a vault. dotfiles (notably...",
+      "norm_label": "the subset of find_port_collisions() output that involves one vault.",
       "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
-      "source_location": "L581"
+      "source_location": "L554"
     },
     {
-      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_rationale_594",
-      "label": "Does the root listing a server returned match the vault on disk? `served_files`\u2026",
+      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_rationale_559",
+      "label": "One sentence naming who collides on what, for a report or a hook line.",
       "_origin": "ast",
       "community": 29,
       "community_name": "obsidian_common.py",
       "file_type": "rationale",
-      "norm_label": "does the root listing a server returned match the vault on disk? `served_files`...",
+      "norm_label": "one sentence naming who collides on what, for a report or a hook line.",
       "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
-      "source_location": "L594"
-    },
-    {
-      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_rationale_842",
-      "label": "Does an open window on this machine belong to THIS vault? Returns {\"state\":\u2026",
-      "_origin": "ast",
-      "community": 29,
-      "community_name": "obsidian_common.py",
-      "file_type": "rationale",
-      "norm_label": "does an open window on this machine belong to this vault? returns {\"state\":...",
-      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
-      "source_location": "L842"
+      "source_location": "L559"
     },
     {
       "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_rationale_85",
@@ -70237,15 +70077,352 @@
       "source_location": "L1"
     },
     {
-      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_rationale_554",
-      "label": "The subset of find_port_collisions() output that involves one vault.",
+      "id": "crew_codemap_crew",
+      "label": "crew.md",
       "_origin": "ast",
       "community": 559,
-      "community_name": "collisions_for",
-      "file_type": "rationale",
-      "norm_label": "the subset of find_port_collisions() output that involves one vault.",
-      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
-      "source_location": "L554"
+      "community_name": "crew",
+      "file_type": "document",
+      "node_kind": "page",
+      "norm_label": "crew.md",
+      "source_file": ".crew/codemap/crew.md",
+      "source_location": "L1"
+    },
+    {
+      "id": "crew_codemap_crew_crew",
+      "label": "crew",
+      "_origin": "ast",
+      "community": 559,
+      "community_name": "crew",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "crew",
+      "source_file": ".crew/codemap/crew.md",
+      "source_location": "L3"
+    },
+    {
+      "id": "crew_codemap_crew_crew_state_py_and_this_very_directory",
+      "label": "`crew_state.py` and this very directory",
+      "_origin": "ast",
+      "community": 559,
+      "community_name": "crew",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "`crew_state.py` and this very directory",
+      "source_file": ".crew/codemap/crew.md",
+      "source_location": "L120"
+    },
+    {
+      "id": "crew_codemap_crew_hooks",
+      "label": "Hooks",
+      "_origin": "ast",
+      "community": 559,
+      "community_name": "crew",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "hooks",
+      "source_file": ".crew/codemap/crew.md",
+      "source_location": "L46"
+    },
+    {
+      "id": "crew_codemap_crew_inventory_and_a_stale_description_found_while_checking_it",
+      "label": "Inventory \u2014 and a stale description found while checking it",
+      "_origin": "ast",
+      "community": 559,
+      "community_name": "crew",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "inventory \u2014 and a stale description found while checking it",
+      "source_file": ".crew/codemap/crew.md",
+      "source_location": "L10"
+    },
+    {
+      "id": "crew_codemap_crew_the_0_16_7_guard_defects_and_the_dispatch_d_rewrite_that_fixed_the_largest_one",
+      "label": "The 0.16.7 guard defects, and the dispatch.d rewrite that fixed the largest one",
+      "_origin": "ast",
+      "community": 559,
+      "community_name": "crew",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "the 0.16.7 guard defects, and the dispatch.d rewrite that fixed the largest one",
+      "source_file": ".crew/codemap/crew.md",
+      "source_location": "L59"
+    },
+    {
+      "id": "crew_codemap_crew_what_this_file_does_not_cover",
+      "label": "What this file does not cover",
+      "_origin": "ast",
+      "community": 559,
+      "community_name": "crew",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "what this file does not cover",
+      "source_file": ".crew/codemap/crew.md",
+      "source_location": "L154"
+    },
+    {
+      "id": "crew_codemap_index",
+      "label": "INDEX.md",
+      "_origin": "ast",
+      "community": 559,
+      "community_name": "crew",
+      "file_type": "document",
+      "node_kind": "page",
+      "norm_label": "index.md",
+      "source_file": ".crew/codemap/INDEX.md",
+      "source_location": "L1"
+    },
+    {
+      "id": "crew_codemap_index_code_map_index",
+      "label": "Code map \u2014 index",
+      "_origin": "ast",
+      "community": 559,
+      "community_name": "crew",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "code map \u2014 index",
+      "source_file": ".crew/codemap/INDEX.md",
+      "source_location": "L1"
+    },
+    {
+      "id": "crew_codemap_index_files",
+      "label": "Files",
+      "_origin": "ast",
+      "community": 559,
+      "community_name": "crew",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "files",
+      "source_file": ".crew/codemap/INDEX.md",
+      "source_location": "L14"
+    },
+    {
+      "id": "crew_codemap_index_how_to_read_these_files",
+      "label": "How to read these files",
+      "_origin": "ast",
+      "community": 559,
+      "community_name": "crew",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "how to read these files",
+      "source_file": ".crew/codemap/INDEX.md",
+      "source_location": "L23"
+    },
+    {
+      "id": "crew_codemap_localgpu",
+      "label": "localgpu.md",
+      "_origin": "ast",
+      "community": 559,
+      "community_name": "crew",
+      "file_type": "document",
+      "node_kind": "page",
+      "norm_label": "localgpu.md",
+      "source_file": ".crew/codemap/localgpu.md",
+      "source_location": "L1"
+    },
+    {
+      "id": "crew_codemap_localgpu_bootstrap_ps1_vs_bootstrap_sh_verdict_the_twin_claim_holds",
+      "label": "bootstrap.ps1 vs bootstrap.sh \u2014 verdict: the \"twin\" claim holds",
+      "_origin": "ast",
+      "community": 559,
+      "community_name": "crew",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "bootstrap.ps1 vs bootstrap.sh \u2014 verdict: the \"twin\" claim holds",
+      "source_file": ".crew/codemap/localgpu.md",
+      "source_location": "L167"
+    },
+    {
+      "id": "crew_codemap_localgpu_check_embed_model_corrected_line_numbers",
+      "label": "`check_embed_model` \u2014 corrected line numbers",
+      "_origin": "ast",
+      "community": 559,
+      "community_name": "crew",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "`check_embed_model` \u2014 corrected line numbers",
+      "source_file": ".crew/codemap/localgpu.md",
+      "source_location": "L36"
+    },
+    {
+      "id": "crew_codemap_localgpu_ignore_unignore_gitignore_three_layers_checked_against_source",
+      "label": "`ignore` / `unignore` / `.gitignore` \u2014 three layers, checked against source",
+      "_origin": "ast",
+      "community": 559,
+      "community_name": "crew",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "`ignore` / `unignore` / `.gitignore` \u2014 three layers, checked against source",
+      "source_file": ".crew/codemap/localgpu.md",
+      "source_location": "L67"
+    },
+    {
+      "id": "crew_codemap_localgpu_localgpu",
+      "label": "localgpu",
+      "_origin": "ast",
+      "community": 559,
+      "community_name": "crew",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "localgpu",
+      "source_file": ".crew/codemap/localgpu.md",
+      "source_location": "L3"
+    },
+    {
+      "id": "crew_codemap_localgpu_two_gaps_recorded_not_fixed",
+      "label": "Two gaps, recorded, not fixed",
+      "_origin": "ast",
+      "community": 559,
+      "community_name": "crew",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "two gaps, recorded, not fixed",
+      "source_file": ".crew/codemap/localgpu.md",
+      "source_location": "L146"
+    },
+    {
+      "id": "crew_codemap_localgpu_two_independent_process_trees_one_shared_ollama",
+      "label": "Two independent process trees, one shared Ollama",
+      "_origin": "ast",
+      "community": 559,
+      "community_name": "crew",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "two independent process trees, one shared ollama",
+      "source_file": ".crew/codemap/localgpu.md",
+      "source_location": "L8"
+    },
+    {
+      "id": "crew_codemap_marketplace_registration",
+      "label": "marketplace-registration.md",
+      "_origin": "ast",
+      "community": 559,
+      "community_name": "crew",
+      "file_type": "document",
+      "node_kind": "page",
+      "norm_label": "marketplace-registration.md",
+      "source_file": ".crew/codemap/marketplace-registration.md",
+      "source_location": "L1"
+    },
+    {
+      "id": "crew_codemap_marketplace_registration_marketplace_and_registration",
+      "label": "Marketplace and registration",
+      "_origin": "ast",
+      "community": 559,
+      "community_name": "crew",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "marketplace and registration",
+      "source_file": ".crew/codemap/marketplace-registration.md",
+      "source_location": "L3"
+    },
+    {
+      "id": "crew_codemap_marketplace_registration_the_registration_web",
+      "label": "The registration web",
+      "_origin": "ast",
+      "community": 559,
+      "community_name": "crew",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "the registration web",
+      "source_file": ".crew/codemap/marketplace-registration.md",
+      "source_location": "L10"
+    },
+    {
+      "id": "crew_codemap_marketplace_registration_two_version_check_paths_not_one_corrected",
+      "label": "Two version-check paths, not one \u2014 corrected",
+      "_origin": "ast",
+      "community": 559,
+      "community_name": "crew",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "two version-check paths, not one \u2014 corrected",
+      "source_file": ".crew/codemap/marketplace-registration.md",
+      "source_location": "L71"
+    },
+    {
+      "id": "crew_codemap_marketplace_registration_what_was_not_re_verified",
+      "label": "What was not re-verified",
+      "_origin": "ast",
+      "community": 559,
+      "community_name": "crew",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "what was not re-verified",
+      "source_file": ".crew/codemap/marketplace-registration.md",
+      "source_location": "L115"
+    },
+    {
+      "id": "crew_codemap_verification_harness",
+      "label": "verification-harness.md",
+      "_origin": "ast",
+      "community": 559,
+      "community_name": "crew",
+      "file_type": "document",
+      "node_kind": "page",
+      "norm_label": "verification-harness.md",
+      "source_file": ".crew/codemap/verification-harness.md",
+      "source_location": "L1"
+    },
+    {
+      "id": "crew_codemap_verification_harness_crew_verify_json_the_mechanism_path_to_command",
+      "label": "`.crew/verify.json` \u2014 the mechanism, path to command",
+      "_origin": "ast",
+      "community": 559,
+      "community_name": "crew",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "`.crew/verify.json` \u2014 the mechanism, path to command",
+      "source_file": ".crew/codemap/verification-harness.md",
+      "source_location": "L51"
+    },
+    {
+      "id": "crew_codemap_verification_harness_scripts_check_marketplace_py_the_direct_gate",
+      "label": "`scripts/check-marketplace.py` \u2014 the direct gate",
+      "_origin": "ast",
+      "community": 559,
+      "community_name": "crew",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "`scripts/check-marketplace.py` \u2014 the direct gate",
+      "source_file": ".crew/codemap/verification-harness.md",
+      "source_location": "L35"
+    },
+    {
+      "id": "crew_codemap_verification_harness_verification_harness",
+      "label": "Verification harness",
+      "_origin": "ast",
+      "community": 559,
+      "community_name": "crew",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "verification harness",
+      "source_file": ".crew/codemap/verification-harness.md",
+      "source_location": "L3"
+    },
+    {
+      "id": "crew_codemap_verification_harness_verify_smoke_sh_10_checks_not_9",
+      "label": "`_verify/smoke.sh` \u2014 10 checks, not 9",
+      "_origin": "ast",
+      "community": 559,
+      "community_name": "crew",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "`_verify/smoke.sh` \u2014 10 checks, not 9",
+      "source_file": ".crew/codemap/verification-harness.md",
+      "source_location": "L10"
+    },
+    {
+      "id": "crew_codemap_verification_harness_what_was_run_to_close_this_task",
+      "label": "What was run to close this task",
+      "_origin": "ast",
+      "community": 559,
+      "community_name": "crew",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "what was run to close this task",
+      "source_file": ".crew/codemap/verification-harness.md",
+      "source_location": "L76"
     },
     {
       "id": "plugin_crew_tests_test_verify_gate_lock_sh",
@@ -70380,15 +70557,70 @@
       "source_location": "L96"
     },
     {
-      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_rationale_559",
-      "label": "One sentence naming who collides on what, for a report or a hook line.",
+      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_rationale_102",
+      "label": "The vault Obsidian itself last had open, or the most recently touched one.\u2026",
       "_origin": "ast",
       "community": 560,
-      "community_name": "describe_collision",
+      "community_name": "list_vaults",
       "file_type": "rationale",
-      "norm_label": "one sentence naming who collides on what, for a report or a hook line.",
+      "norm_label": "the vault obsidian itself last had open, or the most recently touched one....",
       "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
-      "source_location": "L559"
+      "source_location": "L102"
+    },
+    {
+      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_rationale_137",
+      "label": "One rule for what counts as a port, wherever a port is accepted. `_valid_port`\u2026",
+      "_origin": "ast",
+      "community": 560,
+      "community_name": "list_vaults",
+      "file_type": "rationale",
+      "norm_label": "one rule for what counts as a port, wherever a port is accepted. `_valid_port`...",
+      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
+      "source_location": "L137"
+    },
+    {
+      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_rationale_150",
+      "label": "A config `port` value is untrusted input from a hand-edited JSON file. A\u2026",
+      "_origin": "ast",
+      "community": 560,
+      "community_name": "list_vaults",
+      "file_type": "rationale",
+      "norm_label": "a config `port` value is untrusted input from a hand-edited json file. a...",
+      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
+      "source_location": "L150"
+    },
+    {
+      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_rationale_174",
+      "label": "Every configured vault as {name: {path, port, layout, default}}. Normalizes the\u2026",
+      "_origin": "ast",
+      "community": 560,
+      "community_name": "list_vaults",
+      "file_type": "rationale",
+      "norm_label": "every configured vault as {name: {path, port, layout, default}}. normalizes the...",
+      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
+      "source_location": "L174"
+    },
+    {
+      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_rationale_257",
+      "label": "The full {path, port, layout} dict for a named vault, or None. `name=None`\u2026",
+      "_origin": "ast",
+      "community": 560,
+      "community_name": "list_vaults",
+      "file_type": "rationale",
+      "norm_label": "the full {path, port, layout} dict for a named vault, or none. `name=none`...",
+      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
+      "source_location": "L257"
+    },
+    {
+      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_rationale_287",
+      "label": "The vault path this session should act on, or None. Detection is intentionally\u2026",
+      "_origin": "ast",
+      "community": 560,
+      "community_name": "list_vaults",
+      "file_type": "rationale",
+      "norm_label": "the vault path this session should act on, or none. detection is intentionally...",
+      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
+      "source_location": "L287"
     },
     {
       "id": "plugin_obsidian_vault_hooks_scripts_vault_capture_sh__entry",
@@ -72147,6 +72379,50 @@
       "norm_label": "vectorstore",
       "source_file": "",
       "source_location": ""
+    },
+    {
+      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_rationale_446",
+      "label": "Every vault this machine knows about, configured or not. list_vaults() answers\u2026",
+      "_origin": "ast",
+      "community": 612,
+      "community_name": "discover_vaults",
+      "file_type": "rationale",
+      "norm_label": "every vault this machine knows about, configured or not. list_vaults() answers...",
+      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
+      "source_location": "L446"
+    },
+    {
+      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_rationale_581",
+      "label": "Top-level names Local REST API would list for a vault. Dotfiles (notably\u2026",
+      "_origin": "ast",
+      "community": 612,
+      "community_name": "discover_vaults",
+      "file_type": "rationale",
+      "norm_label": "top-level names local rest api would list for a vault. dotfiles (notably...",
+      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
+      "source_location": "L581"
+    },
+    {
+      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_rationale_594",
+      "label": "Does the root listing a server returned match the vault on disk? `served_files`\u2026",
+      "_origin": "ast",
+      "community": 612,
+      "community_name": "discover_vaults",
+      "file_type": "rationale",
+      "norm_label": "does the root listing a server returned match the vault on disk? `served_files`...",
+      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
+      "source_location": "L594"
+    },
+    {
+      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_rationale_842",
+      "label": "Does an open window on this machine belong to THIS vault? Returns {\"state\":\u2026",
+      "_origin": "ast",
+      "community": 612,
+      "community_name": "discover_vaults",
+      "file_type": "rationale",
+      "norm_label": "does an open window on this machine belong to this vault? returns {\"state\":...",
+      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
+      "source_location": "L842"
     },
     {
       "id": "skills_cloudflare_scripts_cloudflare_client",
@@ -122707,17 +122983,17 @@
     },
     {
       "source": "claude",
-      "target": "claude_documentation_rules_not_optional",
+      "target": "claude_claude_md",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CLAUDE.md",
-      "source_location": "L13",
+      "source_location": "L1",
       "weight": 1.0
     },
     {
-      "source": "claude",
+      "source": "claude_claude_md",
       "target": "claude_where_things_are_entrypoints_logic_do_not_touch",
       "relation": "contains",
       "_origin": "ast",
@@ -122728,18 +123004,7 @@
       "weight": 1.0
     },
     {
-      "source": "claude",
-      "target": "claude_conventions",
-      "relation": "contains",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "CLAUDE.md",
-      "source_location": "L163",
-      "weight": 1.0
-    },
-    {
-      "source": "claude",
+      "source": "claude_claude_md",
       "target": "claude_scope_discipline_fix_the_ticket_not_what_you_notice_nearby",
       "relation": "contains",
       "_origin": "ast",
@@ -122750,7 +123015,7 @@
       "weight": 1.0
     },
     {
-      "source": "claude",
+      "source": "claude_claude_md",
       "target": "claude_stop_and_ask_the_conditions_that_should_halt_work",
       "relation": "contains",
       "_origin": "ast",
@@ -122761,7 +123026,7 @@
       "weight": 1.0
     },
     {
-      "source": "claude",
+      "source": "claude_claude_md",
       "target": "claude_promotion_development_qa_production",
       "relation": "contains",
       "_origin": "ast",
@@ -122772,7 +123037,7 @@
       "weight": 1.0
     },
     {
-      "source": "claude",
+      "source": "claude_claude_md",
       "target": "claude_reporting_errors_verbatim_say_what_you_did_not_verify",
       "relation": "contains",
       "_origin": "ast",
@@ -122783,18 +123048,7 @@
       "weight": 1.0
     },
     {
-      "source": "claude",
-      "target": "claude_what_this_repo_is",
-      "relation": "contains",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "CLAUDE.md",
-      "source_location": "L5",
-      "weight": 1.0
-    },
-    {
-      "source": "claude",
+      "source": "claude_claude_md",
       "target": "claude_memory_where_the_code_map_and_runbooks_live",
       "relation": "contains",
       "_origin": "ast",
@@ -122805,18 +123059,7 @@
       "weight": 1.0
     },
     {
-      "source": "claude",
-      "target": "claude_landmines_every_one_of_these_has_already_shipped_broken",
-      "relation": "contains",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "CLAUDE.md",
-      "source_location": "L60",
-      "weight": 1.0
-    },
-    {
-      "source": "claude",
+      "source": "claude_claude_md",
       "target": "claude_commands_build_test_verify_regression_promote",
       "relation": "contains",
       "_origin": "ast",
@@ -122827,47 +123070,14 @@
       "weight": 1.0
     },
     {
-      "source": "claude_1_install_scripts_change_update_readme_md",
-      "target": "claude_documentation_rules_not_optional",
+      "source": "claude_claude_md",
+      "target": "claude_landmines_every_one_of_these_has_already_shipped_broken",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CLAUDE.md",
-      "source_location": "L15",
-      "weight": 1.0
-    },
-    {
-      "source": "claude_2_changing_a_skill_or_plugin_bump_its_version",
-      "target": "claude_documentation_rules_not_optional",
-      "relation": "contains",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "CLAUDE.md",
-      "source_location": "L36",
-      "weight": 1.0
-    },
-    {
-      "source": "claude_3_new_skill_under_skills_update_readme_md",
-      "target": "claude_documentation_rules_not_optional",
-      "relation": "contains",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "CLAUDE.md",
-      "source_location": "L77",
-      "weight": 1.0
-    },
-    {
-      "source": "claude_4_new_plugin_under_plugin_five_places_plus_two_extra_rules",
-      "target": "claude_documentation_rules_not_optional",
-      "relation": "contains",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "CLAUDE.md",
-      "source_location": "L92",
+      "source_location": "L75",
       "weight": 1.0
     },
     {
@@ -123154,6 +123364,270 @@
       "confidence_score": 1.0,
       "source_file": "claude-obsidian-setup/setup-claude-obsidian.sh",
       "source_location": "L1",
+      "weight": 1.0
+    },
+    {
+      "source": "crew_codemap_crew",
+      "target": "crew_codemap_crew_crew",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": ".crew/codemap/crew.md",
+      "source_location": "L3",
+      "weight": 1.0
+    },
+    {
+      "source": "crew_codemap_crew_crew",
+      "target": "crew_codemap_crew_inventory_and_a_stale_description_found_while_checking_it",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": ".crew/codemap/crew.md",
+      "source_location": "L10",
+      "weight": 1.0
+    },
+    {
+      "source": "crew_codemap_crew_crew",
+      "target": "crew_codemap_crew_crew_state_py_and_this_very_directory",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": ".crew/codemap/crew.md",
+      "source_location": "L120",
+      "weight": 1.0
+    },
+    {
+      "source": "crew_codemap_crew_crew",
+      "target": "crew_codemap_crew_what_this_file_does_not_cover",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": ".crew/codemap/crew.md",
+      "source_location": "L154",
+      "weight": 1.0
+    },
+    {
+      "source": "crew_codemap_crew_crew",
+      "target": "crew_codemap_crew_hooks",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": ".crew/codemap/crew.md",
+      "source_location": "L46",
+      "weight": 1.0
+    },
+    {
+      "source": "crew_codemap_crew_crew",
+      "target": "crew_codemap_crew_the_0_16_7_guard_defects_and_the_dispatch_d_rewrite_that_fixed_the_largest_one",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": ".crew/codemap/crew.md",
+      "source_location": "L59",
+      "weight": 1.0
+    },
+    {
+      "source": "crew_codemap_index",
+      "target": "crew_codemap_index_code_map_index",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": ".crew/codemap/INDEX.md",
+      "source_location": "L1",
+      "weight": 1.0
+    },
+    {
+      "source": "crew_codemap_index_code_map_index",
+      "target": "crew_codemap_index_files",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": ".crew/codemap/INDEX.md",
+      "source_location": "L14",
+      "weight": 1.0
+    },
+    {
+      "source": "crew_codemap_index_code_map_index",
+      "target": "crew_codemap_index_how_to_read_these_files",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": ".crew/codemap/INDEX.md",
+      "source_location": "L23",
+      "weight": 1.0
+    },
+    {
+      "source": "crew_codemap_localgpu",
+      "target": "crew_codemap_localgpu_localgpu",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": ".crew/codemap/localgpu.md",
+      "source_location": "L3",
+      "weight": 1.0
+    },
+    {
+      "source": "crew_codemap_localgpu_localgpu",
+      "target": "crew_codemap_localgpu_two_gaps_recorded_not_fixed",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": ".crew/codemap/localgpu.md",
+      "source_location": "L146",
+      "weight": 1.0
+    },
+    {
+      "source": "crew_codemap_localgpu_localgpu",
+      "target": "crew_codemap_localgpu_bootstrap_ps1_vs_bootstrap_sh_verdict_the_twin_claim_holds",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": ".crew/codemap/localgpu.md",
+      "source_location": "L167",
+      "weight": 1.0
+    },
+    {
+      "source": "crew_codemap_localgpu_localgpu",
+      "target": "crew_codemap_localgpu_check_embed_model_corrected_line_numbers",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": ".crew/codemap/localgpu.md",
+      "source_location": "L36",
+      "weight": 1.0
+    },
+    {
+      "source": "crew_codemap_localgpu_localgpu",
+      "target": "crew_codemap_localgpu_ignore_unignore_gitignore_three_layers_checked_against_source",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": ".crew/codemap/localgpu.md",
+      "source_location": "L67",
+      "weight": 1.0
+    },
+    {
+      "source": "crew_codemap_localgpu_localgpu",
+      "target": "crew_codemap_localgpu_two_independent_process_trees_one_shared_ollama",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": ".crew/codemap/localgpu.md",
+      "source_location": "L8",
+      "weight": 1.0
+    },
+    {
+      "source": "crew_codemap_marketplace_registration",
+      "target": "crew_codemap_marketplace_registration_marketplace_and_registration",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": ".crew/codemap/marketplace-registration.md",
+      "source_location": "L3",
+      "weight": 1.0
+    },
+    {
+      "source": "crew_codemap_marketplace_registration_marketplace_and_registration",
+      "target": "crew_codemap_marketplace_registration_the_registration_web",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": ".crew/codemap/marketplace-registration.md",
+      "source_location": "L10",
+      "weight": 1.0
+    },
+    {
+      "source": "crew_codemap_marketplace_registration_marketplace_and_registration",
+      "target": "crew_codemap_marketplace_registration_what_was_not_re_verified",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": ".crew/codemap/marketplace-registration.md",
+      "source_location": "L115",
+      "weight": 1.0
+    },
+    {
+      "source": "crew_codemap_marketplace_registration_marketplace_and_registration",
+      "target": "crew_codemap_marketplace_registration_two_version_check_paths_not_one_corrected",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": ".crew/codemap/marketplace-registration.md",
+      "source_location": "L71",
+      "weight": 1.0
+    },
+    {
+      "source": "crew_codemap_verification_harness",
+      "target": "crew_codemap_verification_harness_verification_harness",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": ".crew/codemap/verification-harness.md",
+      "source_location": "L3",
+      "weight": 1.0
+    },
+    {
+      "source": "crew_codemap_verification_harness_verification_harness",
+      "target": "crew_codemap_verification_harness_verify_smoke_sh_10_checks_not_9",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": ".crew/codemap/verification-harness.md",
+      "source_location": "L10",
+      "weight": 1.0
+    },
+    {
+      "source": "crew_codemap_verification_harness_verification_harness",
+      "target": "crew_codemap_verification_harness_scripts_check_marketplace_py_the_direct_gate",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": ".crew/codemap/verification-harness.md",
+      "source_location": "L35",
+      "weight": 1.0
+    },
+    {
+      "source": "crew_codemap_verification_harness_verification_harness",
+      "target": "crew_codemap_verification_harness_crew_verify_json_the_mechanism_path_to_command",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": ".crew/codemap/verification-harness.md",
+      "source_location": "L51",
+      "weight": 1.0
+    },
+    {
+      "source": "crew_codemap_verification_harness_verification_harness",
+      "target": "crew_codemap_verification_harness_what_was_run_to_close_this_task",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": ".crew/codemap/verification-harness.md",
+      "source_location": "L76",
       "weight": 1.0
     },
     {
@@ -188002,6 +188476,50 @@
       "weight": 1.0
     },
     {
+      "source": "crew_codemap_index",
+      "target": "crew_codemap_marketplace_registration",
+      "relation": "references",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": ".crew/codemap/INDEX.md",
+      "source_location": "L18",
+      "weight": 1.0
+    },
+    {
+      "source": "crew_codemap_index",
+      "target": "crew_codemap_localgpu",
+      "relation": "references",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": ".crew/codemap/INDEX.md",
+      "source_location": "L19",
+      "weight": 1.0
+    },
+    {
+      "source": "crew_codemap_index",
+      "target": "crew_codemap_crew",
+      "relation": "references",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": ".crew/codemap/INDEX.md",
+      "source_location": "L20",
+      "weight": 1.0
+    },
+    {
+      "source": "crew_codemap_index",
+      "target": "crew_codemap_verification_harness",
+      "relation": "references",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": ".crew/codemap/INDEX.md",
+      "source_location": "L21",
+      "weight": 1.0
+    },
+    {
       "source": "installation",
       "target": "plugin_obsidian_vault_readme",
       "relation": "references",
@@ -192545,5 +193063,5 @@
     }
   ],
   "hyperedges": [],
-  "built_at_commit": "62b1c7aeffab86ee8850359ee33892616175f686"
+  "built_at_commit": "c30c6b8b5912af30f82405a385ff5a11b80d5313"
 }

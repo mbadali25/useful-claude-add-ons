@@ -156,7 +156,7 @@ def shell_harness(monkeypatch):
     monkeypatch.setattr(cli, "_preflight", lambda cfg: calls.setdefault("cfg", cfg))
     monkeypatch.setattr(cli, "_find_claude", lambda: "/fake/bin/claude")
     monkeypatch.setattr(cli.anthropic_proxy, "make_server", lambda *a, **k: server)
-    monkeypatch.setattr(cli.threading, "Thread", lambda **kw: _NoopThread(**kw))
+    monkeypatch.setattr(cli.threading, "Thread", _NoopThread)
 
     def fake_run(argv, env=None, **kwargs):
         calls["argv"] = argv
@@ -338,12 +338,30 @@ class StubOllama:
     """Records what it was asked for; raises whatever the test parked on it."""
 
     raises = None
-    last = None
+    # Annotated rather than bare `= None`: pylint infers the class attribute's
+    # type from the assignment, then reports E1137 on `StubOllama.last["models"]`
+    # below because None is not subscriptable. __init__ replaces it with a dict
+    # before any test reads it, so the annotation states what is already true.
+    last: dict | None = None
 
     def __init__(self, url):
         StubOllama.last = {"url": url, "models": None}
 
     def require_models(self, models):
+        # Asserted rather than assumed: `last` is None until __init__ runs, so
+        # reaching here with it unset means the code under test called
+        # require_models on a class it never constructed. Failing loudly on
+        # that beats a TypeError three frames deeper.
+        #
+        # The assert above is the guarantee; pylint cannot see it. It does not
+        # narrow `dict | None` on an `assert x is not None` - not for the class
+        # attribute and not for a local bound from it either, both tried - so
+        # the subscript reads as a possible None and raises E1137. Disabled
+        # here rather than dropping the annotation, because the annotation is
+        # what makes the None case explicit to a human reading the fixture
+        # reset below.
+        # pylint: disable=unsupported-assignment-operation
+        assert StubOllama.last is not None
         StubOllama.last["models"] = list(models)
         if StubOllama.raises is not None:
             raise StubOllama.raises

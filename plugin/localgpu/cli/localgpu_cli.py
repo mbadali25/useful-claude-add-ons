@@ -66,7 +66,11 @@ def _preflight(cfg: dict) -> None:
     try:
         client.require_models([cfg["chat_model"]])
     except ollama_client.OllamaError as exc:
-        raise SystemExit(f"localgpu: {exc}")
+        # `from exc` keeps the OllamaError in the chain. The message alone is
+        # what a user sees, but when this fires inside a traceback - a wrapper
+        # script, a test, a CI run - the cause is the difference between
+        # "localgpu: model not found" and knowing which HTTP call produced it.
+        raise SystemExit(f"localgpu: {exc}") from exc
 
 
 def _find_claude() -> str:
@@ -125,6 +129,11 @@ def cmd_shell(args: argparse.Namespace) -> int:
         completed = subprocess.run(
             [claude, *args.claude_args],
             env=_child_env(base_url),
+            # Explicitly false: this is a shell wrapper, so the child's exit
+            # code IS our exit code and is returned below. check=True would
+            # raise CalledProcessError on any non-zero, turning "the user
+            # quit Claude Code with an error" into a traceback from localgpu.
+            check=False,
         )
         return completed.returncode
     except KeyboardInterrupt:

@@ -32,7 +32,7 @@ class StubOllama:
     @property
     def url(self) -> str:
         assert self.server is not None
-        host, port = self.server.server_address[:2]
+        port = self.server.server_address[1]
         return f"http://127.0.0.1:{port}"
 
     def start(self) -> None:
