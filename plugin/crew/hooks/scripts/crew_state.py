@@ -1288,7 +1288,14 @@ def read_dispatch(root):
     # something about a read it was not present for. Set only when true.
     record.pop("unreadable", None)
     if lost:
-        record["unreadable"] = True
+        # The NAMES, not a bare True. This condition is repo-wide, permanent,
+        # and only a human can clear it -- nothing prunes below
+        # `DISPATCH_FILES_MAX`, so one corrupt file makes every review in the
+        # repo read `unknown` until someone deletes it. "Delete the
+        # unparseable file" is not guidance if it does not say which one.
+        # Still a truthy value, so every `if record.get("unreadable")`
+        # already written keeps failing closed.
+        record["unreadable"] = sorted(set(lost))
     return record
 
 
@@ -1431,13 +1438,29 @@ def _adopt_slot(root, kind):
     `adopted` marks where the entry came from, for anyone reading the
     directory; nothing branches on it.
     """
-    text = read_text(os.path.join(root, *DISPATCH_PATH))
+    # An unreadable file is NOT a file with nothing to lose, which is what
+    # this said until the reader learned to distrust one. The unparseable
+    # record is now the evidence: it is what makes `author_families` answer
+    # `unknown` rather than certifying a family that may not have written the
+    # diff. Overwrite it and the next read finds a well-formed record, sees
+    # nothing lost, and reports proven provenance with the author gone -- the
+    # finding this round closed, re-opened by the next dispatch that runs.
+    #
+    # So the slot is refused while it cannot be read. That costs a stale
+    # display field and a stale mtime for as long as the bad file sits there,
+    # both of which `read_dispatch` recomputes from the store, and it holds
+    # the guard closed until a human deletes the file the report names.
+    path = os.path.join(root, *DISPATCH_PATH)
+    text = read_text(path)
     if text is None:
-        return True                     # no file, so nothing to lose
+        # Missing means nothing to lose. Present-but-unopenable does not:
+        # `read_text` answers None for both, so the file system is asked.
+        return not os.path.exists(path)
     try:
         record = json.loads(text)
     except ValueError:
-        return True                     # unreadable; a rewrite loses nothing
+        return False                    # unreadable; overwriting loses the
+                                        # only sign that anything was lost
     slot = dict_or_empty(record).get(kind)
     if not isinstance(slot, dict) or not slot.get("provider"):
         return True                     # no record in the slot

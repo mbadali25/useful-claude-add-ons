@@ -314,10 +314,32 @@ MUTATIONS = (
         # above unreachable while they still read as covered.
         "a skipped entry file is not reported as lost",
         STATE,
-        "    if lost:\n        record[\"unreadable\"] = True",
-        "    if False:\n        record[\"unreadable\"] = True",
+        "    if lost:",
+        "    if False:",
         ("tests/test_provider_table.py::"
          "test_a_malformed_entry_costs_one_entry_and_not_the_record"),
+    ),
+    (
+        # Round 8, edge. An unparseable slot that may be overwritten is
+        # a signal the next dispatch erases.
+        "an unreadable record may be overwritten",
+        STATE,
+        "        return False                    # unreadable; "
+        "overwriting loses the",
+        "        return True                     # unreadable; "
+        "overwriting loses the",
+        ("tests/test_provider_table.py::"
+         "test_the_next_dispatch_does_not_erase_an_unreadable_record"),
+    ),
+    (
+        # Round 8, edge. A repo-wide, permanent condition reported
+        # without the file that causes it.
+        "the unreadable report does not name its file",
+        STATE,
+        '        record["unreadable"] = sorted(set(lost))',
+        '        record["unreadable"] = True',
+        ("tests/test_provider_table.py::test_a_malformed_dispatch_file_"
+         "reads_as_unknown_not_as_no_dispatch"),
     ),
     (
         "bogus documented role",

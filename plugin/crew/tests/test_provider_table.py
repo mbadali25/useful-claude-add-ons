@@ -700,7 +700,10 @@ def test_a_malformed_dispatch_file_reads_as_unknown_not_as_no_dispatch(
     (root / ".work" / "dispatch.json").write_text("{ half-written",
                                                   encoding="utf-8")
     record = crew_state.read_dispatch(str(root))
-    assert record == {"unreadable": True}, \
+    # The NAME, not a bare True. This condition is repo-wide and permanent
+    # until a human clears it, so a report that cannot say which file to
+    # delete has not told anyone anything actionable.
+    assert record == {"unreadable": ["dispatch.json"]}, \
         "a file that would not parse was reported as one that is not there"
 
     authors, source = crew_state.author_families(str(root), PINNED)
@@ -1902,5 +1905,35 @@ def test_a_later_dispatch_cannot_certify_over_an_unreadable_legacy_record(
 
     assert source == "unknown", \
         "a readable dispatch certified itself over a record nobody could read"
+    assert families == frozenset({"claude"}), \
+        "the family that provably ran stopped being struck"
+
+
+def test_the_next_dispatch_does_not_erase_an_unreadable_record(tmp_path):
+    """The edge round 8's own fix opened. `_adopt_slot` answered True for an
+    unparseable `dispatch.json` -- "a rewrite loses nothing" -- which stopped
+    being true the moment the reader learned to distrust one. `_write_slot`
+    then replaced the bad file with a well-formed record, the next read saw
+    nothing lost, and the guard went straight back to reporting proven
+    provenance with the author missing. One dispatch to undo the round.
+
+    Asserted through `record_dispatch`, not by calling `_adopt_slot`: the
+    claim is about what a dispatch does to the file, and a test that drives
+    the gate directly would pass with `_write_slot` still overwriting it."""
+    cfg = copy.deepcopy(PINNED)
+    cfg["dev"]["roles"]["developer"] = {"provider": "windsurf",
+                                        "model": "swe-1"}
+    root = crew_fixtures.make_repo(tmp_path, config=cfg, git=True)
+    path = root / ".work" / "dispatch.json"
+    path.write_text('{"dev": {"role": "developer", "provider": "cod',
+                    encoding="utf-8")
+
+    crew_state.record_dispatch(str(root), "dev", "developer", "claude", None)
+
+    assert path.read_text(encoding="utf-8").startswith('{"dev"'), \
+        "the dispatch overwrote the record nobody could read"
+    families, source = crew_state.author_families(str(root), cfg)
+    assert source == "unknown", \
+        "one dispatch was enough to certify over an unreadable record"
     assert families == frozenset({"claude"}), \
         "the family that provably ran stopped being struck"

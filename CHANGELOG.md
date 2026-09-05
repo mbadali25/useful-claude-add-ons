@@ -223,6 +223,20 @@ All notable changes to this repository are documented here. Format follows [Keep
   not scoped to a branch: a file that will not parse cannot be attributed to
   one, so it over-bars everywhere until it is deleted.
 
+- **`crew` 0.16.7: the next dispatch erased the sign that anything was lost.**
+  The entry above is only worth having if it survives one more dispatch, and it
+  did not. `_adopt_slot` answered "may be overwritten" for an unparseable
+  `dispatch.json` on the grounds that a rewrite loses nothing — true until the
+  reader learned to distrust one, and false after it. `_write_slot` then
+  replaced the bad file with a well-formed record, the next read saw nothing
+  lost, and the guard went back to reporting proven provenance with the author
+  missing. The slot is now refused while it cannot be read, which costs a stale
+  display field and holds the guard closed until a human clears the file. And
+  the report names that file: `unreadable` carries the names rather than a bare
+  `true`, because the condition is repo-wide, permanent, and nothing below
+  `DISPATCH_FILES_MAX` prunes it — "delete the unparseable file" is not guidance
+  if it does not say which one.
+
 - **`crew` 0.16.7: the hook count in crew's README.** The prose said eight
   scripts and sixteen entries while the table directly beneath it already
   listed all ten across five events, 20 entries.
