@@ -130,9 +130,11 @@ In outline, so you know the shape before you load the skill:
    hand-authors frontmatter into) is deliberately not guarded the same way -
    see the `obsidian-memory-contract` skill for why. Set `guard` toggles from
    what the *default* vault's own `CLAUDE.md` states (ASCII-only, required
-   frontmatter keys) - detected, never assumed. `requireFrontmatter` exempts
-   `CLAUDE.md`, `README.md`, `AGENTS.md` and `GEMINI.md` whatever the vault
-   says - they are instruction files, not notes.
+   frontmatter keys) - detected, never assumed. `requireFrontmatter` never demands
+   frontmatter of `CLAUDE.md`, `README.md`, `AGENTS.md` or `GEMINI.md` whatever
+   the vault says - they are instruction files, not notes. It is only that
+   demand they are excused from: one that does carry frontmatter is still held
+   to the required keys, the title/filename match and the updated date.
 7. **Note a vault's `layout`** if it has a structural convention worth other
    commands knowing - a code-graph vault laid out `<org>/<repo>/` should
    record `"layout": "org/repo"` so `/obsidian-vault:graph` addresses it

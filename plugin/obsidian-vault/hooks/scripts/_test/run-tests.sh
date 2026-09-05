@@ -296,6 +296,38 @@ check "an exempt basename WITH frontmatter is fully contract-checked" 2 "$(run_g
 check_stderr_has "and it is the title check that caught it" \
   "does not match filename" "$(guard_stderr "$f" "$home_on_win")"
 
+# Codex round 3: the title case alone still left a wrong implementation that
+# runs ONLY the title check for an exempt file and skips the rest. These two
+# pin the other checks independently, each naming its own violation.
+readme_missing="---
+type: concept
+title: \"README\"
+created: 2026-08-20
+updated: $today
+tags:
+  - concept
+---
+Required key status: is absent."
+f=$(write_and_payload "wiki/concepts/README.md" "$readme_missing")
+check "an exempt basename is still held to the required keys" 2 "$(run_guard "$f" "$home_on_win")"
+check_stderr_has "and the missing key is named" \
+  "MISSING required frontmatter" "$(guard_stderr "$f" "$home_on_win")"
+
+readme_stale="---
+type: concept
+title: \"README\"
+created: 2026-08-20
+updated: 2020-01-01
+status: seed
+tags:
+  - concept
+---
+The updated date is stale."
+f=$(write_and_payload "wiki/concepts/README.md" "$readme_stale")
+check "an exempt basename is still held to the updated date" 2 "$(run_guard "$f" "$home_on_win")"
+check_stderr_has "and the stale date is named" \
+  "bump to" "$(guard_stderr "$f" "$home_on_win")"
+
 echo "== vault_guard.py: config-off means silent (sabotage: prove the toggle matters) =="
 
 f=$(write_and_payload "wiki/concepts/no-frontmatter-2.md" "Still no frontmatter block.")
