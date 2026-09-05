@@ -19,6 +19,26 @@ def make_indexer(home, embedder, embed_model=None):
     )
 
 
+class FlakyEmbedder:
+    """Wraps a real embedder but raises once a call budget is exhausted.
+
+    Stands in for an Ollama request timing out partway through the first
+    ever refresh - see test_incremental.py, which defines the same helper
+    for the same reason: each test file stays self-contained.
+    """
+
+    def __init__(self, base, fail_after: int) -> None:
+        self.base = base
+        self.fail_after = fail_after
+        self.calls = 0
+
+    def __call__(self, texts):
+        self.calls += 1
+        if self.calls > self.fail_after:
+            raise RuntimeError("embed request failed")
+        return self.base(texts)
+
+
 def test_fresh_build_records_embed_model(home, repo, write, embedder):
     write(repo / "alpha.py", "def alpha():\n    return 1\n")
     store, indexer = make_indexer(home, embedder, embed_model="model-a")
@@ -88,6 +108,45 @@ def test_legacy_manifest_with_no_embed_model_key_is_not_treated_as_a_match(
             indexer2.refresh([repo])
     finally:
         store2.close()
+
+
+def test_failed_initial_refresh_does_not_let_a_later_model_switch_through(
+    home, repo, write, embedder
+):
+    """model-a indexes alpha.py, then fails embedding beta.py before the
+    manifest is ever written - so the manifest this leaves behind is
+    missing entirely, not merely lacking an ``embed_model`` key. A later
+    refresh under a different, same-width model must not read "no manifest"
+    as "nothing built yet": alpha.py's vectors are already live, embedded by
+    model-a, with nothing on disk recording that fact.
+    """
+    write(repo / "alpha.py", "def alpha():\n    return 1\n")
+    write(repo / "beta.py", "def beta():\n    return 2\n")
+    store = VectorStore(config.index_dir(home), dim=TEST_DIM)
+    flaky = FlakyEmbedder(embedder, fail_after=1)
+    failing_indexer = Indexer(
+        store, embed=flaky, ignore=["*.bin"], embed_model="model-a"
+    )
+    try:
+        with pytest.raises(RuntimeError):
+            failing_indexer.refresh([repo])
+        # alpha.py (sorted first) made it in under model-a; beta.py's embed
+        # call is what failed, before write_manifest ever ran.
+        assert store.counts()[0] == 1
+        assert not store.read_manifest()
+
+        switched = Indexer(
+            store, embed=embedder, ignore=["*.bin"], embed_model="model-b"
+        )
+        with pytest.raises(EmbedModelMismatch, match="predates this check"):
+            switched.refresh([repo])
+        # Refusing must mean refusing: alpha.py's model-a vectors are
+        # untouched, and no manifest exists certifying a mixed index as
+        # model-b.
+        assert store.counts()[0] == 1
+        assert not store.read_manifest()
+    finally:
+        store.close()
 
 
 def test_indexer_without_embed_model_skips_the_check_entirely(

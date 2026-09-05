@@ -106,7 +106,11 @@ def search_code(
             # vectors is meaningless while still producing a score. Without
             # this, an index built with model A can be queried with model
             # B's vectors and return confidently wrong-but-plausible hits.
-            check_embed_model(store.read_manifest(), settings["embed_model"])
+            check_embed_model(
+                store.read_manifest(),
+                settings["embed_model"],
+                store_has_content=live > 0,
+            )
         except EmbedModelMismatch as exc:
             return f"localgpu: {exc}"
         try:

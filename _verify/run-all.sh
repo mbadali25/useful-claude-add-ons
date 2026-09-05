@@ -96,20 +96,18 @@ else
   skip "powershell" "pwsh not found"
 fi
 
-# 6. QUARANTINED - crew's blocking-guard suite HANGS on this platform.
-#    It prints "== guard.sh: must BLOCK (exit 2) ==", emits
-#    `OSError: [Errno 22] Invalid argument` flushing sys.stdout, and never
-#    returns. Closing stdin does not help. See .work/SMOKE-GAPS.md.
-#    It is NOT skipped because it is unimportant - it is the only thing proving a
-#    blocking guard still blocks. It is skipped because a hanging check in a gate
-#    is worse than an absent one: it stalls every run instead of failing.
-if [ "$WITH_HOOKS" -eq 1 ]; then
-  run "crew hooks: blocking-guard regression suite" 240 \
-      bash plugin/crew/hooks/scripts/_test/run-tests.sh
-else
-  skip "crew hooks: blocking-guard regression suite" \
-       "hangs on Windows/Git Bash - see .work/SMOKE-GAPS.md; force with --with-hooks"
-fi
+# 6. crew's blocking-guard suite. NOT quarantined - it was never broken.
+#    It was skipped here on the belief that it "hangs on Windows/Git Bash". That
+#    was a measurement error: the suite takes ~6 minutes, and 90s/200s timeouts
+#    cannot tell slow from stuck. Run fresh it completes clean (121/121 before the
+#    harness change, 128/128 after). The wedge that looked like a hang was
+#    session-scoped resource exhaustion caused by the diagnosing session's own
+#    `jq` piping - chocolatey's jq is a native non-MSYS Win32 binary that leaks a
+#    Windows handle on every Git Bash pipe. run-tests.sh now bounds itself to ~7
+#    real jq calls and routes the rest through guard.sh's own python fallback.
+#    This is the only thing that proves a blocking guard still blocks, so it runs
+#    by default. --with-hooks is kept as a no-op alias for anyone scripting it.
+run "crew hooks: blocking-guard regression suite" 900     bash plugin/crew/hooks/scripts/_test/run-tests.sh
 
 # 7. Never automatic: drives the real Claude Code CLI, which no runner has.
 skip "plugin update path: drift-detection.sh" \

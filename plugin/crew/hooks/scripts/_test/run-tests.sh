@@ -45,6 +45,55 @@ expect() {  # $1 = wanted exit, $2 = command
   if [ "$got" = "$1" ]; then pass; else fail "want=$1 got=$got  $2"; fi
 }
 
+# --- jq: covered, but bounded ----------------------------------------------
+# guard.sh and promote-gate.sh both pipe INTO `jq` for CMD extraction when it
+# is on PATH (see guard.sh:8-9) - real, deliberate production behaviour, not
+# a test artifact. On a machine with chocolatey's jq (a native, non-MSYS
+# Win32 binary) this is also this suite's actual hang: `echo ... | jq ...`
+# leaks a Windows handle on every invocation from Git Bash. MSYS-native tools
+# do not - 120 back-to-back `echo | grep` calls in one bash session are
+# clean - but jq alone wedges the SAME session after roughly 25-45 piped
+# calls, and the wedge is session-wide: isolating each call in its own child
+# bash does not postpone it. This file drives 90+ gate invocations, which
+# crosses that line long before the suite finishes, and is why it has never
+# completed here (confirmed by bisecting: swapping in plain `grep`/`cat`
+# survives hundreds of calls; jq alone reproduces the exact hang and the
+# "OSError ... Invalid argument" symptom in isolation, with nothing from
+# guard.sh's own logic involved).
+#
+# guard.sh already has a real fallback for machines with no jq at all (the
+# `elif PY=$(crew_py)` branch, a few lines below the jq branch) - CMD
+# extraction is byte-identical either way, only the ~7-line CHOICE of
+# extractor differs. So: prove the jq extractor itself still works with a
+# small, fixed set of cases up front (well inside the failure threshold
+# above), then hide jq from PATH for the rest of this file. That forces
+# every remaining gate call through its already-real fallback branch, which
+# exercises every actual rule below without ever invoking jq again. A
+# developer's real shell, and Claude Code's actual hook launch, are
+# untouched - only the PATH these test subshells see is scrubbed.
+JQ_BIN=$(command -v jq 2>/dev/null || true)
+FULL_PATH="$PATH"
+if [ -n "$JQ_BIN" ]; then
+  JQ_DIR="$(cd "$(dirname "$JQ_BIN")" && pwd)"
+  NOJQ_PATH=$(printf '%s' "$PATH" | awk -v d="$JQ_DIR" 'BEGIN{RS=":";ORS=":"} $0!=d')
+else
+  NOJQ_PATH="$PATH"
+fi
+
+if [ -n "$JQ_BIN" ]; then
+  echo "== guard.sh: jq fast path (bounded - see PATH note above) =="
+  expect 2 'terraform destroy'
+  expect 2 'git push --force origin main'
+  expect 2 'psql -h prod-db.internal -c "select 1"'
+  expect 0 'git status'
+  expect 0 'npm test'
+  # From here on, every guard()/pgate() call in this file runs with jq
+  # hidden from PATH - see the note above for why.
+  export PATH="$NOJQ_PATH"
+else
+  echo "== guard.sh: jq fast path SKIPPED - no jq on PATH, already testing the fallback =="
+fi
+
 echo "== guard.sh: must BLOCK (exit 2) =="
 expect 2 'terraform apply -auto-approve'
 expect 2 'terraform destroy'
@@ -194,6 +243,19 @@ pexpect() {
 qa_row() {  # write an all-pass qa row for $1
   printf '| when | env | sha | smoke | regression | verify | by |\n|---|---|---|---|---|---|---|\n| now | qa | %s | pass | pass | pass | tester |\n' "$1" > "$ROW"
 }
+
+# Same jq note as above: promote-gate.sh has the identical jq/python-fallback
+# split at its own CMD-extraction line. Prove the jq branch here too, with a
+# couple of cases, then go straight back to the scrubbed PATH for the rest of
+# this section - PATH is already scrubbed from the guard.sh section above; this
+# just restores it for these two calls and puts it back down immediately after.
+if [ -n "$JQ_BIN" ]; then
+  PATH="$FULL_PATH"
+  pexpect 0 'npm test'               'jq fast path: unrelated command must pass straight through'
+  pexpect 0 './scripts/deploy.sh qa' 'jq fast path: qa has no requires and an explicit rollback:none+reason - allowed'
+  rm -f "$PD/.crew/.deploy-in-flight"
+  PATH="$NOJQ_PATH"
+fi
 
 pexpect 0 'npm test'                 'an unrelated command must pass straight through'
 pexpect 0 './scripts/deploy.sh qa'   'qa has no requires and an explicit rollback:none+reason - allowed'
@@ -386,6 +448,10 @@ FIELDS=$(awk -F'\t' 'NF!=3 {c++} END {print c+0}' "$SKIPS")
 rm -f "$PD/.crew/incident.json" "$SKIPS" "$PD/.crew/.deploy-in-flight"
 
 unset CLAUDE_PROJECT_DIR
+
+# jq is no longer on the leaking path here - nothing below this line pipes
+# into it, so put PATH back to what the rest of this shell actually had.
+PATH="$FULL_PATH"
 
 echo "== claude-md-audit.sh =="
 A="$PLUGIN/skills/crew-setup/scripts/claude-md-audit.sh"

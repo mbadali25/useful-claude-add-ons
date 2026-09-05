@@ -125,6 +125,47 @@ def test_changed_file_is_re_embedded_and_its_old_chunks_retired(
         store.close()
 
 
+def test_restoring_content_after_a_failed_reembed_does_not_leave_it_permanently_dead(
+    home, repo, write, embedder
+):
+    """Content A -> changed to B -> embedding B fails *after* A's old chunks
+    were already tombstoned -> restored back to A. The stored FileRecord
+    never got past the tombstone (upsert_file for B is never reached), so
+    its hash still reads A - and a later refresh's hash comparison matches
+    again even though every one of this file's chunks is dead. A hash match
+    alone is not proof live chunks exist; the file must be re-embedded, not
+    silently left unsearchable forever.
+    """
+    path = write(repo / "alpha.py", "def alpha():\n    return 1\n")
+    store, indexer = make_indexer(home, embedder)
+    try:
+        indexer.refresh([repo])
+        assert store.counts() == (1, 0)
+        embedder.reset()
+
+        write(path, "def alpha():\n    return 2\n# changed\n")
+        flaky = FlakyEmbedder(embedder, fail_after=0)
+        failing_indexer = Indexer(store, embed=flaky, ignore=["*.bin"])
+        with pytest.raises(RuntimeError):
+            failing_indexer.refresh([repo])
+        # The old chunk was tombstoned before the re-embed was attempted -
+        # and the re-embed itself never landed.
+        assert store.counts() == (0, 1)
+
+        # Restored to the exact original bytes - same hash as the FileRecord
+        # still on disk, which was never updated past the tombstone.
+        write(path, "def alpha():\n    return 1\n")
+        result = indexer.refresh([repo])
+
+        assert store.counts()[0] == 1, "the file must be searchable again"
+        rows = store._live_rows()
+        assert [meta["path"] for meta in rows.values()] == [str(path)]
+        assert result["files_unchanged"] == 0
+        assert result["files_reindexed"] == 1
+    finally:
+        store.close()
+
+
 def test_a_file_growing_past_one_window_gains_chunks(home, repo, write, embedder):
     write(repo / "big.py", "".join(f"a = {i}\n" for i in range(30)))
     store, indexer = make_indexer(home, embedder)

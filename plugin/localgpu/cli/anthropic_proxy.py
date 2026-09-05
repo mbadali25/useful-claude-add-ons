@@ -336,7 +336,19 @@ def recover_text_tool_calls(text: str, offered: set[str]) -> list[dict[str, Any]
         if not isinstance(name, str) or name not in offered:
             return []
         arguments = entry.get("arguments", entry.get("parameters", {}))
-        if not isinstance(arguments, (dict, str)):
+        if isinstance(arguments, str):
+            # A malformed argument string (e.g. "not json") is not a
+            # degraded call - it is a different call, with input the model
+            # never wrote. _parse_arguments's silent {} fallback exists for
+            # Ollama's own real tool_calls (see
+            # test_unparseable_arguments_degrade_to_empty_not_crash); a
+            # *recovered* call earns no such benefit of the doubt, so reject
+            # the whole recovery instead of promoting an empty-input call.
+            try:
+                arguments = json.loads(arguments)
+            except json.JSONDecodeError:
+                return []
+        if not isinstance(arguments, dict):
             return []
         blocks.append(_tool_use_block(name, arguments))
     return blocks
@@ -451,8 +463,10 @@ def stream_anthropic_events(
 
     Ollama streams text incrementally and resolves `tool_calls` once it has
     the full call assembled, which is usually - but not always - the same
-    chunk marked `done`. Tool calls are tracked off *whichever* chunk carries
-    them, not assumed to live on the final one.
+    chunk marked `done`. Tool calls are accumulated across *every* chunk that
+    carries them, not assumed to live on the final one, and not collapsed to
+    whichever chunk arrives last - a multi-call reply can resolve one call
+    per chunk.
     """
     message_id = _new_message_id()
 
@@ -479,10 +493,11 @@ def stream_anthropic_events(
     final: dict[str, Any] = {}
     saw_done = False
     error_message: str | None = None
-    # Whichever chunk actually carried tool_calls - not necessarily the one
-    # marked `done`. Ollama has emitted them a chunk early in practice, and
-    # reading only `final["message"]` silently dropped the call.
-    tool_message: dict[str, Any] = {}
+    # Every chunk that actually carried tool_calls, concatenated in arrival
+    # order - not just the last one, and not necessarily the chunk marked
+    # `done`. Ollama can resolve separate calls a chunk apart; overwriting
+    # instead of appending here silently executed only the final batch.
+    accumulated_tool_calls: list[dict[str, Any]] = []
 
     # Held back only while the text so far might still resolve to a bare JSON
     # tool call (see recover_text_tool_calls). Prose flushes on its first token.
@@ -522,7 +537,7 @@ def stream_anthropic_events(
             saw_done = True
         message = chunk.get("message") or {}
         if message.get("tool_calls"):
-            tool_message = message
+            accumulated_tool_calls.extend(message["tool_calls"])
         piece = str(message.get("content") or "")
         if not piece:
             continue
@@ -574,7 +589,8 @@ def stream_anthropic_events(
         yield _sse("content_block_stop", {"type": "content_block_stop", "index": index})
         index += 1
 
-    tool_uses = _tool_use_blocks(tool_message or (final.get("message") or {}), offered) or recovered
+    tool_source = {"tool_calls": accumulated_tool_calls} if accumulated_tool_calls else (final.get("message") or {})
+    tool_uses = _tool_use_blocks(tool_source, offered) or recovered
     for block in tool_uses:
         yield _sse(
             "content_block_start",
@@ -784,17 +800,39 @@ class ProxyHandler(BaseHTTPRequestHandler):
         self.send_header("Transfer-Encoding", "chunked")
         self.end_headers()
 
+        def _write_chunk(frame: bytes) -> None:
+            self.wfile.write(f"{len(frame):X}\r\n".encode("ascii"))
+            self.wfile.write(frame)
+            self.wfile.write(b"\r\n")
+            self.wfile.flush()
+
         try:
             offered = offered_tool_names(body)
             for frame in stream_anthropic_events(_iter_ndjson(upstream), self.chat_model, offered):
-                self.wfile.write(f"{len(frame):X}\r\n".encode("ascii"))
-                self.wfile.write(frame)
-                self.wfile.write(b"\r\n")
-                self.wfile.flush()
+                _write_chunk(frame)
             self.wfile.write(b"0\r\n\r\n")
             self.wfile.flush()
         except (BrokenPipeError, ConnectionResetError):
             pass
+        except Exception as exc:
+            # `send_response`/`end_headers` above already put status line and
+            # headers on the wire, and the body is already chunked - so a
+            # failure here (an upstream timeout is the common one: Ollama
+            # stops mid-answer and the next socket read past
+            # self.timeout_seconds raises) must not propagate to do_POST's
+            # handler, which would call send_response again and write a
+            # second HTTP response *inside* this chunked body. That corrupts
+            # the connection for the next request on this keep-alive socket.
+            # Report it the same way a stream-ending error already does:
+            # an SSE error event, then a valid zero-length terminator chunk.
+            try:
+                _write_chunk(
+                    _sse("error", {"type": "error", "error": {"type": "api_error", "message": str(exc)}})
+                )
+                self.wfile.write(b"0\r\n\r\n")
+                self.wfile.flush()
+            except (BrokenPipeError, ConnectionResetError):
+                pass
         finally:
             upstream.close()
 

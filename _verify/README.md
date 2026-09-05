@@ -41,7 +41,7 @@ defect reintroduced, and whether the suite went red.
 | powershell | appended `Invoke-TotallyMadeUpCmdlet` to the **untracked** `plugin/localgpu/bootstrap.ps1` | yes — **only after a fix**, see below | 2026-09-05 |
 | crew-setup round-trip | reverted `canon()`'s `commands*` wildcard | yes | 2026-09-05 |
 | ruff (`**/*.py`) | added an unused `import xml.etree.ElementTree` (F401 — not in the ignore list) | yes | 2026-09-05 |
-| mcp-servers (`npm test`) | not broken on purpose; verified only that it **runs** (6 pass) | **not yet** | 2026-09-05 |
+| mcp-servers (`npm test`) | changed one assertion in `packages/core/test/jwt.test.ts` from `DeviceManagementManagedDevices.Read.All` to `SABOTAGE.Wrong.Role` | yes | 2026-09-05 |
 | versions (check 10) | set `pyproject.toml` back to `0.1.0` against `0.1.2` in both manifests | yes | 2026-09-05 |
 | localgpu CLI (check 9) | planted a second install root with a venv; then removed the persisted PATH entry | yes | 2026-09-05 |
 
@@ -68,6 +68,19 @@ exactly the file it claimed to cover. Two compounding reasons:
 `smoke.sh` now runs CI mode once, then one invocation per untracked file. The
 sabotage goes red. **The underlying script still has both limitations** — anything
 else calling it inherits them.
+
+### `mcp-servers` — the failure propagates through the exit code, not the visible tail
+
+The sabotage changed one assertion in `packages/core/test/jwt.test.ts` — the
+expected role claim from `DeviceManagementManagedDevices.Read.All` to
+`SABOTAGE.Wrong.Role` — and ran `npm --prefix mcp-servers test`. This is a
+workspace script that runs each package's `node --test` in turn; `packages/core`
+fails early, but the last package printed (`mcp-o365-user`, 6/6 passing) is what
+lands in the visible output tail. Reading only that tail would misreport the run
+as green. The command's own exit code is non-zero regardless of what printed
+last, which is what any caller — `_verify/README.md`'s own precondition note,
+`run-all.sh`, or a human running it by hand — needs to check, not the tail.
+Restored immediately after confirming red; `git diff` on `mcp-servers/` is clean.
 
 ## Known gaps
 

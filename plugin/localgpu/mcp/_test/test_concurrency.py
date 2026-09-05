@@ -155,6 +155,60 @@ def test_search_blocks_a_concurrent_add_until_it_finishes(embedder, home, monkey
     assert added.is_set()
 
 
+def test_search_detects_a_racing_compaction_instead_of_misassigning_rows(
+    store, embedder
+):
+    """SIMULATION, not the real cross-process race - this machine is
+    Windows, where the race cannot actually occur (see below), so this
+    fabricates the after-effect directly rather than pretending to
+    reproduce it.
+
+    The real bug: on Linux, POSIX allows replacing a file another process
+    still has memory-mapped, so a *different* process's compact() can
+    tombstone an earlier row and renumber the survivors while this
+    process's `matrix` keeps serving pre-compaction bytes at pre-compaction
+    offsets - `_live_rows()` re-reads sqlite fresh and sees the new
+    (correct) row numbers, but pairing them with the stale `matrix` would
+    silently score one file's metadata against a different file's vector.
+    Windows instead refuses that same replace outright, raising
+    PermissionError before the mismatch could ever happen - see
+    `_replace_vectors_file`'s KNOWN PARTIAL docstring, which this is the
+    mirror image of. A live memmap on this file would make Windows' own
+    os.replace fail before this test could even set up the scenario, so
+    here the "racing compact()" is fabricated directly: the exact sqlite
+    state a real compact() would have committed (tombstoned row gone,
+    survivor renumbered, generation bumped), applied without touching the
+    real vectors.f16 file or closing the memmap - standing in for a
+    separate process's compaction landing in the gap between `matrix` being
+    captured and the row/path associations being resolved against it.
+    """
+    store.add([ChunkRecord("/repo/a.py", 1, 5, "sha_a", 1.0, 10)], [embedder.vector("a")])
+    store.add([ChunkRecord("/repo/b.py", 1, 5, "sha_b", 1.0, 10)], [embedder.vector("b")])
+
+    real_matrix = store._matrix
+
+    def matrix_then_a_racing_compaction(*args, **kwargs):
+        matrix = real_matrix(*args, **kwargs)
+        # What a different process's compact() would already have committed
+        # by the time this search resumes.
+        store.db.execute("DELETE FROM chunks WHERE path = ?", ("/repo/a.py",))
+        store.db.execute('UPDATE chunks SET "row" = 0 WHERE path = ?', ("/repo/b.py",))
+        store.db.execute(
+            "INSERT INTO meta (key, value) VALUES ('compaction_generation', ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (str(store._compaction_generation() + 1),),
+        )
+        store.db.commit()
+        return matrix
+
+    store._matrix = matrix_then_a_racing_compaction
+    try:
+        with pytest.raises(StoreError, match="compacted by another process"):
+            store.search(embedder.vector("a"), k=10)
+    finally:
+        del store._matrix
+
+
 def test_refresh_lock_is_exclusive_across_separate_instances(tmp_path):
     """Simulates two separate `server.py` processes: two RefreshLock objects
     that share no Python state, only the lock file on disk."""

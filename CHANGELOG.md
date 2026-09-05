@@ -124,6 +124,92 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **localgpu 0.1.2 -> 0.1.4: two independent reviewers found 1 BLOCK and 18
+  FIX/NIT in code that had already passed 175 unit tests and 9 smoke checks,
+  and a second pass over the fix found 6 more in the failure paths it added.**
+  Codex (OpenAI) and Copilot pinned to kimi-k3 (Moonshot) each reviewed the
+  branch from an identical prompt — both different families from the author,
+  which is the point: five lanes and the main session, all Claude, had run
+  green over defects neither this session's tests nor its own review caught.
+
+  **The BLOCK.** `_strip_fence` discarded trailing text, so a fenced JSON
+  example followed by disclaiming prose — including "Do not execute this
+  example" — was promoted to a real `tool_use`. A model quoting documentation,
+  or repeating a file it had just read, could cause a tool to actually run.
+  Trailing text now disqualifies the promotion, with six must-not-fire tests
+  and a control proving genuine calls still work.
+
+  **The proxy** no longer reports failure as success: an explicit error chunk
+  or a stream that simply stops now emits an SSE error event instead of
+  `end_turn`. An upstream out-of-memory — likely on an 8 GB card — used to
+  arrive as a normal, complete, truncated answer.
+
+  **The index** gained the guard it was missing: `search_code` now checks the
+  embed model, not just `refresh`. An index built with model A could be
+  queried with model B's embeddings — same dimension, incompatible vector
+  space, silently wrong ranking, no error.
+
+  **Config is no longer type-blind.** `"ignore": "node_modules"` as a bare
+  string used to iterate into the patterns n, o, d, e… and report success. It
+  now names the key, the type found, and the fix.
+
+  **Concurrency is now genuinely locked, not merely detected.** A
+  per-vectors-file RLock serialises search/add/compact in-process, and an
+  OS-level file lock wraps `index_refresh` so two Claude sessions cannot both
+  compact the same index.
+
+  One finding was investigated and rejected rather than fixed: the claim that
+  `shutil.which("claude")` returns a `.cmd` that `subprocess.run` cannot
+  launch. Verified on the development machine — `claude` resolves to a native
+  `.EXE`, and even with a real `.cmd` shim, Python passes
+  `lpApplicationName=NULL` so `CreateProcess` routes it to `cmd.exe`. That
+  failure mode is Node's `child_process`, not Python's; adding `shell=True`
+  would have introduced injection risk to fix nothing.
+
+  Every fix carries a regression test sabotaged individually: reverted,
+  confirmed red, restored, confirmed green. 175 -> 201 tests. The version bump
+  itself needed a second commit — the fix commit changed `plugin/localgpu/**`
+  without bumping the version, which `_verify/run-all.sh`'s drift check caught;
+  `_verify/smoke.sh` stayed 10/10 regardless, since it omits that check on
+  budget grounds.
+
+  **A second Codex pass over the fixed code — not a fresh review of the
+  original branch — found 6 more, all in failure paths written that same
+  day.** The review was re-run exactly once rather than looped, and the
+  pattern is worth naming: fixing 19 defects in fresh code opened new edges,
+  which is what a second look is for.
+
+  - **A regression from round 1's own fix.** Tracking tool calls off whichever
+    chunk carries them meant the accumulator *assigned* instead of appending,
+    so with a call split across two chunks only the last one executed. Now
+    `.extend()`s. No amount of reviewing the original code would have found
+    this; only reviewing the fix did.
+  - **Malformed recovered arguments** (`{"name":"tool","arguments":"not
+    json"}`) became a `tool_use` with `input: {}` — a tool running with no
+    arguments is a different call, not a degraded one, so this is now
+    rejected outright. The real Ollama `tool_calls` path still degrades to
+    empty on purpose; it carries its own contract test for that.
+  - **A mid-stream timeout wrote a second HTTP response into the
+    already-chunked body**, corrupting the connection for anything reusing
+    it. Sabotage reproduced it as a real client-side
+    `http.client.IncompleteRead`, not a synthetic assertion.
+  - **Silent, permanent data loss.** A file whose re-embed failed after
+    tombstoning, then had its content restored, matched on stored hash and
+    was skipped — leaving every chunk dead and the file unsearchable forever,
+    with no error. A hash match is no longer treated as proof that live
+    chunks exist.
+  - **The embed-model guard was bypassable by its own precondition.** A
+    failed *initial* refresh leaves no manifest, so "no manifest" read as "no
+    mismatch," and a later same-width model was certified over mixed vectors.
+    Absence now means "nothing built" only when the store is also empty.
+  - **A Linux-only cross-process compaction race**, undocumented as a full
+    fix because it cannot be reproduced on this Windows machine: a generation
+    counter turns a silent wrong answer into a loud, retryable error instead.
+    Its test is explicitly labelled a simulation.
+
+  175 -> 207 tests across the two rounds. Bumped in `plugin.json`,
+  `marketplace.json`, and `pyproject.toml`.
+
 - **crew 0.15.3 - `claude-md-audit.sh` rejected the very heading it recommends.**
   `canon()` maps a heading to the concern it covers; six of its seven arms use a
   prefix wildcard (`where*`, `scope*`, `stop*`, `promotion*`, `reporting*`,

@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import sys
 import threading
+import time
 import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -222,3 +223,75 @@ def test_a_404_with_a_body_does_not_poison_the_connection(endpoint):
     assert "404" in text, "the first response should still be the 404"
     assert "400 Bad Request" not in text, "the leftover body was parsed as a request line"
     assert '"type": "message"' in text, "the second request on the connection was lost"
+
+
+# -- FIX: a timeout after streaming has started must not write a second ----
+# -- HTTP response into the already-chunked body --------------------------
+
+
+class OneChunkThenHangOllama(BaseHTTPRequestHandler):
+    """Emits one NDJSON line, then goes silent without closing the socket.
+
+    Promises more bytes than it ever sends (Content-Length overstated), so a
+    client reading it blocks past its socket timeout instead of hitting a
+    clean EOF - reproducing an Ollama hang mid-stream.
+    """
+
+    protocol_version = "HTTP/1.1"
+
+    def log_message(self, *args):
+        pass
+
+    def do_POST(self):
+        length = int(self.headers.get("Content-Length") or 0)
+        self.rfile.read(length)
+        chunk = json.dumps({"message": {"content": "partial"}}).encode() + b"\n"
+        self.send_response(200)
+        self.send_header("Content-Type", "application/x-ndjson")
+        self.send_header("Content-Length", str(len(chunk) * 100))
+        self.end_headers()
+        try:
+            self.wfile.write(chunk)
+            self.wfile.flush()
+            time.sleep(2)  # far longer than the proxy's configured timeout
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+
+
+def test_a_timeout_after_streaming_started_ends_the_stream_cleanly():
+    """Without the fix, the TimeoutError raised by reading past
+    timeout_seconds escapes `_stream` into do_POST's generic handler, which
+    calls send_response(500) again - writing a second HTTP status line and
+    headers into the middle of the already-chunked SSE body. A client
+    reading that gets a corrupted chunked encoding instead of a clean error.
+    """
+    ollama = ThreadingHTTPServer(("127.0.0.1", 0), OneChunkThenHangOllama)
+    ollama.daemon_threads = True
+    threading.Thread(target=ollama.serve_forever, daemon=True).start()
+
+    host, port = ollama.server_address
+    server = proxy.make_server(
+        "127.0.0.1", 0, f"http://{host}:{port}", "qwen-test", timeout=0.3
+    )
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    url = f"http://127.0.0.1:{server.server_address[1]}/v1/messages"
+
+    try:
+        request = urllib.request.Request(
+            url,
+            data=json.dumps({"max_tokens": 8, "stream": True, "messages": []}).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=10) as response:
+            assert response.status == 200
+            text = response.read().decode()
+    finally:
+        server.shutdown()
+        server.server_close()
+        ollama.shutdown()
+        ollama.server_close()
+
+    assert "event: error" in text
+    assert text.rstrip().endswith('data: {"type": "message_stop"}') is False
+    assert '"type": "error"' in text

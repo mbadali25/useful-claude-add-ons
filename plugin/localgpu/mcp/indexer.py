@@ -188,7 +188,12 @@ class EmbedModelMismatch(RuntimeError):
     """
 
 
-def check_embed_model(manifest: dict[str, Any], embed_model: str | None) -> None:
+def check_embed_model(
+    manifest: dict[str, Any],
+    embed_model: str | None,
+    *,
+    store_has_content: bool = False,
+) -> None:
     """Raise :class:`EmbedModelMismatch` if ``manifest`` was not built with ``embed_model``.
 
     Shared by every path that touches the vectors on disk - a refresh
@@ -199,12 +204,24 @@ def check_embed_model(manifest: dict[str, Any], embed_model: str | None) -> None
 
     Absent is not a match: a manifest with no ``embed_model`` key predates
     this check and must be treated as unknown, not as agreement.
+
+    ``store_has_content`` distinguishes a genuinely empty index (nothing
+    built yet, nothing to conflict with) from one whose ``manifest.json`` is
+    merely missing while live vectors already exist on disk - which happens
+    when an *initial* refresh embeds some files under one model and then
+    fails before ``write_manifest`` ever runs. A caller that only checked
+    "is there a manifest" would see none and wave a later refresh under a
+    different same-width model through, which then certifies the resulting
+    mix of both models' vectors as if it were built entirely with the new
+    one. So a missing manifest is safe to treat as "nothing built yet" only
+    when the store backs that up - otherwise it is treated exactly like a
+    manifest that exists but predates this check.
     """
     if embed_model is None:
         return
-    if not manifest:
-        return  # no manifest at all - nothing built yet to conflict with
-    stored = manifest.get("embed_model")
+    if not manifest and not store_has_content:
+        return  # no manifest at all, no vectors either - nothing built yet
+    stored = None if not manifest else manifest.get("embed_model")
     if stored is None:
         raise EmbedModelMismatch(
             "the existing index has no recorded embed_model (it predates "
@@ -252,9 +269,16 @@ class Indexer:
         Absent is not a match: a manifest with no ``embed_model`` key predates
         this check and must be treated as unknown, not as agreement - it may
         or may not have been built with the model configured now, and there is
-        no way to tell which.
+        no way to tell which. That includes a manifest that is missing
+        entirely while the store already holds live chunks - a failed
+        *initial* refresh never reaches ``write_manifest``, but any files it
+        embedded before failing are already live vectors of unknown
+        provenance (see ``check_embed_model``'s ``store_has_content``).
         """
-        check_embed_model(self.store.read_manifest(), self.embed_model)
+        live, _dead = self.store.counts()
+        check_embed_model(
+            self.store.read_manifest(), self.embed_model, store_has_content=live > 0
+        )
 
     # -- one file ----------------------------------------------------------
 
@@ -374,8 +398,23 @@ class Indexer:
                     continue
 
                 digest = sha256_bytes(path)
-                if record is not None and record.sha256 == digest:
+                if (
+                    record is not None
+                    and record.sha256 == digest
+                    and self.store.count_live_chunks(key) == record.chunks
+                ):
                     # Touched but identical - refresh the stat, keep the vectors.
+                    #
+                    # The live-chunk check matters: a matching hash alone is
+                    # not proof the vectors are still there. A prior refresh
+                    # could have tombstoned this file's old chunks for a
+                    # change, then failed the re-embed before upsert_file()
+                    # recorded the new hash - leaving this old FileRecord in
+                    # place with its old hash and every one of its chunks
+                    # dead. If the file is then restored to that old content,
+                    # the hash matches again while nothing live backs it. A
+                    # mismatch here falls through to the reindex path below,
+                    # which re-embeds from the current (matching) content.
                     self.store.upsert_file(
                         FileRecord(
                             path=key,

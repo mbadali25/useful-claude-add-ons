@@ -337,6 +337,28 @@ class VectorStore:
         ).fetchone()
         return int(row["live"] or 0), int(row["dead"] or 0)
 
+    def count_live_chunks(self, path: str) -> int:
+        """Live (non-tombstoned) chunk rows recorded for one file path.
+
+        A matching ``files.sha256`` is not by itself proof that this path
+        still has live vectors - a refresh that tombstoned the old chunks
+        for a change and then failed the re-embed (before ``upsert_file``
+        recorded the new hash) leaves the *old* ``FileRecord`` in place with
+        its *old* hash. If the file is later restored to that old content,
+        the hash matches again while every chunk it once had is dead. The
+        caller (``Indexer.refresh``) uses this to confirm live chunks
+        actually back a hash match before trusting it as "nothing to do".
+        """
+        row = self.db.execute(
+            "SELECT COUNT(*) AS n FROM chunks WHERE path = ? AND tombstone = 0",
+            (path,),
+        ).fetchone()
+        return int(row["n"] or 0)
+
+    def _compaction_generation(self) -> int:
+        """Bumped by every :meth:`compact` - see the check in :meth:`search`."""
+        return int(self.get_meta("compaction_generation") or 0)
+
     # -- writing -----------------------------------------------------------
 
     def add(
@@ -463,6 +485,7 @@ class VectorStore:
         # cheap numpy work, so holding it this long is not a bottleneck. See
         # _process_locks.
         with self._lock:
+            generation = self._compaction_generation()
             matrix = self._matrix()
             if matrix is None:
                 return []
@@ -485,6 +508,30 @@ class VectorStore:
             )
             if not candidates:
                 return []
+
+            # `_process_locks` only rules out another THREAD OF THIS PROCESS
+            # compacting mid-search. A different process's compact() renumbers
+            # `chunks."row"` in sqlite (visible to `candidates` above the
+            # instant it commits) but cannot invalidate `matrix` here - on
+            # POSIX, replacing a file another process has memory-mapped is
+            # allowed, so `matrix` keeps quietly serving pre-compaction bytes
+            # at pre-compaction offsets (Windows instead refuses that replace
+            # outright and raises PermissionError - see the KNOWN PARTIAL note
+            # on `_replace_vectors_file`; same cross-process gap, its other
+            # platform face). Scoring `candidates`' new row numbers against
+            # `matrix`'s old bytes would silently pair a row's stale vector
+            # with a different file's metadata. `compaction_generation` is
+            # bumped inside the same sqlite transaction `compact()` uses to
+            # renumber rows, so a change here proves that race happened in
+            # this exact window - closing it for real needs search() to also
+            # take the cross-process lock (a materially bigger change than
+            # this lane covers), so this raises loudly instead.
+            if self._compaction_generation() != generation:
+                raise StoreError(
+                    f"{self.vectors_path} was compacted by another process "
+                    "while this search was reading it - results would be "
+                    "unreliable. Retry the search."
+                )
 
             vector = normalise(query)[0]
             rows = np.fromiter(
@@ -608,6 +655,15 @@ class VectorStore:
                 'UPDATE chunks SET "row" = ? WHERE id = ?',
                 [(new_row, int(r["id"])) for new_row, r in enumerate(keep)],
             )
+            # Committed in the same transaction as the renumbering above, so
+            # any reader (this process or another) that observes the bump
+            # also observes the new row numbers, never the old numbers with
+            # a bumped generation or vice versa. See the check in search().
+            self.db.execute(
+                "INSERT INTO meta (key, value) VALUES ('compaction_generation', ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (str(self._compaction_generation() + 1),),
+            )
             self.db.commit()
             self.db.execute("VACUUM")
             if self.row_count != live:
@@ -646,6 +702,17 @@ class VectorStore:
         ``PermissionError`` is caught here on purpose - anything else
         propagates unchanged, so a genuine bug is never relabelled as "busy,
         retry".
+
+        This is one problem with two platform faces, not two unrelated ones.
+        Here, on Windows, the OS itself refuses the replace outright, so the
+        race surfaces as a loud, retryable error and no data is ever
+        misread. On Linux, POSIX allows the exact same replace to succeed
+        while another process still has the old file memory-mapped - there
+        is no refusal to catch, so that process's `search()` can keep
+        scoring pre-compaction bytes against post-compaction row numbers
+        with no exception raised at all. See the `compaction_generation`
+        check in `search()` for how that silent half is turned back into a
+        loud one.
         """
         last: OSError | None = None
         for attempt in range(5):

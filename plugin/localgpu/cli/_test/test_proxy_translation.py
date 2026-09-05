@@ -385,6 +385,21 @@ def test_a_json_object_that_is_not_a_call_is_left_alone():
     assert proxy.recover_text_tool_calls('{"city": "Oslo"}', OFFERED) == []
 
 
+# -- FIX: malformed recovered arguments must be rejected, not emptied ------
+
+
+def test_recovery_rejects_malformed_argument_json_instead_of_emptying_it():
+    """An offered tool, written as prose with un-parseable `arguments`, must
+    not be promoted at all - an empty-input tool_use is a different call from
+    the one the model wrote, not a degraded version of it."""
+    text = '{"name": "grep", "arguments": "not json"}'
+    assert proxy.recover_text_tool_calls(text, OFFERED) == []
+
+    out = proxy.to_anthropic_response({"message": {"content": text}}, "m", OFFERED)
+    assert out["content"] == [{"type": "text", "text": text}]
+    assert out["stop_reason"] != "tool_use"
+
+
 def test_streaming_recovers_a_buffered_json_call():
     events = _events_with_tools(
         [
@@ -517,6 +532,27 @@ def test_streaming_tool_call_on_a_non_done_chunk_is_not_lost():
     )
     kinds = [d["content_block"]["type"] for e, d in events if e == "content_block_start"]
     assert kinds == ["tool_use"]
+
+
+def test_streaming_tool_calls_across_separate_chunks_all_survive():
+    """FIX (regression): the earlier fix tracked tool_calls off "whichever
+    chunk carries them" by assignment, which *replaces* rather than appends -
+    so with `first` and `second` arriving on separate chunks, only `second`
+    was ever emitted. A test with both calls on one chunk would pass against
+    that broken code, so this streams them on two."""
+    events = _events(
+        [
+            {"message": {"tool_calls": [{"function": {"name": "first", "arguments": {"a": 1}}}]}},
+            {"message": {"tool_calls": [{"function": {"name": "second", "arguments": {"b": 2}}}]}},
+            {"done": True, "done_reason": "stop"},
+        ]
+    )
+    names = [
+        d["content_block"]["name"]
+        for e, d in events
+        if e == "content_block_start" and d["content_block"]["type"] == "tool_use"
+    ]
+    assert names == ["first", "second"]
 
 
 # -- FIX: an upstream stream failure must not look like a successful reply -
