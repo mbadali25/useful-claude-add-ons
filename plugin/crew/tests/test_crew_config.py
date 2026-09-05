@@ -445,6 +445,65 @@ def test_explain_credits_no_layer_for_a_value_the_filter_dropped(
     assert all(row["source"] != "global" for row in rows)
 
 
+def test_an_empty_dict_in_the_repo_does_not_claim_a_global_value(
+        tmp_path, monkeypatch):
+    """The live defect. `/crew:upgrade` writes `dev.roles: {}` into every
+    repo it migrates, so the repo MENTIONS the key while supplying nothing:
+    `merge_defaults` iterates `supplied.items()`, and an empty dict
+    contributes no keys, so the global value survives untouched.
+
+    Crediting `repo` there is the same class of wrong answer the source
+    column was built to prevent -- it understates what the machine-wide file
+    is deciding, which is exactly how the `pm.authority` incident went
+    unnoticed.
+    """
+    pins = {"developer": {"provider": "codex", "model": "gpt-6-astra"}}
+    path = _global(tmp_path, monkeypatch, contents={"dev": {"roles": pins}})
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"schema": crew_state.SCHEMA_CURRENT,
+                          "dev": {"roles": {}}}, git=False)
+
+    rows = {r["path"]: r for r in crew_config.explain_config(str(root),
+                                                             str(path))}
+
+    assert rows["dev.roles"]["value"] == pins, "the global pins must survive"
+    assert rows["dev.roles"]["source"] == "global"
+
+
+def test_a_dict_both_layers_contribute_to_names_both(tmp_path, monkeypatch):
+    """The other half of the same lie. Merging two dicts is not a contest one
+    of them wins -- the keys combine -- so naming a single layer hides that
+    the other is supplying part of the effective value."""
+    path = _global(tmp_path, monkeypatch, contents={
+        "dev": {"roles": {"security": {"provider": "codex"}}}})
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"schema": crew_state.SCHEMA_CURRENT,
+                          "dev": {"roles": {"developer": {"provider": "codex"}}}},
+        git=False)
+
+    rows = {r["path"]: r for r in crew_config.explain_config(str(root),
+                                                             str(path))}
+
+    assert set(rows["dev.roles"]["value"]) == {"developer", "security"}
+    assert rows["dev.roles"]["source"] == "repo+global"
+
+
+def test_a_populated_repo_dict_over_an_absent_global_is_still_repo(
+        tmp_path, monkeypatch):
+    """The control. Fixing the empty-dict case must not stop crediting a repo
+    that genuinely did supply the value."""
+    pins = {"developer": {"provider": "codex", "model": "gpt-6-astra"}}
+    path = _global(tmp_path, monkeypatch, contents={})
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"schema": crew_state.SCHEMA_CURRENT,
+                          "dev": {"roles": pins}}, git=False)
+
+    rows = {r["path"]: r for r in crew_config.explain_config(str(root),
+                                                             str(path))}
+
+    assert rows["dev.roles"]["source"] == "repo"
+
+
 def test_explain_credits_the_global_layer_for_a_value_it_really_supplied(
         tmp_path, monkeypatch):
     """The other half, and the one the incident was about: a key the filter

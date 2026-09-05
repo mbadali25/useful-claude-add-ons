@@ -418,6 +418,51 @@ def test_heal_config_treats_an_empty_file_like_a_missing_one(tmp_path):
     assert not (root / ".crew" / "config.json.broken").exists()
 
 
+def test_heal_config_recreates_an_empty_object(tmp_path):
+    """QA finding 4, Critical: `{}` parses, so the healthy branch adopted it
+    and left crew permanently switched off.
+
+    `crew_state.collect` derives `isCrew` from the truthiness of the parsed
+    config, so an empty object reads as "not a crew repo" -- every hook
+    stands down, the PM brief and pulse skip, and nothing ever says why. The
+    second face is worse: `schema` is read as SCHEMA_CURRENT when the config
+    is falsy, so `/crew:upgrade` reports "already current" forever and the
+    repo can never migrate out of it.
+
+    An empty object carries no hand-edits, which is the entire reason the
+    healthy branch exists -- so it belongs with the zero-byte file, not with
+    the config someone is in the middle of writing. No backup: there is
+    nothing in it to lose.
+    """
+    root = crew_fixtures.make_repo(tmp_path, config=None, git=False)
+    path = root / ".crew" / "config.json"
+    path.write_text("{}", encoding="utf-8")
+
+    cfg, message = crew_platform.heal_config(str(root))
+
+    assert cfg == crew_config.default_config()
+    assert "empty" in message
+    assert not (root / ".crew" / "config.json.broken").exists()
+    written = json.loads(path.read_text(encoding="utf-8"))
+    assert written == crew_config.default_config()
+
+
+def test_heal_config_recreates_an_object_that_is_only_whitespace_keys(tmp_path):
+    """The near-miss control: a dict with ANY key is a real config and is
+    left alone, however little it says. Only the wholly empty one is healed,
+    so this cannot grow into "heal anything that looks incomplete"."""
+    root = crew_fixtures.make_repo(tmp_path, config=None, git=False)
+    path = root / ".crew" / "config.json"
+    path.write_text('{"tracker": "files"}', encoding="utf-8")
+    before = path.read_bytes()
+
+    cfg, message = crew_platform.heal_config(str(root))
+
+    assert cfg is None
+    assert message is None
+    assert path.read_bytes() == before
+
+
 def test_heal_config_backs_up_a_malformed_config_before_recreating(tmp_path):
     root = crew_fixtures.make_repo(tmp_path, config=None, git=False)
     path = root / ".crew" / "config.json"

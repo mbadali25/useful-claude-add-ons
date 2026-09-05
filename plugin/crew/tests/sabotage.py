@@ -22,6 +22,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(
 CREW = os.path.join(ROOT, "plugin", "crew")
 STATE = os.path.join(CREW, "hooks", "scripts", "crew_state.py")
 LADDER_DOC = os.path.join(CREW, "skills", "crew-scaling", "SKILL.md")
+PLATFORM = os.path.join(CREW, "hooks", "scripts", "crew_platform.py")
 
 GUARD = '    if out["family"] is not None and out["family"] in authors:'
 ROLE_PIN = '    decided = resolve_role(cfg, "dev", "developer")'
@@ -46,6 +47,25 @@ MUTATIONS = (
         BLOCK_ONLY,
         ("tests/test_provider_table.py::"
          "test_author_family_honours_a_per_role_dev_pin_over_the_block_default"),
+    ),
+    (
+        # The half of the one-slot fix that a green suite could hide. Both
+        # spellings are the same value in the proven path, so a suite that
+        # only exercises that path stays green with the bug restored.
+        "dispatch history filtered by the record instead of the checkout",
+        STATE,
+        '            and item.get("branch") == here',
+        '            and item.get("branch") == there',
+        ("tests/test_provider_table.py::"
+         "test_a_stale_record_does_not_forget_this_branch_history"),
+    ),
+    (
+        "an empty config is adopted instead of healed",
+        PLATFORM,
+        "        if isinstance(parsed, dict) and parsed:",
+        "        if isinstance(parsed, dict):",
+        ("tests/test_platform_sync.py::"
+         "test_heal_config_recreates_an_empty_object"),
     ),
     (
         "bogus documented role",

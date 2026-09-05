@@ -204,6 +204,28 @@ def test_upgrade_config_adds_pm_and_graph_blocks():
     assert got["graph"]["obsidian"]["confirmed"] is False
 
 
+def test_a_specialist_role_is_kept_and_not_reported_as_unknown():
+    """`rolesUnknown` drives a report line reading "kept, not on this
+    release's ladder", which is true of a typo and false of a specialist.
+    A repo that deliberately onboarded `node-developer` would otherwise be
+    told on every single upgrade that crew does not recognise it.
+    """
+    _out, notes = crew_upgrade.upgrade_config(
+        {"roles": ["explorer", "node-developer", "wharrgarbl"], "tier": 0})
+
+    assert "node-developer" not in notes["rolesUnknown"]
+    assert "wharrgarbl" in notes["rolesUnknown"]
+
+
+def test_a_specialist_survives_the_upgrade_it_did_not_ask_for():
+    out, _notes = crew_upgrade.upgrade_config(
+        {"roles": ["explorer", "node-developer"], "tier": 2})
+
+    assert "node-developer" in out["roles"], "an opted-in role must not vanish"
+    # ...and the upgrade still must not ADD one.
+    assert "sharepoint-developer" not in out["roles"]
+
+
 def test_upgrade_config_preserves_unknown_keys():
     # A config written by a newer crew than the one running must survive.
     got = _cfg({"somethingNew": {"a": 1}, "tier": 2})

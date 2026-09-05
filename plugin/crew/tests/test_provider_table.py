@@ -10,7 +10,9 @@ Everything asserts on `crew_state.resolve_role`'s returned dict rather than on
 printed text. A report that says the right thing while the resolver decided
 the wrong one is exactly the failure mode a stdout assertion cannot see.
 """
+import copy
 import json
+import os
 import subprocess
 
 import pytest
@@ -263,6 +265,31 @@ def test_author_family_honours_a_per_role_dev_pin_over_the_block_default():
     assert crew_state.author_families(
         ".", {"dev": {"provider": "claude"}}) == (frozenset({"claude"}),
                                                   "config")
+
+
+def test_family_normalises_case_separator_and_namespace():
+    """A QA hunt found the guard bypassable by SPELLING alone.
+
+    `family` was `model.split("-")[0]` verbatim, so `GPT-5` -- the same family
+    as `gpt-6-astra`, differing only in case -- produced `GPT`, compared
+    unequal to `gpt`, and was cleared to review GPT-authored work. `gpt5` and
+    `openai/gpt-5` did the same thing by separator and by namespace. A guard
+    that a capital letter walks past is not a guard.
+    """
+    for model in ("gpt-6-astra", "GPT-5", "gpt5", "GPT5",
+                  "openai/gpt-5", "  gpt-5.6-luna  ", "gpt_5"):
+        assert crew_state.family("copilot", model) == "gpt", model
+    for model in ("kimi-k2.7-code", "KIMI-K3", "moonshot/kimi-k3"):
+        assert crew_state.family("copilot", model) == "kimi", model
+
+
+def test_a_differently_spelled_same_family_model_is_still_barred():
+    """The consequence, asserted where it matters rather than on the helper."""
+    for model in ("GPT-5", "gpt5", "openai/gpt-5"):
+        cfg = {"qa": {"provider": "copilot", "copilot": {"model": model}}}
+        got = crew_state.resolve_role(cfg, "qa", "review",
+                                      author=frozenset({"gpt"}))
+        assert got["barred"] is True, model
 
 
 def test_an_unset_copilot_model_is_not_barred_against_another_unset_one():
@@ -549,6 +576,113 @@ def test_an_mtime_stale_verdict_reaches_the_report(tmp_path):
     assert stale >= fresh, "striking must only ever widen"
 
 
+def test_every_family_dispatched_on_this_branch_is_struck(tmp_path):
+    """QA finding 1, Critical.
+
+    `dispatch.json` held ONE dev slot. Codex writes the diff; a Claude
+    developer dispatch later runs on the same branch for something unrelated
+    and overwrites the slot; review then reads a matching branch, declares
+    CLAUDE the author, bars Claude -- and clears Codex to review the diff
+    Codex wrote.
+
+    It was invisible by construction: the record is newer than the merge-base,
+    so the staleness check cannot disprove it, and the report says "recorded
+    at dispatch", which reads as verified rather than guessed.
+
+    Nothing binds a dispatch to the commits it produced, so the honest answer
+    is that ANY family dispatched on this branch may have written this diff.
+    Strike all of them. Over-barring costs a rung; under-barring costs the
+    entire point of the guard.
+    """
+    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=True)
+    crew_state.record_dispatch(str(root), "dev", "developer", "codex",
+                               "gpt-6-astra")
+    crew_state.record_dispatch(str(root), "dev", "developer", "claude", None)
+
+    authors, source = crew_state.author_families(str(root), PINNED)
+
+    assert authors == frozenset({"gpt", "claude"}), \
+        "the earlier codex dispatch must not be forgotten"
+    assert source == "dispatch"
+
+
+def test_a_stale_record_does_not_forget_this_branch_history(tmp_path):
+    """The half of finding 1 that survived the first fix.
+
+    Filtering history on the LAST RECORD's branch is not the same as
+    filtering on the branch in front of the reviewer, and in the stale path
+    they diverge: codex writes the diff on this branch, a claude dispatch on
+    `main` overwrites the slot, and review back on this branch reads
+    `here != there` -> stale. Filtering on `there` then keeps only the claude
+    record and drops codex entirely -- the exact clearance the whole finding
+    is about, restored by the fix for it.
+    """
+    # A config whose own dev family is neither of the dispatched ones, so
+    # the stale path's config strike cannot mask a missing history strike.
+    cfg = copy.deepcopy(PINNED)
+    cfg["dev"]["roles"]["developer"] = {"provider": "copilot",
+                                        "model": "kimi-k3"}
+    root = crew_fixtures.make_repo(tmp_path, config=cfg, git=True)
+    here = crew_state.current_branch(str(root))
+    assert here, "fixture must have a branch for this to mean anything"
+
+    crew_state.record_dispatch(str(root), "dev", "developer", "codex",
+                               "gpt-6-astra", branch=here)
+    crew_state.record_dispatch(str(root), "dev", "developer", "claude", None,
+                               branch="main-elsewhere")
+
+    authors, source = crew_state.author_families(str(root), cfg)
+
+    assert source == "stale"
+    assert "gpt" in authors,         "codex dispatched on THIS branch and must still be struck"
+    assert "claude" in authors
+
+
+def test_one_family_dispatched_twice_is_still_one_family(tmp_path):
+    """The control: striking every dispatch must not widen a repo that only
+    ever used one provider."""
+    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=True)
+    for _ in range(3):
+        crew_state.record_dispatch(str(root), "dev", "developer", "codex",
+                                   "gpt-6-astra")
+
+    authors, _source = crew_state.author_families(str(root), PINNED)
+    assert authors == frozenset({"gpt"})
+
+
+def test_a_dispatch_on_another_branch_is_not_added_to_the_strike(tmp_path):
+    """History is per branch. A family that only ever dispatched elsewhere
+    did not write this diff, and barring it would over-bar permanently
+    rather than by a rung."""
+    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=True)
+    crew_state.record_dispatch(str(root), "dev", "developer", "copilot",
+                               "kimi-k3", branch="some-other-branch")
+    crew_state.record_dispatch(str(root), "dev", "developer", "codex",
+                               "gpt-6-astra")
+
+    authors, _source = crew_state.author_families(str(root), PINNED)
+    assert "kimi" not in authors
+
+
+def test_the_dispatch_write_is_atomic(tmp_path):
+    """QA finding 2, Critical. The writer truncated the live file before the
+    JSON was complete, and `read_dispatch` collapses malformed JSON to `{}` --
+    so a concurrent reader saw no dispatch at all and fell back to reading
+    the CONFIG, which describes the next run rather than the one under review.
+    That is the guard failing open during an ordinary race.
+    """
+    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=False)
+    crew_state.record_dispatch(str(root), "dev", "developer", "codex",
+                               "gpt-6-astra")
+    path = os.path.join(str(root), *crew_state.DISPATCH_PATH)
+
+    with open(path, encoding="utf-8") as handle:
+        assert json.load(handle)["dev"]["provider"] == "codex"
+    leftovers = [n for n in os.listdir(os.path.dirname(path))
+                 if n.endswith(".tmp")]
+    assert leftovers == [], leftovers
+
+
 def test_a_malformed_dispatch_file_reads_as_no_dispatch(tmp_path):
     root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=False)
     (root / ".work" / "dispatch.json").write_text("{ half-written",
@@ -764,3 +898,64 @@ def test_the_printed_report_says_no_independent_reviewer_when_there_is_none(
 
     assert "NO INDEPENDENT REVIEWER" in out
     assert "does not count as an independent review" in out
+
+
+# --- what /crew:model's status column is allowed to claim -------------------
+
+
+def _row(**kw):
+    base = {"kind": "qa", "role": "review", "provider": "copilot",
+            "model": None, "family": None, "barred": False, "barredBy": None}
+    base.update(kw)
+    return base
+
+
+def test_an_unknown_family_is_not_reported_as_eligible():
+    """QA sweep, 2026-09-05. An unpinned `copilot` has no knowable family --
+    Copilot hosts several and an unset model does not say which, so it may be
+    serving the author's own. `order_candidates` has always refused it for
+    exactly that reason; the human-facing table printed the bare word
+    `eligible` at the same config. The gate was right and the report was
+    optimistic, which is the worse half to get wrong: a reader acts on the
+    table."""
+    status = crew_config.role_status(_row())
+    assert "eligible" != status
+    assert "CANNOT PROVE INDEPENDENCE" in status
+    assert "qa.copilot.model" in status
+
+
+def test_a_known_different_family_is_eligible():
+    status = crew_config.role_status(
+        _row(provider="codex", model="gpt-6-astra", family="gpt"))
+    assert status == "eligible"
+
+
+def test_a_barred_row_says_which_family_barred_it():
+    status = crew_config.role_status(
+        _row(provider="codex", model="gpt-6-astra", family="gpt",
+             barred=True, barredBy="gpt"))
+    assert status.startswith("BARRED")
+    assert "gpt" in status
+
+
+def test_auto_says_it_walks_the_order():
+    assert crew_config.role_status(
+        _row(provider="auto")) == "walks qa.order"
+
+
+def test_a_dev_row_never_borrows_the_reviewer_verdict():
+    """`model_report` resolves dev rows with no author, so `barred` is False
+    on every one of them. Printing `eligible` there implied they passed a
+    check that was never run."""
+    status = crew_config.role_status(
+        _row(kind="dev", role="developer", provider="codex",
+             model="gpt-6-astra", family="gpt"))
+    assert "eligible" not in status
+    assert "implements" in status
+
+
+def test_an_unknown_family_dev_row_is_not_flagged_either():
+    """The guard does not govern authorship, so an unpinned dev provider is
+    not an independence problem and must not be reported as one."""
+    status = crew_config.role_status(_row(kind="dev", role="developer"))
+    assert "CANNOT PROVE" not in status

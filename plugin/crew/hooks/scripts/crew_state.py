@@ -179,6 +179,38 @@ _NOT_SUBSYSTEMS = frozenset({"INDEX.md", "UPGRADE.md", "MIGRATION.md"})
 
 # Where the graph lives when config does not say. Defined here rather than in
 # crew_upgrade because this module has to resolve it with no config at all.
+def contained_path(root, value, default):
+    """`root/value`, or `root/default` when `value` escapes the repository.
+
+    Config is hand-edited and, in a cloned repo, is written by whoever wrote
+    the repo. A relative path with `..`, an absolute path, or a UNC path all
+    resolve outside `root` -- and these values are used to READ files that
+    then reach the model's context (`context.handoffPath` under
+    `context.autoResume` injects the whole file at session start). A repo that
+    can name any file on the machine and have it read into a session is a repo
+    that can exfiltrate through the next thing the session says.
+
+    So: resolve, compare against the resolved root, and fall back to the
+    default rather than raising. A hook that dies on a bad config value is a
+    hook that stops every session in the repo; one that quietly reads the
+    right file instead is the behaviour anyone would have wanted.
+
+    `os.path.realpath` on both sides, so a symlink out of the tree is caught
+    too, and `os.path.commonpath` rather than `startswith` -- `/repo-evil`
+    starts with `/repo` and is not inside it.
+    """
+    if not isinstance(value, str) or not value.strip():
+        value = default
+    base = os.path.realpath(root)
+    candidate = os.path.realpath(os.path.join(base, value))
+    try:
+        inside = os.path.commonpath([base, candidate]) == base
+    except ValueError:
+        inside = False          # different drives on Windows
+    return candidate if inside else os.path.realpath(
+        os.path.join(base, default))
+
+
 GRAPH_OUT_DEFAULT = "graphify-out"
 
 # Where committed Mermaid sources live when config does not say. Matches the
@@ -304,7 +336,8 @@ def _read_graph(root, cfg):
     # passes dict_or_empty but `os.path.join` raises TypeError on a non-str.
     if not isinstance(out, str) or not out:
         out = GRAPH_OUT_DEFAULT
-    path = os.path.join(root, out, "graph.json")
+    path = os.path.join(contained_path(root, out, GRAPH_OUT_DEFAULT),
+                        "graph.json")
     if not os.path.exists(path):
         return {"present": False, "current": False, "builtAt": None,
                 "path": path}
@@ -379,7 +412,7 @@ def read_diagrams(root, cfg):
     so nothing is claimed either way, but presence is still knowable.
     """
     head = git_out(root, "rev-parse", "--short=7", "HEAD")
-    dirpath = os.path.join(root, _diagrams_dir(cfg))
+    dirpath = contained_path(root, _diagrams_dir(cfg), DIAGRAMS_DIR_DEFAULT)
     try:
         names = sorted(os.listdir(dirpath))
     except OSError:
@@ -556,6 +589,41 @@ ROLE_TIERS = {
 # keeps it. See `crew-scaling/SKILL.md`.
 TIER_PARALLEL = 3
 
+# Domain specialists: known roles with no tier, never granted automatically.
+#
+# Every ROLE_TIERS entry closes a defect class ANY repo can have, and its
+# "add when" is evidence-shaped -- "migrations are routine", "a UI regression
+# reached users". `roles_for_tier` then grants every rung up to the declared
+# tier, which is why a repo with no database is handed `dba` on upgrade.
+#
+# "This repo does SharePoint" is not a defect class; it is a fact about one
+# checkout. Putting these on the ladder would hand a SharePoint developer to
+# every tier-2 repo on the machine, and the tier table would stop meaning
+# anything. So they are opted into per repo -- `/crew:pm onboard <role>` --
+# and no tier ever grants one.
+#
+# This is the OPPOSITE of the 0.15.x bug that `infrastructure-architect`,
+# `scribe` and `researcher` had: those were general-purpose roles that had
+# simply been forgotten off the ladder, and being unreachable was the defect.
+# Here it is the design, which is why a test asserts it rather than a comment.
+SPECIALIST_ROLES = frozenset({
+    "sharepoint-developer",
+    "power-automate-specialist",
+    "node-developer",
+})
+
+
+def known_role(name):
+    """Is `name` a role this release ships, on the ladder or off it?
+
+    The distinction that needs a name: `tier_for_roles` and `roles_for_tier`
+    both key off `ROLE_TIERS`, so a specialist looks identical to a typo
+    there. Without this, a repo that deliberately onboarded `node-developer`
+    is told on every upgrade that crew does not recognise it -- which trains
+    people to ignore the line that exists to catch real typos.
+    """
+    return name in ROLE_TIERS or name in SPECIALIST_ROLES
+
 
 def roles_for_tier(tier):
     """Every ladder role at or below `tier`, in ladder order."""
@@ -663,11 +731,19 @@ def dict_or_empty(value):
 def family(provider, model=None):
     """Which model family `provider` speaks as, given the model it is pinned to.
 
-    Derived from `model.split("-")[0]`, verified 2026-09-05 against the ids in
-    use: `gpt-6-astra`, `gpt-5.6-sol` and `gpt-5.6-luna` all yield `gpt`, and
+    The leading run of letters, lowercased, after any `vendor/` prefix:
+    `gpt-6-astra`, `gpt-5.6-sol` and `gpt-5.6-luna` all yield `gpt`, and
     `kimi-k2.7-code` and `kimi-k3` both yield `kimi`. No id is special-cased,
     deliberately -- model catalogs churn, and a lookup table of names is a
     lookup table that goes stale without failing.
+
+    It was literally `model.split("-")[0]` until a QA sweep found the guard
+    bypassable by SPELLING: `GPT-5` differs from `gpt-6-astra` only in case,
+    produced `GPT`, compared unequal to `gpt`, and was therefore cleared to
+    review GPT-authored work. `gpt5` and `openai/gpt-5` did the same by
+    separator and by namespace. A guard a capital letter walks past is not a
+    guard, so normalisation happens here rather than at each call site --
+    there is no version of this that is safe to leave to the caller.
 
     `claude` is its own family whatever it is pinned to; it is an in-session
     subagent, not a separate CLI with a model flag. An unpinned `codex` is
@@ -680,7 +756,12 @@ def family(provider, model=None):
     if provider == "claude":
         return "claude"
     if isinstance(model, str) and model.strip():
-        return model.strip().split("-")[0]
+        # Namespace off first (`openai/gpt-5`), then the leading letters, so
+        # every separator convention collapses to the same token: `-`, `_`,
+        # `.`, and a bare digit boundary as in `gpt5`.
+        bare = model.strip().lower().rsplit("/", 1)[-1]
+        head = re.match(r"[a-z]+", bare)
+        return head.group() if head else bare
     if provider == "codex":
         return "gpt"
     return None
@@ -851,6 +932,12 @@ DISPATCH_PATH = (".work", "dispatch.json")
 # and just as invisible. Give a kind a reader and add it here, in one change.
 DISPATCH_KINDS = ("dev",)
 
+# How many distinct dispatches to remember. The guard reads the whole list, so
+# this bounds both the file and the strike set. Ten is well past the number of
+# providers anyone has, and small enough that the file stays a few hundred
+# bytes on a long-lived branch.
+DISPATCH_HISTORY_MAX = 10
+
 
 def read_dispatch(root):
     """The last recorded dispatch, or `{}`. Never raises."""
@@ -939,14 +1026,58 @@ def record_dispatch(root, kind, role, provider, model=None, branch=None):
             f"recordable kinds are {', '.join(DISPATCH_KINDS)}")
     if branch is None:
         branch = current_branch(root)
+    entry = {"role": role, "provider": provider, "model": model,
+             "branch": branch}
     record = dict(read_dispatch(root))
-    record[kind] = {"role": role, "provider": provider, "model": model,
-                    "branch": branch}
+    record[kind] = entry
+
+    # ...and keep the earlier ones. A single slot meant a LATER dispatch
+    # erased the family that actually wrote the diff: codex implements, a
+    # claude dispatch runs afterwards on the same branch for something else,
+    # and review then reads a matching branch, calls claude the author, and
+    # clears CODEX to review codex's own work. Nothing binds a dispatch to
+    # the commits it produced, so any family dispatched on this branch may
+    # have written what is under review, and all of them are struck.
+    history = [h for h in record.get(f"{kind}History") or []
+               if isinstance(h, dict)]
+    history.append(entry)
+    # Newest first, deduplicated on what the guard actually reads, and
+    # bounded: this file is rewritten on every dispatch and nothing prunes it.
+    seen, trimmed = set(), []
+    for item in reversed(history):
+        key = (item.get("provider"), item.get("model"), item.get("branch"))
+        if key in seen:
+            continue
+        seen.add(key)
+        trimmed.append(item)
+        if len(trimmed) >= DISPATCH_HISTORY_MAX:
+            break
+    record[f"{kind}History"] = trimmed
+
     path = os.path.join(root, *DISPATCH_PATH)
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as handle:
-        json.dump(record, handle, indent=2, sort_keys=True)
-        handle.write("\n")
+    # Atomic, for the same reason the config writes are: opening the live
+    # file "w" truncates it before the JSON is complete, and `read_dispatch`
+    # collapses malformed JSON to `{}`. A concurrent reader therefore saw NO
+    # dispatch and fell back to reading the config -- which describes the
+    # next run, not the one being reviewed. The guard failing open during an
+    # ordinary race is the worst version of this bug, because nothing about
+    # it looks like a failure.
+    tmp_path = f"{path}.{os.getpid()}.tmp"
+    try:
+        with open(tmp_path, "w", encoding="utf-8") as handle:
+            json.dump(record, handle, indent=2, sort_keys=True)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp_path, path)
+    except BaseException:
+        try:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+        except OSError:
+            pass
+        raise
     return record
 
 
@@ -990,13 +1121,38 @@ def author_families(root, cfg, stale=False):
     comparison, and without a way to say so its answer never reached the
     resolved report that every later step reads.
     """
-    recorded = dict_or_empty(read_dispatch(root).get("dev"))
+    dispatch = read_dispatch(root)
+    recorded = dict_or_empty(dispatch.get("dev"))
     decided = resolve_role(cfg, "dev", "developer")
     if recorded.get("provider"):
-        recorded_family = family(recorded.get("provider"),
-                                 recorded.get("model"))
         here = current_branch(root)
         there = recorded.get("branch")
+        # Every family dispatched on THE BRANCH IN FRONT OF THE REVIEWER,
+        # not just the last one -- see record_dispatch for why one slot was
+        # not enough. A record from another branch is excluded: it did not
+        # write this diff, and barring it would over-bar permanently rather
+        # than by a rung.
+        #
+        # `here`, NOT `there`. They are the same value in the proven path, so
+        # filtering on the last record's branch looks equivalent -- and in
+        # the STALE path, which is the one that matters, it is not: codex
+        # writes the diff here, a claude dispatch on another branch
+        # overwrites the slot, and filtering on `there` then keeps only that
+        # claude record and forgets codex completely. That is the finding
+        # this history exists to close, reintroduced one line further down.
+        recorded_families = {
+            family(item.get("provider"), item.get("model"))
+            for item in dispatch.get("devHistory") or []
+            if isinstance(item, dict) and item.get("provider")
+            and item.get("branch") == here
+        }
+        # The slot itself is always struck, wherever it was recorded: it is
+        # the one dispatch we know about with no history to corroborate it,
+        # and a record written by a version before `devHistory` existed has
+        # no history entry at all.
+        recorded_families.add(family(recorded.get("provider"),
+                                     recorded.get("model")))
+        recorded_families.discard(None)
         # Strike BOTH unless the record positively proves it is about this
         # branch. Three states reach here and only one of them is evidence:
         #   * branches known and different -- stale, plainly.
@@ -1036,9 +1192,9 @@ def author_families(root, cfg, stale=False):
                   or (there is None and in_git_repo(root) is False))
         if stale or not proven:
             return frozenset(
-                f for f in (recorded_family, decided["family"]) if f
-            ), "stale"
-        return frozenset(f for f in (recorded_family,) if f), "dispatch"
+                recorded_families | {decided["family"]}
+            ) - {None}, "stale"
+        return frozenset(recorded_families) - {None}, "dispatch"
     # No record: read the config. `decided` above asked `resolve_role` for the
     # `developer` role rather than the `dev` block's own provider --
     # `dev.roles.developer` is a pin that OVERRIDES that default, so reading

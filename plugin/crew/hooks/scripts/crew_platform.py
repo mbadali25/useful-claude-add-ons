@@ -195,20 +195,29 @@ def heal_config(root):
     block that already exists -- this function can create the whole file, so
     the guard matters even more here than it does there.
 
-    Three cases, matching `_read_config_strict` in `crew_upgrade.py`:
+    Four cases, matching `_read_config_strict` in `crew_upgrade.py`:
 
       * Missing, or present but empty/whitespace-only (nothing to lose):
         write `crew_config.default_config()` straight away.
+      * Present and parsing to an EMPTY object -- `{}`. It parses, so the
+        healthy branch below used to adopt it, and the result was a repo with
+        crew silently and permanently switched off: `crew_state.collect`
+        derives `isCrew` from the truthiness of the parsed config, so every
+        hook stood down and nothing ever said why, while `schema` read as
+        current so `/crew:upgrade` answered "already current" forever. An
+        empty object holds no hand-edits, which is the whole reason the
+        healthy branch exists, so it belongs here with the zero-byte file. No
+        backup is taken: there is nothing in it to lose.
       * Present, non-empty, but not a parseable JSON object (something IS
         there and failed to parse -- a real file, not "nothing configured"):
         back it up to `config.json.broken` first, so the original survives
         for hand recovery, then write defaults.
-      * Present and a parseable JSON object, however incomplete or unusual:
-        untouched. This function repairs a config that IS NOT ONE; it does
-        not validate or merge defaults into one that already parses -- that
-        is a different, much larger claim about what "healthy" means, and
-        making it here would silently overwrite hand-edits nobody asked to
-        have judged.
+      * Present and a parseable object with ANY key in it, however incomplete
+        or unusual: untouched. This function repairs a config that IS NOT
+        ONE; it does not validate or merge defaults into one that already
+        parses -- that is a different, much larger claim about what "healthy"
+        means, and making it here would silently overwrite hand-edits nobody
+        asked to have judged. One key is enough to be a config.
     """
     if not os.path.isdir(os.path.join(root, ".crew")):
         return None, None
@@ -221,30 +230,40 @@ def heal_config(root):
         raw = None  # missing
 
     backed_up = False
+    was_empty = False
     if raw is not None and raw.strip():
         try:
             parsed = json.loads(raw)
         except ValueError:
             parsed = None
-        if isinstance(parsed, dict):
+        if isinstance(parsed, dict) and parsed:
             return None, None  # healthy; not this function's problem
-        # Present, non-empty, and not a usable config -- back it up.
-        backup_path = path + CONFIG_BROKEN_SUFFIX
-        backed_up = True
-        if not os.path.exists(backup_path):
-            # A previous broken session already took one; do not overwrite it
-            # with a second failure -- the first is still the human's best
-            # chance at recovery. Same rule as crew_upgrade.backup_config.
-            try:
-                shutil.copy2(path, backup_path)
-            except OSError:
-                # Could not back it up (read-only checkout?). Do not destroy
-                # the original by writing over it blind -- report and stop.
-                return None, (
-                    f"## config - {CONFIG_PATH} is malformed and could NOT "
-                    f"be backed up before rewriting - is the checkout "
-                    f"read-only? Left it untouched"
-                )
+        if isinstance(parsed, dict):
+            # `{}` -- it parses, it carries nothing, and it reads downstream
+            # as "not a crew repo". Rewritten like a zero-byte file, and
+            # deliberately NOT backed up: a backup of `{}` is a file whose
+            # only content is the absence of content.
+            was_empty = True
+        else:
+            # Present, non-empty, and not a usable config -- back it up.
+            backup_path = path + CONFIG_BROKEN_SUFFIX
+            backed_up = True
+            if not os.path.exists(backup_path):
+                # A previous broken session already took one; do not
+                # overwrite it with a second failure -- the first is still
+                # the human's best chance at recovery. Same rule as
+                # crew_upgrade.backup_config.
+                try:
+                    shutil.copy2(path, backup_path)
+                except OSError:
+                    # Could not back it up (read-only checkout?). Do not
+                    # destroy the original by writing over it blind --
+                    # report and stop.
+                    return None, (
+                        f"## config - {CONFIG_PATH} is malformed and could "
+                        f"NOT be backed up before rewriting - is the "
+                        f"checkout read-only? Left it untouched"
+                    )
 
     cfg = crew_config.default_config()
     text = json.dumps(cfg, indent=2) + "\n"
@@ -267,6 +286,13 @@ def heal_config(root):
         message = (
             f"## config - {CONFIG_PATH} was malformed; backed it up to "
             f"{CONFIG_PATH}{CONFIG_BROKEN_SUFFIX} and wrote defaults - "
+            f"tracker, roles, and every other choice are back to defaults; "
+            f"run /crew:init to re-record them"
+        )
+    elif was_empty:
+        message = (
+            f"## config - {CONFIG_PATH} was an empty object, which reads "
+            f"everywhere downstream as `not a crew repo`; wrote defaults - "
             f"tracker, roles, and every other choice are back to defaults; "
             f"run /crew:init to re-record them"
         )
