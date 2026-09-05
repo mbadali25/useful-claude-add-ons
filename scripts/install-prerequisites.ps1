@@ -1061,9 +1061,10 @@ function Read-PickerKey {
 
 function Format-PickerLine {
     # Clip to the window width. A line that wraps shifts everything below it and the
-    # next redraw paints over the wrong rows.
+    # next redraw paints over the wrong rows. The ellipsis is 3 characters, so 3 must
+    # be reserved for it - reserving 1 (as this used to) returns Width + 2.
     param([string]$Text, [int]$Width)
-    if ($Text.Length -gt $Width) { return $Text.Substring(0, [Math]::Max(0, $Width - 1)) + '...' }
+    if ($Text.Length -gt $Width) { return $Text.Substring(0, [Math]::Max(0, $Width - 3)) + '...' }
     return $Text.PadRight($Width)
 }
 
@@ -1099,6 +1100,9 @@ function Invoke-Picker {
             $con = Get-PickerConsole
             $winH = $con.Height
             $winW = $con.Width
+            # Same width floor bash's term_cols() applies - without it a narrow window
+            # has no lower bound at all and the title underline below can still wrap.
+            if ($winW -lt 40) { $winW = 40 }
             $width = [Math]::Max(20, $winW - 10)
             # 2 title lines + rows + 1 scroll line + 2 hint lines, plus a line of slack.
             $avail = [Math]::Max(3, $winH - 6)
@@ -1117,8 +1121,12 @@ function Invoke-Picker {
             }
             $null = Set-PickerCursor -Row $origin
 
-            Write-Host (Format-PickerLine "  $Title" $winW).TrimEnd().PadRight($winW - 1) -ForegroundColor Cyan
-            Write-Host ("  " + ('-' * $Title.Length)).PadRight($winW - 1) -ForegroundColor Cyan
+            $fittedTitle = (Format-PickerLine "  $Title" $winW).TrimEnd()
+            Write-Host $fittedTitle.PadRight($winW - 1) -ForegroundColor Cyan
+            # Sized from the fitted title, not the raw one - a clipped title with an
+            # unclipped underline is exactly the wrap this function exists to prevent.
+            $dashCount = [Math]::Max(0, $fittedTitle.Length - 2)
+            Write-Host ("  " + ('-' * $dashCount)).PadRight($winW - 1) -ForegroundColor Cyan
             for ($i = $top; $i -lt $top + $avail; $i++) {
                 $mark = if ($state[$i]) { 'x' } else { ' ' }
                 $arrow = if ($i -eq $Cursor) { '>' } else { ' ' }

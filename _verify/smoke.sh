@@ -314,6 +314,10 @@ for pyproj in sorted(pathlib.Path("plugin").glob("*/pyproject.toml")):
     # import, calls sys.exit, or scribbles on sys.modules cannot take the gate
     # down with it, and a timeout, so one that blocks on input or loops forever
     # fails this check in 15s instead of hanging the whole run indefinitely.
+    # `-I` (isolated) drops PYTHONPATH, user site-packages and env-var influence,
+    # so the probe cannot be steered by the ambient environment into importing
+    # something other than the file named on the command line. It does not make
+    # this a sandbox - see above - it removes the most realistic accidental vector.
     for version_module in sorted(plugin_dir.rglob("_version.py")):
         if is_skipped(version_module):
             continue
@@ -326,7 +330,7 @@ for pyproj in sorted(pathlib.Path("plugin").glob("*/pyproject.toml")):
         )
         try:
             done = subprocess.run(
-                [sys.executable, "-c", probe, str(version_module)],
+                [sys.executable, "-I", "-c", probe, str(version_module)],
                 capture_output=True, text=True, timeout=15,
             )
         except subprocess.TimeoutExpired:

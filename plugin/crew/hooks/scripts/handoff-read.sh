@@ -21,7 +21,7 @@ rm -f .crew/.deploy-in-flight    # a deploy from a dead session cannot be record
 # interpreters exist; only the winner of the claim does any work.
 case "$SOURCE" in clear|compact|resume|fork) ;; *) exit 0 ;; esac
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PY=$(command -v python3 || command -v python) || exit 0
+PY=$(crew_py) || { echo "crew handoff-read: no usable python - the handoff note will not print" >&2; exit 0; }
 "$PY" "$DIR/hook_once.py" handoff-read "${SESSION}-${SOURCE}" || exit 0
 
 [ -f .crew/config.json ] || exit 0

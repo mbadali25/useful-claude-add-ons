@@ -141,3 +141,51 @@ Fix shape when it is picked up: have `crew_py` execute each candidate
 (`"$c" -c "print(1)"`) and return the first that actually runs, rather than the
 first that resolves. Add a must-block case that runs with the stub first on
 PATH.
+
+## Landmine candidate: `pathlib.write_text` on Windows silently converts a shell script to CRLF
+
+**This belongs on `CLAUDE.md`'s Landmines list. It is deliberately recorded here
+instead** — a teammate agent asked for the CLAUDE.md edit, and an agent's request
+is not the user's authorisation to change project instructions. It needs a human
+to say yes. The content below is ready to move as-is.
+
+Python's `pathlib.Path.write_text` uses text mode, which on Windows translates
+every `\n` to `\r\n`. Editing a `.sh` file with it converts the whole file to
+CRLF, and a CRLF shell script dies on its shebang as
+`bad interpreter: /usr/bin/env bash^M`. It happened this session to
+`_verify/smoke.sh` and `plugin/crew/hooks/scripts/_test/run-tests.sh`, and turned
+`plugin/crew/tests/test_platform_sync.py` red — `crew_platform.concerns()` has a
+check for exactly this, and it fired.
+
+**`.gitattributes` does not save you.** The `*.sh text eol=lf` rule at
+`.gitattributes:3` is real and correct, but it governs what git stores and what a
+checkout produces. The damage here happens *after* checkout, in the working tree,
+which is what bash actually executes and what `crew_platform` actually reads.
+
+**The measurement you would reach for is also wrong.** `core.autocrlf` is `true`
+on this machine, so `git show <rev>:<path>` renders CRLF regardless of what the
+blob holds. `git show ... | grep -c $'\r'` therefore reports CRLF on a file that
+is clean, and the same count on one that is not — it cannot distinguish them.
+Measure the worktree directly with `od -c`, or `file`(1).
+
+Fix when writing: pass `newline="\n"` to `write_text`. Fix after the fact:
+`git checkout -- <path>`, then confirm with `od -c`, not with `git show`.
+
+## Nit: the request body is translated twice per request
+
+`plugin/localgpu/cli/anthropic_proxy.py`. `check_fits_context` (via
+`estimate_prompt_tokens`) and `to_ollama_request` each independently call
+`to_ollama_messages`/`to_ollama_tools` on the same body, so the translation runs
+twice per request rather than once and reused.
+
+Both functions are pure and in-memory with no I/O, so this is discarded work, not
+a correctness problem. Explicitly **not** worth blocking a release on and not
+worth a version bump of its own — fold it into whatever next has a reason to
+touch that file. Recorded because it becomes invisible the moment the session
+that found it ends.
+
+Note for whoever does fold it in: `check_fits_context(body, num_ctx)` at
+`:1083`/`:1093` passing the raw `body` is **correct** as written, because
+`estimate_prompt_tokens` translates internally. Changing those call sites to pass
+`to_ollama_request(...)`'s output would double-translate and measure the wrong
+thing. The obvious-looking fix is a bug.

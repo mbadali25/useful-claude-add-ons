@@ -9,5 +9,6 @@
 # PowerShell paths cannot drift, and the once-per-session claim lives in
 # pm_brief.py too so both flavours share one implementation of it.
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PY=$(command -v python3 || command -v python) || exit 0
+. "$DIR/_common.sh"
+PY=$(crew_py) || { echo "crew pm-brief: no usable python - the PM's brief will not print" >&2; exit 0; }
 exec "$PY" "$DIR/pm_brief.py"

@@ -26,6 +26,12 @@ fi
 
 have() { command -v "$1" >/dev/null 2>&1 && echo true || echo false; }
 
+# pwsh is often not on PATH even when installed - `pwsh` and `pwsh.exe` can
+# both miss via command -v while the binary sits at the well-known Program
+# Files path. Probe there first, then fall back to PATH, same as smoke.sh.
+PWSH="C:/Program Files/PowerShell/7/pwsh.exe"
+[ -x "$PWSH" ] || PWSH="$(command -v pwsh 2>/dev/null || true)"
+
 # CRLF line endings break shell scripts with "bad interpreter"
 crlf=false
 for f in _verify/*.sh _verify/cases/*.sh scripts/smoke.sh .crew/*.sh; do
@@ -46,7 +52,7 @@ cat <<JSON
     "python3": $(have python3), "node": $(have node), "npx": $(have npx),
     "dotnet": $(have dotnet), "php": $(have php), "composer": $(have composer),
     "terraform": $(have terraform), "aws": $(have aws), "az": $(have az),
-    "psql": $(have psql), "codex": $(have codex), "pwsh": $(have pwsh)
+    "psql": $(have psql), "codex": $(have codex), "pwsh": $([ -n "$PWSH" ] && echo true || echo false)
   },
   "crlfDetected": $crlf
 }

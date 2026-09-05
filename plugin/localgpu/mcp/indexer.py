@@ -94,13 +94,24 @@ def chunk_lines(
 
 
 def is_ignored(path: Path, root: Path, patterns: Sequence[str]) -> bool:
-    """Match a pattern against the name, the path relative to the root, or any parent."""
+    """Match a pattern against the name, the path relative to the root, or any parent.
+
+    A pattern that starts with ``/`` is anchored - see :func:`_parse_gitignore`
+    - and is matched only against the full path relative to ``root``, never
+    against a bare name or an interior path segment; everything else is
+    matched the loose way this predicate always has been.
+    """
     try:
         relative = path.relative_to(root).as_posix()
     except ValueError:
         relative = path.as_posix()
     parts = relative.split("/")
     for pattern in patterns:
+        if pattern.startswith("/"):
+            anchored = pattern[1:].rstrip("/")
+            if anchored and fnmatch(relative, anchored):
+                return True
+            continue
         clean = pattern.rstrip("/")
         if not clean:
             continue
@@ -113,13 +124,51 @@ def is_ignored(path: Path, root: Path, patterns: Sequence[str]) -> bool:
     return False
 
 
+# A deliberately partial gitignore reader, not a `.gitignore`-syntax engine.
+# Supported: comments (`#`) and blank lines skipped; a trailing `/` treated
+# the same as no trailing `/` (matched by name at any depth, like every other
+# pattern here, rather than restricted to directories only); a leading `/`
+# anchoring the pattern to the directory the `.gitignore` lives in (see
+# `is_ignored`); `**/`, `*`, `?` and `[...]` passed straight to `fnmatch`.
+# NOT supported, and each silently dropped rather than mis-applied:
+# negation (`!pattern`, the construct people most often assume works),
+# backslash-escaped leading `#`/`!`, and any nested `.gitignore` below the
+# indexed root - only the one directly under the root being walked is read.
+GITIGNORE_NAME = ".gitignore"
+
+
+def _parse_gitignore(path: Path) -> list[str]:
+    """Patterns from one `.gitignore`, in the subset documented above."""
+    try:
+        raw = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    patterns: list[str] = []
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or line.startswith("!"):
+            continue
+        patterns.append(line)
+    return patterns
+
+
 def iter_files(root: Path, patterns: Sequence[str]) -> Iterator[Path]:
-    """Every candidate file under ``root``, ignored directories pruned as we go."""
+    """Every candidate file under ``root``, ignored directories pruned as we go.
+
+    A `.gitignore` directly under ``root`` is honoured on top of ``patterns``
+    - a file the project already refuses to commit is the clearest signal it
+    should not be embedded either - subject to the subset documented at
+    :func:`_parse_gitignore`. Nested `.gitignore` files below ``root`` are not
+    read.
+    """
     root = Path(root)
     if root.is_file():
         if not is_ignored(root, root.parent, patterns):
             yield root
         return
+    gitignore = root / GITIGNORE_NAME
+    if gitignore.is_file():
+        patterns = [*patterns, *_parse_gitignore(gitignore)]
     for dirpath, dirnames, filenames in os.walk(root):
         here = Path(dirpath)
         dirnames[:] = sorted(
@@ -537,6 +586,7 @@ __all__ = [
     "EMBED_BATCH",
     "EMBED_DIM",
     "EmbedModelMismatch",
+    "GITIGNORE_NAME",
     "Indexer",
     "OVERLAP_LINES",
     "WINDOW_LINES",

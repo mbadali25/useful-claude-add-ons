@@ -1249,8 +1249,12 @@ picker_draw() {
   [ "$PICK_TOP" -lt 0 ] && PICK_TOP=0
 
   picker_erase
-  printf '\033[36m  %s\033[0m\n' "$(pick_fit "$PICK_TITLE" "$width")"
-  printf '\033[36m  %s\033[0m\n' "$(printf '%*s' "${#PICK_TITLE}" '' | tr ' ' '-')"
+  local title
+  title="$(pick_fit "$PICK_TITLE" "$width")"
+  printf '\033[36m  %s\033[0m\n' "$title"
+  # Sized from the fitted title, not the raw one - a clipped title with an
+  # unclipped underline is exactly the wrap this function exists to prevent.
+  printf '\033[36m  %s\033[0m\n' "$(printf '%*s' "${#title}" '' | tr ' ' '-')"
   for (( i=PICK_TOP; i<PICK_TOP+avail; i++ )); do
     mark=" "; cursor="  "
     [ "${PICK_STATE[$i]}" -eq 1 ] && mark="x"

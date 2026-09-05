@@ -75,6 +75,25 @@ else
   skip "localgpu: engine unit tests" "venv or _test/ missing - run /localgpu:setup"
 fi
 
+# 3b. The CLI and proxy suite, which nothing ran until now. plugin/localgpu/cli
+#     holds anthropic_proxy.py and 115 tests over it, and this file previously
+#     ran mcp/_test ONLY - so the proxy's tests, including the sabotage-proven
+#     num_ctx regression test, passed a fully green gate without ever executing.
+#     A suite the gate does not run is a suite that protects the machine it was
+#     written on and nowhere else. Kept as its own `run` so a failure names which
+#     of the two suites broke.
+#
+#     Safe to wire in only because the live-Ollama test is now opt-in behind
+#     LOCALGPU_TEST_REAL_OLLAMA. Before that it probed the network at import and
+#     did real GPU inference on any machine with the model pulled - which would
+#     have made this gate non-hermetic and slow on exactly the maintainer
+#     machines most likely to run it.
+if [ -n "$VENV_PY" ] && [ -d plugin/localgpu/cli/_test ]; then
+  run "localgpu: CLI and proxy unit tests" 300 "$VENV_PY" -m pytest plugin/localgpu/cli/_test -q
+else
+  skip "localgpu: CLI and proxy unit tests" "venv or cli/_test/ missing - run /localgpu:setup"
+fi
+
 # 4. The audit's label()/canon() contract.
 run "crew-setup: CLAUDE.md heading round-trip" 60 \
     bash plugin/crew/skills/crew-setup/scripts/_test/round-trip.sh

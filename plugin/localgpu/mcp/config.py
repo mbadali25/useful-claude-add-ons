@@ -69,6 +69,21 @@ DEFAULT_IGNORE = [
     "*.woff",
     "*.woff2",
     "*.ttf",
+    # Credentials. The indexer embeds file *contents* into an on-disk vector
+    # store, so a secret excluded from git by name but missing here gets a
+    # second, less-guarded copy written to disk on every machine this plugin
+    # is installed on. ".env.*" is not the bare name "env.production" some
+    # tools use instead - that variant is deliberately left out of this list
+    # rather than caught here, since it cannot be told apart from an ordinary
+    # dotted filename by name alone.
+    ".env",
+    ".env.*",
+    "*.pem",
+    "*.key",
+    "*.p12",
+    "*.pfx",
+    "id_rsa*",
+    "credentials.json",
 ]
 
 DEFAULTS: dict[str, Any] = {

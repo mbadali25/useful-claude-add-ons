@@ -75,6 +75,28 @@ All notable changes to this repository are documented here. Format follows [Keep
   there is labelled exactly like any other, so the shell is for exploring and
   drafting and not for gates.
 
+- **`crew` 0.16.9 - four landmines from `CLAUDE.md`'s "Landmines" section, live
+  in the repo a second time, fixed by reusing the reference implementation
+  each already has.**
+
+  `pm-brief.sh`, `pm-pulse.sh`, `platform-sync.sh` and `handoff-read.sh` each
+  resolved Python with `command -v python3 || command -v python`, missing the
+  `py` launcher and standing down with `exit 0` and nothing on stderr -
+  landmine #2 verbatim, and sharpest on `pm-pulse.sh`: its own header explains
+  that swallowing exit 2 drops the PM's blocking findings, and this line
+  swallowed the whole hook. All four now source `_common.sh` and call
+  `crew_py()`, printing a diagnostic to stderr before standing down -
+  `handoff-read.sh` already had `_common.sh` sourced and `crew_py()` called
+  five lines below the bad line, and did not use it there.
+
+  `crew-setup/scripts/platform.sh` and `detect.sh` probed for PowerShell with
+  a bare `command -v pwsh`, which misses `pwsh.exe` installed at the
+  well-known Program Files path when it is not on `PATH` - verified on a
+  machine `.crew/STATUS.md` documents as running 7.6.5, where the bare probe
+  reported no PowerShell at all. Both now check
+  `C:/Program Files/PowerShell/7/pwsh.exe` before falling back to `PATH`, the
+  same idiom `_common.sh` and `_verify/smoke.sh` already used.
+
 - **`crew` 0.16.8: the machine-global config gets a template, a walkthrough,
   and a migration that finishes the job.**
 
@@ -393,6 +415,64 @@ All notable changes to this repository are documented here. Format follows [Keep
   exits 0.
 
 ### Fixed
+
+- **`scripts/install-prerequisites.ps1` - `Format-PickerLine` reserved one
+  character for a three-character `...` ellipsis, returning `Width + 2` on
+  every clipped line.** Measured before the fix: `Width=20 -> 22`,
+  `Width=40 -> 42`, `Width=80 -> 82`. The keys/hint lines are called with
+  `$winW - 1`, so an 80-column console emitted 81 characters and wrapped,
+  desyncing the cursor-up redraw the picker's own comment warns about. The
+  bash twin's `pick_fit` was already correct (a 1-character `…`, reserving
+  1); `.ps1` now reserves 3 for `...` instead of switching to the Unicode
+  ellipsis, keeping the file's existing ASCII-only convention (its keys line
+  already spells out `Up/Down` rather than using bash's arrow glyphs) - the
+  fix is that the returned length no longer exceeds `Width`, not which
+  ellipsis is used.
+
+  The title-underline line in both flavours sized its dash count from the
+  **unclipped** title (`${#PICK_TITLE}` in `.sh`, `$Title.Length` in `.ps1`)
+  instead of the fitted one, so a long title produced a dash line far wider
+  than the console and wrapped independently of the label-clipping fix
+  above. Both now size the dashes from the title text actually returned by
+  the fitter. `.ps1` also had no width floor at all - `Get-PickerConsole`
+  returns raw `[Console]::WindowWidth`, and only the label width had a
+  floor - so a narrow window could wrap the underline regardless; it now
+  floors at 40, matching bash's `term_cols()`.
+
+- **localgpu 0.1.7 -> 0.1.8: a security review found the indexer had no
+  automatic defence against embedding secrets.** `DEFAULT_IGNORE` covered
+  `.git`, VCS directories, build/dependency directories and binary
+  extensions, but no `.env`, no credential or key patterns, and it never
+  consulted a project's own `.gitignore`. Because the indexer embeds file
+  *contents* into an on-disk vector store, a `.env` or private key not
+  excluded by name got a second, less-guarded copy written to disk - one a
+  later release cannot undo, since the embedding is already there. Two
+  changes, both dependency-free (this package stays standard-library-only
+  except numpy):
+
+  `DEFAULT_IGNORE` in `mcp/config.py` now also excludes `.env` and its
+  dotted variants (`.env.*` - matching the family, not the bare
+  "env.production" some tools use instead, which cannot be told apart from
+  an ordinary filename by name alone), `*.pem`, `*.key`, `*.p12`, `*.pfx`,
+  `id_rsa*` and `credentials.json`.
+
+  `iter_files`/`is_ignored` in `mcp/indexer.py` now honour a `.gitignore`
+  found directly under the indexed root, in a documented subset: comments
+  and blank lines skipped, a leading `/` anchors a pattern to that root
+  (matched only against the full relative path, never as a bare name or an
+  interior segment), `**/`/`*`/`?`/`[...]` pass straight to `fnmatch`, and a
+  trailing `/` is treated like no trailing `/` at all. **Not supported:
+  negation (`!pattern`) is silently dropped rather than mis-applied, and
+  nested `.gitignore` files below the indexed root are not read.**
+
+  `mcp/_test/test_secrets.py` builds a fixture repo with a `.env`, a
+  `*.pem`, a file excluded only via `.gitignore`, and an ordinary source
+  file, then asserts on the *stored chunk text* fed to the embedder - not
+  merely on which files got indexed - since content reaching the vector
+  store is the actual risk. Sabotage-tested: removing the `.env` pattern
+  and disabling the `.gitignore` handling each turned this test red on the
+  exact secret named in the assertion, independently. 227 -> 228 tests;
+  `_verify/smoke.sh` stayed 10/10.
 
 - **localgpu 0.1.6 -> 0.1.7: three more defects, found by a reviewer running
   mutation tests against `anthropic_proxy.py` rather than reading it.**
