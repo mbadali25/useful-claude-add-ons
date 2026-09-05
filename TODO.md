@@ -189,3 +189,41 @@ Note for whoever does fold it in: `check_fits_context(body, num_ctx)` at
 `estimate_prompt_tokens` translates internally. Changing those call sites to pass
 `to_ollama_request(...)`'s output would double-translate and measure the wrong
 thing. The obvious-looking fix is a bug.
+
+## Correction: nothing under `.crew/` is committed, and one commit message says otherwise
+
+`.gitignore:277` ignores `.crew/` deliberately, with a stated rationale —
+`obsidian.vaultPath` and `boardDir` are absolute paths valid on one machine, and
+`pm.authority` is a trust decision a clone should not inherit. That is correct
+and should stay. But three consequences were not obvious and bit this session:
+
+**1. `ae1c92ee`'s commit message is wrong.** It reads "Record both round-3 review
+passes, and rebuild the code graph". The `.crew/metrics.md` append it describes
+happened on disk and is still there, but `git add -A` silently skipped it as an
+ignored path, so the commit contains only `graphify-out/graph.json` and
+`plugin/localgpu/cli/anthropic_proxy.py`. The message claims a file the commit
+could not have held. Not amended, because the commit is several deep and other
+lanes have read it; recorded here instead so the history is not trusted blindly.
+
+**2. The `/crew:review` skill's stated assumption is false in this repo.** It says
+`.crew/verify.json` "is committed and travels between machines", and reasons from
+that when deciding whether a rule naming an uninstalled agent is a gap. Here it
+travels nowhere. A rule added on one machine is invisible on every other.
+
+**3. Half of the CLI-suite gate fix does not travel.** `_verify/run-all.sh` now
+runs `plugin/localgpu/cli/_test` and that change IS committed, so the gate is
+fixed for everyone. The matching `.crew/verify.json` rule that maps
+`plugin/localgpu/cli/**` to `run-all.sh` is local-only. The important half
+travels; the routing half does not, and a fresh clone gets it back from
+`/crew:init`.
+
+**4. The codemap is local-only too.** `.crew/codemap/` now holds four subsystem
+files and `crew_state.py` counts `knowledge.subsystems: 4` on this machine — but
+a fresh clone reads 0 again. That is by design, not a defect: a clone runs
+`/crew:init`. Worth knowing before anyone treats the codemap as a shipped
+artifact.
+
+If the intent is for `verify.json` specifically to travel while the rest of
+`.crew/` stays machine-local, that is a one-line negation in `.gitignore`
+(`!.crew/verify.json`) plus a decision about whether its `agents` lists are
+portable. Not doing it unasked — it changes what a clone inherits.
