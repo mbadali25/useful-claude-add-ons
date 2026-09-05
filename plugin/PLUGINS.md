@@ -311,7 +311,7 @@ Nothing keeps running afterwards — there were no hooks. The Nuclei binary and 
 | **Source** | [`obsidian-vault/`](obsidian-vault) |
 | **Version** | 0.1.2 |
 | **Install** | `claude plugin install obsidian-vault@useful-claude-add-ons` |
-| **Registers** | 2 agents, 8 commands, 3 skills, 8 hook entries (3 scripts × `.sh`/`.ps1`) across 4 events |
+| **Registers** | 2 agents, 11 commands, 3 skills, 8 hook entries (3 scripts × `.sh`/`.ps1`) across 4 events |
 | **Upstream guide** | [`obsidian-vault/README.md`](obsidian-vault/README.md) |
 
 Makes one or more Obsidian vaults Claude Code's durable, token-efficient
@@ -357,12 +357,15 @@ was disabled once during development to confirm the suite goes red rather than
 staying green, per this repo's rule that a hook allowed to block needs proof
 its suite can catch a real regression, not just that the suite exists.
 
-### Commands — 8
+### Commands — 11
 
 | Command | Does |
 |---|---|
 | `/obsidian-vault:init [name] [path]` | Install/configure Obsidian, the REST bridge, and this plugin's config for one vault - see the `obsidian-setup` skill for the full steps |
-| `/obsidian-vault:doctor` | Diagnose every configured vault's bridge, a git-configured-but-not-a-git-repo default vault (Obsidian Git firing into the void on a timer), `CLAUDE.md` drift against what the filesystem actually shows, gardener staleness, and empty structural folders - proposes fixes, applies none without confirmation |
+| `/obsidian-vault:doctor` | Diagnose every configured vault's bridge by running `vault_ops.py diagnose`, plus a git-configured-but-not-a-git-repo default vault (Obsidian Git firing into the void on a timer), `CLAUDE.md` drift against what the filesystem actually shows, gardener staleness, and empty structural folders. Read-only, and its tool list enforces that rather than asserting it - the acting is `/obsidian-vault:repair` |
+| `/obsidian-vault:repair` | The acting counterpart to `doctor`: reassign colliding ports, reload a vault so a `data.json` edit takes effect, and re-register its MCP server, for one vault or all. Shows the plan before applying and takes a yes per operation |
+| `/obsidian-vault:install` | Enable the plugin set the vault's **profile** calls for - the Local REST API floor for any vault Claude must reach, plus `code-graph` for a generated vault or the fuller authored set for a human one - check the new vault's ports against every other vault's, then register its MCP server. Each plugin is confirmed on its own; a set is never enabled behind one yes |
+| `/obsidian-vault:note <type> <title>` | Create a note that satisfies the memory contract on the first write, from the templates this plugin now ships - `memory`, `concept`, `decision`, `session`, `source`, `design` |
 | `/obsidian-vault:optimize` | Reports per-plugin cost on a large vault (index size, what depends on it); every install or removal proposed and confirmed one at a time, never batched behind a single yes |
 | `/obsidian-vault:canvas <topic>` | Builds/refreshes a `.canvas` from a topic's wikilink neighborhood - delegates to the `obsidian-canvas` skill for the JSON Canvas mechanics where that skill is installed |
 | `/obsidian-vault:map <area>` | Builds/refreshes a Map-of-Content note, grouped by the vault's own taxonomy |

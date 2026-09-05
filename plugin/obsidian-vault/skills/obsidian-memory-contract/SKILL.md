@@ -21,15 +21,27 @@ Every memory note carries these. A note missing any of them is broken:
 
 ```yaml
 ---
-type: concept          # concept | session | source | decision | daily | project-index | meta
-title: "Exact title"   # matches the filename, quoted
-created: 2026-08-20    # YYYY-MM-DD, never changes once set
-updated: 2026-08-20    # bump on every edit
-status: seed           # seed | developing | established
+type: concept
+title: "Exact title"
+created: 2026-08-20
+updated: 2026-08-20
+status: seed
 tags:
   - concept
 ---
 ```
+
+- `type` - concept | session | source | decision | daily | project-index | meta
+- `title` - byte-identical to the filename, quoted
+- `created` - YYYY-MM-DD, never changes once set
+- `updated` - YYYY-MM-DD, bumped on every edit
+- `status` - seed | developing | established
+- `tags` - at least one, each on its own line as `  - tag`
+
+Those notes sit outside the block on purpose. **A YAML comment is only a
+comment on its own line.** Everything after `key:` is the value, so
+`title: "x"  # matches the filename` sets the title to the comment as well and
+the guard blocks the note against its own filename.
 
 Type-specific keys a vault's Dataview dashboards commonly read - do not drop
 them once a vault's own contract names them:
@@ -42,6 +54,35 @@ them once a vault's own contract names them:
   `independence_key`, `review_status`
 - **decision** - `decision_id` (`D-NNN`), `decision_status`, `date_decided`,
   `deciders`, `supersedes`, `superseded_by`
+
+## Do not satisfy this by hand - start from a template
+
+`templates/` in this plugin holds a conforming note for each of `memory`,
+`concept`, `decision`, `session`, `source` and `design`, and
+`/obsidian-vault:note` writes one for you with the title and dates already
+stamped. Use them. `hooks/scripts/vault_guard.py` blocks a write that breaks
+any rule above, and a contract that is enforced but not served just costs you
+a rejected turn per note.
+
+Read `templates/README.md` for the substitution rules - two tokens, replaced
+by a literal string replace, no Templater syntax, because Claude writes these
+notes through the filesystem or the REST bridge where nothing would resolve
+`{{date}}`.
+
+**`design` is not a type.** It is a `type: concept` note carrying
+`domain: design` and a `design` tag. A seventh type would be half-registered:
+the guard's own `typeKeys` table names four, and a Dataview query keyed on the
+list above would silently omit every design note. The variant reads to both.
+
+**`memory` is not a type either.** `templates/memory.md` is the bare six-key
+skeleton for a note none of the four specialised kinds fit, and it ships
+`type: meta`. Change it to `daily` or `project-index` where that is what the
+note is; the guard names no type-specific keys for any of the three, so the
+frontmatter stays the same either way.
+
+**The guard never checks what `type:` says**, only that it is present. A
+misspelled or invented type is written, accepted, and then invisible to
+everything that queries by type - so check it against the list above yourself.
 
 ## Evidence rules
 

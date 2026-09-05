@@ -6,6 +6,222 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
+- **`obsidian-vault` 0.3.0: vault profiles, note templates, and a bridge status
+  that tells four failures apart.**
+
+  A vault is either authored, where a person reads it, or generated, where only
+  Claude greps it. `hooks/scripts/vault_profiles.py` is the single definition of
+  what belongs in each, read by install, by the profile report, and by optimize —
+  install and strip are the same decision from two sides, and two lists would
+  have drifted. `vault_ops.py profile` reports the detected kind with the
+  evidence behind it, from note count, plugin count, a graphify manifest or the
+  `code-graph` plugin, and whether notes carry the contract's frontmatter. Never
+  a flag the user sets, always overridable.
+
+  The sets were read off working vaults rather than invented. `bridge` is
+  `obsidian-local-rest-api` alone — the floor, without which a vault is invisible
+  to Claude. `graph` adds `code-graph` and deliberately nothing else. `authored`
+  is the fuller human set, with omnisearch and text-extractor only below 50,000
+  notes. A bare `enable-plugin --apply` writes only the bridge floor; every
+  other plugin has to be named, because enabling a set behind one yes is the
+  blanket-confirmation this plugin's own optimize command already refuses. A
+  split stays the last resort, its seam is provenance rather than size, and the
+  report counts the wikilinks it would break.
+
+  `templates/` closes a gap that had been costing a retry on every note:
+  `vault_guard.py` enforced the six-key contract but nothing helped satisfy it,
+  so a conforming note was written by hand and fixed afterwards. Six templates —
+  `memory`, `concept`, `decision`, `session`, `source`, `design` — each verified
+  against the guard as the PostToolUse hook invokes it, passing on the first
+  write with no advisory. `/obsidian-vault:note` creates one. `design` ships as a
+  `type: concept` variant: the guard has no type enum, so a new type would have
+  passed while being invisible to the contract's type keys and to any Dataview
+  query built on them.
+
+### Fixed
+
+- **`obsidian-vault` 0.3.0: `diagnose` printed a FAIL and exited 0.** A scoped
+  run prints every port collision on the machine - which is the point of a wide
+  diagnosis, since a collision the selected vault is not part of is often what
+  explains its symptoms - but the exit code counted only the selected vaults. So
+  `diagnose --vault memory` could print `[FAIL] port 27126 is claimed by ...` for
+  two unrelated vaults and then exit 0, contradicting itself and the exit-code
+  table in `doctor.md`.
+
+  Neither obvious fix was right. Hiding the out-of-scope collision would delete
+  the most useful line on the screen; counting it would tell someone who asked
+  about one vault that their question failed because two others clash. So the
+  label carries the scope instead: a collision involving the selection is
+  `[FAIL]` and moves the exit code, one elsewhere on the machine is still
+  printed as `[ELSEWHERE]`, names the vaults it belongs to, and does not. The
+  `--json` output carries the same distinction as `in_scope`, so a consumer
+  reading the collisions and the exit code cannot reach the contradiction
+  either. An unscoped run is unchanged: every collision is in scope.
+
+- **`obsidian-vault` 0.3.0: a mistyped `--port` became a working config for a
+  port nobody chose.** `add-vault --port` accepted any integer and wrote it;
+  a later read passed it through the config repairer, which substitutes the
+  default port and carries on, so `217123` silently became `27123` and looked
+  like it had worked. Both paths now ask one question, `port_in_range()`, and
+  answer it differently on purpose: a value already written in a config is still
+  repaired, because a hook that dies on a typo it did not make helps nobody,
+  while a value being *accepted from a person* is rejected. Repairing input at
+  the point of entry is what turns a typo into a silent wrong answer.
+
+  The stale "installs it, enables it" claim also outlived the rename in one more
+  place, `obsidian-setup/SKILL.md`. Grepped rather than spot-fixed; that was the
+  only survivor, and it now states the manual download prerequisite and the
+  reason for it.
+
+- **`obsidian-vault` 0.3.0: `fix-ports --vault X` edited X's neighbour.** The
+  same shape as writing to an unconfigured vault, one level up: `--vault` scoped
+  which collisions to act on but never constrained which vault moved, so
+  scoping to the vault holding the port wrote the *other* vault's `data.json`.
+  Being in config is consent to be managed by this plugin; it is not consent to
+  be edited by a command pointed at something else, and a scripted
+  `fix-ports --vault memory --apply` in a hook never reads a plan first. Moving
+  a vault the user did not name is now refused and names it, with the unscoped
+  run as the way to actually fix the collision - refused rather than silently
+  skipped, because the collision is real and the diagnosis just named it.
+
+  The refusal also carries the field that actually collides. It hardcoded
+  `port`, which the printer labels HTTPS, so a collision existing only on
+  `insecurePort` was refused for an HTTPS change nobody had contemplated. Both
+  refusal paths now derive the claimed keys the same way the move path does, so
+  a vault claiming one port on both protocols is refused for both.
+
+  A configured vault with no recorded path was also reported as one whose
+  directory had been deleted: the reason was decided from a display string that
+  is never empty, which made the no-path branch unreachable. It is decided from
+  whether a path was found.
+
+- **`obsidian-vault` 0.3.0: `fix-ports` could rewrite a vault nobody configured,
+  and an empty selection reported success.** Fencing `--all` off from
+  unconfigured vaults was done at the three commands that route through
+  `select()`. `fix-ports` is the one acting command that does not - it goes
+  straight from discovery into the planner - so it could still pick a
+  discovered-but-unconfigured vault as the mover and write that vault's own
+  `data.json`, a heavier write than the MCP config the earlier fix protected.
+
+  It now moves only configured vaults, and a collision whose mover is
+  unconfigured is **refused by name** rather than worked around. Silently
+  choosing a different mover would hide a real conflict and relocate a vault
+  that was not at fault, so the output says which vault has to `add-vault`
+  first. `scan` still sees everything, because a diagnosis that cannot see the
+  vault causing a collision cannot explain it, and `graph-health` reaches a
+  vault only through a configured `layout` or an explicit `--vault`.
+
+  Separately, filtering `--all` down to configured vaults could produce an empty
+  selection that exited 0 - a configured vault whose directory was deleted,
+  renamed, or sits on an unmounted drive is in config and not in discovery.
+  Reporting success for work nobody did is the failure this file's exit codes
+  exist to prevent, so every such vault is now named with its path and the
+  reason, and keeps the exit non-zero.
+
+  The `claude mcp get` parser also gained direct tests against real captured
+  output, and now treats a redaction marker as *unknown* rather than as a key.
+  As of 2026-09-05 this machine prints the token verbatim and no redaction
+  occurs; the guard is insurance against a format change, because that failure
+  would be silent and destructive - every run would rewrite a correct
+  registration and nothing would look wrong.
+
+- **`obsidian-vault` 0.3.0: a rotated key was never noticed, and `--all` reached
+  vaults nobody had configured.** `register` compared the registered URL to the
+  target and reported "already registered" when they matched. `claude mcp list`
+  prints name and URL only, so that was evidence about the URL and nothing else:
+  a rotated `apiKey` left the URL identical and the bridge permanently
+  unauthenticated, and the command documented as the fix for exactly that
+  reported success and did nothing, forever. `claude mcp get` does print the
+  stored header, so the key is now read back and compared. When it cannot be
+  read, the registration is rebuilt rather than assumed current - re-registering
+  a correct server costs one CLI call, and assuming a stale one is correct is
+  the failure this command exists to fix.
+
+  Separately, `--all` acted on every vault discovered on the machine rather than
+  every vault in config, so `register --all --apply` would write a user-scope MCP
+  server for a vault the user had never put under this plugin, and
+  `enable-plugin --all --apply` would edit its `community-plugins.json`. Both
+  now stop at the config. Discovery itself is unchanged and deliberately wide -
+  an unconfigured vault can still be the one causing a port collision, and a
+  diagnosis that cannot see it cannot explain it - but naming a vault with
+  `--vault` is consent and sharing a disk is not. Anything skipped is named in
+  the output rather than quietly dropped.
+
+  The profile detector's structural fallback also stopped asserting two things
+  it had not checked. Reaching that branch means both authored signals fell
+  *under* their thresholds, and under is not zero - so a vault with one enabled
+  authored plugin was told "no plugin from the authored set is enabled", after
+  which `optimize` could propose disabling the Dataview that renders its notes.
+  It now reports the counts it measured and marks the verdict unconfident when
+  any authored plugin is on.
+
+- **`obsidian-vault` 0.3.0: the install step did not install, and setup could
+  not name a new vault.** `install-plugin` enabled a plugin whose files were
+  already on disk. On a fresh vault - its primary scenario - it printed manual
+  UI steps and stopped, while `/obsidian-vault:install` and `init` presented it
+  as *the* installation step and everything downstream assumed it had happened.
+
+  It is now `enable-plugin`, which is what it does, with `install-plugin` kept
+  as an alias so nothing breaks mid-flight. The download stays a stated manual
+  prerequisite rather than becoming a fetch, and that is deliberate: an Obsidian
+  community plugin is unsigned `main.js` on a GitHub release, with no publisher
+  signature and no authoritative checksum, and it runs with Obsidian's own
+  privileges over every note in the vault. There is nothing to verify a download
+  against, and writing unverifiable executable code into someone's editor is not
+  an install worth automating. A vault missing the bridge now reports `NOT
+  DOWNLOADED`, the exact route through Obsidian's own installer, and - for the
+  Local REST API specifically - that the vault is invisible to Claude until it
+  is done.
+
+  Separately, a vault whose chosen name differed from its directory basename
+  could not be set up at all. An unconfigured vault is discovered under its
+  folder name, and the config entry that would make the chosen name resolvable
+  was written at the *end* of setup - after the enable, port and registration
+  steps had already tried to address it and failed with "unknown vault". The new
+  `add-vault` subcommand writes that entry, and `init` now runs it first. It
+  merges rather than replaces, and carries a legacy `vaultPath` config across
+  instead of silently unconfiguring the vault that was already working. Both produce a silent port, so both read as "down" — and one vault's
+  window exiting was indistinguishable from an unrelated port collision. The
+  hook now separates `NOT OPEN`, `NO SERVER`, `NOT ANSWERING YET` and `UP`. The
+  third is the one that was costing time: on a large vault a socket that accepts
+  without answering means indexing is still running, which is not a fault to
+  chase.
+
+  There is now a fifth verdict, `DOWN, CAUSE NOT DETERMINED`, and it is the
+  point of the change rather than a fallback. The previous diagnostic named a
+  cause with confidence and was wrong, sending its reader to the one file that
+  was already correct — a confident wrong answer costs more than an honest gap.
+  Guidance is derived only from evidence the script actually checked; where two
+  causes cannot be separated it says so and names the check that would separate
+  them; where a check could not run it says that rather than omitting it.
+
+  Process attribution is honest about its own limits. No Obsidian process names
+  its vault on any platform, so command lines are useless everywhere. Window
+  titles name it on Windows and are read in-process. On macOS and Linux the
+  script reports presence only and declares attribution undetermined rather than
+  guessing, and two vaults sharing a folder name are undetermined rather than a
+  coin flip.
+
+- **`obsidian-vault` 0.2.0: the plugin can repair a vault bridge instead of
+  describing how to.** Its connection handling was prose — `bridge_status.py`
+  probed and reported, the vault guard and capture hooks ran, and everything
+  else was a command file telling the session what to type. Nothing restarted a
+  server, nothing wrote `data.json`, and the codegraphs vault's own health was
+  never checked, only whether `graphify` existed.
+
+  `hooks/scripts/vault_ops.py` is the action layer: `scan`, `diagnose`,
+  `add-vault`, `fix-ports`, `reload`, `register`, `enable-plugin` and
+  `graph-health`.
+  Dry-run by default, writing only under `--apply`, `--json` on the read-only
+  subcommands, and exit 0 healthy, 1 problems found, 2 usage error.
+  `/obsidian-vault:repair` and `/obsidian-vault:install` are new and drive it;
+  `/obsidian-vault:doctor` stays read-only and now enforces that through its
+  tool list rather than asserting it in prose; `/obsidian-vault:graph` gained
+  the `graph-health` check. Every hand-typed procedure the script replaced —
+  the registry read, the plugin install, the `claude mcp add` block, the
+  end-to-end curl — was deleted from `init`, the `obsidian-setup` skill and the
+  plugin README rather than left standing beside it.
+
 - **`crew` 0.15.2: every agent can now reach a skill, and the UPDATE.md gate
   actually runs.** 0.15.1 gave the `Skill` tool to the eight agents that named a
   crew skill in their prose. That fixed the agents whose instructions were

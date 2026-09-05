@@ -159,7 +159,7 @@ For this repo's own skills, [`scripts/check-marketplace.py`](scripts/check-marke
 | 16 SkillUI | `skillui` + `playwright` + the Chromium browser build | npm |
 | 17 Strix | The `strix` pentesting CLI | `curl -sSL https://strix.ai/install \| bash` |
 | 18 Obsidian | The Obsidian desktop app (Chocolatey → winget on Windows, flatpak → snap on Linux), plus the `claude-obsidian` vault engine and [`kepano/obsidian-skills`](https://github.com/kepano/obsidian-skills) — Obsidian's own Markdown, Bases, JSON Canvas, CLI and Defuddle skills | choco/winget/flatpak/snap + 2 marketplaces |
-| 19 This repo's plugins | The `crew` plugin from [`plugin/`](plugin/) — 14 subagents, 23 slash commands, 17 bundled skills, and 20 hook entries (10 scripts × `.sh`/`.ps1`) across 5 events — `obsidian-vault` — 2 agents, 8 slash commands, 3 skills, and 8 hook entries (3 scripts × `.sh`/`.ps1`) — and `gizmoduck` — 6 slash commands and 1 skill, no hooks, no agents. Off by default because hooks execute whether or not Claude agrees with them | this repo |
+| 19 This repo's plugins | The `crew` plugin from [`plugin/`](plugin/) — 14 subagents, 23 slash commands, 17 bundled skills, and 20 hook entries (10 scripts × `.sh`/`.ps1`) across 5 events — `obsidian-vault` — 2 agents, 11 slash commands, 3 skills, and 8 hook entries (3 scripts × `.sh`/`.ps1`) — and `gizmoduck` — 6 slash commands and 1 skill, no hooks, no agents. Off by default because hooks execute whether or not Claude agrees with them | this repo |
 | 20 `graphify` | The `graphify` CLI (`graphifyy` on PyPI), registered per-repository with `graphify install --project`. Off by default; not installed globally | `uv tool install` |
 | 21 Microsoft MCP servers | Registers up to 4 servers via npx — `mcp-msgraph`, `mcp-intune`, `mcp-o365-admin` (app-only via `MS_ADMIN_*`, OR delegated via an existing `az login` session, checked with `az account show` — no app registration required for the latter), `mcp-o365-user` (delegated device-code, needs `MS_USER_CLIENT_ID`). Skipped with instructions when neither an `az login` session nor credentials are found | npm (`@badali404/mcp-*`) + `claude mcp add` |
 
@@ -225,6 +225,102 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 Generated from [`plugin/UPDATE.md`](plugin/UPDATE.md) by `scripts/sync-updates.py`. Edit that file, not this block.
 
 <!-- BEGIN plugin/UPDATE.md -->
+
+### obsidian-vault 0.3.0
+
+**Vault profiles.** A vault is either authored, where a person reads it, or
+generated, where only Claude greps it, and the right plugin set differs. One
+definition in `hooks/scripts/vault_profiles.py` now decides both what to
+install and what to strip — two lists would have drifted. `vault_ops.py
+profile` reports the detected kind **with the evidence behind it**, never a
+config flag you have to set, and always overridable.
+
+The sets, read off working vaults rather than invented: `bridge` is
+`obsidian-local-rest-api` alone, the floor for any vault Claude must reach at
+all. `graph` adds `code-graph` and nothing else — omnisearch, dataview,
+backlinks and text-extractor are the index-building cost, and nothing reads
+their output in a vault only Claude greps. `authored` is the fuller human set,
+with omnisearch and text-extractor only below 50,000 notes.
+
+Two rules the profile work does not bend. A plugin is confirmed **one at a
+time**, because any of them can be load-bearing for hundreds of notes through
+a Dataview query, a Templater template or a Breadcrumbs edge — so a bare
+`enable-plugin --apply` writes only the bridge floor and every other plugin
+needs naming. And **splitting a vault is the last resort, not the first**: the
+real limit is index-building plugins rather than note count, a split
+permanently breaks every wikilink crossing it, and where one is genuinely
+warranted the seam is provenance, not size. The report names the seam and
+counts the wikilinks that would break; nothing moves without a yes.
+
+**Note templates, because the contract was enforced but not served.**
+`vault_guard.py` blocks a write that violates the six-key frontmatter
+contract, and it is right to. But the plugin shipped no templates, so every
+conforming note was written by hand and fixed afterwards — a wall with no
+door. `templates/` now holds `memory`, `concept`, `decision`, `session`,
+`source` and `design`, each verified to pass the guard on the first write, and
+`/obsidian-vault:note` creates one. `design` ships as a `type: concept`
+variant rather than a new type: the guard has no type enum, so a new type
+would have passed while being invisible to the contract's own type keys and to
+any Dataview query keyed on them.
+
+**The bridge status tells four states apart.** A dead Obsidian window and a
+misconfigured server both produce a silent port, and until now both rendered
+as one line: down. They are now `NOT OPEN`, `NO SERVER`, `NOT ANSWERING YET`
+and `UP`, plus an explicit `DOWN, CAUSE NOT DETERMINED`. The third matters
+most on a large vault, where a socket that accepts but does not answer means
+indexing is still running — not a fault to chase.
+
+That last verdict is the point of the change. The previous diagnostic named a
+cause with confidence and was wrong, which sent its reader to a file that was
+already correct. Guidance is now derived only from evidence the script
+actually checked, and where two causes cannot be separated it says so and
+names the check that would separate them. Process attribution is honest about
+its limits: window titles name a vault on Windows, and on macOS and Linux the
+script reports presence and says attribution is undetermined rather than
+guessing.
+
+### obsidian-vault 0.2.0
+
+The plugin can now **repair a vault bridge**, where before it could only
+describe how. `hooks/scripts/vault_ops.py` is the action layer, dry-run by
+default and writing only under `--apply`:
+
+| Subcommand | Does |
+|---|---|
+| `scan` | Every vault on the machine — path, real ports, whether the REST plugin is installed, whether it is registered |
+| `diagnose` | Health verdict per vault, port collisions named first |
+| `fix-ports` | Assigns non-colliding ports and writes `data.json` |
+| `reload` | `app:reload` over the REST API, so a `data.json` edit actually takes effect |
+| `register` | Adds or refreshes each vault's MCP server registration |
+| `enable-plugin` | Enables a plugin whose files are already on disk. It does not download one, and no longer claims to |
+| `add-vault` | Names a vault in config so `--vault <name>` resolves - the first step of setting one up, not a record of it afterwards |
+| `graph-health` | The codegraphs vault's `<org>/<repo>` layout, coverage and staleness |
+
+Two new commands drive it: `/obsidian-vault:repair` acts, and
+`/obsidian-vault:install` sets up a vault that has no REST plugin at all.
+`/obsidian-vault:doctor` stays read-only and now enforces that with its tool
+list rather than asserting it in prose.
+
+**The diagnostic was wrong, and the fix is the point of this release.** Two
+vaults declaring the same HTTPS port is not a partial failure: the loser's
+plugin fails to start its server at all, which takes its HTTP listener down
+with it. That produced three symptoms with one cause — the HTTP port never
+listened, the HTTPS port answered with the *other* vault's API key, and it
+served the *other* vault's files. The shipped hook blamed
+`enableInsecureServer`, which was already on. It now compares ports across
+every vault before it blames any flag, and reports a vault with no plugin and
+a wrong-vault-answering server as distinct verdicts.
+
+The hook also stopped deriving the HTTPS port as the HTTP port plus one. That
+assumption is false in practice — one vault on this machine runs HTTPS *below*
+its HTTP port. Both ports are read from the vault's own `data.json`, where
+`port` is HTTPS and `insecurePort` is HTTP. The same correction was applied to
+`init`, the setup skill and the README, which all taught the plus-one rule.
+
+Two facts worth knowing before touching any of it: `curl -k` reaches the HTTPS
+port where Claude Code's Node MCP client rejects the self-signed certificate,
+and the plugin reads `data.json` only at load, so a stale instance disagrees
+with disk on both the port and the API key until the window is reloaded.
 
 ### crew 0.15.1
 
