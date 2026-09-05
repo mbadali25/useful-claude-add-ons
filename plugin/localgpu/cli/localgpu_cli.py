@@ -43,7 +43,7 @@ import anthropic_proxy  # noqa: E402
 import config as localgpu_config  # noqa: E402
 import ollama as ollama_client  # noqa: E402
 
-__version__ = "0.1.0"
+from _version import VERSION as __version__  # noqa: E402
 
 BANNER = """\
 localgpu shell - a separate Claude Code session on a local model

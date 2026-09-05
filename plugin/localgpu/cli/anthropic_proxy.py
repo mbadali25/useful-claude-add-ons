@@ -25,11 +25,17 @@ What does not, and is reported rather than faked:
   numbers report zero cache hits rather than inventing them.
 * **Token counts.** Ollama reports its own prompt/eval counts and those are
   passed through. They are not Anthropic's tokenizer and will not match it.
+* **A request too big for the local model's context window.** This is
+  refused up front (see `check_fits_context`), not sent to Ollama to be
+  silently truncated. Ollama has no equivalent of Anthropic's 400 for an
+  oversized prompt - it drops the front of the conversation and answers
+  about whatever survived, which looks exactly like success.
 """
 
 from __future__ import annotations
 
 import json
+import sys
 import urllib.error
 import urllib.request
 import uuid
@@ -48,6 +54,43 @@ DEFAULT_TIMEOUT = 600.0
 
 # Anthropic requires max_tokens; Ollama calls the same thing num_predict.
 DEFAULT_MAX_TOKENS = 4096
+
+# num_predict (above) only bounds the OUTPUT. A request with no `num_ctx`
+# silently runs Ollama's own built-in default INPUT window of 4096, no matter
+# how large the model actually supports - the model then truncates the front
+# of the prompt to fit and answers confidently about whatever survived. That
+# is the whole bug this module exists to not reproduce.
+#
+# 32768 - qwen2.5-coder's own advertised max - and not a smaller "safer"
+# number, because a smaller number was measured to break the actual job:
+# a single opening turn of `localgpu shell -p` in this project's own Claude
+# Code install, even with --strict-mcp-config stripping every optional MCP
+# server, still comes in around 22k real tokens (measured via Ollama's
+# `prompt_eval_count`) before the model has answered anything - tool
+# schemas and skill listings dominate it, not the conversation. A
+# conservative half-window default left no room for that and would have
+# turned right back into a version of the bug this fixes: the model just
+# never gets to see the actual question.
+#
+# The VRAM trade this makes, measured with `ollama ps` on the 8 GB card this
+# was built against: qwen2.5-coder:7b-instruct-q4_K_M stays 100% GPU-resident
+# (5.9 GB) through 24576, and spills to 12%/88% CPU/GPU at the full 32768
+# (6.8 GB requested against 8 GB of card, with Windows/driver overhead eating
+# the rest). That 12% is a real, bounded cost - slower token generation - not
+# a correctness one; the alternative (fitting only the low context) makes the
+# tool unable to answer at all in a normal Claude Code install. resolve_num_ctx
+# still caps this at whatever a *smaller*-context model actually supports.
+DEFAULT_NUM_CTX = 32768
+
+# There is no local tokenizer for qwen2.5-coder available without adding a
+# dependency, and the check this feeds only has to catch "this cannot
+# possibly fit," not count exactly. 4 characters/token is the same rule of
+# thumb Anthropic's own docs use for English text, and it held up against
+# this model's own tokenizer on a real, tool-schema-heavy Claude Code
+# request: Ollama's `prompt_eval_count` for a captured 104k-character request
+# came back at 22,056 tokens - about 4.7 chars/token, i.e. this estimate runs
+# slightly conservative on exactly the content this module actually sees.
+_CHARS_PER_TOKEN_ESTIMATE = 4
 
 
 class ProxyError(RuntimeError):
@@ -206,10 +249,109 @@ def offered_tool_names(body: dict[str, Any]) -> set[str]:
     return {t["function"]["name"] for t in to_ollama_tools(body.get("tools"))}
 
 
-def to_ollama_request(body: dict[str, Any], model: str, keep_alive: str) -> dict[str, Any]:
+def resolve_num_ctx(
+    ollama_url: str,
+    model: str,
+    timeout: float = 10.0,
+    default: int = DEFAULT_NUM_CTX,
+) -> int:
+    """The context window to request, capped by what the model actually supports.
+
+    Asks Ollama's `/api/show` for the model's own advertised context length
+    and returns the smaller of that and `default` - `default` exists so one
+    model's huge native window does not get requested against an 8 GB card
+    that cannot hold the KV cache for it (see DEFAULT_NUM_CTX), and the cap
+    the other direction exists so a *smaller*-context model is never asked
+    for more than it supports, which is its own failure.
+
+    `/api/show`'s `model_info` names context length with an
+    architecture-prefixed key ("qwen2.context_length", "llama.context_length",
+    ...) rather than one fixed name, because that GGUF metadata field is
+    namespaced under the architecture that defines it.
+
+    Any failure here - Ollama unreachable, model not pulled yet, a build that
+    does not report context_length, an unrecognised key - falls back to
+    `default` rather than raising. This runs on the hot path of a session's
+    first turn; a local model that already works at a documented default
+    context beats a session that cannot start because a metadata probe
+    failed.
+    """
+    try:
+        request = urllib.request.Request(
+            f"{ollama_url.rstrip('/')}/api/show",
+            data=json.dumps({"model": model}).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            info = json.loads(response.read().decode("utf-8"))
+        model_info = info.get("model_info") or {}
+        arch = model_info.get("general.architecture")
+        context_length = model_info.get(f"{arch}.context_length")
+        if not isinstance(context_length, int) or context_length <= 0:
+            return default
+        return min(default, context_length)
+    except Exception:
+        return default
+
+
+def estimate_prompt_tokens(body: dict[str, Any]) -> int:
+    """A cheap, deliberately conservative upper bound on the request's prompt
+    size, in tokens. See `_CHARS_PER_TOKEN_ESTIMATE` for why this is a
+    character count and not a real tokenizer."""
+    size = len(json.dumps(body.get("system") or ""))
+    size += sum(len(json.dumps(m)) for m in body.get("messages") or [])
+    size += len(json.dumps(body.get("tools") or []))
+    return size // _CHARS_PER_TOKEN_ESTIMATE
+
+
+def check_fits_context(body: dict[str, Any], num_ctx: int) -> None:
+    """Refuse a request before it ever reaches Ollama, rather than let Ollama
+    truncate the front of the prompt and have the model answer confidently
+    about whatever survived.
+
+    Ollama has no equivalent of "400: prompt too long" - a prompt that does
+    not fit in `num_ctx` is silently context-shifted (oldest tokens dropped)
+    and generation proceeds as if nothing were missing. That silent shape is
+    exactly the bug this module exists to not reproduce, so this fails loudly
+    here instead.
+
+    The reply only gets a small reservation out of `num_ctx`, not whatever
+    `max_tokens` the request asked for - Claude Code routinely asks for a
+    very large max_tokens (64000, in practice) regardless of how long the
+    answer will actually be, and that is not the failure mode being guarded
+    against here. Running out of room *during* generation already has an
+    honest outcome: Ollama's "length" `done_reason` maps to Anthropic's
+    "max_tokens" `stop_reason` (see `_STOP_REASONS`), a real, visible signal
+    that the reply was cut short - not the silent front-truncation of the
+    prompt this function exists to prevent.
+    """
+    requested_max = int(body.get("max_tokens") or DEFAULT_MAX_TOKENS)
+    reserved_for_reply = min(requested_max, DEFAULT_MAX_TOKENS)
+    estimated = estimate_prompt_tokens(body)
+    budget = num_ctx - reserved_for_reply
+    if estimated > budget:
+        raise ProxyError(
+            f"This request is an estimated ~{estimated} tokens of prompt - "
+            f"more than fits in the local model's {num_ctx}-token context "
+            f"window (with {reserved_for_reply} reserved so a reply can "
+            "start at all). Sending it anyway would make Ollama silently "
+            "drop the front of the prompt and answer about whatever "
+            "survived. Shorten the conversation, or start a fresh "
+            "`localgpu shell`.",
+            status=400,
+            kind="invalid_request_error",
+        )
+
+
+def to_ollama_request(
+    body: dict[str, Any], model: str, keep_alive: str, num_ctx: int
+) -> dict[str, Any]:
     """The whole request translation, in one place."""
     options: dict[str, Any] = {
         "num_predict": int(body.get("max_tokens") or DEFAULT_MAX_TOKENS),
+        # Ollama's own default (4096) if this is left out - see DEFAULT_NUM_CTX.
+        "num_ctx": int(num_ctx),
     }
     if body.get("temperature") is not None:
         options["temperature"] = float(body["temperature"])
@@ -687,6 +829,27 @@ def _iter_ndjson(response) -> Iterator[dict[str, Any]]:
             continue
 
 
+class _QuietThreadingHTTPServer(ThreadingHTTPServer):
+    """A client that hangs up mid-session is normal, not an error.
+
+    socketserver's default `handle_error` dumps a full traceback to stderr
+    for *any* uncaught exception in a request thread - including
+    `ConnectionResetError: [WinError 10054]` from Claude Code simply exiting
+    while the keep-alive socket was open. Nothing in `ProxyHandler` can catch
+    that: it happens in `handle_one_request`'s own socket read, outside every
+    try/except this module writes. A real session end should be silent, the
+    same way `_stream`'s own `except (BrokenPipeError, ConnectionResetError)`
+    already treats a mid-response disconnect - this is that same rule at the
+    one layer above the handler.
+    """
+
+    def handle_error(self, request: Any, client_address: Any) -> None:
+        exc = sys.exc_info()[1]
+        if isinstance(exc, (BrokenPipeError, ConnectionResetError, ConnectionAbortedError)):
+            return
+        super().handle_error(request, client_address)
+
+
 class ProxyHandler(BaseHTTPRequestHandler):
     """Serves the slice of the Anthropic API that Claude Code actually calls."""
 
@@ -699,10 +862,33 @@ class ProxyHandler(BaseHTTPRequestHandler):
     keep_alive = DEFAULT_KEEP_ALIVE
     timeout_seconds = DEFAULT_TIMEOUT
     verbose = False
+    # None means "auto-detect via resolve_num_ctx"; make_server can pin an
+    # explicit value instead. `_num_ctx_cache` is a one-slot cache so
+    # auto-detection costs one extra `/api/show` round trip per *server*, not
+    # per request - make_server gives each bound handler class its own dict,
+    # so this base value is never actually shared or mutated.
+    num_ctx: int | None = None
+    _num_ctx_cache: dict[str, int] = {}
 
     def log_message(self, fmt: str, *args: Any) -> None:  # noqa: A003
         if self.verbose:
             super().log_message(fmt, *args)
+
+    def _resolved_num_ctx(self) -> int:
+        if self.num_ctx is not None:
+            return self.num_ctx
+        cached = self._num_ctx_cache.get("value")
+        if cached is None:
+            # Capped, not self.timeout_seconds outright - that one is sized
+            # for a local model to finish *generating* (DEFAULT_TIMEOUT is
+            # 600s) and a metadata lookup that should return in well under a
+            # second has no business inheriting it. The min() still respects
+            # a deliberately short timeout_seconds (e.g. a test proving
+            # behaviour under a fast timeout) instead of overriding it.
+            probe_timeout = min(self.timeout_seconds, 10.0)
+            cached = resolve_num_ctx(self.ollama_url, self.chat_model, timeout=probe_timeout)
+            self._num_ctx_cache["value"] = cached
+        return cached
 
     # -- helpers -----------------------------------------------------------
 
@@ -781,7 +967,9 @@ class ProxyHandler(BaseHTTPRequestHandler):
             self._send_error_json(500, "api_error", f"{type(exc).__name__}: {exc}")
 
     def _complete(self, body: dict[str, Any]) -> None:
-        payload = to_ollama_request(body, self.chat_model, self.keep_alive)
+        num_ctx = self._resolved_num_ctx()
+        check_fits_context(body, num_ctx)
+        payload = to_ollama_request(body, self.chat_model, self.keep_alive, num_ctx)
         with _post_ollama(self.ollama_url, payload, self.timeout_seconds) as response:
             data = json.loads(response.read().decode("utf-8"))
         self._send_json(
@@ -789,7 +977,9 @@ class ProxyHandler(BaseHTTPRequestHandler):
         )
 
     def _stream(self, body: dict[str, Any]) -> None:
-        payload = to_ollama_request(body, self.chat_model, self.keep_alive)
+        num_ctx = self._resolved_num_ctx()
+        check_fits_context(body, num_ctx)
+        payload = to_ollama_request(body, self.chat_model, self.keep_alive, num_ctx)
         upstream = _post_ollama(self.ollama_url, payload, self.timeout_seconds)
 
         self.send_response(200)
@@ -845,9 +1035,15 @@ def make_server(
     keep_alive: str = DEFAULT_KEEP_ALIVE,
     timeout: float = DEFAULT_TIMEOUT,
     verbose: bool = False,
+    num_ctx: int | None = None,
 ) -> ThreadingHTTPServer:
     """Bind a proxy. Port 0 asks the OS for a free one - read it back off the
-    returned server's `server_address`."""
+    returned server's `server_address`.
+
+    `num_ctx=None` (the default) auto-detects the context window from Ollama
+    on first use - see `resolve_num_ctx`. Passing an explicit value skips
+    that probe entirely, for a caller that already knows what it wants.
+    """
     handler = type(
         "BoundProxyHandler",
         (ProxyHandler,),
@@ -857,8 +1053,13 @@ def make_server(
             "keep_alive": keep_alive,
             "timeout_seconds": timeout,
             "verbose": verbose,
+            "num_ctx": num_ctx,
+            # A fresh dict per server - ProxyHandler's own `_num_ctx_cache` is
+            # never mutated, so unrelated servers (each test's `endpoint`
+            # fixture, for one) never share a cached value.
+            "_num_ctx_cache": {},
         },
     )
-    server = ThreadingHTTPServer((host, port), handler)
+    server = _QuietThreadingHTTPServer((host, port), handler)
     server.daemon_threads = True
     return server

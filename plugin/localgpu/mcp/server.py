@@ -38,7 +38,7 @@ from store import RefreshBusy, RefreshLock, VectorStore  # noqa: E402
 
 from mcp.server.mcpserver import MCPServer  # noqa: E402
 
-VERSION = "0.1.0"
+from _version import VERSION  # noqa: E402
 
 INSTRUCTIONS = """\
 Local semantic code search, backed by an on-disk index and a local Ollama.

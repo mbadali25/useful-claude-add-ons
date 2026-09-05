@@ -295,3 +295,257 @@ def test_a_timeout_after_streaming_started_ends_the_stream_cleanly():
     assert "event: error" in text
     assert text.rstrip().endswith('data: {"type": "message_stop"}') is False
     assert '"type": "error"' in text
+
+
+# --------------------------------------------------------------------------
+# num_ctx: resolved from Ollama, not left for Ollama's own 4096 default
+# --------------------------------------------------------------------------
+
+
+class ShowingOllama(BaseHTTPRequestHandler):
+    """A fake that actually answers /api/show, unlike FakeOllama above -
+    resolve_num_ctx needs a realistic model_info shape to parse."""
+
+    protocol_version = "HTTP/1.1"
+
+    def log_message(self, *args):
+        pass
+
+    def do_POST(self):
+        length = int(self.headers.get("Content-Length") or 0)
+        self.server.last_request = json.loads(self.rfile.read(length) or b"{}")
+        body = json.dumps(self.server.show_reply).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+
+@pytest.fixture
+def showing_ollama():
+    server = ThreadingHTTPServer(("127.0.0.1", 0), ShowingOllama)
+    server.daemon_threads = True
+    server.show_reply = {
+        "model_info": {"general.architecture": "qwen2", "qwen2.context_length": 32768}
+    }
+    server.last_request = None
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    yield server
+    server.shutdown()
+    server.server_close()
+
+
+def test_resolve_num_ctx_reads_the_models_own_context_length(showing_ollama):
+    host, port = showing_ollama.server_address
+    got = proxy.resolve_num_ctx(f"http://{host}:{port}", "qwen-test", default=99999)
+    # The model's real 32768 is smaller than the (deliberately absurd)
+    # default, so the real value wins.
+    assert got == 32768
+
+
+def test_resolve_num_ctx_caps_at_default_for_a_bigger_window_model(showing_ollama):
+    """default exists to protect VRAM - a model that claims a bigger window
+    than the card can hold must not get more than `default` asks for."""
+    showing_ollama.show_reply = {
+        "model_info": {"general.architecture": "llama", "llama.context_length": 131072}
+    }
+    host, port = showing_ollama.server_address
+    got = proxy.resolve_num_ctx(f"http://{host}:{port}", "big-model", default=16384)
+    assert got == 16384
+
+
+def test_resolve_num_ctx_falls_back_when_context_length_is_missing(showing_ollama):
+    """A build of Ollama that does not report context_length must not crash
+    the request that needed it - it should just get the documented default."""
+    showing_ollama.show_reply = {"model_info": {}}
+    host, port = showing_ollama.server_address
+    got = proxy.resolve_num_ctx(f"http://{host}:{port}", "qwen-test", default=16384)
+    assert got == 16384
+
+
+def test_resolve_num_ctx_falls_back_when_ollama_is_unreachable():
+    got = proxy.resolve_num_ctx("http://127.0.0.1:1", "qwen-test", timeout=1, default=16384)
+    assert got == 16384
+
+
+def test_num_ctx_is_auto_detected_end_to_end(showing_ollama):
+    """No explicit num_ctx override, driven through the real server - proves
+    _resolved_num_ctx actually gets called on the request path and its
+    result reaches the /api/chat body, not just that resolve_num_ctx works
+    in isolation."""
+    host, port = showing_ollama.server_address
+    server = proxy.make_server("127.0.0.1", 0, f"http://{host}:{port}", "qwen-test")
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        # ShowingOllama answers /api/chat with the /api/show shape too (it
+        # does not branch on path), which to_anthropic_response tolerates -
+        # the point here is only what ends up in the request it received.
+        post(
+            f"http://127.0.0.1:{server.server_address[1]}/v1/messages",
+            {"max_tokens": 8, "messages": [{"role": "user", "content": "hi"}]},
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+    assert showing_ollama.last_request["options"]["num_ctx"] == 32768
+
+
+# --------------------------------------------------------------------------
+# Refusing a request that cannot fit, instead of letting Ollama truncate it
+# --------------------------------------------------------------------------
+
+
+def test_check_fits_context_allows_a_request_with_room_to_spare():
+    body = {"max_tokens": 100, "messages": [{"role": "user", "content": "hi"}]}
+    proxy.check_fits_context(body, num_ctx=4096)  # must not raise
+
+
+def test_check_fits_context_refuses_an_oversized_prompt():
+    huge = {"role": "user", "content": "x" * 100_000}
+    body = {"max_tokens": 100, "messages": [huge]}
+    with pytest.raises(proxy.ProxyError) as caught:
+        proxy.check_fits_context(body, num_ctx=4096)
+    assert caught.value.status == 400
+    assert caught.value.kind == "invalid_request_error"
+
+
+def test_check_fits_context_does_not_let_a_huge_max_tokens_reject_everything():
+    """Claude Code routinely asks for a very large max_tokens no matter how
+    long the reply will actually be - only a small amount is reserved for
+    it, not the full requested ceiling, or every real request gets refused."""
+    body = {"max_tokens": 64000, "messages": [{"role": "user", "content": "hi"}]}
+    proxy.check_fits_context(body, num_ctx=8192)  # must not raise
+
+
+def test_oversized_request_is_refused_before_reaching_ollama(endpoint, ollama):
+    huge = {"role": "user", "content": "x" * 300_000}
+    with pytest.raises(urllib.error.HTTPError) as caught:
+        post(f"{endpoint}/v1/messages", {"max_tokens": 8, "messages": [huge]})
+    assert caught.value.code == 400
+    body = json.loads(caught.value.read())
+    assert body["error"]["type"] == "invalid_request_error"
+    # Never sent - the fake never saw a /api/chat body anywhere near this size.
+    assert ollama.last_request is None or len(json.dumps(ollama.last_request)) < 300_000
+
+
+# --------------------------------------------------------------------------
+# A client hanging up is not a server error
+# --------------------------------------------------------------------------
+
+
+def test_handle_error_swallows_a_connection_reset(capsys):
+    server = proxy.make_server("127.0.0.1", 0, "http://127.0.0.1:1", "qwen-test")
+    try:
+        try:
+            raise ConnectionResetError("simulated WinError 10054")
+        except ConnectionResetError:
+            server.handle_error(None, ("127.0.0.1", 0))
+    finally:
+        server.server_close()
+    assert capsys.readouterr().err == ""
+
+
+def test_handle_error_still_reports_a_real_bug(capsys):
+    server = proxy.make_server("127.0.0.1", 0, "http://127.0.0.1:1", "qwen-test")
+    try:
+        try:
+            raise ValueError("an actual bug, not a client hanging up")
+        except ValueError:
+            server.handle_error(None, ("127.0.0.1", 0))
+    finally:
+        server.server_close()
+    assert "an actual bug" in capsys.readouterr().err
+
+
+# --------------------------------------------------------------------------
+# The bug, against a REAL Ollama
+# --------------------------------------------------------------------------
+#
+# Every test above talks to a fake. A fake has no context window, so no test
+# above it can observe num_ctx being left unset any more than it could
+# observe it being set correctly - that is exactly how the original bug
+# shipped: 207 passing tests, two independent review rounds, and a deep
+# suite, all green over a proxy that silently ran every real request at
+# Ollama's built-in 4096-token default. This is the one test in the suite
+# that talks to the real thing, and it is written to fail the way the real
+# bug failed - input_tokens pinned at a small constant regardless of prompt
+# size - not merely "num_ctx key missing."
+#
+# Sabotage-tested by hand: delete the "num_ctx" line from to_ollama_request's
+# options dict and rerun just this test - it goes red, reporting input_tokens
+# pinned near ~2000 for both the small and the large prompt, the original
+# symptom. Restoring the line turns it green again. That check is not itself
+# part of the suite, since breaking the fix on every run defeats the point
+# of a regression test.
+
+REAL_OLLAMA_URL = "http://127.0.0.1:11434"
+REAL_CHAT_MODEL = "qwen2.5-coder:7b-instruct-q4_K_M"
+
+
+def _real_ollama_ready() -> bool:
+    """Both the server and the exact model this project ships must be
+    present - a bare "is Ollama up" ping would skip cleanly on a machine
+    missing the model, and this would fail confusingly instead."""
+    try:
+        with urllib.request.urlopen(f"{REAL_OLLAMA_URL}/api/tags", timeout=3) as response:
+            tags = json.loads(response.read())
+        return REAL_CHAT_MODEL in {m.get("name") for m in tags.get("models", [])}
+    except Exception:
+        return False
+
+
+requires_real_ollama = pytest.mark.skipif(
+    not _real_ollama_ready(),
+    reason=f"real Ollama with {REAL_CHAT_MODEL} not reachable at {REAL_OLLAMA_URL}",
+)
+
+
+@pytest.fixture
+def real_endpoint():
+    """A proxy pointed at the real Ollama and the real chat model - no fake
+    anywhere in the loop, which is the entire point of this test."""
+    server = proxy.make_server("127.0.0.1", 0, REAL_OLLAMA_URL, REAL_CHAT_MODEL)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    yield f"http://127.0.0.1:{server.server_address[1]}"
+    server.shutdown()
+    server.server_close()
+
+
+@requires_real_ollama
+def test_input_tokens_scale_with_prompt_size_on_a_real_model(real_endpoint):
+    filler = (
+        "The quick brown fox jumps over the lazy dog near the riverbank "
+        "while the sun sets slowly behind the distant mountains. "
+    ) * 600  # ~15k real tokens - measured via prompt_eval_count, see the
+    # module docstring's chars-per-token note.
+
+    def input_tokens_for(user_text: str) -> int:
+        # Not the shared post() helper - real inference (and a cold model
+        # load on the first call) comfortably exceeds its fixed 10s timeout.
+        request = urllib.request.Request(
+            f"{real_endpoint}/v1/messages",
+            data=json.dumps(
+                {"max_tokens": 8, "messages": [{"role": "user", "content": user_text}]}
+            ).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=180) as response:
+            assert response.status == 200
+            return json.loads(response.read())["usage"]["input_tokens"]
+
+    small_tokens = input_tokens_for("Say hi in one word.")
+    large_tokens = input_tokens_for(filler + "\n\nSay hi in one word.")
+
+    assert small_tokens < 100
+    # Ollama's own default context is 4096 tokens; the original bug's
+    # symptom was every request pinning at roughly 2050 regardless of size.
+    # A real fix clears both of those by a wide margin instead of landing
+    # near either.
+    assert large_tokens > 6000, (
+        f"input_tokens did not scale with prompt size (small={small_tokens}, "
+        f"large={large_tokens}) - num_ctx is likely unset again, capping "
+        "every request at Ollama's built-in default window."
+    )
+    assert large_tokens > small_tokens * 20

@@ -141,28 +141,36 @@ def test_server_side_tools_are_skipped():
 
 
 def test_max_tokens_maps_to_num_predict():
-    req = proxy.to_ollama_request({"max_tokens": 64, "messages": []}, "m", "5m")
+    req = proxy.to_ollama_request({"max_tokens": 64, "messages": []}, "m", "5m", 4096)
     assert req["options"]["num_predict"] == 64
 
 
 def test_missing_max_tokens_falls_back_rather_than_crashing():
-    req = proxy.to_ollama_request({"messages": []}, "m", "5m")
+    req = proxy.to_ollama_request({"messages": []}, "m", "5m", 4096)
     assert req["options"]["num_predict"] == proxy.DEFAULT_MAX_TOKENS
 
 
 def test_stop_sequences_map_to_stop():
-    req = proxy.to_ollama_request({"messages": [], "stop_sequences": ["END"]}, "m", "5m")
+    req = proxy.to_ollama_request({"messages": [], "stop_sequences": ["END"]}, "m", "5m", 4096)
     assert req["options"]["stop"] == ["END"]
 
 
 def test_keep_alive_is_always_sent():
     """The VRAM bargain: nothing may linger on an 8GB card by default."""
-    req = proxy.to_ollama_request({"messages": []}, "m", "30s")
+    req = proxy.to_ollama_request({"messages": []}, "m", "30s", 4096)
     assert req["keep_alive"] == "30s"
 
 
 def test_no_tools_key_when_there_are_none():
-    assert "tools" not in proxy.to_ollama_request({"messages": []}, "m", "5m")
+    assert "tools" not in proxy.to_ollama_request({"messages": []}, "m", "5m", 4096)
+
+
+def test_num_ctx_is_always_sent():
+    """The bug this module exists to not reproduce: omit num_ctx and Ollama
+    silently runs the model at its own default (4096) input window, however
+    large the model's real one is."""
+    req = proxy.to_ollama_request({"messages": []}, "m", "5m", 16384)
+    assert req["options"]["num_ctx"] == 16384
 
 
 # -- response: non-streaming ----------------------------------------------

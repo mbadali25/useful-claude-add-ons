@@ -28,14 +28,23 @@ the embed model. Then:
 
 A full rebuild is genuinely required in exactly one case, and it is not a
 judgement call: `embed_model` has changed since the vectors were built. Vectors
-from two embedding models are not comparable, and appending to a mixed index
-degrades every future search without ever erroring.
+from two embedding models are not comparable, and mixing them would degrade
+every future search — which is exactly why this plugin refuses to let it happen
+silently.
 
-Detecting it is weaker than it sounds, so do not overstate it. `manifest.json`
-records the vector width (`dim`) and not the model's name. A replacement model of a
-different width fails loudly — the store refuses to open — and one of the *same*
-width is invisible to every check in this plugin. If the user says they changed
-`embed_model`, believe them and rebuild; there is no artifact to confirm it with.
+`manifest.json` records the embed model's *name* (`indexer.refresh` writes it),
+and `check_embed_model()` (`mcp/indexer.py`) compares that name against the
+currently configured `embed_model` on every single `index_refresh()` and
+`search_code()` call — by name, not by vector width, so a same-width swap is
+caught exactly as hard as a different-width one. A mismatch raises immediately,
+before anything is touched, with the fix named in the error. A manifest with no
+`embed_model` key at all (an index built before this field existed) is treated
+as unconfirmed, not as a match, and raises the same way. So if the user says
+they changed `embed_model`, the very next `index_refresh()` or `search_code()`
+call will say so on its own — `--full` is the fix once that error actually
+names the mismatch (or once you already know a rebuild is wanted, e.g.
+switching the default model on purpose), not a hedge run pre-emptively against
+an undetectable failure.
 
 **There is no `--full` switch in the code.** `index_refresh(root=None)` is the only
 entry point the plugin ships, and it is incremental by construction. `--full` here

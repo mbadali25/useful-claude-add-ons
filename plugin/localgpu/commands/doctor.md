@@ -23,9 +23,21 @@ which of the two it is, because the fixes are unrelated.
 ### 2. Both models are pulled, at the exact tags in config
 
 Compare `/api/tags` against `embed_model` and `chat_model` as resolved from the
-config. Tag equality is exact: `qwen2.5-coder:7b` is not
-`qwen2.5-coder:7b-instruct-q4_K_M`, and the wrong one silently uses a different
-quantization and a different amount of VRAM.
+config, the same way `index_status()["embed_model_present"]` and
+`OllamaClient.require_models()` do it (`mcp/ollama.py`): a name matches if it is
+byte-identical to an installed tag, **or** if it matches once the installed
+tag's `:suffix` is stripped. That second branch is not a loophole to flag — it
+is what makes a config value with no tag at all (`nomic-embed-text`) correctly
+match an install Ollama tagged `nomic-embed-text:latest` on its own, which is
+the normal, healthy result of a plain `ollama pull nomic-embed-text`. Comparing
+those two byte-for-byte and calling it a mismatch is a false `FAIL` on a
+correctly configured machine.
+
+What *is* exact, with no leniency: two tags that both name something after the
+colon. `qwen2.5-coder:7b` is not `qwen2.5-coder:7b-instruct-q4_K_M` — both sides
+name a tag, they disagree, and the wrong one silently uses a different
+quantization and a different amount of VRAM. Strip-and-compare only when the
+config side is bare; once both sides carry a tag, they must match in full.
 
 ### 3. The environment exists, and the `localgpu` CLI is in it
 
@@ -33,8 +45,21 @@ quantization and a different amount of VRAM.
 that has since been upgraded or uninstalled still has a directory, which is why
 this check runs the interpreter rather than testing for the path.
 
-Then the console script, because `/localgpu:crew` reports whether `localgpu shell`
-is available on this machine and needs an answer that is not a guess:
+Test that first, on its own, before anything else in this check:
+
+```bash
+"$LOCALGPU_HOME/venv/bin/python" --version
+```
+
+This is not only a CLI concern. `.mcp.json` spawns the MCP server as
+`{{LOCALGPU_PYTHON}}` — this exact interpreter — so if it does not run at all,
+`search_code` and `index_refresh` are down too, not just `localgpu shell`. Report
+that plainly as `FAIL` and stop; the fix is the bootstrap, which rebuilds the
+venv against a working interpreter.
+
+Once the interpreter itself answers, check the console script, because
+`/localgpu:crew` reports whether `localgpu shell` is available on this machine
+and needs an answer that is not a guess:
 
 ```bash
 "$LOCALGPU_HOME/venv/bin/python" -c "import localgpu_cli"     # POSIX
@@ -42,18 +67,19 @@ is available on this machine and needs an answer that is not a guess:
 ```
 
 On Windows the same two, at `venv\Scripts\python.exe` and
-`venv\Scripts\localgpu.exe`. Report three distinct states, because their fixes are
-different:
+`venv\Scripts\localgpu.exe`. Report three distinct states here, because their
+fixes are different:
 
 | State | Verdict | Fix |
 |---|---|---|
 | Import works and `--version` answers | `OK` | Say the version, and that a bare `localgpu` only resolves if the venv is on `PATH` — nothing in this plugin puts it there |
-| Neither works | `WARN` | The CLI was never installed. Re-run the bootstrap; `/localgpu:index` and `search_code` are unaffected |
+| Interpreter answered above, but neither the import nor `--version` works | `WARN` | The CLI package's editable install never ran. Re-run the bootstrap. `mcp/requirements.txt` installs into this same venv as an earlier, separate bootstrap step, so `/localgpu:index` and `search_code` are unaffected *if that earlier step completed* — say that qualifier rather than asserting it, and point at check 6's live `search_code` call as the actual proof, not this one |
 | The script runs but exits saying it cannot find the plugin's `mcp/` directory | `FAIL` | A non-editable install. `"$LOCALGPU_HOME/venv/bin/python" -m pip install -e <plugin>/localgpu`, which is what the bootstrap does |
 
-`WARN` and not `FAIL` for a missing CLI: the retrieval half of the plugin — the
-part that saves context on every task — does not use it. Only `localgpu shell` and
-`localgpu proxy` do.
+`WARN` and not `FAIL` for a missing CLI *package*: `mcp/server.py` does not import
+`localgpu_cli` at all, so its absence alone does not touch retrieval. Only
+`localgpu shell` and `localgpu proxy` do. That is a narrower claim than "the venv
+is fine" — which is what the interpreter check above already settled.
 
 ### 4. Config resolves, and to what
 
@@ -72,25 +98,43 @@ Read `$LOCALGPU_HOME/index/manifest.json` and report:
 | Field | Why it matters |
 |---|---|
 | Roots | From `last_refresh.roots`. A repo missing from this list is invisible to search, not merely stale |
-| `dim` | The vector width the store was built at, 768 for `nomic-embed-text`. It is the only fingerprint of the embedding model the manifest carries |
+| `embed_model` | The name of the model that actually built these vectors. `indexer.refresh` writes it every time, alongside `dim` |
+| `dim` | The vector width the store was built at, 768 for `nomic-embed-text`. A second, lower-level safety net inside `VectorStore` — not what catches an `embed_model` swap; see below |
 | Chunk and file counts | A count of zero after a build that reported success means the `ignore` list ate everything |
 | `updated_at`, and `last_refresh.elapsed_s` | Last build time, against the newest mtime in the working tree |
 
-**The manifest does not record the embed model's name** — `indexer.refresh` writes
-`dim`, `updated_at` and the `last_refresh` block, and nothing else identifies what
-produced the vectors. So report this honestly rather than claiming a comparison the
-files cannot support:
+**The manifest does record the embed model's name, and the plugin refuses an
+`embed_model` swap out loud.** `check_embed_model()` (`mcp/indexer.py`) compares
+the manifest's `embed_model` against the *currently configured* one — by name,
+not by vector width — and it runs on **both** paths: at the start of every
+`index_refresh()` and at the start of every `search_code()` call, before either
+one touches Ollama. A mismatch raises `EmbedModelMismatch` immediately, and the
+error names the fix. This is tested directly
+(`mcp/_test/test_embed_model.py::test_same_dim_different_model_is_detected`), so
+do not repeat the older claim that a same-width swap passes unnoticed — it does
+not, and there is no width condition on the check at all:
 
-- A new `embed_model` of a **different** width is caught hard and needs no check
-  here: `VectorStore` refuses to open a store whose stored `dim` disagrees, and the
-  error names the fix. Surface that error verbatim if you hit it.
-- A new `embed_model` of the **same** width is caught by nothing at all. Search
-  quietly gets worse. If the user has changed `embed_model` since the last build,
-  say that no artifact can confirm it and that `/localgpu:index --full` is the only
-  safe answer.
+- A new `embed_model` of a **different** width would also trip `VectorStore`'s
+  own `dim` check if it ever got that far, but in practice `check_embed_model`
+  fires first and stops it before that check is even reached.
+- A new `embed_model` of the **same** width is caught exactly as hard, by the
+  same name comparison, on the very next `search_code()` or `index_refresh()`
+  call — not silently, and not eventually.
+- A manifest with **no** `embed_model` key at all (an index built by a version
+  of this plugin that predates this field) is treated as unconfirmed, not as a
+  match, and raises the same way.
 
-`index_status()["embed_model"]` is the *configured* model, not the one that built
-the index. Do not report it as evidence of the second.
+So if the user says they changed `embed_model`, do not preempt it with "no
+artifact can confirm this, run `/localgpu:index --full` to be safe" — the very
+next tool call already confirms it, on its own, with the fix named in the error.
+Report the manifest's `embed_model` and the configured one side by side and say
+whether they agree; if they do not, say that the next search or refresh will
+refuse rather than degrade, and that `/localgpu:index --full` (or deleting the
+index and letting the next refresh rebuild it) is what clears it once it does.
+
+`index_status()["embed_model"]` is still the *configured* model, which is not
+necessarily the manifest's — report both when you have reason to think they
+might differ, but do not call the difference undetectable.
 
 Staleness is a `WARN` with a number: "last built 3 days ago; 41 tracked files have
 changed since". "Stale" on its own tells nobody whether to care.

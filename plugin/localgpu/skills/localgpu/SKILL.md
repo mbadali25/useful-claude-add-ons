@@ -83,17 +83,26 @@ behaviour. The built-in list covers `.git`, `node_modules`, `venv`, `.venv`,
 swallowed `node_modules` is slow to build, large on disk, and returns nothing
 anyone wanted.
 
-**Changing `embed_model` invalidates the whole index.** Vectors from one embedding
-model are not comparable to vectors from another, and nothing in the file format
-stops you from mixing them - the search just quietly gets worse. Say so and rebuild
-rather than appending.
+**Changing `embed_model` invalidates the whole index, and this plugin refuses to
+let that happen silently.** Vectors from one embedding model are not comparable
+to vectors from another. `manifest.json` records the embed model's *name*
+(`indexer.refresh` writes it, alongside `dim` and the last refresh's counts),
+and `check_embed_model()` (`mcp/indexer.py`) compares that stored name against
+the currently configured `embed_model` — by name, not by vector width — on
+every single `index_refresh()` and every `search_code()` call. A mismatch
+raises immediately, before anything is touched, and names the fix. A same-width
+swap is caught exactly as hard as a different-width one; there is no quiet
+middle case where search "just gets worse" unnoticed. A manifest missing the
+`embed_model` key entirely (an index built before this field existed) is
+treated the same way - unconfirmed, not a match.
 
-Be precise about how much the artifacts can prove: `manifest.json` records the
-vector width (`dim`) and the last refresh's counts, **not** the model that produced
-them, and `index_status()["embed_model"]` is the currently *configured* model. A
-new embedding model of a different width is refused when the store opens; one of
-the same width passes every check this plugin has. So a user who says they changed
-`embed_model` is the only detector, and `/localgpu:index --full` is the answer.
+`index_status()["embed_model"]` is still the currently *configured* model, not
+necessarily the one that built the index - report both when they might differ,
+but do not call the difference invisible: the next tool call proves it either
+way, on its own. If a user says they changed `embed_model`, the coming error
+confirms it without help; `/localgpu:index --full` (or deleting the index and
+letting the next refresh rebuild it) is the fix once that happens, not a hedge
+against uncertainty.
 
 ## The models, and why these two
 
