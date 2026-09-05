@@ -209,6 +209,20 @@ All notable changes to this repository are documented here. Format follows [Keep
   the returned record carries `unrecorded`, and the dispatch CLI prints what
   could not be written and exits non-zero.
 
+- **`crew` 0.16.7: evidence that could not be read was reported as evidence
+  that never existed.** `_read_record_file` reduced a malformed `dispatch.json`
+  to `{}` and said nothing; `_dispatch_entries` skipped an unparseable entry
+  file the same way. Both are right not to raise and wrong about the
+  consequence: a 0.16.6 record left malformed by a killed write is the only
+  trace its dispatch left, so once a later dispatch of another family lands on
+  the same branch, the guard returned that family labelled `dispatch` with the
+  author gone — and with no record at all it returned `config`, which states
+  that nothing was recorded, a claim no read of an unopenable file can make.
+  Anything the store could not read now makes the provenance `unknown`, while
+  every family it COULD read stays in the set and stays struck. Deliberately
+  not scoped to a branch: a file that will not parse cannot be attributed to
+  one, so it over-bars everywhere until it is deleted.
+
 - **`crew` 0.16.7: the hook count in crew's README.** The prose said eight
   scripts and sixteen entries while the table directly beneath it already
   listed all ten across five events, 20 entries.

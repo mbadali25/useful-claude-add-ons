@@ -831,8 +831,9 @@ _ORIGINS = {
     # withholds the certification. See `crew_state.author_families`.
     "unknown": ("UNKNOWN - a dispatch on this branch has a family that "
                 "cannot be determined (an unpinned provider that hosts "
-                "several), so no reviewer can be proven independent of it - "
-                "any family named beside it is still struck"),
+                "several), or something in .work/ would not parse, so no "
+                "reviewer can be proven independent of it - every family "
+                "that COULD be named is still struck"),
 }
 
 

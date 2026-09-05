@@ -62,9 +62,15 @@ The report's first line names the author family and where it came from:
   of the reviewer, and presenting it as the author family would be a guess
   dressed as a fact.
 - **`UNKNOWN - a dispatch on this branch has a family that cannot be
-  determined`** — something DID run here and there is no way to say what family
-  it was, which is what an unpinned `copilot` is: Copilot hosts several families
-  and an unset model does not say which. **Read the family line before saying
+  determined, or something in .work/ would not parse`** — two causes, one
+  answer. Either something DID run and there is no way to say what family it
+  was, which is what an unpinned `copilot` is (Copilot hosts several families
+  and an unset model does not say which); or a file in `.work/` exists and
+  would not parse, so the store cannot say whether the dispatch that wrote the
+  diff is among the records it CAN read. Tell the user which one applies —
+  `unrecorded` in the dispatch JSON and a `.work/dispatch.json` that will not
+  open are visible, and the second is fixed by deleting the unparseable file,
+  not by pinning anything. **Read the family line before saying
   nothing is struck** — this source comes back two ways. If it names no family,
   nothing is struck and every candidate in the table below reads as eligible.
   If it names one, a second dispatch on the same branch COULD be named and that

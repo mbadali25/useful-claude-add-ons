@@ -106,9 +106,11 @@ MUTATIONS = (
         # guard falls back to the config and looks like it checked.
         "one malformed entry file discards the whole directory",
         STATE,
-        "        except ValueError:\n            continue\n"
+        "        except ValueError:\n            _note_lost(lost, name)\n"
+        "            continue\n"
         "        if not isinstance(entry, dict) or not entry.get(\"kind\"):",
-        "        except ValueError:\n            return []\n"
+        "        except ValueError:\n            _note_lost(lost, name)\n"
+        "            return []\n"
         "        if not isinstance(entry, dict) or not entry.get(\"kind\"):",
         ("tests/test_provider_table.py::"
          "test_a_malformed_entry_costs_one_entry_and_not_the_record"),
@@ -285,6 +287,37 @@ MUTATIONS = (
         "        if False:",
         ("tests/test_provider_table.py::"
          "test_the_dispatch_cli_exits_non_zero_when_nothing_was_recorded"),
+    ),
+    (
+        # Round 8, Critical. A record that would not parse, reported as
+        # a record that was never there.
+        "unreadable evidence reads as absent evidence",
+        STATE,
+        '        return known, ("unknown" if unnamed or unread '
+        'else "dispatch")',
+        '        return known, ("unknown" if unnamed else "dispatch")',
+        ("tests/test_provider_table.py::test_a_later_dispatch_cannot_"
+         "certify_over_an_unreadable_legacy_record"),
+    ),
+    (
+        # And the half with no store entry at all: `config` asserts that
+        # nothing was recorded, which an unopenable file cannot support.
+        "an unopenable record still claims nothing was recorded",
+        STATE,
+        '            "unknown" if unread else "config")',
+        '            "config")',
+        ("tests/test_provider_table.py::test_a_malformed_dispatch_file_"
+         "reads_as_unknown_not_as_no_dispatch"),
+    ),
+    (
+        # The reader has to NOTICE. Silence here makes both of the
+        # above unreachable while they still read as covered.
+        "a skipped entry file is not reported as lost",
+        STATE,
+        "    if lost:\n        record[\"unreadable\"] = True",
+        "    if False:\n        record[\"unreadable\"] = True",
+        ("tests/test_provider_table.py::"
+         "test_a_malformed_entry_costs_one_entry_and_not_the_record"),
     ),
     (
         "bogus documented role",

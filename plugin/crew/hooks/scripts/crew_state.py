@@ -1025,7 +1025,7 @@ def _entry_rank(entry, key):
     return (0 if entry.get("adopted") else 1, key)
 
 
-def _dispatch_entries(root):
+def _dispatch_entries(root, lost=None):
     """Every entry in `.work/dispatch.d/`, as `(sort key, kind, entry)`.
 
     Never raises, and a file it cannot read costs exactly that file. A
@@ -1033,11 +1033,24 @@ def _dispatch_entries(root):
     -- the property the single shared file did not have, where one malformed
     byte collapsed the whole record to `{}` and the guard fell back to reading
     the config.
+
+    `lost`, when a list is passed, collects the name of every file that was
+    skipped. Surviving the neighbours is only half the answer: the skipped
+    file may have been the ONLY record of the dispatch that wrote the diff,
+    and a reader that cannot tell "there was no such record" from "there was
+    one and it would not parse" reports the second as the first. The caller
+    turns a non-empty `lost` into an `unknown` source rather than a
+    provenance claim over evidence it could not read.
     """
     directory = os.path.join(root, *DISPATCH_DIR)
     try:
         names = os.listdir(directory)
     except OSError:
+        # An unreadable directory is not an empty one. If it exists, the
+        # store may hold records nobody can see, and saying nothing here is
+        # what turns that into a confident answer further up.
+        if lost is not None and os.path.isdir(directory):
+            lost.append(os.path.join(*DISPATCH_DIR))
         return []
     out = []
     for name in names:
@@ -1046,12 +1059,15 @@ def _dispatch_entries(root):
         path = os.path.join(directory, name)
         text = read_text(path)
         if text is None:
+            _note_lost(lost, name)
             continue
         try:
             entry = json.loads(text)
         except ValueError:
+            _note_lost(lost, name)
             continue
         if not isinstance(entry, dict) or not entry.get("kind"):
+            _note_lost(lost, name)
             continue
         try:
             mtime = os.path.getmtime(path)
@@ -1062,16 +1078,40 @@ def _dispatch_entries(root):
     return out
 
 
-def _read_record_file(root):
-    """`dispatch.json` parsed, or `{}`. Never raises."""
-    text = read_text(os.path.join(root, *DISPATCH_PATH))
+def _note_lost(lost, name):
+    """Record one piece of evidence that could not be read."""
+    if lost is not None:
+        lost.append(name)
+
+
+def _read_record_file(root, lost=None):
+    """`dispatch.json` parsed, or `{}`. Never raises.
+
+    `lost` collects this file's name when it EXISTS and yields no dict --
+    malformed from a killed write, truncated, or unreadable. `{}` is returned
+    either way, because there is nothing to return; the point of `lost` is
+    that `{}` means two different things and only one of them is "no dispatch
+    was ever recorded here". A 0.16.6 record is the only trace its dispatch
+    left, so reporting an unparseable one as an absent one hands the next
+    dispatch on that branch a clean provenance claim it has not earned.
+    """
+    path = os.path.join(root, *DISPATCH_PATH)
+    text = read_text(path)
     if text is None:
+        # Missing and unreadable are not the same. `read_text` answers None
+        # for both, so the file system is asked which one this is.
+        if os.path.exists(path):
+            _note_lost(lost, DISPATCH_PATH[-1])
         return {}
     try:
         parsed = json.loads(text)
     except ValueError:
+        _note_lost(lost, DISPATCH_PATH[-1])
         return {}
-    return parsed if isinstance(parsed, dict) else {}
+    if not isinstance(parsed, dict):
+        _note_lost(lost, DISPATCH_PATH[-1])
+        return {}
+    return parsed
 
 
 def _history_items(record, by_kind, kind):
@@ -1215,10 +1255,11 @@ def read_dispatch(root):
     read where it lies until the bound ages it out, which is what makes this
     an upgrade rather than a migration that can fail halfway.
     """
-    record = _read_record_file(root)
+    lost = []
+    record = _read_record_file(root, lost)
 
     by_kind = {}
-    for key, kind, entry in _dispatch_entries(root):
+    for key, kind, entry in _dispatch_entries(root, lost):
         by_kind.setdefault(kind, []).append((key, entry))
 
     # Resolved at most once per call, and only if the branch cap bites.
@@ -1243,6 +1284,11 @@ def read_dispatch(root):
         # nothing. `report["dispatch"]` and `/crew:review`'s mtime test are
         # what still read the file itself.
         record[kind] = history[0]
+    # Popped first, so a hand-edited file carrying this key cannot assert
+    # something about a read it was not present for. Set only when true.
+    record.pop("unreadable", None)
+    if lost:
+        record["unreadable"] = True
     return record
 
 
@@ -1602,6 +1648,13 @@ def author_families(root, cfg, stale=False):
     resolved report that every later step reads.
     """
     dispatch = read_dispatch(root)
+    # Something in `.work/` exists and would not parse. It may have been the
+    # only record of the dispatch that wrote this diff -- a 0.16.6
+    # `dispatch.json` left malformed by a killed write is exactly that -- so
+    # no answer below this line may claim proven provenance, and the "no
+    # record" fallback may not claim there was none. Not scoped to a branch,
+    # because a file that will not parse cannot be attributed to one.
+    unread = bool(dispatch.get("unreadable"))
     recorded = dict_or_empty(dispatch.get("dev"))
     decided = resolve_role(cfg, "dev", "developer")
     if recorded.get("provider"):
@@ -1737,7 +1790,7 @@ def author_families(root, cfg, stale=False):
         # the second test would read as a guard over a case it cannot see,
         # and no mutation of it could ever go red.
         known = frozenset(recorded_families) - {None}
-        return known, ("unknown" if unnamed else "dispatch")
+        return known, ("unknown" if unnamed or unread else "dispatch")
     # No record: read the config. `decided` above asked `resolve_role` for the
     # `developer` role rather than the `dev` block's own provider --
     # `dev.roles.developer` is a pin that OVERRIDES that default, so reading
@@ -1752,7 +1805,14 @@ def author_families(root, cfg, stale=False):
     # A caller that strikes what this returns must strike nothing in that
     # case, and a None leaking into the set would compare equal to another
     # unknown and bar a reviewer on the strength of two absences.
-    return frozenset(f for f in (decided["family"],) if f), "config"
+    #
+    # `unknown` rather than `config` when something would not parse. The
+    # config family is still returned and still struck -- it is the best
+    # guess available and striking it costs a rung -- but `config` states
+    # that no dispatch was recorded, and that is a claim this read cannot
+    # make about a file it could not open.
+    return (frozenset(f for f in (decided["family"],) if f),
+            "unknown" if unread else "config")
 
 
 def float_or(value, default):

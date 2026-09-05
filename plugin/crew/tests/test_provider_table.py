@@ -684,12 +684,34 @@ def test_the_dispatch_write_is_atomic(tmp_path):
     assert leftovers == [], leftovers
 
 
-def test_a_malformed_dispatch_file_reads_as_no_dispatch(tmp_path):
+def test_a_malformed_dispatch_file_reads_as_unknown_not_as_no_dispatch(
+        tmp_path):
+    """Codex round 8, Critical. This test used to assert `config`, which is
+    the defect: `config` states that NO dispatch was recorded, and a file that
+    exists and will not parse is the one case where that is a claim rather
+    than an observation. A 0.16.6 record left malformed by a killed write is
+    the only trace its dispatch left, so calling it absent hands the next
+    dispatch on that branch a provenance it has not earned.
+
+    The config family is still returned and still struck -- it is the best
+    guess available and striking it costs a rung. Only the label changes, and
+    the label is what withholds the certification."""
     root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=False)
     (root / ".work" / "dispatch.json").write_text("{ half-written",
                                                   encoding="utf-8")
-    assert crew_state.read_dispatch(str(root)) == {}
-    assert crew_state.author_families(str(root), PINNED)[1] == "config"
+    record = crew_state.read_dispatch(str(root))
+    assert record == {"unreadable": True}, \
+        "a file that would not parse was reported as one that is not there"
+
+    authors, source = crew_state.author_families(str(root), PINNED)
+    assert source == "unknown", \
+        "unreadable evidence was reported as evidence of absence"
+    assert authors == frozenset({"gpt"}), \
+        "the config family stopped being struck"
+
+    report = crew_config.model_report(str(root), which=lambda _n: "/bin/x")
+    assert report["independentReviewer"] is False, \
+        "a review was certified over a record nobody could read"
 
 
 def test_recording_a_kind_nothing_reads_is_refused(tmp_path):
@@ -1232,8 +1254,17 @@ def test_a_malformed_entry_costs_one_entry_and_not_the_record(tmp_path):
 
     assert len(history) == 2, "the survivors were lost with the bad one"
     authors, source = crew_state.author_families(str(root), PINNED)
-    assert source == "dispatch", "one bad file must not force a config guess"
-    assert authors == frozenset({"kimi", "swe"})
+    # Both halves, and they pull in opposite directions on purpose. The
+    # survivors are STRUCK -- one bad file must not collapse the record into a
+    # config guess, which is what this test was written to catch. And the
+    # source is `unknown`, not `dispatch` -- the skipped file may have been
+    # the dispatch that wrote the diff, so what survived cannot be certified
+    # as the whole story. Keeping what was read while refusing to call it
+    # complete is the only answer that is true about both.
+    assert authors == frozenset({"kimi", "swe"}), \
+        "one bad file collapsed the record into a config guess"
+    assert source == "unknown", \
+        "a read that lost a file certified what it kept"
 
 
 def test_a_dispatch_that_cannot_be_recorded_still_dispatches(tmp_path):
@@ -1841,3 +1872,35 @@ def test_the_dispatch_cli_exits_non_zero_when_nothing_was_recorded(tmp_path,
     assert code != 0, "a dispatch that was never stored exited 0"
     assert "NOT recorded" in capsys.readouterr().err, \
         "the failure was not reported on stderr"
+
+
+def test_a_later_dispatch_cannot_certify_over_an_unreadable_legacy_record(
+        tmp_path):
+    """Codex round 8, Critical, as reported. A 0.16.6 `dispatch.json` holding
+    the only record of the codex dispatch that wrote the diff is left
+    malformed by a killed write. The repo upgrades, a claude dispatch lands on
+    the same branch, and its entry file is perfectly readable -- so the store
+    answers `{"claude"}` and used to label it `dispatch`, clearing codex to
+    review the diff codex wrote.
+
+    The config's developer family is `swe` here, so neither the assertion nor
+    its failure can be satisfied by the config fallback."""
+    cfg = copy.deepcopy(PINNED)
+    cfg["dev"]["roles"]["developer"] = {"provider": "windsurf",
+                                        "model": "swe-1"}
+    root = crew_fixtures.make_repo(tmp_path, config=cfg, git=True)
+    here = crew_state.current_branch(str(root))
+    # The legacy record of the dispatch that wrote the diff, killed mid-write.
+    (root / ".work" / "dispatch.json").write_text(
+        '{"dev": {"role": "developer", "provider": "cod',
+        encoding="utf-8")
+    # And a later, readable dispatch by another family on the same branch.
+    _seed_entry(root, role="developer", provider="claude", model=None,
+                branch=here, at=5000.0)
+
+    families, source = crew_state.author_families(str(root), cfg)
+
+    assert source == "unknown", \
+        "a readable dispatch certified itself over a record nobody could read"
+    assert families == frozenset({"claude"}), \
+        "the family that provably ran stopped being struck"
