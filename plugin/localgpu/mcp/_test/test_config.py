@@ -79,6 +79,40 @@ def test_ignore_lists_union_rather_than_replace(home, tmp_path):
     assert settings["ignore"].count("*.tmp") == 1
 
 
+def test_unignore_drops_a_liftable_default_pattern(home, tmp_path):
+    write_json(config.repo_config_path(tmp_path), {"unignore": ["*.key"]})
+    settings = config.load_config(cwd=tmp_path, home=home)
+    assert "*.key" not in settings["ignore"]
+    # Pattern removal, not path exemption - the whole rule is gone, and every
+    # other default pattern is untouched.
+    assert "*.pem" in settings["ignore"]
+
+
+def test_unignore_accumulates_across_layers_like_ignore(home, tmp_path):
+    write_json(config.global_config_path(home), {"unignore": ["*.key"]})
+    write_json(config.repo_config_path(tmp_path), {"unignore": ["*.pem"]})
+    settings = config.load_config(cwd=tmp_path, home=home)
+    assert "*.key" not in settings["ignore"]
+    assert "*.pem" not in settings["ignore"]
+
+
+def test_unignore_cannot_lift_the_hard_floor(home, tmp_path):
+    write_json(
+        config.repo_config_path(tmp_path),
+        {"unignore": [".git", ".localgpu", "node_modules"]},
+    )
+    settings = config.load_config(cwd=tmp_path, home=home)
+    assert ".git" in settings["ignore"]
+    assert ".localgpu" in settings["ignore"]
+    assert "node_modules" in settings["ignore"]
+
+
+def test_unignore_as_a_bare_string_is_rejected_not_shredded(home, tmp_path):
+    write_json(config.repo_config_path(tmp_path), {"unignore": "*.key"})
+    with pytest.raises(config.ConfigError, match="'unignore'.*list"):
+        config.load_config(cwd=tmp_path, home=home)
+
+
 def test_roots_are_resolved_absolute(home, tmp_path):
     target = tmp_path / "code"
     target.mkdir()

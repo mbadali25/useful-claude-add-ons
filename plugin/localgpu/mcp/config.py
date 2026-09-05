@@ -5,9 +5,9 @@ Two layers of configuration, nearest wins:
     <cwd>/.localgpu/config.json     per-repo
     $LOCALGPU_HOME/config.json      per-machine
 
-Recognised keys: ``roots``, ``ignore``, ``embed_model``, ``chat_model``,
-``ollama_url``. Every layer may set any subset; unset keys fall through to the
-layer below and then to :data:`DEFAULTS`.
+Recognised keys: ``roots``, ``ignore``, ``unignore``, ``embed_model``,
+``chat_model``, ``ollama_url``. Every layer may set any subset; unset keys
+fall through to the layer below and then to :data:`DEFAULTS`.
 """
 
 from __future__ import annotations
@@ -86,9 +86,17 @@ DEFAULT_IGNORE = [
     "credentials.json",
 ]
 
+# `unignore` can lift any entry a config layer added, and can lift entries
+# from `DEFAULT_IGNORE` too - that is the whole point, see `load_config`'s
+# docstring. It cannot lift these three: indexing `.git`, `.localgpu`, or a
+# `node_modules` tree is not a preference anyone holds, it is a mistake, and
+# no layer gets to re-enable it.
+UNLIFTABLE_IGNORE = frozenset({".git", ".localgpu", "node_modules"})
+
 DEFAULTS: dict[str, Any] = {
     "roots": [],
     "ignore": [],
+    "unignore": [],
     "embed_model": DEFAULT_EMBED_MODEL,
     "chat_model": DEFAULT_CHAT_MODEL,
     "ollama_url": DEFAULT_OLLAMA_URL,
@@ -101,7 +109,7 @@ CONFIG_KEYS = tuple(DEFAULTS)
 # 'n','o','d',... instead of failing. Every key gets its expected shape
 # checked eagerly, before it ever reaches the merge, so a typo reports itself
 # by name instead of turning into inexplicable behaviour three layers away.
-_LIST_KEYS = frozenset({"roots", "ignore"})
+_LIST_KEYS = frozenset({"roots", "ignore", "unignore"})
 _STR_KEYS = frozenset({"embed_model", "chat_model", "ollama_url"})
 
 
@@ -190,23 +198,46 @@ def load_config(
 
     ``roots`` defaults to ``[cwd]`` and is always returned absolute.
     ``ignore`` is the union of :data:`DEFAULT_IGNORE` and every layer's list —
-    a layer can add exclusions, not drop the built-in ones.
+    a layer can add exclusions, not drop the built-in ones directly.
+
+    ``unignore`` is the escape hatch for that: it removes a *pattern* from the
+    effective ``ignore`` list, not a path from what that pattern would have
+    matched. ``"unignore": ["*.key"]`` drops the whole ``*.key`` rule, so every
+    ``.key`` file is indexed again - it is not a per-file exemption, so there is
+    no way to un-ignore one ``.key`` file while the rest stay excluded. This is
+    the simpler of the two shapes and the more honest one: it reads as "undo
+    this default" rather than as a second, competing filter that has to be
+    checked on every path alongside ``ignore`` in `is_ignored`. Like
+    ``ignore``, ``unignore`` is layered as a union - either layer can lift a
+    pattern, and once lifted a pattern stays lifted regardless of which layer
+    said so. It cannot lift anything in :data:`UNLIFTABLE_IGNORE` - ``.git``,
+    ``.localgpu``, and ``node_modules`` stay excluded no matter what a config
+    layer asks for.
     """
     cwd = Path(cwd or Path.cwd()).resolve()
     home = home or localgpu_home()
 
     merged = dict(DEFAULTS)
     ignore: list[str] = list(DEFAULT_IGNORE)
+    unignore: list[str] = []
 
     for layer in (_read_layer(global_config_path(home)), _read_layer(repo_config_path(cwd))):
         for key, value in layer.items():
             if key == "ignore":
                 ignore.extend(str(v) for v in value or [])
+            elif key == "unignore":
+                unignore.extend(str(v) for v in value or [])
             else:
                 merged[key] = value
 
     seen: set[str] = set()
-    merged["ignore"] = [p for p in ignore if not (p in seen or seen.add(p))]
+    ignore = [p for p in ignore if not (p in seen or seen.add(p))]
+
+    lifted = set(unignore) - UNLIFTABLE_IGNORE
+    merged["ignore"] = [p for p in ignore if p not in lifted]
+
+    seen = set()
+    merged["unignore"] = [p for p in unignore if not (p in seen or seen.add(p))]
 
     roots = [str(Path(r).expanduser().resolve()) for r in merged.get("roots") or []]
     merged["roots"] = roots or [str(cwd)]

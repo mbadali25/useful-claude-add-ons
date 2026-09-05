@@ -70,18 +70,33 @@ that sets only `roots` still gets the machine's model choices.
 |---|---|---|---|
 | `roots` | list of paths | the current directory | Directories that get indexed, resolved absolute |
 | `ignore` | list of globs | see below | Paths excluded before embedding |
+| `unignore` | list of globs | `[]` | Drops a pattern from the effective `ignore` list — see below |
 | `embed_model` | string | `nomic-embed-text` | Ollama model that produces vectors |
 | `chat_model` | string | `qwen2.5-coder:7b-instruct-q4_K_M` | Ollama model that answers questions |
 | `ollama_url` | string | `http://127.0.0.1:11434` | Where Ollama listens |
 
 **`ignore` is the one key that does not override — it accumulates.** The effective
 list is the union of the built-in defaults and every layer's entries, deduplicated.
-So a repo config can add to it and cannot subtract from it, and a user asking why
-`dist/` is still excluded after they emptied the list is asking about intended
-behaviour. The built-in list covers `.git`, `node_modules`, `venv`, `.venv`,
-`dist`, `build`, `__pycache__`, and binary and lockfile extensions; an index that
-swallowed `node_modules` is slow to build, large on disk, and returns nothing
-anyone wanted.
+So a repo config can add to it and cannot subtract from it directly, and a user
+asking why `dist/` is still excluded after they emptied the list is asking about
+intended behaviour. The built-in list covers `.git`, `node_modules`, `venv`,
+`.venv`, `dist`, `build`, `__pycache__`, binary and lockfile extensions, and a
+deliberately broad set of credential patterns — `.env`, `.env.*`, `*.pem`,
+`*.key`, `*.p12`, `*.pfx`, `id_rsa*`, `credentials.json`. That breadth is a
+tradeoff made on purpose: a secret the indexer embeds into the on-disk vector
+store is a permanent second copy, while a file wrongly excluded from indexing
+is not — it is just missing from search until someone notices.
+
+**`unignore` is how a wrongly-excluded file comes back.** `"unignore": ["*.key"]`
+removes the whole `*.key` pattern from the effective `ignore` list — pattern
+removal, not a per-file exemption, so every `.key` file is indexed again, not
+just the one that prompted the change. It layers the same way `ignore` does:
+either config layer can list it, and the two accumulate rather than one
+overriding the other. Three entries cannot be lifted this way no matter what a
+config asks for — `.git`, `.localgpu`, and `node_modules` — because indexing
+those is not a preference anyone holds, it is a mistake. If a search is missing
+a file, check the `ignore` list `/localgpu:index` reports before assuming the
+indexer is broken.
 
 **Changing `embed_model` invalidates the whole index, and this plugin refuses to
 let that happen silently.** Vectors from one embedding model are not comparable

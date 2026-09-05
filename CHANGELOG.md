@@ -6,6 +6,35 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
+- **localgpu 0.1.8 -> 0.1.9: `unignore`, the escape hatch the credential
+  patterns needed.** `DEFAULT_IGNORE`'s `*.key` (added in 0.1.8, alongside
+  `.env`, `*.pem` and the rest) is broad enough to catch legitimate non-secret
+  files too - a localization resource, a keystore-adjacent asset - and until
+  now there was no way to re-include one: `ignore` accumulates across config
+  layers by design, and a file it caught stayed caught, silently, forever.
+
+  `"unignore": ["*.key"]` in either config layer now drops that whole pattern
+  from the effective `ignore` list. Pattern removal, not a per-file exemption
+  - `"unignore": ["*.key"]` un-ignores every `.key` file, not one path - which
+  is the simpler, more honest shape: it reads as "undo this default" rather
+  than a second filter checked against every path in `is_ignored` alongside
+  `ignore`. `unignore` layers the same way `ignore` does, as a union across
+  both config layers rather than one overriding the other. Three entries
+  cannot be lifted this way regardless of what a config asks for - `.git`,
+  `.localgpu`, `node_modules` - because indexing those was never a preference,
+  it was a mistake, and `unignore` only undoes preferences.
+
+  `mcp/_test/test_unignore.py` builds a fixture repo and asserts on the
+  *stored chunk text*, matching `test_secrets.py`'s shape: a file excluded
+  only by a liftable default is indexed once unignored, a secret excluded by
+  a pattern the user did not lift is not, and the hard floor holds against an
+  explicit attempt to lift it. `mcp/_test/test_config.py` covers the merge in
+  isolation - pattern removal, cross-layer accumulation, the hard floor, and
+  the same bare-string rejection `ignore` already gets. Sabotage-tested:
+  disabling pattern removal, dropping the hard floor, and dropping the
+  bare-string type check each turned the matching test red on the behaviour
+  named, independently. 228 -> 234 tests; `_verify/smoke.sh` stayed 10/10.
+
 - **`localgpu` 0.1.5 - a new plugin that puts the GPU in this machine behind a
   repository.** Ollama serves `nomic-embed-text` and
   `qwen2.5-coder:7b-instruct-q4_K_M` on `127.0.0.1:11434`; an MCP server chunks a

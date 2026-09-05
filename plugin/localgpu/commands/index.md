@@ -19,7 +19,14 @@ the VRAM rules before running anything.
 ## Step 1 — say what is about to happen, then wait for `--full`
 
 Report the resolved roots, the `ignore` list in effect, how many files match, and
-the embed model. Then:
+the embed model. If a file the user expects is missing, this is the list to check
+first — the credential patterns (`*.env`, `*.pem`, `*.key`, and friends) are
+deliberately broad, because a wrongly-included secret written into the vector
+store is permanent while a wrongly-excluded file is not. `"unignore": ["*.key"]`
+in either config layer drops that whole pattern from the effective `ignore` list
+(pattern removal, not a per-file exemption — see `load_config`'s docstring in
+`mcp/config.py`). `.git`, `.localgpu`, and `node_modules` cannot be lifted this
+way; nothing un-ignores those. Then:
 
 - **Incremental** — go. It touches only files whose content hash changed, and
   doing nothing is its normal outcome on a clean tree.
