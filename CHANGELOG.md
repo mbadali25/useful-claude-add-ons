@@ -6,7 +6,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
-- **`crew` 0.16.3: the machine-global config gets a template, a walkthrough,
+- **`crew` 0.16.4: the machine-global config gets a template, a walkthrough,
   and a migration that finishes the job.**
 
   `~/.claude/crew/config.json` sets defaults for every crew repo on a machine,
@@ -55,7 +55,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   — do not resolve": it is the user's own configuration, outside the repo,
   which is the strongest version of that rule this plugin has.
 
-- **`crew` 0.16.3: a per-role provider table, and the family guard made
+- **`crew` 0.16.4: a per-role provider table, and the family guard made
   visible in state (`schema` 2 → 3).**
 
   `qa` and `dev` each gain a `roles` table and a `fallback`, so
@@ -78,6 +78,17 @@ All notable changes to this repository are documented here. Format follows [Keep
     which is the one state `/crew:review` cannot fix by trying harder: it
     falls back to the `qa-reviewer` subagent and labels the result
     same-family. It runs; it does not count as an independent review.
+
+  **A third round gated the merge and found two more.** `current_branch`
+  returns None for a detached HEAD -- which is also the normal state during a
+  rebase -- and the staleness guard read that as "this checkout has no
+  branches" and trusted the record. Dispatch on `main`, detach, and only the
+  recorded family was struck while the configured one stayed clear to review
+  its own diff. The test is now plain inequality between the record's branch
+  and the checkout's: both absent is a real match (a non-git checkout has
+  nothing to switch between), one absent is not. And `sabotage.py` took its
+  backup outside the `try`, so a failed write could leave a truncated source
+  file behind; restoration is exception-safe and idempotent now.
 
   **A second Codex round on the fix commit confirmed all eleven and found two
   more, both about how stale provenance is represented.** A dispatch record
@@ -137,7 +148,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   in the checkout — labelled as such, because that describes the next
   dispatch rather than the diff in front of the reviewer.
 
-- **`crew` 0.16.3: `upgrade_config` migrated two blocks and claimed to have
+- **`crew` 0.16.4: `upgrade_config` migrated two blocks and claimed to have
   migrated all of them.**
 
   Reported by the user 2026-09-05: `/crew:upgrade` did not pick up the provider
@@ -177,7 +188,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   with a block nobody migrated. `upgrade_config` returns `(config, notes)` for
   this reason: what the run has to say is not optional decoration.
 
-- **`crew` 0.16.3: the three agents added in 0.15.x joined the tier ladder, and
+- **`crew` 0.16.4: the three agents added in 0.15.x joined the tier ladder, and
   the ladder moved into code.**
 
   `infrastructure-architect`, `scribe` and `researcher` shipped as definitions
@@ -193,7 +204,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   human, and `tests/test_role_ladder.py` asserts all three agree — a row added
   to one and not the others fails CI.
 
-- **`crew` 0.16.3: `merge_defaults` said "recurses one level" and does not.**
+- **`crew` 0.16.4: `merge_defaults` said "recurses one level" and does not.**
   It calls itself whenever both sides hold a dict, to whatever depth the
   default has — which is why a supplied `qa` naming only `provider` still comes
   out with `qa.codex.model`. The new `crew_config._layer_supplies`, which
@@ -205,7 +216,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   running both over every settable key and over each of the three ways the
   policy can branch, rather than by asserting the mirror in a comment.
 
-- **`crew` 0.16.3: stale reference tables in `plugin/crew/README.md`.** §25 said
+- **`crew` 0.16.4: stale reference tables in `plugin/crew/README.md`.** §25 said
   21 commands and 11 agents, and listed neither `/crew:model`, `/crew:roster`,
   nor the three agents 0.15.x added. `PLUGINS.md` had been updated and the
   plugin's own README had not, which is the worse half to miss: it is the file

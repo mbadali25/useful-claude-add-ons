@@ -937,6 +937,12 @@ def author_families(root, cfg, stale=False):
         review its own work. Over-barring costs a rung; under-barring costs
         the entire point of the guard.
 
+    Provenance is proven only when the record's branch and the checkout's
+    branch are the SAME -- including both being absent, which is a checkout
+    with no branches at all. A detached HEAD or a rebase in progress reads as
+    no branch while branches do exist, so a record naming one is unprovable
+    there and fails closed like any other mismatch.
+
     A record with no branch, read in a checkout that HAS one, is stale: it
     was written before 0.16.0's field existed and cannot prove which branch
     it came from, and trusting it strikes only its own family while leaving
@@ -974,12 +980,18 @@ def author_families(root, cfg, stale=False):
         #     cost is one over-barred review per repo, until the next
         #     dispatch records a branch.
         #
-        # A checkout with NO branch at all (`here` is None -- not a git repo)
-        # is deliberately NOT stale on those grounds. There is nothing to
-        # switch between, so the cross-branch risk the rule exists for cannot
-        # arise, and failing closed there would over-bar every non-git
-        # checkout forever rather than once.
-        if stale or (here and there != here):
+        # The test is plain inequality, and the two None cases are why. A
+        # checkout with NO branch and a record naming NONE compares equal and
+        # is trusted: nothing to switch between means none of the risk, and
+        # failing closed there would over-bar every non-git checkout forever
+        # rather than once. But `here is None` with a record that DOES name a
+        # branch is not that case -- it is a detached HEAD or a rebase in
+        # progress, where branches exist and this one simply cannot be read.
+        # An earlier version guarded with `here and there != here`, which
+        # trusted exactly that state: dispatch on main, detach, and the
+        # recorded family alone was struck while the configured one stayed
+        # clear to review its own diff.
+        if stale or here != there:
             return frozenset(
                 f for f in (recorded_family, decided["family"]) if f
             ), "stale"

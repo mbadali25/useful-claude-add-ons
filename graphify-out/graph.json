@@ -472,6 +472,19 @@
       "source_location": "L36"
     },
     {
+      "id": "skills_drata_scripts_drata_client_drataclient",
+      "label": "DrataClient",
+      "_callable": true,
+      "_callable_class": true,
+      "_origin": "ast",
+      "community": 184,
+      "community_name": "SystemExit",
+      "file_type": "code",
+      "norm_label": "drataclient",
+      "source_file": "skills/drata/scripts/drata_client.py",
+      "source_location": "L61"
+    },
+    {
       "id": "skills_cisco_meraki_scripts_meraki_http_merakihttp",
       "label": "MerakiHTTP",
       "_callable": true,
@@ -901,6 +914,19 @@
       "source_location": "L26"
     },
     {
+      "id": "skills_sophos_central_scripts_sophos_client_sophosclient",
+      "label": "SophosClient",
+      "_callable": true,
+      "_callable_class": true,
+      "_origin": "ast",
+      "community": 501,
+      "community_name": "SophosClient",
+      "file_type": "code",
+      "norm_label": "sophosclient",
+      "source_file": "skills/sophos-central/scripts/sophos_client.py",
+      "source_location": "L39"
+    },
+    {
       "id": "skills_notify_scripts_inbox_inboxlocked",
       "label": "InboxLocked",
       "_callable": true,
@@ -925,32 +951,6 @@
       "norm_label": "checkpointemailclient",
       "source_file": "skills/checkpoint-email/scripts/checkpoint_email_client.py",
       "source_location": "L77"
-    },
-    {
-      "id": "skills_drata_scripts_drata_client_drataclient",
-      "label": "DrataClient",
-      "_callable": true,
-      "_callable_class": true,
-      "_origin": "ast",
-      "community": 61,
-      "community_name": "CheckPointEmailClient",
-      "file_type": "code",
-      "norm_label": "drataclient",
-      "source_file": "skills/drata/scripts/drata_client.py",
-      "source_location": "L61"
-    },
-    {
-      "id": "skills_sophos_central_scripts_sophos_client_sophosclient",
-      "label": "SophosClient",
-      "_callable": true,
-      "_callable_class": true,
-      "_origin": "ast",
-      "community": 61,
-      "community_name": "CheckPointEmailClient",
-      "file_type": "code",
-      "norm_label": "sophosclient",
-      "source_file": "skills/sophos-central/scripts/sophos_client.py",
-      "source_location": "L39"
     },
     {
       "id": "skills_infra_work_ticketing_scripts_ticketctl_ticketerror",
@@ -7170,52 +7170,196 @@
       "source_location": "L190"
     },
     {
-      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_identity_check",
-      "label": "identity_check()",
+      "id": "skills_checkpoint_email_scripts_checkpoint_email_client_checkpointemailclient_init",
+      "label": ".__init__()",
       "_callable": true,
       "_origin": "ast",
       "community": 184,
-      "community_name": "identity_check",
+      "community_name": "SystemExit",
       "file_type": "code",
-      "norm_label": "identity_check()",
-      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
-      "source_location": "L593"
+      "norm_label": ".__init__()",
+      "source_file": "skills/checkpoint-email/scripts/checkpoint_email_client.py",
+      "source_location": "L78"
     },
     {
-      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_norm_path",
-      "label": "_norm_path()",
+      "id": "skills_checkpoint_email_scripts_checkpoint_email_client_checkpointemailclient_request_raw",
+      "label": "._request_raw()",
       "_callable": true,
       "_origin": "ast",
       "community": 184,
-      "community_name": "identity_check",
+      "community_name": "SystemExit",
       "file_type": "code",
-      "norm_label": "_norm_path()",
-      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
-      "source_location": "L411"
+      "norm_label": "._request_raw()",
+      "source_file": "skills/checkpoint-email/scripts/checkpoint_email_client.py",
+      "source_location": "L137"
     },
     {
-      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_vault_window_state",
-      "label": "vault_window_state()",
+      "id": "skills_checkpoint_email_scripts_checkpoint_email_client_checkpointemailclient_token",
+      "label": ".token()",
       "_callable": true,
       "_origin": "ast",
       "community": 184,
-      "community_name": "identity_check",
+      "community_name": "SystemExit",
       "file_type": "code",
-      "norm_label": "vault_window_state()",
-      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
-      "source_location": "L841"
+      "norm_label": ".token()",
+      "source_file": "skills/checkpoint-email/scripts/checkpoint_email_client.py",
+      "source_location": "L105"
     },
     {
-      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_visible_root_entries",
-      "label": "_visible_root_entries()",
+      "id": "skills_drata_scripts_drata_client_drataclient_bearer",
+      "label": "._bearer()",
       "_callable": true,
       "_origin": "ast",
       "community": 184,
-      "community_name": "identity_check",
+      "community_name": "SystemExit",
       "file_type": "code",
-      "norm_label": "_visible_root_entries()",
-      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
-      "source_location": "L580"
+      "norm_label": "._bearer()",
+      "source_file": "skills/drata/scripts/drata_client.py",
+      "source_location": "L103"
+    },
+    {
+      "id": "skills_drata_scripts_drata_client_drataclient_delete",
+      "label": ".delete()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 184,
+      "community_name": "SystemExit",
+      "file_type": "code",
+      "norm_label": ".delete()",
+      "source_file": "skills/drata/scripts/drata_client.py",
+      "source_location": "L192"
+    },
+    {
+      "id": "skills_drata_scripts_drata_client_drataclient_get",
+      "label": ".get()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 184,
+      "community_name": "SystemExit",
+      "file_type": "code",
+      "norm_label": ".get()",
+      "source_file": "skills/drata/scripts/drata_client.py",
+      "source_location": "L180"
+    },
+    {
+      "id": "skills_drata_scripts_drata_client_drataclient_get_all",
+      "label": ".get_all()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 184,
+      "community_name": "SystemExit",
+      "file_type": "code",
+      "norm_label": ".get_all()",
+      "source_file": "skills/drata/scripts/drata_client.py",
+      "source_location": "L204"
+    },
+    {
+      "id": "skills_drata_scripts_drata_client_drataclient_init",
+      "label": ".__init__()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 184,
+      "community_name": "SystemExit",
+      "file_type": "code",
+      "norm_label": ".__init__()",
+      "source_file": "skills/drata/scripts/drata_client.py",
+      "source_location": "L62"
+    },
+    {
+      "id": "skills_drata_scripts_drata_client_drataclient_patch",
+      "label": ".patch()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 184,
+      "community_name": "SystemExit",
+      "file_type": "code",
+      "norm_label": ".patch()",
+      "source_file": "skills/drata/scripts/drata_client.py",
+      "source_location": "L189"
+    },
+    {
+      "id": "skills_drata_scripts_drata_client_drataclient_post",
+      "label": ".post()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 184,
+      "community_name": "SystemExit",
+      "file_type": "code",
+      "norm_label": ".post()",
+      "source_file": "skills/drata/scripts/drata_client.py",
+      "source_location": "L183"
+    },
+    {
+      "id": "skills_drata_scripts_drata_client_drataclient_put",
+      "label": ".put()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 184,
+      "community_name": "SystemExit",
+      "file_type": "code",
+      "norm_label": ".put()",
+      "source_file": "skills/drata/scripts/drata_client.py",
+      "source_location": "L186"
+    },
+    {
+      "id": "skills_drata_scripts_drata_client_drataclient_request",
+      "label": "._request()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 184,
+      "community_name": "SystemExit",
+      "file_type": "code",
+      "norm_label": "._request()",
+      "source_file": "skills/drata/scripts/drata_client.py",
+      "source_location": "L139"
+    },
+    {
+      "id": "skills_drata_scripts_drata_client_drataclient_whoami",
+      "label": ".whoami()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 184,
+      "community_name": "SystemExit",
+      "file_type": "code",
+      "norm_label": ".whoami()",
+      "source_file": "skills/drata/scripts/drata_client.py",
+      "source_location": "L195"
+    },
+    {
+      "id": "skills_drata_scripts_drata_client_main",
+      "label": "main()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 184,
+      "community_name": "SystemExit",
+      "file_type": "code",
+      "norm_label": "main()",
+      "source_file": "skills/drata/scripts/drata_client.py",
+      "source_location": "L253"
+    },
+    {
+      "id": "skills_drata_scripts_drata_client_parse_params",
+      "label": "_parse_params()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 184,
+      "community_name": "SystemExit",
+      "file_type": "code",
+      "norm_label": "_parse_params()",
+      "source_file": "skills/drata/scripts/drata_client.py",
+      "source_location": "L243"
+    },
+    {
+      "id": "skills_sophos_central_scripts_sophos_client_sophosclient_init",
+      "label": ".__init__()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 184,
+      "community_name": "SystemExit",
+      "file_type": "code",
+      "norm_label": ".__init__()",
+      "source_file": "skills/sophos-central/scripts/sophos_client.py",
+      "source_location": "L40"
     },
     {
       "id": "skills_cisco_meraki_scripts_meraki_http_merakierror_init",
@@ -11202,18 +11346,6 @@
       "source_location": "L452"
     },
     {
-      "id": "plugin_crew_hooks_scripts_crew_config_layered_state",
-      "label": "layered_state()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 30,
-      "community_name": "crew_config.py",
-      "file_type": "code",
-      "norm_label": "layered_state()",
-      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L415"
-    },
-    {
       "id": "plugin_crew_hooks_scripts_crew_config_leaf_paths",
       "label": "leaf_paths()",
       "_callable": true,
@@ -11236,30 +11368,6 @@
       "norm_label": "main()",
       "source_file": "plugin/crew/hooks/scripts/crew_config.py",
       "source_location": "L962"
-    },
-    {
-      "id": "plugin_crew_hooks_scripts_crew_config_model_report",
-      "label": "model_report()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 30,
-      "community_name": "crew_config.py",
-      "file_type": "code",
-      "norm_label": "model_report()",
-      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L687"
-    },
-    {
-      "id": "plugin_crew_hooks_scripts_crew_config_order_candidates",
-      "label": "order_candidates()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 30,
-      "community_name": "crew_config.py",
-      "file_type": "code",
-      "norm_label": "order_candidates()",
-      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L623"
     },
     {
       "id": "plugin_crew_hooks_scripts_crew_config_plan_global_write",
@@ -11296,18 +11404,6 @@
       "norm_label": "_print_models()",
       "source_file": "plugin/crew/hooks/scripts/crew_config.py",
       "source_location": "L789"
-    },
-    {
-      "id": "plugin_crew_hooks_scripts_crew_config_prune",
-      "label": "_prune()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 30,
-      "community_name": "crew_config.py",
-      "file_type": "code",
-      "norm_label": "_prune()",
-      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L283"
     },
     {
       "id": "plugin_crew_hooks_scripts_crew_config_read_global_config",
@@ -11356,126 +11452,6 @@
       "norm_label": "write_global_config()",
       "source_file": "plugin/crew/hooks/scripts/crew_config.py",
       "source_location": "L923"
-    },
-    {
-      "id": "skills_web_testing_playwright_scripts_check_env_browsers_dir",
-      "label": "browsers_dir()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 30,
-      "community_name": "crew_config.py",
-      "file_type": "code",
-      "norm_label": "browsers_dir()",
-      "source_file": "skills/web-testing-playwright/scripts/check_env.py",
-      "source_location": "L45"
-    },
-    {
-      "id": "skills_web_testing_playwright_scripts_check_env_collect",
-      "label": "collect()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 30,
-      "community_name": "crew_config.py",
-      "file_type": "code",
-      "norm_label": "collect()",
-      "source_file": "skills/web-testing-playwright/scripts/check_env.py",
-      "source_location": "L89"
-    },
-    {
-      "id": "skills_web_testing_playwright_scripts_check_env_installed_browsers",
-      "label": "installed_browsers()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 30,
-      "community_name": "crew_config.py",
-      "file_type": "code",
-      "norm_label": "installed_browsers()",
-      "source_file": "skills/web-testing-playwright/scripts/check_env.py",
-      "source_location": "L59"
-    },
-    {
-      "id": "skills_web_testing_playwright_scripts_check_env_main",
-      "label": "main()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 30,
-      "community_name": "crew_config.py",
-      "file_type": "code",
-      "norm_label": "main()",
-      "source_file": "skills/web-testing-playwright/scripts/check_env.py",
-      "source_location": "L208"
-    },
-    {
-      "id": "skills_web_testing_playwright_scripts_check_env_node_playwright",
-      "label": "node_playwright()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 30,
-      "community_name": "crew_config.py",
-      "file_type": "code",
-      "norm_label": "node_playwright()",
-      "source_file": "skills/web-testing-playwright/scripts/check_env.py",
-      "source_location": "L79"
-    },
-    {
-      "id": "skills_web_testing_playwright_scripts_check_env_python_playwright",
-      "label": "python_playwright()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 30,
-      "community_name": "crew_config.py",
-      "file_type": "code",
-      "norm_label": "python_playwright()",
-      "source_file": "skills/web-testing-playwright/scripts/check_env.py",
-      "source_location": "L70"
-    },
-    {
-      "id": "skills_web_testing_playwright_scripts_check_env_recommendations",
-      "label": "recommendations()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 30,
-      "community_name": "crew_config.py",
-      "file_type": "code",
-      "norm_label": "recommendations()",
-      "source_file": "skills/web-testing-playwright/scripts/check_env.py",
-      "source_location": "L128"
-    },
-    {
-      "id": "skills_web_testing_playwright_scripts_check_env_render",
-      "label": "render()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 30,
-      "community_name": "crew_config.py",
-      "file_type": "code",
-      "norm_label": "render()",
-      "source_file": "skills/web-testing-playwright/scripts/check_env.py",
-      "source_location": "L175"
-    },
-    {
-      "id": "skills_web_testing_playwright_scripts_check_env_run",
-      "label": "run()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 30,
-      "community_name": "crew_config.py",
-      "file_type": "code",
-      "norm_label": "run()",
-      "source_file": "skills/web-testing-playwright/scripts/check_env.py",
-      "source_location": "L23"
-    },
-    {
-      "id": "skills_web_testing_playwright_scripts_check_env_which",
-      "label": "which()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 30,
-      "community_name": "crew_config.py",
-      "file_type": "code",
-      "norm_label": "which()",
-      "source_file": "skills/web-testing-playwright/scripts/check_env.py",
-      "source_location": "L41"
     },
     {
       "id": "skills_visio_diagrams_scripts_verify_vsdx_check_package",
@@ -15438,40 +15414,64 @@
       "source_location": "L87"
     },
     {
-      "id": "plugin_crew_tests_sabotage_mutate",
-      "label": "mutate()",
+      "id": "plugin_crew_tests_sabotage_apply_mutation",
+      "label": "apply_mutation()",
       "_callable": true,
       "_origin": "ast",
       "community": 480,
       "community_name": "sabotage.py",
       "file_type": "code",
-      "norm_label": "mutate()",
+      "norm_label": "apply_mutation()",
       "source_file": "plugin/crew/tests/sabotage.py",
-      "source_location": "L50"
+      "source_location": "L78"
     },
     {
-      "id": "plugin_crew_tests_sabotage_restore",
-      "label": "restore()",
+      "id": "plugin_crew_tests_sabotage_main",
+      "label": "main()",
       "_callable": true,
       "_origin": "ast",
       "community": 480,
       "community_name": "sabotage.py",
       "file_type": "code",
-      "norm_label": "restore()",
+      "norm_label": "main()",
       "source_file": "plugin/crew/tests/sabotage.py",
-      "source_location": "L59"
+      "source_location": "L88"
     },
     {
-      "id": "plugin_crew_tests_sabotage_run",
-      "label": "run()",
+      "id": "plugin_crew_tests_sabotage_read",
+      "label": "read()",
       "_callable": true,
       "_origin": "ast",
       "community": 480,
       "community_name": "sabotage.py",
       "file_type": "code",
-      "norm_label": "run()",
+      "norm_label": "read()",
       "source_file": "plugin/crew/tests/sabotage.py",
-      "source_location": "L23"
+      "source_location": "L68"
+    },
+    {
+      "id": "plugin_crew_tests_sabotage_run_test",
+      "label": "run_test()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 480,
+      "community_name": "sabotage.py",
+      "file_type": "code",
+      "norm_label": "run_test()",
+      "source_file": "plugin/crew/tests/sabotage.py",
+      "source_location": "L60"
+    },
+    {
+      "id": "plugin_crew_tests_sabotage_write",
+      "label": "write()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 480,
+      "community_name": "sabotage.py",
+      "file_type": "code",
+      "norm_label": "write()",
+      "source_file": "plugin/crew/tests/sabotage.py",
+      "source_location": "L73"
     },
     {
       "id": "plugin_crew_tests_test_provider_table_test_a_branchless_record_in_a_git_checkout_fails_closed",
@@ -16060,6 +16060,366 @@
       "norm_label": "test_an_mtime_stale_verdict_reaches_the_report()",
       "source_file": "plugin/crew/tests/test_provider_table.py",
       "source_location": "L434"
+    },
+    {
+      "id": "skills_sophos_central_scripts_sophos_client_sophosclient_get",
+      "label": ".get()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 501,
+      "community_name": "SophosClient",
+      "file_type": "code",
+      "norm_label": ".get()",
+      "source_file": "skills/sophos-central/scripts/sophos_client.py",
+      "source_location": "L175"
+    },
+    {
+      "id": "skills_sophos_central_scripts_sophos_client_sophosclient_get_all",
+      "label": ".get_all()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 501,
+      "community_name": "SophosClient",
+      "file_type": "code",
+      "norm_label": ".get_all()",
+      "source_file": "skills/sophos-central/scripts/sophos_client.py",
+      "source_location": "L178"
+    },
+    {
+      "id": "skills_sophos_central_scripts_sophos_client_sophosclient_request",
+      "label": ".request()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 501,
+      "community_name": "SophosClient",
+      "file_type": "code",
+      "norm_label": ".request()",
+      "source_file": "skills/sophos-central/scripts/sophos_client.py",
+      "source_location": "L161"
+    },
+    {
+      "id": "skills_sophos_central_scripts_sophos_client_sophosclient_request_raw",
+      "label": "._request_raw()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 501,
+      "community_name": "SophosClient",
+      "file_type": "code",
+      "norm_label": "._request_raw()",
+      "source_file": "skills/sophos-central/scripts/sophos_client.py",
+      "source_location": "L135"
+    },
+    {
+      "id": "skills_sophos_central_scripts_sophos_client_sophosclient_resolve_context",
+      "label": "._resolve_context()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 501,
+      "community_name": "SophosClient",
+      "file_type": "code",
+      "norm_label": "._resolve_context()",
+      "source_file": "skills/sophos-central/scripts/sophos_client.py",
+      "source_location": "L110"
+    },
+    {
+      "id": "skills_sophos_central_scripts_sophos_client_sophosclient_siem_events",
+      "label": ".siem_events()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 501,
+      "community_name": "SophosClient",
+      "file_type": "code",
+      "norm_label": ".siem_events()",
+      "source_file": "skills/sophos-central/scripts/sophos_client.py",
+      "source_location": "L196"
+    },
+    {
+      "id": "skills_sophos_central_scripts_sophos_client_sophosclient_tenants",
+      "label": ".tenants()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 501,
+      "community_name": "SophosClient",
+      "file_type": "code",
+      "norm_label": ".tenants()",
+      "source_file": "skills/sophos-central/scripts/sophos_client.py",
+      "source_location": "L87"
+    },
+    {
+      "id": "skills_sophos_central_scripts_sophos_client_sophosclient_token",
+      "label": ".token()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 501,
+      "community_name": "SophosClient",
+      "file_type": "code",
+      "norm_label": ".token()",
+      "source_file": "skills/sophos-central/scripts/sophos_client.py",
+      "source_location": "L57"
+    },
+    {
+      "id": "skills_sophos_central_scripts_sophos_client_sophosclient_whoami",
+      "label": ".whoami()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 501,
+      "community_name": "SophosClient",
+      "file_type": "code",
+      "norm_label": ".whoami()",
+      "source_file": "skills/sophos-central/scripts/sophos_client.py",
+      "source_location": "L76"
+    },
+    {
+      "id": "skills_web_testing_playwright_scripts_check_env_browsers_dir",
+      "label": "browsers_dir()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 502,
+      "community_name": "check_env.py",
+      "file_type": "code",
+      "norm_label": "browsers_dir()",
+      "source_file": "skills/web-testing-playwright/scripts/check_env.py",
+      "source_location": "L45"
+    },
+    {
+      "id": "skills_web_testing_playwright_scripts_check_env_collect",
+      "label": "collect()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 502,
+      "community_name": "check_env.py",
+      "file_type": "code",
+      "norm_label": "collect()",
+      "source_file": "skills/web-testing-playwright/scripts/check_env.py",
+      "source_location": "L89"
+    },
+    {
+      "id": "skills_web_testing_playwright_scripts_check_env_installed_browsers",
+      "label": "installed_browsers()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 502,
+      "community_name": "check_env.py",
+      "file_type": "code",
+      "norm_label": "installed_browsers()",
+      "source_file": "skills/web-testing-playwright/scripts/check_env.py",
+      "source_location": "L59"
+    },
+    {
+      "id": "skills_web_testing_playwright_scripts_check_env_main",
+      "label": "main()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 502,
+      "community_name": "check_env.py",
+      "file_type": "code",
+      "norm_label": "main()",
+      "source_file": "skills/web-testing-playwright/scripts/check_env.py",
+      "source_location": "L208"
+    },
+    {
+      "id": "skills_web_testing_playwright_scripts_check_env_node_playwright",
+      "label": "node_playwright()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 502,
+      "community_name": "check_env.py",
+      "file_type": "code",
+      "norm_label": "node_playwright()",
+      "source_file": "skills/web-testing-playwright/scripts/check_env.py",
+      "source_location": "L79"
+    },
+    {
+      "id": "skills_web_testing_playwright_scripts_check_env_python_playwright",
+      "label": "python_playwright()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 502,
+      "community_name": "check_env.py",
+      "file_type": "code",
+      "norm_label": "python_playwright()",
+      "source_file": "skills/web-testing-playwright/scripts/check_env.py",
+      "source_location": "L70"
+    },
+    {
+      "id": "skills_web_testing_playwright_scripts_check_env_recommendations",
+      "label": "recommendations()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 502,
+      "community_name": "check_env.py",
+      "file_type": "code",
+      "norm_label": "recommendations()",
+      "source_file": "skills/web-testing-playwright/scripts/check_env.py",
+      "source_location": "L128"
+    },
+    {
+      "id": "skills_web_testing_playwright_scripts_check_env_render",
+      "label": "render()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 502,
+      "community_name": "check_env.py",
+      "file_type": "code",
+      "norm_label": "render()",
+      "source_file": "skills/web-testing-playwright/scripts/check_env.py",
+      "source_location": "L175"
+    },
+    {
+      "id": "skills_web_testing_playwright_scripts_check_env_run",
+      "label": "run()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 502,
+      "community_name": "check_env.py",
+      "file_type": "code",
+      "norm_label": "run()",
+      "source_file": "skills/web-testing-playwright/scripts/check_env.py",
+      "source_location": "L23"
+    },
+    {
+      "id": "plugin_crew_hooks_scripts_crew_config_model_report",
+      "label": "model_report()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 503,
+      "community_name": "model_report",
+      "file_type": "code",
+      "norm_label": "model_report()",
+      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
+      "source_location": "L687"
+    },
+    {
+      "id": "plugin_crew_hooks_scripts_crew_config_order_candidates",
+      "label": "order_candidates()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 503,
+      "community_name": "model_report",
+      "file_type": "code",
+      "norm_label": "order_candidates()",
+      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
+      "source_location": "L623"
+    },
+    {
+      "id": "skills_web_testing_playwright_scripts_check_env_which",
+      "label": "which()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 503,
+      "community_name": "model_report",
+      "file_type": "code",
+      "norm_label": "which()",
+      "source_file": "skills/web-testing-playwright/scripts/check_env.py",
+      "source_location": "L41"
+    },
+    {
+      "id": "skills_sophos_central_scripts_sophos_client_duration_to_seconds",
+      "label": "_duration_to_seconds()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 504,
+      "community_name": "sophos_client.py",
+      "file_type": "code",
+      "norm_label": "_duration_to_seconds()",
+      "source_file": "skills/sophos-central/scripts/sophos_client.py",
+      "source_location": "L224"
+    },
+    {
+      "id": "skills_sophos_central_scripts_sophos_client_main",
+      "label": "main()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 504,
+      "community_name": "sophos_client.py",
+      "file_type": "code",
+      "norm_label": "main()",
+      "source_file": "skills/sophos-central/scripts/sophos_client.py",
+      "source_location": "L231"
+    },
+    {
+      "id": "skills_sophos_central_scripts_sophos_client_parse_params",
+      "label": "_parse_params()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 504,
+      "community_name": "sophos_client.py",
+      "file_type": "code",
+      "norm_label": "_parse_params()",
+      "source_file": "skills/sophos-central/scripts/sophos_client.py",
+      "source_location": "L211"
+    },
+    {
+      "id": "skills_checkpoint_email_scripts_checkpoint_email_client_main",
+      "label": "main()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 505,
+      "community_name": "checkpoint_email_client.py",
+      "file_type": "code",
+      "norm_label": "main()",
+      "source_file": "skills/checkpoint-email/scripts/checkpoint_email_client.py",
+      "source_location": "L346"
+    },
+    {
+      "id": "skills_checkpoint_email_scripts_checkpoint_email_client_print",
+      "label": "_print()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 505,
+      "community_name": "checkpoint_email_client.py",
+      "file_type": "code",
+      "norm_label": "_print()",
+      "source_file": "skills/checkpoint-email/scripts/checkpoint_email_client.py",
+      "source_location": "L342"
+    },
+    {
+      "id": "plugin_crew_hooks_scripts_crew_config_layered_state",
+      "label": "layered_state()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 506,
+      "community_name": "layered_state",
+      "file_type": "code",
+      "norm_label": "layered_state()",
+      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
+      "source_location": "L415"
+    },
+    {
+      "id": "plugin_crew_hooks_scripts_crew_config_prune",
+      "label": "_prune()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 507,
+      "community_name": "_prune",
+      "file_type": "code",
+      "norm_label": "_prune()",
+      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
+      "source_location": "L283"
+    },
+    {
+      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_collisions_for",
+      "label": "collisions_for()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 508,
+      "community_name": "collisions_for",
+      "file_type": "code",
+      "norm_label": "collisions_for()",
+      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
+      "source_location": "L553"
+    },
+    {
+      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_describe_collision",
+      "label": "describe_collision()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 509,
+      "community_name": "describe_collision",
+      "file_type": "code",
+      "norm_label": "describe_collision()",
+      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
+      "source_location": "L558"
     },
     {
       "id": "skills_notify_scripts_inbox_append",
@@ -17082,18 +17442,6 @@
       "source_location": "L169"
     },
     {
-      "id": "skills_checkpoint_email_scripts_checkpoint_email_client_checkpointemailclient_init",
-      "label": ".__init__()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 61,
-      "community_name": "CheckPointEmailClient",
-      "file_type": "code",
-      "norm_label": ".__init__()",
-      "source_file": "skills/checkpoint-email/scripts/checkpoint_email_client.py",
-      "source_location": "L78"
-    },
-    {
       "id": "skills_checkpoint_email_scripts_checkpoint_email_client_checkpointemailclient_post",
       "label": ".post()",
       "_callable": true,
@@ -17128,18 +17476,6 @@
       "norm_label": ".request()",
       "source_file": "skills/checkpoint-email/scripts/checkpoint_email_client.py",
       "source_location": "L163"
-    },
-    {
-      "id": "skills_checkpoint_email_scripts_checkpoint_email_client_checkpointemailclient_request_raw",
-      "label": "._request_raw()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 61,
-      "community_name": "CheckPointEmailClient",
-      "file_type": "code",
-      "norm_label": "._request_raw()",
-      "source_file": "skills/checkpoint-email/scripts/checkpoint_email_client.py",
-      "source_location": "L137"
     },
     {
       "id": "skills_checkpoint_email_scripts_checkpoint_email_client_checkpointemailclient_scroll_id",
@@ -17188,342 +17524,6 @@
       "norm_label": ".task()",
       "source_file": "skills/checkpoint-email/scripts/checkpoint_email_client.py",
       "source_location": "L265"
-    },
-    {
-      "id": "skills_checkpoint_email_scripts_checkpoint_email_client_checkpointemailclient_token",
-      "label": ".token()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 61,
-      "community_name": "CheckPointEmailClient",
-      "file_type": "code",
-      "norm_label": ".token()",
-      "source_file": "skills/checkpoint-email/scripts/checkpoint_email_client.py",
-      "source_location": "L105"
-    },
-    {
-      "id": "skills_checkpoint_email_scripts_checkpoint_email_client_main",
-      "label": "main()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 61,
-      "community_name": "CheckPointEmailClient",
-      "file_type": "code",
-      "norm_label": "main()",
-      "source_file": "skills/checkpoint-email/scripts/checkpoint_email_client.py",
-      "source_location": "L346"
-    },
-    {
-      "id": "skills_checkpoint_email_scripts_checkpoint_email_client_print",
-      "label": "_print()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 61,
-      "community_name": "CheckPointEmailClient",
-      "file_type": "code",
-      "norm_label": "_print()",
-      "source_file": "skills/checkpoint-email/scripts/checkpoint_email_client.py",
-      "source_location": "L342"
-    },
-    {
-      "id": "skills_drata_scripts_drata_client_drataclient_bearer",
-      "label": "._bearer()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 61,
-      "community_name": "CheckPointEmailClient",
-      "file_type": "code",
-      "norm_label": "._bearer()",
-      "source_file": "skills/drata/scripts/drata_client.py",
-      "source_location": "L103"
-    },
-    {
-      "id": "skills_drata_scripts_drata_client_drataclient_delete",
-      "label": ".delete()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 61,
-      "community_name": "CheckPointEmailClient",
-      "file_type": "code",
-      "norm_label": ".delete()",
-      "source_file": "skills/drata/scripts/drata_client.py",
-      "source_location": "L192"
-    },
-    {
-      "id": "skills_drata_scripts_drata_client_drataclient_get",
-      "label": ".get()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 61,
-      "community_name": "CheckPointEmailClient",
-      "file_type": "code",
-      "norm_label": ".get()",
-      "source_file": "skills/drata/scripts/drata_client.py",
-      "source_location": "L180"
-    },
-    {
-      "id": "skills_drata_scripts_drata_client_drataclient_get_all",
-      "label": ".get_all()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 61,
-      "community_name": "CheckPointEmailClient",
-      "file_type": "code",
-      "norm_label": ".get_all()",
-      "source_file": "skills/drata/scripts/drata_client.py",
-      "source_location": "L204"
-    },
-    {
-      "id": "skills_drata_scripts_drata_client_drataclient_init",
-      "label": ".__init__()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 61,
-      "community_name": "CheckPointEmailClient",
-      "file_type": "code",
-      "norm_label": ".__init__()",
-      "source_file": "skills/drata/scripts/drata_client.py",
-      "source_location": "L62"
-    },
-    {
-      "id": "skills_drata_scripts_drata_client_drataclient_patch",
-      "label": ".patch()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 61,
-      "community_name": "CheckPointEmailClient",
-      "file_type": "code",
-      "norm_label": ".patch()",
-      "source_file": "skills/drata/scripts/drata_client.py",
-      "source_location": "L189"
-    },
-    {
-      "id": "skills_drata_scripts_drata_client_drataclient_post",
-      "label": ".post()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 61,
-      "community_name": "CheckPointEmailClient",
-      "file_type": "code",
-      "norm_label": ".post()",
-      "source_file": "skills/drata/scripts/drata_client.py",
-      "source_location": "L183"
-    },
-    {
-      "id": "skills_drata_scripts_drata_client_drataclient_put",
-      "label": ".put()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 61,
-      "community_name": "CheckPointEmailClient",
-      "file_type": "code",
-      "norm_label": ".put()",
-      "source_file": "skills/drata/scripts/drata_client.py",
-      "source_location": "L186"
-    },
-    {
-      "id": "skills_drata_scripts_drata_client_drataclient_request",
-      "label": "._request()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 61,
-      "community_name": "CheckPointEmailClient",
-      "file_type": "code",
-      "norm_label": "._request()",
-      "source_file": "skills/drata/scripts/drata_client.py",
-      "source_location": "L139"
-    },
-    {
-      "id": "skills_drata_scripts_drata_client_drataclient_whoami",
-      "label": ".whoami()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 61,
-      "community_name": "CheckPointEmailClient",
-      "file_type": "code",
-      "norm_label": ".whoami()",
-      "source_file": "skills/drata/scripts/drata_client.py",
-      "source_location": "L195"
-    },
-    {
-      "id": "skills_drata_scripts_drata_client_main",
-      "label": "main()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 61,
-      "community_name": "CheckPointEmailClient",
-      "file_type": "code",
-      "norm_label": "main()",
-      "source_file": "skills/drata/scripts/drata_client.py",
-      "source_location": "L253"
-    },
-    {
-      "id": "skills_drata_scripts_drata_client_parse_params",
-      "label": "_parse_params()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 61,
-      "community_name": "CheckPointEmailClient",
-      "file_type": "code",
-      "norm_label": "_parse_params()",
-      "source_file": "skills/drata/scripts/drata_client.py",
-      "source_location": "L243"
-    },
-    {
-      "id": "skills_sophos_central_scripts_sophos_client_duration_to_seconds",
-      "label": "_duration_to_seconds()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 61,
-      "community_name": "CheckPointEmailClient",
-      "file_type": "code",
-      "norm_label": "_duration_to_seconds()",
-      "source_file": "skills/sophos-central/scripts/sophos_client.py",
-      "source_location": "L224"
-    },
-    {
-      "id": "skills_sophos_central_scripts_sophos_client_main",
-      "label": "main()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 61,
-      "community_name": "CheckPointEmailClient",
-      "file_type": "code",
-      "norm_label": "main()",
-      "source_file": "skills/sophos-central/scripts/sophos_client.py",
-      "source_location": "L231"
-    },
-    {
-      "id": "skills_sophos_central_scripts_sophos_client_parse_params",
-      "label": "_parse_params()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 61,
-      "community_name": "CheckPointEmailClient",
-      "file_type": "code",
-      "norm_label": "_parse_params()",
-      "source_file": "skills/sophos-central/scripts/sophos_client.py",
-      "source_location": "L211"
-    },
-    {
-      "id": "skills_sophos_central_scripts_sophos_client_sophosclient_get",
-      "label": ".get()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 61,
-      "community_name": "CheckPointEmailClient",
-      "file_type": "code",
-      "norm_label": ".get()",
-      "source_file": "skills/sophos-central/scripts/sophos_client.py",
-      "source_location": "L175"
-    },
-    {
-      "id": "skills_sophos_central_scripts_sophos_client_sophosclient_get_all",
-      "label": ".get_all()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 61,
-      "community_name": "CheckPointEmailClient",
-      "file_type": "code",
-      "norm_label": ".get_all()",
-      "source_file": "skills/sophos-central/scripts/sophos_client.py",
-      "source_location": "L178"
-    },
-    {
-      "id": "skills_sophos_central_scripts_sophos_client_sophosclient_init",
-      "label": ".__init__()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 61,
-      "community_name": "CheckPointEmailClient",
-      "file_type": "code",
-      "norm_label": ".__init__()",
-      "source_file": "skills/sophos-central/scripts/sophos_client.py",
-      "source_location": "L40"
-    },
-    {
-      "id": "skills_sophos_central_scripts_sophos_client_sophosclient_request",
-      "label": ".request()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 61,
-      "community_name": "CheckPointEmailClient",
-      "file_type": "code",
-      "norm_label": ".request()",
-      "source_file": "skills/sophos-central/scripts/sophos_client.py",
-      "source_location": "L161"
-    },
-    {
-      "id": "skills_sophos_central_scripts_sophos_client_sophosclient_request_raw",
-      "label": "._request_raw()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 61,
-      "community_name": "CheckPointEmailClient",
-      "file_type": "code",
-      "norm_label": "._request_raw()",
-      "source_file": "skills/sophos-central/scripts/sophos_client.py",
-      "source_location": "L135"
-    },
-    {
-      "id": "skills_sophos_central_scripts_sophos_client_sophosclient_resolve_context",
-      "label": "._resolve_context()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 61,
-      "community_name": "CheckPointEmailClient",
-      "file_type": "code",
-      "norm_label": "._resolve_context()",
-      "source_file": "skills/sophos-central/scripts/sophos_client.py",
-      "source_location": "L110"
-    },
-    {
-      "id": "skills_sophos_central_scripts_sophos_client_sophosclient_siem_events",
-      "label": ".siem_events()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 61,
-      "community_name": "CheckPointEmailClient",
-      "file_type": "code",
-      "norm_label": ".siem_events()",
-      "source_file": "skills/sophos-central/scripts/sophos_client.py",
-      "source_location": "L196"
-    },
-    {
-      "id": "skills_sophos_central_scripts_sophos_client_sophosclient_tenants",
-      "label": ".tenants()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 61,
-      "community_name": "CheckPointEmailClient",
-      "file_type": "code",
-      "norm_label": ".tenants()",
-      "source_file": "skills/sophos-central/scripts/sophos_client.py",
-      "source_location": "L87"
-    },
-    {
-      "id": "skills_sophos_central_scripts_sophos_client_sophosclient_token",
-      "label": ".token()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 61,
-      "community_name": "CheckPointEmailClient",
-      "file_type": "code",
-      "norm_label": ".token()",
-      "source_file": "skills/sophos-central/scripts/sophos_client.py",
-      "source_location": "L57"
-    },
-    {
-      "id": "skills_sophos_central_scripts_sophos_client_sophosclient_whoami",
-      "label": ".whoami()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 61,
-      "community_name": "CheckPointEmailClient",
-      "file_type": "code",
-      "norm_label": ".whoami()",
-      "source_file": "skills/sophos-central/scripts/sophos_client.py",
-      "source_location": "L76"
     },
     {
       "id": "plugin_crew_tests_test_crew_config_test_default_config_returns_a_fresh_object_each_call",
@@ -19326,18 +19326,6 @@
       "source_location": "L103"
     },
     {
-      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_collisions_for",
-      "label": "collisions_for()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 78,
-      "community_name": "obsidian_common.py",
-      "file_type": "code",
-      "norm_label": "collisions_for()",
-      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
-      "source_location": "L553"
-    },
-    {
       "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_community_plugins_path",
       "label": "community_plugins_path()",
       "_callable": true,
@@ -19386,18 +19374,6 @@
       "source_location": "L226"
     },
     {
-      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_describe_collision",
-      "label": "describe_collision()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 78,
-      "community_name": "obsidian_common.py",
-      "file_type": "code",
-      "norm_label": "describe_collision()",
-      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
-      "source_location": "L558"
-    },
-    {
       "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_detect_vault_from_app",
       "label": "detect_vault_from_app()",
       "_callable": true,
@@ -19434,6 +19410,18 @@
       "source_location": "L50"
     },
     {
+      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_identity_check",
+      "label": "identity_check()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 78,
+      "community_name": "obsidian_common.py",
+      "file_type": "code",
+      "norm_label": "identity_check()",
+      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
+      "source_location": "L593"
+    },
+    {
       "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_list_app_vaults",
       "label": "list_app_vaults()",
       "_callable": true,
@@ -19456,6 +19444,18 @@
       "norm_label": "list_vaults()",
       "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
       "source_location": "L173"
+    },
+    {
+      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_norm_path",
+      "label": "_norm_path()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 78,
+      "community_name": "obsidian_common.py",
+      "file_type": "code",
+      "norm_label": "_norm_path()",
+      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
+      "source_location": "L411"
     },
     {
       "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_obsidian_app_json_path",
@@ -19528,6 +19528,30 @@
       "norm_label": "_valid_port()",
       "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
       "source_location": "L149"
+    },
+    {
+      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_vault_window_state",
+      "label": "vault_window_state()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 78,
+      "community_name": "obsidian_common.py",
+      "file_type": "code",
+      "norm_label": "vault_window_state()",
+      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
+      "source_location": "L841"
+    },
+    {
+      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_visible_root_entries",
+      "label": "_visible_root_entries()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 78,
+      "community_name": "obsidian_common.py",
+      "file_type": "code",
+      "norm_label": "_visible_root_entries()",
+      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
+      "source_location": "L580"
     },
     {
       "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_write_config",
@@ -34238,37 +34262,48 @@
       "source_location": "L21"
     },
     {
-      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_rationale_581",
-      "label": "Top-level names Local REST API would list for a vault. Dotfiles (notably\u2026",
+      "id": "skills_drata_scripts_drata_client",
+      "label": "drata_client.py",
       "_origin": "ast",
       "community": 184,
-      "community_name": "identity_check",
-      "file_type": "rationale",
-      "norm_label": "top-level names local rest api would list for a vault. dotfiles (notably...",
-      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
-      "source_location": "L581"
+      "community_name": "SystemExit",
+      "file_type": "code",
+      "norm_label": "drata_client.py",
+      "source_file": "skills/drata/scripts/drata_client.py",
+      "source_location": "L1"
     },
     {
-      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_rationale_594",
-      "label": "Does the root listing a server returned match the vault on disk? `served_files`\u2026",
+      "id": "systemexit",
+      "label": "SystemExit",
       "_origin": "ast",
       "community": 184,
-      "community_name": "identity_check",
-      "file_type": "rationale",
-      "norm_label": "does the root listing a server returned match the vault on disk? `served_files`...",
-      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
-      "source_location": "L594"
+      "community_name": "SystemExit",
+      "file_type": "code",
+      "norm_label": "systemexit",
+      "source_file": "",
+      "source_location": ""
     },
     {
-      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_rationale_842",
-      "label": "Does an open window on this machine belong to THIS vault? Returns {\"state\":\u2026",
+      "id": "skills_drata_scripts_drata_client_rationale_196",
+      "label": "Lightweight identity/connectivity check via the company endpoint.",
       "_origin": "ast",
       "community": 184,
-      "community_name": "identity_check",
+      "community_name": "SystemExit",
       "file_type": "rationale",
-      "norm_label": "does an open window on this machine belong to this vault? returns {\"state\":...",
-      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
-      "source_location": "L842"
+      "norm_label": "lightweight identity/connectivity check via the company endpoint.",
+      "source_file": "skills/drata/scripts/drata_client.py",
+      "source_location": "L196"
+    },
+    {
+      "id": "skills_drata_scripts_drata_client_rationale_205",
+      "label": "Yield every record across all pages. Auto-detects pagination style from the\u2026",
+      "_origin": "ast",
+      "community": 184,
+      "community_name": "SystemExit",
+      "file_type": "rationale",
+      "norm_label": "yield every record across all pages. auto-detects pagination style from the...",
+      "source_file": "skills/drata/scripts/drata_client.py",
+      "source_location": "L205"
     },
     {
       "id": "plugin_obsidian_vault_skills_obsidian_memory_contract_skill",
@@ -34419,14 +34454,14 @@
       "source_location": "L181"
     },
     {
-      "id": "plugin_readme_crew_0_16_2",
-      "label": "crew 0.16.2",
+      "id": "plugin_readme_crew_0_16_3",
+      "label": "crew 0.16.3",
       "_origin": "ast",
       "community": 186,
       "community_name": "Plugins",
       "file_type": "document",
       "node_kind": "heading",
-      "norm_label": "crew 0.16.2",
+      "norm_label": "crew 0.16.3",
       "source_file": "plugin/README.md",
       "source_location": "L15"
     },
@@ -47483,17 +47518,6 @@
       "source_location": "L1"
     },
     {
-      "id": "skills_web_testing_playwright_scripts_check_env",
-      "label": "check_env.py",
-      "_origin": "ast",
-      "community": 30,
-      "community_name": "crew_config.py",
-      "file_type": "code",
-      "norm_label": "check_env.py",
-      "source_file": "skills/web-testing-playwright/scripts/check_env.py",
-      "source_location": "L1"
-    },
-    {
       "id": "plugin_crew_hooks_scripts_crew_config_rationale_1",
       "label": "Owns the single definition of a fresh `.crew/config.json`. Three things read\u2026",
       "_origin": "ast",
@@ -47536,17 +47560,6 @@
       "norm_label": "every dotted path to a non-dict value in `node`, in declaration order. a list...",
       "source_file": "plugin/crew/hooks/scripts/crew_config.py",
       "source_location": "L268"
-    },
-    {
-      "id": "plugin_crew_hooks_scripts_crew_config_rationale_284",
-      "label": "`node` kept only where `template` has a matching key. Returns `(kept,\u2026",
-      "_origin": "ast",
-      "community": 30,
-      "community_name": "crew_config.py",
-      "file_type": "rationale",
-      "norm_label": "`node` kept only where `template` has a matching key. returns `(kept,...",
-      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L284"
     },
     {
       "id": "plugin_crew_hooks_scripts_crew_config_rationale_310",
@@ -47593,17 +47606,6 @@
       "source_location": "L378"
     },
     {
-      "id": "plugin_crew_hooks_scripts_crew_config_rationale_416",
-      "label": "`crew_state.collect(root)`, with settings layered per `resolve_config` wherever\u2026",
-      "_origin": "ast",
-      "community": 30,
-      "community_name": "crew_config.py",
-      "file_type": "rationale",
-      "norm_label": "`crew_state.collect(root)`, with settings layered per `resolve_config` wherever...",
-      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L416"
-    },
-    {
       "id": "plugin_crew_hooks_scripts_crew_config_rationale_441",
       "label": "`node` walked down `parts`, or `_MISSING` if the walk runs out.",
       "_origin": "ast",
@@ -47648,28 +47650,6 @@
       "source_location": "L522"
     },
     {
-      "id": "plugin_crew_hooks_scripts_crew_config_rationale_624",
-      "label": "Which of `qa.order` could actually review a diff `author` wrote. Pure. The per-\u2026",
-      "_origin": "ast",
-      "community": 30,
-      "community_name": "crew_config.py",
-      "file_type": "rationale",
-      "norm_label": "which of `qa.order` could actually review a diff `author` wrote. pure. the per-...",
-      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L624"
-    },
-    {
-      "id": "plugin_crew_hooks_scripts_crew_config_rationale_688",
-      "label": "Per-ROLE effective provider, model and family, for `/crew:model`. One row per\u2026",
-      "_origin": "ast",
-      "community": 30,
-      "community_name": "crew_config.py",
-      "file_type": "rationale",
-      "norm_label": "per-role effective provider, model and family, for `/crew:model`. one row per...",
-      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L688"
-    },
-    {
       "id": "plugin_crew_hooks_scripts_crew_config_rationale_847",
       "label": "A requested global write named a key the walkthrough may not set.",
       "_origin": "ast",
@@ -47712,50 +47692,6 @@
       "norm_label": "report the config layering, or write the global file. reporting exits 0 even...",
       "source_file": "plugin/crew/hooks/scripts/crew_config.py",
       "source_location": "L963"
-    },
-    {
-      "id": "skills_web_testing_playwright_scripts_check_env_rationale_129",
-      "label": "Ordered list of (what, why, command) for anything missing.",
-      "_origin": "ast",
-      "community": 30,
-      "community_name": "crew_config.py",
-      "file_type": "rationale",
-      "norm_label": "ordered list of (what, why, command) for anything missing.",
-      "source_file": "skills/web-testing-playwright/scripts/check_env.py",
-      "source_location": "L129"
-    },
-    {
-      "id": "skills_web_testing_playwright_scripts_check_env_rationale_24",
-      "label": "Run a command, return stripped stdout or None. Never raises.",
-      "_origin": "ast",
-      "community": 30,
-      "community_name": "crew_config.py",
-      "file_type": "rationale",
-      "norm_label": "run a command, return stripped stdout or none. never raises.",
-      "source_file": "skills/web-testing-playwright/scripts/check_env.py",
-      "source_location": "L24"
-    },
-    {
-      "id": "skills_web_testing_playwright_scripts_check_env_rationale_46",
-      "label": "Where Playwright caches its browser binaries.",
-      "_origin": "ast",
-      "community": 30,
-      "community_name": "crew_config.py",
-      "file_type": "rationale",
-      "norm_label": "where playwright caches its browser binaries.",
-      "source_file": "skills/web-testing-playwright/scripts/check_env.py",
-      "source_location": "L46"
-    },
-    {
-      "id": "skills_web_testing_playwright_scripts_check_env_rationale_80",
-      "label": "Check for a locally or globally installed Node Playwright. Uses --no-install so\u2026",
-      "_origin": "ast",
-      "community": 30,
-      "community_name": "crew_config.py",
-      "file_type": "rationale",
-      "norm_label": "check for a locally or globally installed node playwright. uses --no-install so...",
-      "source_file": "skills/web-testing-playwright/scripts/check_env.py",
-      "source_location": "L80"
     },
     {
       "id": "skills_notify_references_config",
@@ -51233,14 +51169,14 @@
       "source_location": "L395"
     },
     {
-      "id": "readme_crew_0_16_2",
-      "label": "crew 0.16.2",
+      "id": "readme_crew_0_16_3",
+      "label": "crew 0.16.3",
       "_origin": "ast",
       "community": 35,
       "community_name": "useful-claude-add-ons",
       "file_type": "document",
       "node_kind": "heading",
-      "norm_label": "crew 0.16.2",
+      "norm_label": "crew 0.16.3",
       "source_file": "README.md",
       "source_location": "L229"
     },
@@ -55823,14 +55759,14 @@
       "source_location": "L177"
     },
     {
-      "id": "plugin_update_crew_0_16_2",
-      "label": "crew 0.16.2",
+      "id": "plugin_update_crew_0_16_3",
+      "label": "crew 0.16.3",
       "_origin": "ast",
       "community": 470,
       "community_name": "Plugin updates",
       "file_type": "document",
       "node_kind": "heading",
-      "norm_label": "crew 0.16.2",
+      "norm_label": "crew 0.16.3",
       "source_file": "plugin/UPDATE.md",
       "source_location": "L11"
     },
@@ -56103,6 +56039,39 @@
       "norm_label": "sabotage test: reintroduce each bug and confirm the suite goes red. run it...",
       "source_file": "plugin/crew/tests/sabotage.py",
       "source_location": "L1"
+    },
+    {
+      "id": "plugin_crew_tests_sabotage_rationale_61",
+      "label": "Run one pytest target from the crew directory; return its exit code.",
+      "_origin": "ast",
+      "community": 480,
+      "community_name": "sabotage.py",
+      "file_type": "rationale",
+      "norm_label": "run one pytest target from the crew directory; return its exit code.",
+      "source_file": "plugin/crew/tests/sabotage.py",
+      "source_location": "L61"
+    },
+    {
+      "id": "plugin_crew_tests_sabotage_rationale_79",
+      "label": "Patch `target`, backing it up. False when the anchor is not unique.",
+      "_origin": "ast",
+      "community": 480,
+      "community_name": "sabotage.py",
+      "file_type": "rationale",
+      "norm_label": "patch `target`, backing it up. false when the anchor is not unique.",
+      "source_file": "plugin/crew/tests/sabotage.py",
+      "source_location": "L79"
+    },
+    {
+      "id": "plugin_crew_tests_sabotage_rationale_89",
+      "label": "Run every mutation; return 0 only when all of them go red.",
+      "_origin": "ast",
+      "community": 480,
+      "community_name": "sabotage.py",
+      "file_type": "rationale",
+      "norm_label": "run every mutation; return 0 only when all of them go red.",
+      "source_file": "plugin/crew/tests/sabotage.py",
+      "source_location": "L89"
     },
     {
       "id": "plugin_crew_tests_test_provider_table_rationale_398",
@@ -57165,6 +57134,204 @@
       "norm_label": "codex round 2, second block. only /crew:review can compare the record against...",
       "source_file": "plugin/crew/tests/test_provider_table.py",
       "source_location": "L435"
+    },
+    {
+      "id": "skills_sophos_central_scripts_sophos_client_rationale_111",
+      "label": "Determine tenant id + regional base URL for tenant-level calls.",
+      "_origin": "ast",
+      "community": 501,
+      "community_name": "SophosClient",
+      "file_type": "rationale",
+      "norm_label": "determine tenant id + regional base url for tenant-level calls.",
+      "source_file": "skills/sophos-central/scripts/sophos_client.py",
+      "source_location": "L111"
+    },
+    {
+      "id": "skills_sophos_central_scripts_sophos_client_rationale_162",
+      "label": "Tenant-scoped request. `path` like /endpoint/v1/endpoints.",
+      "_origin": "ast",
+      "community": 501,
+      "community_name": "SophosClient",
+      "file_type": "rationale",
+      "norm_label": "tenant-scoped request. `path` like /endpoint/v1/endpoints.",
+      "source_file": "skills/sophos-central/scripts/sophos_client.py",
+      "source_location": "L162"
+    },
+    {
+      "id": "skills_sophos_central_scripts_sophos_client_rationale_179",
+      "label": "Iterate all items across pages (handles key- and offset-paging).",
+      "_origin": "ast",
+      "community": 501,
+      "community_name": "SophosClient",
+      "file_type": "rationale",
+      "norm_label": "iterate all items across pages (handles key- and offset-paging).",
+      "source_file": "skills/sophos-central/scripts/sophos_client.py",
+      "source_location": "L179"
+    },
+    {
+      "id": "skills_sophos_central_scripts_sophos_client_rationale_197",
+      "label": "Yield SIEM events/alerts. kind: 'events' or 'alerts'.",
+      "_origin": "ast",
+      "community": 501,
+      "community_name": "SophosClient",
+      "file_type": "rationale",
+      "norm_label": "yield siem events/alerts. kind: 'events' or 'alerts'.",
+      "source_file": "skills/sophos-central/scripts/sophos_client.py",
+      "source_location": "L197"
+    },
+    {
+      "id": "skills_sophos_central_scripts_sophos_client_rationale_88",
+      "label": "Enumerate tenants (partner/organization credentials only).",
+      "_origin": "ast",
+      "community": 501,
+      "community_name": "SophosClient",
+      "file_type": "rationale",
+      "norm_label": "enumerate tenants (partner/organization credentials only).",
+      "source_file": "skills/sophos-central/scripts/sophos_client.py",
+      "source_location": "L88"
+    },
+    {
+      "id": "skills_web_testing_playwright_scripts_check_env",
+      "label": "check_env.py",
+      "_origin": "ast",
+      "community": 502,
+      "community_name": "check_env.py",
+      "file_type": "code",
+      "norm_label": "check_env.py",
+      "source_file": "skills/web-testing-playwright/scripts/check_env.py",
+      "source_location": "L1"
+    },
+    {
+      "id": "skills_web_testing_playwright_scripts_check_env_rationale_129",
+      "label": "Ordered list of (what, why, command) for anything missing.",
+      "_origin": "ast",
+      "community": 502,
+      "community_name": "check_env.py",
+      "file_type": "rationale",
+      "norm_label": "ordered list of (what, why, command) for anything missing.",
+      "source_file": "skills/web-testing-playwright/scripts/check_env.py",
+      "source_location": "L129"
+    },
+    {
+      "id": "skills_web_testing_playwright_scripts_check_env_rationale_24",
+      "label": "Run a command, return stripped stdout or None. Never raises.",
+      "_origin": "ast",
+      "community": 502,
+      "community_name": "check_env.py",
+      "file_type": "rationale",
+      "norm_label": "run a command, return stripped stdout or none. never raises.",
+      "source_file": "skills/web-testing-playwright/scripts/check_env.py",
+      "source_location": "L24"
+    },
+    {
+      "id": "skills_web_testing_playwright_scripts_check_env_rationale_46",
+      "label": "Where Playwright caches its browser binaries.",
+      "_origin": "ast",
+      "community": 502,
+      "community_name": "check_env.py",
+      "file_type": "rationale",
+      "norm_label": "where playwright caches its browser binaries.",
+      "source_file": "skills/web-testing-playwright/scripts/check_env.py",
+      "source_location": "L46"
+    },
+    {
+      "id": "skills_web_testing_playwright_scripts_check_env_rationale_80",
+      "label": "Check for a locally or globally installed Node Playwright. Uses --no-install so\u2026",
+      "_origin": "ast",
+      "community": 502,
+      "community_name": "check_env.py",
+      "file_type": "rationale",
+      "norm_label": "check for a locally or globally installed node playwright. uses --no-install so...",
+      "source_file": "skills/web-testing-playwright/scripts/check_env.py",
+      "source_location": "L80"
+    },
+    {
+      "id": "plugin_crew_hooks_scripts_crew_config_rationale_624",
+      "label": "Which of `qa.order` could actually review a diff `author` wrote. Pure. The per-\u2026",
+      "_origin": "ast",
+      "community": 503,
+      "community_name": "model_report",
+      "file_type": "rationale",
+      "norm_label": "which of `qa.order` could actually review a diff `author` wrote. pure. the per-...",
+      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
+      "source_location": "L624"
+    },
+    {
+      "id": "plugin_crew_hooks_scripts_crew_config_rationale_688",
+      "label": "Per-ROLE effective provider, model and family, for `/crew:model`. One row per\u2026",
+      "_origin": "ast",
+      "community": 503,
+      "community_name": "model_report",
+      "file_type": "rationale",
+      "norm_label": "per-role effective provider, model and family, for `/crew:model`. one row per...",
+      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
+      "source_location": "L688"
+    },
+    {
+      "id": "skills_sophos_central_scripts_sophos_client",
+      "label": "sophos_client.py",
+      "_origin": "ast",
+      "community": 504,
+      "community_name": "sophos_client.py",
+      "file_type": "code",
+      "norm_label": "sophos_client.py",
+      "source_file": "skills/sophos-central/scripts/sophos_client.py",
+      "source_location": "L1"
+    },
+    {
+      "id": "skills_checkpoint_email_scripts_checkpoint_email_client",
+      "label": "checkpoint_email_client.py",
+      "_origin": "ast",
+      "community": 505,
+      "community_name": "checkpoint_email_client.py",
+      "file_type": "code",
+      "norm_label": "checkpoint_email_client.py",
+      "source_file": "skills/checkpoint-email/scripts/checkpoint_email_client.py",
+      "source_location": "L1"
+    },
+    {
+      "id": "plugin_crew_hooks_scripts_crew_config_rationale_416",
+      "label": "`crew_state.collect(root)`, with settings layered per `resolve_config` wherever\u2026",
+      "_origin": "ast",
+      "community": 506,
+      "community_name": "layered_state",
+      "file_type": "rationale",
+      "norm_label": "`crew_state.collect(root)`, with settings layered per `resolve_config` wherever...",
+      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
+      "source_location": "L416"
+    },
+    {
+      "id": "plugin_crew_hooks_scripts_crew_config_rationale_284",
+      "label": "`node` kept only where `template` has a matching key. Returns `(kept,\u2026",
+      "_origin": "ast",
+      "community": 507,
+      "community_name": "_prune",
+      "file_type": "rationale",
+      "norm_label": "`node` kept only where `template` has a matching key. returns `(kept,...",
+      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
+      "source_location": "L284"
+    },
+    {
+      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_rationale_554",
+      "label": "The subset of find_port_collisions() output that involves one vault.",
+      "_origin": "ast",
+      "community": 508,
+      "community_name": "collisions_for",
+      "file_type": "rationale",
+      "norm_label": "the subset of find_port_collisions() output that involves one vault.",
+      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
+      "source_location": "L554"
+    },
+    {
+      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_rationale_559",
+      "label": "One sentence naming who collides on what, for a report or a hook line.",
+      "_origin": "ast",
+      "community": 509,
+      "community_name": "describe_collision",
+      "file_type": "rationale",
+      "norm_label": "one sentence naming who collides on what, for a report or a hook line.",
+      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
+      "source_location": "L559"
     },
     {
       "id": "plugin_crew_skills_crew_providers_skill",
@@ -59525,50 +59692,6 @@
       "source_location": "L799"
     },
     {
-      "id": "skills_checkpoint_email_scripts_checkpoint_email_client",
-      "label": "checkpoint_email_client.py",
-      "_origin": "ast",
-      "community": 61,
-      "community_name": "CheckPointEmailClient",
-      "file_type": "code",
-      "norm_label": "checkpoint_email_client.py",
-      "source_file": "skills/checkpoint-email/scripts/checkpoint_email_client.py",
-      "source_location": "L1"
-    },
-    {
-      "id": "skills_drata_scripts_drata_client",
-      "label": "drata_client.py",
-      "_origin": "ast",
-      "community": 61,
-      "community_name": "CheckPointEmailClient",
-      "file_type": "code",
-      "norm_label": "drata_client.py",
-      "source_file": "skills/drata/scripts/drata_client.py",
-      "source_location": "L1"
-    },
-    {
-      "id": "skills_sophos_central_scripts_sophos_client",
-      "label": "sophos_client.py",
-      "_origin": "ast",
-      "community": 61,
-      "community_name": "CheckPointEmailClient",
-      "file_type": "code",
-      "norm_label": "sophos_client.py",
-      "source_file": "skills/sophos-central/scripts/sophos_client.py",
-      "source_location": "L1"
-    },
-    {
-      "id": "systemexit",
-      "label": "SystemExit",
-      "_origin": "ast",
-      "community": 61,
-      "community_name": "CheckPointEmailClient",
-      "file_type": "code",
-      "norm_label": "systemexit",
-      "source_file": "",
-      "source_location": ""
-    },
-    {
       "id": "skills_checkpoint_email_scripts_checkpoint_email_client_rationale_164",
       "label": "`path` is relative to the hec-api/v1.0 base, e.g. /search/query.",
       "_origin": "ast",
@@ -59622,83 +59745,6 @@
       "norm_label": "quarantine/restore/etc on email entities. dry-run unless confirm=true.",
       "source_file": "skills/checkpoint-email/scripts/checkpoint_email_client.py",
       "source_location": "L305"
-    },
-    {
-      "id": "skills_drata_scripts_drata_client_rationale_196",
-      "label": "Lightweight identity/connectivity check via the company endpoint.",
-      "_origin": "ast",
-      "community": 61,
-      "community_name": "CheckPointEmailClient",
-      "file_type": "rationale",
-      "norm_label": "lightweight identity/connectivity check via the company endpoint.",
-      "source_file": "skills/drata/scripts/drata_client.py",
-      "source_location": "L196"
-    },
-    {
-      "id": "skills_drata_scripts_drata_client_rationale_205",
-      "label": "Yield every record across all pages. Auto-detects pagination style from the\u2026",
-      "_origin": "ast",
-      "community": 61,
-      "community_name": "CheckPointEmailClient",
-      "file_type": "rationale",
-      "norm_label": "yield every record across all pages. auto-detects pagination style from the...",
-      "source_file": "skills/drata/scripts/drata_client.py",
-      "source_location": "L205"
-    },
-    {
-      "id": "skills_sophos_central_scripts_sophos_client_rationale_111",
-      "label": "Determine tenant id + regional base URL for tenant-level calls.",
-      "_origin": "ast",
-      "community": 61,
-      "community_name": "CheckPointEmailClient",
-      "file_type": "rationale",
-      "norm_label": "determine tenant id + regional base url for tenant-level calls.",
-      "source_file": "skills/sophos-central/scripts/sophos_client.py",
-      "source_location": "L111"
-    },
-    {
-      "id": "skills_sophos_central_scripts_sophos_client_rationale_162",
-      "label": "Tenant-scoped request. `path` like /endpoint/v1/endpoints.",
-      "_origin": "ast",
-      "community": 61,
-      "community_name": "CheckPointEmailClient",
-      "file_type": "rationale",
-      "norm_label": "tenant-scoped request. `path` like /endpoint/v1/endpoints.",
-      "source_file": "skills/sophos-central/scripts/sophos_client.py",
-      "source_location": "L162"
-    },
-    {
-      "id": "skills_sophos_central_scripts_sophos_client_rationale_179",
-      "label": "Iterate all items across pages (handles key- and offset-paging).",
-      "_origin": "ast",
-      "community": 61,
-      "community_name": "CheckPointEmailClient",
-      "file_type": "rationale",
-      "norm_label": "iterate all items across pages (handles key- and offset-paging).",
-      "source_file": "skills/sophos-central/scripts/sophos_client.py",
-      "source_location": "L179"
-    },
-    {
-      "id": "skills_sophos_central_scripts_sophos_client_rationale_197",
-      "label": "Yield SIEM events/alerts. kind: 'events' or 'alerts'.",
-      "_origin": "ast",
-      "community": 61,
-      "community_name": "CheckPointEmailClient",
-      "file_type": "rationale",
-      "norm_label": "yield siem events/alerts. kind: 'events' or 'alerts'.",
-      "source_file": "skills/sophos-central/scripts/sophos_client.py",
-      "source_location": "L197"
-    },
-    {
-      "id": "skills_sophos_central_scripts_sophos_client_rationale_88",
-      "label": "Enumerate tenants (partner/organization credentials only).",
-      "_origin": "ast",
-      "community": 61,
-      "community_name": "CheckPointEmailClient",
-      "file_type": "rationale",
-      "norm_label": "enumerate tenants (partner/organization credentials only).",
-      "source_file": "skills/sophos-central/scripts/sophos_client.py",
-      "source_location": "L88"
     },
     {
       "id": "plugin_crew_tests_test_crew_config_rationale_159",
@@ -62249,26 +62295,37 @@
       "source_location": "L51"
     },
     {
-      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_rationale_554",
-      "label": "The subset of find_port_collisions() output that involves one vault.",
+      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_rationale_581",
+      "label": "Top-level names Local REST API would list for a vault. Dotfiles (notably\u2026",
       "_origin": "ast",
       "community": 78,
       "community_name": "obsidian_common.py",
       "file_type": "rationale",
-      "norm_label": "the subset of find_port_collisions() output that involves one vault.",
+      "norm_label": "top-level names local rest api would list for a vault. dotfiles (notably...",
       "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
-      "source_location": "L554"
+      "source_location": "L581"
     },
     {
-      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_rationale_559",
-      "label": "One sentence naming who collides on what, for a report or a hook line.",
+      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_rationale_594",
+      "label": "Does the root listing a server returned match the vault on disk? `served_files`\u2026",
       "_origin": "ast",
       "community": 78,
       "community_name": "obsidian_common.py",
       "file_type": "rationale",
-      "norm_label": "one sentence naming who collides on what, for a report or a hook line.",
+      "norm_label": "does the root listing a server returned match the vault on disk? `served_files`...",
       "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
-      "source_location": "L559"
+      "source_location": "L594"
+    },
+    {
+      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_rationale_842",
+      "label": "Does an open window on this machine belong to THIS vault? Returns {\"state\":\u2026",
+      "_origin": "ast",
+      "community": 78,
+      "community_name": "obsidian_common.py",
+      "file_type": "rationale",
+      "norm_label": "does an open window on this machine belong to this vault? returns {\"state\":...",
+      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
+      "source_location": "L842"
     },
     {
       "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_rationale_85",
@@ -68879,6 +68936,54 @@
       "context": "call",
       "source_file": "plugin/crew/tests/crew_fixtures.py",
       "source_location": "L73",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_crew_tests_sabotage_apply_mutation",
+      "target": "plugin_crew_tests_sabotage_read",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "plugin/crew/tests/sabotage.py",
+      "source_location": "L80",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_crew_tests_sabotage_apply_mutation",
+      "target": "plugin_crew_tests_sabotage_write",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "plugin/crew/tests/sabotage.py",
+      "source_location": "L84",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_crew_tests_sabotage_main",
+      "target": "plugin_crew_tests_sabotage_apply_mutation",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "plugin/crew/tests/sabotage.py",
+      "source_location": "L92",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_crew_tests_sabotage_main",
+      "target": "plugin_crew_tests_sabotage_run_test",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "plugin/crew/tests/sabotage.py",
+      "source_location": "L97",
       "weight": 1.0
     },
     {
@@ -115231,35 +115336,57 @@
     },
     {
       "source": "plugin_crew_tests_sabotage",
-      "target": "plugin_crew_tests_sabotage_run",
+      "target": "plugin_crew_tests_sabotage_run_test",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/tests/sabotage.py",
-      "source_location": "L23",
+      "source_location": "L60",
       "weight": 1.0
     },
     {
       "source": "plugin_crew_tests_sabotage",
-      "target": "plugin_crew_tests_sabotage_mutate",
+      "target": "plugin_crew_tests_sabotage_read",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/tests/sabotage.py",
-      "source_location": "L50",
+      "source_location": "L68",
       "weight": 1.0
     },
     {
       "source": "plugin_crew_tests_sabotage",
-      "target": "plugin_crew_tests_sabotage_restore",
+      "target": "plugin_crew_tests_sabotage_write",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/tests/sabotage.py",
-      "source_location": "L59",
+      "source_location": "L73",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_crew_tests_sabotage",
+      "target": "plugin_crew_tests_sabotage_apply_mutation",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "plugin/crew/tests/sabotage.py",
+      "source_location": "L78",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_crew_tests_sabotage",
+      "target": "plugin_crew_tests_sabotage_main",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "plugin/crew/tests/sabotage.py",
+      "source_location": "L88",
       "weight": 1.0
     },
     {
@@ -125010,7 +125137,7 @@
     },
     {
       "source": "plugin_readme_what_s_new",
-      "target": "plugin_readme_crew_0_16_2",
+      "target": "plugin_readme_crew_0_16_3",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -125065,7 +125192,7 @@
     },
     {
       "source": "plugin_update_plugin_updates",
-      "target": "plugin_update_crew_0_16_2",
+      "target": "plugin_update_crew_0_16_3",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -125395,7 +125522,7 @@
     },
     {
       "source": "readme_what_s_new_in_the_plugins",
-      "target": "readme_crew_0_16_2",
+      "target": "readme_crew_0_16_3",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -150111,6 +150238,39 @@
       "weight": 1.0
     },
     {
+      "source": "plugin_crew_tests_sabotage_rationale_61",
+      "target": "plugin_crew_tests_sabotage_run_test",
+      "relation": "rationale_for",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "plugin/crew/tests/sabotage.py",
+      "source_location": "L61",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_crew_tests_sabotage_rationale_79",
+      "target": "plugin_crew_tests_sabotage_apply_mutation",
+      "relation": "rationale_for",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "plugin/crew/tests/sabotage.py",
+      "source_location": "L79",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_crew_tests_sabotage_rationale_89",
+      "target": "plugin_crew_tests_sabotage_main",
+      "relation": "rationale_for",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "plugin/crew/tests/sabotage.py",
+      "source_location": "L89",
+      "weight": 1.0
+    },
+    {
       "source": "plugin_crew_tests_test_auto_clear_rationale_1",
       "target": "plugin_crew_tests_test_auto_clear",
       "relation": "rationale_for",
@@ -159175,5 +159335,5 @@
     }
   ],
   "hyperedges": [],
-  "built_at_commit": "e6593a0aa67a67e1ffb96c2d744d187d25eba727"
+  "built_at_commit": "2e536d8b50b55611e0eee5a88492a198965a24ec"
 }

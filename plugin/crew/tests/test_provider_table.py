@@ -11,6 +11,7 @@ printed text. A report that says the right thing while the resolver decided
 the wrong one is exactly the failure mode a stdout assertion cannot see.
 """
 import json
+import subprocess
 
 import pytest
 
@@ -414,6 +415,31 @@ def test_a_branchless_record_in_a_git_checkout_fails_closed(tmp_path):
     # Both: the recorded gpt AND the configured developer's family.
     assert "gpt" in authors
     assert len(authors) >= 1
+
+
+def test_a_detached_head_does_not_trust_a_record_naming_a_branch(tmp_path):
+    """Codex round 3.
+
+    `current_branch` returns None for a detached HEAD -- which is also the
+    normal state during a rebase. An earlier guard read that as "no branches
+    here" and trusted the record, so a dispatch made on main and then read
+    from a detached HEAD struck only the recorded family and left the
+    configured one clear to review its own diff. Absence of a readable branch
+    is not evidence that the record belongs to this one.
+    """
+    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=True)
+    (root / ".work").mkdir(exist_ok=True)
+    (root / ".work" / "dispatch.json").write_text(
+        json.dumps({"dev": {"role": "developer", "provider": "codex",
+                            "model": "gpt-6-astra", "branch": "main"}}),
+        encoding="utf-8")
+
+    subprocess.run(["git", "checkout", "--detach", "HEAD"], cwd=str(root),
+                   capture_output=True, check=True)
+    assert crew_state.current_branch(str(root)) is None, "fixture precondition"
+
+    _authors, source = crew_state.author_families(str(root), PINNED)
+    assert source == "stale"
 
 
 def test_a_non_git_checkout_is_not_stale_merely_for_lacking_branches(tmp_path):

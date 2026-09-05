@@ -76,13 +76,31 @@ def write(target, text):
 
 
 def apply_mutation(target, find, replace):
-    """Patch `target`, backing it up. False when the anchor is not unique."""
+    """Patch `target`, backing it up. False when the anchor is not unique.
+
+    The backup is taken BEFORE the write and restored here if the write
+    itself fails -- a disk error or an interrupt between `shutil.copy` and
+    the last byte would otherwise leave the caller with a truncated source
+    file and a `.bak` beside it, which is a worse outcome than the bug this
+    script exists to find.
+    """
     text = read(target)
     if text.count(find) != 1:
         return False
     shutil.copy(target, target + ".bak")
-    write(target, text.replace(find, replace, 1))
+    try:
+        write(target, text.replace(find, replace, 1))
+    except BaseException:
+        restore(target)
+        raise
     return True
+
+
+def restore(target):
+    """Put `target` back if a backup is present. Safe to call twice."""
+    backup = target + ".bak"
+    if os.path.exists(backup):
+        shutil.move(backup, target)
 
 
 def main():
@@ -96,7 +114,7 @@ def main():
         try:
             code = run_test(test)
         finally:
-            shutil.move(target + ".bak", target)
+            restore(target)
         if code == 0:
             print(f"{'STILL GREEN -- TEST IS VACUOUS':40} {label}")
             ok = False
