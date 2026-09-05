@@ -356,7 +356,11 @@ def test_knowledge_survives_a_non_git_directory(tmp_path):
 
 def _state(**over):
     base = {
-        "schema": 2,
+        # SCHEMA_CURRENT, not a literal: this base state means "a healthy,
+        # current repo", and a literal pins that meaning to one release. It
+        # was `2` until 0.16.0 bumped the schema, at which point every
+        # trigger assertion built on it started reporting upgradeNeeded.
+        "schema": crew_state.SCHEMA_CURRENT,
         "health": {"rate": 1.0, "verdict": "healthy"},
         "work": {"ticket": None, "handoffPending": False},
         "knowledge": {"subsystems": 0, "behind": [],
@@ -469,8 +473,12 @@ def test_dict_or_empty_rejects_non_dicts():
 
 
 def test_a_numeric_string_schema_is_read_as_a_number(tmp_path):
-    root = crew_fixtures.make_repo(tmp_path, config={"schema": "2"})
-    assert crew_state.collect(str(root))["schema"] == 2
+    # A string, because config is hand-edited -- and the CURRENT schema, so
+    # that "was it read as a number" is what fails here rather than "is this
+    # release's number still 2".
+    current = str(crew_state.SCHEMA_CURRENT)
+    root = crew_fixtures.make_repo(tmp_path, config={"schema": current})
+    assert crew_state.collect(str(root))["schema"] == crew_state.SCHEMA_CURRENT
     assert "upgradeNeeded" not in crew_state.collect(str(root))["triggers"]
 
 

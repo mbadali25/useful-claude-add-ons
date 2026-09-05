@@ -9,6 +9,11 @@ Walk this repository through crew setup, one phase at a time.
 Read `.crew/STATUS.md`. If it does not exist, start at Phase 0. If it does,
 resume at the first phase not marked `done`.
 
+**The run order is 0, 1, 2, 3, 4, 5, 6, 8, 7** — the order the sections appear
+in below. Phase 7 is last: it is the acceptance test of everything set up
+before it. The table below is sorted by number, so a resume must follow the
+section order rather than the table's, and take Phase 8 before Phase 7.
+
 **Run one phase, then stop and report.** Do not chain phases without me saying
 go. Each phase ends with something I can verify myself, and the whole point is
 that I see each result before the next thing is built on top of it.
@@ -116,6 +121,23 @@ than one that has to be asked twice.
 Write the answer to `pm.authority`. Say that `/crew:pm authority <value>`
 changes it later, so this is not a decision they are stuck with - and that
 either way removal and deletion always stop for a yes.
+
+**Then offer the machine-global config, once.** Run:
+
+```
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_config.py --root <repo> --explain
+```
+
+and show the table. It names, per setting, the layer that decided it - `repo`,
+`global`, or `default`. If anything the user just chose is already coming from
+a global file, or if `pm.authority` resolves to something other than what they
+answered, say so now rather than letting them find out when the PM behaves
+differently from what they set up.
+
+Then offer `/crew:config` in one line: it walks the machine-global file at
+`~/.claude/crew/config.json`, which sets defaults for every crew repo here.
+Offer it; do not run it as part of this phase and never write `~/.claude`
+without being asked. `global-config.md` beside this file has the walkthrough.
 
 Create
 `.crew/`, `.work/`, `docs/adr/`, `_verify/` from template (README.md, smoke.sh,

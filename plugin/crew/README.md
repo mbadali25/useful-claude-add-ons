@@ -295,8 +295,17 @@ shows where you are, and it picks up from the first incomplete phase.
 | 3 | Smoke harness | `_verify/` created and documented; `_verify/smoke.sh` green from a clean checkout |
 | 4 | Code map | `.crew/codemap/` with anchors |
 | 5 | Verification map | `.crew/verify.json`, each pairing proven |
-| 6 | Browser tests | `e2e/` specs, or `n/a` |
+| 6 | Browser tests | Playwright specs passing with no agent attached, or `n/a` |
+| 8 | Promotion gates | `promote-gate.sh` and `verify-gate.sh` armed; `.work/PROMOTIONS.md` |
 | 7 | First ticket | One real loop, end to end |
+
+The rows are in run order, which is why 8 sits above 7 — First ticket runs
+last, and the numbers do not match the order. Seven of the nine phases carry a
+gate that stops the sequence: Phase 4 does not, and Phase 7 is last so there is
+nothing after it to stop. Just one of those gates is enforced by a hook rather
+than written down. See
+[Setup phase order](../PLUGINS.md#setup-phase-order) in `PLUGINS.md` for the
+sequence diagram, every gate, and why the order is what it is.
 
 Status is written to `.crew/STATUS.md` with honest states — `partial` and
 `blocked` are used, not rounded up to `done`. A status file that overstates
@@ -702,10 +711,10 @@ layers, lowest precedence first:
 | Layer | Source | Written by |
 |---|---|---|
 | Built-in defaults | `hooks/scripts/crew_config.py`'s `default_config()` | Nothing — this is code, not a file |
-| Global | `~/.claude/crew/config.json` | **Nobody.** No command creates or edits it. Write it by hand, or with a one-liner: `mkdir -p ~/.claude/crew && echo '{"pm":{"authority":"report-only"}}' > ~/.claude/crew/config.json` |
+| Global | `~/.claude/crew/config.json` | `/crew:config` — a guided walkthrough that shows the plan first and writes only after a yes. It is also the only thing in crew that writes outside the repository. Hand-editing still works. |
 | Repo | `.crew/config.json` | `/crew:init` (first write); `platform-sync` (the `platform` block, and the whole file when it heals — see §3) |
 
-Repo overrides global overrides built-in defaults, merged one level deep with
+Repo overrides global overrides built-in defaults, merged recursively with
 `crew_state.merge_defaults` — the same policy `/crew:upgrade` uses to bring a
 v1 config's `pm` and `graph` blocks forward: a nested override wins, a scalar
 where a dict belongs is discarded rather than corrupting the block under it.
@@ -725,6 +734,42 @@ Two things never go through this layering, on purpose:
   missing or broken `.crew/config.json` always writes plain built-in
   defaults — never a merge that could smuggle a global preference into a
   file every teammate who clones the repo will also read.
+
+### `/crew:config` — see where a value comes from, and set the global file
+
+```
+python3 hooks/scripts/crew_config.py --root . --explain        # value + source
+python3 hooks/scripts/crew_config.py --root . --check-global   # what is wrong
+python3 hooks/scripts/crew_config.py --set pm.authority='"act"'          # dry run
+python3 hooks/scripts/crew_config.py --set pm.authority='"act"' --apply  # write
+```
+
+`--explain` prints every globally-settable key with its effective value and
+the layer that decided it. That column is the point. The reason this command
+exists is a machine where the global file carried `tier`, `roles`, `qa` and
+`sdp` but **no `pm` block**, so every repo on it resolved to
+`pm.authority: report-only` while the user believed the PM was autonomous.
+Every file was valid; nothing surfaced the discrepancy. `/crew:upgrade` now
+runs `--check-global` and reports the same findings.
+
+Four rules the script enforces rather than documents:
+
+- It **merges**. A key in an existing global file that the walkthrough never
+  asked about survives untouched.
+- It **refuses** any key outside `default_global_config()`, by name, exit 2.
+  That keeps repo facts (`tracker`, `jira.project`, `graph.out`, `platform`,
+  `tier`, `roles`) out of a file every repo reads — and it is what makes
+  `graph.obsidian.confirmed` un-grantable from a guided flow: it is consent to
+  write into your own notes outside the repo, not a capability.
+- It is a **dry run by default**. `--apply` is a second, deliberate call.
+- It marks a widening of `pm.authority` with a `!` line, on both the dry run
+  and the write. That value is the one a user cannot recover from by noticing.
+
+`templates/global.template.json` is the shape, and a committed test asserts it
+equals `default_global_config()` byte-for-byte — the same drift gate the repo
+template has. It is deliberately not a copy of the repo template: it carries
+only what is a property of the machine or the person (`pm.authority`, `qa`,
+`dev`, `secondOpinion`, `notify`, `memory.vaultPath`), and no `schema`.
 
 A global file that is missing, empty, or fails to parse is treated exactly
 like an absent one — the same reasoning `_read_config_strict` documents for
@@ -1883,8 +1928,11 @@ a worktree each, so a half-applied one cannot land on top of the other.
 | `/crew:pm [onboard\|offboard <role>]` | Crew-manager status, or add/remove a role — see §22 |
 | `/crew:upgrade [--force]` | Bring a pre-schema-2 (`v1`) setup forward — see §11 |
 | `/crew:emergency <what is broken>` | Declare a time-boxed incident: gates stand down and record what they skipped, lanes investigate in parallel — see §24. `status`, `extend [min]`, `end` |
+| `/crew:model` | Report the resolved provider and model for every role, and which family would be reviewing which — see §12 |
+| `/crew:roster` | Print the crew as configured: roles, tier, and what each one is for |
+| `/crew:config [--show]` | Show where every setting comes from, and walk the machine-global config — see §11 |
 
-21 commands.
+24 commands.
 
 ### Agents
 
@@ -1900,9 +1948,12 @@ a worktree each, so a half-applied one cannot land on top of the other.
 | `planner` | read-only | `sonnet` | 2 | Design second opinion from an abstracted brief |
 | `dba` | read-only | `sonnet` | 2 | Migrations, locks, online safety |
 | `docs-writer` | read/write | `sonnet` | 2 | Architecture and data flow from real code |
+| `infrastructure-architect` | read-only | `sonnet` | 2 | AWS network and account design, with tradeoffs. Never applies to a live account |
+| `scribe` | read/write | `sonnet` | 2 | The durable record: ADRs, CHANGELOG entries, handoff notes, and what was rejected |
+| `researcher` | read-only + web | `sonnet` | 2 | External research only. Every claim carries its source |
 | `pm` | read/write, scoped to `.crew/` and generated diagrams | `opus` | — | The standing manager: scope, onboarding, communication, ticket hygiene, and dispatch |
 
-11 agents. `pm` sits outside the tier ladder — it is not sized in or out by `/crew:scale`, it is the thing doing the sizing.
+14 agents. `pm` sits outside the tier ladder — it is not sized in or out by `/crew:scale`, it is the thing doing the sizing.
 
 **Model tiers are part of the design, not a cost knob.** The PM runs on `opus` because it holds the whole project picture and every dispatch decision derives from it — a cheap manager makes cheap assignments and every role below inherits the mistake. Working roles run on `sonnet`: narrow brief, clean context, one deliverable. QA walks `qa.order` (`qa.provider` ships as `auto`) and takes the first provider that probes clean — Codex, then Copilot pinned to a non-Claude model, then `qa-reviewer` on `opus`. The ordering is not a preference ranking; it is a family-diversity ranking. A different model family is what makes review independent, so a provider that would land back on the author's own family is skipped rather than used, and if you cannot have a different family at all, the strongest model in this one is the only compensation left.
 
@@ -1967,7 +2018,7 @@ pytest tests/                                     # 234 cases - the python modul
 | `validate-prompts.py` | Frontmatter parses, tools are real, referenced agents and paths exist, read-only agents hold no write tools, commands that spawn subagents are permitted to | **whether the prompts produce good work** |
 | `pytest tests/` | The python modules, and that the `.sh` and `.ps1` flavours of `context-watch`, `verify-gate` and `promote-gate` agree - including the emergency lane's expiry, which is the one property that keeps a forgotten incident from ungating a repo forever | anything on a platform the suite is not running on; the Windows-only cases skip elsewhere |
 
-That last gap is real and no test closes it. The 21 commands and 11 agents are
+That last gap is real and no test closes it. The 24 commands and 14 agents are
 instructions to a model; only a live session running a real ticket exercises
 them. Setup Phase 7 exists for exactly that, and it is the one thing here that
 has to be done by hand.

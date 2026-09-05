@@ -6,14 +6,21 @@ repository -- an absent or malformed file must yield an absent value, never a
 traceback.
 """
 
+import argparse
 import json
 import os
 import re
 import subprocess
+import sys
 
 import crew_incident
 
-SCHEMA_CURRENT = 2
+# 3 as of 0.16.0: `qa` and `dev` gained a per-ROLE provider table and a
+# declared `fallback`. Bumping this makes every existing crew repo report
+# `upgradeNeeded` at session start, so the migration in
+# `crew_upgrade.upgrade_config` is mandatory rather than optional -- see
+# `evaluate_triggers`, which is the line that fires.
+SCHEMA_CURRENT = 3
 
 # Verbatim from crew-scaling/SKILL.md. Below the floor the review is broken
 # rather than thorough; above the ceiling the tickets are too large.
@@ -456,6 +463,117 @@ PM_DEFAULTS = {
 }
 
 
+# The provider table, owned here for the same reason PM_DEFAULTS is: two things
+# have to land on identical values or a freshly created repo and a freshly
+# upgraded one behave differently and nothing says so. `crew_config.
+# default_config()` builds a new repo's blocks from these, and
+# `crew_upgrade.upgrade_config` brings an old config's forward onto them.
+#
+# Before 0.16.0 the upgrade migrated `pm` and `graph` only, so a config
+# predating 0.14.4 came out marked current while still missing `qa.order` and
+# the whole `dev` block -- and an absent `qa.order` made `/crew:model` report
+# zero candidates and "no independent reviewer" for a setup that reviews fine.
+# Schema 3 adds two keys to each block, and neither of them changes what an
+# existing repo does.
+#
+# `fallback` is the model a role falls back to when its PINNED model is gone.
+# `qa.order` already handles a provider that is missing or unauthorised; this
+# is the different failure of a provider that answers fine while the model
+# name it was pinned to has been retired -- `crew-providers` records two that
+# died exactly that way. Configurable rather than hardcoded for that same
+# reason: model names churn, and a hardcoded fallback is the next name to
+# churn. Nothing fell back before this key existed, so shipping it as a value
+# adds a capability rather than changing a behaviour.
+#
+# `roles` is EMPTY on purpose, and that emptiness is load-bearing. A role that
+# names no pin runs on the block's own `provider`, which is exactly what every
+# pre-0.16.0 repo already did -- so a v2 config migrated to v3 dispatches
+# identically until somebody writes a pin. Shipping the recommended table as
+# the default would route developer work to codex the moment a repo upgraded,
+# with no opt-in left to give. `/crew:init`, `/crew:upgrade` and `/crew:config`
+# OFFER that table instead; see `skills/crew-setup/global-config.md`.
+FALLBACK_DEFAULT = "claude-sonnet-5"
+
+QA_DEFAULTS = {
+    "provider": "auto",
+    "order": ["codex", "copilot", "claude"],
+    "fallback": FALLBACK_DEFAULT,
+    "codex": {"model": None, "reasoningEffort": None},
+    "copilot": {"model": None},
+    "roles": {},
+}
+
+DEV_DEFAULTS = {
+    "provider": "claude",
+    "fallback": FALLBACK_DEFAULT,
+    "codex": {"model": None, "reasoningEffort": None},
+    "copilot": {"model": None},
+    "roles": {},
+}
+
+# The role names each block's `roles` table is expected to carry. Not a
+# validation list -- a repo may pin a role crew has never heard of, and
+# `resolve_role` answers for any name -- but the set `/crew:model` reports on
+# by default, so an unset role is visible as "runs on claude" rather than
+# being invisible because nobody wrote it down.
+QA_ROLE_KINDS = ("phase1", "smoke", "review", "gate")
+DEV_ROLE_KINDS = ("developer", "security", "infrastructure-architect",
+                  "planner")
+
+# The role ladder, in code, because `/crew:upgrade` has to compute a tier from
+# a role list and a tier from a role list is arithmetic, not prose. Two markdown
+# tables describe the same ladder for humans -- `skills/crew-scaling/SKILL.md`
+# and `skills/crew-pm/onboarding.md` -- and both are checked against THIS dict
+# by a committed test rather than being parsed at runtime. Parsing a heading in
+# a skill file to decide what an upgrade writes would make the doc load-bearing
+# and the code advisory, which is backwards; a drift test keeps all three honest
+# without giving prose a vote at runtime.
+#
+# Insertion order is ladder order: `roles_for_tier` returns roles in this
+# sequence, so a migrated config's `roles` list reads the way the tier table
+# does rather than in whatever order a set iteration produced.
+ROLE_TIERS = {
+    "explorer": 0,
+    "qa-reviewer": 0,
+    "security": 1,
+    "smoke-author": 1,
+    "developer": 1,
+    "dba": 2,
+    "docs-writer": 2,
+    "browser-tester": 2,
+    "analyst": 2,
+    "planner": 2,
+    # Added in 0.15.x and off the ladder until 0.16.0. Each sits at 2 for the
+    # same reason `dba` does: it closes a defect class that only shows up once
+    # the repo is doing enough of that kind of work to have the evidence.
+    "infrastructure-architect": 2,
+    "scribe": 2,
+    "researcher": 2,
+}
+
+# The tier that is about parallelism rather than about roles -- no role lives
+# here, so `tier_for_roles` can never return it and a config that declares it
+# keeps it. See `crew-scaling/SKILL.md`.
+TIER_PARALLEL = 3
+
+
+def roles_for_tier(tier):
+    """Every ladder role at or below `tier`, in ladder order."""
+    return [name for name, at in ROLE_TIERS.items() if at <= tier]
+
+
+def tier_for_roles(roles):
+    """The tier a role list implies: the highest ladder tier it contains.
+
+    A name that is not on the ladder contributes nothing. It is not an error --
+    a repo may onboard a role this release has never heard of -- but its tier
+    is genuinely unknown, and guessing one would move a crew up the ladder on
+    the strength of a string nobody recognises.
+    """
+    tiers = [ROLE_TIERS[r] for r in roles if r in ROLE_TIERS]
+    return max(tiers) if tiers else 0
+
+
 def normalise_authority(value):
     """`value` as a known authority, else the restrictive default."""
     if isinstance(value, str):
@@ -475,8 +593,15 @@ def can_act(state):
     return normalise_authority(pm.get("authority")) == "act"
 
 
-def merge_defaults(defaults, supplied):
-    """`defaults`, overlaid with anything already present. Recurses one level.
+def merge_defaults(defaults, supplied, discarded=None, _path=""):
+    """`defaults`, overlaid with anything already present. Fully recursive.
+
+    It calls itself whenever BOTH sides hold a dict at a key, so a nested
+    block is merged to whatever depth the default has -- `qa.codex.model`
+    survives a supplied `qa` that names only `provider`. The docstring said
+    "recurses one level" until 0.16.0 and was wrong; `crew_config.
+    _layer_supplies`, which mirrors this function to answer "which layer
+    decided this value", depends on the real behaviour.
 
     Shared by `crew_upgrade.upgrade_config` (bringing a v1 config's `pm` and
     `graph` blocks forward) and `crew_config.resolve_config` (layering repo
@@ -489,15 +614,26 @@ def merge_defaults(defaults, supplied):
     partway through, sometimes after the result has already been written.
     A scalar where the schema wants a block is a mistake, and the default is
     the honest fallback. A legitimate nested override still wins.
+
+    Discarding is right; discarding SILENTLY is not. Pass a list as
+    `discarded` and every dropped override is appended to it as a dotted
+    path, so a caller that rewrites the user's file -- `crew_upgrade.
+    upgrade_config` above all -- can name what it refused to carry forward
+    instead of reporting a clean migration over a destroyed value. Callers
+    that only read (`resolve_config`) can leave it None: there, the default
+    winning is the answer, not a loss.
     """
     out = dict(defaults)
     if not isinstance(supplied, dict):
         return out
     for key, value in supplied.items():
+        path = f"{_path}.{key}" if _path else key
         if isinstance(out.get(key), dict):
             if isinstance(value, dict):
-                out[key] = merge_defaults(out[key], value)
-            # else: keep the default; see the docstring.
+                out[key] = merge_defaults(out[key], value, discarded, path)
+            elif discarded is not None:
+                # Keep the default (see the docstring), but say so.
+                discarded.append(path)
         else:
             out[key] = value
     return out
@@ -512,6 +648,412 @@ def dict_or_empty(value):
     From a SessionStart hook that breaks every session opened in the repo.
     """
     return value if isinstance(value, dict) else {}
+
+
+# --- Who speaks as which family, and which model backs which role ----------
+#
+# The interlock this section exists for: THE FAMILY THAT WROTE THE CODE MAY
+# NOT REVIEW IT. Everything below is arranged so that guard is evaluated
+# FIRST and a pin is applied SECOND. A pin that beat the guard would let a
+# model review its own family's diff, which is the one thing the interlock is
+# for -- so the order is a property of `resolve_role`, not of a caller
+# remembering to check in the right sequence.
+
+
+def family(provider, model=None):
+    """Which model family `provider` speaks as, given the model it is pinned to.
+
+    Derived from `model.split("-")[0]`, verified 2026-09-05 against the ids in
+    use: `gpt-6-astra`, `gpt-5.6-sol` and `gpt-5.6-luna` all yield `gpt`, and
+    `kimi-k2.7-code` and `kimi-k3` both yield `kimi`. No id is special-cased,
+    deliberately -- model catalogs churn, and a lookup table of names is a
+    lookup table that goes stale without failing.
+
+    `claude` is its own family whatever it is pinned to; it is an in-session
+    subagent, not a separate CLI with a model flag. An unpinned `codex` is
+    `gpt` because that is the only family the Codex CLI serves. An unpinned
+    `copilot` is None -- Copilot hosts several families and an unset model
+    genuinely does not say which. None, never a placeholder string: two unset
+    Copilot models must not compare equal to each other and report BARRED when
+    the real reason is "unset".
+    """
+    if provider == "claude":
+        return "claude"
+    if isinstance(model, str) and model.strip():
+        return model.strip().split("-")[0]
+    if provider == "codex":
+        return "gpt"
+    return None
+
+
+# Human-facing names for the model ids in use. A DISPLAY map, never a
+# validation list: an id that is not here renders as itself, so pinning a
+# model this release has never heard of works exactly as it did before. The
+# `/crew:model` rule that no allowlist may gate a write is unchanged -- GPT-5
+# and Sonnet 4 are already retired, and a command that refuses a model because
+# it shipped before that model existed is worse than no validation.
+#
+# `kimi-k2.7-code` is the entry that earns this table. The `-code` suffix is
+# load-bearing: probed 2026-09-05, bare `kimi-k2.7` returns `Model
+# "kimi-k2.7" from --model flag is not available` and only the suffixed id
+# answers. The display name is "Kimi 2.7" either way, so writing the display
+# name into a config would produce a model the CLI rejects -- which is exactly
+# why the two are separated here rather than left for a reader to infer.
+MODEL_DISPLAY = {
+    "gpt-6-astra": "GPT-6 Astra",
+    "gpt-5.6-sol": "GPT-5.6 Sol",
+    "gpt-5.6-luna": "GPT-5.6 Luna",
+    "kimi-k2.7-code": "Kimi 2.7",
+    "kimi-k3": "Kimi 3",
+}
+
+
+def display_model(model):
+    """`"Kimi 2.7 (kimi-k2.7-code)"` for a known id, else the id itself.
+
+    Human-facing text says the name; the wire id rides alongside because it is
+    a debugging detail people genuinely need when a pin stops answering, and
+    because for `kimi-k2.7-code` the name and the id are not the same string.
+    """
+    if not isinstance(model, str) or not model.strip():
+        return None
+    model = model.strip()
+    name = MODEL_DISPLAY.get(model)
+    return f"{name} ({model})" if name else model
+
+
+def _provider_block(block, provider):
+    return dict_or_empty(block.get(provider)) if isinstance(provider, str) else {}
+
+
+def resolve_role(cfg, kind, role, author=None, available=None):
+    """What actually backs one role, and why. Pure.
+
+    `kind` is `"qa"` or `"dev"`; `role` is a name in that block's `roles`
+    table (`review`, `developer`, ...). `author` is the family that WROTE the
+    diff under review, from `author_families` below -- a single family, an
+    iterable of them, or None when that is genuinely unknown, never a guess.
+    It is plural because a dispatch record from another branch strikes two:
+    the family it names and the family the config names. `available(provider, model)` is an
+    optional probe returning False when the pinned model is gone; with no
+    probe, nothing falls back.
+
+    Returns a dict rather than a printed line, so a caller can assert on the
+    decision instead of on stdout:
+
+        {"kind", "role", "provider", "model", "reasoningEffort", "family",
+         "source", "barred", "barredBy", "fellBack", "fallback",
+         "fallbackBarred", "announce"}
+
+    `source` is `"role-pin"` when the `roles` table decided it and
+    `"block-default"` when the block's own `provider` did. Order of
+    evaluation, which is the contract and not an implementation detail:
+
+      1. **The family guard.** If the resolved family is the author's, the
+         role is BARRED and the pin does not save it.
+      2. **The pin, and only then the fallback.** A pinned model that
+         `available` says is gone falls back to `fallback` -- and the fallback
+         is family-checked too, because a claude fallback on claude-authored
+         work is the same-family review the guard exists to prevent.
+
+    `announce` is never empty when something happened. A review that quietly
+    ran on the fallback is indistinguishable from one that ran on the pin, and
+    the difference matters most exactly when the pin was chosen to get a
+    different family onto the diff.
+    """
+    # `author` is a single family, an iterable of them, or None. It is plural
+    # because a STALE dispatch record strikes two: the family the record names
+    # and the family the config names. See `author_families`.
+    if author is None:
+        authors = frozenset()
+    elif isinstance(author, str):
+        authors = frozenset([author])
+    else:
+        authors = frozenset(f for f in author if f)
+
+    block = dict_or_empty(dict_or_empty(cfg).get(kind))
+    pin = dict_or_empty(dict_or_empty(block.get("roles")).get(role))
+    provider = pin.get("provider") or block.get("provider") or "claude"
+    sub = _provider_block(block, provider)
+    model = pin.get("model") or sub.get("model")
+    effort = pin.get("reasoningEffort") or sub.get("reasoningEffort")
+    fallback = block.get("fallback") or FALLBACK_DEFAULT
+
+    out = {
+        "kind": kind,
+        "role": role,
+        "provider": provider,
+        "model": model,
+        "reasoningEffort": effort,
+        "family": family(provider, model),
+        "source": "role-pin" if pin else "block-default",
+        "barred": False,
+        "barredBy": None,
+        "fellBack": False,
+        "fallback": fallback,
+        "fallbackBarred": False,
+        "announce": [],
+    }
+
+    # `auto` is not a provider -- it is an instruction to walk `qa.order` --
+    # so there is no family to check and no model to fall back from. Say that
+    # rather than reporting a family of "auto".
+    if provider == "auto":
+        out["family"] = None
+        out["announce"].append(
+            f"{kind}.{role}: no pin, and {kind}.provider is `auto` -- "
+            f"the candidate that runs is whichever of {kind}.order probes clean"
+        )
+        return out
+
+    # 1. The family guard, BEFORE the pin. See the docstring.
+    if out["family"] is not None and out["family"] in authors:
+        out["barred"] = True
+        out["barredBy"] = out["family"]
+        out["announce"].append(
+            f"{kind}.{role}: BARRED -- {provider} speaks as the "
+            f"`{out['family']}` family, which wrote this diff, so it may not "
+            "review it"
+        )
+        return out
+
+    # 2. The pin, and only then the fallback.
+    if model and available is not None and not available(provider, model):
+        out["announce"].append(
+            f"{kind}.{role}: FELL BACK -- pinned model `{model}` on "
+            f"{provider} is unavailable; running `{fallback}` instead"
+        )
+        out["fellBack"] = True
+        out["provider"] = "claude"
+        out["model"] = fallback
+        out["family"] = family("claude", fallback)
+        out["reasoningEffort"] = None
+        if out["family"] in authors:
+            out["fallbackBarred"] = True
+            out["announce"].append(
+                f"{kind}.{role}: the fallback `{fallback}` is also the "
+                f"`{out['family']}` family that wrote this diff -- this is "
+                "not an independent review"
+            )
+    return out
+
+
+# Where a dispatch is recorded. `.work/`, not `.crew/`: this is ephemeral
+# state about the checkout in front of you, not configuration, and a committed
+# copy would travel to another machine and describe a dispatch that never
+# happened there. `crew-setup/SKILL.md` adds it to .gitignore during setup.
+DISPATCH_PATH = (".work", "dispatch.json")
+
+# Kinds that may be RECORDED, which is exactly the set something READS.
+# `author_family` reads `dev`; nothing reads a `qa` slot, so nothing writes
+# one. A `--record-dispatch qa` flag whose output no code ever consults is
+# state written to nowhere -- the same failure as a reader with no writer,
+# and just as invisible. Give a kind a reader and add it here, in one change.
+DISPATCH_KINDS = ("dev",)
+
+
+def read_dispatch(root):
+    """The last recorded dispatch, or `{}`. Never raises."""
+    text = read_text(os.path.join(root, *DISPATCH_PATH))
+    if text is None:
+        return {}
+    try:
+        parsed = json.loads(text)
+    except ValueError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def current_branch(root):
+    """The checked-out branch name, or None outside a repo / on a detached HEAD.
+
+    `git rev-parse --abbrev-ref HEAD` answers `HEAD` when detached, which is
+    not a branch and must not be recorded as one -- two unrelated detached
+    checkouts would both say `HEAD` and compare equal, which is the false
+    freshness this field exists to remove.
+    """
+    name = git_out(root, "rev-parse", "--abbrev-ref", "HEAD")
+    return None if not name or name == "HEAD" else name
+
+
+def in_git_repo(root):
+    """True, False, or None when git could not answer.
+
+    `current_branch` returns None for two states that are not remotely alike:
+    a plain directory that has no branches, and a repository whose HEAD is
+    detached or mid-rebase. Provenance can be trusted in the first and never
+    in the second, so the branch value alone cannot decide it -- a dispatch
+    recorded while detached stores `branch: null`, which would otherwise
+    compare equal to the no-repo case and read as proof.
+
+    The third state is what makes this tri-state rather than a bool. `git_out`
+    answers None for git being absent, a timeout, a vanished `root`, and a
+    non-repository alike, so collapsing it to a bool made every transient
+    failure look like the SAFE "no repository here" case -- and the caller
+    reads that as proof of provenance. A guard that fails open when its probe
+    breaks is worse than one that has no probe, because it looks like it
+    checked. None means "could not tell", and the caller treats it as unproven.
+    """
+    # Not `git_out`: it answers None for "git ran and said no" and for "git
+    # could not be run" alike, and those are the two states this function
+    # exists to separate. A non-zero exit IS an answer -- git ran, and this
+    # is not a work tree. Only a failure to execute is unknown.
+    try:
+        done = subprocess.run(
+            ("git", "rev-parse", "--is-inside-work-tree"), cwd=root,
+            capture_output=True, text=True, timeout=_GIT_TIMEOUT,
+            check=False, stdin=subprocess.DEVNULL,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if done.returncode != 0:
+        return False
+    return done.stdout.strip() == "true"
+
+
+def record_dispatch(root, kind, role, provider, model=None, branch=None):
+    """Record which role, provider and model actually ran. Returns the record.
+
+    Written at dispatch, read by `author_family` -- the whole point being that
+    the self-review guard judges what RAN rather than what the config happens
+    to say now. A config read after the fact answers a different question: it
+    describes the next dispatch, not the one that produced the diff in front
+    of the reviewer.
+
+    `branch` defaults to the checkout's current branch and is what makes the
+    record falsifiable ACROSS branches. There is one file per checkout with
+    one slot per kind, so a dispatch made on another branch overwrites this
+    one and then reads as perfectly fresh: `/crew:review`'s mtime test
+    compares the record against the diff's merge-base and cannot see a branch
+    switch at all, because the record is genuinely newer. Recording the branch
+    is the only thing that can tell those two states apart.
+
+    `kind` must be one of `DISPATCH_KINDS`. Writing a kind nothing reads is
+    the same inert-feature class as a reader with no writer, so the set is
+    enforced here rather than left to the caller's discretion -- adding a
+    reader means adding its kind to that tuple, in the same change.
+    """
+    if kind not in DISPATCH_KINDS:
+        raise ValueError(
+            f"no reader for dispatch kind {kind!r}; "
+            f"recordable kinds are {', '.join(DISPATCH_KINDS)}")
+    if branch is None:
+        branch = current_branch(root)
+    record = dict(read_dispatch(root))
+    record[kind] = {"role": role, "provider": provider, "model": model,
+                    "branch": branch}
+    path = os.path.join(root, *DISPATCH_PATH)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(record, handle, indent=2, sort_keys=True)
+        handle.write("\n")
+    return record
+
+
+def author_families(root, cfg, stale=False):
+    """`(families, source)` -- who wrote the code here, and how we know.
+
+    `families` is a frozenset because a stale record strikes TWO of them, and
+    `source` is one of:
+
+      * `"dispatch"` -- a record exists and its branch matches this checkout.
+        The guard is judging what actually ran.
+      * `"config"` -- no record, so `dev` was read out of the config. That
+        describes the NEXT dispatch rather than the diff in front of the
+        reviewer, and every caller has to say so rather than presenting a
+        guess as a fact.
+      * `"stale"` -- a record exists but names a DIFFERENT branch, so it
+        cannot describe the commits under review. This **fails closed**: the
+        recorded family and the config family are BOTH struck, matching what
+        `commands/review.md` does with a record that predates the merge-base.
+        Dropping the stale record and trusting config is the one direction
+        that can under-bar -- if codex wrote the commits and the config has
+        since been changed to `claude`, discarding the record clears codex to
+        review its own work. Over-barring costs a rung; under-barring costs
+        the entire point of the guard.
+
+    Provenance is proven only when the checkout has a readable branch and the
+    record names the same one -- or when this is not a repository at all and
+    the record names none, the one case with no branches to confuse. A
+    detached HEAD, a rebase in progress, or a record written while detached
+    are all unprovable and fail closed.
+
+    A record with no branch, read in a checkout that HAS one, is stale: it
+    was written before 0.16.0's field existed and cannot prove which branch
+    it came from, and trusting it strikes only its own family while leaving
+    the configured one clear to review its own diff. A checkout with no
+    branch at all is the exception -- nothing to switch between means none of
+    the risk -- so a non-git repo is not barred forever for lacking git.
+
+    `stale=True` is how a caller that CAN compare the record against the
+    diff's merge-base reports that verdict; only `/crew:review` can make that
+    comparison, and without a way to say so its answer never reached the
+    resolved report that every later step reads.
+    """
+    recorded = dict_or_empty(read_dispatch(root).get("dev"))
+    decided = resolve_role(cfg, "dev", "developer")
+    if recorded.get("provider"):
+        recorded_family = family(recorded.get("provider"),
+                                 recorded.get("model"))
+        here = current_branch(root)
+        there = recorded.get("branch")
+        # Strike BOTH unless the record positively proves it is about this
+        # branch. Three states reach here and only one of them is evidence:
+        #   * branches known and different -- stale, plainly.
+        #   * `stale=True` -- the caller compared the record against the
+        #     diff's merge-base and found it older. Only /crew:review can
+        #     make that comparison, so it has to be able to say so; without
+        #     this argument its verdict never reached the resolved report and
+        #     the report kept saying `dispatch` with one family in it.
+        #   * this checkout HAS a branch and the record does not name one --
+        #     a record written before the `branch` field existed. Trusted
+        #     until now on compatibility grounds, which was the wrong
+        #     direction: it may have been written on another branch minutes
+        #     ago, and trusting it strikes only its family while leaving the
+        #     config's own clear to review its own diff. Over-barring costs a
+        #     rung; under-barring costs the entire point of the guard. The
+        #     cost is one over-barred review per repo, until the next
+        #     dispatch records a branch.
+        #
+        # `is False`, not `not ...`: in_git_repo answers None when git could
+        # not be asked, and `not None` is True, which would hand a broken
+        # probe the same verdict as a proven non-repository.
+        #
+        # Three earlier versions of this test were wrong in three different
+        # directions, which is why it is spelled out rather than clever.
+        # `here and there != here` short-circuited on a None `here` and
+        # trusted a detached HEAD. Plain `here != there` fixed that and then
+        # trusted a record written WHILE detached, because that record stores
+        # `branch: null` and None == None. Only repository presence separates
+        # the harmless missing branch from the dangerous unreadable one.
+        # Provenance is PROVEN in exactly two shapes, and trusted in no
+        # other: a readable branch that matches the record's, or a directory
+        # that is not a repository at all paired with a record that names no
+        # branch. Everything else -- a detached HEAD, a rebase in progress, a
+        # record written while detached, a branch the record does not name --
+        # is unprovable, and unprovable fails closed.
+        proven = ((here is not None and here == there)
+                  or (there is None and in_git_repo(root) is False))
+        if stale or not proven:
+            return frozenset(
+                f for f in (recorded_family, decided["family"]) if f
+            ), "stale"
+        return frozenset(f for f in (recorded_family,) if f), "dispatch"
+    # No record: read the config. `decided` above asked `resolve_role` for the
+    # `developer` role rather than the `dev` block's own provider --
+    # `dev.roles.developer` is a pin that OVERRIDES that default, so reading
+    # the block alone reports the wrong family for exactly the config the role
+    # table exists to express. A repo with `dev.provider: "claude"` and
+    # `developer` pinned to codex would otherwise strike claude and clear
+    # codex to review codex's diff. `developer` is the role that writes;
+    # security and infrastructure-architect do not commit.
+    #
+    # frozenset, like every other branch: an unknowable family (an unset
+    # Copilot model) is the EMPTY set, never `{None}` and never a bare None.
+    # A caller that strikes what this returns must strike nothing in that
+    # case, and a None leaking into the set would compare equal to another
+    # unknown and bar a reviewer on the strength of two absences.
+    return frozenset(f for f in (decided["family"],) if f), "config"
 
 
 def int_or(value, default):
@@ -650,9 +1192,39 @@ def collect(root, cfg_override=None):
     return state
 
 
-def main():
-    """Print the state as JSON. Exit code is always 0."""
-    root = os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
+def main(argv=None):
+    """Print the state as JSON, or record a dispatch. Exit code is always 0.
+
+    Called with no arguments from `SessionStart` and from `/crew:upgrade`,
+    which is why every flag is optional and a bare invocation still prints
+    exactly what it always printed.
+    """
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--root", default=None)
+    parser.add_argument("--record-dispatch", metavar="KIND",
+                        choices=DISPATCH_KINDS,
+                        help="record which role/provider/model just ran")
+    parser.add_argument("--role", default=None)
+    parser.add_argument("--provider", default=None)
+    parser.add_argument("--model", default=None)
+    parser.add_argument("--branch", default=None,
+                        help="branch the work was done on; defaults to the "
+                             "checkout's current branch")
+    args = parser.parse_args(argv)
+
+    root = args.root or os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
+    if args.record_dispatch:
+        if not args.role or not args.provider:
+            # Loud, not silent. A dispatch recorded without a provider would
+            # make author_family read `dispatch` and answer None, which is
+            # worse than the honest config fallback it displaced.
+            print("--record-dispatch needs --role and --provider",
+                  file=sys.stderr)
+            return 2
+        record = record_dispatch(root, args.record_dispatch, args.role,
+                                 args.provider, args.model, args.branch)
+        print(json.dumps(record, indent=2, sort_keys=True))
+        return 0
     print(json.dumps(collect(root), indent=2, sort_keys=True))
     return 0
 

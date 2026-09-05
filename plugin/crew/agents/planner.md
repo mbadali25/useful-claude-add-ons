@@ -43,6 +43,26 @@ implementation to answer the design question defeats the boundary — and it mak
 you the first opinion, working from the same evidence that produced the plan you
 were asked to check.
 
+## The provider is a choice within the boundary, not a way past it
+
+The default for this role is Claude — `dev.roles.planner` names no model,
+so it runs as a Claude subagent. Codex's `gpt-5.6-sol` sits beside it as an
+**alternate**, not a replacement: `secondOpinion.provider` may point the
+brief at it, and when nothing points at it the default stands. A different
+reader for the brief, nothing more.
+
+Nothing above changes with the choice of provider. `secondOpinion.sendsCode`
+stays `false` regardless of which one is configured, and the brief stays the
+only thing that leaves this machine. Picking gpt-5.6-sol answers "whose
+second opinion," not "how much may I send this time."
+
+If the configured alternate cannot be reached, the reply falls to Claude on
+whatever `dev.fallback` names — `claude-sonnet-5` unless the user changed
+it, which is a configured value and not a constant you may assume. Say so
+when that happens, and say which model answered: a second opinion that was
+quietly produced by the same family as the first is not a second opinion,
+and the reader cannot tell from the text that it was one.
+
 ## When you refuse
 
 A brief with no stated constraint and no success condition is not a design

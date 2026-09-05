@@ -8,6 +8,76 @@ only what is newly *possible*.
 Mirrored into [`plugin/README.md`](README.md) and the root
 [`README.md`](../README.md) by `scripts/sync-updates.py`. Edit here, then run it.
 
+## crew 0.16.6
+
+**`/crew:config` — see where every setting comes from, and set the ones that
+belong to the machine.** The machine-global config at
+`~/.claude/crew/config.json` sets defaults for every crew repo you have, and
+until now nothing in crew wrote it, asked about it, or mentioned it existed.
+Writing it by hand meant knowing the file existed, where it lived, which keys
+it took and how it layered. `templates/global.template.json` is now the shape,
+and `/crew:config` is the guided walkthrough.
+
+The point of the command is the **source** column. `--explain` prints every
+globally-settable key with its effective value and the layer that decided it —
+`repo`, `global`, or `default`. That is the question the failure behind this
+work could not answer: a global file that carried `tier`, `roles`, `qa` and
+`sdp` but **no `pm` block** silently resolved every repo on the machine to
+`pm.authority: report-only`, while the user believed the PM was autonomous.
+Every file was valid. The behaviour was a default nobody chose, and nothing
+surfaced it.
+
+The global template is deliberately **not** a copy of the repo one. `tracker`,
+`jira.project`, `obsidian.boardDir`, `graph.out` and `platform.*` are facts
+about one checkout; shipping them globally invites a vault path set once that
+every repo then inherits. What is left is what is genuinely a property of the
+machine or the person: `pm.authority`, the `qa` and `dev` provider tables,
+`secondOpinion`, `notify` and `memory.vaultPath`. It carries no `schema` at
+all — that value is read from the repo file alone, so a global one can never
+make an unmigrated repo look current.
+
+Four rules the writer enforces in code rather than in prose. It **merges**, so
+a key in an existing global file that the walkthrough never asked about
+survives. It **refuses**, by name and with exit 2, any key that describes a
+repository — which is also what makes `graph.obsidian.confirmed` un-grantable
+from a guided flow, since that flag is consent to write into your own notes
+outside the repo, not a capability. It is a **dry run by default**; `--apply`
+is a second, deliberate call. And it **marks a widening of `pm.authority`** on
+both the plan and the write, because that is the one value you cannot recover
+from by noticing.
+
+**`/crew:upgrade` migrates the whole config, and says what it changed.** It
+brought `pm` and `graph` forward and stamped `schema` current regardless, so a
+config predating 0.14.4 came out marked up to date while still missing
+`qa.order` and the entire `dev` block — and an absent `qa.order` made
+`/crew:model` report zero candidates and "no independent reviewer" for a setup
+that reviews fine. `qa` and `dev` now migrate too.
+
+So does `roles`: an upgrade **adds** the roles a later release put at a tier
+the config already declares, rather than reporting them and leaving you to
+re-derive the change. It cannot grow a crew past its own declared tier —
+moving up is still `/crew:scale`, with evidence — and it never removes
+anything, because `/crew:pm offboard` keeps its explicit-yes gate. The run
+states the roles it added and the tier it moved from and to, at the CLI and in
+`.crew/codemap/UPGRADE.md`, every time, including when the answer is none.
+
+`schema` is now stamped only when every block actually migrated. A `pm`,
+`graph`, `qa`, `dev` or `roles` value that arrived as the wrong type is left
+exactly as you wrote it, named in the report, and the status is `upgraded with
+unmigrated blocks` — so the repo still reports an upgrade as needed instead of
+being marked done with a block nobody migrated. `/crew:upgrade` also reports
+what is wrong with the machine-global file, and fixes none of it: that is
+`/crew:config`'s job, and it asks first.
+
+**The three agents added in 0.15.x joined the tier ladder**, at tier 2 beside
+`dba` and `docs-writer`. `infrastructure-architect`, `scribe` and `researcher`
+shipped as definitions with no tier row, so `/crew:scale` would not propose
+them and `/crew:pm` would not onboard them from evidence. The ladder itself now
+lives in `crew_state.ROLE_TIERS`, because computing a tier from a role list is
+arithmetic and a heading in a skill file should not decide what an upgrade
+writes; the two markdown tables that describe it are checked against that dict
+by a committed test instead.
+
 ## obsidian-vault 0.3.0
 
 **Vault profiles.** A vault is either authored, where a person reads it, or

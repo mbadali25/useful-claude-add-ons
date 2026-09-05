@@ -159,7 +159,7 @@ For this repo's own skills, [`scripts/check-marketplace.py`](scripts/check-marke
 | 16 SkillUI | `skillui` + `playwright` + the Chromium browser build | npm |
 | 17 Strix | The `strix` pentesting CLI | `curl -sSL https://strix.ai/install \| bash` |
 | 18 Obsidian | The Obsidian desktop app (Chocolatey → winget on Windows, flatpak → snap on Linux), plus the `claude-obsidian` vault engine and [`kepano/obsidian-skills`](https://github.com/kepano/obsidian-skills) — Obsidian's own Markdown, Bases, JSON Canvas, CLI and Defuddle skills | choco/winget/flatpak/snap + 2 marketplaces |
-| 19 This repo's plugins | The `crew` plugin from [`plugin/`](plugin/) — 14 subagents, 23 slash commands, 17 bundled skills, and 20 hook entries (10 scripts × `.sh`/`.ps1`) across 5 events — `obsidian-vault` — 2 agents, 11 slash commands, 3 skills, and 8 hook entries (3 scripts × `.sh`/`.ps1`) — and `gizmoduck` — 6 slash commands and 1 skill, no hooks, no agents. Off by default because hooks execute whether or not Claude agrees with them | this repo |
+| 19 This repo's plugins | The `crew` plugin from [`plugin/`](plugin/) — 14 subagents, 24 slash commands, 17 bundled skills, and 20 hook entries (10 scripts × `.sh`/`.ps1`) across 5 events — `obsidian-vault` — 2 agents, 11 slash commands, 3 skills, and 8 hook entries (3 scripts × `.sh`/`.ps1`) — and `gizmoduck` — 6 slash commands and 1 skill, no hooks, no agents. Off by default because hooks execute whether or not Claude agrees with them | this repo |
 | 20 `graphify` | The `graphify` CLI (`graphifyy` on PyPI), registered per-repository with `graphify install --project`. Off by default; not installed globally | `uv tool install` |
 | 21 Microsoft MCP servers | Registers up to 4 servers via npx — `mcp-msgraph`, `mcp-intune`, `mcp-o365-admin` (app-only via `MS_ADMIN_*`, OR delegated via an existing `az login` session, checked with `az account show` — no app registration required for the latter), `mcp-o365-user` (delegated device-code, needs `MS_USER_CLIENT_ID`). Skipped with instructions when neither an `az login` session nor credentials are found | npm (`@badali404/mcp-*`) + `claude mcp add` |
 
@@ -225,6 +225,76 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 Generated from [`plugin/UPDATE.md`](plugin/UPDATE.md) by `scripts/sync-updates.py`. Edit that file, not this block.
 
 <!-- BEGIN plugin/UPDATE.md -->
+
+### crew 0.16.6
+
+**`/crew:config` — see where every setting comes from, and set the ones that
+belong to the machine.** The machine-global config at
+`~/.claude/crew/config.json` sets defaults for every crew repo you have, and
+until now nothing in crew wrote it, asked about it, or mentioned it existed.
+Writing it by hand meant knowing the file existed, where it lived, which keys
+it took and how it layered. `templates/global.template.json` is now the shape,
+and `/crew:config` is the guided walkthrough.
+
+The point of the command is the **source** column. `--explain` prints every
+globally-settable key with its effective value and the layer that decided it —
+`repo`, `global`, or `default`. That is the question the failure behind this
+work could not answer: a global file that carried `tier`, `roles`, `qa` and
+`sdp` but **no `pm` block** silently resolved every repo on the machine to
+`pm.authority: report-only`, while the user believed the PM was autonomous.
+Every file was valid. The behaviour was a default nobody chose, and nothing
+surfaced it.
+
+The global template is deliberately **not** a copy of the repo one. `tracker`,
+`jira.project`, `obsidian.boardDir`, `graph.out` and `platform.*` are facts
+about one checkout; shipping them globally invites a vault path set once that
+every repo then inherits. What is left is what is genuinely a property of the
+machine or the person: `pm.authority`, the `qa` and `dev` provider tables,
+`secondOpinion`, `notify` and `memory.vaultPath`. It carries no `schema` at
+all — that value is read from the repo file alone, so a global one can never
+make an unmigrated repo look current.
+
+Four rules the writer enforces in code rather than in prose. It **merges**, so
+a key in an existing global file that the walkthrough never asked about
+survives. It **refuses**, by name and with exit 2, any key that describes a
+repository — which is also what makes `graph.obsidian.confirmed` un-grantable
+from a guided flow, since that flag is consent to write into your own notes
+outside the repo, not a capability. It is a **dry run by default**; `--apply`
+is a second, deliberate call. And it **marks a widening of `pm.authority`** on
+both the plan and the write, because that is the one value you cannot recover
+from by noticing.
+
+**`/crew:upgrade` migrates the whole config, and says what it changed.** It
+brought `pm` and `graph` forward and stamped `schema` current regardless, so a
+config predating 0.14.4 came out marked up to date while still missing
+`qa.order` and the entire `dev` block — and an absent `qa.order` made
+`/crew:model` report zero candidates and "no independent reviewer" for a setup
+that reviews fine. `qa` and `dev` now migrate too.
+
+So does `roles`: an upgrade **adds** the roles a later release put at a tier
+the config already declares, rather than reporting them and leaving you to
+re-derive the change. It cannot grow a crew past its own declared tier —
+moving up is still `/crew:scale`, with evidence — and it never removes
+anything, because `/crew:pm offboard` keeps its explicit-yes gate. The run
+states the roles it added and the tier it moved from and to, at the CLI and in
+`.crew/codemap/UPGRADE.md`, every time, including when the answer is none.
+
+`schema` is now stamped only when every block actually migrated. A `pm`,
+`graph`, `qa`, `dev` or `roles` value that arrived as the wrong type is left
+exactly as you wrote it, named in the report, and the status is `upgraded with
+unmigrated blocks` — so the repo still reports an upgrade as needed instead of
+being marked done with a block nobody migrated. `/crew:upgrade` also reports
+what is wrong with the machine-global file, and fixes none of it: that is
+`/crew:config`'s job, and it asks first.
+
+**The three agents added in 0.15.x joined the tier ladder**, at tier 2 beside
+`dba` and `docs-writer`. `infrastructure-architect`, `scribe` and `researcher`
+shipped as definitions with no tier row, so `/crew:scale` would not propose
+them and `/crew:pm` would not onboard them from evidence. The ladder itself now
+lives in `crew_state.ROLE_TIERS`, because computing a tier from a role list is
+arithmetic and a heading in a skill file should not decide what an upgrade
+writes; the two markdown tables that describe it are checked against that dict
+by a committed test instead.
 
 ### obsidian-vault 0.3.0
 
@@ -557,7 +627,7 @@ Each subdirectory in [`plugin/`](plugin/) is a self-contained [Claude Code plugi
 
 | Plugin | Category | What it does | Use cases | Provides |
 |---|---|---|---|---|
-| [`crew`](plugin/crew) | Workflow / QA | A virtual dev team for multi-repo legacy work — file-backed tickets, one implementation session, an independent reviewer, and deterministic gates that block on failure instead of offering an opinion. Hooks enforce unsafe commands, unverified turns, and unearned production deploys. Roles exist only where they buy an isolated context window, a restricted tool set, or genuinely independent eyes; the manager is the one role that can assign work rather than only reporting on it, opt-in via `pm.authority`, and BA/architecture stay files and commands. Codex QA, Jira or ServiceDesk Plus, an Obsidian Kanban board for tickets, Obsidian memory, a code graph, and Teams/Telegram notifications are all optional. | Several repositories, mixed stacks, legacy code, and almost no test coverage; a change that needs review by something that did not write it; wanting `terraform apply`, force-push, and destructive DDL blocked by a hook rather than by good intentions; a turn that should fail when the checks its changed paths map to go red; a production deploy that should be refused unless qa signed off on **that exact sha** and the rollback runbook is still verified; wanting to know what every endpoint and scheduled job actually does; losing the thread across a `/clear` or an auto-compact; wanting the crew to pick up the next thing itself when a ticket closes or the diagrams fall behind, instead of waiting to be asked — bounded so it fixes only what blocks the job and tickets the rest. | 14 agents, 21 commands, 17 skills, 20 hook entries |
+| [`crew`](plugin/crew) | Workflow / QA | A virtual dev team for multi-repo legacy work — file-backed tickets, one implementation session, an independent reviewer, and deterministic gates that block on failure instead of offering an opinion. Hooks enforce unsafe commands, unverified turns, and unearned production deploys. Roles exist only where they buy an isolated context window, a restricted tool set, or genuinely independent eyes; the manager is the one role that can assign work rather than only reporting on it, opt-in via `pm.authority`, and BA/architecture stay files and commands. Codex QA, Jira or ServiceDesk Plus, an Obsidian Kanban board for tickets, Obsidian memory, a code graph, and Teams/Telegram notifications are all optional. | Several repositories, mixed stacks, legacy code, and almost no test coverage; a change that needs review by something that did not write it; wanting `terraform apply`, force-push, and destructive DDL blocked by a hook rather than by good intentions; a turn that should fail when the checks its changed paths map to go red; a production deploy that should be refused unless qa signed off on **that exact sha** and the rollback runbook is still verified; wanting to know what every endpoint and scheduled job actually does; losing the thread across a `/clear` or an auto-compact; wanting the crew to pick up the next thing itself when a ticket closes or the diagrams fall behind, instead of waiting to be asked — bounded so it fixes only what blocks the job and tickets the rest. | 14 agents, 24 commands, 17 skills, 20 hook entries |
 | [`gizmoduck`](plugin/gizmoduck) | Security | Runs [Nuclei](https://github.com/projectdiscovery/nuclei) vulnerability scans against hosts and websites you are authorised to test, then does the part that usually gets skipped: diffs the run against a previous baseline so you see what is genuinely new, renders a triaged report as Markdown, HTML or PDF, and opens or syncs ServiceDesk Plus tickets for Critical and High findings. Nuclei is MIT-licensed and self-hosted, so the whole loop runs locally with no export step and no API quota. Bootstrap scripts for WSL/Linux and Windows fetch the engine and the community template set; `/gizmoduck:doctor` tells you which half of the toolchain is missing rather than failing mid-scan. Registers no hooks and no agents — it is six commands over one Python CLI. | Wanting a scheduled external scan whose findings land in the ticket queue instead of a PDF nobody opens; needing to show an auditor what changed between this quarter's scan and last quarter's; a scan whose Critical and High findings should become tickets automatically while the Mediums stay in the report; re-rendering a report at a different severity floor without paying for another scan; a scanner that stops working on a new machine and you want to know whether it is `nuclei`, the templates, `python`, or `wkhtmltopdf`. | 6 commands, 1 skill |
 | [`obsidian-vault`](plugin/obsidian-vault) | Memory | Makes one or more Obsidian vaults Claude Code's durable, token-efficient memory. Cross-platform, multi-vault setup for the Local REST API bridge and MCP registration (one server per vault, never one juggling two), a vault-contract guard hook that ships every check off until a target vault's own `CLAUDE.md` says to turn it on, gardening and reflection agents with no fabricated citations, canvas and Map-of-Content generation, and `graphify` wiring into a separate, dedicated codegraphs vault. No vault path is hardcoded — it detects from Obsidian's own vault registry or a config file. Named `obsidian-vault`, not `obsidian`, so it cannot collide with a third-party plugin of that name. | Wanting Claude Code sessions to remember architecture decisions and patterns across `/clear` without re-explaining them; a second machine-generated vault (a code graph running past 100k notes) that needs different defaults than a hand-curated one; an Obsidian Git plugin auto-committing on a timer into a directory that turns out not to be a git repo; a vault whose own `CLAUDE.md` has drifted from what the filesystem actually shows; wanting a canvas or Map of Content that stays a spatial/structural aid rather than a second, driftable copy of facts already in notes. | 8 commands, 2 agents, 3 skills, 8 hook entries |
 

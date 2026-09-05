@@ -111,24 +111,33 @@ when actually creating `config.json`.
 one at `~/.claude/crew/config.json`. If that file exists it sets defaults for
 every crew repo on this machine, with the repo file you are about to write
 taking precedence over it — see "Global config, and how it layers with the
-repo file" in `README.md` §11. Nothing in setup creates the global file; a
-user who wants one writes it by hand.
+repo file" in `README.md` §11.
+
+The global file has its own guided walkthrough, `/crew:config`, defined in
+`global-config.md` beside this file. Offer it during Phase 1; never run it
+without being asked, and never write `~/.claude` on your own initiative — the
+same reasoning that forbids deleting a global `find-skills`. Setup itself
+still writes only the repo file.
 
 ```json
 {
-  "schema": 2,
+  "schema": 3,
   "tier": 0,
   "roles": ["explorer", "qa-reviewer"],
   "qa": {
     "provider": "auto",
     "order": ["codex", "copilot", "claude"],
+    "fallback": "claude-sonnet-5",
     "codex": { "model": null, "reasoningEffort": null },
-    "copilot": { "model": null }
+    "copilot": { "model": null },
+    "roles": {}
   },
   "dev": {
     "provider": "claude",
+    "fallback": "claude-sonnet-5",
     "codex": { "model": null, "reasoningEffort": null },
-    "copilot": { "model": null }
+    "copilot": { "model": null },
+    "roles": {}
   },
   "secondOpinion": { "provider": "none", "mode": "cli", "model": null, "keyEnv": "GEMINI_API_KEY", "sendsCode": false },
   "tracker": "files",
@@ -146,8 +155,8 @@ user who wants one writes it by hand.
 }
 ```
 
-`schema: 2` — this repo is born current. It never trips `upgradeNeeded`, which fires only
-when a config predates the `pm` and `graph` blocks.
+`schema: 3` — this repo is born current. It never trips `upgradeNeeded`, which fires on
+any config predating the `pm` and `graph` blocks or the per-role provider table.
 `qa.provider`: `auto` walks `qa.order` and uses the first provider that passes its
 probe, announcing which ran. Name a provider (`codex`, `copilot`, `claude`) to pin it
 and hard-fail instead of falling back.
@@ -168,6 +177,55 @@ unpinned Copilot rather than quietly running a same-family review. Pin a model f
 family that is neither the author's nor Codex's — a Google model such as
 `gemini-3.7-flash` — so the review is actually independent. Verify the name
 against the current catalog; a stale one fails at startup.
+
+`qa.roles` / `dev.roles`: **empty by default, and that emptiness is the whole design.**
+A role with no entry runs on its block's own `provider`, which is what every repo did
+before schema 3 — so a repo born here and a repo upgraded into here dispatch
+identically. Add an entry to send one role somewhere else:
+
+    "dev": { "roles": { "developer": { "provider": "codex", "model": "gpt-6-astra" } } }
+
+`qa.fallback` / `dev.fallback`: the model a role falls back to when the model it is
+pinned to has been *retired*. Default `claude-sonnet-5`. This is a different failure
+from the one `qa.order` handles: `qa.order` covers a provider that is missing or
+unauthorised, this covers a provider that answers fine while the model name is gone —
+`crew-providers` records two names that died exactly that way. Configurable rather than
+hardcoded for that same reason. **A fallback that fires is announced, never silent**: a
+review that quietly ran on the fallback looks identical to one that ran on the pin, and
+the difference matters most exactly when the pin was chosen to get a different family
+onto the diff.
+
+### Offer the per-role table — do not leave the user to find the keys
+
+Ask this during Phase 1, alongside the QA-reviewer question, and read the consequence
+out loud rather than writing it silently. A setup that ships pins nobody was told about
+is the failure `pm.authority` already taught us. Verified available on this machine
+2026-09-05; probe before offering, since these names churn:
+
+| Slot | Suggested pin | Family |
+|---|---|---|
+| `dev.roles.developer` | `codex` / `gpt-6-astra` | gpt |
+| `dev.roles.security` | `codex` / `gpt-6-astra` | gpt |
+| `dev.roles.infrastructure-architect` | `codex` / `gpt-6-astra` | gpt |
+| `dev.roles.planner` | `claude`, with a `codex` / `gpt-5.6-sol` alternate | claude |
+| `qa.roles.phase1`, `qa.roles.smoke` | `codex` / `gpt-5.6-sol` | gpt |
+| `qa.roles.review`, `qa.roles.gate` | `codex` / `gpt-5.6-luna` | gpt |
+| a Copilot alternative | Kimi 2.7 (`kimi-k2.7-code`), or Kimi 3 (`kimi-k3`) | kimi |
+
+Two things to say before writing any of it:
+
+- **The family guard is evaluated FIRST, the pin second.** `gpt-5.6-sol` and
+  `gpt-5.6-luna` are the same `gpt` family as `gpt-6-astra`, so on a diff **codex
+  wrote** they are barred and QA falls to claude or kimi. **Pinning the developer to
+  codex therefore means most dev work is codex-authored, so the Sol and Luna QA pins
+  fire on claude-authored work and comparatively rarely elsewhere.** That may be exactly
+  what the user wants. It must not be something they discover from a review log.
+- **The `-code` suffix on Kimi 2.7 is load-bearing.** The display name is "Kimi 2.7";
+  the value that goes in the config is `kimi-k2.7-code`. Bare `kimi-k2.7` is rejected by
+  the Copilot CLI with `Model "kimi-k2.7" from --model flag is not available`.
+
+`/crew:model` reports the resulting table per role — effective provider, model, family,
+which fallbacks are armed, and whether the guard is currently barring anything.
 
 If `.crew/` exists but `config.json` went missing or stopped parsing, you do not
 need to recreate it by hand — the `platform-sync` `SessionStart` hook already
@@ -318,9 +376,13 @@ Act on what it found, and say why:
 
 ## 3c. Gitignore secrets before any exist
 
-Append `.env`, `.env.*`, `!.env.example`, `.crew/*.local`, `.crew/.hook-*`, and
-`.crew/transcripts/` to `.gitignore` during setup. Doing this before the first
-secret exists is the only time it is free. `.crew/.hook-*` is the once-per-session
+Append `.env`, `.env.*`, `!.env.example`, `.crew/*.local`, `.crew/.hook-*`,
+`.crew/transcripts/`, and `.work/dispatch.json` to `.gitignore` during setup. Doing
+this before the first secret exists is the only time it is free.
+`.work/dispatch.json` is the record of which role, provider and model last ran here —
+the self-review guard reads it to know who WROTE the diff. It describes one checkout on
+one machine, so a committed copy would travel to a colleague and claim a dispatch that
+never happened there. `.crew/.hook-*` is the once-per-session
 claim marker (see `hooks/scripts/hook_once.py`) — a repo that commits `.crew/`,
 which crew's own design encourages, collects one of these per claimed hook per
 session and shows them in every `git status` if they are not ignored.
