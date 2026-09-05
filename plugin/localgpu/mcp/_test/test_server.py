@@ -226,3 +226,27 @@ def test_index_refresh_wires_embed_model_through_to_the_indexer(wired):
     assert result["status"] == "error"
     assert "a-different-model" in result["detail"]
     assert config.DEFAULT_EMBED_MODEL in result["detail"]
+
+
+def test_search_code_refuses_a_mismatched_embed_model(wired):
+    """The refresh-time guard (above) does not cover this path at all.
+
+    Build the index with one model, reconfigure a different one (same
+    width - a dim check would stay silent), and search without ever calling
+    index_refresh again. Without a check in search_code itself, this would
+    embed the query with the new model and score it against vectors from
+    the old one - same width, incompatible space, a confident but
+    meaningless ranking with no error anywhere.
+    """
+    first = server.index_refresh()
+    assert first["status"] == "ok"
+
+    (wired / ".localgpu").mkdir(exist_ok=True)
+    (wired / ".localgpu" / "config.json").write_text(
+        json.dumps({"embed_model": "a-different-model"}), encoding="utf-8"
+    )
+
+    answer = server.search_code("verify a password hash")
+    assert "a-different-model" in answer
+    assert config.DEFAULT_EMBED_MODEL in answer
+    assert "hit(s)" not in answer

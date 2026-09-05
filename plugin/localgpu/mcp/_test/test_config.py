@@ -109,3 +109,24 @@ def test_a_json_array_is_not_a_config(home, tmp_path):
     config.global_config_path(home).write_text("[1, 2]", encoding="utf-8")
     with pytest.raises(config.ConfigError):
         config.load_config(cwd=tmp_path, home=home)
+
+
+def test_ignore_as_a_bare_string_is_rejected_not_shredded(home, tmp_path):
+    """"ignore": "node_modules" is the natural typo. A string is iterable, so
+    without a type check it silently becomes the single-character patterns
+    'n', 'o', 'd', ... and reports success - garbage config, no error."""
+    write_json(config.repo_config_path(tmp_path), {"ignore": "node_modules"})
+    with pytest.raises(config.ConfigError, match="'ignore'.*list"):
+        config.load_config(cwd=tmp_path, home=home)
+
+
+def test_roots_as_a_bare_string_is_rejected_not_shredded(home, tmp_path):
+    write_json(config.repo_config_path(tmp_path), {"roots": "/repo"})
+    with pytest.raises(config.ConfigError, match="'roots'.*list"):
+        config.load_config(cwd=tmp_path, home=home)
+
+
+def test_embed_model_as_a_non_string_is_rejected(home, tmp_path):
+    write_json(config.repo_config_path(tmp_path), {"embed_model": 123})
+    with pytest.raises(config.ConfigError, match="'embed_model'.*string"):
+        config.load_config(cwd=tmp_path, home=home)

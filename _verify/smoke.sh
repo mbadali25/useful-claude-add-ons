@@ -239,6 +239,42 @@ localgpu_cli_check() {
 check "localgpu CLI: console script is on the persistent PATH (skips if not bootstrapped here)" \
       localgpu_cli_check
 
+# --- check 10: a plugin's THIRD version number agrees with the other two -------
+# check-marketplace.py enforces plugin.json == marketplace.json. It knows nothing
+# about pyproject.toml, so a plugin that also ships a Python package carries a third
+# version that nothing compares - and localgpu drifted to 0.1.0 against 0.1.2 in both
+# manifests within a day of being created. `localgpu --version` then reports one number
+# while `claude plugin update` decides on another, which is the same class of failure as
+# a missed bump: correct locally, wrong on the installed machine. Generic over plugins,
+# not hardcoded to localgpu - the next one to grow a pyproject.toml is covered for free.
+version_agreement_check() {
+  "$PY" - <<'PY'
+import json, pathlib, re, sys
+mp = {e["name"]: e["version"]
+      for e in json.loads(pathlib.Path(".claude-plugin/marketplace.json").read_text(encoding="utf-8"))["plugins"]}
+problems = []
+for pyproj in sorted(pathlib.Path("plugin").glob("*/pyproject.toml")):
+    name = pyproj.parent.name
+    m = re.search(r'^\s*version\s*=\s*"([^"]+)"', pyproj.read_text(encoding="utf-8"), re.M)
+    if not m:
+        problems.append(f"{name}: pyproject.toml has no version field"); continue
+    py = m.group(1)
+    pj_path = pyproj.parent / ".claude-plugin" / "plugin.json"
+    pj = json.loads(pj_path.read_text(encoding="utf-8")).get("version") if pj_path.exists() else None
+    want = mp.get(name)
+    if want is None:
+        problems.append(f"{name}: has a pyproject.toml but no marketplace entry"); continue
+    if py != want or (pj is not None and pj != want):
+        problems.append(
+            f"{name}: version disagreement - pyproject.toml={py} plugin.json={pj} marketplace.json={want}")
+for p in problems:
+    print(p)
+sys.exit(1 if problems else 0)
+PY
+}
+check "versions: pyproject.toml agrees with plugin.json and marketplace.json" \
+      version_agreement_check
+
 echo
 echo "smoke: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ] || exit 1

@@ -188,6 +188,42 @@ class EmbedModelMismatch(RuntimeError):
     """
 
 
+def check_embed_model(manifest: dict[str, Any], embed_model: str | None) -> None:
+    """Raise :class:`EmbedModelMismatch` if ``manifest`` was not built with ``embed_model``.
+
+    Shared by every path that touches the vectors on disk - a refresh
+    (:meth:`Indexer._check_embed_model`) and a search
+    (``server.search_code``) alike. A dimension check cannot catch this: two
+    different models can emit the same width, and cosine similarity between
+    their vectors is meaningless even though it happily produces a score.
+
+    Absent is not a match: a manifest with no ``embed_model`` key predates
+    this check and must be treated as unknown, not as agreement.
+    """
+    if embed_model is None:
+        return
+    if not manifest:
+        return  # no manifest at all - nothing built yet to conflict with
+    stored = manifest.get("embed_model")
+    if stored is None:
+        raise EmbedModelMismatch(
+            "the existing index has no recorded embed_model (it predates "
+            "this check), so it cannot be confirmed to match the "
+            f"configured model {embed_model!r}. If the embed model "
+            "has not changed, this is safe to ignore only by rebuilding "
+            "to record it; otherwise delete the index and rebuild with "
+            "index_refresh (or /localgpu:index --full)."
+        )
+    if stored != embed_model:
+        raise EmbedModelMismatch(
+            f"the index was built with embed_model {stored!r}, but "
+            f"{embed_model!r} is configured now. Vectors from "
+            "different models are not comparable even at the same width. "
+            "Delete the index and rebuild with index_refresh (or "
+            "/localgpu:index --full)."
+        )
+
+
 class Indexer:
     """Drives one refresh pass over the configured roots."""
 
@@ -218,29 +254,7 @@ class Indexer:
         or may not have been built with the model configured now, and there is
         no way to tell which.
         """
-        if self.embed_model is None:
-            return
-        manifest = self.store.read_manifest()
-        if not manifest:
-            return  # no prior manifest at all - this is a fresh index
-        stored = manifest.get("embed_model")
-        if stored is None:
-            raise EmbedModelMismatch(
-                "the existing index has no recorded embed_model (it predates "
-                "this check), so it cannot be confirmed to match the "
-                f"configured model {self.embed_model!r}. If the embed model "
-                "has not changed, this is safe to ignore only by rebuilding "
-                "to record it; otherwise delete the index and rebuild with "
-                "index_refresh (or /localgpu:index --full)."
-            )
-        if stored != self.embed_model:
-            raise EmbedModelMismatch(
-                f"the index was built with embed_model {stored!r}, but "
-                f"{self.embed_model!r} is configured now. Vectors from "
-                "different models are not comparable even at the same width. "
-                "Delete the index and rebuild with index_refresh (or "
-                "/localgpu:index --full)."
-            )
+        check_embed_model(self.store.read_manifest(), self.embed_model)
 
     # -- one file ----------------------------------------------------------
 
@@ -267,11 +281,21 @@ class Indexer:
 
         stat = path.stat()
         digest = sha256_bytes(path)
-        added = 0
+
+        # Every batch is embedded before anything is written to the store.
+        # store.add() appends live rows immediately - if it ran per batch and
+        # a later batch's embed() call failed, the earlier batches' chunks
+        # would already be live with no matching file record (upsert_file
+        # below never runs), so the next refresh sees this as a brand-new
+        # file and re-adds them, duplicating those rows permanently. Failing
+        # before the first add() call means a failed file leaves nothing
+        # behind to duplicate.
+        all_records: list[ChunkRecord] = []
+        all_vectors: list[Sequence[float]] = []
         for start in range(0, len(chunks), self.batch):
             window = chunks[start : start + self.batch]
             vectors = self.embed([document_text(path, c, root) for c in window])
-            records = [
+            all_records.extend(
                 ChunkRecord(
                     path=str(path),
                     start_line=c.start_line,
@@ -281,9 +305,11 @@ class Indexer:
                     size=stat.st_size,
                 )
                 for c in window
-            ]
-            self.store.add(records, vectors)
-            added += len(records)
+            )
+            all_vectors.extend(vectors)
+
+        self.store.add(all_records, all_vectors)
+        added = len(all_records)
 
         self.store.upsert_file(
             FileRecord(
@@ -314,9 +340,15 @@ class Indexer:
             if not root.exists():
                 continue
             for path in iter_files(root, self.ignore):
-                scanned += 1
                 key = str(path)
+                if key in seen:
+                    # Overlapping roots (e.g. a root and one of its own
+                    # subdirectories, both configured) enumerate the same
+                    # file once per enclosing root. Process it only the
+                    # first time or its chunks get embedded and added twice.
+                    continue
                 seen.add(key)
+                scanned += 1
                 record = known.get(key)
                 try:
                     stat = path.stat()
@@ -332,6 +364,13 @@ class Indexer:
                     continue  # fast path: nothing to hash, nothing to embed
 
                 if read_text_file(path) is None:
+                    if record is not None:
+                        # Previously indexed, now binary or past
+                        # MAX_FILE_BYTES. Leaving its old chunks alone would
+                        # keep stale content searchable forever - treat this
+                        # like the file was deleted.
+                        tombstoned += self.store.tombstone_paths([key])
+                        self.store.forget_files([key])
                     continue
 
                 digest = sha256_bytes(path)

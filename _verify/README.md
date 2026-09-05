@@ -13,7 +13,7 @@ copies drift.
 
 | Script | Covers | Budget | Run it when |
 |---|---|---|---|
-| `smoke.sh` | 8 checks: registration, skill manifests, plugin-version agreement, catalog rows, install-script menu parity, hook command quoting, every `.ps1` parsing (**tracked and untracked**), the audit's `label()`/`canon()` contract | **14s** (cap 90s) | every change; this is the Stop-gate default |
+| `smoke.sh` | 10 checks: registration, skill manifests, plugin-version agreement, catalog rows, install-script menu parity, hook command quoting, every `.ps1` parsing (**tracked and untracked**), the audit's `label()`/`canon()` contract | **14s** (cap 90s) | every change; this is the Stop-gate default |
 | `run-all.sh` | everything in smoke **plus** the version-drift walk, the full install-script menu contract, and localgpu's 87 engine tests | ~6 min | before pushing; before a promotion |
 | `run-all.sh --with-hooks` | additionally forces crew's blocking-guard suite, which **hangs** here | +240s to hang | only when debugging that hang |
 | `cases/` | fixtures. Empty — every check builds its own throwaway state | — | — |
@@ -42,6 +42,8 @@ defect reintroduced, and whether the suite went red.
 | crew-setup round-trip | reverted `canon()`'s `commands*` wildcard | yes | 2026-09-05 |
 | ruff (`**/*.py`) | added an unused `import xml.etree.ElementTree` (F401 — not in the ignore list) | yes | 2026-09-05 |
 | mcp-servers (`npm test`) | not broken on purpose; verified only that it **runs** (6 pass) | **not yet** | 2026-09-05 |
+| versions (check 10) | set `pyproject.toml` back to `0.1.0` against `0.1.2` in both manifests | yes | 2026-09-05 |
+| localgpu CLI (check 9) | planted a second install root with a venv; then removed the persisted PATH entry | yes | 2026-09-05 |
 
 ### One sabotage that was wrong, not a hole
 
@@ -80,3 +82,13 @@ of failing one.
 `npm --prefix mcp-servers test` needs `npm --prefix mcp-servers install` run once. Without
 it the rule fails with `'tsc' is not recognized` — which reads as a broken check rather
 than a missing dependency. It was in exactly that state when the rule was written.
+
+## Why check 10 exists
+
+`check-marketplace.py` enforces `plugin.json == marketplace.json` and knows nothing about
+`pyproject.toml`. A plugin that also ships a Python package therefore carries a THIRD
+version that nothing compared - and `localgpu` drifted to `0.1.0` against `0.1.2` in both
+manifests within a day of being created. `localgpu --version` would have reported one
+number while `claude plugin update` decided on another: the same class of failure as a
+missed bump, correct locally and wrong on the installed machine. The check is generic over
+`plugin/*/pyproject.toml`, so the next plugin to grow one is covered without an edit.

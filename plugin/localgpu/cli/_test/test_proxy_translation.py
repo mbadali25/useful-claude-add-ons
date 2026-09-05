@@ -410,3 +410,162 @@ def test_streaming_prose_is_not_buffered_to_the_end():
     )
     deltas = [d["delta"]["text"] for e, d in events if e == "content_block_delta"]
     assert deltas == ["Hello ", "there"]
+
+
+def test_streaming_recovers_a_fence_whose_backticks_arrive_split():
+    """The opening ``` can land as separate tokens ("`", "``", "```json...").
+
+    Before the fix, "``" failed the is-this-still-a-fence check (it needs
+    three backticks) and was flushed as prose, ending buffering before the
+    rest of the fence and the JSON inside it ever arrived.
+    """
+    events = _events_with_tools(
+        [
+            {"message": {"content": "`"}},
+            {"message": {"content": "`"}},
+            {"message": {"content": '`json\n{"name": "grep", "arguments": {"q": "x"}}\n```'}},
+            {"done": True, "done_reason": "stop"},
+        ]
+    )
+    kinds = [d["content_block"]["type"] for e, d in events if e == "content_block_start"]
+    assert kinds == ["tool_use"], (
+        "a token-split fence must still be recovered as a tool call, not "
+        "streamed as raw backticks-and-JSON text"
+    )
+
+
+# -- must NOT fire: prose around a fenced example is not a real tool call --
+#
+# recover_text_tool_calls promotes a fenced JSON block to a real tool_use
+# even when the model wrapped it in disclaiming prose - documentation,
+# a quoted example, text just read out of a file. Trailing text after the
+# fence was discarded rather than treated as disqualifying, so a model
+# quoting "don't run this" right after the example still ran it.
+
+DELETE_FILE_OFFERED = {"delete_file"}
+
+
+def test_fence_followed_by_a_disclaimer_is_not_promoted():
+    text = (
+        '```json\n{"name": "delete_file", "arguments": {"path": "notes.txt"}}\n```\n'
+        "Do not execute this example."
+    )
+    assert proxy.recover_text_tool_calls(text, DELETE_FILE_OFFERED) == []
+
+
+def test_fence_followed_by_prose_is_not_promoted():
+    text = '```json\n{"name": "grep", "arguments": {"q": "x"}}\n```\nThat is what the call looks like.'
+    assert proxy.recover_text_tool_calls(text, OFFERED) == []
+
+
+def test_fence_preceded_by_prose_is_not_promoted():
+    text = 'Here is an example call:\n```json\n{"name": "grep", "arguments": {"q": "x"}}\n```'
+    assert proxy.recover_text_tool_calls(text, OFFERED) == []
+
+
+def test_a_fenced_example_inside_a_larger_explanation_is_not_promoted():
+    text = (
+        "To search a file, the model would call something like\n"
+        '```json\n{"name": "grep", "arguments": {"q": "x"}}\n```\n'
+        "and then read the results before deciding what to do next."
+    )
+    assert proxy.recover_text_tool_calls(text, OFFERED) == []
+
+
+def test_a_bare_fenced_call_with_nothing_else_is_still_promoted():
+    """The fix must not overcorrect: a fence that really is the whole
+    message, with no surrounding prose, is still a real call."""
+    text = '```json\n{"name": "grep", "arguments": {"q": "x"}}\n```'
+    blocks = proxy.recover_text_tool_calls(text, OFFERED)
+    assert [b["name"] for b in blocks] == ["grep"]
+
+
+def test_streaming_does_not_promote_a_disclaimed_fenced_example():
+    events = _events(
+        [
+            {
+                "message": {
+                    "content": '```json\n{"name": "delete_file", "arguments": {"path": "x"}}\n```'
+                }
+            },
+            {"message": {"content": "\nDo not execute this example."}},
+            {"done": True, "done_reason": "stop"},
+        ],
+        offered=DELETE_FILE_OFFERED,
+    )
+    kinds = [d.get("content_block", {}).get("type") for e, d in events if e == "content_block_start"]
+    assert "tool_use" not in kinds, "a disclaimed example must never become a real tool call"
+
+
+# -- FIX: a tool call must survive even when it lands on a non-final chunk -
+
+
+def test_streaming_tool_call_on_a_non_done_chunk_is_not_lost():
+    """Ollama usually resolves tool_calls on the chunk marked done, but not
+    always - reading only final["message"] silently dropped the call when it
+    arrived a chunk early and the done chunk carried no message at all."""
+    events = _events(
+        [
+            {
+                "message": {
+                    "content": "",
+                    "tool_calls": [{"function": {"name": "grep", "arguments": {"q": "x"}}}],
+                }
+            },
+            {"done": True, "done_reason": "stop"},
+        ]
+    )
+    kinds = [d["content_block"]["type"] for e, d in events if e == "content_block_start"]
+    assert kinds == ["tool_use"]
+
+
+# -- FIX: an upstream stream failure must not look like a successful reply -
+
+
+def test_an_explicit_error_chunk_is_reported_not_hidden_as_success():
+    events = _events(
+        [
+            {"message": {"content": "partial answer"}},
+            {"error": "model runtime error: out of memory"},
+        ]
+    )
+    kinds = [e for e, _ in events]
+    assert "error" in kinds, "an upstream error chunk must produce an SSE error event"
+    assert "message_stop" not in kinds, (
+        "a failed stream must not also claim to have completed normally"
+    )
+
+
+def test_a_stream_that_ends_without_a_done_chunk_is_reported_as_an_error():
+    """A dropped connection or a crashed model just stops producing chunks -
+    there is no explicit error, only silence. Treating that the same as a
+    clean finish is indistinguishable from a truncated answer that worked."""
+    events = _events([{"message": {"content": "partial"}}])
+    kinds = [e for e, _ in events]
+    assert "error" in kinds
+    assert "message_stop" not in kinds
+
+
+def test_a_normal_stream_with_a_done_chunk_still_completes_cleanly():
+    """The fix must not cry wolf on the ordinary, successful case."""
+    events = _events([{"message": {"content": "ok"}}, {"done": True, "done_reason": "stop"}])
+    kinds = [e for e, _ in events]
+    assert "error" not in kinds
+    assert kinds[-1] == "message_stop"
+
+
+# -- FIX: streaming usage must report real input tokens, not always zero --
+
+
+def test_streaming_message_delta_carries_the_real_input_token_count():
+    events = _events(
+        [
+            {"message": {"content": "hi"}},
+            {"done": True, "done_reason": "stop", "prompt_eval_count": 42, "eval_count": 3},
+        ]
+    )
+    delta = [d for e, d in events if e == "message_delta"][0]
+    assert delta["usage"]["input_tokens"] == 42, (
+        "message_start always reports 0 (Ollama has not counted yet) - the "
+        "done chunk's prompt_eval_count must reach the client somewhere"
+    )

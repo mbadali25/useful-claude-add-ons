@@ -242,6 +242,75 @@ def test_shell_shuts_the_proxy_down_on_a_normal_exit(shell_harness):
     assert server.close_calls == 1
 
 
+# -- cmd_proxy: shutdown() must not be called from serve_forever()'s own
+# thread ------------------------------------------------------------------
+#
+# cmd_shell runs serve_forever() on a background thread and shutdown() on the
+# main thread afterwards - the one arrangement Python's docs say is safe.
+# cmd_proxy runs serve_forever() directly on the main thread, so by the time
+# Ctrl+C (or any exit) reaches the `finally`, serve_forever() has already
+# returned on *this* thread and shutdown() has nothing left to signal.
+# https://docs.python.org/3/library/socketserver.html#socketserver.BaseServer.shutdown
+# says calling it in that situation "will deadlock".
+
+
+class DeadlockProneServer(FakeServer):
+    """Stands in for a real ThreadingHTTPServer whose shutdown() would hang
+    forever if called from serve_forever()'s own thread. Raising instead of
+    blocking is what turns that into a fast, loud test failure rather than a
+    hung test suite."""
+
+    def shutdown(self):
+        raise AssertionError(
+            "cmd_proxy must not call shutdown() - serve_forever() runs on "
+            "this same thread, so shutdown() would wait forever on a signal "
+            "only a *different* thread's serve_forever() loop ever sets"
+        )
+
+
+def _proxy_args(**overrides):
+    args = argparse.Namespace(model=None, host="127.0.0.1", port=8817, keep_alive="5m")
+    for key, value in overrides.items():
+        setattr(args, key, value)
+    return args
+
+
+@pytest.fixture
+def proxy_harness(monkeypatch):
+    server = DeadlockProneServer()
+
+    monkeypatch.setattr(
+        cli.localgpu_config,
+        "load_config",
+        lambda *a, **k: {
+            "chat_model": "qwen2.5-coder:7b-instruct-q4_K_M",
+            "ollama_url": "http://127.0.0.1:11434",
+        },
+    )
+    monkeypatch.setattr(cli, "_preflight", lambda cfg: None)
+    monkeypatch.setattr(cli.anthropic_proxy, "make_server", lambda *a, **k: server)
+    return {"server": server}
+
+
+def test_proxy_does_not_call_shutdown_on_ctrl_c(proxy_harness, monkeypatch):
+    server = proxy_harness["server"]
+
+    def interrupted():
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(server, "serve_forever", interrupted)
+
+    assert cli.cmd_proxy(_proxy_args()) == 0
+    assert server.close_calls == 1
+
+
+def test_proxy_does_not_call_shutdown_on_a_normal_exit(proxy_harness):
+    assert cli.cmd_proxy(_proxy_args()) == 0
+
+    server = proxy_harness["server"]
+    assert server.close_calls == 1
+
+
 # -- _find_claude -----------------------------------------------------------
 
 

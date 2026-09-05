@@ -26,9 +26,15 @@ if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 
 from config import EMBED_DIM, index_dir, load_config, localgpu_home  # noqa: E402
-from indexer import EmbedModelMismatch, Indexer, excerpt, query_text  # noqa: E402
+from indexer import (  # noqa: E402
+    EmbedModelMismatch,
+    Indexer,
+    check_embed_model,
+    excerpt,
+    query_text,
+)
 from ollama import OllamaClient, OllamaError  # noqa: E402
-from store import VectorStore  # noqa: E402
+from store import RefreshBusy, RefreshLock, VectorStore  # noqa: E402
 
 from mcp.server.mcpserver import MCPServer  # noqa: E402
 
@@ -94,6 +100,15 @@ def search_code(
                 "localgpu: the index is empty. Run index_refresh() first "
                 f"(roots: {', '.join(settings['roots'])})."
             )
+        try:
+            # A dimension check alone would stay silent here: two different
+            # models can share a width, and cosine similarity between their
+            # vectors is meaningless while still producing a score. Without
+            # this, an index built with model A can be queried with model
+            # B's vectors and return confidently wrong-but-plausible hits.
+            check_embed_model(store.read_manifest(), settings["embed_model"])
+        except EmbedModelMismatch as exc:
+            return f"localgpu: {exc}"
         try:
             vector = _client(settings).embed(
                 query_text(query), settings["embed_model"]
@@ -175,36 +190,50 @@ def index_refresh(root: str | None = None) -> dict[str, Any]:
         return {"status": "busy", "detail": "a refresh is already running"}
     try:
         settings = _settings()
-        client = _client(settings)
         try:
-            client.require_models([settings["embed_model"]])
-        except OllamaError as exc:
-            return {"status": "error", "detail": str(exc)}
-
-        roots = [root] if root else settings["roots"]
-        store = _open_store(settings)
+            # _refresh_lock above only ever protected against another
+            # thread in *this* process. A second Claude session running
+            # its own server.py against the same index directory is a
+            # different process entirely - this is the lock that actually
+            # stops two refreshes from compacting the same vectors.f16 at
+            # once. See RefreshLock's docstring in store.py.
+            cross_process_lock = RefreshLock(index_dir(Path(settings["home"])))
+            cross_process_lock.__enter__()
+        except RefreshBusy as exc:
+            return {"status": "busy", "detail": str(exc)}
         try:
-            indexer = Indexer(
-                store,
-                embed=lambda texts: client.embed(texts, settings["embed_model"]),
-                ignore=settings["ignore"],
-                embed_model=settings["embed_model"],
-            )
+            client = _client(settings)
             try:
-                result = indexer.refresh(roots)
+                client.require_models([settings["embed_model"]])
             except OllamaError as exc:
                 return {"status": "error", "detail": str(exc)}
-            except EmbedModelMismatch as exc:
-                # Not silent, not auto-fixed: an incremental refresh cannot
-                # safely reconcile this on its own. The files most likely to
-                # carry stale vectors are exactly the mtime/size-unchanged
-                # ones an incremental pass skips, so "auto" here would really
-                # mean silently forcing a full rebuild - the opposite of loud.
-                return {"status": "error", "detail": str(exc)}
-            result["status"] = "ok"
-            return result
+
+            roots = [root] if root else settings["roots"]
+            store = _open_store(settings)
+            try:
+                indexer = Indexer(
+                    store,
+                    embed=lambda texts: client.embed(texts, settings["embed_model"]),
+                    ignore=settings["ignore"],
+                    embed_model=settings["embed_model"],
+                )
+                try:
+                    result = indexer.refresh(roots)
+                except OllamaError as exc:
+                    return {"status": "error", "detail": str(exc)}
+                except EmbedModelMismatch as exc:
+                    # Not silent, not auto-fixed: an incremental refresh cannot
+                    # safely reconcile this on its own. The files most likely to
+                    # carry stale vectors are exactly the mtime/size-unchanged
+                    # ones an incremental pass skips, so "auto" here would really
+                    # mean silently forcing a full rebuild - the opposite of loud.
+                    return {"status": "error", "detail": str(exc)}
+                result["status"] = "ok"
+                return result
+            finally:
+                store.close()
         finally:
-            store.close()
+            cross_process_lock.__exit__(None, None, None)
     finally:
         _refresh_lock.release()
 

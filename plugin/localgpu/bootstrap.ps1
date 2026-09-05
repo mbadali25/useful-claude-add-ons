@@ -516,9 +516,23 @@ function Install-LocalGpuVenv {
     # EDITABLE on purpose: cli\localgpu_cli.py finds its sibling mcp\ directory
     # relative to its own __file__, and a copied install puts that __file__ in
     # site-packages, where mcp\ does not exist. Do not drop the -e.
+    #
+    # "Can I import it?" is not enough: an editable install from a PREVIOUS plugin
+    # directory (e.g. after the plugin was reinstalled elsewhere) still imports fine -
+    # it just runs the old code. Confirm the imported module's own file actually lives
+    # under THIS ScriptDir before calling it installed.
     $projectFile = Join-Path $script:ScriptDir 'pyproject.toml'
     if (Test-Path -LiteralPath $projectFile) {
-        & $vpy -c 'import localgpu_cli' 2>$null | Out-Null
+        & $vpy -c '
+import os, sys
+try:
+    import localgpu_cli
+except Exception:
+    sys.exit(1)
+want = os.path.realpath(os.path.join(sys.argv[1], "cli"))
+got = os.path.realpath(os.path.dirname(getattr(localgpu_cli, "__file__", "") or ""))
+sys.exit(0 if want == got else 1)
+' $script:ScriptDir 2>$null | Out-Null
         if ($LASTEXITCODE -eq 0) {
             Write-Skip 'localgpu CLI already installed'
         } else {

@@ -81,6 +81,14 @@ DEFAULTS: dict[str, Any] = {
 
 CONFIG_KEYS = tuple(DEFAULTS)
 
+# "ignore": "node_modules" is the mistake a user actually makes - a string is
+# iterable, so it would silently become the single-character patterns
+# 'n','o','d',... instead of failing. Every key gets its expected shape
+# checked eagerly, before it ever reaches the merge, so a typo reports itself
+# by name instead of turning into inexplicable behaviour three layers away.
+_LIST_KEYS = frozenset({"roots", "ignore"})
+_STR_KEYS = frozenset({"embed_model", "chat_model", "ollama_url"})
+
 
 class ConfigError(RuntimeError):
     """A config file exists but cannot be used."""
@@ -144,7 +152,19 @@ def _read_layer(path: Path) -> dict[str, Any]:
         raise ConfigError(f"{path} is not valid JSON: {exc}") from exc
     if not isinstance(raw, dict):
         raise ConfigError(f"{path} must hold a JSON object, found {type(raw).__name__}")
-    return {k: v for k, v in raw.items() if k in CONFIG_KEYS}
+    filtered = {k: v for k, v in raw.items() if k in CONFIG_KEYS}
+    for key, value in filtered.items():
+        if key in _LIST_KEYS and not isinstance(value, list):
+            raise ConfigError(
+                f"{path}: {key!r} must be a list of strings, found "
+                f"{type(value).__name__} ({value!r}). Did you mean [{value!r}]?"
+            )
+        if key in _STR_KEYS and not isinstance(value, str):
+            raise ConfigError(
+                f"{path}: {key!r} must be a string, found "
+                f"{type(value).__name__} ({value!r})"
+            )
+    return filtered
 
 
 def load_config(

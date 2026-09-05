@@ -272,14 +272,29 @@ def _tool_use_block(name: str, arguments: Any) -> dict[str, Any]:
 
 
 def _strip_fence(text: str) -> str:
-    """Models love to wrap JSON in ```json fences."""
+    """Models love to wrap JSON in ```json fences.
+
+    Only unwraps when the fence is *all there is*. Text after the closing
+    fence - a disclaimer, more explanation, anything - means this was not a
+    bare tool call, so the original (still fenced) text is returned
+    unchanged. The caller's `candidate.startswith(("{", "["))` check then
+    disqualifies it, because it still starts with the fence marker rather
+    than JSON. Without this, `rsplit("```", 1)` silently discarded trailing
+    prose and let a documentation example with "do not execute this" written
+    right after it be promoted to a real tool call anyway.
+    """
     stripped = text.strip()
     if not stripped.startswith("```"):
         return stripped
     body = stripped[3:]
     if body.lower().startswith("json"):
         body = body[4:]
-    return body.rsplit("```", 1)[0].strip() if "```" in body else body.strip()
+    if "```" not in body:
+        return body.strip()
+    inner, _, trailing = body.partition("```")
+    if trailing.strip():
+        return stripped
+    return inner.strip()
 
 
 def recover_text_tool_calls(text: str, offered: set[str]) -> list[dict[str, Any]]:
@@ -403,11 +418,19 @@ def _could_still_be_a_tool_call(buffered: str) -> bool:
     Lets ordinary prose stream token by token while holding back only the shape
     that might turn out to be a call the model wrote as text. An answer that
     genuinely opens with `{` is buffered to the end - rare, and harmless.
+
+    Ollama streams token by token, so the opening ` ``` ` of a fence can arrive
+    split across chunks - a lone "`" or "``" is not yet three characters, but
+    it is still a *prefix* of one and must not be judged prose early. Without
+    the prefix check, `"``"` fails `startswith("```")` and (not being `{`/`[`
+    either) was flushed as ordinary text, ending buffering before the rest of
+    the fence and the JSON inside it ever arrived - so a fenced call that
+    happened to be tokenized that way was never recovered.
     """
     head = buffered.lstrip()
     if not head:
         return True
-    if head.startswith("```"):
+    if head.startswith("```") or "```".startswith(head):
         return True
     return head.startswith(("{", "["))
 
@@ -422,10 +445,14 @@ def stream_anthropic_events(
     Anthropic's order is fixed and clients depend on it:
     `message_start`, then per block `content_block_start` /
     `content_block_delta`* / `content_block_stop`, then `message_delta`
-    carrying the stop reason, then `message_stop`.
+    carrying the stop reason, then `message_stop` - unless the upstream
+    stream fails, in which case an `error` event replaces the last two: a
+    truncated answer must never look identical to a completed one.
 
-    Ollama streams text incrementally but only resolves `tool_calls` on the
-    final chunk, so tool blocks are emitted after the text block closes.
+    Ollama streams text incrementally and resolves `tool_calls` once it has
+    the full call assembled, which is usually - but not always - the same
+    chunk marked `done`. Tool calls are tracked off *whichever* chunk carries
+    them, not assumed to live on the final one.
     """
     message_id = _new_message_id()
 
@@ -450,6 +477,12 @@ def stream_anthropic_events(
     text_open = False
     index = 0
     final: dict[str, Any] = {}
+    saw_done = False
+    error_message: str | None = None
+    # Whichever chunk actually carried tool_calls - not necessarily the one
+    # marked `done`. Ollama has emitted them a chunk early in practice, and
+    # reading only `final["message"]` silently dropped the call.
+    tool_message: dict[str, Any] = {}
 
     # Held back only while the text so far might still resolve to a bare JSON
     # tool call (see recover_text_tool_calls). Prose flushes on its first token.
@@ -477,9 +510,19 @@ def stream_anthropic_events(
         )
 
     for chunk in chunks:
+        if chunk.get("error"):
+            # Ollama reports a mid-stream failure (an OOM on the GPU is the
+            # common one on an 8GB card) as a bare {"error": ...} object
+            # instead of a "done" chunk. Stop reading - there is nothing
+            # further to translate - and report it below.
+            error_message = str(chunk["error"])
+            break
         if chunk.get("done"):
             final = chunk
+            saw_done = True
         message = chunk.get("message") or {}
+        if message.get("tool_calls"):
+            tool_message = message
         piece = str(message.get("content") or "")
         if not piece:
             continue
@@ -497,6 +540,27 @@ def stream_anthropic_events(
             text_open = True
         yield delta(piece)
 
+    if error_message is None and not saw_done:
+        # The generator ran dry without ever seeing a "done" chunk - the
+        # upstream connection dropped or the model process died mid-answer.
+        # Without this check that reads exactly like a completed turn: same
+        # message_delta/message_stop, an end_turn stop_reason, and whatever
+        # partial text had streamed so far looking like the whole answer.
+        error_message = (
+            "Ollama's stream ended before a done chunk arrived - the "
+            "connection dropped or the model crashed (check for an "
+            "out-of-memory error on the GPU) before the reply finished."
+        )
+
+    if error_message is not None:
+        if text_open:
+            yield _sse("content_block_stop", {"type": "content_block_stop", "index": index})
+        yield _sse(
+            "error",
+            {"type": "error", "error": {"type": "api_error", "message": error_message}},
+        )
+        return
+
     recovered: list[dict[str, Any]] = []
     if pending:
         recovered = recover_text_tool_calls(pending, offered)
@@ -510,7 +574,7 @@ def stream_anthropic_events(
         yield _sse("content_block_stop", {"type": "content_block_stop", "index": index})
         index += 1
 
-    tool_uses = _tool_use_blocks((final.get("message") or {}), offered) or recovered
+    tool_uses = _tool_use_blocks(tool_message or (final.get("message") or {}), offered) or recovered
     for block in tool_uses:
         yield _sse(
             "content_block_start",
@@ -550,7 +614,16 @@ def stream_anthropic_events(
         {
             "type": "message_delta",
             "delta": {"stop_reason": stop_reason, "stop_sequence": None},
-            "usage": {"output_tokens": usage["output_tokens"]},
+            # message_start already went out with input_tokens: 0 - Ollama
+            # does not report prompt_eval_count until the done chunk, which
+            # is long after message_start had to be sent. Carrying the real
+            # count here, alongside output_tokens, is the only point in the
+            # protocol left to report it; without it every streaming turn
+            # looked like it cost 0 input tokens.
+            "usage": {
+                "input_tokens": usage["input_tokens"],
+                "output_tokens": usage["output_tokens"],
+            },
         },
     )
     yield _sse("message_stop", {"type": "message_stop"})

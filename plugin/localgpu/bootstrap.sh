@@ -544,8 +544,22 @@ install_venv() {
   # EDITABLE on purpose: cli/localgpu_cli.py finds its sibling mcp/ directory
   # relative to its own __file__, and a copied install puts that __file__ in
   # site-packages, where mcp/ does not exist. Do not drop the -e.
+  #
+  # "Can I import it?" is not enough: an editable install from a PREVIOUS plugin
+  # directory (e.g. after the plugin was reinstalled elsewhere) still imports fine -
+  # it just runs the old code. Confirm the imported module's own file actually lives
+  # under THIS SCRIPT_DIR before calling it installed.
   if [ -f "$SCRIPT_DIR/pyproject.toml" ]; then
-    if "$vpy" -c 'import localgpu_cli' >/dev/null 2>&1; then
+    if "$vpy" -c '
+import os, sys
+try:
+    import localgpu_cli
+except Exception:
+    sys.exit(1)
+want = os.path.realpath(os.path.join(sys.argv[1], "cli"))
+got = os.path.realpath(os.path.dirname(getattr(localgpu_cli, "__file__", "") or ""))
+sys.exit(0 if want == got else 1)
+' "$SCRIPT_DIR" >/dev/null 2>&1; then
       skip "localgpu CLI already installed"
     else
       info "Installing the localgpu CLI (editable) ..."
@@ -579,7 +593,7 @@ model_present() {
   [ -z "$listed" ] && return 1
   case "$wanted" in
     *:*) printf '%s\n' "$listed" | grep -qxF "$wanted" ;;
-    *)   printf '%s\n' "$listed" | grep -qE "^${wanted}(:latest)?$" ;;
+    *)   printf '%s\n' "$listed" | grep -qxF "$wanted" || printf '%s\n' "$listed" | grep -qxF "${wanted}:latest" ;;
   esac
 }
 

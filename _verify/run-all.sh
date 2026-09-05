@@ -50,8 +50,26 @@ run "install scripts: sub-picker catalogs, group flags, parent implication" 400 
     bash scripts/_test/menu-groups.sh
 
 # 3. localgpu's own suite, on the venv that owns numpy (system python has none).
-VENV_PY="$LOCALAPPDATA/localgpu/venv/Scripts/python.exe"
-if [ -x "$VENV_PY" ] && [ -d plugin/localgpu/mcp/_test ]; then
+#    Root resolution matches _verify/smoke.sh's localgpu_cli_check: $LOCALGPU_HOME
+#    first, else the platform defaults ($HOME/.local/share/localgpu on POSIX,
+#    $LOCALAPPDATA/localgpu on Windows). LOCALAPPDATA is unset on POSIX, so it must
+#    stay behind a ${...:-} guard under `set -u` rather than being read unconditionally.
+VENV_PY=""
+localgpu_candidates=()
+if [ -n "${LOCALGPU_HOME:-}" ]; then
+  localgpu_candidates+=("$LOCALGPU_HOME")
+else
+  localgpu_candidates+=("$HOME/.local/share/localgpu")
+  [ -n "${LOCALAPPDATA:-}" ] && localgpu_candidates+=("$LOCALAPPDATA/localgpu")
+fi
+for localgpu_root in "${localgpu_candidates[@]}"; do
+  if [ -x "$localgpu_root/venv/bin/python" ]; then
+    VENV_PY="$localgpu_root/venv/bin/python"; break
+  elif [ -x "$localgpu_root/venv/Scripts/python.exe" ]; then
+    VENV_PY="$localgpu_root/venv/Scripts/python.exe"; break
+  fi
+done
+if [ -n "$VENV_PY" ] && [ -d plugin/localgpu/mcp/_test ]; then
   run "localgpu: engine unit tests" 300 "$VENV_PY" -m pytest plugin/localgpu/mcp/_test -q
 else
   skip "localgpu: engine unit tests" "venv or _test/ missing - run /localgpu:setup"
@@ -65,9 +83,15 @@ run "crew-setup: CLAUDE.md heading round-trip" 60 \
 #    untracked ones are checked one at a time (param([string]$Path) takes ONE path).
 if [ -n "$PWSH" ]; then
   run "powershell: tracked (CI mode)" 120 "$PWSH" -NoProfile -File scripts/check-powershell.ps1
-  git ls-files -o --exclude-standard '*.ps1' '*.psm1' | while IFS= read -r f; do
-    [ -n "$f" ] && "$PWSH" -NoProfile -File scripts/check-powershell.ps1 -Path "$f"
-  done
+  # Process-substitution redirect, not a pipe: `git ls-files | while read` runs the
+  # loop body in a subshell, so a failure `run` records inside it (PASS/FAIL are
+  # incremented in the subshell's copy) never reaches the parent shell and run-all
+  # exits 0 over a check it actually observed failing. `< <(...)` keeps the loop in
+  # this shell.
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    run "powershell: untracked $f" 60 "$PWSH" -NoProfile -File scripts/check-powershell.ps1 -Path "$f"
+  done < <(git ls-files -o --exclude-standard '*.ps1' '*.psm1')
 else
   skip "powershell" "pwsh not found"
 fi

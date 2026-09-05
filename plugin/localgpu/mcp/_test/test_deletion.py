@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 import config
 from conftest import TEST_DIM
 from indexer import Indexer
@@ -37,6 +39,34 @@ def test_deleted_file_disappears_from_results(home, repo, write, embedder):
         hits = store.search(embedder.vector("def c(): return c.py"), k=10)
         assert all(hit.path != str(repo / "c.py") for hit in hits)
         assert len(hits) == 4
+    finally:
+        store.close()
+
+
+def test_file_that_turns_binary_has_its_old_chunks_tombstoned(
+    home, repo, write, embedder, clock
+):
+    """A file that was text and indexed, then overwritten as binary, must
+    lose its old chunks - otherwise stale content stays searchable forever,
+    since ``read_text_file`` now returns ``None`` for it on every later pass."""
+    path = write(repo / "alpha.py", "def alpha():\n    return 1\n")
+    store, indexer = make_indexer(home, embedder)
+    try:
+        indexer.refresh([repo])
+        assert paths_in(store) == [str(path)]
+
+        stamp = clock.tick()
+        path.write_bytes(b"\x00\x01\x02 no longer text")
+        os.utime(path, (stamp, stamp))
+
+        result = indexer.refresh([repo])
+        assert str(path) not in paths_in(store)
+        assert str(path) not in store.files_under([str(repo)])
+        assert store.counts() == (0, 0)
+        assert result["chunks_tombstoned"] == 1
+
+        hits = store.search(embedder.vector("def alpha(): return 1"), k=10)
+        assert hits == []
     finally:
         store.close()
 

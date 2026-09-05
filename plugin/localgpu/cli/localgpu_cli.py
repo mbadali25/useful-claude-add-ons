@@ -158,7 +158,13 @@ def cmd_proxy(args: argparse.Namespace) -> int:
     except KeyboardInterrupt:
         print()
     finally:
-        server.shutdown()
+        # Unlike cmd_shell, serve_forever() runs on *this* thread, not a
+        # background one - by the time we reach here it has already
+        # returned. server.shutdown() is documented to deadlock unless
+        # serve_forever() is still running on a different thread
+        # (https://docs.python.org/3/library/socketserver.html#socketserver.BaseServer.shutdown),
+        # so it has nothing to signal here and must not be called - only the
+        # socket needs closing.
         server.server_close()
     return 0
 
