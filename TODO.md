@@ -108,3 +108,36 @@ it; the specific check was not located. Either find it and cite it, or write it.
   `claude-obsidian-setup/` (48), `vault-automation/` (22).
 - **`/crew:diagram`** — deferred until the codemap covers `plugin/crew`, so the
   diagram does not need redrawing immediately.
+
+## Found during the 0.16.7 merge review, deferred as out of scope
+
+### `crew_py` can hand back a Python that is not a Python
+
+`plugin/crew/hooks/scripts/_common.sh:38-43`. `crew_py()` returns the first of
+`python3`, `python`, `py` that `command -v` resolves, and never checks that it
+runs. On Windows, `command -v python3` succeeds on the App Execution Alias in
+`%LOCALAPPDATA%\Microsoft\WindowsApps` — a stub that opens the Microsoft Store
+and is not an interpreter. `crew_py` hands that stub to `guard.sh`, whose
+`$PY -c ...` then produces nothing, so `CMD` comes back empty and
+`[ -z "$CMD" ] && exit 0` fires: **the command guard stands down silently, on
+exactly the platform where it has already shipped broken once.** A working `py`
+sitting further down the list is never reached, because the first match wins.
+
+Confirmed by experiment, not inferred: with jq hidden and `C:\Python\314`
+removed from PATH, `plugin/crew/hooks/scripts/_test/run-tests.sh` goes from
+`128 passed, 0 failed` to `77 passed, 51 failed` — the must-BLOCK cases stop
+blocking. `py -c "print(1)"` works fine in that same shell; `python3` is the
+stub that wins.
+
+Not fixed here on scope discipline: this is pre-existing in `_common.sh`, not
+introduced by the branch under review, and `crew_py` is called from several
+hooks — changing it is its own ticket with its own must-block/must-allow
+regression cases, per the CLAUDE.md rule for anything that can block. The
+`_test/run-tests.sh` guard added in this branch now *detects* the condition and
+fails loudly, so the suite can no longer go green against a stood-down guard;
+the underlying resolver is still wrong.
+
+Fix shape when it is picked up: have `crew_py` execute each candidate
+(`"$c" -c "print(1)"`) and return the first that actually runs, rather than the
+first that resolves. Add a must-block case that runs with the stub first on
+PATH.

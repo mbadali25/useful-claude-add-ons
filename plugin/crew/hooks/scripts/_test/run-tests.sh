@@ -75,7 +75,17 @@ JQ_BIN=$(command -v jq 2>/dev/null || true)
 FULL_PATH="$PATH"
 if [ -n "$JQ_BIN" ]; then
   JQ_DIR="$(cd "$(dirname "$JQ_BIN")" && pwd)"
-  NOJQ_PATH=$(printf '%s' "$PATH" | awk -v d="$JQ_DIR" 'BEGIN{RS=":";ORS=":"} $0!=d')
+  # Join with ":" BETWEEN fields, never after each one, and drop empty fields.
+  # `ORS=":"` appended a trailing separator, and a trailing - or any empty -
+  # PATH component means "the current directory" to every POSIX shell. So the
+  # scrub meant to HIDE jq silently put CWD on the PATH for the rest of this
+  # file, and `command -v jq` would then find any file named `jq` sitting in
+  # whatever directory the suite happened to be launched from - including one
+  # committed by a pull request, executed the moment a maintainer runs the
+  # suite, with the guard's real tool_input JSON on its stdin.
+  NOJQ_PATH=$(printf '%s' "$PATH" | awk -v d="$JQ_DIR" '
+    BEGIN{RS=":"; ORS=""}
+    $0!=d && $0!="" {printf "%s%s", (n++ ? ":" : ""), $0}')
 else
   NOJQ_PATH="$PATH"
 fi
@@ -89,6 +99,44 @@ if [ -n "$JQ_BIN" ]; then
   expect 0 'npm test'
   # From here on, every guard()/pgate() call in this file runs with jq
   # hidden from PATH - see the note above for why.
+  # The scrub removes jq's whole DIRECTORY, not just the jq binary, because
+  # PATH has no finer granularity. On a layout that installs several tools into
+  # one bin (chocolatey does exactly this) that directory can also hold python -
+  # and guard.sh's no-jq fallback NEEDS python. Without it the guard prints
+  # "no jq and no python" and stands down, so every case below would assert
+  # against a guard that never ran and the suite would go green while testing
+  # nothing. Prove both halves of the scrub before trusting a single result.
+  if PATH="$NOJQ_PATH" command -v jq >/dev/null 2>&1; then
+    echo "FATAL: the PATH scrub did not hide jq ($JQ_BIN)." >&2
+    echo "       Every case below would take the jq fast path, so the fallback" >&2
+    echo "       this section exists to exercise would go untested." >&2
+    exit 1
+  fi
+  # Walk crew_py's OWN resolution order (python3, python, py) and then RUN the
+  # winner. Resolving is not enough: on Windows, `command -v python` succeeds on
+  # the App Execution Alias in WindowsApps, a stub that opens the Microsoft
+  # Store and is not an interpreter. crew_py hands that stub back, guard.sh's
+  # `$PY -c ...` produces nothing, CMD comes back empty, and `[ -z "$CMD" ]`
+  # exits 0 - the guard stands down and every must-BLOCK case below silently
+  # passes for the wrong reason. An existence check cannot see that; executing
+  # it can.
+  if ! PATH="$NOJQ_PATH" sh -c '
+    for c in python3 python py; do
+      command -v "$c" >/dev/null 2>&1 || continue
+      # FIRST match wins, exactly as crew_py does - it returns the first name
+      # that resolves and never tries the next one. So if this one does not
+      # execute, the guard is dead even though a working interpreter may sit
+      # further down the list; checking the rest would pass where crew_py fails.
+      "$c" -c "print(1)" >/dev/null 2>&1 && exit 0
+      exit 1
+    done
+    exit 1'; then
+    echo "FATAL: with jq's directory ($JQ_DIR) hidden, no WORKING python remains." >&2
+    echo "       guard.sh would report 'no jq and no python' and exit 0 - standing" >&2
+    echo "       down - so every must-BLOCK case below would pass against a guard" >&2
+    echo "       that never ran." >&2
+    exit 1
+  fi
   export PATH="$NOJQ_PATH"
 else
   echo "== guard.sh: jq fast path SKIPPED - no jq on PATH, already testing the fallback =="
