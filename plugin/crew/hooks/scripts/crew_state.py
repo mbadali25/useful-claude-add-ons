@@ -877,7 +877,7 @@ def current_branch(root):
 
 
 def in_git_repo(root):
-    """Is `root` inside a git working tree at all?
+    """True, False, or None when git could not answer.
 
     `current_branch` returns None for two states that are not remotely alike:
     a plain directory that has no branches, and a repository whose HEAD is
@@ -885,8 +885,30 @@ def in_git_repo(root):
     in the second, so the branch value alone cannot decide it -- a dispatch
     recorded while detached stores `branch: null`, which would otherwise
     compare equal to the no-repo case and read as proof.
+
+    The third state is what makes this tri-state rather than a bool. `git_out`
+    answers None for git being absent, a timeout, a vanished `root`, and a
+    non-repository alike, so collapsing it to a bool made every transient
+    failure look like the SAFE "no repository here" case -- and the caller
+    reads that as proof of provenance. A guard that fails open when its probe
+    breaks is worse than one that has no probe, because it looks like it
+    checked. None means "could not tell", and the caller treats it as unproven.
     """
-    return git_out(root, "rev-parse", "--is-inside-work-tree") == "true"
+    # Not `git_out`: it answers None for "git ran and said no" and for "git
+    # could not be run" alike, and those are the two states this function
+    # exists to separate. A non-zero exit IS an answer -- git ran, and this
+    # is not a work tree. Only a failure to execute is unknown.
+    try:
+        done = subprocess.run(
+            ("git", "rev-parse", "--is-inside-work-tree"), cwd=root,
+            capture_output=True, text=True, timeout=_GIT_TIMEOUT,
+            check=False, stdin=subprocess.DEVNULL,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if done.returncode != 0:
+        return False
+    return done.stdout.strip() == "true"
 
 
 def record_dispatch(root, kind, role, provider, model=None, branch=None):
@@ -993,7 +1015,11 @@ def author_families(root, cfg, stale=False):
         #     cost is one over-barred review per repo, until the next
         #     dispatch records a branch.
         #
-        # Two earlier versions of this test were wrong in opposite
+        # `is False`, not `not ...`: in_git_repo answers None when git could
+        # not be asked, and `not None` is True, which would hand a broken
+        # probe the same verdict as a proven non-repository.
+        #
+        # Three earlier versions of this test were wrong in three different
         # directions, which is why it is spelled out rather than clever.
         # `here and there != here` short-circuited on a None `here` and
         # trusted a detached HEAD. Plain `here != there` fixed that and then
@@ -1007,7 +1033,7 @@ def author_families(root, cfg, stale=False):
         # record written while detached, a branch the record does not name --
         # is unprovable, and unprovable fails closed.
         proven = ((here is not None and here == there)
-                  or (there is None and not in_git_repo(root)))
+                  or (there is None and in_git_repo(root) is False))
         if stale or not proven:
             return frozenset(
                 f for f in (recorded_family, decided["family"]) if f

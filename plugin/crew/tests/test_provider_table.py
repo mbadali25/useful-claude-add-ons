@@ -442,6 +442,36 @@ def test_a_record_written_while_detached_is_not_trusted_by_another(tmp_path):
     assert source == "stale", "a null branch inside a repo proves nothing"
 
 
+def test_a_broken_git_probe_is_unknown_not_proof(tmp_path, monkeypatch):
+    """Codex round 5.
+
+    `in_git_repo` returned a bool, so git being absent, timing out, or
+    failing to spawn collapsed to False -- which the rule reads as the SAFE
+    "no repository here" case and therefore as PROOF of provenance. A guard
+    that fails open when its probe breaks is worse than one with no probe,
+    because it looks like it checked.
+    """
+    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=False)
+    crew_state.record_dispatch(str(root), "dev", "developer", "codex",
+                               "gpt-6-astra")
+    assert crew_state.author_families(str(root), PINNED)[1] == "dispatch"
+
+    def no_git(*_args, **_kwargs):
+        raise OSError("git is not installed")
+
+    monkeypatch.setattr(crew_state.subprocess, "run", no_git)
+    assert crew_state.in_git_repo(str(root)) is None, "unknown, not False"
+    assert crew_state.author_families(str(root), PINNED)[1] == "stale"
+
+
+def test_git_answering_no_is_an_answer_not_a_failure(tmp_path):
+    """The other half: a non-zero exit means git RAN and said this is not a
+    work tree. Treating that as unknown would bar every non-git checkout
+    forever, which is the over-bar two earlier rounds already rejected."""
+    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=False)
+    assert crew_state.in_git_repo(str(root)) is False
+
+
 def test_a_non_git_directory_with_a_branchless_record_is_still_trusted(
         tmp_path):
     """The counterweight: the fix above must not bar every non-git checkout.

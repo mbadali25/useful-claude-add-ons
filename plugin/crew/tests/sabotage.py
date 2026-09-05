@@ -87,14 +87,30 @@ def apply_mutation(target, find, replace):
     text = read(target)
     if text.count(find) != 1:
         return False
+
+    # The copy and the write fail in ways that need opposite responses, so
+    # they cannot share a handler. `shutil.copy` never modifies the SOURCE:
+    # if it fails the original is still intact and the `.bak` is the damaged
+    # one, so restoring from it is precisely what would corrupt the file this
+    # is trying to protect. Discard the partial backup instead.
     try:
         shutil.copy(target, target + ".bak")
+    except BaseException:
+        try:
+            if os.path.exists(target + ".bak"):
+                os.remove(target + ".bak")
+        except OSError as cleanup_error:
+            print(f"WARNING: stray backup at {target}.bak: {cleanup_error}")
+        raise
+
+    # Past this point the backup is known complete, so a failed write is the
+    # case restoring exists for.
+    try:
         write(target, text.replace(find, replace, 1))
     except BaseException:
-        # Restore is best-effort and must not replace the exception that
-        # actually explains the failure -- a restore that cannot move over a
-        # read-only target would otherwise mask the original error and report
-        # the wrong cause.
+        # Best-effort, and it must not replace the exception that explains
+        # the failure: a restore blocked by a read-only target would
+        # otherwise report the wrong cause.
         try:
             restore(target)
         except OSError as restore_error:
