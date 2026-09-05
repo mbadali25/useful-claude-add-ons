@@ -290,19 +290,6 @@
       "source_location": "L21"
     },
     {
-      "id": "skills_infra_work_ticketing_scripts_ticketctl_fakeargs",
-      "label": "FakeArgs",
-      "_callable": true,
-      "_callable_class": true,
-      "_origin": "ast",
-      "community": 13,
-      "community_name": "ticketctl.py",
-      "file_type": "code",
-      "norm_label": "fakeargs",
-      "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
-      "source_location": "L1755"
-    },
-    {
       "id": "skills_cisco_meraki_scripts_meraki_config_configtool",
       "label": "ConfigTool",
       "_callable": true,
@@ -849,26 +836,13 @@
       "source_location": "L48"
     },
     {
-      "id": "skills_infra_work_ticketing_scripts_ticketctl_jira",
-      "label": "Jira",
-      "_callable": true,
-      "_callable_class": true,
-      "_origin": "ast",
-      "community": 27,
-      "community_name": "Jira",
-      "file_type": "code",
-      "norm_label": "jira",
-      "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
-      "source_location": "L979"
-    },
-    {
       "id": "skills_infra_work_ticketing_scripts_ticketctl_zohosdp",
       "label": "ZohoSDP",
       "_callable": true,
       "_callable_class": true,
       "_origin": "ast",
       "community": 27,
-      "community_name": "Jira",
+      "community_name": "ZohoSDP",
       "file_type": "code",
       "norm_label": "zohosdp",
       "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
@@ -1135,6 +1109,19 @@
       "source_location": "L49"
     },
     {
+      "id": "skills_infra_work_ticketing_scripts_ticketctl_jira",
+      "label": "Jira",
+      "_callable": true,
+      "_callable_class": true,
+      "_origin": "ast",
+      "community": 43,
+      "community_name": "Jira",
+      "file_type": "code",
+      "norm_label": "jira",
+      "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
+      "source_location": "L979"
+    },
+    {
       "id": "skills_notify_tests_test_inbox_concurrency_testinboxconcurrency",
       "label": "TestInboxConcurrency",
       "_callable": true,
@@ -1146,6 +1133,19 @@
       "norm_label": "testinboxconcurrency",
       "source_file": "skills/notify/tests/test_inbox_concurrency.py",
       "source_location": "L26"
+    },
+    {
+      "id": "skills_infra_work_ticketing_scripts_ticketctl_fakeargs",
+      "label": "FakeArgs",
+      "_callable": true,
+      "_callable_class": true,
+      "_origin": "ast",
+      "community": 501,
+      "community_name": "FakeArgs",
+      "file_type": "code",
+      "norm_label": "fakeargs",
+      "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
+      "source_location": "L1755"
     },
     {
       "id": "plugin_localgpu_cli_anthropic_proxy_quietthreadinghttpserver",
@@ -4995,18 +4995,6 @@
       "source_location": "L1926"
     },
     {
-      "id": "skills_infra_work_ticketing_scripts_ticketctl_cache_get",
-      "label": "cache_get()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 13,
-      "community_name": "ticketctl.py",
-      "file_type": "code",
-      "norm_label": "cache_get()",
-      "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
-      "source_location": "L386"
-    },
-    {
       "id": "skills_infra_work_ticketing_scripts_ticketctl_cmd_close",
       "label": "cmd_close()",
       "_callable": true,
@@ -5151,6 +5139,18 @@
       "source_location": "L1681"
     },
     {
+      "id": "skills_infra_work_ticketing_scripts_ticketctl_config_candidates",
+      "label": "config_candidates()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 13,
+      "community_name": "ticketctl.py",
+      "file_type": "code",
+      "norm_label": "config_candidates()",
+      "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
+      "source_location": "L46"
+    },
+    {
       "id": "skills_infra_work_ticketing_scripts_ticketctl_emit",
       "label": "emit()",
       "_callable": true,
@@ -5161,18 +5161,6 @@
       "norm_label": "emit()",
       "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
       "source_location": "L1413"
-    },
-    {
-      "id": "skills_infra_work_ticketing_scripts_ticketctl_fakeargs_init",
-      "label": ".__init__()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 13,
-      "community_name": "ticketctl.py",
-      "file_type": "code",
-      "norm_label": ".__init__()",
-      "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
-      "source_location": "L1758"
     },
     {
       "id": "skills_infra_work_ticketing_scripts_ticketctl_get_provider",
@@ -5197,6 +5185,18 @@
       "norm_label": "load_config()",
       "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
       "source_location": "L329"
+    },
+    {
+      "id": "skills_infra_work_ticketing_scripts_ticketctl_main",
+      "label": "main()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 13,
+      "community_name": "ticketctl.py",
+      "file_type": "code",
+      "norm_label": "main()",
+      "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
+      "source_location": "L2093"
     },
     {
       "id": "skills_infra_work_ticketing_scripts_ticketctl_merge_defaults",
@@ -5329,18 +5329,6 @@
       "norm_label": "state_dir()",
       "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
       "source_location": "L70"
-    },
-    {
-      "id": "skills_infra_work_ticketing_scripts_ticketctl_token_cache_path",
-      "label": "token_cache_path()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 13,
-      "community_name": "ticketctl.py",
-      "file_type": "code",
-      "norm_label": "token_cache_path()",
-      "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
-      "source_location": "L382"
     },
     {
       "id": "skills_infra_work_ticketing_scripts_ticketctl_vars_for_queue",
@@ -11300,7 +11288,7 @@
       "_callable": true,
       "_origin": "ast",
       "community": 27,
-      "community_name": "Jira",
+      "community_name": "ZohoSDP",
       "file_type": "code",
       "norm_label": "_adf_text_nodes()",
       "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
@@ -11312,7 +11300,7 @@
       "_callable": true,
       "_origin": "ast",
       "community": 27,
-      "community_name": "Jira",
+      "community_name": "ZohoSDP",
       "file_type": "code",
       "norm_label": "first_nonempty()",
       "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
@@ -11324,7 +11312,7 @@
       "_callable": true,
       "_origin": "ast",
       "community": 27,
-      "community_name": "Jira",
+      "community_name": "ZohoSDP",
       "file_type": "code",
       "norm_label": "html_to_text()",
       "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
@@ -11336,7 +11324,7 @@
       "_callable": true,
       "_origin": "ast",
       "community": 27,
-      "community_name": "Jira",
+      "community_name": "ZohoSDP",
       "file_type": "code",
       "norm_label": ".build_close()",
       "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
@@ -11348,7 +11336,7 @@
       "_callable": true,
       "_origin": "ast",
       "community": 27,
-      "community_name": "Jira",
+      "community_name": "ZohoSDP",
       "file_type": "code",
       "norm_label": ".build_create()",
       "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
@@ -11360,7 +11348,7 @@
       "_callable": true,
       "_origin": "ast",
       "community": 27,
-      "community_name": "Jira",
+      "community_name": "ZohoSDP",
       "file_type": "code",
       "norm_label": ".build_note()",
       "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
@@ -11372,7 +11360,7 @@
       "_callable": true,
       "_origin": "ast",
       "community": 27,
-      "community_name": "Jira",
+      "community_name": "ZohoSDP",
       "file_type": "code",
       "norm_label": ".build_update()",
       "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
@@ -11384,23 +11372,11 @@
       "_callable": true,
       "_origin": "ast",
       "community": 27,
-      "community_name": "Jira",
+      "community_name": "ZohoSDP",
       "file_type": "code",
       "norm_label": "._edit_fields()",
       "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
       "source_location": "L1216"
-    },
-    {
-      "id": "skills_infra_work_ticketing_scripts_ticketctl_jira_init",
-      "label": ".__init__()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 27,
-      "community_name": "Jira",
-      "file_type": "code",
-      "norm_label": ".__init__()",
-      "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
-      "source_location": "L988"
     },
     {
       "id": "skills_infra_work_ticketing_scripts_ticketctl_jira_resolve",
@@ -11408,7 +11384,7 @@
       "_callable": true,
       "_origin": "ast",
       "community": 27,
-      "community_name": "Jira",
+      "community_name": "ZohoSDP",
       "file_type": "code",
       "norm_label": ".resolve()",
       "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
@@ -11420,7 +11396,7 @@
       "_callable": true,
       "_origin": "ast",
       "community": 27,
-      "community_name": "Jira",
+      "community_name": "ZohoSDP",
       "file_type": "code",
       "norm_label": "split_list()",
       "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
@@ -11432,7 +11408,7 @@
       "_callable": true,
       "_origin": "ast",
       "community": 27,
-      "community_name": "Jira",
+      "community_name": "ZohoSDP",
       "file_type": "code",
       "norm_label": "text_to_adf()",
       "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
@@ -11444,7 +11420,7 @@
       "_callable": true,
       "_origin": "ast",
       "community": 27,
-      "community_name": "Jira",
+      "community_name": "ZohoSDP",
       "file_type": "code",
       "norm_label": "text_to_html()",
       "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
@@ -11456,7 +11432,7 @@
       "_callable": true,
       "_origin": "ast",
       "community": 27,
-      "community_name": "Jira",
+      "community_name": "ZohoSDP",
       "file_type": "code",
       "norm_label": ".api_root()",
       "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
@@ -11468,7 +11444,7 @@
       "_callable": true,
       "_origin": "ast",
       "community": 27,
-      "community_name": "Jira",
+      "community_name": "ZohoSDP",
       "file_type": "code",
       "norm_label": ".build_close()",
       "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
@@ -11480,7 +11456,7 @@
       "_callable": true,
       "_origin": "ast",
       "community": 27,
-      "community_name": "Jira",
+      "community_name": "ZohoSDP",
       "file_type": "code",
       "norm_label": ".build_create()",
       "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
@@ -11492,7 +11468,7 @@
       "_callable": true,
       "_origin": "ast",
       "community": 27,
-      "community_name": "Jira",
+      "community_name": "ZohoSDP",
       "file_type": "code",
       "norm_label": ".build_note()",
       "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
@@ -11504,7 +11480,7 @@
       "_callable": true,
       "_origin": "ast",
       "community": 27,
-      "community_name": "Jira",
+      "community_name": "ZohoSDP",
       "file_type": "code",
       "norm_label": ".build_update()",
       "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
@@ -11516,7 +11492,7 @@
       "_callable": true,
       "_origin": "ast",
       "community": 27,
-      "community_name": "Jira",
+      "community_name": "ZohoSDP",
       "file_type": "code",
       "norm_label": ".check_config()",
       "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
@@ -11528,7 +11504,7 @@
       "_callable": true,
       "_origin": "ast",
       "community": 27,
-      "community_name": "Jira",
+      "community_name": "ZohoSDP",
       "file_type": "code",
       "norm_label": "._edit_fields()",
       "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
@@ -11540,7 +11516,7 @@
       "_callable": true,
       "_origin": "ast",
       "community": 27,
-      "community_name": "Jira",
+      "community_name": "ZohoSDP",
       "file_type": "code",
       "norm_label": ".headers()",
       "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
@@ -11552,7 +11528,7 @@
       "_callable": true,
       "_origin": "ast",
       "community": 27,
-      "community_name": "Jira",
+      "community_name": "ZohoSDP",
       "file_type": "code",
       "norm_label": ".__init__()",
       "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
@@ -11564,7 +11540,7 @@
       "_callable": true,
       "_origin": "ast",
       "community": 27,
-      "community_name": "Jira",
+      "community_name": "ZohoSDP",
       "file_type": "code",
       "norm_label": "._named()",
       "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
@@ -11576,11 +11552,23 @@
       "_callable": true,
       "_origin": "ast",
       "community": 27,
-      "community_name": "Jira",
+      "community_name": "ZohoSDP",
       "file_type": "code",
       "norm_label": ".notify()",
       "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
       "source_location": "L948"
+    },
+    {
+      "id": "skills_infra_work_ticketing_scripts_ticketctl_zohosdp_resolve",
+      "label": ".resolve()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 27,
+      "community_name": "ZohoSDP",
+      "file_type": "code",
+      "norm_label": ".resolve()",
+      "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
+      "source_location": "L692"
     },
     {
       "id": "skills_infra_work_ticketing_scripts_ticketctl_zohosdp_ticket_url",
@@ -11588,7 +11576,7 @@
       "_callable": true,
       "_origin": "ast",
       "community": 27,
-      "community_name": "Jira",
+      "community_name": "ZohoSDP",
       "file_type": "code",
       "norm_label": ".ticket_url()",
       "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
@@ -12459,6 +12447,18 @@
       "source_location": "L25"
     },
     {
+      "id": "skills_infra_work_ticketing_scripts_ticketctl_cache_get",
+      "label": "cache_get()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 299,
+      "community_name": "TicketError",
+      "file_type": "code",
+      "norm_label": "cache_get()",
+      "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
+      "source_location": "L386"
+    },
+    {
       "id": "skills_infra_work_ticketing_scripts_ticketctl_cache_put",
       "label": "cache_put()",
       "_callable": true,
@@ -12469,6 +12469,18 @@
       "norm_label": "cache_put()",
       "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
       "source_location": "L402"
+    },
+    {
+      "id": "skills_infra_work_ticketing_scripts_ticketctl_cmd_init",
+      "label": "cmd_init()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 299,
+      "community_name": "TicketError",
+      "file_type": "code",
+      "norm_label": "cmd_init()",
+      "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
+      "source_location": "L1447"
     },
     {
       "id": "skills_infra_work_ticketing_scripts_ticketctl_cmd_jira_token",
@@ -12493,6 +12505,18 @@
       "norm_label": "cmd_zoho_token()",
       "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
       "source_location": "L1769"
+    },
+    {
+      "id": "skills_infra_work_ticketing_scripts_ticketctl_default_config_path",
+      "label": "default_config_path()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 299,
+      "community_name": "TicketError",
+      "file_type": "code",
+      "norm_label": "default_config_path()",
+      "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
+      "source_location": "L59"
     },
     {
       "id": "skills_infra_work_ticketing_scripts_ticketctl_form_encode",
@@ -12613,6 +12637,30 @@
       "norm_label": "save_config()",
       "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
       "source_location": "L370"
+    },
+    {
+      "id": "skills_infra_work_ticketing_scripts_ticketctl_token_cache_path",
+      "label": "token_cache_path()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 299,
+      "community_name": "TicketError",
+      "file_type": "code",
+      "norm_label": "token_cache_path()",
+      "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
+      "source_location": "L382"
+    },
+    {
+      "id": "skills_infra_work_ticketing_scripts_ticketctl_write_private",
+      "label": "write_private()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 299,
+      "community_name": "TicketError",
+      "file_type": "code",
+      "norm_label": "write_private()",
+      "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
+      "source_location": "L80"
     },
     {
       "id": "skills_infra_work_ticketing_scripts_ticketctl_zohosdp_access_token",
@@ -16100,7 +16148,7 @@
       "_callable": true,
       "_origin": "ast",
       "community": 43,
-      "community_name": ".call",
+      "community_name": "Jira",
       "file_type": "code",
       "norm_label": "adf_to_text()",
       "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
@@ -16112,7 +16160,7 @@
       "_callable": true,
       "_origin": "ast",
       "community": 43,
-      "community_name": ".call",
+      "community_name": "Jira",
       "file_type": "code",
       "norm_label": "deep_get()",
       "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
@@ -16124,7 +16172,7 @@
       "_callable": true,
       "_origin": "ast",
       "community": 43,
-      "community_name": ".call",
+      "community_name": "Jira",
       "file_type": "code",
       "norm_label": "eprint()",
       "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
@@ -16136,7 +16184,7 @@
       "_callable": true,
       "_origin": "ast",
       "community": 43,
-      "community_name": ".call",
+      "community_name": "Jira",
       "file_type": "code",
       "norm_label": ".call()",
       "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
@@ -16148,7 +16196,7 @@
       "_callable": true,
       "_origin": "ast",
       "community": 43,
-      "community_name": ".call",
+      "community_name": "Jira",
       "file_type": "code",
       "norm_label": ".close()",
       "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
@@ -16160,7 +16208,7 @@
       "_callable": true,
       "_origin": "ast",
       "community": 43,
-      "community_name": ".call",
+      "community_name": "Jira",
       "file_type": "code",
       "norm_label": ".create()",
       "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
@@ -16172,7 +16220,7 @@
       "_callable": true,
       "_origin": "ast",
       "community": 43,
-      "community_name": ".call",
+      "community_name": "Jira",
       "file_type": "code",
       "norm_label": ".find_account_id()",
       "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
@@ -16184,11 +16232,23 @@
       "_callable": true,
       "_origin": "ast",
       "community": 43,
-      "community_name": ".call",
+      "community_name": "Jira",
       "file_type": "code",
       "norm_label": ".get()",
       "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
       "source_location": "L1304"
+    },
+    {
+      "id": "skills_infra_work_ticketing_scripts_ticketctl_jira_init",
+      "label": ".__init__()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 43,
+      "community_name": "Jira",
+      "file_type": "code",
+      "norm_label": ".__init__()",
+      "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
+      "source_location": "L988"
     },
     {
       "id": "skills_infra_work_ticketing_scripts_ticketctl_jira_note",
@@ -16196,7 +16256,7 @@
       "_callable": true,
       "_origin": "ast",
       "community": 43,
-      "community_name": ".call",
+      "community_name": "Jira",
       "file_type": "code",
       "norm_label": ".note()",
       "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
@@ -16208,7 +16268,7 @@
       "_callable": true,
       "_origin": "ast",
       "community": 43,
-      "community_name": ".call",
+      "community_name": "Jira",
       "file_type": "code",
       "norm_label": ".notify()",
       "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
@@ -16220,7 +16280,7 @@
       "_callable": true,
       "_origin": "ast",
       "community": 43,
-      "community_name": ".call",
+      "community_name": "Jira",
       "file_type": "code",
       "norm_label": ".search()",
       "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
@@ -16232,7 +16292,7 @@
       "_callable": true,
       "_origin": "ast",
       "community": 43,
-      "community_name": ".call",
+      "community_name": "Jira",
       "file_type": "code",
       "norm_label": ".self_account_id()",
       "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
@@ -16244,7 +16304,7 @@
       "_callable": true,
       "_origin": "ast",
       "community": 43,
-      "community_name": ".call",
+      "community_name": "Jira",
       "file_type": "code",
       "norm_label": ".ticket_url()",
       "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
@@ -16256,23 +16316,11 @@
       "_callable": true,
       "_origin": "ast",
       "community": 43,
-      "community_name": ".call",
+      "community_name": "Jira",
       "file_type": "code",
       "norm_label": ".update()",
       "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
       "source_location": "L1249"
-    },
-    {
-      "id": "skills_infra_work_ticketing_scripts_ticketctl_main",
-      "label": "main()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 43,
-      "community_name": ".call",
-      "file_type": "code",
-      "norm_label": "main()",
-      "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
-      "source_location": "L2093"
     },
     {
       "id": "skills_infra_work_ticketing_scripts_ticketctl_zohosdp_close",
@@ -16280,7 +16328,7 @@
       "_callable": true,
       "_origin": "ast",
       "community": 43,
-      "community_name": ".call",
+      "community_name": "Jira",
       "file_type": "code",
       "norm_label": ".close()",
       "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
@@ -16292,7 +16340,7 @@
       "_callable": true,
       "_origin": "ast",
       "community": 43,
-      "community_name": ".call",
+      "community_name": "Jira",
       "file_type": "code",
       "norm_label": ".create()",
       "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
@@ -16304,7 +16352,7 @@
       "_callable": true,
       "_origin": "ast",
       "community": 43,
-      "community_name": ".call",
+      "community_name": "Jira",
       "file_type": "code",
       "norm_label": ".get()",
       "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
@@ -16316,23 +16364,11 @@
       "_callable": true,
       "_origin": "ast",
       "community": 43,
-      "community_name": ".call",
+      "community_name": "Jira",
       "file_type": "code",
       "norm_label": ".note()",
       "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
       "source_location": "L796"
-    },
-    {
-      "id": "skills_infra_work_ticketing_scripts_ticketctl_zohosdp_resolve",
-      "label": ".resolve()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 43,
-      "community_name": ".call",
-      "file_type": "code",
-      "norm_label": ".resolve()",
-      "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
-      "source_location": "L692"
     },
     {
       "id": "skills_infra_work_ticketing_scripts_ticketctl_zohosdp_search",
@@ -16340,7 +16376,7 @@
       "_callable": true,
       "_origin": "ast",
       "community": 43,
-      "community_name": ".call",
+      "community_name": "Jira",
       "file_type": "code",
       "norm_label": ".search()",
       "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
@@ -16352,7 +16388,7 @@
       "_callable": true,
       "_origin": "ast",
       "community": 43,
-      "community_name": ".call",
+      "community_name": "Jira",
       "file_type": "code",
       "norm_label": ".update()",
       "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
@@ -17856,7 +17892,7 @@
       "file_type": "code",
       "norm_label": "make_indexer()",
       "source_file": "plugin/localgpu/mcp/_test/test_unignore.py",
-      "source_location": "L18"
+      "source_location": "L20"
     },
     {
       "id": "plugin_localgpu_mcp_test_test_unignore_test_hard_floor_survives_an_unignore_attempt",
@@ -17868,7 +17904,7 @@
       "file_type": "code",
       "norm_label": "test_hard_floor_survives_an_unignore_attempt()",
       "source_file": "plugin/localgpu/mcp/_test/test_unignore.py",
-      "source_location": "L52"
+      "source_location": "L54"
     },
     {
       "id": "plugin_localgpu_mcp_test_test_unignore_test_unignoring_a_liftable_default_lets_the_file_through",
@@ -17880,7 +17916,7 @@
       "file_type": "code",
       "norm_label": "test_unignoring_a_liftable_default_lets_the_file_through()",
       "source_file": "plugin/localgpu/mcp/_test/test_unignore.py",
-      "source_location": "L28"
+      "source_location": "L30"
     },
     {
       "id": "plugin_localgpu_mcp_test_test_unignore_write_json",
@@ -17892,7 +17928,7 @@
       "file_type": "code",
       "norm_label": "write_json()",
       "source_file": "plugin/localgpu/mcp/_test/test_unignore.py",
-      "source_location": "L23"
+      "source_location": "L25"
     },
     {
       "id": "plugin_crew_tests_test_provider_table_test_a_branchless_record_in_a_git_checkout_fails_closed",
@@ -18483,6 +18519,18 @@
       "source_location": "L531"
     },
     {
+      "id": "skills_infra_work_ticketing_scripts_ticketctl_fakeargs_init",
+      "label": ".__init__()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 501,
+      "community_name": "FakeArgs",
+      "file_type": "code",
+      "norm_label": ".__init__()",
+      "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
+      "source_location": "L1758"
+    },
+    {
       "id": "plugin_localgpu_cli_test_test_proxy_server_test_a_timeout_after_streaming_started_ends_the_stream_cleanly",
       "label": "test_a_timeout_after_streaming_started_ends_the_stream_cleanly()",
       "_callable": true,
@@ -18721,54 +18769,6 @@
       "norm_label": "test_the_lock_never_records_a_pid()",
       "source_file": "plugin/crew/tests/test_verify_gate_lock_sh.py",
       "source_location": "L178"
-    },
-    {
-      "id": "skills_infra_work_ticketing_scripts_ticketctl_cmd_init",
-      "label": "cmd_init()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 507,
-      "community_name": "Path",
-      "file_type": "code",
-      "norm_label": "cmd_init()",
-      "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
-      "source_location": "L1447"
-    },
-    {
-      "id": "skills_infra_work_ticketing_scripts_ticketctl_config_candidates",
-      "label": "config_candidates()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 507,
-      "community_name": "Path",
-      "file_type": "code",
-      "norm_label": "config_candidates()",
-      "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
-      "source_location": "L46"
-    },
-    {
-      "id": "skills_infra_work_ticketing_scripts_ticketctl_default_config_path",
-      "label": "default_config_path()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 507,
-      "community_name": "Path",
-      "file_type": "code",
-      "norm_label": "default_config_path()",
-      "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
-      "source_location": "L59"
-    },
-    {
-      "id": "skills_infra_work_ticketing_scripts_ticketctl_write_private",
-      "label": "write_private()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 507,
-      "community_name": "Path",
-      "file_type": "code",
-      "norm_label": "write_private()",
-      "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
-      "source_location": "L80"
     },
     {
       "id": "plugin_crew_hooks_scripts_crew_config_model_report",
@@ -25692,7 +25692,7 @@
       "file_type": "code",
       "norm_label": "test_a_json_array_is_not_a_config()",
       "source_file": "plugin/localgpu/mcp/_test/test_config.py",
-      "source_location": "L141"
+      "source_location": "L153"
     },
     {
       "id": "plugin_localgpu_mcp_test_test_config_test_artifact_paths_hang_off_the_home",
@@ -25716,7 +25716,7 @@
       "file_type": "code",
       "norm_label": "test_broken_json_is_reported_not_swallowed()",
       "source_file": "plugin/localgpu/mcp/_test/test_config.py",
-      "source_location": "L132"
+      "source_location": "L144"
     },
     {
       "id": "plugin_localgpu_mcp_test_test_config_test_defaults_when_nothing_is_configured",
@@ -25740,7 +25740,7 @@
       "file_type": "code",
       "norm_label": "test_embed_model_as_a_non_string_is_rejected()",
       "source_file": "plugin/localgpu/mcp/_test/test_config.py",
-      "source_location": "L163"
+      "source_location": "L175"
     },
     {
       "id": "plugin_localgpu_mcp_test_test_config_test_explicit_home_wins",
@@ -25764,7 +25764,7 @@
       "file_type": "code",
       "norm_label": "test_ignore_as_a_bare_string_is_rejected_not_shredded()",
       "source_file": "plugin/localgpu/mcp/_test/test_config.py",
-      "source_location": "L148"
+      "source_location": "L160"
     },
     {
       "id": "plugin_localgpu_mcp_test_test_config_test_ignore_lists_union_rather_than_replace",
@@ -25812,7 +25812,7 @@
       "file_type": "code",
       "norm_label": "test_roots_are_resolved_absolute()",
       "source_file": "plugin/localgpu/mcp/_test/test_config.py",
-      "source_location": "L116"
+      "source_location": "L128"
     },
     {
       "id": "plugin_localgpu_mcp_test_test_config_test_roots_as_a_bare_string_is_rejected_not_shredded",
@@ -25824,7 +25824,7 @@
       "file_type": "code",
       "norm_label": "test_roots_as_a_bare_string_is_rejected_not_shredded()",
       "source_file": "plugin/localgpu/mcp/_test/test_config.py",
-      "source_location": "L157"
+      "source_location": "L169"
     },
     {
       "id": "plugin_localgpu_mcp_test_test_config_test_unignore_accumulates_across_layers_like_ignore",
@@ -25848,7 +25848,7 @@
       "file_type": "code",
       "norm_label": "test_unignore_as_a_bare_string_is_rejected_not_shredded()",
       "source_file": "plugin/localgpu/mcp/_test/test_config.py",
-      "source_location": "L110"
+      "source_location": "L122"
     },
     {
       "id": "plugin_localgpu_mcp_test_test_config_test_unignore_cannot_lift_the_hard_floor",
@@ -25875,6 +25875,18 @@
       "source_location": "L82"
     },
     {
+      "id": "plugin_localgpu_mcp_test_test_config_test_unignore_lifting_a_liftable_entry_alongside_none_of_the_floor_is_fine",
+      "label": "test_unignore_lifting_a_liftable_entry_alongside_none_of_the_floor_is_fine()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 82,
+      "community_name": "_test/test_config.py",
+      "file_type": "code",
+      "norm_label": "test_unignore_lifting_a_liftable_entry_alongside_none_of_the_floor_is_fine()",
+      "source_file": "plugin/localgpu/mcp/_test/test_config.py",
+      "source_location": "L113"
+    },
+    {
       "id": "plugin_localgpu_mcp_test_test_config_test_unknown_keys_are_ignored",
       "label": "test_unknown_keys_are_ignored()",
       "_callable": true,
@@ -25884,7 +25896,7 @@
       "file_type": "code",
       "norm_label": "test_unknown_keys_are_ignored()",
       "source_file": "plugin/localgpu/mcp/_test/test_config.py",
-      "source_location": "L125"
+      "source_location": "L137"
     },
     {
       "id": "plugin_localgpu_mcp_test_test_config_test_windows_default_is_localappdata",
@@ -32019,18 +32031,6 @@
       "source_location": "L1"
     },
     {
-      "id": "claude_obsidian_setup_readme",
-      "label": "claude-obsidian-setup/README.md",
-      "_origin": "ast",
-      "community": 120,
-      "community_name": "claude-obsidian setup",
-      "file_type": "document",
-      "node_kind": "page",
-      "norm_label": "claude-obsidian-setup/readme.md",
-      "source_file": "claude-obsidian-setup/README.md",
-      "source_location": "L1"
-    },
-    {
       "id": "claude_obsidian_setup_readme_after_the_script",
       "label": "After the script",
       "_origin": "ast",
@@ -33198,17 +33198,6 @@
       "norm_label": "strip things that must never land in a ticket. returns (clean, hits).",
       "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
       "source_location": "L173"
-    },
-    {
-      "id": "skills_infra_work_ticketing_scripts_ticketctl_rationale_1756",
-      "label": "Rehydrate the flags the builders read, for queue replay.",
-      "_origin": "ast",
-      "community": 13,
-      "community_name": "ticketctl.py",
-      "file_type": "rationale",
-      "norm_label": "rehydrate the flags the builders read, for queue replay.",
-      "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
-      "source_location": "L1756"
     },
     {
       "id": "skills_infra_work_ticketing_scripts_ticketctl_rationale_308",
@@ -42502,7 +42491,7 @@
       "source_location": "L7"
     },
     {
-      "id": "changelog_added_1139",
+      "id": "changelog_added_1150",
       "label": "Added",
       "_origin": "ast",
       "community": 205,
@@ -42511,10 +42500,10 @@
       "node_kind": "heading",
       "norm_label": "added",
       "source_file": "CHANGELOG.md",
-      "source_location": "L1139"
+      "source_location": "L1150"
     },
     {
-      "id": "changelog_added_1388",
+      "id": "changelog_added_1399",
       "label": "Added",
       "_origin": "ast",
       "community": 205,
@@ -42523,10 +42512,10 @@
       "node_kind": "heading",
       "norm_label": "added",
       "source_file": "CHANGELOG.md",
-      "source_location": "L1388"
+      "source_location": "L1399"
     },
     {
-      "id": "changelog_added_1496",
+      "id": "changelog_added_1507",
       "label": "Added",
       "_origin": "ast",
       "community": 205,
@@ -42535,10 +42524,10 @@
       "node_kind": "heading",
       "norm_label": "added",
       "source_file": "CHANGELOG.md",
-      "source_location": "L1496"
+      "source_location": "L1507"
     },
     {
-      "id": "changelog_added_1510",
+      "id": "changelog_added_1521",
       "label": "Added",
       "_origin": "ast",
       "community": 205,
@@ -42547,10 +42536,10 @@
       "node_kind": "heading",
       "norm_label": "added",
       "source_file": "CHANGELOG.md",
-      "source_location": "L1510"
+      "source_location": "L1521"
     },
     {
-      "id": "changelog_added_1804",
+      "id": "changelog_added_1815",
       "label": "Added",
       "_origin": "ast",
       "community": 205,
@@ -42559,10 +42548,10 @@
       "node_kind": "heading",
       "norm_label": "added",
       "source_file": "CHANGELOG.md",
-      "source_location": "L1804"
+      "source_location": "L1815"
     },
     {
-      "id": "changelog_added_2363",
+      "id": "changelog_added_2374",
       "label": "Added",
       "_origin": "ast",
       "community": 205,
@@ -42571,10 +42560,10 @@
       "node_kind": "heading",
       "norm_label": "added",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2363"
+      "source_location": "L2374"
     },
     {
-      "id": "changelog_added_2638",
+      "id": "changelog_added_2649",
       "label": "Added",
       "_origin": "ast",
       "community": 205,
@@ -42583,10 +42572,10 @@
       "node_kind": "heading",
       "norm_label": "added",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2638"
+      "source_location": "L2649"
     },
     {
-      "id": "changelog_added_2842",
+      "id": "changelog_added_2853",
       "label": "Added",
       "_origin": "ast",
       "community": 205,
@@ -42595,10 +42584,10 @@
       "node_kind": "heading",
       "norm_label": "added",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2842"
+      "source_location": "L2853"
     },
     {
-      "id": "changelog_added_2957",
+      "id": "changelog_added_2968",
       "label": "Added",
       "_origin": "ast",
       "community": 205,
@@ -42607,10 +42596,10 @@
       "node_kind": "heading",
       "norm_label": "added",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2957"
+      "source_location": "L2968"
     },
     {
-      "id": "changelog_added_3039",
+      "id": "changelog_added_3050",
       "label": "Added",
       "_origin": "ast",
       "community": 205,
@@ -42619,10 +42608,10 @@
       "node_kind": "heading",
       "norm_label": "added",
       "source_file": "CHANGELOG.md",
-      "source_location": "L3039"
+      "source_location": "L3050"
     },
     {
-      "id": "changelog_added_3080",
+      "id": "changelog_added_3091",
       "label": "Added",
       "_origin": "ast",
       "community": 205,
@@ -42631,7 +42620,7 @@
       "node_kind": "heading",
       "norm_label": "added",
       "source_file": "CHANGELOG.md",
-      "source_location": "L3080"
+      "source_location": "L3091"
     },
     {
       "id": "changelog_changed",
@@ -42643,10 +42632,10 @@
       "node_kind": "heading",
       "norm_label": "changed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L1093"
+      "source_location": "L1104"
     },
     {
-      "id": "changelog_changed_1354",
+      "id": "changelog_changed_1365",
       "label": "Changed",
       "_origin": "ast",
       "community": 205,
@@ -42655,10 +42644,10 @@
       "node_kind": "heading",
       "norm_label": "changed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L1354"
+      "source_location": "L1365"
     },
     {
-      "id": "changelog_changed_1432",
+      "id": "changelog_changed_1443",
       "label": "Changed",
       "_origin": "ast",
       "community": 205,
@@ -42667,10 +42656,10 @@
       "node_kind": "heading",
       "norm_label": "changed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L1432"
+      "source_location": "L1443"
     },
     {
-      "id": "changelog_changed_2202",
+      "id": "changelog_changed_2213",
       "label": "Changed",
       "_origin": "ast",
       "community": 205,
@@ -42679,10 +42668,10 @@
       "node_kind": "heading",
       "norm_label": "changed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2202"
+      "source_location": "L2213"
     },
     {
-      "id": "changelog_changed_2338",
+      "id": "changelog_changed_2349",
       "label": "Changed",
       "_origin": "ast",
       "community": 205,
@@ -42691,10 +42680,10 @@
       "node_kind": "heading",
       "norm_label": "changed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2338"
+      "source_location": "L2349"
     },
     {
-      "id": "changelog_changed_2720",
+      "id": "changelog_changed_2731",
       "label": "Changed",
       "_origin": "ast",
       "community": 205,
@@ -42703,10 +42692,10 @@
       "node_kind": "heading",
       "norm_label": "changed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2720"
+      "source_location": "L2731"
     },
     {
-      "id": "changelog_changed_3199",
+      "id": "changelog_changed_3210",
       "label": "Changed",
       "_origin": "ast",
       "community": 205,
@@ -42715,10 +42704,10 @@
       "node_kind": "heading",
       "norm_label": "changed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L3199"
+      "source_location": "L3210"
     },
     {
-      "id": "changelog_changed_3288",
+      "id": "changelog_changed_3299",
       "label": "Changed",
       "_origin": "ast",
       "community": 205,
@@ -42727,7 +42716,7 @@
       "node_kind": "heading",
       "norm_label": "changed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L3288"
+      "source_location": "L3299"
     },
     {
       "id": "changelog_fixed",
@@ -42742,7 +42731,7 @@
       "source_location": "L446"
     },
     {
-      "id": "changelog_fixed_1029",
+      "id": "changelog_fixed_1040",
       "label": "Fixed",
       "_origin": "ast",
       "community": 205,
@@ -42751,10 +42740,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L1029"
+      "source_location": "L1040"
     },
     {
-      "id": "changelog_fixed_1071",
+      "id": "changelog_fixed_1082",
       "label": "Fixed",
       "_origin": "ast",
       "community": 205,
@@ -42763,10 +42752,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L1071"
+      "source_location": "L1082"
     },
     {
-      "id": "changelog_fixed_1119",
+      "id": "changelog_fixed_1130",
       "label": "Fixed",
       "_origin": "ast",
       "community": 205,
@@ -42775,10 +42764,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L1119"
+      "source_location": "L1130"
     },
     {
-      "id": "changelog_fixed_1253",
+      "id": "changelog_fixed_1264",
       "label": "Fixed",
       "_origin": "ast",
       "community": 205,
@@ -42787,10 +42776,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L1253"
+      "source_location": "L1264"
     },
     {
-      "id": "changelog_fixed_1593",
+      "id": "changelog_fixed_1604",
       "label": "Fixed",
       "_origin": "ast",
       "community": 205,
@@ -42799,10 +42788,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L1593"
+      "source_location": "L1604"
     },
     {
-      "id": "changelog_fixed_1779",
+      "id": "changelog_fixed_1790",
       "label": "Fixed",
       "_origin": "ast",
       "community": 205,
@@ -42811,10 +42800,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L1779"
+      "source_location": "L1790"
     },
     {
-      "id": "changelog_fixed_1795",
+      "id": "changelog_fixed_1806",
       "label": "Fixed",
       "_origin": "ast",
       "community": 205,
@@ -42823,10 +42812,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L1795"
+      "source_location": "L1806"
     },
     {
-      "id": "changelog_fixed_2102",
+      "id": "changelog_fixed_2113",
       "label": "Fixed",
       "_origin": "ast",
       "community": 205,
@@ -42835,10 +42824,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2102"
+      "source_location": "L2113"
     },
     {
-      "id": "changelog_fixed_2223",
+      "id": "changelog_fixed_2234",
       "label": "Fixed",
       "_origin": "ast",
       "community": 205,
@@ -42847,10 +42836,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2223"
+      "source_location": "L2234"
     },
     {
-      "id": "changelog_fixed_2316",
+      "id": "changelog_fixed_2327",
       "label": "Fixed",
       "_origin": "ast",
       "community": 205,
@@ -42859,10 +42848,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2316"
+      "source_location": "L2327"
     },
     {
-      "id": "changelog_fixed_2348",
+      "id": "changelog_fixed_2359",
       "label": "Fixed",
       "_origin": "ast",
       "community": 205,
@@ -42871,10 +42860,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2348"
+      "source_location": "L2359"
     },
     {
-      "id": "changelog_fixed_2496",
+      "id": "changelog_fixed_2507",
       "label": "Fixed",
       "_origin": "ast",
       "community": 205,
@@ -42883,10 +42872,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2496"
+      "source_location": "L2507"
     },
     {
-      "id": "changelog_fixed_2711",
+      "id": "changelog_fixed_2722",
       "label": "Fixed",
       "_origin": "ast",
       "community": 205,
@@ -42895,10 +42884,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2711"
+      "source_location": "L2722"
     },
     {
-      "id": "changelog_fixed_2790",
+      "id": "changelog_fixed_2801",
       "label": "Fixed",
       "_origin": "ast",
       "community": 205,
@@ -42907,10 +42896,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2790"
+      "source_location": "L2801"
     },
     {
-      "id": "changelog_fixed_2891",
+      "id": "changelog_fixed_2902",
       "label": "Fixed",
       "_origin": "ast",
       "community": 205,
@@ -42919,10 +42908,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2891"
+      "source_location": "L2902"
     },
     {
-      "id": "changelog_fixed_3061",
+      "id": "changelog_fixed_3072",
       "label": "Fixed",
       "_origin": "ast",
       "community": 205,
@@ -42931,10 +42920,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L3061"
+      "source_location": "L3072"
     },
     {
-      "id": "changelog_fixed_3208",
+      "id": "changelog_fixed_3219",
       "label": "Fixed",
       "_origin": "ast",
       "community": 205,
@@ -42943,10 +42932,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L3208"
+      "source_location": "L3219"
     },
     {
-      "id": "changelog_fixed_3335",
+      "id": "changelog_fixed_3346",
       "label": "Fixed",
       "_origin": "ast",
       "community": 205,
@@ -42955,10 +42944,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L3335"
+      "source_location": "L3346"
     },
     {
-      "id": "changelog_fixed_935",
+      "id": "changelog_fixed_946",
       "label": "Fixed",
       "_origin": "ast",
       "community": 205,
@@ -42967,7 +42956,7 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L935"
+      "source_location": "L946"
     },
     {
       "id": "changelog_removed",
@@ -42979,10 +42968,10 @@
       "node_kind": "heading",
       "norm_label": "removed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2287"
+      "source_location": "L2298"
     },
     {
-      "id": "changelog_removed_2628",
+      "id": "changelog_removed_2639",
       "label": "Removed",
       "_origin": "ast",
       "community": 205,
@@ -42991,10 +42980,10 @@
       "node_kind": "heading",
       "norm_label": "removed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2628"
+      "source_location": "L2639"
     },
     {
-      "id": "changelog_removed_3014",
+      "id": "changelog_removed_3025",
       "label": "Removed",
       "_origin": "ast",
       "community": 205,
@@ -43003,10 +42992,10 @@
       "node_kind": "heading",
       "norm_label": "removed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L3014"
+      "source_location": "L3025"
     },
     {
-      "id": "changelog_removed_3185",
+      "id": "changelog_removed_3196",
       "label": "Removed",
       "_origin": "ast",
       "community": 205,
@@ -43015,10 +43004,10 @@
       "node_kind": "heading",
       "norm_label": "removed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L3185"
+      "source_location": "L3196"
     },
     {
-      "id": "changelog_removed_3310",
+      "id": "changelog_removed_3321",
       "label": "Removed",
       "_origin": "ast",
       "community": 205,
@@ -43027,7 +43016,7 @@
       "node_kind": "heading",
       "norm_label": "removed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L3310"
+      "source_location": "L3321"
     },
     {
       "id": "changelog_unreleased",
@@ -44190,7 +44179,7 @@
       "node_kind": "heading",
       "norm_label": "safety rails",
       "source_file": "plugin/localgpu/skills/localgpu/SKILL.md",
-      "source_location": "L310"
+      "source_location": "L313"
     },
     {
       "id": "plugin_localgpu_skills_localgpu_skill_talking_to_ollama_directly",
@@ -44202,7 +44191,7 @@
       "node_kind": "heading",
       "norm_label": "talking to ollama directly",
       "source_file": "plugin/localgpu/skills/localgpu/SKILL.md",
-      "source_location": "L287"
+      "source_location": "L290"
     },
     {
       "id": "plugin_localgpu_skills_localgpu_skill_the_localgpu_command",
@@ -44214,7 +44203,7 @@
       "node_kind": "heading",
       "norm_label": "the `localgpu` command",
       "source_file": "plugin/localgpu/skills/localgpu/SKILL.md",
-      "source_location": "L219"
+      "source_location": "L222"
     },
     {
       "id": "plugin_localgpu_skills_localgpu_skill_the_mcp_tools",
@@ -44226,7 +44215,7 @@
       "node_kind": "heading",
       "norm_label": "the mcp tools",
       "source_file": "plugin/localgpu/skills/localgpu/SKILL.md",
-      "source_location": "L176"
+      "source_location": "L179"
     },
     {
       "id": "plugin_localgpu_skills_localgpu_skill_the_models_and_why_these_two",
@@ -44238,7 +44227,7 @@
       "node_kind": "heading",
       "norm_label": "the models, and why these two",
       "source_file": "plugin/localgpu/skills/localgpu/SKILL.md",
-      "source_location": "L122"
+      "source_location": "L125"
     },
     {
       "id": "plugin_localgpu_skills_localgpu_skill_the_two_keep_alive_defaults_are_deliberate",
@@ -44250,7 +44239,7 @@
       "node_kind": "heading",
       "norm_label": "the two keep-alive defaults are deliberate",
       "source_file": "plugin/localgpu/skills/localgpu/SKILL.md",
-      "source_location": "L157"
+      "source_location": "L160"
     },
     {
       "id": "plugin_localgpu_skills_localgpu_skill_vram_discipline",
@@ -44262,7 +44251,7 @@
       "node_kind": "heading",
       "norm_label": "vram discipline",
       "source_file": "plugin/localgpu/skills/localgpu/SKILL.md",
-      "source_location": "L133"
+      "source_location": "L136"
     },
     {
       "id": "plugin_localgpu_skills_localgpu_skill_what_is_where",
@@ -44286,7 +44275,7 @@
       "node_kind": "heading",
       "norm_label": "what the proxy carries",
       "source_file": "plugin/localgpu/skills/localgpu/SKILL.md",
-      "source_location": "L246"
+      "source_location": "L249"
     },
     {
       "id": "plugin_localgpu_skills_localgpu_skill_when_search_returns_nothing",
@@ -44298,7 +44287,7 @@
       "node_kind": "heading",
       "norm_label": "when search returns nothing",
       "source_file": "plugin/localgpu/skills/localgpu/SKILL.md",
-      "source_location": "L201"
+      "source_location": "L204"
     },
     {
       "id": "plugin_localgpu_skills_localgpu_skill_when_to_reach_for_it",
@@ -44310,7 +44299,7 @@
       "node_kind": "heading",
       "norm_label": "when to reach for it",
       "source_file": "plugin/localgpu/skills/localgpu/SKILL.md",
-      "source_location": "L272"
+      "source_location": "L275"
     },
     {
       "id": "skills_wazuh_onprem_scripts_wazuh_client",
@@ -49762,7 +49751,7 @@
       "label": "Jira's nearest equivalents to the SDP fields update accepts.",
       "_origin": "ast",
       "community": 27,
-      "community_name": "Jira",
+      "community_name": "ZohoSDP",
       "file_type": "rationale",
       "norm_label": "jira's nearest equivalents to the sdp fields update accepts.",
       "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
@@ -49773,7 +49762,7 @@
       "label": "Split a comma/semicolon list. Labels and component names may contain spaces, so\u2026",
       "_origin": "ast",
       "community": 27,
-      "community_name": "Jira",
+      "community_name": "ZohoSDP",
       "file_type": "rationale",
       "norm_label": "split a comma/semicolon list. labels and component names may contain spaces, so...",
       "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
@@ -49784,7 +49773,7 @@
       "label": "Plain/markdown-ish text -> the simple HTML ServiceDesk Plus expects.",
       "_origin": "ast",
       "community": 27,
-      "community_name": "Jira",
+      "community_name": "ZohoSDP",
       "file_type": "rationale",
       "norm_label": "plain/markdown-ish text -> the simple html servicedesk plus expects.",
       "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
@@ -49795,18 +49784,29 @@
       "label": "Plain/markdown-ish text -> Atlassian Document Format for Jira v3. Deliberately\u2026",
       "_origin": "ast",
       "community": 27,
-      "community_name": "Jira",
+      "community_name": "ZohoSDP",
       "file_type": "rationale",
       "norm_label": "plain/markdown-ish text -> atlassian document format for jira v3. deliberately...",
       "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
       "source_location": "L456"
     },
     {
+      "id": "skills_infra_work_ticketing_scripts_ticketctl_rationale_693",
+      "label": "Accept a display id, an internal id, or a pasted URL -> internal id.",
+      "_origin": "ast",
+      "community": 27,
+      "community_name": "ZohoSDP",
+      "file_type": "rationale",
+      "norm_label": "accept a display id, an internal id, or a pasted url -> internal id.",
+      "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
+      "source_location": "L693"
+    },
+    {
       "id": "skills_infra_work_ticketing_scripts_ticketctl_rationale_815",
       "label": "The subset of request fields both update and close can set.",
       "_origin": "ast",
       "community": 27,
-      "community_name": "Jira",
+      "community_name": "ZohoSDP",
       "file_type": "rationale",
       "norm_label": "the subset of request fields both update and close can set.",
       "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
@@ -52571,6 +52571,17 @@
       "source_location": ""
     },
     {
+      "id": "skills_infra_work_ticketing_scripts_ticketctl_py_path",
+      "label": "Path",
+      "_origin": "ast",
+      "community": 299,
+      "community_name": "TicketError",
+      "file_type": "code",
+      "norm_label": "path",
+      "source_file": "",
+      "source_location": ""
+    },
+    {
       "id": "skills_infra_work_ticketing_scripts_ticketctl_rationale_190",
       "label": "Return (status, text). Raises TicketError on transport failure.",
       "_origin": "ast",
@@ -52591,6 +52602,17 @@
       "norm_label": "persist config, dropping the runtime-only keys.",
       "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
       "source_location": "L371"
+    },
+    {
+      "id": "skills_infra_work_ticketing_scripts_ticketctl_rationale_81",
+      "label": "Write a file and make it user-only where the OS supports it.",
+      "_origin": "ast",
+      "community": 299,
+      "community_name": "TicketError",
+      "file_type": "rationale",
+      "norm_label": "write a file and make it user-only where the os supports it.",
+      "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
+      "source_location": "L81"
     },
     {
       "id": "skills_infra_work_ticketing_scripts_ticketctl_rationale_97",
@@ -57902,7 +57924,7 @@
       "node_kind": "heading",
       "norm_label": "step 2 \u2014 hold one model, and only one",
       "source_file": "plugin/localgpu/commands/index.md",
-      "source_location": "L65"
+      "source_location": "L66"
     },
     {
       "id": "plugin_localgpu_commands_index_step_3_run_it_and_report_numbers",
@@ -57914,7 +57936,7 @@
       "node_kind": "heading",
       "norm_label": "step 3 \u2014 run it, and report numbers",
       "source_file": "plugin/localgpu/commands/index.md",
-      "source_location": "L83"
+      "source_location": "L84"
     },
     {
       "id": "plugin_localgpu_commands_index_step_4_prove_it_answers",
@@ -57926,7 +57948,7 @@
       "node_kind": "heading",
       "norm_label": "step 4 \u2014 prove it answers",
       "source_file": "plugin/localgpu/commands/index.md",
-      "source_location": "L109"
+      "source_location": "L110"
     },
     {
       "id": "plugin_localgpu_commands_index_when_to_run_this",
@@ -57938,7 +57960,7 @@
       "node_kind": "heading",
       "norm_label": "when to run this",
       "source_file": "plugin/localgpu/commands/index.md",
-      "source_location": "L115"
+      "source_location": "L116"
     },
     {
       "id": "plugin_crew_tests_test_crew_config_rationale_75",
@@ -59610,6 +59632,18 @@
       "source_location": "L1"
     },
     {
+      "id": "claude_obsidian_setup_readme",
+      "label": "claude-obsidian-setup/README.md",
+      "_origin": "ast",
+      "community": 41,
+      "community_name": "README.md",
+      "file_type": "document",
+      "node_kind": "page",
+      "norm_label": "claude-obsidian-setup/readme.md",
+      "source_file": "claude-obsidian-setup/README.md",
+      "source_location": "L1"
+    },
+    {
       "id": "installation",
       "label": "INSTALLATION.md",
       "_origin": "ast",
@@ -60243,22 +60277,11 @@
       "label": "Best-effort flatten of ADF for display.",
       "_origin": "ast",
       "community": 43,
-      "community_name": ".call",
+      "community_name": "Jira",
       "file_type": "rationale",
       "norm_label": "best-effort flatten of adf for display.",
       "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
       "source_location": "L520"
-    },
-    {
-      "id": "skills_infra_work_ticketing_scripts_ticketctl_rationale_693",
-      "label": "Accept a display id, an internal id, or a pasted URL -> internal id.",
-      "_origin": "ast",
-      "community": 43,
-      "community_name": ".call",
-      "file_type": "rationale",
-      "norm_label": "accept a display id, an internal id, or a pasted url -> internal id.",
-      "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
-      "source_location": "L693"
     },
     {
       "id": "plugin_crew_agents_explorer",
@@ -60527,7 +60550,7 @@
       "source_file": "plugin/localgpu/pyproject.toml",
       "source_location": "L1",
       "type": "package",
-      "version": "0.1.9"
+      "version": "0.1.10"
     },
     {
       "id": "plugin_crew_hooks_scripts_handoff_write_ps1_plugin_crew_hooks_scripts_handoff_write",
@@ -61524,10 +61547,10 @@
       "node_kind": "heading",
       "norm_label": "[2026-07-28]",
       "source_file": "CHANGELOG.md",
-      "source_location": "L3349"
+      "source_location": "L3360"
     },
     {
-      "id": "changelog_added_3351",
+      "id": "changelog_added_3362",
       "label": "Added",
       "_origin": "ast",
       "community": 469,
@@ -61536,7 +61559,7 @@
       "node_kind": "heading",
       "norm_label": "added",
       "source_file": "CHANGELOG.md",
-      "source_location": "L3351"
+      "source_location": "L3362"
     },
     {
       "id": "changelog_changelog",
@@ -61551,7 +61574,7 @@
       "source_location": "L1"
     },
     {
-      "id": "changelog_fixed_3360",
+      "id": "changelog_fixed_3371",
       "label": "Fixed",
       "_origin": "ast",
       "community": 469,
@@ -61560,7 +61583,7 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L3360"
+      "source_location": "L3371"
     },
     {
       "id": "changelog_skills_present_as_of_this_baseline",
@@ -61572,7 +61595,7 @@
       "node_kind": "heading",
       "norm_label": "skills present as of this baseline",
       "source_file": "CHANGELOG.md",
-      "source_location": "L3364"
+      "source_location": "L3375"
     },
     {
       "id": "plugin_crew_tests_test_verify_gate_lock",
@@ -63430,6 +63453,17 @@
       "source_location": "L532"
     },
     {
+      "id": "skills_infra_work_ticketing_scripts_ticketctl_rationale_1756",
+      "label": "Rehydrate the flags the builders read, for queue replay.",
+      "_origin": "ast",
+      "community": 501,
+      "community_name": "FakeArgs",
+      "file_type": "rationale",
+      "norm_label": "rehydrate the flags the builders read, for queue replay.",
+      "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
+      "source_location": "L1756"
+    },
+    {
       "id": "plugin_localgpu_cli_test_test_proxy_server_rationale_272",
       "label": "Without the fix, the TimeoutError raised by reading past timeout_seconds\u2026",
       "_origin": "ast",
@@ -63637,28 +63671,6 @@
       "norm_label": "a lock as any other process would have left it: a bare directory, aged by its...",
       "source_file": "plugin/crew/tests/test_verify_gate_lock_sh.py",
       "source_location": "L96"
-    },
-    {
-      "id": "skills_infra_work_ticketing_scripts_ticketctl_py_path",
-      "label": "Path",
-      "_origin": "ast",
-      "community": 507,
-      "community_name": "Path",
-      "file_type": "code",
-      "norm_label": "path",
-      "source_file": "",
-      "source_location": ""
-    },
-    {
-      "id": "skills_infra_work_ticketing_scripts_ticketctl_rationale_81",
-      "label": "Write a file and make it user-only where the OS supports it.",
-      "_origin": "ast",
-      "community": 507,
-      "community_name": "Path",
-      "file_type": "rationale",
-      "norm_label": "write a file and make it user-only where the os supports it.",
-      "source_file": "skills/infra-work-ticketing/scripts/ticketctl.py",
-      "source_location": "L81"
     },
     {
       "id": "plugin_crew_hooks_scripts_crew_config_rationale_624",
@@ -74002,7 +74014,29 @@
       "source_location": "L1"
     },
     {
-      "id": "plugin_localgpu_mcp_test_test_config_rationale_149",
+      "id": "plugin_localgpu_mcp_test_test_config_rationale_100",
+      "label": "And says so. Dropping the entry silently would leave the floor intact but the\u2026",
+      "_origin": "ast",
+      "community": 82,
+      "community_name": "_test/test_config.py",
+      "file_type": "rationale",
+      "norm_label": "and says so. dropping the entry silently would leave the floor intact but the...",
+      "source_file": "plugin/localgpu/mcp/_test/test_config.py",
+      "source_location": "L100"
+    },
+    {
+      "id": "plugin_localgpu_mcp_test_test_config_rationale_114",
+      "label": "The refusal must be about the floor, not about using `unignore` at all.",
+      "_origin": "ast",
+      "community": 82,
+      "community_name": "_test/test_config.py",
+      "file_type": "rationale",
+      "norm_label": "the refusal must be about the floor, not about using `unignore` at all.",
+      "source_file": "plugin/localgpu/mcp/_test/test_config.py",
+      "source_location": "L114"
+    },
+    {
+      "id": "plugin_localgpu_mcp_test_test_config_rationale_161",
       "label": "ignore\": \"node_modules\" is the natural typo. A string is iterable, so without a\u2026",
       "_origin": "ast",
       "community": 82,
@@ -74010,7 +74044,7 @@
       "file_type": "rationale",
       "norm_label": "ignore\": \"node_modules\" is the natural typo. a string is iterable, so without a...",
       "source_file": "plugin/localgpu/mcp/_test/test_config.py",
-      "source_location": "L149"
+      "source_location": "L161"
     },
     {
       "id": "plugin_obsidian_vault_hooks_scripts_vault_ops_rationale_1280",
@@ -87152,6 +87186,18 @@
       "weight": 1.0
     },
     {
+      "source": "plugin_localgpu_mcp_config_load_config",
+      "target": "plugin_localgpu_mcp_config_configerror",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "plugin/localgpu/mcp/config.py",
+      "source_location": "L243",
+      "weight": 1.0
+    },
+    {
       "source": "plugin_localgpu_mcp_config_localgpu_home",
       "target": "plugin_localgpu_mcp_config_py_path",
       "relation": "calls",
@@ -89272,7 +89318,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/localgpu/mcp/_test/test_config.py",
-      "source_location": "L142",
+      "source_location": "L154",
       "weight": 1.0
     },
     {
@@ -89284,7 +89330,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/localgpu/mcp/_test/test_config.py",
-      "source_location": "L164",
+      "source_location": "L176",
       "weight": 1.0
     },
     {
@@ -89296,7 +89342,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/localgpu/mcp/_test/test_config.py",
-      "source_location": "L152",
+      "source_location": "L164",
       "weight": 1.0
     },
     {
@@ -89332,7 +89378,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/localgpu/mcp/_test/test_config.py",
-      "source_location": "L119",
+      "source_location": "L131",
       "weight": 1.0
     },
     {
@@ -89344,7 +89390,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/localgpu/mcp/_test/test_config.py",
-      "source_location": "L158",
+      "source_location": "L170",
       "weight": 1.0
     },
     {
@@ -89368,7 +89414,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/localgpu/mcp/_test/test_config.py",
-      "source_location": "L111",
+      "source_location": "L123",
       "weight": 1.0
     },
     {
@@ -89380,7 +89426,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/localgpu/mcp/_test/test_config.py",
-      "source_location": "L100",
+      "source_location": "L102",
       "weight": 1.0
     },
     {
@@ -89396,6 +89442,18 @@
       "weight": 1.0
     },
     {
+      "source": "plugin_localgpu_mcp_test_test_config_test_unignore_lifting_a_liftable_entry_alongside_none_of_the_floor_is_fine",
+      "target": "plugin_localgpu_mcp_test_test_config_write_json",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "plugin/localgpu/mcp/_test/test_config.py",
+      "source_location": "L115",
+      "weight": 1.0
+    },
+    {
       "source": "plugin_localgpu_mcp_test_test_config_test_unknown_keys_are_ignored",
       "target": "plugin_localgpu_mcp_test_test_config_write_json",
       "relation": "calls",
@@ -89404,7 +89462,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/localgpu/mcp/_test/test_config.py",
-      "source_location": "L126",
+      "source_location": "L138",
       "weight": 1.0
     },
     {
@@ -89956,7 +90014,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/localgpu/mcp/_test/test_unignore.py",
-      "source_location": "L55",
+      "source_location": "L57",
       "weight": 1.0
     },
     {
@@ -89968,7 +90026,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/localgpu/mcp/_test/test_unignore.py",
-      "source_location": "L60",
+      "source_location": "L70",
       "weight": 1.0
     },
     {
@@ -89980,7 +90038,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/localgpu/mcp/_test/test_unignore.py",
-      "source_location": "L34",
+      "source_location": "L36",
       "weight": 1.0
     },
     {
@@ -89992,7 +90050,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/localgpu/mcp/_test/test_unignore.py",
-      "source_location": "L37",
+      "source_location": "L39",
       "weight": 1.0
     },
     {
@@ -115985,7 +116043,7 @@
       "confidence_score": 1.0,
       "context": "import",
       "source_file": "plugin/localgpu/mcp/_test/test_unignore.py",
-      "source_location": "L14",
+      "source_location": "L16",
       "weight": 1.0
     },
     {
@@ -115997,7 +116055,7 @@
       "confidence_score": 1.0,
       "context": "import",
       "source_file": "plugin/localgpu/mcp/_test/test_unignore.py",
-      "source_location": "L15",
+      "source_location": "L17",
       "weight": 1.0
     },
     {
@@ -119867,24 +119925,24 @@
     },
     {
       "source": "changelog_2026_07_28",
-      "target": "changelog_added_3351",
+      "target": "changelog_added_3362",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L3351",
+      "source_location": "L3362",
       "weight": 1.0
     },
     {
       "source": "changelog_2026_07_28",
-      "target": "changelog_fixed_3360",
+      "target": "changelog_fixed_3371",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L3360",
+      "source_location": "L3371",
       "weight": 1.0
     },
     {
@@ -119895,7 +119953,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L3364",
+      "source_location": "L3375",
       "weight": 1.0
     },
     {
@@ -119906,7 +119964,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L3349",
+      "source_location": "L3360",
       "weight": 1.0
     },
     {
@@ -119922,24 +119980,24 @@
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_1029",
+      "target": "changelog_fixed_1040",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L1029",
+      "source_location": "L1040",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_1071",
+      "target": "changelog_fixed_1082",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L1071",
+      "source_location": "L1082",
       "weight": 1.0
     },
     {
@@ -119950,172 +120008,172 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L1093",
+      "source_location": "L1104",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_1119",
+      "target": "changelog_fixed_1130",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L1119",
+      "source_location": "L1130",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_added_1139",
+      "target": "changelog_added_1150",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L1139",
+      "source_location": "L1150",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_1253",
+      "target": "changelog_fixed_1264",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L1253",
+      "source_location": "L1264",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_changed_1354",
+      "target": "changelog_changed_1365",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L1354",
+      "source_location": "L1365",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_added_1388",
+      "target": "changelog_added_1399",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L1388",
+      "source_location": "L1399",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_changed_1432",
+      "target": "changelog_changed_1443",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L1432",
+      "source_location": "L1443",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_added_1496",
+      "target": "changelog_added_1507",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L1496",
+      "source_location": "L1507",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_added_1510",
+      "target": "changelog_added_1521",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L1510",
+      "source_location": "L1521",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_1593",
+      "target": "changelog_fixed_1604",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L1593",
+      "source_location": "L1604",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_1779",
+      "target": "changelog_fixed_1790",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L1779",
+      "source_location": "L1790",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_1795",
+      "target": "changelog_fixed_1806",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L1795",
+      "source_location": "L1806",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_added_1804",
+      "target": "changelog_added_1815",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L1804",
+      "source_location": "L1815",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_2102",
+      "target": "changelog_fixed_2113",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2102",
+      "source_location": "L2113",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_changed_2202",
+      "target": "changelog_changed_2213",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2202",
+      "source_location": "L2213",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_2223",
+      "target": "changelog_fixed_2234",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2223",
+      "source_location": "L2234",
       "weight": 1.0
     },
     {
@@ -120126,260 +120184,260 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2287",
+      "source_location": "L2298",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_2316",
+      "target": "changelog_fixed_2327",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2316",
+      "source_location": "L2327",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_changed_2338",
+      "target": "changelog_changed_2349",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2338",
+      "source_location": "L2349",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_2348",
+      "target": "changelog_fixed_2359",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2348",
+      "source_location": "L2359",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_added_2363",
+      "target": "changelog_added_2374",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2363",
+      "source_location": "L2374",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_2496",
+      "target": "changelog_fixed_2507",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2496",
+      "source_location": "L2507",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_removed_2628",
+      "target": "changelog_removed_2639",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2628",
+      "source_location": "L2639",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_added_2638",
+      "target": "changelog_added_2649",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2638",
+      "source_location": "L2649",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_2711",
+      "target": "changelog_fixed_2722",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2711",
+      "source_location": "L2722",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_changed_2720",
+      "target": "changelog_changed_2731",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2720",
+      "source_location": "L2731",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_2790",
+      "target": "changelog_fixed_2801",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2790",
+      "source_location": "L2801",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_added_2842",
+      "target": "changelog_added_2853",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2842",
+      "source_location": "L2853",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_2891",
+      "target": "changelog_fixed_2902",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2891",
+      "source_location": "L2902",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_added_2957",
+      "target": "changelog_added_2968",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2957",
+      "source_location": "L2968",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_removed_3014",
+      "target": "changelog_removed_3025",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L3014",
+      "source_location": "L3025",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_added_3039",
+      "target": "changelog_added_3050",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L3039",
+      "source_location": "L3050",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_3061",
+      "target": "changelog_fixed_3072",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L3061",
+      "source_location": "L3072",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_added_3080",
+      "target": "changelog_added_3091",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L3080",
+      "source_location": "L3091",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_removed_3185",
+      "target": "changelog_removed_3196",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L3185",
+      "source_location": "L3196",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_changed_3199",
+      "target": "changelog_changed_3210",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L3199",
+      "source_location": "L3210",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_3208",
+      "target": "changelog_fixed_3219",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L3208",
+      "source_location": "L3219",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_changed_3288",
+      "target": "changelog_changed_3299",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L3288",
+      "source_location": "L3299",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_removed_3310",
+      "target": "changelog_removed_3321",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L3310",
+      "source_location": "L3321",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_3335",
+      "target": "changelog_fixed_3346",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L3335",
+      "source_location": "L3346",
       "weight": 1.0
     },
     {
@@ -120406,13 +120464,13 @@
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_935",
+      "target": "changelog_fixed_946",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L935",
+      "source_location": "L946",
       "weight": 1.0
     },
     {
@@ -142797,7 +142855,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/commands/index.md",
-      "source_location": "L109",
+      "source_location": "L110",
       "weight": 1.0
     },
     {
@@ -142808,7 +142866,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/commands/index.md",
-      "source_location": "L115",
+      "source_location": "L116",
       "weight": 1.0
     },
     {
@@ -142830,7 +142888,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/commands/index.md",
-      "source_location": "L65",
+      "source_location": "L66",
       "weight": 1.0
     },
     {
@@ -142841,7 +142899,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/commands/index.md",
-      "source_location": "L83",
+      "source_location": "L84",
       "weight": 1.0
     },
     {
@@ -143814,13 +143872,24 @@
     },
     {
       "source": "plugin_localgpu_mcp_test_test_config",
+      "target": "plugin_localgpu_mcp_test_test_config_test_unignore_lifting_a_liftable_entry_alongside_none_of_the_floor_is_fine",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "plugin/localgpu/mcp/_test/test_config.py",
+      "source_location": "L113",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_localgpu_mcp_test_test_config",
       "target": "plugin_localgpu_mcp_test_test_config_test_unignore_as_a_bare_string_is_rejected_not_shredded",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/mcp/_test/test_config.py",
-      "source_location": "L110",
+      "source_location": "L122",
       "weight": 1.0
     },
     {
@@ -143831,7 +143900,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/mcp/_test/test_config.py",
-      "source_location": "L116",
+      "source_location": "L128",
       "weight": 1.0
     },
     {
@@ -143842,18 +143911,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/mcp/_test/test_config.py",
-      "source_location": "L125",
-      "weight": 1.0
-    },
-    {
-      "source": "plugin_localgpu_mcp_test_test_config",
-      "target": "plugin_localgpu_mcp_test_test_config_test_broken_json_is_reported_not_swallowed",
-      "relation": "contains",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "plugin/localgpu/mcp/_test/test_config.py",
-      "source_location": "L132",
+      "source_location": "L137",
       "weight": 1.0
     },
     {
@@ -143869,13 +143927,24 @@
     },
     {
       "source": "plugin_localgpu_mcp_test_test_config",
+      "target": "plugin_localgpu_mcp_test_test_config_test_broken_json_is_reported_not_swallowed",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "plugin/localgpu/mcp/_test/test_config.py",
+      "source_location": "L144",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_localgpu_mcp_test_test_config",
       "target": "plugin_localgpu_mcp_test_test_config_test_a_json_array_is_not_a_config",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/mcp/_test/test_config.py",
-      "source_location": "L141",
+      "source_location": "L153",
       "weight": 1.0
     },
     {
@@ -143886,7 +143955,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/mcp/_test/test_config.py",
-      "source_location": "L148",
+      "source_location": "L160",
       "weight": 1.0
     },
     {
@@ -143897,7 +143966,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/mcp/_test/test_config.py",
-      "source_location": "L157",
+      "source_location": "L169",
       "weight": 1.0
     },
     {
@@ -143908,7 +143977,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/mcp/_test/test_config.py",
-      "source_location": "L163",
+      "source_location": "L175",
       "weight": 1.0
     },
     {
@@ -144964,7 +145033,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/mcp/_test/test_unignore.py",
-      "source_location": "L18",
+      "source_location": "L20",
       "weight": 1.0
     },
     {
@@ -144975,7 +145044,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/mcp/_test/test_unignore.py",
-      "source_location": "L23",
+      "source_location": "L25",
       "weight": 1.0
     },
     {
@@ -144986,7 +145055,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/mcp/_test/test_unignore.py",
-      "source_location": "L28",
+      "source_location": "L30",
       "weight": 1.0
     },
     {
@@ -144997,7 +145066,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/mcp/_test/test_unignore.py",
-      "source_location": "L52",
+      "source_location": "L54",
       "weight": 1.0
     },
     {
@@ -145074,7 +145143,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/skills/localgpu/SKILL.md",
-      "source_location": "L122",
+      "source_location": "L125",
       "weight": 1.0
     },
     {
@@ -145085,7 +145154,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/skills/localgpu/SKILL.md",
-      "source_location": "L133",
+      "source_location": "L136",
       "weight": 1.0
     },
     {
@@ -145096,7 +145165,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/skills/localgpu/SKILL.md",
-      "source_location": "L176",
+      "source_location": "L179",
       "weight": 1.0
     },
     {
@@ -145107,7 +145176,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/skills/localgpu/SKILL.md",
-      "source_location": "L201",
+      "source_location": "L204",
       "weight": 1.0
     },
     {
@@ -145118,7 +145187,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/skills/localgpu/SKILL.md",
-      "source_location": "L219",
+      "source_location": "L222",
       "weight": 1.0
     },
     {
@@ -145129,7 +145198,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/skills/localgpu/SKILL.md",
-      "source_location": "L287",
+      "source_location": "L290",
       "weight": 1.0
     },
     {
@@ -145140,7 +145209,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/skills/localgpu/SKILL.md",
-      "source_location": "L310",
+      "source_location": "L313",
       "weight": 1.0
     },
     {
@@ -145173,7 +145242,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/skills/localgpu/SKILL.md",
-      "source_location": "L246",
+      "source_location": "L249",
       "weight": 1.0
     },
     {
@@ -145184,7 +145253,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/skills/localgpu/SKILL.md",
-      "source_location": "L272",
+      "source_location": "L275",
       "weight": 1.0
     },
     {
@@ -145195,7 +145264,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/skills/localgpu/SKILL.md",
-      "source_location": "L157",
+      "source_location": "L160",
       "weight": 1.0
     },
     {
@@ -179959,14 +180028,36 @@
       "weight": 1.0
     },
     {
-      "source": "plugin_localgpu_mcp_test_test_config_rationale_149",
+      "source": "plugin_localgpu_mcp_test_test_config_rationale_100",
+      "target": "plugin_localgpu_mcp_test_test_config_test_unignore_cannot_lift_the_hard_floor",
+      "relation": "rationale_for",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "plugin/localgpu/mcp/_test/test_config.py",
+      "source_location": "L100",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_localgpu_mcp_test_test_config_rationale_114",
+      "target": "plugin_localgpu_mcp_test_test_config_test_unignore_lifting_a_liftable_entry_alongside_none_of_the_floor_is_fine",
+      "relation": "rationale_for",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "plugin/localgpu/mcp/_test/test_config.py",
+      "source_location": "L114",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_localgpu_mcp_test_test_config_rationale_161",
       "target": "plugin_localgpu_mcp_test_test_config_test_ignore_as_a_bare_string_is_rejected_not_shredded",
       "relation": "rationale_for",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/mcp/_test/test_config.py",
-      "source_location": "L149",
+      "source_location": "L161",
       "weight": 1.0
     },
     {
@@ -183332,7 +183423,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2899",
+      "source_location": "L2910",
       "weight": 1.0
     },
     {
@@ -183343,7 +183434,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L3366",
+      "source_location": "L3377",
       "weight": 1.0
     },
     {
@@ -185515,7 +185606,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "plugin/localgpu/mcp/_test/test_unignore.py",
-      "source_location": "L19",
+      "source_location": "L21",
       "weight": 1.0
     },
     {
@@ -185527,7 +185618,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "plugin/localgpu/mcp/_test/test_unignore.py",
-      "source_location": "L20",
+      "source_location": "L22",
       "weight": 1.0
     },
     {
@@ -185539,7 +185630,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "plugin/localgpu/mcp/_test/test_unignore.py",
-      "source_location": "L53",
+      "source_location": "L55",
       "weight": 1.0
     },
     {
@@ -185551,7 +185642,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "plugin/localgpu/mcp/_test/test_unignore.py",
-      "source_location": "L32",
+      "source_location": "L34",
       "weight": 1.0
     },
     {
@@ -188007,5 +188098,5 @@
     }
   ],
   "hyperedges": [],
-  "built_at_commit": "61e51d784220b853d7af4334476c1e336151a711"
+  "built_at_commit": "c7d7f8aa2832201cedcfce2ad5d9c34dc69a6e05"
 }
