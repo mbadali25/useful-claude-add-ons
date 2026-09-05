@@ -10,38 +10,102 @@ vault; detect one if none is configured.
 
 Invoke the `obsidian-setup` skill and follow it exactly - it has the per-OS
 install steps, the Local REST API configuration, and the MCP registration this
-file does not repeat. In outline, so you know the shape before you load it:
+file does not repeat.
 
-1. **Resolve the vault.** $2 if given. Otherwise, for the default vault, probe
-   Obsidian's own registry (`%APPDATA%\obsidian\obsidian.json` on Windows,
-   `~/.config/obsidian/obsidian.json` on Linux, `~/Library/Application
-   Support/obsidian/obsidian.json` on macOS) for a vault marked open. If none
-   exists anywhere, ask where to create one - do not invent a path. For a
-   second or later named vault there is nothing to detect from - always ask.
+Every step below that touches a vault's plugin, ports, or MCP registration is
+performed by `${CLAUDE_PLUGIN_ROOT}/hooks/scripts/vault_ops.py`, the same script
+`/obsidian-vault:doctor`, `repair`, and `install` wrap. It is dry-run by default
+and writes only with `--apply`, which is what makes "show the plan, then ask"
+possible. Exit 0 healthy or applied, 1 problems found, 2 usage error - exit 1
+from a dry run is a successful diagnosis, not a crash. If `python` is not on
+PATH, try `python3` then `py`, and say which one worked; Git Bash on Windows
+ships without `python3`.
+
+In outline, so you know the shape before you load the skill:
+
+1. **Resolve the vault.** $2 if given. Otherwise:
+   ```
+   python "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/vault_ops.py" scan --json
+   ```
+   `scan` reads both config and Obsidian's own registry and reports every vault
+   on the machine, including ones config has never heard of. Do not open the
+   registry file yourself. Three things it cannot decide: whether this is a
+   re-run (a vault already in config is being updated - show the diff, do not
+   overwrite silently), which vault is default (a choice, not a detection), and
+   where to create a vault when nothing resolves. Ask rather than invent a path
+   - a hook silently pointed at the wrong directory is how the personal version
+   of this plugin used to fail for everyone else. For a second or later named
+   vault there is nothing to detect from - always ask.
 2. **Install Obsidian if it is missing.** `winget install Obsidian.Obsidian` on
    Windows; on Linux, detect the package manager and offer the Flatpak
    (`flatpak install flathub md.obsidian.Obsidian`) or point at the AppImage -
    there is no universal package name across distros, so ask rather than guess.
-3. **Configure the Local REST API community plugin, per vault.** Install it if
-   absent in *that* vault, enable it, read its generated `apiKey` from
-   `<vault>/.obsidian/plugins/obsidian-local-rest-api/data.json`. Local REST
-   API is per-vault: it only answers while that vault is open in its own
-   Obsidian window, on the port that vault's plugin instance was configured
-   with. Ask for the port rather than assuming - `27123` for a first vault,
-   the next configured vault commonly `27125` (leaving `27124`/`27126` free
-   for each vault's HTTPS side), but this is a convention this plugin follows,
-   not something Local REST API enforces.
-4. **Register one MCP server per vault**, never one server multiplexing two
+3. **Name the vault in config, before anything addresses it by name.** Every
+   step below takes `--vault <name>`, and a vault config has never heard of is
+   discovered under its *directory basename*. If the chosen name differs from
+   the folder - `thd` for `claude-anew-thd-codegraph` - every one of those steps
+   fails with "unknown vault" until the entry exists. So write it first:
+   ```
+   python "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/vault_ops.py" add-vault --name <name> --path <path>
+   python "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/vault_ops.py" add-vault --name <name> --path <path> --apply
+   ```
+   Add `--layout org/repo` for a code-graph vault and `--default` for the
+   primary one. Show the dry run and get a yes before applying.
+
+4. **Download the Local REST API community plugin, then enable it.** The
+   download is a **manual prerequisite** and nothing in this plugin fetches it.
+   An Obsidian community plugin is unsigned `main.js` on a GitHub release, with
+   no publisher signature and no authoritative checksum, and it runs with
+   Obsidian's own privileges over every note in the vault - so it is installed
+   through Obsidian's own installer, by a person, or not at all.
+
+   In Obsidian, with that vault open: Settings > Community plugins > turn on
+   community plugins (this is what leaves Restricted Mode) > Browse > search
+   Local REST API > Install. Then let the script enable it and read back the key
+   - do not place release files or hand-edit a `data.json`:
+   ```
+   python "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/vault_ops.py" enable-plugin --vault <name>
+   python "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/vault_ops.py" enable-plugin --vault <name> --apply
+   ```
+   Show the dry run and get a yes before applying. If the plugin's files are not
+   there yet it says `NOT DOWNLOADED` and stops - that is the prerequisite above,
+   not a failure to chase. Launching the vault is also Obsidian's own job: once
+   so `.obsidian/` exists, again after the plugin is enabled so it generates its
+   `apiKey`. Read that key from
+   `<vault>/.obsidian/plugins/obsidian-local-rest-api/data.json`; never
+   generate or guess one.
+
+   Then check this vault's ports against every other vault's, before anything
+   is registered against them:
+   ```
+   python "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/vault_ops.py" fix-ports --vault <name>
+   ```
+   Exit 0 means no collision and nothing to apply. Exit 1 means this vault
+   duplicates a port another vault already declares - show the plan, get a yes,
+   run it again with `--apply`, then `reload` that vault's window so the live
+   plugin picks up the change. Do not choose ports yourself. Local REST API is
+   per-vault: it answers only while that vault is open in its own Obsidian
+   window, on that instance's own ports.
+5. **Register one MCP server per vault**, never one server multiplexing two
    vaults - the bridge is per-port, so a single server config cannot serve
-   both anyway. Name each server `obsidian-<vault-name>` so multiple vaults
-   never collide:
+   both anyway:
    ```
-   claude mcp add --scope user obsidian-<name> --transport http http://127.0.0.1:<port>/mcp \
-     --header "Authorization: Bearer <apiKey for that vault>"
+   python "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/vault_ops.py" register --vault <name> --apply
    ```
-   Always the HTTP port, never HTTP port + 1 (self-signed cert on the HTTPS
-   side; Node's client rejects it - see the `obsidian-setup` skill).
-5. **Write `~/.claude/obsidian/config.json`** as:
+   That is the whole step. It names each server `obsidian-<vault-name>` so
+   multiple vaults never collide, and points it at that vault's HTTP port with
+   that vault's current key. Run it again after any port change or key
+   rotation - "key rejected, and it used to work" is always one of those two.
+
+   **Read both ports from the vault's own `data.json`; derive neither from the
+   other.** There `port` is the HTTPS port and `insecurePort` is the HTTP one,
+   and they are whatever that vault was configured with. On this machine memory
+   is HTTPS 27124 / HTTP 27123, codegraphs 27128 / 27125, anew-codegraph 27126
+   / 27127 - HTTPS *below* HTTP. There is no arithmetic relating them. The MCP
+   server goes on the HTTP port: the HTTPS side is self-signed and Claude
+   Code's Node client rejects it, so a green `curl -k` proves the vault is
+   serving and proves nothing about whether MCP will connect.
+6. **Complete the config entry** that step 3 created. The full shape is:
    ```json
    {
      "vaults": {
@@ -51,6 +115,14 @@ file does not repeat. In outline, so you know the shape before you load it:
      "guard": { "asciiOnly": false, "requireFrontmatter": false, "checkCanvas": true }
    }
    ```
+   `add-vault` wrote `path`, and `--port`/`--layout`/`--default` if you passed
+   them; the `guard` block and anything you skipped is typed here. Re-running
+   `add-vault --apply` merges into the existing entry rather than replacing it,
+   so either route is fine.
+   `port` here is the **HTTP** port - the value that vault's `data.json` calls
+   `insecurePort`. The same word means the HTTPS port in `data.json`, so check
+   which file you are copying from.
+
    Set `default: true` on exactly one vault - the first one configured, unless
    told otherwise. Only that vault gets the ASCII/frontmatter/canvas guard,
    the capture-to-inbox hook, and env-var/detection fallback; a second vault
@@ -59,14 +131,17 @@ file does not repeat. In outline, so you know the shape before you load it:
    see the `obsidian-memory-contract` skill for why. Set `guard` toggles from
    what the *default* vault's own `CLAUDE.md` states (ASCII-only, required
    frontmatter keys) - detected, never assumed.
-6. **Note a vault's `layout`** if it has a structural convention worth other
+7. **Note a vault's `layout`** if it has a structural convention worth other
    commands knowing - a code-graph vault laid out `<org>/<repo>/` should
    record `"layout": "org/repo"` so `/obsidian-vault:graph` addresses it
    correctly instead of guessing crew's own `codegraphs/<repo>/` default.
-7. **Probe end to end**, the way `/obsidian-vault:doctor` does, for every vault
-   just configured, and report the result plainly rather than assuming the
-   wiring worked because the steps ran.
-8. **Companions.** Offer each of the following as its own yes/no - never a
+8. **Confirm with `diagnose`**, for every vault just configured:
+   ```
+   python "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/vault_ops.py" diagnose --vault <name>
+   ```
+   Report what it returned, not that the steps ran. `/obsidian-vault:doctor`
+   explains the verdicts if one needs translating.
+9. **Companions.** Offer each of the following as its own yes/no - never a
    batched "install all three." State what it adds and the exact command
    before asking; skip an item with a one-line note if its check fails (e.g.
    its marketplace is unreachable), and never add a marketplace or install a

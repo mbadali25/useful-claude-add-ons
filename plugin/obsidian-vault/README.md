@@ -62,7 +62,7 @@ just left to be discovered.
 
 | Component | Count |
 |---|---|
-| Commands | 8: `init`, `doctor`, `optimize`, `canvas`, `map`, `graph`, `garden`, `reflect` |
+| Commands | 10: `init`, `doctor`, `repair`, `install`, `optimize`, `canvas`, `map`, `graph`, `garden`, `reflect` |
 | Agents | 2: `obsidian-vault:gardener`, `obsidian-vault:reflector` |
 | Skills | 3: `obsidian-setup`, `obsidian-memory-contract`, `obsidian-scheduling` |
 | Hooks | 8 entries (3 scripts x `.sh`/`.ps1`) across `SessionStart`, `PostToolUse`, `SessionEnd`, `PreCompact` |
@@ -74,7 +74,7 @@ to be asked; hooks do not.
 
 | Script | Event | What it does |
 |---|---|---|
-| `bridge-status.sh`/`.ps1` | `SessionStart` | Probes **every** configured vault's Local REST API bridge and states plainly whether each `mcp__obsidian-<name>__*` will work this session - down, wrong port, or rejected key, each with the actual fix. Never blocks. |
+| `bridge-status.sh`/`.ps1` | `SessionStart` | Probes **every** configured vault's Local REST API bridge and states plainly whether each `mcp__obsidian-<name>__*` will work this session. Both ports come from that vault's own `data.json` (`insecurePort` HTTP, `port` HTTPS), never derived from each other. It checks for a port collision across every vault **before** blaming any per-vault setting - `enableInsecureServer` is not the cause when the losing vault never started a server at all. Not-installed ("there is no bridge") and wrong-vault-answering (authenticates, serves someone else's files) are separate verdicts from down and rejected-key, each with its own fix. Never blocks. |
 | `vault-guard.sh`/`.ps1` | `PostToolUse` on `Edit`/`Write`/`MultiEdit` | Enforces the *default* vault's frontmatter contract, ASCII rule, and canvas well-formedness - **all three OFF by default.** `/obsidian-vault:init` turns one on only when it finds the matching rule stated in the target vault's own `CLAUDE.md`. Can block (exit 2) with the specific fix on stderr. Does not apply to a non-default vault. |
 | `vault-capture.sh`/`.ps1` | `SessionEnd`, `PreCompact` | Appends one line (session id, cwd, transcript path) to the default vault's `inbox/pending-reflect.md`. Costs nothing, cannot break a session. |
 
@@ -95,13 +95,54 @@ toggles actually gate the checks).
 | Command | Does |
 |---|---|
 | `/obsidian-vault:init [name] [path]` | Install/configure Obsidian, the REST bridge, and plugin config - for the default vault with no arguments, or add/update a named vault |
-| `/obsidian-vault:doctor` | Diagnose every configured vault's REST bridge, a git-configured-but-not-a-git-repo default vault, `CLAUDE.md` drift against reality, gardener staleness, and empty structural folders - offers fixes, never applies one without confirmation |
+| `/obsidian-vault:doctor [vault]` | Runs `vault_ops.py diagnose` and explains the verdicts: REST bridge state, port collisions across every vault, a git-configured-but-not-a-git-repo default vault, `CLAUDE.md` drift, gardener staleness, empty structural folders. **Read-only by design** - it has no `Write` or `Edit` and hands off to `repair` |
+| `/obsidian-vault:repair [op] [vault]` | The acting counterpart: `fix-ports`, `reload`, `register`, for one vault or all. Shows the dry-run plan and requires a yes per operation before anything writes |
+| `/obsidian-vault:install <vault>` | Installs and enables the Local REST API plugin in a vault that has none, assigns non-colliding ports, and registers its MCP server |
 | `/obsidian-vault:optimize` | Reports per-plugin cost on a large vault; every install/removal proposed one at a time, never batched |
 | `/obsidian-vault:canvas <topic>` | Builds/refreshes a `.canvas` from a topic's wikilink neighborhood - canvases hold no facts |
 | `/obsidian-vault:map <area>` | Builds/refreshes a Map-of-Content note |
 | `/obsidian-vault:graph [repo] [vault-name]` | Builds a `graphify` code graph and exports it into a dedicated, separately-configured codegraphs vault laid out `<org>/<repo>/` - exact `graphify . --no-viz --code-only` / `graphify export obsidian` invocations, not `--obsidian`, which is silently ignored |
 | `/obsidian-vault:garden` | Runs the gardener now instead of waiting for its schedule |
 | `/obsidian-vault:reflect <topic>` | Asks the vault what it knows, and what contradicts |
+
+## Repairing the bridge
+
+Every fix is performed by `hooks/scripts/vault_ops.py`, not typed out by hand.
+It is dry-run by default and writes only with `--apply`; exit 0 means healthy or
+applied, 1 means it found problems, 2 means a bad flag. The commands are thin
+wrappers: `doctor` calls `diagnose` and never writes, `repair` calls
+`fix-ports` / `reload` / `register`, `install` calls `install-plugin`, and
+`init` calls `scan`, `install-plugin`, `fix-ports`, `register`, and `diagnose`
+in that order - the only thing it still writes by hand is
+`~/.claude/obsidian/config.json`, which no subcommand owns.
+
+**The failure that looks like three failures.** Two vaults declaring the same
+port is one cause with three symptoms: HTTP never listens, HTTPS answers with
+the *other* vault's API key, and the bridge serves the *other* vault's files.
+One plugin instance wins the bind; the loser fails to start its server at all,
+which takes its HTTP listener down with it.
+
+Find it by comparing `port` and `insecurePort` across **every** vault's
+`.obsidian/plugins/obsidian-local-rest-api/data.json` - including vaults absent
+from `~/.claude/obsidian/config.json`, because an unconfigured vault still binds
+ports. `enableInsecureServer` is not the answer: on the machine that hit this,
+that flag was already `true` everywhere.
+
+Two things that mislead here:
+
+- **`curl -k` proves less than it looks like.** It succeeds against the HTTPS
+  port where Claude Code's Node MCP client rejects the same self-signed
+  certificate. A green `curl -k` means the vault is serving; it does not mean
+  MCP will connect.
+- **An edit to `data.json` needs an Obsidian window reload.** The plugin reads
+  that file only at load, so a stale instance disagrees with disk on both the
+  port and the API key at once.
+
+**There is no port arithmetic.** In `data.json`, `port` is the HTTPS port and
+`insecurePort` is the HTTP one - not an offset. On this machine: memory is HTTPS
+27124 / HTTP 27123, codegraphs 27128 / 27125, anew-codegraph 27126 / 27127. In
+`~/.claude/obsidian/config.json` the key `port` means the *HTTP* port, the
+opposite of the same word in `data.json`.
 
 ## Agents
 
@@ -116,8 +157,9 @@ plainly rather than buried in a script comment.
 
 - `obsidian-setup` - the steps `/obsidian-vault:init` follows, in full,
   including per-OS install, per-vault Local REST API configuration and MCP
-  registration, and the `enableInsecureServer`/HTTPS-port troubleshooting that
-  a wrong guess here silently breaks.
+  registration, and the `vault_ops.py` subcommand table every command here
+  wraps. Its Troubleshooting section carries the port-collision diagnosis
+  below.
 - `obsidian-memory-contract` - the six-key frontmatter contract, evidence
   rules, tag discipline, the canvas-holds-no-facts rule, and the
   filesystem-over-MCP performance rule for a large vault. A vault's own

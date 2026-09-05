@@ -8,27 +8,59 @@ description: Install and configure Obsidian, the Local REST API bridge, and this
 The steps `/obsidian-vault:init` follows. Read this before running that command by
 hand or debugging a bridge that will not connect.
 
+## Nothing here is done by hand
+
+`${CLAUDE_PLUGIN_ROOT}/hooks/scripts/vault_ops.py` performs every action this
+skill describes. It is dry-run by default and writes only with `--apply`. Exit 0
+means healthy or applied, 1 means problems found, 2 means a usage error - exit 1
+is a successful diagnosis, not a crash.
+
+| Want | Run |
+|---|---|
+| See every vault on the machine, configured or not | `scan [--json]` |
+| Find what is wrong | `diagnose [--vault NAME] [--json]` |
+| Resolve a port collision | `fix-ports [--vault NAME] [--apply]` |
+| Reload a stale Obsidian window | `reload [--vault NAME \| --all]` |
+| Register or re-register MCP servers | `register [--vault NAME \| --all] [--apply]` |
+| Install the REST plugin into a vault that lacks it | `enable-plugin [--vault NAME \| --all] [--apply]` |
+| Check a code-graph vault's graph output | `graph-health [--vault NAME] [--fix]` |
+
+`--json` is available on the read-only subcommands only. `graph-health` takes
+`--fix`, not `--apply`.
+
+The commands are thin wrappers over these: `/obsidian-vault:doctor` diagnoses
+and never writes, `/obsidian-vault:repair` fixes ports, reloads, and registers,
+`/obsidian-vault:install` brings a plugin-less vault onto the bridge. Reach for
+those before typing a fix.
+
+If `python` is not on PATH, try `python3` then `py`. Git Bash on Windows ships
+without `python3`.
+
 ## 1. Resolve the vault
 
-Check, in order:
+An explicit path given to the command always wins. Otherwise:
 
-1. An explicit path given to the command.
-2. `~/.claude/obsidian/config.json` -> `vaults.<name>.path` (or the legacy
-   `vaultPath` for the default vault), if the named vault already exists in
-   config - this is a re-run for that vault, not a first setup.
-3. Obsidian's own vault registry:
-   - Windows: `%APPDATA%\obsidian\obsidian.json`
-   - macOS: `~/Library/Application Support/obsidian/obsidian.json`
-   - Linux: `~/.config/obsidian/obsidian.json` (respects `XDG_CONFIG_HOME`)
+```
+python "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/vault_ops.py" scan --json
+```
 
-   That file is `{"vaults": {"<id>": {"path": "...", "ts": <ms>, "open": bool}}}`.
-   Prefer a vault with `"open": true`; otherwise take the newest by `ts`. This
-   tells you what Obsidian itself currently considers current, without the
-   user repeating it.
-4. If nothing resolves, ask where to create or point at a vault. Never invent
-   a path - a wrong default silently pointed a hook at the wrong directory is
-   how the personal version of this plugin's hooks used to fail for anyone
-   else who installed them.
+`scan` reads both sources - `~/.claude/obsidian/config.json` and Obsidian's own
+registry - and reports every vault on the machine, including ones config has
+never heard of. Do not re-derive that by opening the registry file yourself.
+
+Three things `scan` cannot decide for you:
+
+1. **Whether this is a re-run.** A vault already in config is being updated, not
+   set up. Say which, and do not overwrite its settings without showing the diff.
+2. **Which vault is default.** Exactly one, and it is a choice, not a detection.
+3. **Where to create a vault when nothing resolves.** Ask. Never invent a path -
+   a wrong default silently pointed a hook at the wrong directory is how the
+   personal version of this plugin's hooks used to fail for anyone else who
+   installed them.
+
+A vault that `scan` lists but config does not is a real vault with real bound
+ports and no name this plugin can pass to `--vault`. Give it one with
+`/obsidian-vault:init <name> <path>` before anything else can address it.
 
 ## 2. Install Obsidian if missing
 
@@ -52,35 +84,54 @@ which matters for step 3.
 
 ## 3. Community plugin: Local REST API
 
-1. If Obsidian has never been launched against this vault, launch it once so
-   `.obsidian/` exists, then close it (a real quit, not a window close - see
-   the warning under Troubleshooting).
-2. Community plugins must be enabled (not Restricted Mode). If
-   `.obsidian/community-plugins.json` does not exist or is `[]`, this is
-   likely the first run - say so and ask the user to confirm "Turn on
-   community plugins" in Obsidian's Settings > Community plugins once, since
-   Claude cannot click through Obsidian's own onboarding dialog.
-3. Install `obsidian-local-rest-api` (from the Community Plugins browser, or
-   by placing the release files under
-   `.obsidian/plugins/obsidian-local-rest-api/` if scripting the install) and
-   enable it in `community-plugins.json`.
-4. After Obsidian has run with the plugin enabled at least once,
-   `.obsidian/plugins/obsidian-local-rest-api/data.json` contains a generated
-   `apiKey`. Read it - never generate or guess a key yourself.
+**Downloading the plugin is a manual prerequisite, and nothing here does it.**
+An Obsidian community plugin is unsigned `main.js` on a GitHub release, with no
+publisher signature and no authoritative checksum, running at Obsidian's own
+privilege over every note in the vault - so it comes through Obsidian's own
+installer or not at all. In Obsidian, with that vault open: Settings >
+Community plugins > turn on community plugins > Browse > Local REST API >
+Install. Never place release files by hand either.
+
+`enable-plugin --vault <name> --apply` then enables an already-downloaded
+plugin and reads back the key. On a vault whose files are absent it reports
+`NOT DOWNLOADED` and stops - that is the prerequisite above, not a failure.
+Three things it cannot do, because they are Obsidian's own UI:
+
+1. **Launch the vault once** so `.obsidian/` exists, and once more after the
+   plugin is enabled so the plugin generates its `apiKey`. Closing the window is
+   not quitting - see Troubleshooting.
+2. **Turn community plugins on.** If `.obsidian/community-plugins.json` does not
+   exist or is `[]`, ask the user to confirm "Turn on community plugins" in
+   Settings > Community plugins. Claude cannot click through that dialog.
+
+The key lives in `.obsidian/plugins/obsidian-local-rest-api/data.json`. Read it;
+never generate or guess one.
 
 ## 4. Register the MCP server - one per vault
 
 ```
-claude mcp add --scope user obsidian-<name> --transport http http://127.0.0.1:<port>/mcp \
-  --header "Authorization: Bearer <apiKey from step 3.4>"
+python "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/vault_ops.py" register --vault <name> --apply
 ```
 
-**Always the HTTP port, never HTTP port + 1 (HTTPS).** The HTTPS side uses a
-self-signed certificate; Claude Code's Node HTTP client rejects it with
+That is the whole step. It registers `obsidian-<name>` against that vault's HTTP
+port with that vault's current key. Run it again after any port change or key
+rotation - "key rejected, and it used to work" is always one of those two.
+
+**Point the MCP server at the HTTP port.** The HTTPS side uses a self-signed
+certificate; Claude Code's Node HTTP client rejects it with
 `DEPTH_ZERO_SELF_SIGNED_CERT` and there is no clean way to trust it from this
-side. If `enableInsecureServer` is off in the plugin's settings, turn it on -
-insecure here means "no TLS on loopback," not "no auth"; the bearer key still
-gates every request.
+side. `curl -k` reaches that same port happily, so a green `curl -k` proves the
+vault is serving and proves nothing about whether MCP will connect. Do not
+repoint a server at HTTPS because `curl -k` worked.
+
+**Read both ports from the file; do not derive one from the other.** In
+`data.json`, `port` is the HTTPS port and `insecurePort` is the HTTP one, and
+they are whatever that vault was configured with - not an offset of each other.
+On the machine this plugin was written against: memory is HTTPS 27124 / HTTP
+27123, codegraphs 27128 / 27125, anew-codegraph 27126 / 27127. In
+`~/.claude/obsidian/config.json` the key `port` means the **HTTP** port, the
+opposite of what the same word means in `data.json`. Two files, one word, two
+meanings - check which file you are reading.
 
 **One MCP server per vault, never one server for two vaults.** Local REST API
 is a per-vault plugin instance on a per-vault port, live only while that
@@ -114,6 +165,10 @@ both even if you wanted one. Name each server `obsidian-<name>` (e.g.
   }
 }
 ```
+
+`port` here is that vault's **HTTP** port - the value its `data.json` calls
+`insecurePort`. The same word means the HTTPS port in `data.json`. Copy it from
+the file, never from the other file's `port`.
 
 Only ever set `default: true` on one vault - it is the only one the ASCII/
 frontmatter/canvas guard and the session-capture hook apply to, and the only
@@ -164,16 +219,15 @@ filesystem-first approach instead and skip straight to step 6.
 
 ## 6. Verify end to end
 
-Do not report success because the steps ran. For each vault just configured,
-confirm:
+Do not report success because the steps ran.
 
 ```
-GET http://127.0.0.1:<that vault's port>/  with header  Authorization: Bearer <apiKey>
+python "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/vault_ops.py" diagnose
 ```
 
-returns `{"authenticated": true, ...}`. If it does not, this is exactly what
-`/obsidian-vault:doctor` diagnoses - point there rather than re-deriving the
-diagnosis inline.
+Exit 0 and every vault healthy is the only success. Exit 1 means it found
+something; read the verdicts, do not re-derive them by hand. `/obsidian-vault:doctor`
+is the same call with the verdicts explained.
 
 ## Troubleshooting
 
@@ -182,16 +236,32 @@ diagnosis inline.
   quitting, so a plugin enabled after launch is not actually loaded. A full
   quit from the tray icon and relaunch is required, not just closing the
   window.
-- **The HTTPS port (port + 1) answers but the HTTP port does not.**
-  `enableInsecureServer` is off in the plugin's settings for that vault. Turn
-  it on, reload Obsidian (command `app:reload`). Do not repoint the MCP server
-  at the HTTPS port to work around it - see step 4.
+- **HTTP never answers, HTTPS answers with the wrong vault's key, and the
+  bridge serves the wrong vault's files.** That is one fault, not three. Two
+  vaults declared the same port; one won the bind and the loser's plugin failed
+  to start its server at all, taking its HTTP listener down with it. Find it by
+  comparing `port` and `insecurePort` across **every** vault's
+  `.obsidian/plugins/obsidian-local-rest-api/data.json` - including vaults that
+  `~/.claude/obsidian/config.json` has never heard of, because an unconfigured
+  vault still binds ports. Then run `/obsidian-vault:repair fix-ports`.
+
+  Do not reach for `enableInsecureServer`. On the machine that hit this, that
+  flag was already `true` on every vault; the collision kills the server before
+  either listener starts, so the flag has nothing to gate.
+- **The plugin disagrees with its own `data.json`.** It reads that file only at
+  load. Any edit needs an Obsidian window reload before it takes effect, so a
+  stale instance is wrong about both the port and the API key at once - and a
+  probe of it reports something true of neither. `/obsidian-vault:repair reload`
+  (Obsidian's own `app:reload`), or a full quit and relaunch if that does not
+  take.
 - **Key rejected after previously working.** The key in that vault's
-  `data.json` no longer matches what its MCP server has. Re-run `claude mcp
-  remove --scope user obsidian-<name>` and re-add with the current key, or run
-  `/obsidian-vault:doctor`.
+  `data.json` no longer matches what its MCP server has. Run
+  `/obsidian-vault:repair register`; it re-registers from the current key.
 - **A second vault's bridge only answers while that vault's Obsidian window is
   actually open.** Unlike a single-vault setup, running two vaults commonly
   means running two Obsidian windows (or opening the second one only when
   needed) - `/obsidian-vault:doctor` reporting one vault down while another is
   up is expected, not a misconfiguration, if only one window is open.
+- **A vault with no REST plugin at all** has nothing to repair - no `data.json`
+  to compare, no key to register. `/obsidian-vault:install` is the command for
+  that one.
