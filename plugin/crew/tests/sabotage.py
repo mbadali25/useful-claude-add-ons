@@ -133,8 +133,8 @@ MUTATIONS = (
         # branch to review its own diff.
         "a pre-store record is overwritten instead of adopted",
         STATE,
-        "    _adopt_slot(root, kind)\n    _append_dispatch(root, kind, entry)",
-        "    _append_dispatch(root, kind, entry)",
+        "    return _append_dispatch(root, kind, dict(slot, adopted=True))",
+        "    return True",
         ("tests/test_provider_table.py::"
          "test_a_dispatch_recorded_before_the_store_existed_is_not_lost"),
     ),
@@ -182,6 +182,48 @@ MUTATIONS = (
         "        if isinstance(parsed, dict):",
         ("tests/test_platform_sync.py::"
          "test_heal_config_recreates_an_empty_object"),
+    ),
+    (
+        # Round 4, Critical. An entry naming no author cannot BE the
+        # author, so it must not displace one that can.
+        "an entry with no provider still spends a slot",
+        STATE,
+        '        if not entry.get("provider"):\n            continue',
+        '        if False:\n            continue',
+        ("tests/test_provider_table.py::"
+         "test_an_entry_with_no_provider_cannot_evict_one_that_has_one"),
+    ),
+    (
+        # Round 4, Critical. The branch filter runs AFTER the trim, so a
+        # store-wide bound lets other branches evict this one's record.
+        "the history bound is spent across branches",
+        STATE,
+        "        bucket = kept.setdefault(branch, [])",
+        "        bucket = kept.setdefault(None, [])",
+        ("tests/test_provider_table.py::"
+         "test_another_branch_cannot_spend_this_branch_s_history"),
+    ),
+    (
+        # Round 4, Critical. A hygiene cap that can delete the record
+        # under review is the cap deciding which family is remembered.
+        "pruning ignores what the reader still keeps",
+        STATE,
+        "        if name in protected:\n            continue",
+        "        if False:\n            continue",
+        ("tests/test_provider_table.py::"
+         "test_pruning_never_removes_an_entry_the_reader_still_keeps"),
+    ),
+    (
+        # Round 4, Critical. Overwriting the slot before its contents are
+        # in the store makes the retry read from a record that is gone.
+        "the slot is overwritten whether or not the adoption landed",
+        STATE,
+        "    if _adopt_slot(root, kind):\n"
+        "        _write_slot(root, kind, entry)",
+        "    _adopt_slot(root, kind)\n"
+        "    _write_slot(root, kind, entry)",
+        ("tests/test_provider_table.py::"
+         "test_a_failed_adoption_is_retried_on_the_next_dispatch"),
     ),
     (
         "bogus documented role",

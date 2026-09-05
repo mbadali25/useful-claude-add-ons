@@ -1401,3 +1401,168 @@ def test_an_unknown_author_cannot_certify_an_independent_review(tmp_path):
 
     assert report["authorSource"] == "unknown"
     assert report["independentReviewer"] is False
+
+
+# --- Codex round 4 on PR #66: a slot may only be spent on evidence ----------
+
+
+def _seed_entry(root, kind="dev", **fields):
+    """Write one entry file directly, bypassing `record_dispatch`."""
+    directory = os.path.join(str(root), *crew_state.DISPATCH_DIR)
+    os.makedirs(directory, exist_ok=True)
+    name = f"{kind}-{fields.get('at', 0.0):015.4f}-{len(os.listdir(directory))}"
+    with open(os.path.join(directory, f"{name}.json"), "w",
+              encoding="utf-8") as handle:
+        json.dump(dict(fields, kind=kind), handle)
+
+
+def test_an_entry_with_no_provider_cannot_evict_one_that_has_one(tmp_path):
+    """Codex round 4, Critical. `author_families` skips an entry with no
+    `provider` -- it names no author, so it cannot BE the author. It was still
+    spending a slot in the bound, so ten hand-edited or truncated files ahead
+    of a real dispatch emptied the history of the family that wrote the diff.
+
+    Something that is not evidence must not displace something that is."""
+    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=True)
+    here = crew_state.current_branch(str(root))
+    crew_state.record_dispatch(str(root), "dev", "developer", "codex",
+                               "gpt-6-astra", branch=here)
+    for n in range(crew_state.DISPATCH_HISTORY_MAX + 5):
+        _seed_entry(root, role="developer", model=f"ghost{n}-1", branch=here,
+                    at=9.0e9 + n)       # newer than the real one, and empty
+
+    authors, source = crew_state.author_families(str(root), PINNED)
+
+    assert source == "dispatch"
+    assert authors == frozenset({"gpt"}), \
+        "entries naming no author evicted the one that does"
+
+
+def test_another_branch_cannot_spend_this_branch_s_history(tmp_path):
+    """Codex round 4, Critical. `author_families` filters to this checkout
+    AFTER the trim, so entries from other branches used to consume the bound
+    and evict this branch's only record -- and a repo with a few active
+    branches reaches ten of them in a day.
+
+    The guard asks who was dispatched HERE. A bound that answers it by
+    discarding what happened here is the bug, not the bound."""
+    # The config's developer must NOT be the family under test. `PINNED`
+    # pins it to codex, whose family is `gpt` -- and the stale path strikes
+    # the config family alongside the recorded one, so evicting the real gpt
+    # record changed nothing and this passed on the wrong evidence. The
+    # sabotage suite is what caught that.
+    cfg = copy.deepcopy(PINNED)
+    cfg["dev"]["roles"]["developer"] = {"provider": "copilot",
+                                        "model": "kimi-k3"}
+    root = crew_fixtures.make_repo(tmp_path, config=cfg, git=True)
+    here = crew_state.current_branch(str(root))
+    crew_state.record_dispatch(str(root), "dev", "developer", "codex",
+                               "gpt-6-astra", branch=here)
+    for n, name in enumerate(("alpha", "bravo", "charlie", "delta", "echo",
+                              "foxtrot", "golf", "hotel", "india", "juliett",
+                              "kilo", "lima", "mike")):
+        _seed_entry(root, role="developer", provider="copilot",
+                    model=f"{name}-1", branch=f"other-{n}", at=9.0e9 + n)
+
+    authors, _source = crew_state.author_families(str(root), cfg)
+
+    # Not the source: the slot is the newest dispatch ANYWHERE, so a newer
+    # dispatch on another branch correctly reads as stale and strikes the
+    # config family too. What must hold either way is that this branch's own
+    # record is still there to be struck.
+    assert "gpt" in authors, \
+        "other branches evicted the record for the branch under review"
+
+
+def test_pruning_never_removes_an_entry_the_reader_still_keeps(tmp_path):
+    """Codex round 4, Critical. The cap counted raw files across every branch
+    and family, so a busy repo could push this branch's ONLY record past it
+    and delete it -- pruning deciding which family is remembered, which is
+    exactly what the cap is documented as never doing."""
+    # Same masking as above: the config's developer must not be `gpt`, or
+    # the stale path supplies the very family the prune was supposed to have
+    # kept.
+    cfg = copy.deepcopy(PINNED)
+    cfg["dev"]["roles"]["developer"] = {"provider": "copilot",
+                                        "model": "kimi-k3"}
+    root = crew_fixtures.make_repo(tmp_path, config=cfg, git=True)
+    here = crew_state.current_branch(str(root))
+    crew_state.record_dispatch(str(root), "dev", "developer", "codex",
+                               "gpt-6-astra", branch=here)
+    # A second dispatch so the legacy slot holds something OTHER than the
+    # entry under test. Left holding codex, the slot is folded into the
+    # history by `read_dispatch` and hands back the very record the prune was
+    # supposed to have kept -- the assertion then passes on the fallback.
+    crew_state.record_dispatch(str(root), "dev", "developer", "claude", None,
+                               branch=here)
+    # Far more than the cap, all newer, all on other branches. Under the old
+    # rule the one entry that mattered was the oldest file in the directory.
+    for n in range(crew_state.DISPATCH_FILES_MAX + 50):
+        _seed_entry(root, role="developer", provider="copilot",
+                    model=f"kimi-k{n}", branch=f"other-{n}", at=9.0e9 + n)
+
+    # The pruner directly, not a dispatch. Through `record_dispatch` the
+    # damage healed before the assertion ran: the prune emptied the store,
+    # `_adopt_slot` found the slot's record missing and copied it back. That
+    # is correct behaviour and it is not this test's subject.
+    crew_state._prune_dispatch_dir(str(root))  # pylint: disable=protected-access
+
+    authors, _source = crew_state.author_families(str(root), cfg)
+    assert {"gpt", "claude"} <= authors, \
+        "pruning deleted the record for the branch under review"
+
+
+def test_a_failed_adoption_is_retried_on_the_next_dispatch(tmp_path):
+    """Codex round 4, Critical. The gate was "the store is empty for this
+    kind". One transient write failure and it closed forever: the dispatch
+    that followed filled the store, every later run saw a non-empty store and
+    declared there was nothing to adopt, and `_write_slot` had already
+    overwritten the slot it was supposed to save.
+
+    Comparing the RECORD rather than counting the store makes it retry, which
+    is the only version of this that survives a failure."""
+    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=True)
+    here = crew_state.current_branch(str(root))
+    path = os.path.join(str(root), *crew_state.DISPATCH_PATH)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump({"dev": {"role": "developer", "provider": "codex",
+                           "model": "gpt-6-astra", "branch": here}}, handle)
+
+    real_append = crew_state._append_dispatch  # pylint: disable=protected-access
+    calls = []
+
+    def fail_the_adoption(target, kind, entry):
+        if entry.get("adopted") and not calls:
+            calls.append(entry)
+            return False                # the transient failure
+        return real_append(target, kind, entry)
+
+    try:
+        crew_state._append_dispatch = fail_the_adoption  # pylint: disable=protected-access
+        crew_state.record_dispatch(str(root), "dev", "developer", "claude",
+                                   None, branch=here)
+    finally:
+        crew_state._append_dispatch = real_append  # pylint: disable=protected-access
+
+    assert calls, "the adoption never ran, so this proves nothing"
+    # The slot has been overwritten by now. The next dispatch must still
+    # notice the legacy record is missing and copy it.
+    crew_state.record_dispatch(str(root), "dev", "developer", "windsurf",
+                               "swe-1", branch=here)
+
+    authors, _source = crew_state.author_families(str(root), PINNED)
+    assert "gpt" in authors, \
+        "one transient failure lost the pre-upgrade record permanently"
+
+
+def test_the_file_token_never_reaches_a_reader(tmp_path):
+    """`_file` exists so the pruner can protect what the reader keeps. It is
+    bookkeeping, and a record handed to `/crew:review` or written into a
+    report must not carry it."""
+    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=True)
+    crew_state.record_dispatch(str(root), "dev", "developer", "codex",
+                               "gpt-6-astra")
+    record = crew_state.read_dispatch(str(root))
+    assert "_file" not in record["dev"]
+    assert all("_file" not in item for item in record["devHistory"])

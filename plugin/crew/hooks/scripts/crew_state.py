@@ -1025,6 +1025,7 @@ def _dispatch_entries(root):
             mtime = os.path.getmtime(path)
         except OSError:
             mtime = None
+        entry["_file"] = name       # for `_prune_dispatch_dir` only
         out.append((_entry_sort_key(entry, mtime), entry.pop("kind"), entry))
     return out
 
@@ -1052,20 +1053,47 @@ def _merge_history(items):
     its key instead: None must not compare equal to None here, or two
     genuinely different unpinned providers collapse into one and the second is
     dropped as a duplicate of the first.
+
+    Two rules about what a slot may be spent ON, both of which exist because
+    the bound evicting the wrong entry is the same failure as never recording
+    it.
+
+    **An entry with no `provider` spends nothing.** `author_families` skips
+    those -- they name no author, so they cannot BE the author -- and ten of
+    them ahead of a real dispatch emptied the history of the family that wrote
+    the diff. A hand-edited file, a truncated write, a future field: none of
+    them are evidence, and something that is not evidence must not displace
+    something that is.
+
+    **The bound is per BRANCH, not per store.** `author_families` filters to
+    the current checkout AFTER this trim, so ten entries from other branches
+    used to evict this branch's only record -- and a repo with a few active
+    branches reaches ten in a day. The guard asks "who was dispatched HERE",
+    and a bound that answers it by discarding what happened here is not a
+    bound, it is the bug. Total entries kept is branches x
+    `DISPATCH_HISTORY_MAX`, which is what `DISPATCH_FILES_MAX` is sized
+    against.
     """
-    seen, trimmed = set(), []
+    seen, kept = set(), {}
     for _key, entry in sorted(items, key=lambda pair: pair[0], reverse=True):
+        if not entry.get("provider"):
+            continue
+        branch = entry.get("branch")
         fam = family(entry.get("provider"), entry.get("model"))
-        key = ((fam, entry.get("branch")) if fam is not None
-               else (None, entry.get("provider"), entry.get("model"),
-                     entry.get("branch")))
+        key = ((fam, branch) if fam is not None
+               else (None, entry.get("provider"), entry.get("model"), branch))
         if key in seen:
             continue
+        bucket = kept.setdefault(branch, [])
+        if len(bucket) >= DISPATCH_HISTORY_MAX:
+            continue
         seen.add(key)
-        trimmed.append(entry)
-        if len(trimmed) >= DISPATCH_HISTORY_MAX:
-            break
-    return trimmed
+        bucket.append(entry)
+    # Flattened back into one newest-first list, because that is the shape
+    # every reader has always been handed.
+    out = [entry for bucket in kept.values() for entry in bucket]
+    out.sort(key=lambda entry: float_or(entry.get("at"), 0.0), reverse=True)
+    return out
 
 
 def read_dispatch(root):
@@ -1112,7 +1140,10 @@ def read_dispatch(root):
         items.extend(((0, _entry_sort_key(h)), h) for h in legacy)
         if not items:
             continue
-        history = _merge_history(items)
+        # `_file` is bookkeeping for the pruner and is not part of the
+        # record any reader is handed.
+        history = [{k: v for k, v in entry.items() if k != "_file"}
+                   for entry in _merge_history(items)]
         record[f"{kind}History"] = history
         # The slot is the newest entry, recomputed rather than trusted: it is
         # written unlocked and best-effort, so a lost update there must cost
@@ -1204,16 +1235,23 @@ def record_dispatch(root, kind, role, provider, model=None, branch=None):
     # reader is mutated, no writer is overwritten, and a writer that fails
     # takes only its own entry down with it. See `DISPATCH_DIR` for the three
     # review rounds that went into learning that.
-    # Before the new entry, so "the store has nothing for this kind" still
-    # means "nothing was ever recorded here".
-    _adopt_slot(root, kind)
     _append_dispatch(root, kind, entry)
-    _write_slot(root, kind, entry)
+    # The slot is only overwritten once whatever it held is safely in the
+    # store. Making the adoption retryable does nothing on its own if the
+    # record it retries FROM was destroyed by the same call that failed:
+    # `_write_slot` would have replaced the pre-0.16.7 record with this
+    # dispatch, and the next run would find an empty slot and nothing to
+    # adopt. Skipping the slot write costs a stale display field and a stale
+    # mtime for one dispatch, both of which `read_dispatch` recomputes from
+    # the store anyway.
+    if _adopt_slot(root, kind):
+        _write_slot(root, kind, entry)
     return read_dispatch(root)
 
 
 def _adopt_slot(root, kind):
-    """Copy a pre-store `dispatch.json` slot into the store. Never raises.
+    """Get the slot's own record into the store. True if the slot may now be
+    overwritten. Never raises.
 
     `_write_slot` is about to overwrite that slot, and on a repo upgraded
     mid-branch it is the ONLY record of the family that wrote the code being
@@ -1221,31 +1259,47 @@ def _adopt_slot(root, kind):
     the exact failure this whole subsystem exists to prevent, reintroduced by
     the release that was meant to close it.
 
-    Runs only while the store holds nothing for this kind -- which is what a
-    pre-store record IS. Without that gate every dispatch re-adopted the
-    previous one's slot: harmless to the answer, because the family-keyed
-    dedup collapses it, and wrong for the directory, which filled with
-    redundant entries and pushed real ones toward the prune bound.
+    Runs whenever the slot's own record is not already in the store, which is
+    both idempotent and RETRYABLE. The gate was "the store is empty for this
+    kind" until round 4 found what that costs: the adoption's write fails
+    transiently, the dispatch that follows lands and fills the store, and
+    every later run then sees a non-empty store and declares there is nothing
+    to adopt -- while `_write_slot` has already overwritten the slot it was
+    supposed to save. One transient error and the family that wrote the branch
+    is gone permanently.
 
     Idempotent by dedup rather than by coordination: two concurrent first
-    dispatches both pass the gate and both copy it, and `_merge_history` keys
-    on the family, so the duplicate collapses. That is what makes it safe on a
-    path with no lock.
+    dispatches can both pass the gate and both copy it, and `_merge_history`
+    keys on the family, so the duplicate collapses. That is what makes it safe
+    on a path with no lock.
     `adopted` marks where the entry came from, for anyone reading the
     directory; nothing branches on it.
     """
-    if any(k == kind for _key, k, _entry in _dispatch_entries(root)):
-        return                          # not a pre-store record; nothing to do
     text = read_text(os.path.join(root, *DISPATCH_PATH))
     if text is None:
-        return
+        return True                     # no file, so nothing to lose
     try:
         record = json.loads(text)
     except ValueError:
-        return
+        return True                     # unreadable; a rewrite loses nothing
     slot = dict_or_empty(record).get(kind)
-    if isinstance(slot, dict) and slot.get("provider"):
-        _append_dispatch(root, kind, dict(slot, adopted=True))
+    if not isinstance(slot, dict) or not slot.get("provider"):
+        return True                     # no record in the slot
+    # Is THIS record already in the store? Not "is the store non-empty" --
+    # that gate closed permanently the first time the adoption's write failed
+    # transiently, because the dispatch that followed filled the store and
+    # every later run then declared there was nothing to adopt. The legacy
+    # slot was overwritten in the meantime and the family that wrote the
+    # branch was gone for good. Comparing the record itself makes the
+    # adoption retry on the next dispatch, which is the only version of this
+    # that survives a failure.
+    for _key, entry_kind, entry in _dispatch_entries(root):
+        if entry_kind != kind:
+            continue
+        if all(entry.get(field) == slot.get(field)
+               for field in ("provider", "model", "branch")):
+            return True                 # already in the store
+    return _append_dispatch(root, kind, dict(slot, adopted=True))
 
 
 def _append_dispatch(root, kind, entry):
@@ -1342,15 +1396,39 @@ def _prune_dispatch_dir(root):
         return
     if len(names) <= DISPATCH_FILES_MAX:
         return
+
+    # What the reader would keep, computed the same way the reader computes
+    # it. Counting raw files instead let a busy repo's other branches push
+    # this branch's ONLY record past the cap and delete it -- pruning
+    # deciding which family is remembered, which is precisely what the cap
+    # was documented as never doing.
+    protected = set()
+    for kind in DISPATCH_KINDS:
+        items = [((1, key), entry)
+                 for key, entry_kind, entry in _dispatch_entries(root)
+                 if entry_kind == kind
+                 for key in (_entry_sort_key(entry),)]
+        for entry in _merge_history(items):
+            token = entry.get("_file")
+            if token:
+                protected.add(token)
+
     aged = []
     for name in names:
+        if name in protected:
+            continue
         path = os.path.join(directory, name)
         try:
             aged.append((os.path.getmtime(path), path))
         except OSError:
             continue
     aged.sort(reverse=True)
-    for _mtime, path in aged[DISPATCH_FILES_MAX:]:
+    # The cap counts only what is NOT protected, so a repo whose live history
+    # legitimately exceeds it keeps every live entry and prunes nothing. A
+    # directory larger than intended is untidy; a missing author family is a
+    # guard that passes a diff to the model that wrote it.
+    keep = max(0, DISPATCH_FILES_MAX - len(protected))
+    for _mtime, path in aged[keep:]:
         try:
             os.remove(path)
         except OSError:
