@@ -37,6 +37,40 @@ definition — rather than from a pattern in `.crew/metrics.md`. Onboarding one
 leaves `tier` alone: the crew has specialised, not grown. `/crew:upgrade` no
 longer reports a deliberately-onboarded specialist as an unrecognised name.
 
+**The self-review guard stopped losing dispatches.** The guard's job is to
+know which model family wrote the diff, so that family cannot be handed its
+own work to review. It read `.work/dispatch.json` — one file that every
+dispatch read, modified and rewrote. Two dispatches doing that at once erased
+each other, and the PM dispatches up to three roles at a time. If the erased
+one was the family that wrote the code, it was cleared to review itself: the
+guard reported a pass, having lost the fact it was checking.
+
+Four review rounds went into trying to make that file safe, through an atomic
+write, then a lock, then a lock plus a self-verifying write. None of them
+close it. A lock has to be reclaimable or one killed dispatch wedges the repo
+forever, and reclaiming it is two calls against a pathname a rival can replace
+in between. A self-verifying write holds only for the writer that lands last.
+
+There is no shared file left to race. **Each dispatch now writes its own file
+under `.work/dispatch.d/`, and nothing ever rewrites one.** The reader merges
+the directory. Concurrency stopped being a correctness question, a malformed
+file costs one entry rather than the whole record, and a bookkeeping write
+that fails can no longer abort the dispatch it was recording.
+
+If you gitignore crew's working files by hand, **add `.work/dispatch.d/`** —
+ignoring `dispatch.json` alone now commits the actual record. `/crew:init`
+does both.
+
+**`/crew:model` and `/crew:review` stopped calling an unknown author proven.**
+An unpinned `copilot` has no determinable family: Copilot hosts several, and
+an unset model does not say which. A dispatch by one was reported as
+`recorded at dispatch` — "the guard is judging what actually ran" — with an
+empty author family, so nothing was struck and every reviewer read as
+eligible. It is now reported as `UNKNOWN`, and no review under it is
+certified independent. Pin `dev.copilot.model` and it resolves; nothing is
+barred on the unknown itself, because taking a real reviewer off a diff on a
+value nobody established is the same mistake pointing the other way.
+
 ## crew 0.16.6
 
 **`/crew:config` — see where every setting comes from, and set the ones that

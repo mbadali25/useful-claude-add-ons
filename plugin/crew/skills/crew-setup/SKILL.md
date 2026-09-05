@@ -377,12 +377,16 @@ Act on what it found, and say why:
 ## 3c. Gitignore secrets before any exist
 
 Append `.env`, `.env.*`, `!.env.example`, `.crew/*.local`, `.crew/.hook-*`,
-`.crew/transcripts/`, and `.work/dispatch.json` to `.gitignore` during setup. Doing
-this before the first secret exists is the only time it is free.
-`.work/dispatch.json` is the record of which role, provider and model last ran here —
-the self-review guard reads it to know who WROTE the diff. It describes one checkout on
-one machine, so a committed copy would travel to a colleague and claim a dispatch that
-never happened there. `.crew/.hook-*` is the once-per-session
+`.crew/transcripts/`, `.work/dispatch.json` and `.work/dispatch.d/` to
+`.gitignore` during setup. Doing this before the first secret exists is the only
+time it is free.
+Those last two are the record of which roles, providers and models have run here —
+the self-review guard reads them to know who WROTE the diff. **Both**: since
+0.16.7 each dispatch writes its own file under `.work/dispatch.d/` and
+`dispatch.json` keeps only a convenience pointer to the most recent one, so
+ignoring the single file and not the directory commits the actual record. It
+describes one checkout on one machine, so a committed copy would travel to a
+colleague and claim a dispatch that never happened there. `.crew/.hook-*` is the once-per-session
 claim marker (see `hooks/scripts/hook_once.py`) — a repo that commits `.crew/`,
 which crew's own design encourages, collects one of these per claimed hook per
 session and shows them in every `git status` if they are not ignored.

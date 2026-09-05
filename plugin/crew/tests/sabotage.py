@@ -10,6 +10,13 @@ claim "this is tested" is checked here rather than asserted.
 
 A mutation whose anchor no longer matches is a FAILURE, not a skip: the anchor
 drifting is how this suite would quietly stop testing anything.
+
+Which is why a mutation whose CODE is deliberately deleted must be deleted
+here too, with the reason written down -- never re-anchored onto whatever line
+is nearest. Five went when the dispatch record stopped being a single shared
+file: they proved things about a lock, a retry loop and a self-verifying write
+that an append-only directory cannot get wrong, and a suite still listing them
+would have read as concurrency coverage while testing nothing.
 """
 import io
 import os
@@ -23,6 +30,7 @@ CREW = os.path.join(ROOT, "plugin", "crew")
 STATE = os.path.join(CREW, "hooks", "scripts", "crew_state.py")
 LADDER_DOC = os.path.join(CREW, "skills", "crew-scaling", "SKILL.md")
 PLATFORM = os.path.join(CREW, "hooks", "scripts", "crew_platform.py")
+CONFIG = os.path.join(CREW, "hooks", "scripts", "crew_config.py")
 
 GUARD = '    if out["family"] is not None and out["family"] in authors:'
 ROLE_PIN = '    decided = resolve_role(cfg, "dev", "developer")'
@@ -75,22 +83,85 @@ MUTATIONS = (
         # provider's model churn evicts the family that wrote the diff.
         "the history bound is spent per model instead of per family",
         STATE,
-        '        fam = family(item.get("provider"), item.get("model"))',
+        '        fam = family(entry.get("provider"), entry.get("model"))',
         "        fam = None",
         ("tests/test_provider_table.py::"
          "test_the_history_bound_is_spent_per_family_not_per_model"),
     ),
     (
-        # An atomic write stops a torn read and does nothing about two
-        # dispatches both reading the same history and each publishing it
-        # plus itself.
-        "the dispatch read happens outside the lock",
+        # Round 3, Critical. Every dispatch writing the same name is the old
+        # shared-file design wearing a directory: writers overwrite each
+        # other and the lost one may be the family that wrote the diff.
+        "every dispatch writes the same entry file",
         STATE,
-        ("        with _dispatch_lock(root):\n"
-         "            record = _write_dispatch(root, kind, entry)"),
-        "        record = _write_dispatch(root, kind, entry)",
+        '    base = os.path.join(directory, f"{kind}-{stamp}-'
+        '{uuid.uuid4().hex[:12]}")',
+        '    base = os.path.join(directory, f"{kind}-entry")',
         ("tests/test_provider_table.py::"
-         "test_the_dispatch_read_happens_inside_the_lock"),
+         "test_three_concurrent_dispatches_all_survive"),
+    ),
+    (
+        # Round 3, Critical. One malformed file must cost one entry. Failing
+        # the whole read is the single-file design's worst property -- the
+        # guard falls back to the config and looks like it checked.
+        "one malformed entry file discards the whole directory",
+        STATE,
+        "        except ValueError:\n            continue\n"
+        "        if not isinstance(entry, dict) or not entry.get(\"kind\"):",
+        "        except ValueError:\n            return []\n"
+        "        if not isinstance(entry, dict) or not entry.get(\"kind\"):",
+        ("tests/test_provider_table.py::"
+         "test_a_malformed_entry_costs_one_entry_and_not_the_record"),
+    ),
+    (
+        # Round 3. A wall-clock value inside the legacy file must not be able
+        # to outrank the store, or a stepped clock evicts the dispatch that
+        # just happened -- the write-time hazard, relocated to read time.
+        "the legacy file can outrank the store",
+        STATE,
+        "        items = [((1, key), entry) for key, entry in "
+        "by_kind.get(kind) or []]",
+        "        items = [((0, key), entry) for key, entry in "
+        "by_kind.get(kind) or []]",
+        ("tests/test_provider_table.py::"
+         "test_a_backward_clock_does_not_evict_the_dispatch_that_just"
+         "_happened"),
+    ),
+    (
+        # Round 3. A repo upgraded mid-branch has its only record in the slot
+        # about to be overwritten. Losing it clears the family that wrote the
+        # branch to review its own diff.
+        "a pre-store record is overwritten instead of adopted",
+        STATE,
+        "    _adopt_slot(root, kind)\n    _append_dispatch(root, kind, entry)",
+        "    _append_dispatch(root, kind, entry)",
+        ("tests/test_provider_table.py::"
+         "test_a_dispatch_recorded_before_the_store_existed_is_not_lost"),
+    ),
+    (
+        # Round 3, Critical. An empty author set labelled as proven
+        # provenance -- an unknown collapsing into the safe-looking value,
+        # wearing the label of a check that happened.
+        "an unknown author family is reported as proven",
+        STATE,
+        '            return frozenset(), "unknown"',
+        '            return frozenset(), "dispatch"',
+        ("tests/test_provider_table.py::"
+         "test_a_proven_dispatch_with_an_unknown_family_is_not_called"
+         "_proven"),
+    ),
+    (
+        # And the teeth: `eligible` means only "not struck", so with nothing
+        # struck every candidate certified a review it had no basis for.
+        "an unknown author still certifies an independent review",
+        CONFIG,
+        '        "independentReviewer": (author_source != "unknown"\n'
+        '                                and any(c["eligible"] '
+        'for c in candidates)),',
+        '        "independentReviewer": any(c["eligible"] for c in '
+        'candidates),',
+        ("tests/test_provider_table.py::"
+         "test_an_unknown_author_cannot_certify_an_independent_review"),
     ),
     (
         # Skipping the backup when the name is taken destroys the newer
@@ -111,52 +182,6 @@ MUTATIONS = (
         "        if isinstance(parsed, dict):",
         ("tests/test_platform_sync.py::"
          "test_heal_config_recreates_an_empty_object"),
-    ),
-    (
-        # Without the republish, a clobbered write is simply gone -- which is
-        # the whole reason the lock alone was not enough.
-        "a clobbered write does not republish itself",
-        STATE,
-        "    for _attempt in range(DISPATCH_WRITE_TRIES):",
-        "    for _attempt in range(1):",
-        ("tests/test_provider_table.py::"
-         "test_a_write_that_loses_a_race_republishes_itself"),
-    ),
-    (
-        # Ordering derived from the file's layout instead of from what the
-        # entries say puts the bound back at the mercy of the layout.
-        "history order is taken from the file instead of from `at`",
-        STATE,
-        "        key=lambda item: float_or(item.get(\"at\"), 0.0),",
-        "        key=lambda item: 0.0,",
-        ("tests/test_provider_table.py::"
-         "test_history_written_in_the_wrong_order_is_still_read_newest_first"),
-    ),
-    (
-        # The clock is not monotonic, so it cannot be what decides that
-        # the dispatch happening right now is the newest one.
-        "the new entry is sorted by the clock instead of prepended",
-        STATE,
-        ('    history = [entry] + sorted(\n'
-         '        [h for h in record.get(f"{kind}History") or []\n'
-         '         if isinstance(h, dict)],'),
-        ('    history = sorted(\n'
-         '        [entry] + [h for h in record.get(f"{kind}History")'
-         ' or []\n'
-         '                   if isinstance(h, dict)],'),
-        ("tests/test_provider_table.py::test_a_backward_clock_does_not"
-         "_evict_the_dispatch_that_just_happened"),
-    ),
-    (
-        # Without `at`, a writer's verification passes on an identical
-        # entry another writer landed, and its own record never appears.
-        "the write verification cannot tell two writers apart",
-        STATE,
-        '               for key in ("provider", "model", "branch",'
-        ' "at")):',
-        '               for key in ("provider", "model", "branch")):',
-        ("tests/test_provider_table.py::"
-         "test_a_writer_does_not_mistake_an_identical_entry_for_its_own"),
     ),
     (
         "bogus documented role",

@@ -11,7 +11,6 @@ printed text. A report that says the right thing while the resolver decided
 the wrong one is exactly the failure mode a stdout assertion cannot see.
 """
 import threading
-import time
 import copy
 import json
 import os
@@ -1063,79 +1062,6 @@ def test_two_unknown_families_are_not_deduplicated_into_one(tmp_path):
     assert providers == {"copilot", "windsurf"}
 
 
-def test_the_dispatch_read_happens_inside_the_lock(tmp_path):
-    """Codex finding 3, High.
-
-    Writing the file atomically stops a torn READ and does nothing about the
-    read-modify-write: two dispatches both read history H, both append their
-    own entry, and whichever replaces last publishes `H + itself`. The other
-    dispatch is gone, and if it was the one that wrote the diff its family is
-    never struck. The PM dispatches up to three roles in parallel, so this is
-    the ordinary case rather than a contrived one.
-
-    The property that closes it is not "the write is atomic" -- it already
-    was -- but "the READ is inside the lock too". That is what this asserts,
-    deterministically: with the lock held, a concurrent `record_dispatch` must
-    not have read anything yet, and must finish once it is released. Racing
-    two threads and hoping to catch the window would be a flaky test of a
-    guard, which is worse than no test at all.
-    """
-    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=True)
-    crew_state.record_dispatch(str(root), "dev", "developer", "codex",
-                               "gpt-6-astra")
-    reads = []
-    real_read = crew_state.read_dispatch
-
-    def counting_read(target):
-        reads.append(target)
-        return real_read(target)
-
-    def dispatch():
-        crew_state.record_dispatch(str(root), "dev", "developer", "copilot",
-                                   "kimi-k3")
-
-    worker = threading.Thread(target=dispatch)
-    try:
-        crew_state.read_dispatch = counting_read
-        with crew_state._dispatch_lock(str(root)) as held:  # pylint: disable=protected-access
-            assert held, "the lock must be free in a fresh fixture"
-            worker.start()
-            time.sleep(0.3)
-            assert not reads, "the read ran outside the lock"
-            assert worker.is_alive(), "the writer did not wait for the lock"
-        worker.join(timeout=20)
-        assert not worker.is_alive(), "the writer never got the lock"
-    finally:
-        crew_state.read_dispatch = real_read
-
-    assert reads, "the writer must proceed once the lock is released"
-    families = {crew_state.family(item["provider"], item["model"])
-                for item in crew_state.read_dispatch(str(root))["devHistory"]}
-    assert families == {"gpt", "kimi"}, "a concurrent dispatch was lost"
-
-
-def test_a_stale_lock_does_not_wedge_dispatch_forever(tmp_path):
-    """A lock with no expiry is a new way to break: a killed dispatch leaves
-    the file behind and every later one blocks on a holder that is gone. The
-    lock is reclaimed once it is older than its TTL, the same rule
-    `verify-gate` already applies to its own."""
-    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=True)
-    lock = os.path.join(str(root), *crew_state.DISPATCH_LOCK_PATH)
-    os.makedirs(os.path.dirname(lock), exist_ok=True)
-    with open(lock, "w", encoding="utf-8") as handle:
-        handle.write("held by a process that died\n")
-    old = time.time() - crew_state.DISPATCH_LOCK_TTL - 5
-    os.utime(lock, (old, old))
-
-    record = crew_state.record_dispatch(str(root), "dev", "developer",
-                                        "codex", "gpt-6-astra")
-    assert record["dev"]["provider"] == "codex"
-    assert not os.path.exists(lock), "the lock must be released on exit"
-
-
-# --- finding 4: the report must not outrank the gate ------------------------
-
-
 def test_a_role_whose_cli_is_absent_is_not_reported_eligible():
     """Codex finding 4, Medium. `order_candidates` refuses a provider that is
     not on PATH; `role_status` said `eligible` at the same config because it
@@ -1170,54 +1096,6 @@ def test_model_report_records_whether_each_role_provider_resolves(tmp_path):
 
 
 # --- Codex round 2 on PR #66 ------------------------------------------------
-
-
-def test_a_write_that_loses_a_race_republishes_itself(tmp_path):
-    """Codex round 2, Critical + High.
-
-    The lock was doing all the work, and a lock cannot: two writers both see
-    a stale lock, both remove it, and both create their own (`getmtime` and
-    `os.remove` are separate calls against a pathname, and `O_EXCL` cannot
-    repair a pathname that was replaced between them). Separately, a writer
-    that cannot acquire within the deadline proceeds unlocked on purpose,
-    because a review with NO record falls back to reading the config -- which
-    is the guess this module exists to avoid.
-
-    So correctness cannot rest on the lock. It rests on the write CHECKING
-    ITSELF: read the file back, and if this entry is not in it, someone
-    published over it -- re-read their version, merge into that, and publish
-    again. The lock is now a fast path that avoids the retry, not the thing
-    that makes the answer right.
-
-    Simulated by publishing a competing record between the write and the
-    verification, which is exactly what a lost update looks like from here.
-    """
-    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=True)
-    real_write = crew_state._write_dispatch  # pylint: disable=protected-access
-    calls = []
-
-    def clobbering_write(target, kind, entry):
-        out = real_write(target, kind, entry)
-        if not calls:                 # exactly once, on the first attempt
-            calls.append(entry)
-            path = os.path.join(target, *crew_state.DISPATCH_PATH)
-            rival = {"role": "developer", "provider": "copilot",
-                     "model": "kimi-k3", "branch": entry.get("branch")}
-            with open(path, "w", encoding="utf-8") as handle:
-                json.dump({"dev": rival, "devHistory": [rival]}, handle)
-        return out
-
-    try:
-        crew_state._write_dispatch = clobbering_write  # pylint: disable=protected-access
-        crew_state.record_dispatch(str(root), "dev", "developer", "codex",
-                                   "gpt-6-astra")
-    finally:
-        crew_state._write_dispatch = real_write  # pylint: disable=protected-access
-
-    families = {crew_state.family(item["provider"], item["model"])
-                for item in crew_state.read_dispatch(str(root))["devHistory"]}
-    assert families == {"gpt", "kimi"}, \
-        "the clobbered write must republish itself over the winner"
 
 
 def test_a_dispatch_entry_records_when_it_happened(tmp_path):
@@ -1285,14 +1163,113 @@ def test_a_legacy_record_with_no_history_still_works(tmp_path):
     assert source == "dispatch"
 
 
+# --- Codex round 3 on PR #66: the store is append-only ----------------------
+
+
+def test_three_concurrent_dispatches_all_survive(tmp_path):
+    """Codex round 3, Critical. THE test the old design could not pass.
+
+    Verify-and-republish held only for the writer that landed last. Three
+    writers: C publishes and verifies; B reads C's version, publishes C+B and
+    verifies; A, whose read predates both, publishes A over the top and
+    verifies its own entry present. All three return successfully and B is
+    gone -- and if B is the family that wrote the diff, the guard clears it to
+    review its own work.
+
+    No amount of locking fixes that portably, so there is no shared file left
+    to race: each dispatch writes a file nothing else will ever touch. This
+    runs them concurrently for real rather than simulating an interleaving,
+    because the bug it replaces was found by RUNNING the concurrency test and
+    not by reading it.
+    """
+    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=True)
+    here = crew_state.current_branch(str(root))
+    families = ("codex", "copilot", "windsurf")
+    models = ("gpt-6-astra", "kimi-k3", "swe-1")
+    start = threading.Barrier(len(families))
+
+    def dispatch(provider, model):
+        start.wait()
+        crew_state.record_dispatch(str(root), "dev", "developer", provider,
+                                   model, branch=here)
+
+    threads = [threading.Thread(target=dispatch, args=pair)
+               for pair in zip(families, models)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    got = {crew_state.family(item["provider"], item["model"])
+           for item in crew_state.read_dispatch(str(root))["devHistory"]}
+    assert got == {"gpt", "kimi", "swe"}, \
+        "a concurrent dispatch was lost; the guard would clear its family"
+
+
+def test_a_malformed_entry_costs_one_entry_and_not_the_record(tmp_path):
+    """Codex round 3, Critical. One shared file meant one malformed byte
+    collapsed the WHOLE record to `{}` -- and `author_families` then fell back
+    to reading the config, which describes the next run rather than the diff
+    in front of the reviewer. A directory degrades instead: the unreadable
+    file is skipped and its neighbours are still there."""
+    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=True)
+    here = crew_state.current_branch(str(root))
+    # THREE dispatches, and the OLDEST is the one corrupted. Two is not
+    # enough: `dispatch.json`'s slot still holds the last dispatch, so a
+    # mutation discarding the entire directory left exactly the entry the
+    # assertion was looking for and the test passed on the fallback. Two must
+    # survive, and the slot can only ever supply one.
+    for provider, model in (("codex", "gpt-6-astra"), ("copilot", "kimi-k3"),
+                            ("windsurf", "swe-1")):
+        crew_state.record_dispatch(str(root), "dev", "developer", provider,
+                                   model, branch=here)
+    directory = os.path.join(str(root), *crew_state.DISPATCH_DIR)
+    victim = sorted(os.listdir(directory))[0]
+    with open(os.path.join(directory, victim), "w", encoding="utf-8") as h:
+        h.write("{ half a file")
+
+    history = crew_state.read_dispatch(str(root))["devHistory"]
+
+    assert len(history) == 2, "the survivors were lost with the bad one"
+    authors, source = crew_state.author_families(str(root), PINNED)
+    assert source == "dispatch", "one bad file must not force a config guess"
+    assert authors == frozenset({"kimi", "swe"})
+
+
+def test_a_dispatch_that_cannot_be_recorded_still_dispatches(tmp_path):
+    """Codex round 3, High. Bookkeeping that cannot be written must not abort
+    the work. `_append_dispatch` answers False and the caller carries on; the
+    review that follows falls back to the config and SAYS so, which is a worse
+    answer than a record and a far better outcome than refusing to run."""
+    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=True)
+    real_open = crew_state.os.replace
+
+    def refuse(src, dst):
+        raise OSError(13, "permission denied")
+
+    try:
+        crew_state.os.replace = refuse
+        record = crew_state.record_dispatch(str(root), "dev", "developer",
+                                            "codex", "gpt-6-astra")
+    finally:
+        crew_state.os.replace = real_open
+
+    assert record == {} or "dev" not in record or record["dev"] is not None
+    assert crew_state._append_dispatch(  # pylint: disable=protected-access
+        str(root), "dev", {"provider": "codex", "at": 1.0}) is True
+
+
 def test_a_backward_clock_does_not_evict_the_dispatch_that_just_happened(
         tmp_path):
-    """`time.time()` is not monotonic. An NTP correction, a VM resume or a
-    dual-boot hands back a value below what is already on disk -- and if the
-    new entry were sorted into place by it, the freshest dispatch in the repo
-    would file as the oldest and be the first thing the bound evicts. It is
-    newest because it is happening now, which is a fact about causality
-    rather than about the clock."""
+    """`time.time()` is not monotonic, and moving the bound from write time to
+    read time moved that hazard with it: a `dispatch.json` carrying far-future
+    timestamps -- a clock that ran ahead, a hand edit, a restored backup --
+    outsorted every real entry in the store and evicted the dispatch that had
+    just happened.
+
+    Comparing timestamps cannot fix it; both sides are wall-clock and step
+    together. The store outranks the legacy file STRUCTURALLY instead, so no
+    value inside `dispatch.json` can promote it."""
     root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=True)
     here = crew_state.current_branch(str(root))
     path = os.path.join(str(root), *crew_state.DISPATCH_PATH)
@@ -1303,6 +1280,8 @@ def test_a_backward_clock_does_not_evict_the_dispatch_that_just_happened(
               for n, name in enumerate(
                   ("alpha", "bravo", "charlie", "delta", "echo", "foxtrot",
                    "golf", "hotel", "india", "juliett", "kilo", "lima"))]
+    assert len(future) > crew_state.DISPATCH_HISTORY_MAX, \
+        "the filler must overflow the bound or this proves nothing"
     with open(path, "w", encoding="utf-8") as handle:
         json.dump({"dev": future[0], "devHistory": future}, handle)
 
@@ -1314,46 +1293,111 @@ def test_a_backward_clock_does_not_evict_the_dispatch_that_just_happened(
     assert "gpt" in families, "the dispatch that just happened was evicted"
 
 
-def test_a_writer_does_not_mistake_an_identical_entry_for_its_own(tmp_path):
-    """Provider, model and branch do not identify a WRITE. The PM dispatching
-    `developer` twice on one branch produces two entries identical in all
-    three, so a verification comparing only those passes on the other
-    writer's record and returns having never landed its own."""
+def test_a_dispatch_recorded_before_the_store_existed_is_not_lost(tmp_path):
+    """A repo upgraded mid-branch has its only record in `dispatch.json`, with
+    no `devHistory` and no `.work/dispatch.d/` at all. That family still wrote
+    the diff, so it is read where it lies and struck alongside anything
+    dispatched afterwards. Nothing rewrites it into the new store: a migration
+    that can fail halfway is a migration that loses records."""
     root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=True)
     here = crew_state.current_branch(str(root))
-    theirs = {"role": "developer", "provider": "codex",
-              "model": "gpt-6-astra", "branch": here, "at": 111.0}
-    mine = dict(theirs, at=222.0)
+    path = os.path.join(str(root), *crew_state.DISPATCH_PATH)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump({"dev": {"role": "developer", "provider": "codex",
+                           "model": "gpt-6-astra", "branch": here}}, handle)
 
-    assert crew_state._entry_recorded(  # pylint: disable=protected-access
-        {"devHistory": [theirs]}, "dev", theirs) is True
-    assert crew_state._entry_recorded(  # pylint: disable=protected-access
-        {"devHistory": [theirs]}, "dev", mine) is False
+    crew_state.record_dispatch(str(root), "dev", "developer", "claude", None,
+                               branch=here)
+
+    authors, source = crew_state.author_families(str(root), PINNED)
+    assert authors == frozenset({"gpt", "claude"}), \
+        "the pre-upgrade record was dropped"
+    assert source == "dispatch"
 
 
-def test_a_write_that_never_lands_returns_rather_than_raising(tmp_path):
-    """Refusing to dispatch because the bookkeeping is contended is a worse
-    failure than a bookkeeping entry that lost. The loop is bounded, so an
-    unparseable file -- which `read_dispatch` collapses to `{}`, failing every
-    check -- cannot spin forever."""
+def test_an_entry_file_is_never_rewritten(tmp_path):
+    """The property everything above rests on. If a second dispatch could
+    touch the first one's file, every race the directory removed comes back
+    -- so this asserts the bytes, not the behaviour."""
     root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=True)
-    real_write = crew_state._write_dispatch  # pylint: disable=protected-access
-    attempts = []
+    crew_state.record_dispatch(str(root), "dev", "developer", "codex",
+                               "gpt-6-astra")
+    directory = os.path.join(str(root), *crew_state.DISPATCH_DIR)
+    first = os.path.join(directory, sorted(os.listdir(directory))[0])
+    with open(first, "rb") as handle:
+        before = handle.read()
 
-    def never_lands(target, kind, entry):
-        attempts.append(entry)
-        out = real_write(target, kind, entry)
-        path = os.path.join(target, *crew_state.DISPATCH_PATH)
-        with open(path, "w", encoding="utf-8") as handle:
-            handle.write("{ not json")
-        return out
+    for provider, model in (("copilot", "kimi-k3"), ("claude", None),
+                            ("windsurf", "swe-1")):
+        crew_state.record_dispatch(str(root), "dev", "developer", provider,
+                                   model)
 
-    try:
-        crew_state._write_dispatch = never_lands  # pylint: disable=protected-access
-        record = crew_state.record_dispatch(str(root), "dev", "developer",
-                                            "codex", "gpt-6-astra")
-    finally:
-        crew_state._write_dispatch = real_write  # pylint: disable=protected-access
+    with open(first, "rb") as handle:
+        assert handle.read() == before, "an existing entry file was modified"
 
-    assert len(attempts) == crew_state.DISPATCH_WRITE_TRIES
-    assert record["dev"]["provider"] == "codex"
+
+def test_the_directory_is_pruned_but_never_below_what_is_read(tmp_path):
+    """Nothing else deletes these files and a checkout dispatches for months.
+    The prune bound sits far above the read bound on purpose: pruning must
+    never be what decides which family is remembered."""
+    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=True)
+    assert crew_state.DISPATCH_FILES_MAX > crew_state.DISPATCH_HISTORY_MAX
+    directory = os.path.join(str(root), *crew_state.DISPATCH_DIR)
+    os.makedirs(directory, exist_ok=True)
+    for n in range(crew_state.DISPATCH_FILES_MAX + 20):
+        with open(os.path.join(directory, f"dev-{n:06d}-old.json"), "w",
+                  encoding="utf-8") as handle:
+            json.dump({"kind": "dev", "role": "developer",
+                       "provider": "copilot", "model": f"kimi-k{n}",
+                       "branch": None, "at": float(n)}, handle)
+
+    crew_state.record_dispatch(str(root), "dev", "developer", "codex",
+                               "gpt-6-astra")
+
+    left = [n for n in os.listdir(directory) if n.endswith(".json")]
+    assert len(left) <= crew_state.DISPATCH_FILES_MAX
+    families = {crew_state.family(item["provider"], item["model"])
+                for item in crew_state.read_dispatch(str(root))["devHistory"]}
+    assert "gpt" in families, "the newest dispatch was pruned"
+
+
+def test_a_proven_dispatch_with_an_unknown_family_is_not_called_proven(
+        tmp_path):
+    """Codex round 3, Critical. An unpinned `copilot` hosts several families
+    and an unset model does not say which, so `family()` answers None --
+    correctly. `discard(None)` then emptied the author set, and the old code
+    handed that back labelled `dispatch`: "the guard is judging what actually
+    ran". Nothing was struck, every reviewer read as eligible, and the report
+    said the provenance was proven.
+
+    There is no set to return here, so the LABEL is what changes. Barring the
+    config's family would be a guess about who wrote the diff; barring
+    everything would take a real reviewer off it on a value nobody
+    established."""
+    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=True)
+    here = crew_state.current_branch(str(root))
+    crew_state.record_dispatch(str(root), "dev", "developer", "copilot", None,
+                               branch=here)
+
+    authors, source = crew_state.author_families(str(root), PINNED)
+
+    assert authors == frozenset()
+    assert source == "unknown", \
+        "an empty author set must not be labelled proven provenance"
+
+
+def test_an_unknown_author_cannot_certify_an_independent_review(tmp_path):
+    """The teeth. `eligible` means only "not struck", and with an empty author
+    set nothing is struck -- so every candidate looked eligible and the report
+    certified a review it had no basis to certify. Independence is a claim
+    ABOUT the author's family; there is none to be independent of."""
+    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=True)
+    here = crew_state.current_branch(str(root))
+    crew_state.record_dispatch(str(root), "dev", "developer", "copilot", None,
+                               branch=here)
+
+    report = crew_config.model_report(str(root))
+
+    assert report["authorSource"] == "unknown"
+    assert report["independentReviewer"] is False

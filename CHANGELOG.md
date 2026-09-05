@@ -88,23 +88,54 @@ All notable changes to this repository are documented here. Format follows [Keep
   purpose, because the guard governs who may review and not who may write.
 
 - **`crew` 0.16.7: two dispatch writers could both publish, and one would
-  lose.** Writing the file atomically stops a torn read and does nothing about
-  two dispatches each reading history H and publishing `H + itself`. A lock
-  cannot close it on its own either: two writers that both find a stale lock
-  can both take it, because the age check and the removal are separate calls
-  against a pathname and `O_EXCL` cannot repair a pathname replaced between
-  them. So `record_dispatch` verifies its own write — it reads the file back,
-  and if its entry is not there it merges into whoever won and publishes
-  again. Convergent, because the winner's own check passes and it stops. The
-  lock at `.work/dispatch.lock` is now a fast path that avoids the retry, with
-  a TTL so a killed dispatch cannot wedge every later one.
+  lose.** `.work/dispatch.json` was a single file that every dispatch read,
+  modified and rewrote, so two dispatches each reading history H and
+  publishing `H + itself` erased one another — and if the erased one wrote the
+  diff, its family was never struck. The PM dispatches up to three roles at a
+  time. Writing atomically only stops a torn read. A lock does not close it
+  either: it has to be reclaimable, or one killed dispatch wedges the repo
+  forever, and reclaiming is two calls against a pathname that a rival can
+  replace in between — Windows has no inode, so "remove this only if it is
+  still the file I looked at" cannot be said. Verifying the write and
+  republishing does not close it either; that holds only for the writer that
+  lands last, and three writers lose the middle one permanently.
+
+  So there is no shared file left to race. Each dispatch writes its own
+  immutable file under `.work/dispatch.d/` and the reader merges the
+  directory. `dispatch.json` keeps a best-effort pointer to the most recent
+  one, because `/crew:review` reads its mtime and `/crew:model` prints it, and
+  losing that race now costs a display field rather than a record. **Both
+  paths are gitignored by `/crew:init`** — ignoring the file and not the
+  directory would commit the actual record.
+
+  Three properties fall out of the shape rather than out of care: a malformed
+  entry costs one entry instead of collapsing the whole record to `{}` and
+  sending the guard back to the config; a bookkeeping write that fails cannot
+  abort the dispatch; and a repo upgraded mid-branch has its pre-0.16.7 record
+  adopted into the store before the slot holding it is overwritten.
 
 - **`crew` 0.16.7: the dispatch history carried no ordering of its own.** The
-  writer assumed the list it found was already newest-first, so a file laid
-  out any other way decided which family survived the bound. Each entry now
-  records `at`, and the order is derived from that; an entry without one
-  sorts oldest, which is the safe end because that is the end the bound
-  evicts from.
+  reader assumed the list it found was already newest-first, so a file laid
+  out any other way decided which family survived the bound. Entries now
+  record `at`, and an entry's own file mtime is a second witness to the same
+  event. Neither is trusted to rank the store against the legacy file: a
+  `dispatch.json` carrying far-future timestamps — a clock that ran ahead, a
+  hand edit, a restored backup — would otherwise evict the dispatch that had
+  just happened. The store outranks the legacy file structurally, so no value
+  inside that file can promote it.
+
+- **`crew` 0.16.7: an unknown author family was reported as proven
+  provenance.** A dispatch recorded on this branch by an unpinned `copilot`
+  has no determinable family — Copilot hosts several and an unset model does
+  not say which — so `family()` answers `None`, correctly. The author set was
+  then emptied and handed back labelled `dispatch`, documented as "the guard
+  is judging what actually ran": nothing struck, every reviewer eligible, and
+  a report claiming the provenance was proven. It is now its own source,
+  `unknown`, and `independentReviewer` is `false` whenever it applies —
+  independence is a claim about the author's family, and there is none to be
+  independent of. Nothing is barred on it, because barring a real reviewer on
+  a value nobody established is the opposite error. Pinning
+  `dev.copilot.model` is what resolves it.
 
 - **`crew` 0.16.7: the hook count in crew's README.** The prose said eight
   scripts and sixteen entries while the table directly beneath it already

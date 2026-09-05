@@ -7,7 +7,6 @@ traceback.
 """
 
 import argparse
-import contextlib
 import json
 import os
 import re
@@ -943,97 +942,184 @@ DISPATCH_KINDS = ("dev",)
 # actually wrote the diff, spending ten slots to carry one bit.
 DISPATCH_HISTORY_MAX = 10
 
-# Serialises the read-modify-write above. `.work/`, beside the record itself.
-DISPATCH_LOCK_PATH = (".work", "dispatch.lock")
+# One file per dispatch, under `.work/dispatch.d/`. THE store; everything
+# below reads from here.
+#
+# `dispatch.json` was a single shared file that every dispatch read, modified
+# and rewrote, and three review rounds went by trying to make that safe. It
+# cannot be made safe portably. A lock has to be reclaimable or one killed
+# dispatch wedges the repo forever, and a reclaimable lock is two `os` calls
+# against a pathname that a rival can replace between them -- Windows has no
+# inode to compare, so "remove this file only if it is still the one I looked
+# at" cannot be said. Verify-and-republish did not close it either: it holds
+# only for the writer that lands LAST, and a writer whose read predates a
+# rival's successful write still erases that rival afterward. Three writers
+# are enough to lose the middle one permanently, and if the lost one is the
+# family that wrote the diff, the guard clears it to review its own work.
+#
+# So there is no read-modify-write left to race. A dispatch creates a file
+# nothing else will ever write, under a name nothing else will ever pick, and
+# the reader merges what it finds. Concurrency stops being a correctness
+# question and a malformed file costs exactly one entry instead of all of
+# them.
+DISPATCH_DIR = (".work", "dispatch.d")
 
-# How long a lock may be held before the next writer takes it. A dispatch
-# writes one small file, so anything still holding this after a minute is a
-# process that died -- and a lock with no expiry is its own outage: one killed
-# dispatch and every later one blocks forever on a holder that is gone.
-# `verify-gate` applies the same rule to its own lock for the same reason.
-DISPATCH_LOCK_TTL = 60.0
-
-# How many times a write will republish itself after finding it was clobbered.
-# Each attempt merges into whatever is on disk, so two writers converge on the
-# first retry and N writers on at most N-1; three is slack, not a guess at how
-# many dispatches run at once.
-DISPATCH_WRITE_TRIES = 3
+# How many entry files may accumulate before the oldest are pruned. The read
+# bound is per kind and family-keyed, so this is only about not letting a
+# directory grow without limit in a long-lived checkout; it is deliberately
+# far above `DISPATCH_HISTORY_MAX` so pruning can never be what decides which
+# family is remembered.
+DISPATCH_FILES_MAX = 200
 
 
-@contextlib.contextmanager
-def _dispatch_lock(root):
-    """Hold the dispatch lock, or proceed unlocked rather than lose the write.
+def _entry_sort_key(entry, mtime=None):
+    """How recent an entry is. Newest sorts highest. Never raises.
 
-    `O_CREAT|O_EXCL` is the atomic primitive -- the same one `hook_once.py`
-    uses -- so exactly one writer creates the file and the rest wait.
+    `at` is what the writer said, and the file's own mtime is a second witness
+    to the same event. The larger of the two wins, which is what makes an
+    entry with a missing, hand-edited or non-numeric `at` still sort by when
+    it was actually written rather than falling to the bottom as a zero.
 
-    Two deliberate softnesses, both of which trade a rare wrong answer for a
-    common one:
-
-      * A lock older than `DISPATCH_LOCK_TTL` is reclaimed. A killed dispatch
-        would otherwise wedge every later one permanently.
-      * Failing to acquire it at all does NOT raise. A dispatch that cannot be
-        recorded is a review with no record, which falls back to reading the
-        config -- the guess this whole module exists to avoid.
-
-    Both of those let two writers into the read-modify-write, so this is a
-    fast path and not a guarantee. `record_dispatch` verifies its own write
-    and republishes if it was clobbered; that is what makes the record right.
-    Yielding `held` rather than raising is deliberate for the same reason --
-    the caller is expected to proceed either way.
+    It does NOT make the ordering clock-independent -- a system clock that
+    steps backward moves `at` and mtime together, and nothing in a directory
+    of files can see that. What bounds the damage is that the bound is
+    family-keyed and per kind: it only ever bites once more than
+    `DISPATCH_HISTORY_MAX` DISTINCT families have been dispatched on one
+    branch, and over-keeping is the safe direction anyway.
     """
-    path = os.path.join(root, *DISPATCH_LOCK_PATH)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    held = False
-    deadline = time.time() + 5.0
-    while time.time() < deadline:
-        try:
-            handle = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
-        except FileExistsError:
-            try:
-                age = time.time() - os.path.getmtime(path)
-            except OSError:
-                age = 0.0
-            if age > DISPATCH_LOCK_TTL:
-                # Reclaim it. This narrows the window rather than closing it:
-                # two writers can both read the same old mtime and both remove
-                # the pathname, and the second removal takes the FIRST's fresh
-                # lock. There is no portable way to say "remove this file only
-                # if it is still the one I looked at" -- Windows has no inode
-                # to compare. `record_dispatch` is what makes that survivable:
-                # it verifies its own write and republishes if it lost.
-                try:
-                    os.remove(path)
-                except OSError:
-                    pass
-                continue
-            time.sleep(0.02)
-            continue
-        except OSError:
-            break               # unwritable .work/; the write below will say so
-        os.close(handle)
-        held = True
-        break
+    stamps = [float_or(entry.get("at"), 0.0)]
+    if mtime is not None:
+        stamps.append(mtime)
+    return max(stamps)
+
+
+def _dispatch_entries(root):
+    """Every entry in `.work/dispatch.d/`, as `(sort key, kind, entry)`.
+
+    Never raises, and a file it cannot read costs exactly that file. A
+    half-written or hand-mangled entry is skipped and its neighbours survive
+    -- the property the single shared file did not have, where one malformed
+    byte collapsed the whole record to `{}` and the guard fell back to reading
+    the config.
+    """
+    directory = os.path.join(root, *DISPATCH_DIR)
     try:
-        yield held
-    finally:
-        if held:
-            try:
-                os.remove(path)
-            except OSError:
-                pass
+        names = os.listdir(directory)
+    except OSError:
+        return []
+    out = []
+    for name in names:
+        if not name.endswith(".json"):
+            continue                    # a `.tmp` mid-write, or anything else
+        path = os.path.join(directory, name)
+        text = read_text(path)
+        if text is None:
+            continue
+        try:
+            entry = json.loads(text)
+        except ValueError:
+            continue
+        if not isinstance(entry, dict) or not entry.get("kind"):
+            continue
+        try:
+            mtime = os.path.getmtime(path)
+        except OSError:
+            mtime = None
+        out.append((_entry_sort_key(entry, mtime), entry.pop("kind"), entry))
+    return out
+
+
+def _merge_history(items):
+    """Newest first, deduplicated on what the guard reads, bounded.
+
+    `items` is `(rank, entry)`, and `rank` is `(tier, sort key)`. The tier is
+    what makes the ordering independent of any clock: an entry from
+    `.work/dispatch.d/` is tier 1 and one read out of the legacy
+    `dispatch.json` is tier 0, so nothing written in the legacy file can
+    outrank the store no matter what its `at` says. A `dispatch.json` carrying
+    far-future timestamps -- a clock that ran ahead, a hand edit, a restored
+    backup -- otherwise evicted the dispatch that had just happened, which is
+    the same hazard the write path had and is why this is structural rather
+    than a comparison between two wall-clock values that step together.
+
+    The key is the FAMILY, not the model id,
+    because the family is the only thing `author_families` ever compares.
+    Keyed on the model, one provider walking through ten ids on one branch
+    filled the whole history by itself and evicted the family that wrote the
+    diff -- ten entries carrying one bit between them.
+
+    An UNKNOWN family (an unpinned copilot) keeps the provider and model in
+    its key instead: None must not compare equal to None here, or two
+    genuinely different unpinned providers collapse into one and the second is
+    dropped as a duplicate of the first.
+    """
+    seen, trimmed = set(), []
+    for _key, entry in sorted(items, key=lambda pair: pair[0], reverse=True):
+        fam = family(entry.get("provider"), entry.get("model"))
+        key = ((fam, entry.get("branch")) if fam is not None
+               else (None, entry.get("provider"), entry.get("model"),
+                     entry.get("branch")))
+        if key in seen:
+            continue
+        seen.add(key)
+        trimmed.append(entry)
+        if len(trimmed) >= DISPATCH_HISTORY_MAX:
+            break
+    return trimmed
 
 
 def read_dispatch(root):
-    """The last recorded dispatch, or `{}`. Never raises."""
+    """Every dispatch this checkout recorded, merged. Never raises.
+
+    Returns the same shape it always did -- a `<kind>` slot holding the most
+    recent dispatch and a `<kind>History` list, newest first -- so
+    `author_families`, `/crew:review` and `/crew:model` did not have to change
+    when the store underneath did.
+
+    Three sources are unioned, in order of authority:
+
+      1. `.work/dispatch.d/`, one immutable file per dispatch. Authoritative.
+      2. `dispatch.json`'s `<kind>History`, if some older version wrote one.
+      3. `dispatch.json`'s `<kind>` slot itself, which is all a 0.16.6 record
+         has. A repo upgraded mid-branch must not lose the dispatch that is
+         already recorded there, so it is folded in rather than replaced.
+
+    A record that exists only in (2) or (3) is never rewritten into (1). It is
+    read where it lies until the bound ages it out, which is what makes this
+    an upgrade rather than a migration that can fail halfway.
+    """
     text = read_text(os.path.join(root, *DISPATCH_PATH))
-    if text is None:
-        return {}
-    try:
-        parsed = json.loads(text)
-    except ValueError:
-        return {}
-    return parsed if isinstance(parsed, dict) else {}
+    record = {}
+    if text is not None:
+        try:
+            parsed = json.loads(text)
+        except ValueError:
+            parsed = None
+        if isinstance(parsed, dict):
+            record = parsed
+
+    by_kind = {}
+    for key, kind, entry in _dispatch_entries(root):
+        by_kind.setdefault(kind, []).append((key, entry))
+
+    for kind in DISPATCH_KINDS:
+        items = [((1, key), entry) for key, entry in by_kind.get(kind) or []]
+        legacy = [h for h in record.get(f"{kind}History") or []
+                  if isinstance(h, dict)]
+        slot = record.get(kind)
+        if isinstance(slot, dict) and slot.get("provider"):
+            legacy.append(slot)
+        items.extend(((0, _entry_sort_key(h)), h) for h in legacy)
+        if not items:
+            continue
+        history = _merge_history(items)
+        record[f"{kind}History"] = history
+        # The slot is the newest entry, recomputed rather than trusted: it is
+        # written unlocked and best-effort, so a lost update there must cost
+        # nothing. `report["dispatch"]` and `/crew:review`'s mtime test are
+        # what still read the file itself.
+        record[kind] = history[0]
+    return record
 
 
 def current_branch(root):
@@ -1114,169 +1200,161 @@ def record_dispatch(root, kind, role, provider, model=None, branch=None):
     entry = {"role": role, "provider": provider, "model": model,
              "branch": branch, "at": time.time()}
 
-    # Write, then CHECK. The lock below is a fast path, not the guarantee:
-    #
-    #   * Two writers that both find the lock stale can both take it. The age
-    #     test and the removal are separate calls against a pathname, and
-    #     `O_EXCL` cannot repair a pathname that was replaced between them.
-    #   * A writer that cannot acquire within the deadline proceeds anyway, on
-    #     purpose -- a review with NO record falls back to reading the config,
-    #     which is exactly the guess this module exists to avoid.
-    #
-    # Both leave two writers inside the read-modify-write, and the loser's
-    # entry is erased. So the write verifies itself: read the file back, and
-    # if this entry is not in it, someone published over it -- merge into
-    # THEIR version and publish again. Convergent, because the winner's own
-    # verification passes and it stops.
-    record = None
-    for _attempt in range(DISPATCH_WRITE_TRIES):
-        with _dispatch_lock(root):
-            record = _write_dispatch(root, kind, entry)
-        if _entry_recorded(read_dispatch(root), kind, entry):
-            return record
-    # Out of tries. Return what the last write produced and do not raise: the
-    # caller is a dispatch, and refusing to dispatch because the bookkeeping
-    # is contended is a worse failure than a bookkeeping entry that lost. The
-    # loop is bounded for the same reason it exists at all -- a file that
-    # `read_dispatch` cannot parse collapses to `{}`, every check then fails,
-    # and an unbounded retry would spin on it forever rather than getting on
-    # with the work.
-    return record
+    # One file, created once, never modified. There is nothing to race: no
+    # reader is mutated, no writer is overwritten, and a writer that fails
+    # takes only its own entry down with it. See `DISPATCH_DIR` for the three
+    # review rounds that went into learning that.
+    # Before the new entry, so "the store has nothing for this kind" still
+    # means "nothing was ever recorded here".
+    _adopt_slot(root, kind)
+    _append_dispatch(root, kind, entry)
+    _write_slot(root, kind, entry)
+    return read_dispatch(root)
 
 
-def _entry_recorded(record, kind, entry):
-    """Did `entry` survive into the record that is now on disk?
+def _adopt_slot(root, kind):
+    """Copy a pre-store `dispatch.json` slot into the store. Never raises.
 
-    `at` is part of the comparison, and has to be. Provider, model and branch
-    alone do not identify a WRITE -- the PM dispatching `developer` twice on
-    one branch produces two entries identical in all three, so writer B's
-    check would pass on writer A's record and return having never landed its
-    own. `at` is set once per `record_dispatch` call and carried unchanged
-    across its retries, so it stays stable for the writer that owns it while
-    telling two writers apart.
+    `_write_slot` is about to overwrite that slot, and on a repo upgraded
+    mid-branch it is the ONLY record of the family that wrote the code being
+    reviewed. Overwriting it clears that family to review its own diff --
+    the exact failure this whole subsystem exists to prevent, reintroduced by
+    the release that was meant to close it.
 
-    An entry that predates `at` has none, and `None == None` then makes the
-    old comparison exactly: that is correct here, because a record from
-    before the field cannot have been written by this call anyway.
+    Runs only while the store holds nothing for this kind -- which is what a
+    pre-store record IS. Without that gate every dispatch re-adopted the
+    previous one's slot: harmless to the answer, because the family-keyed
+    dedup collapses it, and wrong for the directory, which filled with
+    redundant entries and pushed real ones toward the prune bound.
+
+    Idempotent by dedup rather than by coordination: two concurrent first
+    dispatches both pass the gate and both copy it, and `_merge_history` keys
+    on the family, so the duplicate collapses. That is what makes it safe on a
+    path with no lock.
+    `adopted` marks where the entry came from, for anyone reading the
+    directory; nothing branches on it.
     """
-    for item in dict_or_empty(record).get(f"{kind}History") or []:
-        if not isinstance(item, dict):
-            continue
-        if all(item.get(key) == entry.get(key)
-               for key in ("provider", "model", "branch", "at")):
-            return True
-    return False
+    if any(k == kind for _key, k, _entry in _dispatch_entries(root)):
+        return                          # not a pre-store record; nothing to do
+    text = read_text(os.path.join(root, *DISPATCH_PATH))
+    if text is None:
+        return
+    try:
+        record = json.loads(text)
+    except ValueError:
+        return
+    slot = dict_or_empty(record).get(kind)
+    if isinstance(slot, dict) and slot.get("provider"):
+        _append_dispatch(root, kind, dict(slot, adopted=True))
 
 
-def _write_dispatch(root, kind, entry):
-    """The read-modify-write itself. Call it holding `_dispatch_lock`.
+def _append_dispatch(root, kind, entry):
+    """Write `entry` as its own file. True if it landed. Never raises.
 
-    Separated so the lock has one obvious scope: the read AND the write are
-    inside it. Writing the file atomically stops a torn read and does nothing
-    at all about two dispatches both reading the same history and each
-    publishing it plus itself -- whichever lands second erases the other, and
-    if the erased one wrote the diff its family is never struck. The PM
-    dispatches up to three roles at a time, so that is the ordinary case.
+    A dispatch must not be aborted because its bookkeeping failed -- an
+    unwritable `.work/`, a full disk, a permission change mid-run. The review
+    that follows falls back to reading the config and SAYS so, which is a
+    worse answer than a record but a far better outcome than refusing to do
+    the work.
+
+    Written to a temp name and renamed into place, so a reader never sees a
+    half-written entry. The name carries the kind and the timestamp for a
+    human reading the directory, and a random token because that is what makes
+    it unique: two threads in one interpreter share a PID, and the timestamp
+    alone can repeat at the clock's resolution.
     """
-    record = dict(read_dispatch(root))
-    record[kind] = entry
+    directory = os.path.join(root, *DISPATCH_DIR)
+    stamp = f"{entry.get('at') or 0.0:.6f}".replace(".", "")
+    base = os.path.join(directory, f"{kind}-{stamp}-{uuid.uuid4().hex[:12]}")
+    tmp_path = f"{base}.tmp"
+    try:
+        os.makedirs(directory, exist_ok=True)
+        with open(tmp_path, "w", encoding="utf-8") as handle:
+            json.dump(dict(entry, kind=kind), handle, indent=2,
+                      sort_keys=True)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp_path, f"{base}.json")
+    except OSError:
+        try:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+        except OSError:
+            pass
+        return False
+    _prune_dispatch_dir(root)
+    return True
 
-    # ...and keep the earlier ones. A single slot meant a LATER dispatch
-    # erased the family that actually wrote the diff: codex implements, a
-    # claude dispatch runs afterwards on the same branch for something else,
-    # and review then reads a matching branch, calls claude the author, and
-    # clears CODEX to review codex's own work. Nothing binds a dispatch to
-    # the commits it produced, so any family dispatched on this branch may
-    # have written what is under review, and all of them are struck.
-    # Newest FIRST, and the stored list is already in that order -- so the new
-    # entry goes on the front. Appending it to the end instead (which this did
-    # until the sabotage suite caught it) reverses a newest-first list on every
-    # write: `reversed()` then promotes the oldest records and evicts
-    # middle-aged ones, so which family survives the bound became a function of
-    # how many dispatches had happened rather than of when they happened.
-    # Newest first -- and derived from what the entries SAY rather than from
-    # the order they happen to be in. The list carried no ordering information
-    # of its own, so the writer had to assume the file it found was already
-    # newest-first; a file laid out any other way then decided which family
-    # survived the bound. `at` makes that self-describing. An entry without
-    # one is treated as oldest, which is the safe direction: the bound evicts
-    # from that end, and a record with no timestamp is a record from before
-    # this field existed.
-    # The entry being written is newest BY CONSTRUCTION -- it is happening
-    # now -- so it goes on the front rather than being sorted into place.
-    # `time.time()` is not monotonic: an NTP correction, a VM resume or a
-    # dual-boot can hand back a value BELOW what is already on disk, and a
-    # sort would then file a fresh dispatch as the oldest thing in the
-    # history and evict it first. The clock is recorded, and not trusted to
-    # order the one entry whose position is already known.
-    #
-    # The rest ARE sorted on `at`, because their order is the one thing this
-    # file cannot otherwise know: the list carried no ordering information of
-    # its own, so a writer had to assume the layout it found was already
-    # newest-first. An entry with no `at` sorts oldest, which is the safe end
-    # -- it is the end the bound evicts from, and a record with no timestamp
-    # predates the field.
-    history = [entry] + sorted(
-        [h for h in record.get(f"{kind}History") or []
-         if isinstance(h, dict)],
-        key=lambda item: float_or(item.get("at"), 0.0),
-        reverse=True,
-    )
-    # Newest first, deduplicated on what the guard actually reads, and
-    # bounded: this file is rewritten on every dispatch and nothing prunes it.
-    #
-    # The key is the FAMILY, not the model id, because the family is the only
-    # thing `author_families` ever compares. Keyed on the model, one provider
-    # walking through ten ids on one branch filled the whole history and
-    # evicted the family that wrote the diff -- ten entries carrying one bit
-    # between them. An UNKNOWN family (an unpinned copilot) keeps the provider
-    # and model in its key instead: None must not compare equal to None here,
-    # or two genuinely different unpinned providers collapse into one and the
-    # second is dropped as a duplicate of the first.
-    seen, trimmed = set(), []
-    for item in history:
-        fam = family(item.get("provider"), item.get("model"))
-        key = ((fam, item.get("branch")) if fam is not None
-               else (None, item.get("provider"), item.get("model"),
-                     item.get("branch")))
-        if key in seen:
-            continue
-        seen.add(key)
-        trimmed.append(item)
-        if len(trimmed) >= DISPATCH_HISTORY_MAX:
-            break
-    record[f"{kind}History"] = trimmed
 
+def _write_slot(root, kind, entry):
+    """Update `dispatch.json`'s `<kind>` slot. Best-effort. Never raises.
+
+    Unlocked, and that is now fine: `read_dispatch` recomputes the slot from
+    the directory, so losing this race costs a display field and a file mtime
+    rather than a record. It is still written because two things read the file
+    directly -- `/crew:review` takes its freshness from this file's mtime, and
+    `/crew:model` prints the last dispatch from the slot.
+    """
     path = os.path.join(root, *DISPATCH_PATH)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    # Atomic, for the same reason the config writes are: opening the live
-    # file "w" truncates it before the JSON is complete, and `read_dispatch`
-    # collapses malformed JSON to `{}`. A concurrent reader therefore saw NO
-    # dispatch and fell back to reading the config -- which describes the
-    # next run, not the one being reviewed. The guard failing open during an
-    # ordinary race is the worst version of this bug, because nothing about
-    # it looks like a failure.
-    # PID *and* a random token. The PID alone is not unique to a WRITER: two
-    # threads in one interpreter share it, collide on this name, and
-    # `os.replace` then fails on Windows because the sibling still holds the
-    # file open. Found by running the concurrency test rather than by reading
-    # it.
+    record = {}
+    text = read_text(path)
+    if text is not None:
+        try:
+            parsed = json.loads(text)
+        except ValueError:
+            parsed = None
+        if isinstance(parsed, dict):
+            record = parsed
+    record[kind] = entry
     tmp_path = f"{path}.{os.getpid()}.{uuid.uuid4().hex[:8]}.tmp"
     try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(tmp_path, "w", encoding="utf-8") as handle:
             json.dump(record, handle, indent=2, sort_keys=True)
             handle.write("\n")
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(tmp_path, path)
-    except BaseException:
+    except OSError:
         try:
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
         except OSError:
             pass
-        raise
-    return record
+        return False
+    return True
+
+
+def _prune_dispatch_dir(root):
+    """Drop the oldest entry files once there are too many. Never raises.
+
+    Nothing else deletes them, and a long-lived checkout dispatches for
+    months. The bound is far above what the reader keeps, so this can never be
+    what decides which family is remembered -- and a deletion that fails is
+    ignored, because a directory that is larger than intended is not a
+    correctness problem.
+    """
+    directory = os.path.join(root, *DISPATCH_DIR)
+    try:
+        names = [n for n in os.listdir(directory) if n.endswith(".json")]
+    except OSError:
+        return
+    if len(names) <= DISPATCH_FILES_MAX:
+        return
+    aged = []
+    for name in names:
+        path = os.path.join(directory, name)
+        try:
+            aged.append((os.path.getmtime(path), path))
+        except OSError:
+            continue
+    aged.sort(reverse=True)
+    for _mtime, path in aged[DISPATCH_FILES_MAX:]:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
 
 
 def author_families(root, cfg, stale=False):
@@ -1405,7 +1483,31 @@ def author_families(root, cfg, stale=False):
             return frozenset(
                 recorded_families | {decided["family"]}
             ) - {None}, "stale"
-        return frozenset(recorded_families) - {None}, "dispatch"
+        # A dispatch we can place on this branch, whose family nobody can
+        # name. An unpinned `copilot` is exactly this: Copilot hosts several
+        # families and an unset model does not say which, so `family()`
+        # answers None -- correctly, because None is the honest answer and a
+        # placeholder string would compare equal to the next unset one.
+        #
+        # `discard(None)` then empties the set, and the old return handed
+        # that back labelled `dispatch`: "the guard is judging what actually
+        # ran". Nothing is struck, every reviewer reads as eligible, and the
+        # report says the provenance was proven. That is this codebase's
+        # recurring bug in its purest form -- an unknown collapsing into the
+        # safe-looking value, wearing the label of a check that happened.
+        #
+        # There is no set to return here. Barring the config's family instead
+        # would be a guess about who wrote the diff, and barring everything
+        # would take a real reviewer off it on the strength of a value nobody
+        # established. So the answer is the honest one: a dispatch happened,
+        # its family is unknown, and NO reviewer can be proven independent of
+        # it. `crew_config.model_report` turns that into
+        # `independentReviewer: False`, which is what actually stops the
+        # review from being certified.
+        known = frozenset(recorded_families) - {None}
+        if not known:
+            return frozenset(), "unknown"
+        return known, "dispatch"
     # No record: read the config. `decided` above asked `resolve_role` for the
     # `developer` role rather than the `dev` block's own provider --
     # `dev.roles.developer` is a pin that OVERRIDES that default, so reading

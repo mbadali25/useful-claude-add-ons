@@ -804,7 +804,16 @@ def model_report(root, which=None, stale=False):
         # run". `independentReviewerProbed` says which of those was measured,
         # so a caller never has to guess whether presence was mistaken for
         # capability.
-        "independentReviewer": any(c["eligible"] for c in candidates),
+        #
+        # An `unknown` author source forces this False. Independence is a
+        # claim ABOUT the author's family, so a candidate cannot be
+        # independent of a family nobody named -- the unpinned provider that
+        # wrote the diff may be serving the reviewer's own. `eligible` says
+        # only "not struck", and with an empty author set nothing is struck,
+        # so every candidate looked eligible and the report certified a review
+        # it had no basis to certify.
+        "independentReviewer": (author_source != "unknown"
+                                and any(c["eligible"] for c in candidates)),
         "independentReviewerProbed": all(c["probed"] for c in candidates)
                                      and bool(candidates),
     }
@@ -818,6 +827,12 @@ _ORIGINS = {
     # `crew_state.author_families` and `commands/review.md`.
     "stale": ("STALE RECORD - the dispatch was made on a different branch, "
               "so BOTH the recorded family and the config family are struck"),
+    # Nothing is struck and nothing is cleared. See
+    # `crew_state.author_families`.
+    "unknown": ("UNKNOWN - a dispatch was recorded on this branch and its "
+                "family cannot be determined (an unpinned provider that "
+                "hosts several), so no reviewer can be proven independent "
+                "of it"),
 }
 
 
