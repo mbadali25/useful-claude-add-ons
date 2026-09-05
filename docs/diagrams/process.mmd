@@ -1,0 +1,44 @@
+%% anchor: useful-claude-add-ons@4795a69
+%% localgpu: /localgpu:setup (7 steps, agent-driven) calls bootstrap.{sh,ps1} (6 steps, script-driven).
+%% NOTE: ground truth handed to this lane said "six-step" setup flow; commands/setup.md
+%% actually says "Seven steps, in order" (setup.md:2) - corrected here, see report.
+%% Verified against source on 2026-09-05; see comments for path:line.
+flowchart TB
+
+    Start(["user runs<br/>/localgpu:setup"])
+
+    subgraph SetupFlow["/localgpu:setup - commands/setup.md - 7 steps"]
+        direction TB
+        S1["Step 1: resolve LOCALGPU_HOME<br/>[AGENT] prints resolved path,<br/>flags WSL cross-filesystem case<br/>setup.md Step 1"]
+        S2["Step 2: check Ollama installed + serving<br/>[AGENT] runs 'ollama --version' and<br/>'curl .../api/tags' as tool calls;<br/>stops if either fails<br/>setup.md Step 2"]
+        S3["Step 3: pull the two models<br/>[AGENT] runs 'ollama pull ...' x2,<br/>skipped on --no-pull<br/>(bootstrap step 4 covers this too)<br/>setup.md Step 3"]
+        S4["Step 4: build the environment<br/>[SCRIPT] invokes bootstrap.sh or<br/>bootstrap.ps1 for the platform<br/>setup.md Step 4"]
+        S5["Step 5: write repo config<br/>[AGENT] writes<br/>&lt;repo&gt;/.localgpu/config.json;<br/>asks whether it is gitignored<br/>setup.md Step 5"]
+        S6["Step 6: register the MCP server<br/>[AGENT] copies templates/mcp.json,<br/>substitutes 3 placeholders itself,<br/>writes repo-root .mcp.json<br/>-- no script performs this<br/>setup.md Step 6"]
+        S7["Step 7: hand off, do not index<br/>[AGENT] reports what changed,<br/>points at /localgpu:index,<br/>runs /localgpu:doctor<br/>setup.md Step 7"]
+
+        S1 --> S2 --> S3 --> S4 --> S5 --> S6 --> S7
+    end
+
+    Start --> S1
+
+    subgraph Bootstrap["bootstrap.sh / bootstrap.ps1 - matched pair, same 6 steps, same order (verified)"]
+        direction TB
+        B1["1. NVIDIA driver present,<br/>report compute capability<br/>[SCRIPT]"]
+        B2["2. Ollama installed<br/>[SCRIPT]"]
+        B3["3. venv + numpy<br/>(+ mcp/requirements.txt,<br/>editable console script)<br/>[SCRIPT]"]
+        B4["4. both models pulled<br/>(idempotent - checks<br/>/api/tags first)<br/>[SCRIPT]"]
+        B5["5. VRAM discipline:<br/>export OLLAMA_MAX_LOADED_MODELS=1<br/>bootstrap.sh:646-715<br/>[SCRIPT]"]
+        B6["6. VERIFY: real embed request,<br/>then 'ollama ps' proving GPU<br/>residency, not CPU offload<br/>bootstrap.sh header comment<br/>[SCRIPT]"]
+
+        B1 --> B2 --> B3 --> B4 --> B5 --> B6
+    end
+
+    S4 -- "bash bootstrap.sh (Linux/macOS/WSL)<br/>OR pwsh -File bootstrap.ps1 (Windows)<br/>setup.md Step 4" --> B1
+    B6 -- "returns control" --> S5
+
+    Note["Every step in both flows detects before<br/>it acts - re-running either is a no-op<br/>where the target already exists<br/>(bootstrap.sh:1-4 header, setup.md throughout)"]
+
+    style S4 fill:#5a4a1a,stroke:#b7861a,color:#fff
+    style S6 fill:#5a4a1a,stroke:#b7861a,color:#fff
+    style Bootstrap fill:#1a2a3a,stroke:#2b6cb0,color:#fff
