@@ -199,19 +199,6 @@
       "source_location": "L576"
     },
     {
-      "id": "plugin_localgpu_mcp_store_refreshbusy",
-      "label": "RefreshBusy",
-      "_callable": true,
-      "_callable_class": true,
-      "_origin": "ast",
-      "community": 106,
-      "community_name": "store.py",
-      "file_type": "code",
-      "norm_label": "refreshbusy",
-      "source_file": "plugin/localgpu/mcp/store.py",
-      "source_location": "L122"
-    },
-    {
       "id": "plugin_localgpu_mcp_store_refreshlock",
       "label": "RefreshLock",
       "_callable": true,
@@ -223,19 +210,6 @@
       "norm_label": "refreshlock",
       "source_file": "plugin/localgpu/mcp/store.py",
       "source_location": "L126"
-    },
-    {
-      "id": "plugin_localgpu_mcp_store_storeerror",
-      "label": "StoreError",
-      "_callable": true,
-      "_callable_class": true,
-      "_origin": "ast",
-      "community": 11,
-      "community_name": "VectorStore",
-      "file_type": "code",
-      "norm_label": "storeerror",
-      "source_file": "plugin/localgpu/mcp/store.py",
-      "source_location": "L202"
     },
     {
       "id": "plugin_localgpu_mcp_store_vectorstore",
@@ -1018,17 +992,17 @@
       "source_location": "L337"
     },
     {
-      "id": "plugin_localgpu_cli_anthropic_proxy_proxyerror",
-      "label": "ProxyError",
+      "id": "plugin_localgpu_mcp_config_configerror",
+      "label": "ConfigError",
       "_callable": true,
       "_callable_class": true,
       "_origin": "ast",
-      "community": 335,
-      "community_name": "check_fits_context",
+      "community": 331,
+      "community_name": "config.py",
       "file_type": "code",
-      "norm_label": "proxyerror",
-      "source_file": "plugin/localgpu/cli/anthropic_proxy.py",
-      "source_location": "L109"
+      "norm_label": "configerror",
+      "source_file": "plugin/localgpu/mcp/config.py",
+      "source_location": "L116"
     },
     {
       "id": "skills_cisco_meraki_tests_test_config_batches_testbatchoutputredaction",
@@ -1107,6 +1081,19 @@
       "norm_label": "chunk",
       "source_file": "plugin/localgpu/mcp/indexer.py",
       "source_location": "L51"
+    },
+    {
+      "id": "plugin_localgpu_mcp_indexer_indexer",
+      "label": "Indexer",
+      "_callable": true,
+      "_callable_class": true,
+      "_origin": "ast",
+      "community": 40,
+      "community_name": "indexer.py",
+      "file_type": "code",
+      "norm_label": "indexer",
+      "source_file": "plugin/localgpu/mcp/indexer.py",
+      "source_location": "L293"
     },
     {
       "id": "plugin_localgpu_mcp_store_filerecord",
@@ -1200,19 +1187,6 @@
       "source_location": "L926"
     },
     {
-      "id": "plugin_localgpu_mcp_indexer_indexer",
-      "label": "Indexer",
-      "_callable": true,
-      "_callable_class": true,
-      "_origin": "ast",
-      "community": 513,
-      "community_name": "write",
-      "file_type": "code",
-      "norm_label": "indexer",
-      "source_file": "plugin/localgpu/mcp/indexer.py",
-      "source_location": "L293"
-    },
-    {
       "id": "plugin_localgpu_mcp_test_test_incremental_flakyembedder",
       "label": "FlakyEmbedder",
       "_callable": true,
@@ -1239,6 +1213,32 @@
       "source_location": "L207"
     },
     {
+      "id": "plugin_localgpu_mcp_store_refreshbusy",
+      "label": "RefreshBusy",
+      "_callable": true,
+      "_callable_class": true,
+      "_origin": "ast",
+      "community": 515,
+      "community_name": "ChunkRecord",
+      "file_type": "code",
+      "norm_label": "refreshbusy",
+      "source_file": "plugin/localgpu/mcp/store.py",
+      "source_location": "L122"
+    },
+    {
+      "id": "plugin_localgpu_mcp_store_storeerror",
+      "label": "StoreError",
+      "_callable": true,
+      "_callable_class": true,
+      "_origin": "ast",
+      "community": 515,
+      "community_name": "ChunkRecord",
+      "file_type": "code",
+      "norm_label": "storeerror",
+      "source_file": "plugin/localgpu/mcp/store.py",
+      "source_location": "L202"
+    },
+    {
       "id": "skills_notify_scripts_inbox_inboxlocked",
       "label": "InboxLocked",
       "_callable": true,
@@ -1250,6 +1250,19 @@
       "norm_label": "inboxlocked",
       "source_file": "skills/notify/scripts/inbox.py",
       "source_location": "L44"
+    },
+    {
+      "id": "plugin_localgpu_cli_anthropic_proxy_proxyerror",
+      "label": "ProxyError",
+      "_callable": true,
+      "_callable_class": true,
+      "_origin": "ast",
+      "community": 530,
+      "community_name": "ProxyHandler",
+      "file_type": "code",
+      "norm_label": "proxyerror",
+      "source_file": "plugin/localgpu/cli/anthropic_proxy.py",
+      "source_location": "L109"
     },
     {
       "id": "plugin_localgpu_cli_anthropic_proxy_proxyhandler",
@@ -1341,19 +1354,6 @@
       "norm_label": "tgerror",
       "source_file": "skills/notify/scripts/tg.py",
       "source_location": "L26"
-    },
-    {
-      "id": "plugin_localgpu_mcp_config_configerror",
-      "label": "ConfigError",
-      "_callable": true,
-      "_callable_class": true,
-      "_origin": "ast",
-      "community": 74,
-      "community_name": "config.py",
-      "file_type": "code",
-      "norm_label": "configerror",
-      "source_file": "plugin/localgpu/mcp/config.py",
-      "source_location": "L108"
     },
     {
       "id": "skills_cisco_meraki_tests_test_client_bootstrap_testnetworklookup",
@@ -2907,6 +2907,18 @@
       "source_location": "L741"
     },
     {
+      "id": "plugin_localgpu_mcp_store_match_glob",
+      "label": "match_glob()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 106,
+      "community_name": "store.py",
+      "file_type": "code",
+      "norm_label": "match_glob()",
+      "source_file": "plugin/localgpu/mcp/store.py",
+      "source_location": "L785"
+    },
+    {
       "id": "plugin_localgpu_mcp_store_prefix_key",
       "label": "_prefix_key()",
       "_callable": true,
@@ -3027,16 +3039,28 @@
       "source_location": "L250"
     },
     {
-      "id": "plugin_localgpu_mcp_test_test_concurrency_test_refresh_lock_is_exclusive_across_separate_instances",
-      "label": "test_refresh_lock_is_exclusive_across_separate_instances()",
+      "id": "plugin_localgpu_mcp_store_vectorstore_live_rows",
+      "label": "._live_rows()",
       "_callable": true,
       "_origin": "ast",
       "community": 106,
       "community_name": "store.py",
       "file_type": "code",
-      "norm_label": "test_refresh_lock_is_exclusive_across_separate_instances()",
-      "source_file": "plugin/localgpu/mcp/_test/test_concurrency.py",
-      "source_location": "L212"
+      "norm_label": "._live_rows()",
+      "source_file": "plugin/localgpu/mcp/store.py",
+      "source_location": "L565"
+    },
+    {
+      "id": "plugin_localgpu_mcp_test_test_ranking_test_match_glob_handles_both_separators",
+      "label": "test_match_glob_handles_both_separators()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 106,
+      "community_name": "store.py",
+      "file_type": "code",
+      "norm_label": "test_match_glob_handles_both_separators()",
+      "source_file": "plugin/localgpu/mcp/_test/test_ranking.py",
+      "source_location": "L106"
     },
     {
       "id": "plugin_crew_tests_test_crew_config_decided_by_layer",
@@ -3243,30 +3267,6 @@
       "source_location": "L195"
     },
     {
-      "id": "plugin_localgpu_mcp_store_normalise",
-      "label": "normalise()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 11,
-      "community_name": "VectorStore",
-      "file_type": "code",
-      "norm_label": "normalise()",
-      "source_file": "plugin/localgpu/mcp/store.py",
-      "source_location": "L237"
-    },
-    {
-      "id": "plugin_localgpu_mcp_store_vectorstore_add",
-      "label": ".add()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 11,
-      "community_name": "VectorStore",
-      "file_type": "code",
-      "norm_label": ".add()",
-      "source_file": "plugin/localgpu/mcp/store.py",
-      "source_location": "L364"
-    },
-    {
       "id": "plugin_localgpu_mcp_store_vectorstore_check_dim",
       "label": "._check_dim()",
       "_callable": true,
@@ -3399,18 +3399,6 @@
       "source_location": "L313"
     },
     {
-      "id": "plugin_localgpu_mcp_store_vectorstore_live_rows",
-      "label": "._live_rows()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 11,
-      "community_name": "VectorStore",
-      "file_type": "code",
-      "norm_label": "._live_rows()",
-      "source_file": "plugin/localgpu/mcp/store.py",
-      "source_location": "L565"
-    },
-    {
       "id": "plugin_localgpu_mcp_store_vectorstore_matrix",
       "label": "._matrix()",
       "_callable": true,
@@ -3471,18 +3459,6 @@
       "source_location": "L326"
     },
     {
-      "id": "plugin_localgpu_mcp_store_vectorstore_search",
-      "label": ".search()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 11,
-      "community_name": "VectorStore",
-      "file_type": "code",
-      "norm_label": ".search()",
-      "source_file": "plugin/localgpu/mcp/store.py",
-      "source_location": "L471"
-    },
-    {
       "id": "plugin_localgpu_mcp_store_vectorstore_set_meta",
       "label": ".set_meta()",
       "_callable": true,
@@ -3531,6 +3507,18 @@
       "source_location": "L608"
     },
     {
+      "id": "plugin_localgpu_mcp_store_vectorstore_upsert_file",
+      "label": ".upsert_file()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 11,
+      "community_name": "VectorStore",
+      "file_type": "code",
+      "norm_label": ".upsert_file()",
+      "source_file": "plugin/localgpu/mcp/store.py",
+      "source_location": "L423"
+    },
+    {
       "id": "plugin_localgpu_mcp_store_vectorstore_write_manifest",
       "label": ".write_manifest()",
       "_callable": true,
@@ -3541,18 +3529,6 @@
       "norm_label": ".write_manifest()",
       "source_file": "plugin/localgpu/mcp/store.py",
       "source_location": "L757"
-    },
-    {
-      "id": "plugin_localgpu_mcp_test_test_ranking_test_normalise_leaves_a_zero_vector_alone",
-      "label": "test_normalise_leaves_a_zero_vector_alone()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 11,
-      "community_name": "VectorStore",
-      "file_type": "code",
-      "norm_label": "test_normalise_leaves_a_zero_vector_alone()",
-      "source_file": "plugin/localgpu/mcp/_test/test_ranking.py",
-      "source_location": "L123"
     },
     {
       "id": "skills_notify_scripts_notifyd_deep_merge",
@@ -13467,52 +13443,136 @@
       "source_location": "L346"
     },
     {
-      "id": "plugin_localgpu_cli_anthropic_proxy_blocks_to_text",
-      "label": "_blocks_to_text()",
+      "id": "plugin_localgpu_mcp_config_global_config_path",
+      "label": "global_config_path()",
       "_callable": true,
       "_origin": "ast",
       "community": 331,
-      "community_name": "to_ollama_messages",
+      "community_name": "config.py",
       "file_type": "code",
-      "norm_label": "_blocks_to_text()",
-      "source_file": "plugin/localgpu/cli/anthropic_proxy.py",
-      "source_location": "L137"
-    },
-    {
-      "id": "plugin_localgpu_cli_anthropic_proxy_system_to_text",
-      "label": "_system_to_text()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 331,
-      "community_name": "to_ollama_messages",
-      "file_type": "code",
-      "norm_label": "_system_to_text()",
-      "source_file": "plugin/localgpu/cli/anthropic_proxy.py",
-      "source_location": "L123"
-    },
-    {
-      "id": "plugin_localgpu_cli_anthropic_proxy_to_ollama_messages",
-      "label": "to_ollama_messages()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 331,
-      "community_name": "to_ollama_messages",
-      "file_type": "code",
-      "norm_label": "to_ollama_messages()",
-      "source_file": "plugin/localgpu/cli/anthropic_proxy.py",
-      "source_location": "L172"
-    },
-    {
-      "id": "plugin_localgpu_cli_anthropic_proxy_tool_results",
-      "label": "_tool_results()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 331,
-      "community_name": "to_ollama_messages",
-      "file_type": "code",
-      "norm_label": "_tool_results()",
-      "source_file": "plugin/localgpu/cli/anthropic_proxy.py",
+      "norm_label": "global_config_path()",
+      "source_file": "plugin/localgpu/mcp/config.py",
       "source_location": "L161"
+    },
+    {
+      "id": "plugin_localgpu_mcp_config_index_dir",
+      "label": "index_dir()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 331,
+      "community_name": "config.py",
+      "file_type": "code",
+      "norm_label": "index_dir()",
+      "source_file": "plugin/localgpu/mcp/config.py",
+      "source_location": "L145"
+    },
+    {
+      "id": "plugin_localgpu_mcp_config_load_config",
+      "label": "load_config()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 331,
+      "community_name": "config.py",
+      "file_type": "code",
+      "norm_label": "load_config()",
+      "source_file": "plugin/localgpu/mcp/config.py",
+      "source_location": "L193"
+    },
+    {
+      "id": "plugin_localgpu_mcp_config_localgpu_home",
+      "label": "localgpu_home()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 331,
+      "community_name": "config.py",
+      "file_type": "code",
+      "norm_label": "localgpu_home()",
+      "source_file": "plugin/localgpu/mcp/config.py",
+      "source_location": "L120"
+    },
+    {
+      "id": "plugin_localgpu_mcp_config_manifest_path",
+      "label": "manifest_path()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 331,
+      "community_name": "config.py",
+      "file_type": "code",
+      "norm_label": "manifest_path()",
+      "source_file": "plugin/localgpu/mcp/config.py",
+      "source_location": "L157"
+    },
+    {
+      "id": "plugin_localgpu_mcp_config_meta_path",
+      "label": "meta_path()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 331,
+      "community_name": "config.py",
+      "file_type": "code",
+      "norm_label": "meta_path()",
+      "source_file": "plugin/localgpu/mcp/config.py",
+      "source_location": "L153"
+    },
+    {
+      "id": "plugin_localgpu_mcp_config_read_layer",
+      "label": "_read_layer()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 331,
+      "community_name": "config.py",
+      "file_type": "code",
+      "norm_label": "_read_layer()",
+      "source_file": "plugin/localgpu/mcp/config.py",
+      "source_location": "L169"
+    },
+    {
+      "id": "plugin_localgpu_mcp_config_repo_config_path",
+      "label": "repo_config_path()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 331,
+      "community_name": "config.py",
+      "file_type": "code",
+      "norm_label": "repo_config_path()",
+      "source_file": "plugin/localgpu/mcp/config.py",
+      "source_location": "L165"
+    },
+    {
+      "id": "plugin_localgpu_mcp_config_vectors_path",
+      "label": "vectors_path()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 331,
+      "community_name": "config.py",
+      "file_type": "code",
+      "norm_label": "vectors_path()",
+      "source_file": "plugin/localgpu/mcp/config.py",
+      "source_location": "L149"
+    },
+    {
+      "id": "plugin_localgpu_mcp_config_venv_dir",
+      "label": "venv_dir()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 331,
+      "community_name": "config.py",
+      "file_type": "code",
+      "norm_label": "venv_dir()",
+      "source_file": "plugin/localgpu/mcp/config.py",
+      "source_location": "L135"
+    },
+    {
+      "id": "plugin_localgpu_mcp_config_venv_python",
+      "label": "venv_python()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 331,
+      "community_name": "config.py",
+      "file_type": "code",
+      "norm_label": "venv_python()",
+      "source_file": "plugin/localgpu/mcp/config.py",
+      "source_location": "L140"
     },
     {
       "id": "plugin_crew_tests_test_crew_config_test_layered_state_fills_in_a_built_in_default_the_raw_repo_file_omits",
@@ -13527,60 +13587,12 @@
       "source_location": "L572"
     },
     {
-      "id": "plugin_localgpu_cli_anthropic_proxy_check_fits_context",
-      "label": "check_fits_context()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 335,
-      "community_name": "check_fits_context",
-      "file_type": "code",
-      "norm_label": "check_fits_context()",
-      "source_file": "plugin/localgpu/cli/anthropic_proxy.py",
-      "source_location": "L371"
-    },
-    {
-      "id": "plugin_localgpu_cli_anthropic_proxy_estimate_prompt_tokens",
-      "label": "estimate_prompt_tokens()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 335,
-      "community_name": "check_fits_context",
-      "file_type": "code",
-      "norm_label": "estimate_prompt_tokens()",
-      "source_file": "plugin/localgpu/cli/anthropic_proxy.py",
-      "source_location": "L333"
-    },
-    {
-      "id": "plugin_localgpu_cli_anthropic_proxy_post_ollama",
-      "label": "_post_ollama()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 335,
-      "community_name": "check_fits_context",
-      "file_type": "code",
-      "norm_label": "_post_ollama()",
-      "source_file": "plugin/localgpu/cli/anthropic_proxy.py",
-      "source_location": "L889"
-    },
-    {
-      "id": "plugin_localgpu_cli_anthropic_proxy_proxyerror_init",
-      "label": ".__init__()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 335,
-      "community_name": "check_fits_context",
-      "file_type": "code",
-      "norm_label": ".__init__()",
-      "source_file": "plugin/localgpu/cli/anthropic_proxy.py",
-      "source_location": "L112"
-    },
-    {
       "id": "plugin_localgpu_mcp_version_read_version",
       "label": "read_version()",
       "_callable": true,
       "_origin": "ast",
       "community": 335,
-      "community_name": "check_fits_context",
+      "community_name": "_version.py",
       "file_type": "code",
       "norm_label": "read_version()",
       "source_file": "plugin/localgpu/mcp/_version.py",
@@ -15543,18 +15555,6 @@
       "source_location": "L140"
     },
     {
-      "id": "plugin_localgpu_mcp_indexer_query_text",
-      "label": "query_text()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 40,
-      "community_name": "indexer.py",
-      "file_type": "code",
-      "norm_label": "query_text()",
-      "source_file": "plugin/localgpu/mcp/indexer.py",
-      "source_location": "L214"
-    },
-    {
       "id": "plugin_localgpu_mcp_indexer_read_text_file",
       "label": "read_text_file()",
       "_callable": true,
@@ -15591,18 +15591,6 @@
       "source_location": "L570"
     },
     {
-      "id": "plugin_localgpu_mcp_store_vectorstore_upsert_file",
-      "label": ".upsert_file()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 40,
-      "community_name": "indexer.py",
-      "file_type": "code",
-      "norm_label": ".upsert_file()",
-      "source_file": "plugin/localgpu/mcp/store.py",
-      "source_location": "L423"
-    },
-    {
       "id": "plugin_localgpu_mcp_test_test_chunking_test_binary_and_oversized_files_are_not_text",
       "label": "test_binary_and_oversized_files_are_not_text()",
       "_callable": true,
@@ -15613,6 +15601,30 @@
       "norm_label": "test_binary_and_oversized_files_are_not_text()",
       "source_file": "plugin/localgpu/mcp/_test/test_chunking.py",
       "source_location": "L97"
+    },
+    {
+      "id": "plugin_localgpu_mcp_test_test_secrets_make_indexer",
+      "label": "make_indexer()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 40,
+      "community_name": "indexer.py",
+      "file_type": "code",
+      "norm_label": "make_indexer()",
+      "source_file": "plugin/localgpu/mcp/_test/test_secrets.py",
+      "source_location": "L20"
+    },
+    {
+      "id": "plugin_localgpu_mcp_test_test_secrets_test_env_pem_and_gitignored_secrets_never_reach_the_embedder",
+      "label": "test_env_pem_and_gitignored_secrets_never_reach_the_embedder()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 40,
+      "community_name": "indexer.py",
+      "file_type": "code",
+      "norm_label": "test_env_pem_and_gitignored_secrets_never_reach_the_embedder()",
+      "source_file": "plugin/localgpu/mcp/_test/test_secrets.py",
+      "source_location": "L25"
     },
     {
       "id": "plugin_crew_tests_test_crew_state_test_a_hand_edited_graph_block_does_not_crash_collect",
@@ -17835,7 +17847,7 @@
       "source_location": "L73"
     },
     {
-      "id": "plugin_localgpu_mcp_test_test_secrets_make_indexer",
+      "id": "plugin_localgpu_mcp_test_test_unignore_make_indexer",
       "label": "make_indexer()",
       "_callable": true,
       "_origin": "ast",
@@ -17843,20 +17855,44 @@
       "community_name": "sabotage.py",
       "file_type": "code",
       "norm_label": "make_indexer()",
-      "source_file": "plugin/localgpu/mcp/_test/test_secrets.py",
-      "source_location": "L20"
+      "source_file": "plugin/localgpu/mcp/_test/test_unignore.py",
+      "source_location": "L18"
     },
     {
-      "id": "plugin_localgpu_mcp_test_test_secrets_test_env_pem_and_gitignored_secrets_never_reach_the_embedder",
-      "label": "test_env_pem_and_gitignored_secrets_never_reach_the_embedder()",
+      "id": "plugin_localgpu_mcp_test_test_unignore_test_hard_floor_survives_an_unignore_attempt",
+      "label": "test_hard_floor_survives_an_unignore_attempt()",
       "_callable": true,
       "_origin": "ast",
       "community": 480,
       "community_name": "sabotage.py",
       "file_type": "code",
-      "norm_label": "test_env_pem_and_gitignored_secrets_never_reach_the_embedder()",
-      "source_file": "plugin/localgpu/mcp/_test/test_secrets.py",
-      "source_location": "L25"
+      "norm_label": "test_hard_floor_survives_an_unignore_attempt()",
+      "source_file": "plugin/localgpu/mcp/_test/test_unignore.py",
+      "source_location": "L52"
+    },
+    {
+      "id": "plugin_localgpu_mcp_test_test_unignore_test_unignoring_a_liftable_default_lets_the_file_through",
+      "label": "test_unignoring_a_liftable_default_lets_the_file_through()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 480,
+      "community_name": "sabotage.py",
+      "file_type": "code",
+      "norm_label": "test_unignoring_a_liftable_default_lets_the_file_through()",
+      "source_file": "plugin/localgpu/mcp/_test/test_unignore.py",
+      "source_location": "L28"
+    },
+    {
+      "id": "plugin_localgpu_mcp_test_test_unignore_write_json",
+      "label": "write_json()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 480,
+      "community_name": "sabotage.py",
+      "file_type": "code",
+      "norm_label": "write_json()",
+      "source_file": "plugin/localgpu/mcp/_test/test_unignore.py",
+      "source_location": "L23"
     },
     {
       "id": "plugin_crew_tests_test_provider_table_test_a_branchless_record_in_a_git_checkout_fails_closed",
@@ -18649,42 +18685,6 @@
       "norm_label": "test_resolve_num_ctx_caps_at_default_for_a_bigger_window_model()",
       "source_file": "plugin/localgpu/cli/_test/test_proxy_server.py",
       "source_location": "L357"
-    },
-    {
-      "id": "plugin_localgpu_cli_anthropic_proxy_offered_tool_names",
-      "label": "offered_tool_names()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 503,
-      "community_name": "to_ollama_request",
-      "file_type": "code",
-      "norm_label": "offered_tool_names()",
-      "source_file": "plugin/localgpu/cli/anthropic_proxy.py",
-      "source_location": "L260"
-    },
-    {
-      "id": "plugin_localgpu_cli_anthropic_proxy_to_ollama_request",
-      "label": "to_ollama_request()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 503,
-      "community_name": "to_ollama_request",
-      "file_type": "code",
-      "norm_label": "to_ollama_request()",
-      "source_file": "plugin/localgpu/cli/anthropic_proxy.py",
-      "source_location": "L441"
-    },
-    {
-      "id": "plugin_localgpu_cli_anthropic_proxy_to_ollama_tools",
-      "label": "to_ollama_tools()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 503,
-      "community_name": "to_ollama_request",
-      "file_type": "code",
-      "norm_label": "to_ollama_tools()",
-      "source_file": "plugin/localgpu/cli/anthropic_proxy.py",
-      "source_location": "L234"
     },
     {
       "id": "skills_sophos_central_scripts_sophos_client_sophosclient_get",
@@ -19549,6 +19549,18 @@
       "norm_label": "test_live_rows_limit_excludes_rows_not_yet_trusted()",
       "source_file": "plugin/localgpu/mcp/_test/test_concurrency.py",
       "source_location": "L23"
+    },
+    {
+      "id": "plugin_localgpu_mcp_test_test_concurrency_test_refresh_lock_is_exclusive_across_separate_instances",
+      "label": "test_refresh_lock_is_exclusive_across_separate_instances()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 515,
+      "community_name": "ChunkRecord",
+      "file_type": "code",
+      "norm_label": "test_refresh_lock_is_exclusive_across_separate_instances()",
+      "source_file": "plugin/localgpu/mcp/_test/test_concurrency.py",
+      "source_location": "L212"
     },
     {
       "id": "plugin_localgpu_mcp_test_test_concurrency_test_search_blocks_a_concurrent_add_until_it_finishes",
@@ -20739,6 +20751,54 @@
       "source_location": "L187"
     },
     {
+      "id": "plugin_localgpu_cli_anthropic_proxy_check_fits_context",
+      "label": "check_fits_context()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 530,
+      "community_name": "ProxyHandler",
+      "file_type": "code",
+      "norm_label": "check_fits_context()",
+      "source_file": "plugin/localgpu/cli/anthropic_proxy.py",
+      "source_location": "L371"
+    },
+    {
+      "id": "plugin_localgpu_cli_anthropic_proxy_offered_tool_names",
+      "label": "offered_tool_names()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 530,
+      "community_name": "ProxyHandler",
+      "file_type": "code",
+      "norm_label": "offered_tool_names()",
+      "source_file": "plugin/localgpu/cli/anthropic_proxy.py",
+      "source_location": "L260"
+    },
+    {
+      "id": "plugin_localgpu_cli_anthropic_proxy_post_ollama",
+      "label": "_post_ollama()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 530,
+      "community_name": "ProxyHandler",
+      "file_type": "code",
+      "norm_label": "_post_ollama()",
+      "source_file": "plugin/localgpu/cli/anthropic_proxy.py",
+      "source_location": "L889"
+    },
+    {
+      "id": "plugin_localgpu_cli_anthropic_proxy_proxyerror_init",
+      "label": ".__init__()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 530,
+      "community_name": "ProxyHandler",
+      "file_type": "code",
+      "norm_label": ".__init__()",
+      "source_file": "plugin/localgpu/cli/anthropic_proxy.py",
+      "source_location": "L112"
+    },
+    {
       "id": "plugin_localgpu_cli_anthropic_proxy_proxyhandler_complete",
       "label": "._complete()",
       "_callable": true,
@@ -20845,6 +20905,18 @@
       "norm_label": "._send_json()",
       "source_file": "plugin/localgpu/cli/anthropic_proxy.py",
       "source_location": "L1007"
+    },
+    {
+      "id": "plugin_localgpu_cli_anthropic_proxy_proxyhandler_stream",
+      "label": "._stream()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 530,
+      "community_name": "ProxyHandler",
+      "file_type": "code",
+      "norm_label": "._stream()",
+      "source_file": "plugin/localgpu/cli/anthropic_proxy.py",
+      "source_location": "L1091"
     },
     {
       "id": "plugin_obsidian_vault_hooks_scripts_vault_ops_authenticated",
@@ -22371,6 +22443,18 @@
       "source_location": "L158"
     },
     {
+      "id": "plugin_localgpu_cli_anthropic_proxy_blocks_to_text",
+      "label": "_blocks_to_text()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 63,
+      "community_name": "anthropic_proxy.py",
+      "file_type": "code",
+      "norm_label": "_blocks_to_text()",
+      "source_file": "plugin/localgpu/cli/anthropic_proxy.py",
+      "source_location": "L137"
+    },
+    {
       "id": "plugin_localgpu_cli_anthropic_proxy_could_still_be_a_tool_call",
       "label": "_could_still_be_a_tool_call()",
       "_callable": true,
@@ -22381,6 +22465,18 @@
       "norm_label": "_could_still_be_a_tool_call()",
       "source_file": "plugin/localgpu/cli/anthropic_proxy.py",
       "source_location": "L663"
+    },
+    {
+      "id": "plugin_localgpu_cli_anthropic_proxy_estimate_prompt_tokens",
+      "label": "estimate_prompt_tokens()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 63,
+      "community_name": "anthropic_proxy.py",
+      "file_type": "code",
+      "norm_label": "estimate_prompt_tokens()",
+      "source_file": "plugin/localgpu/cli/anthropic_proxy.py",
+      "source_location": "L333"
     },
     {
       "id": "plugin_localgpu_cli_anthropic_proxy_iter_ndjson",
@@ -22417,18 +22513,6 @@
       "norm_label": "_parse_arguments()",
       "source_file": "plugin/localgpu/cli/anthropic_proxy.py",
       "source_location": "L488"
-    },
-    {
-      "id": "plugin_localgpu_cli_anthropic_proxy_proxyhandler_stream",
-      "label": "._stream()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 63,
-      "community_name": "anthropic_proxy.py",
-      "file_type": "code",
-      "norm_label": "._stream()",
-      "source_file": "plugin/localgpu/cli/anthropic_proxy.py",
-      "source_location": "L1091"
     },
     {
       "id": "plugin_localgpu_cli_anthropic_proxy_recover_text_tool_calls",
@@ -22479,6 +22563,18 @@
       "source_location": "L510"
     },
     {
+      "id": "plugin_localgpu_cli_anthropic_proxy_system_to_text",
+      "label": "_system_to_text()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 63,
+      "community_name": "anthropic_proxy.py",
+      "file_type": "code",
+      "norm_label": "_system_to_text()",
+      "source_file": "plugin/localgpu/cli/anthropic_proxy.py",
+      "source_location": "L123"
+    },
+    {
       "id": "plugin_localgpu_cli_anthropic_proxy_to_anthropic_response",
       "label": "to_anthropic_response()",
       "_callable": true,
@@ -22489,6 +22585,54 @@
       "norm_label": "to_anthropic_response()",
       "source_file": "plugin/localgpu/cli/anthropic_proxy.py",
       "source_location": "L619"
+    },
+    {
+      "id": "plugin_localgpu_cli_anthropic_proxy_to_ollama_messages",
+      "label": "to_ollama_messages()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 63,
+      "community_name": "anthropic_proxy.py",
+      "file_type": "code",
+      "norm_label": "to_ollama_messages()",
+      "source_file": "plugin/localgpu/cli/anthropic_proxy.py",
+      "source_location": "L172"
+    },
+    {
+      "id": "plugin_localgpu_cli_anthropic_proxy_to_ollama_request",
+      "label": "to_ollama_request()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 63,
+      "community_name": "anthropic_proxy.py",
+      "file_type": "code",
+      "norm_label": "to_ollama_request()",
+      "source_file": "plugin/localgpu/cli/anthropic_proxy.py",
+      "source_location": "L441"
+    },
+    {
+      "id": "plugin_localgpu_cli_anthropic_proxy_to_ollama_tools",
+      "label": "to_ollama_tools()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 63,
+      "community_name": "anthropic_proxy.py",
+      "file_type": "code",
+      "norm_label": "to_ollama_tools()",
+      "source_file": "plugin/localgpu/cli/anthropic_proxy.py",
+      "source_location": "L234"
+    },
+    {
+      "id": "plugin_localgpu_cli_anthropic_proxy_tool_results",
+      "label": "_tool_results()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 63,
+      "community_name": "anthropic_proxy.py",
+      "file_type": "code",
+      "norm_label": "_tool_results()",
+      "source_file": "plugin/localgpu/cli/anthropic_proxy.py",
+      "source_location": "L161"
     },
     {
       "id": "plugin_localgpu_cli_anthropic_proxy_tool_use_block",
@@ -22743,16 +22887,40 @@
       "source_location": "L37"
     },
     {
-      "id": "plugin_localgpu_mcp_store_match_glob",
-      "label": "match_glob()",
+      "id": "plugin_localgpu_mcp_store_normalise",
+      "label": "normalise()",
       "_callable": true,
       "_origin": "ast",
       "community": 65,
       "community_name": "test_ranking.py",
       "file_type": "code",
-      "norm_label": "match_glob()",
+      "norm_label": "normalise()",
       "source_file": "plugin/localgpu/mcp/store.py",
-      "source_location": "L785"
+      "source_location": "L237"
+    },
+    {
+      "id": "plugin_localgpu_mcp_store_vectorstore_add",
+      "label": ".add()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 65,
+      "community_name": "test_ranking.py",
+      "file_type": "code",
+      "norm_label": ".add()",
+      "source_file": "plugin/localgpu/mcp/store.py",
+      "source_location": "L364"
+    },
+    {
+      "id": "plugin_localgpu_mcp_store_vectorstore_search",
+      "label": ".search()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 65,
+      "community_name": "test_ranking.py",
+      "file_type": "code",
+      "norm_label": ".search()",
+      "source_file": "plugin/localgpu/mcp/store.py",
+      "source_location": "L471"
     },
     {
       "id": "plugin_localgpu_mcp_test_conftest_store",
@@ -22827,16 +22995,16 @@
       "source_location": "L50"
     },
     {
-      "id": "plugin_localgpu_mcp_test_test_ranking_test_match_glob_handles_both_separators",
-      "label": "test_match_glob_handles_both_separators()",
+      "id": "plugin_localgpu_mcp_test_test_ranking_test_normalise_leaves_a_zero_vector_alone",
+      "label": "test_normalise_leaves_a_zero_vector_alone()",
       "_callable": true,
       "_origin": "ast",
       "community": 65,
       "community_name": "test_ranking.py",
       "file_type": "code",
-      "norm_label": "test_match_glob_handles_both_separators()",
+      "norm_label": "test_normalise_leaves_a_zero_vector_alone()",
       "source_file": "plugin/localgpu/mcp/_test/test_ranking.py",
-      "source_location": "L106"
+      "source_location": "L123"
     },
     {
       "id": "plugin_localgpu_mcp_test_test_ranking_test_path_glob_filter",
@@ -24483,148 +24651,28 @@
       "source_location": "L103"
     },
     {
-      "id": "plugin_localgpu_mcp_config_global_config_path",
-      "label": "global_config_path()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 74,
-      "community_name": "config.py",
-      "file_type": "code",
-      "norm_label": "global_config_path()",
-      "source_file": "plugin/localgpu/mcp/config.py",
-      "source_location": "L153"
-    },
-    {
-      "id": "plugin_localgpu_mcp_config_index_dir",
-      "label": "index_dir()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 74,
-      "community_name": "config.py",
-      "file_type": "code",
-      "norm_label": "index_dir()",
-      "source_file": "plugin/localgpu/mcp/config.py",
-      "source_location": "L137"
-    },
-    {
-      "id": "plugin_localgpu_mcp_config_load_config",
-      "label": "load_config()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 74,
-      "community_name": "config.py",
-      "file_type": "code",
-      "norm_label": "load_config()",
-      "source_file": "plugin/localgpu/mcp/config.py",
-      "source_location": "L185"
-    },
-    {
-      "id": "plugin_localgpu_mcp_config_localgpu_home",
-      "label": "localgpu_home()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 74,
-      "community_name": "config.py",
-      "file_type": "code",
-      "norm_label": "localgpu_home()",
-      "source_file": "plugin/localgpu/mcp/config.py",
-      "source_location": "L112"
-    },
-    {
-      "id": "plugin_localgpu_mcp_config_manifest_path",
-      "label": "manifest_path()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 74,
-      "community_name": "config.py",
-      "file_type": "code",
-      "norm_label": "manifest_path()",
-      "source_file": "plugin/localgpu/mcp/config.py",
-      "source_location": "L149"
-    },
-    {
-      "id": "plugin_localgpu_mcp_config_meta_path",
-      "label": "meta_path()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 74,
-      "community_name": "config.py",
-      "file_type": "code",
-      "norm_label": "meta_path()",
-      "source_file": "plugin/localgpu/mcp/config.py",
-      "source_location": "L145"
-    },
-    {
-      "id": "plugin_localgpu_mcp_config_read_layer",
-      "label": "_read_layer()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 74,
-      "community_name": "config.py",
-      "file_type": "code",
-      "norm_label": "_read_layer()",
-      "source_file": "plugin/localgpu/mcp/config.py",
-      "source_location": "L161"
-    },
-    {
-      "id": "plugin_localgpu_mcp_config_repo_config_path",
-      "label": "repo_config_path()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 74,
-      "community_name": "config.py",
-      "file_type": "code",
-      "norm_label": "repo_config_path()",
-      "source_file": "plugin/localgpu/mcp/config.py",
-      "source_location": "L157"
-    },
-    {
-      "id": "plugin_localgpu_mcp_config_vectors_path",
-      "label": "vectors_path()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 74,
-      "community_name": "config.py",
-      "file_type": "code",
-      "norm_label": "vectors_path()",
-      "source_file": "plugin/localgpu/mcp/config.py",
-      "source_location": "L141"
-    },
-    {
-      "id": "plugin_localgpu_mcp_config_venv_dir",
-      "label": "venv_dir()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 74,
-      "community_name": "config.py",
-      "file_type": "code",
-      "norm_label": "venv_dir()",
-      "source_file": "plugin/localgpu/mcp/config.py",
-      "source_location": "L127"
-    },
-    {
-      "id": "plugin_localgpu_mcp_config_venv_python",
-      "label": "venv_python()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 74,
-      "community_name": "config.py",
-      "file_type": "code",
-      "norm_label": "venv_python()",
-      "source_file": "plugin/localgpu/mcp/config.py",
-      "source_location": "L132"
-    },
-    {
       "id": "plugin_localgpu_mcp_indexer_indexer_init",
       "label": ".__init__()",
       "_callable": true,
       "_origin": "ast",
       "community": 74,
-      "community_name": "config.py",
+      "community_name": "server.py",
       "file_type": "code",
       "norm_label": ".__init__()",
       "source_file": "plugin/localgpu/mcp/indexer.py",
       "source_location": "L296"
+    },
+    {
+      "id": "plugin_localgpu_mcp_indexer_query_text",
+      "label": "query_text()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 74,
+      "community_name": "server.py",
+      "file_type": "code",
+      "norm_label": "query_text()",
+      "source_file": "plugin/localgpu/mcp/indexer.py",
+      "source_location": "L214"
     },
     {
       "id": "plugin_localgpu_mcp_server_client",
@@ -24632,7 +24680,7 @@
       "_callable": true,
       "_origin": "ast",
       "community": 74,
-      "community_name": "config.py",
+      "community_name": "server.py",
       "file_type": "code",
       "norm_label": "_client()",
       "source_file": "plugin/localgpu/mcp/server.py",
@@ -24644,7 +24692,7 @@
       "_callable": true,
       "_origin": "ast",
       "community": 74,
-      "community_name": "config.py",
+      "community_name": "server.py",
       "file_type": "code",
       "norm_label": "index_refresh()",
       "source_file": "plugin/localgpu/mcp/server.py",
@@ -24656,7 +24704,7 @@
       "_callable": true,
       "_origin": "ast",
       "community": 74,
-      "community_name": "config.py",
+      "community_name": "server.py",
       "file_type": "code",
       "norm_label": "index_status()",
       "source_file": "plugin/localgpu/mcp/server.py",
@@ -24668,7 +24716,7 @@
       "_callable": true,
       "_origin": "ast",
       "community": 74,
-      "community_name": "config.py",
+      "community_name": "server.py",
       "file_type": "code",
       "norm_label": "main()",
       "source_file": "plugin/localgpu/mcp/server.py",
@@ -24680,7 +24728,7 @@
       "_callable": true,
       "_origin": "ast",
       "community": 74,
-      "community_name": "config.py",
+      "community_name": "server.py",
       "file_type": "code",
       "norm_label": "_open_store()",
       "source_file": "plugin/localgpu/mcp/server.py",
@@ -24692,7 +24740,7 @@
       "_callable": true,
       "_origin": "ast",
       "community": 74,
-      "community_name": "config.py",
+      "community_name": "server.py",
       "file_type": "code",
       "norm_label": "search_code()",
       "source_file": "plugin/localgpu/mcp/server.py",
@@ -24704,7 +24752,7 @@
       "_callable": true,
       "_origin": "ast",
       "community": 74,
-      "community_name": "config.py",
+      "community_name": "server.py",
       "file_type": "code",
       "norm_label": "_settings()",
       "source_file": "plugin/localgpu/mcp/server.py",
@@ -25644,7 +25692,7 @@
       "file_type": "code",
       "norm_label": "test_a_json_array_is_not_a_config()",
       "source_file": "plugin/localgpu/mcp/_test/test_config.py",
-      "source_location": "L107"
+      "source_location": "L141"
     },
     {
       "id": "plugin_localgpu_mcp_test_test_config_test_artifact_paths_hang_off_the_home",
@@ -25668,7 +25716,7 @@
       "file_type": "code",
       "norm_label": "test_broken_json_is_reported_not_swallowed()",
       "source_file": "plugin/localgpu/mcp/_test/test_config.py",
-      "source_location": "L98"
+      "source_location": "L132"
     },
     {
       "id": "plugin_localgpu_mcp_test_test_config_test_defaults_when_nothing_is_configured",
@@ -25692,7 +25740,7 @@
       "file_type": "code",
       "norm_label": "test_embed_model_as_a_non_string_is_rejected()",
       "source_file": "plugin/localgpu/mcp/_test/test_config.py",
-      "source_location": "L129"
+      "source_location": "L163"
     },
     {
       "id": "plugin_localgpu_mcp_test_test_config_test_explicit_home_wins",
@@ -25716,7 +25764,7 @@
       "file_type": "code",
       "norm_label": "test_ignore_as_a_bare_string_is_rejected_not_shredded()",
       "source_file": "plugin/localgpu/mcp/_test/test_config.py",
-      "source_location": "L114"
+      "source_location": "L148"
     },
     {
       "id": "plugin_localgpu_mcp_test_test_config_test_ignore_lists_union_rather_than_replace",
@@ -25764,7 +25812,7 @@
       "file_type": "code",
       "norm_label": "test_roots_are_resolved_absolute()",
       "source_file": "plugin/localgpu/mcp/_test/test_config.py",
-      "source_location": "L82"
+      "source_location": "L116"
     },
     {
       "id": "plugin_localgpu_mcp_test_test_config_test_roots_as_a_bare_string_is_rejected_not_shredded",
@@ -25776,7 +25824,55 @@
       "file_type": "code",
       "norm_label": "test_roots_as_a_bare_string_is_rejected_not_shredded()",
       "source_file": "plugin/localgpu/mcp/_test/test_config.py",
-      "source_location": "L123"
+      "source_location": "L157"
+    },
+    {
+      "id": "plugin_localgpu_mcp_test_test_config_test_unignore_accumulates_across_layers_like_ignore",
+      "label": "test_unignore_accumulates_across_layers_like_ignore()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 82,
+      "community_name": "_test/test_config.py",
+      "file_type": "code",
+      "norm_label": "test_unignore_accumulates_across_layers_like_ignore()",
+      "source_file": "plugin/localgpu/mcp/_test/test_config.py",
+      "source_location": "L91"
+    },
+    {
+      "id": "plugin_localgpu_mcp_test_test_config_test_unignore_as_a_bare_string_is_rejected_not_shredded",
+      "label": "test_unignore_as_a_bare_string_is_rejected_not_shredded()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 82,
+      "community_name": "_test/test_config.py",
+      "file_type": "code",
+      "norm_label": "test_unignore_as_a_bare_string_is_rejected_not_shredded()",
+      "source_file": "plugin/localgpu/mcp/_test/test_config.py",
+      "source_location": "L110"
+    },
+    {
+      "id": "plugin_localgpu_mcp_test_test_config_test_unignore_cannot_lift_the_hard_floor",
+      "label": "test_unignore_cannot_lift_the_hard_floor()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 82,
+      "community_name": "_test/test_config.py",
+      "file_type": "code",
+      "norm_label": "test_unignore_cannot_lift_the_hard_floor()",
+      "source_file": "plugin/localgpu/mcp/_test/test_config.py",
+      "source_location": "L99"
+    },
+    {
+      "id": "plugin_localgpu_mcp_test_test_config_test_unignore_drops_a_liftable_default_pattern",
+      "label": "test_unignore_drops_a_liftable_default_pattern()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 82,
+      "community_name": "_test/test_config.py",
+      "file_type": "code",
+      "norm_label": "test_unignore_drops_a_liftable_default_pattern()",
+      "source_file": "plugin/localgpu/mcp/_test/test_config.py",
+      "source_location": "L82"
     },
     {
       "id": "plugin_localgpu_mcp_test_test_config_test_unknown_keys_are_ignored",
@@ -25788,7 +25884,7 @@
       "file_type": "code",
       "norm_label": "test_unknown_keys_are_ignored()",
       "source_file": "plugin/localgpu/mcp/_test/test_config.py",
-      "source_location": "L91"
+      "source_location": "L125"
     },
     {
       "id": "plugin_localgpu_mcp_test_test_config_test_windows_default_is_localappdata",
@@ -30405,17 +30501,6 @@
       "source_location": ""
     },
     {
-      "id": "plugin_localgpu_mcp_store_py_runtimeerror",
-      "label": "RuntimeError",
-      "_origin": "ast",
-      "community": 106,
-      "community_name": "store.py",
-      "file_type": "code",
-      "norm_label": "runtimeerror",
-      "source_file": "",
-      "source_location": ""
-    },
-    {
       "id": "rlock",
       "label": "RLock",
       "_origin": "ast",
@@ -30436,17 +30521,6 @@
       "norm_label": "the index on disk: float16 vectors in a flat file, metadata in sqlite....",
       "source_file": "plugin/localgpu/mcp/store.py",
       "source_location": "L1"
-    },
-    {
-      "id": "plugin_localgpu_mcp_store_rationale_123",
-      "label": "Another process already holds the cross-process refresh lock.",
-      "_origin": "ast",
-      "community": 106,
-      "community_name": "store.py",
-      "file_type": "rationale",
-      "norm_label": "another process already holds the cross-process refresh lock.",
-      "source_file": "plugin/localgpu/mcp/store.py",
-      "source_location": "L123"
     },
     {
       "id": "plugin_localgpu_mcp_store_rationale_127",
@@ -30471,6 +30545,17 @@
       "source_location": "L450"
     },
     {
+      "id": "plugin_localgpu_mcp_store_rationale_571",
+      "label": "Live chunks that pass the filters, keyed by vector row. ``limit`` bounds which\u2026",
+      "_origin": "ast",
+      "community": 106,
+      "community_name": "store.py",
+      "file_type": "rationale",
+      "norm_label": "live chunks that pass the filters, keyed by vector row. ``limit`` bounds which...",
+      "source_file": "plugin/localgpu/mcp/store.py",
+      "source_location": "L571"
+    },
+    {
       "id": "plugin_localgpu_mcp_store_rationale_776",
       "label": "A normalised ``root`` that only matches whole path components.",
       "_origin": "ast",
@@ -30482,6 +30567,17 @@
       "source_location": "L776"
     },
     {
+      "id": "plugin_localgpu_mcp_store_rationale_786",
+      "label": "Forgiving glob match against a full path or its basename. ``*`` crosses\u2026",
+      "_origin": "ast",
+      "community": 106,
+      "community_name": "store.py",
+      "file_type": "rationale",
+      "norm_label": "forgiving glob match against a full path or its basename. ``*`` crosses...",
+      "source_file": "plugin/localgpu/mcp/store.py",
+      "source_location": "L786"
+    },
+    {
       "id": "plugin_localgpu_mcp_store_rationale_81",
       "label": "Best-effort, non-blocking, whole-file exclusive advisory lock. True if\u2026",
       "_origin": "ast",
@@ -30491,17 +30587,6 @@
       "norm_label": "best-effort, non-blocking, whole-file exclusive advisory lock. true if...",
       "source_file": "plugin/localgpu/mcp/store.py",
       "source_location": "L81"
-    },
-    {
-      "id": "plugin_localgpu_mcp_test_test_concurrency_rationale_213",
-      "label": "Simulates two separate `server.py` processes: two RefreshLock objects that\u2026",
-      "_origin": "ast",
-      "community": 106,
-      "community_name": "store.py",
-      "file_type": "rationale",
-      "norm_label": "simulates two separate `server.py` processes: two refreshlock objects that...",
-      "source_file": "plugin/localgpu/mcp/_test/test_concurrency.py",
-      "source_location": "L213"
     },
     {
       "id": "plugin_crew_skills_find_skills_skill",
@@ -30786,17 +30871,6 @@
       "source_location": ""
     },
     {
-      "id": "ndarray",
-      "label": "ndarray",
-      "_origin": "ast",
-      "community": 11,
-      "community_name": "VectorStore",
-      "file_type": "code",
-      "norm_label": "ndarray",
-      "source_file": "",
-      "source_location": ""
-    },
-    {
       "id": "plugin_localgpu_mcp_store_py_any",
       "label": "Any",
       "_origin": "ast",
@@ -30806,28 +30880,6 @@
       "norm_label": "any",
       "source_file": "",
       "source_location": ""
-    },
-    {
-      "id": "plugin_localgpu_mcp_store_rationale_203",
-      "label": "The index on disk cannot be used as-is.",
-      "_origin": "ast",
-      "community": 11,
-      "community_name": "VectorStore",
-      "file_type": "rationale",
-      "norm_label": "the index on disk cannot be used as-is.",
-      "source_file": "plugin/localgpu/mcp/store.py",
-      "source_location": "L203"
-    },
-    {
-      "id": "plugin_localgpu_mcp_store_rationale_238",
-      "label": "L2-normalise to float32. A zero vector stays zero rather than becoming NaN.",
-      "_origin": "ast",
-      "community": 11,
-      "community_name": "VectorStore",
-      "file_type": "rationale",
-      "norm_label": "l2-normalise to float32. a zero vector stays zero rather than becoming nan.",
-      "source_file": "plugin/localgpu/mcp/store.py",
-      "source_location": "L238"
     },
     {
       "id": "plugin_localgpu_mcp_store_rationale_248",
@@ -30885,17 +30937,6 @@
       "source_location": "L359"
     },
     {
-      "id": "plugin_localgpu_mcp_store_rationale_369",
-      "label": "Append chunks and their vectors. Returns the new chunk ids.",
-      "_origin": "ast",
-      "community": 11,
-      "community_name": "VectorStore",
-      "file_type": "rationale",
-      "norm_label": "append chunks and their vectors. returns the new chunk ids.",
-      "source_file": "plugin/localgpu/mcp/store.py",
-      "source_location": "L369"
-    },
-    {
       "id": "plugin_localgpu_mcp_store_rationale_411",
       "label": "Mark every live chunk of these files dead. Returns how many.",
       "_origin": "ast",
@@ -30905,28 +30946,6 @@
       "norm_label": "mark every live chunk of these files dead. returns how many.",
       "source_file": "plugin/localgpu/mcp/store.py",
       "source_location": "L411"
-    },
-    {
-      "id": "plugin_localgpu_mcp_store_rationale_478",
-      "label": "Brute-force cosine over every live row, best first.",
-      "_origin": "ast",
-      "community": 11,
-      "community_name": "VectorStore",
-      "file_type": "rationale",
-      "norm_label": "brute-force cosine over every live row, best first.",
-      "source_file": "plugin/localgpu/mcp/store.py",
-      "source_location": "L478"
-    },
-    {
-      "id": "plugin_localgpu_mcp_store_rationale_571",
-      "label": "Live chunks that pass the filters, keyed by vector row. ``limit`` bounds which\u2026",
-      "_origin": "ast",
-      "community": 11,
-      "community_name": "VectorStore",
-      "file_type": "rationale",
-      "norm_label": "live chunks that pass the filters, keyed by vector row. ``limit`` bounds which...",
-      "source_file": "plugin/localgpu/mcp/store.py",
-      "source_location": "L571"
     },
     {
       "id": "plugin_localgpu_mcp_store_rationale_614",
@@ -42471,7 +42490,7 @@
       "source_location": "L7"
     },
     {
-      "id": "changelog_added_1110",
+      "id": "changelog_added_1139",
       "label": "Added",
       "_origin": "ast",
       "community": 205,
@@ -42480,10 +42499,10 @@
       "node_kind": "heading",
       "norm_label": "added",
       "source_file": "CHANGELOG.md",
-      "source_location": "L1110"
+      "source_location": "L1139"
     },
     {
-      "id": "changelog_added_1359",
+      "id": "changelog_added_1388",
       "label": "Added",
       "_origin": "ast",
       "community": 205,
@@ -42492,10 +42511,10 @@
       "node_kind": "heading",
       "norm_label": "added",
       "source_file": "CHANGELOG.md",
-      "source_location": "L1359"
+      "source_location": "L1388"
     },
     {
-      "id": "changelog_added_1467",
+      "id": "changelog_added_1496",
       "label": "Added",
       "_origin": "ast",
       "community": 205,
@@ -42504,10 +42523,10 @@
       "node_kind": "heading",
       "norm_label": "added",
       "source_file": "CHANGELOG.md",
-      "source_location": "L1467"
+      "source_location": "L1496"
     },
     {
-      "id": "changelog_added_1481",
+      "id": "changelog_added_1510",
       "label": "Added",
       "_origin": "ast",
       "community": 205,
@@ -42516,10 +42535,10 @@
       "node_kind": "heading",
       "norm_label": "added",
       "source_file": "CHANGELOG.md",
-      "source_location": "L1481"
+      "source_location": "L1510"
     },
     {
-      "id": "changelog_added_1775",
+      "id": "changelog_added_1804",
       "label": "Added",
       "_origin": "ast",
       "community": 205,
@@ -42528,10 +42547,10 @@
       "node_kind": "heading",
       "norm_label": "added",
       "source_file": "CHANGELOG.md",
-      "source_location": "L1775"
+      "source_location": "L1804"
     },
     {
-      "id": "changelog_added_2334",
+      "id": "changelog_added_2363",
       "label": "Added",
       "_origin": "ast",
       "community": 205,
@@ -42540,10 +42559,10 @@
       "node_kind": "heading",
       "norm_label": "added",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2334"
+      "source_location": "L2363"
     },
     {
-      "id": "changelog_added_2609",
+      "id": "changelog_added_2638",
       "label": "Added",
       "_origin": "ast",
       "community": 205,
@@ -42552,10 +42571,10 @@
       "node_kind": "heading",
       "norm_label": "added",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2609"
+      "source_location": "L2638"
     },
     {
-      "id": "changelog_added_2813",
+      "id": "changelog_added_2842",
       "label": "Added",
       "_origin": "ast",
       "community": 205,
@@ -42564,10 +42583,10 @@
       "node_kind": "heading",
       "norm_label": "added",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2813"
+      "source_location": "L2842"
     },
     {
-      "id": "changelog_added_2928",
+      "id": "changelog_added_2957",
       "label": "Added",
       "_origin": "ast",
       "community": 205,
@@ -42576,10 +42595,10 @@
       "node_kind": "heading",
       "norm_label": "added",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2928"
+      "source_location": "L2957"
     },
     {
-      "id": "changelog_added_3010",
+      "id": "changelog_added_3039",
       "label": "Added",
       "_origin": "ast",
       "community": 205,
@@ -42588,10 +42607,10 @@
       "node_kind": "heading",
       "norm_label": "added",
       "source_file": "CHANGELOG.md",
-      "source_location": "L3010"
+      "source_location": "L3039"
     },
     {
-      "id": "changelog_added_3051",
+      "id": "changelog_added_3080",
       "label": "Added",
       "_origin": "ast",
       "community": 205,
@@ -42600,7 +42619,7 @@
       "node_kind": "heading",
       "norm_label": "added",
       "source_file": "CHANGELOG.md",
-      "source_location": "L3051"
+      "source_location": "L3080"
     },
     {
       "id": "changelog_changed",
@@ -42612,10 +42631,10 @@
       "node_kind": "heading",
       "norm_label": "changed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L1064"
+      "source_location": "L1093"
     },
     {
-      "id": "changelog_changed_1325",
+      "id": "changelog_changed_1354",
       "label": "Changed",
       "_origin": "ast",
       "community": 205,
@@ -42624,10 +42643,10 @@
       "node_kind": "heading",
       "norm_label": "changed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L1325"
+      "source_location": "L1354"
     },
     {
-      "id": "changelog_changed_1403",
+      "id": "changelog_changed_1432",
       "label": "Changed",
       "_origin": "ast",
       "community": 205,
@@ -42636,10 +42655,10 @@
       "node_kind": "heading",
       "norm_label": "changed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L1403"
+      "source_location": "L1432"
     },
     {
-      "id": "changelog_changed_2173",
+      "id": "changelog_changed_2202",
       "label": "Changed",
       "_origin": "ast",
       "community": 205,
@@ -42648,10 +42667,10 @@
       "node_kind": "heading",
       "norm_label": "changed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2173"
+      "source_location": "L2202"
     },
     {
-      "id": "changelog_changed_2309",
+      "id": "changelog_changed_2338",
       "label": "Changed",
       "_origin": "ast",
       "community": 205,
@@ -42660,10 +42679,10 @@
       "node_kind": "heading",
       "norm_label": "changed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2309"
+      "source_location": "L2338"
     },
     {
-      "id": "changelog_changed_2691",
+      "id": "changelog_changed_2720",
       "label": "Changed",
       "_origin": "ast",
       "community": 205,
@@ -42672,10 +42691,10 @@
       "node_kind": "heading",
       "norm_label": "changed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2691"
+      "source_location": "L2720"
     },
     {
-      "id": "changelog_changed_3170",
+      "id": "changelog_changed_3199",
       "label": "Changed",
       "_origin": "ast",
       "community": 205,
@@ -42684,10 +42703,10 @@
       "node_kind": "heading",
       "norm_label": "changed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L3170"
+      "source_location": "L3199"
     },
     {
-      "id": "changelog_changed_3259",
+      "id": "changelog_changed_3288",
       "label": "Changed",
       "_origin": "ast",
       "community": 205,
@@ -42696,7 +42715,7 @@
       "node_kind": "heading",
       "norm_label": "changed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L3259"
+      "source_location": "L3288"
     },
     {
       "id": "changelog_fixed",
@@ -42708,10 +42727,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L417"
+      "source_location": "L446"
     },
     {
-      "id": "changelog_fixed_1000",
+      "id": "changelog_fixed_1029",
       "label": "Fixed",
       "_origin": "ast",
       "community": 205,
@@ -42720,10 +42739,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L1000"
+      "source_location": "L1029"
     },
     {
-      "id": "changelog_fixed_1042",
+      "id": "changelog_fixed_1071",
       "label": "Fixed",
       "_origin": "ast",
       "community": 205,
@@ -42732,10 +42751,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L1042"
+      "source_location": "L1071"
     },
     {
-      "id": "changelog_fixed_1090",
+      "id": "changelog_fixed_1119",
       "label": "Fixed",
       "_origin": "ast",
       "community": 205,
@@ -42744,10 +42763,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L1090"
+      "source_location": "L1119"
     },
     {
-      "id": "changelog_fixed_1224",
+      "id": "changelog_fixed_1253",
       "label": "Fixed",
       "_origin": "ast",
       "community": 205,
@@ -42756,10 +42775,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L1224"
+      "source_location": "L1253"
     },
     {
-      "id": "changelog_fixed_1564",
+      "id": "changelog_fixed_1593",
       "label": "Fixed",
       "_origin": "ast",
       "community": 205,
@@ -42768,10 +42787,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L1564"
+      "source_location": "L1593"
     },
     {
-      "id": "changelog_fixed_1750",
+      "id": "changelog_fixed_1779",
       "label": "Fixed",
       "_origin": "ast",
       "community": 205,
@@ -42780,10 +42799,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L1750"
+      "source_location": "L1779"
     },
     {
-      "id": "changelog_fixed_1766",
+      "id": "changelog_fixed_1795",
       "label": "Fixed",
       "_origin": "ast",
       "community": 205,
@@ -42792,10 +42811,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L1766"
+      "source_location": "L1795"
     },
     {
-      "id": "changelog_fixed_2073",
+      "id": "changelog_fixed_2102",
       "label": "Fixed",
       "_origin": "ast",
       "community": 205,
@@ -42804,10 +42823,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2073"
+      "source_location": "L2102"
     },
     {
-      "id": "changelog_fixed_2194",
+      "id": "changelog_fixed_2223",
       "label": "Fixed",
       "_origin": "ast",
       "community": 205,
@@ -42816,10 +42835,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2194"
+      "source_location": "L2223"
     },
     {
-      "id": "changelog_fixed_2287",
+      "id": "changelog_fixed_2316",
       "label": "Fixed",
       "_origin": "ast",
       "community": 205,
@@ -42828,10 +42847,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2287"
+      "source_location": "L2316"
     },
     {
-      "id": "changelog_fixed_2319",
+      "id": "changelog_fixed_2348",
       "label": "Fixed",
       "_origin": "ast",
       "community": 205,
@@ -42840,10 +42859,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2319"
+      "source_location": "L2348"
     },
     {
-      "id": "changelog_fixed_2467",
+      "id": "changelog_fixed_2496",
       "label": "Fixed",
       "_origin": "ast",
       "community": 205,
@@ -42852,10 +42871,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2467"
+      "source_location": "L2496"
     },
     {
-      "id": "changelog_fixed_2682",
+      "id": "changelog_fixed_2711",
       "label": "Fixed",
       "_origin": "ast",
       "community": 205,
@@ -42864,10 +42883,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2682"
+      "source_location": "L2711"
     },
     {
-      "id": "changelog_fixed_2761",
+      "id": "changelog_fixed_2790",
       "label": "Fixed",
       "_origin": "ast",
       "community": 205,
@@ -42876,10 +42895,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2761"
+      "source_location": "L2790"
     },
     {
-      "id": "changelog_fixed_2862",
+      "id": "changelog_fixed_2891",
       "label": "Fixed",
       "_origin": "ast",
       "community": 205,
@@ -42888,10 +42907,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2862"
+      "source_location": "L2891"
     },
     {
-      "id": "changelog_fixed_3032",
+      "id": "changelog_fixed_3061",
       "label": "Fixed",
       "_origin": "ast",
       "community": 205,
@@ -42900,10 +42919,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L3032"
+      "source_location": "L3061"
     },
     {
-      "id": "changelog_fixed_3179",
+      "id": "changelog_fixed_3208",
       "label": "Fixed",
       "_origin": "ast",
       "community": 205,
@@ -42912,10 +42931,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L3179"
+      "source_location": "L3208"
     },
     {
-      "id": "changelog_fixed_3306",
+      "id": "changelog_fixed_3335",
       "label": "Fixed",
       "_origin": "ast",
       "community": 205,
@@ -42924,10 +42943,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L3306"
+      "source_location": "L3335"
     },
     {
-      "id": "changelog_fixed_906",
+      "id": "changelog_fixed_935",
       "label": "Fixed",
       "_origin": "ast",
       "community": 205,
@@ -42936,7 +42955,7 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L906"
+      "source_location": "L935"
     },
     {
       "id": "changelog_removed",
@@ -42948,10 +42967,10 @@
       "node_kind": "heading",
       "norm_label": "removed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2258"
+      "source_location": "L2287"
     },
     {
-      "id": "changelog_removed_2599",
+      "id": "changelog_removed_2628",
       "label": "Removed",
       "_origin": "ast",
       "community": 205,
@@ -42960,10 +42979,10 @@
       "node_kind": "heading",
       "norm_label": "removed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2599"
+      "source_location": "L2628"
     },
     {
-      "id": "changelog_removed_2985",
+      "id": "changelog_removed_3014",
       "label": "Removed",
       "_origin": "ast",
       "community": 205,
@@ -42972,10 +42991,10 @@
       "node_kind": "heading",
       "norm_label": "removed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2985"
+      "source_location": "L3014"
     },
     {
-      "id": "changelog_removed_3156",
+      "id": "changelog_removed_3185",
       "label": "Removed",
       "_origin": "ast",
       "community": 205,
@@ -42984,10 +43003,10 @@
       "node_kind": "heading",
       "norm_label": "removed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L3156"
+      "source_location": "L3185"
     },
     {
-      "id": "changelog_removed_3281",
+      "id": "changelog_removed_3310",
       "label": "Removed",
       "_origin": "ast",
       "community": 205,
@@ -42996,7 +43015,7 @@
       "node_kind": "heading",
       "norm_label": "removed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L3281"
+      "source_location": "L3310"
     },
     {
       "id": "changelog_unreleased",
@@ -44135,7 +44154,7 @@
       "node_kind": "heading",
       "norm_label": "safety rails",
       "source_file": "plugin/localgpu/skills/localgpu/SKILL.md",
-      "source_location": "L295"
+      "source_location": "L310"
     },
     {
       "id": "plugin_localgpu_skills_localgpu_skill_talking_to_ollama_directly",
@@ -44147,7 +44166,7 @@
       "node_kind": "heading",
       "norm_label": "talking to ollama directly",
       "source_file": "plugin/localgpu/skills/localgpu/SKILL.md",
-      "source_location": "L272"
+      "source_location": "L287"
     },
     {
       "id": "plugin_localgpu_skills_localgpu_skill_the_localgpu_command",
@@ -44159,7 +44178,7 @@
       "node_kind": "heading",
       "norm_label": "the `localgpu` command",
       "source_file": "plugin/localgpu/skills/localgpu/SKILL.md",
-      "source_location": "L204"
+      "source_location": "L219"
     },
     {
       "id": "plugin_localgpu_skills_localgpu_skill_the_mcp_tools",
@@ -44171,7 +44190,7 @@
       "node_kind": "heading",
       "norm_label": "the mcp tools",
       "source_file": "plugin/localgpu/skills/localgpu/SKILL.md",
-      "source_location": "L161"
+      "source_location": "L176"
     },
     {
       "id": "plugin_localgpu_skills_localgpu_skill_the_models_and_why_these_two",
@@ -44183,7 +44202,7 @@
       "node_kind": "heading",
       "norm_label": "the models, and why these two",
       "source_file": "plugin/localgpu/skills/localgpu/SKILL.md",
-      "source_location": "L107"
+      "source_location": "L122"
     },
     {
       "id": "plugin_localgpu_skills_localgpu_skill_the_two_keep_alive_defaults_are_deliberate",
@@ -44195,7 +44214,7 @@
       "node_kind": "heading",
       "norm_label": "the two keep-alive defaults are deliberate",
       "source_file": "plugin/localgpu/skills/localgpu/SKILL.md",
-      "source_location": "L142"
+      "source_location": "L157"
     },
     {
       "id": "plugin_localgpu_skills_localgpu_skill_vram_discipline",
@@ -44207,7 +44226,7 @@
       "node_kind": "heading",
       "norm_label": "vram discipline",
       "source_file": "plugin/localgpu/skills/localgpu/SKILL.md",
-      "source_location": "L118"
+      "source_location": "L133"
     },
     {
       "id": "plugin_localgpu_skills_localgpu_skill_what_is_where",
@@ -44231,7 +44250,7 @@
       "node_kind": "heading",
       "norm_label": "what the proxy carries",
       "source_file": "plugin/localgpu/skills/localgpu/SKILL.md",
-      "source_location": "L231"
+      "source_location": "L246"
     },
     {
       "id": "plugin_localgpu_skills_localgpu_skill_when_search_returns_nothing",
@@ -44243,7 +44262,7 @@
       "node_kind": "heading",
       "norm_label": "when search returns nothing",
       "source_file": "plugin/localgpu/skills/localgpu/SKILL.md",
-      "source_location": "L186"
+      "source_location": "L201"
     },
     {
       "id": "plugin_localgpu_skills_localgpu_skill_when_to_reach_for_it",
@@ -44255,7 +44274,7 @@
       "node_kind": "heading",
       "norm_label": "when to reach for it",
       "source_file": "plugin/localgpu/skills/localgpu/SKILL.md",
-      "source_location": "L257"
+      "source_location": "L272"
     },
     {
       "id": "skills_wazuh_onprem_scripts_wazuh_client",
@@ -55657,48 +55676,81 @@
       "source_location": "L338"
     },
     {
-      "id": "plugin_localgpu_cli_anthropic_proxy_rationale_124",
-      "label": "`system` is either a string or a list of content blocks.",
+      "id": "plugin_localgpu_mcp_config",
+      "label": "config.py",
       "_origin": "ast",
       "community": 331,
-      "community_name": "to_ollama_messages",
-      "file_type": "rationale",
-      "norm_label": "`system` is either a string or a list of content blocks.",
-      "source_file": "plugin/localgpu/cli/anthropic_proxy.py",
-      "source_location": "L124"
+      "community_name": "config.py",
+      "file_type": "code",
+      "norm_label": "config.py",
+      "source_file": "plugin/localgpu/mcp/config.py",
+      "source_location": "L1"
     },
     {
-      "id": "plugin_localgpu_cli_anthropic_proxy_rationale_138",
-      "label": "Flatten one message's content blocks into text Ollama can read.",
+      "id": "plugin_localgpu_mcp_config_py_path",
+      "label": "Path",
       "_origin": "ast",
       "community": 331,
-      "community_name": "to_ollama_messages",
-      "file_type": "rationale",
-      "norm_label": "flatten one message's content blocks into text ollama can read.",
-      "source_file": "plugin/localgpu/cli/anthropic_proxy.py",
-      "source_location": "L138"
+      "community_name": "config.py",
+      "file_type": "code",
+      "norm_label": "path",
+      "source_file": "",
+      "source_location": ""
     },
     {
-      "id": "plugin_localgpu_cli_anthropic_proxy_rationale_162",
-      "label": "Pull `tool_result` blocks out of a user turn.",
+      "id": "plugin_localgpu_mcp_config_rationale_1",
+      "label": "Where localgpu keeps its things, and what the user asked for. Two layers of\u2026",
       "_origin": "ast",
       "community": 331,
-      "community_name": "to_ollama_messages",
+      "community_name": "config.py",
       "file_type": "rationale",
-      "norm_label": "pull `tool_result` blocks out of a user turn.",
-      "source_file": "plugin/localgpu/cli/anthropic_proxy.py",
-      "source_location": "L162"
+      "norm_label": "where localgpu keeps its things, and what the user asked for. two layers of...",
+      "source_file": "plugin/localgpu/mcp/config.py",
+      "source_location": "L1"
     },
     {
-      "id": "plugin_localgpu_cli_anthropic_proxy_rationale_173",
-      "label": "Build Ollama's flat message list from Anthropic's block structure. Anthropic\u2026",
+      "id": "plugin_localgpu_mcp_config_rationale_117",
+      "label": "A config file exists but cannot be used.",
       "_origin": "ast",
       "community": 331,
-      "community_name": "to_ollama_messages",
+      "community_name": "config.py",
       "file_type": "rationale",
-      "norm_label": "build ollama's flat message list from anthropic's block structure. anthropic...",
-      "source_file": "plugin/localgpu/cli/anthropic_proxy.py",
-      "source_location": "L173"
+      "norm_label": "a config file exists but cannot be used.",
+      "source_file": "plugin/localgpu/mcp/config.py",
+      "source_location": "L117"
+    },
+    {
+      "id": "plugin_localgpu_mcp_config_rationale_121",
+      "label": "r\"\"\"The install root: ``%LOCALAPPDATA%\\localgpu`` or\u2026",
+      "_origin": "ast",
+      "community": 331,
+      "community_name": "config.py",
+      "file_type": "rationale",
+      "norm_label": "r\"\"\"the install root: ``%localappdata%\\localgpu`` or...",
+      "source_file": "plugin/localgpu/mcp/config.py",
+      "source_location": "L121"
+    },
+    {
+      "id": "plugin_localgpu_mcp_config_rationale_136",
+      "label": "The interpreter the bootstrap builds. Never the system Python.",
+      "_origin": "ast",
+      "community": 331,
+      "community_name": "config.py",
+      "file_type": "rationale",
+      "norm_label": "the interpreter the bootstrap builds. never the system python.",
+      "source_file": "plugin/localgpu/mcp/config.py",
+      "source_location": "L136"
+    },
+    {
+      "id": "plugin_localgpu_mcp_config_rationale_197",
+      "label": "Merge the two layers and fill in the defaults. ``roots`` defaults to ``[cwd]``\u2026",
+      "_origin": "ast",
+      "community": 331,
+      "community_name": "config.py",
+      "file_type": "rationale",
+      "norm_label": "merge the two layers and fill in the defaults. ``roots`` defaults to ``[cwd]``...",
+      "source_file": "plugin/localgpu/mcp/config.py",
+      "source_location": "L197"
     },
     {
       "id": "plugin_localgpu_run_tests_get_venvpythonin",
@@ -55804,7 +55856,7 @@
       "label": "_version.py",
       "_origin": "ast",
       "community": 335,
-      "community_name": "check_fits_context",
+      "community_name": "_version.py",
       "file_type": "code",
       "norm_label": "_version.py",
       "source_file": "plugin/localgpu/mcp/_version.py",
@@ -55815,51 +55867,18 @@
       "label": "RuntimeError",
       "_origin": "ast",
       "community": 335,
-      "community_name": "check_fits_context",
+      "community_name": "_version.py",
       "file_type": "code",
       "norm_label": "runtimeerror",
       "source_file": "",
       "source_location": ""
     },
     {
-      "id": "plugin_localgpu_cli_anthropic_proxy_rationale_110",
-      "label": "Something upstream failed in a way the client should be told about.",
-      "_origin": "ast",
-      "community": 335,
-      "community_name": "check_fits_context",
-      "file_type": "rationale",
-      "norm_label": "something upstream failed in a way the client should be told about.",
-      "source_file": "plugin/localgpu/cli/anthropic_proxy.py",
-      "source_location": "L110"
-    },
-    {
-      "id": "plugin_localgpu_cli_anthropic_proxy_rationale_334",
-      "label": "A cheap approximation of the request's prompt size, in tokens, that\u2026",
-      "_origin": "ast",
-      "community": 335,
-      "community_name": "check_fits_context",
-      "file_type": "rationale",
-      "norm_label": "a cheap approximation of the request's prompt size, in tokens, that...",
-      "source_file": "plugin/localgpu/cli/anthropic_proxy.py",
-      "source_location": "L334"
-    },
-    {
-      "id": "plugin_localgpu_cli_anthropic_proxy_rationale_372",
-      "label": "Refuse a request before it ever reaches Ollama, rather than let Ollama truncate\u2026",
-      "_origin": "ast",
-      "community": 335,
-      "community_name": "check_fits_context",
-      "file_type": "rationale",
-      "norm_label": "refuse a request before it ever reaches ollama, rather than let ollama truncate...",
-      "source_file": "plugin/localgpu/cli/anthropic_proxy.py",
-      "source_location": "L372"
-    },
-    {
       "id": "plugin_localgpu_mcp_version_rationale_1",
       "label": "Single source of truth for localgpu's version: pyproject.toml. Both\u2026",
       "_origin": "ast",
       "community": 335,
-      "community_name": "check_fits_context",
+      "community_name": "_version.py",
       "file_type": "rationale",
       "norm_label": "single source of truth for localgpu's version: pyproject.toml. both...",
       "source_file": "plugin/localgpu/mcp/_version.py",
@@ -57847,7 +57866,7 @@
       "node_kind": "heading",
       "norm_label": "step 2 \u2014 hold one model, and only one",
       "source_file": "plugin/localgpu/commands/index.md",
-      "source_location": "L58"
+      "source_location": "L65"
     },
     {
       "id": "plugin_localgpu_commands_index_step_3_run_it_and_report_numbers",
@@ -57859,7 +57878,7 @@
       "node_kind": "heading",
       "norm_label": "step 3 \u2014 run it, and report numbers",
       "source_file": "plugin/localgpu/commands/index.md",
-      "source_location": "L76"
+      "source_location": "L83"
     },
     {
       "id": "plugin_localgpu_commands_index_step_4_prove_it_answers",
@@ -57871,7 +57890,7 @@
       "node_kind": "heading",
       "norm_label": "step 4 \u2014 prove it answers",
       "source_file": "plugin/localgpu/commands/index.md",
-      "source_location": "L102"
+      "source_location": "L109"
     },
     {
       "id": "plugin_localgpu_commands_index_when_to_run_this",
@@ -57883,7 +57902,7 @@
       "node_kind": "heading",
       "norm_label": "when to run this",
       "source_file": "plugin/localgpu/commands/index.md",
-      "source_location": "L108"
+      "source_location": "L115"
     },
     {
       "id": "plugin_crew_tests_test_crew_config_rationale_75",
@@ -58076,6 +58095,17 @@
       "norm_label": "hands out strictly increasing mtimes so 'changed' is never a coin flip.",
       "source_file": "plugin/localgpu/mcp/_test/conftest.py",
       "source_location": "L93"
+    },
+    {
+      "id": "plugin_localgpu_mcp_config_py_any",
+      "label": "Any",
+      "_origin": "ast",
+      "community": 369,
+      "community_name": "Any",
+      "file_type": "code",
+      "norm_label": "any",
+      "source_file": "",
+      "source_location": ""
     },
     {
       "id": "plugin_localgpu_bootstrap_add_localgpuvenvtopath",
@@ -58395,6 +58425,17 @@
       "norm_label": "write-warn2()",
       "source_file": "plugin/localgpu/bootstrap.ps1",
       "source_location": "L73"
+    },
+    {
+      "id": "plugin_localgpu_mcp_config_py_runtimeerror",
+      "label": "RuntimeError",
+      "_origin": "ast",
+      "community": 370,
+      "community_name": "RuntimeError",
+      "file_type": "code",
+      "norm_label": "runtimeerror",
+      "source_file": "",
+      "source_location": ""
     },
     {
       "id": "plugin_crew_skills_crew_diagrams_scripts_visio",
@@ -59257,6 +59298,17 @@
       "source_location": ""
     },
     {
+      "id": "plugin_localgpu_mcp_test_test_secrets",
+      "label": "test_secrets.py",
+      "_origin": "ast",
+      "community": 40,
+      "community_name": "indexer.py",
+      "file_type": "code",
+      "norm_label": "test_secrets.py",
+      "source_file": "plugin/localgpu/mcp/_test/test_secrets.py",
+      "source_location": "L1"
+    },
+    {
       "id": "plugin_localgpu_mcp_indexer_rationale_1",
       "label": "Walk the roots, cut files into overlapping windows, embed what changed. Windows\u2026",
       "_origin": "ast",
@@ -59323,6 +59375,17 @@
       "source_location": "L246"
     },
     {
+      "id": "plugin_localgpu_mcp_indexer_rationale_294",
+      "label": "Drives one refresh pass over the configured roots.",
+      "_origin": "ast",
+      "community": 40,
+      "community_name": "indexer.py",
+      "file_type": "rationale",
+      "norm_label": "drives one refresh pass over the configured roots.",
+      "source_file": "plugin/localgpu/mcp/indexer.py",
+      "source_location": "L294"
+    },
+    {
       "id": "plugin_localgpu_mcp_indexer_rationale_316",
       "label": "Refuse to touch an index built with a different embedding model. Absent is not\u2026",
       "_origin": "ast",
@@ -59376,6 +59439,17 @@
       "norm_label": "match a pattern against the name, the path relative to the root, or any parent....",
       "source_file": "plugin/localgpu/mcp/indexer.py",
       "source_location": "L97"
+    },
+    {
+      "id": "plugin_localgpu_mcp_test_test_secrets_rationale_1",
+      "label": "Secrets must never reach the vector store. Two independent guards are exercised\u2026",
+      "_origin": "ast",
+      "community": 40,
+      "community_name": "indexer.py",
+      "file_type": "rationale",
+      "norm_label": "secrets must never reach the vector store. two independent guards are exercised...",
+      "source_file": "plugin/localgpu/mcp/_test/test_secrets.py",
+      "source_location": "L1"
     },
     {
       "id": "plugin_crew_tests_test_crew_state_rationale_513",
@@ -60429,7 +60503,7 @@
       "source_file": "plugin/localgpu/pyproject.toml",
       "source_location": "L1",
       "type": "package",
-      "version": "0.1.8"
+      "version": "0.1.9"
     },
     {
       "id": "plugin_crew_hooks_scripts_handoff_write_ps1_plugin_crew_hooks_scripts_handoff_write",
@@ -61426,10 +61500,10 @@
       "node_kind": "heading",
       "norm_label": "[2026-07-28]",
       "source_file": "CHANGELOG.md",
-      "source_location": "L3320"
+      "source_location": "L3349"
     },
     {
-      "id": "changelog_added_3322",
+      "id": "changelog_added_3351",
       "label": "Added",
       "_origin": "ast",
       "community": 469,
@@ -61438,7 +61512,7 @@
       "node_kind": "heading",
       "norm_label": "added",
       "source_file": "CHANGELOG.md",
-      "source_location": "L3322"
+      "source_location": "L3351"
     },
     {
       "id": "changelog_changelog",
@@ -61453,7 +61527,7 @@
       "source_location": "L1"
     },
     {
-      "id": "changelog_fixed_3331",
+      "id": "changelog_fixed_3360",
       "label": "Fixed",
       "_origin": "ast",
       "community": 469,
@@ -61462,7 +61536,7 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L3331"
+      "source_location": "L3360"
     },
     {
       "id": "changelog_skills_present_as_of_this_baseline",
@@ -61474,7 +61548,7 @@
       "node_kind": "heading",
       "norm_label": "skills present as of this baseline",
       "source_file": "CHANGELOG.md",
-      "source_location": "L3335"
+      "source_location": "L3364"
     },
     {
       "id": "plugin_crew_tests_test_verify_gate_lock",
@@ -62182,14 +62256,14 @@
       "source_location": "L1"
     },
     {
-      "id": "plugin_localgpu_mcp_test_test_secrets",
-      "label": "test_secrets.py",
+      "id": "plugin_localgpu_mcp_test_test_unignore",
+      "label": "test_unignore.py",
       "_origin": "ast",
       "community": 480,
       "community_name": "sabotage.py",
       "file_type": "code",
-      "norm_label": "test_secrets.py",
-      "source_file": "plugin/localgpu/mcp/_test/test_secrets.py",
+      "norm_label": "test_unignore.py",
+      "source_file": "plugin/localgpu/mcp/_test/test_unignore.py",
       "source_location": "L1"
     },
     {
@@ -62248,14 +62322,14 @@
       "source_location": "L79"
     },
     {
-      "id": "plugin_localgpu_mcp_test_test_secrets_rationale_1",
-      "label": "Secrets must never reach the vector store. Two independent guards are exercised\u2026",
+      "id": "plugin_localgpu_mcp_test_test_unignore_rationale_1",
+      "label": "`unignore` re-includes a file `DEFAULT_IGNORE` would otherwise swallow. Same\u2026",
       "_origin": "ast",
       "community": 480,
       "community_name": "sabotage.py",
       "file_type": "rationale",
-      "norm_label": "secrets must never reach the vector store. two independent guards are exercised...",
-      "source_file": "plugin/localgpu/mcp/_test/test_secrets.py",
+      "norm_label": "`unignore` re-includes a file `default_ignore` would otherwise swallow. same...",
+      "source_file": "plugin/localgpu/mcp/_test/test_unignore.py",
       "source_location": "L1"
     },
     {
@@ -63420,39 +63494,6 @@
       "source_location": "L580"
     },
     {
-      "id": "plugin_localgpu_cli_anthropic_proxy_rationale_235",
-      "label": "Anthropic `input_schema` is Ollama/OpenAI `parameters`; the rest matches.",
-      "_origin": "ast",
-      "community": 503,
-      "community_name": "to_ollama_request",
-      "file_type": "rationale",
-      "norm_label": "anthropic `input_schema` is ollama/openai `parameters`; the rest matches.",
-      "source_file": "plugin/localgpu/cli/anthropic_proxy.py",
-      "source_location": "L235"
-    },
-    {
-      "id": "plugin_localgpu_cli_anthropic_proxy_rationale_261",
-      "label": "Which tool names this request actually put on the table.",
-      "_origin": "ast",
-      "community": 503,
-      "community_name": "to_ollama_request",
-      "file_type": "rationale",
-      "norm_label": "which tool names this request actually put on the table.",
-      "source_file": "plugin/localgpu/cli/anthropic_proxy.py",
-      "source_location": "L261"
-    },
-    {
-      "id": "plugin_localgpu_cli_anthropic_proxy_rationale_444",
-      "label": "The whole request translation, in one place.",
-      "_origin": "ast",
-      "community": 503,
-      "community_name": "to_ollama_request",
-      "file_type": "rationale",
-      "norm_label": "the whole request translation, in one place.",
-      "source_file": "plugin/localgpu/cli/anthropic_proxy.py",
-      "source_location": "L444"
-    },
-    {
       "id": "skills_sophos_central_scripts_sophos_client_rationale_111",
       "label": "Determine tenant id + regional base URL for tenant-level calls.",
       "_origin": "ast",
@@ -64387,17 +64428,6 @@
       "source_location": "L1"
     },
     {
-      "id": "plugin_localgpu_mcp_indexer_rationale_294",
-      "label": "Drives one refresh pass over the configured roots.",
-      "_origin": "ast",
-      "community": 513,
-      "community_name": "write",
-      "file_type": "rationale",
-      "norm_label": "drives one refresh pass over the configured roots.",
-      "source_file": "plugin/localgpu/mcp/indexer.py",
-      "source_location": "L294"
-    },
-    {
       "id": "plugin_localgpu_mcp_test_conftest_rationale_110",
       "label": "Write a file and stamp it with a fresh mtime.",
       "_origin": "ast",
@@ -64541,6 +64571,17 @@
       "source_location": "L88"
     },
     {
+      "id": "plugin_localgpu_mcp_store_py_runtimeerror",
+      "label": "RuntimeError",
+      "_origin": "ast",
+      "community": 515,
+      "community_name": "ChunkRecord",
+      "file_type": "code",
+      "norm_label": "runtimeerror",
+      "source_file": "",
+      "source_location": ""
+    },
+    {
       "id": "plugin_localgpu_mcp_test_test_concurrency",
       "label": "test_concurrency.py",
       "_origin": "ast",
@@ -64561,6 +64602,28 @@
       "norm_label": "test_deletion.py",
       "source_file": "plugin/localgpu/mcp/_test/test_deletion.py",
       "source_location": "L1"
+    },
+    {
+      "id": "plugin_localgpu_mcp_store_rationale_123",
+      "label": "Another process already holds the cross-process refresh lock.",
+      "_origin": "ast",
+      "community": 515,
+      "community_name": "ChunkRecord",
+      "file_type": "rationale",
+      "norm_label": "another process already holds the cross-process refresh lock.",
+      "source_file": "plugin/localgpu/mcp/store.py",
+      "source_location": "L123"
+    },
+    {
+      "id": "plugin_localgpu_mcp_store_rationale_203",
+      "label": "The index on disk cannot be used as-is.",
+      "_origin": "ast",
+      "community": 515,
+      "community_name": "ChunkRecord",
+      "file_type": "rationale",
+      "norm_label": "the index on disk cannot be used as-is.",
+      "source_file": "plugin/localgpu/mcp/store.py",
+      "source_location": "L203"
     },
     {
       "id": "plugin_localgpu_mcp_store_rationale_208",
@@ -64594,6 +64657,17 @@
       "norm_label": "simulation, not the real cross-process race - this machine is windows, where...",
       "source_file": "plugin/localgpu/mcp/_test/test_concurrency.py",
       "source_location": "L161"
+    },
+    {
+      "id": "plugin_localgpu_mcp_test_test_concurrency_rationale_213",
+      "label": "Simulates two separate `server.py` processes: two RefreshLock objects that\u2026",
+      "_origin": "ast",
+      "community": 515,
+      "community_name": "ChunkRecord",
+      "file_type": "rationale",
+      "norm_label": "simulates two separate `server.py` processes: two refreshlock objects that...",
+      "source_file": "plugin/localgpu/mcp/_test/test_concurrency.py",
+      "source_location": "L213"
     },
     {
       "id": "plugin_localgpu_mcp_test_test_concurrency_rationale_234",
@@ -67146,6 +67220,39 @@
       "norm_label": "always consume the request body, even on a path that ignores it....",
       "source_file": "plugin/localgpu/cli/anthropic_proxy.py",
       "source_location": "L1019"
+    },
+    {
+      "id": "plugin_localgpu_cli_anthropic_proxy_rationale_110",
+      "label": "Something upstream failed in a way the client should be told about.",
+      "_origin": "ast",
+      "community": 530,
+      "community_name": "ProxyHandler",
+      "file_type": "rationale",
+      "norm_label": "something upstream failed in a way the client should be told about.",
+      "source_file": "plugin/localgpu/cli/anthropic_proxy.py",
+      "source_location": "L110"
+    },
+    {
+      "id": "plugin_localgpu_cli_anthropic_proxy_rationale_261",
+      "label": "Which tool names this request actually put on the table.",
+      "_origin": "ast",
+      "community": 530,
+      "community_name": "ProxyHandler",
+      "file_type": "rationale",
+      "norm_label": "which tool names this request actually put on the table.",
+      "source_file": "plugin/localgpu/cli/anthropic_proxy.py",
+      "source_location": "L261"
+    },
+    {
+      "id": "plugin_localgpu_cli_anthropic_proxy_rationale_372",
+      "label": "Refuse a request before it ever reaches Ollama, rather than let Ollama truncate\u2026",
+      "_origin": "ast",
+      "community": 530,
+      "community_name": "ProxyHandler",
+      "file_type": "rationale",
+      "norm_label": "refuse a request before it ever reaches ollama, rather than let ollama truncate...",
+      "source_file": "plugin/localgpu/cli/anthropic_proxy.py",
+      "source_location": "L372"
     },
     {
       "id": "plugin_localgpu_cli_anthropic_proxy_rationale_948",
@@ -70967,6 +71074,83 @@
       "source_location": "L1"
     },
     {
+      "id": "plugin_localgpu_cli_anthropic_proxy_rationale_124",
+      "label": "`system` is either a string or a list of content blocks.",
+      "_origin": "ast",
+      "community": 63,
+      "community_name": "anthropic_proxy.py",
+      "file_type": "rationale",
+      "norm_label": "`system` is either a string or a list of content blocks.",
+      "source_file": "plugin/localgpu/cli/anthropic_proxy.py",
+      "source_location": "L124"
+    },
+    {
+      "id": "plugin_localgpu_cli_anthropic_proxy_rationale_138",
+      "label": "Flatten one message's content blocks into text Ollama can read.",
+      "_origin": "ast",
+      "community": 63,
+      "community_name": "anthropic_proxy.py",
+      "file_type": "rationale",
+      "norm_label": "flatten one message's content blocks into text ollama can read.",
+      "source_file": "plugin/localgpu/cli/anthropic_proxy.py",
+      "source_location": "L138"
+    },
+    {
+      "id": "plugin_localgpu_cli_anthropic_proxy_rationale_162",
+      "label": "Pull `tool_result` blocks out of a user turn.",
+      "_origin": "ast",
+      "community": 63,
+      "community_name": "anthropic_proxy.py",
+      "file_type": "rationale",
+      "norm_label": "pull `tool_result` blocks out of a user turn.",
+      "source_file": "plugin/localgpu/cli/anthropic_proxy.py",
+      "source_location": "L162"
+    },
+    {
+      "id": "plugin_localgpu_cli_anthropic_proxy_rationale_173",
+      "label": "Build Ollama's flat message list from Anthropic's block structure. Anthropic\u2026",
+      "_origin": "ast",
+      "community": 63,
+      "community_name": "anthropic_proxy.py",
+      "file_type": "rationale",
+      "norm_label": "build ollama's flat message list from anthropic's block structure. anthropic...",
+      "source_file": "plugin/localgpu/cli/anthropic_proxy.py",
+      "source_location": "L173"
+    },
+    {
+      "id": "plugin_localgpu_cli_anthropic_proxy_rationale_235",
+      "label": "Anthropic `input_schema` is Ollama/OpenAI `parameters`; the rest matches.",
+      "_origin": "ast",
+      "community": 63,
+      "community_name": "anthropic_proxy.py",
+      "file_type": "rationale",
+      "norm_label": "anthropic `input_schema` is ollama/openai `parameters`; the rest matches.",
+      "source_file": "plugin/localgpu/cli/anthropic_proxy.py",
+      "source_location": "L235"
+    },
+    {
+      "id": "plugin_localgpu_cli_anthropic_proxy_rationale_334",
+      "label": "A cheap approximation of the request's prompt size, in tokens, that\u2026",
+      "_origin": "ast",
+      "community": 63,
+      "community_name": "anthropic_proxy.py",
+      "file_type": "rationale",
+      "norm_label": "a cheap approximation of the request's prompt size, in tokens, that...",
+      "source_file": "plugin/localgpu/cli/anthropic_proxy.py",
+      "source_location": "L334"
+    },
+    {
+      "id": "plugin_localgpu_cli_anthropic_proxy_rationale_444",
+      "label": "The whole request translation, in one place.",
+      "_origin": "ast",
+      "community": 63,
+      "community_name": "anthropic_proxy.py",
+      "file_type": "rationale",
+      "norm_label": "the whole request translation, in one place.",
+      "source_file": "plugin/localgpu/cli/anthropic_proxy.py",
+      "source_location": "L444"
+    },
+    {
       "id": "plugin_localgpu_cli_anthropic_proxy_rationale_489",
       "label": "Ollama usually sends a dict; some builds send a JSON string.",
       "_origin": "ast",
@@ -71077,6 +71261,17 @@
       "source_location": "L1"
     },
     {
+      "id": "ndarray",
+      "label": "ndarray",
+      "_origin": "ast",
+      "community": 65,
+      "community_name": "test_ranking.py",
+      "file_type": "code",
+      "norm_label": "ndarray",
+      "source_file": "",
+      "source_location": ""
+    },
+    {
       "id": "plugin_localgpu_mcp_test_test_ranking",
       "label": "test_ranking.py",
       "_origin": "ast",
@@ -71099,15 +71294,37 @@
       "source_location": ""
     },
     {
-      "id": "plugin_localgpu_mcp_store_rationale_786",
-      "label": "Forgiving glob match against a full path or its basename. ``*`` crosses\u2026",
+      "id": "plugin_localgpu_mcp_store_rationale_238",
+      "label": "L2-normalise to float32. A zero vector stays zero rather than becoming NaN.",
       "_origin": "ast",
       "community": 65,
       "community_name": "test_ranking.py",
       "file_type": "rationale",
-      "norm_label": "forgiving glob match against a full path or its basename. ``*`` crosses...",
+      "norm_label": "l2-normalise to float32. a zero vector stays zero rather than becoming nan.",
       "source_file": "plugin/localgpu/mcp/store.py",
-      "source_location": "L786"
+      "source_location": "L238"
+    },
+    {
+      "id": "plugin_localgpu_mcp_store_rationale_369",
+      "label": "Append chunks and their vectors. Returns the new chunk ids.",
+      "_origin": "ast",
+      "community": 65,
+      "community_name": "test_ranking.py",
+      "file_type": "rationale",
+      "norm_label": "append chunks and their vectors. returns the new chunk ids.",
+      "source_file": "plugin/localgpu/mcp/store.py",
+      "source_location": "L369"
+    },
+    {
+      "id": "plugin_localgpu_mcp_store_rationale_478",
+      "label": "Brute-force cosine over every live row, best first.",
+      "_origin": "ast",
+      "community": 65,
+      "community_name": "test_ranking.py",
+      "file_type": "rationale",
+      "norm_label": "brute-force cosine over every live row, best first.",
+      "source_file": "plugin/localgpu/mcp/store.py",
+      "source_location": "L478"
     },
     {
       "id": "plugin_localgpu_mcp_test_test_ranking_rationale_1",
@@ -72181,7 +72398,7 @@
       "label": "Embedder",
       "_origin": "ast",
       "community": 74,
-      "community_name": "config.py",
+      "community_name": "server.py",
       "file_type": "code",
       "norm_label": "embedder",
       "source_file": "",
@@ -72192,53 +72409,9 @@
       "label": "OllamaClient",
       "_origin": "ast",
       "community": 74,
-      "community_name": "config.py",
+      "community_name": "server.py",
       "file_type": "code",
       "norm_label": "ollamaclient",
-      "source_file": "",
-      "source_location": ""
-    },
-    {
-      "id": "plugin_localgpu_mcp_config",
-      "label": "config.py",
-      "_origin": "ast",
-      "community": 74,
-      "community_name": "config.py",
-      "file_type": "code",
-      "norm_label": "config.py",
-      "source_file": "plugin/localgpu/mcp/config.py",
-      "source_location": "L1"
-    },
-    {
-      "id": "plugin_localgpu_mcp_config_py_any",
-      "label": "Any",
-      "_origin": "ast",
-      "community": 74,
-      "community_name": "config.py",
-      "file_type": "code",
-      "norm_label": "any",
-      "source_file": "",
-      "source_location": ""
-    },
-    {
-      "id": "plugin_localgpu_mcp_config_py_path",
-      "label": "Path",
-      "_origin": "ast",
-      "community": 74,
-      "community_name": "config.py",
-      "file_type": "code",
-      "norm_label": "path",
-      "source_file": "",
-      "source_location": ""
-    },
-    {
-      "id": "plugin_localgpu_mcp_config_py_runtimeerror",
-      "label": "RuntimeError",
-      "_origin": "ast",
-      "community": 74,
-      "community_name": "config.py",
-      "file_type": "code",
-      "norm_label": "runtimeerror",
       "source_file": "",
       "source_location": ""
     },
@@ -72247,7 +72420,7 @@
       "label": "server.py",
       "_origin": "ast",
       "community": 74,
-      "community_name": "config.py",
+      "community_name": "server.py",
       "file_type": "code",
       "norm_label": "server.py",
       "source_file": "plugin/localgpu/mcp/server.py",
@@ -72258,7 +72431,7 @@
       "label": "Any",
       "_origin": "ast",
       "community": 74,
-      "community_name": "config.py",
+      "community_name": "server.py",
       "file_type": "code",
       "norm_label": "any",
       "source_file": "",
@@ -72269,7 +72442,7 @@
       "label": "tool",
       "_origin": "ast",
       "community": 74,
-      "community_name": "config.py",
+      "community_name": "server.py",
       "file_type": "code",
       "norm_label": "tool",
       "source_file": "",
@@ -72280,73 +72453,18 @@
       "label": "VectorStore",
       "_origin": "ast",
       "community": 74,
-      "community_name": "config.py",
+      "community_name": "server.py",
       "file_type": "code",
       "norm_label": "vectorstore",
       "source_file": "",
       "source_location": ""
     },
     {
-      "id": "plugin_localgpu_mcp_config_rationale_1",
-      "label": "Where localgpu keeps its things, and what the user asked for. Two layers of\u2026",
-      "_origin": "ast",
-      "community": 74,
-      "community_name": "config.py",
-      "file_type": "rationale",
-      "norm_label": "where localgpu keeps its things, and what the user asked for. two layers of...",
-      "source_file": "plugin/localgpu/mcp/config.py",
-      "source_location": "L1"
-    },
-    {
-      "id": "plugin_localgpu_mcp_config_rationale_109",
-      "label": "A config file exists but cannot be used.",
-      "_origin": "ast",
-      "community": 74,
-      "community_name": "config.py",
-      "file_type": "rationale",
-      "norm_label": "a config file exists but cannot be used.",
-      "source_file": "plugin/localgpu/mcp/config.py",
-      "source_location": "L109"
-    },
-    {
-      "id": "plugin_localgpu_mcp_config_rationale_113",
-      "label": "r\"\"\"The install root: ``%LOCALAPPDATA%\\localgpu`` or\u2026",
-      "_origin": "ast",
-      "community": 74,
-      "community_name": "config.py",
-      "file_type": "rationale",
-      "norm_label": "r\"\"\"the install root: ``%localappdata%\\localgpu`` or...",
-      "source_file": "plugin/localgpu/mcp/config.py",
-      "source_location": "L113"
-    },
-    {
-      "id": "plugin_localgpu_mcp_config_rationale_128",
-      "label": "The interpreter the bootstrap builds. Never the system Python.",
-      "_origin": "ast",
-      "community": 74,
-      "community_name": "config.py",
-      "file_type": "rationale",
-      "norm_label": "the interpreter the bootstrap builds. never the system python.",
-      "source_file": "plugin/localgpu/mcp/config.py",
-      "source_location": "L128"
-    },
-    {
-      "id": "plugin_localgpu_mcp_config_rationale_189",
-      "label": "Merge the two layers and fill in the defaults. ``roots`` defaults to ``[cwd]``\u2026",
-      "_origin": "ast",
-      "community": 74,
-      "community_name": "config.py",
-      "file_type": "rationale",
-      "norm_label": "merge the two layers and fill in the defaults. ``roots`` defaults to ``[cwd]``...",
-      "source_file": "plugin/localgpu/mcp/config.py",
-      "source_location": "L189"
-    },
-    {
       "id": "plugin_localgpu_mcp_server_rationale_1",
       "label": "The localgpu MCP server: three tools over stdio. search_code(query, k=10,\u2026",
       "_origin": "ast",
       "community": 74,
-      "community_name": "config.py",
+      "community_name": "server.py",
       "file_type": "rationale",
       "norm_label": "the localgpu mcp server: three tools over stdio. search_code(query, k=10,...",
       "source_file": "plugin/localgpu/mcp/server.py",
@@ -72357,7 +72475,7 @@
       "label": "What is indexed, how stale it is, and whether Ollama is reachable.",
       "_origin": "ast",
       "community": 74,
-      "community_name": "config.py",
+      "community_name": "server.py",
       "file_type": "rationale",
       "norm_label": "what is indexed, how stale it is, and whether ollama is reachable.",
       "source_file": "plugin/localgpu/mcp/server.py",
@@ -72368,7 +72486,7 @@
       "label": "Re-index changed files. Incremental: unchanged files are not re-embedded. Args:\u2026",
       "_origin": "ast",
       "community": 74,
-      "community_name": "config.py",
+      "community_name": "server.py",
       "file_type": "rationale",
       "norm_label": "re-index changed files. incremental: unchanged files are not re-embedded. args:...",
       "source_file": "plugin/localgpu/mcp/server.py",
@@ -72379,7 +72497,7 @@
       "label": "Semantic code search over the local index. Args: query: What the code does, in\u2026",
       "_origin": "ast",
       "community": 74,
-      "community_name": "config.py",
+      "community_name": "server.py",
       "file_type": "rationale",
       "norm_label": "semantic code search over the local index. args: query: what the code does, in...",
       "source_file": "plugin/localgpu/mcp/server.py",
@@ -73860,7 +73978,7 @@
       "source_location": "L1"
     },
     {
-      "id": "plugin_localgpu_mcp_test_test_config_rationale_115",
+      "id": "plugin_localgpu_mcp_test_test_config_rationale_149",
       "label": "ignore\": \"node_modules\" is the natural typo. A string is iterable, so without a\u2026",
       "_origin": "ast",
       "community": 82,
@@ -73868,7 +73986,7 @@
       "file_type": "rationale",
       "norm_label": "ignore\": \"node_modules\" is the natural typo. a string is iterable, so without a...",
       "source_file": "plugin/localgpu/mcp/_test/test_config.py",
-      "source_location": "L115"
+      "source_location": "L149"
     },
     {
       "id": "plugin_obsidian_vault_hooks_scripts_vault_ops_rationale_1280",
@@ -86934,7 +87052,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/localgpu/mcp/config.py",
-      "source_location": "L154",
+      "source_location": "L162",
       "weight": 1.0
     },
     {
@@ -86946,7 +87064,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/localgpu/mcp/config.py",
-      "source_location": "L138",
+      "source_location": "L146",
       "weight": 1.0
     },
     {
@@ -86958,7 +87076,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/localgpu/mcp/config.py",
-      "source_location": "L195",
+      "source_location": "L217",
       "weight": 1.0
     },
     {
@@ -86970,7 +87088,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/localgpu/mcp/config.py",
-      "source_location": "L196",
+      "source_location": "L218",
       "weight": 1.0
     },
     {
@@ -86982,7 +87100,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/localgpu/mcp/config.py",
-      "source_location": "L201",
+      "source_location": "L224",
       "weight": 1.0
     },
     {
@@ -86994,7 +87112,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/localgpu/mcp/config.py",
-      "source_location": "L201",
+      "source_location": "L224",
       "weight": 1.0
     },
     {
@@ -87006,7 +87124,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/localgpu/mcp/config.py",
-      "source_location": "L201",
+      "source_location": "L224",
       "weight": 1.0
     },
     {
@@ -87018,7 +87136,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/localgpu/mcp/config.py",
-      "source_location": "L119",
+      "source_location": "L127",
       "weight": 1.0
     },
     {
@@ -87030,7 +87148,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/localgpu/mcp/config.py",
-      "source_location": "L150",
+      "source_location": "L158",
       "weight": 1.0
     },
     {
@@ -87042,7 +87160,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/localgpu/mcp/config.py",
-      "source_location": "L146",
+      "source_location": "L154",
       "weight": 1.0
     },
     {
@@ -87054,7 +87172,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/localgpu/mcp/config.py",
-      "source_location": "L167",
+      "source_location": "L175",
       "weight": 1.0
     },
     {
@@ -87066,7 +87184,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/localgpu/mcp/config.py",
-      "source_location": "L158",
+      "source_location": "L166",
       "weight": 1.0
     },
     {
@@ -87078,7 +87196,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/localgpu/mcp/config.py",
-      "source_location": "L142",
+      "source_location": "L150",
       "weight": 1.0
     },
     {
@@ -87090,7 +87208,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/localgpu/mcp/config.py",
-      "source_location": "L129",
+      "source_location": "L137",
       "weight": 1.0
     },
     {
@@ -87102,7 +87220,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/localgpu/mcp/config.py",
-      "source_location": "L133",
+      "source_location": "L141",
       "weight": 1.0
     },
     {
@@ -89130,7 +89248,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/localgpu/mcp/_test/test_config.py",
-      "source_location": "L108",
+      "source_location": "L142",
       "weight": 1.0
     },
     {
@@ -89142,7 +89260,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/localgpu/mcp/_test/test_config.py",
-      "source_location": "L130",
+      "source_location": "L164",
       "weight": 1.0
     },
     {
@@ -89154,7 +89272,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/localgpu/mcp/_test/test_config.py",
-      "source_location": "L118",
+      "source_location": "L152",
       "weight": 1.0
     },
     {
@@ -89190,7 +89308,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/localgpu/mcp/_test/test_config.py",
-      "source_location": "L85",
+      "source_location": "L119",
       "weight": 1.0
     },
     {
@@ -89202,7 +89320,55 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/localgpu/mcp/_test/test_config.py",
-      "source_location": "L124",
+      "source_location": "L158",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_localgpu_mcp_test_test_config_test_unignore_accumulates_across_layers_like_ignore",
+      "target": "plugin_localgpu_mcp_test_test_config_write_json",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "plugin/localgpu/mcp/_test/test_config.py",
+      "source_location": "L92",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_localgpu_mcp_test_test_config_test_unignore_as_a_bare_string_is_rejected_not_shredded",
+      "target": "plugin_localgpu_mcp_test_test_config_write_json",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "plugin/localgpu/mcp/_test/test_config.py",
+      "source_location": "L111",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_localgpu_mcp_test_test_config_test_unignore_cannot_lift_the_hard_floor",
+      "target": "plugin_localgpu_mcp_test_test_config_write_json",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "plugin/localgpu/mcp/_test/test_config.py",
+      "source_location": "L100",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_localgpu_mcp_test_test_config_test_unignore_drops_a_liftable_default_pattern",
+      "target": "plugin_localgpu_mcp_test_test_config_write_json",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "plugin/localgpu/mcp/_test/test_config.py",
+      "source_location": "L83",
       "weight": 1.0
     },
     {
@@ -89214,7 +89380,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/localgpu/mcp/_test/test_config.py",
-      "source_location": "L92",
+      "source_location": "L126",
       "weight": 1.0
     },
     {
@@ -89755,6 +89921,54 @@
       "context": "call",
       "source_file": "plugin/localgpu/mcp/_test/test_server.py",
       "source_location": "L74",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_localgpu_mcp_test_test_unignore_test_hard_floor_survives_an_unignore_attempt",
+      "target": "plugin_localgpu_mcp_test_test_unignore_write_json",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "plugin/localgpu/mcp/_test/test_unignore.py",
+      "source_location": "L55",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_localgpu_mcp_test_test_unignore_test_hard_floor_survives_an_unignore_attempt",
+      "target": "plugin_localgpu_mcp_test_test_unignore_make_indexer",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "plugin/localgpu/mcp/_test/test_unignore.py",
+      "source_location": "L60",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_localgpu_mcp_test_test_unignore_test_unignoring_a_liftable_default_lets_the_file_through",
+      "target": "plugin_localgpu_mcp_test_test_unignore_write_json",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "plugin/localgpu/mcp/_test/test_unignore.py",
+      "source_location": "L34",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_localgpu_mcp_test_test_unignore_test_unignoring_a_liftable_default_lets_the_file_through",
+      "target": "plugin_localgpu_mcp_test_test_unignore_make_indexer",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "plugin/localgpu/mcp/_test/test_unignore.py",
+      "source_location": "L37",
       "weight": 1.0
     },
     {
@@ -112271,26 +112485,26 @@
     },
     {
       "source": "plugin_localgpu_mcp_config_load_config",
-      "target": "plugin_localgpu_mcp_config_py_any",
+      "target": "any",
       "relation": "references",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "context": "generic_arg",
       "source_file": "plugin/localgpu/mcp/config.py",
-      "source_location": "L185",
+      "source_location": "L193",
       "weight": 1.0
     },
     {
       "source": "plugin_localgpu_mcp_config_read_layer",
-      "target": "plugin_localgpu_mcp_config_py_any",
+      "target": "any",
       "relation": "references",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "context": "generic_arg",
       "source_file": "plugin/localgpu/mcp/config.py",
-      "source_location": "L161",
+      "source_location": "L169",
       "weight": 1.0
     },
     {
@@ -115739,6 +115953,30 @@
       "weight": 1.0
     },
     {
+      "source": "plugin_localgpu_mcp_test_test_unignore",
+      "target": "plugin_localgpu_mcp_indexer",
+      "relation": "imports_from",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "import",
+      "source_file": "plugin/localgpu/mcp/_test/test_unignore.py",
+      "source_location": "L14",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_localgpu_mcp_test_test_unignore",
+      "target": "plugin_localgpu_mcp_store",
+      "relation": "imports_from",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "import",
+      "source_file": "plugin/localgpu/mcp/_test/test_unignore.py",
+      "source_location": "L15",
+      "weight": 1.0
+    },
+    {
       "source": "plugin_localgpu_mcp_version",
       "target": "plugin_localgpu_cli_localgpu_cli",
       "relation": "imports_from",
@@ -116251,7 +116489,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "plugin/localgpu/mcp/config.py",
-      "source_location": "L161",
+      "source_location": "L169",
       "weight": 1.0
     },
     {
@@ -117343,7 +117581,7 @@
       "confidence_score": 1.0,
       "context": "return_type",
       "source_file": "plugin/localgpu/mcp/config.py",
-      "source_location": "L153",
+      "source_location": "L161",
       "weight": 1.0
     },
     {
@@ -117355,7 +117593,7 @@
       "confidence_score": 1.0,
       "context": "return_type",
       "source_file": "plugin/localgpu/mcp/config.py",
-      "source_location": "L137",
+      "source_location": "L145",
       "weight": 1.0
     },
     {
@@ -117367,7 +117605,7 @@
       "confidence_score": 1.0,
       "context": "return_type",
       "source_file": "plugin/localgpu/mcp/config.py",
-      "source_location": "L149",
+      "source_location": "L157",
       "weight": 1.0
     },
     {
@@ -117379,7 +117617,7 @@
       "confidence_score": 1.0,
       "context": "return_type",
       "source_file": "plugin/localgpu/mcp/config.py",
-      "source_location": "L145",
+      "source_location": "L153",
       "weight": 1.0
     },
     {
@@ -117391,7 +117629,7 @@
       "confidence_score": 1.0,
       "context": "return_type",
       "source_file": "plugin/localgpu/mcp/config.py",
-      "source_location": "L141",
+      "source_location": "L149",
       "weight": 1.0
     },
     {
@@ -117403,7 +117641,7 @@
       "confidence_score": 1.0,
       "context": "return_type",
       "source_file": "plugin/localgpu/mcp/config.py",
-      "source_location": "L127",
+      "source_location": "L135",
       "weight": 1.0
     },
     {
@@ -117415,7 +117653,7 @@
       "confidence_score": 1.0,
       "context": "return_type",
       "source_file": "plugin/localgpu/mcp/config.py",
-      "source_location": "L132",
+      "source_location": "L140",
       "weight": 1.0
     },
     {
@@ -119605,24 +119843,24 @@
     },
     {
       "source": "changelog_2026_07_28",
-      "target": "changelog_added_3322",
+      "target": "changelog_added_3351",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L3322",
+      "source_location": "L3351",
       "weight": 1.0
     },
     {
       "source": "changelog_2026_07_28",
-      "target": "changelog_fixed_3331",
+      "target": "changelog_fixed_3360",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L3331",
+      "source_location": "L3360",
       "weight": 1.0
     },
     {
@@ -119633,7 +119871,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L3335",
+      "source_location": "L3364",
       "weight": 1.0
     },
     {
@@ -119644,7 +119882,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L3320",
+      "source_location": "L3349",
       "weight": 1.0
     },
     {
@@ -119660,24 +119898,24 @@
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_1000",
+      "target": "changelog_fixed_1029",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L1000",
+      "source_location": "L1029",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_1042",
+      "target": "changelog_fixed_1071",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L1042",
+      "source_location": "L1071",
       "weight": 1.0
     },
     {
@@ -119688,172 +119926,172 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L1064",
+      "source_location": "L1093",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_1090",
+      "target": "changelog_fixed_1119",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L1090",
+      "source_location": "L1119",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_added_1110",
+      "target": "changelog_added_1139",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L1110",
+      "source_location": "L1139",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_1224",
+      "target": "changelog_fixed_1253",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L1224",
+      "source_location": "L1253",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_changed_1325",
+      "target": "changelog_changed_1354",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L1325",
+      "source_location": "L1354",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_added_1359",
+      "target": "changelog_added_1388",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L1359",
+      "source_location": "L1388",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_changed_1403",
+      "target": "changelog_changed_1432",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L1403",
+      "source_location": "L1432",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_added_1467",
+      "target": "changelog_added_1496",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L1467",
+      "source_location": "L1496",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_added_1481",
+      "target": "changelog_added_1510",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L1481",
+      "source_location": "L1510",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_1564",
+      "target": "changelog_fixed_1593",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L1564",
+      "source_location": "L1593",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_1750",
+      "target": "changelog_fixed_1779",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L1750",
+      "source_location": "L1779",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_1766",
+      "target": "changelog_fixed_1795",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L1766",
+      "source_location": "L1795",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_added_1775",
+      "target": "changelog_added_1804",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L1775",
+      "source_location": "L1804",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_2073",
+      "target": "changelog_fixed_2102",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2073",
+      "source_location": "L2102",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_changed_2173",
+      "target": "changelog_changed_2202",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2173",
+      "source_location": "L2202",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_2194",
+      "target": "changelog_fixed_2223",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2194",
+      "source_location": "L2223",
       "weight": 1.0
     },
     {
@@ -119864,260 +120102,260 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2258",
-      "weight": 1.0
-    },
-    {
-      "source": "changelog_unreleased",
-      "target": "changelog_fixed_2287",
-      "relation": "contains",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "CHANGELOG.md",
       "source_location": "L2287",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_changed_2309",
+      "target": "changelog_fixed_2316",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2309",
+      "source_location": "L2316",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_2319",
+      "target": "changelog_changed_2338",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2319",
+      "source_location": "L2338",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_added_2334",
+      "target": "changelog_fixed_2348",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2334",
+      "source_location": "L2348",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_2467",
+      "target": "changelog_added_2363",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2467",
+      "source_location": "L2363",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_removed_2599",
+      "target": "changelog_fixed_2496",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2599",
+      "source_location": "L2496",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_added_2609",
+      "target": "changelog_removed_2628",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2609",
+      "source_location": "L2628",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_2682",
+      "target": "changelog_added_2638",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2682",
+      "source_location": "L2638",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_changed_2691",
+      "target": "changelog_fixed_2711",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2691",
+      "source_location": "L2711",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_2761",
+      "target": "changelog_changed_2720",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2761",
+      "source_location": "L2720",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_added_2813",
+      "target": "changelog_fixed_2790",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2813",
+      "source_location": "L2790",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_2862",
+      "target": "changelog_added_2842",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2862",
+      "source_location": "L2842",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_added_2928",
+      "target": "changelog_fixed_2891",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2928",
+      "source_location": "L2891",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_removed_2985",
+      "target": "changelog_added_2957",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2985",
+      "source_location": "L2957",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_added_3010",
+      "target": "changelog_removed_3014",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L3010",
+      "source_location": "L3014",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_3032",
+      "target": "changelog_added_3039",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L3032",
+      "source_location": "L3039",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_added_3051",
+      "target": "changelog_fixed_3061",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L3051",
+      "source_location": "L3061",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_removed_3156",
+      "target": "changelog_added_3080",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L3156",
+      "source_location": "L3080",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_changed_3170",
+      "target": "changelog_removed_3185",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L3170",
+      "source_location": "L3185",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_3179",
+      "target": "changelog_changed_3199",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L3179",
+      "source_location": "L3199",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_changed_3259",
+      "target": "changelog_fixed_3208",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L3259",
+      "source_location": "L3208",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_removed_3281",
+      "target": "changelog_changed_3288",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L3281",
+      "source_location": "L3288",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_3306",
+      "target": "changelog_removed_3310",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L3306",
+      "source_location": "L3310",
+      "weight": 1.0
+    },
+    {
+      "source": "changelog_unreleased",
+      "target": "changelog_fixed_3335",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "CHANGELOG.md",
+      "source_location": "L3335",
       "weight": 1.0
     },
     {
@@ -120128,7 +120366,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L417",
+      "source_location": "L446",
       "weight": 1.0
     },
     {
@@ -120144,13 +120382,13 @@
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_906",
+      "target": "changelog_fixed_935",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L906",
+      "source_location": "L935",
       "weight": 1.0
     },
     {
@@ -142513,7 +142751,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/commands/index.md",
-      "source_location": "L102",
+      "source_location": "L109",
       "weight": 1.0
     },
     {
@@ -142524,7 +142762,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/commands/index.md",
-      "source_location": "L108",
+      "source_location": "L115",
       "weight": 1.0
     },
     {
@@ -142546,7 +142784,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/commands/index.md",
-      "source_location": "L58",
+      "source_location": "L65",
       "weight": 1.0
     },
     {
@@ -142557,7 +142795,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/commands/index.md",
-      "source_location": "L76",
+      "source_location": "L83",
       "weight": 1.0
     },
     {
@@ -142568,7 +142806,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/mcp/config.py",
-      "source_location": "L108",
+      "source_location": "L116",
       "weight": 1.0
     },
     {
@@ -142579,7 +142817,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/mcp/config.py",
-      "source_location": "L112",
+      "source_location": "L120",
       "weight": 1.0
     },
     {
@@ -142590,7 +142828,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/mcp/config.py",
-      "source_location": "L127",
+      "source_location": "L135",
       "weight": 1.0
     },
     {
@@ -142601,7 +142839,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/mcp/config.py",
-      "source_location": "L132",
+      "source_location": "L140",
       "weight": 1.0
     },
     {
@@ -142612,7 +142850,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/mcp/config.py",
-      "source_location": "L137",
+      "source_location": "L145",
       "weight": 1.0
     },
     {
@@ -142623,7 +142861,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/mcp/config.py",
-      "source_location": "L141",
+      "source_location": "L149",
       "weight": 1.0
     },
     {
@@ -142634,7 +142872,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/mcp/config.py",
-      "source_location": "L145",
+      "source_location": "L153",
       "weight": 1.0
     },
     {
@@ -142645,7 +142883,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/mcp/config.py",
-      "source_location": "L149",
+      "source_location": "L157",
       "weight": 1.0
     },
     {
@@ -142656,7 +142894,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/mcp/config.py",
-      "source_location": "L153",
+      "source_location": "L161",
       "weight": 1.0
     },
     {
@@ -142667,7 +142905,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/mcp/config.py",
-      "source_location": "L157",
+      "source_location": "L165",
       "weight": 1.0
     },
     {
@@ -142678,7 +142916,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/mcp/config.py",
-      "source_location": "L161",
+      "source_location": "L169",
       "weight": 1.0
     },
     {
@@ -142689,7 +142927,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/mcp/config.py",
-      "source_location": "L185",
+      "source_location": "L193",
       "weight": 1.0
     },
     {
@@ -143529,63 +143767,107 @@
       "weight": 1.0
     },
     {
-      "source": "plugin_localgpu_mcp_test_test_config_test_a_json_array_is_not_a_config",
-      "target": "plugin_localgpu_mcp_test_test_config",
+      "source": "plugin_localgpu_mcp_test_test_config",
+      "target": "plugin_localgpu_mcp_test_test_config_test_unignore_as_a_bare_string_is_rejected_not_shredded",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/mcp/_test/test_config.py",
-      "source_location": "L107",
+      "source_location": "L110",
       "weight": 1.0
     },
     {
-      "source": "plugin_localgpu_mcp_test_test_config_test_artifact_paths_hang_off_the_home",
-      "target": "plugin_localgpu_mcp_test_test_config",
+      "source": "plugin_localgpu_mcp_test_test_config",
+      "target": "plugin_localgpu_mcp_test_test_config_test_roots_are_resolved_absolute",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/mcp/_test/test_config.py",
-      "source_location": "L38",
+      "source_location": "L116",
       "weight": 1.0
     },
     {
-      "source": "plugin_localgpu_mcp_test_test_config_test_broken_json_is_reported_not_swallowed",
-      "target": "plugin_localgpu_mcp_test_test_config",
+      "source": "plugin_localgpu_mcp_test_test_config",
+      "target": "plugin_localgpu_mcp_test_test_config_test_unknown_keys_are_ignored",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/mcp/_test/test_config.py",
-      "source_location": "L98",
+      "source_location": "L125",
       "weight": 1.0
     },
     {
-      "source": "plugin_localgpu_mcp_test_test_config_test_defaults_when_nothing_is_configured",
-      "target": "plugin_localgpu_mcp_test_test_config",
+      "source": "plugin_localgpu_mcp_test_test_config",
+      "target": "plugin_localgpu_mcp_test_test_config_test_broken_json_is_reported_not_swallowed",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/mcp/_test/test_config.py",
-      "source_location": "L47",
+      "source_location": "L132",
       "weight": 1.0
     },
     {
-      "source": "plugin_localgpu_mcp_test_test_config_test_embed_model_as_a_non_string_is_rejected",
-      "target": "plugin_localgpu_mcp_test_test_config",
+      "source": "plugin_localgpu_mcp_test_test_config",
+      "target": "plugin_localgpu_mcp_test_test_config_write_json",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/mcp/_test/test_config.py",
-      "source_location": "L129",
+      "source_location": "L14",
       "weight": 1.0
     },
     {
-      "source": "plugin_localgpu_mcp_test_test_config_test_explicit_home_wins",
-      "target": "plugin_localgpu_mcp_test_test_config",
+      "source": "plugin_localgpu_mcp_test_test_config",
+      "target": "plugin_localgpu_mcp_test_test_config_test_a_json_array_is_not_a_config",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "plugin/localgpu/mcp/_test/test_config.py",
+      "source_location": "L141",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_localgpu_mcp_test_test_config",
+      "target": "plugin_localgpu_mcp_test_test_config_test_ignore_as_a_bare_string_is_rejected_not_shredded",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "plugin/localgpu/mcp/_test/test_config.py",
+      "source_location": "L148",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_localgpu_mcp_test_test_config",
+      "target": "plugin_localgpu_mcp_test_test_config_test_roots_as_a_bare_string_is_rejected_not_shredded",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "plugin/localgpu/mcp/_test/test_config.py",
+      "source_location": "L157",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_localgpu_mcp_test_test_config",
+      "target": "plugin_localgpu_mcp_test_test_config_test_embed_model_as_a_non_string_is_rejected",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "plugin/localgpu/mcp/_test/test_config.py",
+      "source_location": "L163",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_localgpu_mcp_test_test_config",
+      "target": "plugin_localgpu_mcp_test_test_config_test_explicit_home_wins",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -143595,85 +143877,8 @@
       "weight": 1.0
     },
     {
-      "source": "plugin_localgpu_mcp_test_test_config_test_ignore_as_a_bare_string_is_rejected_not_shredded",
-      "target": "plugin_localgpu_mcp_test_test_config",
-      "relation": "contains",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "plugin/localgpu/mcp/_test/test_config.py",
-      "source_location": "L114",
-      "weight": 1.0
-    },
-    {
-      "source": "plugin_localgpu_mcp_test_test_config_test_ignore_lists_union_rather_than_replace",
-      "target": "plugin_localgpu_mcp_test_test_config",
-      "relation": "contains",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "plugin/localgpu/mcp/_test/test_config.py",
-      "source_location": "L72",
-      "weight": 1.0
-    },
-    {
-      "source": "plugin_localgpu_mcp_test_test_config_test_posix_default_is_local_share",
-      "target": "plugin_localgpu_mcp_test_test_config",
-      "relation": "contains",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "plugin/localgpu/mcp/_test/test_config.py",
-      "source_location": "L31",
-      "weight": 1.0
-    },
-    {
-      "source": "plugin_localgpu_mcp_test_test_config_test_repo_layer_beats_the_home_layer",
-      "target": "plugin_localgpu_mcp_test_test_config",
-      "relation": "contains",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "plugin/localgpu/mcp/_test/test_config.py",
-      "source_location": "L57",
-      "weight": 1.0
-    },
-    {
-      "source": "plugin_localgpu_mcp_test_test_config_test_roots_are_resolved_absolute",
-      "target": "plugin_localgpu_mcp_test_test_config",
-      "relation": "contains",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "plugin/localgpu/mcp/_test/test_config.py",
-      "source_location": "L82",
-      "weight": 1.0
-    },
-    {
-      "source": "plugin_localgpu_mcp_test_test_config_test_roots_as_a_bare_string_is_rejected_not_shredded",
-      "target": "plugin_localgpu_mcp_test_test_config",
-      "relation": "contains",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "plugin/localgpu/mcp/_test/test_config.py",
-      "source_location": "L123",
-      "weight": 1.0
-    },
-    {
-      "source": "plugin_localgpu_mcp_test_test_config_test_unknown_keys_are_ignored",
-      "target": "plugin_localgpu_mcp_test_test_config",
-      "relation": "contains",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "plugin/localgpu/mcp/_test/test_config.py",
-      "source_location": "L91",
-      "weight": 1.0
-    },
-    {
-      "source": "plugin_localgpu_mcp_test_test_config_test_windows_default_is_localappdata",
-      "target": "plugin_localgpu_mcp_test_test_config",
+      "source": "plugin_localgpu_mcp_test_test_config",
+      "target": "plugin_localgpu_mcp_test_test_config_test_windows_default_is_localappdata",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -143683,14 +143888,91 @@
       "weight": 1.0
     },
     {
-      "source": "plugin_localgpu_mcp_test_test_config_write_json",
-      "target": "plugin_localgpu_mcp_test_test_config",
+      "source": "plugin_localgpu_mcp_test_test_config",
+      "target": "plugin_localgpu_mcp_test_test_config_test_posix_default_is_local_share",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/mcp/_test/test_config.py",
-      "source_location": "L14",
+      "source_location": "L31",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_localgpu_mcp_test_test_config",
+      "target": "plugin_localgpu_mcp_test_test_config_test_artifact_paths_hang_off_the_home",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "plugin/localgpu/mcp/_test/test_config.py",
+      "source_location": "L38",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_localgpu_mcp_test_test_config",
+      "target": "plugin_localgpu_mcp_test_test_config_test_defaults_when_nothing_is_configured",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "plugin/localgpu/mcp/_test/test_config.py",
+      "source_location": "L47",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_localgpu_mcp_test_test_config",
+      "target": "plugin_localgpu_mcp_test_test_config_test_repo_layer_beats_the_home_layer",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "plugin/localgpu/mcp/_test/test_config.py",
+      "source_location": "L57",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_localgpu_mcp_test_test_config",
+      "target": "plugin_localgpu_mcp_test_test_config_test_ignore_lists_union_rather_than_replace",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "plugin/localgpu/mcp/_test/test_config.py",
+      "source_location": "L72",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_localgpu_mcp_test_test_config",
+      "target": "plugin_localgpu_mcp_test_test_config_test_unignore_drops_a_liftable_default_pattern",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "plugin/localgpu/mcp/_test/test_config.py",
+      "source_location": "L82",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_localgpu_mcp_test_test_config",
+      "target": "plugin_localgpu_mcp_test_test_config_test_unignore_accumulates_across_layers_like_ignore",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "plugin/localgpu/mcp/_test/test_config.py",
+      "source_location": "L91",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_localgpu_mcp_test_test_config",
+      "target": "plugin_localgpu_mcp_test_test_config_test_unignore_cannot_lift_the_hard_floor",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "plugin/localgpu/mcp/_test/test_config.py",
+      "source_location": "L99",
       "weight": 1.0
     },
     {
@@ -144629,6 +144911,50 @@
       "weight": 1.0
     },
     {
+      "source": "plugin_localgpu_mcp_test_test_unignore",
+      "target": "plugin_localgpu_mcp_test_test_unignore_make_indexer",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "plugin/localgpu/mcp/_test/test_unignore.py",
+      "source_location": "L18",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_localgpu_mcp_test_test_unignore",
+      "target": "plugin_localgpu_mcp_test_test_unignore_write_json",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "plugin/localgpu/mcp/_test/test_unignore.py",
+      "source_location": "L23",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_localgpu_mcp_test_test_unignore",
+      "target": "plugin_localgpu_mcp_test_test_unignore_test_unignoring_a_liftable_default_lets_the_file_through",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "plugin/localgpu/mcp/_test/test_unignore.py",
+      "source_location": "L28",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_localgpu_mcp_test_test_unignore",
+      "target": "plugin_localgpu_mcp_test_test_unignore_test_hard_floor_survives_an_unignore_attempt",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "plugin/localgpu/mcp/_test/test_unignore.py",
+      "source_location": "L52",
+      "weight": 1.0
+    },
+    {
       "source": "plugin_localgpu_mcp_version_read_version",
       "target": "plugin_localgpu_mcp_version",
       "relation": "contains",
@@ -144695,17 +145021,6 @@
       "weight": 1.0
     },
     {
-      "source": "plugin_localgpu_skills_localgpu_skill_configuration",
-      "target": "plugin_localgpu_skills_localgpu_skill_localgpu",
-      "relation": "contains",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "plugin/localgpu/skills/localgpu/SKILL.md",
-      "source_location": "L63",
-      "weight": 1.0
-    },
-    {
       "source": "plugin_localgpu_skills_localgpu_skill_localgpu",
       "target": "plugin_localgpu_skills_localgpu_skill_the_models_and_why_these_two",
       "relation": "contains",
@@ -144713,7 +145028,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/skills/localgpu/SKILL.md",
-      "source_location": "L107",
+      "source_location": "L122",
       "weight": 1.0
     },
     {
@@ -144724,7 +145039,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/skills/localgpu/SKILL.md",
-      "source_location": "L118",
+      "source_location": "L133",
       "weight": 1.0
     },
     {
@@ -144735,7 +145050,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/skills/localgpu/SKILL.md",
-      "source_location": "L161",
+      "source_location": "L176",
       "weight": 1.0
     },
     {
@@ -144746,7 +145061,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/skills/localgpu/SKILL.md",
-      "source_location": "L186",
+      "source_location": "L201",
       "weight": 1.0
     },
     {
@@ -144757,7 +145072,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/skills/localgpu/SKILL.md",
-      "source_location": "L204",
+      "source_location": "L219",
       "weight": 1.0
     },
     {
@@ -144768,7 +145083,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/skills/localgpu/SKILL.md",
-      "source_location": "L272",
+      "source_location": "L287",
       "weight": 1.0
     },
     {
@@ -144779,7 +145094,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/skills/localgpu/SKILL.md",
-      "source_location": "L295",
+      "source_location": "L310",
       "weight": 1.0
     },
     {
@@ -144794,6 +145109,17 @@
       "weight": 1.0
     },
     {
+      "source": "plugin_localgpu_skills_localgpu_skill_localgpu",
+      "target": "plugin_localgpu_skills_localgpu_skill_configuration",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "plugin/localgpu/skills/localgpu/SKILL.md",
+      "source_location": "L63",
+      "weight": 1.0
+    },
+    {
       "source": "plugin_localgpu_skills_localgpu_skill_the_localgpu_command",
       "target": "plugin_localgpu_skills_localgpu_skill_what_the_proxy_carries",
       "relation": "contains",
@@ -144801,7 +145127,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/skills/localgpu/SKILL.md",
-      "source_location": "L231",
+      "source_location": "L246",
       "weight": 1.0
     },
     {
@@ -144812,18 +145138,18 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/skills/localgpu/SKILL.md",
-      "source_location": "L257",
+      "source_location": "L272",
       "weight": 1.0
     },
     {
-      "source": "plugin_localgpu_skills_localgpu_skill_the_two_keep_alive_defaults_are_deliberate",
-      "target": "plugin_localgpu_skills_localgpu_skill_vram_discipline",
+      "source": "plugin_localgpu_skills_localgpu_skill_vram_discipline",
+      "target": "plugin_localgpu_skills_localgpu_skill_the_two_keep_alive_defaults_are_deliberate",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/skills/localgpu/SKILL.md",
-      "source_location": "L142",
+      "source_location": "L157",
       "weight": 1.0
     },
     {
@@ -168302,13 +168628,13 @@
     },
     {
       "source": "plugin_localgpu_mcp_config_configerror",
-      "target": "plugin_localgpu_mcp_config_py_runtimeerror",
+      "target": "runtimeerror",
       "relation": "inherits",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/mcp/config.py",
-      "source_location": "L108",
+      "source_location": "L116",
       "weight": 1.0
     },
     {
@@ -178839,47 +179165,47 @@
       "weight": 1.0
     },
     {
-      "source": "plugin_localgpu_mcp_config_rationale_109",
+      "source": "plugin_localgpu_mcp_config_rationale_117",
       "target": "plugin_localgpu_mcp_config_configerror",
       "relation": "rationale_for",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/mcp/config.py",
-      "source_location": "L109",
+      "source_location": "L117",
       "weight": 1.0
     },
     {
-      "source": "plugin_localgpu_mcp_config_rationale_113",
+      "source": "plugin_localgpu_mcp_config_rationale_121",
       "target": "plugin_localgpu_mcp_config_localgpu_home",
       "relation": "rationale_for",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/mcp/config.py",
-      "source_location": "L113",
+      "source_location": "L121",
       "weight": 1.0
     },
     {
-      "source": "plugin_localgpu_mcp_config_rationale_128",
+      "source": "plugin_localgpu_mcp_config_rationale_136",
       "target": "plugin_localgpu_mcp_config_venv_dir",
       "relation": "rationale_for",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/mcp/config.py",
-      "source_location": "L128",
+      "source_location": "L136",
       "weight": 1.0
     },
     {
-      "source": "plugin_localgpu_mcp_config_rationale_189",
+      "source": "plugin_localgpu_mcp_config_rationale_197",
       "target": "plugin_localgpu_mcp_config_load_config",
       "relation": "rationale_for",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/mcp/config.py",
-      "source_location": "L189",
+      "source_location": "L197",
       "weight": 1.0
     },
     {
@@ -179576,8 +179902,8 @@
       "weight": 1.0
     },
     {
-      "source": "plugin_localgpu_mcp_test_test_config",
-      "target": "plugin_localgpu_mcp_test_test_config_rationale_1",
+      "source": "plugin_localgpu_mcp_test_test_config_rationale_1",
+      "target": "plugin_localgpu_mcp_test_test_config",
       "relation": "rationale_for",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -179587,14 +179913,14 @@
       "weight": 1.0
     },
     {
-      "source": "plugin_localgpu_mcp_test_test_config_test_ignore_as_a_bare_string_is_rejected_not_shredded",
-      "target": "plugin_localgpu_mcp_test_test_config_rationale_115",
+      "source": "plugin_localgpu_mcp_test_test_config_rationale_149",
+      "target": "plugin_localgpu_mcp_test_test_config_test_ignore_as_a_bare_string_is_rejected_not_shredded",
       "relation": "rationale_for",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/mcp/_test/test_config.py",
-      "source_location": "L115",
+      "source_location": "L149",
       "weight": 1.0
     },
     {
@@ -179870,6 +180196,17 @@
       "confidence_score": 1.0,
       "source_file": "plugin/localgpu/mcp/_test/test_server.py",
       "source_location": "L41",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_localgpu_mcp_test_test_unignore_rationale_1",
+      "target": "plugin_localgpu_mcp_test_test_unignore",
+      "relation": "rationale_for",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "plugin/localgpu/mcp/_test/test_unignore.py",
+      "source_location": "L1",
       "weight": 1.0
     },
     {
@@ -182949,7 +183286,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2870",
+      "source_location": "L2899",
       "weight": 1.0
     },
     {
@@ -182960,7 +183297,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L3337",
+      "source_location": "L3366",
       "weight": 1.0
     },
     {
@@ -185121,6 +185458,54 @@
       "context": "call",
       "source_file": "plugin/localgpu/mcp/_test/test_secrets.py",
       "source_location": "L26",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_localgpu_mcp_test_test_unignore_make_indexer",
+      "target": "plugin_localgpu_mcp_store_vectorstore",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "context": "call",
+      "source_file": "plugin/localgpu/mcp/_test/test_unignore.py",
+      "source_location": "L19",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_localgpu_mcp_test_test_unignore_make_indexer",
+      "target": "plugin_localgpu_mcp_indexer_indexer",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "context": "call",
+      "source_file": "plugin/localgpu/mcp/_test/test_unignore.py",
+      "source_location": "L20",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_localgpu_mcp_test_test_unignore_test_hard_floor_survives_an_unignore_attempt",
+      "target": "plugin_crew_tests_sabotage_write",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "context": "call",
+      "source_file": "plugin/localgpu/mcp/_test/test_unignore.py",
+      "source_location": "L53",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_localgpu_mcp_test_test_unignore_test_unignoring_a_liftable_default_lets_the_file_through",
+      "target": "plugin_crew_tests_sabotage_write",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "context": "call",
+      "source_file": "plugin/localgpu/mcp/_test/test_unignore.py",
+      "source_location": "L32",
       "weight": 1.0
     },
     {
@@ -187576,5 +187961,5 @@
     }
   ],
   "hyperedges": [],
-  "built_at_commit": "6bcf0f8fb5ac5e007623cdedcacb18fd277ee694"
+  "built_at_commit": "fded58c17fba718c633bfbc12ca09f7354f827e0"
 }
