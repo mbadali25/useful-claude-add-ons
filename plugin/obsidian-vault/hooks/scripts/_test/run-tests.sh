@@ -15,7 +15,15 @@
 # harmless.
 set -uo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PY=$(command -v python3 || command -v python)
+PY=""
+for cand in python3 python py; do
+  if command -v "$cand" >/dev/null 2>&1; then PY="$cand"; break; fi
+done
+if [ -z "$PY" ]; then
+  echo "FATAL: no Python interpreter found. Tried python3, python, py on PATH." >&2
+  echo "Git Bash ships without python3; install Python or put it on PATH." >&2
+  exit 1
+fi
 PASS=0
 FAIL=0
 
@@ -80,6 +88,14 @@ run_guard() {
   echo $?
 }
 
+guard_stderr() {
+  # Same call, but returns what the guard wrote to stderr instead of its exit
+  # code. The redirect order matters: `2>&1 >/dev/null` dups stderr onto the
+  # still-original stdout and only then sends stdout to the bin, so what is
+  # captured is stderr alone. The reverse order captures nothing.
+  HOME="$2" "$PY" "$DIR/vault_guard.py" < "$1" 2>&1 >/dev/null
+}
+
 check() {
   local desc="$1" expect="$2" got="$3"
   if [ "$got" = "$expect" ]; then
@@ -87,6 +103,24 @@ check() {
   else
     FAIL=$((FAIL+1))
     echo "FAIL: $desc (expected exit $expect, got $got)"
+  fi
+}
+
+check_stderr_has() {
+  local desc="$1" needle="$2" got="$3"
+  case "$got" in
+    *"$needle"*) PASS=$((PASS+1)) ;;
+    *) FAIL=$((FAIL+1)); echo "FAIL: $desc (stderr did not contain '$needle'; got: $got)" ;;
+  esac
+}
+
+check_stderr_empty() {
+  local desc="$1" got="$2"
+  if [ -z "$got" ]; then
+    PASS=$((PASS+1))
+  else
+    FAIL=$((FAIL+1))
+    echo "FAIL: $desc (expected silent stderr, got: $got)"
   fi
 }
 
@@ -110,6 +144,8 @@ Body.
 
 f=$(write_and_payload "wiki/concepts/no-frontmatter.md" "Just prose, no frontmatter block.")
 check "note with no frontmatter" 2 "$(run_guard "$f" "$home_on_win")"
+check_stderr_has "note with no frontmatter names the violation on stderr" \
+  "NO FRONTMATTER" "$(guard_stderr "$f" "$home_on_win")"
 
 bad_fm="---
 type: concept
@@ -186,6 +222,39 @@ import json, sys
 print(json.dumps({"tool_input": {"file_path": sys.argv[1], "content": sys.argv[2]}}))
 PYEOF
 check "file outside the vault is ignored" 0 "$(run_guard "$payload_file" "$home_on_win")"
+
+echo "== vault_guard.py: FRONTMATTER_EXEMPT_NAMES (TODO #4) =="
+
+# These four basenames are agent-instruction files, not notes. They can never
+# carry the six-key contract - a YAML header in CLAUDE.md is read as part of
+# Claude's instructions - so demanding one is a false report on every legitimate
+# edit. The guard is PostToolUse, so exit 2 does not prevent the write; it hands
+# Claude stderr and tells it to go back and "fix" a file that is not broken.
+#
+# Every case here lives UNDER "wiki/" on purpose. notesPrefix is "wiki/", so a
+# vault-root CLAUDE.md never reaches check_note at all and would pass with or
+# without the exemption - it proves nothing. Only these go red when
+# FRONTMATTER_EXEMPT_NAMES is emptied.
+for exempt_name in CLAUDE.md README.md AGENTS.md GEMINI.md; do
+  f=$(write_and_payload "wiki/$exempt_name" "Instructions for this vault. No frontmatter, by design.")
+  check "$exempt_name inside notesPrefix is frontmatter-exempt" 0 "$(run_guard "$f" "$home_on_win")"
+done
+
+f=$(write_and_payload "wiki/Readme.MD" "Mixed-case basename. Still no frontmatter, still exempt.")
+check "the exemption is case-insensitive (Readme.MD)" 0 "$(run_guard "$f" "$home_on_win")"
+
+f=$(write_and_payload "wiki/CLAUDE.md" "Instructions for this vault. No frontmatter, by design.")
+check_stderr_empty "an exempt file reports nothing at all on stderr" \
+  "$(guard_stderr "$f" "$home_on_win")"
+
+# The exemption is frontmatter-only. An exempt basename is still held to every
+# other rule the vault turned on, so the ASCII check must still fire here.
+ascii_readme="README carrying an em dash that should still be caught: EMDASH"
+ascii_readme="${ascii_readme/EMDASH/$'\xe2\x80\x94'}"
+f=$(write_and_payload "wiki/ascii/README.md" "$ascii_readme")
+check "an exempt basename is still ASCII-checked" 2 "$(run_guard "$f" "$home_on_win")"
+check_stderr_has "and it is reported as an ASCII violation, not a frontmatter one" \
+  "NON-ASCII" "$(guard_stderr "$f" "$home_on_win")"
 
 echo "== vault_guard.py: config-off means silent (sabotage: prove the toggle matters) =="
 

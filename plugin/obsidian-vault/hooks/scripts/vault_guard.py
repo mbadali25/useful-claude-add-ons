@@ -36,6 +36,14 @@ import obsidian_common  # noqa: E402  pylint: disable=wrong-import-position
 # whenever asciiOnly is on.
 ASCII_EXEMPT_NAMES = {"claude.md"}
 
+# ...and it is not a note either. CLAUDE.md is the agent's instruction file that
+# happens to live in the vault; it has no frontmatter and must not grow any, or
+# Claude Code reads a YAML header as part of its instructions. Same for the
+# READMEs a repo-shaped vault carries. Demanding the six-key contract here is a
+# false positive that blocks every legitimate edit to the file, and the only way
+# to satisfy it is to damage the file.
+FRONTMATTER_EXEMPT_NAMES = {"claude.md", "readme.md", "agents.md", "gemini.md"}
+
 ASCII_MAP = {
     "—": " - ", "–": " - ", "·": "|", "•": "-",
     "→": "->", "←": "<-", "↔": "<->",
@@ -231,7 +239,8 @@ def main():
         issues, advisory = [], []
         if ascii_only:
             check_ascii(path, added if added is not None else text, issues)
-        if ext == ".md" and require_fm:
+        if (ext == ".md" and require_fm
+                and os.path.basename(path).lower() not in FRONTMATTER_EXEMPT_NAMES):
             check_note(path, text, issues, advisory, six_keys, type_keys, vault, notes_glob)
         elif ext == ".canvas" and check_canvas_shape:
             check_canvas(path, text, issues, advisory, vault)
