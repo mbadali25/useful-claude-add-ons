@@ -233,7 +233,23 @@ def load_config(
     seen: set[str] = set()
     ignore = [p for p in ignore if not (p in seen or seen.add(p))]
 
-    lifted = set(unignore) - UNLIFTABLE_IGNORE
+    # Refuse an unliftable entry rather than dropping it. Silently discarding a
+    # directive the user wrote by hand is the failure this repo keeps re-learning:
+    # `"unignore": [".git"]` would take effect nowhere, report nothing, and leave
+    # them re-reading their own config for a typo that is not there. The floor is
+    # still a floor - this changes how it says no, not whether it says it.
+    refused = sorted(set(unignore) & UNLIFTABLE_IGNORE)
+    if refused:
+        raise ConfigError(
+            f"unignore may not lift {', '.join(repr(r) for r in refused)}. "
+            f"Indexing {'these' if len(refused) > 1 else 'that'} is not a "
+            "preference, it is a mistake: .git is history, .localgpu is the "
+            "index's own store (indexing it feeds the index to itself), and "
+            "node_modules is dependency code nobody wrote here. Remove "
+            f"{'them' if len(refused) > 1 else 'it'} from `unignore`."
+        )
+
+    lifted = set(unignore)
     merged["ignore"] = [p for p in ignore if p not in lifted]
 
     seen = set()

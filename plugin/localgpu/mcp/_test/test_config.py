@@ -97,14 +97,26 @@ def test_unignore_accumulates_across_layers_like_ignore(home, tmp_path):
 
 
 def test_unignore_cannot_lift_the_hard_floor(home, tmp_path):
+    """And says so. Dropping the entry silently would leave the floor intact but
+    the user re-reading their own config for a typo that is not there."""
     write_json(
         config.repo_config_path(tmp_path),
         {"unignore": [".git", ".localgpu", "node_modules"]},
     )
+    with pytest.raises(config.ConfigError) as excinfo:
+        config.load_config(cwd=tmp_path, home=home)
+    message = str(excinfo.value)
+    for entry in (".git", ".localgpu", "node_modules"):
+        assert entry in message, f"the refusal must name {entry}"
+
+
+def test_unignore_lifting_a_liftable_entry_alongside_none_of_the_floor_is_fine(home, tmp_path):
+    """The refusal must be about the floor, not about using `unignore` at all."""
+    write_json(config.repo_config_path(tmp_path), {"unignore": ["*.key", "dist"]})
     settings = config.load_config(cwd=tmp_path, home=home)
-    assert ".git" in settings["ignore"]
-    assert ".localgpu" in settings["ignore"]
-    assert "node_modules" in settings["ignore"]
+    assert "*.key" not in settings["ignore"]
+    assert "dist" not in settings["ignore"]
+    assert ".git" in settings["ignore"], "an unrelated lift must not touch the floor"
 
 
 def test_unignore_as_a_bare_string_is_rejected_not_shredded(home, tmp_path):

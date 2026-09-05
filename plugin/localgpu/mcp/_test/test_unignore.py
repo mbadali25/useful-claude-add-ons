@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 import config
 from conftest import TEST_DIM
 from indexer import Indexer
@@ -54,6 +56,14 @@ def test_hard_floor_survives_an_unignore_attempt(home, repo, write, embedder):
     write(repo / "app.py", "def handler():\n    return 'ordinary source line'\n")
     write_json(config.repo_config_path(repo), {"unignore": ["node_modules"]})
 
+    # The floor now refuses out loud rather than dropping the entry quietly, so
+    # the config never loads at all - which is the strongest form of "survives".
+    with pytest.raises(config.ConfigError) as excinfo:
+        config.load_config(cwd=repo, home=home)
+    assert "node_modules" in str(excinfo.value)
+
+    # And with the offending line removed, node_modules is still excluded.
+    write_json(config.repo_config_path(repo), {})
     settings = config.load_config(cwd=repo, home=home)
     assert "node_modules" in settings["ignore"], "the hard floor must survive the merge"
 

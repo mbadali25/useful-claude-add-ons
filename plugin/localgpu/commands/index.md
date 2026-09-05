@@ -26,7 +26,8 @@ store is permanent while a wrongly-excluded file is not. `"unignore": ["*.key"]`
 in either config layer drops that whole pattern from the effective `ignore` list
 (pattern removal, not a per-file exemption — see `load_config`'s docstring in
 `mcp/config.py`). `.git`, `.localgpu`, and `node_modules` cannot be lifted this
-way; nothing un-ignores those. Then:
+way, and asking to is a hard error rather than a line that quietly does
+nothing — the config fails to load and names the entry. Then:
 
 - **Incremental** — go. It touches only files whose content hash changed, and
   doing nothing is its normal outcome on a clean tree.

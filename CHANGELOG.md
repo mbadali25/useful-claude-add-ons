@@ -445,6 +445,17 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`localgpu` 0.1.10: `unignore` discarded an unliftable entry in silence.**
+  `.git`, `.localgpu` and `node_modules` are a floor `unignore` cannot lift, and
+  that is right — but `load_config` enforced it with
+  `set(unignore) - UNLIFTABLE_IGNORE`, which drops the entry and says nothing. A
+  user who wrote `"unignore": [".git"]` got no error, no warning, and no effect,
+  and would reasonably go hunting their own config for a typo that was never
+  there. It now raises `ConfigError` naming the refused entries and saying why
+  each one is a mistake rather than a preference. The floor is unchanged; only
+  how it says no. Sabotage-proven: reverting to the silent drop turns both floor
+  tests red.
+
 - **`scripts/install-prerequisites.ps1` - `Format-PickerLine` reserved one
   character for a three-character `...` ellipsis, returning `Width + 2` on
   every clipped line.** Measured before the fix: `Width=20 -> 22`,

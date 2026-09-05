@@ -94,7 +94,10 @@ just the one that prompted the change. It layers the same way `ignore` does:
 either config layer can list it, and the two accumulate rather than one
 overriding the other. Three entries cannot be lifted this way no matter what a
 config asks for — `.git`, `.localgpu`, and `node_modules` — because indexing
-those is not a preference anyone holds, it is a mistake. If a search is missing
+those is not a preference anyone holds, it is a mistake. Listing one is a
+**hard error**, not a silently discarded line: `load_config` raises and names
+the entry. Dropping it quietly would leave the floor intact and the user
+re-reading their own config for a typo that was never there. If a search is missing
 a file, check the `ignore` list `/localgpu:index` reports before assuming the
 indexer is broken.
 
