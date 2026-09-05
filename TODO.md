@@ -97,14 +97,35 @@ menu keys, order and default flags — otherwise `--select 3,7` means different
 things on Windows and Linux. `scripts/check-marketplace.py` is said to enforce
 it; the specific check was not located. Either find it and cite it, or write it.
 
+### 8. `_common.sh`'s header describes a hook architecture that changed
+
+`plugin/crew/hooks/scripts/_common.sh:5` states "Every hook is registered once,
+as bash. The PreToolUse guard hands off to its `.ps1` twin" — but
+`plugin/crew/hooks/hooks.json` now registers **both** flavours for every event,
+all 20 entries, with `shell: powershell` on the PowerShell side.
+
+Two mechanisms therefore exist for the same job, and the comment only knows
+about one. The open question is whether `crew_tool_dispatch`
+(`plugin/crew/hooks/scripts/_common.sh:18`, called at
+`plugin/crew/hooks/scripts/guard.sh:7`) is still reachable at all: `guard.sh`
+runs only under the `Bash` matcher (`hooks.json:12`), so it should never see a
+`tool_name` of `PowerShell`, which is the only case the dispatch acts on.
+
+Do not delete it on that reasoning — the guard suite is the arbiter, and a
+belt-and-braces path that costs nothing is worth keeping if the matcher is ever
+loosened. Determine which is load-bearing on Windows, then either fix the
+comment or remove the dead path, with the regression case that proves it.
+
+Found by the `crew:explorer` pass for `.crew/codemap/plugin-crew.md`, 2026-09-05;
+recorded in that note's `## Unverified`. Anchor `875c9c6f`.
+
 ## Deferred by design, not oversight
 
-- **`plugin/crew` is unmapped** in `.crew/codemap/`. It is the file set the
-  in-flight PR is rewriting; mapping it now yields `DERIVE` facts from
-  `fe538879` and judgment from a moved-on working tree. Run
-  `/crew:onboard --refresh plugin/crew` after that PR merges.
+- ~~**`plugin/crew` is unmapped**~~ — **done 2026-09-05**, after #66 merged.
+  `.crew/codemap/plugin-crew.md` at `875c9c6f`.
+- ~~**`/crew:diagram`** deferred until the codemap covers `plugin/crew`~~ —
+  **done 2026-09-05**: `docs/diagrams/{architecture,data-flow-install,
+  process-plugin-change}.mmd`, rendered to SVG and PNG.
 - **Unmapped smaller areas**, in node order: `mcp-servers/` root (65),
   `mcp-servers/graph` / `intune` / `o365-admin` / `o365-user` (54 each),
   `claude-obsidian-setup/` (48), `vault-automation/` (22).
-- **`/crew:diagram`** — deferred until the codemap covers `plugin/crew`, so the
-  diagram does not need redrawing immediately.

@@ -171,3 +171,39 @@ to `claude plugin marketplace add`.
   why nothing may bypass the clip helpers.
 - Both scripts are idempotent by design: detect first, then act. A new install step
   needs a detection branch that reports "already installed" rather than reinstalling.
+
+## Lessons that keep re-earning themselves
+
+Carried out of `.work/HANDOFF.md` before it was deleted as superseded. These are
+not general advice; each one cost real time in this repo, most of them twice.
+
+- **The recurring bug class is an unknown collapsing into the safe-looking
+  value.** `None` for "no branch" read as "no repo"; a file that would not parse
+  read as a file that was never written; a record naming no author read as no
+  record. Where a probe can fail, "could not tell" has to be its own value, or
+  the guard fails open while looking like it checked. Eleven Codex rounds on
+  `crew_state.author_families` found six instances of exactly this shape.
+- **A guard is usually wrong again in the fix for the last time it was wrong.**
+  Every version of that branch check was right about the case it was aimed at
+  and wrong about its neighbour. Fixes to a guard need the same adversarial
+  reading the original did — more, not less.
+- **Put the check where the evidence is dropped, not only downstream.** Two
+  correct fixes were undone by a filter running earlier that discarded the thing
+  silently, so it never reached the code that would have reported it.
+- **Judge every gate by exit code.** pylint printed "rated at 9.99/10" directly
+  above exiting 28. `| tail` reports the tail's exit code, not the command's.
+- **Run the states; do not reason about them.** A fix that looked obviously
+  right regressed the non-git case, and only running all seven provenance states
+  caught it. A sabotage mutation can also stay green for the wrong reason — one
+  rerouted the record into a *different* reporting path, so the test passed
+  while the guarantee it named was gone. A green test is evidence about the
+  test.
+- **A version bump must be in the LAST commit**, and the value has to change —
+  `version_set_at` reads git history, so rewriting the same string does nothing.
+- **Check `ListAgents` before assuming a diff is yours.** Another agent wrote
+  into a branch mid-session; the change was better than what it replaced and was
+  kept, but it was nearly reverted as unexplained.
+- **Write anchors repo-relative.** A `path:line` written relative to a subsystem
+  root resolves fine by eye and cannot be pasted into
+  `git diff --name-only <sha>..HEAD -- <paths>`, which is the whole re-verification
+  mechanism. 10 of 54 codemap anchors were written that way.

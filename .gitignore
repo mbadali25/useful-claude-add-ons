@@ -275,7 +275,19 @@ __marimo__/
 # boardDir are absolute paths that exist on one machine, and pm.authority is a
 # trust decision its owner makes, not one a clone should inherit. Treat it like
 # .vscode/settings.json. A fresh clone runs /crew:init to generate its own.
-.crew/
+#
+# `.crew/*` rather than `.crew/`, because git cannot re-include anything under
+# a directory that is itself excluded -- the negation below would silently do
+# nothing. The codemap is the exception worth sharing: it is durable reviewable
+# knowledge with a freshness contract (`git diff <anchor>..HEAD -- <paths>`),
+# and that contract only pays off if a second reader can run it. Everything
+# else here is runtime -- config, incident state, per-session hook markers.
+.crew/*
+!.crew/codemap/
+
+# Rendered from the .mmd sources beside them. Mermaid text is the artifact;
+# the image is a build output, reproducible with crew-diagrams' render.sh.
+docs/diagrams/out/
 
 # Written by the GitHub Copilot CLI when --model is passed; pins the model for
 # anyone running `copilot` in this repo. crew owns provider model choice

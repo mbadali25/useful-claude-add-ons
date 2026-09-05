@@ -1,0 +1,45 @@
+%% Generated from useful-claude-add-ons@875c9c6f on 2026-09-05. Verify before trusting.
+%% Anchors: .claude-plugin/marketplace.json, scripts/install-prerequisites.sh, scripts/install-prerequisites.ps1, scripts/check-marketplace.py, scripts/check-powershell.ps1, plugin/crew, plugin/gizmoduck, plugin/obsidian-vault, skills, mcp-servers/packages
+%% --
+%% This repo is a CATALOGUE more than a system: 25 of its 28 registered entries
+%% are a single SKILL.md with no code and no edges to anything else. What
+%% actually has structure is the registration contract in the middle -- every
+%% entry reaches a machine through marketplace.json and nothing else -- and
+%% mcp-servers/, a real npm workspace that ships via npm and is NOT in the
+%% marketplace at all. A box per folder would have hidden both facts.
+%% --
+%% Solid = something is delivered. Dashed = something is checked or constrained.
+
+flowchart LR
+  subgraph src["Sources"]
+    direction TB
+    sk["skills/<br/>25 entries, one SKILL.md each"]
+    pl["plugin/<br/>crew 0.16.7 · gizmoduck 0.2.1<br/>obsidian-vault 0.3.0"]
+  end
+
+  mkt["<b>.claude-plugin/marketplace.json</b><br/>name · source · description · version"]
+  pair["install-prerequisites.sh<br/>+ install-prerequisites.ps1<br/>21 menu keys"]
+  upd["claude plugin update"]
+  machine[["~/.claude/plugins/cache/"]]
+
+  mcp["mcp-servers/<br/>core · graph · intune<br/>o365-admin · o365-user"]
+  npm[["npm registry"]]
+
+  subgraph gates["CI gates"]
+    direction TB
+    cm["check-marketplace.py"]
+    cps["check-powershell.ps1"]
+  end
+
+  sk --> mkt
+  pl --> mkt
+  mkt --> pair --> upd --> machine
+  mcp --> npm --> machine
+
+  cm -.->|"registration rules,<br/>version drift"| mkt
+  cm -.->|"same keys, same order,<br/>same defaults"| pair
+  cps -.->|"parses, and every<br/>Verb-Noun resolves"| pair
+
+  style mkt stroke-width:3px
+  style mcp stroke-dasharray: 5 5
+  style gates stroke-dasharray: 5 5

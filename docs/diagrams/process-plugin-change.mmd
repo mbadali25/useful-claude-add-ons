@@ -1,0 +1,37 @@
+%% Generated from useful-claude-add-ons@875c9c6f on 2026-09-05. Verify before trusting.
+%% Anchors: CLAUDE.md, scripts/check-marketplace.py, .github/workflows/marketplace.yml, .github/workflows/pytest-crew.yml, .github/workflows/pylint.yml, plugin/crew/tests/sabotage.py, plugin/crew/hooks/scripts/_test/run-tests.sh
+%% --
+%% The ORDER is the point, and only part of it is enforced by a machine.
+%% The version bump must land in the LAST commit because check-marketplace.py
+%% walks marketplace.json's git history to find where each version was last set
+%% and fails if that plugin's files changed after it -- so a fix made after the
+%% bump costs another bump. The sabotage step is the one nothing checks for
+%% you: two of crew's guard bugs passed code review and were found only by
+%% running it.
+%% --
+%% LR, not TD: these 12 steps stacked vertically rendered 4254px tall, which
+%% is not "one screen" by any definition. Condensed to 12 nodes on purpose --
+%% steps that always happen together are one box, and the two boxes with a
+%% heavy border are the ones that actually bite.
+
+flowchart LR
+  start(["Change under skills/ or plugin/"]) --> hook{"Registers<br/>a hook?"}
+  hook -->|no| reg
+  hook -->|yes| hw["Default it OFF in both menus, and add a<br/>must-block / must-allow case — then SABOTAGE it:<br/>reintroduce the bug, confirm the suite goes RED"]
+  hw --> reg["Register everywhere — skills 4 places, plugins 5<br/>+ README, CHANGELOG, INSTALLATION.md"]
+  reg --> tests["Local gates: pytest · pylint by EXIT CODE<br/>guard suite · sabotage all RED"]
+  tests --> bump["Bump the version — in the LAST commit<br/>marketplace.json AND the plugin's own plugin.json"]
+  bump --> cmp{"check-marketplace.py"}
+  cmp -->|"reports drift — a fix made<br/>after the bump costs another"| bump
+  cmp -->|"all checks passed"| pr["Open the PR"]
+  pr --> ci["CI: marketplace · pylint · pytest-crew · mcp-servers"]
+  ci --> rev{"Codex reviews<br/>ON the PR"}
+  rev -->|BLOCK| tests
+  rev -->|PASS| merge["gh pr merge --match-head-commit,<br/>then re-pin the README SHA"]
+
+  note["Nothing above catches a content change with NO version<br/>bump, on a machine that already installed it: the CLI<br/>compares declared versions, reports 'already at the latest',<br/>and copies nothing. That is what the bump step is for."]
+  bump -.-> note
+
+  style bump stroke-width:3px
+  style hw stroke-width:3px
+  style note stroke-dasharray: 5 5

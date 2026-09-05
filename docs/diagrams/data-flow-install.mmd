@@ -1,0 +1,34 @@
+%% Generated from useful-claude-add-ons@875c9c6f on 2026-09-05. Verify before trusting.
+%% Anchors: .claude-plugin/marketplace.json, scripts/install-prerequisites.sh, scripts/install-prerequisites.ps1, README.md, plugin/crew/.claude-plugin/plugin.json
+%% --
+%% What moves from this repo to a machine, and what each hop carries. The
+%% failure this diagram exists to show is the one that is INVISIBLE here and
+%% only exists on other people's machines: `claude plugin update` compares the
+%% declared version string, never file contents, so an edited plugin whose
+%% version did not change is reported "already at the latest version" and
+%% copies nothing.
+
+flowchart LR
+  edit["A content change<br/>under skills/&lt;name&gt;/ or plugin/&lt;name&gt;/"]
+  mkt[".claude-plugin/marketplace.json"]
+  pj["plugin/crew/.claude-plugin/plugin.json<br/>(plugins carrying their own manifest<br/>must match, to the same value)"]
+
+  url["README one-liner<br/>pinned to a commit SHA"]
+  scr["install-prerequisites.sh / .ps1<br/>21 menu keys, identical order"]
+
+  add["claude plugin marketplace add"]
+  upd["claude plugin update"]
+  cache[["~/.claude/plugins/cache/<br/>useful-claude-add-ons/&lt;name&gt;/&lt;version&gt;/"]]
+
+  edit -->|"name, source, description,<br/>NEW version string"| mkt
+  edit -->|"the same new version"| pj
+  mkt --> url
+  url -->|"curl · a SHA, not a branch —<br/>re-pin after every merge to main"| scr
+  scr -->|"marketplace URL"| add
+  scr -->|"--select 3,7 → menu keys<br/>(same numbers on both platforms<br/>or they mean different things)"| upd
+  add --> upd
+  upd -->|"declared version<br/>DIFFERS from installed"| cache
+  upd -.->|"declared version UNCHANGED:<br/>reports 'already at the latest',<br/>copies nothing, looks fine locally"| drift(["silent drift<br/>old copy kept forever"])
+
+  linkStyle 8 stroke:#c00,stroke-width:2px
+  style drift stroke:#c00,stroke-width:2px

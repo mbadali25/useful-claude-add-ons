@@ -1,0 +1,31 @@
+{
+  "plugin-crew": {
+    "Entry points": [
+      "- `plugin/crew/hooks/hooks.json:3` \u2014 `SessionStart`: handoff-read, platform-sync, pm-brief",
+      "- `plugin/crew/hooks/hooks.json:11` \u2014 `PreToolUse`: guard + promote-gate, matched per tool (`Bash`, `PowerShell`)",
+      "- `plugin/crew/hooks/hooks.json:21` \u2014 `PreCompact`: handoff-write",
+      "- `plugin/crew/hooks/hooks.json:25` \u2014 `Notification`: notify",
+      "- `plugin/crew/hooks/hooks.json:29` \u2014 `Stop`: context-watch, pm-pulse, verify-gate",
+      "- 20 hook entries total: every event registered once per shell flavour, `shell: powershell` on the PowerShell side",
+      "- `plugin/crew/hooks/scripts/crew_state.py:2061` \u2014 `main`, the state CLI every command reads first",
+      "- `plugin/crew/hooks/scripts/crew_config.py:1079` \u2014 `main`, `--author-stale` reaches `model_report` here",
+      "- `plugin/crew/hooks/scripts/crew_incident.py:416`, `plugin/crew/hooks/scripts/pm_brief.py:402`, `plugin/crew/hooks/scripts/pm_pulse.py`, `plugin/crew/hooks/scripts/crew_platform.py`, `plugin/crew/hooks/scripts/hook_once.py` \u2014 the other five CLIs",
+      "- `plugin/crew/commands/` \u2014 24 commands; `plugin/crew/agents/` \u2014 17 agents"
+    ],
+    "Owns data": [
+      "- `.crew/config.json` via `plugin/crew/hooks/scripts/crew_config.py:377` (`resolve_config`), backed up to `.crew/config.json.v1.bak`",
+      "- `.crew/codemap/` \u2014 this map; backed up once to `.crew/codemap.v1.bak/`",
+      "- .crew/incident.json, .crew/incidents/, .crew/incident-skips.log (runtime; created on first incident) via `plugin/crew/hooks/scripts/crew_incident.py:16`",
+      "- `.work/dispatch.d/` via `plugin/crew/hooks/scripts/crew_state.py:981` \u2014 append-only, one immutable file per dispatch",
+      "- .work/dispatch.json (runtime) \u2014 legacy/display slot only, recomputed from the store at read time",
+      "- .work/HANDOFF.md (runtime) via the PreCompact hook",
+      "- `docs/diagrams/` via `/crew:diagram`"
+    ],
+    "Calls out to": [
+      "- `graphify` \u2014 reads `graphify-out/graph.json`; `plugin/crew/skills/crew-graph/scripts/crew_upgrade.py:461` reconciles it into this codemap",
+      "- `git` \u2014 branch and HEAD, via `crew_state.current_branch` and `_head`",
+      "- `skills/web-testing-playwright/scripts/check_env.py` \u2014 the only real code link out of this subsystem",
+      "- Otherwise self-contained: of 8548 graph links, the cross-boundary ones are almost all pytest fixture pseudo-nodes"
+    ]
+  }
+}
