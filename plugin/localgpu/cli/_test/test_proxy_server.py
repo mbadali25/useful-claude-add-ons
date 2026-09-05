@@ -3,11 +3,21 @@
 The translation tests cover the shapes. These cover the things only a bound
 server gets wrong - routing, status codes, chunked SSE framing, and the error
 text a user sees when Ollama is not running.
+
+Every test here talks to a fake Ollama except one, `test_input_tokens_scale_
+with_prompt_size_on_a_real_model` at the bottom - it is opt-in only and does
+NOT run as part of a plain `pytest cli/_test`. Run it by name, against a real
+Ollama with the model pulled:
+
+    LOCALGPU_TEST_REAL_OLLAMA=1 pytest cli/_test/test_proxy_server.py -k real_model -m real_ollama
+
+See the comment above that test for why it exists and cannot be deleted.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import sys
 import threading
 import time
@@ -418,6 +428,82 @@ def test_check_fits_context_does_not_let_a_huge_max_tokens_reject_everything():
     proxy.check_fits_context(body, num_ctx=8192)  # must not raise
 
 
+def test_check_fits_context_accepts_an_ordinary_request_on_a_4096_window():
+    """The bug this guards against: with no explicit `max_tokens`,
+    `requested_max` defaults to `DEFAULT_MAX_TOKENS` (4096). On a model whose
+    entire context window IS 4096, reserving that much for the reply left a
+    budget of 0 - every request was refused, including a ten-token one, with
+    a message blaming the length of the prompt. A small ordinary request on
+    exactly that window must go through.
+
+    Sabotage-tested: reverting to
+    `reserved_for_reply = min(requested_max, DEFAULT_MAX_TOKENS)` (dropping
+    the `max(_MIN_REPLY_RESERVE, num_ctx // 4)` cap) makes this raise
+    `ProxyError: The local model's context window (4096 tokens) is too small
+    to fit a reply for this request...` - restoring the cap turns it green.
+    """
+    body = {"messages": [{"role": "user", "content": "What does this function do?"}]}
+    proxy.check_fits_context(body, num_ctx=4096)  # must not raise
+
+
+def test_check_fits_context_names_the_window_when_it_is_too_small_regardless_of_prompt():
+    """When the window is too small no matter how the reservation is split -
+    true independent of the prompt, since the reservation alone consumes it -
+    the message must name num_ctx and say the window is too small, not blame
+    the length of the prompt, which was never the problem.
+
+    Sabotage-tested: removing the `budget <= 0` branch and falling straight
+    through to the "estimated > budget" check makes this raise the *other*
+    message ("Shorten the conversation, or start a fresh `localgpu shell`"),
+    which fails both assertions below.
+    """
+    body = {"messages": [{"role": "user", "content": "hi"}]}
+    with pytest.raises(proxy.ProxyError) as caught:
+        proxy.check_fits_context(body, num_ctx=100)
+    message = str(caught.value)
+    assert "100" in message
+    assert "context window" in message
+    assert "shorten" not in message.lower()
+
+
+def test_chars_per_token_estimate_is_conservative_for_dense_code():
+    """This proxy's real workload includes source code, and real tokenizers
+    land nearer 3 chars/token on punctuation-dense code, not the ~4 that
+    holds for English prose. A divisor above 3 under-counts real tokens,
+    which is the failure `check_fits_context` exists to prevent: it waves a
+    prompt through that Ollama then silently front-truncates.
+
+    Sabotage-tested: setting `_CHARS_PER_TOKEN_ESTIMATE` back to 4 makes this
+    fail (`4 <= 3` is False)."""
+    assert proxy._CHARS_PER_TOKEN_ESTIMATE <= 3
+
+
+def test_check_fits_context_catches_dense_code_a_looser_estimate_would_miss():
+    """Demonstrates the divisor tightening behaviourally rather than just
+    checking the constant: a prompt sized so the *old* (4 chars/token)
+    estimate would have fit the budget, but the real (3 chars/token)
+    estimate this module actually uses must not.
+
+    Sabotage-tested: setting `_CHARS_PER_TOKEN_ESTIMATE` back to 4 makes the
+    first assertion fail (the tightened estimate no longer differs from the
+    loose one) and the `pytest.raises` block fail to raise."""
+    body = {"max_tokens": 100, "messages": [{"role": "user", "content": "x" * 1200}]}
+    raw_size = (
+        len(json.dumps(body.get("system") or ""))
+        + sum(len(json.dumps(m)) for m in body["messages"])
+        + len(json.dumps(body.get("tools") or []))
+    )
+    loose_estimate = raw_size // 4  # what the old, looser divisor would say
+    tight_estimate = proxy.estimate_prompt_tokens(body)
+    assert tight_estimate > loose_estimate
+
+    # budget = num_ctx - reserved_for_reply(100) sits just above what the
+    # loose estimate needed, so only the tightened estimate overruns it.
+    num_ctx = 100 + loose_estimate + 5
+    with pytest.raises(proxy.ProxyError):
+        proxy.check_fits_context(body, num_ctx=num_ctx)
+
+
 def test_oversized_request_is_refused_before_reaching_ollama(endpoint, ollama):
     huge = {"role": "user", "content": "x" * 300_000}
     with pytest.raises(urllib.error.HTTPError) as caught:
@@ -478,9 +564,19 @@ def test_handle_error_still_reports_a_real_bug(capsys):
 # symptom. Restoring the line turns it green again. That check is not itself
 # part of the suite, since breaking the fix on every run defeats the point
 # of a regression test.
+#
+# It is also opt-in only, gated on LOCALGPU_TEST_REAL_OLLAMA below, not just
+# skip-if-unavailable. A machine that HAS both Ollama and the exact model -
+# the maintainer's, which is where this matters - used to run real GPU
+# inference on every plain `pytest cli/_test`, making the default run slow
+# (~97s) and nondeterministic. The opt-in check runs first and short-circuits
+# before `_real_ollama_ready()`'s network call, so an ordinary run neither
+# waits on it nor even reaches the socket - see the module docstring for the
+# exact command that runs it on purpose.
 
 REAL_OLLAMA_URL = "http://127.0.0.1:11434"
 REAL_CHAT_MODEL = "qwen2.5-coder:7b-instruct-q4_K_M"
+REAL_OLLAMA_OPT_IN_ENV_VAR = "LOCALGPU_TEST_REAL_OLLAMA"
 
 
 def _real_ollama_ready() -> bool:
@@ -495,9 +591,35 @@ def _real_ollama_ready() -> bool:
         return False
 
 
+def _real_ollama_skip_reason() -> str | None:
+    """`None` means "run it"; anything else is why it did not.
+
+    The opt-in check runs first, and short-circuits before
+    `_real_ollama_ready()` when it fails - that ordering is what keeps a
+    plain `pytest cli/_test` from ever making the network call in the first
+    place, not just from acting on its result.
+    """
+    if os.environ.get(REAL_OLLAMA_OPT_IN_ENV_VAR) != "1":
+        return (
+            f"opt-in only - set {REAL_OLLAMA_OPT_IN_ENV_VAR}=1 to run this "
+            "against a real Ollama (see this module's docstring for the "
+            "exact command)"
+        )
+    if not _real_ollama_ready():
+        return f"real Ollama with {REAL_CHAT_MODEL} not reachable at {REAL_OLLAMA_URL}"
+    return None
+
+
+# There is no pytest.ini/pyproject.toml `[tool.pytest.ini_options]` this
+# plugin owns to register markers in (see cli/_test/README.md's "Why there is
+# no conftest.py here" - the same reasoning keeps ini-based config out of this
+# directory too), so `real_ollama` (applied alongside this, below, for
+# `-m real_ollama` filtering) is unregistered and pytest will warn about it -
+# the actual default-off gate is `_real_ollama_skip_reason` above, not marker
+# deselection.
 requires_real_ollama = pytest.mark.skipif(
-    not _real_ollama_ready(),
-    reason=f"real Ollama with {REAL_CHAT_MODEL} not reachable at {REAL_OLLAMA_URL}",
+    _real_ollama_skip_reason() is not None,
+    reason=_real_ollama_skip_reason() or "",
 )
 
 
@@ -512,6 +634,7 @@ def real_endpoint():
     server.server_close()
 
 
+@pytest.mark.real_ollama
 @requires_real_ollama
 def test_input_tokens_scale_with_prompt_size_on_a_real_model(real_endpoint):
     filler = (

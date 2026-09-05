@@ -260,7 +260,7 @@ check "localgpu CLI: console script is on the persistent PATH (skips if not boot
 #     not just a stale literal.
 version_agreement_check() {
   "$PY" - <<'PY'
-import importlib.util, json, pathlib, re, sys
+import json, pathlib, re, subprocess, sys
 
 mp = {e["name"]: e["version"]
       for e in json.loads(pathlib.Path(".claude-plugin/marketplace.json").read_text(encoding="utf-8"))["plugins"]}
@@ -298,17 +298,48 @@ for pyproj in sorted(pathlib.Path("plugin").glob("*/pyproject.toml")):
                 problems.append(
                     f"{name}: {pyfile} hardcodes version {literal!r}, marketplace.json wants {want!r}")
 
+    # A _version.py that DERIVES its value has to be RUN to be checked - a
+    # regex would compare the literal `read_version()` call, not the string it
+    # returns, so the derivation bug this exists to catch would sail through.
+    #
+    # Running it means this check executes code out of the repository, so be
+    # explicit about the trust boundary: `smoke.sh` is not a sandbox, and it
+    # was never the thing standing between you and a hostile branch. Anyone who
+    # runs the suites at all already runs repository code - `pytest
+    # plugin/crew/tests` imports every module under test. Read a branch before
+    # you run its harness; do not mistake a green gate for having vetted it.
+    #
+    # What IS bounded here is blast radius on ACCIDENT, which is the failure
+    # that actually happens: a subprocess, so a _version.py that raises at
+    # import, calls sys.exit, or scribbles on sys.modules cannot take the gate
+    # down with it, and a timeout, so one that blocks on input or loops forever
+    # fails this check in 15s instead of hanging the whole run indefinitely.
     for version_module in sorted(plugin_dir.rglob("_version.py")):
         if is_skipped(version_module):
             continue
-        spec = importlib.util.spec_from_file_location("_localgpu_smoke_version", version_module)
-        mod = importlib.util.module_from_spec(spec)
+        probe = (
+            "import importlib.util,sys;"
+            "spec=importlib.util.spec_from_file_location('_smoke_version',sys.argv[1]);"
+            "mod=importlib.util.module_from_spec(spec);"
+            "spec.loader.exec_module(mod);"
+            "sys.stdout.write(str(getattr(mod,'VERSION',None)))"
+        )
         try:
-            spec.loader.exec_module(mod)
-            derived = getattr(mod, "VERSION", None)
-        except Exception as exc:  # noqa: BLE001 - report, don't crash the check
-            problems.append(f"{name}: {version_module} failed to import - {exc}")
+            done = subprocess.run(
+                [sys.executable, "-c", probe, str(version_module)],
+                capture_output=True, text=True, timeout=15,
+            )
+        except subprocess.TimeoutExpired:
+            problems.append(
+                f"{name}: {version_module} did not finish importing within 15s")
             continue
+        if done.returncode != 0:
+            detail = (done.stderr or "").strip().splitlines()
+            problems.append(
+                f"{name}: {version_module} failed to import - "
+                f"{detail[-1] if detail else 'exit ' + str(done.returncode)}")
+            continue
+        derived = done.stdout.strip()
         if derived != want:
             problems.append(
                 f"{name}: {version_module} resolves to {derived!r}, marketplace.json wants {want!r}")

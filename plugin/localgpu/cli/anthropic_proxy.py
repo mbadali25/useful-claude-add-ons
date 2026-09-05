@@ -83,14 +83,27 @@ DEFAULT_MAX_TOKENS = 4096
 DEFAULT_NUM_CTX = 32768
 
 # There is no local tokenizer for qwen2.5-coder available without adding a
-# dependency, and the check this feeds only has to catch "this cannot
-# possibly fit," not count exactly. 4 characters/token is the same rule of
-# thumb Anthropic's own docs use for English text, and it held up against
-# this model's own tokenizer on a real, tool-schema-heavy Claude Code
-# request: Ollama's `prompt_eval_count` for a captured 104k-character request
-# came back at 22,056 tokens - about 4.7 chars/token, i.e. this estimate runs
-# slightly conservative on exactly the content this module actually sees.
-_CHARS_PER_TOKEN_ESTIMATE = 4
+# dependency, so this is an approximation with a deliberate safety margin,
+# not a true upper bound - it can still be wrong on some input, and it is
+# built to be wrong in one direction only. Over-counting costs a needlessly
+# refused request; under-counting costs a silently wrong answer (Ollama
+# front-truncates the prompt and the model answers about whatever survived,
+# which is the entire failure this module exists to prevent). That asymmetry,
+# not accuracy, is why this leans conservative rather than picking the
+# number that best fits any one measurement.
+#
+# 4 chars/token is the rule of thumb Anthropic's own docs give for English
+# prose, and it held up on one real, tool-schema-heavy Claude Code request
+# captured against this model - Ollama's `prompt_eval_count` for a 104k-
+# character body came back at 22,056 tokens, about 4.7 chars/token. But that
+# capture's average is inflated by English tool descriptions and JSON
+# whitespace; this proxy's actual workload also includes long stretches of
+# source code, and real tokenizers land nearer 3 chars/token on punctuation-
+# dense code, not 4. Dividing by 4 there under-counts, which lets exactly the
+# kind of prompt this guard exists to catch through. 3 is used instead so the
+# estimate errs toward over-counting on that content rather than trusting the
+# one measurement that happened to look conservative.
+_CHARS_PER_TOKEN_ESTIMATE = 3
 
 
 class ProxyError(RuntimeError):
@@ -296,13 +309,24 @@ def resolve_num_ctx(
 
 
 def estimate_prompt_tokens(body: dict[str, Any]) -> int:
-    """A cheap, deliberately conservative upper bound on the request's prompt
-    size, in tokens. See `_CHARS_PER_TOKEN_ESTIMATE` for why this is a
-    character count and not a real tokenizer."""
+    """A cheap approximation of the request's prompt size, in tokens, that
+    deliberately errs toward over-counting rather than accuracy. See
+    `_CHARS_PER_TOKEN_ESTIMATE` for why this is a character count and not a
+    real tokenizer, and why the direction of the error is chosen on purpose."""
     size = len(json.dumps(body.get("system") or ""))
     size += sum(len(json.dumps(m)) for m in body.get("messages") or [])
     size += len(json.dumps(body.get("tools") or []))
     return size // _CHARS_PER_TOKEN_ESTIMATE
+
+
+# The floor `check_fits_context` reserves for a reply, whatever `num_ctx`
+# turns out to be. Without a floor, `num_ctx // 4` alone goes to single
+# digits on a small-context model and the reservation stops meaning
+# anything; 256 is enough for the model to actually finish a short answer
+# (a sentence, a short function signature) rather than being cut off after
+# a token or two. It is not tied to DEFAULT_MAX_TOKENS - it exists for the
+# opposite case, a window too small for that default to fit at all.
+_MIN_REPLY_RESERVE = 256
 
 
 def check_fits_context(body: dict[str, Any], num_ctx: int) -> None:
@@ -325,11 +349,42 @@ def check_fits_context(body: dict[str, Any], num_ctx: int) -> None:
     "max_tokens" `stop_reason` (see `_STOP_REASONS`), a real, visible signal
     that the reply was cut short - not the silent front-truncation of the
     prompt this function exists to prevent.
+
+    The reservation itself is capped at a quarter of `num_ctx`, floored at
+    `_MIN_REPLY_RESERVE`, on top of the existing cap at `DEFAULT_MAX_TOKENS`.
+    Without that cap, a model whose whole context window is at or below
+    `DEFAULT_MAX_TOKENS` (4096) - the same size Ollama silently falls back to
+    when `num_ctx` is left unset at all - reserved the *entire* window for
+    the reply, leaving a budget of 0. Every request was then refused,
+    including a ten-token one, and the message blamed the length of the
+    prompt for a problem the prompt never caused. A quarter of the window
+    still leaves the majority of it for the prompt, which is the part that
+    actually varies request to request.
+
+    If the reservation alone still consumes the whole window - true no
+    matter how short the prompt is, since nothing about it depends on the
+    prompt - that is reported as its own, more honest error: the model's
+    context window is too small for this workload, not "shorten your
+    prompt," which would send the user chasing a problem that was never
+    theirs.
     """
     requested_max = int(body.get("max_tokens") or DEFAULT_MAX_TOKENS)
-    reserved_for_reply = min(requested_max, DEFAULT_MAX_TOKENS)
-    estimated = estimate_prompt_tokens(body)
+    reserved_for_reply = min(
+        requested_max, DEFAULT_MAX_TOKENS, max(_MIN_REPLY_RESERVE, num_ctx // 4)
+    )
     budget = num_ctx - reserved_for_reply
+    if budget <= 0:
+        raise ProxyError(
+            f"The local model's context window ({num_ctx} tokens) is too "
+            "small to fit a reply for this request, no matter how short the "
+            "prompt is - reserving even a minimal reply already uses up the "
+            "whole window. This is a model/configuration limit, not "
+            "something the length of the conversation caused: use a model "
+            "with a larger context window instead.",
+            status=400,
+            kind="invalid_request_error",
+        )
+    estimated = estimate_prompt_tokens(body)
     if estimated > budget:
         raise ProxyError(
             f"This request is an estimated ~{estimated} tokens of prompt - "

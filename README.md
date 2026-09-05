@@ -226,7 +226,7 @@ Generated from [`plugin/UPDATE.md`](plugin/UPDATE.md) by `scripts/sync-updates.p
 
 <!-- BEGIN plugin/UPDATE.md -->
 
-### localgpu 0.1.5
+### localgpu 0.1.6
 
 A new plugin: the GPU in this machine, as a sidecar for one repository. Two
 halves - a semantic index the session you are already in can search, and a

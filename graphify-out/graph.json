@@ -40050,14 +40050,14 @@
       "source_location": "L248"
     },
     {
-      "id": "plugin_readme_crew_0_16_7",
-      "label": "crew 0.16.7",
+      "id": "plugin_readme_crew_0_16_8",
+      "label": "crew 0.16.8",
       "_origin": "ast",
       "community": 186,
       "community_name": "What's new",
       "file_type": "document",
       "node_kind": "heading",
-      "norm_label": "crew 0.16.7",
+      "norm_label": "crew 0.16.8",
       "source_file": "plugin/README.md",
       "source_location": "L82"
     },
@@ -55917,14 +55917,14 @@
       "source_location": "L100"
     },
     {
-      "id": "todo_found_during_the_0_16_7_merge_review_deferred_as_out_of_scope",
-      "label": "Found during the 0.16.7 merge review, deferred as out of scope",
+      "id": "todo_found_during_the_0_16_8_merge_review_deferred_as_out_of_scope",
+      "label": "Found during the 0.16.8 merge review, deferred as out of scope",
       "_origin": "ast",
       "community": 336,
       "community_name": "Correctness and verification gaps",
       "file_type": "document",
       "node_kind": "heading",
-      "norm_label": "found during the 0.16.7 merge review, deferred as out of scope",
+      "norm_label": "found during the 0.16.8 merge review, deferred as out of scope",
       "source_file": "TODO.md",
       "source_location": "L112"
     },
@@ -56887,14 +56887,14 @@
       "source_location": "L462"
     },
     {
-      "id": "readme_crew_0_16_7",
-      "label": "crew 0.16.7",
+      "id": "readme_crew_0_16_8",
+      "label": "crew 0.16.8",
       "_origin": "ast",
       "community": 35,
       "community_name": "useful-claude-add-ons",
       "file_type": "document",
       "node_kind": "heading",
-      "norm_label": "crew 0.16.7",
+      "norm_label": "crew 0.16.8",
       "source_file": "README.md",
       "source_location": "L296"
     },
@@ -61472,14 +61472,14 @@
       "source_location": "L244"
     },
     {
-      "id": "plugin_update_crew_0_16_7",
-      "label": "crew 0.16.7",
+      "id": "plugin_update_crew_0_16_8",
+      "label": "crew 0.16.8",
       "_origin": "ast",
       "community": 470,
       "community_name": "Plugin updates",
       "file_type": "document",
       "node_kind": "heading",
-      "norm_label": "crew 0.16.7",
+      "norm_label": "crew 0.16.8",
       "source_file": "plugin/UPDATE.md",
       "source_location": "L78"
     },
@@ -148135,7 +148135,7 @@
     },
     {
       "source": "plugin_readme_what_s_new",
-      "target": "plugin_readme_crew_0_16_7",
+      "target": "plugin_readme_crew_0_16_8",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -148201,7 +148201,7 @@
     },
     {
       "source": "plugin_update_plugin_updates",
-      "target": "plugin_update_crew_0_16_7",
+      "target": "plugin_update_crew_0_16_8",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -148465,7 +148465,7 @@
     },
     {
       "source": "readme_what_s_new_in_the_plugins",
-      "target": "readme_crew_0_16_7",
+      "target": "readme_crew_0_16_8",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -164271,7 +164271,7 @@
       "weight": 1.0
     },
     {
-      "source": "todo_found_during_the_0_16_7_merge_review_deferred_as_out_of_scope",
+      "source": "todo_found_during_the_0_16_8_merge_review_deferred_as_out_of_scope",
       "target": "todo_crew_py_can_hand_back_a_python_that_is_not_a_python",
       "relation": "contains",
       "_origin": "ast",
@@ -164305,7 +164305,7 @@
     },
     {
       "source": "todo_todo",
-      "target": "todo_found_during_the_0_16_7_merge_review_deferred_as_out_of_scope",
+      "target": "todo_found_during_the_0_16_8_merge_review_deferred_as_out_of_scope",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -186743,5 +186743,5 @@
     }
   ],
   "hyperedges": [],
-  "built_at_commit": "0bf0c2f30c8d175c9132986cce764d9cb762f5f2"
+  "built_at_commit": "de9cb6d467c698bafe2c8e06c88c9ed28f8e5ca4"
 }
