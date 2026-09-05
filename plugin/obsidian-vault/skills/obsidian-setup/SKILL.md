@@ -186,6 +186,9 @@ Before writing `guard.asciiOnly` or `guard.requireFrontmatter` as `true`, read
 the *default* vault's own `CLAUDE.md` for an explicit statement of an ASCII
 rule or a frontmatter contract. Turn a toggle on only when the vault says so
 itself - never because this plugin's author's own vault happens to want it.
+`requireFrontmatter` never applies to `CLAUDE.md`, `README.md`, `AGENTS.md` or
+`GEMINI.md` - those are instruction files, not notes, so the contract they
+could never satisfy is skipped for them. `asciiOnly` still applies.
 If the vault has no `CLAUDE.md` yet, leave both `false` and offer to write one
 from the `obsidian-memory-contract` skill's template, explaining what each
 toggle would then do.

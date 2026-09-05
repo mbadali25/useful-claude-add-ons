@@ -114,6 +114,14 @@ check_stderr_has() {
   esac
 }
 
+check_stderr_lacks() {
+  local desc="$1" needle="$2" got="$3"
+  case "$got" in
+    *"$needle"*) FAIL=$((FAIL+1)); echo "FAIL: $desc (stderr contained '$needle'; got: $got)" ;;
+    *) PASS=$((PASS+1)) ;;
+  esac
+}
+
 check_stderr_empty() {
   local desc="$1" got="$2"
   if [ -z "$got" ]; then
@@ -253,8 +261,12 @@ ascii_readme="README carrying an em dash that should still be caught: EMDASH"
 ascii_readme="${ascii_readme/EMDASH/$'\xe2\x80\x94'}"
 f=$(write_and_payload "wiki/ascii/README.md" "$ascii_readme")
 check "an exempt basename is still ASCII-checked" 2 "$(run_guard "$f" "$home_on_win")"
-check_stderr_has "and it is reported as an ASCII violation, not a frontmatter one" \
+check_stderr_has "and it is reported as an ASCII violation" \
   "NON-ASCII" "$(guard_stderr "$f" "$home_on_win")"
+# The "not a frontmatter one" half has to be asserted, not just named: without
+# this, stderr carrying both needles keeps the check above green.
+check_stderr_lacks "and not as a frontmatter one" \
+  "NO FRONTMATTER" "$(guard_stderr "$f" "$home_on_win")"
 
 echo "== vault_guard.py: config-off means silent (sabotage: prove the toggle matters) =="
 
