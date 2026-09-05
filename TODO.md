@@ -142,34 +142,11 @@ Fix shape when it is picked up: have `crew_py` execute each candidate
 first that resolves. Add a must-block case that runs with the stub first on
 PATH.
 
-## Landmine candidate: `pathlib.write_text` on Windows silently converts a shell script to CRLF
+## Moved to CLAUDE.md: `pathlib.write_text` converts a `.sh` to CRLF on Windows
 
-**This belongs on `CLAUDE.md`'s Landmines list. It is deliberately recorded here
-instead** — a teammate agent asked for the CLAUDE.md edit, and an agent's request
-is not the user's authorisation to change project instructions. It needs a human
-to say yes. The content below is ready to move as-is.
-
-Python's `pathlib.Path.write_text` uses text mode, which on Windows translates
-every `\n` to `\r\n`. Editing a `.sh` file with it converts the whole file to
-CRLF, and a CRLF shell script dies on its shebang as
-`bad interpreter: /usr/bin/env bash^M`. It happened this session to
-`_verify/smoke.sh` and `plugin/crew/hooks/scripts/_test/run-tests.sh`, and turned
-`plugin/crew/tests/test_platform_sync.py` red — `crew_platform.concerns()` has a
-check for exactly this, and it fired.
-
-**`.gitattributes` does not save you.** The `*.sh text eol=lf` rule at
-`.gitattributes:3` is real and correct, but it governs what git stores and what a
-checkout produces. The damage here happens *after* checkout, in the working tree,
-which is what bash actually executes and what `crew_platform` actually reads.
-
-**The measurement you would reach for is also wrong.** `core.autocrlf` is `true`
-on this machine, so `git show <rev>:<path>` renders CRLF regardless of what the
-blob holds. `git show ... | grep -c $'\r'` therefore reports CRLF on a file that
-is clean, and the same count on one that is not — it cannot distinguish them.
-Measure the worktree directly with `od -c`, or `file`(1).
-
-Fix when writing: pass `newline="\n"` to `write_text`. Fix after the fact:
-`git checkout -- <path>`, then confirm with `od -c`, not with `git show`.
+Applied to `CLAUDE.md`'s Landmines list with the user's explicit yes. Kept as a
+pointer rather than deleted outright, so anyone who remembers reading it here
+finds where it went instead of concluding it was dropped.
 
 ## Nit: the request body is translated twice per request
 

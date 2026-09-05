@@ -72,5 +72,13 @@ Quote failures exactly; never summarise a stack trace. Name which suites ran and
   *wraps* throws off the cursor-up redraw count and smears the menu over what was above it.
 - **Both install scripts are idempotent** — a new step needs a detection branch reporting "already
   installed".
+- **`pathlib.write_text` converts a `.sh` to CRLF on Windows** — it is text mode, so every `\n`
+  becomes `\r\n` and the script dies on its shebang as `bad interpreter: ...^M`. Pass
+  `newline="\n"`. `.gitattributes`' `*.sh text eol=lf` does *not* save you: it governs what git
+  stores and what a checkout produces, and the damage lands after checkout, in the working tree
+  bash actually executes. Worse, the obvious check lies — with `core.autocrlf=true`,
+  `git show <rev>:<path>` renders CRLF whatever the blob holds, so grepping its output reports the
+  same count for a clean file and a broken one. Measure the worktree with `od -c` or `file`(1).
+  Repair with `git checkout -- <path>`, then confirm the same way.
 
 Skills follow `Skill-Authoring-Standard.md`; changes follow `Skill-Pipeline.md`.
