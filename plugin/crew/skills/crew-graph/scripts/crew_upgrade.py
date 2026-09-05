@@ -1,19 +1,29 @@
-"""Upgrades a v1 crew setup (no `schema` key) to v2.
+"""Brings an out-of-date crew setup up to the current schema.
+
+Not "v1 -> v2", whatever this file used to say. That docstring was written for
+one migration, never extended when 0.14.4 added the `qa`/`dev` provider table
+or when 0.15.x added three roles, and was exactly what let `upgrade_config`
+migrate two blocks while claiming to have migrated all of them. Every block a
+release adds belongs in `CONFIG_BLOCKS`, and the docstring belongs with it.
 
 Order matters and is not negotiable: back up, then upgrade config, then
 reconcile, then report. The backup exists so that every later step can be
 non-destructive in practice as well as in intent.
 
-Two rules this module exists to enforce:
+Rules this module exists to enforce:
 
   * A codemap `anchor:` is bumped only on a file this run actually re-verified.
     A false freshness claim is worse than an honest stale one, because the
     entire freshness rule depends on the anchor being true.
   * A conflict between the map and the graph is written to the report, never
     applied to the map.
+  * `schema` is stamped current only when every block actually migrated, and
+    the run says what it added -- roles and tier included. Both are the same
+    rule as the anchor one, applied to the config: never claim the work.
 """
 
 import argparse
+import copy
 import json
 import os
 import re
@@ -68,28 +78,136 @@ _ANCHOR_LINE_RE = re.compile(r"^(anchor:\s*\S*@?)([0-9a-f]{7,40})",
 _merged = crew_state.merge_defaults
 
 
+_ABSENT = object()
+
+# Every block an upgrade brings forward, and the defaults it brings it onto.
+# `qa` and `dev` were missing from this list until 0.16.0, which is the whole
+# of the bug: a config predating the 0.14.4 provider table was stamped current
+# while still carrying neither.
+CONFIG_BLOCKS = (
+    ("pm", PM_BLOCK),
+    ("graph", GRAPH_BLOCK),
+    ("qa", crew_state.QA_DEFAULTS),
+    ("dev", crew_state.DEV_DEFAULTS),
+)
+
+# The keys schema 3 introduced. Named here rather than diffed generically so
+# the report can SAY what the 2 -> 3 migration added, in the words the user
+# will search for. Both are behaviour-neutral on arrival -- `fallback` only
+# fires when a pinned model is gone, which previously was an error and not a
+# fallback at all, and an EMPTY `roles` table means every role keeps running
+# on the block's own `provider`, exactly as it did before.
+SCHEMA_3_KEYS = ("qa.fallback", "qa.roles", "dev.fallback", "dev.roles")
+
+
 def upgrade_config(cfg):
-    """v1 config -> v2. Pure. Preserves every key it does not know about."""
+    """Bring a config up to the current schema. Pure.
+
+    Returns `(out, notes)`. `out` preserves every key it does not know about;
+    `notes` is what the run has to SAY, and is not optional decoration:
+
+        {"unmigrated": [...], "rolesAdded": [...], "rolesUnknown": [...],
+         "tierFrom": int, "tierTo": int, "schemaFrom": int,
+         "providerKeysAdded": [...], "schemaStamped": bool}
+
+    Four rules, each of which used to be wrong here:
+
+      * **Every block moves forward, not just `pm` and `graph`.** See
+        `CONFIG_BLOCKS`.
+      * **`roles` moves forward too, by adding, not by reporting.** A config
+        already at tier N gets every ladder role at or below N that it is
+        missing -- the roles a later release added at a tier it already
+        claimed. An upgrade that made the user re-derive that from a report
+        would be the same "a default nobody chose" failure the guided-config
+        work exists to close. It cannot grow a crew past the tier the config
+        itself declares: a tier-0 repo gains nothing, and `/crew:scale` is
+        still the only thing that moves a repo UP the ladder. Removal is not
+        the mirror of this and never happens here -- `/crew:pm offboard` keeps
+        its explicit-yes gate, because adding a role is reversible and
+        removing one destroys the coverage that would have told you whether
+        the removal was right.
+      * **Schema 3's per-role provider table arrives EMPTY.** `qa.roles` and
+        `dev.roles` are added as `{}` and `fallback` as its default value, so
+        a v2 config comes out of this dispatching to exactly the provider and
+        model it dispatched to before. That is the whole design of the 2 -> 3
+        migration: bumping `SCHEMA_CURRENT` makes every crew repo on the
+        machine report `upgradeNeeded`, so this migration is mandatory, and a
+        mandatory migration that silently re-routed someone's development work
+        to a different model would be indefensible. `/crew:upgrade` OFFERS the
+        pins afterwards; it never writes them here.
+      * **`schema` is stamped only when everything migrated.** A block that
+        arrived as the wrong type is left exactly as the user wrote it and
+        named in `notes["unmigrated"]`; marking that config current would
+        claim work that did not happen, and the next run would skip it.
+    """
     out = dict(cfg)
-    out["pm"] = _merged(PM_BLOCK, cfg.get("pm"))
-    out["graph"] = _merged(GRAPH_BLOCK, cfg.get("graph"))
-    # _merged only recurses when the supplied side has a dict at this key --
-    # with no graph.obsidian supplied (the ordinary v1 case) out["graph"]
-    # ["obsidian"] IS the module-level GRAPH_BLOCK["obsidian"] object. Writing
-    # through it below would mutate that shared default for every future
-    # caller in the process, which is the same failure PM_BLOCK's identity-
-    # sharing is meant to prevent, one level down and inverted: here the
-    # returned config must NOT share the module's mutable default.
-    out["graph"]["obsidian"] = dict(out["graph"]["obsidian"])
-    # obsidian.confirmed is a consent flag, not a setting. An upgrade must
-    # never grant it -- only the user, in session, can.
-    out["graph"]["obsidian"]["confirmed"] = (
-        crew_state.dict_or_empty(
-            crew_state.dict_or_empty(cfg.get("graph")).get("obsidian")
-        ).get("confirmed") is True
-    )
-    out["schema"] = crew_state.SCHEMA_CURRENT
-    return out
+    notes = {"unmigrated": [], "rolesAdded": [], "rolesUnknown": [],
+             "tierFrom": 0, "tierTo": 0,
+             "schemaFrom": crew_state.int_or(cfg.get("schema", 1), 1),
+             "providerKeysAdded": [], "schemaStamped": False}
+
+    for key, block in CONFIG_BLOCKS:
+        supplied = cfg.get(key, _ABSENT)
+        if supplied is not _ABSENT and not isinstance(supplied, dict):
+            # _merged would discard it and the user would never know. Leave
+            # the value untouched and report it instead.
+            notes["unmigrated"].append(key)
+            continue
+        # deepcopy first: with nothing supplied at a nested key, _merged hands
+        # back the module-level default object itself, and a caller writing
+        # through the result would mutate the shared default for every later
+        # caller in the process.
+        out[key] = _merged(copy.deepcopy(block),
+                           None if supplied is _ABSENT else supplied)
+
+    # What schema 3 actually added to THIS config, computed from the incoming
+    # file rather than from the version number: a config hand-edited to carry
+    # `dev.roles` already must not be reported as having just gained it.
+    for dotted in SCHEMA_3_KEYS:
+        block_key, leaf = dotted.split(".")
+        if block_key in notes["unmigrated"]:
+            continue
+        supplied = crew_state.dict_or_empty(cfg.get(block_key))
+        if leaf not in supplied:
+            notes["providerKeysAdded"].append(dotted)
+
+    if "graph" not in notes["unmigrated"]:
+        # obsidian.confirmed is consent to write into the user's own notes
+        # outside the repo, not a capability. An upgrade must never grant it
+        # -- only the user, in session, can.
+        out["graph"]["obsidian"]["confirmed"] = (
+            crew_state.dict_or_empty(
+                crew_state.dict_or_empty(cfg.get("graph")).get("obsidian")
+            ).get("confirmed") is True
+        )
+
+    supplied_roles = cfg.get("roles", _ABSENT)
+    if supplied_roles is not _ABSENT and not (
+            isinstance(supplied_roles, list)
+            and all(isinstance(r, str) for r in supplied_roles)):
+        notes["unmigrated"].append("roles")
+    else:
+        current = [] if supplied_roles is _ABSENT else list(supplied_roles)
+        declared = crew_state.int_or(cfg.get("tier"), 0)
+        # The tier to grant from is the higher of what the config claims and
+        # what its own role list already implies -- a config saying tier 0
+        # while listing `planner` is at tier 2 whatever the number says.
+        entitled = max(declared, crew_state.tier_for_roles(current))
+        ladder = crew_state.roles_for_tier(entitled)
+        notes["rolesAdded"] = [r for r in ladder if r not in current]
+        notes["rolesUnknown"] = [r for r in current
+                                 if r not in crew_state.ROLE_TIERS]
+        # Ladder order, then anything this release does not recognise. A name
+        # crew has never heard of is kept, not dropped: the user put it there.
+        out["roles"] = ladder + notes["rolesUnknown"]
+        notes["tierFrom"] = declared
+        notes["tierTo"] = entitled
+        out["tier"] = entitled
+
+    if not notes["unmigrated"]:
+        out["schema"] = crew_state.SCHEMA_CURRENT
+        notes["schemaStamped"] = True
+    return out, notes
 
 
 def backup_codemap(root):
@@ -161,10 +279,62 @@ def _bump_anchor(text, head):
     return _ANCHOR_LINE_RE.sub(lambda m: m.group(1) + head, text, count=1)
 
 
-def _report(status, head, results):
+def _config_lines(notes):
+    """The config half of the report: what the migration changed, and what it
+    could not. A crew that silently grows is the thing `/crew:scale` exists to
+    catch, so the roles it added and the tier it moved are stated every run,
+    including when the answer is "none"."""
+    lines = ["## Config"]
+    if notes["rolesAdded"]:
+        lines.append("- roles added: " + ", ".join(notes["rolesAdded"]))
+    else:
+        lines.append("- roles added: none")
+    if notes["tierFrom"] == notes["tierTo"]:
+        lines.append(f"- tier: {notes['tierTo']} (unchanged)")
+    else:
+        lines.append(f"- tier: {notes['tierFrom']} -> {notes['tierTo']}")
+    lines.append(
+        "- roles are added only up to the tier this config already declares. "
+        "Moving UP a tier is `/crew:scale`; removing a role is "
+        "`/crew:pm offboard`, which still stops for an explicit yes."
+    )
+    if notes["providerKeysAdded"]:
+        lines.append(
+            "- schema "
+            f"{notes['schemaFrom']} -> {crew_state.SCHEMA_CURRENT}, which "
+            "added the per-role provider table and a declared fallback: "
+            + ", ".join(notes["providerKeysAdded"])
+            + ". Both arrive NEUTRAL — `qa.roles` and `dev.roles` are empty, "
+            "so every role still runs on its block's own `provider`, and "
+            "`fallback` only fires when a pinned model has been retired, "
+            "which used to be a plain error. This repo dispatches exactly as "
+            "it did before the upgrade. To pin a model per role, run "
+            "`/crew:model` — nothing here chose one for you."
+        )
+    if notes["rolesUnknown"]:
+        lines.append("- kept, not on this release's ladder: "
+                     + ", ".join(notes["rolesUnknown"]))
+    if notes["unmigrated"]:
+        lines.append(
+            "- **NOT migrated** (present but the wrong type, left exactly as "
+            "written): " + ", ".join(notes["unmigrated"])
+            + ". `schema` was deliberately NOT stamped current, so this repo "
+            "still reports an upgrade as needed. Fix the block by hand and "
+            "run `/crew:upgrade` again."
+        )
+    lines.append("")
+    return lines
+
+
+def _report(status, head, results, notes):
+    schema_line = (
+        f"to schema: {crew_state.SCHEMA_CURRENT}" if notes["schemaStamped"]
+        else "schema: NOT stamped — see Config below"
+    )
     lines = [
         "# Upgrade report",
-        f"from schema: 1 -> {crew_state.SCHEMA_CURRENT}",
+        f"status: {status}",
+        schema_line,
         f"graph anchor: {head or 'unknown'}",
         "",
         "Nothing below was applied automatically. Conflicts are the map and",
@@ -172,6 +342,7 @@ def _report(status, head, results):
         "generated call sites, reflection, and dynamic dispatch.",
         "",
     ]
+    lines.extend(_config_lines(notes))
     conflicts = [c for r in results.values() for c in r["conflicts"]]
     lines.append("## Contradictions — kept in the map, verify by hand")
     # Not `f"- {c}" for c in conflicts or [...]`: that prefixes the fallback
@@ -195,21 +366,25 @@ def run(root, derived, force=False):
     """Upgrade the repo at `root`. `derived` maps subsystem -> graph sections."""
     cfg_path = os.path.join(root, ".crew", "config.json")
     if not os.path.exists(cfg_path):
-        return {"status": "not a crew repo", "report": "", "conflicts": []}
+        return {"status": "not a crew repo", "report": "", "notes": None,
+                "conflicts": []}
 
     cfg, ok = _read_config_strict(root)
     if not ok:
         # Present but unparseable. Change nothing -- see _read_config_strict.
-        return {"status": "config unreadable", "report": "", "conflicts": []}
+        return {"status": "config unreadable", "report": "", "notes": None,
+                "conflicts": []}
     if crew_state.int_or(cfg.get("schema", 1), 1) >= crew_state.SCHEMA_CURRENT \
             and not force:
-        return {"status": "already current", "report": "", "conflicts": []}
+        return {"status": "already current", "report": "", "notes": None,
+                "conflicts": []}
 
     backup_codemap(root)
     backup_config(root)
 
+    upgraded, notes = upgrade_config(cfg)
     with open(cfg_path, "w", encoding="utf-8") as handle:
-        json.dump(upgrade_config(cfg), handle, indent=2, sort_keys=True)
+        json.dump(upgraded, handle, indent=2, sort_keys=True)
         handle.write("\n")
 
     head = _head(root)
@@ -226,15 +401,21 @@ def run(root, derived, force=False):
             handle.write(body)
         results[name] = out
 
-    report = _report("upgraded", head, results)
+    # A config with a block that could not be migrated is genuinely not
+    # current, and `upgrade_config` refused to stamp it. Saying "upgraded"
+    # here would be the report claiming work the config itself denies.
+    status = ("upgraded with unmigrated blocks" if notes["unmigrated"]
+              else "upgraded")
+    report = _report(status, head, results, notes)
     if os.path.isdir(mapdir):
         with open(os.path.join(mapdir, "UPGRADE.md"), "w",
                   encoding="utf-8") as handle:
             handle.write(report)
 
     return {
-        "status": "upgraded",
+        "status": status,
         "report": report,
+        "notes": notes,
         "conflicts": [c for r in results.values() for c in r["conflicts"]],
     }
 
@@ -258,6 +439,23 @@ def main(argv=None):
 
     out = run(args.root, derived, force=args.force)
     print(out["status"])
+    notes = out.get("notes")
+    if notes:
+        # Printed at the CLI, not only buried in UPGRADE.md: the roles an
+        # upgrade added and the tier it moved are the two things a user must
+        # not learn about later by noticing new agents in a dispatch.
+        print("roles added: " + (", ".join(notes["rolesAdded"]) or "none"))
+        print(f"tier: {notes['tierFrom']} -> {notes['tierTo']}")
+        if notes["providerKeysAdded"]:
+            print(f"schema {notes['schemaFrom']} -> "
+                  f"{crew_state.SCHEMA_CURRENT}: added "
+                  + ", ".join(notes["providerKeysAdded"])
+                  + " (empty/neutral - dispatch is unchanged; "
+                    "run /crew:model to pin a model per role)")
+        if notes["unmigrated"]:
+            print("NOT migrated (wrong type, left as written): "
+                  + ", ".join(notes["unmigrated"]))
+            print("schema was not stamped; fix these and re-run /crew:upgrade")
     if out["conflicts"]:
         print(f"{len(out['conflicts'])} conflict(s) - see .crew/codemap/UPGRADE.md")
     return 0

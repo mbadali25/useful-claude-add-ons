@@ -1,0 +1,56 @@
+{
+  "qa": {
+    "provider": "auto",
+    "order": [
+      "codex",
+      "copilot",
+      "claude"
+    ],
+    "fallback": "claude-sonnet-5",
+    "codex": {
+      "model": null,
+      "reasoningEffort": null
+    },
+    "copilot": {
+      "model": null
+    },
+    "roles": {}
+  },
+  "dev": {
+    "provider": "claude",
+    "fallback": "claude-sonnet-5",
+    "codex": {
+      "model": null,
+      "reasoningEffort": null
+    },
+    "copilot": {
+      "model": null
+    },
+    "roles": {}
+  },
+  "secondOpinion": {
+    "provider": "none",
+    "mode": "cli",
+    "model": null,
+    "keyEnv": "GEMINI_API_KEY",
+    "sendsCode": false
+  },
+  "memory": {
+    "mode": "repo",
+    "vaultPath": null
+  },
+  "notify": {
+    "provider": "none",
+    "urlEnv": null,
+    "tokenEnv": null,
+    "chatId": null,
+    "events": [
+      "phase",
+      "gate",
+      "waiting"
+    ]
+  },
+  "pm": {
+    "authority": "report-only"
+  }
+}

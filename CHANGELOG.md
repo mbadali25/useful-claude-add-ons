@@ -6,6 +6,164 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
+- **`crew` 0.16.0: the machine-global config gets a template, a walkthrough,
+  and a migration that finishes the job.**
+
+  `~/.claude/crew/config.json` sets defaults for every crew repo on a machine,
+  and nothing in crew ever wrote it, asked about it, or said it existed.
+  `skills/crew-setup/SKILL.md` said so in as many words: "Nothing in setup
+  creates the global file; a user who wants one writes it by hand." Writing it
+  by hand required knowing the file existed, where it lived, which keys it
+  accepted, and how it layered.
+
+  Not hypothetical. On the author's machine that file carried `tier`, `roles`,
+  `qa` and `sdp` and had **no `pm` block at all**, so every crew repo resolved
+  to `pm.authority: report-only` while the user believed the PM was autonomous.
+  The global file was valid, the repos were valid, and the resulting behaviour
+  was a default nobody chose. It was found because someone opened the file for
+  an unrelated reason.
+
+  `templates/global.template.json` and `crew_config.default_global_config()`
+  are the shape, held byte-for-byte identical by the same committed test the
+  repo template has. It is deliberately not a copy of the repo template:
+  `tracker`, `jira.project`, `obsidian.boardDir`, `graph.out` and `platform.*`
+  are facts about one checkout, and shipping them globally invites a vault path
+  set once that every repo inherits. What is left is what is a property of the
+  machine or the person — `pm.authority`, the `qa` and `dev` provider tables,
+  `secondOpinion`, `notify`, `memory.vaultPath`. It carries no `schema`:
+  `resolve_config` exempts that key structurally so a global value can never
+  make an unmigrated repo look current, and a template shipping it would hand
+  every user the exact value that exemption exists to ignore.
+
+  `/crew:config` is the walkthrough, reachable standalone for a user with no
+  repo in mind and offered from `/crew:init` Phase 1. Its point is the
+  **source** column: `crew_config.py --explain` prints every globally-settable
+  key with its effective value and the layer that decided it — `repo`,
+  `global`, or `default` — which is precisely the question the incident above
+  could not answer. `--check-global` prints the findings.
+
+  Four properties the writer enforces in code rather than in prose, each with
+  a test that goes red when it is removed. It **merges**, so a key in an
+  existing global file that the walkthrough never asked about survives. It
+  **refuses** any path outside `default_global_config()`, by name, exit 2 —
+  which keeps repo facts out of a file every repo reads and makes
+  `graph.obsidian.confirmed` structurally un-grantable from a guided flow,
+  since that flag is consent to write outside the repo, not a capability. It
+  is a **dry run by default**; `--apply` is a second call. And it **marks a
+  widening of `pm.authority`** on both the plan and the write. `/crew:upgrade`
+  reports on the global file and fixes none of it, per `upgrade.md` §5 "Report
+  — do not resolve": it is the user's own configuration, outside the repo,
+  which is the strongest version of that rule this plugin has.
+
+- **`crew` 0.16.0: a per-role provider table, and the family guard made
+  visible in state (`schema` 2 → 3).**
+
+  `qa` and `dev` each gain a `roles` table and a `fallback`, so
+  `qa.roles.review` and `qa.roles.smoke` can be different models from
+  different families. Both arrive **empty**: the migration writes no pin
+  nobody chose, and an existing repo dispatches exactly as it did before it
+  ran. `/crew:init` and `/crew:upgrade` offer the recommended table rather
+  than leaving the user to find the keys.
+
+  `crew_config.model_report()` — what `crew_config.py --models` and
+  `/crew:model` print — carries two new keys alongside the per-role rows:
+
+  - **`qaFallThrough`** — the evidence. One entry per provider in `qa.order`,
+    in order, each with its `provider`, `model`, derived `family`, whether it
+    is on `PATH`, and, when it cannot review, the single reason: absent from
+    `PATH`, no `qa.<provider>.model` pinned so its family is unknowable, or
+    same family as the author.
+  - **`independentReviewer`** — the conclusion. `false` means every candidate
+    in `qa.order` is unreachable or speaks as the family that wrote the diff,
+    which is the one state `/crew:review` cannot fix by trying harder: it
+    falls back to the `qa-reviewer` subagent and labels the result
+    same-family. It runs; it does not count as an independent review.
+
+  Neither key is a new rule. The interlock — the family that wrote the code
+  may not review it, guard evaluated before any pin — is unchanged; what
+  changed is that its consequence is now in the report instead of being
+  something a reader had to infer from four `BARRED` rows. The author family
+  itself now comes from what was recorded at dispatch (`.work/dispatch.json`,
+  gitignored) and falls back to reading the config only when nothing has run
+  in the checkout — labelled as such, because that describes the next
+  dispatch rather than the diff in front of the reviewer.
+
+- **`crew` 0.16.0: `upgrade_config` migrated two blocks and claimed to have
+  migrated all of them.**
+
+  Reported by the user 2026-09-05: `/crew:upgrade` did not pick up the provider
+  and roles changes. The whole of the migration was `pm`, `graph`, and
+  `schema = SCHEMA_CURRENT` — stamped unconditionally. Its docstring still read
+  "v1 config -> v2": written for that one migration, never extended when 0.14.4
+  added the `qa`/`dev` provider table or when 0.15.x added three roles. So a
+  config predating 0.14.4 came out of an upgrade marked current while missing
+  `qa.order` and the entire `dev` block, and an absent `qa.order` made
+  `/crew:model` report zero candidates and "no independent reviewer" for a setup
+  that reviews fine.
+
+  `qa` and `dev` now migrate, from `crew_state.QA_DEFAULTS` and `DEV_DEFAULTS`
+  — moved there so a freshly created repo and a freshly upgraded one land on
+  identical values by construction, the same rule `PM_DEFAULTS` already
+  followed.
+
+  `roles` migrates by **adding**, not by reporting: a config already at tier N
+  gets every ladder role at or below N that it is missing. An upgrade that
+  reported the change and left the user to re-derive it would be the same
+  "a default nobody chose" failure. Two things that does not license, because
+  they are different decisions from adding capability: it cannot grow a crew
+  past the tier the config itself declares — moving up is `/crew:scale`, with
+  evidence — and it never removes anything, because removing a role destroys
+  the coverage that would have told you whether the removal was right, so
+  `/crew:pm offboard` keeps its explicit-yes gate. `tier` is recomputed
+  afterwards, and the run states the roles it added and the tier it moved from
+  and to, at the CLI and in `.crew/codemap/UPGRADE.md`, every run including
+  when the answer is none — a crew that silently grows is the thing
+  `/crew:scale` exists to catch.
+
+  `schema` is stamped only when every block actually migrated. A `pm`, `graph`,
+  `qa`, `dev` or `roles` value that arrived as the wrong type would have been
+  silently discarded by `merge_defaults`; it is now left exactly as written,
+  named in the report, and the status is `upgraded with unmigrated blocks`, so
+  the repo still reports an upgrade as needed rather than being marked done
+  with a block nobody migrated. `upgrade_config` returns `(config, notes)` for
+  this reason: what the run has to say is not optional decoration.
+
+- **`crew` 0.16.0: the three agents added in 0.15.x joined the tier ladder, and
+  the ladder moved into code.**
+
+  `infrastructure-architect`, `scribe` and `researcher` shipped as definitions
+  with no row in `crew-scaling`'s tier table, so `/crew:scale` would not propose
+  them and `/crew:pm` would not onboard them from evidence. All three are now
+  tier 2, beside `dba` and `docs-writer`: each closes a defect class that only
+  appears once a repo is doing enough of that kind of work to have the evidence.
+
+  The ladder itself is `crew_state.ROLE_TIERS`, because computing a tier from a
+  role list is arithmetic, and parsing a heading in a skill file to decide what
+  an upgrade writes would make the doc load-bearing and the code advisory.
+  `crew-scaling/SKILL.md` and `crew-pm/onboarding.md` still describe it for a
+  human, and `tests/test_role_ladder.py` asserts all three agree — a row added
+  to one and not the others fails CI.
+
+- **`crew` 0.16.0: `merge_defaults` said "recurses one level" and does not.**
+  It calls itself whenever both sides hold a dict, to whatever depth the
+  default has — which is why a supplied `qa` naming only `provider` still comes
+  out with `qa.codex.model`. The new `crew_config._layer_supplies`, which
+  mirrors this function to answer "which layer decided this value", depends on
+  the real behaviour, so a docstring describing something else stopped being
+  merely inaccurate. Two implementations of one merge policy drift silently --
+  the source column would name the wrong layer and every test would still
+  pass -- so `tests/test_crew_config.py` now pins them to each other by
+  running both over every settable key and over each of the three ways the
+  policy can branch, rather than by asserting the mirror in a comment.
+
+- **`crew` 0.16.0: stale reference tables in `plugin/crew/README.md`.** §25 said
+  21 commands and 11 agents, and listed neither `/crew:model`, `/crew:roster`,
+  nor the three agents 0.15.x added. `PLUGINS.md` had been updated and the
+  plugin's own README had not, which is the worse half to miss: it is the file
+  someone reads after installing. Both are now 24 and 14, and `PLUGINS.md`'s
+  own header count (`21 commands`) and `validate-prompts.py` check count (110)
+  were stale by the same release and are corrected too.
+
 - **`obsidian-vault` 0.3.0: vault profiles, note templates, and a bridge status
   that tells four failures apart.**
 

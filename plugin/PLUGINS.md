@@ -14,7 +14,7 @@ Read the **Hooks** section of any plugin before installing it. Commands and agen
 | **Version** | 0.12.2 |
 | **Install** | `claude plugin install crew@useful-claude-add-ons` |
 | **Menu item** | 21, `repo-plugins` — **off by default**. Menu item 22, `graphify`, is a separate, also-off-by-default install of the `graphify` CLI this plugin's graph feature depends on — see **The code graph** below. |
-| **Registers** | 14 agents, 21 commands, 17 skills, 20 hook entries (10 scripts × `.sh`/`.ps1`) across 5 events |
+| **Registers** | 14 agents, 24 commands, 17 skills, 20 hook entries (10 scripts × `.sh`/`.ps1`) across 5 events |
 | **Upstream guide** | [`crew/README.md`](crew/README.md) — 25 sections, the authoritative version |
 
 Built for the awkward case: several repositories, mixed stacks, legacy code, and almost no test coverage. The workflow is file-backed tickets, one implementation session, an independent reviewer, and deterministic gates that block on failure rather than offering an opinion.
@@ -51,7 +51,7 @@ Every event is registered twice, once per flavour, each with the matching `shell
 
 A hook cannot be argued out of blocking `terraform apply`; an agent can. That is the entire value, and also the reason a bootstrap run should not install one without the box being ticked.
 
-Committed suites, all sabotage-tested: `hooks/scripts/_test/run-tests.sh` (101 cases across the three gates, the emergency lane, and the PM pulse), `setup-walkthrough.sh` (32 cases running every setup-phase script against a real mixed-stack scratch repo), `validate-prompts.py` (110 structural checks over the commands, agents and skills), and `tests/` under pytest (324 cases, including both flavours of `context-watch` and of the two gates that stand down). All but the pytest suite's Windows-only cases run in CI. What none of them proves is whether the prompts produce good work — that needs a live session on a real ticket, which is what setup Phase 7 is for.
+Committed suites, all sabotage-tested: `hooks/scripts/_test/run-tests.sh` (101 cases across the three gates, the emergency lane, and the PM pulse), `setup-walkthrough.sh` (32 cases running every setup-phase script against a real mixed-stack scratch repo), `validate-prompts.py` (133 structural checks over the commands, agents and skills), and `tests/` under pytest (324 cases, including both flavours of `context-watch` and of the two gates that stand down). All but the pytest suite's Windows-only cases run in CI. What none of them proves is whether the prompts produce good work — that needs a live session on a real ticket, which is what setup Phase 7 is for.
 
 **Every hook is inert until the repository has `.crew/config.json`.** Installing the plugin arms nothing - `/crew:init` in a repo is what turns the gates on there. A gate firing in every repository you opened would be hostile, so this is deliberate; it does mean "installed it, nothing happened" is expected rather than broken.
 
@@ -119,7 +119,7 @@ Enforcement is session-local, like every other gate here: an incident stands
 the hooks down for sessions in this repository on this machine. It does nothing
 to CI or to branch protection.
 
-### Commands — 23, all explicit
+### Commands — 24, all explicit
 
 | Command | Purpose |
 |---|---|
@@ -145,7 +145,8 @@ to CI or to branch protection.
 | `/crew:sdp-sync <REQUEST-ID> [--push]` | Sync one ServiceDesk Plus request with the local cache: pull the forty tokens that matter out of a several-thousand-token payload, push one note and a transition |
 | `/crew:obsidian-sync <T-####> [--push]` | Sync one Obsidian Kanban card with the local cache: pull reads the card's lane as the status, push moves the card and appends one note. Edits the board in place — the `kanban-plugin` frontmatter, the trailing `%% kanban:settings` block and the `**Complete**` marker are load-bearing, and a regenerated board silently stops rendering as one |
 | `/crew:pm [assign\|authority [value]\|onboard\|offboard <role>]` | Talk to the crew's manager: status with no argument, `assign` to let it decide and dispatch the next work itself, `authority report-only\|act` to read or set how much it may do unprompted, or add/remove a role. Offboarding still needs an explicit yes before it touches `.crew/config.json` |
-| `/crew:upgrade [--force]` | Bring a pre-schema-2 (`v1`) setup forward: backs up the codemap first, builds the graph if missing, reconciles derived facts per subsystem, and reports contradictions and stale-on-purpose anchors rather than resolving them |
+| `/crew:upgrade [--force]` | Bring an out-of-date setup forward: backs up the codemap and the config first, migrates `pm`, `graph`, `qa`, `dev` and `roles`, recomputes the tier, builds the graph if missing, reconciles derived facts per subsystem, and reports contradictions, stale-on-purpose anchors and machine-global config findings rather than resolving them. A block that arrived as the wrong type is left untouched and `schema` is deliberately not stamped |
+| `/crew:config [--show]` | Show every globally-settable key with its effective value and the layer that decided it, and walk the machine-global config at `~/.claude/crew/config.json`. Dry run by default; `--apply` writes, merging rather than replacing. Refuses any key that describes a repository rather than a machine, and marks a widening of `pm.authority` on both the plan and the write. The only thing in crew that writes outside the repository |
 
 First run in a new repository: `/crew:init`, then `/crew:onboard`, then `/crew:verify`.
 
@@ -165,14 +166,14 @@ Tier 0 installs with everyone; tiers 1 and 2 are added as the work demands. `/cr
 | `planner` | read-only | `sonnet` | 2 | Design second opinion from an abstracted brief |
 | `dba` | read-only | `sonnet` | 2 | Migrations, locks, online safety |
 | `docs-writer` | read/write | `sonnet` | 2 | Architecture and data flow from real code; exports a delivered artifact per `crew-house-style` |
-| `infrastructure-architect` | read-only | `sonnet` | — (off the ladder) | AWS network and account design — VPCs, routing, connectivity, DNS, ingress, landing zones — with tradeoffs. Never applies to a live account |
-| `scribe` | read/write | `sonnet` | — (off the ladder) | The durable record: ADRs, CHANGELOG entries, handoff notes, and what was tried and rejected |
-| `researcher` | read-only + web | `sonnet` | — (off the ladder) | External research only — docs, APIs, versions, vendor limits, standards, prior art. Every claim carries its source |
+| `infrastructure-architect` | read-only | `sonnet` | 2 | AWS network and account design — VPCs, routing, connectivity, DNS, ingress, landing zones — with tradeoffs. Never applies to a live account |
+| `scribe` | read/write | `sonnet` | 2 | The durable record: ADRs, CHANGELOG entries, handoff notes, and what was tried and rejected |
+| `researcher` | read-only + web | `sonnet` | 2 | External research only — docs, APIs, versions, vendor limits, standards, prior art. Every claim carries its source |
 | `pm` | read/write + `Agent` | `opus` | — (outside the ladder) | The standing manager. Reads state, decides what the crew does next, and — **when `pm.authority` is `act`** — dispatches the roles that do it. Under the default `report-only` it recommends and stops. Also does the heavy analysis that would cost more context in the main session than the answer is worth: correlating defect classes across `.crew/metrics.md`, auditing codemap anchors, assembling tier-change evidence |
 
 `explorer`, `qa-reviewer`, `security`, `analyst`, `planner`, `dba`, `infrastructure-architect` and `researcher` are read-only — a restricted tool set is one of the three things that earns a role its place. `researcher`'s read-only set is the seam that keeps it out of the codebase: it holds web and Context7 tools and no `Grep`, because anything inside this repository belongs to `explorer` or `analyst`.
 
-**Three agents ship without a tier.** `infrastructure-architect`, `scribe` and `researcher` exist as definitions and dispatch normally when named, but they are not yet rows in `crew-scaling`'s tier table, so `/crew:scale` will not propose them and `/crew:pm` will not onboard them from evidence. Add them by name in `.crew/config.json` if you want them on a crew today; the tier entries are a separate change.
+**The three agents added in 0.15.x joined the ladder in 0.16.0**, at tier 2, alongside `dba` and `docs-writer` — each closes a defect class that only appears once a repo is doing enough of that kind of work to have the evidence. `/crew:scale` proposes them, `/crew:pm` can onboard them, and `/crew:upgrade` adds them to any config already at tier 2. The ladder itself lives in `crew_state.ROLE_TIERS`; the two markdown tables that describe it (`crew-scaling/SKILL.md` and `crew-pm/onboarding.md`) are checked against that dict by a committed test rather than parsed at runtime.
 
 **Model tiers.** `opus` for the PM, because every dispatch decision derives from the project picture it holds and a bad assignment is inherited by every role below it. `opus` for `qa-reviewer`, because it is the same model family as the author and the tier is the only compensation left when Codex is absent. `sonnet` for the working roles: narrow brief, clean context, one deliverable. QA itself defaults to Codex — `qa.provider` ships as `auto`, so a machine with `codex` on `PATH` gets a different model family reviewing, and `/crew:review` says out loud which reviewer ran. These are tiers, not pinned versions; a plugin cannot pin a point release.
 
@@ -226,6 +227,180 @@ Setup is nine resumable phases (`/crew:init`), and every artifact it writes is a
 
 `.crew/` and `.work/` must be gitignored - the deploy gate writes a marker there, and an ungitignored marker dirties the tree and blocks the next deploy.
 
+### Setup phase order
+
+Source of truth: `crew-setup/phases.md`. Its numbers run 0-8, but its body does
+not: the sections appear as 0, 1, 2, 3, 4, 5, 6, then **8** (Promotion gates),
+then **7** (First real ticket), and the closing section is titled "After Phase
+7". Two things in the file agree that First real ticket runs last — where the
+section sits, and that closing heading, whose content ("repeat Phases 0-5 for
+the next repo", "run `/crew:survey` now that there is a safety net worth acting
+on") only makes sense from the end. Only the numbers disagree, and the phase
+table is sorted by number rather than making a claim about order. So the
+sequence below is **0-6, 8, 7** — the order the prose runs in, not the order
+the numbers suggest.
+
+```mermaid
+flowchart TD
+    P0["Phase 0 — Platform"] --> P1["Phase 1 — Config & structure"]
+    P1 -->|"GATE: claude-md-audit.sh clean — no missing<br/>sections, no unfilled placeholders"| P2["Phase 2 — Providers & notifications"]
+    P2 -->|"GATE: one real round trip per provider,<br/>test message actually delivered"| P3["Phase 3 — Smoke harness"]
+    P3 -->|"GATE: harness green and not vacuous —<br/>do not proceed red"| P4["Phase 4 — Code map"]
+    P4 --> P5["Phase 5 — Verification map"]
+    P5 -->|"GATE: every pairing proven by breaking it,<br/>unmapped: fail, no MISSING tool"| P6{"Phase 6 — Browser tests"}
+    P5 -.->|"no UI: skip Phase 6 as n/a —<br/>the Phase 5 gate still applies"| P8
+    P6 -->|"GATE: passes with no agent attached"| P8["Phase 8 — Promotion gates"]
+    P8 -->|"HOOK GATE armed from here on:<br/>promote-gate.sh 4 preconditions,<br/>verify-gate.sh promotion row"| P7["Phase 7 — First real ticket"]
+    P7 --> After["After Phase 7:<br/>repeat 0-5 for the next repo,<br/>survey, runbook, scale"]
+
+    STOP["Every arrow is also a stop:<br/>each phase reports and waits for a<br/>human go before the next one runs"]
+
+    classDef hookgate stroke:#c0392b,stroke-width:3px;
+    classDef provegate stroke:#d68910,stroke-width:2px;
+    classDef note fill:#f7f7f7,stroke:#999999,stroke-dasharray: 3 3;
+    class P8 hookgate;
+    class P1,P2,P3,P5,P6 provegate;
+    class STOP note;
+```
+
+**Skippable:** Phase 6 is the only phase that can be marked `n/a` outright, and
+only when the repo has no UI. Two phases have optional *parts* without being
+skippable themselves — Phase 2's notifications and Cloud MCP halves, and Phase
+5's Terraform sub-step, which only applies when there are `.tf` files. Phase 3
+can end `blocked`, which is not a skip: it stops the sequence rather than
+letting it past.
+
+**Gated.** One gate is mechanical and the rest are written, and the difference
+is the point:
+
+- **Phase 8 is enforced by hooks.** `promote-gate.sh` refuses any command
+  matching a declared `deploy` entry unless all four preconditions hold for the
+  sha at HEAD, and `verify-gate.sh` will not let a turn end after a deploy that
+  wrote no `.work/PROMOTIONS.md` row.
+- **Phases 1, 2, 3, 5 and 6 are stop-and-prove gates** — written into
+  `phases.md`, not enforced by code, but each closed by a named artifact or a
+  script's verdict rather than by judgement. Phase 1 is done when
+  `claude-md-audit.sh` reports no missing sections and no remaining
+  placeholders. Phase 2 is done on a real round trip per provider and a test
+  message that arrived, explicitly not on something being found on `PATH`.
+  Phase 3 says do not proceed to Phase 4 with a red or vacuous harness. Phase 5
+  is done when every pairing has been proven by breaking the code and watching
+  the mapped check go red, `"unmapped"` is `"fail"`, and `resolve-tools.sh`
+  reports no MISSING tool. Phase 6 is done when `npx playwright test` passes
+  **with no agent attached**.
+- **Phase 0 needs a human acceptance** — any CRLF or filesystem problem is
+  either fixed or explicitly accepted, and nothing is re-cloned without asking.
+- **Every phase boundary is a gate**, which is the one that does not belong to
+  any phase: setup runs one phase, then stops and reports, and does not chain
+  into the next without being told to go.
+
+Phase 4 is the one phase with no gate. Its done-when is satisfied by producing
+the code map and **reporting** which areas are still unmapped, so it closes
+with known gaps rather than refusing to close on them.
+
+Phases 3 and 5 also arm the machinery the later phases are judged by, which is
+the concrete reason they come first. With no `.crew/verify.json` yet,
+`verify-gate.sh` falls back to running `_verify/smoke.sh` — Phase 3's artifact
+(`plugin/crew/hooks/scripts/verify-gate.sh:122-130`). Once Phase 5 has written
+the map, the same gate checks the rules a changed path requires and refuses to
+end the turn on unmapped changes (`verify-gate.sh:189-190`).
+
+**Why 8 precedes 7:** Phase 7 is the acceptance test of the assembled system,
+so everything it is meant to shake down has to be armed before it runs. Its
+output is the awkward-parts feedback, and that feedback is only worth having if
+promotion is part of what was exercised. Phase 8 is also where `.gitignore`
+grows to cover `.crew/` and `.work/` — the directories Phase 7's `/crew:work`
+immediately starts writing into, and an ungitignored marker there dirties the
+tree and blocks the next deploy.
+
+**None of it is durable outside a crew session.** `guard.sh`, `verify-gate.sh`
+and `promote-gate.sh` are hooks that live in whichever Claude Code session has
+the crew plugin active. A phase marked `done` records that the setup work
+happened once; it says nothing about whether the session open right now has the
+plugin enabled. A teammate who never installed crew gets none of these gates,
+even with `CLAUDE.md`, `.crew/verify.json` and `.crew/STATUS.md` all sitting
+there looking fully set up.
+
+Per phase, what it produces and what going wrong looks like:
+
+- **Phase 0 — Platform.** Produces a recorded `platform` block in
+  `.crew/config.json` and every tool the repo needs resolved to a form that
+  actually runs on this machine (native, or `wsl.exe -e <tool>`). Wrong looks
+  like a rule calling `terraform validate` on a shell where terraform only
+  exists in WSL — the gate reports "command not found" as a failed check
+  instead of a missing tool, and someone loses an afternoon to a config bug
+  that was never there. **Gated on a human:** any CRLF or filesystem problem is
+  fixed or explicitly accepted, and nothing is re-cloned without asking first.
+- **Phase 1 — Config and structure.** Produces `.crew/config.json` (reviewer,
+  tracker, memory, `pm.authority`), the repo's `CLAUDE.md` (created, or
+  appended to — never regenerated), and the context/handoff settings. **Gated
+  by a script:** `claude-md-audit.sh` compares the repo's `CLAUDE.md` against
+  the template section by section, and the phase does not close while it still
+  reports a missing section or an unfilled placeholder. Wrong
+  looks like a repo ending up crew-managed with no promotion discipline and
+  no stop-and-ask list because missing `CLAUDE.md` sections were silently
+  skipped, or `pm.authority` resolving to something other than what was just
+  chosen because a machine-global file was already deciding it.
+- **Phase 2 — Providers and notifications.** Produces a reviewer chain proven
+  by one real round trip each (not just found on `PATH`), a design second
+  opinion, and a notification channel that has actually delivered a test
+  message. **Gated:** presence on `PATH` and a pasted webhook URL do not close
+  this phase; a completed call and a message someone actually saw do. Wrong
+  looks like an `events` list set to everything — a channel that pings
+  constantly gets muted within a week, and a muted channel is worse than none
+  because the team believes it is covered.
+- **Phase 3 — Smoke harness.** Produces `_verify/` with a green `smoke.sh` in
+  under 90 seconds, 5-9 real checks, and a `README.md` recording what each
+  covers. **Gated:** does not proceed to Phase 4 with a red or vacuous
+  harness — a gate that passes because it checks nothing is worse than no
+  gate at all.
+- **Phase 4 — Code map.** Produces `.crew/codemap/INDEX.md`, one note per
+  subsystem, every claim anchored to a file path and a sha. Wrong looks like
+  an anchor asserted without the file having actually been read, or an
+  unmapped area folded quietly into "done" instead of reported as a gap.
+- **Phase 5 — Verification map.** Produces `.crew/verify.json` mapping
+  changed paths to checks with `"unmapped": "fail"`, plus linter and
+  Terraform rules, with every pairing verified by breaking the code and
+  confirming the mapped check goes red. **Gated:** not done until
+  `resolve-tools.sh` reports no MISSING tool either — a rule naming a tool this
+  shell cannot run is a check that fails on the turn someone needed it. Wrong
+  looks like a pairing that stays green when broken — a coverage hole, and
+  finding it is half the point of this phase — or a script in `_verify/` that
+  no rule names, so it never runs.
+- **Phase 6 — Browser tests (skippable).** Produces Playwright specs and
+  visual baselines for the two or three flows where breakage is expensive,
+  Chromium only unless there is evidence of a browser-specific bug, and with
+  Playwright installed and confirmed by `npx playwright test --list` before any
+  spec is written. Explicitly `n/a` when there is no UI; otherwise **gated** on
+  `npx playwright test` passing **with no agent attached**. Wrong looks like
+  chasing exhaustive coverage instead of the handful of flows that matter, or
+  skipping it for a repo that does have a UI because it is the path of least
+  resistance.
+- **Phase 8 — Promotion gates.** Produces the `environments` block in
+  `verify.json` (deploy, smoke, regression, rollback, soak per environment),
+  `requireHuman: true` on production, and a rollback runbook with a fresh
+  `last verified` date. **The one gate here that is enforced by code rather
+  than written down:** from here on, `promote-gate.sh` refuses any command
+  matching a declared
+  `deploy` entry unless every precondition already holds, and `verify-gate.sh`
+  will not let a turn end after a deploy that wrote no promotion row. Wrong
+  looks like an `environments` block with five aspirational commands nobody
+  has run — it reads as coverage while being worse than an empty file.
+- **Phase 7 — First real ticket.** Produces one small, real change carried
+  through `/crew:ticket` -> `/crew:plan` -> `/crew:work` -> `/crew:review` end
+  to end, plus the awkward-parts feedback that gets fed back into the command
+  prompts themselves. Wrong looks like picking something too large — which
+  tests the code instead of the loop — or treating one clean run as proof the
+  prompts are good rather than proof this one ticket went well.
+
+The code map and the verification map come before the first real ticket
+because work reviewed against nothing is unreviewed. Phase 4 gives the review
+something to read the change against, Phase 5 gives it the rules a changed
+path must satisfy, and only then is Phase 7's `/crew:review` doing anything a
+turn later could not have done by eye. Run the ticket first and the loop still
+completes — it just completes against an empty map, which looks exactly like
+success.
+
 ### Testing
 
 Four committed suites, all sabotage-tested - three under `plugin/crew/hooks/scripts/_test/` and the pytest suite under `plugin/crew/tests/`:
@@ -237,7 +412,7 @@ Four committed suites, all sabotage-tested - three under `plugin/crew/hooks/scri
 | `validate-prompts.py` | 110 | Frontmatter, tool names, referenced agents and paths, read-only agents holding no write tools |
 | `tests/` (pytest, one level up) | 324 | The Python behind the hooks: `crew_state`, `pm_brief`, `pm_pulse`, both flavours of `context-watch`, and the two gates that stand down. Run it — it is the suite that catches renderer regressions the shell suite cannot see, such as a new brief line squeezing the top finding out of a capped brief |
 
-What none of them proves is whether the prompts produce good work. The 21 commands and 10 agents are instructions to a model; only a live session on a real ticket exercises those, which is what setup phase 7 is for.
+What none of them proves is whether the prompts produce good work. The 24 commands and 14 agents are instructions to a model; only a live session on a real ticket exercises those, which is what setup phase 7 is for.
 
 ### Optional integrations
 

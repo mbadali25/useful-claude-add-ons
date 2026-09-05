@@ -18,6 +18,7 @@ import context  # noqa: F401  pylint: disable=unused-import
 import crew_config
 import crew_fixtures
 import crew_platform
+import crew_state
 
 
 BASE = {
@@ -540,7 +541,9 @@ def test_main_backs_up_and_recreates_a_malformed_config(
         encoding="utf-8") == "{ not json, half-edited"
     written = _cfg(root)
     assert written["tracker"] == "files"
-    assert written["schema"] == 2
+    # heal_config writes default_config(), so the recreated file is born
+    # current -- SCHEMA_CURRENT, not a literal that goes stale on a bump.
+    assert written["schema"] == crew_state.SCHEMA_CURRENT
 
 
 # --- The brief line ------------------------------------------------------

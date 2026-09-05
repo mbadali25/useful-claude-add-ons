@@ -4,6 +4,7 @@ import subprocess
 
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_fixtures
+import crew_state
 import crew_upgrade
 import graph_reconcile
 
@@ -180,12 +181,23 @@ def test_conflict_strings_are_ascii():
         line.encode("ascii")
 
 
-def test_upgrade_config_sets_schema_two():
-    assert crew_upgrade.upgrade_config({})["schema"] == 2
+def _cfg(cfg):
+    """`upgrade_config`'s config half.
+
+    It returns `(out, notes)` as of 0.16.0 -- the notes are what the run has
+    to SAY, and a caller that only wants the dict has to say so. The tests
+    below that are about the notes call `crew_upgrade.upgrade_config` directly.
+    """
+    out, _ = crew_upgrade.upgrade_config(cfg)
+    return out
+
+
+def test_upgrade_config_stamps_the_current_schema():
+    assert _cfg({})["schema"] == crew_state.SCHEMA_CURRENT
 
 
 def test_upgrade_config_adds_pm_and_graph_blocks():
-    got = crew_upgrade.upgrade_config({"tier": 0})
+    got = _cfg({"tier": 0})
     assert got["pm"]["mode"] == "adaptive"
     assert got["pm"]["authority"] == "report-only"
     assert got["graph"]["mode"] == "code-only"
@@ -194,13 +206,13 @@ def test_upgrade_config_adds_pm_and_graph_blocks():
 
 def test_upgrade_config_preserves_unknown_keys():
     # A config written by a newer crew than the one running must survive.
-    got = crew_upgrade.upgrade_config({"somethingNew": {"a": 1}, "tier": 2})
+    got = _cfg({"somethingNew": {"a": 1}, "tier": 2})
     assert got["somethingNew"] == {"a": 1}
     assert got["tier"] == 2
 
 
 def test_upgrade_config_does_not_clobber_an_existing_pm_block():
-    got = crew_upgrade.upgrade_config({"pm": {"quietLines": 3}})
+    got = _cfg({"pm": {"quietLines": 3}})
     assert got["pm"]["quietLines"] == 3
     assert got["pm"]["mode"] == "adaptive"  # defaults still filled in
 
@@ -213,13 +225,13 @@ def test_a_wrong_typed_block_does_not_crash_the_upgrade():
     partway, not merely a silent session.
     """
     for bad in ("yes", 1, ["a"], None, 0, True):
-        got = crew_upgrade.upgrade_config({"graph": {"obsidian": bad}})
+        got = _cfg({"graph": {"obsidian": bad}})
         assert got["graph"]["obsidian"]["confirmed"] is False, bad
         assert got["graph"]["obsidian"]["enabled"] is False, bad
 
 
 def test_a_legitimate_nested_override_still_wins():
-    got = crew_upgrade.upgrade_config(
+    got = _cfg(
         {"pm": {"quietLines": 3}, "graph": {"obsidian": {"dir": "/vault"}}}
     )
     assert got["pm"]["quietLines"] == 3
@@ -229,7 +241,7 @@ def test_a_legitimate_nested_override_still_wins():
 
 
 def test_obsidian_confirmed_defaults_false_even_if_dir_is_set():
-    got = crew_upgrade.upgrade_config(
+    got = _cfg(
         {"graph": {"obsidian": {"dir": "/somewhere"}}}
     )
     assert got["graph"]["obsidian"]["dir"] == "/somewhere"
@@ -237,7 +249,7 @@ def test_obsidian_confirmed_defaults_false_even_if_dir_is_set():
 
 
 def test_upgrade_config_does_not_alias_the_shared_graph_block():
-    got = crew_upgrade.upgrade_config({})
+    got = _cfg({})
     assert got["graph"]["obsidian"] is not crew_upgrade.GRAPH_BLOCK["obsidian"]
     assert crew_upgrade.GRAPH_BLOCK["obsidian"]["confirmed"] is False
 
@@ -250,11 +262,11 @@ def test_backup_is_taken_before_any_write(tmp_path):
     assert backup.read_text(encoding="utf-8") == V1_MAP
 
 
-def test_run_writes_schema_two_to_disk(tmp_path):
+def test_run_writes_the_current_schema_to_disk(tmp_path):
     root = crew_fixtures.make_repo(tmp_path, config={"tier": 0})
     crew_upgrade.run(str(root), {})
     cfg = json.loads((root / ".crew" / "config.json").read_text(encoding="utf-8"))
-    assert cfg["schema"] == 2
+    assert cfg["schema"] == crew_state.SCHEMA_CURRENT
 
 
 def test_second_run_reports_already_current(tmp_path):
@@ -264,7 +276,7 @@ def test_second_run_reports_already_current(tmp_path):
 
 
 def test_force_reruns_a_current_setup(tmp_path):
-    root = crew_fixtures.make_repo(tmp_path, config={"schema": 2})
+    root = crew_fixtures.make_repo(tmp_path, config={"schema": crew_state.SCHEMA_CURRENT})
     assert crew_upgrade.run(str(root), {}, force=True)["status"] == "upgraded"
 
 
@@ -338,11 +350,14 @@ def test_bom_prefixed_config_upgrades_normally(tmp_path):
     assert out["status"] == "upgraded"
     cfg = json.loads((root / ".crew" / "config.json").read_text(encoding="utf-8"))
     assert cfg["tier"] == 2
-    assert cfg["roles"] == ["explorer", "dba"]
+    # Roles migrate forward now, so this is a superset rather than an
+    # equality -- what this test is about is that the BOM did not eat the
+    # file, not the ladder.
+    assert {"explorer", "dba"} <= set(cfg["roles"])
     assert cfg["tracker"] == "jira"
     assert cfg["jira"] == {"cloudId": "abc", "project": "PROJ"}
     assert cfg["myCustomKey"] == {"anything": "goes"}
-    assert cfg["schema"] == 2
+    assert cfg["schema"] == crew_state.SCHEMA_CURRENT
 
 
 def test_unparseable_config_is_refused_not_overwritten(tmp_path):
@@ -363,7 +378,7 @@ def test_null_schema_does_not_raise(tmp_path):
     out = crew_upgrade.run(str(root), {})
     assert out["status"] == "upgraded"
     cfg = json.loads((root / ".crew" / "config.json").read_text(encoding="utf-8"))
-    assert cfg["schema"] == 2
+    assert cfg["schema"] == crew_state.SCHEMA_CURRENT
     assert cfg["tier"] == 1
 
 
@@ -389,3 +404,259 @@ def test_config_backup_is_not_overwritten_by_a_second_run(tmp_path):
     backup.write_text('{"sentinel": true}', encoding="utf-8")
     crew_upgrade.run(str(root), {}, force=True)
     assert json.loads(backup.read_text(encoding="utf-8")) == {"sentinel": True}
+
+
+# --- 0.16.0: qa, dev, roles and tier migrate too ---------------------------
+
+
+def test_upgrade_config_brings_the_provider_table_forward():
+    """The reported bug. A config predating 0.14.4 has neither `qa.order` nor
+    a `dev` block, and an absent `qa.order` made /crew:model report zero
+    candidates and "no independent reviewer" for a setup that reviews fine."""
+    got = _cfg({"tier": 0, "roles": ["explorer", "qa-reviewer"],
+                "qa": {"provider": "codex"}})
+    assert got["qa"]["order"] == ["codex", "copilot", "claude"]
+    assert got["qa"]["provider"] == "codex"          # the user's value survives
+    assert got["qa"]["codex"] == {"model": None, "reasoningEffort": None}
+    assert got["dev"] == crew_state.DEV_DEFAULTS
+
+
+def test_upgrade_config_does_not_alias_the_shared_provider_blocks():
+    got = _cfg({})
+    got["qa"]["codex"]["model"] = "mutated"
+    got["dev"]["copilot"]["model"] = "mutated"
+    assert crew_state.QA_DEFAULTS["codex"]["model"] is None
+    assert crew_state.DEV_DEFAULTS["copilot"]["model"] is None
+
+
+def test_upgrade_adds_roles_the_declared_tier_already_entitles():
+    """Adding, not reporting: the decision the spec records. A repo already at
+    tier 2 gets the tier-2 roles later releases added."""
+    got, notes = crew_upgrade.upgrade_config(
+        {"tier": 2, "roles": ["explorer", "qa-reviewer", "developer",
+                              "docs-writer", "planner"]})
+    for role in ("dba", "browser-tester", "analyst", "security",
+                 "smoke-author", "infrastructure-architect", "scribe",
+                 "researcher"):
+        assert role in got["roles"], role
+    assert notes["rolesAdded"] == [
+        "security", "smoke-author", "dba", "browser-tester", "analyst",
+        "infrastructure-architect", "scribe", "researcher"]
+    assert notes["tierFrom"] == 2 and notes["tierTo"] == 2
+
+
+def test_upgrade_never_grows_a_crew_past_its_declared_tier():
+    """The guard that keeps "add the new roles" from meaning "add every role".
+    Moving UP a tier is /crew:scale's job and needs evidence."""
+    got, notes = crew_upgrade.upgrade_config(
+        {"tier": 0, "roles": ["explorer", "qa-reviewer"]})
+    assert got["roles"] == ["explorer", "qa-reviewer"]
+    assert not notes["rolesAdded"]
+    assert notes["tierTo"] == 0
+
+
+def test_upgrade_recomputes_tier_from_the_roles_actually_listed():
+    """A config claiming tier 0 while listing `planner` is at tier 2 whatever
+    the number says -- and the report has to name the move."""
+    got, notes = crew_upgrade.upgrade_config(
+        {"tier": 0, "roles": ["explorer", "planner"]})
+    assert got["tier"] == 2
+    assert notes["tierFrom"] == 0 and notes["tierTo"] == 2
+    assert "dba" in got["roles"]
+
+
+def test_upgrade_keeps_a_role_this_release_does_not_know():
+    got, notes = crew_upgrade.upgrade_config(
+        {"tier": 1, "roles": ["explorer", "house-style-cop"]})
+    assert "house-style-cop" in got["roles"]
+    assert notes["rolesUnknown"] == ["house-style-cop"]
+    # Unknown to the ladder means its tier is genuinely unknown; guessing one
+    # would move a crew up on the strength of a string nobody recognises.
+    assert notes["tierTo"] == 1
+
+
+def test_upgrade_never_removes_a_role():
+    """Offboarding keeps its explicit-yes gate; nothing here may take a role
+    away. Removing one destroys the coverage that would have told you whether
+    the removal was right."""
+    before = ["explorer", "qa-reviewer", "planner", "something-custom"]
+    got, _ = crew_upgrade.upgrade_config({"tier": 2, "roles": before})
+    assert set(before) <= set(got["roles"])
+
+
+def test_a_wrong_typed_block_is_left_alone_and_schema_is_not_stamped():
+    """`schema` stamped current unconditionally is how the whole class of bug
+    stayed invisible: the next run reports "already current" and skips."""
+    for key in ("pm", "graph", "qa", "dev"):
+        got, notes = crew_upgrade.upgrade_config({key: "oops", "tier": 0})
+        assert got[key] == "oops", key            # the user's value, untouched
+        assert notes["unmigrated"] == [key], key
+        assert notes["schemaStamped"] is False, key
+        assert "schema" not in got, key
+
+
+def test_wrong_typed_roles_is_reported_not_silently_replaced():
+    got, notes = crew_upgrade.upgrade_config({"roles": "explorer", "tier": 2})
+    assert got["roles"] == "explorer"
+    assert notes["unmigrated"] == ["roles"]
+    assert "schema" not in got
+
+
+def test_run_reports_unmigrated_blocks_in_its_status(tmp_path):
+    root = crew_fixtures.make_repo(tmp_path, config={"tier": 0, "qa": "oops"})
+    out = crew_upgrade.run(str(root), {})
+    assert out["status"] == "upgraded with unmigrated blocks"
+    cfg = json.loads((root / ".crew" / "config.json").read_text(encoding="utf-8"))
+    assert "schema" not in cfg
+    # And the repo therefore still reports an upgrade as needed, rather than
+    # being marked done with a block nobody migrated.
+    again = crew_upgrade.run(str(root), {})
+    assert again["status"] == "upgraded with unmigrated blocks"
+
+
+def test_the_report_states_roles_added_and_the_tier_move(tmp_path):
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"tier": 2, "roles": ["explorer", "qa-reviewer"]},
+        codemap={"auth": V1_MAP})
+    out = crew_upgrade.run(str(root), {})
+    assert "## Config" in out["report"]
+    assert "roles added: security" in out["report"]
+    assert "planner" in out["report"]
+    written = (root / ".crew" / "codemap" / "UPGRADE.md").read_text(encoding="utf-8")
+    assert written == out["report"]
+
+
+# --- 0.16.0: schema 2 -> 3, the per-role provider table --------------------
+#
+# Bumping SCHEMA_CURRENT makes every existing crew repo report `upgradeNeeded`
+# at session start, so this migration is mandatory rather than optional. A
+# mandatory migration that silently re-routed someone's development work to a
+# different model would be indefensible, so the identical-behaviour property
+# is PROVEN here rather than asserted in a docstring -- and proven on the
+# resolver, not on the dict, since the dict obviously differs once keys are
+# added.
+
+
+# A config exactly as 0.15.x wrote it: the 0.14.4 provider table, no per-role
+# entries, no fallback, `schema: 2`.
+V2_CONFIG = {
+    "schema": 2,
+    "tier": 1,
+    "roles": ["explorer", "qa-reviewer", "security", "smoke-author",
+              "developer"],
+    "qa": {
+        "provider": "auto",
+        "order": ["codex", "copilot", "claude"],
+        "codex": {"model": None, "reasoningEffort": "high"},
+        "copilot": {"model": "kimi-k3"},
+    },
+    "dev": {
+        "provider": "codex",
+        "codex": {"model": "gpt-6-astra", "reasoningEffort": None},
+        "copilot": {"model": None},
+    },
+    "tracker": "files",
+}
+
+_EVERY_ROLE = (crew_state.QA_ROLE_KINDS + crew_state.DEV_ROLE_KINDS
+               + ("something-nobody-named",))
+
+
+def _dispatch(cfg):
+    """Every role's resolved provider/model/family, for both blocks."""
+    out = {}
+    for kind in ("qa", "dev"):
+        for role in _EVERY_ROLE:
+            got = crew_state.resolve_role(cfg, kind, role)
+            out[f"{kind}.{role}"] = (got["provider"], got["model"],
+                                     got["family"], got["reasoningEffort"])
+    return out
+
+
+def test_a_v2_config_migrates_to_v3_with_identical_dispatch():
+    """The behaviour gate. Every role resolves to the same provider, model,
+    family and reasoning effort before and after -- so a repo that upgrades
+    keeps dispatching exactly where it did, and opting in stays a choice."""
+    before = _dispatch(V2_CONFIG)
+    after, _ = crew_upgrade.upgrade_config(V2_CONFIG)
+
+    assert _dispatch(after) == before
+    # And the values themselves are the v2 ones, not coincidentally-equal
+    # defaults -- a resolver that returned None for everything would satisfy
+    # the equality above and prove nothing.
+    assert before["dev.developer"] == ("codex", "gpt-6-astra", "gpt", None)
+    assert before["qa.review"] == ("auto", None, None, None)
+
+
+def test_the_migration_adds_the_schema_3_keys_empty():
+    got, notes = crew_upgrade.upgrade_config(V2_CONFIG)
+
+    assert got["schema"] == 3
+    assert got["qa"]["roles"] == {}  # pylint: disable=use-implicit-booleaness-not-comparison
+    assert got["dev"]["roles"] == {}  # pylint: disable=use-implicit-booleaness-not-comparison
+    assert got["qa"]["fallback"] == crew_state.FALLBACK_DEFAULT
+    assert got["dev"]["fallback"] == crew_state.FALLBACK_DEFAULT
+    assert notes["schemaFrom"] == 2
+    assert set(notes["providerKeysAdded"]) == set(crew_upgrade.SCHEMA_3_KEYS)
+
+
+def test_the_migration_preserves_every_v2_provider_value():
+    got, _ = crew_upgrade.upgrade_config(V2_CONFIG)
+    assert got["qa"]["codex"]["reasoningEffort"] == "high"
+    assert got["qa"]["copilot"]["model"] == "kimi-k3"
+    assert got["dev"]["provider"] == "codex"
+    assert got["dev"]["codex"]["model"] == "gpt-6-astra"
+    assert got["tracker"] == "files"
+
+
+def test_the_migration_never_writes_a_role_pin_nobody_chose():
+    """`/crew:init` and `/crew:upgrade` OFFER the recommended table. Shipping
+    it as a migration would route developer work to codex the moment a repo
+    upgraded, with no opt-in left to give."""
+    got, _ = crew_upgrade.upgrade_config({"schema": 2, "tier": 0,
+                                          "roles": ["explorer"]})
+    assert got["dev"]["roles"] == {}  # pylint: disable=use-implicit-booleaness-not-comparison
+    assert got["dev"]["provider"] == "claude"
+    assert crew_state.resolve_role(got, "dev", "developer")["provider"] == "claude"
+
+
+def test_a_config_that_already_has_the_v3_keys_is_not_reported_as_gaining_them():
+    """Computed from the incoming file, not from the version number -- a
+    hand-edited config carrying `dev.roles` already must not be reported as
+    having just been given it."""
+    cfg = json.loads(json.dumps(V2_CONFIG))
+    cfg["dev"]["roles"] = {"developer": {"provider": "codex",
+                                         "model": "gpt-6-astra"}}
+    got, notes = crew_upgrade.upgrade_config(cfg)
+    assert "dev.roles" not in notes["providerKeysAdded"]
+    assert "qa.roles" in notes["providerKeysAdded"]
+    assert got["dev"]["roles"]["developer"]["model"] == "gpt-6-astra"
+
+
+def test_the_report_states_what_schema_three_added_and_that_it_is_neutral(
+        tmp_path):
+    root = crew_fixtures.make_repo(tmp_path, config=V2_CONFIG,
+                                   codemap={"auth": V1_MAP})
+    out = crew_upgrade.run(str(root), {})
+    assert "dev.roles" in out["report"]
+    assert "NEUTRAL" in out["report"]
+    assert "dispatches exactly as it did" in out["report"]
+    assert "/crew:model" in out["report"]
+
+
+def test_an_unmigrated_block_is_not_reported_as_having_gained_v3_keys():
+    """A `qa` left exactly as the user wrote it did not gain anything, and
+    saying otherwise would claim work the migration explicitly declined."""
+    _, notes = crew_upgrade.upgrade_config({"qa": "oops", "tier": 0})
+    assert not any(k.startswith("qa.") for k in notes["providerKeysAdded"])
+
+
+def test_the_report_says_so_when_nothing_was_added(tmp_path):
+    """Stated every run, including when the answer is none -- a report that
+    only speaks up on change cannot be trusted when it is silent."""
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"tier": 0, "roles": ["explorer", "qa-reviewer"]},
+        codemap={"auth": V1_MAP})
+    out = crew_upgrade.run(str(root), {})
+    assert "roles added: none" in out["report"]
+    assert "tier: 0 (unchanged)" in out["report"]

@@ -34,6 +34,109 @@ not that such a review is bad; it is that it looks exactly like a good one.
 
 ---
 
+## Role pins for this project
+
+Crew fills every role with Claude except these:
+
+| Role | Config key | Provider | Model |
+|---|---|---|---|
+| `developer` (senior) | `dev.roles.developer` | codex | `gpt-6-astra` |
+| `security` | `dev.roles.security` | codex | `gpt-6-astra` |
+| `infrastructure-architect` | `dev.roles.infrastructure-architect` | codex | `gpt-6-astra` |
+| `planner` | `dev.roles.planner` | **claude** | `model` stays null — codex `gpt-5.6-sol` sits in `alternate` |
+| QA phase-1 review, and the smoke test | `qa.roles.phase1`, `qa.roles.smoke` | codex | `gpt-5.6-sol` |
+| QA review, and gating | `qa.roles.review`, `qa.roles.gate` | codex | `gpt-5.6-luna` |
+
+Two rows carry the word "review" against two different models, so read the key
+and not the label: `qa.roles.phase1` is Sol, `qa.roles.review` is Luna.
+
+**Every role not named above runs on claude.** An absent `roles` entry is not an
+error state — it is the claude default, and that is how most of the roster is
+filled.
+
+Copilot's **Kimi 2.7 (`kimi-k2.7-code`)** must also be selectable as a `dev`
+provider, pinned the same way any other `dev.roles.<role>` model is pinned:
+
+```json
+"dev": { "roles": { "developer": { "provider": "copilot", "model": "kimi-k2.7-code" } } }
+```
+
+"Kimi 2.7 (`kimi-k2.7-code`)" above is the only place this document pairs the
+display name with the wire id, deliberately: the id is a debugging detail, not
+a name. Everywhere else, say "Kimi 2.7" to a person and write `kimi-k2.7-code`
+into config. See "Pin the model, always" in the Copilot section below for why
+the suffix is not optional.
+
+### `planner` stays an alternate, not a swap
+
+`gpt-5.6-sol` is offered **alongside** Claude for `planner`, never in place of
+it. The schema says so structurally: `dev.roles.planner.provider` stays
+`claude` and `dev.roles.planner.model` stays null, while the codex option lives
+under a separate `alternate` key.
+
+```json
+"planner": {
+  "provider": "claude",
+  "model": null,
+  "alternate": { "provider": "codex", "model": "gpt-5.6-sol" }
+}
+```
+
+A reader who only sees the model string cannot tell an alternate from a pin.
+The key name is the difference. Two things about `planner` do not change when
+the alternate is offered:
+
+- It works from an **abstracted brief**, never source code.
+- `secondOpinion.sendsCode` stays `false`.
+
+Both exist because `planner`'s design assumes a brief, not a diff — see "Free
+tier reality" below. Pinning a codex model onto `planner` does not relax
+either constraint.
+
+### Fallback: configurable, and announced when it fires
+
+Every pin above shares the same fallback, `claude-sonnet-5`. It lives in
+config (`qa.fallback` / `dev.fallback`, set via `/crew:model`), not as a
+hardcoded string, because model names retire — `gemini-3.1-pro-preview` and
+`mai-code-1-flash` were both recommended by an earlier revision of this file
+and both now fail outright. See "Pin the model, always" below.
+
+A fallback that fires must be **announced**, never silent. A review that
+quietly ran on the fallback is indistinguishable from one that ran on the
+pin, and the difference matters most exactly when the pin was chosen to get
+a different model family onto the diff.
+
+### The family guard beats every pin above
+
+Evaluation happens in this order, and the order is the whole interlock:
+
+1. **The family guard runs first.** The family that wrote the diff is struck
+   from the QA walk. `family()` is `model.split("-")[0]`, so `gpt-6-astra`,
+   `gpt-5.6-sol` and `gpt-5.6-luna` are all `gpt`, and `kimi-k2.7-code` and
+   `kimi-k3` are both `kimi`.
+2. **The pin applies second**, to whatever families survive step 1.
+
+A pin that beat the guard would let a model review its own family's diff, which
+is the single thing this interlock exists to prevent. Never document it, or
+build it, the other way round.
+
+The consequence is concrete. `gpt-5.6-sol` and `gpt-5.6-luna` are the same `gpt`
+family as `gpt-6-astra`, so when `developer`, `security`, or
+`infrastructure-architect` are pinned to `gpt-6-astra` and codex writes the
+diff, the guard bars **all** `gpt` models from reviewing it — including both QA
+pins above. QA falls to `claude` or to Copilot pinned to Kimi 2.7. **The Sol and
+Luna pins therefore apply to work codex did not write.**
+
+State this plainly whenever these pins are discussed: pinning the senior
+developer to codex means most dev work is codex-authored, so the Sol and Luna
+QA pins fire on the claude-authored work and comparatively rarely on codex's
+own diffs. A doc that lists the QA pins without this promises a review the
+guard correctly refuses to run. `/crew:model` step 3 applies this exclusion
+at review time and reports it per role — see that command for how it decides
+which family authored the diff.
+
+---
+
 ## Codex (QA review)
 
 ### Check
@@ -153,6 +256,7 @@ family. Pin a family neither the author nor Codex provides:
 | Model | Family | Status |
 |---|---|---|
 | `gemini-3.7-flash` | Google | confirmed working |
+| `kimi-k2.7-code` | Moonshot | confirmed working — display as **Kimi 2.7**; the bare `kimi-k2.7` is rejected, see below |
 | `gpt-*` | OpenAI | available, but same family as Codex — pick it only if Codex is not your other rung |
 | `claude-*` | Anthropic | **never** — this is the author's family |
 
@@ -161,6 +265,15 @@ earlier revision recommended `gemini-3.1-pro-preview` and `mai-code-1-flash`, an
 both now fail with `Model "<name>" from --model flag is not available`. Keep the
 value in `.crew/config.json` and read it at call time; never hardcode one in a
 command.
+
+Kimi 2.7 is the inverse case: not a name that died, but one that never worked.
+Probed 2026-09-05: bare `kimi-k2.7` has never been a valid id — Copilot rejects
+it with the same `Model "kimi-k2.7" from --model flag is not available` error —
+while `kimi-k2.7-code` answers. Kimi 3's id (`kimi-k3`) happens to match its
+display name, which is exactly why the 2.7 mismatch has to be stated rather
+than assumed. Say "Kimi 2.7" to a person; write `kimi-k2.7-code` into config.
+Verified available as of the same probe: `gpt-6-astra`, `gpt-5.6-sol`,
+`gpt-5.6-luna`, `kimi-k2.7-code`, `kimi-k3`.
 
 **There is no `copilot` command that lists models.** `--model list` is rejected
 like any other bad name and `copilot help` does not enumerate them, so a previous
@@ -383,15 +496,24 @@ Codex or Copilot can write the code, not just review it. `dev.provider` ships as
 ```json
 "dev": {
   "provider": "codex",
-  "codex": { "model": "gpt-5.6-sol", "reasoningEffort": "high" },
+  "codex": { "model": "gpt-6-astra", "reasoningEffort": "high" },
   "copilot": { "model": null }
 }
 ```
 
 Reach for this when the work plays to a different model's shape rather than
-because a change felt hard. The published split is consistent enough to plan
-around: GPT-5.6 Sol leads on short single-shot tasks, Kimi K3 on long-horizon
-multi-session work, Claude on multi-file refactors in a large existing codebase.
+because a change felt hard. This project's own pin — see "Role pins for this
+project" above — puts the senior `developer` role on `gpt-6-astra`. Copilot's
+`kimi-k2.7-code` is a selectable alternative for the same role:
+
+```json
+"dev": { "roles": { "developer": { "provider": "copilot", "model": "kimi-k2.7-code" } } }
+```
+
+Beyond this project's specific pins, the published split is consistent enough
+to plan around generally: GPT-5.6 Sol leads on short single-shot tasks, Kimi K3
+on long-horizon multi-session work, Claude on multi-file refactors in a large
+existing codebase.
 
 **The interlock is the whole cost of this feature.** The family that wrote the
 diff is struck from the QA walk — `/crew:review` does it from `dev.provider` at
