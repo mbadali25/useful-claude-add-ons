@@ -27,6 +27,54 @@ also means **a core-only version bump has no effect on npm until all four server
 re-published with their pin updated to match**. See
 [`PUBLISHING.md`](PUBLISHING.md#5-releasing-an-update) for the exact steps.
 
+## What's new
+
+Generated from [`UPDATE.md`](UPDATE.md) by `scripts/sync-updates.py`. Edit that file, not this block.
+
+<!-- BEGIN mcp-servers/UPDATE.md -->
+
+### Unreleased
+
+No new MCP servers this round.
+
+One operational note that costs an afternoon if you hit it cold: when several
+Obsidian vaults each run the Local REST API plugin, **every vault needs its own
+HTTPS port as well as its own HTTP port**. Two vaults declaring the same HTTPS
+port is not a partial failure — the second one to load fails to bind, and its
+plugin then serves neither protocol, so the HTTP port you actually configured
+goes silent too. The symptom looks like an auth or TLS problem and is not:
+the surviving vault answers on the shared port with *its* API key and *its*
+files. Compare `port` and `insecurePort` across every vault's
+`.obsidian/plugins/obsidian-local-rest-api/data.json` before touching anything
+else, and probe with `curl -k` on the HTTPS port, which works even where a
+Node client rejects the self-signed certificate.
+
+<!-- END mcp-servers/UPDATE.md -->
+
+## What's new
+
+Generated from `UPDATE.md` in this directory by `scripts/sync-updates.py`. Edit that file, not this block.
+
+<!-- BEGIN mcp-servers/UPDATE.md -->
+
+### Unreleased
+
+No new MCP servers this round.
+
+One operational note that costs an afternoon if you hit it cold: when several
+Obsidian vaults each run the Local REST API plugin, **every vault needs its own
+HTTPS port as well as its own HTTP port**. Two vaults declaring the same HTTPS
+port is not a partial failure — the second one to load fails to bind, and its
+plugin then serves neither protocol, so the HTTP port you actually configured
+goes silent too. The symptom looks like an auth or TLS problem and is not:
+the surviving vault answers on the shared port with *its* API key and *its*
+files. Compare `port` and `insecurePort` across every vault's
+`.obsidian/plugins/obsidian-local-rest-api/data.json` before touching anything
+else, and probe with `curl -k` on the HTTPS port, which works even where a
+Node client rejects the self-signed certificate.
+
+<!-- END mcp-servers/UPDATE.md -->
+
 ## Quickstart: minimum setup is just `az login`
 
 The three admin-scope servers (`mcp-msgraph`, `mcp-intune`, `mcp-o365-admin`) need **no

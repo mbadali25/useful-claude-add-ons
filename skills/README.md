@@ -4,6 +4,33 @@ Each subdirectory here is a self-contained [Claude Code Skill](https://docs.clau
 
 See [`../Skill-Authoring-Standard.md`](../Skill-Authoring-Standard.md) for how a skill in this repo must be structured, and [`../Skill-Pipeline.md`](../Skill-Pipeline.md) for how a new or changed skill gets from a draft to something your team can install.
 
+## What's new
+
+Generated from [`UPDATE.md`](UPDATE.md) by `scripts/sync-updates.py`. Edit that file, not this block.
+
+<!-- BEGIN skills/UPDATE.md -->
+
+### Unreleased
+
+No standalone skills added this round. The 25 skills registered in
+`.claude-plugin/marketplace.json` are unchanged.
+
+<!-- END skills/UPDATE.md -->
+
+## What's new
+
+Generated from `UPDATE.md` in this directory by `scripts/sync-updates.py`. Edit that file, not this block.
+
+<!-- BEGIN skills/UPDATE.md -->
+
+### Unreleased
+
+No standalone skills added this round. The 25 skills registered in
+[`.claude-plugin/marketplace.json`](../.claude-plugin/marketplace.json) are
+unchanged.
+
+<!-- END skills/UPDATE.md -->
+
 ## Overview
 
 | Skill | Category | What it does | Use cases | Invocation |

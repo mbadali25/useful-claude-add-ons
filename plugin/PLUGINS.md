@@ -14,7 +14,7 @@ Read the **Hooks** section of any plugin before installing it. Commands and agen
 | **Version** | 0.12.2 |
 | **Install** | `claude plugin install crew@useful-claude-add-ons` |
 | **Menu item** | 21, `repo-plugins` — **off by default**. Menu item 22, `graphify`, is a separate, also-off-by-default install of the `graphify` CLI this plugin's graph feature depends on — see **The code graph** below. |
-| **Registers** | 11 agents, 21 commands, 16 skills, 20 hook entries (10 scripts × `.sh`/`.ps1`) across 5 events |
+| **Registers** | 14 agents, 21 commands, 17 skills, 20 hook entries (10 scripts × `.sh`/`.ps1`) across 5 events |
 | **Upstream guide** | [`crew/README.md`](crew/README.md) — 25 sections, the authoritative version |
 
 Built for the awkward case: several repositories, mixed stacks, legacy code, and almost no test coverage. The workflow is file-backed tickets, one implementation session, an independent reviewer, and deterministic gates that block on failure rather than offering an opinion.
@@ -149,7 +149,7 @@ to CI or to branch protection.
 
 First run in a new repository: `/crew:init`, then `/crew:onboard`, then `/crew:verify`.
 
-### Agents — 11, tiered plus the manager
+### Agents — 14, tiered plus the manager
 
 Tier 0 installs with everyone; tiers 1 and 2 are added as the work demands. `/crew:scale` decides from evidence rather than taste.
 
@@ -164,10 +164,15 @@ Tier 0 installs with everyone; tiers 1 and 2 are added as the work demands. `/cr
 | `analyst` | read-only | `sonnet` | 2 | Anchored findings and options, never tickets |
 | `planner` | read-only | `sonnet` | 2 | Design second opinion from an abstracted brief |
 | `dba` | read-only | `sonnet` | 2 | Migrations, locks, online safety |
-| `docs-writer` | read/write | `sonnet` | 2 | Architecture and data flow from real code |
+| `docs-writer` | read/write | `sonnet` | 2 | Architecture and data flow from real code; exports a delivered artifact per `crew-house-style` |
+| `infrastructure-architect` | read-only | `sonnet` | — (off the ladder) | AWS network and account design — VPCs, routing, connectivity, DNS, ingress, landing zones — with tradeoffs. Never applies to a live account |
+| `scribe` | read/write | `sonnet` | — (off the ladder) | The durable record: ADRs, CHANGELOG entries, handoff notes, and what was tried and rejected |
+| `researcher` | read-only + web | `sonnet` | — (off the ladder) | External research only — docs, APIs, versions, vendor limits, standards, prior art. Every claim carries its source |
 | `pm` | read/write + `Agent` | `opus` | — (outside the ladder) | The standing manager. Reads state, decides what the crew does next, and — **when `pm.authority` is `act`** — dispatches the roles that do it. Under the default `report-only` it recommends and stops. Also does the heavy analysis that would cost more context in the main session than the answer is worth: correlating defect classes across `.crew/metrics.md`, auditing codemap anchors, assembling tier-change evidence |
 
-`explorer`, `qa-reviewer`, `security`, `analyst`, `planner`, and `dba` are read-only — a restricted tool set is one of the three things that earns a role its place.
+`explorer`, `qa-reviewer`, `security`, `analyst`, `planner`, `dba`, `infrastructure-architect` and `researcher` are read-only — a restricted tool set is one of the three things that earns a role its place. `researcher`'s read-only set is the seam that keeps it out of the codebase: it holds web and Context7 tools and no `Grep`, because anything inside this repository belongs to `explorer` or `analyst`.
+
+**Three agents ship without a tier.** `infrastructure-architect`, `scribe` and `researcher` exist as definitions and dispatch normally when named, but they are not yet rows in `crew-scaling`'s tier table, so `/crew:scale` will not propose them and `/crew:pm` will not onboard them from evidence. Add them by name in `.crew/config.json` if you want them on a crew today; the tier entries are a separate change.
 
 **Model tiers.** `opus` for the PM, because every dispatch decision derives from the project picture it holds and a bad assignment is inherited by every role below it. `opus` for `qa-reviewer`, because it is the same model family as the author and the tier is the only compensation left when Codex is absent. `sonnet` for the working roles: narrow brief, clean context, one deliverable. QA itself defaults to Codex — `qa.provider` ships as `auto`, so a machine with `codex` on `PATH` gets a different model family reviewing, and `/crew:review` says out loud which reviewer ran. These are tiers, not pinned versions; a plugin cannot pin a point release.
 
@@ -181,7 +186,7 @@ Four bounds keep `act` honest. A priority the user has stated **outranks** the P
 
 The fifth bound is about scope rather than permission, and it is the one that makes autonomy survivable: **a problem the PM stumbles on gets fixed only if it blocks a finding it was already working.** Everything else becomes a ticket (if a `tracker` is configured) or a `TODO.md` line with its reason, and the report has to say what was deferred and where it went. Autonomy's failure mode is not doing the wrong thing, it is doing too many things — refreshing a diagram, noticing a bug, fixing it, noticing thin tests, writing tests, and never finishing the diagram. It writes only inside `.crew/`, `docs/diagrams/`, and `TODO.md` — application source is always someone else's job.
 
-### Bundled skills — 16
+### Bundled skills — 17
 
 These are ordinary skills, scoped to `crew`'s own workflow. They work on every Claude surface, including chat, unlike the hooks and agents.
 
@@ -195,6 +200,7 @@ These are ordinary skills, scoped to `crew`'s own workflow. They work on every C
 | `crew-terraform` | `terraform-docs` and `tflint` for a module — header block, `footer.md`, README injection |
 | `crew-runbooks` | Writing, indexing, and maintaining operational runbooks |
 | `crew-diagrams` | Architecture and data-flow diagrams, with a Visio path |
+| `crew-house-style` | House style for a document handed to a human — palette, headings, capitalization, and PDF vs DOCX vs HTML vs plain markdown. Routes generation to `anthropic-office-skills`, `ppt-master` and `visio-diagrams`; falls back to markdown and says so when none is installed |
 | `crew-providers` | Codex as reviewer, Gemini as design partner, and verifying either |
 | `crew-memory` | Obsidian-backed memory |
 | `crew-notify` | Teams and Telegram payload discipline |
