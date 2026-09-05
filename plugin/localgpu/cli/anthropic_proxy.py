@@ -262,32 +262,24 @@ def offered_tool_names(body: dict[str, Any]) -> set[str]:
     return {t["function"]["name"] for t in to_ollama_tools(body.get("tools"))}
 
 
-def resolve_num_ctx(
-    ollama_url: str,
-    model: str,
-    timeout: float = 10.0,
-    default: int = DEFAULT_NUM_CTX,
-) -> int:
-    """The context window to request, capped by what the model actually supports.
+def _probe_num_ctx(ollama_url: str, model: str, timeout: float) -> int | None:
+    """Ask Ollama's `/api/show` for the model's own advertised context length.
 
-    Asks Ollama's `/api/show` for the model's own advertised context length
-    and returns the smaller of that and `default` - `default` exists so one
-    model's huge native window does not get requested against an 8 GB card
-    that cannot hold the KV cache for it (see DEFAULT_NUM_CTX), and the cap
-    the other direction exists so a *smaller*-context model is never asked
-    for more than it supports, which is its own failure.
+    Returns `None` on any failure - Ollama unreachable, model not pulled yet,
+    a build that does not report context_length, an unrecognised key - rather
+    than a fallback number, so a caller can tell a real answer from a failed
+    probe apart. That distinction is the whole point of splitting this out of
+    `resolve_num_ctx`: a caller that folds failure into the same fallback
+    value it would return on success (as a bare `except: return default`
+    does) cannot tell "the model really has this window" from "the probe
+    didn't work this time," and a caller that then *caches* the result caches
+    the failure exactly as confidently as it would a real answer - see
+    `ProxyHandler._resolved_num_ctx`, which is why this exists.
 
     `/api/show`'s `model_info` names context length with an
     architecture-prefixed key ("qwen2.context_length", "llama.context_length",
     ...) rather than one fixed name, because that GGUF metadata field is
     namespaced under the architecture that defines it.
-
-    Any failure here - Ollama unreachable, model not pulled yet, a build that
-    does not report context_length, an unrecognised key - falls back to
-    `default` rather than raising. This runs on the hot path of a session's
-    first turn; a local model that already works at a documented default
-    context beats a session that cannot start because a metadata probe
-    failed.
     """
     try:
         request = urllib.request.Request(
@@ -302,20 +294,67 @@ def resolve_num_ctx(
         arch = model_info.get("general.architecture")
         context_length = model_info.get(f"{arch}.context_length")
         if not isinstance(context_length, int) or context_length <= 0:
-            return default
-        return min(default, context_length)
+            return None
+        return context_length
     except Exception:
+        return None
+
+
+def resolve_num_ctx(
+    ollama_url: str,
+    model: str,
+    timeout: float = 10.0,
+    default: int = DEFAULT_NUM_CTX,
+) -> int:
+    """The context window to request, capped by what the model actually supports.
+
+    Asks Ollama for the model's own advertised context length (via
+    `_probe_num_ctx`) and returns the smaller of that and `default` -
+    `default` exists so one model's huge native window does not get requested
+    against an 8 GB card that cannot hold the KV cache for it (see
+    DEFAULT_NUM_CTX), and the cap the other direction exists so a
+    *smaller*-context model is never asked for more than it supports, which
+    is its own failure.
+
+    Any failure to probe falls back to `default` rather than raising. This
+    runs on the hot path of a session's first turn; a local model that
+    already works at a documented default context beats a session that
+    cannot start because a metadata probe failed. Callers that need to
+    distinguish a real answer from this fallback - to avoid caching a
+    transient failure, for instance - should call `_probe_num_ctx` directly
+    instead.
+    """
+    probed = _probe_num_ctx(ollama_url, model, timeout)
+    if probed is None:
         return default
+    return min(default, probed)
 
 
 def estimate_prompt_tokens(body: dict[str, Any]) -> int:
     """A cheap approximation of the request's prompt size, in tokens, that
     deliberately errs toward over-counting rather than accuracy. See
     `_CHARS_PER_TOKEN_ESTIMATE` for why this is a character count and not a
-    real tokenizer, and why the direction of the error is chosen on purpose."""
-    size = len(json.dumps(body.get("system") or ""))
-    size += sum(len(json.dumps(m)) for m in body.get("messages") or [])
-    size += len(json.dumps(body.get("tools") or []))
+    real tokenizer, and why the direction of the error is chosen on purpose.
+
+    Measures the *translated* Ollama form (`to_ollama_messages`/
+    `to_ollama_tools`), not the raw Anthropic `body` - an image block is ~2 KB
+    of base64 in `body` but a ~30-character placeholder in what actually
+    reaches Ollama (see `_blocks_to_text`); sizing the untranslated body
+    measures base64 that is never sent and refuses a request the model would
+    have answered in a heartbeat.
+
+    Serialises with `ensure_ascii=False` for the same reason: `json.dumps`'s
+    default escapes every non-ASCII character (CJK included) as a 6-character
+    `\\uXXXX` sequence, inflating a 4000-character CJK message to roughly
+    24,000 measured characters - triple its real size - and refusing an
+    ordinary non-English conversation at a fraction of the model's actual
+    capacity. `_CHARS_PER_TOKEN_ESTIMATE` stays conservative regardless; this
+    only fixes which bytes get divided by it.
+    """
+    messages = to_ollama_messages(body.get("system"), body.get("messages") or [])
+    tools = to_ollama_tools(body.get("tools"))
+    size = len(json.dumps(messages, ensure_ascii=False))
+    size += len(json.dumps(tools, ensure_ascii=False))
     return size // _CHARS_PER_TOKEN_ESTIMATE
 
 
@@ -933,17 +972,35 @@ class ProxyHandler(BaseHTTPRequestHandler):
         if self.num_ctx is not None:
             return self.num_ctx
         cached = self._num_ctx_cache.get("value")
-        if cached is None:
-            # Capped, not self.timeout_seconds outright - that one is sized
-            # for a local model to finish *generating* (DEFAULT_TIMEOUT is
-            # 600s) and a metadata lookup that should return in well under a
-            # second has no business inheriting it. The min() still respects
-            # a deliberately short timeout_seconds (e.g. a test proving
-            # behaviour under a fast timeout) instead of overriding it.
-            probe_timeout = min(self.timeout_seconds, 10.0)
-            cached = resolve_num_ctx(self.ollama_url, self.chat_model, timeout=probe_timeout)
-            self._num_ctx_cache["value"] = cached
-        return cached
+        if cached is not None:
+            return cached
+        # Capped, not self.timeout_seconds outright - that one is sized
+        # for a local model to finish *generating* (DEFAULT_TIMEOUT is
+        # 600s) and a metadata lookup that should return in well under a
+        # second has no business inheriting it. The min() still respects
+        # a deliberately short timeout_seconds (e.g. a test proving
+        # behaviour under a fast timeout) instead of overriding it.
+        probe_timeout = min(self.timeout_seconds, 10.0)
+        probed = _probe_num_ctx(self.ollama_url, self.chat_model, probe_timeout)
+        if probed is None:
+            # Calling resolve_num_ctx here and caching its return would cache
+            # the fallback exactly as confidently as a real answer, pinning
+            # DEFAULT_NUM_CTX for the life of the process after one transient
+            # probe failure (Ollama loading another model, a cold start) - a
+            # model whose real window is smaller then silently receives a
+            # budget computed from the wrong number for every request that
+            # follows. Only a successful probe is cached (below), so the next
+            # request tries again instead of being stuck with this one.
+            self.log_message(
+                "num_ctx probe failed for %s; using %s for this request "
+                "only (will retry on the next request)",
+                self.chat_model,
+                DEFAULT_NUM_CTX,
+            )
+            return DEFAULT_NUM_CTX
+        resolved = min(DEFAULT_NUM_CTX, probed)
+        self._num_ctx_cache["value"] = resolved
+        return resolved
 
     # -- helpers -----------------------------------------------------------
 
