@@ -6,6 +6,75 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
+- **`localgpu` 0.1.0 - a new plugin that puts the GPU in this machine behind a
+  repository.** Ollama serves `nomic-embed-text` and
+  `qwen2.5-coder:7b-instruct-q4_K_M` on `127.0.0.1:11434`; an MCP server chunks a
+  tree, embeds it into a vector store under `$LOCALGPU_HOME/index/`, and exposes
+  `search_code`, `index_status` and `index_refresh` over it. Six commands -
+  `setup`, `doctor`, `index`, `search`, `ask`, `crew` - and one bundled skill
+  holding the paths, the two config layers and the VRAM rules every command reads
+  before acting. No prompt, no file and no embedding leaves the machine, which is
+  the whole reason to run it: code that is not permitted to reach a vendor API
+  still gets search by meaning.
+
+  **A `localgpu` CLI ships with it, and a translating proxy underneath.**
+  `pyproject.toml` installs one console script into `$LOCALGPU_HOME/venv` -
+  editable on purpose, because `cli/localgpu_cli.py` resolves its sibling `mcp/`
+  directory from its own `__file__` and a copied install puts that `__file__` in
+  `site-packages`, where `mcp/` does not exist. `localgpu shell` starts
+  `cli/anthropic_proxy.py` on a loopback port and launches a **separate** `claude`
+  process against it, so the current session and `.crew/config.json` are untouched;
+  `localgpu proxy` runs the same proxy in the foreground for debugging or for a
+  non-Claude client. The proxy exists because the two ends do not otherwise meet:
+  `ANTHROPIC_BASE_URL` makes a client POST `/v1/messages` in the Anthropic Messages
+  format, while Ollama's OpenAI-compatible surface is `/v1/chat/completions` with a
+  different body, so pointing one straight at the other 404s on every request. It
+  serves `POST /v1/messages` (streaming and not), `GET /v1/models` and `GET /health`,
+  carries system prompts, multi-turn text, tool definitions, tool calls, tool
+  results, stop sequences and sampling options across intact, and reports rather
+  than fakes what cannot cross - images become a visible placeholder, thinking
+  blocks are never synthesised, `cache_control` is accepted and ignored with zero
+  cache hits reported, and the token counts are Ollama's rather than Anthropic's.
+  It also recovers tool calls the model writes as prose: the shipped
+  `qwen2.5-coder:7b-instruct-q4_K_M` puts `{"name": ..., "arguments": {...}}` in
+  `content` and leaves `tool_calls` empty, which Claude Code reads as text - the
+  tool never runs, `stop_reason` stays `end_turn`, and nothing errors. The
+  promotion is deliberately narrow (tools actually offered, the entire body one
+  JSON value, an object or list of objects, every name one of the offered tools),
+  because the cost of a false positive is inventing a call nobody asked for. The
+  child process is launched with `ANTHROPIC_AUTH_TOKEN` and `ANTHROPIC_PROFILE`
+  removed, since either outranks the API key and would send the session silently
+  back to the real API. `cli/_test/` holds 46 tests over all of this - the wire
+  format as pure functions, plus the proxy on a real bound socket against a fake
+  Ollama - with a sabotage log recording four regressions reintroduced and
+  confirmed red.
+
+  **It registers no hooks, so nothing starts running when it is enabled.** There
+  is deliberately no background indexer and no watcher - the index goes stale
+  until someone runs `/localgpu:index`. A hook here would mean GPU work firing on
+  somebody else's schedule, and on an 8 GB card that is not free: it evicts
+  whatever model was resident.
+
+  The heavy parts are not installed by installing the plugin. Ticking `localgpu`
+  in either bootstrap script copies commands, a skill and Python source and
+  downloads nothing; Ollama, the virtualenv and roughly 5 GB of weights come from
+  `/localgpu:setup`, per repository, after it has shown the plan and asked. It
+  will not install Ollama silently either - that registers a background service
+  and a GPU runtime, so the command stops and points at the installer.
+
+  The design constraint everything bends around is that a 7B model at 4-bit
+  quantization is several tiers below the model reading the commands.
+  `/localgpu:ask` therefore labels its output `qwen2.5-coder:7b (local)` rather
+  than folding it into the session's prose, refuses to answer on thin retrieval,
+  and always prints the `file:line` excerpts it was given; `/localgpu:crew` is
+  report-only and writes nothing, not `.crew/config.json` and not an environment
+  variable. An unattributed 7B claim inheriting a frontier model's credibility is
+  the failure mode the plugin is written around - which is why `localgpu shell`
+  prints, on every launch, that *everything* in that session is the 7B including
+  any `/crew:*` command run inside it. Nothing enforces that; a review written
+  there is labelled exactly like any other, so the shell is for exploring and
+  drafting and not for gates.
+
 - **`crew` 0.15.2: every agent can now reach a skill, and the UPDATE.md gate
   actually runs.** 0.15.1 gave the `Skill` tool to the eight agents that named a
   crew skill in their prose. That fixed the agents whose instructions were
@@ -54,6 +123,24 @@ All notable changes to this repository are documented here. Format follows [Keep
   exits 0.
 
 ### Fixed
+
+- **crew 0.15.3 - `claude-md-audit.sh` rejected the very heading it recommends.**
+  `canon()` maps a heading to the concern it covers; six of its seven arms use a
+  prefix wildcard (`where*`, `scope*`, `stop*`, `promotion*`, `reporting*`,
+  `memory*`) but the commands arm was a bare `commands` with none. The script's own
+  `label()` tells the user the canonical heading is
+  `## Commands - build, test, verify, regression, promote`, which lowercases to
+  `commands - build, ...` and matches neither `commands` nor `build*`. So the audit
+  reported that section MISSING and listed it under `extra` in the same run, and a
+  user who followed the recommendation could never make it pass. One character:
+  `commands*`.
+
+  The real fix is the test beside it. `skills/crew-setup/scripts/_test/round-trip.sh`
+  feeds every `label()` output back through `canon()` and asserts it resolves to the
+  concern it came from - the contract between the two functions, which nothing
+  checked. It fails if fewer than seven concerns are examined, so a broken extraction
+  cannot report green over zero cases. Sabotage-tested: reintroducing the missing
+  wildcard turns it red.
 
 - **Eight crew agents cited a skill they had no way to load.** Naming a skill in
   an agent's prose does not load it; the agent needs `skills:` frontmatter or the

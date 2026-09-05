@@ -293,3 +293,28 @@ __marimo__/
 # accident. Ignore the directory and re-admit the one file that must be tracked.
 graphify-out/*
 !graphify-out/graph.json
+
+# --- crew local state ------------------------------------------------------
+# Raw transcripts contain everything the session saw, including any secret
+# that reached it. Never commit them.
+.crew/transcripts/
+.crew/state.json
+.work/*.local.md
+
+# --- crew promotion gate ---------------------------------------------------
+# promote-gate.sh refuses to deploy when the tree is dirty and writes its own
+# approval marker into .crew/. .crew/ and .work/ are ALREADY fully ignored above
+# (lines ~268/278), so the whole of crew's state - config.json, verify.json,
+# STATUS.md, INDEX.md, PROMOTIONS.md - is local to each machine and never
+# committed. These entries are redundant belt-and-braces under that, kept
+# because they name the specific files whose tracking would deadlock a
+# promotion. NOTE: because .crew/ is ignored, every clone starts with no crew
+# config and must run /crew:init itself.
+.crew/.approved-*
+.crew/*.lock
+.work/cache/
+
+# --- localgpu ------------------------------------------------------------
+# Per-repo config carries absolute, machine-specific paths; the index itself
+# lives under %LOCALAPPDATA%\localgpu and never enters the tree.
+.localgpu/
