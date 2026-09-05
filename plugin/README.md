@@ -12,6 +12,35 @@ Generated from [`UPDATE.md`](UPDATE.md) by `scripts/sync-updates.py`. Edit that 
 
 <!-- BEGIN plugin/UPDATE.md -->
 
+### crew 0.16.7
+
+**Three domain specialists you can onboard per repo.**
+`sharepoint-developer`, `power-automate-specialist` and `node-developer` are
+full agents with their own refusal boundaries — a SharePoint change never
+breaks permission inheritance to make something work, and a Power Automate
+flow that already has a trigger is already live, so neither touches a
+production tenant unasked.
+
+They sit **off the tier ladder**, and no amount of scaling grants one. Every
+ladder role closes a defect class any repo can have, so `roles_for_tier` hands
+out every rung up to the declared tier — which is exactly how a repo with no
+database ends up holding `dba`. "This repo does SharePoint" is not a defect
+class; it is a fact about one checkout, knowable on day one. On the ladder,
+every tier-2 repo on the machine would get a SharePoint developer it will
+never dispatch.
+
+So you ask for one:
+
+```
+/crew:pm onboard node-developer
+```
+
+and it is justified from what is actually in the repo — a `package.json` with
+a server entry point, an SPFx `config/package-solution.json`, an exported flow
+definition — rather than from a pattern in `.crew/metrics.md`. Onboarding one
+leaves `tier` alone: the crew has specialised, not grown. `/crew:upgrade` no
+longer reports a deliberately-onboarded specialist as an unrecognised name.
+
 ### crew 0.16.6
 
 **`/crew:config` — see where every setting comes from, and set the ones that

@@ -755,6 +755,15 @@ def model_report(root, which=None, stale=False):
             row["display"] = (crew_state.display_model(row["model"])
                               or ("n/a (subagent)" if row["provider"] == "claude"
                                   else "(cli default)"))
+            # `claude` is an in-session subagent, not a CLI to look for, so it
+            # is always reachable; `auto` is an instruction rather than a
+            # provider and `order_candidates` answers the PATH question for
+            # the candidates it walks. Everything else is a real executable
+            # and gets asked about, so `role_status` never has to guess -- the
+            # guess is what made it disagree with the gate.
+            row["providerOnPath"] = (
+                True if row["provider"] in ("claude", "auto")
+                else bool(which(row["provider"])))
             out.append(row)
         return out
 
@@ -821,6 +830,14 @@ def role_status(row):
       * `BARRED` -- the resolved family is one that wrote this diff.
       * `walks qa.order` -- `auto` is an instruction, not a provider; the
         guard is applied to the candidates rather than to this row.
+      * `NOT ON PATH` -- the CLI that would run is not installed.
+        `order_candidates` has always refused such a candidate; this said
+        `eligible` at the same config, because it looked only at the family.
+        A report that outranks the gate is the bug this function was written
+        to fix, so getting it wrong in the other direction is not a fix.
+        Being on PATH is still not working auth -- `/crew:model` says to make
+        one real call before deciding anything on it -- so the positive
+        answer stays the weaker claim.
       * `CANNOT PROVE INDEPENDENCE` -- the family is unknown, which is what an
         unpinned `copilot` is: Copilot hosts several families and an unset
         model does not say which, so it may be serving the author's own. This
@@ -843,6 +860,8 @@ def role_status(row):
         return f"BARRED - same `{row['barredBy']}` family as the author"
     if row["provider"] == "auto":
         return "walks qa.order"
+    if not row["providerOnPath"]:
+        return f"NOT ON PATH - `{row['provider']}` is not installed here"
     if row["family"] is None:
         return (f"CANNOT PROVE INDEPENDENCE - no `{row['kind']}."
                 f"{row['provider']}.model` pinned, so its family is unknown")

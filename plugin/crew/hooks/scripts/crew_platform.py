@@ -59,6 +59,13 @@ import hook_once
 CONFIG_PATH = ".crew/config.json"
 CONFIG_BROKEN_SUFFIX = ".broken"
 
+# How many corruptions to keep. The first keeps the bare
+# `.broken` name, the rest are numbered. A cap rather than an unbounded
+# series because a config corrupting on a loop should not silently fill
+# `.crew/` -- past this, heal_config refuses rather than destroying the
+# newest original to make room.
+CONFIG_BROKEN_MAX = 5
+
 # The only keys this module may write. Everything else in the file is somebody's
 # decision. Adding to this list is a deliberate act - if a key could ever be
 # hand-set to something a human means, it does not belong here.
@@ -246,24 +253,44 @@ def heal_config(root):
             was_empty = True
         else:
             # Present, non-empty, and not a usable config -- back it up.
-            backup_path = path + CONFIG_BROKEN_SUFFIX
-            backed_up = True
-            if not os.path.exists(backup_path):
-                # A previous broken session already took one; do not
-                # overwrite it with a second failure -- the first is still
-                # the human's best chance at recovery. Same rule as
-                # crew_upgrade.backup_config.
+            #
+            # The first `.broken` is never overwritten: it is still the
+            # human's best chance at recovering THAT incident, the same rule
+            # crew_upgrade.backup_config applies. Skipping the backup and
+            # rewriting anyway, which is what this did, loses the newer file
+            # and then reports that it was saved -- an old incident leaves
+            # `config.json.broken`, the human repairs the config and edits it
+            # for weeks, a second corruption truncates it, and those weeks go
+            # to defaults with the message claiming a backup. So a second
+            # corruption gets a second name.
+            saved_to = None
+            for slot in range(1, CONFIG_BROKEN_MAX + 1):
+                candidate = path + CONFIG_BROKEN_SUFFIX
+                if slot > 1:
+                    candidate = f"{candidate}.{slot}"
+                if os.path.exists(candidate):
+                    continue
                 try:
-                    shutil.copy2(path, backup_path)
+                    shutil.copy2(path, candidate)
                 except OSError:
-                    # Could not back it up (read-only checkout?). Do not
-                    # destroy the original by writing over it blind --
-                    # report and stop.
-                    return None, (
-                        f"## config - {CONFIG_PATH} is malformed and could "
-                        f"NOT be backed up before rewriting - is the "
-                        f"checkout read-only? Left it untouched"
-                    )
+                    break       # read-only checkout; nothing else will work
+                saved_to = candidate
+                break
+
+            if saved_to is None:
+                # Read-only checkout, or every slot taken. Writing defaults
+                # here would destroy the only copy of the original in exchange
+                # for a config nobody asked for, so stop instead. Explicitly
+                # NOT "does the backup path exist" -- an older incident's file
+                # exists, and testing for it would pass on someone else's
+                # backup and rewrite this original anyway.
+                return None, (
+                    f"## config - {CONFIG_PATH} is malformed and could NOT "
+                    f"be backed up before rewriting - is the checkout "
+                    f"read-only, or are all {CONFIG_BROKEN_MAX} "
+                    f"{CONFIG_BROKEN_SUFFIX} slots taken? Left it untouched"
+                )
+            backed_up = os.path.basename(saved_to)
 
     cfg = crew_config.default_config()
     text = json.dumps(cfg, indent=2) + "\n"
@@ -283,9 +310,13 @@ def heal_config(root):
         )
 
     if backed_up:
+        # The name that was ACTUALLY written, not the one that would have been
+        # -- a message naming a file the recovery copy is not in is worse than
+        # no message, because it sends the human to the wrong incident.
+        saved_as = backed_up
         message = (
             f"## config - {CONFIG_PATH} was malformed; backed it up to "
-            f"{CONFIG_PATH}{CONFIG_BROKEN_SUFFIX} and wrote defaults - "
+            f".crew/{saved_as} and wrote defaults - "
             f"tracker, roles, and every other choice are back to defaults; "
             f"run /crew:init to re-record them"
         )

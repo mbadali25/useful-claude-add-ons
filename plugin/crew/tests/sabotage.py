@@ -54,10 +54,54 @@ MUTATIONS = (
         # only exercises that path stays green with the bug restored.
         "dispatch history filtered by the record instead of the checkout",
         STATE,
-        '            and item.get("branch") == here',
+        '            and (keep_all or item.get("branch") == here)',
         '            and item.get("branch") == there',
         ("tests/test_provider_table.py::"
          "test_a_stale_record_does_not_forget_this_branch_history"),
+    ),
+    (
+        # `here is None` has two causes and only one is evidence. Dropping
+        # keep_all makes an unreadable branch discard every named-branch
+        # record, which is the Critical half of Codex's round-1 review.
+        "an unreadable branch discards the named-branch history",
+        STATE,
+        "        keep_all = here is None and in_repo is not False",
+        "        keep_all = False",
+        ("tests/test_provider_table.py::"
+         "test_an_unreadable_branch_keeps_the_named_branch_history"),
+    ),
+    (
+        # Ten slots keyed on the model instead of the family means one
+        # provider's model churn evicts the family that wrote the diff.
+        "the history bound is spent per model instead of per family",
+        STATE,
+        '        fam = family(item.get("provider"), item.get("model"))',
+        "        fam = None",
+        ("tests/test_provider_table.py::"
+         "test_the_history_bound_is_spent_per_family_not_per_model"),
+    ),
+    (
+        # An atomic write stops a torn read and does nothing about two
+        # dispatches both reading the same history and each publishing it
+        # plus itself.
+        "the dispatch read happens outside the lock",
+        STATE,
+        "    with _dispatch_lock(root):\n        return _write_dispatch(root, kind, entry)",
+        "    return _write_dispatch(root, kind, entry)",
+        ("tests/test_provider_table.py::"
+         "test_the_dispatch_read_happens_inside_the_lock"),
+    ),
+    (
+        # Skipping the backup when the name is taken destroys the newer
+        # original and then reports that it was saved.
+        "a second corruption is rewritten without its own backup",
+        PLATFORM,
+        "                if os.path.exists(candidate):\n                    continue",
+        ("                if os.path.exists(candidate):\n"
+         "                    saved_to = candidate\n"
+         "                    break"),
+        ("tests/test_platform_sync.py::"
+         "test_a_second_corruption_gets_its_own_backup"),
     ),
     (
         "an empty config is adopted instead of healed",

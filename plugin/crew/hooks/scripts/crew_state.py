@@ -7,11 +7,14 @@ traceback.
 """
 
 import argparse
+import contextlib
 import json
 import os
 import re
 import subprocess
 import sys
+import time
+import uuid
 
 import crew_incident
 
@@ -934,9 +937,74 @@ DISPATCH_KINDS = ("dev",)
 
 # How many distinct dispatches to remember. The guard reads the whole list, so
 # this bounds both the file and the strike set. Ten is well past the number of
-# providers anyone has, and small enough that the file stays a few hundred
-# bytes on a long-lived branch.
+# FAMILIES anyone has -- and families are what it counts, which is the whole
+# point: keying the bound on `(provider, model)` let one provider cycling
+# through ten model ids fill the history by itself and evict the family that
+# actually wrote the diff, spending ten slots to carry one bit.
 DISPATCH_HISTORY_MAX = 10
+
+# Serialises the read-modify-write above. `.work/`, beside the record itself.
+DISPATCH_LOCK_PATH = (".work", "dispatch.lock")
+
+# How long a lock may be held before the next writer takes it. A dispatch
+# writes one small file, so anything still holding this after a minute is a
+# process that died -- and a lock with no expiry is its own outage: one killed
+# dispatch and every later one blocks forever on a holder that is gone.
+# `verify-gate` applies the same rule to its own lock for the same reason.
+DISPATCH_LOCK_TTL = 60.0
+
+
+@contextlib.contextmanager
+def _dispatch_lock(root):
+    """Hold the dispatch lock, or proceed unlocked rather than lose the write.
+
+    `O_CREAT|O_EXCL` is the atomic primitive -- the same one `hook_once.py`
+    uses -- so exactly one writer creates the file and the rest wait.
+
+    Two deliberate softnesses, both of which trade a rare wrong answer for a
+    common one:
+
+      * A lock older than `DISPATCH_LOCK_TTL` is reclaimed. A killed dispatch
+        would otherwise wedge every later one permanently.
+      * Failing to acquire it at all does NOT raise. A dispatch that cannot be
+        recorded is a review with no record, which falls back to reading the
+        config -- the guess this whole module exists to avoid. Recording it
+        with a small chance of a lost concurrent update is strictly better
+        than not recording it.
+    """
+    path = os.path.join(root, *DISPATCH_LOCK_PATH)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    held = False
+    deadline = time.time() + 5.0
+    while time.time() < deadline:
+        try:
+            handle = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        except FileExistsError:
+            try:
+                age = time.time() - os.path.getmtime(path)
+            except OSError:
+                age = 0.0
+            if age > DISPATCH_LOCK_TTL:
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
+                continue
+            time.sleep(0.02)
+            continue
+        except OSError:
+            break               # unwritable .work/; the write below will say so
+        os.close(handle)
+        held = True
+        break
+    try:
+        yield held
+    finally:
+        if held:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
 
 
 def read_dispatch(root):
@@ -1028,6 +1096,20 @@ def record_dispatch(root, kind, role, provider, model=None, branch=None):
         branch = current_branch(root)
     entry = {"role": role, "provider": provider, "model": model,
              "branch": branch}
+    with _dispatch_lock(root):
+        return _write_dispatch(root, kind, entry)
+
+
+def _write_dispatch(root, kind, entry):
+    """The read-modify-write itself. Call it holding `_dispatch_lock`.
+
+    Separated so the lock has one obvious scope: the read AND the write are
+    inside it. Writing the file atomically stops a torn read and does nothing
+    at all about two dispatches both reading the same history and each
+    publishing it plus itself -- whichever lands second erases the other, and
+    if the erased one wrote the diff its family is never struck. The PM
+    dispatches up to three roles at a time, so that is the ordinary case.
+    """
     record = dict(read_dispatch(root))
     record[kind] = entry
 
@@ -1038,14 +1120,31 @@ def record_dispatch(root, kind, role, provider, model=None, branch=None):
     # clears CODEX to review codex's own work. Nothing binds a dispatch to
     # the commits it produced, so any family dispatched on this branch may
     # have written what is under review, and all of them are struck.
-    history = [h for h in record.get(f"{kind}History") or []
-               if isinstance(h, dict)]
-    history.append(entry)
+    # Newest FIRST, and the stored list is already in that order -- so the new
+    # entry goes on the front. Appending it to the end instead (which this did
+    # until the sabotage suite caught it) reverses a newest-first list on every
+    # write: `reversed()` then promotes the oldest records and evicts
+    # middle-aged ones, so which family survives the bound became a function of
+    # how many dispatches had happened rather than of when they happened.
+    history = [entry] + [h for h in record.get(f"{kind}History") or []
+                         if isinstance(h, dict)]
     # Newest first, deduplicated on what the guard actually reads, and
     # bounded: this file is rewritten on every dispatch and nothing prunes it.
+    #
+    # The key is the FAMILY, not the model id, because the family is the only
+    # thing `author_families` ever compares. Keyed on the model, one provider
+    # walking through ten ids on one branch filled the whole history and
+    # evicted the family that wrote the diff -- ten entries carrying one bit
+    # between them. An UNKNOWN family (an unpinned copilot) keeps the provider
+    # and model in its key instead: None must not compare equal to None here,
+    # or two genuinely different unpinned providers collapse into one and the
+    # second is dropped as a duplicate of the first.
     seen, trimmed = set(), []
-    for item in reversed(history):
-        key = (item.get("provider"), item.get("model"), item.get("branch"))
+    for item in history:
+        fam = family(item.get("provider"), item.get("model"))
+        key = ((fam, item.get("branch")) if fam is not None
+               else (None, item.get("provider"), item.get("model"),
+                     item.get("branch")))
         if key in seen:
             continue
         seen.add(key)
@@ -1063,7 +1162,12 @@ def record_dispatch(root, kind, role, provider, model=None, branch=None):
     # next run, not the one being reviewed. The guard failing open during an
     # ordinary race is the worst version of this bug, because nothing about
     # it looks like a failure.
-    tmp_path = f"{path}.{os.getpid()}.tmp"
+    # PID *and* a random token. The PID alone is not unique to a WRITER: two
+    # threads in one interpreter share it, collide on this name, and
+    # `os.replace` then fails on Windows because the sibling still holds the
+    # file open. Found by running the concurrency test rather than by reading
+    # it.
+    tmp_path = f"{path}.{os.getpid()}.{uuid.uuid4().hex[:8]}.tmp"
     try:
         with open(tmp_path, "w", encoding="utf-8") as handle:
             json.dump(record, handle, indent=2, sort_keys=True)
@@ -1140,11 +1244,24 @@ def author_families(root, cfg, stale=False):
         # overwrites the slot, and filtering on `there` then keeps only that
         # claude record and forgets codex completely. That is the finding
         # this history exists to close, reintroduced one line further down.
+        #
+        # And when `here` is None, keep EVERYTHING. A None branch has two
+        # completely different causes and only one of them is evidence: a
+        # directory that provably is not a repository has no branches to
+        # confuse, while a detached HEAD, a rebase in progress, or git failing
+        # to answer means the branch is unknown. Filtering on `== None` in the
+        # second case throws away every named-branch record -- so codex
+        # dispatches on `feature`, claude takes the slot on `main`, the
+        # reviewer opens the feature commit detached, and codex is handed its
+        # own diff to review. The absence of evidence is the state this guard
+        # fails closed on.
+        in_repo = in_git_repo(root)
+        keep_all = here is None and in_repo is not False
         recorded_families = {
             family(item.get("provider"), item.get("model"))
             for item in dispatch.get("devHistory") or []
             if isinstance(item, dict) and item.get("provider")
-            and item.get("branch") == here
+            and (keep_all or item.get("branch") == here)
         }
         # The slot itself is always struck, wherever it was recorded: it is
         # the one dispatch we know about with no history to corroborate it,
@@ -1189,7 +1306,7 @@ def author_families(root, cfg, stale=False):
         # record written while detached, a branch the record does not name --
         # is unprovable, and unprovable fails closed.
         proven = ((here is not None and here == there)
-                  or (there is None and in_git_repo(root) is False))
+                  or (there is None and in_repo is False))
         if stale or not proven:
             return frozenset(
                 recorded_families | {decided["family"]}

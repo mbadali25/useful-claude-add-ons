@@ -10,6 +10,8 @@ Everything asserts on `crew_state.resolve_role`'s returned dict rather than on
 printed text. A report that says the right thing while the resolver decided
 the wrong one is exactly the failure mode a stdout assertion cannot see.
 """
+import threading
+import time
 import copy
 import json
 import os
@@ -905,7 +907,8 @@ def test_the_printed_report_says_no_independent_reviewer_when_there_is_none(
 
 def _row(**kw):
     base = {"kind": "qa", "role": "review", "provider": "copilot",
-            "model": None, "family": None, "barred": False, "barredBy": None}
+            "model": None, "family": None, "barred": False, "barredBy": None,
+            "providerOnPath": True}
     base.update(kw)
     return base
 
@@ -959,3 +962,208 @@ def test_an_unknown_family_dev_row_is_not_flagged_either():
     not an independence problem and must not be reported as one."""
     status = crew_config.role_status(_row(kind="dev", role="developer"))
     assert "CANNOT PROVE" not in status
+
+
+# --- Codex round 1 on PR #66 ------------------------------------------------
+
+
+def test_an_unreadable_branch_keeps_the_named_branch_history(tmp_path):
+    """Codex finding 1, Critical.
+
+    The history filter is `item["branch"] == here`. When `here` is None --
+    a detached HEAD, a rebase in progress, or git simply failing to answer --
+    that keeps only branchless records and DISCARDS every named-branch one.
+    So: codex dispatches on `feature` and writes the diff, claude dispatches
+    later on `main` and takes the slot, the reviewer looks at the feature
+    commit in detached HEAD, and the whole codex history is thrown away. The
+    stale path then strikes claude and the config family, and codex is clear
+    to review its own diff.
+
+    `here is None` is not evidence that nothing named a branch. It is the
+    absence of evidence, which is the state this guard is supposed to fail
+    closed on -- so every record is kept and every family struck.
+    """
+    cfg = copy.deepcopy(PINNED)
+    cfg["dev"]["roles"]["developer"] = {"provider": "copilot",
+                                        "model": "kimi-k3"}
+    root = crew_fixtures.make_repo(tmp_path, config=cfg, git=True)
+    crew_state.record_dispatch(str(root), "dev", "developer", "codex",
+                               "gpt-6-astra", branch="feature")
+    crew_state.record_dispatch(str(root), "dev", "developer", "claude", None,
+                               branch="main")
+
+    real = crew_state.current_branch
+    try:
+        crew_state.current_branch = lambda _root: None
+        authors, source = crew_state.author_families(str(root), cfg)
+    finally:
+        crew_state.current_branch = real
+
+    assert source == "stale"
+    assert "gpt" in authors, "an unreadable branch must not drop history"
+    assert "claude" in authors
+
+
+def test_a_non_git_directory_still_only_keeps_its_own_records(tmp_path):
+    """The control for the fix above. A directory that is PROVABLY not a
+    repository has no branches to confuse, which is the one case where a
+    None `here` is evidence rather than the absence of it -- so it keeps its
+    branchless records and does not widen to everything ever recorded."""
+    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=False)
+    crew_state.record_dispatch(str(root), "dev", "developer", "copilot",
+                               "kimi-k3", branch="left-over-branch")
+    crew_state.record_dispatch(str(root), "dev", "developer", "codex",
+                               "gpt-6-astra")
+
+    authors, source = crew_state.author_families(str(root), PINNED)
+
+    assert source == "dispatch"
+    assert authors == frozenset({"gpt"})
+
+
+def test_the_history_bound_is_spent_per_family_not_per_model(tmp_path):
+    """Codex finding 2, High.
+
+    The dedup key was `(provider, model, branch)` and the bound is ten. One
+    provider cycling through ten model ids on the same branch therefore fills
+    the entire history and evicts the family that actually wrote the diff --
+    and the guard consumes FAMILIES, so those ten entries carry one bit of
+    information between them. Deduplicating on the family is what makes the
+    bound mean "ten families deep" rather than "ten model strings deep".
+    """
+    cfg = copy.deepcopy(PINNED)
+    cfg["dev"]["roles"]["developer"] = {"provider": "claude", "model": None}
+    root = crew_fixtures.make_repo(tmp_path, config=cfg, git=True)
+    here = crew_state.current_branch(str(root))
+
+    crew_state.record_dispatch(str(root), "dev", "developer", "codex",
+                               "gpt-6-astra", branch=here)
+    for n in range(crew_state.DISPATCH_HISTORY_MAX + 4):
+        crew_state.record_dispatch(str(root), "dev", "developer", "copilot",
+                                   f"kimi-k{n}", branch=here)
+
+    authors, _source = crew_state.author_families(str(root), cfg)
+    assert "gpt" in authors, "one provider's model churn evicted the author"
+    assert "kimi" in authors
+
+
+def test_two_unknown_families_are_not_deduplicated_into_one(tmp_path):
+    """Deduplicating on the family must not collapse the case where the
+    family is genuinely unknown: two unpinned providers are two candidates,
+    not one, and `family()` answers None for both."""
+    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=True)
+    here = crew_state.current_branch(str(root))
+    crew_state.record_dispatch(str(root), "dev", "developer", "copilot", None,
+                               branch=here)
+    crew_state.record_dispatch(str(root), "dev", "developer", "windsurf", None,
+                               branch=here)
+
+    history = crew_state.read_dispatch(str(root))["devHistory"]
+    providers = {item["provider"] for item in history}
+    assert providers == {"copilot", "windsurf"}
+
+
+def test_the_dispatch_read_happens_inside_the_lock(tmp_path):
+    """Codex finding 3, High.
+
+    Writing the file atomically stops a torn READ and does nothing about the
+    read-modify-write: two dispatches both read history H, both append their
+    own entry, and whichever replaces last publishes `H + itself`. The other
+    dispatch is gone, and if it was the one that wrote the diff its family is
+    never struck. The PM dispatches up to three roles in parallel, so this is
+    the ordinary case rather than a contrived one.
+
+    The property that closes it is not "the write is atomic" -- it already
+    was -- but "the READ is inside the lock too". That is what this asserts,
+    deterministically: with the lock held, a concurrent `record_dispatch` must
+    not have read anything yet, and must finish once it is released. Racing
+    two threads and hoping to catch the window would be a flaky test of a
+    guard, which is worse than no test at all.
+    """
+    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=True)
+    crew_state.record_dispatch(str(root), "dev", "developer", "codex",
+                               "gpt-6-astra")
+    reads = []
+    real_read = crew_state.read_dispatch
+
+    def counting_read(target):
+        reads.append(target)
+        return real_read(target)
+
+    def dispatch():
+        crew_state.record_dispatch(str(root), "dev", "developer", "copilot",
+                                   "kimi-k3")
+
+    worker = threading.Thread(target=dispatch)
+    try:
+        crew_state.read_dispatch = counting_read
+        with crew_state._dispatch_lock(str(root)) as held:  # pylint: disable=protected-access
+            assert held, "the lock must be free in a fresh fixture"
+            worker.start()
+            time.sleep(0.3)
+            assert not reads, "the read ran outside the lock"
+            assert worker.is_alive(), "the writer did not wait for the lock"
+        worker.join(timeout=20)
+        assert not worker.is_alive(), "the writer never got the lock"
+    finally:
+        crew_state.read_dispatch = real_read
+
+    assert reads, "the writer must proceed once the lock is released"
+    families = {crew_state.family(item["provider"], item["model"])
+                for item in crew_state.read_dispatch(str(root))["devHistory"]}
+    assert families == {"gpt", "kimi"}, "a concurrent dispatch was lost"
+
+
+def test_a_stale_lock_does_not_wedge_dispatch_forever(tmp_path):
+    """A lock with no expiry is a new way to break: a killed dispatch leaves
+    the file behind and every later one blocks on a holder that is gone. The
+    lock is reclaimed once it is older than its TTL, the same rule
+    `verify-gate` already applies to its own."""
+    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=True)
+    lock = os.path.join(str(root), *crew_state.DISPATCH_LOCK_PATH)
+    os.makedirs(os.path.dirname(lock), exist_ok=True)
+    with open(lock, "w", encoding="utf-8") as handle:
+        handle.write("held by a process that died\n")
+    old = time.time() - crew_state.DISPATCH_LOCK_TTL - 5
+    os.utime(lock, (old, old))
+
+    record = crew_state.record_dispatch(str(root), "dev", "developer",
+                                        "codex", "gpt-6-astra")
+    assert record["dev"]["provider"] == "codex"
+    assert not os.path.exists(lock), "the lock must be released on exit"
+
+
+# --- finding 4: the report must not outrank the gate ------------------------
+
+
+def test_a_role_whose_cli_is_absent_is_not_reported_eligible():
+    """Codex finding 4, Medium. `order_candidates` refuses a provider that is
+    not on PATH; `role_status` said `eligible` at the same config because it
+    only looked at the family. The report outranking the gate is the exact
+    bug this pass was fixing, so getting it wrong in the other direction is
+    not an improvement."""
+    status = crew_config.role_status(
+        _row(provider="codex", model="gpt-6-astra", family="gpt",
+             providerOnPath=False))
+    assert "eligible" != status
+    assert "NOT ON PATH" in status
+
+
+def test_on_path_is_still_not_claimed_as_working_auth():
+    status = crew_config.role_status(
+        _row(provider="codex", model="gpt-6-astra", family="gpt",
+             providerOnPath=True))
+    assert status == "eligible"
+
+
+def test_model_report_records_whether_each_role_provider_resolves(tmp_path):
+    """`role_status` cannot answer the PATH question on its own -- the row has
+    to carry it, or the printer would be back to guessing."""
+    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=True)
+    report = crew_config.model_report(str(root), which=lambda _t: None)
+    for row in report["qa"] + report["dev"]:
+        assert "providerOnPath" in row
+        if row["provider"] == "claude":
+            assert row["providerOnPath"] is True
+        elif row["provider"] != "auto":
+            assert row["providerOnPath"] is False
