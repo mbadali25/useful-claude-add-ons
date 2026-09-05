@@ -781,7 +781,7 @@
       "file_type": "code",
       "norm_label": "globalwriterefused",
       "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L845"
+      "source_location": "L846"
     },
     {
       "id": "skills_cisco_meraki_tests_test_config_batches_testbatchcommit",
@@ -2271,7 +2271,7 @@
       "file_type": "code",
       "norm_label": "_all_cli()",
       "source_file": "plugin/crew/tests/test_provider_table.py",
-      "source_location": "L526"
+      "source_location": "L584"
     },
     {
       "id": "plugin_crew_tests_test_provider_table_test_a_claude_authored_diff_bars_the_claude_reviewer",
@@ -2295,7 +2295,7 @@
       "file_type": "code",
       "norm_label": "test_a_malformed_dispatch_file_reads_as_no_dispatch()",
       "source_file": "plugin/crew/tests/test_provider_table.py",
-      "source_location": "L397"
+      "source_location": "L455"
     },
     {
       "id": "plugin_crew_tests_test_provider_table_test_a_role_crew_has_never_heard_of_still_resolves",
@@ -2319,7 +2319,7 @@
       "file_type": "code",
       "norm_label": "test_an_unpinned_copilot_has_no_knowable_family_and_cannot_review()",
       "source_file": "plugin/crew/tests/test_provider_table.py",
-      "source_location": "L548"
+      "source_location": "L606"
     },
     {
       "id": "plugin_crew_tests_test_provider_table_test_an_unset_copilot_model_is_not_barred_against_another_unset_one",
@@ -2427,7 +2427,7 @@
       "file_type": "code",
       "norm_label": "test_the_dispatch_cli_records_and_refuses_an_incomplete_call()",
       "source_file": "plugin/crew/tests/test_provider_table.py",
-      "source_location": "L427"
+      "source_location": "L485"
     },
     {
       "id": "plugin_crew_tests_test_provider_table_test_the_fall_through_names_who_reviews_a_codex_authored_diff",
@@ -2439,7 +2439,7 @@
       "file_type": "code",
       "norm_label": "test_the_fall_through_names_who_reviews_a_codex_authored_diff()",
       "source_file": "plugin/crew/tests/test_provider_table.py",
-      "source_location": "L530"
+      "source_location": "L588"
     },
     {
       "id": "plugin_crew_tests_test_provider_table_test_the_printed_report_names_the_guard_and_the_fallback",
@@ -2451,7 +2451,7 @@
       "file_type": "code",
       "norm_label": "test_the_printed_report_names_the_guard_and_the_fallback()",
       "source_file": "plugin/crew/tests/test_provider_table.py",
-      "source_location": "L499"
+      "source_location": "L557"
     },
     {
       "id": "plugin_crew_tests_test_provider_table_test_the_printed_report_says_a_config_read_is_not_a_dispatch",
@@ -2463,7 +2463,7 @@
       "file_type": "code",
       "norm_label": "test_the_printed_report_says_a_config_read_is_not_a_dispatch()",
       "source_file": "plugin/crew/tests/test_provider_table.py",
-      "source_location": "L510"
+      "source_location": "L568"
     },
     {
       "id": "plugin_crew_tests_test_provider_table_test_the_printed_report_states_the_fall_through_beside_the_bars",
@@ -2475,7 +2475,7 @@
       "file_type": "code",
       "norm_label": "test_the_printed_report_states_the_fall_through_beside_the_bars()",
       "source_file": "plugin/crew/tests/test_provider_table.py",
-      "source_location": "L586"
+      "source_location": "L644"
     },
     {
       "id": "plugin_crew_tests_test_crew_config_decided_by_layer",
@@ -9123,7 +9123,7 @@
       "file_type": "code",
       "norm_label": "collect()",
       "source_file": "plugin/crew/hooks/scripts/crew_state.py",
-      "source_location": "L1038"
+      "source_location": "L1068"
     },
     {
       "id": "plugin_crew_hooks_scripts_crew_state_diagrams_dir",
@@ -9147,7 +9147,7 @@
       "file_type": "code",
       "norm_label": "evaluate_triggers()",
       "source_file": "plugin/crew/hooks/scripts/crew_state.py",
-      "source_location": "L993"
+      "source_location": "L1023"
     },
     {
       "id": "plugin_crew_hooks_scripts_crew_state_int_or",
@@ -9159,7 +9159,7 @@
       "file_type": "code",
       "norm_label": "int_or()",
       "source_file": "plugin/crew/hooks/scripts/crew_state.py",
-      "source_location": "L974"
+      "source_location": "L1004"
     },
     {
       "id": "plugin_crew_hooks_scripts_crew_state_load_config",
@@ -11235,7 +11235,7 @@
       "file_type": "code",
       "norm_label": "main()",
       "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L961"
+      "source_location": "L962"
     },
     {
       "id": "plugin_crew_hooks_scripts_crew_config_model_report",
@@ -11271,7 +11271,7 @@
       "file_type": "code",
       "norm_label": "plan_global_write()",
       "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L860"
+      "source_location": "L861"
     },
     {
       "id": "plugin_crew_hooks_scripts_crew_config_print_explain",
@@ -11283,7 +11283,7 @@
       "file_type": "code",
       "norm_label": "_print_explain()",
       "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L946"
+      "source_location": "L947"
     },
     {
       "id": "plugin_crew_hooks_scripts_crew_config_print_models",
@@ -11295,7 +11295,7 @@
       "file_type": "code",
       "norm_label": "_print_models()",
       "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L788"
+      "source_location": "L789"
     },
     {
       "id": "plugin_crew_hooks_scripts_crew_config_prune",
@@ -11343,7 +11343,7 @@
       "file_type": "code",
       "norm_label": "_set_path()",
       "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L849"
+      "source_location": "L850"
     },
     {
       "id": "plugin_crew_hooks_scripts_crew_config_write_global_config",
@@ -11355,7 +11355,7 @@
       "file_type": "code",
       "norm_label": "write_global_config()",
       "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L922"
+      "source_location": "L923"
     },
     {
       "id": "skills_web_testing_playwright_scripts_check_env_browsers_dir",
@@ -14871,7 +14871,7 @@
       "file_type": "code",
       "norm_label": "_no_cli()",
       "source_file": "plugin/crew/tests/test_provider_table.py",
-      "source_location": "L449"
+      "source_location": "L507"
     },
     {
       "id": "plugin_crew_tests_test_provider_table_test_a_provider_missing_from_path_is_not_a_candidate",
@@ -14883,7 +14883,7 @@
       "file_type": "code",
       "norm_label": "test_a_provider_missing_from_path_is_not_a_candidate()",
       "source_file": "plugin/crew/tests/test_provider_table.py",
-      "source_location": "L561"
+      "source_location": "L619"
     },
     {
       "id": "plugin_crew_tests_test_provider_table_test_no_independent_reviewer_is_stated_when_nothing_can_review",
@@ -14895,7 +14895,7 @@
       "file_type": "code",
       "norm_label": "test_no_independent_reviewer_is_stated_when_nothing_can_review()",
       "source_file": "plugin/crew/tests/test_provider_table.py",
-      "source_location": "L572"
+      "source_location": "L630"
     },
     {
       "id": "plugin_crew_tests_test_provider_table_test_the_printed_report_says_no_independent_reviewer_when_there_is_none",
@@ -14907,7 +14907,7 @@
       "file_type": "code",
       "norm_label": "test_the_printed_report_says_no_independent_reviewer_when_there_is_none()",
       "source_file": "plugin/crew/tests/test_provider_table.py",
-      "source_location": "L599"
+      "source_location": "L657"
     },
     {
       "id": "plugin_crew_tests_test_provider_table_test_the_report_includes_a_role_the_user_pinned_that_crew_does_not_name",
@@ -14919,7 +14919,7 @@
       "file_type": "code",
       "norm_label": "test_the_report_includes_a_role_the_user_pinned_that_crew_does_not_name()",
       "source_file": "plugin/crew/tests/test_provider_table.py",
-      "source_location": "L489"
+      "source_location": "L547"
     },
     {
       "id": "plugin_crew_tests_test_provider_table_test_the_report_labels_a_config_read_when_no_dispatch_exists",
@@ -14931,7 +14931,7 @@
       "file_type": "code",
       "norm_label": "test_the_report_labels_a_config_read_when_no_dispatch_exists()",
       "source_file": "plugin/crew/tests/test_provider_table.py",
-      "source_location": "L482"
+      "source_location": "L540"
     },
     {
       "id": "plugin_crew_tests_test_provider_table_test_the_report_names_every_role_with_its_family_and_fallback",
@@ -14943,7 +14943,7 @@
       "file_type": "code",
       "norm_label": "test_the_report_names_every_role_with_its_family_and_fallback()",
       "source_file": "plugin/crew/tests/test_provider_table.py",
-      "source_location": "L453"
+      "source_location": "L511"
     },
     {
       "id": "plugin_crew_tests_test_provider_table_test_the_report_shows_the_display_name_not_the_bare_wire_id",
@@ -14955,7 +14955,7 @@
       "file_type": "code",
       "norm_label": "test_the_report_shows_the_display_name_not_the_bare_wire_id()",
       "source_file": "plugin/crew/tests/test_provider_table.py",
-      "source_location": "L470"
+      "source_location": "L528"
     },
     {
       "id": "plugin_crew_hooks_scripts_crew_state_current_branch",
@@ -14979,7 +14979,7 @@
       "file_type": "code",
       "norm_label": "main()",
       "source_file": "plugin/crew/hooks/scripts/crew_state.py",
-      "source_location": "L1110"
+      "source_location": "L1140"
     },
     {
       "id": "plugin_crew_hooks_scripts_crew_state_read_dispatch",
@@ -15207,7 +15207,7 @@
       "file_type": "code",
       "norm_label": "test_recording_a_kind_nothing_reads_is_refused()",
       "source_file": "plugin/crew/tests/test_provider_table.py",
-      "source_location": "L405"
+      "source_location": "L463"
     },
     {
       "id": "plugin_crew_tests_test_crew_config_test_the_model_table_still_layers_globally",
@@ -15438,6 +15438,54 @@
       "source_location": "L87"
     },
     {
+      "id": "plugin_crew_tests_sabotage_mutate",
+      "label": "mutate()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 480,
+      "community_name": "sabotage.py",
+      "file_type": "code",
+      "norm_label": "mutate()",
+      "source_file": "plugin/crew/tests/sabotage.py",
+      "source_location": "L50"
+    },
+    {
+      "id": "plugin_crew_tests_sabotage_restore",
+      "label": "restore()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 480,
+      "community_name": "sabotage.py",
+      "file_type": "code",
+      "norm_label": "restore()",
+      "source_file": "plugin/crew/tests/sabotage.py",
+      "source_location": "L59"
+    },
+    {
+      "id": "plugin_crew_tests_sabotage_run",
+      "label": "run()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 480,
+      "community_name": "sabotage.py",
+      "file_type": "code",
+      "norm_label": "run()",
+      "source_file": "plugin/crew/tests/sabotage.py",
+      "source_location": "L23"
+    },
+    {
+      "id": "plugin_crew_tests_test_provider_table_test_a_branchless_record_in_a_git_checkout_fails_closed",
+      "label": "test_a_branchless_record_in_a_git_checkout_fails_closed()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 481,
+      "community_name": "test_a_branchless_record_in_a_git_checkout_fails_closed",
+      "file_type": "code",
+      "norm_label": "test_a_branchless_record_in_a_git_checkout_fails_closed()",
+      "source_file": "plugin/crew/tests/test_provider_table.py",
+      "source_location": "L397"
+    },
+    {
       "id": "plugin_crew_tests_test_provider_table_test_display_model_passes_an_unknown_id_through_unchanged",
       "label": "test_display_model_passes_an_unknown_id_through_unchanged()",
       "_callable": true,
@@ -15544,6 +15592,18 @@
       "norm_label": "test_an_unknown_author_family_bars_nothing()",
       "source_file": "plugin/crew/tests/test_provider_table.py",
       "source_location": "L228"
+    },
+    {
+      "id": "plugin_crew_tests_test_provider_table_test_a_non_git_checkout_is_not_stale_merely_for_lacking_branches",
+      "label": "test_a_non_git_checkout_is_not_stale_merely_for_lacking_branches()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 491,
+      "community_name": "test_a_non_git_checkout_is_not_stale_merely_for_lacking_branches",
+      "file_type": "code",
+      "norm_label": "test_a_non_git_checkout_is_not_stale_merely_for_lacking_branches()",
+      "source_file": "plugin/crew/tests/test_provider_table.py",
+      "source_location": "L419"
     },
     {
       "id": "plugin_crew_tests_test_provider_table_test_a_recorded_dispatch_beats_what_the_config_now_says",
@@ -15988,6 +16048,18 @@
       "norm_label": ".test_no_message_is_lost_under_concurrent_read()",
       "source_file": "skills/notify/tests/test_inbox_concurrency.py",
       "source_location": "L32"
+    },
+    {
+      "id": "plugin_crew_tests_test_provider_table_test_an_mtime_stale_verdict_reaches_the_report",
+      "label": "test_an_mtime_stale_verdict_reaches_the_report()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 500,
+      "community_name": "test_an_mtime_stale_verdict_reaches_the_report",
+      "file_type": "code",
+      "norm_label": "test_an_mtime_stale_verdict_reaches_the_report()",
+      "source_file": "plugin/crew/tests/test_provider_table.py",
+      "source_location": "L434"
     },
     {
       "id": "skills_notify_scripts_inbox_append",
@@ -34347,14 +34419,14 @@
       "source_location": "L181"
     },
     {
-      "id": "plugin_readme_crew_0_16_1",
-      "label": "crew 0.16.1",
+      "id": "plugin_readme_crew_0_16_2",
+      "label": "crew 0.16.2",
       "_origin": "ast",
       "community": 186,
       "community_name": "Plugins",
       "file_type": "document",
       "node_kind": "heading",
-      "norm_label": "crew 0.16.1",
+      "norm_label": "crew 0.16.2",
       "source_file": "plugin/README.md",
       "source_location": "L15"
     },
@@ -36686,7 +36758,7 @@
       "source_location": "L7"
     },
     {
-      "id": "changelog_added_1013",
+      "id": "changelog_added_1032",
       "label": "Added",
       "_origin": "ast",
       "community": 205,
@@ -36695,10 +36767,10 @@
       "node_kind": "heading",
       "norm_label": "added",
       "source_file": "CHANGELOG.md",
-      "source_location": "L1013"
+      "source_location": "L1032"
     },
     {
-      "id": "changelog_added_1121",
+      "id": "changelog_added_1140",
       "label": "Added",
       "_origin": "ast",
       "community": 205,
@@ -36707,10 +36779,10 @@
       "node_kind": "heading",
       "norm_label": "added",
       "source_file": "CHANGELOG.md",
-      "source_location": "L1121"
+      "source_location": "L1140"
     },
     {
-      "id": "changelog_added_1135",
+      "id": "changelog_added_1154",
       "label": "Added",
       "_origin": "ast",
       "community": 205,
@@ -36719,10 +36791,10 @@
       "node_kind": "heading",
       "norm_label": "added",
       "source_file": "CHANGELOG.md",
-      "source_location": "L1135"
+      "source_location": "L1154"
     },
     {
-      "id": "changelog_added_1429",
+      "id": "changelog_added_1448",
       "label": "Added",
       "_origin": "ast",
       "community": 205,
@@ -36731,10 +36803,10 @@
       "node_kind": "heading",
       "norm_label": "added",
       "source_file": "CHANGELOG.md",
-      "source_location": "L1429"
+      "source_location": "L1448"
     },
     {
-      "id": "changelog_added_1988",
+      "id": "changelog_added_2007",
       "label": "Added",
       "_origin": "ast",
       "community": 205,
@@ -36743,10 +36815,10 @@
       "node_kind": "heading",
       "norm_label": "added",
       "source_file": "CHANGELOG.md",
-      "source_location": "L1988"
+      "source_location": "L2007"
     },
     {
-      "id": "changelog_added_2263",
+      "id": "changelog_added_2282",
       "label": "Added",
       "_origin": "ast",
       "community": 205,
@@ -36755,10 +36827,10 @@
       "node_kind": "heading",
       "norm_label": "added",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2263"
+      "source_location": "L2282"
     },
     {
-      "id": "changelog_added_2467",
+      "id": "changelog_added_2486",
       "label": "Added",
       "_origin": "ast",
       "community": 205,
@@ -36767,10 +36839,10 @@
       "node_kind": "heading",
       "norm_label": "added",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2467"
+      "source_location": "L2486"
     },
     {
-      "id": "changelog_added_2582",
+      "id": "changelog_added_2601",
       "label": "Added",
       "_origin": "ast",
       "community": 205,
@@ -36779,10 +36851,10 @@
       "node_kind": "heading",
       "norm_label": "added",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2582"
+      "source_location": "L2601"
     },
     {
-      "id": "changelog_added_2664",
+      "id": "changelog_added_2683",
       "label": "Added",
       "_origin": "ast",
       "community": 205,
@@ -36791,10 +36863,10 @@
       "node_kind": "heading",
       "norm_label": "added",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2664"
+      "source_location": "L2683"
     },
     {
-      "id": "changelog_added_2705",
+      "id": "changelog_added_2724",
       "label": "Added",
       "_origin": "ast",
       "community": 205,
@@ -36803,10 +36875,10 @@
       "node_kind": "heading",
       "norm_label": "added",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2705"
+      "source_location": "L2724"
     },
     {
-      "id": "changelog_added_764",
+      "id": "changelog_added_783",
       "label": "Added",
       "_origin": "ast",
       "community": 205,
@@ -36815,7 +36887,7 @@
       "node_kind": "heading",
       "norm_label": "added",
       "source_file": "CHANGELOG.md",
-      "source_location": "L764"
+      "source_location": "L783"
     },
     {
       "id": "changelog_changed",
@@ -36827,10 +36899,10 @@
       "node_kind": "heading",
       "norm_label": "changed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L718"
+      "source_location": "L737"
     },
     {
-      "id": "changelog_changed_1057",
+      "id": "changelog_changed_1076",
       "label": "Changed",
       "_origin": "ast",
       "community": 205,
@@ -36839,10 +36911,10 @@
       "node_kind": "heading",
       "norm_label": "changed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L1057"
+      "source_location": "L1076"
     },
     {
-      "id": "changelog_changed_1827",
+      "id": "changelog_changed_1846",
       "label": "Changed",
       "_origin": "ast",
       "community": 205,
@@ -36851,10 +36923,10 @@
       "node_kind": "heading",
       "norm_label": "changed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L1827"
+      "source_location": "L1846"
     },
     {
-      "id": "changelog_changed_1963",
+      "id": "changelog_changed_1982",
       "label": "Changed",
       "_origin": "ast",
       "community": 205,
@@ -36863,10 +36935,10 @@
       "node_kind": "heading",
       "norm_label": "changed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L1963"
+      "source_location": "L1982"
     },
     {
-      "id": "changelog_changed_2345",
+      "id": "changelog_changed_2364",
       "label": "Changed",
       "_origin": "ast",
       "community": 205,
@@ -36875,10 +36947,10 @@
       "node_kind": "heading",
       "norm_label": "changed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2345"
+      "source_location": "L2364"
     },
     {
-      "id": "changelog_changed_2824",
+      "id": "changelog_changed_2843",
       "label": "Changed",
       "_origin": "ast",
       "community": 205,
@@ -36887,10 +36959,10 @@
       "node_kind": "heading",
       "norm_label": "changed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2824"
+      "source_location": "L2843"
     },
     {
-      "id": "changelog_changed_2913",
+      "id": "changelog_changed_2932",
       "label": "Changed",
       "_origin": "ast",
       "community": 205,
@@ -36899,10 +36971,10 @@
       "node_kind": "heading",
       "norm_label": "changed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2913"
+      "source_location": "L2932"
     },
     {
-      "id": "changelog_changed_979",
+      "id": "changelog_changed_998",
       "label": "Changed",
       "_origin": "ast",
       "community": 205,
@@ -36911,7 +36983,7 @@
       "node_kind": "heading",
       "norm_label": "changed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L979"
+      "source_location": "L998"
     },
     {
       "id": "changelog_fixed",
@@ -36923,10 +36995,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L229"
+      "source_location": "L248"
     },
     {
-      "id": "changelog_fixed_1218",
+      "id": "changelog_fixed_1237",
       "label": "Fixed",
       "_origin": "ast",
       "community": 205,
@@ -36935,10 +37007,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L1218"
+      "source_location": "L1237"
     },
     {
-      "id": "changelog_fixed_1404",
+      "id": "changelog_fixed_1423",
       "label": "Fixed",
       "_origin": "ast",
       "community": 205,
@@ -36947,10 +37019,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L1404"
+      "source_location": "L1423"
     },
     {
-      "id": "changelog_fixed_1420",
+      "id": "changelog_fixed_1439",
       "label": "Fixed",
       "_origin": "ast",
       "community": 205,
@@ -36959,10 +37031,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L1420"
+      "source_location": "L1439"
     },
     {
-      "id": "changelog_fixed_1727",
+      "id": "changelog_fixed_1746",
       "label": "Fixed",
       "_origin": "ast",
       "community": 205,
@@ -36971,10 +37043,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L1727"
+      "source_location": "L1746"
     },
     {
-      "id": "changelog_fixed_1848",
+      "id": "changelog_fixed_1867",
       "label": "Fixed",
       "_origin": "ast",
       "community": 205,
@@ -36983,10 +37055,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L1848"
+      "source_location": "L1867"
     },
     {
-      "id": "changelog_fixed_1941",
+      "id": "changelog_fixed_1960",
       "label": "Fixed",
       "_origin": "ast",
       "community": 205,
@@ -36995,10 +37067,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L1941"
+      "source_location": "L1960"
     },
     {
-      "id": "changelog_fixed_1973",
+      "id": "changelog_fixed_1992",
       "label": "Fixed",
       "_origin": "ast",
       "community": 205,
@@ -37007,10 +37079,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L1973"
+      "source_location": "L1992"
     },
     {
-      "id": "changelog_fixed_2121",
+      "id": "changelog_fixed_2140",
       "label": "Fixed",
       "_origin": "ast",
       "community": 205,
@@ -37019,10 +37091,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2121"
+      "source_location": "L2140"
     },
     {
-      "id": "changelog_fixed_2336",
+      "id": "changelog_fixed_2355",
       "label": "Fixed",
       "_origin": "ast",
       "community": 205,
@@ -37031,10 +37103,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2336"
+      "source_location": "L2355"
     },
     {
-      "id": "changelog_fixed_2415",
+      "id": "changelog_fixed_2434",
       "label": "Fixed",
       "_origin": "ast",
       "community": 205,
@@ -37043,10 +37115,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2415"
+      "source_location": "L2434"
     },
     {
-      "id": "changelog_fixed_2516",
+      "id": "changelog_fixed_2535",
       "label": "Fixed",
       "_origin": "ast",
       "community": 205,
@@ -37055,10 +37127,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2516"
+      "source_location": "L2535"
     },
     {
-      "id": "changelog_fixed_2686",
+      "id": "changelog_fixed_2705",
       "label": "Fixed",
       "_origin": "ast",
       "community": 205,
@@ -37067,10 +37139,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2686"
+      "source_location": "L2705"
     },
     {
-      "id": "changelog_fixed_2833",
+      "id": "changelog_fixed_2852",
       "label": "Fixed",
       "_origin": "ast",
       "community": 205,
@@ -37079,10 +37151,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2833"
+      "source_location": "L2852"
     },
     {
-      "id": "changelog_fixed_2960",
+      "id": "changelog_fixed_2979",
       "label": "Fixed",
       "_origin": "ast",
       "community": 205,
@@ -37091,10 +37163,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2960"
+      "source_location": "L2979"
     },
     {
-      "id": "changelog_fixed_460",
+      "id": "changelog_fixed_479",
       "label": "Fixed",
       "_origin": "ast",
       "community": 205,
@@ -37103,10 +37175,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L460"
+      "source_location": "L479"
     },
     {
-      "id": "changelog_fixed_560",
+      "id": "changelog_fixed_579",
       "label": "Fixed",
       "_origin": "ast",
       "community": 205,
@@ -37115,10 +37187,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L560"
+      "source_location": "L579"
     },
     {
-      "id": "changelog_fixed_654",
+      "id": "changelog_fixed_673",
       "label": "Fixed",
       "_origin": "ast",
       "community": 205,
@@ -37127,10 +37199,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L654"
+      "source_location": "L673"
     },
     {
-      "id": "changelog_fixed_696",
+      "id": "changelog_fixed_715",
       "label": "Fixed",
       "_origin": "ast",
       "community": 205,
@@ -37139,10 +37211,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L696"
+      "source_location": "L715"
     },
     {
-      "id": "changelog_fixed_744",
+      "id": "changelog_fixed_763",
       "label": "Fixed",
       "_origin": "ast",
       "community": 205,
@@ -37151,10 +37223,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L744"
+      "source_location": "L763"
     },
     {
-      "id": "changelog_fixed_878",
+      "id": "changelog_fixed_897",
       "label": "Fixed",
       "_origin": "ast",
       "community": 205,
@@ -37163,7 +37235,7 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L878"
+      "source_location": "L897"
     },
     {
       "id": "changelog_removed",
@@ -37175,10 +37247,10 @@
       "node_kind": "heading",
       "norm_label": "removed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L1912"
+      "source_location": "L1931"
     },
     {
-      "id": "changelog_removed_2253",
+      "id": "changelog_removed_2272",
       "label": "Removed",
       "_origin": "ast",
       "community": 205,
@@ -37187,10 +37259,10 @@
       "node_kind": "heading",
       "norm_label": "removed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2253"
+      "source_location": "L2272"
     },
     {
-      "id": "changelog_removed_2639",
+      "id": "changelog_removed_2658",
       "label": "Removed",
       "_origin": "ast",
       "community": 205,
@@ -37199,10 +37271,10 @@
       "node_kind": "heading",
       "norm_label": "removed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2639"
+      "source_location": "L2658"
     },
     {
-      "id": "changelog_removed_2810",
+      "id": "changelog_removed_2829",
       "label": "Removed",
       "_origin": "ast",
       "community": 205,
@@ -37211,10 +37283,10 @@
       "node_kind": "heading",
       "norm_label": "removed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2810"
+      "source_location": "L2829"
     },
     {
-      "id": "changelog_removed_2935",
+      "id": "changelog_removed_2954",
       "label": "Removed",
       "_origin": "ast",
       "community": 205,
@@ -37223,7 +37295,7 @@
       "node_kind": "heading",
       "norm_label": "removed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2935"
+      "source_location": "L2954"
     },
     {
       "id": "changelog_unreleased",
@@ -37717,7 +37789,29 @@
       "source_location": "L320"
     },
     {
-      "id": "plugin_crew_hooks_scripts_crew_state_rationale_1039",
+      "id": "plugin_crew_hooks_scripts_crew_state_rationale_1005",
+      "label": "`value` as an int when it plausibly is one, else `default`. Config is hand-\u2026",
+      "_origin": "ast",
+      "community": 211,
+      "community_name": "collect",
+      "file_type": "rationale",
+      "norm_label": "`value` as an int when it plausibly is one, else `default`. config is hand-...",
+      "source_file": "plugin/crew/hooks/scripts/crew_state.py",
+      "source_location": "L1005"
+    },
+    {
+      "id": "plugin_crew_hooks_scripts_crew_state_rationale_1024",
+      "label": "Reasons the PM should speak up, in TRIGGERS order.",
+      "_origin": "ast",
+      "community": 211,
+      "community_name": "collect",
+      "file_type": "rationale",
+      "norm_label": "reasons the pm should speak up, in triggers order.",
+      "source_file": "plugin/crew/hooks/scripts/crew_state.py",
+      "source_location": "L1024"
+    },
+    {
+      "id": "plugin_crew_hooks_scripts_crew_state_rationale_1069",
       "label": "Full crew state for a repository. Never raises. `cfg_override`, when given,\u2026",
       "_origin": "ast",
       "community": 211,
@@ -37725,7 +37819,7 @@
       "file_type": "rationale",
       "norm_label": "full crew state for a repository. never raises. `cfg_override`, when given,...",
       "source_file": "plugin/crew/hooks/scripts/crew_state.py",
-      "source_location": "L1039"
+      "source_location": "L1069"
     },
     {
       "id": "plugin_crew_hooks_scripts_crew_state_rationale_144",
@@ -37781,28 +37875,6 @@
       "norm_label": "parse .crew/config.json. returns {} when absent, malformed, or not a dict.",
       "source_file": "plugin/crew/hooks/scripts/crew_state.py",
       "source_location": "L81"
-    },
-    {
-      "id": "plugin_crew_hooks_scripts_crew_state_rationale_975",
-      "label": "`value` as an int when it plausibly is one, else `default`. Config is hand-\u2026",
-      "_origin": "ast",
-      "community": 211,
-      "community_name": "collect",
-      "file_type": "rationale",
-      "norm_label": "`value` as an int when it plausibly is one, else `default`. config is hand-...",
-      "source_file": "plugin/crew/hooks/scripts/crew_state.py",
-      "source_location": "L975"
-    },
-    {
-      "id": "plugin_crew_hooks_scripts_crew_state_rationale_994",
-      "label": "Reasons the PM should speak up, in TRIGGERS order.",
-      "_origin": "ast",
-      "community": 211,
-      "community_name": "collect",
-      "file_type": "rationale",
-      "norm_label": "reasons the pm should speak up, in triggers order.",
-      "source_file": "plugin/crew/hooks/scripts/crew_state.py",
-      "source_location": "L994"
     },
     {
       "id": "plugin_crew_skills_crew_memory_skill",
@@ -47598,7 +47670,7 @@
       "source_location": "L688"
     },
     {
-      "id": "plugin_crew_hooks_scripts_crew_config_rationale_846",
+      "id": "plugin_crew_hooks_scripts_crew_config_rationale_847",
       "label": "A requested global write named a key the walkthrough may not set.",
       "_origin": "ast",
       "community": 30,
@@ -47606,10 +47678,10 @@
       "file_type": "rationale",
       "norm_label": "a requested global write named a key the walkthrough may not set.",
       "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L846"
+      "source_location": "L847"
     },
     {
-      "id": "plugin_crew_hooks_scripts_crew_config_rationale_861",
+      "id": "plugin_crew_hooks_scripts_crew_config_rationale_862",
       "label": "What writing `updates` to the global file would change. Pure. `updates` is a\u2026",
       "_origin": "ast",
       "community": 30,
@@ -47617,10 +47689,10 @@
       "file_type": "rationale",
       "norm_label": "what writing `updates` to the global file would change. pure. `updates` is a...",
       "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L861"
+      "source_location": "L862"
     },
     {
-      "id": "plugin_crew_hooks_scripts_crew_config_rationale_923",
+      "id": "plugin_crew_hooks_scripts_crew_config_rationale_924",
       "label": "Apply `plan_global_write` to disk. Returns `(merged, changes)`. Creates\u2026",
       "_origin": "ast",
       "community": 30,
@@ -47628,10 +47700,10 @@
       "file_type": "rationale",
       "norm_label": "apply `plan_global_write` to disk. returns `(merged, changes)`. creates...",
       "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L923"
+      "source_location": "L924"
     },
     {
-      "id": "plugin_crew_hooks_scripts_crew_config_rationale_962",
+      "id": "plugin_crew_hooks_scripts_crew_config_rationale_963",
       "label": "Report the config layering, or write the global file. Reporting exits 0 even\u2026",
       "_origin": "ast",
       "community": 30,
@@ -47639,7 +47711,7 @@
       "file_type": "rationale",
       "norm_label": "report the config layering, or write the global file. reporting exits 0 even...",
       "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L962"
+      "source_location": "L963"
     },
     {
       "id": "skills_web_testing_playwright_scripts_check_env_rationale_129",
@@ -51161,14 +51233,14 @@
       "source_location": "L395"
     },
     {
-      "id": "readme_crew_0_16_1",
-      "label": "crew 0.16.1",
+      "id": "readme_crew_0_16_2",
+      "label": "crew 0.16.2",
       "_origin": "ast",
       "community": 35,
       "community_name": "useful-claude-add-ons",
       "file_type": "document",
       "node_kind": "heading",
-      "norm_label": "crew 0.16.1",
+      "norm_label": "crew 0.16.2",
       "source_file": "README.md",
       "source_location": "L229"
     },
@@ -55514,7 +55586,7 @@
       "source_location": "L1"
     },
     {
-      "id": "plugin_crew_hooks_scripts_crew_state_rationale_1111",
+      "id": "plugin_crew_hooks_scripts_crew_state_rationale_1141",
       "label": "Print the state as JSON, or record a dispatch. Exit code is always 0. Called\u2026",
       "_origin": "ast",
       "community": 468,
@@ -55522,7 +55594,7 @@
       "file_type": "rationale",
       "norm_label": "print the state as json, or record a dispatch. exit code is always 0. called...",
       "source_file": "plugin/crew/hooks/scripts/crew_state.py",
-      "source_location": "L1111"
+      "source_location": "L1141"
     },
     {
       "id": "plugin_crew_hooks_scripts_crew_state_rationale_856",
@@ -55567,10 +55639,10 @@
       "node_kind": "heading",
       "norm_label": "[2026-07-28]",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2974"
+      "source_location": "L2993"
     },
     {
-      "id": "changelog_added_2976",
+      "id": "changelog_added_2995",
       "label": "Added",
       "_origin": "ast",
       "community": 469,
@@ -55579,7 +55651,7 @@
       "node_kind": "heading",
       "norm_label": "added",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2976"
+      "source_location": "L2995"
     },
     {
       "id": "changelog_changelog",
@@ -55594,7 +55666,7 @@
       "source_location": "L1"
     },
     {
-      "id": "changelog_fixed_2985",
+      "id": "changelog_fixed_3004",
       "label": "Fixed",
       "_origin": "ast",
       "community": 469,
@@ -55603,7 +55675,7 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2985"
+      "source_location": "L3004"
     },
     {
       "id": "changelog_skills_present_as_of_this_baseline",
@@ -55615,7 +55687,7 @@
       "node_kind": "heading",
       "norm_label": "skills present as of this baseline",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2989"
+      "source_location": "L3008"
     },
     {
       "id": "plugin_crew_tests_test_verify_gate_lock",
@@ -55751,14 +55823,14 @@
       "source_location": "L177"
     },
     {
-      "id": "plugin_update_crew_0_16_1",
-      "label": "crew 0.16.1",
+      "id": "plugin_update_crew_0_16_2",
+      "label": "crew 0.16.2",
       "_origin": "ast",
       "community": 470,
       "community_name": "Plugin updates",
       "file_type": "document",
       "node_kind": "heading",
-      "norm_label": "crew 0.16.1",
+      "norm_label": "crew 0.16.2",
       "source_file": "plugin/UPDATE.md",
       "source_location": "L11"
     },
@@ -55879,7 +55951,7 @@
       "source_location": "L237"
     },
     {
-      "id": "plugin_crew_tests_test_provider_table_rationale_406",
+      "id": "plugin_crew_tests_test_provider_table_rationale_464",
       "label": "A writer with no reader is an inert feature that looks like coverage. `qa` was\u2026",
       "_origin": "ast",
       "community": 475,
@@ -55887,7 +55959,7 @@
       "file_type": "rationale",
       "norm_label": "a writer with no reader is an inert feature that looks like coverage. `qa` was...",
       "source_file": "plugin/crew/tests/test_provider_table.py",
-      "source_location": "L406"
+      "source_location": "L464"
     },
     {
       "id": "plugin_crew_tests_test_crew_config_rationale_356",
@@ -56009,6 +56081,39 @@
       "norm_label": "write `text` to `path` as utf-8, closing the handle on the way out.",
       "source_file": "plugin/gizmoduck/scripts/gizmoduck.py",
       "source_location": "L88"
+    },
+    {
+      "id": "plugin_crew_tests_sabotage",
+      "label": "sabotage.py",
+      "_origin": "ast",
+      "community": 480,
+      "community_name": "sabotage.py",
+      "file_type": "code",
+      "norm_label": "sabotage.py",
+      "source_file": "plugin/crew/tests/sabotage.py",
+      "source_location": "L1"
+    },
+    {
+      "id": "plugin_crew_tests_sabotage_rationale_1",
+      "label": "Sabotage test: reintroduce each bug and confirm the suite goes red. Run it\u2026",
+      "_origin": "ast",
+      "community": 480,
+      "community_name": "sabotage.py",
+      "file_type": "rationale",
+      "norm_label": "sabotage test: reintroduce each bug and confirm the suite goes red. run it...",
+      "source_file": "plugin/crew/tests/sabotage.py",
+      "source_location": "L1"
+    },
+    {
+      "id": "plugin_crew_tests_test_provider_table_rationale_398",
+      "label": "Codex round 2, first BLOCK. A record written before the `branch` field existed\u2026",
+      "_origin": "ast",
+      "community": 481,
+      "community_name": "test_a_branchless_record_in_a_git_checkout_fails_closed",
+      "file_type": "rationale",
+      "norm_label": "codex round 2, first block. a record written before the `branch` field existed...",
+      "source_file": "plugin/crew/tests/test_provider_table.py",
+      "source_location": "L398"
     },
     {
       "id": "plugin_crew_tests_test_provider_table_rationale_112",
@@ -56372,6 +56477,17 @@
       "norm_label": "none, never a guess. barring on an unknown author would take a real reviewer...",
       "source_file": "plugin/crew/tests/test_provider_table.py",
       "source_location": "L229"
+    },
+    {
+      "id": "plugin_crew_tests_test_provider_table_rationale_420",
+      "label": "The other side of the same rule, and the reason it is not simply \"no branch\u2026",
+      "_origin": "ast",
+      "community": 491,
+      "community_name": "test_a_non_git_checkout_is_not_stale_merely_for_lacking_branches",
+      "file_type": "rationale",
+      "norm_label": "the other side of the same rule, and the reason it is not simply \"no branch...",
+      "source_file": "plugin/crew/tests/test_provider_table.py",
+      "source_location": "L420"
     },
     {
       "id": "plugin_crew_tests_test_provider_table_rationale_362",
@@ -57038,6 +57154,17 @@
       "norm_label": "zod",
       "source_file": "mcp-servers/packages/o365-user/package.json",
       "source_location": "L30"
+    },
+    {
+      "id": "plugin_crew_tests_test_provider_table_rationale_435",
+      "label": "Codex round 2, second BLOCK. Only /crew:review can compare the record against\u2026",
+      "_origin": "ast",
+      "community": 500,
+      "community_name": "test_an_mtime_stale_verdict_reaches_the_report",
+      "file_type": "rationale",
+      "norm_label": "codex round 2, second block. only /crew:review can compare the record against...",
+      "source_file": "plugin/crew/tests/test_provider_table.py",
+      "source_location": "L435"
     },
     {
       "id": "plugin_crew_skills_crew_providers_skill",
@@ -66332,6 +66459,18 @@
     },
     {
       "source": "plugin_crew_hooks_scripts_crew_config_main",
+      "target": "plugin_crew_hooks_scripts_crew_config_write_global_config",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
+      "source_location": "L1004",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_crew_hooks_scripts_crew_config_main",
       "target": "plugin_crew_hooks_scripts_crew_config_plan_global_write",
       "relation": "calls",
       "_origin": "ast",
@@ -66339,7 +66478,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L1000",
+      "source_location": "L1006",
       "weight": 1.0
     },
     {
@@ -66351,7 +66490,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L1019",
+      "source_location": "L1025",
       "weight": 1.0
     },
     {
@@ -66363,7 +66502,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L1023",
+      "source_location": "L1029",
       "weight": 1.0
     },
     {
@@ -66375,7 +66514,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L1027",
+      "source_location": "L1033",
       "weight": 1.0
     },
     {
@@ -66387,7 +66526,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L1036",
+      "source_location": "L1042",
       "weight": 1.0
     },
     {
@@ -66399,19 +66538,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L1040",
-      "weight": 1.0
-    },
-    {
-      "source": "plugin_crew_hooks_scripts_crew_config_main",
-      "target": "plugin_crew_hooks_scripts_crew_config_write_global_config",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L998",
+      "source_location": "L1046",
       "weight": 1.0
     },
     {
@@ -66435,7 +66562,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L734",
+      "source_location": "L735",
       "weight": 1.0
     },
     {
@@ -66447,7 +66574,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L886",
+      "source_location": "L887",
       "weight": 1.0
     },
     {
@@ -66459,7 +66586,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L888",
+      "source_location": "L889",
       "weight": 1.0
     },
     {
@@ -66471,7 +66598,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L888",
+      "source_location": "L889",
       "weight": 1.0
     },
     {
@@ -66483,7 +66610,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L889",
+      "source_location": "L890",
       "weight": 1.0
     },
     {
@@ -66495,7 +66622,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L895",
+      "source_location": "L896",
       "weight": 1.0
     },
     {
@@ -66507,7 +66634,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L899",
+      "source_location": "L900",
       "weight": 1.0
     },
     {
@@ -66519,7 +66646,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L918",
+      "source_location": "L919",
       "weight": 1.0
     },
     {
@@ -66567,7 +66694,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L931",
+      "source_location": "L932",
       "weight": 1.0
     },
     {
@@ -67119,7 +67246,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/crew/hooks/scripts/crew_state.py",
-      "source_location": "L945",
+      "source_location": "L952",
       "weight": 1.0
     },
     {
@@ -67131,7 +67258,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/crew/hooks/scripts/crew_state.py",
-      "source_location": "L945",
+      "source_location": "L952",
       "weight": 1.0
     },
     {
@@ -67143,7 +67270,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/crew/hooks/scripts/crew_state.py",
-      "source_location": "L946",
+      "source_location": "L953",
       "weight": 1.0
     },
     {
@@ -67155,7 +67282,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/crew/hooks/scripts/crew_state.py",
-      "source_location": "L948",
+      "source_location": "L955",
       "weight": 1.0
     },
     {
@@ -67167,7 +67294,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/crew/hooks/scripts/crew_state.py",
-      "source_location": "L950",
+      "source_location": "L957",
       "weight": 1.0
     },
     {
@@ -67203,7 +67330,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/crew/hooks/scripts/crew_state.py",
-      "source_location": "L1060",
+      "source_location": "L1090",
       "weight": 1.0
     },
     {
@@ -67215,7 +67342,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/crew/hooks/scripts/crew_state.py",
-      "source_location": "L1074",
+      "source_location": "L1104",
       "weight": 1.0
     },
     {
@@ -67227,7 +67354,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/crew/hooks/scripts/crew_state.py",
-      "source_location": "L1078",
+      "source_location": "L1108",
       "weight": 1.0
     },
     {
@@ -67239,7 +67366,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/crew/hooks/scripts/crew_state.py",
-      "source_location": "L1096",
+      "source_location": "L1126",
       "weight": 1.0
     },
     {
@@ -67251,7 +67378,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/crew/hooks/scripts/crew_state.py",
-      "source_location": "L1097",
+      "source_location": "L1127",
       "weight": 1.0
     },
     {
@@ -67263,7 +67390,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/crew/hooks/scripts/crew_state.py",
-      "source_location": "L1098",
+      "source_location": "L1128",
       "weight": 1.0
     },
     {
@@ -67275,7 +67402,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/crew/hooks/scripts/crew_state.py",
-      "source_location": "L1099",
+      "source_location": "L1129",
       "weight": 1.0
     },
     {
@@ -67287,7 +67414,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/crew/hooks/scripts/crew_state.py",
-      "source_location": "L1106",
+      "source_location": "L1136",
       "weight": 1.0
     },
     {
@@ -67316,18 +67443,6 @@
     },
     {
       "source": "plugin_crew_hooks_scripts_crew_state_evaluate_triggers",
-      "target": "plugin_crew_hooks_scripts_crew_state_int_or",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "plugin/crew/hooks/scripts/crew_state.py",
-      "source_location": "L1006",
-      "weight": 1.0
-    },
-    {
-      "source": "plugin_crew_hooks_scripts_crew_state_evaluate_triggers",
       "target": "plugin_crew_hooks_scripts_crew_state_dict_or_empty",
       "relation": "calls",
       "_origin": "ast",
@@ -67335,7 +67450,19 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/crew/hooks/scripts/crew_state.py",
-      "source_location": "L999",
+      "source_location": "L1029",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_crew_hooks_scripts_crew_state_evaluate_triggers",
+      "target": "plugin_crew_hooks_scripts_crew_state_int_or",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "plugin/crew/hooks/scripts/crew_state.py",
+      "source_location": "L1036",
       "weight": 1.0
     },
     {
@@ -67359,7 +67486,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/crew/hooks/scripts/crew_state.py",
-      "source_location": "L1139",
+      "source_location": "L1169",
       "weight": 1.0
     },
     {
@@ -67371,7 +67498,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/crew/hooks/scripts/crew_state.py",
-      "source_location": "L1143",
+      "source_location": "L1173",
       "weight": 1.0
     },
     {
@@ -100881,24 +101008,24 @@
     },
     {
       "source": "changelog_2026_07_28",
-      "target": "changelog_added_2976",
+      "target": "changelog_added_2995",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2976",
+      "source_location": "L2995",
       "weight": 1.0
     },
     {
       "source": "changelog_2026_07_28",
-      "target": "changelog_fixed_2985",
+      "target": "changelog_fixed_3004",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2985",
+      "source_location": "L3004",
       "weight": 1.0
     },
     {
@@ -100909,7 +101036,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2989",
+      "source_location": "L3008",
       "weight": 1.0
     },
     {
@@ -100920,7 +101047,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2974",
+      "source_location": "L2993",
       "weight": 1.0
     },
     {
@@ -100936,123 +101063,123 @@
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_added_1013",
+      "target": "changelog_added_1032",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L1013",
+      "source_location": "L1032",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_changed_1057",
+      "target": "changelog_changed_1076",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L1057",
+      "source_location": "L1076",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_added_1121",
+      "target": "changelog_added_1140",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L1121",
+      "source_location": "L1140",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_added_1135",
+      "target": "changelog_added_1154",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L1135",
+      "source_location": "L1154",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_1218",
+      "target": "changelog_fixed_1237",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L1218",
+      "source_location": "L1237",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_1404",
+      "target": "changelog_fixed_1423",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L1404",
+      "source_location": "L1423",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_1420",
+      "target": "changelog_fixed_1439",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L1420",
+      "source_location": "L1439",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_added_1429",
+      "target": "changelog_added_1448",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L1429",
+      "source_location": "L1448",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_1727",
+      "target": "changelog_fixed_1746",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L1727",
+      "source_location": "L1746",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_changed_1827",
+      "target": "changelog_changed_1846",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L1827",
+      "source_location": "L1846",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_1848",
+      "target": "changelog_fixed_1867",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L1848",
+      "source_location": "L1867",
       "weight": 1.0
     },
     {
@@ -101063,84 +101190,117 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L1912",
+      "source_location": "L1931",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_1941",
+      "target": "changelog_fixed_1960",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L1941",
+      "source_location": "L1960",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_changed_1963",
+      "target": "changelog_changed_1982",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L1963",
+      "source_location": "L1982",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_1973",
+      "target": "changelog_fixed_1992",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L1973",
+      "source_location": "L1992",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_added_1988",
+      "target": "changelog_added_2007",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L1988",
+      "source_location": "L2007",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_2121",
+      "target": "changelog_fixed_2140",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2121",
+      "source_location": "L2140",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_removed_2253",
+      "target": "changelog_removed_2272",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2253",
+      "source_location": "L2272",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_added_2263",
+      "target": "changelog_added_2282",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2263",
+      "source_location": "L2282",
+      "weight": 1.0
+    },
+    {
+      "source": "changelog_unreleased",
+      "target": "changelog_fixed_2355",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "CHANGELOG.md",
+      "source_location": "L2355",
+      "weight": 1.0
+    },
+    {
+      "source": "changelog_unreleased",
+      "target": "changelog_changed_2364",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "CHANGELOG.md",
+      "source_location": "L2364",
+      "weight": 1.0
+    },
+    {
+      "source": "changelog_unreleased",
+      "target": "changelog_fixed_2434",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "CHANGELOG.md",
+      "source_location": "L2434",
       "weight": 1.0
     },
     {
@@ -101151,111 +101311,67 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L229",
+      "source_location": "L248",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_2336",
+      "target": "changelog_added_2486",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2336",
+      "source_location": "L2486",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_changed_2345",
+      "target": "changelog_fixed_2535",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2345",
+      "source_location": "L2535",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_2415",
+      "target": "changelog_added_2601",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2415",
+      "source_location": "L2601",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_added_2467",
+      "target": "changelog_removed_2658",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2467",
+      "source_location": "L2658",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_2516",
+      "target": "changelog_added_2683",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2516",
+      "source_location": "L2683",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_added_2582",
-      "relation": "contains",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "CHANGELOG.md",
-      "source_location": "L2582",
-      "weight": 1.0
-    },
-    {
-      "source": "changelog_unreleased",
-      "target": "changelog_removed_2639",
-      "relation": "contains",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "CHANGELOG.md",
-      "source_location": "L2639",
-      "weight": 1.0
-    },
-    {
-      "source": "changelog_unreleased",
-      "target": "changelog_added_2664",
-      "relation": "contains",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "CHANGELOG.md",
-      "source_location": "L2664",
-      "weight": 1.0
-    },
-    {
-      "source": "changelog_unreleased",
-      "target": "changelog_fixed_2686",
-      "relation": "contains",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "CHANGELOG.md",
-      "source_location": "L2686",
-      "weight": 1.0
-    },
-    {
-      "source": "changelog_unreleased",
-      "target": "changelog_added_2705",
+      "target": "changelog_fixed_2705",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -101266,112 +101382,112 @@
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_removed_2810",
+      "target": "changelog_added_2724",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2810",
+      "source_location": "L2724",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_changed_2824",
+      "target": "changelog_removed_2829",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2824",
+      "source_location": "L2829",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_2833",
+      "target": "changelog_changed_2843",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2833",
+      "source_location": "L2843",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_changed_2913",
+      "target": "changelog_fixed_2852",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2913",
+      "source_location": "L2852",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_removed_2935",
+      "target": "changelog_changed_2932",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2935",
+      "source_location": "L2932",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_2960",
+      "target": "changelog_removed_2954",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2960",
+      "source_location": "L2954",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_460",
+      "target": "changelog_fixed_2979",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L460",
+      "source_location": "L2979",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_560",
+      "target": "changelog_fixed_479",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L560",
+      "source_location": "L479",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_654",
+      "target": "changelog_fixed_579",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L654",
+      "source_location": "L579",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_696",
+      "target": "changelog_fixed_673",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L696",
+      "source_location": "L673",
       "weight": 1.0
     },
     {
@@ -101387,57 +101503,68 @@
     },
     {
       "source": "changelog_unreleased",
+      "target": "changelog_fixed_715",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "CHANGELOG.md",
+      "source_location": "L715",
+      "weight": 1.0
+    },
+    {
+      "source": "changelog_unreleased",
       "target": "changelog_changed",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L718",
+      "source_location": "L737",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_744",
+      "target": "changelog_fixed_763",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L744",
+      "source_location": "L763",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_added_764",
+      "target": "changelog_added_783",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L764",
+      "source_location": "L783",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_878",
+      "target": "changelog_fixed_897",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L878",
+      "source_location": "L897",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_changed_979",
+      "target": "changelog_changed_998",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L979",
+      "source_location": "L998",
       "weight": 1.0
     },
     {
@@ -109390,7 +109517,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L788",
+      "source_location": "L789",
       "weight": 1.0
     },
     {
@@ -109401,7 +109528,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L845",
+      "source_location": "L846",
       "weight": 1.0
     },
     {
@@ -109412,7 +109539,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L849",
+      "source_location": "L850",
       "weight": 1.0
     },
     {
@@ -109423,7 +109550,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L860",
+      "source_location": "L861",
       "weight": 1.0
     },
     {
@@ -109434,7 +109561,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L922",
+      "source_location": "L923",
       "weight": 1.0
     },
     {
@@ -109445,7 +109572,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L946",
+      "source_location": "L947",
       "weight": 1.0
     },
     {
@@ -109456,7 +109583,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L961",
+      "source_location": "L962",
       "weight": 1.0
     },
     {
@@ -109747,13 +109874,24 @@
     },
     {
       "source": "plugin_crew_hooks_scripts_crew_state",
-      "target": "plugin_crew_hooks_scripts_crew_state_collect",
+      "target": "plugin_crew_hooks_scripts_crew_state_int_or",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/hooks/scripts/crew_state.py",
-      "source_location": "L1038",
+      "source_location": "L1004",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_crew_hooks_scripts_crew_state",
+      "target": "plugin_crew_hooks_scripts_crew_state_evaluate_triggers",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "plugin/crew/hooks/scripts/crew_state.py",
+      "source_location": "L1023",
       "weight": 1.0
     },
     {
@@ -109769,13 +109907,24 @@
     },
     {
       "source": "plugin_crew_hooks_scripts_crew_state",
+      "target": "plugin_crew_hooks_scripts_crew_state_collect",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "plugin/crew/hooks/scripts/crew_state.py",
+      "source_location": "L1068",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_crew_hooks_scripts_crew_state",
       "target": "plugin_crew_hooks_scripts_crew_state_main",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/hooks/scripts/crew_state.py",
-      "source_location": "L1110",
+      "source_location": "L1140",
       "weight": 1.0
     },
     {
@@ -110044,17 +110193,6 @@
     },
     {
       "source": "plugin_crew_hooks_scripts_crew_state",
-      "target": "plugin_crew_hooks_scripts_crew_state_int_or",
-      "relation": "contains",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "plugin/crew/hooks/scripts/crew_state.py",
-      "source_location": "L974",
-      "weight": 1.0
-    },
-    {
-      "source": "plugin_crew_hooks_scripts_crew_state",
       "target": "plugin_crew_hooks_scripts_crew_state_verdict",
       "relation": "contains",
       "_origin": "ast",
@@ -110062,17 +110200,6 @@
       "confidence_score": 1.0,
       "source_file": "plugin/crew/hooks/scripts/crew_state.py",
       "source_location": "L98",
-      "weight": 1.0
-    },
-    {
-      "source": "plugin_crew_hooks_scripts_crew_state",
-      "target": "plugin_crew_hooks_scripts_crew_state_evaluate_triggers",
-      "relation": "contains",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "plugin/crew/hooks/scripts/crew_state.py",
-      "source_location": "L993",
       "weight": 1.0
     },
     {
@@ -115103,6 +115230,39 @@
       "weight": 1.0
     },
     {
+      "source": "plugin_crew_tests_sabotage",
+      "target": "plugin_crew_tests_sabotage_run",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "plugin/crew/tests/sabotage.py",
+      "source_location": "L23",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_crew_tests_sabotage",
+      "target": "plugin_crew_tests_sabotage_mutate",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "plugin/crew/tests/sabotage.py",
+      "source_location": "L50",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_crew_tests_sabotage",
+      "target": "plugin_crew_tests_sabotage_restore",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "plugin/crew/tests/sabotage.py",
+      "source_location": "L59",
+      "weight": 1.0
+    },
+    {
       "source": "plugin_crew_tests_test_auto_clear",
       "target": "plugin_crew_tests_test_auto_clear_sendable",
       "relation": "contains",
@@ -119218,7 +119378,7 @@
     },
     {
       "source": "plugin_crew_tests_test_provider_table",
-      "target": "plugin_crew_tests_test_provider_table_test_a_malformed_dispatch_file_reads_as_no_dispatch",
+      "target": "plugin_crew_tests_test_provider_table_test_a_branchless_record_in_a_git_checkout_fails_closed",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -119229,13 +119389,46 @@
     },
     {
       "source": "plugin_crew_tests_test_provider_table",
+      "target": "plugin_crew_tests_test_provider_table_test_a_non_git_checkout_is_not_stale_merely_for_lacking_branches",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "plugin/crew/tests/test_provider_table.py",
+      "source_location": "L419",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_crew_tests_test_provider_table",
+      "target": "plugin_crew_tests_test_provider_table_test_an_mtime_stale_verdict_reaches_the_report",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "plugin/crew/tests/test_provider_table.py",
+      "source_location": "L434",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_crew_tests_test_provider_table",
+      "target": "plugin_crew_tests_test_provider_table_test_a_malformed_dispatch_file_reads_as_no_dispatch",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "plugin/crew/tests/test_provider_table.py",
+      "source_location": "L455",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_crew_tests_test_provider_table",
       "target": "plugin_crew_tests_test_provider_table_test_recording_a_kind_nothing_reads_is_refused",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/tests/test_provider_table.py",
-      "source_location": "L405",
+      "source_location": "L463",
       "weight": 1.0
     },
     {
@@ -119246,7 +119439,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/tests/test_provider_table.py",
-      "source_location": "L427",
+      "source_location": "L485",
       "weight": 1.0
     },
     {
@@ -119257,7 +119450,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/tests/test_provider_table.py",
-      "source_location": "L449",
+      "source_location": "L507",
       "weight": 1.0
     },
     {
@@ -119268,7 +119461,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/tests/test_provider_table.py",
-      "source_location": "L453",
+      "source_location": "L511",
       "weight": 1.0
     },
     {
@@ -119279,7 +119472,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/tests/test_provider_table.py",
-      "source_location": "L470",
+      "source_location": "L528",
       "weight": 1.0
     },
     {
@@ -119290,7 +119483,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/tests/test_provider_table.py",
-      "source_location": "L482",
+      "source_location": "L540",
       "weight": 1.0
     },
     {
@@ -119301,7 +119494,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/tests/test_provider_table.py",
-      "source_location": "L489",
+      "source_location": "L547",
       "weight": 1.0
     },
     {
@@ -119312,7 +119505,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/tests/test_provider_table.py",
-      "source_location": "L499",
+      "source_location": "L557",
       "weight": 1.0
     },
     {
@@ -119323,7 +119516,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/tests/test_provider_table.py",
-      "source_location": "L510",
+      "source_location": "L568",
       "weight": 1.0
     },
     {
@@ -119334,7 +119527,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/tests/test_provider_table.py",
-      "source_location": "L526",
+      "source_location": "L584",
       "weight": 1.0
     },
     {
@@ -119345,7 +119538,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/tests/test_provider_table.py",
-      "source_location": "L530",
+      "source_location": "L588",
       "weight": 1.0
     },
     {
@@ -119356,7 +119549,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/tests/test_provider_table.py",
-      "source_location": "L548",
+      "source_location": "L606",
       "weight": 1.0
     },
     {
@@ -119367,7 +119560,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/tests/test_provider_table.py",
-      "source_location": "L561",
+      "source_location": "L619",
       "weight": 1.0
     },
     {
@@ -119378,7 +119571,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/tests/test_provider_table.py",
-      "source_location": "L572",
+      "source_location": "L630",
       "weight": 1.0
     },
     {
@@ -119389,7 +119582,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/tests/test_provider_table.py",
-      "source_location": "L586",
+      "source_location": "L644",
       "weight": 1.0
     },
     {
@@ -119400,7 +119593,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/tests/test_provider_table.py",
-      "source_location": "L599",
+      "source_location": "L657",
       "weight": 1.0
     },
     {
@@ -124817,7 +125010,7 @@
     },
     {
       "source": "plugin_readme_what_s_new",
-      "target": "plugin_readme_crew_0_16_1",
+      "target": "plugin_readme_crew_0_16_2",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -124872,7 +125065,7 @@
     },
     {
       "source": "plugin_update_plugin_updates",
-      "target": "plugin_update_crew_0_16_1",
+      "target": "plugin_update_crew_0_16_2",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -125202,7 +125395,7 @@
     },
     {
       "source": "readme_what_s_new_in_the_plugins",
-      "target": "readme_crew_0_16_1",
+      "target": "readme_crew_0_16_2",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -143666,7 +143859,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L845",
+      "source_location": "L846",
       "weight": 1.0
     },
     {
@@ -148719,47 +148912,47 @@
       "weight": 1.0
     },
     {
-      "source": "plugin_crew_hooks_scripts_crew_config_rationale_846",
+      "source": "plugin_crew_hooks_scripts_crew_config_rationale_847",
       "target": "plugin_crew_hooks_scripts_crew_config_globalwriterefused",
       "relation": "rationale_for",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L846",
+      "source_location": "L847",
       "weight": 1.0
     },
     {
-      "source": "plugin_crew_hooks_scripts_crew_config_rationale_861",
+      "source": "plugin_crew_hooks_scripts_crew_config_rationale_862",
       "target": "plugin_crew_hooks_scripts_crew_config_plan_global_write",
       "relation": "rationale_for",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L861",
+      "source_location": "L862",
       "weight": 1.0
     },
     {
-      "source": "plugin_crew_hooks_scripts_crew_config_rationale_923",
+      "source": "plugin_crew_hooks_scripts_crew_config_rationale_924",
       "target": "plugin_crew_hooks_scripts_crew_config_write_global_config",
       "relation": "rationale_for",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L923",
+      "source_location": "L924",
       "weight": 1.0
     },
     {
-      "source": "plugin_crew_hooks_scripts_crew_config_rationale_962",
+      "source": "plugin_crew_hooks_scripts_crew_config_rationale_963",
       "target": "plugin_crew_hooks_scripts_crew_config_main",
       "relation": "rationale_for",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L962",
+      "source_location": "L963",
       "weight": 1.0
     },
     {
@@ -149027,14 +149220,36 @@
       "weight": 1.0
     },
     {
-      "source": "plugin_crew_hooks_scripts_crew_state_rationale_1039",
+      "source": "plugin_crew_hooks_scripts_crew_state_rationale_1005",
+      "target": "plugin_crew_hooks_scripts_crew_state_int_or",
+      "relation": "rationale_for",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "plugin/crew/hooks/scripts/crew_state.py",
+      "source_location": "L1005",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_crew_hooks_scripts_crew_state_rationale_1024",
+      "target": "plugin_crew_hooks_scripts_crew_state_evaluate_triggers",
+      "relation": "rationale_for",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "plugin/crew/hooks/scripts/crew_state.py",
+      "source_location": "L1024",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_crew_hooks_scripts_crew_state_rationale_1069",
       "target": "plugin_crew_hooks_scripts_crew_state_collect",
       "relation": "rationale_for",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/hooks/scripts/crew_state.py",
-      "source_location": "L1039",
+      "source_location": "L1069",
       "weight": 1.0
     },
     {
@@ -149049,14 +149264,14 @@
       "weight": 1.0
     },
     {
-      "source": "plugin_crew_hooks_scripts_crew_state_rationale_1111",
+      "source": "plugin_crew_hooks_scripts_crew_state_rationale_1141",
       "target": "plugin_crew_hooks_scripts_crew_state_main",
       "relation": "rationale_for",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/hooks/scripts/crew_state.py",
-      "source_location": "L1111",
+      "source_location": "L1141",
       "weight": 1.0
     },
     {
@@ -149310,28 +149525,6 @@
       "confidence_score": 1.0,
       "source_file": "plugin/crew/hooks/scripts/crew_state.py",
       "source_location": "L93",
-      "weight": 1.0
-    },
-    {
-      "source": "plugin_crew_hooks_scripts_crew_state_rationale_975",
-      "target": "plugin_crew_hooks_scripts_crew_state_int_or",
-      "relation": "rationale_for",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "plugin/crew/hooks/scripts/crew_state.py",
-      "source_location": "L975",
-      "weight": 1.0
-    },
-    {
-      "source": "plugin_crew_hooks_scripts_crew_state_rationale_994",
-      "target": "plugin_crew_hooks_scripts_crew_state_evaluate_triggers",
-      "relation": "rationale_for",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "plugin/crew/hooks/scripts/crew_state.py",
-      "source_location": "L994",
       "weight": 1.0
     },
     {
@@ -149904,6 +150097,17 @@
       "confidence_score": 1.0,
       "source_file": "plugin/crew/tests/crew_fixtures.py",
       "source_location": "L92",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_crew_tests_sabotage_rationale_1",
+      "target": "plugin_crew_tests_sabotage",
+      "relation": "rationale_for",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "plugin/crew/tests/sabotage.py",
+      "source_location": "L1",
       "weight": 1.0
     },
     {
@@ -151238,14 +151442,47 @@
       "weight": 1.0
     },
     {
-      "source": "plugin_crew_tests_test_provider_table_rationale_406",
+      "source": "plugin_crew_tests_test_provider_table_rationale_398",
+      "target": "plugin_crew_tests_test_provider_table_test_a_branchless_record_in_a_git_checkout_fails_closed",
+      "relation": "rationale_for",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "plugin/crew/tests/test_provider_table.py",
+      "source_location": "L398",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_crew_tests_test_provider_table_rationale_420",
+      "target": "plugin_crew_tests_test_provider_table_test_a_non_git_checkout_is_not_stale_merely_for_lacking_branches",
+      "relation": "rationale_for",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "plugin/crew/tests/test_provider_table.py",
+      "source_location": "L420",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_crew_tests_test_provider_table_rationale_435",
+      "target": "plugin_crew_tests_test_provider_table_test_an_mtime_stale_verdict_reaches_the_report",
+      "relation": "rationale_for",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "plugin/crew/tests/test_provider_table.py",
+      "source_location": "L435",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_crew_tests_test_provider_table_rationale_464",
       "target": "plugin_crew_tests_test_provider_table_test_recording_a_kind_nothing_reads_is_refused",
       "relation": "rationale_for",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/tests/test_provider_table.py",
-      "source_location": "L406",
+      "source_location": "L464",
       "weight": 1.0
     },
     {
@@ -155073,7 +155310,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2524",
+      "source_location": "L2543",
       "weight": 1.0
     },
     {
@@ -155084,7 +155321,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2991",
+      "source_location": "L3010",
       "weight": 1.0
     },
     {
@@ -155757,7 +155994,7 @@
       "confidence_score": 0.85,
       "context": "argument",
       "source_file": "plugin/crew/tests/test_provider_table.py",
-      "source_location": "L565",
+      "source_location": "L623",
       "weight": 1.0
     },
     {
@@ -155781,7 +156018,7 @@
       "confidence_score": 0.85,
       "context": "argument",
       "source_file": "plugin/crew/tests/test_provider_table.py",
-      "source_location": "L553",
+      "source_location": "L611",
       "weight": 1.0
     },
     {
@@ -155793,7 +156030,7 @@
       "confidence_score": 0.85,
       "context": "argument",
       "source_file": "plugin/crew/tests/test_provider_table.py",
-      "source_location": "L580",
+      "source_location": "L638",
       "weight": 1.0
     },
     {
@@ -155817,7 +156054,7 @@
       "confidence_score": 0.85,
       "context": "argument",
       "source_file": "plugin/crew/tests/test_provider_table.py",
-      "source_location": "L535",
+      "source_location": "L593",
       "weight": 1.0
     },
     {
@@ -155853,7 +156090,7 @@
       "confidence_score": 0.85,
       "context": "argument",
       "source_file": "plugin/crew/tests/test_provider_table.py",
-      "source_location": "L605",
+      "source_location": "L663",
       "weight": 1.0
     },
     {
@@ -155865,7 +156102,7 @@
       "confidence_score": 0.85,
       "context": "argument",
       "source_file": "plugin/crew/tests/test_provider_table.py",
-      "source_location": "L495",
+      "source_location": "L553",
       "weight": 1.0
     },
     {
@@ -155877,7 +156114,7 @@
       "confidence_score": 0.85,
       "context": "argument",
       "source_file": "plugin/crew/tests/test_provider_table.py",
-      "source_location": "L484",
+      "source_location": "L542",
       "weight": 1.0
     },
     {
@@ -155889,7 +156126,7 @@
       "confidence_score": 0.85,
       "context": "argument",
       "source_file": "plugin/crew/tests/test_provider_table.py",
-      "source_location": "L458",
+      "source_location": "L516",
       "weight": 1.0
     },
     {
@@ -155901,7 +156138,7 @@
       "confidence_score": 0.85,
       "context": "argument",
       "source_file": "plugin/crew/tests/test_provider_table.py",
-      "source_location": "L476",
+      "source_location": "L534",
       "weight": 1.0
     },
     {
@@ -156669,7 +156906,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L758",
+      "source_location": "L759",
       "weight": 1.0
     },
     {
@@ -158938,5 +159175,5 @@
     }
   ],
   "hyperedges": [],
-  "built_at_commit": "459bba5a92a4cf6a29c0ef03089d7a98e0b6cace"
+  "built_at_commit": "e6593a0aa67a67e1ffb96c2d744d187d25eba727"
 }
