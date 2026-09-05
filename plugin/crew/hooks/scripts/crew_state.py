@@ -1328,7 +1328,17 @@ def record_dispatch(root, kind, role, provider, model=None, branch=None):
     # reader is mutated, no writer is overwritten, and a writer that fails
     # takes only its own entry down with it. See `DISPATCH_DIR` for the three
     # review rounds that went into learning that.
-    _append_dispatch(root, kind, entry)
+    #
+    # The answer is kept. Discarding it made a failed write INVISIBLE: this
+    # dispatch left no trace, the next one on the same branch recorded a
+    # different family, and `author_families` then returned that family
+    # labelled `dispatch` with the one that actually wrote the diff absent.
+    # There is no durable marker to leave instead -- the write that failed is
+    # the store itself, and a marker file lands in the same directory that
+    # just refused one -- so the fix is that the caller is told. `main` exits
+    # non-zero on it; a dispatch that was not recorded is not a dispatch this
+    # guard can judge later.
+    stored = _append_dispatch(root, kind, entry)
     # The slot is only overwritten once whatever it held is safely in the
     # store. Making the adoption retryable does nothing on its own if the
     # record it retries FROM was destroyed by the same call that failed:
@@ -1339,7 +1349,14 @@ def record_dispatch(root, kind, role, provider, model=None, branch=None):
     # the store anyway.
     if _adopt_slot(root, kind):
         _write_slot(root, kind, entry)
-    return read_dispatch(root)
+    record = read_dispatch(root)
+    if not stored:
+        # Present only when it is True, so no reader can mistake the key's
+        # absence for a claim either way -- every existing caller that does
+        # not look for it is unchanged, and one that does gets a fact rather
+        # than a default.
+        record["unrecorded"] = True
+    return record
 
 
 def _adopt_slot(root, kind):
@@ -1628,6 +1645,9 @@ def author_families(root, cfg, stale=False):
         # no history entry at all.
         recorded_families.add(family(recorded.get("provider"),
                                      recorded.get("model")))
+        # Captured BEFORE the discard, because the discard is what destroys
+        # it. See the `unnamed` return below.
+        unnamed = None in recorded_families
         recorded_families.discard(None)
         # Strike BOTH unless the record positively proves it is about this
         # branch. Three states reach here and only one of them is evidence:
@@ -1691,10 +1711,33 @@ def author_families(root, cfg, stale=False):
         # it. `crew_config.model_report` turns that into
         # `independentReviewer: False`, which is what actually stops the
         # review from being certified.
+        # `unnamed`, not `not known`. Round 3 closed the case where every
+        # recorded family was unknown and left the MIXED case wide open: the
+        # discard above ran first, so `{None, "gpt"}` arrived here as
+        # `{"gpt"}` with nothing left to say a second dispatch had ever been
+        # unreadable, and it was returned as `dispatch` -- proven provenance.
+        # An unpinned Copilot serving Claude writes the diff, codex is
+        # dispatched on the same branch after it, and the guard clears Claude
+        # to review Claude's own work. Same bug as round 3, one instance
+        # narrower: an unknown collapsing into the safe-looking value.
+        #
+        # The known families are still RETURNED, because they still ran and
+        # still must be struck. Only the source changes, and that is what
+        # withholds the certification: `crew_config.model_report` reads
+        # `unknown` and sets `independentReviewer: False`. Striking what is
+        # known while refusing to call the provenance proven is the honest
+        # answer to "one of these dispatches has no name" -- the alternative,
+        # dropping the known family to keep the empty-set shape, would clear
+        # the one reviewer we have positive evidence against.
+        #
+        # `unnamed` alone, with no `not known` beside it: reaching here needs
+        # a provider in the slot, and the slot's own family is added
+        # unconditionally, so `recorded_families` is never empty and an empty
+        # `known` means every member was None -- which is `unnamed`. Carrying
+        # the second test would read as a guard over a case it cannot see,
+        # and no mutation of it could ever go red.
         known = frozenset(recorded_families) - {None}
-        if not known:
-            return frozenset(), "unknown"
-        return known, "dispatch"
+        return known, ("unknown" if unnamed else "dispatch")
     # No record: read the config. `decided` above asked `resolve_role` for the
     # `developer` role rather than the `dev` block's own provider --
     # `dev.roles.developer` is a pin that OVERRIDES that default, so reading
@@ -1895,6 +1938,16 @@ def main(argv=None):
         record = record_dispatch(root, args.record_dispatch, args.role,
                                  args.provider, args.model, args.branch)
         print(json.dumps(record, indent=2, sort_keys=True))
+        if record.get("unrecorded"):
+            # Loud, and non-zero. The store could not take this dispatch, so
+            # nothing later can prove who wrote the diff -- and the danger is
+            # not the missing record on its own but the NEXT dispatch on this
+            # branch, which will be reported as proven with this one absent.
+            print(f"{args.provider} dispatch was NOT recorded: "
+                  f"{os.path.join(*DISPATCH_DIR)} could not be written. "
+                  "Provenance for this branch is now incomplete.",
+                  file=sys.stderr)
+            return 3
         return 0
     print(json.dumps(collect(root), indent=2, sort_keys=True))
     return 0

@@ -1736,3 +1736,108 @@ def test_the_pruner_and_the_reader_rank_from_the_same_inputs(tmp_path):
     directory = os.path.join(str(root), *crew_state.DISPATCH_DIR)
     assert wanted <= set(os.listdir(directory)), \
         "the pruner deleted a store entry the reader was keeping"
+
+
+# --- Codex round 7 on PR #66 ------------------------------------------------
+
+
+def test_one_unnamed_family_makes_the_whole_provenance_unproven(tmp_path):
+    """Codex round 7, Critical. Round 3 closed the case where EVERY recorded
+    family was unknown. The mixed case walked past it: the discard ran before
+    the emptiness test, so `{None, "gpt"}` arrived as `{"gpt"}` and was
+    returned labelled `dispatch`. An unpinned Copilot serving Claude writes
+    the diff, codex is dispatched on the same branch afterwards, and the guard
+    reports proven provenance for gpt -- clearing Claude to review Claude.
+
+    The config's own family is `swe` here, and neither dispatch is codex's
+    default, so nothing in this assertion can be satisfied by the config
+    fallback or by `PINNED`'s `gpt` developer pin. Both halves are asserted:
+    the source is `unknown`, AND `gpt` is still in the set, because a family
+    that provably ran must still be struck. Dropping it to keep the old
+    empty-set shape would clear the one reviewer there IS evidence against.
+    """
+    cfg = copy.deepcopy(PINNED)
+    cfg["dev"]["roles"]["developer"] = {"provider": "windsurf",
+                                        "model": "swe-1"}
+    root = crew_fixtures.make_repo(tmp_path, config=cfg, git=True)
+    # The dispatch that actually wrote the diff. Copilot hosts several
+    # families and an unset model does not say which, so `family()` is None.
+    crew_state.record_dispatch(str(root), "dev", "developer", "copilot", None)
+    # A second, nameable dispatch on the SAME branch, after it.
+    crew_state.record_dispatch(str(root), "dev", "developer", "codex",
+                               "gpt-6-astra")
+
+    families, source = crew_state.author_families(str(root), cfg)
+
+    assert source == "unknown", \
+        "one dispatch has no family and the provenance was called proven"
+    assert families == frozenset({"gpt"}), \
+        "the family that provably ran stopped being struck"
+    assert "swe" not in families, "the config family leaked into the answer"
+
+    report = crew_config.model_report(str(root), which=lambda _n: "/bin/x")
+    assert report["independentReviewer"] is False, \
+        "a review was certified independent of an author nobody can name"
+
+
+def test_a_dispatch_the_store_refused_is_not_silent(tmp_path, monkeypatch):
+    """Codex round 7, Critical. `record_dispatch` threw away
+    `_append_dispatch`'s answer, so a dispatch whose entry file could not be
+    written left NO trace. The next dispatch of another family on the same
+    branch then reported `dispatch` with the family that wrote the diff
+    absent from the set -- a positive provenance claim over an incomplete
+    store.
+
+    There is no durable marker to leave instead: the write that failed is the
+    store, and a marker file lands in the directory that just refused one. So
+    the fix is that the failure is reported, and `main` exits non-zero on it.
+
+    `os.replace` is what fails here, not `_append_dispatch` -- mutating the
+    function under test would assert the plumbing and nothing else.
+    """
+    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=True)
+
+    real_replace = os.replace
+
+    def refuse(src, dst):
+        if str(dst).endswith(".json") and "dispatch.d" in str(dst):
+            raise OSError("no space left on device")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(crew_state.os, "replace", refuse)
+    record = crew_state.record_dispatch(str(root), "dev", "developer",
+                                        "codex", "gpt-6-astra")
+    monkeypatch.undo()
+
+    assert record.get("unrecorded") is True, \
+        "the store refused the dispatch and the record did not say so"
+    directory = os.path.join(str(root), *crew_state.DISPATCH_DIR)
+    kept = os.listdir(directory) if os.path.isdir(directory) else []
+    assert not [n for n in kept if n.endswith(".json")], \
+        "the entry landed anyway, so this proves nothing"
+
+
+def test_the_dispatch_cli_exits_non_zero_when_nothing_was_recorded(tmp_path,
+                                                                   monkeypatch,
+                                                                   capsys):
+    """The other half: the CLI is the dispatch path, so it is where a lost
+    write has to be loud. Printing the record and returning 0 tells the
+    caller the dispatch was recorded when it was not."""
+    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=True)
+
+    real_replace = os.replace
+
+    def refuse(src, dst):
+        if str(dst).endswith(".json") and "dispatch.d" in str(dst):
+            raise OSError("no space left on device")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(crew_state.os, "replace", refuse)
+    code = crew_state.main(["--root", str(root), "--record-dispatch", "dev",
+                            "--role", "developer", "--provider", "codex",
+                            "--model", "gpt-6-astra"])
+    monkeypatch.undo()
+
+    assert code != 0, "a dispatch that was never stored exited 0"
+    assert "NOT recorded" in capsys.readouterr().err, \
+        "the failure was not reported on stderr"

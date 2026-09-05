@@ -186,6 +186,29 @@ All notable changes to this repository are documented here. Format follows [Keep
   a value nobody established is the opposite error. Pinning
   `dev.copilot.model` is what resolves it.
 
+- **`crew` 0.16.7: one unnamed family beside a named one still read as
+  proven.** The entry above closed the case where EVERY recorded family was
+  unknown. The mixed case walked straight past it: the `None` was discarded
+  before the emptiness test ran, so `{None, "gpt"}` arrived as `{"gpt"}` and
+  was returned labelled `dispatch`. An unpinned Copilot serving Claude writes
+  the diff, codex is dispatched on the same branch afterwards, and the guard
+  reports proven provenance for gpt — clearing Claude to review Claude's own
+  work. One unnamed family now makes the whole source `unknown`, while the
+  families that COULD be named stay in the set and stay struck: they ran, and
+  dropping them to keep the old empty-set shape would clear the one reviewer
+  there is positive evidence against.
+
+- **`crew` 0.16.7: a dispatch the store refused to take was silent.**
+  `record_dispatch` threw away `_append_dispatch`'s answer, so a dispatch
+  whose entry file could not be written left no trace at all. The next
+  dispatch of another family on the same branch was then reported as
+  `dispatch` — a positive provenance claim — with the family that actually
+  wrote the diff absent from the set. There is no durable marker to leave
+  instead, because the write that failed is the store and a marker file lands
+  in the directory that just refused one. So the failure stops being silent:
+  the returned record carries `unrecorded`, and the dispatch CLI prints what
+  could not be written and exits non-zero.
+
 - **`crew` 0.16.7: the hook count in crew's README.** The prose said eight
   scripts and sixteen entries while the table directly beneath it already
   listed all ten across five events, 20 entries.

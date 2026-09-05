@@ -827,12 +827,12 @@ _ORIGINS = {
     # `crew_state.author_families` and `commands/review.md`.
     "stale": ("STALE RECORD - the dispatch was made on a different branch, "
               "so BOTH the recorded family and the config family are struck"),
-    # Nothing is struck and nothing is cleared. See
-    # `crew_state.author_families`.
-    "unknown": ("UNKNOWN - a dispatch was recorded on this branch and its "
-                "family cannot be determined (an unpinned provider that "
-                "hosts several), so no reviewer can be proven independent "
-                "of it"),
+    # Whatever families COULD be named are still struck; the source is what
+    # withholds the certification. See `crew_state.author_families`.
+    "unknown": ("UNKNOWN - a dispatch on this branch has a family that "
+                "cannot be determined (an unpinned provider that hosts "
+                "several), so no reviewer can be proven independent of it - "
+                "any family named beside it is still struck"),
 }
 
 

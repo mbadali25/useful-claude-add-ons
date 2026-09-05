@@ -140,10 +140,16 @@ MUTATIONS = (
         # Round 3, Critical. An empty author set labelled as proven
         # provenance -- an unknown collapsing into the safe-looking value,
         # wearing the label of a check that happened.
+        #
+        # Same anchor as round 7's below, on purpose. Round 3's `if not
+        # known` was subsumed by `unnamed` rather than deleted, so one line
+        # now carries both guarantees -- and turning it off has to be caught
+        # by the empty case AND the mixed one. An entry running only one of
+        # them would leave the other's claim unchecked.
         "an unknown author family is reported as proven",
         STATE,
-        '            return frozenset(), "unknown"',
-        '            return frozenset(), "dispatch"',
+        "        unnamed = None in recorded_families",
+        "        unnamed = False",
         ("tests/test_provider_table.py::"
          "test_a_proven_dispatch_with_an_unknown_family_is_not_called"
          "_proven"),
@@ -248,6 +254,37 @@ MUTATIONS = (
         "    _write_slot(root, kind, entry)",
         ("tests/test_provider_table.py::"
          "test_a_failed_adoption_is_retried_on_the_next_dispatch"),
+    ),
+    (
+        # Round 7, Critical. Capturing the unnamed family AFTER the
+        # discard is the same as not capturing it: the mixed set then
+        # reads as proven provenance.
+        "an unnamed family beside a named one still says proven",
+        STATE,
+        "        unnamed = None in recorded_families",
+        "        unnamed = False",
+        ("tests/test_provider_table.py::"
+         "test_one_unnamed_family_makes_the_whole_provenance_unproven"),
+    ),
+    (
+        # Round 7, Critical. A dispatch the store refused, reported as
+        # one it took.
+        "a lost entry write is reported as a recorded dispatch",
+        STATE,
+        '        record["unrecorded"] = True',
+        '        record["unrecorded"] = False',
+        ("tests/test_provider_table.py::"
+         "test_a_dispatch_the_store_refused_is_not_silent"),
+    ),
+    (
+        # Round 7, Critical. The CLI swallowing it is the other half:
+        # the dispatch path is what the caller reads.
+        "the dispatch CLI exits 0 on a store that refused the entry",
+        STATE,
+        '        if record.get("unrecorded"):',
+        "        if False:",
+        ("tests/test_provider_table.py::"
+         "test_the_dispatch_cli_exits_non_zero_when_nothing_was_recorded"),
     ),
     (
         "bogus documented role",

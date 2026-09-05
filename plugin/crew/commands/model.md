@@ -61,13 +61,16 @@ The report's first line names the author family and where it came from:
   in those words. That describes the **next** dispatch, not the diff in front
   of the reviewer, and presenting it as the author family would be a guess
   dressed as a fact.
-- **`UNKNOWN - a dispatch was recorded ... its family cannot be determined`** —
-  something DID run here and there is no way to say what family it was, which
-  is what an unpinned `copilot` is: Copilot hosts several families and an unset
-  model does not say which. Nothing is struck, so every candidate in the table
-  below still reads as eligible — and `independentReviewer` is `false`
-  regardless, because independence is a claim about the author's family and
-  there is none to be independent of. Tell the user to pin
+- **`UNKNOWN - a dispatch on this branch has a family that cannot be
+  determined`** — something DID run here and there is no way to say what family
+  it was, which is what an unpinned `copilot` is: Copilot hosts several families
+  and an unset model does not say which. **Read the family line before saying
+  nothing is struck** — this source comes back two ways. If it names no family,
+  nothing is struck and every candidate in the table below reads as eligible.
+  If it names one, a second dispatch on the same branch COULD be named and that
+  family is struck; the source is `unknown` because the other one could not be.
+  Either way `independentReviewer` is `false`: independence is a claim about
+  the author's family, and one of them has no name. Tell the user to pin
   `dev.copilot.model`; that is the only thing that resolves it.
 
 A dispatch is recorded by whatever ran the work:
