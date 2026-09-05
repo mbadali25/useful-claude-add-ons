@@ -213,11 +213,23 @@ def upgrade_config(cfg):
         entitled = max(declared, crew_state.tier_for_roles(current))
         ladder = crew_state.roles_for_tier(entitled)
         notes["rolesAdded"] = [r for r in ladder if r not in current]
+        # `known_role`, not `ROLE_TIERS`: a domain specialist has no tier on
+        # purpose and is not an unrecognised name. Reporting it as one would
+        # tell a repo that deliberately onboarded `node-developer` that crew
+        # has never heard of it, on every single upgrade.
         notes["rolesUnknown"] = [r for r in current
-                                 if r not in crew_state.ROLE_TIERS]
-        # Ladder order, then anything this release does not recognise. A name
-        # crew has never heard of is kept, not dropped: the user put it there.
-        out["roles"] = ladder + notes["rolesUnknown"]
+                                 if not crew_state.known_role(r)]
+        # Ladder order, then the roles that are not on it: domain specialists
+        # this repo opted into, then names crew does not recognise. BOTH are
+        # kept, for the same reason -- the user put them there.
+        #
+        # The specialist half is separate from `rolesUnknown` and easy to lose:
+        # while specialists counted as "unknown" they rode along in that list,
+        # and the moment they stopped being unknown this line silently dropped
+        # every one of them on the next upgrade. A committed test covers it.
+        kept_specialists = [r for r in current
+                            if r in crew_state.SPECIALIST_ROLES]
+        out["roles"] = ladder + kept_specialists + notes["rolesUnknown"]
         notes["tierFrom"] = declared
         notes["tierTo"] = entitled
         out["tier"] = entitled
@@ -420,7 +432,10 @@ def run(root, derived, force=False):
     # half-written file, and the NEXT run stops at "config unreadable"
     # rather than retrying. os.replace is atomic on POSIX and on Windows,
     # so the config on disk is only ever the old one or the new one.
-    tmp_path = cfg_path + ".tmp"
+    # PID in the name: a fixed `.tmp` races a second upgrade in another
+    # session -- both write the same sibling, and the first os.replace
+    # removes the shared pathname out from under the second.
+    tmp_path = f"{cfg_path}.{os.getpid()}.tmp"
     with open(tmp_path, "w", encoding="utf-8") as handle:
         json.dump(upgraded, handle, indent=2, sort_keys=True)
         handle.write("\n")
@@ -432,6 +447,15 @@ def run(root, derived, force=False):
     mapdir = os.path.join(root, ".crew", "codemap")
     results = {}
     for name, sections in (derived or {}).items():
+        # The keys come from a JSON file this script is handed, and they are
+        # interpolated into a filename. `../../docs/target` as a key wrote
+        # outside the codemap entirely, and an absolute Windows path escaped
+        # in one hop. A subsystem name is a basename, always -- anything else
+        # is skipped rather than sanitised, because a name that needed
+        # sanitising was not a subsystem name in the first place.
+        if name != os.path.basename(name) or name in ("", ".", ".."):
+            results[name] = {"skipped": "not a plain subsystem name"}
+            continue
         path = os.path.join(mapdir, f"{name}.md")
         text = crew_state.read_text(path)
         if text is None:

@@ -1951,9 +1951,14 @@ a worktree each, so a half-applied one cannot land on top of the other.
 | `infrastructure-architect` | read-only | `sonnet` | 2 | AWS network and account design, with tradeoffs. Never applies to a live account |
 | `scribe` | read/write | `sonnet` | 2 | The durable record: ADRs, CHANGELOG entries, handoff notes, and what was rejected |
 | `researcher` | read-only + web | `sonnet` | 2 | External research only. Every claim carries its source |
+| `sharepoint-developer` | read/write | `sonnet` | — | SPFx, Graph and REST, list and library schema, permissions. Never changes a live tenant unasked |
+| `power-automate-specialist` | read/write | `sonnet` | — | Flows and the Power Platform around them. A flow with a trigger is already live, so it never edits a production flow unasked |
+| `node-developer` | read/write | `sonnet` | — | Node work where the async model, the module system or the dependency tree is the hard part |
 | `pm` | read/write, scoped to `.crew/` and generated diagrams | `opus` | — | The standing manager: scope, onboarding, communication, ticket hygiene, and dispatch |
 
-14 agents. `pm` sits outside the tier ladder — it is not sized in or out by `/crew:scale`, it is the thing doing the sizing.
+17 agents — 14 on the tier ladder, 3 domain specialists off it. `pm` sits outside the tier ladder — it is not sized in or out by `/crew:scale`, it is the thing doing the sizing.
+
+**No tier grants a specialist, and that is deliberate.** Every ladder role closes a defect class any repo can have, so `roles_for_tier` hands out every rung up to the declared tier — which is exactly how a repo with no database ends up with `dba`. "This repo does SharePoint" is not a defect class; it is a fact about one checkout, and it is knowable on day one. Put these on the ladder and every tier-2 repo on the machine gets a SharePoint developer it will never dispatch. So they are opted into per repo with `/crew:pm onboard <role>`, justified by what is actually in the repo — a `package.json` with a server entry point, an SPFx `config/package-solution.json`, an exported flow definition — rather than by a pattern in `.crew/metrics.md`, and onboarding one leaves `tier` where it was: the crew has specialised, not grown.
 
 **Model tiers are part of the design, not a cost knob.** The PM runs on `opus` because it holds the whole project picture and every dispatch decision derives from it — a cheap manager makes cheap assignments and every role below inherits the mistake. Working roles run on `sonnet`: narrow brief, clean context, one deliverable. QA walks `qa.order` (`qa.provider` ships as `auto`) and takes the first provider that probes clean — Codex, then Copilot pinned to a non-Claude model, then `qa-reviewer` on `opus`. The ordering is not a preference ranking; it is a family-diversity ranking. A different model family is what makes review independent, so a provider that would land back on the author's own family is skipped rather than used, and if you cannot have a different family at all, the strongest model in this one is the only compensation left.
 
@@ -1965,8 +1970,10 @@ a worktree each, so a half-applied one cannot land on top of the other.
 
 ### Hooks
 
-Eight scripts across five events, each with a `.sh` and a `.ps1` twin
-registered on its own matcher or event — 16 entries total.
+Ten scripts across five events, each with a `.sh` and a `.ps1` twin
+registered on its own matcher or event — 20 entries total. The sentence said
+eight and sixteen until 0.16.7 while the table below it already listed all
+ten; the prose was the half that went stale.
 
 | Script | Event | Behavior |
 |---|---|---|
@@ -2018,7 +2025,7 @@ pytest tests/                                     # 234 cases - the python modul
 | `validate-prompts.py` | Frontmatter parses, tools are real, referenced agents and paths exist, read-only agents hold no write tools, commands that spawn subagents are permitted to | **whether the prompts produce good work** |
 | `pytest tests/` | The python modules, and that the `.sh` and `.ps1` flavours of `context-watch`, `verify-gate` and `promote-gate` agree - including the emergency lane's expiry, which is the one property that keeps a forgotten incident from ungating a repo forever | anything on a platform the suite is not running on; the Windows-only cases skip elsewhere |
 
-That last gap is real and no test closes it. The 24 commands and 14 agents are
+That last gap is real and no test closes it. The 24 commands and 17 agents are
 instructions to a model; only a live session running a real ticket exercises
 them. Setup Phase 7 exists for exactly that, and it is the one thing here that
 has to be done by hand.

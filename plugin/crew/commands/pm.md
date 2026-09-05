@@ -116,6 +116,24 @@ the role closes, confirm `.crew/metrics.md` supports it, then stop and ask me
 yes/no. Only on yes: add the role to `.crew/config.json` -> `roles` and
 recompute `tier` from `crew-scaling`'s tier table.
 
+**Domain specialists take the same command and a different justification.**
+`sharepoint-developer`, `power-automate-specialist` and `node-developer` are
+real roles with real agent definitions and no tier — no amount of scaling ever
+grants one, because "this repo does SharePoint" is a fact about a checkout
+rather than a defect class every repo can have. For these, the evidence is the
+repo's own stack rather than `.crew/metrics.md`: name the file that proves it
+(a `package.json` with a server entry point, an SPFx
+`config/package-solution.json`, an exported flow definition) and say so before
+asking. On yes, add it to `roles` and **leave `tier` alone** — there is no rung
+to recompute, and a tier that moved would tell `/crew:scale` the crew had grown
+when it has only specialised. See onboarding.md's "Domain specialists are
+justified by the stack, not by metrics".
+
+A role name crew does not ship at all is still not an error — a repo may
+onboard one and write its own `agents/<role>.md` — but say plainly that no
+agent definition backs it yet, because a name in `roles` with no file behind it
+dispatches nothing and fails silently.
+
 **`offboard <role>`.**
 Check the role is actually on the crew before doing anything else: read
 `roles` from `crew_state.py`'s output and confirm the named role is in it. If

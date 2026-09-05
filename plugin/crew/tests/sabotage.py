@@ -10,6 +10,13 @@ claim "this is tested" is checked here rather than asserted.
 
 A mutation whose anchor no longer matches is a FAILURE, not a skip: the anchor
 drifting is how this suite would quietly stop testing anything.
+
+Which is why a mutation whose CODE is deliberately deleted must be deleted
+here too, with the reason written down -- never re-anchored onto whatever line
+is nearest. Five went when the dispatch record stopped being a single shared
+file: they proved things about a lock, a retry loop and a self-verifying write
+that an append-only directory cannot get wrong, and a suite still listing them
+would have read as concurrency coverage while testing nothing.
 """
 import io
 import os
@@ -22,6 +29,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(
 CREW = os.path.join(ROOT, "plugin", "crew")
 STATE = os.path.join(CREW, "hooks", "scripts", "crew_state.py")
 LADDER_DOC = os.path.join(CREW, "skills", "crew-scaling", "SKILL.md")
+PLATFORM = os.path.join(CREW, "hooks", "scripts", "crew_platform.py")
+CONFIG = os.path.join(CREW, "hooks", "scripts", "crew_config.py")
 
 GUARD = '    if out["family"] is not None and out["family"] in authors:'
 ROLE_PIN = '    decided = resolve_role(cfg, "dev", "developer")'
@@ -46,6 +55,364 @@ MUTATIONS = (
         BLOCK_ONLY,
         ("tests/test_provider_table.py::"
          "test_author_family_honours_a_per_role_dev_pin_over_the_block_default"),
+    ),
+    (
+        # The half of the one-slot fix that a green suite could hide. Both
+        # spellings are the same value in the proven path, so a suite that
+        # only exercises that path stays green with the bug restored.
+        "dispatch history filtered by the record instead of the checkout",
+        STATE,
+        '            and (keep_all or item.get("branch") == here)',
+        '            and item.get("branch") == there',
+        ("tests/test_provider_table.py::"
+         "test_a_stale_record_does_not_forget_this_branch_history"),
+    ),
+    (
+        # `here is None` has two causes and only one is evidence. Dropping
+        # keep_all makes an unreadable branch discard every named-branch
+        # record, which is the Critical half of Codex's round-1 review.
+        "an unreadable branch discards the named-branch history",
+        STATE,
+        "        keep_all = here is None and in_repo is not False",
+        "        keep_all = False",
+        ("tests/test_provider_table.py::"
+         "test_an_unreadable_branch_keeps_the_named_branch_history"),
+    ),
+    (
+        # Ten slots keyed on the model instead of the family means one
+        # provider's model churn evicts the family that wrote the diff.
+        "the history bound is spent per model instead of per family",
+        STATE,
+        '        fam = family(entry.get("provider"), entry.get("model"))',
+        "        fam = None",
+        ("tests/test_provider_table.py::"
+         "test_model_churn_collapses_to_one_entry_per_family"),
+    ),
+    (
+        # Round 3, Critical. Every dispatch writing the same name is the old
+        # shared-file design wearing a directory: writers overwrite each
+        # other and the lost one may be the family that wrote the diff.
+        "every dispatch writes the same entry file",
+        STATE,
+        '    base = os.path.join(directory, f"{kind}-{stamp}-'
+        '{uuid.uuid4().hex[:12]}")',
+        '    base = os.path.join(directory, f"{kind}-entry")',
+        ("tests/test_provider_table.py::"
+         "test_three_concurrent_dispatches_all_survive"),
+    ),
+    (
+        # Round 3, Critical. One malformed file must cost one entry. Failing
+        # the whole read is the single-file design's worst property -- the
+        # guard falls back to the config and looks like it checked.
+        "one malformed entry file discards the whole directory",
+        STATE,
+        "        except ValueError:\n            _note_lost(lost, name)\n"
+        "            continue\n"
+        "        if not isinstance(entry, dict) or not entry.get(\"kind\"):",
+        "        except ValueError:\n            _note_lost(lost, name)\n"
+        "            return []\n"
+        "        if not isinstance(entry, dict) or not entry.get(\"kind\"):",
+        ("tests/test_provider_table.py::"
+         "test_a_malformed_entry_costs_one_entry_and_not_the_record"),
+    ),
+    (
+        # Round 3. A wall-clock value inside the legacy file must not be able
+        # to outrank the store, or a stepped clock evicts the dispatch that
+        # just happened -- the write-time hazard, relocated to read time.
+        "the legacy file can outrank the store",
+        STATE,
+        '    return (0 if entry.get("adopted") else 1, key)',
+        "    return (0, key)",
+        ("tests/test_provider_table.py::"
+         "test_a_backward_clock_does_not_evict_the_dispatch_that_just"
+         "_happened"),
+    ),
+    (
+        # Round 3. A repo upgraded mid-branch has its only record in the slot
+        # about to be overwritten. Losing it clears the family that wrote the
+        # branch to review its own diff.
+        "a pre-store record is overwritten instead of adopted",
+        STATE,
+        "    return _append_dispatch(root, kind, dict(slot, adopted=True))",
+        "    return True",
+        ("tests/test_provider_table.py::"
+         "test_a_dispatch_recorded_before_the_store_existed_is_not_lost"),
+    ),
+    (
+        # Round 3, Critical. An empty author set labelled as proven
+        # provenance -- an unknown collapsing into the safe-looking value,
+        # wearing the label of a check that happened.
+        #
+        # Same anchor as round 7's below, on purpose. Round 3's `if not
+        # known` was subsumed by `unnamed` rather than deleted, so one line
+        # now carries both guarantees -- and turning it off has to be caught
+        # by the empty case AND the mixed one. An entry running only one of
+        # them would leave the other's claim unchecked.
+        "an unknown author family is reported as proven",
+        STATE,
+        "        unnamed = None in recorded_families",
+        "        unnamed = False",
+        ("tests/test_provider_table.py::"
+         "test_a_proven_dispatch_with_an_unknown_family_is_not_called"
+         "_proven"),
+    ),
+    (
+        # And the teeth: `eligible` means only "not struck", so with nothing
+        # struck every candidate certified a review it had no basis for.
+        "an unknown author still certifies an independent review",
+        CONFIG,
+        '        "independentReviewer": (author_source != "unknown"\n'
+        '                                and any(c["eligible"] '
+        'for c in candidates)),',
+        '        "independentReviewer": any(c["eligible"] for c in '
+        'candidates),',
+        ("tests/test_provider_table.py::"
+         "test_an_unknown_author_cannot_certify_an_independent_review"),
+    ),
+    (
+        # Skipping the backup when the name is taken destroys the newer
+        # original and then reports that it was saved.
+        "a second corruption is rewritten without its own backup",
+        PLATFORM,
+        "                if os.path.exists(candidate):\n                    continue",
+        ("                if os.path.exists(candidate):\n"
+         "                    saved_to = candidate\n"
+         "                    break"),
+        ("tests/test_platform_sync.py::"
+         "test_a_second_corruption_gets_its_own_backup"),
+    ),
+    (
+        "an empty config is adopted instead of healed",
+        PLATFORM,
+        "        if isinstance(parsed, dict) and parsed:",
+        "        if isinstance(parsed, dict):",
+        ("tests/test_platform_sync.py::"
+         "test_heal_config_recreates_an_empty_object"),
+    ),
+    (
+        # Round 4, Critical. An entry naming no author cannot BE the
+        # author, so it must not displace one that can.
+        "an entry with no provider still spends a slot",
+        STATE,
+        '        if not entry.get("provider"):',
+        "        if False:",
+        ("tests/test_provider_table.py::"
+         "test_an_entry_with_no_provider_cannot_evict_one_that_has_one"),
+    ),
+    (
+        # Round 5, Critical. ANY cap on families within a branch evicts the
+        # one that wrote the diff, given enough later dispatches.
+        "families within a branch are capped",
+        STATE,
+        "        seen.add(key)\n        kept.setdefault(branch, [])"
+        ".append((rank, entry))",
+        "        seen.add(key)\n"
+        "        if len(kept.setdefault(branch, [])) < "
+        "DISPATCH_HISTORY_MAX:\n"
+        "            kept[branch].append((rank, entry))",
+        ("tests/test_provider_table.py::"
+         "test_no_number_of_later_families_evicts_the_one_that_wrote_the"
+         "_diff"),
+    ),
+    (
+        # Round 5. The cap has to fall on something and it must not fall on
+        # the checkout the reviewer is standing on.
+        "the branch cap can evict the branch under review",
+        STATE,
+        "        if here is not None and here in kept and here not in live:\n"
+        "            live = live[:DISPATCH_BRANCHES_MAX - 1] + [here]",
+        "        live = live",
+        ("tests/test_provider_table.py::"
+         "test_the_branch_cap_never_evicts_the_branch_under_review"),
+    ),
+    (
+        # Round 5, Medium. `read_dispatch` runs at session start, so an
+        # unbounded live set is unbounded startup cost.
+        "the branch cap does not bound the store",
+        STATE,
+        "        live = ranked[:DISPATCH_BRANCHES_MAX]",
+        "        live = ranked",
+        ("tests/test_provider_table.py::"
+         "test_the_branch_cap_bounds_the_store"),
+    ),
+    (
+        # Round 4, Critical. A hygiene cap that can delete the record
+        # under review is the cap deciding which family is remembered.
+        "pruning ignores what the reader still keeps",
+        STATE,
+        "        if name in protected:\n            continue",
+        "        if False:\n            continue",
+        ("tests/test_provider_table.py::"
+         "test_pruning_never_removes_an_entry_the_reader_still_keeps"),
+    ),
+    (
+        # Round 4, Critical. Overwriting the slot before its contents are
+        # in the store makes the retry read from a record that is gone.
+        "the slot is overwritten whether or not the adoption landed",
+        STATE,
+        "    if _adopt_slot(root, kind):\n"
+        "        _write_slot(root, kind, entry)",
+        "    _adopt_slot(root, kind)\n"
+        "    _write_slot(root, kind, entry)",
+        ("tests/test_provider_table.py::"
+         "test_a_failed_adoption_is_retried_on_the_next_dispatch"),
+    ),
+    (
+        # Round 7, Critical. Capturing the unnamed family AFTER the
+        # discard is the same as not capturing it: the mixed set then
+        # reads as proven provenance.
+        "an unnamed family beside a named one still says proven",
+        STATE,
+        "        unnamed = None in recorded_families",
+        "        unnamed = False",
+        ("tests/test_provider_table.py::"
+         "test_one_unnamed_family_makes_the_whole_provenance_unproven"),
+    ),
+    (
+        # Round 7, Critical. A dispatch the store refused, reported as
+        # one it took.
+        "a lost entry write is reported as a recorded dispatch",
+        STATE,
+        '        record["unrecorded"] = True',
+        '        record["unrecorded"] = False',
+        ("tests/test_provider_table.py::"
+         "test_a_dispatch_the_store_refused_is_not_silent"),
+    ),
+    (
+        # Round 7, Critical. The CLI swallowing it is the other half:
+        # the dispatch path is what the caller reads.
+        "the dispatch CLI exits 0 on a store that refused the entry",
+        STATE,
+        '        if record.get("unrecorded"):',
+        "        if False:",
+        ("tests/test_provider_table.py::"
+         "test_the_dispatch_cli_exits_non_zero_when_nothing_was_recorded"),
+    ),
+    (
+        # Round 8, Critical. A record that would not parse, reported as
+        # a record that was never there.
+        "unreadable evidence reads as absent evidence",
+        STATE,
+        '        return known, ("unknown" if unnamed or unread '
+        'else "dispatch")',
+        '        return known, ("unknown" if unnamed else "dispatch")',
+        ("tests/test_provider_table.py::test_a_later_dispatch_cannot_"
+         "certify_over_an_unreadable_legacy_record"),
+    ),
+    (
+        # And the half with no store entry at all: `config` asserts that
+        # nothing was recorded, which an unopenable file cannot support.
+        "an unopenable record still claims nothing was recorded",
+        STATE,
+        '            "unknown" if unread else "config")',
+        '            "config")',
+        ("tests/test_provider_table.py::test_a_malformed_dispatch_file_"
+         "reads_as_unknown_not_as_no_dispatch"),
+    ),
+    (
+        # The reader has to NOTICE. Silence here makes both of the
+        # above unreachable while they still read as covered.
+        "a skipped entry file is not reported as lost",
+        STATE,
+        "    if lost:",
+        "    if False:",
+        ("tests/test_provider_table.py::"
+         "test_a_malformed_entry_costs_one_entry_and_not_the_record"),
+    ),
+    (
+        # Round 8, edge. An unparseable slot that may be overwritten is
+        # a signal the next dispatch erases.
+        "an unreadable record may be overwritten",
+        STATE,
+        "        return False                    # unreadable; "
+        "overwriting loses the",
+        "        return True                     # unreadable; "
+        "overwriting loses the",
+        ("tests/test_provider_table.py::"
+         "test_the_next_dispatch_does_not_erase_an_unreadable_record"),
+    ),
+    (
+        # Round 8, edge. A repo-wide, permanent condition reported
+        # without the file that causes it.
+        "the unreadable report does not name its file",
+        STATE,
+        '        record["unreadable"] = sorted(set(lost))',
+        '        record["unreadable"] = True',
+        ("tests/test_provider_table.py::test_a_malformed_dispatch_file_"
+         "reads_as_unknown_not_as_no_dispatch"),
+    ),
+    (
+        # Round 9, High. A reader that fails closed over a file it
+        # could not read is undone by a pruner that deletes it.
+        "the pruner deletes the evidence that evidence was lost",
+        STATE,
+        "    protected.update(lost)",
+        "    protected.update([])",
+        ("tests/test_provider_table.py::test_the_pruner_does_not_delete_"
+         "the_evidence_that_evidence_was_lost"),
+    ),
+    (
+        # Round 10, High. Skipping a record that names no author is
+        # right; skipping it in SILENCE lets the next dispatch on the
+        # branch answer `dispatch` over a record nobody could read.
+        "a record naming no author is dropped in silence",
+        STATE,
+        '            _note_lost(lost, entry.get("_file") or '
+        'DISPATCH_PATH[-1])',
+        "            pass",
+        ("tests/test_provider_table.py::test_a_legacy_history_entry_"
+         "naming_no_author_is_not_silently_dropped"),
+    ),
+    (
+        # Round 11, High. A `.tmp` left by a crash between the write
+        # and the rename is a dispatch that may have landed. The suffix
+        # filter ran before the reader learned to distrust it.
+        "an interrupted write is skipped without a word",
+        STATE,
+        '            _note_lost(lost, name)\n            continue'
+        "\n        path = os.path.join(directory, name)",
+        "            continue\n        path = os.path.join(directory, name)",
+        ("tests/test_provider_table.py::test_an_interrupted_write_in_"
+         "the_store_is_not_an_empty_directory"),
+    ),
+    (
+        # Round 11, High. A filter upstream of the funnel empties the
+        # pipe before the funnel can report anything.
+        "a mangled legacy history member is filtered out in silence",
+        STATE,
+        "            else:\n                # A history whose members "
+        "are not records is a mangled file,",
+        "            elif False:\n                # A history whose "
+        "members are not records is a mangled file,",
+        ("tests/test_provider_table.py::test_a_mangled_legacy_history_"
+         "member_is_not_silently_dropped"),
+    ),
+    (
+        # Round 11, High, and a regression on round 10: the legacy slot
+        # was the one record shape that never reached the funnel.
+        "the legacy slot is filtered before it reaches the funnel",
+        STATE,
+        "        if isinstance(slot, dict):",
+        # Reproduces the SILENCE, not just the filter: a provider-less dict
+        # slot falls through with no report, exactly as it did before, while
+        # a non-dict still reaches the `else` that reports it. Mutating the
+        # condition alone was vacuous -- it rerouted the slot into the new
+        # `else` branch, which reports it by another road.
+        '        if isinstance(slot, dict) and not slot.get("provider"):\n'
+        "            pass\n"
+        "        elif isinstance(slot, dict):",
+        ("tests/test_provider_table.py::test_a_legacy_slot_that_names_"
+         "no_author_reaches_the_funnel"),
+    ),
+    (
+        # The non-dict half: a key present holding nothing is a record
+        # that was written and lost.
+        "a slot holding nothing reads as a slot never written",
+        STATE,
+        "    if kind in record:",
+        "    if record.get(kind) is not None:",
+        ("tests/test_provider_table.py::test_a_legacy_slot_holding_"
+         "nothing_is_a_record_that_was_lost"),
     ),
     (
         "bogus documented role",

@@ -55,12 +55,29 @@ the same string — see step 2.
 The report's first line names the author family and where it came from:
 
 - **`recorded at dispatch`** — a real dispatch was recorded in
-  `.work/dispatch.json`, and the guard is judging what actually ran.
+  `.work/dispatch.d/`, and the guard is judging what actually ran.
 - **`READ FROM CONFIG - no dispatch recorded`** — nothing has run in this
   checkout, so the report fell back to reading `dev` out of the config. Say so
   in those words. That describes the **next** dispatch, not the diff in front
   of the reviewer, and presenting it as the author family would be a guess
   dressed as a fact.
+- **`UNKNOWN - a dispatch on this branch has a family that cannot be
+  determined, or something in .work/ would not parse`** — two causes, one
+  answer. Either something DID run and there is no way to say what family it
+  was, which is what an unpinned `copilot` is (Copilot hosts several families
+  and an unset model does not say which); or a file in `.work/` exists and
+  would not parse, so the store cannot say whether the dispatch that wrote the
+  diff is among the records it CAN read. Tell the user which one applies —
+  `unrecorded` in the dispatch JSON and a `.work/dispatch.json` that will not
+  open are visible, and the second is fixed by deleting the unparseable file,
+  not by pinning anything. **Read the family line before saying
+  nothing is struck** — this source comes back two ways. If it names no family,
+  nothing is struck and every candidate in the table below reads as eligible.
+  If it names one, a second dispatch on the same branch COULD be named and that
+  family is struck; the source is `unknown` because the other one could not be.
+  Either way `independentReviewer` is `false`: independence is a claim about
+  the author's family, and one of them has no name. Tell the user to pin
+  `dev.copilot.model`; that is the only thing that resolves it.
 
 A dispatch is recorded by whatever ran the work:
 
@@ -69,9 +86,15 @@ python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_state.py --root . \
   --record-dispatch dev --role developer --provider codex --model gpt-6-astra
 ```
 
-`.work/dispatch.json` is gitignored during `/crew:init` — it describes one
-checkout on one machine, and a committed copy would travel to a colleague and
-claim a dispatch that never happened there.
+`.work/dispatch.json` and `.work/dispatch.d/` are both gitignored during
+`/crew:init` — they describe one checkout on one machine, and a committed copy
+would travel to a colleague and claim a dispatch that never happened there.
+
+Each dispatch writes its own file under `.work/dispatch.d/` and nothing ever
+rewrites one. That is not a filing convention: a single shared file meant two
+concurrent dispatches both read it, both rewrote it, and whichever landed
+second erased the other — and if the erased one wrote the diff, its family was
+never struck. The PM dispatches up to three roles at a time.
 
 Presence on `PATH` is not working auth. If the user is deciding anything based
 on this, make one real call per configured provider — `codex exec
