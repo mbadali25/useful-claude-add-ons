@@ -1,6 +1,8 @@
 """Tests for the crew state reader."""
 import subprocess
 
+import os
+
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_fixtures
 import crew_state
@@ -586,3 +588,67 @@ def test_collect_with_no_override_behaves_as_before(tmp_path):
     root = crew_fixtures.make_repo(tmp_path, config={"schema": 2})
     assert crew_state.collect(str(root)) == crew_state.collect(
         str(root), cfg_override=None)
+
+
+# --- config-supplied paths must not escape the repository ------------------
+#
+# Found by a hostile QA sweep, 2026-09-05. `graph.out`, `docs.diagramsDir` and
+# `context.handoffPath` were joined to the repo root with no containment
+# check. The handoff one is the sharp end: under `context.autoResume` the file
+# is injected wholesale into the model's context at session start, so a repo
+# could name any file on the machine and have it read into a session.
+
+
+def test_contained_path_keeps_an_ordinary_relative_path(tmp_path):
+    root = str(tmp_path)
+    got = crew_state.contained_path(root, "graphify-out", "default-out")
+    assert got == os.path.realpath(os.path.join(root, "graphify-out"))
+
+
+def test_contained_path_refuses_dot_dot_traversal(tmp_path):
+    root = str(tmp_path / "repo")
+    os.makedirs(root, exist_ok=True)
+    got = crew_state.contained_path(root, "../../secrets", "safe")
+    assert got == os.path.realpath(os.path.join(root, "safe"))
+
+
+def test_contained_path_refuses_an_absolute_path(tmp_path):
+    root = str(tmp_path / "repo")
+    os.makedirs(root, exist_ok=True)
+    outside = str(tmp_path / "outside.txt")
+    assert crew_state.contained_path(root, outside, "safe") == \
+        os.path.realpath(os.path.join(root, "safe"))
+
+
+def test_contained_path_is_not_fooled_by_a_shared_prefix(tmp_path):
+    """`/repo-evil` starts with `/repo` and is not inside it -- which is why
+    this compares path components rather than string prefixes."""
+    root = str(tmp_path / "repo")
+    os.makedirs(root, exist_ok=True)
+    os.makedirs(str(tmp_path / "repo-evil"), exist_ok=True)
+    got = crew_state.contained_path(root, "../repo-evil", "safe")
+    assert got == os.path.realpath(os.path.join(root, "safe"))
+
+
+def test_contained_path_falls_back_for_a_wrong_typed_value(tmp_path):
+    """A hook that raises on a bad config value stops every session in the
+    repo; one that reads the right file instead is what anyone wanted."""
+    root = str(tmp_path)
+    for bad in (None, 42, {"a": 1}, [], "", "   "):
+        assert crew_state.contained_path(root, bad, "safe") == \
+            os.path.realpath(os.path.join(root, "safe")), bad
+
+
+def test_a_graph_out_pointing_outside_the_repo_is_ignored(tmp_path):
+    """The read that would otherwise follow a repo's config off the tree."""
+    root = tmp_path / "repo"
+    (root / ".crew").mkdir(parents=True)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "graph.json").write_text('{"built_at_commit": "deadbeef"}',
+                                        encoding="utf-8")
+
+    cfg = {"graph": {"out": "../outside"}}
+    got = crew_state._read_graph(str(root), cfg)  # pylint: disable=protected-access
+
+    assert got["present"] is False, "must not read the escaped graph"

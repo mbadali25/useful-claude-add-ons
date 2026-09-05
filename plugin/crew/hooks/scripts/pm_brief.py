@@ -372,8 +372,14 @@ def _resume_context(root, cfg, brief_lines):
     """
     if not _auto_resume_enabled(cfg):
         return None
+    # contained_path, not a bare join: this text is injected wholesale into
+    # the model's context, and `handoffPath` comes from the repo's own config.
+    # A cloned repo naming `../../.ssh/id_rsa` here would have it read and
+    # placed in front of the model at session start -- the shortest path from
+    # "checked out a repo" to "leaked a file" this plugin had.
     handoff_text = crew_state.read_text(
-        os.path.join(root, _handoff_path(cfg))
+        crew_state.contained_path(root, _handoff_path(cfg),
+                                  _DEFAULT_HANDOFF_PATH)
     )
     if not handoff_text or not handoff_text.strip():
         return None
