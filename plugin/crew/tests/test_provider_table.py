@@ -1670,3 +1670,69 @@ def test_the_branch_cap_bounds_the_store(tmp_path):
     newest = {item["branch"] for item in history}
     assert f"other-{crew_state.DISPATCH_BRANCHES_MAX * 3 - 1}" in newest, \
         "the cap kept the oldest branches instead of the newest"
+
+
+# --- Codex round 6 on PR #66 ------------------------------------------------
+
+
+def test_the_pruner_and_the_reader_rank_from_the_same_inputs(tmp_path):
+    """Codex round 6, Critical. The pruner protected what `_merge_history`
+    returned and fed it the STORE alone, while `read_dispatch` fed it the
+    store and the legacy `dispatch.json` together. A branch whose legacy
+    record is newer than its store entries then ranks inside the branch cap
+    for the reader and outside it for the pruner -- which deletes every store
+    file that branch had. Check it out afterwards and the surviving legacy
+    record names a different family, reported as proven, with the family that
+    wrote the diff gone.
+
+    Two rankings, one of them deleting files for the other. The fix is that
+    there is one function computing the input and both call it.
+
+    The reported consequence does NOT follow against this code, and saying so
+    is part of the record: `_entry_rank` puts every legacy value in tier 0, so
+    a legacy record cannot lift a branch above a store-native one, and the
+    reader drops `X` here exactly as the pruner does. Measured, not reasoned.
+    Every divergence the tier allows runs the safe way, in both directions it
+    has. The branch cap: the store-only input sees fewer branches competing,
+    so it protects a superset. The dedup: iteration is rank-descending and
+    legacy is always tier 0, so a legacy entry is never `seen` before a
+    store entry sharing its `(family, branch)` key -- no store entry is ever
+    deduped away by something only the store-plus-legacy view can see. Those
+    are the only two places the extra input can act. This
+    is unified against DRIFT, and there is deliberately no sabotage mutation
+    for it: with the tier in place none can turn this red, and a mutation that
+    cannot go red is a green line in a suite whose only value is that green
+    means something."""
+    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=True)
+    # Branch `X`: its store entry is the OLDEST thing in the repo, so it ranks
+    # last on store evidence alone and is evicted by the branch cap.
+    _seed_entry(root, role="developer", provider="codex", model="gpt-6-astra",
+                branch="X", at=1.0)
+    for n in range(crew_state.DISPATCH_BRANCHES_MAX + 5):
+        _seed_entry(root, role="developer", provider="copilot",
+                    model=f"kimi-k{n}", branch=f"other-{n}", at=5000.0 + n)
+    # ...but the legacy file carries a NEWER record for `X`, which is what the
+    # reader ranks it by. The two must agree about that.
+    path = os.path.join(str(root), *crew_state.DISPATCH_PATH)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump({"dev": {"role": "developer", "provider": "windsurf",
+                           "model": "swe-1", "branch": "X", "at": 9.0e9}},
+                  handle)
+
+    record = crew_state._read_record_file(str(root))  # pylint: disable=protected-access
+    by_kind = {}
+    for key, entry_kind, entry in crew_state._dispatch_entries(str(root)):  # pylint: disable=protected-access
+        by_kind.setdefault(entry_kind, []).append((key, entry))
+    wanted = {entry["_file"]
+              for kind in crew_state.DISPATCH_KINDS
+              for entry in crew_state._merge_history(  # pylint: disable=protected-access
+                  crew_state._history_items(record, by_kind, kind))  # pylint: disable=protected-access
+              if entry.get("_file")}
+    assert wanted, "nothing was kept, so this proves nothing"
+
+    crew_state._prune_dispatch_dir(str(root))  # pylint: disable=protected-access
+
+    directory = os.path.join(str(root), *crew_state.DISPATCH_DIR)
+    assert wanted <= set(os.listdir(directory)), \
+        "the pruner deleted a store entry the reader was keeping"

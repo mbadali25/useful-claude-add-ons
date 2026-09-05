@@ -1062,6 +1062,45 @@ def _dispatch_entries(root):
     return out
 
 
+def _read_record_file(root):
+    """`dispatch.json` parsed, or `{}`. Never raises."""
+    text = read_text(os.path.join(root, *DISPATCH_PATH))
+    if text is None:
+        return {}
+    try:
+        parsed = json.loads(text)
+    except ValueError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _history_items(record, by_kind, kind):
+    """The `(rank, entry)` input `_merge_history` takes, for one kind.
+
+    Exists so that `read_dispatch` and `_prune_dispatch_dir` cannot disagree
+    about what the history IS. They did: the pruner protected what the merge
+    returned but fed it the store alone, while the reader fed it the store and
+    the legacy `dispatch.json` together. A branch whose legacy record was
+    newer than its store entries then ranked inside the branch cap for the
+    reader and outside it for the pruner, which deleted every store file that
+    branch had -- and checking it out afterwards left a legacy record naming a
+    different family, reported as proven, with the family that wrote the diff
+    gone.
+
+    A pruner that has to be kept in agreement with a reader drifts the next
+    time either one changes. One function, two callers.
+    """
+    items = [(_entry_rank(entry, key), entry)
+             for key, entry in by_kind.get(kind) or []]
+    legacy = [h for h in record.get(f"{kind}History") or []
+              if isinstance(h, dict)]
+    slot = record.get(kind)
+    if isinstance(slot, dict) and slot.get("provider"):
+        legacy.append(slot)
+    items.extend(((0, _entry_sort_key(h)), h) for h in legacy)
+    return items
+
+
 def _merge_history(items, pin=None):
     """Newest first, deduplicated on what the guard reads, bounded.
 
@@ -1176,15 +1215,7 @@ def read_dispatch(root):
     read where it lies until the bound ages it out, which is what makes this
     an upgrade rather than a migration that can fail halfway.
     """
-    text = read_text(os.path.join(root, *DISPATCH_PATH))
-    record = {}
-    if text is not None:
-        try:
-            parsed = json.loads(text)
-        except ValueError:
-            parsed = None
-        if isinstance(parsed, dict):
-            record = parsed
+    record = _read_record_file(root)
 
     by_kind = {}
     for key, kind, entry in _dispatch_entries(root):
@@ -1199,14 +1230,7 @@ def read_dispatch(root):
         return cached[0]
 
     for kind in DISPATCH_KINDS:
-        items = [(_entry_rank(entry, key), entry)
-                 for key, entry in by_kind.get(kind) or []]
-        legacy = [h for h in record.get(f"{kind}History") or []
-                  if isinstance(h, dict)]
-        slot = record.get(kind)
-        if isinstance(slot, dict) and slot.get("provider"):
-            legacy.append(slot)
-        items.extend(((0, _entry_sort_key(h)), h) for h in legacy)
+        items = _history_items(record, by_kind, kind)
         if not items:
             continue
         # `_file` is bookkeeping for the pruner and is not part of the
@@ -1479,11 +1503,14 @@ def _prune_dispatch_dir(root):
             cached.append(current_branch(root))
         return cached[0]
 
+    record = _read_record_file(root)
+    by_kind = {}
+    for key, entry_kind, entry in _dispatch_entries(root):
+        by_kind.setdefault(entry_kind, []).append((key, entry))
+
     for kind in DISPATCH_KINDS:
-        items = [(_entry_rank(entry, key), entry)
-                 for key, entry_kind, entry in _dispatch_entries(root)
-                 if entry_kind == kind]
-        for entry in _merge_history(items, pin):
+        for entry in _merge_history(_history_items(record, by_kind, kind),
+                                    pin):
             token = entry.get("_file")
             if token:
                 protected.add(token)
