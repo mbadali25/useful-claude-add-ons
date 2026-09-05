@@ -43,10 +43,17 @@ ASCII_EXEMPT_NAMES = {"claude.md"}
 # false positive that blocks every legitimate edit to the file, and the only way
 # to satisfy it is to damage the file.
 #
-# These names are excused from HAVING frontmatter, and from nothing else. They
-# are still held to the ASCII rule, and if one of them does carry frontmatter it
-# is still held to the required keys, the title/filename match and the updated
-# date. See `fm_optional` in `check_note`.
+# These names are excused from HAVING frontmatter, and from nothing else in this
+# check: if one of them does carry frontmatter it is still held to the required
+# keys, the title/filename match and the updated date. See `fm_optional` in
+# `check_note`.
+#
+# "and from nothing else" is scoped to the note contract on purpose. CLAUDE.md
+# is ALSO in ASCII_EXEMPT_NAMES above, so it is excused from the ASCII rule too
+# -- by a separate, older decision. An earlier version of this comment claimed
+# every exempt name "is still held to the ASCII rule", which is true of
+# README/AGENTS/GEMINI and false of CLAUDE.md. The two exemption sets are
+# deliberately separate and deliberately not the same size.
 FRONTMATTER_EXEMPT_NAMES = {"claude.md", "readme.md", "agents.md", "gemini.md"}
 
 ASCII_MAP = {

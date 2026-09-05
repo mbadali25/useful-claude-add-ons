@@ -290,6 +290,11 @@ tags:
 A real note that happens to be called README.md."
 f=$(write_and_payload "wiki/concepts/README.md" "$readme_note")
 check "an exempt basename WITH frontmatter is fully contract-checked" 2 "$(run_guard "$f" "$home_on_win")"
+# Exit 2 alone would also be satisfied by an implementation that rejects every
+# frontmatter-bearing README outright, which is a different wrong answer. Name
+# the violation, the same way the ASCII pair above does.
+check_stderr_has "and it is the title check that caught it" \
+  "does not match filename" "$(guard_stderr "$f" "$home_on_win")"
 
 echo "== vault_guard.py: config-off means silent (sabotage: prove the toggle matters) =="
 
