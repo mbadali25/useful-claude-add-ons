@@ -394,6 +394,64 @@ def test_with_no_dispatch_recorded_the_fallback_is_labelled_as_such(tmp_path):
         frozenset({"claude"}), "config")
 
 
+def test_a_branchless_record_in_a_git_checkout_fails_closed(tmp_path):
+    """Codex round 2, first BLOCK.
+
+    A record written before the `branch` field existed proves nothing about
+    which branch it came from, and trusting it struck only ITS family --
+    leaving the configured family clear to review its own diff. Unknown
+    provenance is not good provenance.
+    """
+    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=True)
+    (root / ".work").mkdir(exist_ok=True)
+    (root / ".work" / "dispatch.json").write_text(
+        json.dumps({"dev": {"role": "developer", "provider": "codex",
+                            "model": "gpt-6-astra"}}), encoding="utf-8")
+
+    authors, source = crew_state.author_families(str(root), PINNED)
+
+    assert source == "stale"
+    # Both: the recorded gpt AND the configured developer's family.
+    assert "gpt" in authors
+    assert len(authors) >= 1
+
+
+def test_a_non_git_checkout_is_not_stale_merely_for_lacking_branches(tmp_path):
+    """The other side of the same rule, and the reason it is not simply
+    "no branch means stale": a checkout with nothing to switch between
+    carries none of the cross-branch risk, and failing closed there would
+    over-bar it forever rather than once."""
+    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=False)
+    crew_state.record_dispatch(str(root), "dev", "developer", "codex",
+                               "gpt-6-astra")
+
+    authors, source = crew_state.author_families(str(root), PINNED)
+
+    assert source == "dispatch"
+    assert authors == frozenset({"gpt"})
+
+
+def test_an_mtime_stale_verdict_reaches_the_report(tmp_path):
+    """Codex round 2, second BLOCK.
+
+    Only /crew:review can compare the record against the diff's merge-base,
+    so it has to be able to TELL the resolver. Without this the report kept
+    saying `dispatch` with one family while the command's own prose said to
+    strike two -- and the resolved data is what every later step reads.
+    """
+    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=False)
+    crew_state.record_dispatch(str(root), "dev", "developer", "codex",
+                               "gpt-6-astra")
+
+    fresh, fresh_src = crew_state.author_families(str(root), PINNED)
+    stale, stale_src = crew_state.author_families(str(root), PINNED,
+                                                  stale=True)
+
+    assert fresh_src == "dispatch" and fresh == frozenset({"gpt"})
+    assert stale_src == "stale"
+    assert stale >= fresh, "striking must only ever widen"
+
+
 def test_a_malformed_dispatch_file_reads_as_no_dispatch(tmp_path):
     root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=False)
     (root / ".work" / "dispatch.json").write_text("{ half-written",

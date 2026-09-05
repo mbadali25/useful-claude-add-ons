@@ -90,6 +90,15 @@ REC_AT=$(python3 -c 'import os,sys;print(int(os.path.getmtime(sys.argv[1])))' .w
 BASE_AT=$(git log -1 --format=%ct "$BASE" 2>/dev/null) || BASE_AT=0
 : "${BASE_AT:=0}"
 echo "record=$REC_AT base=$BASE_AT branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
+
+# Carry the verdict forward as a FLAG, not as a note to yourself. Step 2 passes
+# it to crew_config.py so the resolved report strikes both families too; without
+# it the report says `dispatch` with one family in it while the table below tells
+# you to strike two, and the resolved data is what every later step reads.
+STALE_FLAG=""
+if [ "$REC_AT" -gt 0 ] && [ "$BASE_AT" -gt 0 ] && [ "$REC_AT" -lt "$BASE_AT" ]; then
+  STALE_FLAG="--author-stale"
+fi
 ```
 
 | Reading | Means | Do |
@@ -184,7 +193,7 @@ provider blocks below are literally runnable rather than prose about themselves:
 # machines.
 REPORT="$SCRATCH/models.json"
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_config.py \
-  --root . --models --json > "$REPORT"
+  --root . --models --json $STALE_FLAG > "$REPORT"
 
 # What model would PROVIDER use for the `review` role? The role pin wins when it
 # names that provider; otherwise the provider's own block does. Absent stays
@@ -206,10 +215,39 @@ QA_MODEL=$(qm codex model)
 QA_EFFORT=$(qm codex reasoningEffort)
 QA_COPILOT_MODEL=$(qm copilot model)
 
-# The author families to strike came from the same report in step 1 -- read
-# them from it rather than re-deriving from dev.provider, which is a default
-# that a per-role pin may already have overridden.
+# The author families to strike, from the same report -- never re-derived from
+# dev.provider, which is a default a per-role pin may already have overridden.
+# This is a SET: a stale or branchless record strikes the recorded family AND
+# the configured one, because neither can be ruled out as the author.
 AUTHORS=$(python3 -c 'import json,sys;print(" ".join(sorted(json.load(open(sys.argv[1])).get("authorFamilies") or [])))' "$REPORT")
+AUTHOR_SOURCE=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1])).get("authorSource") or "")' "$REPORT")
+
+# Which candidates survive that strike, and can actually run. The report has
+# already applied the guard -- this is the list to pick from, in order, and an
+# empty one is the "no independent reviewer" state, not an error.
+ELIGIBLE=$(python3 -c '
+import json, sys
+report = json.load(open(sys.argv[1]))
+print(" ".join(c["provider"] for c in report.get("qaFallThrough") or []
+                if c.get("eligible")))' "$REPORT")
+echo "authors=$AUTHORS source=$AUTHOR_SOURCE eligible=${ELIGIBLE:-<none>}"
+```
+
+**Use `$ELIGIBLE`, in that order, and say `$AUTHOR_SOURCE` out loud.** It is the
+report's own answer to "who may review this", with the family guard already
+applied and `qa.order` already walked. Re-deriving the choice from `qa.provider`
+here would be a second implementation of the rule that can disagree with the one
+`/crew:model` prints. An empty `$ELIGIBLE` is step 2c: run the `qa-reviewer`
+fallback and say in the verdict that this review is same-family and does not
+count as independent.
+
+`source=stale` means the recorded dispatch could not be tied to this diff -- a
+different branch, an unrecorded branch, or a record older than the merge-base --
+so **both** the recorded and the configured family were struck. Report that as
+the reason a rung was lost, rather than presenting the narrower candidate list
+as though it were a preference.
+
+```bash
 
 # $BASE comes from step 1a. Reuse it; do not recompute it here. A second
 # derivation can disagree with the first, and then the staleness verdict was

@@ -34347,14 +34347,14 @@
       "source_location": "L181"
     },
     {
-      "id": "plugin_readme_crew_0_16_0",
-      "label": "crew 0.16.0",
+      "id": "plugin_readme_crew_0_16_1",
+      "label": "crew 0.16.1",
       "_origin": "ast",
       "community": 186,
       "community_name": "Plugins",
       "file_type": "document",
       "node_kind": "heading",
-      "norm_label": "crew 0.16.0",
+      "norm_label": "crew 0.16.1",
       "source_file": "plugin/README.md",
       "source_location": "L15"
     },
@@ -51161,14 +51161,14 @@
       "source_location": "L395"
     },
     {
-      "id": "readme_crew_0_16_0",
-      "label": "crew 0.16.0",
+      "id": "readme_crew_0_16_1",
+      "label": "crew 0.16.1",
       "_origin": "ast",
       "community": 35,
       "community_name": "useful-claude-add-ons",
       "file_type": "document",
       "node_kind": "heading",
-      "norm_label": "crew 0.16.0",
+      "norm_label": "crew 0.16.1",
       "source_file": "README.md",
       "source_location": "L229"
     },
@@ -55751,14 +55751,14 @@
       "source_location": "L177"
     },
     {
-      "id": "plugin_update_crew_0_16_0",
-      "label": "crew 0.16.0",
+      "id": "plugin_update_crew_0_16_1",
+      "label": "crew 0.16.1",
       "_origin": "ast",
       "community": 470,
       "community_name": "Plugin updates",
       "file_type": "document",
       "node_kind": "heading",
-      "norm_label": "crew 0.16.0",
+      "norm_label": "crew 0.16.1",
       "source_file": "plugin/UPDATE.md",
       "source_location": "L11"
     },
@@ -124817,7 +124817,7 @@
     },
     {
       "source": "plugin_readme_what_s_new",
-      "target": "plugin_readme_crew_0_16_0",
+      "target": "plugin_readme_crew_0_16_1",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -124872,7 +124872,7 @@
     },
     {
       "source": "plugin_update_plugin_updates",
-      "target": "plugin_update_crew_0_16_0",
+      "target": "plugin_update_crew_0_16_1",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -125202,7 +125202,7 @@
     },
     {
       "source": "readme_what_s_new_in_the_plugins",
-      "target": "readme_crew_0_16_0",
+      "target": "readme_crew_0_16_1",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -158938,5 +158938,5 @@
     }
   ],
   "hyperedges": [],
-  "built_at_commit": "d8b8161bba80b3a6806b84e6f4beb9b46874e770"
+  "built_at_commit": "459bba5a92a4cf6a29c0ef03089d7a98e0b6cace"
 }

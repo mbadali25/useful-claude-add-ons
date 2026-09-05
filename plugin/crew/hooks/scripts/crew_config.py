@@ -684,7 +684,7 @@ def order_candidates(cfg, author, which=None, probe=None):
     return out
 
 
-def model_report(root, which=None):
+def model_report(root, which=None, stale=False):
     """Per-ROLE effective provider, model and family, for `/crew:model`.
 
     One row per role, not one row per block. `qa` used to be reported as a
@@ -712,7 +712,8 @@ def model_report(root, which=None):
     """
     which = shutil.which if which is None else which
     cfg = resolve_config(root)
-    authors, author_source = crew_state.author_families(root, cfg)
+    authors, author_source = crew_state.author_families(root, cfg,
+                                                       stale=stale)
 
     def rows(kind, names, author_for_guard):
         block = crew_state.dict_or_empty(cfg.get(kind))
@@ -973,6 +974,11 @@ def main(argv=None):
                         help="every globally-settable key, value and source")
     parser.add_argument("--check-global", action="store_true",
                         help="findings about the machine-global config")
+    parser.add_argument("--author-stale", action="store_true",
+                        help="the caller compared the recorded dispatch "
+                             "against the diff's merge-base and found it "
+                             "older; strike the recorded AND the configured "
+                             "family")
     parser.add_argument("--models", action="store_true",
                         help="per-role provider, model, family and fallback")
     parser.add_argument("--set", action="append", default=[], metavar="PATH=JSON",
@@ -1016,7 +1022,7 @@ def main(argv=None):
         return 0
 
     if args.models:
-        report = model_report(args.root)
+        report = model_report(args.root, stale=args.author_stale)
         if args.json:
             print(json.dumps(report, indent=2))
         else:

@@ -915,7 +915,7 @@ def record_dispatch(root, kind, role, provider, model=None, branch=None):
     return record
 
 
-def author_families(root, cfg):
+def author_families(root, cfg, stale=False):
     """`(families, source)` -- who wrote the code here, and how we know.
 
     `families` is a frozenset because a stale record strikes TWO of them, and
@@ -937,10 +937,17 @@ def author_families(root, cfg):
         review its own work. Over-barring costs a rung; under-barring costs
         the entire point of the guard.
 
-    A record with no branch recorded (written before 0.16.0's field existed,
-    or in a non-git checkout) is NOT treated as stale. It is the pre-existing
-    state, and failing closed on every such record would bar everything on
-    the first upgraded repo, which teaches people to ignore the bar.
+    A record with no branch, read in a checkout that HAS one, is stale: it
+    was written before 0.16.0's field existed and cannot prove which branch
+    it came from, and trusting it strikes only its own family while leaving
+    the configured one clear to review its own diff. A checkout with no
+    branch at all is the exception -- nothing to switch between means none of
+    the risk -- so a non-git repo is not barred forever for lacking git.
+
+    `stale=True` is how a caller that CAN compare the record against the
+    diff's merge-base reports that verdict; only `/crew:review` can make that
+    comparison, and without a way to say so its answer never reached the
+    resolved report that every later step reads.
     """
     recorded = dict_or_empty(read_dispatch(root).get("dev"))
     decided = resolve_role(cfg, "dev", "developer")
@@ -949,20 +956,43 @@ def author_families(root, cfg):
                                  recorded.get("model"))
         here = current_branch(root)
         there = recorded.get("branch")
-        if there and here and there != here:
+        # Strike BOTH unless the record positively proves it is about this
+        # branch. Three states reach here and only one of them is evidence:
+        #   * branches known and different -- stale, plainly.
+        #   * `stale=True` -- the caller compared the record against the
+        #     diff's merge-base and found it older. Only /crew:review can
+        #     make that comparison, so it has to be able to say so; without
+        #     this argument its verdict never reached the resolved report and
+        #     the report kept saying `dispatch` with one family in it.
+        #   * this checkout HAS a branch and the record does not name one --
+        #     a record written before the `branch` field existed. Trusted
+        #     until now on compatibility grounds, which was the wrong
+        #     direction: it may have been written on another branch minutes
+        #     ago, and trusting it strikes only its family while leaving the
+        #     config's own clear to review its own diff. Over-barring costs a
+        #     rung; under-barring costs the entire point of the guard. The
+        #     cost is one over-barred review per repo, until the next
+        #     dispatch records a branch.
+        #
+        # A checkout with NO branch at all (`here` is None -- not a git repo)
+        # is deliberately NOT stale on those grounds. There is nothing to
+        # switch between, so the cross-branch risk the rule exists for cannot
+        # arise, and failing closed there would over-bar every non-git
+        # checkout forever rather than once.
+        if stale or (here and there != here):
             return frozenset(
                 f for f in (recorded_family, decided["family"]) if f
             ), "stale"
         return frozenset(f for f in (recorded_family,) if f), "dispatch"
-    # No record: read the config. Ask `resolve_role` for the `developer` role
-    # rather than the `dev` block's own provider -- `dev.roles.developer` is a
-    # pin that OVERRIDES that default, so reading the block alone reports the
-    # wrong family for exactly the config the role table exists to express.
-    # A repo with `dev.provider: "claude"` and `developer` pinned to codex
-    # would otherwise strike claude and clear codex to review codex's diff,
-    # which is the under-bar the guard exists to prevent. `developer` is the
-    # role that writes; security and infrastructure-architect do not commit.
-    decided = resolve_role(cfg, "dev", "developer")
+    # No record: read the config. `decided` above asked `resolve_role` for the
+    # `developer` role rather than the `dev` block's own provider --
+    # `dev.roles.developer` is a pin that OVERRIDES that default, so reading
+    # the block alone reports the wrong family for exactly the config the role
+    # table exists to express. A repo with `dev.provider: "claude"` and
+    # `developer` pinned to codex would otherwise strike claude and clear
+    # codex to review codex's diff. `developer` is the role that writes;
+    # security and infrastructure-architect do not commit.
+    #
     # frozenset, like every other branch: an unknowable family (an unset
     # Copilot model) is the EMPTY set, never `{None}` and never a bare None.
     # A caller that strikes what this returns must strike nothing in that
