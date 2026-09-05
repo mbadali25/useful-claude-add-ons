@@ -157,21 +157,39 @@ def upgrade_config(cfg):
         # back the module-level default object itself, and a caller writing
         # through the result would mutate the shared default for every later
         # caller in the process.
-        out[key] = _merged(copy.deepcopy(block),
-                           None if supplied is _ABSENT else supplied)
+        #
+        # `dropped` catches the NESTED version of the check above: a scalar
+        # where the schema wants a block, e.g. `qa.codex: "human"`. _merged
+        # discards it on purpose -- callers index into these blocks -- but a
+        # migration that rewrites the user's file must say which value it
+        # refused to carry forward. Without this the config came back stamped
+        # current with the value gone and `unmigrated` empty.
+        dropped = []
+        merged = _merged(copy.deepcopy(block),
+                         None if supplied is _ABSENT else supplied,
+                         dropped, key)
+        if dropped:
+            # Same contract as the top-level branch above: leave the block
+            # EXACTLY as written and report it. Reporting the loss while
+            # still writing the replacement would make the report itself a
+            # lie -- it says "left exactly as written" -- and the value would
+            # be gone from disk either way.
+            notes["unmigrated"].extend(dropped)
+            continue
+        out[key] = merged
 
     # What schema 3 actually added to THIS config, computed from the incoming
     # file rather than from the version number: a config hand-edited to carry
     # `dev.roles` already must not be reported as having just gained it.
     for dotted in SCHEMA_3_KEYS:
         block_key, leaf = dotted.split(".")
-        if block_key in notes["unmigrated"]:
+        if _block_untouched(notes, block_key):
             continue
         supplied = crew_state.dict_or_empty(cfg.get(block_key))
         if leaf not in supplied:
             notes["providerKeysAdded"].append(dotted)
 
-    if "graph" not in notes["unmigrated"]:
+    if not _block_untouched(notes, "graph"):
         # obsidian.confirmed is consent to write into the user's own notes
         # outside the repo, not a capability. An upgrade must never grant it
         # -- only the user, in session, can.
@@ -208,6 +226,19 @@ def upgrade_config(cfg):
         out["schema"] = crew_state.SCHEMA_CURRENT
         notes["schemaStamped"] = True
     return out, notes
+
+
+def _block_untouched(notes, block_key):
+    """Was `block_key` left un-migrated, whole or in part?
+
+    `unmigrated` holds a bare block name when the block itself was the wrong
+    type, and a dotted path (`qa.codex`) when a nested value was. Both mean
+    the block was left exactly as the user wrote it, so anything that indexes
+    into the migrated shape afterwards must skip it -- a plain `in` test sees
+    only the first kind and walks straight into the second.
+    """
+    return any(entry == block_key or entry.startswith(block_key + ".")
+               for entry in notes["unmigrated"])
 
 
 def backup_codemap(root):
@@ -383,9 +414,19 @@ def run(root, derived, force=False):
     backup_config(root)
 
     upgraded, notes = upgrade_config(cfg)
-    with open(cfg_path, "w", encoding="utf-8") as handle:
+    # Write a sibling and rename over the target. Opening the live config
+    # "w" truncates it first, so an interruption -- a kill, a full disk, a
+    # serialization error -- between truncate and the last byte leaves a
+    # half-written file, and the NEXT run stops at "config unreadable"
+    # rather than retrying. os.replace is atomic on POSIX and on Windows,
+    # so the config on disk is only ever the old one or the new one.
+    tmp_path = cfg_path + ".tmp"
+    with open(tmp_path, "w", encoding="utf-8") as handle:
         json.dump(upgraded, handle, indent=2, sort_keys=True)
         handle.write("\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(tmp_path, cfg_path)
 
     head = _head(root)
     mapdir = os.path.join(root, ".crew", "codemap")

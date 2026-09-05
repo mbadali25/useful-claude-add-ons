@@ -205,9 +205,17 @@ def default_global_config():
     What is left is the set whose right answer really is a property of the
     machine or the person:
 
-      * `pm.authority` -- the key the whole guided-setup work exists for. A
-        global file with no `pm` block silently resolved every repo to
-        `report-only`, which is a default nobody chose.
+      * `pm` -- the WHOLE block, not just `authority`. `authority` is the key
+        the guided-setup work exists for: a global file with no `pm` block
+        silently resolved every repo to `report-only`, a default nobody
+        chose. Its siblings are the same kind of fact. How many roles one
+        pass may dispatch (`maxDispatches`) is a property of the machine
+        doing the dispatching, and how chatty the PM is (`enabled`, `mode`,
+        `quietLines`, `maxLines`) is a property of the person reading it --
+        neither is a fact about a checkout. `maxDispatches` was inherited
+        globally before 0.16.0 and a committed test said so; briefly
+        filtering it out was a removal of working capability, and the user
+        ruled on 2026-09-05 to put it back.
       * `qa` and `dev` -- which reviewer and which implementer CLI are
         installed here, which model each may use, the per-role pins and the
         declared `fallback`. Provider availability is a machine fact; a repo
@@ -252,7 +260,7 @@ def default_global_config():
             "chatId": None,
             "events": ["phase", "gate", "waiting"],
         },
-        "pm": {"authority": crew_state.AUTHORITY_DEFAULT},
+        "pm": copy.deepcopy(crew_state.PM_DEFAULTS),
     }
 
 
@@ -612,7 +620,7 @@ def inspect_global(root, path=None):
 # --- What actually backs each role -----------------------------------------
 
 
-def order_candidates(cfg, author, which=None):
+def order_candidates(cfg, author, which=None, probe=None):
     """Which of `qa.order` could actually review a diff `author` wrote. Pure.
 
     The per-role table answers "what is each role pinned to". It does NOT
@@ -629,11 +637,30 @@ def order_candidates(cfg, author, which=None):
     `{"provider", "model", "family", "onPath", "eligible", "why"}`. `why` is
     None when the candidate is eligible and otherwise names the single reason
     it is not, in the order the walk itself would find them: absent from PATH,
-    then family unknown, then same family as the author. A `copilot` with no
-    `qa.copilot.model` has NO knowable family -- that is why the walkthroughs
-    insist on pinning it before Copilot may review at all.
+    then family unknown, then same family as the author, then a failed probe.
+    A `copilot` with no `qa.copilot.model` has NO knowable family -- that is
+    why the walkthroughs insist on pinning it before Copilot may review at all.
+
+    **Being on PATH is not being able to review.** An installed CLI that is
+    logged out, rate-limited or disabled by policy resolves on PATH and then
+    fails at the first call, so presence alone must never be reported as an
+    independent reviewer. With no `probe`, this answers the question it can
+    actually answer -- "is a differently-familied candidate installed" -- and
+    `probed` on each row is False so a caller can say which it got.
+    `probe(provider, model)` returning False marks the candidate ineligible;
+    supply one wherever the answer is about to be trusted, as `/crew:review`
+    does with its real round trip.
     """
     which = shutil.which if which is None else which
+    # `author` is a single family, an iterable of them, or None -- plural
+    # because a stale dispatch record strikes two. See
+    # `crew_state.author_families`.
+    if author is None:
+        authors = frozenset()
+    elif isinstance(author, str):
+        authors = frozenset([author])
+    else:
+        authors = frozenset(f for f in author if f)
     block = crew_state.dict_or_empty(crew_state.dict_or_empty(cfg).get("qa"))
     out = []
     for provider in block.get("order") or []:
@@ -645,12 +672,15 @@ def order_candidates(cfg, author, which=None):
             why = "not on PATH"
         elif fam is None:
             why = f"no `qa.{provider}.model` pinned, so its family is unknown"
-        elif author is not None and fam == author:
+        elif fam in authors:
             why = f"speaks as the `{fam}` family, which wrote this diff"
+        elif probe is not None and not probe(provider, model):
+            why = "on PATH but its probe failed -- installed, not usable"
         else:
             why = None
         out.append({"provider": provider, "model": model, "family": fam,
-                    "onPath": on_path, "eligible": why is None, "why": why})
+                    "onPath": on_path, "probed": probe is not None,
+                    "eligible": why is None, "why": why})
     return out
 
 
@@ -682,7 +712,7 @@ def model_report(root, which=None):
     """
     which = shutil.which if which is None else which
     cfg = resolve_config(root)
-    author, author_source = crew_state.author_family(root, cfg)
+    authors, author_source = crew_state.author_families(root, cfg)
 
     def rows(kind, names, author_for_guard):
         block = crew_state.dict_or_empty(cfg.get(kind))
@@ -701,32 +731,69 @@ def model_report(root, which=None):
             out.append(row)
         return out
 
-    candidates = order_candidates(cfg, author, which)
+    candidates = order_candidates(cfg, authors, which)
     return {
-        "authorFamily": author,
+        "authorFamily": ", ".join(sorted(authors)) or None,
+        "authorFamilies": sorted(authors),
         "authorSource": author_source,
         "dispatch": crew_state.read_dispatch(root).get("dev"),
+        "branch": crew_state.current_branch(root),
         "qaOrder": crew_state.dict_or_empty(cfg.get("qa")).get("order") or [],
+        # The RESOLVED per-provider blocks, so a caller never has to reopen
+        # .crew/config.json to find one. `qaFallThrough` only covers providers
+        # named in `qa.order`, and `qa.provider` may name one that is not in
+        # it -- reading the raw repo file to recover that was the bug this
+        # whole key exists to remove, because that file is one layer of three.
+        "qaProviders": {
+            name: {
+                "model": crew_state.dict_or_empty(
+                    crew_state.dict_or_empty(cfg.get("qa")).get(name)
+                ).get("model"),
+                "reasoningEffort": crew_state.dict_or_empty(
+                    crew_state.dict_or_empty(cfg.get("qa")).get(name)
+                ).get("reasoningEffort"),
+            }
+            for name in ("codex", "copilot", "claude")
+        },
         "onPath": {tool: bool(which(tool)) for tool in ("codex", "copilot")},
         "dev": rows("dev", crew_state.DEV_ROLE_KINDS, None),
-        "qa": rows("qa", crew_state.QA_ROLE_KINDS, author),
+        "qa": rows("qa", crew_state.QA_ROLE_KINDS, authors),
         "qaFallThrough": candidates,
         # The conclusion, not the evidence. False means every candidate in
         # `qa.order` is unreachable or same-family, which is the one state
         # `/crew:review` cannot fix by trying harder.
+        #
+        # True is the WEAKER claim of the two: with no probe supplied it means
+        # "a differently-familied candidate is installed", not "a review can
+        # run". `independentReviewerProbed` says which of those was measured,
+        # so a caller never has to guess whether presence was mistaken for
+        # capability.
         "independentReviewer": any(c["eligible"] for c in candidates),
+        "independentReviewerProbed": all(c["probed"] for c in candidates)
+                                     and bool(candidates),
     }
 
 
+_ORIGINS = {
+    "dispatch": "recorded at dispatch",
+    "config": ("READ FROM CONFIG - no dispatch recorded, so this describes "
+               "the NEXT run, not the diff in front of you"),
+    # Fail closed, and say which two were struck. See
+    # `crew_state.author_families` and `commands/review.md`.
+    "stale": ("STALE RECORD - the dispatch was made on a different branch, "
+              "so BOTH the recorded family and the config family are struck"),
+}
+
+
 def _print_models(report):
-    origin = ("recorded at dispatch" if report["authorSource"] == "dispatch"
-              else "READ FROM CONFIG - no dispatch recorded, so this describes "
-                   "the NEXT run, not the diff in front of you")
+    origin = _ORIGINS.get(report["authorSource"], report["authorSource"])
     print(f"author family: {report['authorFamily'] or 'unknown'}  ({origin})")
     if report["dispatch"]:
         job = report["dispatch"]
         print(f"last dev dispatch: role={job.get('role')} "
-              f"provider={job.get('provider')} model={job.get('model')}")
+              f"provider={job.get('provider')} model={job.get('model')} "
+              f"branch={job.get('branch') or '(not recorded)'} "
+              f"| current branch={report['branch'] or '(none)'}")
     print()
     for kind in ("dev", "qa"):
         print(f"{kind + ' role':<28}{'provider':<10}{'model':<32}"

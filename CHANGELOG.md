@@ -79,6 +79,36 @@ All notable changes to this repository are documented here. Format follows [Keep
     falls back to the `qa-reviewer` subagent and labels the result
     same-family. It runs; it does not count as an independent review.
 
+  **Codex gated this change on the PR and found eleven defects; all eleven are
+  fixed here.** The four that would have shipped working-looking behaviour:
+
+  - `upgrade_config` destroyed a wrong-typed NESTED value (`qa.codex: "human"`),
+    reported `unmigrated: []`, and stamped the schema current -- a migration
+    that ate a hand-written value and called itself clean. `merge_defaults`
+    now takes a `discarded` list, the block is left exactly as written, and
+    the schema is not stamped, so the next run retries it.
+  - `/crew:review` re-parsed `.crew/config.json` for the model to invoke, so
+    `qa.roles.review` and the entire machine-global layer were invisible to
+    the only command that runs a review: `/crew:model` reported the pinned
+    reviewer while `/crew:review` ran the block default. It now resolves
+    through `crew_config.py --models --json`, and the report grew `qaProviders`
+    so nothing has to reopen the repo file to find a provider's model.
+  - `author_family` read `dev.provider` and ignored `dev.roles.*`, so a repo
+    pinning `developer` to codex under a `claude` block reported the author as
+    `claude` -- striking claude and clearing CODEX to review a codex-written
+    diff. It is now `author_families`, returns a frozenset, and a record naming
+    a different branch fails closed by striking both.
+  - `independentReviewer` treated presence on `PATH` as an eligible reviewer,
+    so a logged-out CLI made it `true`. `order_candidates` now accepts a
+    `probe`, and `independentReviewerProbed` says whether capability was
+    measured or merely assumed.
+
+  Also: the config rewrite is atomic (`os.replace`) rather than a truncate in
+  place; three tests that would have passed with the behaviour deleted were
+  rewritten and sabotage-tested; `pm.maxDispatches` is globally settable again;
+  and the agent files no longer claim Codex runs "by default" when a fresh
+  install ships `dev.provider: "claude"` with an empty `dev.roles`.
+
   Neither key is a new rule. The interlock — the family that wrote the code
   may not review it, guard evaluated before any pin — is unchanged; what
   changed is that its consequence is now in the report instead of being

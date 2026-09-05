@@ -593,7 +593,7 @@ def can_act(state):
     return normalise_authority(pm.get("authority")) == "act"
 
 
-def merge_defaults(defaults, supplied):
+def merge_defaults(defaults, supplied, discarded=None, _path=""):
     """`defaults`, overlaid with anything already present. Fully recursive.
 
     It calls itself whenever BOTH sides hold a dict at a key, so a nested
@@ -614,15 +614,26 @@ def merge_defaults(defaults, supplied):
     partway through, sometimes after the result has already been written.
     A scalar where the schema wants a block is a mistake, and the default is
     the honest fallback. A legitimate nested override still wins.
+
+    Discarding is right; discarding SILENTLY is not. Pass a list as
+    `discarded` and every dropped override is appended to it as a dotted
+    path, so a caller that rewrites the user's file -- `crew_upgrade.
+    upgrade_config` above all -- can name what it refused to carry forward
+    instead of reporting a clean migration over a destroyed value. Callers
+    that only read (`resolve_config`) can leave it None: there, the default
+    winning is the answer, not a loss.
     """
     out = dict(defaults)
     if not isinstance(supplied, dict):
         return out
     for key, value in supplied.items():
+        path = f"{_path}.{key}" if _path else key
         if isinstance(out.get(key), dict):
             if isinstance(value, dict):
-                out[key] = merge_defaults(out[key], value)
-            # else: keep the default; see the docstring.
+                out[key] = merge_defaults(out[key], value, discarded, path)
+            elif discarded is not None:
+                # Keep the default (see the docstring), but say so.
+                discarded.append(path)
         else:
             out[key] = value
     return out
@@ -720,8 +731,10 @@ def resolve_role(cfg, kind, role, author=None, available=None):
 
     `kind` is `"qa"` or `"dev"`; `role` is a name in that block's `roles`
     table (`review`, `developer`, ...). `author` is the family that WROTE the
-    diff under review, from `author_family` below -- pass None when that is
-    genuinely unknown, never a guess. `available(provider, model)` is an
+    diff under review, from `author_families` below -- a single family, an
+    iterable of them, or None when that is genuinely unknown, never a guess.
+    It is plural because a dispatch record from another branch strikes two:
+    the family it names and the family the config names. `available(provider, model)` is an
     optional probe returning False when the pinned model is gone; with no
     probe, nothing falls back.
 
@@ -748,6 +761,16 @@ def resolve_role(cfg, kind, role, author=None, available=None):
     the difference matters most exactly when the pin was chosen to get a
     different family onto the diff.
     """
+    # `author` is a single family, an iterable of them, or None. It is plural
+    # because a STALE dispatch record strikes two: the family the record names
+    # and the family the config names. See `author_families`.
+    if author is None:
+        authors = frozenset()
+    elif isinstance(author, str):
+        authors = frozenset([author])
+    else:
+        authors = frozenset(f for f in author if f)
+
     block = dict_or_empty(dict_or_empty(cfg).get(kind))
     pin = dict_or_empty(dict_or_empty(block.get("roles")).get(role))
     provider = pin.get("provider") or block.get("provider") or "claude"
@@ -784,12 +807,13 @@ def resolve_role(cfg, kind, role, author=None, available=None):
         return out
 
     # 1. The family guard, BEFORE the pin. See the docstring.
-    if author is not None and out["family"] is not None and out["family"] == author:
+    if out["family"] is not None and out["family"] in authors:
         out["barred"] = True
-        out["barredBy"] = author
+        out["barredBy"] = out["family"]
         out["announce"].append(
-            f"{kind}.{role}: BARRED -- {provider} speaks as the `{author}` "
-            "family, which wrote this diff, so it may not review it"
+            f"{kind}.{role}: BARRED -- {provider} speaks as the "
+            f"`{out['family']}` family, which wrote this diff, so it may not "
+            "review it"
         )
         return out
 
@@ -804,12 +828,12 @@ def resolve_role(cfg, kind, role, author=None, available=None):
         out["model"] = fallback
         out["family"] = family("claude", fallback)
         out["reasoningEffort"] = None
-        if author is not None and out["family"] == author:
+        if out["family"] in authors:
             out["fallbackBarred"] = True
             out["announce"].append(
                 f"{kind}.{role}: the fallback `{fallback}` is also the "
-                f"`{author}` family that wrote this diff -- this is not an "
-                "independent review"
+                f"`{out['family']}` family that wrote this diff -- this is "
+                "not an independent review"
             )
     return out
 
@@ -819,6 +843,13 @@ def resolve_role(cfg, kind, role, author=None, available=None):
 # copy would travel to another machine and describe a dispatch that never
 # happened there. `crew-setup/SKILL.md` adds it to .gitignore during setup.
 DISPATCH_PATH = (".work", "dispatch.json")
+
+# Kinds that may be RECORDED, which is exactly the set something READS.
+# `author_family` reads `dev`; nothing reads a `qa` slot, so nothing writes
+# one. A `--record-dispatch qa` flag whose output no code ever consults is
+# state written to nowhere -- the same failure as a reader with no writer,
+# and just as invisible. Give a kind a reader and add it here, in one change.
+DISPATCH_KINDS = ("dev",)
 
 
 def read_dispatch(root):
@@ -833,7 +864,19 @@ def read_dispatch(root):
     return parsed if isinstance(parsed, dict) else {}
 
 
-def record_dispatch(root, kind, role, provider, model=None):
+def current_branch(root):
+    """The checked-out branch name, or None outside a repo / on a detached HEAD.
+
+    `git rev-parse --abbrev-ref HEAD` answers `HEAD` when detached, which is
+    not a branch and must not be recorded as one -- two unrelated detached
+    checkouts would both say `HEAD` and compare equal, which is the false
+    freshness this field exists to remove.
+    """
+    name = git_out(root, "rev-parse", "--abbrev-ref", "HEAD")
+    return None if not name or name == "HEAD" else name
+
+
+def record_dispatch(root, kind, role, provider, model=None, branch=None):
     """Record which role, provider and model actually ran. Returns the record.
 
     Written at dispatch, read by `author_family` -- the whole point being that
@@ -841,9 +884,29 @@ def record_dispatch(root, kind, role, provider, model=None):
     to say now. A config read after the fact answers a different question: it
     describes the next dispatch, not the one that produced the diff in front
     of the reviewer.
+
+    `branch` defaults to the checkout's current branch and is what makes the
+    record falsifiable ACROSS branches. There is one file per checkout with
+    one slot per kind, so a dispatch made on another branch overwrites this
+    one and then reads as perfectly fresh: `/crew:review`'s mtime test
+    compares the record against the diff's merge-base and cannot see a branch
+    switch at all, because the record is genuinely newer. Recording the branch
+    is the only thing that can tell those two states apart.
+
+    `kind` must be one of `DISPATCH_KINDS`. Writing a kind nothing reads is
+    the same inert-feature class as a reader with no writer, so the set is
+    enforced here rather than left to the caller's discretion -- adding a
+    reader means adding its kind to that tuple, in the same change.
     """
+    if kind not in DISPATCH_KINDS:
+        raise ValueError(
+            f"no reader for dispatch kind {kind!r}; "
+            f"recordable kinds are {', '.join(DISPATCH_KINDS)}")
+    if branch is None:
+        branch = current_branch(root)
     record = dict(read_dispatch(root))
-    record[kind] = {"role": role, "provider": provider, "model": model}
+    record[kind] = {"role": role, "provider": provider, "model": model,
+                    "branch": branch}
     path = os.path.join(root, *DISPATCH_PATH)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as handle:
@@ -852,23 +915,60 @@ def record_dispatch(root, kind, role, provider, model=None):
     return record
 
 
-def author_family(root, cfg):
-    """`(family, source)` -- who wrote the code in this checkout, and how we know.
+def author_families(root, cfg):
+    """`(families, source)` -- who wrote the code here, and how we know.
 
-    `source` is `"dispatch"` when a real dispatch was recorded and
-    `"config"` when it was not. The distinction is reported, never smoothed
-    over: with no dispatch recorded this falls back to reading `dev` out of
-    the config, which describes the NEXT dispatch rather than the one that
-    produced the diff, and `/crew:model` on a clean tree has to say so rather
-    than presenting a guess as a fact.
+    `families` is a frozenset because a stale record strikes TWO of them, and
+    `source` is one of:
+
+      * `"dispatch"` -- a record exists and its branch matches this checkout.
+        The guard is judging what actually ran.
+      * `"config"` -- no record, so `dev` was read out of the config. That
+        describes the NEXT dispatch rather than the diff in front of the
+        reviewer, and every caller has to say so rather than presenting a
+        guess as a fact.
+      * `"stale"` -- a record exists but names a DIFFERENT branch, so it
+        cannot describe the commits under review. This **fails closed**: the
+        recorded family and the config family are BOTH struck, matching what
+        `commands/review.md` does with a record that predates the merge-base.
+        Dropping the stale record and trusting config is the one direction
+        that can under-bar -- if codex wrote the commits and the config has
+        since been changed to `claude`, discarding the record clears codex to
+        review its own work. Over-barring costs a rung; under-barring costs
+        the entire point of the guard.
+
+    A record with no branch recorded (written before 0.16.0's field existed,
+    or in a non-git checkout) is NOT treated as stale. It is the pre-existing
+    state, and failing closed on every such record would bar everything on
+    the first upgraded repo, which teaches people to ignore the bar.
     """
     recorded = dict_or_empty(read_dispatch(root).get("dev"))
+    decided = resolve_role(cfg, "dev", "developer")
     if recorded.get("provider"):
-        return family(recorded.get("provider"), recorded.get("model")), "dispatch"
-    dev = dict_or_empty(dict_or_empty(cfg).get("dev"))
-    provider = dev.get("provider") or "claude"
-    model = _provider_block(dev, provider).get("model")
-    return family(provider, model), "config"
+        recorded_family = family(recorded.get("provider"),
+                                 recorded.get("model"))
+        here = current_branch(root)
+        there = recorded.get("branch")
+        if there and here and there != here:
+            return frozenset(
+                f for f in (recorded_family, decided["family"]) if f
+            ), "stale"
+        return frozenset(f for f in (recorded_family,) if f), "dispatch"
+    # No record: read the config. Ask `resolve_role` for the `developer` role
+    # rather than the `dev` block's own provider -- `dev.roles.developer` is a
+    # pin that OVERRIDES that default, so reading the block alone reports the
+    # wrong family for exactly the config the role table exists to express.
+    # A repo with `dev.provider: "claude"` and `developer` pinned to codex
+    # would otherwise strike claude and clear codex to review codex's diff,
+    # which is the under-bar the guard exists to prevent. `developer` is the
+    # role that writes; security and infrastructure-architect do not commit.
+    decided = resolve_role(cfg, "dev", "developer")
+    # frozenset, like every other branch: an unknowable family (an unset
+    # Copilot model) is the EMPTY set, never `{None}` and never a bare None.
+    # A caller that strikes what this returns must strike nothing in that
+    # case, and a None leaking into the set would compare equal to another
+    # unknown and bar a reviewer on the strength of two absences.
+    return frozenset(f for f in (decided["family"],) if f), "config"
 
 
 def int_or(value, default):
@@ -1017,11 +1117,14 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--root", default=None)
     parser.add_argument("--record-dispatch", metavar="KIND",
-                        choices=("dev", "qa"),
+                        choices=DISPATCH_KINDS,
                         help="record which role/provider/model just ran")
     parser.add_argument("--role", default=None)
     parser.add_argument("--provider", default=None)
     parser.add_argument("--model", default=None)
+    parser.add_argument("--branch", default=None,
+                        help="branch the work was done on; defaults to the "
+                             "checkout's current branch")
     args = parser.parse_args(argv)
 
     root = args.root or os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
@@ -1034,7 +1137,7 @@ def main(argv=None):
                   file=sys.stderr)
             return 2
         record = record_dispatch(root, args.record_dispatch, args.role,
-                                 args.provider, args.model)
+                                 args.provider, args.model, args.branch)
         print(json.dumps(record, indent=2, sort_keys=True))
         return 0
     print(json.dumps(collect(root), indent=2, sort_keys=True))

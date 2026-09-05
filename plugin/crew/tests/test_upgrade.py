@@ -217,17 +217,29 @@ def test_upgrade_config_does_not_clobber_an_existing_pm_block():
     assert got["pm"]["mode"] == "adaptive"  # defaults still filled in
 
 
-def test_a_wrong_typed_block_does_not_crash_the_upgrade():
+def test_a_wrong_typed_nested_block_is_kept_and_reported_not_destroyed():
     """The nested shape case none of the other guards reach.
 
     /crew:upgrade runs against a real repository and run() writes the config
     before reconciling the codemap, so a crash here is a migration that dies
-    partway, not merely a silent session.
+    partway, not merely a silent session. It must not crash -- and, since
+    0.16.0, it must not quietly swallow the value either.
+
+    Until 0.16.0 the merge replaced a wrong-typed nested value with the
+    default, added nothing to `unmigrated`, and stamped the schema current:
+    the config came back looking migrated with the user's value gone. The
+    contract now matches what the report has always claimed -- "left exactly
+    as written".
     """
     for bad in ("yes", 1, ["a"], None, 0, True):
-        got = _cfg({"graph": {"obsidian": bad}})
-        assert got["graph"]["obsidian"]["confirmed"] is False, bad
-        assert got["graph"]["obsidian"]["enabled"] is False, bad
+        got, notes = crew_upgrade.upgrade_config({"graph": {"obsidian": bad}})
+        # Kept verbatim, not replaced by the default block.
+        assert got["graph"]["obsidian"] == bad, bad
+        # Named, so the operator can fix it by hand.
+        assert "graph.obsidian" in notes["unmigrated"], bad
+        # And NOT claimed as current, so the next run retries it.
+        assert notes["schemaStamped"] is False, bad
+        assert got.get("schema") != crew_state.SCHEMA_CURRENT, bad
 
 
 def test_a_legitimate_nested_override_still_wins():

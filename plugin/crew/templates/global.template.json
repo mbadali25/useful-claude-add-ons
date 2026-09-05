@@ -51,6 +51,11 @@
     ]
   },
   "pm": {
-    "authority": "report-only"
+    "enabled": true,
+    "mode": "adaptive",
+    "quietLines": 8,
+    "maxLines": 40,
+    "authority": "report-only",
+    "maxDispatches": 3
   }
 }

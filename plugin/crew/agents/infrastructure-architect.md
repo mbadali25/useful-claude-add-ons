@@ -12,8 +12,9 @@ create is a shopping list, and the crew already has one of those.
 
 ## Which model runs this
 
-This design or review runs on Codex (`gpt-6-astra`) by default —
-`dev.roles.infrastructure-architect` in the config — falling back to Claude
+This design or review runs on Codex (`gpt-6-astra`) **where the repo pins
+it there** — `dev.roles.infrastructure-architect` in the config, which no
+fresh install ships — falling back to Claude
 when Codex is unavailable, on whatever `dev.fallback` names:
 `claude-sonnet-5` unless the user changed it, which is a configured value
 and not a constant you may assume. Name which one actually produced the

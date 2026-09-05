@@ -245,8 +245,33 @@ in the config. Two things follow, and both are yours to enforce:
    gates. Handing a ticket to Codex is a change of who types, not a change of what
    the work has to satisfy.
 
-Say which implementer ran, every time. A diff whose author nobody recorded cannot
-have its reviewer chosen correctly on the next pass.
+### Record the dispatch, do not just narrate it
+
+Say which implementer ran, every time — and write it down, because the reviewer
+reads the file, not your report:
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_state.py --root . \
+  --record-dispatch dev --role <role> --provider <provider> --model <model>
+```
+
+Run it the moment the implementing dispatch returns, with the provider and model
+that **actually ran**. If a pin was gone and `dev.fallback` fired, the fallback
+is what goes in the record; naming the pin instead bars a family that did not
+write the diff and clears the one that did — the exact inversion the guard
+exists to prevent. Omit `--model` only for `claude`, an in-session subagent with
+no model flag.
+
+Only the **implementing** dispatch writes that record. The file holds one `dev`
+slot and the last write wins, so letting a later `crew:smoke-author` or
+`crew:docs-writer` pass overwrite a codex record would clear codex to review the
+change it wrote — leave the record alone and name **both** families when you
+hand the diff to `/crew:review`.
+
+A dispatch you narrated and never recorded is a review that gets its author from
+a guess: `/crew:review` and `/crew:model` both fall back to reading `dev` out of
+the config, which describes the next run rather than this diff, and both are
+required to label that fallback out loud.
 
 A role that is not on the crew yet is an onboarding decision, not a reason to do
 the work yourself. Say which role the job needs, name the defect class it would

@@ -227,19 +227,52 @@ def test_a_claude_authored_diff_bars_the_claude_reviewer():
 
 def test_an_unknown_author_family_bars_nothing():
     """None, never a guess. Barring on an unknown author would take a real
-    reviewer off a diff on the strength of a value nobody established."""
+    reviewer off a diff on the strength of a value nobody established.
+
+    The negative half alone proves nothing -- `barred` is initialised False,
+    so deleting the guard outright would leave it green. The paired positive
+    assertion is what makes this a test of the guard rather than of the
+    initialiser: the SAME role and config must bar once a real author is
+    supplied.
+    """
     for role in ("phase1", "review"):
-        assert crew_state.resolve_role(
-            PINNED, "qa", role, author=None)["barred"] is False, role
+        unknown = crew_state.resolve_role(PINNED, "qa", role, author=None)
+        assert unknown["barred"] is False, role
+        known = crew_state.resolve_role(PINNED, "qa", role,
+                                        author=unknown["family"])
+        assert known["barred"] is True, role
+        assert known["barredBy"] == unknown["family"], role
+
+
+def test_author_family_honours_a_per_role_dev_pin_over_the_block_default():
+    """The under-bar the role table would otherwise have introduced.
+
+    `dev.provider` is only the default; `dev.roles.developer` overrides it.
+    Reading the block alone reported `claude` for a repo whose developer is
+    pinned to codex, which struck claude and cleared CODEX to review a diff
+    codex wrote -- the same-family review the guard exists to prevent,
+    introduced by the very feature that added the pins.
+    """
+    cfg = {"dev": {"provider": "claude",
+                   "roles": {"developer": {"provider": "codex",
+                                           "model": "gpt-6-astra"}}}}
+    assert crew_state.author_families(".", cfg) == (frozenset({"gpt"}),
+                                                    "config")
+    # And the pin must not invent an author where the block default rules.
+    assert crew_state.author_families(
+        ".", {"dev": {"provider": "claude"}}) == (frozenset({"claude"}),
+                                                  "config")
 
 
 def test_an_unset_copilot_model_is_not_barred_against_another_unset_one():
     cfg = {"dev": {"provider": "copilot", "copilot": {"model": None}},
            "qa": {"provider": "copilot", "copilot": {"model": None}}}
-    author, _ = crew_state.author_family(".", cfg)
-    assert author is None
+    authors, _ = crew_state.author_families(".", cfg)
+    # Unknown, not "some family called None": an unset Copilot model has no
+    # knowable family, so there is nothing to strike.
+    assert authors == frozenset()
     assert crew_state.resolve_role(
-        cfg, "qa", "review", author=author)["barred"] is False
+        cfg, "qa", "review", author=None)["barred"] is False
 
 
 # --- the fallback fires, and announces -------------------------------------
@@ -286,10 +319,20 @@ def test_a_fallback_that_lands_on_the_authors_own_family_says_that_too():
 
 
 def test_nothing_falls_back_when_no_probe_is_supplied():
-    """`available=None` means "not checked", not "assumed dead"."""
+    """`available=None` means "not checked", not "assumed dead".
+
+    Both asserted values are the pre-fallback initial state, so this half
+    would survive deleting the fallback branch outright. The probed control
+    below is what pins the difference: same config, same role, and the ONLY
+    change is that a probe was supplied.
+    """
     got = crew_state.resolve_role(PINNED, "qa", "review")
     assert got["fellBack"] is False
     assert got["model"] == "gpt-5.6-luna"
+
+    probed = crew_state.resolve_role(PINNED, "qa", "review", available=_gone)
+    assert probed["fellBack"] is True
+    assert probed["model"] != got["model"]
 
 
 def test_the_guard_is_evaluated_before_the_fallback():
@@ -309,9 +352,9 @@ def test_author_family_reads_the_recorded_dispatch(tmp_path):
     crew_state.record_dispatch(str(root), "dev", "developer", "codex",
                                "gpt-6-astra")
 
-    author, source = crew_state.author_family(str(root), PINNED)
+    authors, source = crew_state.author_families(str(root), PINNED)
 
-    assert author == "gpt"
+    assert authors == frozenset({"gpt"})
     assert source == "dispatch"
 
 
@@ -322,9 +365,9 @@ def test_a_recorded_dispatch_beats_what_the_config_now_says(tmp_path):
     crew_state.record_dispatch(str(root), "dev", "developer", "copilot",
                                "kimi-k3")
 
-    author, source = crew_state.author_family(str(root), PINNED)
+    authors, source = crew_state.author_families(str(root), PINNED)
 
-    assert author == "kimi", "the config's claude default did not win"
+    assert authors == frozenset({"kimi"}), "the config default did not win"
     assert source == "dispatch"
 
 
@@ -334,10 +377,21 @@ def test_with_no_dispatch_recorded_the_fallback_is_labelled_as_such(tmp_path):
     between a fact and a guess."""
     root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=False)
 
-    author, source = crew_state.author_family(str(root), PINNED)
+    authors, source = crew_state.author_families(str(root), PINNED)
 
     assert source == "config"
-    assert author == "claude", "dev.provider, which is what a fresh repo has"
+    # PINNED pins `developer` to codex/gpt-6-astra, so `gpt` -- NOT the
+    # `claude` its dev.provider names. This assertion read "claude" until
+    # 0.16.0 and was wrong in the one direction that matters: it is the
+    # under-bar that would clear codex to review a codex-written diff.
+    assert authors == frozenset({"gpt"}), \
+        "dev.roles.developer overrides dev.provider"
+
+    # A repo with no role pins still reports the block default, so the fix
+    # narrows nothing for a config that never used the role table.
+    plain = dict(PINNED, dev={"provider": "claude"})
+    assert crew_state.author_families(str(root), plain) == (
+        frozenset({"claude"}), "config")
 
 
 def test_a_malformed_dispatch_file_reads_as_no_dispatch(tmp_path):
@@ -345,17 +399,28 @@ def test_a_malformed_dispatch_file_reads_as_no_dispatch(tmp_path):
     (root / ".work" / "dispatch.json").write_text("{ half-written",
                                                   encoding="utf-8")
     assert crew_state.read_dispatch(str(root)) == {}
-    assert crew_state.author_family(str(root), PINNED)[1] == "config"
+    assert crew_state.author_families(str(root), PINNED)[1] == "config"
 
 
-def test_recording_a_dispatch_preserves_the_other_kind(tmp_path):
+def test_recording_a_kind_nothing_reads_is_refused(tmp_path):
+    """A writer with no reader is an inert feature that looks like coverage.
+
+    `qa` was recordable until 0.16.0 and nothing ever read the slot, so a
+    `qa` record could only mislead someone inspecting dispatch.json. Adding a
+    reader means adding its kind to DISPATCH_KINDS in the same change.
+    """
     root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=False)
-    crew_state.record_dispatch(str(root), "qa", "review", "codex",
-                               "gpt-5.6-luna")
+    try:
+        crew_state.record_dispatch(str(root), "qa", "review", "codex",
+                                   "gpt-5.6-luna")
+        raise AssertionError("recording an unread kind should have raised")
+    except ValueError as exc:
+        assert "no reader for dispatch kind" in str(exc)
+
     crew_state.record_dispatch(str(root), "dev", "developer", "codex",
                                "gpt-6-astra")
     got = crew_state.read_dispatch(str(root))
-    assert got["qa"]["model"] == "gpt-5.6-luna"
+    assert "qa" not in got
     assert got["dev"]["model"] == "gpt-6-astra"
 
 
@@ -367,9 +432,10 @@ def test_the_dispatch_cli_records_and_refuses_an_incomplete_call(
         "--role", "developer", "--provider", "codex",
         "--model", "gpt-6-astra"]) == 0
     capsys.readouterr()
-    assert crew_state.author_family(str(root), PINNED) == ("gpt", "dispatch")
+    assert crew_state.author_families(str(root), PINNED) == (
+        frozenset({"gpt"}), "dispatch")
 
-    # A record with no provider would make author_family answer None while
+    # A record with no provider would make author_families answer empty while
     # claiming `dispatch` -- worse than the honest config read it displaced.
     assert crew_state.main([
         "--root", str(root), "--record-dispatch", "dev",

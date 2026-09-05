@@ -50,12 +50,81 @@ review strictly less while producing output indistinguishable from a full pass.
 That is the same class of failure as a QA provider that authenticates and then
 returns nothing, and it gets the same treatment: say it out loud.
 
-**Step 1 — pick the reviewer.** Read `.crew/config.json` -> `qa` **and** `dev`.
+**Step 1 — who wrote this diff, and how do we know?** Ask the thing that
+recorded the dispatch, rather than re-deriving the answer from config:
 
-**First, disqualify the author's own family.** `dev.provider` says who wrote the
-code. Whichever family that is, strike it from the candidate list before choosing —
-a family reviewing its own output agrees with itself, and that is the exact failure
-this command exists to catch.
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_config.py --root . --models
+```
+
+Its first line names the author family **and its source**, and you repeat that
+source everywhere you name the family — never the family alone:
+
+| First line says | What it means | You say |
+|---|---|---|
+| `author family: <f>  (recorded at dispatch)` | `.work/dispatch.json` holds the role, provider and model that actually ran, and the guard is judging what ran | `author: <f>, recorded dispatch <role>/<provider>/<model>` — the `last dev dispatch:` line printed right under it |
+| `author family: <f>  (READ FROM CONFIG - no dispatch recorded...)` | nothing was recorded in this checkout, so the report read `dev` out of the config | `author: <f>, READ FROM CONFIG - no dispatch recorded, so this is what the NEXT run would use and not who wrote this diff` |
+
+A recorded fact and a config-derived guess look identical once both are just the
+word `claude`. The label is the only thing that separates them, so a review that
+prints the family and swallows the source has withheld the half that says how
+much to trust the bar it just applied.
+
+**Step 1a — is that record about THIS diff?** Compute the diff's base here, in
+step 1, and carry `$BASE` forward — step 2 reuses it rather than recomputing it,
+for the same reason `$SCRATCH` is carried:
+
+```bash
+# `... | sed ... || echo main` does NOT work: the || binds to the whole pipeline
+# and sed exits 0 even when symbolic-ref failed, so the fallback never fires and
+# merge-base is handed an empty string. Branch on the ref itself.
+DEFAULT_BRANCH=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null) || DEFAULT_BRANCH=""
+DEFAULT_BRANCH=${DEFAULT_BRANCH#origin/}
+: "${DEFAULT_BRANCH:=main}"
+BASE=$(git merge-base HEAD "$DEFAULT_BRANCH")
+
+# The record carries a role, a provider and a model, and nothing else. It has no
+# timestamp of its own, so the file's mtime is the only clock there is, and a
+# missing python3 must not take the review down with it.
+REC_AT=$(python3 -c 'import os,sys;print(int(os.path.getmtime(sys.argv[1])))' .work/dispatch.json 2>/dev/null || echo 0)
+BASE_AT=$(git log -1 --format=%ct "$BASE" 2>/dev/null) || BASE_AT=0
+: "${BASE_AT:=0}"
+echo "record=$REC_AT base=$BASE_AT branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
+```
+
+| Reading | Means | Do |
+|---|---|---|
+| `REC_AT` is `0` | no record, or no `python3` | source is `config`; announce it in those words |
+| `REC_AT >= BASE_AT` | the record is no older than the point this branch left the trunk | trust it |
+| `REC_AT < BASE_AT` | **STALE** — the record predates every commit under review, so it cannot describe any of them | fail closed, below |
+
+Compare against the **base**, never the tip. The normal sequence is implement,
+record, commit, review, so the record is routinely older than `HEAD` and a
+tip comparison would report STALE on every healthy review — which collapses the
+guard into a permanent "no independent reviewer" and teaches everyone to ignore
+it.
+
+**A stale record is fail-closed, not discarded.** Strike **both** the family the
+record names and the family the config names, and say you did both. Dropping the
+stale record and trusting config is the one direction that can under-bar: if
+codex wrote the commits and the config has since been changed to `claude`,
+discarding the record clears codex to review its own work. Over-barring costs a
+rung; under-barring costs the entire point of the guard. If striking both leaves
+no candidate, that is the same state as striking one and leaving none — step 2c
+runs and the verdict says same-family.
+
+**This test proves stale, and never proves fresh. Say so.** `.work/dispatch.json`
+is one file per checkout with a single `dev` slot, and the record carries no
+branch and no ticket — so a dispatch made on another branch overwrites it and
+then reads as perfectly fresh here. Print the recorded `role`/`provider`/`model`
+next to the current branch and the ticket under review, so a human can see a
+mismatch this command cannot detect. **If the recorded role has nothing to do
+with the work you are reviewing, treat it as stale and fail closed.**
+
+**Step 1b — strike the author's family, then pick.** The report has already
+applied the guard to its own `qa` rows and printed the `qa.order` fall-through;
+apply the same strike to the provider you are about to run. When the source is
+`config` rather than a record, the family comes from `dev.provider`:
 
 | `dev.provider` | Struck from QA |
 |---|---|
@@ -63,9 +132,10 @@ this command exists to catch.
 | `codex` | `codex` |
 | `copilot` | whichever family `dev.copilot.model` names — `gemini-*` strikes nothing here, `claude-*` strikes the fallback, `gpt-*` strikes Codex |
 
-Apply this at review time, from the config as it currently reads. Do not rely on
-`qa.order` having been edited to match; the two keys are set at different times by
-different people, and the ordering is a preference while this is a rule.
+A family reviewing its own output agrees with itself, and that is the exact
+failure this command exists to catch. Apply the strike at review time. Do not
+rely on `qa.order` having been edited to match; the two keys are set at different
+times by different people, and the ordering is a preference while this is a rule.
 
 If striking the author's family leaves **no** candidate, fall back to step 2c and
 say **in the verdict itself** that this review is same-family and does not count as
@@ -105,24 +175,45 @@ count as independent.
 provider blocks below are literally runnable rather than prose about themselves:
 
 ```bash
-CFG=.crew/config.json
-# .get() at EVERY level. A config written before these keys existed has no
-# qa.codex / qa.copilot block, and indexing it directly is a KeyError that kills
-# the review before it starts. Absent means "pass no flag", never "crash".
-# `or {}` at every hop, not .get(k, {}): a key PRESENT and null returns None,
-# which the default never covers, and .get on None is an AttributeError.
-q() { python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print((((d.get("qa") or {}).get(sys.argv[2]) or {}).get(sys.argv[3])) or "")' "$CFG" "$1" "$2"; }
-QA_MODEL=$(q codex model)
-QA_EFFORT=$(q codex reasoningEffort)
-QA_COPILOT_MODEL=$(q copilot model)
+# Resolve through crew_config, NEVER by re-reading .crew/config.json. That file
+# is one layer of three, and it does not know about the `roles` table at all:
+# reading it directly made both `qa.roles.review` and every value set in
+# ~/.claude/crew/config.json invisible to the only command that actually runs a
+# review, so /crew:model would report the pinned reviewer while /crew:review ran
+# the block default. One resolver, or the report and the run describe different
+# machines.
+REPORT="$SCRATCH/models.json"
+python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_config.py \
+  --root . --models --json > "$REPORT"
 
-# `... | sed ... || echo main` does NOT work: the || binds to the whole pipeline
-# and sed exits 0 even when symbolic-ref failed, so the fallback never fires and
-# merge-base is handed an empty string. Branch on the ref itself.
-DEFAULT_BRANCH=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null) || DEFAULT_BRANCH=""
-DEFAULT_BRANCH=${DEFAULT_BRANCH#origin/}
-: "${DEFAULT_BRANCH:=main}"
-BASE=$(git merge-base HEAD "$DEFAULT_BRANCH")
+# What model would PROVIDER use for the `review` role? The role pin wins when it
+# names that provider; otherwise the provider's own block does. Absent stays
+# empty -- "pass no flag", never "crash" and never a literal "None" on the
+# command line.
+qm() { python3 -c '
+import json, sys
+report, want = json.load(open(sys.argv[1])), sys.argv[2]
+field = sys.argv[3]
+row = next((r for r in report.get("qa") or []
+            if r.get("role") == "review"), {})
+if row.get("provider") == want and row.get(field):
+    print(row[field]); raise SystemExit
+block = (report.get("qaProviders") or {}).get(want) or {}
+print(block.get(field) or "")
+' "$REPORT" "$1" "${2:-model}"; }
+
+QA_MODEL=$(qm codex model)
+QA_EFFORT=$(qm codex reasoningEffort)
+QA_COPILOT_MODEL=$(qm copilot model)
+
+# The author families to strike came from the same report in step 1 -- read
+# them from it rather than re-deriving from dev.provider, which is a default
+# that a per-role pin may already have overridden.
+AUTHORS=$(python3 -c 'import json,sys;print(" ".join(sorted(json.load(open(sys.argv[1])).get("authorFamilies") or [])))' "$REPORT")
+
+# $BASE comes from step 1a. Reuse it; do not recompute it here. A second
+# derivation can disagree with the first, and then the staleness verdict was
+# about a different range than the diff the reviewer actually read.
 git diff "$BASE"...HEAD > "$SCRATCH/diff.txt"
 
 # Write the prompt HERE, before any provider block reads it. All three reviewers
@@ -233,6 +324,12 @@ to.
    that file, and "this rule has asked for `security-auditor` eleven times and
    never got it" is exactly the evidence that should drive either installing it
    or deleting the rule.
+8. Name the author family **and its source** in the same breath as the reviewer:
+   `recorded dispatch <role>/<provider>/<model>`, `READ FROM CONFIG - no
+   dispatch recorded`, or `STALE RECORD - both families struck`. Which family
+   was barred is only checkable by a reader who knows whether the bar rests on a
+   fact or on a guess, and that is the whole difference this record exists to
+   make visible.
 
 That metrics line is not bookkeeping. `/crew:scale` reads it to decide whether
 this setup is actually catching anything.

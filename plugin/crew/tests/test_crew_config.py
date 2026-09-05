@@ -208,12 +208,15 @@ def test_resolve_config_with_neither_layer_is_just_defaults(tmp_path, monkeypatc
 
 def test_resolve_config_global_only(tmp_path, monkeypatch):
     _global(tmp_path, monkeypatch, contents={
-        "pm": {"authority": "act"}, "qa": {"provider": "codex"}})
+        "pm": {"maxDispatches": 9}, "qa": {"provider": "codex"}})
     root = crew_fixtures.make_repo(tmp_path, config=None, git=False)
 
     resolved = crew_config.resolve_config(str(root))
 
-    assert resolved["pm"]["authority"] == "act"
+    # The WHOLE pm block layers globally, not just `authority`. How many
+    # roles one pass may dispatch is a property of the machine doing the
+    # dispatching; 0.16.0 briefly filtered it out and the user ruled it back.
+    assert resolved["pm"]["maxDispatches"] == 9
     assert resolved["qa"]["provider"] == "codex"
     # Everything else in pm still comes from the built-in default.
     assert resolved["pm"]["quietLines"] == crew_state.PM_DEFAULTS["quietLines"]
@@ -341,8 +344,12 @@ def test_the_filter_reports_a_nested_stray_a_top_level_diff_cannot_see(
         "qa": {"provider": "codex", "boardDir": "Boards/x"},
         "pm": {"authority": "act", "maxDispatches": 9},
     })
-    assert kept == {"qa": {"provider": "codex"}, "pm": {"authority": "act"}}
-    assert ignored == ["qa.boardDir", "pm.maxDispatches"]
+    # `pm` is admitted as a WHOLE block: maxDispatches is a fact about the
+    # machine doing the dispatching. `qa.boardDir` is the stray -- a tracker
+    # path is a fact about one checkout and cannot be set for every repo.
+    assert kept == {"qa": {"provider": "codex"},
+                    "pm": {"authority": "act", "maxDispatches": 9}}
+    assert ignored == ["qa.boardDir"]
 
 
 def test_the_model_table_still_layers_globally(tmp_path, monkeypatch):
@@ -410,8 +417,12 @@ def test_write_and_read_admit_exactly_the_same_paths():
         assert crew_config.is_global_path(path) is True, path
     for path in ("tracker", "jira.project", "graph.out", "tier", "roles",
                  "schema", "platform.os", "verify", "codemap.dir",
-                 "graph.obsidian.confirmed", "pm.maxDispatches"):
+                 "graph.obsidian.confirmed"):
         assert crew_config.is_global_path(path) is False, path
+    # The whole `pm` block is global, siblings included -- see the
+    # default_global_config docstring for why each one is a machine or
+    # person fact rather than a checkout fact.
+    assert crew_config.is_global_path("pm.maxDispatches") is True
 
 
 def test_a_pin_for_a_role_this_release_does_not_name_survives_the_filter():
@@ -428,10 +439,24 @@ def test_explain_credits_no_layer_for_a_value_the_filter_dropped(
         tmp_path, monkeypatch):
     """Explaining an effective value from a layer the resolver would have
     discarded is how a source column comes to name a key that does nothing."""
-    path = _global(tmp_path, monkeypatch, contents={"pm": {"maxDispatches": 9}})
+    path = _global(tmp_path, monkeypatch, contents={"qa": {"boardDir": "B/x"}})
     root = crew_fixtures.make_repo(tmp_path, config=None, git=False)
     rows = crew_config.explain_config(str(root), str(path))
     assert all(row["source"] != "global" for row in rows)
+
+
+def test_explain_credits_the_global_layer_for_a_value_it_really_supplied(
+        tmp_path, monkeypatch):
+    """The other half, and the one the incident was about: a key the filter
+    ADMITS has to be credited to `global`, or the source column understates
+    what the machine-wide file is deciding."""
+    path = _global(tmp_path, monkeypatch,
+                   contents={"pm": {"maxDispatches": 9}})
+    root = crew_fixtures.make_repo(tmp_path, config=None, git=False)
+    rows = crew_config.explain_config(str(root), str(path))
+    row = next(r for r in rows if r["path"] == "pm.maxDispatches")
+    assert row["source"] == "global"
+    assert row["value"] == 9
 
 
 # --- resolve_config's structural schema exemption --------------------------
@@ -490,7 +515,8 @@ def test_heal_writes_the_repo_file_not_the_global_one(tmp_path, monkeypatch):
 
 
 def test_layered_state_applies_a_global_override_for_a_crew_repo(tmp_path, monkeypatch):
-    _global(tmp_path, monkeypatch, contents={"pm": {"authority": "act"}})
+    _global(tmp_path, monkeypatch,
+            contents={"pm": {"authority": "act", "maxDispatches": 9}})
     root = crew_fixtures.make_repo(
         tmp_path, config={"schema": crew_state.SCHEMA_CURRENT,
                           "tier": 0, "roles": []})
@@ -499,6 +525,7 @@ def test_layered_state_applies_a_global_override_for_a_crew_repo(tmp_path, monke
 
     assert got["isCrew"] is True
     assert got["pm"]["authority"] == "act"
+    assert got["pm"]["maxDispatches"] == 9
 
 
 def test_layered_state_never_lets_a_global_file_make_a_plain_repo_crew(

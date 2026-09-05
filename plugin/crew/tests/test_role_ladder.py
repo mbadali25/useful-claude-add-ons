@@ -46,9 +46,21 @@ def _scaling_ladder():
     ladder = {}
     for tier, cell in re.findall(r"^\|\s*(\d+)\s*\|([^|]+)\|", _read(_SCALING),
                                  re.MULTILINE):
+        if int(tier) == crew_state.TIER_PARALLEL:
+            # This row lists parallelism, not roles -- no role lives at this
+            # tier, which is why tier_for_roles can never return it. Skipping
+            # the row is a claim about the table; skipping unrecognised NAMES
+            # would be using the code as the answer key for its own docs.
+            continue
         for name in cell.replace("+", "").split(","):
             name = name.strip()
-            if name in crew_state.ROLE_TIERS:
+            # Deliberately NOT filtered through crew_state.ROLE_TIERS. Doing
+            # that used the production dict as a sieve for the documentation
+            # it is supposed to be checked against, so a table listing
+            # `securty`, or a role crew does not have, was dropped before the
+            # comparison and the equality below still passed. This parser has
+            # to represent the table as written, wrong entries included.
+            if name and not name.startswith("`"):
                 ladder[name] = int(tier)
     return ladder
 
