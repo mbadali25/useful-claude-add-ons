@@ -942,6 +942,22 @@ DISPATCH_KINDS = ("dev",)
 # actually wrote the diff, spending ten slots to carry one bit.
 DISPATCH_HISTORY_MAX = 10
 
+# How many BRANCHES the history remembers, newest-dispatched first.
+#
+# There is deliberately no bound on families WITHIN a branch. Any such bound
+# is the same defect: dispatch the family that writes the diff, then enough
+# newer dispatches with distinct families, and the one that wrote the code is
+# pushed out of its own branch's history -- after which the guard reports
+# proven provenance with the author missing and hands that family its own
+# work. Raising the number moves the input and keeps the failure. The
+# family-keyed dedup is the only bound a branch needs, because a family
+# appears at most once in one no matter how many model ids it walks through.
+#
+# Branches are the axis that actually grows, so branches are what is capped.
+# Dropping the fifty-first-oldest branch is not silent: a checkout with no
+# record falls through to `config` or `stale`, both of which say so.
+DISPATCH_BRANCHES_MAX = 50
+
 # One file per dispatch, under `.work/dispatch.d/`. THE store; everything
 # below reads from here.
 #
@@ -993,6 +1009,22 @@ def _entry_sort_key(entry, mtime=None):
     return max(stamps)
 
 
+def _entry_rank(entry, key):
+    """`(tier, sort key)`. Tier 1 is a record this store wrote itself.
+
+    Tier 0 is everything whose timestamp came from outside it: the legacy
+    `dispatch.json`, and any record ADOPTED out of it. Adoption copies the
+    file's claim about when a dispatch happened, and a claim is exactly what
+    the tier exists not to trust -- an adopted entry carrying a far-future
+    `at` otherwise became the newest record in the repo and took the `<kind>`
+    slot that decides whether provenance is proven.
+
+    An adopted record predates the store by definition, so sorting it below
+    everything in the store is not a safety margin, it is the truth.
+    """
+    return (0 if entry.get("adopted") else 1, key)
+
+
 def _dispatch_entries(root):
     """Every entry in `.work/dispatch.d/`, as `(sort key, kind, entry)`.
 
@@ -1030,7 +1062,7 @@ def _dispatch_entries(root):
     return out
 
 
-def _merge_history(items):
+def _merge_history(items, pin=None):
     """Newest first, deduplicated on what the guard reads, bounded.
 
     `items` is `(rank, entry)`, and `rank` is `(tier, sort key)`. The tier is
@@ -1065,17 +1097,32 @@ def _merge_history(items):
     them are evidence, and something that is not evidence must not displace
     something that is.
 
-    **The bound is per BRANCH, not per store.** `author_families` filters to
-    the current checkout AFTER this trim, so ten entries from other branches
-    used to evict this branch's only record -- and a repo with a few active
-    branches reaches ten in a day. The guard asks "who was dispatched HERE",
-    and a bound that answers it by discarding what happened here is not a
-    bound, it is the bug. Total entries kept is branches x
-    `DISPATCH_HISTORY_MAX`, which is what `DISPATCH_FILES_MAX` is sized
-    against.
+    **Nothing bounds the families within a branch, and nothing may.**
+    `author_families` filters to the current checkout AFTER this merge, so a
+    store-wide bound let other branches evict this one's only record -- and
+    then a PER-BRANCH bound did the same thing from inside: dispatch the
+    family that writes the diff, then enough newer dispatches with distinct
+    families, and the author is pushed out of its own branch's history while
+    the guard still reports proven provenance. Every finite cap has that
+    input. The dedup is the bound a branch gets, and it is enough: a family
+    appears at most once in one.
+
+    **Branches are what is capped**, at `DISPATCH_BRANCHES_MAX`, ranked by
+    each branch's newest entry. That is the axis that grows without limit,
+    and dropping the oldest of fifty is fail-loud -- a checkout with no record
+    reads as `config` or `stale`, and both say so out loud.
+
+    `pin` is a zero-argument callable naming a branch that is never a
+    candidate for eviction, and the caller passes one that resolves to the
+    CURRENT checkout. Without it the cap could drop the branch the reviewer is
+    standing on -- fifty branches dispatched more recently is all it takes,
+    and that is the same defect as evicting the family that wrote the diff,
+    one axis over. It is a callable and not a value because resolving it costs
+    a `git rev-parse`, and the cap does not bite at all in a repository with
+    fewer than fifty branches.
     """
-    seen, kept = set(), {}
-    for _key, entry in sorted(items, key=lambda pair: pair[0], reverse=True):
+    seen, kept, newest = set(), {}, {}
+    for rank, entry in sorted(items, key=lambda pair: pair[0], reverse=True):
         if not entry.get("provider"):
             continue
         branch = entry.get("branch")
@@ -1084,16 +1131,29 @@ def _merge_history(items):
                else (None, entry.get("provider"), entry.get("model"), branch))
         if key in seen:
             continue
-        bucket = kept.setdefault(branch, [])
-        if len(bucket) >= DISPATCH_HISTORY_MAX:
-            continue
         seen.add(key)
-        bucket.append(entry)
-    # Flattened back into one newest-first list, because that is the shape
-    # every reader has always been handed.
-    out = [entry for bucket in kept.values() for entry in bucket]
-    out.sort(key=lambda entry: float_or(entry.get("at"), 0.0), reverse=True)
-    return out
+        kept.setdefault(branch, []).append((rank, entry))
+        # The branch's rank is set by the FIRST entry seen for it, which is
+        # its newest -- the loop is already in newest-first order.
+        newest.setdefault(branch, rank)
+
+    ranked = sorted(newest, key=lambda name: newest[name], reverse=True)
+    if len(ranked) > DISPATCH_BRANCHES_MAX:
+        here = pin() if pin else None
+        live = ranked[:DISPATCH_BRANCHES_MAX]
+        if here is not None and here in kept and here not in live:
+            live = live[:DISPATCH_BRANCHES_MAX - 1] + [here]
+    else:
+        live = ranked
+    out = [pair for branch in live for pair in kept[branch]]
+    # Newest-first overall, because that is the shape every reader has always
+    # been handed -- and on the RANK, which carries the tier, not on `at`
+    # alone. `read_dispatch` takes the `<kind>` slot from `out[0]` and
+    # `author_families` reads that slot's branch to decide whether provenance
+    # is proven, so re-sorting on the raw timestamp handed the slot to
+    # whatever the legacy file claimed the largest one for.
+    out.sort(key=lambda pair: pair[0], reverse=True)
+    return [entry for _rank, entry in out]
 
 
 def read_dispatch(root):
@@ -1130,8 +1190,17 @@ def read_dispatch(root):
     for key, kind, entry in _dispatch_entries(root):
         by_kind.setdefault(kind, []).append((key, entry))
 
+    # Resolved at most once per call, and only if the branch cap bites.
+    cached = []
+
+    def pin():
+        if not cached:
+            cached.append(current_branch(root))
+        return cached[0]
+
     for kind in DISPATCH_KINDS:
-        items = [((1, key), entry) for key, entry in by_kind.get(kind) or []]
+        items = [(_entry_rank(entry, key), entry)
+                 for key, entry in by_kind.get(kind) or []]
         legacy = [h for h in record.get(f"{kind}History") or []
                   if isinstance(h, dict)]
         slot = record.get(kind)
@@ -1143,7 +1212,7 @@ def read_dispatch(root):
         # `_file` is bookkeeping for the pruner and is not part of the
         # record any reader is handed.
         history = [{k: v for k, v in entry.items() if k != "_file"}
-                   for entry in _merge_history(items)]
+                   for entry in _merge_history(items, pin)]
         record[f"{kind}History"] = history
         # The slot is the newest entry, recomputed rather than trusted: it is
         # written unlocked and best-effort, so a lost update there must cost
@@ -1403,12 +1472,18 @@ def _prune_dispatch_dir(root):
     # deciding which family is remembered, which is precisely what the cap
     # was documented as never doing.
     protected = set()
+    cached = []
+
+    def pin():
+        if not cached:
+            cached.append(current_branch(root))
+        return cached[0]
+
     for kind in DISPATCH_KINDS:
-        items = [((1, key), entry)
+        items = [(_entry_rank(entry, key), entry)
                  for key, entry_kind, entry in _dispatch_entries(root)
-                 if entry_kind == kind
-                 for key in (_entry_sort_key(entry),)]
-        for entry in _merge_history(items):
+                 if entry_kind == kind]
+        for entry in _merge_history(items, pin):
             token = entry.get("_file")
             if token:
                 protected.add(token)
@@ -1427,6 +1502,13 @@ def _prune_dispatch_dir(root):
     # legitimately exceeds it keeps every live entry and prunes nothing. A
     # directory larger than intended is untidy; a missing author family is a
     # guard that passes a diff to the model that wrote it.
+    #
+    # `protected` cannot grow without limit, which is what makes that safe to
+    # say: `_merge_history` keeps at most `DISPATCH_BRANCHES_MAX` branches and
+    # at most one entry per family within each, so the live set is bounded by
+    # the number of model families that exist. Everything outside it is
+    # deletable, and `keep` reaching zero means every deletable file goes --
+    # which is the correct answer, not a stall.
     keep = max(0, DISPATCH_FILES_MAX - len(protected))
     for _mtime, path in aged[keep:]:
         try:

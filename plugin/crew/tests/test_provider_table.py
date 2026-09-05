@@ -1288,9 +1288,16 @@ def test_a_backward_clock_does_not_evict_the_dispatch_that_just_happened(
     crew_state.record_dispatch(str(root), "dev", "developer", "codex",
                                "gpt-6-astra", branch=here)
 
+    record = crew_state.read_dispatch(str(root))
     families = {crew_state.family(item["provider"], item["model"])
-                for item in crew_state.read_dispatch(str(root))["devHistory"]}
+                for item in record["devHistory"]}
     assert "gpt" in families, "the dispatch that just happened was evicted"
+    # And it is the RECORD of record. `author_families` reads this slot's
+    # branch to decide whether provenance is proven, so handing it to whatever
+    # the legacy file claimed the largest timestamp for is the same bug
+    # wearing a different hat.
+    assert record["dev"]["provider"] == "codex", \
+        "a far-future legacy entry became the current dispatch"
 
 
 def test_a_dispatch_recorded_before_the_store_existed_is_not_lost(tmp_path):
@@ -1566,3 +1573,100 @@ def test_the_file_token_never_reaches_a_reader(tmp_path):
     record = crew_state.read_dispatch(str(root))
     assert "_file" not in record["dev"]
     assert all("_file" not in item for item in record["devHistory"])
+
+
+# --- Codex round 5 on PR #66: what may be evicted, and what may not ---------
+
+
+def test_no_number_of_later_families_evicts_the_one_that_wrote_the_diff(
+        tmp_path):
+    """Codex round 5, Critical. Not a number that was too small -- what ANY
+    per-branch cap does. Dispatch the family that writes the diff, then enough
+    newer dispatches with distinct families, and the author is pushed out of
+    its own branch's history while `author_families` still reports proven
+    provenance. Raising the cap moves the input and keeps the failure.
+
+    So the dedup is the only bound a branch gets: a family appears at most
+    once in one, however many models it walks through. Over-barring costs a
+    rung; under-barring costs the entire point of the guard."""
+    cfg = copy.deepcopy(PINNED)
+    cfg["dev"]["roles"]["developer"] = {"provider": "copilot",
+                                        "model": "kimi-k3"}
+    root = crew_fixtures.make_repo(tmp_path, config=cfg, git=True)
+    here = crew_state.current_branch(str(root))
+    crew_state.record_dispatch(str(root), "dev", "developer", "codex",
+                               "gpt-6-astra", branch=here)
+    names = ("alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf",
+             "hotel", "india", "juliett", "kilo", "lima", "mike", "november")
+    assert len(names) > crew_state.DISPATCH_HISTORY_MAX, \
+        "the filler must exceed any plausible cap or this proves nothing"
+    for n, name in enumerate(names):
+        _seed_entry(root, role="developer", provider="copilot",
+                    model=f"{name}-1", branch=here, at=9.0e9 + n)
+
+    authors, source = crew_state.author_families(str(root), cfg)
+
+    assert source == "dispatch"
+    assert "gpt" in authors, \
+        "later families on this branch evicted the one that wrote the diff"
+
+
+def test_model_churn_collapses_to_one_entry_per_family(tmp_path):
+    """The dedup, asserted as COLLAPSE rather than as survival. With no cap
+    inside a branch, nothing is evicted for the family key to save -- what it
+    does instead is stop one provider walking through model ids from filling
+    the store with entries that all carry the same bit."""
+    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=True)
+    here = crew_state.current_branch(str(root))
+    for n in range(25):
+        _seed_entry(root, role="developer", provider="copilot",
+                    model=f"kimi-k{n}", branch=here, at=1000.0 + n)
+
+    history = crew_state.read_dispatch(str(root))["devHistory"]
+
+    assert len(history) == 1, "one family, one entry, whatever it is pinned to"
+    assert crew_state.family(history[0]["provider"],
+                             history[0]["model"]) == "kimi"
+
+
+def test_the_branch_cap_never_evicts_the_branch_under_review(tmp_path):
+    """The cap has to fall on something, and it must not fall here. Fifty
+    branches dispatched more recently is all it takes, and dropping the
+    checkout the reviewer is standing on is the Critical above one axis
+    over."""
+    cfg = copy.deepcopy(PINNED)
+    cfg["dev"]["roles"]["developer"] = {"provider": "copilot",
+                                        "model": "kimi-k3"}
+    root = crew_fixtures.make_repo(tmp_path, config=cfg, git=True)
+    here = crew_state.current_branch(str(root))
+    _seed_entry(root, role="developer", provider="codex", model="gpt-6-astra",
+                branch=here, at=1.0)            # the oldest thing in the store
+    for n in range(crew_state.DISPATCH_BRANCHES_MAX + 10):
+        _seed_entry(root, role="developer", provider="copilot",
+                    model=f"kimi-k{n}", branch=f"other-{n}", at=9.0e9 + n)
+
+    history = crew_state.read_dispatch(str(root))["devHistory"]
+
+    assert len(history) <= crew_state.DISPATCH_BRANCHES_MAX + 1, \
+        "the branch cap did not bite, so this proves nothing"
+    assert any(item.get("branch") == here for item in history), \
+        "the branch under review was evicted by newer branches"
+    authors, _source = crew_state.author_families(str(root), cfg)
+    assert "gpt" in authors
+
+
+def test_the_branch_cap_bounds_the_store(tmp_path):
+    """The Medium. Branches are the axis that grows without limit, and
+    `read_dispatch` runs at session start -- so the live set has to be bounded
+    or startup cost grows with the age of the checkout."""
+    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=True)
+    for n in range(crew_state.DISPATCH_BRANCHES_MAX * 3):
+        _seed_entry(root, role="developer", provider="copilot",
+                    model=f"kimi-k{n}", branch=f"other-{n}", at=1000.0 + n)
+
+    history = crew_state.read_dispatch(str(root))["devHistory"]
+
+    assert len(history) <= crew_state.DISPATCH_BRANCHES_MAX
+    newest = {item["branch"] for item in history}
+    assert f"other-{crew_state.DISPATCH_BRANCHES_MAX * 3 - 1}" in newest, \
+        "the cap kept the oldest branches instead of the newest"

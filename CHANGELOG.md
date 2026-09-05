@@ -124,6 +124,55 @@ All notable changes to this repository are documented here. Format follows [Keep
   just happened. The store outranks the legacy file structurally, so no value
   inside that file can promote it.
 
+- **`crew` 0.16.7: a slot in the dispatch history could be spent on
+  something that was not evidence.** The history is bounded, and the bound
+  evicting the wrong entry is the same failure as never recording it — the
+  family that wrote the diff is absent from `devHistory` and is cleared to
+  review its own work. Three ways in, all closed:
+
+  An entry with **no `provider`** named no author, so `author_families` always
+  skipped it — and it was still consuming a slot. Ten hand-edited or truncated
+  files ahead of a real dispatch emptied the history of the family that wrote
+  the code. Something that is not evidence cannot displace something that is.
+
+  The bound was **per store rather than per branch**, and the branch filter
+  runs after the trim. A repo with a few active branches reaches ten
+  dispatches in a day, and those evicted the record for the branch actually
+  under review. The guard's question is "who was dispatched HERE"; a bound
+  that answers it by discarding what happened here is the bug.
+
+  Moving it inside the branch was not enough, and the next review round said
+  why: **any** cap on families within a branch has the same input. Dispatch
+  the family that writes the diff, then enough newer dispatches with distinct
+  families, and the author is pushed out of its own branch's history while the
+  report still says the provenance was proven. Raising the number moves the
+  input and keeps the failure. So there is no cap there at all — the
+  family-keyed dedup is the whole bound a branch gets, and it is enough,
+  because a family appears at most once in one however many model ids it walks
+  through. What is capped is **branches**, the axis that actually grows, at
+  the fifty most recently dispatched — and never the branch currently checked
+  out, which is resolved lazily and only when the cap would otherwise bite.
+
+  **Pruning** counted raw files across every branch and family, so the same
+  busy repo could push its own only record past the hygiene cap and delete
+  it. The pruner now computes what the reader would keep, the same way the
+  reader computes it, and never removes one of those — a directory larger
+  than intended is untidy, a missing author family is a guard handing a diff
+  to the model that wrote it.
+
+  Records **adopted** out of a pre-0.16.7 `dispatch.json` carry that file's
+  claim about when they happened, so they rank below everything the store
+  wrote itself — a claim is what the tier exists not to trust. Adopted with
+  their stated timestamp, one carrying a far-future `at` became the newest
+  record in the repo and took the slot whose branch decides whether provenance
+  is proven.
+
+  A fourth, in the same family of mistake: adopting a pre-0.16.7 record was
+  gated on "the store is empty", which closed permanently the first time that
+  write failed transiently. It now compares the record itself, so it retries —
+  and the slot holding it is not overwritten until the copy has landed, since
+  a retry that reads from a record the failing call destroyed is not a retry.
+
 - **`crew` 0.16.7: an unknown author family was reported as proven
   provenance.** A dispatch recorded on this branch by an unpinned `copilot`
   has no determinable family — Copilot hosts several and an unset model does

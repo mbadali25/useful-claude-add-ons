@@ -86,7 +86,7 @@ MUTATIONS = (
         '        fam = family(entry.get("provider"), entry.get("model"))',
         "        fam = None",
         ("tests/test_provider_table.py::"
-         "test_the_history_bound_is_spent_per_family_not_per_model"),
+         "test_model_churn_collapses_to_one_entry_per_family"),
     ),
     (
         # Round 3, Critical. Every dispatch writing the same name is the old
@@ -119,10 +119,8 @@ MUTATIONS = (
         # just happened -- the write-time hazard, relocated to read time.
         "the legacy file can outrank the store",
         STATE,
-        "        items = [((1, key), entry) for key, entry in "
-        "by_kind.get(kind) or []]",
-        "        items = [((0, key), entry) for key, entry in "
-        "by_kind.get(kind) or []]",
+        '    return (0 if entry.get("adopted") else 1, key)',
+        "    return (0, key)",
         ("tests/test_provider_table.py::"
          "test_a_backward_clock_does_not_evict_the_dispatch_that_just"
          "_happened"),
@@ -194,14 +192,40 @@ MUTATIONS = (
          "test_an_entry_with_no_provider_cannot_evict_one_that_has_one"),
     ),
     (
-        # Round 4, Critical. The branch filter runs AFTER the trim, so a
-        # store-wide bound lets other branches evict this one's record.
-        "the history bound is spent across branches",
+        # Round 5, Critical. ANY cap on families within a branch evicts the
+        # one that wrote the diff, given enough later dispatches.
+        "families within a branch are capped",
         STATE,
-        "        bucket = kept.setdefault(branch, [])",
-        "        bucket = kept.setdefault(None, [])",
+        "        seen.add(key)\n        kept.setdefault(branch, [])"
+        ".append((rank, entry))",
+        "        seen.add(key)\n"
+        "        if len(kept.setdefault(branch, [])) < "
+        "DISPATCH_HISTORY_MAX:\n"
+        "            kept[branch].append((rank, entry))",
         ("tests/test_provider_table.py::"
-         "test_another_branch_cannot_spend_this_branch_s_history"),
+         "test_no_number_of_later_families_evicts_the_one_that_wrote_the"
+         "_diff"),
+    ),
+    (
+        # Round 5. The cap has to fall on something and it must not fall on
+        # the checkout the reviewer is standing on.
+        "the branch cap can evict the branch under review",
+        STATE,
+        "        if here is not None and here in kept and here not in live:\n"
+        "            live = live[:DISPATCH_BRANCHES_MAX - 1] + [here]",
+        "        live = live",
+        ("tests/test_provider_table.py::"
+         "test_the_branch_cap_never_evicts_the_branch_under_review"),
+    ),
+    (
+        # Round 5, Medium. `read_dispatch` runs at session start, so an
+        # unbounded live set is unbounded startup cost.
+        "the branch cap does not bound the store",
+        STATE,
+        "        live = ranked[:DISPATCH_BRANCHES_MAX]",
+        "        live = ranked",
+        ("tests/test_provider_table.py::"
+         "test_the_branch_cap_bounds_the_store"),
     ),
     (
         # Round 4, Critical. A hygiene cap that can delete the record
