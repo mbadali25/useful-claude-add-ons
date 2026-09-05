@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "localgpu"
+version = "0.1.0"
+description = "Local models on your own GPU via Ollama, for Claude Code."
+requires-python = ">=3.10"
+# Deliberately empty. The CLI and the proxy are standard library only; numpy
+# and the MCP SDK belong to mcp/server.py and are installed from
+# mcp/requirements.txt by the bootstrap. Nothing here should drag them in.
+dependencies = []
+
+[project.scripts]
+localgpu = "localgpu_cli:main"
+
+[tool.setuptools]
+# Flat modules, not a package: `mcp/` next door cannot be imported as one
+# without shadowing the MCP SDK, and splitting the CLI into a package while
+# its siblings stay flat would buy nothing.
+package-dir = { "" = "cli" }
+py-modules = ["localgpu_cli", "anthropic_proxy"]
+
+# Install this EDITABLE (`pip install -e`). localgpu_cli resolves its sibling
+# mcp/ directory relative to its own __file__; a copied install puts that
+# __file__ in site-packages, where mcp/ does not exist. The bootstrap does this
+# correctly - see bootstrap.sh / bootstrap.ps1 step 3.

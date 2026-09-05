@@ -1,0 +1,508 @@
+"""The index on disk: float16 vectors in a flat file, metadata in sqlite.
+
+``vectors.f16`` is ``rows x dim`` little-endian float16 and nothing else - no
+header, no padding - so row *n* lives at byte ``n * dim * 2`` and the whole
+thing can be memmapped and scored in blocks. Every vector is stored already
+L2-normalised, which makes cosine similarity a plain dot product.
+
+``meta.sqlite`` holds one row per chunk (path, line span, the file's sha256,
+mtime, size, the row offset above, and a tombstone flag) plus one row per file
+for the incremental scan.
+
+Deletes are tombstones, because rewriting a 200 MB vector file to remove one
+chunk is absurd. Once more than 20% of the rows are dead the file is compacted
+and every surviving row is renumbered.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import sqlite3
+import sys
+import time
+from dataclasses import dataclass
+from fnmatch import fnmatch
+from pathlib import Path, PurePosixPath
+from typing import Any, Iterable, Sequence
+
+import numpy as np
+
+# This directory is named `mcp`, which is also the SDK's package name, so it
+# must not become an importable package - `import mcp` would find it instead of
+# the SDK. Siblings are therefore imported flat, off an explicit sys.path entry.
+_HERE = os.path.dirname(os.path.abspath(__file__))
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+
+from config import EMBED_DIM  # noqa: E402
+
+# Strictly greater than this fraction of dead rows triggers a compaction.
+TOMBSTONE_COMPACT_RATIO = 0.20
+
+# Rows scored per block. Keeps the float32 working copy of the matrix bounded
+# no matter how large the index grows.
+_SCORE_BLOCK = 4096
+
+_SCHEMA = """
+CREATE TABLE IF NOT EXISTS chunks (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    path       TEXT    NOT NULL,
+    start_line INTEGER NOT NULL,
+    end_line   INTEGER NOT NULL,
+    sha256     TEXT    NOT NULL,
+    mtime      REAL    NOT NULL,
+    size       INTEGER NOT NULL,
+    "row"      INTEGER NOT NULL UNIQUE,
+    tombstone  INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS chunks_path_idx ON chunks (path);
+CREATE INDEX IF NOT EXISTS chunks_live_idx ON chunks (tombstone);
+
+CREATE TABLE IF NOT EXISTS files (
+    path       TEXT PRIMARY KEY,
+    root       TEXT NOT NULL,
+    sha256     TEXT NOT NULL,
+    mtime      REAL NOT NULL,
+    size       INTEGER NOT NULL,
+    chunks     INTEGER NOT NULL,
+    indexed_at REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+"""
+
+
+class StoreError(RuntimeError):
+    """The index on disk cannot be used as-is."""
+
+
+@dataclass(frozen=True)
+class ChunkRecord:
+    """One window of one file, before it has a row number."""
+
+    path: str
+    start_line: int
+    end_line: int
+    sha256: str
+    mtime: float
+    size: int
+
+
+@dataclass(frozen=True)
+class FileRecord:
+    path: str
+    root: str
+    sha256: str
+    mtime: float
+    size: int
+    chunks: int
+
+
+@dataclass(frozen=True)
+class Hit:
+    chunk_id: int
+    path: str
+    start_line: int
+    end_line: int
+    score: float
+
+
+def normalise(vectors: Sequence[Sequence[float]] | np.ndarray) -> np.ndarray:
+    """L2-normalise to float32. A zero vector stays zero rather than becoming NaN."""
+    matrix = np.asarray(vectors, dtype=np.float32)
+    if matrix.ndim == 1:
+        matrix = matrix.reshape(1, -1)
+    norms = np.linalg.norm(matrix, axis=1, keepdims=True)
+    norms[norms == 0.0] = 1.0
+    return matrix / norms
+
+
+class VectorStore:
+    """Owns ``vectors.f16`` and ``meta.sqlite`` in one directory."""
+
+    def __init__(self, index_dir: Path | str, dim: int = EMBED_DIM) -> None:
+        self.dir = Path(index_dir)
+        self.dir.mkdir(parents=True, exist_ok=True)
+        self.dim = int(dim)
+        self.vectors_path = self.dir / "vectors.f16"
+        self.meta_path = self.dir / "meta.sqlite"
+        self.manifest_path = self.dir / "manifest.json"
+        self._mm: np.memmap | None = None
+
+        self.db = sqlite3.connect(self.meta_path)
+        self.db.row_factory = sqlite3.Row
+        self.db.executescript(_SCHEMA)
+        self._check_dim()
+
+    # -- lifecycle ---------------------------------------------------------
+
+    def _check_dim(self) -> None:
+        stored = self.get_meta("dim")
+        if stored is None:
+            self.set_meta("dim", str(self.dim))
+            return
+        if int(stored) != self.dim:
+            raise StoreError(
+                f"{self.meta_path} was built with {stored}-dimensional vectors, "
+                f"but this run expects {self.dim}. Changing the embed model means "
+                "rebuilding: delete the index directory and run index_refresh."
+            )
+
+    def close(self) -> None:
+        self._close_memmap()
+        self.db.close()
+
+    def __enter__(self) -> "VectorStore":
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        self.close()
+
+    def _close_memmap(self) -> None:
+        # Windows will not let the file be replaced while a mapping is open.
+        if self._mm is not None:
+            mapping = getattr(self._mm, "_mmap", None)
+            if mapping is not None:
+                mapping.close()
+            self._mm = None
+
+    def _matrix(self) -> np.memmap | None:
+        rows = self.row_count
+        if rows == 0:
+            return None
+        if self._mm is None or self._mm.shape[0] != rows:
+            self._close_memmap()
+            self._mm = np.memmap(
+                self.vectors_path, dtype=np.float16, mode="r", shape=(rows, self.dim)
+            )
+        return self._mm
+
+    # -- metadata ----------------------------------------------------------
+
+    def get_meta(self, key: str) -> str | None:
+        row = self.db.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
+        return None if row is None else str(row["value"])
+
+    def set_meta(self, key: str, value: str) -> None:
+        self.db.execute(
+            "INSERT INTO meta (key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (key, str(value)),
+        )
+        self.db.commit()
+
+    @property
+    def row_count(self) -> int:
+        """Rows physically present in the vector file, dead ones included."""
+        try:
+            return self.vectors_path.stat().st_size // (self.dim * 2)
+        except FileNotFoundError:
+            return 0
+
+    def counts(self) -> tuple[int, int]:
+        """``(live chunks, tombstoned chunks)``."""
+        row = self.db.execute(
+            "SELECT SUM(tombstone = 0) AS live, SUM(tombstone = 1) AS dead FROM chunks"
+        ).fetchone()
+        return int(row["live"] or 0), int(row["dead"] or 0)
+
+    # -- writing -----------------------------------------------------------
+
+    def add(
+        self,
+        records: Sequence[ChunkRecord],
+        vectors: Sequence[Sequence[float]] | np.ndarray,
+    ) -> list[int]:
+        """Append chunks and their vectors. Returns the new chunk ids."""
+        if not records:
+            return []
+        matrix = normalise(vectors)
+        if matrix.shape[0] != len(records):
+            raise ValueError(
+                f"{len(records)} chunk(s) but {matrix.shape[0]} vector(s)"
+            )
+        if matrix.shape[1] != self.dim:
+            raise ValueError(
+                f"vectors are {matrix.shape[1]}-dimensional, index expects {self.dim}"
+            )
+
+        first_row = self.row_count
+        self._close_memmap()
+        with open(self.vectors_path, "ab") as handle:
+            handle.write(matrix.astype(np.float16, copy=False).tobytes(order="C"))
+
+        ids: list[int] = []
+        cursor = self.db.cursor()
+        for offset, record in enumerate(records):
+            cursor.execute(
+                'INSERT INTO chunks (path, start_line, end_line, sha256, mtime, size, "row")'
+                " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    record.path,
+                    record.start_line,
+                    record.end_line,
+                    record.sha256,
+                    record.mtime,
+                    record.size,
+                    first_row + offset,
+                ),
+            )
+            ids.append(int(cursor.lastrowid or 0))
+        self.db.commit()
+        return ids
+
+    def tombstone_paths(self, paths: Iterable[str]) -> int:
+        """Mark every live chunk of these files dead. Returns how many."""
+        paths = list(paths)
+        if not paths:
+            return 0
+        before = self.db.total_changes
+        self.db.executemany(
+            "UPDATE chunks SET tombstone = 1 WHERE path = ? AND tombstone = 0",
+            [(p,) for p in paths],
+        )
+        self.db.commit()
+        return int(self.db.total_changes - before)
+
+    def upsert_file(self, record: FileRecord) -> None:
+        self.db.execute(
+            "INSERT INTO files (path, root, sha256, mtime, size, chunks, indexed_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?)"
+            " ON CONFLICT(path) DO UPDATE SET root = excluded.root,"
+            " sha256 = excluded.sha256, mtime = excluded.mtime, size = excluded.size,"
+            " chunks = excluded.chunks, indexed_at = excluded.indexed_at",
+            (
+                record.path,
+                record.root,
+                record.sha256,
+                record.mtime,
+                record.size,
+                record.chunks,
+                time.time(),
+            ),
+        )
+        self.db.commit()
+
+    def forget_files(self, paths: Iterable[str]) -> None:
+        paths = list(paths)
+        if not paths:
+            return
+        self.db.executemany("DELETE FROM files WHERE path = ?", [(p,) for p in paths])
+        self.db.commit()
+
+    def files_under(self, roots: Sequence[str] | None = None) -> dict[str, FileRecord]:
+        """Every known file, or only those recorded under the given roots."""
+        rows = self.db.execute(
+            "SELECT path, root, sha256, mtime, size, chunks FROM files"
+        ).fetchall()
+        out: dict[str, FileRecord] = {}
+        keys = [_prefix_key(r) for r in (roots or [])]
+        for row in rows:
+            if keys and not any(_under(str(row["path"]), k) for k in keys):
+                continue
+            out[str(row["path"])] = FileRecord(
+                path=str(row["path"]),
+                root=str(row["root"]),
+                sha256=str(row["sha256"]),
+                mtime=float(row["mtime"]),
+                size=int(row["size"]),
+                chunks=int(row["chunks"]),
+            )
+        return out
+
+    # -- searching ---------------------------------------------------------
+
+    def search(
+        self,
+        query: Sequence[float] | np.ndarray,
+        k: int = 10,
+        root: str | None = None,
+        path_glob: str | None = None,
+    ) -> list[Hit]:
+        """Brute-force cosine over every live row, best first."""
+        if k <= 0:
+            return []
+        matrix = self._matrix()
+        if matrix is None:
+            return []
+
+        candidates = self._live_rows(root=root, path_glob=path_glob)
+        if not candidates:
+            return []
+
+        vector = normalise(query)[0]
+        rows = np.fromiter((r for r in candidates), dtype=np.int64, count=len(candidates))
+        scores = np.empty(rows.shape[0], dtype=np.float32)
+        for start in range(0, rows.shape[0], _SCORE_BLOCK):
+            block = rows[start : start + _SCORE_BLOCK]
+            scores[start : start + block.shape[0]] = (
+                np.asarray(matrix[block], dtype=np.float32) @ vector
+            )
+
+        k = min(k, scores.shape[0])
+        top = np.argpartition(-scores, k - 1)[:k]
+        top = top[np.argsort(-scores[top], kind="stable")]
+
+        hits: list[Hit] = []
+        for position in top:
+            meta = candidates[int(rows[position])]
+            hits.append(
+                Hit(
+                    chunk_id=meta["id"],
+                    path=meta["path"],
+                    start_line=meta["start_line"],
+                    end_line=meta["end_line"],
+                    score=float(scores[position]),
+                )
+            )
+        return hits
+
+    def _live_rows(
+        self, root: str | None = None, path_glob: str | None = None
+    ) -> dict[int, dict[str, Any]]:
+        """Live chunks that pass the filters, keyed by vector row."""
+        rows = self.db.execute(
+            'SELECT id, path, start_line, end_line, "row" FROM chunks '
+            "WHERE tombstone = 0"
+        ).fetchall()
+
+        # Filtering happens here rather than in SQL: LIKE has its own escaping
+        # rules and its own opinion about case, and neither matches a path.
+        prefix = _prefix_key(root) if root else None
+        limit = self.row_count
+        out: dict[int, dict[str, Any]] = {}
+        for row in rows:
+            index = int(row["row"])
+            if index >= limit:
+                continue  # a half-written append; ignore rather than read garbage
+            path = str(row["path"])
+            if prefix and not _under(path, prefix):
+                continue
+            if path_glob and not match_glob(path, path_glob):
+                continue
+            out[index] = {
+                "id": int(row["id"]),
+                "path": path,
+                "start_line": int(row["start_line"]),
+                "end_line": int(row["end_line"]),
+            }
+        return out
+
+    # -- compaction --------------------------------------------------------
+
+    def tombstone_ratio(self) -> float:
+        live, dead = self.counts()
+        total = live + dead
+        return 0.0 if total == 0 else dead / total
+
+    def maybe_compact(self, ratio: float = TOMBSTONE_COMPACT_RATIO) -> bool:
+        """Compact only once the dead rows are worth the rewrite."""
+        if self.tombstone_ratio() > ratio:
+            self.compact()
+            return True
+        return False
+
+    def compact(self) -> int:
+        """Rewrite the vector file with the live rows only. Returns rows dropped."""
+        live, dead = self.counts()
+        if dead == 0:
+            return 0
+
+        keep = self.db.execute(
+            'SELECT id, "row" FROM chunks WHERE tombstone = 0 ORDER BY "row"'
+        ).fetchall()
+        source = self._matrix()
+        temp = self.vectors_path.with_suffix(".f16.compacting")
+
+        with open(temp, "wb") as handle:
+            if source is not None and keep:
+                rows = np.fromiter(
+                    (int(r["row"]) for r in keep), dtype=np.int64, count=len(keep)
+                )
+                for start in range(0, rows.shape[0], _SCORE_BLOCK):
+                    block = rows[start : start + _SCORE_BLOCK]
+                    handle.write(np.asarray(source[block], dtype=np.float16).tobytes())
+
+        self._close_memmap()
+        os.replace(temp, self.vectors_path)
+
+        self.db.execute("DELETE FROM chunks WHERE tombstone = 1")
+        self.db.executemany(
+            'UPDATE chunks SET "row" = ? WHERE id = ?',
+            [(new_row, int(r["id"])) for new_row, r in enumerate(keep)],
+        )
+        self.db.commit()
+        self.db.execute("VACUUM")
+        if self.row_count != live:
+            raise StoreError(
+                f"compaction left {self.row_count} row(s) on disk for {live} live "
+                f"chunk(s) in {self.vectors_path}"
+            )
+        return dead
+
+    # -- reporting ---------------------------------------------------------
+
+    def stats(self) -> dict[str, Any]:
+        live, dead = self.counts()
+        files = int(
+            self.db.execute("SELECT COUNT(*) AS n FROM files").fetchone()["n"] or 0
+        )
+        return {
+            "index_dir": str(self.dir),
+            "files": files,
+            "chunks": live,
+            "tombstoned": dead,
+            "tombstone_ratio": round(self.tombstone_ratio(), 4),
+            "rows_on_disk": self.row_count,
+            "dim": self.dim,
+            "vectors_bytes": (
+                self.vectors_path.stat().st_size if self.vectors_path.exists() else 0
+            ),
+            "meta_bytes": (
+                self.meta_path.stat().st_size if self.meta_path.exists() else 0
+            ),
+        }
+
+    def write_manifest(self, extra: dict[str, Any] | None = None) -> dict[str, Any]:
+        manifest = self.stats()
+        manifest["updated_at"] = time.time()
+        manifest.update(extra or {})
+        self.manifest_path.write_text(
+            json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8"
+        )
+        return manifest
+
+    def read_manifest(self) -> dict[str, Any]:
+        if not self.manifest_path.is_file():
+            return {}
+        try:
+            return json.loads(self.manifest_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return {}
+
+
+def _prefix_key(root: str | Path) -> str:
+    """A normalised ``root`` that only matches whole path components."""
+    return os.path.normcase(str(Path(root))).rstrip("\\/") + os.sep
+
+
+def _under(path: str, prefix_key: str) -> bool:
+    normalised = os.path.normcase(path)
+    return normalised.startswith(prefix_key) or normalised == prefix_key.rstrip(os.sep)
+
+
+def match_glob(path: str, pattern: str) -> bool:
+    """Forgiving glob match against a full path or its basename.
+
+    ``*`` crosses directory separators here, so ``*.py``, ``**/*.py`` and
+    ``src/*.py`` all do the obvious thing on ``C:/x/src/a.py``.
+    """
+    posix = PurePosixPath(Path(path).as_posix())
+    text = str(posix)
+    candidates = (text, posix.name)
+    patterns = (pattern, pattern.replace("**/", "*"))
+    return any(fnmatch(c, p) for c in candidates for p in patterns)

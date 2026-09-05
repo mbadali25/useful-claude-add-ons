@@ -304,6 +304,103 @@ Nothing keeps running afterwards — there were no hooks. The Nuclei binary and 
 
 ---
 
+## `localgpu` — the GPU in this machine, as a sidecar
+
+| | |
+|---|---|
+| **Source** | [`localgpu/`](localgpu) |
+| **Version** | 0.1.1 |
+| **Install** | `claude plugin install localgpu@useful-claude-add-ons` |
+| **Registers** | 6 commands, 1 skill. **No agents, no hooks** — nothing runs unless you type a command. `/localgpu:setup` additionally writes one stdio MCP server into the repository's own `.mcp.json`, which you approve through `/mcp`. The bootstrap separately installs a `localgpu` console script into `$LOCALGPU_HOME/venv`, which Claude Code neither registers nor runs |
+| **Upstream guide** | [`localgpu/README.md`](localgpu/README.md) |
+
+Puts a local model behind a repository, in two halves that are installed together and used apart. The **MCP server** is the one that earns its keep: [Ollama](https://ollama.com) serves `nomic-embed-text` for embeddings and `qwen2.5-coder:7b-instruct-q4_K_M` for chat on `127.0.0.1:11434`; a Python MCP server chunks the tree, embeds it into a vector store under `$LOCALGPU_HOME/index/`, and exposes semantic search over it to the session you are already in. The **CLI** is the other half: `localgpu shell` launches a *separate* Claude Code session whose every token comes from the local model, through a proxy that translates the Anthropic Messages API into Ollama's `/api/chat`. No prompt, no file, and no embedding reaches a vendor either way, which is the reason to run it — code that is not permitted to leave the network still gets search by meaning and a fast first-pass answer.
+
+**The local model is a triage tier, not a second opinion.** A 7B model at 4-bit quantization is several tiers below the model reading these commands, and every command that reaches for it says so: `/localgpu:ask` labels its output `qwen2.5-coder:7b (local)` rather than folding it into the session's own prose, refuses to answer when the retrieval came back thin, and always prints the `file:line` excerpts it was given. An unattributed 7B claim inheriting a frontier model's credibility is the failure mode the whole plugin is written around.
+
+### Commands — 6
+
+| Command | Does |
+|---|---|
+| `/localgpu:setup [--no-pull]` | Six detect-then-act steps: resolve `$LOCALGPU_HOME`, verify Ollama is installed *and* serving, pull the two models (~5 GB), run the bootstrap (venv, dependencies, the `localgpu` CLI), write the config, and register the MCP server. Asks before writing anything, then deliberately hands off rather than indexing — a first build is minutes of GPU time and belongs to a command the user chose to run |
+| `/localgpu:doctor` | Seven checks — Ollama, model tags, venv, config provenance, index freshness, MCP registration, VRAM discipline — each `OK`/`WARN`/`FAIL`, reported whether or not they pass, ending in exactly one next step |
+| `/localgpu:index [--full] [--root <path>]` | Build or refresh the index. Incremental by default and touching only files whose content hash changed; `--full` confirms first |
+| `/localgpu:search <query> [--k N] [--glob <pattern>] [--root <path>]` | Semantic search — `file:line` plus a three-line excerpt. Calls the `search_code` MCP tool directly |
+| `/localgpu:ask <question> [--k N] [--glob <pattern>]` | Retrieve with `search_code`, then put the question plus the excerpts to the chat model. Reports the answer, its sources, and the model that produced it |
+| `/localgpu:crew` | Report-only: which `crew` roles a local 7B could take over and which it must not, ending in the one route that is supported — `localgpu shell`, a separate session. Writes nothing — not `.crew/config.json`, not an environment variable, not a shim on `PATH` |
+
+`setup` will not install Ollama for you. It registers a background service and a GPU runtime, so the command stops and points at the installer rather than doing it silently.
+
+### The MCP server
+
+`mcp/server.py`, run by the venv's Python over stdio, backed by `config.py` (two config layers — repo `.localgpu/config.json` over machine `$LOCALGPU_HOME/config.json` over built-in defaults, nearest wins), `ollama.py` (the HTTP client), `indexer.py` (walk, chunk, embed) and `store.py` (the vector file). Three tools: `search_code(query, k=10, root=None, path_glob=None)` — the one the commands call — plus `index_status()` (what is indexed, how stale, and whether Ollama answers) and `index_refresh(root=None)`, which refuses rather than queues while another refresh is running.
+
+Registration is per repository: `/localgpu:setup` renders `skills/localgpu/templates/mcp.json` into the repo's `.mcp.json`, expanding `{{LOCALGPU_PYTHON}}`, `{{LOCALGPU_PLUGIN_ROOT}}` and `{{LOCALGPU_HOME}}`. An unexpanded placeholder is a server that will not spawn and a Claude Code error that does not name the cause, so `/localgpu:doctor` checks for it explicitly — and separately checks whether the tools are actually callable in this session, since registering a server is not the same as having approved it through `/mcp`.
+
+### The `localgpu` CLI, and the proxy underneath it
+
+`pyproject.toml` installs one console script, `localgpu` (`cli/localgpu_cli.py`), into `$LOCALGPU_HOME/venv`. It is not a slash command and Claude Code never runs it; it is typed in a terminal, and it resolves only where that venv's `bin`/`Scripts` directory is on `PATH` or the full path is used. Two subcommands:
+
+| Command | Does |
+|---|---|
+| `localgpu shell [--model M] [--port N] [--keep-alive D] [--verbose] [-- <claude args>]` | Starts the proxy on a loopback port (`--port 0`, a free one, by default) and launches a **separate** `claude` process against it. Trailing arguments pass straight through to `claude` |
+| `localgpu proxy [--model M] [--host H] [--port 8817] [--keep-alive D]` | Runs the same proxy in the foreground, verbose, for debugging it or for pointing something other than Claude Code at the local model |
+
+Both preflight against Ollama first — the configured `chat_model` has to be pulled — so a missing model fails before a session starts rather than three prompts into one. `shell` prints a banner naming the model, the proxy URL and the Ollama URL on every launch, because the catch is not enforceable: **everything** in that session is the 7B, including any `/crew:*` command run inside it. It is for exploring and drafting, not for gates.
+
+The child process gets `ANTHROPIC_BASE_URL` and a placeholder `ANTHROPIC_API_KEY`, and it gets `ANTHROPIC_AUTH_TOKEN` and `ANTHROPIC_PROFILE` **removed**. Either of those outranks the API key and would send the session back to the real API silently, which is the worst possible way to discover you were never on the local model. Your own session, and crew's config, are untouched — that separation is the whole design, and `/localgpu:crew` is where the alternatives are refused in writing.
+
+`cli/anthropic_proxy.py` is the translation that makes the two ends meet, and it exists because they otherwise do not: `ANTHROPIC_BASE_URL` makes the client POST `/v1/messages` in the Anthropic Messages format, while Ollama's OpenAI-compatible surface is `/v1/chat/completions` with a different body — point one at the other and every request 404s. It serves the slice Claude Code actually calls: `POST /v1/messages` (streaming and not), `GET /v1/models`, and `GET /health` (also `/v1/health`). Anything else is a 404 in Anthropic's own error shape.
+
+| Crosses intact | Does not cross, and says so rather than faking it |
+|---|---|
+| System prompts, multi-turn text, tool definitions, tool calls, tool results, stop sequences, `temperature`/`top_p`/`top_k`, `max_tokens` (as `num_predict`), and both reply modes — non-streaming JSON and Anthropic's SSE event order | **Images** — a 7B coder model has no vision, so an image block becomes a visible placeholder instead of vanishing. **Thinking blocks** — nothing is synthesised. **Prompt caching** — `cache_control` is accepted and ignored, and the usage numbers report zero cache hits. **Token counts** — Ollama's own prompt and eval counts are passed through; they are not Anthropic's tokenizer and will not match it |
+
+One piece of it is not a nicety. `qwen2.5-coder:7b-instruct-q4_K_M` — the model this plugin ships with — answers a tools request by writing `{"name": ..., "arguments": {...}}` into `content` and leaving `tool_calls` empty. Claude Code reads that as prose: the tool never runs, `stop_reason` stays `end_turn`, and nothing errors. `recover_text_tool_calls` promotes it to a real `tool_use` block, under four conditions that all have a must-not-fire test — tools were actually offered, the whole message body is one JSON value, it is an object or a list of objects, and every name is one of the offered tools. Prose that merely discusses JSON fails the second and is left alone. Streaming holds back only text that might still resolve to a bare JSON call, so ordinary prose still streams token by token.
+
+The CLI is installed **editable** on purpose (`pip install -e`, bootstrap step 3): `localgpu_cli.py` resolves its sibling `mcp/` directory from its own `__file__`, and a copied install puts that `__file__` in `site-packages`, where `mcp/` does not exist. That directory is deliberately not a package — the name would shadow the MCP SDK. A non-editable install is detected at import and exits with the fix rather than a bare `ImportError`.
+
+### Hooks — none, deliberately
+
+`localgpu` registers **no hooks**, so **nothing starts running the moment it is enabled**. Every part of it waits to be typed: no `PreToolUse` guard, no `Stop` gate, no `SessionStart` brief. There is no background indexer and no watcher — the index goes stale until someone runs `/localgpu:index`, which is a tradeoff the plugin makes on purpose rather than an omission. A hook here would mean GPU work firing on somebody else's schedule, and on an 8 GB card that is not free: it evicts whatever model was resident.
+
+The heavy things this plugin depends on — Ollama, the virtualenv, and roughly 5 GB of model weights — are installed by `/localgpu:setup`, not by installing the plugin and not by the bootstrap scripts. Ticking `localgpu` in the install menu copies commands, a skill and Python source onto the machine and downloads nothing.
+
+### VRAM is the constraint everything else bends around
+
+Two models, one card. `bootstrap.sh` / `bootstrap.ps1` and every command that touches Ollama hold `OLLAMA_MAX_LOADED_MODELS=1` with a short `keep_alive`, because the failure mode when they co-reside is not an error — it is an index run getting an order of magnitude slower partway through, which reads as "big repo" rather than "misconfigured". `/localgpu:index` checks `/api/ps` before it starts, and `/localgpu:ask` says outright that interleaving an ask with a build is the one combination to avoid.
+
+Changing `embed_model` invalidates the whole index: vectors from two embedding models are not comparable, and appending to a mixed index degrades every search without ever erroring. `manifest.json` records the model the vectors were built with, and a disagreement with the config is a `FAIL` and a forced `--full` rebuild, not a warning.
+
+### Bundled skills — 1
+
+| Skill | Covers |
+|---|---|
+| `localgpu` | The paths, the two config layers and their precedence, the model tags, the VRAM rules, and the `mcp.json` template the commands render. Every command reads it before acting |
+
+### Testing
+
+Two suites, both run by the venv's Python, neither needing Ollama, a GPU or a network.
+
+| Suite | Covers |
+|---|---|
+| `mcp/_test/` | Config layering and precedence, the Ollama client, chunking and indexing, and the vector store |
+| `cli/_test/` | 46 tests over the proxy: the wire format as pure functions in `test_proxy_translation.py` (system prompts, content blocks, the tool-call round trip, options, non-streaming replies, the SSE event sequence), and the same proxy on a real bound socket against a fake Ollama in `test_proxy_server.py` (routing, status codes, chunked SSE framing, and the text a user sees when Ollama is down or the model is not pulled) |
+
+The proxy suite carries a sabotage log — four regressions reintroduced as real edits to `anthropic_proxy.py`, each confirmed red — and a warning worth reading before adding a file: `cli/_test` has no `conftest.py` on purpose. Both `_test` directories are outside any package, so pytest imports each `conftest.py` under the same top-level name and one silently wins, breaking every `mcp/_test` module that imports helpers from it — but only when both suites run in the same invocation, which is exactly what a full run is. The path setup is inlined in each test module instead.
+
+There are no hooks, so there is no blocking-hook regression suite to sabotage-test. What no test proves is whether a 7B model's answers are any good; that is what the attribution rule in `/localgpu:ask`, and the banner on every `localgpu shell`, exist to keep visible.
+
+### Uninstall
+
+```bash
+claude plugin uninstall localgpu@useful-claude-add-ons
+```
+
+Nothing keeps running afterwards — there were no hooks. Ollama, the models it pulled, `$LOCALGPU_HOME` (the venv, the config and the index), and the repository's `.mcp.json` entry are all outside the plugin and stay where they are; remove them by hand for no trace. The `localgpu` console script is the one loose end: it was installed editable against the plugin directory, so it stops working the moment that directory goes and wants `pip uninstall localgpu` in the venv rather than being left as a broken entry point.
+
+---
+
 ## `obsidian-vault` — one or more Obsidian vaults as Claude Code memory
 
 | | |
