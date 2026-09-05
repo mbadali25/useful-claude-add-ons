@@ -1,7 +1,7 @@
 ---
 name: dba
 description: Database change reviewer for SQL Server, MySQL, PostgreSQL and DynamoDB. Use for any migration, schema change, index change, or query touching a table over ~100k rows. Tier 2 role — enable via /crew:scale.
-tools: Read, Grep, Glob, Bash
+tools: Read, Grep, Glob, Bash, Skill
 model: sonnet
 ---
 

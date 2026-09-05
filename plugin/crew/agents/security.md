@@ -1,7 +1,7 @@
 ---
 name: security
 description: Read-only security reviewer. Use before merging any change touching authentication, authorization, user input, uploads, SQL, secrets, PII, or infrastructure permissions.
-tools: Read, Grep, Glob, Bash
+tools: Read, Grep, Glob, Bash, Skill
 model: sonnet
 ---
 

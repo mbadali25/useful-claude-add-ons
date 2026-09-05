@@ -6,6 +6,25 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
+- **`crew` 0.15.2: every agent can now reach a skill, and the UPDATE.md gate
+  actually runs.** 0.15.1 gave the `Skill` tool to the eight agents that named a
+  crew skill in their prose. That fixed the agents whose instructions were
+  already broken and left the other six unable to reach `find-skills` — or any
+  skill — at all, which is a capability question rather than a bug: an agent
+  that discovers mid-task that a skill exists for what it is doing should be
+  able to load it. `analyst`, `dba`, `developer`, `explorer`, `researcher` and
+  `security` now hold it too, so all fourteen do. `Skill` loads instructions and
+  grants no write capability, so `explorer` stays read-only, which is the whole
+  reason it is safe to dispatch without a plan.
+
+- **`scripts/sync-updates.py --check` runs in CI.** It shipped in 0.15.1 as a
+  gate nothing invoked. That is worse than having no gate: the mirrored blocks
+  carry a comment saying they are generated, so a reader takes them as current,
+  and the one mechanism that could contradict that was never run. Now a stale
+  mirror fails `Marketplace / check` the way a stale plugin version already
+  does. Sabotage-tested against a hand-edited block: tampered exits 1, clean
+  exits 0.
+
 - **`UPDATE.md` per component directory, mirrored into the READMEs by a
   generator that can fail CI.** `plugin/`, `skills/` and `mcp-servers/` each own
   an `UPDATE.md` listing what is newly *possible* there — distinct from

@@ -1,7 +1,7 @@
 ---
 name: explorer
 description: Read-only codebase investigator. Use proactively for any question about where code lives, how a flow works, or what depends on what. Returns a short map, never file contents.
-tools: Read, Grep, Glob
+tools: Read, Grep, Glob, Skill
 model: sonnet
 ---
 
