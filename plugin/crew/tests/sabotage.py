@@ -86,8 +86,9 @@ MUTATIONS = (
         # plus itself.
         "the dispatch read happens outside the lock",
         STATE,
-        "    with _dispatch_lock(root):\n        return _write_dispatch(root, kind, entry)",
-        "    return _write_dispatch(root, kind, entry)",
+        ("        with _dispatch_lock(root):\n"
+         "            record = _write_dispatch(root, kind, entry)"),
+        "        record = _write_dispatch(root, kind, entry)",
         ("tests/test_provider_table.py::"
          "test_the_dispatch_read_happens_inside_the_lock"),
     ),
@@ -110,6 +111,26 @@ MUTATIONS = (
         "        if isinstance(parsed, dict):",
         ("tests/test_platform_sync.py::"
          "test_heal_config_recreates_an_empty_object"),
+    ),
+    (
+        # Without the republish, a clobbered write is simply gone -- which is
+        # the whole reason the lock alone was not enough.
+        "a clobbered write does not republish itself",
+        STATE,
+        "    for _attempt in range(DISPATCH_WRITE_TRIES):",
+        "    for _attempt in range(1):",
+        ("tests/test_provider_table.py::"
+         "test_a_write_that_loses_a_race_republishes_itself"),
+    ),
+    (
+        # Ordering derived from the file's layout instead of from what the
+        # entries say puts the bound back at the mercy of the layout.
+        "history order is taken from the file instead of from `at`",
+        STATE,
+        "        key=lambda item: float_or(item.get(\"at\"), 0.0),",
+        "        key=lambda item: 0.0,",
+        ("tests/test_provider_table.py::"
+         "test_history_written_in_the_wrong_order_is_still_read_newest_first"),
     ),
     (
         "bogus documented role",

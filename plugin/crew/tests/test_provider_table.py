@@ -1167,3 +1167,119 @@ def test_model_report_records_whether_each_role_provider_resolves(tmp_path):
             assert row["providerOnPath"] is True
         elif row["provider"] != "auto":
             assert row["providerOnPath"] is False
+
+
+# --- Codex round 2 on PR #66 ------------------------------------------------
+
+
+def test_a_write_that_loses_a_race_republishes_itself(tmp_path):
+    """Codex round 2, Critical + High.
+
+    The lock was doing all the work, and a lock cannot: two writers both see
+    a stale lock, both remove it, and both create their own (`getmtime` and
+    `os.remove` are separate calls against a pathname, and `O_EXCL` cannot
+    repair a pathname that was replaced between them). Separately, a writer
+    that cannot acquire within the deadline proceeds unlocked on purpose,
+    because a review with NO record falls back to reading the config -- which
+    is the guess this module exists to avoid.
+
+    So correctness cannot rest on the lock. It rests on the write CHECKING
+    ITSELF: read the file back, and if this entry is not in it, someone
+    published over it -- re-read their version, merge into that, and publish
+    again. The lock is now a fast path that avoids the retry, not the thing
+    that makes the answer right.
+
+    Simulated by publishing a competing record between the write and the
+    verification, which is exactly what a lost update looks like from here.
+    """
+    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=True)
+    real_write = crew_state._write_dispatch  # pylint: disable=protected-access
+    calls = []
+
+    def clobbering_write(target, kind, entry):
+        out = real_write(target, kind, entry)
+        if not calls:                 # exactly once, on the first attempt
+            calls.append(entry)
+            path = os.path.join(target, *crew_state.DISPATCH_PATH)
+            rival = {"role": "developer", "provider": "copilot",
+                     "model": "kimi-k3", "branch": entry.get("branch")}
+            with open(path, "w", encoding="utf-8") as handle:
+                json.dump({"dev": rival, "devHistory": [rival]}, handle)
+        return out
+
+    try:
+        crew_state._write_dispatch = clobbering_write  # pylint: disable=protected-access
+        crew_state.record_dispatch(str(root), "dev", "developer", "codex",
+                                   "gpt-6-astra")
+    finally:
+        crew_state._write_dispatch = real_write  # pylint: disable=protected-access
+
+    families = {crew_state.family(item["provider"], item["model"])
+                for item in crew_state.read_dispatch(str(root))["devHistory"]}
+    assert families == {"gpt", "kimi"}, \
+        "the clobbered write must republish itself over the winner"
+
+
+def test_a_dispatch_entry_records_when_it_happened(tmp_path):
+    """Codex round 2, Medium. The history is order-dependent and carried no
+    ordering information of its own, so a file written by any other ordering
+    convention could not be read correctly -- the writer simply assumed the
+    list it found was already newest-first. An entry that says when it was
+    written is self-describing, and the reader sorts on it."""
+    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=True)
+    crew_state.record_dispatch(str(root), "dev", "developer", "codex",
+                               "gpt-6-astra")
+    entry = crew_state.read_dispatch(str(root))["devHistory"][0]
+    assert isinstance(entry.get("at"), (int, float))
+
+
+def test_history_written_in_the_wrong_order_is_still_read_newest_first(
+        tmp_path):
+    """A file whose `devHistory` is oldest-first -- or in no order at all --
+    must not decide which family survives the bound. Sorting on `at` makes
+    the answer independent of how the file happened to be laid out; an entry
+    with no `at` is treated as oldest, which is the safe direction because
+    the bound evicts from that end."""
+    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=True)
+    here = crew_state.current_branch(str(root))
+    path = os.path.join(str(root), *crew_state.DISPATCH_PATH)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    # Distinct FAMILIES, not distinct model ids: the dedup is family-keyed,
+    # so thirteen Copilot models collapse to one entry and the bound never
+    # bites. A filler that cannot fill is a test that cannot fail.
+    names = ("alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf",
+             "hotel", "india", "juliett", "kilo", "lima", "mike")
+    stale = [{"role": "developer", "provider": "copilot",
+              "model": f"{name}-1", "branch": here, "at": 1000.0 + n}
+             for n, name in enumerate(names)]
+    assert len(stale) > crew_state.DISPATCH_HISTORY_MAX, \
+        "the filler must overflow the bound or this proves nothing"
+    newest = {"role": "developer", "provider": "codex",
+              "model": "gpt-6-astra", "branch": here, "at": 9999.0}
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump({"dev": stale[-1], "devHistory": stale + [newest]}, handle)
+
+    crew_state.record_dispatch(str(root), "dev", "developer", "claude", None,
+                               branch=here)
+
+    families = {crew_state.family(item["provider"], item["model"])
+                for item in crew_state.read_dispatch(str(root))["devHistory"]}
+    assert "gpt" in families, \
+        "the newest entry was evicted because the file was in the wrong order"
+
+
+def test_a_legacy_record_with_no_history_still_works(tmp_path):
+    """A `dispatch.json` written by 0.16.6 has a `dev` slot and no
+    `devHistory` at all. It must keep working, and the slot's own family must
+    still be struck."""
+    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=True)
+    here = crew_state.current_branch(str(root))
+    path = os.path.join(str(root), *crew_state.DISPATCH_PATH)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump({"dev": {"role": "developer", "provider": "codex",
+                           "model": "gpt-6-astra", "branch": here}}, handle)
+
+    authors, source = crew_state.author_families(str(root), PINNED)
+    assert authors == frozenset({"gpt"})
+    assert source == "dispatch"

@@ -953,6 +953,12 @@ DISPATCH_LOCK_PATH = (".work", "dispatch.lock")
 # `verify-gate` applies the same rule to its own lock for the same reason.
 DISPATCH_LOCK_TTL = 60.0
 
+# How many times a write will republish itself after finding it was clobbered.
+# Each attempt merges into whatever is on disk, so two writers converge on the
+# first retry and N writers on at most N-1; three is slack, not a guess at how
+# many dispatches run at once.
+DISPATCH_WRITE_TRIES = 3
+
 
 @contextlib.contextmanager
 def _dispatch_lock(root):
@@ -968,9 +974,13 @@ def _dispatch_lock(root):
         would otherwise wedge every later one permanently.
       * Failing to acquire it at all does NOT raise. A dispatch that cannot be
         recorded is a review with no record, which falls back to reading the
-        config -- the guess this whole module exists to avoid. Recording it
-        with a small chance of a lost concurrent update is strictly better
-        than not recording it.
+        config -- the guess this whole module exists to avoid.
+
+    Both of those let two writers into the read-modify-write, so this is a
+    fast path and not a guarantee. `record_dispatch` verifies its own write
+    and republishes if it was clobbered; that is what makes the record right.
+    Yielding `held` rather than raising is deliberate for the same reason --
+    the caller is expected to proceed either way.
     """
     path = os.path.join(root, *DISPATCH_LOCK_PATH)
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -985,6 +995,13 @@ def _dispatch_lock(root):
             except OSError:
                 age = 0.0
             if age > DISPATCH_LOCK_TTL:
+                # Reclaim it. This narrows the window rather than closing it:
+                # two writers can both read the same old mtime and both remove
+                # the pathname, and the second removal takes the FIRST's fresh
+                # lock. There is no portable way to say "remove this file only
+                # if it is still the one I looked at" -- Windows has no inode
+                # to compare. `record_dispatch` is what makes that survivable:
+                # it verifies its own write and republishes if it lost.
                 try:
                     os.remove(path)
                 except OSError:
@@ -1095,9 +1112,45 @@ def record_dispatch(root, kind, role, provider, model=None, branch=None):
     if branch is None:
         branch = current_branch(root)
     entry = {"role": role, "provider": provider, "model": model,
-             "branch": branch}
-    with _dispatch_lock(root):
-        return _write_dispatch(root, kind, entry)
+             "branch": branch, "at": time.time()}
+
+    # Write, then CHECK. The lock below is a fast path, not the guarantee:
+    #
+    #   * Two writers that both find the lock stale can both take it. The age
+    #     test and the removal are separate calls against a pathname, and
+    #     `O_EXCL` cannot repair a pathname that was replaced between them.
+    #   * A writer that cannot acquire within the deadline proceeds anyway, on
+    #     purpose -- a review with NO record falls back to reading the config,
+    #     which is exactly the guess this module exists to avoid.
+    #
+    # Both leave two writers inside the read-modify-write, and the loser's
+    # entry is erased. So the write verifies itself: read the file back, and
+    # if this entry is not in it, someone published over it -- merge into
+    # THEIR version and publish again. Convergent, because the winner's own
+    # verification passes and it stops.
+    record = None
+    for _attempt in range(DISPATCH_WRITE_TRIES):
+        with _dispatch_lock(root):
+            record = _write_dispatch(root, kind, entry)
+        if _entry_recorded(read_dispatch(root), kind, entry):
+            return record
+    return record
+
+
+def _entry_recorded(record, kind, entry):
+    """Did `entry` survive into the record that is now on disk?
+
+    Compared on the fields the guard reads -- provider, model, branch -- and
+    not on `at`, so a retry that merges into someone else's version still
+    recognises its own earlier attempt rather than looping until it runs out.
+    """
+    for item in dict_or_empty(record).get(f"{kind}History") or []:
+        if not isinstance(item, dict):
+            continue
+        if all(item.get(key) == entry.get(key)
+               for key in ("provider", "model", "branch")):
+            return True
+    return False
 
 
 def _write_dispatch(root, kind, entry):
@@ -1126,8 +1179,20 @@ def _write_dispatch(root, kind, entry):
     # write: `reversed()` then promotes the oldest records and evicts
     # middle-aged ones, so which family survives the bound became a function of
     # how many dispatches had happened rather than of when they happened.
-    history = [entry] + [h for h in record.get(f"{kind}History") or []
-                         if isinstance(h, dict)]
+    # Newest first -- and derived from what the entries SAY rather than from
+    # the order they happen to be in. The list carried no ordering information
+    # of its own, so the writer had to assume the file it found was already
+    # newest-first; a file laid out any other way then decided which family
+    # survived the bound. `at` makes that self-describing. An entry without
+    # one is treated as oldest, which is the safe direction: the bound evicts
+    # from that end, and a record with no timestamp is a record from before
+    # this field existed.
+    history = sorted(
+        [entry] + [h for h in record.get(f"{kind}History") or []
+                   if isinstance(h, dict)],
+        key=lambda item: float_or(item.get("at"), 0.0),
+        reverse=True,
+    )
     # Newest first, deduplicated on what the guard actually reads, and
     # bounded: this file is rewritten on every dispatch and nothing prunes it.
     #
@@ -1327,6 +1392,21 @@ def author_families(root, cfg, stale=False):
     # case, and a None leaking into the set would compare equal to another
     # unknown and bar a reviewer on the strength of two absences.
     return frozenset(f for f in (decided["family"],) if f), "config"
+
+
+def float_or(value, default):
+    """`value` as a float, or `default`. Same contract as `int_or`.
+
+    Timestamps come out of a hand-editable JSON file, so the type is whatever
+    someone typed, and an unguarded comparison against one is a TypeError that
+    takes out every session in the repository.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+        return default
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def int_or(value, default):

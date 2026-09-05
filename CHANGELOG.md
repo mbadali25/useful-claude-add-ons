@@ -87,6 +87,25 @@ All notable changes to this repository are documented here. Format follows [Keep
   was never run on them — `model_report` resolves them with no author, on
   purpose, because the guard governs who may review and not who may write.
 
+- **`crew` 0.16.7: two dispatch writers could both publish, and one would
+  lose.** Writing the file atomically stops a torn read and does nothing about
+  two dispatches each reading history H and publishing `H + itself`. A lock
+  cannot close it on its own either: two writers that both find a stale lock
+  can both take it, because the age check and the removal are separate calls
+  against a pathname and `O_EXCL` cannot repair a pathname replaced between
+  them. So `record_dispatch` verifies its own write — it reads the file back,
+  and if its entry is not there it merges into whoever won and publishes
+  again. Convergent, because the winner's own check passes and it stops. The
+  lock at `.work/dispatch.lock` is now a fast path that avoids the retry, with
+  a TTL so a killed dispatch cannot wedge every later one.
+
+- **`crew` 0.16.7: the dispatch history carried no ordering of its own.** The
+  writer assumed the list it found was already newest-first, so a file laid
+  out any other way decided which family survived the bound. Each entry now
+  records `at`, and the order is derived from that; an entry without one
+  sorts oldest, which is the safe end because that is the end the bound
+  evicts from.
+
 - **`crew` 0.16.7: the hook count in crew's README.** The prose said eight
   scripts and sixteen entries while the table directly beneath it already
   listed all ten across five events, 20 entries.
