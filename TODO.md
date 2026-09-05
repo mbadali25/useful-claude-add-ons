@@ -119,6 +119,47 @@ comment or remove the dead path, with the regression case that proves it.
 Found by the `crew:explorer` pass for `.crew/codemap/plugin-crew.md`, 2026-09-05;
 recorded in that note's `## Unverified`. Anchor `875c9c6f`.
 
+### 9. `knowledgeBehind` / `diagramsStale` fire on every commit, so they train you to ignore them
+
+`read_knowledge` and `read_diagrams` in
+`plugin/crew/hooks/scripts/crew_state.py` both decide freshness with the same
+string test — `found.group(1)[:7] != head[:7]`, the recorded anchor sha against
+HEAD. **Any** commit therefore marks every codemap note and every diagram
+behind, including a commit that touched no code at all, and including a commit
+that touched only the notes themselves. That is self-triggering: writing the
+codemap makes the codemap stale.
+
+Observed 2026-09-05: one docs-only commit (`.crew/codemap/*`,
+`docs/diagrams/*.mmd`, `.gitignore`, `CLAUDE.md`, `TODO.md` — zero code files)
+took the pulse from `behind: []` to all 6 subsystems and all 3 diagrams behind,
+and fired the identical PM pulse twice in ten minutes. The cost is not a wasted
+refresh, it is alarm fatigue: a trigger that fires on every commit stops
+carrying information, and the one time it means something it gets waved through.
+
+**Anchor-based is right and should stay.** The `read_diagrams` docstring makes
+the case and it is correct — an mtime says when a file was saved, not whether
+the code it describes moved, and `git pull` alone can invalidate a file whose
+mtime looks fresh. The defect is that sha-inequality is far too coarse a proxy
+for it.
+
+**The precise test is already the documented one, and the data is already on
+disk.** `.crew/codemap/INDEX.md` and `skills/crew-graph/reconcile.md` both
+define freshness as `git diff --name-only <anchor>..HEAD -- <paths>`, and
+reconcile.md is explicit that comparison is by path, never by `path:line`.
+Every diagram already carries a `%% Anchors: <comma-separated paths>` header
+that `crew-diagrams/SKILL.md` mandates — and the string `Anchors` appears
+**0 times** in `crew_state.py`. Crew writes an anchor list nothing ever reads.
+
+Fix: have both readers diff the anchor against HEAD over the paths the note or
+diagram actually cites, and fall back to the current sha test only when no
+paths can be parsed (unknown still resolves to stale, which is the honest
+direction the docstring already argues for). Needs cases for: docs-only commit
+→ not behind; a cited code file moves → behind; no parseable anchor list →
+behind.
+
+Found while acting on a PM pulse, 2026-09-05. Anchor `af802150`. Verified in
+source, not inferred — both call sites read, and the `Anchors` count measured.
+
 ## Deferred by design, not oversight
 
 - ~~**`plugin/crew` is unmapped**~~ — **done 2026-09-05**, after #66 merged.
