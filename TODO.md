@@ -204,3 +204,53 @@ If the intent is for `verify.json` specifically to travel while the rest of
 `.crew/` stays machine-local, that is a one-line negation in `.gitignore`
 (`!.crew/verify.json`) plus a decision about whether its `agents` lists are
 portable. Not doing it unasked — it changes what a clone inherits.
+
+## Landmine candidate: an 8-character anchor can never match, and fails silently
+
+**Staged here for a human to approve into `CLAUDE.md`'s Landmines list**, the same
+way the `write_text` CRLF entry was. An agent asking for a project-instruction
+change is not authorisation. Content below is ready to move verbatim.
+
+`crew_state.py` decides whether a codemap or diagram is stale by comparing its
+recorded anchor against `git rev-parse --short=7 HEAD` (`read_knowledge` and
+`read_diagrams`). But the anchor patterns — `_ANCHOR_RE` and
+`_DIAGRAM_ANCHOR_RE` — both accept `[0-9a-f]{7,40}`. So an anchor written with
+`--short=8` **parses perfectly and then never equals HEAD**. There is no error,
+no warning, and no hint in the output; every affected map or diagram simply
+reports `behind` forever, including immediately after someone "refreshes" it.
+
+The tell is that *all* of them flip to `behind` at once, right after the edit
+that was supposed to fix them — which reads as the refresh having failed rather
+than the anchor format being wrong. Write anchors with
+`git rev-parse --short=7`.
+
+**Related, and not a bug to fix:** `graphStale` and `diagramsStale` are
+structurally unsatisfiable for any *tracked* artifact. The anchor names a commit,
+and committing the file advances HEAD past the commit it names, so a committed
+anchored artifact can never report itself current. Re-anchoring makes another
+commit and reproduces the condition — there is no fixed point. The codemap under
+`.crew/` escapes this only because it is gitignored, so re-anchoring it creates no
+commit. Treat both triggers as artifacts; a diagram's anchor honestly records the
+commit it was **drawn from**, which is what a provenance header is for.
+
+## Briefing style: state claims as claims, and say that refuting them is a win
+
+Three times in one session the most valuable thing a subagent did was refute a
+confident claim in its own brief:
+
+- The codemap lane checked "a user who tries to lift an unliftable entry is told,
+  not silently ignored" and found `load_config` dropped it in silence — which
+  became the localgpu 0.1.10 fix.
+- `qa-proxy` refuted the framing that B1/B2/F1/F5 were one design error, and the
+  correction carried a hard ordering constraint: fixing the clamp before the
+  estimator would have capped every reply while no test went red.
+- The diagram lane checked "`/localgpu:setup` is a six-step flow" against
+  `setup.md:7`, which says "Seven steps, in order". `bootstrap.sh` is the one with
+  six.
+
+In all three the brief was confident and wrong, and the lane caught it only
+because it went to source instead of transcribing. Make that deliberate rather
+than lucky: in any lane brief, mark which statements are verified and which are
+claims to check, and say explicitly that refuting the brief is a valid and valued
+outcome. A lane that believes its brief is a lane that can only find the bugs you
+already suspected.
