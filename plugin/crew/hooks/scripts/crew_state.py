@@ -1134,21 +1134,36 @@ def record_dispatch(root, kind, role, provider, model=None, branch=None):
             record = _write_dispatch(root, kind, entry)
         if _entry_recorded(read_dispatch(root), kind, entry):
             return record
+    # Out of tries. Return what the last write produced and do not raise: the
+    # caller is a dispatch, and refusing to dispatch because the bookkeeping
+    # is contended is a worse failure than a bookkeeping entry that lost. The
+    # loop is bounded for the same reason it exists at all -- a file that
+    # `read_dispatch` cannot parse collapses to `{}`, every check then fails,
+    # and an unbounded retry would spin on it forever rather than getting on
+    # with the work.
     return record
 
 
 def _entry_recorded(record, kind, entry):
     """Did `entry` survive into the record that is now on disk?
 
-    Compared on the fields the guard reads -- provider, model, branch -- and
-    not on `at`, so a retry that merges into someone else's version still
-    recognises its own earlier attempt rather than looping until it runs out.
+    `at` is part of the comparison, and has to be. Provider, model and branch
+    alone do not identify a WRITE -- the PM dispatching `developer` twice on
+    one branch produces two entries identical in all three, so writer B's
+    check would pass on writer A's record and return having never landed its
+    own. `at` is set once per `record_dispatch` call and carried unchanged
+    across its retries, so it stays stable for the writer that owns it while
+    telling two writers apart.
+
+    An entry that predates `at` has none, and `None == None` then makes the
+    old comparison exactly: that is correct here, because a record from
+    before the field cannot have been written by this call anyway.
     """
     for item in dict_or_empty(record).get(f"{kind}History") or []:
         if not isinstance(item, dict):
             continue
         if all(item.get(key) == entry.get(key)
-               for key in ("provider", "model", "branch")):
+               for key in ("provider", "model", "branch", "at")):
             return True
     return False
 
@@ -1187,9 +1202,23 @@ def _write_dispatch(root, kind, entry):
     # one is treated as oldest, which is the safe direction: the bound evicts
     # from that end, and a record with no timestamp is a record from before
     # this field existed.
-    history = sorted(
-        [entry] + [h for h in record.get(f"{kind}History") or []
-                   if isinstance(h, dict)],
+    # The entry being written is newest BY CONSTRUCTION -- it is happening
+    # now -- so it goes on the front rather than being sorted into place.
+    # `time.time()` is not monotonic: an NTP correction, a VM resume or a
+    # dual-boot can hand back a value BELOW what is already on disk, and a
+    # sort would then file a fresh dispatch as the oldest thing in the
+    # history and evict it first. The clock is recorded, and not trusted to
+    # order the one entry whose position is already known.
+    #
+    # The rest ARE sorted on `at`, because their order is the one thing this
+    # file cannot otherwise know: the list carried no ordering information of
+    # its own, so a writer had to assume the layout it found was already
+    # newest-first. An entry with no `at` sorts oldest, which is the safe end
+    # -- it is the end the bound evicts from, and a record with no timestamp
+    # predates the field.
+    history = [entry] + sorted(
+        [h for h in record.get(f"{kind}History") or []
+         if isinstance(h, dict)],
         key=lambda item: float_or(item.get("at"), 0.0),
         reverse=True,
     )

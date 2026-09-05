@@ -1283,3 +1283,77 @@ def test_a_legacy_record_with_no_history_still_works(tmp_path):
     authors, source = crew_state.author_families(str(root), PINNED)
     assert authors == frozenset({"gpt"})
     assert source == "dispatch"
+
+
+def test_a_backward_clock_does_not_evict_the_dispatch_that_just_happened(
+        tmp_path):
+    """`time.time()` is not monotonic. An NTP correction, a VM resume or a
+    dual-boot hands back a value below what is already on disk -- and if the
+    new entry were sorted into place by it, the freshest dispatch in the repo
+    would file as the oldest and be the first thing the bound evicts. It is
+    newest because it is happening now, which is a fact about causality
+    rather than about the clock."""
+    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=True)
+    here = crew_state.current_branch(str(root))
+    path = os.path.join(str(root), *crew_state.DISPATCH_PATH)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    future = [{"role": "developer", "provider": "copilot",
+               "model": f"{name}-1", "branch": here,
+               "at": 4.0e9 + n}          # a clock that ran ahead, then back
+              for n, name in enumerate(
+                  ("alpha", "bravo", "charlie", "delta", "echo", "foxtrot",
+                   "golf", "hotel", "india", "juliett", "kilo", "lima"))]
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump({"dev": future[0], "devHistory": future}, handle)
+
+    crew_state.record_dispatch(str(root), "dev", "developer", "codex",
+                               "gpt-6-astra", branch=here)
+
+    families = {crew_state.family(item["provider"], item["model"])
+                for item in crew_state.read_dispatch(str(root))["devHistory"]}
+    assert "gpt" in families, "the dispatch that just happened was evicted"
+
+
+def test_a_writer_does_not_mistake_an_identical_entry_for_its_own(tmp_path):
+    """Provider, model and branch do not identify a WRITE. The PM dispatching
+    `developer` twice on one branch produces two entries identical in all
+    three, so a verification comparing only those passes on the other
+    writer's record and returns having never landed its own."""
+    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=True)
+    here = crew_state.current_branch(str(root))
+    theirs = {"role": "developer", "provider": "codex",
+              "model": "gpt-6-astra", "branch": here, "at": 111.0}
+    mine = dict(theirs, at=222.0)
+
+    assert crew_state._entry_recorded(  # pylint: disable=protected-access
+        {"devHistory": [theirs]}, "dev", theirs) is True
+    assert crew_state._entry_recorded(  # pylint: disable=protected-access
+        {"devHistory": [theirs]}, "dev", mine) is False
+
+
+def test_a_write_that_never_lands_returns_rather_than_raising(tmp_path):
+    """Refusing to dispatch because the bookkeeping is contended is a worse
+    failure than a bookkeeping entry that lost. The loop is bounded, so an
+    unparseable file -- which `read_dispatch` collapses to `{}`, failing every
+    check -- cannot spin forever."""
+    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=True)
+    real_write = crew_state._write_dispatch  # pylint: disable=protected-access
+    attempts = []
+
+    def never_lands(target, kind, entry):
+        attempts.append(entry)
+        out = real_write(target, kind, entry)
+        path = os.path.join(target, *crew_state.DISPATCH_PATH)
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write("{ not json")
+        return out
+
+    try:
+        crew_state._write_dispatch = never_lands  # pylint: disable=protected-access
+        record = crew_state.record_dispatch(str(root), "dev", "developer",
+                                            "codex", "gpt-6-astra")
+    finally:
+        crew_state._write_dispatch = real_write  # pylint: disable=protected-access
+
+    assert len(attempts) == crew_state.DISPATCH_WRITE_TRIES
+    assert record["dev"]["provider"] == "codex"

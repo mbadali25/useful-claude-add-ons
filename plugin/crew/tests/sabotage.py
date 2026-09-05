@@ -133,6 +133,32 @@ MUTATIONS = (
          "test_history_written_in_the_wrong_order_is_still_read_newest_first"),
     ),
     (
+        # The clock is not monotonic, so it cannot be what decides that
+        # the dispatch happening right now is the newest one.
+        "the new entry is sorted by the clock instead of prepended",
+        STATE,
+        ('    history = [entry] + sorted(\n'
+         '        [h for h in record.get(f"{kind}History") or []\n'
+         '         if isinstance(h, dict)],'),
+        ('    history = sorted(\n'
+         '        [entry] + [h for h in record.get(f"{kind}History")'
+         ' or []\n'
+         '                   if isinstance(h, dict)],'),
+        ("tests/test_provider_table.py::test_a_backward_clock_does_not"
+         "_evict_the_dispatch_that_just_happened"),
+    ),
+    (
+        # Without `at`, a writer's verification passes on an identical
+        # entry another writer landed, and its own record never appears.
+        "the write verification cannot tell two writers apart",
+        STATE,
+        '               for key in ("provider", "model", "branch",'
+        ' "at")):',
+        '               for key in ("provider", "model", "branch")):',
+        ("tests/test_provider_table.py::"
+         "test_a_writer_does_not_mistake_an_identical_entry_for_its_own"),
+    ),
+    (
         "bogus documented role",
         LADDER_DOC,
         "| 1 | + security",
