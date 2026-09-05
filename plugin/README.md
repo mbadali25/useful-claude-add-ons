@@ -12,7 +12,7 @@ Generated from [`UPDATE.md`](UPDATE.md) by `scripts/sync-updates.py`. Edit that 
 
 <!-- BEGIN plugin/UPDATE.md -->
 
-### crew 0.15.0
+### crew 0.15.1
 
 Three new agents and a skill, taking crew to 14 agents and 17 bundled skills.
 

@@ -226,7 +226,7 @@ Generated from [`plugin/UPDATE.md`](plugin/UPDATE.md) by `scripts/sync-updates.p
 
 <!-- BEGIN plugin/UPDATE.md -->
 
-### crew 0.15.0
+### crew 0.15.1
 
 Three new agents and a skill, taking crew to 14 agents and 17 bundled skills.
 

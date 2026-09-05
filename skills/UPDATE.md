@@ -10,7 +10,7 @@ Mirrored into [`skills/README.md`](README.md) and the root
 
 Skills bundled inside a plugin are listed in [`plugin/UPDATE.md`](../plugin/UPDATE.md)
 instead — they install with their plugin, not on their own. `crew-house-style`
-shipped in crew 0.15.0 and is recorded there.
+shipped in crew 0.15.1 and is recorded there.
 
 ## Unreleased
 

@@ -8,7 +8,7 @@ only what is newly *possible*.
 Mirrored into [`plugin/README.md`](README.md) and the root
 [`README.md`](../README.md) by `scripts/sync-updates.py`. Edit here, then run it.
 
-## crew 0.15.0
+## crew 0.15.1
 
 Three new agents and a skill, taking crew to 14 agents and 17 bundled skills.
 

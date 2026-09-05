@@ -52,7 +52,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   model ignoring its brief. A reviewer found the `docs-writer` instance; the
   ripple check across all fourteen agents found the other seven.
 
-- **`crew` 0.15.0: three new agents, a house-style skill, and a documentation
+- **`crew` 0.15.1: three new agents, a house-style skill, and a documentation
   role that stops handing people raw markdown.**
 
   `infrastructure-architect` designs and reviews AWS network and account
