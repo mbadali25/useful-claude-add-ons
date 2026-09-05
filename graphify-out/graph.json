@@ -55974,6 +55974,18 @@
       "source_location": "L10"
     },
     {
+      "id": "todo_correction_nothing_under_crew_is_committed_and_one_commit_message_says_otherwise",
+      "label": "Correction: nothing under `.crew/` is committed, and one commit message says otherwise",
+      "_origin": "ast",
+      "community": 336,
+      "community_name": "TODO",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "correction: nothing under `.crew/` is committed, and one commit message says otherwise",
+      "source_file": "TODO.md",
+      "source_location": "L193"
+    },
+    {
       "id": "todo_correctness_and_verification_gaps",
       "label": "Correctness and verification gaps",
       "_origin": "ast",
@@ -164968,6 +164980,17 @@
     },
     {
       "source": "todo_todo",
+      "target": "todo_correction_nothing_under_crew_is_committed_and_one_commit_message_says_otherwise",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "TODO.md",
+      "source_location": "L193",
+      "weight": 1.0
+    },
+    {
+      "source": "todo_todo",
       "target": "todo_correctness_and_verification_gaps",
       "relation": "contains",
       "_origin": "ast",
@@ -187553,5 +187576,5 @@
     }
   ],
   "hyperedges": [],
-  "built_at_commit": "0131d0f064b1c950ea9186e246848106801d6a83"
+  "built_at_commit": "6bcf0f8fb5ac5e007623cdedcacb18fd277ee694"
 }
