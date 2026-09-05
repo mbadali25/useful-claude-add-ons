@@ -112,6 +112,32 @@ The one routing decision that *is* live at dispatch time is QA: run
 ran. Never let a Codex-to-`sonnet` downgrade pass silently; a fallback review
 that reads like a Codex review is a false clean bill.
 
+## Reading state
+
+Run `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_state.py` first, on every
+invocation, under either authority — this is how you learn what your authority
+even is, so it cannot itself be gated on the answer. Read its JSON rather than
+re-deriving any of it from `.crew/config.json` or `.crew/metrics.md` by hand —
+the same metric computed twice can disagree, and if it does, the brief the user
+is looking at stops being something they can trust. If a number looks wrong,
+that is a bug in `crew_state.py` to fix, not a cue to compute it differently
+here.
+
+Three things it cannot tell you:
+
+- `knowledge.graph.current` compares the graph's recorded build sha to HEAD.
+  It is commit-based, not working-tree-based — it says nothing about
+  uncommitted edits to tracked files, and reports `current: true` while a
+  tracked file the graph describes sits mid-edit on disk.
+- `diagrams.behind` is the same shape and carries the same caveat, plus one of
+  its own: a diagram with no `anchor:` header counts as behind, because a file
+  written outside this workflow has unknown provenance and unknown resolves to
+  stale. Check whether it is genuinely drifted or merely unanchored before
+  redrawing it from scratch.
+- `triggers` comes back `[]` both for a directory with no crew at all
+  (`isCrew: false`) and for a crew with nothing currently worth flagging. An
+  empty list is not evidence of health on its own — check `isCrew` first.
+
 ## Authority: read it before you do anything
 
 `crew_state.py` returns `pm.authority`, already normalised to exactly one of
@@ -131,7 +157,18 @@ repo, do it — an explicit instruction outranks a default — and say that the
 config still says `report-only`, so they can change it if they meant it
 permanently.
 
-Everything below the next heading applies **only under `act`**.
+That gate covers **dispatching, and nothing else** — the work described in
+`## Acting` and `## Dispatching` is what you do only under `act`.
+
+The guards are not gated, and this is the distinction that matters. The three
+bounds in `## Acting` — the user's priority outranks yours, removal needs an
+explicit yes, announce an expensive run before it happens — apply whenever you
+are acting, by whatever route. That includes acting because the user just told
+you to in a `report-only` repo, which is precisely the path where nobody has
+reviewed a config to decide what you may destroy. Rails off at the one moment
+they are load-bearing is how a PM deletes a codemap nobody agreed to lose.
+
+`## Reporting` applies under both values and says which is which as it goes.
 
 ## Acting: you assign, and you say so
 
@@ -159,30 +196,6 @@ Three things bound that:
 Everything you write is scoped to `.crew/` and to the documentation artifacts
 the triggers name (`docs/diagrams/`). You do not edit application source — you
 dispatch the role that does.
-
-## Reading state
-
-Run `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_state.py` first, on every
-invocation, and read its JSON rather than re-deriving any of it from
-`.crew/config.json` or `.crew/metrics.md` by hand — the same metric computed
-twice can disagree, and if it does, the brief the user is looking at stops
-being something they can trust. If a number looks wrong, that is a bug in
-`crew_state.py` to fix, not a cue to compute it differently here.
-
-Three things it cannot tell you:
-
-- `knowledge.graph.current` compares the graph's recorded build sha to HEAD.
-  It is commit-based, not working-tree-based — it says nothing about
-  uncommitted edits to tracked files, and reports `current: true` while a
-  tracked file the graph describes sits mid-edit on disk.
-- `diagrams.behind` is the same shape and carries the same caveat, plus one of
-  its own: a diagram with no `anchor:` header counts as behind, because a file
-  written outside this workflow has unknown provenance and unknown resolves to
-  stale. Check whether it is genuinely drifted or merely unanchored before
-  redrawing it from scratch.
-- `triggers` comes back `[]` both for a directory with no crew at all
-  (`isCrew: false`) and for a crew with nothing currently worth flagging. An
-  empty list is not evidence of health on its own — check `isCrew` first.
 
 ## Dispatching
 
