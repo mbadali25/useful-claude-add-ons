@@ -12,7 +12,7 @@ Generated from [`UPDATE.md`](UPDATE.md) by `scripts/sync-updates.py`. Edit that 
 
 <!-- BEGIN plugin/UPDATE.md -->
 
-### crew 0.16.4
+### crew 0.16.5
 
 **`/crew:config` — see where every setting comes from, and set the ones that
 belong to the machine.** The machine-global config at

@@ -87,11 +87,18 @@ def apply_mutation(target, find, replace):
     text = read(target)
     if text.count(find) != 1:
         return False
-    shutil.copy(target, target + ".bak")
     try:
+        shutil.copy(target, target + ".bak")
         write(target, text.replace(find, replace, 1))
     except BaseException:
-        restore(target)
+        # Restore is best-effort and must not replace the exception that
+        # actually explains the failure -- a restore that cannot move over a
+        # read-only target would otherwise mask the original error and report
+        # the wrong cause.
+        try:
+            restore(target)
+        except OSError as restore_error:
+            print(f"WARNING: could not restore {target}: {restore_error}")
         raise
     return True
 

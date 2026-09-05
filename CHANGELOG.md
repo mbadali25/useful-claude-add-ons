@@ -6,7 +6,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
-- **`crew` 0.16.4: the machine-global config gets a template, a walkthrough,
+- **`crew` 0.16.5: the machine-global config gets a template, a walkthrough,
   and a migration that finishes the job.**
 
   `~/.claude/crew/config.json` sets defaults for every crew repo on a machine,
@@ -55,7 +55,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   — do not resolve": it is the user's own configuration, outside the repo,
   which is the strongest version of that rule this plugin has.
 
-- **`crew` 0.16.4: a per-role provider table, and the family guard made
+- **`crew` 0.16.5: a per-role provider table, and the family guard made
   visible in state (`schema` 2 → 3).**
 
   `qa` and `dev` each gain a `roles` table and a `fallback`, so
@@ -78,6 +78,15 @@ All notable changes to this repository are documented here. Format follows [Keep
     which is the one state `/crew:review` cannot fix by trying harder: it
     falls back to the `qa-reviewer` subagent and labels the result
     same-family. It runs; it does not count as an independent review.
+
+  **A fourth round found the same guard wrong a second time.** Plain
+  inequality trusted a record written WHILE detached: that record stores
+  `branch: null`, so reading it from another detached state compared
+  None == None and read as proof. Branch values alone cannot decide this --
+  the harmless missing branch (a directory with no branches at all) and the
+  dangerous unreadable one look identical. `in_git_repo` separates them, and
+  provenance is now proven in exactly two shapes: a readable branch matching
+  the record's, or no repository paired with a record naming no branch.
 
   **A third round gated the merge and found two more.** `current_branch`
   returns None for a detached HEAD -- which is also the normal state during a
@@ -148,7 +157,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   in the checkout — labelled as such, because that describes the next
   dispatch rather than the diff in front of the reviewer.
 
-- **`crew` 0.16.4: `upgrade_config` migrated two blocks and claimed to have
+- **`crew` 0.16.5: `upgrade_config` migrated two blocks and claimed to have
   migrated all of them.**
 
   Reported by the user 2026-09-05: `/crew:upgrade` did not pick up the provider
@@ -188,7 +197,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   with a block nobody migrated. `upgrade_config` returns `(config, notes)` for
   this reason: what the run has to say is not optional decoration.
 
-- **`crew` 0.16.4: the three agents added in 0.15.x joined the tier ladder, and
+- **`crew` 0.16.5: the three agents added in 0.15.x joined the tier ladder, and
   the ladder moved into code.**
 
   `infrastructure-architect`, `scribe` and `researcher` shipped as definitions
@@ -204,7 +213,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   human, and `tests/test_role_ladder.py` asserts all three agree — a row added
   to one and not the others fails CI.
 
-- **`crew` 0.16.4: `merge_defaults` said "recurses one level" and does not.**
+- **`crew` 0.16.5: `merge_defaults` said "recurses one level" and does not.**
   It calls itself whenever both sides hold a dict, to whatever depth the
   default has — which is why a supplied `qa` naming only `provider` still comes
   out with `qa.codex.model`. The new `crew_config._layer_supplies`, which
@@ -216,7 +225,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   running both over every settable key and over each of the three ways the
   policy can branch, rather than by asserting the mirror in a comment.
 
-- **`crew` 0.16.4: stale reference tables in `plugin/crew/README.md`.** §25 said
+- **`crew` 0.16.5: stale reference tables in `plugin/crew/README.md`.** §25 said
   21 commands and 11 agents, and listed neither `/crew:model`, `/crew:roster`,
   nor the three agents 0.15.x added. `PLUGINS.md` had been updated and the
   plugin's own README had not, which is the worse half to miss: it is the file

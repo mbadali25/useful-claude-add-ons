@@ -417,6 +417,47 @@ def test_a_branchless_record_in_a_git_checkout_fails_closed(tmp_path):
     assert len(authors) >= 1
 
 
+def test_a_record_written_while_detached_is_not_trusted_by_another(tmp_path):
+    """Codex round 4.
+
+    A dispatch recorded while HEAD is already detached stores `branch: null`.
+    Reading it from any other detached state then gave None == None and read
+    as proof, so the guard trusted provenance that was never established --
+    the second wrong answer in a row from comparing branch values alone.
+    Repository PRESENCE is what separates the harmless missing branch (a
+    directory with no branches at all) from the dangerous unreadable one.
+    """
+    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=True)
+    subprocess.run(["git", "checkout", "--detach", "HEAD"], cwd=str(root),
+                   capture_output=True, check=True)
+    assert crew_state.in_git_repo(str(root)) is True, "fixture precondition"
+
+    (root / ".work").mkdir(exist_ok=True)
+    (root / ".work" / "dispatch.json").write_text(
+        json.dumps({"dev": {"role": "developer", "provider": "codex",
+                            "model": "gpt-6-astra", "branch": None}}),
+        encoding="utf-8")
+
+    _authors, source = crew_state.author_families(str(root), PINNED)
+    assert source == "stale", "a null branch inside a repo proves nothing"
+
+
+def test_a_non_git_directory_with_a_branchless_record_is_still_trusted(
+        tmp_path):
+    """The counterweight: the fix above must not bar every non-git checkout.
+
+    No repository means no branches to switch between, so a record naming
+    none is the expected shape rather than a gap in the evidence.
+    """
+    root = crew_fixtures.make_repo(tmp_path, config=PINNED, git=False)
+    assert crew_state.in_git_repo(str(root)) is False, "fixture precondition"
+    crew_state.record_dispatch(str(root), "dev", "developer", "codex",
+                               "gpt-6-astra")
+
+    _authors, source = crew_state.author_families(str(root), PINNED)
+    assert source == "dispatch"
+
+
 def test_a_detached_head_does_not_trust_a_record_naming_a_branch(tmp_path):
     """Codex round 3.
 

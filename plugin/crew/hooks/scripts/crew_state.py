@@ -876,6 +876,19 @@ def current_branch(root):
     return None if not name or name == "HEAD" else name
 
 
+def in_git_repo(root):
+    """Is `root` inside a git working tree at all?
+
+    `current_branch` returns None for two states that are not remotely alike:
+    a plain directory that has no branches, and a repository whose HEAD is
+    detached or mid-rebase. Provenance can be trusted in the first and never
+    in the second, so the branch value alone cannot decide it -- a dispatch
+    recorded while detached stores `branch: null`, which would otherwise
+    compare equal to the no-repo case and read as proof.
+    """
+    return git_out(root, "rev-parse", "--is-inside-work-tree") == "true"
+
+
 def record_dispatch(root, kind, role, provider, model=None, branch=None):
     """Record which role, provider and model actually ran. Returns the record.
 
@@ -937,11 +950,11 @@ def author_families(root, cfg, stale=False):
         review its own work. Over-barring costs a rung; under-barring costs
         the entire point of the guard.
 
-    Provenance is proven only when the record's branch and the checkout's
-    branch are the SAME -- including both being absent, which is a checkout
-    with no branches at all. A detached HEAD or a rebase in progress reads as
-    no branch while branches do exist, so a record naming one is unprovable
-    there and fails closed like any other mismatch.
+    Provenance is proven only when the checkout has a readable branch and the
+    record names the same one -- or when this is not a repository at all and
+    the record names none, the one case with no branches to confuse. A
+    detached HEAD, a rebase in progress, or a record written while detached
+    are all unprovable and fail closed.
 
     A record with no branch, read in a checkout that HAS one, is stale: it
     was written before 0.16.0's field existed and cannot prove which branch
@@ -980,18 +993,22 @@ def author_families(root, cfg, stale=False):
         #     cost is one over-barred review per repo, until the next
         #     dispatch records a branch.
         #
-        # The test is plain inequality, and the two None cases are why. A
-        # checkout with NO branch and a record naming NONE compares equal and
-        # is trusted: nothing to switch between means none of the risk, and
-        # failing closed there would over-bar every non-git checkout forever
-        # rather than once. But `here is None` with a record that DOES name a
-        # branch is not that case -- it is a detached HEAD or a rebase in
-        # progress, where branches exist and this one simply cannot be read.
-        # An earlier version guarded with `here and there != here`, which
-        # trusted exactly that state: dispatch on main, detach, and the
-        # recorded family alone was struck while the configured one stayed
-        # clear to review its own diff.
-        if stale or here != there:
+        # Two earlier versions of this test were wrong in opposite
+        # directions, which is why it is spelled out rather than clever.
+        # `here and there != here` short-circuited on a None `here` and
+        # trusted a detached HEAD. Plain `here != there` fixed that and then
+        # trusted a record written WHILE detached, because that record stores
+        # `branch: null` and None == None. Only repository presence separates
+        # the harmless missing branch from the dangerous unreadable one.
+        # Provenance is PROVEN in exactly two shapes, and trusted in no
+        # other: a readable branch that matches the record's, or a directory
+        # that is not a repository at all paired with a record that names no
+        # branch. Everything else -- a detached HEAD, a rebase in progress, a
+        # record written while detached, a branch the record does not name --
+        # is unprovable, and unprovable fails closed.
+        proven = ((here is not None and here == there)
+                  or (there is None and not in_git_repo(root)))
+        if stale or not proven:
             return frozenset(
                 f for f in (recorded_family, decided["family"]) if f
             ), "stale"

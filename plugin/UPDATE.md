@@ -8,7 +8,7 @@ only what is newly *possible*.
 Mirrored into [`plugin/README.md`](README.md) and the root
 [`README.md`](../README.md) by `scripts/sync-updates.py`. Edit here, then run it.
 
-## crew 0.16.4
+## crew 0.16.5
 
 **`/crew:config` — see where every setting comes from, and set the ones that
 belong to the machine.** The machine-global config at
