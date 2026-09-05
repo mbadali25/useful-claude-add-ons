@@ -293,7 +293,7 @@ Also worth knowing before enabling it:
   every command that reaches for it attributes the answer and prints the excerpts
   it was given.
 
-### crew 0.16.7
+### crew 0.16.8
 
 **`/crew:config` — see where every setting comes from, and set the ones that
 belong to the machine.** The machine-global config at

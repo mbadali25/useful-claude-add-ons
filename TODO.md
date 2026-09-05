@@ -109,7 +109,7 @@ it; the specific check was not located. Either find it and cite it, or write it.
 - **`/crew:diagram`** — deferred until the codemap covers `plugin/crew`, so the
   diagram does not need redrawing immediately.
 
-## Found during the 0.16.7 merge review, deferred as out of scope
+## Found during the 0.16.8 merge review, deferred as out of scope
 
 ### `crew_py` can hand back a Python that is not a Python
 

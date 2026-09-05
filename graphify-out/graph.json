@@ -992,19 +992,6 @@
       "source_location": "L337"
     },
     {
-      "id": "plugin_localgpu_mcp_ollama_modelnotpulled",
-      "label": "ModelNotPulled",
-      "_callable": true,
-      "_callable_class": true,
-      "_origin": "ast",
-      "community": 331,
-      "community_name": "ModelNotPulled",
-      "file_type": "code",
-      "norm_label": "modelnotpulled",
-      "source_file": "plugin/localgpu/mcp/ollama.py",
-      "source_location": "L37"
-    },
-    {
       "id": "plugin_localgpu_cli_anthropic_proxy_proxyerror",
       "label": "ProxyError",
       "_callable": true,
@@ -1250,6 +1237,19 @@
       "norm_label": "hit",
       "source_file": "plugin/localgpu/mcp/store.py",
       "source_location": "L229"
+    },
+    {
+      "id": "plugin_localgpu_mcp_ollama_modelnotpulled",
+      "label": "ModelNotPulled",
+      "_callable": true,
+      "_callable_class": true,
+      "_origin": "ast",
+      "community": 68,
+      "community_name": "ollama.py",
+      "file_type": "code",
+      "norm_label": "modelnotpulled",
+      "source_file": "plugin/localgpu/mcp/ollama.py",
+      "source_location": "L37"
     },
     {
       "id": "plugin_localgpu_mcp_ollama_ollamaerror",
@@ -12795,6 +12795,30 @@
       "source_location": "L964"
     },
     {
+      "id": "plugin_crew_hooks_scripts_crew_config_default_config",
+      "label": "default_config()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 30,
+      "community_name": "crew_config.py",
+      "file_type": "code",
+      "norm_label": "default_config()",
+      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
+      "source_location": "L100"
+    },
+    {
+      "id": "plugin_crew_hooks_scripts_crew_config_default_global_config",
+      "label": "default_global_config()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 30,
+      "community_name": "crew_config.py",
+      "file_type": "code",
+      "norm_label": "default_global_config()",
+      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
+      "source_location": "L180"
+    },
+    {
       "id": "plugin_crew_hooks_scripts_crew_config_dig",
       "label": "_dig()",
       "_callable": true,
@@ -12805,6 +12829,42 @@
       "norm_label": "_dig()",
       "source_file": "plugin/crew/hooks/scripts/crew_config.py",
       "source_location": "L440"
+    },
+    {
+      "id": "plugin_crew_hooks_scripts_crew_config_explain_config",
+      "label": "explain_config()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 30,
+      "community_name": "crew_config.py",
+      "file_type": "code",
+      "norm_label": "explain_config()",
+      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
+      "source_location": "L480"
+    },
+    {
+      "id": "plugin_crew_hooks_scripts_crew_config_filter_global",
+      "label": "filter_global()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 30,
+      "community_name": "crew_config.py",
+      "file_type": "code",
+      "norm_label": "filter_global()",
+      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
+      "source_location": "L309"
+    },
+    {
+      "id": "plugin_crew_hooks_scripts_crew_config_inspect_global",
+      "label": "inspect_global()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 30,
+      "community_name": "crew_config.py",
+      "file_type": "code",
+      "norm_label": "inspect_global()",
+      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
+      "source_location": "L521"
     },
     {
       "id": "plugin_crew_hooks_scripts_crew_config_is_global_path",
@@ -12819,6 +12879,42 @@
       "source_location": "L332"
     },
     {
+      "id": "plugin_crew_hooks_scripts_crew_config_layer_supplies",
+      "label": "_layer_supplies()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 30,
+      "community_name": "crew_config.py",
+      "file_type": "code",
+      "norm_label": "_layer_supplies()",
+      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
+      "source_location": "L452"
+    },
+    {
+      "id": "plugin_crew_hooks_scripts_crew_config_layered_state",
+      "label": "layered_state()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 30,
+      "community_name": "crew_config.py",
+      "file_type": "code",
+      "norm_label": "layered_state()",
+      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
+      "source_location": "L415"
+    },
+    {
+      "id": "plugin_crew_hooks_scripts_crew_config_leaf_paths",
+      "label": "leaf_paths()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 30,
+      "community_name": "crew_config.py",
+      "file_type": "code",
+      "norm_label": "leaf_paths()",
+      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
+      "source_location": "L267"
+    },
+    {
       "id": "plugin_crew_hooks_scripts_crew_config_main",
       "label": "main()",
       "_callable": true,
@@ -12829,6 +12925,30 @@
       "norm_label": "main()",
       "source_file": "plugin/crew/hooks/scripts/crew_config.py",
       "source_location": "L962"
+    },
+    {
+      "id": "plugin_crew_hooks_scripts_crew_config_model_report",
+      "label": "model_report()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 30,
+      "community_name": "crew_config.py",
+      "file_type": "code",
+      "norm_label": "model_report()",
+      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
+      "source_location": "L687"
+    },
+    {
+      "id": "plugin_crew_hooks_scripts_crew_config_order_candidates",
+      "label": "order_candidates()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 30,
+      "community_name": "crew_config.py",
+      "file_type": "code",
+      "norm_label": "order_candidates()",
+      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
+      "source_location": "L623"
     },
     {
       "id": "plugin_crew_hooks_scripts_crew_config_plan_global_write",
@@ -12867,6 +12987,42 @@
       "source_location": "L789"
     },
     {
+      "id": "plugin_crew_hooks_scripts_crew_config_prune",
+      "label": "_prune()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 30,
+      "community_name": "crew_config.py",
+      "file_type": "code",
+      "norm_label": "_prune()",
+      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
+      "source_location": "L283"
+    },
+    {
+      "id": "plugin_crew_hooks_scripts_crew_config_read_global_config",
+      "label": "read_global_config()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 30,
+      "community_name": "crew_config.py",
+      "file_type": "code",
+      "norm_label": "read_global_config()",
+      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
+      "source_location": "L351"
+    },
+    {
+      "id": "plugin_crew_hooks_scripts_crew_config_resolve_config",
+      "label": "resolve_config()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 30,
+      "community_name": "crew_config.py",
+      "file_type": "code",
+      "norm_label": "resolve_config()",
+      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
+      "source_location": "L377"
+    },
+    {
       "id": "plugin_crew_hooks_scripts_crew_config_set_path",
       "label": "_set_path()",
       "_callable": true,
@@ -12889,6 +13045,138 @@
       "norm_label": "write_global_config()",
       "source_file": "plugin/crew/hooks/scripts/crew_config.py",
       "source_location": "L923"
+    },
+    {
+      "id": "plugin_crew_tests_conftest_no_real_global_config",
+      "label": "_no_real_global_config()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 30,
+      "community_name": "crew_config.py",
+      "file_type": "code",
+      "norm_label": "_no_real_global_config()",
+      "source_file": "plugin/crew/tests/conftest.py",
+      "source_location": "L19"
+    },
+    {
+      "id": "skills_web_testing_playwright_scripts_check_env_browsers_dir",
+      "label": "browsers_dir()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 30,
+      "community_name": "crew_config.py",
+      "file_type": "code",
+      "norm_label": "browsers_dir()",
+      "source_file": "skills/web-testing-playwright/scripts/check_env.py",
+      "source_location": "L45"
+    },
+    {
+      "id": "skills_web_testing_playwright_scripts_check_env_collect",
+      "label": "collect()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 30,
+      "community_name": "crew_config.py",
+      "file_type": "code",
+      "norm_label": "collect()",
+      "source_file": "skills/web-testing-playwright/scripts/check_env.py",
+      "source_location": "L89"
+    },
+    {
+      "id": "skills_web_testing_playwright_scripts_check_env_installed_browsers",
+      "label": "installed_browsers()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 30,
+      "community_name": "crew_config.py",
+      "file_type": "code",
+      "norm_label": "installed_browsers()",
+      "source_file": "skills/web-testing-playwright/scripts/check_env.py",
+      "source_location": "L59"
+    },
+    {
+      "id": "skills_web_testing_playwright_scripts_check_env_main",
+      "label": "main()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 30,
+      "community_name": "crew_config.py",
+      "file_type": "code",
+      "norm_label": "main()",
+      "source_file": "skills/web-testing-playwright/scripts/check_env.py",
+      "source_location": "L208"
+    },
+    {
+      "id": "skills_web_testing_playwright_scripts_check_env_node_playwright",
+      "label": "node_playwright()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 30,
+      "community_name": "crew_config.py",
+      "file_type": "code",
+      "norm_label": "node_playwright()",
+      "source_file": "skills/web-testing-playwright/scripts/check_env.py",
+      "source_location": "L79"
+    },
+    {
+      "id": "skills_web_testing_playwright_scripts_check_env_python_playwright",
+      "label": "python_playwright()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 30,
+      "community_name": "crew_config.py",
+      "file_type": "code",
+      "norm_label": "python_playwright()",
+      "source_file": "skills/web-testing-playwright/scripts/check_env.py",
+      "source_location": "L70"
+    },
+    {
+      "id": "skills_web_testing_playwright_scripts_check_env_recommendations",
+      "label": "recommendations()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 30,
+      "community_name": "crew_config.py",
+      "file_type": "code",
+      "norm_label": "recommendations()",
+      "source_file": "skills/web-testing-playwright/scripts/check_env.py",
+      "source_location": "L128"
+    },
+    {
+      "id": "skills_web_testing_playwright_scripts_check_env_render",
+      "label": "render()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 30,
+      "community_name": "crew_config.py",
+      "file_type": "code",
+      "norm_label": "render()",
+      "source_file": "skills/web-testing-playwright/scripts/check_env.py",
+      "source_location": "L175"
+    },
+    {
+      "id": "skills_web_testing_playwright_scripts_check_env_run",
+      "label": "run()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 30,
+      "community_name": "crew_config.py",
+      "file_type": "code",
+      "norm_label": "run()",
+      "source_file": "skills/web-testing-playwright/scripts/check_env.py",
+      "source_location": "L23"
+    },
+    {
+      "id": "skills_web_testing_playwright_scripts_check_env_which",
+      "label": "which()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 30,
+      "community_name": "crew_config.py",
+      "file_type": "code",
+      "norm_label": "which()",
+      "source_file": "skills/web-testing-playwright/scripts/check_env.py",
+      "source_location": "L41"
     },
     {
       "id": "skills_visio_diagrams_scripts_verify_vsdx_check_package",
@@ -12987,16 +13275,76 @@
       "source_location": "L36"
     },
     {
-      "id": "plugin_crew_tests_conftest_no_real_global_config",
-      "label": "_no_real_global_config()",
+      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_discover_vaults",
+      "label": "discover_vaults()",
       "_callable": true,
       "_origin": "ast",
       "community": 319,
-      "community_name": "tests/conftest.py",
+      "community_name": "discover_vaults",
       "file_type": "code",
-      "norm_label": "_no_real_global_config()",
-      "source_file": "plugin/crew/tests/conftest.py",
-      "source_location": "L19"
+      "norm_label": "discover_vaults()",
+      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
+      "source_location": "L445"
+    },
+    {
+      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_identity_check",
+      "label": "identity_check()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 319,
+      "community_name": "discover_vaults",
+      "file_type": "code",
+      "norm_label": "identity_check()",
+      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
+      "source_location": "L593"
+    },
+    {
+      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_list_app_vaults",
+      "label": "list_app_vaults()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 319,
+      "community_name": "discover_vaults",
+      "file_type": "code",
+      "norm_label": "list_app_vaults()",
+      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
+      "source_location": "L417"
+    },
+    {
+      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_norm_path",
+      "label": "_norm_path()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 319,
+      "community_name": "discover_vaults",
+      "file_type": "code",
+      "norm_label": "_norm_path()",
+      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
+      "source_location": "L411"
+    },
+    {
+      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_vault_window_state",
+      "label": "vault_window_state()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 319,
+      "community_name": "discover_vaults",
+      "file_type": "code",
+      "norm_label": "vault_window_state()",
+      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
+      "source_location": "L841"
+    },
+    {
+      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_visible_root_entries",
+      "label": "_visible_root_entries()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 319,
+      "community_name": "discover_vaults",
+      "file_type": "code",
+      "norm_label": "_visible_root_entries()",
+      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
+      "source_location": "L580"
     },
     {
       "id": "plugin_crew_hooks_scripts_pm_brief_authority_note",
@@ -13465,30 +13813,6 @@
       "norm_label": ".require_models()",
       "source_file": "plugin/localgpu/cli/_test/test_cli.py",
       "source_location": "L346"
-    },
-    {
-      "id": "plugin_localgpu_mcp_test_test_ollama_test_missing_endpoint_is_not_reported_as_a_missing_model",
-      "label": "test_missing_endpoint_is_not_reported_as_a_missing_model()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 331,
-      "community_name": "ModelNotPulled",
-      "file_type": "code",
-      "norm_label": "test_missing_endpoint_is_not_reported_as_a_missing_model()",
-      "source_file": "plugin/localgpu/mcp/_test/test_ollama.py",
-      "source_location": "L139"
-    },
-    {
-      "id": "plugin_localgpu_mcp_test_test_server_test_ollama_failures_come_back_as_the_fix_not_a_traceback",
-      "label": "test_ollama_failures_come_back_as_the_fix_not_a_traceback()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 331,
-      "community_name": "ModelNotPulled",
-      "file_type": "code",
-      "norm_label": "test_ollama_failures_come_back_as_the_fix_not_a_traceback()",
-      "source_file": "plugin/localgpu/mcp/_test/test_server.py",
-      "source_location": "L171"
     },
     {
       "id": "plugin_crew_tests_test_crew_config_test_layered_state_fills_in_a_built_in_default_the_raw_repo_file_omits",
@@ -18375,174 +18699,6 @@
       "source_location": "L76"
     },
     {
-      "id": "skills_web_testing_playwright_scripts_check_env_browsers_dir",
-      "label": "browsers_dir()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 502,
-      "community_name": "check_env.py",
-      "file_type": "code",
-      "norm_label": "browsers_dir()",
-      "source_file": "skills/web-testing-playwright/scripts/check_env.py",
-      "source_location": "L45"
-    },
-    {
-      "id": "skills_web_testing_playwright_scripts_check_env_collect",
-      "label": "collect()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 502,
-      "community_name": "check_env.py",
-      "file_type": "code",
-      "norm_label": "collect()",
-      "source_file": "skills/web-testing-playwright/scripts/check_env.py",
-      "source_location": "L89"
-    },
-    {
-      "id": "skills_web_testing_playwright_scripts_check_env_installed_browsers",
-      "label": "installed_browsers()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 502,
-      "community_name": "check_env.py",
-      "file_type": "code",
-      "norm_label": "installed_browsers()",
-      "source_file": "skills/web-testing-playwright/scripts/check_env.py",
-      "source_location": "L59"
-    },
-    {
-      "id": "skills_web_testing_playwright_scripts_check_env_main",
-      "label": "main()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 502,
-      "community_name": "check_env.py",
-      "file_type": "code",
-      "norm_label": "main()",
-      "source_file": "skills/web-testing-playwright/scripts/check_env.py",
-      "source_location": "L208"
-    },
-    {
-      "id": "skills_web_testing_playwright_scripts_check_env_node_playwright",
-      "label": "node_playwright()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 502,
-      "community_name": "check_env.py",
-      "file_type": "code",
-      "norm_label": "node_playwright()",
-      "source_file": "skills/web-testing-playwright/scripts/check_env.py",
-      "source_location": "L79"
-    },
-    {
-      "id": "skills_web_testing_playwright_scripts_check_env_python_playwright",
-      "label": "python_playwright()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 502,
-      "community_name": "check_env.py",
-      "file_type": "code",
-      "norm_label": "python_playwright()",
-      "source_file": "skills/web-testing-playwright/scripts/check_env.py",
-      "source_location": "L70"
-    },
-    {
-      "id": "skills_web_testing_playwright_scripts_check_env_recommendations",
-      "label": "recommendations()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 502,
-      "community_name": "check_env.py",
-      "file_type": "code",
-      "norm_label": "recommendations()",
-      "source_file": "skills/web-testing-playwright/scripts/check_env.py",
-      "source_location": "L128"
-    },
-    {
-      "id": "skills_web_testing_playwright_scripts_check_env_render",
-      "label": "render()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 502,
-      "community_name": "check_env.py",
-      "file_type": "code",
-      "norm_label": "render()",
-      "source_file": "skills/web-testing-playwright/scripts/check_env.py",
-      "source_location": "L175"
-    },
-    {
-      "id": "skills_web_testing_playwright_scripts_check_env_run",
-      "label": "run()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 502,
-      "community_name": "check_env.py",
-      "file_type": "code",
-      "norm_label": "run()",
-      "source_file": "skills/web-testing-playwright/scripts/check_env.py",
-      "source_location": "L23"
-    },
-    {
-      "id": "skills_web_testing_playwright_scripts_check_env_which",
-      "label": "which()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 502,
-      "community_name": "check_env.py",
-      "file_type": "code",
-      "norm_label": "which()",
-      "source_file": "skills/web-testing-playwright/scripts/check_env.py",
-      "source_location": "L41"
-    },
-    {
-      "id": "plugin_crew_hooks_scripts_crew_config_layered_state",
-      "label": "layered_state()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 503,
-      "community_name": "resolve_config",
-      "file_type": "code",
-      "norm_label": "layered_state()",
-      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L415"
-    },
-    {
-      "id": "plugin_crew_hooks_scripts_crew_config_model_report",
-      "label": "model_report()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 503,
-      "community_name": "resolve_config",
-      "file_type": "code",
-      "norm_label": "model_report()",
-      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L687"
-    },
-    {
-      "id": "plugin_crew_hooks_scripts_crew_config_order_candidates",
-      "label": "order_candidates()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 503,
-      "community_name": "resolve_config",
-      "file_type": "code",
-      "norm_label": "order_candidates()",
-      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L623"
-    },
-    {
-      "id": "plugin_crew_hooks_scripts_crew_config_resolve_config",
-      "label": "resolve_config()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 503,
-      "community_name": "resolve_config",
-      "file_type": "code",
-      "norm_label": "resolve_config()",
-      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L377"
-    },
-    {
       "id": "skills_sophos_central_scripts_sophos_client_duration_to_seconds",
       "label": "_duration_to_seconds()",
       "_callable": true,
@@ -18757,138 +18913,6 @@
       "norm_label": "test_the_lock_never_records_a_pid()",
       "source_file": "plugin/crew/tests/test_verify_gate_lock_sh.py",
       "source_location": "L178"
-    },
-    {
-      "id": "plugin_crew_hooks_scripts_crew_config_default_config",
-      "label": "default_config()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 507,
-      "community_name": "explain_config",
-      "file_type": "code",
-      "norm_label": "default_config()",
-      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L100"
-    },
-    {
-      "id": "plugin_crew_hooks_scripts_crew_config_default_global_config",
-      "label": "default_global_config()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 507,
-      "community_name": "explain_config",
-      "file_type": "code",
-      "norm_label": "default_global_config()",
-      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L180"
-    },
-    {
-      "id": "plugin_crew_hooks_scripts_crew_config_explain_config",
-      "label": "explain_config()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 507,
-      "community_name": "explain_config",
-      "file_type": "code",
-      "norm_label": "explain_config()",
-      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L480"
-    },
-    {
-      "id": "plugin_crew_hooks_scripts_crew_config_filter_global",
-      "label": "filter_global()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 507,
-      "community_name": "explain_config",
-      "file_type": "code",
-      "norm_label": "filter_global()",
-      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L309"
-    },
-    {
-      "id": "plugin_crew_hooks_scripts_crew_config_inspect_global",
-      "label": "inspect_global()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 507,
-      "community_name": "explain_config",
-      "file_type": "code",
-      "norm_label": "inspect_global()",
-      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L521"
-    },
-    {
-      "id": "plugin_crew_hooks_scripts_crew_config_layer_supplies",
-      "label": "_layer_supplies()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 507,
-      "community_name": "explain_config",
-      "file_type": "code",
-      "norm_label": "_layer_supplies()",
-      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L452"
-    },
-    {
-      "id": "plugin_crew_hooks_scripts_crew_config_leaf_paths",
-      "label": "leaf_paths()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 507,
-      "community_name": "explain_config",
-      "file_type": "code",
-      "norm_label": "leaf_paths()",
-      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L267"
-    },
-    {
-      "id": "plugin_crew_hooks_scripts_crew_config_prune",
-      "label": "_prune()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 507,
-      "community_name": "explain_config",
-      "file_type": "code",
-      "norm_label": "_prune()",
-      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L283"
-    },
-    {
-      "id": "plugin_crew_hooks_scripts_crew_config_read_global_config",
-      "label": "read_global_config()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 507,
-      "community_name": "explain_config",
-      "file_type": "code",
-      "norm_label": "read_global_config()",
-      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L351"
-    },
-    {
-      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_collisions_for",
-      "label": "collisions_for()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 508,
-      "community_name": "collisions_for",
-      "file_type": "code",
-      "norm_label": "collisions_for()",
-      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
-      "source_location": "L553"
-    },
-    {
-      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_describe_collision",
-      "label": "describe_collision()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 509,
-      "community_name": "describe_collision",
-      "file_type": "code",
-      "norm_label": "describe_collision()",
-      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
-      "source_location": "L558"
     },
     {
       "id": "plugin_crew_tests_test_provider_table_test_a_record_written_while_detached_is_not_trusted_by_another",
@@ -23139,6 +23163,18 @@
       "source_location": "L45"
     },
     {
+      "id": "plugin_localgpu_mcp_test_test_server_test_ollama_failures_come_back_as_the_fix_not_a_traceback",
+      "label": "test_ollama_failures_come_back_as_the_fix_not_a_traceback()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 68,
+      "community_name": "ollama.py",
+      "file_type": "code",
+      "norm_label": "test_ollama_failures_come_back_as_the_fix_not_a_traceback()",
+      "source_file": "plugin/localgpu/mcp/_test/test_server.py",
+      "source_location": "L171"
+    },
+    {
       "id": "plugin_obsidian_vault_hooks_scripts_bridge_status_claim",
       "label": "claim()",
       "_callable": true,
@@ -24375,6 +24411,18 @@
       "source_location": "L117"
     },
     {
+      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_collisions_for",
+      "label": "collisions_for()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 78,
+      "community_name": "obsidian_common.py",
+      "file_type": "code",
+      "norm_label": "collisions_for()",
+      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
+      "source_location": "L553"
+    },
+    {
       "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_community_plugins_path",
       "label": "community_plugins_path()",
       "_callable": true,
@@ -24423,6 +24471,18 @@
       "source_location": "L226"
     },
     {
+      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_describe_collision",
+      "label": "describe_collision()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 78,
+      "community_name": "obsidian_common.py",
+      "file_type": "code",
+      "norm_label": "describe_collision()",
+      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
+      "source_location": "L558"
+    },
+    {
       "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_detect_vault_from_app",
       "label": "detect_vault_from_app()",
       "_callable": true,
@@ -24433,18 +24493,6 @@
       "norm_label": "detect_vault_from_app()",
       "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
       "source_location": "L101"
-    },
-    {
-      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_discover_vaults",
-      "label": "discover_vaults()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 78,
-      "community_name": "obsidian_common.py",
-      "file_type": "code",
-      "norm_label": "discover_vaults()",
-      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
-      "source_location": "L445"
     },
     {
       "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_home",
@@ -24459,30 +24507,6 @@
       "source_location": "L50"
     },
     {
-      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_identity_check",
-      "label": "identity_check()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 78,
-      "community_name": "obsidian_common.py",
-      "file_type": "code",
-      "norm_label": "identity_check()",
-      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
-      "source_location": "L593"
-    },
-    {
-      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_list_app_vaults",
-      "label": "list_app_vaults()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 78,
-      "community_name": "obsidian_common.py",
-      "file_type": "code",
-      "norm_label": "list_app_vaults()",
-      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
-      "source_location": "L417"
-    },
-    {
       "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_list_vaults",
       "label": "list_vaults()",
       "_callable": true,
@@ -24493,18 +24517,6 @@
       "norm_label": "list_vaults()",
       "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
       "source_location": "L173"
-    },
-    {
-      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_norm_path",
-      "label": "_norm_path()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 78,
-      "community_name": "obsidian_common.py",
-      "file_type": "code",
-      "norm_label": "_norm_path()",
-      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
-      "source_location": "L411"
     },
     {
       "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_obsidian_app_json_path",
@@ -24577,30 +24589,6 @@
       "norm_label": "_valid_port()",
       "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
       "source_location": "L149"
-    },
-    {
-      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_vault_window_state",
-      "label": "vault_window_state()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 78,
-      "community_name": "obsidian_common.py",
-      "file_type": "code",
-      "norm_label": "vault_window_state()",
-      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
-      "source_location": "L841"
-    },
-    {
-      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_visible_root_entries",
-      "label": "_visible_root_entries()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 78,
-      "community_name": "obsidian_common.py",
-      "file_type": "code",
-      "norm_label": "_visible_root_entries()",
-      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
-      "source_location": "L580"
     },
     {
       "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_write_config",
@@ -25261,6 +25249,18 @@
       "norm_label": "test_list_models_also_reports_an_absent_server()",
       "source_file": "plugin/localgpu/mcp/_test/test_ollama.py",
       "source_location": "L157"
+    },
+    {
+      "id": "plugin_localgpu_mcp_test_test_ollama_test_missing_endpoint_is_not_reported_as_a_missing_model",
+      "label": "test_missing_endpoint_is_not_reported_as_a_missing_model()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 80,
+      "community_name": "OllamaClient",
+      "file_type": "code",
+      "norm_label": "test_missing_endpoint_is_not_reported_as_a_missing_model()",
+      "source_file": "plugin/localgpu/mcp/_test/test_ollama.py",
+      "source_location": "L139"
     },
     {
       "id": "plugin_localgpu_mcp_test_test_ollama_test_missing_model_names_the_pull_command",
@@ -53149,6 +53149,39 @@
       "source_location": "L1"
     },
     {
+      "id": "plugin_crew_tests_conftest",
+      "label": "tests/conftest.py",
+      "_origin": "ast",
+      "community": 30,
+      "community_name": "crew_config.py",
+      "file_type": "code",
+      "norm_label": "tests/conftest.py",
+      "source_file": "plugin/crew/tests/conftest.py",
+      "source_location": "L1"
+    },
+    {
+      "id": "plugin_crew_tests_conftest_py_fixture",
+      "label": "fixture",
+      "_origin": "ast",
+      "community": 30,
+      "community_name": "crew_config.py",
+      "file_type": "code",
+      "norm_label": "fixture",
+      "source_file": "",
+      "source_location": ""
+    },
+    {
+      "id": "skills_web_testing_playwright_scripts_check_env",
+      "label": "check_env.py",
+      "_origin": "ast",
+      "community": 30,
+      "community_name": "crew_config.py",
+      "file_type": "code",
+      "norm_label": "check_env.py",
+      "source_file": "skills/web-testing-playwright/scripts/check_env.py",
+      "source_location": "L1"
+    },
+    {
       "id": "plugin_crew_hooks_scripts_crew_config_rationale_1",
       "label": "Owns the single definition of a fresh `.crew/config.json`. Three things read\u2026",
       "_origin": "ast",
@@ -53158,6 +53191,61 @@
       "norm_label": "owns the single definition of a fresh `.crew/config.json`. three things read...",
       "source_file": "plugin/crew/hooks/scripts/crew_config.py",
       "source_location": "L1"
+    },
+    {
+      "id": "plugin_crew_hooks_scripts_crew_config_rationale_101",
+      "label": "A fresh, current `.crew/config.json`, as a plain dict. Every call builds a new\u2026",
+      "_origin": "ast",
+      "community": 30,
+      "community_name": "crew_config.py",
+      "file_type": "rationale",
+      "norm_label": "a fresh, current `.crew/config.json`, as a plain dict. every call builds a new...",
+      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
+      "source_location": "L101"
+    },
+    {
+      "id": "plugin_crew_hooks_scripts_crew_config_rationale_181",
+      "label": "A fresh `~/.claude/crew/config.json`, as a plain dict. Deliberately NOT\u2026",
+      "_origin": "ast",
+      "community": 30,
+      "community_name": "crew_config.py",
+      "file_type": "rationale",
+      "norm_label": "a fresh `~/.claude/crew/config.json`, as a plain dict. deliberately not...",
+      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
+      "source_location": "L181"
+    },
+    {
+      "id": "plugin_crew_hooks_scripts_crew_config_rationale_268",
+      "label": "Every dotted path to a non-dict value in `node`, in declaration order. A list\u2026",
+      "_origin": "ast",
+      "community": 30,
+      "community_name": "crew_config.py",
+      "file_type": "rationale",
+      "norm_label": "every dotted path to a non-dict value in `node`, in declaration order. a list...",
+      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
+      "source_location": "L268"
+    },
+    {
+      "id": "plugin_crew_hooks_scripts_crew_config_rationale_284",
+      "label": "`node` kept only where `template` has a matching key. Returns `(kept,\u2026",
+      "_origin": "ast",
+      "community": 30,
+      "community_name": "crew_config.py",
+      "file_type": "rationale",
+      "norm_label": "`node` kept only where `template` has a matching key. returns `(kept,...",
+      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
+      "source_location": "L284"
+    },
+    {
+      "id": "plugin_crew_hooks_scripts_crew_config_rationale_310",
+      "label": "The global layer, pruned to the keys a global file may actually set. Returns\u2026",
+      "_origin": "ast",
+      "community": 30,
+      "community_name": "crew_config.py",
+      "file_type": "rationale",
+      "norm_label": "the global layer, pruned to the keys a global file may actually set. returns...",
+      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
+      "source_location": "L310"
     },
     {
       "id": "plugin_crew_hooks_scripts_crew_config_rationale_333",
@@ -53171,6 +53259,39 @@
       "source_location": "L333"
     },
     {
+      "id": "plugin_crew_hooks_scripts_crew_config_rationale_352",
+      "label": "The machine-global crew config, or `{}` when absent, malformed, or not a JSON\u2026",
+      "_origin": "ast",
+      "community": 30,
+      "community_name": "crew_config.py",
+      "file_type": "rationale",
+      "norm_label": "the machine-global crew config, or `{}` when absent, malformed, or not a json...",
+      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
+      "source_location": "L352"
+    },
+    {
+      "id": "plugin_crew_hooks_scripts_crew_config_rationale_378",
+      "label": "The effective config for the repo at `root` -- see the module docstring's\u2026",
+      "_origin": "ast",
+      "community": 30,
+      "community_name": "crew_config.py",
+      "file_type": "rationale",
+      "norm_label": "the effective config for the repo at `root` -- see the module docstring's...",
+      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
+      "source_location": "L378"
+    },
+    {
+      "id": "plugin_crew_hooks_scripts_crew_config_rationale_416",
+      "label": "`crew_state.collect(root)`, with settings layered per `resolve_config` wherever\u2026",
+      "_origin": "ast",
+      "community": 30,
+      "community_name": "crew_config.py",
+      "file_type": "rationale",
+      "norm_label": "`crew_state.collect(root)`, with settings layered per `resolve_config` wherever...",
+      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
+      "source_location": "L416"
+    },
+    {
       "id": "plugin_crew_hooks_scripts_crew_config_rationale_441",
       "label": "`node` walked down `parts`, or `_MISSING` if the walk runs out.",
       "_origin": "ast",
@@ -53180,6 +53301,61 @@
       "norm_label": "`node` walked down `parts`, or `_missing` if the walk runs out.",
       "source_file": "plugin/crew/hooks/scripts/crew_config.py",
       "source_location": "L441"
+    },
+    {
+      "id": "plugin_crew_hooks_scripts_crew_config_rationale_453",
+      "label": "True when `layer` is the one that decides the value at `parts`. Mirrors\u2026",
+      "_origin": "ast",
+      "community": 30,
+      "community_name": "crew_config.py",
+      "file_type": "rationale",
+      "norm_label": "true when `layer` is the one that decides the value at `parts`. mirrors...",
+      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
+      "source_location": "L453"
+    },
+    {
+      "id": "plugin_crew_hooks_scripts_crew_config_rationale_481",
+      "label": "Every globally-settable key, with its effective value and its source. Returns a\u2026",
+      "_origin": "ast",
+      "community": 30,
+      "community_name": "crew_config.py",
+      "file_type": "rationale",
+      "norm_label": "every globally-settable key, with its effective value and its source. returns a...",
+      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
+      "source_location": "L481"
+    },
+    {
+      "id": "plugin_crew_hooks_scripts_crew_config_rationale_522",
+      "label": "Findings about the machine-global config, for `/crew:upgrade` to report.\u2026",
+      "_origin": "ast",
+      "community": 30,
+      "community_name": "crew_config.py",
+      "file_type": "rationale",
+      "norm_label": "findings about the machine-global config, for `/crew:upgrade` to report....",
+      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
+      "source_location": "L522"
+    },
+    {
+      "id": "plugin_crew_hooks_scripts_crew_config_rationale_624",
+      "label": "Which of `qa.order` could actually review a diff `author` wrote. Pure. The per-\u2026",
+      "_origin": "ast",
+      "community": 30,
+      "community_name": "crew_config.py",
+      "file_type": "rationale",
+      "norm_label": "which of `qa.order` could actually review a diff `author` wrote. pure. the per-...",
+      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
+      "source_location": "L624"
+    },
+    {
+      "id": "plugin_crew_hooks_scripts_crew_config_rationale_688",
+      "label": "Per-ROLE effective provider, model and family, for `/crew:model`. One row per\u2026",
+      "_origin": "ast",
+      "community": 30,
+      "community_name": "crew_config.py",
+      "file_type": "rationale",
+      "norm_label": "per-role effective provider, model and family, for `/crew:model`. one row per...",
+      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
+      "source_location": "L688"
     },
     {
       "id": "plugin_crew_hooks_scripts_crew_config_rationale_847",
@@ -53224,6 +53400,61 @@
       "norm_label": "report the config layering, or write the global file. reporting exits 0 even...",
       "source_file": "plugin/crew/hooks/scripts/crew_config.py",
       "source_location": "L963"
+    },
+    {
+      "id": "plugin_crew_tests_conftest_rationale_1",
+      "label": "Shared test isolation for the whole suite. Every test that touches\u2026",
+      "_origin": "ast",
+      "community": 30,
+      "community_name": "crew_config.py",
+      "file_type": "rationale",
+      "norm_label": "shared test isolation for the whole suite. every test that touches...",
+      "source_file": "plugin/crew/tests/conftest.py",
+      "source_location": "L1"
+    },
+    {
+      "id": "skills_web_testing_playwright_scripts_check_env_rationale_129",
+      "label": "Ordered list of (what, why, command) for anything missing.",
+      "_origin": "ast",
+      "community": 30,
+      "community_name": "crew_config.py",
+      "file_type": "rationale",
+      "norm_label": "ordered list of (what, why, command) for anything missing.",
+      "source_file": "skills/web-testing-playwright/scripts/check_env.py",
+      "source_location": "L129"
+    },
+    {
+      "id": "skills_web_testing_playwright_scripts_check_env_rationale_24",
+      "label": "Run a command, return stripped stdout or None. Never raises.",
+      "_origin": "ast",
+      "community": 30,
+      "community_name": "crew_config.py",
+      "file_type": "rationale",
+      "norm_label": "run a command, return stripped stdout or none. never raises.",
+      "source_file": "skills/web-testing-playwright/scripts/check_env.py",
+      "source_location": "L24"
+    },
+    {
+      "id": "skills_web_testing_playwright_scripts_check_env_rationale_46",
+      "label": "Where Playwright caches its browser binaries.",
+      "_origin": "ast",
+      "community": 30,
+      "community_name": "crew_config.py",
+      "file_type": "rationale",
+      "norm_label": "where playwright caches its browser binaries.",
+      "source_file": "skills/web-testing-playwright/scripts/check_env.py",
+      "source_location": "L46"
+    },
+    {
+      "id": "skills_web_testing_playwright_scripts_check_env_rationale_80",
+      "label": "Check for a locally or globally installed Node Playwright. Uses --no-install so\u2026",
+      "_origin": "ast",
+      "community": 30,
+      "community_name": "crew_config.py",
+      "file_type": "rationale",
+      "norm_label": "check for a locally or globally installed node playwright. uses --no-install so...",
+      "source_file": "skills/web-testing-playwright/scripts/check_env.py",
+      "source_location": "L80"
     },
     {
       "id": "skills_notify_references_config",
@@ -54725,37 +54956,59 @@
       "source_location": "L1"
     },
     {
-      "id": "plugin_crew_tests_conftest",
-      "label": "tests/conftest.py",
+      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_rationale_418",
+      "label": "Every vault in Obsidian's own registry as {vault_id: {path, open, ts}}. Never\u2026",
       "_origin": "ast",
       "community": 319,
-      "community_name": "tests/conftest.py",
-      "file_type": "code",
-      "norm_label": "tests/conftest.py",
-      "source_file": "plugin/crew/tests/conftest.py",
-      "source_location": "L1"
-    },
-    {
-      "id": "plugin_crew_tests_conftest_py_fixture",
-      "label": "fixture",
-      "_origin": "ast",
-      "community": 319,
-      "community_name": "tests/conftest.py",
-      "file_type": "code",
-      "norm_label": "fixture",
-      "source_file": "",
-      "source_location": ""
-    },
-    {
-      "id": "plugin_crew_tests_conftest_rationale_1",
-      "label": "Shared test isolation for the whole suite. Every test that touches\u2026",
-      "_origin": "ast",
-      "community": 319,
-      "community_name": "tests/conftest.py",
+      "community_name": "discover_vaults",
       "file_type": "rationale",
-      "norm_label": "shared test isolation for the whole suite. every test that touches...",
-      "source_file": "plugin/crew/tests/conftest.py",
-      "source_location": "L1"
+      "norm_label": "every vault in obsidian's own registry as {vault_id: {path, open, ts}}. never...",
+      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
+      "source_location": "L418"
+    },
+    {
+      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_rationale_446",
+      "label": "Every vault this machine knows about, configured or not. list_vaults() answers\u2026",
+      "_origin": "ast",
+      "community": 319,
+      "community_name": "discover_vaults",
+      "file_type": "rationale",
+      "norm_label": "every vault this machine knows about, configured or not. list_vaults() answers...",
+      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
+      "source_location": "L446"
+    },
+    {
+      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_rationale_581",
+      "label": "Top-level names Local REST API would list for a vault. Dotfiles (notably\u2026",
+      "_origin": "ast",
+      "community": 319,
+      "community_name": "discover_vaults",
+      "file_type": "rationale",
+      "norm_label": "top-level names local rest api would list for a vault. dotfiles (notably...",
+      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
+      "source_location": "L581"
+    },
+    {
+      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_rationale_594",
+      "label": "Does the root listing a server returned match the vault on disk? `served_files`\u2026",
+      "_origin": "ast",
+      "community": 319,
+      "community_name": "discover_vaults",
+      "file_type": "rationale",
+      "norm_label": "does the root listing a server returned match the vault on disk? `served_files`...",
+      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
+      "source_location": "L594"
+    },
+    {
+      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_rationale_842",
+      "label": "Does an open window on this machine belong to THIS vault? Returns {\"state\":\u2026",
+      "_origin": "ast",
+      "community": 319,
+      "community_name": "discover_vaults",
+      "file_type": "rationale",
+      "norm_label": "does an open window on this machine belong to this vault? returns {\"state\":...",
+      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
+      "source_location": "L842"
     },
     {
       "id": "plugin_crew_hooks_scripts_pm_brief_py_plugin_crew_hooks_scripts_pm_brief",
@@ -55377,17 +55630,6 @@
       "source_location": "L338"
     },
     {
-      "id": "plugin_localgpu_mcp_ollama_rationale_38",
-      "label": "The server is up but does not have that model on disk.",
-      "_origin": "ast",
-      "community": 331,
-      "community_name": "ModelNotPulled",
-      "file_type": "rationale",
-      "norm_label": "the server is up but does not have that model on disk.",
-      "source_file": "plugin/localgpu/mcp/ollama.py",
-      "source_location": "L38"
-    },
-    {
       "id": "plugin_localgpu_run_tests_get_venvpythonin",
       "label": "Get-VenvPythonIn()",
       "_origin": "ast",
@@ -55651,6 +55893,18 @@
       "source_location": "L49"
     },
     {
+      "id": "todo_crew_py_can_hand_back_a_python_that_is_not_a_python",
+      "label": "`crew_py` can hand back a Python that is not a Python",
+      "_origin": "ast",
+      "community": 336,
+      "community_name": "Correctness and verification gaps",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "`crew_py` can hand back a python that is not a python",
+      "source_file": "TODO.md",
+      "source_location": "L114"
+    },
+    {
       "id": "todo_deferred_by_design_not_oversight",
       "label": "Deferred by design, not oversight",
       "_origin": "ast",
@@ -55661,6 +55915,18 @@
       "norm_label": "deferred by design, not oversight",
       "source_file": "TODO.md",
       "source_location": "L100"
+    },
+    {
+      "id": "todo_found_during_the_0_16_7_merge_review_deferred_as_out_of_scope",
+      "label": "Found during the 0.16.7 merge review, deferred as out of scope",
+      "_origin": "ast",
+      "community": 336,
+      "community_name": "Correctness and verification gaps",
+      "file_type": "document",
+      "node_kind": "heading",
+      "norm_label": "found during the 0.16.7 merge review, deferred as out of scope",
+      "source_file": "TODO.md",
+      "source_location": "L112"
     },
     {
       "id": "todo_todo",
@@ -62961,105 +63227,6 @@
       "source_location": "L88"
     },
     {
-      "id": "skills_web_testing_playwright_scripts_check_env",
-      "label": "check_env.py",
-      "_origin": "ast",
-      "community": 502,
-      "community_name": "check_env.py",
-      "file_type": "code",
-      "norm_label": "check_env.py",
-      "source_file": "skills/web-testing-playwright/scripts/check_env.py",
-      "source_location": "L1"
-    },
-    {
-      "id": "skills_web_testing_playwright_scripts_check_env_rationale_129",
-      "label": "Ordered list of (what, why, command) for anything missing.",
-      "_origin": "ast",
-      "community": 502,
-      "community_name": "check_env.py",
-      "file_type": "rationale",
-      "norm_label": "ordered list of (what, why, command) for anything missing.",
-      "source_file": "skills/web-testing-playwright/scripts/check_env.py",
-      "source_location": "L129"
-    },
-    {
-      "id": "skills_web_testing_playwright_scripts_check_env_rationale_24",
-      "label": "Run a command, return stripped stdout or None. Never raises.",
-      "_origin": "ast",
-      "community": 502,
-      "community_name": "check_env.py",
-      "file_type": "rationale",
-      "norm_label": "run a command, return stripped stdout or none. never raises.",
-      "source_file": "skills/web-testing-playwright/scripts/check_env.py",
-      "source_location": "L24"
-    },
-    {
-      "id": "skills_web_testing_playwright_scripts_check_env_rationale_46",
-      "label": "Where Playwright caches its browser binaries.",
-      "_origin": "ast",
-      "community": 502,
-      "community_name": "check_env.py",
-      "file_type": "rationale",
-      "norm_label": "where playwright caches its browser binaries.",
-      "source_file": "skills/web-testing-playwright/scripts/check_env.py",
-      "source_location": "L46"
-    },
-    {
-      "id": "skills_web_testing_playwright_scripts_check_env_rationale_80",
-      "label": "Check for a locally or globally installed Node Playwright. Uses --no-install so\u2026",
-      "_origin": "ast",
-      "community": 502,
-      "community_name": "check_env.py",
-      "file_type": "rationale",
-      "norm_label": "check for a locally or globally installed node playwright. uses --no-install so...",
-      "source_file": "skills/web-testing-playwright/scripts/check_env.py",
-      "source_location": "L80"
-    },
-    {
-      "id": "plugin_crew_hooks_scripts_crew_config_rationale_378",
-      "label": "The effective config for the repo at `root` -- see the module docstring's\u2026",
-      "_origin": "ast",
-      "community": 503,
-      "community_name": "resolve_config",
-      "file_type": "rationale",
-      "norm_label": "the effective config for the repo at `root` -- see the module docstring's...",
-      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L378"
-    },
-    {
-      "id": "plugin_crew_hooks_scripts_crew_config_rationale_416",
-      "label": "`crew_state.collect(root)`, with settings layered per `resolve_config` wherever\u2026",
-      "_origin": "ast",
-      "community": 503,
-      "community_name": "resolve_config",
-      "file_type": "rationale",
-      "norm_label": "`crew_state.collect(root)`, with settings layered per `resolve_config` wherever...",
-      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L416"
-    },
-    {
-      "id": "plugin_crew_hooks_scripts_crew_config_rationale_624",
-      "label": "Which of `qa.order` could actually review a diff `author` wrote. Pure. The per-\u2026",
-      "_origin": "ast",
-      "community": 503,
-      "community_name": "resolve_config",
-      "file_type": "rationale",
-      "norm_label": "which of `qa.order` could actually review a diff `author` wrote. pure. the per-...",
-      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L624"
-    },
-    {
-      "id": "plugin_crew_hooks_scripts_crew_config_rationale_688",
-      "label": "Per-ROLE effective provider, model and family, for `/crew:model`. One row per\u2026",
-      "_origin": "ast",
-      "community": 503,
-      "community_name": "resolve_config",
-      "file_type": "rationale",
-      "norm_label": "per-role effective provider, model and family, for `/crew:model`. one row per...",
-      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L688"
-    },
-    {
       "id": "skills_sophos_central_scripts_sophos_client",
       "label": "sophos_client.py",
       "_origin": "ast",
@@ -63212,127 +63379,6 @@
       "norm_label": "a lock as any other process would have left it: a bare directory, aged by its...",
       "source_file": "plugin/crew/tests/test_verify_gate_lock_sh.py",
       "source_location": "L96"
-    },
-    {
-      "id": "plugin_crew_hooks_scripts_crew_config_rationale_101",
-      "label": "A fresh, current `.crew/config.json`, as a plain dict. Every call builds a new\u2026",
-      "_origin": "ast",
-      "community": 507,
-      "community_name": "explain_config",
-      "file_type": "rationale",
-      "norm_label": "a fresh, current `.crew/config.json`, as a plain dict. every call builds a new...",
-      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L101"
-    },
-    {
-      "id": "plugin_crew_hooks_scripts_crew_config_rationale_181",
-      "label": "A fresh `~/.claude/crew/config.json`, as a plain dict. Deliberately NOT\u2026",
-      "_origin": "ast",
-      "community": 507,
-      "community_name": "explain_config",
-      "file_type": "rationale",
-      "norm_label": "a fresh `~/.claude/crew/config.json`, as a plain dict. deliberately not...",
-      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L181"
-    },
-    {
-      "id": "plugin_crew_hooks_scripts_crew_config_rationale_268",
-      "label": "Every dotted path to a non-dict value in `node`, in declaration order. A list\u2026",
-      "_origin": "ast",
-      "community": 507,
-      "community_name": "explain_config",
-      "file_type": "rationale",
-      "norm_label": "every dotted path to a non-dict value in `node`, in declaration order. a list...",
-      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L268"
-    },
-    {
-      "id": "plugin_crew_hooks_scripts_crew_config_rationale_284",
-      "label": "`node` kept only where `template` has a matching key. Returns `(kept,\u2026",
-      "_origin": "ast",
-      "community": 507,
-      "community_name": "explain_config",
-      "file_type": "rationale",
-      "norm_label": "`node` kept only where `template` has a matching key. returns `(kept,...",
-      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L284"
-    },
-    {
-      "id": "plugin_crew_hooks_scripts_crew_config_rationale_310",
-      "label": "The global layer, pruned to the keys a global file may actually set. Returns\u2026",
-      "_origin": "ast",
-      "community": 507,
-      "community_name": "explain_config",
-      "file_type": "rationale",
-      "norm_label": "the global layer, pruned to the keys a global file may actually set. returns...",
-      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L310"
-    },
-    {
-      "id": "plugin_crew_hooks_scripts_crew_config_rationale_352",
-      "label": "The machine-global crew config, or `{}` when absent, malformed, or not a JSON\u2026",
-      "_origin": "ast",
-      "community": 507,
-      "community_name": "explain_config",
-      "file_type": "rationale",
-      "norm_label": "the machine-global crew config, or `{}` when absent, malformed, or not a json...",
-      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L352"
-    },
-    {
-      "id": "plugin_crew_hooks_scripts_crew_config_rationale_453",
-      "label": "True when `layer` is the one that decides the value at `parts`. Mirrors\u2026",
-      "_origin": "ast",
-      "community": 507,
-      "community_name": "explain_config",
-      "file_type": "rationale",
-      "norm_label": "true when `layer` is the one that decides the value at `parts`. mirrors...",
-      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L453"
-    },
-    {
-      "id": "plugin_crew_hooks_scripts_crew_config_rationale_481",
-      "label": "Every globally-settable key, with its effective value and its source. Returns a\u2026",
-      "_origin": "ast",
-      "community": 507,
-      "community_name": "explain_config",
-      "file_type": "rationale",
-      "norm_label": "every globally-settable key, with its effective value and its source. returns a...",
-      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L481"
-    },
-    {
-      "id": "plugin_crew_hooks_scripts_crew_config_rationale_522",
-      "label": "Findings about the machine-global config, for `/crew:upgrade` to report.\u2026",
-      "_origin": "ast",
-      "community": 507,
-      "community_name": "explain_config",
-      "file_type": "rationale",
-      "norm_label": "findings about the machine-global config, for `/crew:upgrade` to report....",
-      "source_file": "plugin/crew/hooks/scripts/crew_config.py",
-      "source_location": "L522"
-    },
-    {
-      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_rationale_554",
-      "label": "The subset of find_port_collisions() output that involves one vault.",
-      "_origin": "ast",
-      "community": 508,
-      "community_name": "collisions_for",
-      "file_type": "rationale",
-      "norm_label": "the subset of find_port_collisions() output that involves one vault.",
-      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
-      "source_location": "L554"
-    },
-    {
-      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_rationale_559",
-      "label": "One sentence naming who collides on what, for a report or a hook line.",
-      "_origin": "ast",
-      "community": 509,
-      "community_name": "describe_collision",
-      "file_type": "rationale",
-      "norm_label": "one sentence naming who collides on what, for a report or a hook line.",
-      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
-      "source_location": "L559"
     },
     {
       "id": "plugin_crew_skills_crew_providers_skill",
@@ -70970,6 +71016,17 @@
       "source_location": "L30"
     },
     {
+      "id": "plugin_localgpu_mcp_ollama_rationale_38",
+      "label": "The server is up but does not have that model on disk.",
+      "_origin": "ast",
+      "community": 68,
+      "community_name": "ollama.py",
+      "file_type": "rationale",
+      "norm_label": "the server is up but does not have that model on disk.",
+      "source_file": "plugin/localgpu/mcp/ollama.py",
+      "source_location": "L38"
+    },
+    {
       "id": "plugin_localgpu_mcp_ollama_rationale_42",
       "label": "The server accepted the request and did not answer in time.",
       "_origin": "ast",
@@ -72603,28 +72660,6 @@
       "source_location": "L287"
     },
     {
-      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_rationale_418",
-      "label": "Every vault in Obsidian's own registry as {vault_id: {path, open, ts}}. Never\u2026",
-      "_origin": "ast",
-      "community": 78,
-      "community_name": "obsidian_common.py",
-      "file_type": "rationale",
-      "norm_label": "every vault in obsidian's own registry as {vault_id: {path, open, ts}}. never...",
-      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
-      "source_location": "L418"
-    },
-    {
-      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_rationale_446",
-      "label": "Every vault this machine knows about, configured or not. list_vaults() answers\u2026",
-      "_origin": "ast",
-      "community": 78,
-      "community_name": "obsidian_common.py",
-      "file_type": "rationale",
-      "norm_label": "every vault this machine knows about, configured or not. list_vaults() answers...",
-      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
-      "source_location": "L446"
-    },
-    {
       "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_rationale_51",
       "label": "The user's home directory, HOME-first. os.path.expanduser(\"~\") reads\u2026",
       "_origin": "ast",
@@ -72636,37 +72671,26 @@
       "source_location": "L51"
     },
     {
-      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_rationale_581",
-      "label": "Top-level names Local REST API would list for a vault. Dotfiles (notably\u2026",
+      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_rationale_554",
+      "label": "The subset of find_port_collisions() output that involves one vault.",
       "_origin": "ast",
       "community": 78,
       "community_name": "obsidian_common.py",
       "file_type": "rationale",
-      "norm_label": "top-level names local rest api would list for a vault. dotfiles (notably...",
+      "norm_label": "the subset of find_port_collisions() output that involves one vault.",
       "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
-      "source_location": "L581"
+      "source_location": "L554"
     },
     {
-      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_rationale_594",
-      "label": "Does the root listing a server returned match the vault on disk? `served_files`\u2026",
+      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_rationale_559",
+      "label": "One sentence naming who collides on what, for a report or a hook line.",
       "_origin": "ast",
       "community": 78,
       "community_name": "obsidian_common.py",
       "file_type": "rationale",
-      "norm_label": "does the root listing a server returned match the vault on disk? `served_files`...",
+      "norm_label": "one sentence naming who collides on what, for a report or a hook line.",
       "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
-      "source_location": "L594"
-    },
-    {
-      "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_rationale_842",
-      "label": "Does an open window on this machine belong to THIS vault? Returns {\"state\":\u2026",
-      "_origin": "ast",
-      "community": 78,
-      "community_name": "obsidian_common.py",
-      "file_type": "rationale",
-      "norm_label": "does an open window on this machine belong to this vault? returns {\"state\":...",
-      "source_file": "plugin/obsidian-vault/hooks/scripts/obsidian_common.py",
-      "source_location": "L842"
+      "source_location": "L559"
     },
     {
       "id": "plugin_obsidian_vault_hooks_scripts_obsidian_common_rationale_85",
@@ -75038,7 +75062,7 @@
       },
       "norm_label": "claude_project_dir",
       "source_file": "plugin/crew/hooks/scripts/_test/run-tests.sh",
-      "source_location": "L143"
+      "source_location": "L240"
     },
     {
       "id": "plugin_crew_hooks_scripts_test_run_tests_expect",
@@ -75068,7 +75092,7 @@
       },
       "norm_label": "expect_pulse()",
       "source_file": "plugin/crew/hooks/scripts/_test/run-tests.sh",
-      "source_location": "L457"
+      "source_location": "L571"
     },
     {
       "id": "plugin_crew_hooks_scripts_test_run_tests_fail",
@@ -75113,7 +75137,7 @@
       },
       "norm_label": "inc()",
       "source_file": "plugin/crew/hooks/scripts/_test/run-tests.sh",
-      "source_location": "L283"
+      "source_location": "L393"
     },
     {
       "id": "plugin_crew_hooks_scripts_test_run_tests_json_cmd",
@@ -75158,7 +75182,7 @@
       },
       "norm_label": "pexpect()",
       "source_file": "plugin/crew/hooks/scripts/_test/run-tests.sh",
-      "source_location": "L190"
+      "source_location": "L287"
     },
     {
       "id": "plugin_crew_hooks_scripts_test_run_tests_pgate",
@@ -75173,7 +75197,7 @@
       },
       "norm_label": "pgate()",
       "source_file": "plugin/crew/hooks/scripts/_test/run-tests.sh",
-      "source_location": "L186"
+      "source_location": "L283"
     },
     {
       "id": "plugin_crew_hooks_scripts_test_run_tests_pulse",
@@ -75188,7 +75212,7 @@
       },
       "norm_label": "pulse()",
       "source_file": "plugin/crew/hooks/scripts/_test/run-tests.sh",
-      "source_location": "L452"
+      "source_location": "L566"
     },
     {
       "id": "plugin_crew_hooks_scripts_test_run_tests_pulse_payload",
@@ -75203,7 +75227,7 @@
       },
       "norm_label": "pulse_payload()",
       "source_file": "plugin/crew/hooks/scripts/_test/run-tests.sh",
-      "source_location": "L441"
+      "source_location": "L555"
     },
     {
       "id": "plugin_crew_hooks_scripts_test_run_tests_qa_row",
@@ -75218,7 +75242,7 @@
       },
       "norm_label": "qa_row()",
       "source_file": "plugin/crew/hooks/scripts/_test/run-tests.sh",
-      "source_location": "L194"
+      "source_location": "L291"
     },
     {
       "id": "plugin_crew_hooks_scripts_test_run_tests_sh__entry",
@@ -78470,18 +78494,6 @@
       "weight": 1.0
     },
     {
-      "source": "plugin_crew_hooks_scripts_test_run_tests_expect",
-      "target": "plugin_crew_hooks_scripts_test_run_tests_sh__entry",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "plugin/crew/hooks/scripts/_test/run-tests.sh",
-      "source_location": "L49",
-      "weight": 1.0
-    },
-    {
       "source": "plugin_crew_hooks_scripts_test_run_tests_expect_pulse",
       "target": "plugin_crew_hooks_scripts_test_run_tests_pulse",
       "relation": "calls",
@@ -78490,7 +78502,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/crew/hooks/scripts/_test/run-tests.sh",
-      "source_location": "L458",
+      "source_location": "L572",
       "weight": 1.0
     },
     {
@@ -78502,7 +78514,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/crew/hooks/scripts/_test/run-tests.sh",
-      "source_location": "L459",
+      "source_location": "L573",
       "weight": 1.0
     },
     {
@@ -78514,43 +78526,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/crew/hooks/scripts/_test/run-tests.sh",
-      "source_location": "L459",
-      "weight": 1.0
-    },
-    {
-      "source": "plugin_crew_hooks_scripts_test_run_tests_expect_pulse",
-      "target": "plugin_crew_hooks_scripts_test_run_tests_sh__entry",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "plugin/crew/hooks/scripts/_test/run-tests.sh",
-      "source_location": "L475",
-      "weight": 1.0
-    },
-    {
-      "source": "plugin_crew_hooks_scripts_test_run_tests_fail",
-      "target": "plugin_crew_hooks_scripts_test_run_tests_sh__entry",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "plugin/crew/hooks/scripts/_test/run-tests.sh",
-      "source_location": "L148",
-      "weight": 1.0
-    },
-    {
-      "source": "plugin_crew_hooks_scripts_test_run_tests_fail",
-      "target": "plugin_crew_hooks_scripts_test_run_tests_pexpect",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "plugin/crew/hooks/scripts/_test/run-tests.sh",
-      "source_location": "L192",
+      "source_location": "L573",
       "weight": 1.0
     },
     {
@@ -78566,54 +78542,6 @@
       "weight": 1.0
     },
     {
-      "source": "plugin_crew_hooks_scripts_test_run_tests_inc",
-      "target": "plugin_crew_hooks_scripts_test_run_tests_sh__entry",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "plugin/crew/hooks/scripts/_test/run-tests.sh",
-      "source_location": "L298",
-      "weight": 1.0
-    },
-    {
-      "source": "plugin_crew_hooks_scripts_test_run_tests_json_cmd",
-      "target": "plugin_crew_hooks_scripts_test_run_tests_pgate",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "plugin/crew/hooks/scripts/_test/run-tests.sh",
-      "source_location": "L187",
-      "weight": 1.0
-    },
-    {
-      "source": "plugin_crew_hooks_scripts_test_run_tests_pass",
-      "target": "plugin_crew_hooks_scripts_test_run_tests_sh__entry",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "plugin/crew/hooks/scripts/_test/run-tests.sh",
-      "source_location": "L148",
-      "weight": 1.0
-    },
-    {
-      "source": "plugin_crew_hooks_scripts_test_run_tests_pass",
-      "target": "plugin_crew_hooks_scripts_test_run_tests_pexpect",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "plugin/crew/hooks/scripts/_test/run-tests.sh",
-      "source_location": "L192",
-      "weight": 1.0
-    },
-    {
       "source": "plugin_crew_hooks_scripts_test_run_tests_pexpect",
       "target": "plugin_crew_hooks_scripts_test_run_tests_pgate",
       "relation": "calls",
@@ -78622,19 +78550,43 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/crew/hooks/scripts/_test/run-tests.sh",
-      "source_location": "L191",
+      "source_location": "L288",
       "weight": 1.0
     },
     {
       "source": "plugin_crew_hooks_scripts_test_run_tests_pexpect",
-      "target": "plugin_crew_hooks_scripts_test_run_tests_sh__entry",
+      "target": "plugin_crew_hooks_scripts_test_run_tests_fail",
       "relation": "calls",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/crew/hooks/scripts/_test/run-tests.sh",
-      "source_location": "L198",
+      "source_location": "L289",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_crew_hooks_scripts_test_run_tests_pexpect",
+      "target": "plugin_crew_hooks_scripts_test_run_tests_pass",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "plugin/crew/hooks/scripts/_test/run-tests.sh",
+      "source_location": "L289",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_crew_hooks_scripts_test_run_tests_pgate",
+      "target": "plugin_crew_hooks_scripts_test_run_tests_json_cmd",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "plugin/crew/hooks/scripts/_test/run-tests.sh",
+      "source_location": "L284",
       "weight": 1.0
     },
     {
@@ -78646,31 +78598,103 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/crew/hooks/scripts/_test/run-tests.sh",
-      "source_location": "L453",
+      "source_location": "L567",
       "weight": 1.0
     },
     {
-      "source": "plugin_crew_hooks_scripts_test_run_tests_pulse_payload",
-      "target": "plugin_crew_hooks_scripts_test_run_tests_sh__entry",
+      "source": "plugin_crew_hooks_scripts_test_run_tests_sh__entry",
+      "target": "plugin_crew_hooks_scripts_test_run_tests_fail",
       "relation": "calls",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/crew/hooks/scripts/_test/run-tests.sh",
-      "source_location": "L533",
+      "source_location": "L245",
       "weight": 1.0
     },
     {
-      "source": "plugin_crew_hooks_scripts_test_run_tests_qa_row",
-      "target": "plugin_crew_hooks_scripts_test_run_tests_sh__entry",
+      "source": "plugin_crew_hooks_scripts_test_run_tests_sh__entry",
+      "target": "plugin_crew_hooks_scripts_test_run_tests_pass",
       "relation": "calls",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/crew/hooks/scripts/_test/run-tests.sh",
-      "source_location": "L231",
+      "source_location": "L245",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_crew_hooks_scripts_test_run_tests_sh__entry",
+      "target": "plugin_crew_hooks_scripts_test_run_tests_pexpect",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "plugin/crew/hooks/scripts/_test/run-tests.sh",
+      "source_location": "L302",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_crew_hooks_scripts_test_run_tests_sh__entry",
+      "target": "plugin_crew_hooks_scripts_test_run_tests_qa_row",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "plugin/crew/hooks/scripts/_test/run-tests.sh",
+      "source_location": "L341",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_crew_hooks_scripts_test_run_tests_sh__entry",
+      "target": "plugin_crew_hooks_scripts_test_run_tests_inc",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "plugin/crew/hooks/scripts/_test/run-tests.sh",
+      "source_location": "L408",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_crew_hooks_scripts_test_run_tests_sh__entry",
+      "target": "plugin_crew_hooks_scripts_test_run_tests_expect_pulse",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "plugin/crew/hooks/scripts/_test/run-tests.sh",
+      "source_location": "L589",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_crew_hooks_scripts_test_run_tests_sh__entry",
+      "target": "plugin_crew_hooks_scripts_test_run_tests_pulse_payload",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "plugin/crew/hooks/scripts/_test/run-tests.sh",
+      "source_location": "L647",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_crew_hooks_scripts_test_run_tests_sh__entry",
+      "target": "plugin_crew_hooks_scripts_test_run_tests_expect",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "plugin/crew/hooks/scripts/_test/run-tests.sh",
+      "source_location": "L95",
       "weight": 1.0
     },
     {
@@ -164247,6 +164271,17 @@
       "weight": 1.0
     },
     {
+      "source": "todo_found_during_the_0_16_7_merge_review_deferred_as_out_of_scope",
+      "target": "todo_crew_py_can_hand_back_a_python_that_is_not_a_python",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "TODO.md",
+      "source_location": "L114",
+      "weight": 1.0
+    },
+    {
       "source": "todo_todo",
       "target": "todo_blast_radius_act_on_these_first",
       "relation": "contains",
@@ -164266,6 +164301,17 @@
       "confidence_score": 1.0,
       "source_file": "TODO.md",
       "source_location": "L100",
+      "weight": 1.0
+    },
+    {
+      "source": "todo_todo",
+      "target": "todo_found_during_the_0_16_7_merge_review_deferred_as_out_of_scope",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "TODO.md",
+      "source_location": "L112",
       "weight": 1.0
     },
     {
@@ -165183,39 +165229,6 @@
     },
     {
       "source": "plugin_crew_hooks_scripts_test_run_tests",
-      "target": "plugin_crew_hooks_scripts_test_run_tests_pgate",
-      "relation": "defines",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "plugin/crew/hooks/scripts/_test/run-tests.sh",
-      "source_location": "L186",
-      "weight": 1.0
-    },
-    {
-      "source": "plugin_crew_hooks_scripts_test_run_tests",
-      "target": "plugin_crew_hooks_scripts_test_run_tests_pexpect",
-      "relation": "defines",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "plugin/crew/hooks/scripts/_test/run-tests.sh",
-      "source_location": "L190",
-      "weight": 1.0
-    },
-    {
-      "source": "plugin_crew_hooks_scripts_test_run_tests",
-      "target": "plugin_crew_hooks_scripts_test_run_tests_qa_row",
-      "relation": "defines",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "plugin/crew/hooks/scripts/_test/run-tests.sh",
-      "source_location": "L194",
-      "weight": 1.0
-    },
-    {
-      "source": "plugin_crew_hooks_scripts_test_run_tests",
       "target": "plugin_crew_hooks_scripts_test_run_tests_fail",
       "relation": "defines",
       "_origin": "ast",
@@ -165238,13 +165251,35 @@
     },
     {
       "source": "plugin_crew_hooks_scripts_test_run_tests",
-      "target": "plugin_crew_hooks_scripts_test_run_tests_inc",
+      "target": "plugin_crew_hooks_scripts_test_run_tests_pgate",
       "relation": "defines",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/hooks/scripts/_test/run-tests.sh",
       "source_location": "L283",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_crew_hooks_scripts_test_run_tests",
+      "target": "plugin_crew_hooks_scripts_test_run_tests_pexpect",
+      "relation": "defines",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "plugin/crew/hooks/scripts/_test/run-tests.sh",
+      "source_location": "L287",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_crew_hooks_scripts_test_run_tests",
+      "target": "plugin_crew_hooks_scripts_test_run_tests_qa_row",
+      "relation": "defines",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "plugin/crew/hooks/scripts/_test/run-tests.sh",
+      "source_location": "L291",
       "weight": 1.0
     },
     {
@@ -165271,13 +165306,13 @@
     },
     {
       "source": "plugin_crew_hooks_scripts_test_run_tests",
-      "target": "plugin_crew_hooks_scripts_test_run_tests_claude_project_dir",
+      "target": "plugin_crew_hooks_scripts_test_run_tests_inc",
       "relation": "defines",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/hooks/scripts/_test/run-tests.sh",
-      "source_location": "L420",
+      "source_location": "L393",
       "weight": 1.0
     },
     {
@@ -165293,13 +165328,24 @@
     },
     {
       "source": "plugin_crew_hooks_scripts_test_run_tests",
+      "target": "plugin_crew_hooks_scripts_test_run_tests_claude_project_dir",
+      "relation": "defines",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "plugin/crew/hooks/scripts/_test/run-tests.sh",
+      "source_location": "L534",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_crew_hooks_scripts_test_run_tests",
       "target": "plugin_crew_hooks_scripts_test_run_tests_pulse_payload",
       "relation": "defines",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/hooks/scripts/_test/run-tests.sh",
-      "source_location": "L441",
+      "source_location": "L555",
       "weight": 1.0
     },
     {
@@ -165310,7 +165356,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/hooks/scripts/_test/run-tests.sh",
-      "source_location": "L452",
+      "source_location": "L566",
       "weight": 1.0
     },
     {
@@ -165321,7 +165367,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/hooks/scripts/_test/run-tests.sh",
-      "source_location": "L457",
+      "source_location": "L571",
       "weight": 1.0
     },
     {
@@ -186697,5 +186743,5 @@
     }
   ],
   "hyperedges": [],
-  "built_at_commit": "4b92b51849f8f470baa194c0d4a94f666bfea850"
+  "built_at_commit": "0bf0c2f30c8d175c9132986cce764d9cb762f5f2"
 }
