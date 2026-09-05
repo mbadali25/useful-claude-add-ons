@@ -237,6 +237,18 @@ All notable changes to this repository are documented here. Format follows [Keep
   `DISPATCH_FILES_MAX` prunes it — "delete the unparseable file" is not guidance
   if it does not say which one.
 
+- **`crew` 0.16.7: the pruner deleted the evidence that evidence was lost.**
+  A reader that answers `unknown` over a file it could not parse is undone by a
+  pruner that removes the file. `_prune_dispatch_dir` called
+  `_dispatch_entries` with no `lost` list, so a malformed entry was skipped
+  silently, never reached `protected`, and was deleted as an aged file — after
+  which the next read found a clean directory, set no `unreadable`, and
+  returned `dispatch` with whatever that entry held gone and nothing left to
+  say it had ever been there. Unreadable files are protected now, for a
+  stronger reason than live records are: a live record can be reconstructed
+  from the merged history, and this file is the only thing between a lost
+  dispatch and a confident answer about it. It leaves when a human deletes it.
+
 - **`crew` 0.16.7: the hook count in crew's README.** The prose said eight
   scripts and sixteen entries while the table directly beneath it already
   listed all ten across five events, 20 entries.

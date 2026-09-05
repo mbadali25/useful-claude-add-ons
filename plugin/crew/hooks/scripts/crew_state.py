@@ -1591,8 +1591,19 @@ def _prune_dispatch_dir(root):
 
     record = _read_record_file(root)
     by_kind = {}
-    for key, entry_kind, entry in _dispatch_entries(root):
+    # Every file this pass could not read is protected too. A reader that
+    # answers `unknown` over a malformed entry is undone by a pruner that
+    # deletes it: the next read finds a clean directory, sets no
+    # `unreadable`, and returns `dispatch` with whatever that file held gone
+    # and nothing left to say it was ever there. The protection is stronger
+    # than a live record's, not weaker -- a live record can be reconstructed
+    # from the merged history, and this file is the only thing between a lost
+    # dispatch and a confident answer about it. It leaves when a human
+    # deletes it, which is why `read_dispatch` reports its name.
+    lost = []
+    for key, entry_kind, entry in _dispatch_entries(root, lost):
         by_kind.setdefault(entry_kind, []).append((key, entry))
+    protected.update(lost)
 
     for kind in DISPATCH_KINDS:
         for entry in _merge_history(_history_items(record, by_kind, kind),

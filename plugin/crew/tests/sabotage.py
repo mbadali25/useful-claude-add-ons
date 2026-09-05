@@ -342,6 +342,16 @@ MUTATIONS = (
          "reads_as_unknown_not_as_no_dispatch"),
     ),
     (
+        # Round 9, High. A reader that fails closed over a file it
+        # could not read is undone by a pruner that deletes it.
+        "the pruner deletes the evidence that evidence was lost",
+        STATE,
+        "    protected.update(lost)",
+        "    protected.update([])",
+        ("tests/test_provider_table.py::test_the_pruner_does_not_delete_"
+         "the_evidence_that_evidence_was_lost"),
+    ),
+    (
         "bogus documented role",
         LADDER_DOC,
         "| 1 | + security",

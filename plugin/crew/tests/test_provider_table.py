@@ -1937,3 +1937,52 @@ def test_the_next_dispatch_does_not_erase_an_unreadable_record(tmp_path):
         "one dispatch was enough to certify over an unreadable record"
     assert families == frozenset({"claude"}), \
         "the family that provably ran stopped being struck"
+
+
+def test_the_pruner_does_not_delete_the_evidence_that_evidence_was_lost(
+        tmp_path, monkeypatch):
+    """Codex round 9, High. `_prune_dispatch_dir` called `_dispatch_entries`
+    with no `lost` list, so a malformed entry was skipped silently, never
+    reached `protected`, and was deleted as an aged file. The next read then
+    found a clean directory, set no `unreadable`, and returned `dispatch` --
+    with whatever that file held gone and nothing left to say it ever
+    existed.
+
+    A reader that fails closed over a bad file is undone by a pruner that
+    removes it, so the rule has to reach the component that deletes things.
+
+    `DISPATCH_FILES_MAX` is lowered rather than writing two hundred files:
+    the claim is about what pruning protects, and a cap the test never
+    crosses would assert nothing at all."""
+    monkeypatch.setattr(crew_state, "DISPATCH_FILES_MAX", 3)
+    cfg = copy.deepcopy(PINNED)
+    cfg["dev"]["roles"]["developer"] = {"provider": "windsurf",
+                                        "model": "swe-1"}
+    root = crew_fixtures.make_repo(tmp_path, config=cfg, git=True)
+    here = crew_state.current_branch(str(root))
+    directory = os.path.join(str(root), *crew_state.DISPATCH_DIR)
+
+    # The oldest file in the directory, and the one nobody can read.
+    _seed_entry(root, role="developer", provider="codex",
+                model="gpt-6-astra", branch=here, at=1.0)
+    victim = sorted(os.listdir(directory))[0]
+    with open(os.path.join(directory, victim), "w", encoding="utf-8") as h:
+        h.write("{ half a file")
+    # Enough readable, newer entries that the cap bites. All on THIS branch
+    # and all one family, so the merged history dedups them to a single
+    # protected file and the rest are genuinely prunable -- and so the
+    # provenance below is `unknown` because a file was lost, not `stale`
+    # because the newest record names somewhere else.
+    for n in range(6):
+        _seed_entry(root, role="developer", provider="claude", model=None,
+                    branch=here, at=5000.0 + n)
+
+    crew_state._prune_dispatch_dir(str(root))  # pylint: disable=protected-access
+
+    assert victim in os.listdir(directory), \
+        "the pruner deleted the only sign that a record was lost"
+    record = crew_state.read_dispatch(str(root))
+    assert record.get("unreadable") == [victim], \
+        "the read stopped reporting the file the pruner spared"
+    assert crew_state.author_families(str(root), cfg)[1] == "unknown", \
+        "provenance was certified over a store that lost a file"
