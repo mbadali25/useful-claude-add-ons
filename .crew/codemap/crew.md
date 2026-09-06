@@ -11,6 +11,35 @@ CI fixes, `0.16.12` for the scrub rewrite described below. Both sites move
 together — `check_versions` compares "has the directory changed since the
 version was set", which `_verify/smoke.sh` does not run.)
 
+## Re-anchor provenance - b56d41f -> 3167721f, 2026-09-05
+
+The anchor moved because the exposure was re-checked, not because the sha
+looked old. Recording that here is the point: an anchor on its own cannot
+distinguish an earned bump from an unearned one, and a gating reviewer reading
+only "this note tested behind" is right to call the bump unearned. This section
+is what makes the difference checkable.
+
+`git diff --name-only b56d41f..3167721f -- <this note's cited paths>` returned
+`.claude-plugin/marketplace.json` and `plugin/PLUGINS.md`, plus the codemap
+files this note cites - notes citing each other, which is self-triggering and
+carries no information about crew.
+
+Re-checked against source, not inferred:
+
+- crew's version is `0.16.12` in **both** `.claude-plugin/marketplace.json` and
+  `plugin/crew/.claude-plugin/plugin.json`, and
+  `plugin/crew/.claude-plugin/plugin.json:2-3` really is where `name` and
+  `version` sit.
+- All 14 `path:line` anchors in this note resolve to an existing file with the
+  cited line in range. 9 of them did not before this pass: they were written
+  relative to `plugin/crew/hooks/scripts/`, which resolves by eye and cannot be
+  pasted into the diff command above.
+
+**Not re-verified at this anchor:** every DERIVED claim about `crew_state.py`'s
+internals below. Those files did not move in the diff window, so their claims
+were not re-read. If `plugin/crew/hooks/scripts/` appears in a future diff
+against this anchor, treat this section's guarantee as spent.
+
 ## Inventory — and a stale description found while checking it
 
 **DERIVED**, counted directly rather than trusted from any one description:

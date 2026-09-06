@@ -7,6 +7,28 @@ this repo (`CLAUDE.md`'s own rule — a second one anywhere under `plugin/`
 would look like a nested marketplace and `check_registration` treats it as an
 error).
 
+## Re-anchor provenance - b56d41f -> 3167721f, 2026-09-05
+
+`git diff --name-only b56d41f..3167721f -- <this note's cited paths>` returned
+`.claude-plugin/marketplace.json`, `README.md`, `plugin/README.md` and
+`plugin/PLUGINS.md`. It also listed files throughout `plugin/`, because this
+note backticks the prefix `./plugin/` in prose and the checker treated that as
+a cited directory - an over-report, not evidence.
+
+That diff was read, not merely counted. It is `obsidian-vault` moving `0.3.0`
+to `0.3.2` with a reworded `description`, plus the matching catalog rows: a
+content change to an existing entry. It does **not** change the registration
+web this note describes - no entry was added or removed, and neither install
+script moved.
+
+Re-checked against source: 29 entries total, 25 skills and 4 plugins, matching
+the table below and `check-marketplace.py`'s own output. All 11 `path:line`
+anchors resolve with the cited line in range.
+
+**Not re-verified at this anchor:** `check_menu_parity` and
+`check_group_parity`, which the last section already declares unverified, and
+the `_verify/smoke.sh` line references - none of those files moved.
+
 ## The registration web
 
 **DERIVED.** A skill (source path starting `./skills/`) and a plugin (source

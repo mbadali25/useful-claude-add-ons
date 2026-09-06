@@ -7,6 +7,24 @@ Three layers, fastest to slowest: `_verify/smoke.sh` (seconds), the direct
 one — see `marketplace-registration.md`), and `_verify/run-all.sh` (minutes).
 `.crew/verify.json` maps a changed path to which of these to run.
 
+## Re-anchor provenance - b56d41f -> 3167721f, 2026-09-05
+
+The anchor moved on evidence, and the evidence is narrow enough to write down.
+An `anchor:` line alone cannot show whether a bump was earned; this section can.
+
+`git diff --name-only b56d41f..3167721f -- <this note's cited paths>` returned
+`.claude-plugin/marketplace.json` and this directory's own notes. Nothing under
+`_verify/` or `scripts/` moved, and that is where every substantive claim below
+points.
+
+Re-checked against source: `python scripts/check-marketplace.py` exits 0 and
+prints `marketplace: 25 skills, 4 plugins` - the one claim here that the moved
+file could have invalidated. All 15 `path:line` anchors resolve with the cited
+line in range.
+
+**Not re-verified at this anchor:** the line-by-line behaviour of
+`_verify/smoke.sh`'s 10 checks. They did not move, so they were not re-read.
+
 ## `_verify/smoke.sh` — 10 checks, not 9
 
 **DERIVED.** The file's own header comment says *"9 checks, target is under
