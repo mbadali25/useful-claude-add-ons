@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@b56d41f
+anchor: useful-claude-add-ons@3167721f
 
 # Marketplace and registration
 
@@ -6,6 +6,28 @@ The root `.claude-plugin/marketplace.json` is the **only** marketplace file in
 this repo (`CLAUDE.md`'s own rule — a second one anywhere under `plugin/`
 would look like a nested marketplace and `check_registration` treats it as an
 error).
+
+## Re-anchor provenance - b56d41f -> 3167721f, 2026-09-05
+
+`git diff --name-only b56d41f..3167721f -- <this note's cited paths>` returned
+`.claude-plugin/marketplace.json`, `README.md`, `plugin/README.md` and
+`plugin/PLUGINS.md`. It also listed files throughout `plugin/`, because this
+note backticks the prefix `./plugin/` in prose and the checker treated that as
+a cited directory - an over-report, not evidence.
+
+That diff was read, not merely counted. It is `obsidian-vault` moving `0.3.0`
+to `0.3.2` with a reworded `description`, plus the matching catalog rows: a
+content change to an existing entry. It does **not** change the registration
+web this note describes - no entry was added or removed, and neither install
+script moved.
+
+Re-checked against source: 29 entries total, 25 skills and 4 plugins, matching
+the table below and `check-marketplace.py`'s own output. Every `path:line`
+anchor here resolves with the cited line in range.
+
+**Not re-verified at this anchor:** `check_menu_parity` and
+`check_group_parity`, which the last section already declares unverified, and
+the `_verify/smoke.sh` line references - none of those files moved.
 
 ## The registration web
 
@@ -26,14 +48,14 @@ them:
 **A recent change checked against this table rather than assumed to fit it:**
 crew 0.16.7 added three agents (`node-developer`, `power-automate-specialist`,
 `sharepoint-developer`) inside `plugin/crew/agents/`. `git diff --stat
-2b0972d..HEAD -- .claude-plugin/marketplace.json` shows exactly one entry
+2b0972d..b56d41f -- .claude-plugin/marketplace.json` shows exactly one entry
 touched, 2 lines changed: the existing `crew` row's `description` (agent
 count 14 -> 17) and `version` (`0.16.9` -> `0.16.10`) fields. No new
 `plugins` array entry was added, `plugin/PLUGINS.md` and `plugin/README.md`
 gained prose (a new specialists paragraph and a `### crew 0.16.10` /
 `### crew 0.16.7` changelog section) rather than new catalog rows, and both
 install scripts are byte-identical to the old anchor
-(`git diff --stat 2b0972d..HEAD -- scripts/install-prerequisites.sh
+(`git diff --stat 2b0972d..b56d41f -- scripts/install-prerequisites.sh
 scripts/install-prerequisites.ps1` produces no output). Total marketplace
 entries stayed at 29 (25 skills, 4 plugins) throughout.
 
