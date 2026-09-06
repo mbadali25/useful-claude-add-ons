@@ -1,0 +1,10 @@
+# Installed into $LOCALGPU_HOME/venv by the bootstrap. Never into system Python:
+# this machine's system interpreter has no numpy and is not ours to change.
+
+# Vector maths for the float16 index and the brute-force cosine scan.
+numpy>=1.26
+
+# The MCP SDK. Pinned below 3 on purpose: 2.x renamed FastMCP to MCPServer,
+# which is the API server.py is written against, and the next major may move it
+# again. No HTTP client here - ollama.py talks to Ollama over urllib.
+mcp>=2.1,<3

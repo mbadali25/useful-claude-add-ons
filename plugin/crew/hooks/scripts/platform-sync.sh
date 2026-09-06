@@ -9,5 +9,6 @@
 # elsewhere: a hook that WRITES config must not have two implementations that
 # disagree about what it writes.
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PY=$(command -v python3 || command -v python) || exit 0
+. "$DIR/_common.sh"
+PY=$(crew_py) || { echo "crew platform-sync: no usable python - the platform config will not be repaired" >&2; exit 0; }
 exec "$PY" "$DIR/crew_platform.py"

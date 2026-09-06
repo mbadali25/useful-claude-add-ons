@@ -45,6 +45,161 @@ expect() {  # $1 = wanted exit, $2 = command
   if [ "$got" = "$1" ]; then pass; else fail "want=$1 got=$got  $2"; fi
 }
 
+# --- jq: covered, but bounded ----------------------------------------------
+# guard.sh and promote-gate.sh both pipe INTO `jq` for CMD extraction when it
+# is on PATH (see guard.sh:8-9) - real, deliberate production behaviour, not
+# a test artifact. On a machine with chocolatey's jq (a native, non-MSYS
+# Win32 binary) this is also this suite's actual hang: `echo ... | jq ...`
+# leaks a Windows handle on every invocation from Git Bash. MSYS-native tools
+# do not - 120 back-to-back `echo | grep` calls in one bash session are
+# clean - but jq alone wedges the SAME session after roughly 25-45 piped
+# calls, and the wedge is session-wide: isolating each call in its own child
+# bash does not postpone it. This file drives 90+ gate invocations, which
+# crosses that line long before the suite finishes, and is why it has never
+# completed here (confirmed by bisecting: swapping in plain `grep`/`cat`
+# survives hundreds of calls; jq alone reproduces the exact hang and the
+# "OSError ... Invalid argument" symptom in isolation, with nothing from
+# guard.sh's own logic involved).
+#
+# guard.sh already has a real fallback for machines with no jq at all (the
+# `elif PY=$(crew_py)` branch, a few lines below the jq branch) - CMD
+# extraction is byte-identical either way, only the ~7-line CHOICE of
+# extractor differs. So: prove the jq extractor itself still works with a
+# small, fixed set of cases up front (well inside the failure threshold
+# above), then hide jq from PATH for the rest of this file. That forces
+# every remaining gate call through its already-real fallback branch, which
+# exercises every actual rule below without ever invoking jq again. A
+# developer's real shell, and Claude Code's actual hook launch, are
+# untouched - only the PATH these test subshells see is scrubbed.
+JQ_BIN=$(command -v jq 2>/dev/null || true)
+FULL_PATH="$PATH"
+if [ -n "$JQ_BIN" ]; then
+  JQ_DIR="$(cd "$(dirname "$JQ_BIN")" && pwd -P)"
+  # Compare RESOLVED directories, not the strings PATH happens to hold. On a
+  # merged-/usr Linux - Ubuntu, Debian, Fedora, and every GitHub runner - /bin
+  # is a symlink to /usr/bin, so PATH lists both and they are the same
+  # directory. Dropping the literal "/usr/bin" left "/bin" behind, jq stayed
+  # reachable, and this suite refused to run at all on CI while passing on a
+  # Windows machine where the two paths are genuinely distinct. Resolving each
+  # entry with `cd ... && pwd -P` is what makes the two spellings compare equal.
+  #
+  # Join with ":" BETWEEN fields, never after each one, and drop empty fields.
+  # `ORS=":"` appended a trailing separator, and a trailing - or any empty -
+  # PATH component means "the current directory" to every POSIX shell. So the
+  # scrub meant to HIDE jq silently put CWD on the PATH for the rest of this
+  # file, and `command -v jq` would then find any file named `jq` sitting in
+  # whatever directory the suite happened to be launched from - including one
+  # committed by a pull request, executed the moment a maintainer runs the
+  # suite, with the guard's real tool_input JSON on its stdin.
+  # SUBSTITUTE jq's directory, do not drop it. Dropping worked on Windows,
+  # where jq sits in its own chocolatey bin. On Linux jq lives in /usr/bin
+  # alongside python3, sh, grep and everything else the no-jq fallback needs,
+  # so removing that directory did not test the fallback - it removed the
+  # interpreter the fallback runs on, and the suite correctly refused with
+  # "no WORKING python remains".
+  #
+  # Instead, mirror the directory into a temp dir as symlinks, minus `jq`
+  # itself, and put the mirror where the original was. Everything else in that
+  # bin stays reachable at the same PATH position; only jq disappears.
+  # Exclude every spelling `command -v jq` can resolve, not just the bare
+  # name. On Windows the binary is `jq.exe` and chocolatey adds a `jq.bat`
+  # shim; mirroring those and skipping only "jq" left jq findable and the
+  # scrub silently did nothing - measured, not assumed. The list stays
+  # explicit so a `jq-1.7` or a `jqlang` beside it is still mirrored: those
+  # are not what a bare `jq` resolves to, and hiding them would be a
+  # different, unasked-for change.
+  JQ_SHADOW=$(mktemp -d) || { echo "FATAL: mktemp -d failed" >&2; exit 1; }
+  trap 'rm -rf "$JQ_SHADOW"' EXIT
+  for _scrub_f in "$JQ_DIR"/*; do
+    [ -e "$_scrub_f" ] || continue          # unmatched glob in an empty dir
+    _scrub_b=${_scrub_f##*/}
+    case $_scrub_b in
+      jq|jq.exe|jq.EXE|jq.bat|jq.BAT|jq.cmd|jq.CMD|jq.com|jq.ps1) continue ;;
+    esac
+    ln -s "$_scrub_f" "$JQ_SHADOW/$_scrub_b" 2>/dev/null || true
+  done
+  if PATH="$JQ_SHADOW" command -v jq >/dev/null 2>&1; then
+    echo "FATAL: the jq mirror still resolves jq - a spelling this loop does" >&2
+    echo "       not exclude. Add it to the case above." >&2
+    exit 1
+  fi
+
+  NOJQ_PATH=""
+  _scrub_oldifs=$IFS
+  IFS=":"
+  for _scrub_dir in $PATH; do
+    [ -n "$_scrub_dir" ] || continue
+    _scrub_real=$(cd "$_scrub_dir" 2>/dev/null && pwd -P) || _scrub_real="$_scrub_dir"
+    if [ "$_scrub_real" = "$JQ_DIR" ]; then
+      # First spelling of jq's dir becomes the mirror; later spellings of the
+      # same dir (a merged-/usr /bin -> /usr/bin symlink) are dropped, or they
+      # would put the real jq back.
+      case ":$NOJQ_PATH:" in
+        *":$JQ_SHADOW:"*) ;;
+        *) NOJQ_PATH="${NOJQ_PATH:+$NOJQ_PATH:}$JQ_SHADOW" ;;
+      esac
+      continue
+    fi
+    NOJQ_PATH="${NOJQ_PATH:+$NOJQ_PATH:}$_scrub_dir"
+  done
+  IFS=$_scrub_oldifs
+  unset _scrub_oldifs _scrub_dir _scrub_real _scrub_f _scrub_b
+else
+  NOJQ_PATH="$PATH"
+fi
+
+if [ -n "$JQ_BIN" ]; then
+  echo "== guard.sh: jq fast path (bounded - see PATH note above) =="
+  expect 2 'terraform destroy'
+  expect 2 'git push --force origin main'
+  expect 2 'psql -h prod-db.internal -c "select 1"'
+  expect 0 'git status'
+  expect 0 'npm test'
+  # From here on, every guard()/pgate() call in this file runs with jq
+  # hidden from PATH - see the note above for why.
+  # The scrub removes jq's whole DIRECTORY, not just the jq binary, because
+  # PATH has no finer granularity. On a layout that installs several tools into
+  # one bin (chocolatey does exactly this) that directory can also hold python -
+  # and guard.sh's no-jq fallback NEEDS python. Without it the guard prints
+  # "no jq and no python" and stands down, so every case below would assert
+  # against a guard that never ran and the suite would go green while testing
+  # nothing. Prove both halves of the scrub before trusting a single result.
+  if PATH="$NOJQ_PATH" command -v jq >/dev/null 2>&1; then
+    echo "FATAL: the PATH scrub did not hide jq ($JQ_BIN)." >&2
+    echo "       Every case below would take the jq fast path, so the fallback" >&2
+    echo "       this section exists to exercise would go untested." >&2
+    exit 1
+  fi
+  # Walk crew_py's OWN resolution order (python3, python, py) and then RUN the
+  # winner. Resolving is not enough: on Windows, `command -v python` succeeds on
+  # the App Execution Alias in WindowsApps, a stub that opens the Microsoft
+  # Store and is not an interpreter. crew_py hands that stub back, guard.sh's
+  # `$PY -c ...` produces nothing, CMD comes back empty, and `[ -z "$CMD" ]`
+  # exits 0 - the guard stands down and every must-BLOCK case below silently
+  # passes for the wrong reason. An existence check cannot see that; executing
+  # it can.
+  if ! PATH="$NOJQ_PATH" sh -c '
+    for c in python3 python py; do
+      command -v "$c" >/dev/null 2>&1 || continue
+      # FIRST match wins, exactly as crew_py does - it returns the first name
+      # that resolves and never tries the next one. So if this one does not
+      # execute, the guard is dead even though a working interpreter may sit
+      # further down the list; checking the rest would pass where crew_py fails.
+      "$c" -c "print(1)" >/dev/null 2>&1 && exit 0
+      exit 1
+    done
+    exit 1'; then
+    echo "FATAL: with jq's directory ($JQ_DIR) hidden, no WORKING python remains." >&2
+    echo "       guard.sh would report 'no jq and no python' and exit 0 - standing" >&2
+    echo "       down - so every must-BLOCK case below would pass against a guard" >&2
+    echo "       that never ran." >&2
+    exit 1
+  fi
+  export PATH="$NOJQ_PATH"
+else
+  echo "== guard.sh: jq fast path SKIPPED - no jq on PATH, already testing the fallback =="
+fi
+
 echo "== guard.sh: must BLOCK (exit 2) =="
 expect 2 'terraform apply -auto-approve'
 expect 2 'terraform destroy'
@@ -194,6 +349,19 @@ pexpect() {
 qa_row() {  # write an all-pass qa row for $1
   printf '| when | env | sha | smoke | regression | verify | by |\n|---|---|---|---|---|---|---|\n| now | qa | %s | pass | pass | pass | tester |\n' "$1" > "$ROW"
 }
+
+# Same jq note as above: promote-gate.sh has the identical jq/python-fallback
+# split at its own CMD-extraction line. Prove the jq branch here too, with a
+# couple of cases, then go straight back to the scrubbed PATH for the rest of
+# this section - PATH is already scrubbed from the guard.sh section above; this
+# just restores it for these two calls and puts it back down immediately after.
+if [ -n "$JQ_BIN" ]; then
+  PATH="$FULL_PATH"
+  pexpect 0 'npm test'               'jq fast path: unrelated command must pass straight through'
+  pexpect 0 './scripts/deploy.sh qa' 'jq fast path: qa has no requires and an explicit rollback:none+reason - allowed'
+  rm -f "$PD/.crew/.deploy-in-flight"
+  PATH="$NOJQ_PATH"
+fi
 
 pexpect 0 'npm test'                 'an unrelated command must pass straight through'
 pexpect 0 './scripts/deploy.sh qa'   'qa has no requires and an explicit rollback:none+reason - allowed'
@@ -386,6 +554,10 @@ FIELDS=$(awk -F'\t' 'NF!=3 {c++} END {print c+0}' "$SKIPS")
 rm -f "$PD/.crew/incident.json" "$SKIPS" "$PD/.crew/.deploy-in-flight"
 
 unset CLAUDE_PROJECT_DIR
+
+# jq is no longer on the leaking path here - nothing below this line pipes
+# into it, so put PATH back to what the rest of this shell actually had.
+PATH="$FULL_PATH"
 
 echo "== claude-md-audit.sh =="
 A="$PLUGIN/skills/crew-setup/scripts/claude-md-audit.sh"

@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "localgpu": {
+      "type": "stdio",
+      "command": "{{LOCALGPU_PYTHON}}",
+      "args": ["{{LOCALGPU_PLUGIN_ROOT}}/mcp/server.py"],
+      "env": {
+        "LOCALGPU_HOME": "{{LOCALGPU_HOME}}"
+      }
+    }
+  }
+}

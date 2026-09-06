@@ -744,7 +744,7 @@ MENU_NAME=(
   "SkillUI (npm) + Playwright/Chromium - extract a design system from a URL"
   "Strix AI pentesting CLI (needs Docker + an LLM API key)"
   "Obsidian desktop + claude-obsidian + obsidian-skills plugins"
-  "This repo's plugins: crew, gizmoduck, obsidian-vault (agents, commands, hooks)"
+  "This repo's plugins: crew, gizmoduck, localgpu, obsidian-vault (agents, hooks)"
   "graphify code graph (uv tool install graphifyy; per-repo, not global)"
   "Microsoft MCP servers (mcp-servers/): Graph, Intune, Office 365 user/admin - needs az login or tenant credentials"
 )
@@ -852,16 +852,19 @@ unset _i
 PLUGIN_KEYS=(
   "crew"
   "gizmoduck"
+  "localgpu"
   "obsidian-vault"
 )
 PLUGIN_NAME=(
   "crew                    - Virtual dev team: 11 agents, 21 commands, safety hooks"
   "gizmoduck               - Nuclei scans: diff, triaged reports, SDP tickets. No hooks"
+  "localgpu                - Local models via Ollama: index, search, ask. MCP, no hooks"
   "obsidian-vault          - Multi-vault memory: gardener/reflector agents, bridge+guard hooks"
 )
 PLUGIN_SPEC=(
   "crew@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons"
   "gizmoduck@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons"
+  "localgpu@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons"
   "obsidian-vault@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons"
 )
 PLUGIN_STATE=()
@@ -926,7 +929,7 @@ GROUP_LABEL=(
   "This repo's marketplace + %s of %s skills  >"
   "Team plugins: %s of %s (superpowers, frontend-design, excalidraw)  >"
   "Community marketplaces + %s of %s plugins  >"
-  "This repo's plugins: %s of %s (crew, gizmoduck, obsidian-vault)  >"
+  "This repo's plugins: %s of %s (crew, gizmoduck, localgpu, obsidian-vault)  >"
 )
 GROUP_TITLE=(
   "Pick individual skills from this repo"
@@ -1246,8 +1249,12 @@ picker_draw() {
   [ "$PICK_TOP" -lt 0 ] && PICK_TOP=0
 
   picker_erase
-  printf '\033[36m  %s\033[0m\n' "$(pick_fit "$PICK_TITLE" "$width")"
-  printf '\033[36m  %s\033[0m\n' "$(printf '%*s' "${#PICK_TITLE}" '' | tr ' ' '-')"
+  local title
+  title="$(pick_fit "$PICK_TITLE" "$width")"
+  printf '\033[36m  %s\033[0m\n' "$title"
+  # Sized from the fitted title, not the raw one - a clipped title with an
+  # unclipped underline is exactly the wrap this function exists to prevent.
+  printf '\033[36m  %s\033[0m\n' "$(printf '%*s' "${#title}" '' | tr ' ' '-')"
   for (( i=PICK_TOP; i<PICK_TOP+avail; i++ )); do
     mark=" "; cursor="  "
     [ "${PICK_STATE[$i]}" -eq 1 ] && mark="x"

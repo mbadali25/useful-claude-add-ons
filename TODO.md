@@ -108,3 +108,212 @@ it; the specific check was not located. Either find it and cite it, or write it.
   `claude-obsidian-setup/` (48), `vault-automation/` (22).
 - **`/crew:diagram`** — deferred until the codemap covers `plugin/crew`, so the
   diagram does not need redrawing immediately.
+
+## Found during the 0.16.8 merge review, deferred as out of scope
+
+### `crew_py` can hand back a Python that is not a Python
+
+`plugin/crew/hooks/scripts/_common.sh:38-43`. `crew_py()` returns the first of
+`python3`, `python`, `py` that `command -v` resolves, and never checks that it
+runs. On Windows, `command -v python3` succeeds on the App Execution Alias in
+`%LOCALAPPDATA%\Microsoft\WindowsApps` — a stub that opens the Microsoft Store
+and is not an interpreter. `crew_py` hands that stub to `guard.sh`, whose
+`$PY -c ...` then produces nothing, so `CMD` comes back empty and
+`[ -z "$CMD" ] && exit 0` fires: **the command guard stands down silently, on
+exactly the platform where it has already shipped broken once.** A working `py`
+sitting further down the list is never reached, because the first match wins.
+
+Confirmed by experiment, not inferred: with jq hidden and `C:\Python\314`
+removed from PATH, `plugin/crew/hooks/scripts/_test/run-tests.sh` goes from
+`128 passed, 0 failed` to `77 passed, 51 failed` — the must-BLOCK cases stop
+blocking. `py -c "print(1)"` works fine in that same shell; `python3` is the
+stub that wins.
+
+Not fixed here on scope discipline: this is pre-existing in `_common.sh`, not
+introduced by the branch under review, and `crew_py` is called from several
+hooks — changing it is its own ticket with its own must-block/must-allow
+regression cases, per the CLAUDE.md rule for anything that can block. The
+`_test/run-tests.sh` guard added in this branch now *detects* the condition and
+fails loudly, so the suite can no longer go green against a stood-down guard;
+the underlying resolver is still wrong.
+
+Fix shape when it is picked up: have `crew_py` execute each candidate
+(`"$c" -c "print(1)"`) and return the first that actually runs, rather than the
+first that resolves. Add a must-block case that runs with the stub first on
+PATH.
+
+### `CHANGELOG.md`'s "0.16.8: the machine-global config..." entries are mislabeled
+
+`CHANGELOG.md:420` and five more at 469-650, all `crew 0.16.8: ...`. That
+content actually shipped as **0.16.6**: `git show abe639ce:plugin/crew/.claude-plugin/plugin.json`
+reads `"version": "0.16.6"`, and `abe639ce` (PR #65) is a real ancestor of
+`origin/main` — so 0.16.6 is what anyone installing from `main` at that commit
+actually got. This branch's own history even carried an intermediate state at
+`4b92b518` (an earlier merge of `origin/main`) where `plugin.json` briefly read
+**0.16.7** for the same content, before a later local commit moved on to
+`0.16.8` for unrelated work (the PATH-scrub fix) and, at some point since, a
+local edit relabeled this already-shipped entry's text from 0.16.6 to 0.16.8.
+
+Found during the `origin/main` merge that brought in crew 0.16.7 (three
+specialists, four dispatch-guard defects) and bumped this branch to 0.16.10.
+The rule applied throughout that merge was: relabel a still-unreleased
+CHANGELOG entry to the version it actually ships under; never relabel one
+that already shipped. By that rule, 0.16.8 here is the mistake the rule
+forbids — it should read 0.16.6.
+
+Not fixed in that merge commit, on scope discipline: this divergence predates
+the merge, is already committed, and spans ~200 lines of long-shared
+CHANGELOG text that git did not flag as conflicting. `CLAUDE.md` is explicit
+that renumbering historical prose outside the change at hand falsifies the
+record in the other direction, and correcting it *approximately* inside an
+unrelated merge commit is how a record gets quietly worse rather than better.
+
+Fix shape when it is picked up: change the six `0.16.8:` labels at the lines
+above back to `0.16.6:`, and confirm no other file (`plugin/UPDATE.md`,
+`README.md`, `plugin/README.md`) repeats the same mislabel via its
+`scripts/sync-updates.py` mirror.
+
+## Moved to CLAUDE.md: `pathlib.write_text` converts a `.sh` to CRLF on Windows
+
+Applied to `CLAUDE.md`'s Landmines list with the user's explicit yes. Kept as a
+pointer rather than deleted outright, so anyone who remembers reading it here
+finds where it went instead of concluding it was dropped.
+
+## Nit: the request body is translated twice per request
+
+`plugin/localgpu/cli/anthropic_proxy.py`. `check_fits_context` (via
+`estimate_prompt_tokens`) and `to_ollama_request` each independently call
+`to_ollama_messages`/`to_ollama_tools` on the same body, so the translation runs
+twice per request rather than once and reused.
+
+Both functions are pure and in-memory with no I/O, so this is discarded work, not
+a correctness problem. Explicitly **not** worth blocking a release on and not
+worth a version bump of its own — fold it into whatever next has a reason to
+touch that file. Recorded because it becomes invisible the moment the session
+that found it ends.
+
+Note for whoever does fold it in: `check_fits_context(body, num_ctx)` at
+`:1083`/`:1093` passing the raw `body` is **correct** as written, because
+`estimate_prompt_tokens` translates internally. Changing those call sites to pass
+`to_ollama_request(...)`'s output would double-translate and measure the wrong
+thing. The obvious-looking fix is a bug.
+
+## Correction: nothing under `.crew/` is committed, and one commit message says otherwise
+
+`.gitignore:277` ignores `.crew/` deliberately, with a stated rationale —
+`obsidian.vaultPath` and `boardDir` are absolute paths valid on one machine, and
+`pm.authority` is a trust decision a clone should not inherit. That is correct
+and should stay. But three consequences were not obvious and bit this session:
+
+**1. `ae1c92ee`'s commit message is wrong.** It reads "Record both round-3 review
+passes, and rebuild the code graph". The `.crew/metrics.md` append it describes
+happened on disk and is still there, but `git add -A` silently skipped it as an
+ignored path, so the commit contains only `graphify-out/graph.json` and
+`plugin/localgpu/cli/anthropic_proxy.py`. The message claims a file the commit
+could not have held. Not amended, because the commit is several deep and other
+lanes have read it; recorded here instead so the history is not trusted blindly.
+
+**2. The `/crew:review` skill's stated assumption is false in this repo.** It says
+`.crew/verify.json` "is committed and travels between machines", and reasons from
+that when deciding whether a rule naming an uninstalled agent is a gap. Here it
+travels nowhere. A rule added on one machine is invisible on every other.
+
+**3. Half of the CLI-suite gate fix does not travel.** `_verify/run-all.sh` now
+runs `plugin/localgpu/cli/_test` and that change IS committed, so the gate is
+fixed for everyone. The matching `.crew/verify.json` rule that maps
+`plugin/localgpu/cli/**` to `run-all.sh` is local-only. The important half
+travels; the routing half does not, and a fresh clone gets it back from
+`/crew:init`.
+
+**4. The codemap is local-only too.** `.crew/codemap/` now holds four subsystem
+files and `crew_state.py` counts `knowledge.subsystems: 4` on this machine — but
+a fresh clone reads 0 again. That is by design, not a defect: a clone runs
+`/crew:init`. Worth knowing before anyone treats the codemap as a shipped
+artifact.
+
+If the intent is for `verify.json` specifically to travel while the rest of
+`.crew/` stays machine-local, that is a one-line negation in `.gitignore`
+(`!.crew/verify.json`) plus a decision about whether its `agents` lists are
+portable. Not doing it unasked — it changes what a clone inherits.
+
+## Landmine candidate: an 8-character anchor can never match, and fails silently
+
+**Staged here for a human to approve into `CLAUDE.md`'s Landmines list**, the same
+way the `write_text` CRLF entry was. An agent asking for a project-instruction
+change is not authorisation. Content below is ready to move verbatim.
+
+`crew_state.py` decides whether a codemap or diagram is stale by comparing its
+recorded anchor against `git rev-parse --short=7 HEAD` (`read_knowledge` and
+`read_diagrams`). But the anchor patterns — `_ANCHOR_RE` and
+`_DIAGRAM_ANCHOR_RE` — both accept `[0-9a-f]{7,40}`. So an anchor written with
+`--short=8` **parses perfectly and then never equals HEAD**. There is no error,
+no warning, and no hint in the output; every affected map or diagram simply
+reports `behind` forever, including immediately after someone "refreshes" it.
+
+The tell is that *all* of them flip to `behind` at once, right after the edit
+that was supposed to fix them — which reads as the refresh having failed rather
+than the anchor format being wrong. Write anchors with
+`git rev-parse --short=7`.
+
+**Related, and not a bug to fix:** `graphStale` and `diagramsStale` are
+structurally unsatisfiable for any *tracked* artifact. The anchor names a commit,
+and committing the file advances HEAD past the commit it names, so a committed
+anchored artifact can never report itself current. Re-anchoring makes another
+commit and reproduces the condition — there is no fixed point. The codemap under
+`.crew/` escapes this only because it is gitignored, so re-anchoring it creates no
+commit. Treat both triggers as artifacts; a diagram's anchor honestly records the
+commit it was **drawn from**, which is what a provenance header is for.
+
+## Briefing style: state claims as claims, and say that refuting them is a win
+
+Three times in one session the most valuable thing a subagent did was refute a
+confident claim in its own brief:
+
+- The codemap lane checked "a user who tries to lift an unliftable entry is told,
+  not silently ignored" and found `load_config` dropped it in silence — which
+  became the localgpu 0.1.10 fix.
+- `qa-proxy` refuted the framing that B1/B2/F1/F5 were one design error, and the
+  correction carried a hard ordering constraint: fixing the clamp before the
+  estimator would have capped every reply while no test went red.
+- The diagram lane checked "`/localgpu:setup` is a six-step flow" against
+  `setup.md:7`, which says "Seven steps, in order". `bootstrap.sh` is the one with
+  six.
+
+In all three the brief was confident and wrong, and the lane caught it only
+because it went to source instead of transcribing. Make that deliberate rather
+than lucky: in any lane brief, mark which statements are verified and which are
+claims to check, and say explicitly that refuting the brief is a valid and valued
+outcome. A lane that believes its brief is a lane that can only find the bugs you
+already suspected.
+
+## The installer menu undersells crew by six agents and three commands
+
+`scripts/install-prerequisites.sh:859` and `scripts/install-prerequisites.ps1:843`
+both read:
+
+```
+crew                    - Virtual dev team: 11 agents, 21 commands, safety hooks
+```
+
+Actual on disk after the 0.16.10 merge: **17 agents, 24 commands.** The two
+scripts agree with each other, so the matched-pair rule is satisfied — they are
+consistently wrong, which is why no check catches it. `check-marketplace.py`
+compares the *menu keys* between the two scripts, not the descriptive text, and
+nothing compares that text against the plugin it describes.
+
+This is the first thing a user reads when deciding what to install, and it
+undersells the plugin by a third.
+
+**Not fixed in this PR deliberately, and the reason is process rather than
+scope.** `CLAUDE.md` requires that after a change to either install script,
+`scripts/_test/drift-detection.sh` is run by hand — it cannot run in CI — and the
+README's install URLs, which are pinned to a commit SHA, are re-pinned. PR #67
+has just been brought current with a verified drift run against its exact tip.
+A one-line label fix would invalidate that run and buy another manual pass plus a
+re-pin, for text that is wrong but harmless.
+
+Fix in a follow-up alongside the other deferred items. When it is done, consider
+whether the check that would have caught it is worth writing: the counts are
+derivable from `ls plugin/crew/agents/*.md` and `commands/*.md`, so a smoke check
+comparing the installer's advertised numbers against the directory contents is
+about ten lines and would cover every plugin's menu line, not just crew's.

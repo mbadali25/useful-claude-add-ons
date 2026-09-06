@@ -57,6 +57,48 @@ _DONE_RE = re.compile(
     re.IGNORECASE,
 )
 
+# The other shape /crew:ticket writes: a table row, not prose --
+# `T-#### | open | <risk> | <repos> | <title>` (commands/ticket.md:37), with
+# leading/trailing pipes tolerated. `_DONE_RE` cannot see this at all: it
+# requires a line to START with a bullet/checkbox/keyword-colon, and a table
+# row starts with `|` (or the bare ticket key). Widening `_DONE_RE` to accept
+# a bare `done` would reopen the exact false positive its colon exists to
+# prevent -- `- Merged conflicts remain in T-8` is open work that happens to
+# lead with a status word.
+#
+# In prose, position is not the discriminator. In a table it is the ONLY
+# discriminator: the status is a defined cell, so a keyword needs no colon to
+# be a label there -- it already is one. So this checks one specific cell,
+# never the row text as a whole, which is what keeps a `done` sitting in the
+# TITLE cell of an open row from closing it.
+_TABLE_DONE_WORDS = frozenset({
+    "done", "closed", "merged", "shipped", "complete", "completed",
+})
+
+
+def _table_status(line, ticket_text):
+    """Whether `line` is a finished INDEX.md table row for `ticket_text`.
+
+    Returns True/False when `line` is a table row naming this ticket, or
+    None when it isn't a table row at all -- the caller then falls back to
+    the prose rule in `_DONE_RE`.
+
+    A row needs at least two `|` separators to count as tabular; a prose
+    line with a single stray pipe is not mistaken for one. The ticket's own
+    cell is found by re-matching `_TICKET_RE` against each cell rather than
+    a substring test, so a ticket key that happens to appear inside a later
+    cell (e.g. the title) is never picked over the real one. The status is
+    then read from the very next cell -- and only that cell.
+    """
+    if line.count("|") < 2:
+        return None
+    cells = [c.strip() for c in line.split("|")]
+    for index, cell in enumerate(cells):
+        found = _TICKET_RE.search(cell)
+        if found and found.group(1) == ticket_text and index + 1 < len(cells):
+            return cells[index + 1].strip().lower() in _TABLE_DONE_WORDS
+    return None
+
 
 def read_text(path):
     """Return the file's text, or None if it cannot be read for any reason.
@@ -160,7 +202,10 @@ def read_work(root):
         found = _TICKET_RE.search(line)
         if not found:
             continue
-        if _DONE_RE.search(line):
+        table_done = _table_status(line, found.group(1))
+        if table_done is True:
+            continue
+        if table_done is None and _DONE_RE.search(line):
             continue
         ticket = found.group(1)
         break

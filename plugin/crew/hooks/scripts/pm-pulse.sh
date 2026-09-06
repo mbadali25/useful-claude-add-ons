@@ -11,5 +11,6 @@
 # the subshell's, and a swallowed 2 reads to Claude Code as a non-blocking
 # error, which means the PM's findings are dropped on the floor.
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PY=$(command -v python3 || command -v python) || exit 0
+. "$DIR/_common.sh"
+PY=$(crew_py) || { echo "crew pm-pulse: no usable python - the PM's findings, including blocking ones, will not run" >&2; exit 0; }
 exec "$PY" "$DIR/pm_pulse.py"

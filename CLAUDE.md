@@ -1,173 +1,99 @@
 # CLAUDE.md
 
-Instructions for Claude Code working in this repository.
+A Claude Code **marketplace**. Each directory under `skills/` is an installable plugin holding one
+`SKILL.md`; each under `plugin/` is a full plugin that may also bundle subagents, commands and
+hooks. Both register in `.claude-plugin/marketplace.json` — the root's is the **only** one here.
 
-## What this repo is
+## Commands - build, test, verify, regression, promote
 
-A Claude Code **marketplace**. Every directory under `skills/` is an installable plugin
-holding a single `SKILL.md`; every directory under `plugin/` is a full plugin that may
-also bundle subagents, slash commands, and hooks. Both are registered in
-`.claude-plugin/marketplace.json`. Two bootstrap scripts under `scripts/` install them,
-plus the team's other marketplaces and tooling, onto a fresh machine.
+No build. `python3 scripts/check-marketplace.py` is the gate: every registration rule, both install
+scripts being a matched pair, hook quoting and exit codes, and version drift. Run it before pushing.
+Per-path commands and promotion steps live in `.crew/verify.json` — that file is the mechanism, this
+one is the judgment. Do not restate its commands here.
 
-## Documentation rules — not optional
+## Where things are - entrypoints, logic, DO NOT TOUCH
 
-### 1. Install scripts change → update `README.md`
+- `scripts/install-prerequisites.{sh,ps1}` — a matched pair. Change one, change the other.
+- `scripts/_test/`, `plugin/crew/hooks/scripts/_test/` — the suites. Each builds throwaway fixtures
+  and must never touch real config or install anything.
+- `graphify-out/`, `node_modules/` — generated. Do not hand-edit.
 
-Any edit to `scripts/install-prerequisites.sh` or `scripts/install-prerequisites.ps1`
-must be reflected in `README.md` in the same change. That means, at minimum:
+## Scope discipline - fix the ticket, not what you notice nearby
 
-- The numbered **menu table** (item number, label, whether it's on by default).
-- The **"What each item actually installs"** table.
-- The **switch table** if you added, renamed, or removed a command-line flag.
-- Any per-item prose that names an item by number — the numbers shift whenever an item
-  is added or removed.
+Registering an entry means updating **every** place in the same commit — marketplace entry, catalog
+row, `plugin/PLUGINS.md` for plugins, and both install scripts in the same order with the same text.
+A partial registration is worse than none: the checker fails and nobody can tell which half was
+intended. Renaming or removing means the same places, in reverse.
 
-Also update `INSTALLATION.md` (it documents the same menu in more detail) and add a
-`CHANGELOG.md` entry.
+## Stop and ask - the conditions that should halt work
 
-The two scripts are a **matched pair**: the menu keys, their order, and their default
-flags must be identical between them, or `--select 3,7` means different things on
-Windows and Linux. Change one, change the other.
+- **Content change with no `version` bump.** `claude plugin update` compares the *declared version*,
+  not contents. Ship without the bump and every machine that already installed it keeps the old copy
+  forever, reporting "already at the latest version". Nothing in the repo looks wrong; the bug
+  exists only on other people's machines. A plugin with its own `plugin.json` bumps in both.
+- **Adding a hook.** It runs whether or not Claude agrees with it, so a plugin registering one
+  **defaults to OFF in the menu**. One that can *block* needs a committed regression suite with
+  must-block and must-allow cases, sabotage-tested: reintroduce a bug it should catch and confirm
+  the suite goes red. Two of `crew`'s guard bugs shipped past review and were caught only by that.
+- **A `marketplace.json` inside a plugin directory** (makes it look like a second marketplace), or
+  **deleting or renaming a registered entry.** Ask first.
 
-The README's one-liner install URLs are pinned to a commit SHA. After merging a change
-to either script to `main`, run `git rev-parse HEAD` and re-pin both URLs.
+## Promotion: development -> qa -> production
 
-### 2. Changing a skill or plugin → bump its `version`
+Nothing is deployed; "production" means merged to `main` and installable. Two steps no script
+enforces: `scripts/_test/drift-detection.sh` drives the real `claude` CLI so CI cannot run it — run
+it by hand before pushing a change to the plugin update path; and the README's install URLs are
+**pinned to a commit SHA** — after merging a change to either install script, `git rev-parse HEAD`
+and re-pin both.
 
-`claude plugin update` decides whether to re-copy a plugin by comparing the **declared
-version**, not its contents. Editing anything under `skills/<name>/` or `plugin/<name>/`
-without bumping that entry's `version` in `.claude-plugin/marketplace.json` means every
-machine that already installed it keeps the old copy forever — the CLI reports "already
-at the latest version" and copies nothing. Nothing about the repo looks wrong; the bug
-only exists on other people's machines.
+## Reporting - errors verbatim, say what you did NOT verify
 
-So: **content change → version bump, in the same commit.** A plugin that carries its own
-`.claude-plugin/plugin.json` (`crew`) has to be bumped in both, to the same value.
+Quote failures exactly; never summarise a stack trace. Name which suites ran and which did not.
+`drift-detection.sh` is skipped by default — say so rather than implying the gate is green.
 
-`scripts/check-marketplace.py` enforces this and runs in CI. It walks the history of
-`marketplace.json` to find where each version was last set and fails if that plugin's
-files have changed since. It also checks every registration rule below, so run it before
-pushing:
+## Memory - where the code map and runbooks live
 
-```bash
-python3 scripts/check-marketplace.py
-```
+Two maps, both **in this repo**, both tracked. No Obsidian vault — the graph used to be exported to
+one, which meant the map lived on one machine and reached nobody who cloned.
 
-The install scripts detect the same condition at runtime and report it rather than
-claiming the plugin is current. The suites for all of this live in `scripts/_test/`:
+- **`.crew/codemap/`** — the prose map: one file per subsystem, every claim marked DERIVED (with a
+  `path:line` to re-check) or JUDGEMENT, each carrying an `anchor:` commit. `INDEX.md` is the table
+  of contents. Refresh with `/crew:onboard --refresh <subsystem>`; **anchor with `git rev-parse
+  --short=7`** — `crew_state.py` compares at 7 while the regex accepts 7-40, so an 8-char anchor
+  parses fine and then never matches.
+- **`graphify-out/graph.json`** — the mechanical graph. Refresh with `graphify . --no-viz
+  --code-only`; a post-commit hook does it automatically.
 
-| Script | Covers | Needs |
-|---|---|---|
-| `scripts/check-marketplace.py` | every registration rule here, version drift, and the two install scripts being a matched pair | python3, git |
-| `scripts/check-powershell.ps1` | the `.ps1` parses **and** every `Verb-Noun` call resolves | pwsh |
-| `scripts/_test/drift-detection.sh` | the plugin update path, against a throwaway marketplace | the `claude` CLI |
-| `scripts/_test/menu-groups.sh` | the sub-picker catalogs, `--<group>` flags, parent implication, and once-per-marketplace registration | bash |
+An `anchor:` behind HEAD means *re-check the claims*, not that they are wrong. Do the per-path check
+first — `git diff --name-only <anchor>..HEAD -- <paths the map documents>` — because a repo-wide
+version bump moves every anchor without invalidating a word. Empty output means current despite the
+lag. The same comparison for `graphify-out/` and `docs/diagrams/` can never come out current: they
+are tracked, so committing one advances HEAD past the sha it records.
 
-All but the drift suite run in CI (`.github/workflows/marketplace.yml`). That one drives
-the real Claude Code CLI, which a runner does not have, so run it by hand before pushing
-a change to the plugin update path. Every suite builds throwaway fixtures, uses
-`--dry-run` or a stub `claude`, and never touches the real config or installs anything.
+Decisions in `docs/adr/`; the rest of `.crew/` is machine-local and stays ignored.
 
-`check-powershell.ps1` exists because the `.ps1` is Windows-only end to end: a call to a
-function that does not exist parses cleanly, is never reached on Linux, and dies on the
-one platform that matters. That is not hypothetical - a mis-named picker call shipped
-exactly that way and killed every sub-picker on Windows.
+## Landmines - every one of these has already shipped broken
 
-### 3. New skill under `skills/` → update `README.md`
+- **`pwsh` is not on Git Bash's PATH here.** Name it absolutely. A bare `pwsh` fails as "command
+  not found" and the gate reports that as a *failed check*, not a missing tool.
+- **Git Bash ships without `python3`.** Resolve `python3`/`python`/`py` and fail loudly on stderr
+  rather than suppressing the error and exiting 0.
+- **A bare hook `command` goes to Git Bash on Windows**, not PowerShell — set `shell: "powershell"`
+  and register each event once per flavour. `crew` shipped a release where the guard stood down on
+  Windows instead, so it blocked nothing there.
+- **Branch on the tool, not the OS.** A `Bash` call is bash syntax even on Windows; PowerShell rules
+  get it wrong both ways. A `.ps1` that `hooks.json` never references is dead code.
+- **Nothing may bypass `pick_fit` / `Format-PickerLine`.** Clipping is degradation; a line that
+  *wraps* throws off the cursor-up redraw count and smears the menu over what was above it.
+- **Both install scripts are idempotent** — a new step needs a detection branch reporting "already
+  installed".
+- **`pathlib.write_text` converts a `.sh` to CRLF on Windows** — it is text mode, so every `\n`
+  becomes `\r\n` and the script dies on its shebang as `bad interpreter: ...^M`. Pass
+  `newline="\n"`. `.gitattributes`' `*.sh text eol=lf` does *not* save you: it governs what git
+  stores and what a checkout produces, and the damage lands after checkout, in the working tree
+  bash actually executes. Worse, the obvious check lies — with `core.autocrlf=true`,
+  `git show <rev>:<path>` renders CRLF whatever the blob holds, so grepping its output reports the
+  same count for a clean file and a broken one. Measure the worktree with `od -c` or `file`(1).
+  Repair with `git checkout -- <path>`, then confirm the same way.
 
-Adding a directory to `skills/` is not finished until it is registered in all four
-places:
-
-1. `.claude-plugin/marketplace.json` — `name`, `source` (`./skills/<name>`),
-   `description`, `version`.
-2. `skills/README.md` — a row in the overview table (all five columns).
-3. `README.md` — the same row, inside the `<!-- BEGIN skills/README.md -->` block, plus
-   the skill count wherever it appears as a number.
-4. Both install scripts — `SKILL_KEYS` / `SKILL_NAME` in the `.sh`, `$script:SkillCatalog`
-   in the `.ps1`. Keep the two in the same order, with the same text.
-
-Renaming or removing a skill means the same four places, in reverse.
-
-### 4. New plugin under `plugin/` → five places, plus two extra rules
-
-A directory under `plugin/` is a full Claude Code plugin, not a skill. It carries the
-skills' registration rule with one more place bolted on — `plugin/` has both a catalog
-(`README.md`) and a detail doc (`PLUGINS.md`), where `skills/` has only the catalog.
-Register it in all five, with `source` pointing at `./plugin/<name>`:
-
-1. `.claude-plugin/marketplace.json`.
-2. `plugin/README.md` — a row in the overview table (all five columns).
-3. `plugin/PLUGINS.md` — a section with the full component breakdown: every command,
-   agent, bundled skill, and hook, and what starts running the moment it is enabled.
-4. `README.md` — the same row, inside the `<!-- BEGIN plugin/README.md -->` block, plus
-   the plugin count wherever it appears as a number.
-5. Both install scripts — `PLUGIN_KEYS` / `PLUGIN_NAME` in the `.sh`,
-   `$script:PluginCatalog` in the `.ps1`.
-
-Three rules that apply to plugins and not to skills:
-
-- **A plugin that registers hooks defaults to OFF in the menu.** A hook is not
-  advisory — it runs whether or not Claude agrees with it — so a bootstrap run must not
-  add one to someone's machine without the box being ticked.
-- **Think about the shell before registering a hook.** A `hooks.json` entry's
-  `shell` field (`"bash"` or `"powershell"`) is documented and Claude Code does read
-  it: setting `"powershell"` runs that entry via PowerShell on Windows, without
-  needing `CLAUDE_CODE_USE_POWERSHELL_TOOL`, since hooks spawn the interpreter
-  directly. `crew` shipped a release where the guard stood down on Windows instead of
-  being registered this way, so the command guard blocked nothing there — see
-  `plugin/crew/hooks/hooks.json` and `plugin/crew/hooks/scripts/_common.sh` for the
-  fixed pattern: each event registered once per flavour, `shell: powershell` on the
-  PowerShell side.
-  - **What is not configurable is the shell form's default.** A bare `command`
-    string (no `args`) is passed to a shell: `sh -c` on macOS/Linux, **Git Bash** on
-    Windows, or PowerShell only when Git Bash isn't installed. A `bash` resolved from
-    some non-MSYS parent process is not necessarily what actually runs it — verify on
-    the machine you're targeting rather than assuming.
-  - **Double-quote `${CLAUDE_PLUGIN_ROOT}` in every shell-form command.** In a
-    `shell: powershell` entry the placeholder is substituted as a PowerShell
-    *environment reference*, not as a literal path, and PowerShell does not expand
-    anything inside single quotes — so `& '${CLAUDE_PLUGIN_ROOT}/x.ps1'` hands `&`
-    the token verbatim and every one of those hooks dies with "is not recognized as
-    a name of a cmdlet". `& "${CLAUDE_PLUGIN_ROOT}/x.ps1"` is the fix, and the same
-    quoting keeps the bash side working under a home directory with a space in it.
-  - **End every PowerShell hook command with `; exit $LASTEXITCODE`.** `& script.ps1`
-    inside PowerShell's `-Command` does not propagate the script's exit code: a
-    guard's `exit 2` comes back as 1, which Claude Code reports as a non-blocking
-    error and then runs the command anyway. Exec form (`args`) does not have this
-    problem, but it also ignores `shell`, so a `powershell.exe` entry then fails to
-    spawn on macOS and Linux instead of being skipped. `scripts/check-marketplace.py`
-    enforces both this and the quoting rule above.
-  - **Branch on the tool, not the OS.** A hook that judges a *command* (a `PreToolUse`
-    guard) must dispatch on `tool_name`, either via separate matchers per tool (each
-    with its matching `shell` field) or from inside one script to its twin: a `Bash`
-    tool call is bash syntax even on Windows, and judging it with PowerShell rules
-    gets it wrong in both directions.
-  - **A hook that judges no command still needs a real answer for both shells** —
-    either register both flavours (one is expected to fail on a given machine, which
-    is fine) or dispatch from inside a single registered script. A `.ps1` sitting on
-    disk that `hooks.json` never references is dead code either way.
-  - **Assume nothing about the interpreter.** Git Bash ships without `python3`. Resolve
-    `python3`/`python`/`py` and fail loudly on stderr rather than suppressing the error
-    and exiting 0.
-- **A hook that can block needs a committed regression suite**, with must-block and
-  must-allow cases, and it must be sabotage-tested: reintroduce a bug it should catch
-  and confirm the suite goes red. `plugin/crew/hooks/scripts/_test/run-tests.sh` is the
-  worked example. Two of `crew`'s guard bugs shipped past code review and were only
-  found by running the thing.
-
-Never commit a `marketplace.json` inside a plugin directory. The repo root's is the only
-marketplace here; a nested one makes the plugin directory look like a second marketplace
-to `claude plugin marketplace add`.
-
-## Conventions
-
-- Skills follow `Skill-Authoring-Standard.md`; changes follow `Skill-Pipeline.md`.
-- The picker menus clip every line at `terminal width - 9` (`pick_fit` in bash,
-  `Format-PickerLine` in PowerShell) and append an ellipsis. The current labels are
-  written for a ~95-column window; narrower consoles clip them, which is degradation
-  rather than breakage. What is *not* survivable is a line that wraps — that throws off
-  the cursor-up redraw count and smears the menu over whatever was above it, which is
-  why nothing may bypass the clip helpers.
-- Both scripts are idempotent by design: detect first, then act. A new install step
-  needs a detection branch that reports "already installed" rather than reinstalling.
+Skills follow `Skill-Authoring-Standard.md`; changes follow `Skill-Pipeline.md`.

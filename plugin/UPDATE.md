@@ -8,70 +8,87 @@ only what is newly *possible*.
 Mirrored into [`plugin/README.md`](README.md) and the root
 [`README.md`](../README.md) by `scripts/sync-updates.py`. Edit here, then run it.
 
-## crew 0.16.7
+## localgpu 0.1.7
 
-**Three domain specialists you can onboard per repo.**
-`sharepoint-developer`, `power-automate-specialist` and `node-developer` are
-full agents with their own refusal boundaries — a SharePoint change never
-breaks permission inheritance to make something work, and a Power Automate
-flow that already has a trigger is already live, so neither touches a
-production tenant unasked.
+A new plugin: the GPU in this machine, as a sidecar for one repository. Two
+halves - a semantic index the session you are already in can search, and a
+separate session that runs entirely on the local model.
 
-They sit **off the tier ladder**, and no amount of scaling grants one. Every
-ladder role closes a defect class any repo can have, so `roles_for_tier` hands
-out every rung up to the declared tier — which is exactly how a repo with no
-database ends up holding `dba`. "This repo does SharePoint" is not a defect
-class; it is a fact about one checkout, knowable on day one. On the ladder,
-every tier-2 repo on the machine would get a SharePoint developer it will
-never dispatch.
+| Added | What it does |
+|---|---|
+| `/localgpu:setup` | Six detect-then-act steps - resolve the install root, verify Ollama is installed *and* serving, pull the two models, run the bootstrap (venv, dependencies, the `localgpu` CLI), write the config, register the MCP server. Asks before writing anything, and will not install Ollama silently |
+| `/localgpu:doctor` | Seven checks - Ollama, model tags, venv, config provenance, index freshness, MCP registration, VRAM - each reported whether or not it passes, ending in exactly one next step |
+| `/localgpu:index` | Build or refresh the vector index. Incremental by default; a changed embedding model forces a full rebuild, because vectors from two models are not comparable |
+| `/localgpu:search` | Semantic search of the repo - `file:line` plus a three-line excerpt, via the `search_code` MCP tool |
+| `/localgpu:ask` | Retrieve first, then put the question and the excerpts to the local chat model. Always labelled `qwen2.5-coder:7b (local)`, always with its sources |
+| `/localgpu:crew` | Report-only: which crew roles a local 7B could take over and which it must not, ending in the one supported route - `localgpu shell`. Writes nothing |
+| `localgpu shell` | A **separate** Claude Code session on the local model. Starts the bundled proxy on a loopback port, launches a second `claude` against it, and leaves your current session and crew's config exactly as they were |
+| `localgpu proxy` | The same proxy in the foreground, for debugging it or for pointing something other than Claude Code at the local model |
+| `localgpu` skill | The paths, the two config layers and their precedence, the model tags, the VRAM rules, and the `mcp.json` template the commands render |
 
-So you ask for one:
+`localgpu shell` and `localgpu proxy` are a console script, not slash commands:
+the bootstrap installs it into `$LOCALGPU_HOME/venv`, and you type it in a
+terminal. What makes them possible is `cli/anthropic_proxy.py`, which speaks the
+**Anthropic Messages API** on the front and Ollama's `/api/chat` on the back.
+That translation is the feature, not plumbing: `ANTHROPIC_BASE_URL` makes a
+client POST `/v1/messages`, while Ollama's OpenAI-compatible surface is
+`/v1/chat/completions` with a different body, so pointing one straight at the
+other 404s on every request.
 
-```
-/crew:pm onboard node-developer
-```
+- **What crosses intact**: system prompts, multi-turn text, tool definitions,
+  tool calls, tool results, stop sequences, sampling options, and both reply
+  modes - non-streaming and Anthropic's SSE event order.
+- **What does not, and is reported rather than faked**: images (replaced with a
+  visible placeholder, because a 7B coder model has no vision), thinking blocks,
+  prompt caching (`cache_control` accepted and ignored, cache usage reported as
+  zero), and token counts, which are Ollama's own and will not match Anthropic's
+  tokenizer.
+- **Tool calls the model writes as prose are recovered.** The shipped
+  `qwen2.5-coder:7b-instruct-q4_K_M` answers a tools request by putting the call
+  into `content` as JSON and leaving `tool_calls` empty. Claude Code reads that as
+  prose: the tool never runs and nothing errors. The proxy promotes it to a real
+  `tool_use` block under four narrow conditions, each with a must-not-fire test,
+  so it cannot invent a call the user never asked for. Without it the shell could
+  not drive a single tool.
+- **The catch, printed on every launch because nothing enforces it**: everything
+  in that session is the 7B, including any `/crew:*` command run inside it. Use it
+  for exploring and drafting, not for gates - a 7B review is labelled exactly like
+  a real one. The child process also has `ANTHROPIC_AUTH_TOKEN` and
+  `ANTHROPIC_PROFILE` stripped, since either would outrank the API key and send the
+  session back to the real API without saying so.
 
-and it is justified from what is actually in the repo — a `package.json` with
-a server entry point, an SPFx `config/package-solution.json`, an exported flow
-definition — rather than from a pattern in `.crew/metrics.md`. Onboarding one
-leaves `tier` alone: the crew has specialised, not grown. `/crew:upgrade` no
-longer reports a deliberately-onboarded specialist as an unrecognised name.
+Also worth knowing before enabling it:
 
-**The self-review guard stopped losing dispatches.** The guard's job is to
-know which model family wrote the diff, so that family cannot be handed its
-own work to review. It read `.work/dispatch.json` — one file that every
-dispatch read, modified and rewrote. Two dispatches doing that at once erased
-each other, and the PM dispatches up to three roles at a time. If the erased
-one was the family that wrote the code, it was cleared to review itself: the
-guard reported a pass, having lost the fact it was checking.
+- **No hooks, so nothing starts running when it is enabled.** There is no
+  background indexer and no watcher - the index goes stale until someone runs
+  `/localgpu:index`. That is deliberate: GPU work firing on somebody else's
+  schedule evicts whatever model was resident, which on an 8 GB card is the
+  difference between a fast index run and a slow one.
+- **Installing the plugin downloads nothing.** Ollama, the virtualenv and roughly
+  5 GB of model weights come from `/localgpu:setup`, per repository, after it has
+  shown the plan and asked.
+- **Nothing leaves the machine.** No prompt, no file and no embedding reaches a
+  vendor, which is the point - code that is not permitted to reach an API still
+  gets search by meaning and a fast first-pass answer.
+- **The local model is a triage tier, not a second opinion.** A 7B model at 4-bit
+  quantization sits several tiers below the model reading these commands, so
+  every command that reaches for it attributes the answer and prints the excerpts
+  it was given.
 
-Four review rounds went into trying to make that file safe, through an atomic
-write, then a lock, then a lock plus a self-verifying write. None of them
-close it. A lock has to be reclaimable or one killed dispatch wedges the repo
-forever, and reclaiming it is two calls against a pathname a rival can replace
-in between. A self-verifying write holds only for the writer that lands last.
+## crew 0.16.10
 
-There is no shared file left to race. **Each dispatch now writes its own file
-under `.work/dispatch.d/`, and nothing ever rewrites one.** The reader merges
-the directory. Concurrency stopped being a correctness question, a malformed
-file costs one entry rather than the whole record, and a bookkeeping write
-that fails can no longer abort the dispatch it was recording.
+**Two independent sets of fail-open guard fixes, in one release.** 0.16.7 fixed
+four guard defects in the Python hook modules upstream; 0.16.8 and 0.16.9 fixed
+three more in the shell wrappers on this branch, found separately. They are
+different defects in different files, so both sets are here rather than one
+replacing the other. See the entries below for each.
 
-If you gitignore crew's working files by hand, **add `.work/dispatch.d/`** —
-ignoring `dispatch.json` alone now commits the actual record. `/crew:init`
-does both.
+The renumber to 0.16.10 is not cosmetic: `claude plugin update` compares the
+declared version, and merged content shipped under a number set before that
+content arrived would leave every installed copy reporting "already at the
+latest version" while holding the old code.
 
-**`/crew:model` and `/crew:review` stopped calling an unknown author proven.**
-An unpinned `copilot` has no determinable family: Copilot hosts several, and
-an unset model does not say which. A dispatch by one was reported as
-`recorded at dispatch` — "the guard is judging what actually ran" — with an
-empty author family, so nothing was struck and every reviewer read as
-eligible. It is now reported as `UNKNOWN`, and no review under it is
-certified independent. Pin `dev.copilot.model` and it resolves; nothing is
-barred on the unknown itself, because taking a real reviewer off a diff on a
-value nobody established is the same mistake pointing the other way.
-
-## crew 0.16.6
+## crew 0.16.8
 
 **`/crew:config` — see where every setting comes from, and set the ones that
 belong to the machine.** The machine-global config at
@@ -236,6 +253,69 @@ Two facts worth knowing before touching any of it: `curl -k` reaches the HTTPS
 port where Claude Code's Node MCP client rejects the self-signed certificate,
 and the plugin reads `data.json` only at load, so a stale instance disagrees
 with disk on both the port and the API key until the window is reloaded.
+
+## crew 0.16.7
+
+**Three domain specialists you can onboard per repo.**
+`sharepoint-developer`, `power-automate-specialist` and `node-developer` are
+full agents with their own refusal boundaries — a SharePoint change never
+breaks permission inheritance to make something work, and a Power Automate
+flow that already has a trigger is already live, so neither touches a
+production tenant unasked.
+
+They sit **off the tier ladder**, and no amount of scaling grants one. Every
+ladder role closes a defect class any repo can have, so `roles_for_tier` hands
+out every rung up to the declared tier — which is exactly how a repo with no
+database ends up holding `dba`. "This repo does SharePoint" is not a defect
+class; it is a fact about one checkout, knowable on day one. On the ladder,
+every tier-2 repo on the machine would get a SharePoint developer it will
+never dispatch.
+
+So you ask for one:
+
+```
+/crew:pm onboard node-developer
+```
+
+and it is justified from what is actually in the repo — a `package.json` with
+a server entry point, an SPFx `config/package-solution.json`, an exported flow
+definition — rather than from a pattern in `.crew/metrics.md`. Onboarding one
+leaves `tier` alone: the crew has specialised, not grown. `/crew:upgrade` no
+longer reports a deliberately-onboarded specialist as an unrecognised name.
+
+**The self-review guard stopped losing dispatches.** The guard's job is to
+know which model family wrote the diff, so that family cannot be handed its
+own work to review. It read `.work/dispatch.json` — one file that every
+dispatch read, modified and rewrote. Two dispatches doing that at once erased
+each other, and the PM dispatches up to three roles at a time. If the erased
+one was the family that wrote the code, it was cleared to review itself: the
+guard reported a pass, having lost the fact it was checking.
+
+Four review rounds went into trying to make that file safe, through an atomic
+write, then a lock, then a lock plus a self-verifying write. None of them
+close it. A lock has to be reclaimable or one killed dispatch wedges the repo
+forever, and reclaiming it is two calls against a pathname a rival can replace
+in between. A self-verifying write holds only for the writer that lands last.
+
+There is no shared file left to race. **Each dispatch now writes its own file
+under `.work/dispatch.d/`, and nothing ever rewrites one.** The reader merges
+the directory. Concurrency stopped being a correctness question, a malformed
+file costs one entry rather than the whole record, and a bookkeeping write
+that fails can no longer abort the dispatch it was recording.
+
+If you gitignore crew's working files by hand, **add `.work/dispatch.d/`** —
+ignoring `dispatch.json` alone now commits the actual record. `/crew:init`
+does both.
+
+**`/crew:model` and `/crew:review` stopped calling an unknown author proven.**
+An unpinned `copilot` has no determinable family: Copilot hosts several, and
+an unset model does not say which. A dispatch by one was reported as
+`recorded at dispatch` — "the guard is judging what actually ran" — with an
+empty author family, so nothing was struck and every reviewer read as
+eligible. It is now reported as `UNKNOWN`, and no review under it is
+certified independent. Pin `dev.copilot.model` and it resolves; nothing is
+barred on the unknown itself, because taking a real reviewer off a diff on a
+value nobody established is the same mistake pointing the other way.
 
 ## crew 0.15.1
 

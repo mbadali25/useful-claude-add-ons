@@ -12,70 +12,87 @@ Generated from [`UPDATE.md`](UPDATE.md) by `scripts/sync-updates.py`. Edit that 
 
 <!-- BEGIN plugin/UPDATE.md -->
 
-### crew 0.16.7
+### localgpu 0.1.7
 
-**Three domain specialists you can onboard per repo.**
-`sharepoint-developer`, `power-automate-specialist` and `node-developer` are
-full agents with their own refusal boundaries — a SharePoint change never
-breaks permission inheritance to make something work, and a Power Automate
-flow that already has a trigger is already live, so neither touches a
-production tenant unasked.
+A new plugin: the GPU in this machine, as a sidecar for one repository. Two
+halves - a semantic index the session you are already in can search, and a
+separate session that runs entirely on the local model.
 
-They sit **off the tier ladder**, and no amount of scaling grants one. Every
-ladder role closes a defect class any repo can have, so `roles_for_tier` hands
-out every rung up to the declared tier — which is exactly how a repo with no
-database ends up holding `dba`. "This repo does SharePoint" is not a defect
-class; it is a fact about one checkout, knowable on day one. On the ladder,
-every tier-2 repo on the machine would get a SharePoint developer it will
-never dispatch.
+| Added | What it does |
+|---|---|
+| `/localgpu:setup` | Six detect-then-act steps - resolve the install root, verify Ollama is installed *and* serving, pull the two models, run the bootstrap (venv, dependencies, the `localgpu` CLI), write the config, register the MCP server. Asks before writing anything, and will not install Ollama silently |
+| `/localgpu:doctor` | Seven checks - Ollama, model tags, venv, config provenance, index freshness, MCP registration, VRAM - each reported whether or not it passes, ending in exactly one next step |
+| `/localgpu:index` | Build or refresh the vector index. Incremental by default; a changed embedding model forces a full rebuild, because vectors from two models are not comparable |
+| `/localgpu:search` | Semantic search of the repo - `file:line` plus a three-line excerpt, via the `search_code` MCP tool |
+| `/localgpu:ask` | Retrieve first, then put the question and the excerpts to the local chat model. Always labelled `qwen2.5-coder:7b (local)`, always with its sources |
+| `/localgpu:crew` | Report-only: which crew roles a local 7B could take over and which it must not, ending in the one supported route - `localgpu shell`. Writes nothing |
+| `localgpu shell` | A **separate** Claude Code session on the local model. Starts the bundled proxy on a loopback port, launches a second `claude` against it, and leaves your current session and crew's config exactly as they were |
+| `localgpu proxy` | The same proxy in the foreground, for debugging it or for pointing something other than Claude Code at the local model |
+| `localgpu` skill | The paths, the two config layers and their precedence, the model tags, the VRAM rules, and the `mcp.json` template the commands render |
 
-So you ask for one:
+`localgpu shell` and `localgpu proxy` are a console script, not slash commands:
+the bootstrap installs it into `$LOCALGPU_HOME/venv`, and you type it in a
+terminal. What makes them possible is `cli/anthropic_proxy.py`, which speaks the
+**Anthropic Messages API** on the front and Ollama's `/api/chat` on the back.
+That translation is the feature, not plumbing: `ANTHROPIC_BASE_URL` makes a
+client POST `/v1/messages`, while Ollama's OpenAI-compatible surface is
+`/v1/chat/completions` with a different body, so pointing one straight at the
+other 404s on every request.
 
-```
-/crew:pm onboard node-developer
-```
+- **What crosses intact**: system prompts, multi-turn text, tool definitions,
+  tool calls, tool results, stop sequences, sampling options, and both reply
+  modes - non-streaming and Anthropic's SSE event order.
+- **What does not, and is reported rather than faked**: images (replaced with a
+  visible placeholder, because a 7B coder model has no vision), thinking blocks,
+  prompt caching (`cache_control` accepted and ignored, cache usage reported as
+  zero), and token counts, which are Ollama's own and will not match Anthropic's
+  tokenizer.
+- **Tool calls the model writes as prose are recovered.** The shipped
+  `qwen2.5-coder:7b-instruct-q4_K_M` answers a tools request by putting the call
+  into `content` as JSON and leaving `tool_calls` empty. Claude Code reads that as
+  prose: the tool never runs and nothing errors. The proxy promotes it to a real
+  `tool_use` block under four narrow conditions, each with a must-not-fire test,
+  so it cannot invent a call the user never asked for. Without it the shell could
+  not drive a single tool.
+- **The catch, printed on every launch because nothing enforces it**: everything
+  in that session is the 7B, including any `/crew:*` command run inside it. Use it
+  for exploring and drafting, not for gates - a 7B review is labelled exactly like
+  a real one. The child process also has `ANTHROPIC_AUTH_TOKEN` and
+  `ANTHROPIC_PROFILE` stripped, since either would outrank the API key and send the
+  session back to the real API without saying so.
 
-and it is justified from what is actually in the repo — a `package.json` with
-a server entry point, an SPFx `config/package-solution.json`, an exported flow
-definition — rather than from a pattern in `.crew/metrics.md`. Onboarding one
-leaves `tier` alone: the crew has specialised, not grown. `/crew:upgrade` no
-longer reports a deliberately-onboarded specialist as an unrecognised name.
+Also worth knowing before enabling it:
 
-**The self-review guard stopped losing dispatches.** The guard's job is to
-know which model family wrote the diff, so that family cannot be handed its
-own work to review. It read `.work/dispatch.json` — one file that every
-dispatch read, modified and rewrote. Two dispatches doing that at once erased
-each other, and the PM dispatches up to three roles at a time. If the erased
-one was the family that wrote the code, it was cleared to review itself: the
-guard reported a pass, having lost the fact it was checking.
+- **No hooks, so nothing starts running when it is enabled.** There is no
+  background indexer and no watcher - the index goes stale until someone runs
+  `/localgpu:index`. That is deliberate: GPU work firing on somebody else's
+  schedule evicts whatever model was resident, which on an 8 GB card is the
+  difference between a fast index run and a slow one.
+- **Installing the plugin downloads nothing.** Ollama, the virtualenv and roughly
+  5 GB of model weights come from `/localgpu:setup`, per repository, after it has
+  shown the plan and asked.
+- **Nothing leaves the machine.** No prompt, no file and no embedding reaches a
+  vendor, which is the point - code that is not permitted to reach an API still
+  gets search by meaning and a fast first-pass answer.
+- **The local model is a triage tier, not a second opinion.** A 7B model at 4-bit
+  quantization sits several tiers below the model reading these commands, so
+  every command that reaches for it attributes the answer and prints the excerpts
+  it was given.
 
-Four review rounds went into trying to make that file safe, through an atomic
-write, then a lock, then a lock plus a self-verifying write. None of them
-close it. A lock has to be reclaimable or one killed dispatch wedges the repo
-forever, and reclaiming it is two calls against a pathname a rival can replace
-in between. A self-verifying write holds only for the writer that lands last.
+### crew 0.16.10
 
-There is no shared file left to race. **Each dispatch now writes its own file
-under `.work/dispatch.d/`, and nothing ever rewrites one.** The reader merges
-the directory. Concurrency stopped being a correctness question, a malformed
-file costs one entry rather than the whole record, and a bookkeeping write
-that fails can no longer abort the dispatch it was recording.
+**Two independent sets of fail-open guard fixes, in one release.** 0.16.7 fixed
+four guard defects in the Python hook modules upstream; 0.16.8 and 0.16.9 fixed
+three more in the shell wrappers on this branch, found separately. They are
+different defects in different files, so both sets are here rather than one
+replacing the other. See the entries below for each.
 
-If you gitignore crew's working files by hand, **add `.work/dispatch.d/`** —
-ignoring `dispatch.json` alone now commits the actual record. `/crew:init`
-does both.
+The renumber to 0.16.10 is not cosmetic: `claude plugin update` compares the
+declared version, and merged content shipped under a number set before that
+content arrived would leave every installed copy reporting "already at the
+latest version" while holding the old code.
 
-**`/crew:model` and `/crew:review` stopped calling an unknown author proven.**
-An unpinned `copilot` has no determinable family: Copilot hosts several, and
-an unset model does not say which. A dispatch by one was reported as
-`recorded at dispatch` — "the guard is judging what actually ran" — with an
-empty author family, so nothing was struck and every reviewer read as
-eligible. It is now reported as `UNKNOWN`, and no review under it is
-certified independent. Pin `dev.copilot.model` and it resolves; nothing is
-barred on the unknown itself, because taking a real reviewer off a diff on a
-value nobody established is the same mistake pointing the other way.
-
-### crew 0.16.6
+### crew 0.16.8
 
 **`/crew:config` — see where every setting comes from, and set the ones that
 belong to the machine.** The machine-global config at
@@ -241,55 +258,70 @@ port where Claude Code's Node MCP client rejects the self-signed certificate,
 and the plugin reads `data.json` only at load, so a stale instance disagrees
 with disk on both the port and the API key until the window is reloaded.
 
+### crew 0.16.7
+
+**Three domain specialists you can onboard per repo.**
+`sharepoint-developer`, `power-automate-specialist` and `node-developer` are
+full agents with their own refusal boundaries — a SharePoint change never
+breaks permission inheritance to make something work, and a Power Automate
+flow that already has a trigger is already live, so neither touches a
+production tenant unasked.
+
+They sit **off the tier ladder**, and no amount of scaling grants one. Every
+ladder role closes a defect class any repo can have, so `roles_for_tier` hands
+out every rung up to the declared tier — which is exactly how a repo with no
+database ends up holding `dba`. "This repo does SharePoint" is not a defect
+class; it is a fact about one checkout, knowable on day one. On the ladder,
+every tier-2 repo on the machine would get a SharePoint developer it will
+never dispatch.
+
+So you ask for one:
+
+```
+/crew:pm onboard node-developer
+```
+
+and it is justified from what is actually in the repo — a `package.json` with
+a server entry point, an SPFx `config/package-solution.json`, an exported flow
+definition — rather than from a pattern in `.crew/metrics.md`. Onboarding one
+leaves `tier` alone: the crew has specialised, not grown. `/crew:upgrade` no
+longer reports a deliberately-onboarded specialist as an unrecognised name.
+
+**The self-review guard stopped losing dispatches.** The guard's job is to
+know which model family wrote the diff, so that family cannot be handed its
+own work to review. It read `.work/dispatch.json` — one file that every
+dispatch read, modified and rewrote. Two dispatches doing that at once erased
+each other, and the PM dispatches up to three roles at a time. If the erased
+one was the family that wrote the code, it was cleared to review itself: the
+guard reported a pass, having lost the fact it was checking.
+
+Four review rounds went into trying to make that file safe, through an atomic
+write, then a lock, then a lock plus a self-verifying write. None of them
+close it. A lock has to be reclaimable or one killed dispatch wedges the repo
+forever, and reclaiming it is two calls against a pathname a rival can replace
+in between. A self-verifying write holds only for the writer that lands last.
+
+There is no shared file left to race. **Each dispatch now writes its own file
+under `.work/dispatch.d/`, and nothing ever rewrites one.** The reader merges
+the directory. Concurrency stopped being a correctness question, a malformed
+file costs one entry rather than the whole record, and a bookkeeping write
+that fails can no longer abort the dispatch it was recording.
+
+If you gitignore crew's working files by hand, **add `.work/dispatch.d/`** —
+ignoring `dispatch.json` alone now commits the actual record. `/crew:init`
+does both.
+
+**`/crew:model` and `/crew:review` stopped calling an unknown author proven.**
+An unpinned `copilot` has no determinable family: Copilot hosts several, and
+an unset model does not say which. A dispatch by one was reported as
+`recorded at dispatch` — "the guard is judging what actually ran" — with an
+empty author family, so nothing was struck and every reviewer read as
+eligible. It is now reported as `UNKNOWN`, and no review under it is
+certified independent. Pin `dev.copilot.model` and it resolves; nothing is
+barred on the unknown itself, because taking a real reviewer off a diff on a
+value nobody established is the same mistake pointing the other way.
+
 ### crew 0.15.1
-
-Three new agents and a skill, taking crew to 14 agents and 17 bundled skills.
-
-| Added | What it does |
-|---|---|
-| `infrastructure-architect` | Designs and reviews AWS network and account architecture — VPCs, routing, connectivity, DNS, ingress, landing zones. Returns the design with its tradeoffs. Never applies anything to a live account. |
-| `scribe` | Keeps the durable record: ADRs, CHANGELOG entries, handoff notes, and what was tried and rejected. ADRs are append-only — a correction is a new ADR, never an edit to the old one. |
-| `researcher` | External research only — library and SDK docs at the version actually pinned, API behaviour, vendor limits, standards. Every claim carries its source; it refuses to answer a version, a limit, or an API surface from memory. |
-| `crew-house-style` skill | House style for documents a human will read: format choice, headings, capitalization, palette. Routes to the office and diagram skills rather than reimplementing generation. |
-
-Also in 0.15.0:
-
-- **`docs-writer` exports for humans.** Documentation a person will consume ships
-  as HTML, DOCX or PDF, not raw markdown. The markdown under `docs/` stays the
-  source of truth — the export is an additional artifact, so anything reading
-  those paths keeps working. Repo-native files (`CHANGELOG.md`, `README.md`,
-  `CLAUDE.md`, ADRs) stay markdown, because exporting one breaks the tool that
-  reads it. `docs-writer` also gained the return contract it never had.
-- **`dba` covers DynamoDB as its own model**, not as a row in a relational
-  checklist — access-pattern-first, single-table design, partition-key
-  cardinality, GSI backfill cost, the creation-time-only nature of LSIs, and the
-  400KB item limit. Relational review is now split by engine, because lock
-  behaviour under `ALTER TABLE` differs across Postgres, MySQL/InnoDB and SQL
-  Server, and the old text applied Postgres vocabulary to all three.
-- **`planner` asks what a decision forecloses** — whether it is one-way, what
-  undoing it costs later, and the cheapest experiment that would settle it before
-  committing.
-- **Agents can now load the skills they cite.** Eight agents referenced a crew
-  skill without declaring `skills:` frontmatter, so the reference was decoration:
-  naming a skill does not load it. `browser-tester`, `docs-writer`,
-  `infrastructure-architect`, `planner`, `pm`, `qa-reviewer`, `scribe` and
-  `smoke-author` now declare what they cite.
-- **`explorer` no longer orders a write it cannot perform.** It held
-  `Read, Grep, Glob` and was told to append findings to memory; it now returns a
-  `**Durable:**` block for its caller to persist.
-- **The PM's guards apply on every path.** Removal needing an explicit yes was
-  previously gated to `authority: act`, which switched it off exactly when a user
-  told a `report-only` PM to go ahead.
-
-<!-- END plugin/UPDATE.md -->
-
-## What's new
-
-Generated from `UPDATE.md` in this directory by `scripts/sync-updates.py`. Edit that file, not this block.
-
-<!-- BEGIN plugin/UPDATE.md -->
-
-### crew 0.15.0
 
 Three new agents and a skill, taking crew to 14 agents and 17 bundled skills.
 
@@ -337,6 +369,7 @@ Also in 0.15.0:
 |---|---|---|---|---|
 | [`crew`](crew) | Workflow / QA | A virtual dev team for multi-repo legacy work — file-backed tickets, one implementation session, an independent reviewer, and deterministic gates that block on failure instead of offering an opinion. Hooks enforce unsafe commands, unverified turns, and unearned production deploys. Roles exist only where they buy an isolated context window, a restricted tool set, or genuinely independent eyes; the manager is the one role that can assign work rather than only reporting on it, opt-in via `pm.authority`, and BA/architecture stay files and commands. Codex QA, Jira or ServiceDesk Plus, an Obsidian Kanban board for tickets, Obsidian memory, a code graph, and Teams/Telegram notifications are all optional. | Several repositories, mixed stacks, legacy code, and almost no test coverage; a change that needs review by something that did not write it; wanting `terraform apply`, force-push, and destructive DDL blocked by a hook rather than by good intentions; a turn that should fail when the checks its changed paths map to go red; a production deploy that should be refused unless qa signed off on **that exact sha** and the rollback runbook is still verified; wanting to know what every endpoint and scheduled job actually does; losing the thread across a `/clear` or an auto-compact; wanting the crew to pick up the next thing itself when a ticket closes or the diagrams fall behind, instead of waiting to be asked — bounded so it fixes only what blocks the job and tickets the rest. | 14 agents, 24 commands, 17 skills, 20 hook entries |
 | [`gizmoduck`](gizmoduck) | Security | Runs [Nuclei](https://github.com/projectdiscovery/nuclei) vulnerability scans against hosts and websites you are authorised to test, then does the part that usually gets skipped: diffs the run against a previous baseline so you see what is genuinely new, renders a triaged report as Markdown, HTML or PDF, and opens or syncs ServiceDesk Plus tickets for Critical and High findings. Nuclei is MIT-licensed and self-hosted, so the whole loop runs locally with no export step and no API quota. Bootstrap scripts for WSL/Linux and Windows fetch the engine and the community template set; `/gizmoduck:doctor` tells you which half of the toolchain is missing rather than failing mid-scan. Registers no hooks and no agents — it is six commands over one Python CLI. | Wanting a scheduled external scan whose findings land in the ticket queue instead of a PDF nobody opens; needing to show an auditor what changed between this quarter's scan and last quarter's; a scan whose Critical and High findings should become tickets automatically while the Mediums stay in the report; re-rendering a report at a different severity floor without paying for another scan; a scanner that stops working on a new machine and you want to know whether it is `nuclei`, the templates, `python`, or `wkhtmltopdf`. | 6 commands, 1 skill |
+| [`localgpu`](localgpu) | Local models | Runs models on your own GPU through [Ollama](https://ollama.com) and puts a repository or folder behind them: `bootstrap.sh` / `bootstrap.ps1` install Ollama, a private virtualenv, the chat and embedding models, and a `localgpu` CLI, then an MCP server indexes a tree into a vector store on disk and exposes search and ask over it. Nothing is a service call — no prompt, no file, and no embedding leaves the machine, which is what makes it usable on code that is not allowed to reach a vendor API. `localgpu shell` goes further and runs a *whole separate* Claude Code session on the local model, through a bundled proxy that translates the Anthropic Messages API into Ollama's `/api/chat` — the two do not otherwise speak, and a client pointed straight at Ollama 404s on every request. `/localgpu:doctor` tells you which half of the toolchain is missing (Ollama, the venv, a pulled model, a built index) rather than failing mid-answer, and `/localgpu:crew` reports which `crew` roles a local 7B could take over and refuses, in writing, to point crew's gates at one. Registers no hooks and no agents — six commands, one bundled skill, an MCP server you register yourself in `/localgpu:setup`, and a `localgpu` CLI its bootstrap installs into the venv. | Code or documents that are not permitted to leave the network but still need a model over them; wanting to ask "where is this handled" against a repo too large to read into a context window; a laptop or workstation with a GPU sitting idle while every query bills a vendor; wanting a throwaway session that runs entirely on the local model for exploring and drafting; wanting an honest account of which `crew` work a local 7B could take over and which it must not; an offline machine, a flight, or an outage at the provider; a first-run failure where you want to know whether it is Ollama, the venv, the model pull, or the index. | 6 commands, 1 skill, 1 CLI — no agents, no hooks, plus one local MCP server `/localgpu:setup` registers |
 | [`obsidian-vault`](obsidian-vault) | Memory | Makes one or more Obsidian vaults Claude Code's durable, token-efficient memory. Cross-platform, multi-vault setup for the Local REST API bridge and MCP registration (one server per vault, never one juggling two), a vault-contract guard hook that ships every check off until a target vault's own `CLAUDE.md` says to turn it on, gardening and reflection agents with no fabricated citations, canvas and Map-of-Content generation, and `graphify` wiring into a separate, dedicated codegraphs vault. No vault path is hardcoded — it detects from Obsidian's own vault registry or a config file. Named `obsidian-vault`, not `obsidian`, so it cannot collide with a third-party plugin of that name. | Wanting Claude Code sessions to remember architecture decisions and patterns across `/clear` without re-explaining them; a second machine-generated vault (a code graph running past 100k notes) that needs different defaults than a hand-curated one; an Obsidian Git plugin auto-committing on a timer into a directory that turns out not to be a git repo; a vault whose own `CLAUDE.md` has drifted from what the filesystem actually shows; wanting a canvas or Map of Content that stays a spatial/structural aid rather than a second, driftable copy of facts already in notes. | 11 commands, 2 agents, 3 skills, 8 hook entries |
 
 **Provides** counts what the plugin registers with Claude Code. The per-item breakdown is in [`PLUGINS.md`](PLUGINS.md); the authoritative upstream guide is [`crew/README.md`](crew/README.md).

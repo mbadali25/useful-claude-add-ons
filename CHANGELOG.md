@@ -6,6 +6,126 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
+- **localgpu 0.1.8 -> 0.1.9: `unignore`, the escape hatch the credential
+  patterns needed.** `DEFAULT_IGNORE`'s `*.key` (added in 0.1.8, alongside
+  `.env`, `*.pem` and the rest) is broad enough to catch legitimate non-secret
+  files too - a localization resource, a keystore-adjacent asset - and until
+  now there was no way to re-include one: `ignore` accumulates across config
+  layers by design, and a file it caught stayed caught, silently, forever.
+
+  `"unignore": ["*.key"]` in either config layer now drops that whole pattern
+  from the effective `ignore` list. Pattern removal, not a per-file exemption
+  - `"unignore": ["*.key"]` un-ignores every `.key` file, not one path - which
+  is the simpler, more honest shape: it reads as "undo this default" rather
+  than a second filter checked against every path in `is_ignored` alongside
+  `ignore`. `unignore` layers the same way `ignore` does, as a union across
+  both config layers rather than one overriding the other. Three entries
+  cannot be lifted this way regardless of what a config asks for - `.git`,
+  `.localgpu`, `node_modules` - because indexing those was never a preference,
+  it was a mistake, and `unignore` only undoes preferences.
+
+  `mcp/_test/test_unignore.py` builds a fixture repo and asserts on the
+  *stored chunk text*, matching `test_secrets.py`'s shape: a file excluded
+  only by a liftable default is indexed once unignored, a secret excluded by
+  a pattern the user did not lift is not, and the hard floor holds against an
+  explicit attempt to lift it. `mcp/_test/test_config.py` covers the merge in
+  isolation - pattern removal, cross-layer accumulation, the hard floor, and
+  the same bare-string rejection `ignore` already gets. Sabotage-tested:
+  disabling pattern removal, dropping the hard floor, and dropping the
+  bare-string type check each turned the matching test red on the behaviour
+  named, independently. 228 -> 234 tests; `_verify/smoke.sh` stayed 10/10.
+
+- **`localgpu` 0.1.5 - a new plugin that puts the GPU in this machine behind a
+  repository.** Ollama serves `nomic-embed-text` and
+  `qwen2.5-coder:7b-instruct-q4_K_M` on `127.0.0.1:11434`; an MCP server chunks a
+  tree, embeds it into a vector store under `$LOCALGPU_HOME/index/`, and exposes
+  `search_code`, `index_status` and `index_refresh` over it. Six commands -
+  `setup`, `doctor`, `index`, `search`, `ask`, `crew` - and one bundled skill
+  holding the paths, the two config layers and the VRAM rules every command reads
+  before acting. No prompt, no file and no embedding leaves the machine, which is
+  the whole reason to run it: code that is not permitted to reach a vendor API
+  still gets search by meaning.
+
+  **A `localgpu` CLI ships with it, and a translating proxy underneath.**
+  `pyproject.toml` installs one console script into `$LOCALGPU_HOME/venv` -
+  editable on purpose, because `cli/localgpu_cli.py` resolves its sibling `mcp/`
+  directory from its own `__file__` and a copied install puts that `__file__` in
+  `site-packages`, where `mcp/` does not exist. `localgpu shell` starts
+  `cli/anthropic_proxy.py` on a loopback port and launches a **separate** `claude`
+  process against it, so the current session and `.crew/config.json` are untouched;
+  `localgpu proxy` runs the same proxy in the foreground for debugging or for a
+  non-Claude client. The proxy exists because the two ends do not otherwise meet:
+  `ANTHROPIC_BASE_URL` makes a client POST `/v1/messages` in the Anthropic Messages
+  format, while Ollama's OpenAI-compatible surface is `/v1/chat/completions` with a
+  different body, so pointing one straight at the other 404s on every request. It
+  serves `POST /v1/messages` (streaming and not), `GET /v1/models` and `GET /health`,
+  carries system prompts, multi-turn text, tool definitions, tool calls, tool
+  results, stop sequences and sampling options across intact, and reports rather
+  than fakes what cannot cross - images become a visible placeholder, thinking
+  blocks are never synthesised, `cache_control` is accepted and ignored with zero
+  cache hits reported, and the token counts are Ollama's rather than Anthropic's.
+  It also recovers tool calls the model writes as prose: the shipped
+  `qwen2.5-coder:7b-instruct-q4_K_M` puts `{"name": ..., "arguments": {...}}` in
+  `content` and leaves `tool_calls` empty, which Claude Code reads as text - the
+  tool never runs, `stop_reason` stays `end_turn`, and nothing errors. The
+  promotion is deliberately narrow (tools actually offered, the entire body one
+  JSON value, an object or list of objects, every name one of the offered tools),
+  because the cost of a false positive is inventing a call nobody asked for. The
+  child process is launched with `ANTHROPIC_AUTH_TOKEN` and `ANTHROPIC_PROFILE`
+  removed, since either outranks the API key and would send the session silently
+  back to the real API. `cli/_test/` holds 46 tests over all of this - the wire
+  format as pure functions, plus the proxy on a real bound socket against a fake
+  Ollama - with a sabotage log recording four regressions reintroduced and
+  confirmed red.
+
+  **It registers no hooks, so nothing starts running when it is enabled.** There
+  is deliberately no background indexer and no watcher - the index goes stale
+  until someone runs `/localgpu:index`. A hook here would mean GPU work firing on
+  somebody else's schedule, and on an 8 GB card that is not free: it evicts
+  whatever model was resident.
+
+  The heavy parts are not installed by installing the plugin. Ticking `localgpu`
+  in either bootstrap script copies commands, a skill and Python source and
+  downloads nothing; Ollama, the virtualenv and roughly 5 GB of weights come from
+  `/localgpu:setup`, per repository, after it has shown the plan and asked. It
+  will not install Ollama silently either - that registers a background service
+  and a GPU runtime, so the command stops and points at the installer.
+
+  The design constraint everything bends around is that a 7B model at 4-bit
+  quantization is several tiers below the model reading the commands.
+  `/localgpu:ask` therefore labels its output `qwen2.5-coder:7b (local)` rather
+  than folding it into the session's prose, refuses to answer on thin retrieval,
+  and always prints the `file:line` excerpts it was given; `/localgpu:crew` is
+  report-only and writes nothing, not `.crew/config.json` and not an environment
+  variable. An unattributed 7B claim inheriting a frontier model's credibility is
+  the failure mode the plugin is written around - which is why `localgpu shell`
+  prints, on every launch, that *everything* in that session is the 7B including
+  any `/crew:*` command run inside it. Nothing enforces that; a review written
+  there is labelled exactly like any other, so the shell is for exploring and
+  drafting and not for gates.
+
+- **`crew` 0.16.9 - four landmines from `CLAUDE.md`'s "Landmines" section, live
+  in the repo a second time, fixed by reusing the reference implementation
+  each already has.**
+
+  `pm-brief.sh`, `pm-pulse.sh`, `platform-sync.sh` and `handoff-read.sh` each
+  resolved Python with `command -v python3 || command -v python`, missing the
+  `py` launcher and standing down with `exit 0` and nothing on stderr -
+  landmine #2 verbatim, and sharpest on `pm-pulse.sh`: its own header explains
+  that swallowing exit 2 drops the PM's blocking findings, and this line
+  swallowed the whole hook. All four now source `_common.sh` and call
+  `crew_py()`, printing a diagnostic to stderr before standing down -
+  `handoff-read.sh` already had `_common.sh` sourced and `crew_py()` called
+  five lines below the bad line, and did not use it there.
+
+  `crew-setup/scripts/platform.sh` and `detect.sh` probed for PowerShell with
+  a bare `command -v pwsh`, which misses `pwsh.exe` installed at the
+  well-known Program Files path when it is not on `PATH` - verified on a
+  machine `.crew/STATUS.md` documents as running 7.6.5, where the bare probe
+  reported no PowerShell at all. Both now check
+  `C:/Program Files/PowerShell/7/pwsh.exe` before falling back to `PATH`, the
+  same idiom `_common.sh` and `_verify/smoke.sh` already used.
+
 - **`crew` 0.16.7: three domain specialists, and four more guard defects.**
 
   `sharepoint-developer`, `power-automate-specialist` and `node-developer` join
@@ -32,6 +152,22 @@ All notable changes to this repository are documented here. Format follows [Keep
   leaves `tier` alone: the crew has specialised, not grown.
 
 ### Fixed
+
+- **`crew` 0.16.10: two independent sets of fail-open guard fixes, merged.**
+  Upstream's 0.16.7 fixed four guard defects in the Python hook modules
+  (`crew_config.py`, `crew_platform.py`, `crew_state.py`, `pm_brief.py`); this
+  branch's 0.16.8 and 0.16.9 fixed three more in the shell wrappers
+  (`_test/run-tests.sh`'s PATH scrub putting CWD on `PATH`, and four hook
+  wrappers standing down with nothing on stderr). Different defects, different
+  files, found independently — `crew_state.py` auto-merged, so both sets are in
+  this release rather than one silently replacing the other. The version is
+  0.16.10 rather than 0.16.9 because the merge brings upstream content in under
+  a number set before that content existed, and `claude plugin update` compares
+  the declared version: shipping it as 0.16.9 would leave every installed copy
+  reporting "already at the latest version" while holding the old code. The
+  0.16.7 entries below are upstream's own and keep their number — that version
+  shipped and is installable, so relabelling it would falsify the record for
+  people who have it.
 
 - **`crew` 0.16.7: a later dispatch cleared the family that wrote the diff.**
 
@@ -281,7 +417,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   scripts and sixteen entries while the table directly beneath it already
   listed all ten across five events, 20 entries.
 
-- **`crew` 0.16.6: the machine-global config gets a template, a walkthrough,
+- **`crew` 0.16.8: the machine-global config gets a template, a walkthrough,
   and a migration that finishes the job.**
 
   `~/.claude/crew/config.json` sets defaults for every crew repo on a machine,
@@ -330,7 +466,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   — do not resolve": it is the user's own configuration, outside the repo,
   which is the strongest version of that rule this plugin has.
 
-- **`crew` 0.16.6: a per-role provider table, and the family guard made
+- **`crew` 0.16.8: a per-role provider table, and the family guard made
   visible in state (`schema` 2 → 3).**
 
   `qa` and `dev` each gain a `roles` table and a `fallback`, so
@@ -443,7 +579,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   in the checkout — labelled as such, because that describes the next
   dispatch rather than the diff in front of the reviewer.
 
-- **`crew` 0.16.6: `upgrade_config` migrated two blocks and claimed to have
+- **`crew` 0.16.8: `upgrade_config` migrated two blocks and claimed to have
   migrated all of them.**
 
   Reported by the user 2026-09-05: `/crew:upgrade` did not pick up the provider
@@ -483,7 +619,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   with a block nobody migrated. `upgrade_config` returns `(config, notes)` for
   this reason: what the run has to say is not optional decoration.
 
-- **`crew` 0.16.6: the three agents added in 0.15.x joined the tier ladder, and
+- **`crew` 0.16.8: the three agents added in 0.15.x joined the tier ladder, and
   the ladder moved into code.**
 
   `infrastructure-architect`, `scribe` and `researcher` shipped as definitions
@@ -499,7 +635,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   human, and `tests/test_role_ladder.py` asserts all three agree — a row added
   to one and not the others fails CI.
 
-- **`crew` 0.16.6: `merge_defaults` said "recurses one level" and does not.**
+- **`crew` 0.16.8: `merge_defaults` said "recurses one level" and does not.**
   It calls itself whenever both sides hold a dict, to whatever depth the
   default has — which is why a supplied `qa` naming only `provider` still comes
   out with `qa.codex.model`. The new `crew_config._layer_supplies`, which
@@ -511,7 +647,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   running both over every settable key and over each of the three ways the
   policy can branch, rather than by asserting the mirror in a comment.
 
-- **`crew` 0.16.6: stale reference tables in `plugin/crew/README.md`.** §25 said
+- **`crew` 0.16.8: stale reference tables in `plugin/crew/README.md`.** §25 said
   21 commands and 11 agents, and listed neither `/crew:model`, `/crew:roster`,
   nor the three agents 0.15.x added. `PLUGINS.md` had been updated and the
   plugin's own README had not, which is the worse half to miss: it is the file
@@ -551,7 +687,272 @@ All notable changes to this repository are documented here. Format follows [Keep
   passed while being invisible to the contract's type keys and to any Dataview
   query built on them.
 
+- **`crew` 0.15.2: every agent can now reach a skill, and the UPDATE.md gate
+  actually runs.** 0.15.1 gave the `Skill` tool to the eight agents that named a
+  crew skill in their prose. That fixed the agents whose instructions were
+  already broken and left the other six unable to reach `find-skills` — or any
+  skill — at all, which is a capability question rather than a bug: an agent
+  that discovers mid-task that a skill exists for what it is doing should be
+  able to load it. `analyst`, `dba`, `developer`, `explorer`, `researcher` and
+  `security` now hold it too, so all fourteen do. `Skill` loads instructions and
+  grants no write capability, so `explorer` stays read-only, which is the whole
+  reason it is safe to dispatch without a plan.
+
+- **`scripts/sync-updates.py --check` runs in CI.** It shipped in 0.15.1 as a
+  gate nothing invoked. That is worse than having no gate: the mirrored blocks
+  carry a comment saying they are generated, so a reader takes them as current,
+  and the one mechanism that could contradict that was never run. Now a stale
+  mirror fails `Marketplace / check` the way a stale plugin version already
+  does. Sabotage-tested against a hand-edited block: tampered exits 1, clean
+  exits 0.
+
+- **`UPDATE.md` per component directory, mirrored into the READMEs by a
+  generator that can fail CI.** `plugin/`, `skills/` and `mcp-servers/` each own
+  an `UPDATE.md` listing what is newly *possible* there — distinct from
+  `CHANGELOG.md`, which records everything including fixes. Each file's sections
+  are mirrored into that directory's `README.md` and into the root `README.md`
+  between `<!-- BEGIN <dir>/UPDATE.md -->` markers, reusing the convention the
+  root README already used for its folder mirrors rather than inventing a second
+  one.
+
+  The difference from those existing blocks is that these have
+  `scripts/sync-updates.py`. The older mirrors are maintained by hand and nothing
+  notices when the source moves on — survivable for a table that changes a few
+  times a year, not for a "what's new" list whose entire value is being current.
+  `--check` writes nothing and exits 1 when a block is stale, 2 on a structural
+  fault it will not paper over.
+
+  Two rules fall out of splicing one text into two directory depths, and both are
+  enforced rather than merely documented. Headings are demoted one level, since a
+  mirrored section always sits under a heading its host supplies. And relative
+  links are rejected outright: `../CHANGELOG.md` resolves from
+  `plugin/README.md` and 404s from the root, so no relative target can be correct
+  in both. That second rule was in the module docstring with nothing checking it,
+  and the very first `UPDATE.md` written against it shipped a
+  `../.claude-plugin/marketplace.json` link that had to be caught by eye — a rule
+  a generator states and does not check is worse than no rule, because it reads
+  as guaranteed. Sabotage-tested: injecting a relative link exits 2, removing it
+  exits 0.
+
 ### Fixed
+
+- **`localgpu` 0.1.10: `unignore` discarded an unliftable entry in silence.**
+  `.git`, `.localgpu` and `node_modules` are a floor `unignore` cannot lift, and
+  that is right — but `load_config` enforced it with
+  `set(unignore) - UNLIFTABLE_IGNORE`, which drops the entry and says nothing. A
+  user who wrote `"unignore": [".git"]` got no error, no warning, and no effect,
+  and would reasonably go hunting their own config for a typo that was never
+  there. It now raises `ConfigError` naming the refused entries and saying why
+  each one is a mistake rather than a preference. The floor is unchanged; only
+  how it says no. Sabotage-proven: reverting to the silent drop turns both floor
+  tests red.
+
+- **`scripts/install-prerequisites.ps1` - `Format-PickerLine` reserved one
+  character for a three-character `...` ellipsis, returning `Width + 2` on
+  every clipped line.** Measured before the fix: `Width=20 -> 22`,
+  `Width=40 -> 42`, `Width=80 -> 82`. The keys/hint lines are called with
+  `$winW - 1`, so an 80-column console emitted 81 characters and wrapped,
+  desyncing the cursor-up redraw the picker's own comment warns about. The
+  bash twin's `pick_fit` was already correct (a 1-character `…`, reserving
+  1); `.ps1` now reserves 3 for `...` instead of switching to the Unicode
+  ellipsis, keeping the file's existing ASCII-only convention (its keys line
+  already spells out `Up/Down` rather than using bash's arrow glyphs) - the
+  fix is that the returned length no longer exceeds `Width`, not which
+  ellipsis is used.
+
+  The title-underline line in both flavours sized its dash count from the
+  **unclipped** title (`${#PICK_TITLE}` in `.sh`, `$Title.Length` in `.ps1`)
+  instead of the fitted one, so a long title produced a dash line far wider
+  than the console and wrapped independently of the label-clipping fix
+  above. Both now size the dashes from the title text actually returned by
+  the fitter. `.ps1` also had no width floor at all - `Get-PickerConsole`
+  returns raw `[Console]::WindowWidth`, and only the label width had a
+  floor - so a narrow window could wrap the underline regardless; it now
+  floors at 40, matching bash's `term_cols()`.
+
+- **localgpu 0.1.7 -> 0.1.8: a security review found the indexer had no
+  automatic defence against embedding secrets.** `DEFAULT_IGNORE` covered
+  `.git`, VCS directories, build/dependency directories and binary
+  extensions, but no `.env`, no credential or key patterns, and it never
+  consulted a project's own `.gitignore`. Because the indexer embeds file
+  *contents* into an on-disk vector store, a `.env` or private key not
+  excluded by name got a second, less-guarded copy written to disk - one a
+  later release cannot undo, since the embedding is already there. Two
+  changes, both dependency-free (this package stays standard-library-only
+  except numpy):
+
+  `DEFAULT_IGNORE` in `mcp/config.py` now also excludes `.env` and its
+  dotted variants (`.env.*` - matching the family, not the bare
+  "env.production" some tools use instead, which cannot be told apart from
+  an ordinary filename by name alone), `*.pem`, `*.key`, `*.p12`, `*.pfx`,
+  `id_rsa*` and `credentials.json`.
+
+  `iter_files`/`is_ignored` in `mcp/indexer.py` now honour a `.gitignore`
+  found directly under the indexed root, in a documented subset: comments
+  and blank lines skipped, a leading `/` anchors a pattern to that root
+  (matched only against the full relative path, never as a bare name or an
+  interior segment), `**/`/`*`/`?`/`[...]` pass straight to `fnmatch`, and a
+  trailing `/` is treated like no trailing `/` at all. **Not supported:
+  negation (`!pattern`) is silently dropped rather than mis-applied, and
+  nested `.gitignore` files below the indexed root are not read.**
+
+  `mcp/_test/test_secrets.py` builds a fixture repo with a `.env`, a
+  `*.pem`, a file excluded only via `.gitignore`, and an ordinary source
+  file, then asserts on the *stored chunk text* fed to the embedder - not
+  merely on which files got indexed - since content reaching the vector
+  store is the actual risk. Sabotage-tested: removing the `.env` pattern
+  and disabling the `.gitignore` handling each turned this test red on the
+  exact secret named in the assertion, independently. 227 -> 228 tests;
+  `_verify/smoke.sh` stayed 10/10.
+
+- **localgpu 0.1.6 -> 0.1.7: three more defects, found by a reviewer running
+  mutation tests against `anthropic_proxy.py` rather than reading it.**
+
+  **The context-window guard could fail open.** `resolve_num_ctx` folded "the
+  model really has this context window" and "the probe to find out failed"
+  into the same fallback number, and the caller cached whichever one it got
+  as if both were equally trustworthy. One slow `/api/show` probe - Ollama
+  loading another model, a cold start - pinned `DEFAULT_NUM_CTX` (32768) for
+  the rest of the process even against a model whose real window was 8192,
+  with every later request's budget computed from the wrong number and no
+  log line to say so. That is the exact silent-truncation bug this module
+  exists to prevent, reinstated by a network blip. `_probe_num_ctx` now
+  returns `None` on any failure instead of guessing a number, and only a
+  successful probe is cached — a failed one falls back for that one request
+  only and is retried, with a verbose-gated log line, on the next.
+
+  **The context guard measured base64 that would never be sent.**
+  `check_fits_context` estimated the request's size from the untranslated
+  Anthropic body, where a pasted image is still full base64; what actually
+  reaches Ollama is a ~30-character placeholder (`_blocks_to_text` replaces
+  every image block before translation). A 100 KB image estimated roughly
+  44,500 tokens against the ~29 the model would actually see, so the guard
+  refused a turn its own module docstring promises degrades gracefully
+  instead. `estimate_prompt_tokens` now measures the translated
+  (`to_ollama_messages`/`to_ollama_tools`) form.
+
+  **The same estimator over-counted non-English text.** `json.dumps` defaults
+  to `ensure_ascii=True`, escaping every CJK character as a six-character
+  `\uXXXX` sequence before the count was ever divided down — 4000 CJK
+  characters estimated roughly 8,010 tokens, refusing an ordinary non-English
+  conversation at a fraction of the model's real capacity.
+  `estimate_prompt_tokens` now serializes with `ensure_ascii=False`.
+  `_CHARS_PER_TOKEN_ESTIMATE` (3, deliberately conservative for dense code)
+  was left untouched — a prior attempt at this file changed the divisor alone
+  and made both over-counts worse instead of fixing which bytes were counted.
+
+  Every fix carries a regression test sabotaged individually: reverted,
+  confirmed red against the exact numbers above, restored, confirmed green.
+  Two existing tests were hollow in a way an independent reviewer proved by
+  running them against a `resolve_num_ctx` that was nothing but
+  `return default` — `test_num_ctx_is_auto_detected_end_to_end`'s fixture
+  advertised the same context length as `DEFAULT_NUM_CTX`, so it passed
+  whether or not the probe ran at all; its fixture now advertises a distinct
+  8192. 223 -> 227 tests; `_verify/smoke.sh` stayed 10/10.
+
+- **localgpu 0.1.2 -> 0.1.4: two independent reviewers found 1 BLOCK and 18
+  FIX/NIT in code that had already passed 175 unit tests and 9 smoke checks,
+  and a second pass over the fix found 6 more in the failure paths it added.**
+  Codex (OpenAI) and Copilot pinned to kimi-k3 (Moonshot) each reviewed the
+  branch from an identical prompt — both different families from the author,
+  which is the point: five lanes and the main session, all Claude, had run
+  green over defects neither this session's tests nor its own review caught.
+
+  **The BLOCK.** `_strip_fence` discarded trailing text, so a fenced JSON
+  example followed by disclaiming prose — including "Do not execute this
+  example" — was promoted to a real `tool_use`. A model quoting documentation,
+  or repeating a file it had just read, could cause a tool to actually run.
+  Trailing text now disqualifies the promotion, with six must-not-fire tests
+  and a control proving genuine calls still work.
+
+  **The proxy** no longer reports failure as success: an explicit error chunk
+  or a stream that simply stops now emits an SSE error event instead of
+  `end_turn`. An upstream out-of-memory — likely on an 8 GB card — used to
+  arrive as a normal, complete, truncated answer.
+
+  **The index** gained the guard it was missing: `search_code` now checks the
+  embed model, not just `refresh`. An index built with model A could be
+  queried with model B's embeddings — same dimension, incompatible vector
+  space, silently wrong ranking, no error.
+
+  **Config is no longer type-blind.** `"ignore": "node_modules"` as a bare
+  string used to iterate into the patterns n, o, d, e… and report success. It
+  now names the key, the type found, and the fix.
+
+  **Concurrency is now genuinely locked, not merely detected.** A
+  per-vectors-file RLock serialises search/add/compact in-process, and an
+  OS-level file lock wraps `index_refresh` so two Claude sessions cannot both
+  compact the same index.
+
+  One finding was investigated and rejected rather than fixed: the claim that
+  `shutil.which("claude")` returns a `.cmd` that `subprocess.run` cannot
+  launch. Verified on the development machine — `claude` resolves to a native
+  `.EXE`, and even with a real `.cmd` shim, Python passes
+  `lpApplicationName=NULL` so `CreateProcess` routes it to `cmd.exe`. That
+  failure mode is Node's `child_process`, not Python's; adding `shell=True`
+  would have introduced injection risk to fix nothing.
+
+  Every fix carries a regression test sabotaged individually: reverted,
+  confirmed red, restored, confirmed green. 175 -> 201 tests. The version bump
+  itself needed a second commit — the fix commit changed `plugin/localgpu/**`
+  without bumping the version, which `_verify/run-all.sh`'s drift check caught;
+  `_verify/smoke.sh` stayed 10/10 regardless, since it omits that check on
+  budget grounds.
+
+  **A second Codex pass over the fixed code — not a fresh review of the
+  original branch — found 6 more, all in failure paths written that same
+  day.** The review was re-run exactly once rather than looped, and the
+  pattern is worth naming: fixing 19 defects in fresh code opened new edges,
+  which is what a second look is for.
+
+  - **A regression from round 1's own fix.** Tracking tool calls off whichever
+    chunk carries them meant the accumulator *assigned* instead of appending,
+    so with a call split across two chunks only the last one executed. Now
+    `.extend()`s. No amount of reviewing the original code would have found
+    this; only reviewing the fix did.
+  - **Malformed recovered arguments** (`{"name":"tool","arguments":"not
+    json"}`) became a `tool_use` with `input: {}` — a tool running with no
+    arguments is a different call, not a degraded one, so this is now
+    rejected outright. The real Ollama `tool_calls` path still degrades to
+    empty on purpose; it carries its own contract test for that.
+  - **A mid-stream timeout wrote a second HTTP response into the
+    already-chunked body**, corrupting the connection for anything reusing
+    it. Sabotage reproduced it as a real client-side
+    `http.client.IncompleteRead`, not a synthetic assertion.
+  - **Silent, permanent data loss.** A file whose re-embed failed after
+    tombstoning, then had its content restored, matched on stored hash and
+    was skipped — leaving every chunk dead and the file unsearchable forever,
+    with no error. A hash match is no longer treated as proof that live
+    chunks exist.
+  - **The embed-model guard was bypassable by its own precondition.** A
+    failed *initial* refresh leaves no manifest, so "no manifest" read as "no
+    mismatch," and a later same-width model was certified over mixed vectors.
+    Absence now means "nothing built" only when the store is also empty.
+  - **A Linux-only cross-process compaction race**, undocumented as a full
+    fix because it cannot be reproduced on this Windows machine: a generation
+    counter turns a silent wrong answer into a loud, retryable error instead.
+    Its test is explicitly labelled a simulation.
+
+  175 -> 207 tests across the two rounds. Bumped in `plugin.json`,
+  `marketplace.json`, and `pyproject.toml`.
+
+- **crew 0.15.3 - `claude-md-audit.sh` rejected the very heading it recommends.**
+  `canon()` maps a heading to the concern it covers; six of its seven arms use a
+  prefix wildcard (`where*`, `scope*`, `stop*`, `promotion*`, `reporting*`,
+  `memory*`) but the commands arm was a bare `commands` with none. The script's own
+  `label()` tells the user the canonical heading is
+  `## Commands - build, test, verify, regression, promote`, which lowercases to
+  `commands - build, ...` and matches neither `commands` nor `build*`. So the audit
+  reported that section MISSING and listed it under `extra` in the same run, and a
+  user who followed the recommendation could never make it pass. One character:
+  `commands*`.
+
+  The real fix is the test beside it. `skills/crew-setup/scripts/_test/round-trip.sh`
+  feeds every `label()` output back through `canon()` and asserts it resolves to the
+  concern it came from - the contract between the two functions, which nothing
+  checked. It fails if fewer than seven concerns are examined, so a broken extraction
+  cannot report green over zero cases. Sabotage-tested: reintroducing the missing
+  wildcard turns it red.
 
 - **`obsidian-vault` 0.3.0: `diagnose` printed a FAIL and exited 0.** A scoped
   run prints every port collision on the machine - which is the point of a wide
@@ -734,55 +1135,6 @@ All notable changes to this repository are documented here. Format follows [Keep
   the registry read, the plugin install, the `claude mcp add` block, the
   end-to-end curl — was deleted from `init`, the `obsidian-setup` skill and the
   plugin README rather than left standing beside it.
-
-- **`crew` 0.15.2: every agent can now reach a skill, and the UPDATE.md gate
-  actually runs.** 0.15.1 gave the `Skill` tool to the eight agents that named a
-  crew skill in their prose. That fixed the agents whose instructions were
-  already broken and left the other six unable to reach `find-skills` — or any
-  skill — at all, which is a capability question rather than a bug: an agent
-  that discovers mid-task that a skill exists for what it is doing should be
-  able to load it. `analyst`, `dba`, `developer`, `explorer`, `researcher` and
-  `security` now hold it too, so all fourteen do. `Skill` loads instructions and
-  grants no write capability, so `explorer` stays read-only, which is the whole
-  reason it is safe to dispatch without a plan.
-
-- **`scripts/sync-updates.py --check` runs in CI.** It shipped in 0.15.1 as a
-  gate nothing invoked. That is worse than having no gate: the mirrored blocks
-  carry a comment saying they are generated, so a reader takes them as current,
-  and the one mechanism that could contradict that was never run. Now a stale
-  mirror fails `Marketplace / check` the way a stale plugin version already
-  does. Sabotage-tested against a hand-edited block: tampered exits 1, clean
-  exits 0.
-
-- **`UPDATE.md` per component directory, mirrored into the READMEs by a
-  generator that can fail CI.** `plugin/`, `skills/` and `mcp-servers/` each own
-  an `UPDATE.md` listing what is newly *possible* there — distinct from
-  `CHANGELOG.md`, which records everything including fixes. Each file's sections
-  are mirrored into that directory's `README.md` and into the root `README.md`
-  between `<!-- BEGIN <dir>/UPDATE.md -->` markers, reusing the convention the
-  root README already used for its folder mirrors rather than inventing a second
-  one.
-
-  The difference from those existing blocks is that these have
-  `scripts/sync-updates.py`. The older mirrors are maintained by hand and nothing
-  notices when the source moves on — survivable for a table that changes a few
-  times a year, not for a "what's new" list whose entire value is being current.
-  `--check` writes nothing and exits 1 when a block is stale, 2 on a structural
-  fault it will not paper over.
-
-  Two rules fall out of splicing one text into two directory depths, and both are
-  enforced rather than merely documented. Headings are demoted one level, since a
-  mirrored section always sits under a heading its host supplies. And relative
-  links are rejected outright: `../CHANGELOG.md` resolves from
-  `plugin/README.md` and 404s from the root, so no relative target can be correct
-  in both. That second rule was in the module docstring with nothing checking it,
-  and the very first `UPDATE.md` written against it shipped a
-  `../.claude-plugin/marketplace.json` link that had to be caught by eye — a rule
-  a generator states and does not check is worse than no rule, because it reads
-  as guaranteed. Sabotage-tested: injecting a relative link exits 2, removing it
-  exits 0.
-
-### Fixed
 
 - **Eight crew agents cited a skill they had no way to load.** Naming a skill in
   an agent's prose does not load it; the agent needs `skills:` frontmatter or the

@@ -248,6 +248,65 @@ def test_work_with_every_ticket_done_reports_none(tmp_path):
     assert crew_state.read_work(str(root))["ticket"] is None
 
 
+def test_table_row_status_is_read_from_the_status_cell(tmp_path):
+    """/crew:ticket writes the INDEX row as a table, not prose --
+    `T-#### | open | <risk> | <repos> | <title>` (commands/ticket.md:37).
+    `_DONE_RE` never matches this shape at all (a table row starts with `|`,
+    not a bullet/checkbox/keyword-colon), which is the defect this test
+    guards: every row used to read OPEN regardless of its status column.
+    """
+    root = crew_fixtures.make_repo(tmp_path)
+    (root / ".work" / "INDEX.md").write_text(
+        "T-0001 | open | low | r | t\n",
+        encoding="utf-8",
+    )
+    assert crew_state.read_work(str(root))["ticket"] == "T-0001"
+
+
+def test_table_row_marked_done_is_skipped(tmp_path):
+    root = crew_fixtures.make_repo(tmp_path)
+    (root / ".work" / "INDEX.md").write_text(
+        "| T-0001 | done | low | r | t |\n"
+        "| T-0002 | open | low | r | t |\n",
+        encoding="utf-8",
+    )
+    assert crew_state.read_work(str(root))["ticket"] == "T-0002"
+
+
+def test_every_table_row_done_reports_none(tmp_path):
+    root = crew_fixtures.make_repo(tmp_path)
+    (root / ".work" / "INDEX.md").write_text(
+        "| T-0001 | done | low | r | t |\n"
+        "| T-0002 | closed | low | r | t |\n",
+        encoding="utf-8",
+    )
+    assert crew_state.read_work(str(root))["ticket"] is None
+
+
+def test_table_row_title_saying_done_does_not_close_an_open_status_cell(tmp_path):
+    """Position is the whole discriminator in a table: the status is a
+    defined cell, so the word "done" sitting in the TITLE cell must not
+    close a row whose STATUS cell says open. A sloppy fix that greps the
+    whole row for "done" passes every other fixture here and fails only
+    this one.
+    """
+    root = crew_fixtures.make_repo(tmp_path)
+    (root / ".work" / "INDEX.md").write_text(
+        "T-0001 | open | low | r | mark the old workflow done\n",
+        encoding="utf-8",
+    )
+    assert crew_state.read_work(str(root))["ticket"] == "T-0001"
+
+
+def test_table_row_with_leading_and_trailing_pipes(tmp_path):
+    root = crew_fixtures.make_repo(tmp_path)
+    (root / ".work" / "INDEX.md").write_text(
+        "| T-0001 | open | low | r | t |\n",
+        encoding="utf-8",
+    )
+    assert crew_state.read_work(str(root))["ticket"] == "T-0001"
+
+
 CODEMAP_BODY = """# auth
 anchor: repo@{sha}
 verified: 2026-08-01

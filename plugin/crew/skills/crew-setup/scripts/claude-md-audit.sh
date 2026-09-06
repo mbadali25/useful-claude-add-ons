@@ -26,7 +26,7 @@ fi
 # not reported as missing it. Add rows here rather than loosening the match.
 canon() {
   case "$1" in
-    commands|build*|running*|how\ to\ run*)                  echo "commands" ;;
+    commands*|build*|running*|how\ to\ run*)                 echo "commands" ;;
     where*|layout*|structure*|code\ map*)                    echo "where-things-are" ;;
     scope*|discipline*)                                      echo "scope" ;;
     stop*|ask*|escalat*)                                     echo "stop-and-ask" ;;

@@ -1,0 +1,38 @@
+# ruff configuration for useful-claude-add-ons.
+#
+# Same premise as .pylintrc: this repo is NOT a Python package. It is ~29
+# independent Claude Code skills and plugins, each shipping standalone helper
+# scripts that Claude runs directly with `python3 script.py`. Ruff's defaults
+# assume library code; a few of them fight the deliberate style of a
+# single-file script that has to stay readable in one screen.
+#
+# Baselined 2026-09-05 at 72 findings, all three rules below, so the gate
+# starts green. A gate that starts red never becomes a gate — it gets an
+# exception, then gets ignored, then gets deleted.
+
+line-length = 110
+
+[lint]
+ignore = [
+  # E701/E702 — multiple statements on one line (colon / semicolon).
+  # 66 of the 72 baselined findings. This is the house style for guard clauses
+  # and one-line helpers in scripts meant to be read top-to-bottom, e.g.
+  #     def die(m, c=2): eprint(f"notify: {m}"); sys.exit(c)
+  # Splitting those across six lines makes the scripts longer without making
+  # them clearer. Concentrated in skills/notify/scripts/ and
+  # skills/checkpoint-email/scripts/.
+  "E701",
+  "E702",
+
+  # E741 — ambiguous variable name. All 5 findings are `l` as a comprehension
+  # variable for "line" or "label":
+  #     lines = [l for l in text.splitlines() if l.strip()]
+  # The scope is one expression. Worth revisiting if `l` ever escapes a
+  # comprehension into a real function body — that is when the rule earns its keep.
+  "E741",
+]
+
+[lint.per-file-ignores]
+# Test files legitimately import fixtures they do not directly reference and
+# assert on values they do not use.
+"**/_test/**" = ["F401", "F811"]
