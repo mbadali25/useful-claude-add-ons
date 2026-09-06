@@ -626,20 +626,21 @@ entries.
 | Script | Event | What it does |
 |---|---|---|
 | `bridge-status.sh`/`.ps1` | `SessionStart` | Probes **every configured vault's** Local REST API bridge (each on its own port) and states plainly whether each `mcp__obsidian-<name>__*` will work this session, with the specific fix for each failure mode (not running, wrong port enabled, rejected key). Never blocks - a `SessionStart` hook cannot, and "the bridge is down" is information, not a reason to refuse a turn. Claims the session once via a lock file so both interpreters firing (normal on Windows) does not print the context twice. |
-| `vault-guard.sh`/`.ps1` | `PostToolUse` on `Edit`/`Write`/`MultiEdit` | Enforces the *default* vault's frontmatter contract, ASCII-only rule, and canvas well-formedness. **All three checks ship OFF** in `~/.claude/obsidian/config.json` - a fresh install must not reject edits against a different vault's house rules. `/obsidian-vault:init` turns a toggle on only when it finds the matching rule stated in the target vault's own `CLAUDE.md`. Can block (exit 2) with the specific violation and fix on stderr. A non-default vault (a generated code-graph vault, say) is never held to this contract. |
+| `vault-guard.sh`/`.ps1` | `PostToolUse` on `Edit`/`Write`/`MultiEdit` | Enforces the *default* vault's frontmatter contract, ASCII-only rule, and canvas well-formedness. **The frontmatter and ASCII rules ship OFF; the canvas shape check ships ON** in `~/.claude/obsidian/config.json` (`checkCanvas` defaults true - a `.canvas` that does not parse opens blank with no error, and checking costs nothing) - a fresh install must not reject prose against a different vault's house rules. `/obsidian-vault:init` turns a toggle on only when it finds the matching rule stated in the target vault's own `CLAUDE.md`. Can block (exit 2) with the specific violation and fix on stderr. A non-default vault (a generated code-graph vault, say) is never held to this contract. |
 | `vault-capture.sh`/`.ps1` | `SessionEnd`, `PreCompact` | Appends one line (session id, cwd, transcript path) to the default vault's `inbox/pending-reflect.md` for the gardener to process later. Costs nothing, never raises - a capture miss must not break a session. |
 
 **This is what "the moment the plugin is enabled" means in practice:**
 `bridge-status` fires on every session start once at least one vault resolves,
 and `vault-guard` fires on every edit to a file inside the default vault - but
-with every guard check off by default, a fresh install changes nothing about
-what you can write until `/obsidian-vault:init` or you turn a toggle on
-deliberately.
+with the frontmatter and ASCII rules off by default, a fresh install changes
+nothing about the prose you can write until `/obsidian-vault:init` or you turn
+a toggle on deliberately. A `.canvas` file is the exception: `checkCanvas`
+defaults true, so a canvas that does not parse is rejected on a fresh install.
 
 **`vault-guard` is the one hook that can block**, and ships a committed,
 sabotage-tested regression suite: `obsidian-vault/hooks/scripts/_test/run-tests.sh`
-(12 cases - 6 must-block, 5 must-allow, 1 proving the off-by-default toggles
-actually gate the checks). Sabotage-tested means exactly that: the ASCII check
+(57 assertions, must-block and must-allow, including one proving the config
+toggles actually gate the checks). Sabotage-tested means exactly that: the ASCII check
 was disabled once during development to confirm the suite goes red rather than
 staying green, per this repo's rule that a hook allowed to block needs proof
 its suite can catch a real regression, not just that the suite exists.

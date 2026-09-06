@@ -75,7 +75,7 @@ to be asked; hooks do not.
 | Script | Event | What it does |
 |---|---|---|
 | `bridge-status.sh`/`.ps1` | `SessionStart` | Probes **every** configured vault's Local REST API bridge and states plainly whether each `mcp__obsidian-<name>__*` will work this session. Both ports come from that vault's own `data.json` (`insecurePort` HTTP, `port` HTTPS), never derived from each other. It checks for a port collision across every vault **before** blaming any per-vault setting - `enableInsecureServer` is not the cause when the losing vault never started a server at all. Not-installed ("there is no bridge") and wrong-vault-answering (authenticates, serves someone else's files) are separate verdicts from down and rejected-key, each with its own fix. Never blocks. |
-| `vault-guard.sh`/`.ps1` | `PostToolUse` on `Edit`/`Write`/`MultiEdit` | Enforces the *default* vault's frontmatter contract, ASCII rule, and canvas well-formedness - **all three OFF by default.** `/obsidian-vault:init` turns one on only when it finds the matching rule stated in the target vault's own `CLAUDE.md`. Can block (exit 2) with the specific fix on stderr. Does not apply to a non-default vault. |
+| `vault-guard.sh`/`.ps1` | `PostToolUse` on `Edit`/`Write`/`MultiEdit` | Enforces the *default* vault's frontmatter contract, ASCII rule, and canvas well-formedness - **the frontmatter and ASCII rules are OFF by default; the canvas shape check is ON** (`checkCanvas` defaults true - a `.canvas` that does not parse opens blank with no error, and checking costs nothing). `/obsidian-vault:init` turns one of the other two on only when it finds the matching rule stated in the target vault's own `CLAUDE.md`. Can block (exit 2) with the specific fix on stderr. Does not apply to a non-default vault. Four basenames - `CLAUDE.md`, `README.md`, `AGENTS.md`, `GEMINI.md` - are excused from *having* frontmatter, and from nothing else: if one of them does carry frontmatter it is still held to the required keys, the title/filename match and the updated date. The ASCII rule still applies to three of the four, because `CLAUDE.md` is separately ASCII-exempt by an older decision. The canvas rule never enters into it: all four are `.md`, and the canvas checks run only on a `.canvas` file. |
 | `vault-capture.sh`/`.ps1` | `SessionEnd`, `PreCompact` | Appends one line (session id, cwd, transcript path) to the default vault's `inbox/pending-reflect.md`. Costs nothing, cannot break a session. |
 
 Every script delegates to one Python module shared by both the bash and
@@ -86,8 +86,8 @@ docstring: env var and Obsidian's own registry apply only to the default
 vault; a named non-default vault is only ever what config says it is.
 
 **`vault-guard` is the one hook that can block**, and it ships a committed,
-sabotage-tested regression suite: `hooks/scripts/_test/run-tests.sh` (12
-cases, must-block and must-allow, plus a case proving the OFF-by-default
+sabotage-tested regression suite: `hooks/scripts/_test/run-tests.sh` (57
+assertions, must-block and must-allow, including a case proving the config
 toggles actually gate the checks).
 
 ## Commands

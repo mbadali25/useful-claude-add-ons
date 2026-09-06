@@ -5,10 +5,12 @@ Generalized from a personal ~/.claude/hooks/obsidian-vault-guard.py written for
 one vault's own contract. The checks below are the same mechanics, but every
 one is now a config toggle under ~/.claude/obsidian/config.json -> "guard",
 because a vault's frontmatter contract, ASCII rule and tag vocabulary are that
-vault's decision, not this plugin's. Defaults are all OFF: a fresh install must
-not suddenly reject edits against rules a different vault chose. /obsidian-vault:init
-turns a toggle on only when it finds the matching rule stated in the target
-vault's own CLAUDE.md, and says so when it does.
+vault's decision, not this plugin's. The frontmatter and ASCII rules default
+OFF: a fresh install must not suddenly reject edits against rules a different
+vault chose. checkCanvas is the one exception and defaults ON (see below).
+/obsidian-vault:init turns one of the other two on only when it finds the
+matching rule stated in the target vault's own CLAUDE.md, and says so when it
+does.
 
   guard.asciiOnly           bool, default false
   guard.requireFrontmatter  bool, default false
@@ -35,6 +37,26 @@ import obsidian_common  # noqa: E402  pylint: disable=wrong-import-position
 # CLAUDE.md itself must show the real characters, so it is exempt by design
 # whenever asciiOnly is on.
 ASCII_EXEMPT_NAMES = {"claude.md"}
+
+# ...and it is not a note either. CLAUDE.md is the agent's instruction file that
+# happens to live in the vault; it has no frontmatter and must not grow any, or
+# Claude Code reads a YAML header as part of its instructions. Same for the
+# READMEs a repo-shaped vault carries. Demanding the six-key contract here is a
+# false positive that blocks every legitimate edit to the file, and the only way
+# to satisfy it is to damage the file.
+#
+# These names are excused from HAVING frontmatter, and from nothing else in this
+# check: if one of them does carry frontmatter it is still held to the required
+# keys, the title/filename match and the updated date. See `fm_optional` in
+# `check_note`.
+#
+# "and from nothing else" is scoped to the note contract on purpose. CLAUDE.md
+# is ALSO in ASCII_EXEMPT_NAMES above, so it is excused from the ASCII rule too
+# -- by a separate, older decision. An earlier version of this comment claimed
+# every exempt name "is still held to the ASCII rule", which is true of
+# README/AGENTS/GEMINI and false of CLAUDE.md. The two exemption sets are
+# deliberately separate and deliberately not the same size.
+FRONTMATTER_EXEMPT_NAMES = {"claude.md", "readme.md", "agents.md", "gemini.md"}
 
 ASCII_MAP = {
     "—": " - ", "–": " - ", "·": "|", "•": "-",
@@ -131,7 +153,8 @@ def parse_frontmatter(text):
     return fm
 
 
-def check_note(path, text, issues, advisory, six_keys, type_keys, root, notes_glob):
+def check_note(path, text, issues, advisory, six_keys, type_keys, root,
+               notes_glob, fm_optional=False):
     rel = os.path.relpath(path, root).replace("\\", "/")
     if notes_glob and not rel.startswith(notes_glob):
         return
@@ -139,7 +162,19 @@ def check_note(path, text, issues, advisory, six_keys, type_keys, root, notes_gl
         return
     fm = parse_frontmatter(text)
     if fm is None:
-        issues.append("NO FRONTMATTER. Required keys: " + ", ".join(six_keys))
+        # `fm_optional` names the ONE check an exempt basename is excused from:
+        # having frontmatter at all. Codex found the first version of this
+        # skipped the whole function, which also dropped the required-keys,
+        # title-matches-filename and updated-date checks -- while the comment
+        # beside it claimed the exemption was "frontmatter-only". A guarantee
+        # written narrower than the code it describes is the same defect class
+        # as a guard that fails open while looking like it checked.
+        #
+        # So a CLAUDE.md with no frontmatter is silent, and a note that happens
+        # to be called README.md and DOES carry frontmatter is still held to
+        # every other rule.
+        if not fm_optional:
+            issues.append("NO FRONTMATTER. Required keys: " + ", ".join(six_keys))
         return
 
     missing = [k for k in six_keys if k not in fm or fm[k] in ("", None)]
@@ -232,7 +267,10 @@ def main():
         if ascii_only:
             check_ascii(path, added if added is not None else text, issues)
         if ext == ".md" and require_fm:
-            check_note(path, text, issues, advisory, six_keys, type_keys, vault, notes_glob)
+            check_note(path, text, issues, advisory, six_keys, type_keys, vault,
+                       notes_glob,
+                       fm_optional=(os.path.basename(path).lower()
+                                    in FRONTMATTER_EXEMPT_NAMES))
         elif ext == ".canvas" and check_canvas_shape:
             check_canvas(path, text, issues, advisory, vault)
 
