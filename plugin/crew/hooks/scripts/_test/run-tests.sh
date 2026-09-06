@@ -91,17 +91,59 @@ if [ -n "$JQ_BIN" ]; then
   # whatever directory the suite happened to be launched from - including one
   # committed by a pull request, executed the moment a maintainer runs the
   # suite, with the guard's real tool_input JSON on its stdin.
+  # SUBSTITUTE jq's directory, do not drop it. Dropping worked on Windows,
+  # where jq sits in its own chocolatey bin. On Linux jq lives in /usr/bin
+  # alongside python3, sh, grep and everything else the no-jq fallback needs,
+  # so removing that directory did not test the fallback - it removed the
+  # interpreter the fallback runs on, and the suite correctly refused with
+  # "no WORKING python remains".
+  #
+  # Instead, mirror the directory into a temp dir as symlinks, minus `jq`
+  # itself, and put the mirror where the original was. Everything else in that
+  # bin stays reachable at the same PATH position; only jq disappears.
+  # Exclude every spelling `command -v jq` can resolve, not just the bare
+  # name. On Windows the binary is `jq.exe` and chocolatey adds a `jq.bat`
+  # shim; mirroring those and skipping only "jq" left jq findable and the
+  # scrub silently did nothing - measured, not assumed. The list stays
+  # explicit so a `jq-1.7` or a `jqlang` beside it is still mirrored: those
+  # are not what a bare `jq` resolves to, and hiding them would be a
+  # different, unasked-for change.
+  JQ_SHADOW=$(mktemp -d) || { echo "FATAL: mktemp -d failed" >&2; exit 1; }
+  trap 'rm -rf "$JQ_SHADOW"' EXIT
+  for _scrub_f in "$JQ_DIR"/*; do
+    [ -e "$_scrub_f" ] || continue          # unmatched glob in an empty dir
+    _scrub_b=${_scrub_f##*/}
+    case $_scrub_b in
+      jq|jq.exe|jq.EXE|jq.bat|jq.BAT|jq.cmd|jq.CMD|jq.com|jq.ps1) continue ;;
+    esac
+    ln -s "$_scrub_f" "$JQ_SHADOW/$_scrub_b" 2>/dev/null || true
+  done
+  if PATH="$JQ_SHADOW" command -v jq >/dev/null 2>&1; then
+    echo "FATAL: the jq mirror still resolves jq - a spelling this loop does" >&2
+    echo "       not exclude. Add it to the case above." >&2
+    exit 1
+  fi
+
   NOJQ_PATH=""
   _scrub_oldifs=$IFS
   IFS=":"
   for _scrub_dir in $PATH; do
     [ -n "$_scrub_dir" ] || continue
     _scrub_real=$(cd "$_scrub_dir" 2>/dev/null && pwd -P) || _scrub_real="$_scrub_dir"
-    [ "$_scrub_real" = "$JQ_DIR" ] && continue
+    if [ "$_scrub_real" = "$JQ_DIR" ]; then
+      # First spelling of jq's dir becomes the mirror; later spellings of the
+      # same dir (a merged-/usr /bin -> /usr/bin symlink) are dropped, or they
+      # would put the real jq back.
+      case ":$NOJQ_PATH:" in
+        *":$JQ_SHADOW:"*) ;;
+        *) NOJQ_PATH="${NOJQ_PATH:+$NOJQ_PATH:}$JQ_SHADOW" ;;
+      esac
+      continue
+    fi
     NOJQ_PATH="${NOJQ_PATH:+$NOJQ_PATH:}$_scrub_dir"
   done
   IFS=$_scrub_oldifs
-  unset _scrub_oldifs _scrub_dir _scrub_real
+  unset _scrub_oldifs _scrub_dir _scrub_real _scrub_f _scrub_b
 else
   NOJQ_PATH="$PATH"
 fi

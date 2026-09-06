@@ -70910,7 +70910,7 @@
       "source_file": "plugin/localgpu/pyproject.toml",
       "source_location": "L1",
       "type": "package",
-      "version": "0.1.10"
+      "version": "0.1.11"
     },
     {
       "id": "plugin_crew_agents_explorer",
@@ -192561,5 +192561,5 @@
     }
   ],
   "hyperedges": [],
-  "built_at_commit": "128e69162ce63b6eb951d112cf71437f03f5ef0a"
+  "built_at_commit": "84e368291d2bb6cc9799b11e6a424eabfcf1b175"
 }
