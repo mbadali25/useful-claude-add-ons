@@ -1,21 +1,32 @@
 ---
-description: Run a Nuclei scan on a target, then report and offer to open SDP tickets
+description: Run a Nuclei scan on a target, then report + confirm-then-open SDP tickets
 argument-hint: <url-host-or-targets-file> [min-severity]
 ---
-Scan `$1` with the `gizmoduck` skill: run the scan (default `--severity critical,high,medium`),
-show the summary, then produce a report at severity `$2` (default: high) as inline Markdown plus
-HTML and PDF.
+Scan `$1` with the `gizmoduck` skill: run the scan (default `--severity critical,high,medium`,
+writing `findings.jsonl`), show the summary, produce a report at severity `$2` (default: high) as
+inline Markdown plus HTML and PDF, then run `gizmoduck.py tickets findings.jsonl --min-severity
+${2:-high}` (no `--yes`) to get the candidate list. Without `--yes`, the command prints the
+candidate list, a digest over that exact batch, and the rerun command carrying it — search
+ServiceDesk Plus for each `[Nuclei <template-id>]` tag to split it into create-vs-add-a-note, and
+show the user the full batch (severity + subject per line, plus that split) **and the exact
+rerun command the preview printed**, so there is nothing to retype. Get one explicit go-ahead
+for the whole batch before creating anything — do not prompt per ticket. Only then run that
+exact printed command — `gizmoduck.py tickets findings.jsonl --min-severity ${2:-high} --yes
+<digest-from-the-preview>` — and act on the records (create, or add a note to an existing open
+ticket). The digest binds the rerun to the exact batch shown: a `--yes` value that does not
+match what `tickets` recomputes right now — a different findings file, a different
+`--min-severity`, findings that changed in between — is refused (`GIZMODUCK_APPROVAL_MISMATCH`),
+never silently widened. Never edit the findings file or `--min-severity` on the rerun; if the
+batch needs to change, get a fresh preview and a fresh digest, and confirm again. Print a
+created-vs-updated summary.
 
-Then run `gizmoduck.py tickets <findings> --min-severity high` **without** `--create` and show the
-resulting list - the findings that would become tickets. Ask whether to open them. This command
-does not file anything on its own; a scan the user asked for is not consent to write to a
-ticketing system on their behalf.
-
-The ticket floor is `high` and does not follow `$2`. `$2` sets the *report* severity, and a user
-who widens the report to `medium` to read about Mediums has not asked to open a ticket for each
-one. Passing `${2:-high}` here would tie the two together and let a report-widening flag quietly
-widen the write.
-
-On an explicit yes, follow `/gizmoduck:tickets` from its `--create` step: re-run with `--create`,
-skip any finding that already has an open `[Nuclei <template-id>]` request (add a note instead),
-and print a created-vs-updated summary.
+Producing the report: this scan may be discharging a crew endpoint-ledger obligation.
+Follow the `--out` convention documented in `commands/report.md` — check
+`.crew/endpoints.json` (when crew is installed) for a declared record whose `endpoint`
+matches `$1`, and if one matches, land the report at that record's computed path and
+freeze it there afterward (`--record-scan-artifact`), instead of an arbitrary default
+location. Do not skip the freeze — `commands/report.md` explains why it is silent if you
+do, and how it is now detectable (`endpoints.unfrozen`) rather than only discoverable
+after the fact. The report's own `**Total finding instances:**` line is the marker
+`crew_state.py` requires as proof this file is a real scan, not a placeholder or a note
+that merely mentions the target — see `commands/report.md`'s scan-artifact contract.

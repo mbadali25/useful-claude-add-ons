@@ -1,14 +1,20 @@
 ---
 name: crew-graph
-description: Build and query a code graph of this repository with graphify, export it to an Obsidian vault, and keep it fresh on commit. Use when the user asks to build or refresh the code graph, asks what calls what or what connects to what, wants the codebase in Obsidian, or asks how a subsystem is wired.
+description: Build and query a code graph of this repository with graphify, keeping it on the filesystem as graph.json and fresh on commit. Use when the user asks to build or refresh the code graph, asks what calls what or what connects to what, or asks how a subsystem is wired. The graph lives on the filesystem only; there is no vault or notes-app export and no config for one.
 ---
 
 # Crew Graph
 
 Wraps `graphify`, an external CLI that builds a static code graph and answers
-questions against it. This skill detects it, builds keyless, queries it
-instead of loading the raw graph, and gates the one thing that touches files
-outside this repo — an Obsidian vault export.
+questions against it. This skill detects it, builds keyless, and queries it
+instead of loading the raw graph into context.
+
+**The filesystem is the home of the graph, and its only home.**
+`graphify-out/graph.json` is one file, greppable, refreshed by a post-commit
+hook, and queried without loading it. Everything this skill does stays inside
+the repo. It writes nothing to a vault, a notes app, or anywhere else — see
+**Why there is no Obsidian export** below, which is a closed question, not a
+default someone can turn back on.
 
 ## Detect — never auto-install
 
@@ -82,7 +88,7 @@ installs a Git hook that rebuilds the graph on every commit, plus a union
 merge driver for `graph.json`. That merge driver is the reason `graph.json`
 is committed to the repo rather than gitignored — a union driver only has
 something to merge if both sides are tracked. `.gitignore` covers the HTML
-output, the wiki, and any Obsidian export; never `graph.json` itself.
+output and the wiki; never `graph.json` itself.
 
 **No stamping step, and none should be added.** graphify writes a top-level
 `built_at_commit` field into `graph.json` — the full commit sha it built
@@ -109,106 +115,38 @@ while being stale against what's actually on disk. State this plainly when
 reporting graph freshness; "graph current" is a claim about HEAD, not about
 what the user is looking at right now.
 
-## Obsidian export — refusal, not preference
+## Why there is no Obsidian export
 
-Exporting into a vault writes into the user's own notes outside this repo.
-Two conditions, both required, before any export runs:
+**Removed in 0.16.13. Do not re-add it, and do not offer it.**
 
-1. `.crew/config.json` has `graph.obsidian.confirmed == true` — set only by
-   the user explicitly approving this in the current session. An upgrade
-   (`crew_upgrade.py`) never sets this flag itself; it always resets it to
-   `false` unless it was already `true`, on purpose.
-2. A scratch-directory proof run has been done and its output inspected —
-   see **Verified behaviour** below. Upstream's non-destructive claim is
-   verified once against a scratch directory, not trusted the first time
-   against a vault the user actually cares about.
+It wrote one note per node and one wikilink per edge. Obsidian builds a
+metadata cache over every file and resolves every wikilink at load, so the cost
+scales with graph density — exactly where a code graph is worst. Four vaults
+built this way, measured 2026-09-05:
 
-If either condition is unmet, **refuse the export and ask** — don't run it
-"just this once" or treat a missing scratch-run as good enough.
+| Vault | Notes | Size |
+|---|---|---|
+| `claude-anew-codegraph` | 23,464 | 64M |
+| `claude-memories-codegraphs` | 5,406 | 16M |
+| `claude-personal-codegraph` | 5,388 | 23M |
+| `claude-anew-ai-software-codegraph` | 2,759 | 11M |
 
-**Target directory is configurable, via `graph.obsidian.dir` and
-`graph.obsidian.layout`.** Two layouts:
+~37,000 notes holding what one 7 MB `graph.json` holds. Obsidian slowed
+dramatically and no setting tunes it away.
 
-- `layout: "flat"` (the default — unchanged behaviour for a config written
-  before this key existed): `graph.obsidian.dir` IS the export target,
-  verbatim. The documented convention is `<vault>/codegraphs/<repo>/`, but
-  the field is used as-is, whatever it is set to.
-- `layout: "org/repo"`: `graph.obsidian.dir` is a per-org folder — e.g. a
-  vault laid out as `<vault>/<org>/<repo>/` (`solomon/aws-managed-services`,
-  `anew/*`, `personal/*`) sets `dir` to `<vault>/<org>` — and the skill
-  appends `/<repo>` under it to get the actual export target. Ask which org
-  this repo belongs to before writing `dir`; it is not something either
-  layout can derive from the repo alone.
+The failure was conceptual, not a tuning problem: the export **inverted the
+storage model.** A code graph is one dense structure; a vault is many sparse
+documents. Fanning one into the other multiplies file count by node count and
+buys nothing — `graph.json` is already greppable, already refreshed by the
+commit hook, and already queried without loading it.
 
-Confirm which layout and which `dir` are in effect before running an export
-that has not run in this repo before — do not assume `flat` just because it
-is the default, and do not assume a `dir` written for one layout still means
-the same thing if `layout` has since changed.
+So when someone asks to see the code graph in Obsidian, the answer is this
+measurement, not a setup. If they want to *read* the structure, query the graph
+(`## Query` above) or write a codemap note in `.crew/codemap/` — prose about a
+subsystem is what a vault is genuinely good at holding.
 
-**CLI syntax:** the export is its own subcommand, not a flag on the build
-command. `graphify . --obsidian --obsidian-dir <path>` is silently ignored —
-those flags don't exist on the default build/extract command, and an
-unrecognized flag there produces no error, so it looks like it worked. The
-real invocation, with the target resolved per the layout above:
-
-```
-graphify export obsidian --graph <repo>/graphify-out/graph.json --dir <resolved-target>
-```
-
-### Verified behaviour (graphify 0.9.49, checked 2026-08-24)
-
-Proof run: built a scratch vault (populated `.obsidian/` with `app.json` +
-`workspace.json`, notes in nested subfolders, a top-level `README.md` and a
-`my-notes/graph.md` chosen to collide with plausible generated output),
-snapshotted every file by SHA-256, then ran `graphify export obsidian`
-against it from a scratch clone of this repo under three configurations:
-`--dir` at the vault root, `--dir` at the documented
-`<vault>/codegraphs/<repo>/` target, and a second export re-run into an
-already-exported vault. A fourth run pre-seeded a real
-`.obsidian/graph.json` to test the overwrite case directly.
-
-- **Pre-existing notes: untouched in every configuration.** Every
-  snapshotted file's hash was identical after export, including the two
-  collision-candidate filenames, under both the root-targeted and the
-  subdirectory-targeted run.
-- **`.obsidian/app.json` and `.obsidian/workspace.json` at the vault root:
-  untouched in every configuration**, including when `--dir` pointed at the
-  vault root itself.
-- **Targeting the vault root directly writes into `.obsidian/`.** Obsidian's
-  own graph-view config file (`.obsidian/graph.json`) is a filename graphify
-  also uses. Pointed at the vault root, graphify created that file where none
-  existed. Re-run against a vault that already had a real
-  `.obsidian/graph.json`, it skipped it and printed: `WARNING: skipped 1
-  pre-existing file(s) graphify did not create, to avoid overwriting your
-  notes: .obsidian/graph.json` — i.e. it does not overwrite a file it did not
-  create, but it will create one under a name Obsidian also uses if that name
-  is free. **Whether the user's real vault already has
-  `.obsidian/graph.json` is the one fact this proof can't answer — ask them,
-  don't assume.**
-- **Targeting the documented default, `<vault>/codegraphs/<repo>/`, avoids
-  this entirely.** graphify created its own `.obsidian/` *inside* that
-  subdirectory (a self-contained nested-vault config), and the real
-  `.obsidian/` at the vault root was untouched — confirmed by diff, not just
-  by the absence of a warning.
-- **It tracks its own output** in a `.graphify_obsidian_manifest.json` at the
-  export root and skips any pre-existing file not listed there. What was
-  *not* tested: whether a hand-edit to a note graphify itself generated
-  survives a re-export — the second-export result below suggests it would
-  be silently overwritten, since re-export reproduces the same file set.
-- **Second export into the same directory:** identical file count and file
-  set (no duplicates) — it overwrote its own previously-generated notes and
-  `graph.canvas` in place. Pre-existing notes and `.obsidian` config outside
-  its own manifest remained untouched.
-- **Nothing was written outside the named `--dir`** except the scratch
-  clone's own `<repo>/graphify-out/` (the graph build artifacts, expected)
-  — checked by directory listing before and after, and confirmed no
-  `~/.graphify/` global directory was created or touched.
-
-Upstream's non-destructive claim held under every configuration tested: it
-never overwrote a pre-existing note or a pre-existing `.obsidian` file. The
-one caveat is additive, not destructive — pointed at a vault root, it can add
-a new `.obsidian/graph.json` if that name is free, which the documented
-`codegraphs/<repo>/` target avoids by construction.
+`graph.obsidian.*` no longer exists in the config schema. `crew_upgrade.py`
+drops it from an older config and says it did.
 
 ## MCP server — optional, off by default
 
@@ -229,10 +167,10 @@ choice the user makes, not a side effect of building a graph.
 | `graph.out` | Output directory; defaults to `graphify-out`. |
 | `graph.mode` | Always `"code-only"` today. |
 | `graph.commitHook` | Whether `graphify hook install` has been run. |
-| `graph.obsidian.enabled` | Whether an Obsidian export is configured at all. |
-| `graph.obsidian.dir` | Export target, or `null` — its meaning depends on `layout`. |
-| `graph.obsidian.layout` | `"flat"` (default) or `"org/repo"` — see above. |
-| `graph.obsidian.confirmed` | The consent gate above — never set by an upgrade. |
+
+That is the whole block. `graph.obsidian.*` was removed in 0.16.13 — a config
+still carrying it is not misconfigured, just old, and `crew_upgrade.py` drops
+the key and says so.
 
 ## Refreshing an existing codemap
 

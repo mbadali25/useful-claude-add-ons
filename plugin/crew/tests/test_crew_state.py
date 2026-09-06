@@ -40,6 +40,30 @@ def test_git_out_never_inherits_the_parent_stdin(tmp_path, monkeypatch):
         )
 
 
+def test_git_out_never_raises_on_undecodable_bytes(tmp_path):
+    """Finding 5: without an explicit encoding, `text=True` decodes with the
+    platform default (cp1252 on a Windows console); a diff containing one
+    undecodable byte then raises UnicodeDecodeError out of subprocess.run
+    itself, and `done.stdout` -- never reached -- would otherwise be the
+    None that made `.strip()` an AttributeError. git_out's never-raises
+    contract has to hold for a file with a raw non-utf-8 byte in its diff.
+    """
+    root = crew_fixtures.make_repo(tmp_path)
+    path = root / "binaryish.txt"
+    path.write_bytes(b"first version\n")
+    crew_fixtures._git(root, "add", "binaryish.txt")  # pylint: disable=protected-access
+    crew_fixtures._git(root, "commit", "-q", "-m", "first")
+    # 0x8f is not valid UTF-8 on its own and is not valid cp1252 either in a
+    # way that round-trips -- this reproduces the exact byte the finding
+    # named, checked into a tracked file's history so `git diff HEAD` has to
+    # read it back.
+    path.write_bytes(b"second version \x8f\n")
+    crew_fixtures._git(root, "add", "binaryish.txt")  # pylint: disable=protected-access
+
+    out = crew_state.git_out(str(root), "diff", "HEAD", "--cached", "--unified=0")
+    assert out is not None  # never the AttributeError-then-None failure mode
+
+
 def test_missing_config_is_empty_dict(tmp_path):
     root = crew_fixtures.make_repo(tmp_path)
     assert crew_state.load_config(str(root)) == {}

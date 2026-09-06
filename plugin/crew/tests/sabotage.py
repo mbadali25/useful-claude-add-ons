@@ -31,6 +31,7 @@ STATE = os.path.join(CREW, "hooks", "scripts", "crew_state.py")
 LADDER_DOC = os.path.join(CREW, "skills", "crew-scaling", "SKILL.md")
 PLATFORM = os.path.join(CREW, "hooks", "scripts", "crew_platform.py")
 CONFIG = os.path.join(CREW, "hooks", "scripts", "crew_config.py")
+PM_BRIEF = os.path.join(CREW, "hooks", "scripts", "pm_brief.py")
 
 GUARD = '    if out["family"] is not None and out["family"] in authors:'
 ROLE_PIN = '    decided = resolve_role(cfg, "dev", "developer")'
@@ -421,15 +422,549 @@ MUTATIONS = (
         "| 1 | + ghost-reviewer, + security",
         "tests/test_role_ladder.py",
     ),
+    # --- The endpoint ledger and endpointUnscanned (BLOCK 1, BLOCK 2, findings
+    # 2-11 of this round). ---------------------------------------------------
+    (
+        # This repo SHIPS plugin/gizmoduck/ as source; that must never read
+        # as installation on its own.
+        "in-repo plugin/gizmoduck/ counts as installed",
+        STATE,
+        '    scopes = []\n    if root:\n        scopes.append(os.path.join('
+        'root, ".claude", "settings.local.json"))',
+        '    if root and os.path.isdir(os.path.join(root, "plugin", '
+        '"gizmoduck")):\n        return True\n    scopes = []\n    if root:'
+        '\n        scopes.append(os.path.join(root, ".claude", '
+        '"settings.local.json"))',
+        ("tests/test_endpoints.py::"
+         "test_in_repo_source_directory_is_not_installation"),
+    ),
+    (
+        # `"false"` (a JSON string) is truthy in Python -- only a real
+        # boolean may decide this.
+        "a truthy non-bool value counts as installed",
+        STATE,
+        '        if not isinstance(value, bool):\n            continue\n'
+        '        return value\n    return False',
+        '        if value:\n            return True\n    return False',
+        "tests/test_endpoints.py::test_string_false_does_not_count_as_installed",
+    ),
+    (
+        # Project scope must win over global; reordering the scope list
+        # undoes that.
+        "global scope is consulted before project scope",
+        STATE,
+        '    scopes = []\n    if root:\n        scopes.append(os.path.join('
+        'root, ".claude", "settings.local.json"))\n        scopes.append('
+        'os.path.join(root, ".claude", "settings.json"))\n    home = '
+        'os.path.expanduser("~")\n    scopes.append(os.path.join(home, '
+        '".claude", "settings.local.json"))\n    scopes.append(os.path.join('
+        'home, ".claude", "settings.json"))',
+        '    scopes = []\n    home = os.path.expanduser("~")\n    scopes.'
+        'append(os.path.join(home, ".claude", "settings.local.json"))\n'
+        '    scopes.append(os.path.join(home, ".claude", "settings.json"))'
+        '\n    if root:\n        scopes.append(os.path.join(root, '
+        '".claude", "settings.local.json"))\n        scopes.append(os.path.'
+        'join(root, ".claude", "settings.json"))',
+        ("tests/test_endpoints.py::"
+         "test_project_explicit_false_wins_over_global_true"),
+    ),
+    (
+        # More than one manifest anywhere below root must flip _is_monorepo;
+        # `hits > 0` fires on the FIRST one instead.
+        "a single manifest counts as a monorepo",
+        STATE,
+        "            if hits > 1:\n                return True",
+        "            if hits > 0:\n                return True",
+        ("tests/test_endpoints.py::"
+         "test_single_go_mod_at_root_is_not_a_monorepo"),
+    ),
+    (
+        # scan_artifact_path must reject an id it cannot safely use in a
+        # path, not merely at mint time.
+        "an unsafe id is not rejected at read time",
+        STATE,
+        '    record_id = record.get("id")\n    if not _valid_endpoint_id('
+        'record_id):\n        return None',
+        '    record_id = record.get("id")',
+        ("tests/test_endpoints.py::"
+         "test_scan_artifact_path_rejects_a_traversal_id"),
+    ),
+    (
+        # declare_endpoint must refuse an unsafe caller-supplied id, not
+        # only scan_artifact_path reading one back later.
+        "an unsafe id is not rejected at mint time",
+        STATE,
+        '    if endpoint_id is not None and not _valid_endpoint_id('
+        'endpoint_id):\n        return {"error": f"refusing to declare an '
+        'unsafe endpoint id: {endpoint_id!r}"}',
+        "    pass",
+        ("tests/test_endpoints.py::"
+         "test_declare_endpoint_rejects_an_unsafe_endpoint_id"),
+    ),
+    (
+        # A record that already landed a scan must keep ITS OWN frozen
+        # path; recomputing ignores finding 6 entirely.
+        "a frozen scan-artifact path is recomputed instead of kept",
+        STATE,
+        '    frozen = record.get("artifactPath")\n    if isinstance(frozen, '
+        'str):\n        frozen = frozen.replace("\\\\", "/")\n    if frozen '
+        'is not None:\n        return _relative_safe(root, frozen, '
+        'default)\n    return default',
+        "    return default",
+        ("tests/test_endpoints.py::"
+         "test_frozen_artifact_path_survives_a_later_monorepo_flip"),
+    ),
+    (
+        # BLOCK 5: a hand-edited artifactPath that escapes the repo must
+        # fall back to the computed default, never be trusted as-is.
+        "the traversal guard on a frozen artifact path is deleted",
+        STATE,
+        "    return value if inside else default",
+        "    return value",
+        ("tests/test_endpoints.py::"
+         "test_frozen_artifact_path_traversal_falls_back_to_the_computed_"
+         "default"),
+    ),
+    (
+        # BLOCK 12: a frozen path must resolve on ANY OS, not just the one
+        # that froze it -- a legacy/hand-edited native-separator value must
+        # be normalised before use.
+        "a frozen artifact path is not normalised to POSIX on read",
+        STATE,
+        '    if isinstance(frozen, str):\n        frozen = frozen.replace('
+        '"\\\\", "/")',
+        "    if False:\n        frozen = frozen",
+        ("tests/test_endpoints.py::"
+         "test_scan_artifact_path_normalises_backslashes_in_a_frozen_path"),
+    ),
+    (
+        # `len(records) + 1` collides the moment any record is removed from
+        # the committed, hand-editable ledger.
+        "declared endpoint ids are minted from record count, not a sequence",
+        STATE,
+        "        else:\n            doc[\"nextSeq\"] += 1\n            "
+        "new_id = f\"ep-{doc['nextSeq']:04d}\"",
+        '        else:\n            new_id = f"ep-{len(records) + 1:04d}"',
+        ("tests/test_endpoints.py::"
+         "test_declare_endpoint_ids_do_not_collide_after_a_deletion"),
+    ),
+    (
+        # Write-then-rename is what makes a failed write leave the original
+        # untouched; write-in-place already clobbers it before any failure
+        # can be detected.
+        "the ledger write is not atomic",
+        STATE,
+        '        # newline="\\n": this file is JSON, not one of the `.sh` '
+        'scripts the\n        # CRLF landmine names, but pinning it costs '
+        'nothing and keeps every\n        # file this module writes '
+        'consistent on Windows.\n        with open(tmp_path, "w", '
+        'encoding="utf-8", newline="\\n") as handle:\n            json.dump'
+        '(doc, handle, indent=2, sort_keys=True)\n            handle.write'
+        '("\\n")\n            handle.flush()\n            os.fsync(handle.'
+        'fileno())\n        os.replace(tmp_path, path)',
+        '        with open(path, "w", encoding="utf-8", newline="\\n") as '
+        'handle:\n            json.dump(doc, handle, indent=2, '
+        'sort_keys=True)\n            handle.write("\\n")\n            '
+        'handle.flush()\n            os.fsync(handle.fileno())',
+        ("tests/test_endpoints.py::"
+         "test_write_endpoints_leaves_the_original_intact_if_replace_fails"),
+    ),
+    (
+        # A gate that stops running still has to be REMOVABLE -- a mutation
+        # that deletes the early return must be caught, not just trusted.
+        "the gizmoduck gate is removed from read_endpoints",
+        STATE,
+        '    if not gizmoduck_installed(root):\n        return {"installed"'
+        ': False, "unscanned": []}',
+        '    if False:\n        return {"installed": False, "unscanned": []}',
+        ("tests/test_endpoints.py::"
+         "test_trigger_does_not_fire_when_gizmoduck_absent"),
+    ),
+    (
+        "closed records are still counted as unscanned",
+        STATE,
+        '        if record.get("status") not in ("open", "candidate"):\n'
+        '            continue',
+        '        if False:\n            continue',
+        "tests/test_endpoints.py::test_closed_records_never_count_as_unscanned",
+    ),
+    (
+        # Non-empty is necessary but not sufficient -- the text must
+        # actually reference the endpoint it claims to cover.
+        "a scan artifact for a different endpoint still confirms this one",
+        STATE,
+        "    needle = _endpoint_needle(record.get(\"endpoint\"))\n    if "
+        "needle is None:\n        return record.get(\"source\") != "
+        '"declared"\n    return needle.lower() in text.lower()',
+        "    return True",
+        ("tests/test_endpoints.py::"
+         "test_artifact_for_a_different_endpoint_does_not_confirm_this_one"),
+    ),
+    (
+        # BLOCK 4: the scan marker itself -- without it, a hand-typed note
+        # that merely mentions the URL passes for free.
+        "the scan marker is not required to confirm a scan",
+        STATE,
+        '    if not _SCAN_MARKER_RE.search(text):\n        return False',
+        "    if False:\n        return False",
+        "tests/test_endpoints.py::test_todo_note_does_not_confirm_a_scan",
+    ),
+    (
+        # BLOCK 3: a declared record with no matchable needle must fail
+        # CLOSED, not pass on the marker alone.
+        "a declared record with no needle fails open instead of closed",
+        STATE,
+        '    if needle is None:\n        return record.get("source") != '
+        '"declared"',
+        "    if needle is None:\n        return True",
+        ("tests/test_endpoints.py::"
+         "test_declared_bare_description_endpoint_fails_closed_with_no_"
+         "needle"),
+    ),
+    (
+        # BLOCK 3: the needle derivation must cover a bare hostname, not
+        # only a URL or an absolute path.
+        "the needle derivation does not cover a bare hostname",
+        STATE,
+        '    if stripped.startswith("/") or _HOSTNAME_RE.match(stripped):\n'
+        "        return stripped",
+        '    if stripped.startswith("/"):\n        return stripped',
+        "tests/test_endpoints.py::test_endpoint_needle_covers_a_bare_hostname",
+    ),
+    (
+        # Finding 4's related bug: a bare "/" would match almost any
+        # markdown file that contains a slash anywhere.
+        "a bare slash is treated as a specific needle",
+        STATE,
+        '    if stripped == "/":\n        return None',
+        "    if False:\n        return None",
+        "tests/test_endpoints.py::test_endpoint_needle_rejects_a_bare_slash",
+    ),
+    (
+        # Attribution to the owning package is the whole point of the
+        # mono-repo path rule; ignoring it silently falls back to root.
+        "mono-repo scan artifacts ignore package attribution",
+        STATE,
+        '        package_dir = _owning_package_dir(root, record.get('
+        '"location"))',
+        '        package_dir = ""',
+        ("tests/test_endpoints.py::"
+         "test_monorepo_path_rule_attributes_to_owning_package"),
+    ),
+    (
+        # BLOCK 1: candidates are computed, never persisted as declared.
+        "an ephemeral candidate is built as a declared record",
+        STATE,
+        '        "id": f"cand-{digest}",\n        "endpoint": candidate.get'
+        '("label") or "unidentified endpoint candidate",\n        "source":'
+        ' "inferred", "status": "candidate",',
+        '        "id": f"cand-{digest}",\n        "endpoint": candidate.get'
+        '("label") or "unidentified endpoint candidate",\n        "source":'
+        ' "declared", "status": "open",',
+        ("tests/test_endpoints.py::"
+         "test_read_endpoints_surfaces_an_inferred_hit_as_an_ephemeral_"
+         "candidate"),
+    ),
+    (
+        # declare_endpoint is the ONLY function allowed to write
+        # source="declared", status="open" -- a status downgrade here is
+        # the whole guarantee failing at its one writer.
+        "declare_endpoint writes status=candidate instead of open",
+        STATE,
+        '        record = {\n            "id": new_id, "endpoint": '
+        'endpoint, "source": "declared",\n            "status": "open", '
+        '"location": location, "ticket": ticket,\n            "createdAt": '
+        'now,\n        }\n        records.append(record)',
+        '        record = {\n            "id": new_id, "endpoint": '
+        'endpoint, "source": "declared",\n            "status": '
+        '"candidate", "location": location, "ticket": ticket,\n            '
+        '"createdAt": now,\n        }\n        records.append(record)',
+        ("tests/test_endpoints.py::"
+         "test_declare_endpoint_writes_an_authoritative_open_record"),
+    ),
+    (
+        # The dedup/id key for an ephemeral candidate must include location,
+        # or two different diff lines sharing a signal collide onto one id
+        # and one scan artifact silently discharges both.
+        "an ephemeral candidate id ignores location",
+        STATE,
+        "    digest = hashlib.sha1(\n        f\"{candidate.get('signal')}:"
+        "{candidate.get('location')}\".encode(\"utf-8\")\n    ).hexdigest()"
+        "[:8]",
+        "    digest = hashlib.sha1(\n        f\"{candidate.get('signal')}\""
+        ".encode(\"utf-8\")\n    ).hexdigest()[:8]",
+        ("tests/test_endpoints.py::"
+         "test_ephemeral_candidate_ids_differ_by_location"),
+    ),
+    (
+        # A location already covered by a persisted record must not ALSO
+        # surface as a fresh inferred candidate under a different id.
+        "a promoted location still surfaces as a fresh candidate",
+        STATE,
+        '        if candidate.get("location") in covered_locations:\n'
+        '            continue',
+        "        if False:\n            continue",
+        ("tests/test_endpoints.py::"
+         "test_a_promoted_location_no_longer_surfaces_as_a_fresh_candidate"),
+    ),
+    (
+        # Finding 9: a comment describing the shape must not itself be read
+        # as the shape.
+        "inference does not skip comment lines",
+        STATE,
+        '        stripped = added.strip()\n        if stripped.startswith('
+        '_COMMENT_PREFIXES):\n            next_line += 1\n            '
+        "continue",
+        "        stripped = added.strip()",
+        ("tests/test_endpoints.py::"
+         "test_infer_endpoints_ignores_a_commented_out_example"),
+    ),
+    (
+        "inference does not skip a match inside someone else's string",
+        STATE,
+        'if match and not _inside_quoted_string(added, match.start()):',
+        "if match:",
+        ("tests/test_endpoints.py::test_infer_endpoints_ignores_a_match_"
+         "inside_someone_elses_string"),
+    ),
+    (
+        # crew's own source comments on the shapes it looks for; excluding
+        # it is what stops the trigger crying wolf on every session opened
+        # in this repo.
+        "inference no longer excludes crew's own source",
+        STATE,
+        "        if current_excluded:\n            next_line += 1\n"
+        "            continue",
+        "        if False:\n            next_line += 1\n            continue",
+        ("tests/test_endpoints.py::"
+         "test_infer_endpoints_excludes_crews_own_source_even_without_a_"
+         "comment"),
+    ),
+    (
+        "inference no longer gates openapi-path to spec-shaped files",
+        STATE,
+        "            if extensions and current_ext not in extensions:\n"
+        "                continue",
+        "            if False:\n                continue",
+        ("tests/test_endpoints.py::"
+         "test_infer_endpoints_gates_openapi_path_to_spec_files"),
+    ),
+    (
+        # Finding 10: `status`, not `source`, is authoritative -- a record
+        # whose fields disagree must still render as a candidate.
+        "the brief splits declared vs. candidate on source, not status",
+        PM_BRIEF,
+        'candidates = [hit for hit in hits if hit.get("status") == '
+        '"candidate"]\n    declared = [hit for hit in hits if hit.get('
+        '"status") != "candidate"]',
+        'candidates = [hit for hit in hits if hit.get("source") != '
+        '"declared"]\n    declared = [hit for hit in hits if hit.get('
+        '"source") == "declared"]',
+        ("tests/test_pm_brief.py::"
+         "test_endpoint_finding_keys_on_status_not_source"),
+    ),
+    (
+        # The hard requirement behind the whole feature: a candidate must
+        # say, in its own text, that it is not confirmed.
+        "the candidate finding text drops its NOT confirmed wording",
+        PM_BRIEF,
+        '"candidates are NOT confirmed endpoints until researched"',
+        '""',
+        ("tests/test_pm_brief.py::"
+         "test_endpoint_finding_distinguishes_declared_from_candidate"),
+    ),
+    (
+        # Finding 7: an unsafe-id hit must still carry location.
+        "an unsafe-id unscanned hit drops location",
+        STATE,
+        '            "status": record.get("status"),\n            '
+        '"location": record.get("location"),\n            "path": None,',
+        '            "status": record.get("status"),\n            '
+        '"path": None,',
+        "tests/test_endpoints.py::test_unsafe_id_hit_surfaces_location_too",
+    ),
+    (
+        # Finding 7: an ordinary unscanned hit must carry location too.
+        "an unscanned hit drops location",
+        STATE,
+        '        "status": record.get("status"),\n        "location": '
+        'record.get("location"),\n        "path": artifact,',
+        '        "status": record.get("status"),\n        "path": '
+        'artifact,',
+        "tests/test_endpoints.py::test_unscanned_hit_surfaces_location",
+    ),
+    (
+        # Finding 8: a confirmed-but-never-frozen scan must be surfaced,
+        # not silently indistinguishable from a properly frozen one.
+        "a confirmed but never-frozen scan is not surfaced",
+        STATE,
+        '        elif (record.get("source") == "declared"\n              '
+        'and record.get("artifactPath") is None):',
+        "        elif False:",
+        "tests/test_endpoints.py::test_unfrozen_confirmed_scan_is_surfaced",
+    ),
+    (
+        # Finding 9: a closed record's location must ALSO stay excluded
+        # from fresh inference, not just an open/candidate one.
+        "a closed record's location re-surfaces as a fresh candidate",
+        STATE,
+        'covered_locations = {record.get("location") for record in '
+        'declared}',
+        'covered_locations = {record.get("location") for record in '
+        'declared if record.get("status") != "closed"}',
+        ("tests/test_endpoints.py::"
+         "test_a_closed_records_location_does_not_surface_as_a_fresh_"
+         "candidate"),
+    ),
+    (
+        # Finding 10: a vendored/generated tree with its own manifests must
+        # not itself flip a repo into monorepo classification.
+        "the monorepo skip-dirs list is emptied",
+        STATE,
+        '_MONOREPO_SKIP_DIRS = frozenset({\n    "node_modules", '
+        '"graphify-out", "vendor", ".venv", "venv", "dist", "build",\n})',
+        "_MONOREPO_SKIP_DIRS = frozenset()",
+        ("tests/test_endpoints.py::"
+         "test_vendored_manifests_do_not_count_toward_monorepo_detection"),
+    ),
+    (
+        # Finding 11: re-declaring an existing id must not silently reopen
+        # a record a human deliberately closed.
+        "re-declaring an existing id forces status back to open",
+        STATE,
+        '                    record.update(endpoint=endpoint, '
+        'source="declared",\n                                  '
+        "location=location, ticket=ticket,\n                                  "
+        "updatedAt=now)",
+        '                    record.update(endpoint=endpoint, '
+        'source="declared",\n                                  '
+        'status="open", location=location, ticket=ticket,\n                                  '
+        "updatedAt=now)",
+        ("tests/test_endpoints.py::"
+         "test_redeclare_does_not_reopen_a_closed_record"),
+    ),
+    (
+        # Finding 12: record_scan_artifact must store POSIX separators
+        # regardless of the OS this runs on.
+        "the frozen artifact path is stored with native separators",
+        STATE,
+        '                path = path.replace("\\\\", "/")',
+        "                pass",
+        ("tests/test_endpoints.py::"
+         "test_record_scan_artifact_stores_posix_separators"),
+    ),
+    (
+        # BLOCK 2: declare_endpoint must hold the ledger lock across its
+        # whole read-modify-write cycle, or concurrent callers lose each
+        # other's records with no error raised on either side.
+        "declare_endpoint no longer holds the endpoints lock",
+        STATE,
+        '    """\n    path = _endpoints_path(root) + ".lock"\n    deadline'
+        " = time.time() + _ENDPOINTS_LOCK_TIMEOUT_SECONDS",
+        '    """\n    return None\n    path = _endpoints_path(root) + '
+        '".lock"\n    deadline = time.time() + _ENDPOINTS_LOCK_TIMEOUT_SECONDS',
+        ("tests/test_endpoints.py::"
+         "test_concurrent_threads_declaring_distinct_endpoints_all_survive"),
+    ),
+    (
+        # Nit 15: `--declare-endpoint ""` is falsy and must not silently
+        # fall through to printing full state and exiting 0.
+        "an empty --declare-endpoint value is not rejected",
+        STATE,
+        "    if args.declare_endpoint is not None:\n        # `is not "
+        'None`, not truthiness (nit 15): `--declare-endpoint ""`\n        '
+        "# is falsy, and a bare-truthiness check let it fall through to "
+        "the\n        # unconditional `print(json.dumps(collect(root), "
+        "...))` below --\n        # printing full state and exiting 0 for "
+        "a call that asked to\n        # declare an endpoint and got "
+        "silently ignored, the same way a\n        # missing "
+        "`--location` is not silently ignored.\n        if not "
+        "args.declare_endpoint:\n            print(\"--declare-endpoint "
+        'needs a non-empty value",\n                  file=sys.stderr)\n'
+        "            return 2",
+        "    if args.declare_endpoint:",
+        "tests/test_endpoints.py::test_declare_endpoint_cli_rejects_an_empty_value",
+    ),
+    # --- The unguarded QA read path (the security hole). `validate_providers`
+    # only ever ran on WRITE, and hand-editing `.crew/config.json` was always
+    # the bypass -- `resolve_role` is what actually decides who reviews, so it
+    # has to refuse an illegitimate provider on its own. Three mutations,
+    # each reintroducing one half of the fix. -------------------------------
+    (
+        # `provider_problems` had zero callers before this round. Removing
+        # the one added here is the reporter going back to being a reporter
+        # nobody calls -- the read-side counterpart to `validate_providers`
+        # existing in name only.
+        "provider_problems is no longer called from the read path",
+        CONFIG,
+        "    provider_problems_found = provider_problems(cfg)",
+        "    provider_problems_found = []",
+        ("tests/test_provider_table.py::"
+         "test_model_report_surfaces_provider_problems_from_a_hand_edited_"
+         "config"),
+    ),
+    (
+        # Without this, an unrecognised `qa` provider falls through to the
+        # family guard alone -- which only fires on a NAMED match, so a
+        # provider outside `QA_PROVIDERS` cleared review the moment its
+        # family (real or absent) differed from the author's.
+        "resolve_role no longer bars an unrecognised qa provider",
+        STATE,
+        '    if kind == "qa" and provider not in QA_PROVIDERS:',
+        "    if False:",
+        ("tests/test_provider_table.py::"
+         "test_an_entirely_unknown_qa_provider_is_barred"),
+    ),
+    (
+        # The narrower half: the bar survives for a NAMED family (a pinned
+        # model) but a provider left unpinned -- `family() is None` -- slips
+        # back through, which is the exact "unknown reads as no conflict"
+        # bug the fix exists to close.
+        "an unpinned provider's family of None skips the new guard too",
+        STATE,
+        '    if kind == "qa" and provider not in QA_PROVIDERS:',
+        '    if kind == "qa" and provider not in QA_PROVIDERS '
+        'and out["family"] is not None:',
+        ("tests/test_provider_table.py::"
+         "test_an_unpinned_localgpu_qa_reviewer_is_still_barred"),
+    ),
 )
 
 
+# pytest's own exit codes (documented, not this file's invention): 0 all
+# passed; 1 at least one test FAILED (a real assertion, or an error raised
+# during a test); 2 execution interrupted; 3 an internal pytest error; 4 a
+# usage error, which is what a collection failure -- an import blowing up
+# on a SyntaxError, say -- actually produces; 5 no tests were collected at
+# all. Only 1 is evidence that the TARGET TEST caught the mutation. Finding
+# 13: the previous version of this treated every non-zero code the same,
+# so a mutation that broke the whole file's syntax (crashing collection
+# for every test in the suite, this one included) reported "RED (good)"
+# indistinguishably from a mutation the target test actually caught -- and
+# only 4 of the round's 18 new mutations had been hand-verified as the real
+# thing rather than this.
+_REAL_TEST_FAILURE = 1
+
+
 def run_test(target):
-    """Run one pytest target from the crew directory; return its exit code."""
+    """Run one pytest target from the crew directory; return
+    (exit_code, combined_output).
+
+    PYTHONDONTWRITEBYTECODE=1: two mutations back to back can produce a
+    source file of the SAME byte length (many of these are single-character
+    swaps, e.g. "hits > 1" -> "hits > 0"), written within the same mtime
+    tick. Python's default (mtime, size) pyc-invalidation check cannot tell
+    those two versions apart, so the SECOND mutation's subprocess can load a
+    stale bytecode cache left by the FIRST -- observed here as an
+    intermittent "STILL GREEN" for a mutation that goes red on every
+    isolated re-run. Never writing bytecode removes the cache entirely
+    rather than trying to invalidate it correctly.
+    """
+    env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
     completed = subprocess.run(
         [sys.executable, "-m", "pytest", target, "-q", "--no-header", "-x"],
-        cwd=CREW, capture_output=True, text=True, check=False)
-    return completed.returncode
+        cwd=CREW, capture_output=True, text=True, check=False, env=env)
+    return completed.returncode, completed.stdout + completed.stderr
 
 
 def read(target):
@@ -494,7 +1029,9 @@ def restore(target):
 
 
 def main():
-    """Run every mutation; return 0 only when all of them go red."""
+    """Run every mutation; return 0 only when all of them go red FOR REAL --
+    a genuine assertion failure in the named test, not merely a non-zero
+    exit code (finding 13)."""
     ok = True
     for label, target, find, replace, test in MUTATIONS:
         if not apply_mutation(target, find, replace):
@@ -502,11 +1039,23 @@ def main():
             ok = False
             continue
         try:
-            code = run_test(test)
+            # `output` is deliberately dropped: a mutation's job is to make
+            # the suite go red, and the failure text is the suite's to report.
+            code, _ = run_test(test)
         finally:
             restore(target)
         if code == 0:
             print(f"{'STILL GREEN -- TEST IS VACUOUS':40} {label}")
+            ok = False
+        elif code != _REAL_TEST_FAILURE:
+            # Went red, but not because the target test caught anything --
+            # a collection/import error (SyntaxError, a bad import) crashed
+            # the whole run before the test ever executed, or nothing
+            # matching `test` was even collected. Reported separately, and
+            # counted as a failure of THIS suite, because it proves nothing
+            # about whether the mutation is real.
+            print(f"{'RED BUT UNPROVEN -- exit ' + str(code) + ', not a test failure':40} "
+                  f"{label}")
             ok = False
         else:
             print(f"{'RED (good)':40} {label}")

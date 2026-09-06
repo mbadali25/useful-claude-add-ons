@@ -110,12 +110,6 @@
     "tool": "graphify",
     "out": "graphify-out",
     "mode": "code-only",
-    "commitHook": false,
-    "obsidian": {
-      "enabled": false,
-      "dir": null,
-      "layout": "flat",
-      "confirmed": false
-    }
+    "commitHook": false
   }
 }

@@ -1,24 +1,49 @@
-"""The `tickets` opt-in gate: what `--create` withholds, and what it releases.
+"""gizmoduck.py's `tickets` confirmation gate - the control nothing covered before
+this suite. `grep -rln gizmoduck scripts/_test/ plugin/crew/hooks/scripts/_test/`
+found only menu-groups.sh, which tests the installer menu, not this command.
 
-This suite exists because the gate is the only thing standing between a scan and
-a write to a live ServiceDesk Plus instance. Everything else in that path
-*instructs* the write rather than restraining it: `commands/tickets.md` and
-`skills/gizmoduck/SKILL.md` are prose the model follows, and
-`skills/infra-work-ticketing/SKILL.md:209-211` tells it explicitly to create a
-ticket with no confirmation round-trip. Prose cannot restrain a call.
+Runs `gizmoduck.py` as a real subprocess (the same boundary the `scan`/`tickets`
+commands and the bundled skill actually cross - stdout, exit code, nothing more),
+matching the shape used for guard.sh/guard.ps1 in plugin/crew/tests rather than
+the in-process import shape in plugin/localgpu/cli/_test: gizmoduck.py is a
+single script invoked by name (`python3 gizmoduck.py tickets ...`), never
+imported as a module by a caller, so the contract worth pinning down is the CLI
+surface, not its internal functions.
 
-So the assertion that carries the weight is not "the preview is labelled" - it
-is **`description` is absent**. A preview that carried a fileable body under a
-warning would be a gate in name and a create-ready payload in fact, and a caller
-that skips prose could file straight from it. `test_preview_carries_no_fileable_body`
-is that test; if it ever goes green while `--create` is absent, the gate is gone
-whatever the labels say.
+Every fixture here is a throwaway JSONL file written under pytest's `tmp_path`.
+Nothing here touches real config, real ServiceDesk Plus, or installs anything.
 
-Run: python -m pytest plugin/gizmoduck/scripts/_test/ -q
+SABOTAGE-TEST THIS FILE before trusting it (see the report for the run that did
+this once already). `main()`'s `tickets` branch has two independent gates -
+"no --yes yet" and "the --yes value does not match the recomputed digest" -
+each ending in its own `sys.exit(3)`, so some single-line mutations degrade
+gracefully instead of leaking; that is deliberate defense-in-depth, and the
+three mutations below are the ones actually confirmed to defeat it:
+
+  1. insert `safe_print(json.dumps(records, indent=2))` right after the
+     preview loop in `main()` (before the `GIZMODUCK_CONFIRMATION_REQUIRED`
+     marker / `sys.exit(3)`) - confirm
+     `test_must_block_no_yes_exits_3_with_marker_and_no_records` goes RED on
+     the record-content-leak assertion, whose message names
+     GIZMODUCK_CONFIRMATION_REQUIRED, not merely "expected exit 3, got 0".
+     This is the mutation that used to pass green before this rewrite: the
+     marker alone satisfied a whole-stdout-JSON-parse-failure check even with
+     every record's description/remediation text printed.
+  2. invert `if a.yes is None:` (the first gate) to `if a.yes is not None:` -
+     confirm both `test_must_block_*` and `test_must_allow_*` go RED (6 of 8
+     tests here fail).
+  3. mutate `for r in records:` in the preview loop to `for r in records[:1]:`
+     - confirm `test_preview_lists_exactly_the_records_yes_would_emit` goes RED
+     (the preview would show 1 line while --yes still emits all 3 records).
+
+  NOT a red case, checked and noted rather than assumed: deleting only the
+  first gate's `sys.exit(3)` does not leak and does not go red, because the
+  second gate's `if a.yes != digest` independently fires (`a.yes` is `None`,
+  which never equals a digest string) and exits 3 before
+  `safe_print(json.dumps(records, ...))` is ever reached.
+
+  Restore all mutations afterward.
 """
-
-from __future__ import annotations
-
 import json
 import re
 import subprocess
@@ -27,222 +52,296 @@ from pathlib import Path
 
 import pytest
 
-GIZMODUCK = Path(__file__).resolve().parent.parent / "gizmoduck.py"
+_SCRIPT = Path(__file__).resolve().parent.parent / "gizmoduck.py"
 
-# One Critical and one Medium, so the severity floor is exercised too: `tickets`
-# floors at high, and a Medium reaching the output would mean the floor moved.
-FINDINGS = [
-    {
-        "template-id": "CVE-2021-44228",
-        "info": {
-            "name": "Log4j RCE",
-            "severity": "critical",
-            "description": "Remote code execution.",
-            "remediation": "Upgrade log4j.",
-            "classification": {"cve-id": ["CVE-2021-44228"], "cvss-score": 10.0},
-        },
-        "type": "http",
-        "host": "https://example.com",
-        "matched-at": "https://example.com/app",
-    },
-    {
-        "template-id": "tls-version",
-        "info": {
-            "name": "Legacy TLS offered",
-            "severity": "medium",
-            "description": "TLS 1.0 is enabled.",
-            "remediation": "Disable TLS 1.0.",
-            "classification": {},
-        },
-        "type": "ssl",
-        "host": "https://example.com",
-        "matched-at": "https://example.com:443",
-    },
+_MARKER = "GIZMODUCK_CONFIRMATION_REQUIRED"
+
+# One High finding - enough to exercise the gate without depending on sort order.
+_HIGH_FINDING = (
+    '{"template-id":"http-title-exposed","info":{"name":"Exposed HTTP Title",'
+    '"severity":"high"},"host":"h.example.com","matched-at":"https://h.example.com/"}\n'
+)
+
+# The exact non-ASCII repro from the review finding: a Nuclei template name with
+# an accented character, an em dash, and an emoji - all outside cp1252... except
+# the accented character and em dash, which cp1252 CAN encode; the warning sign
+# emoji cannot, which is what used to crash the preview.
+_UNICODE_FINDING = (
+    '{"template-id":"uni-test","info":{"name":"Café — TLS ⚠",'
+    '"severity":"high"},"host":"u.example.com","matched-at":"https://u.example.com/"}\n'
+)
+
+# Three distinct records, all at or above `high`, each carrying a description
+# and remediation string unique enough that it can only ever have come from the
+# record body - never from a preview line, which prints only severity+subject.
+_MULTI_FINDINGS = (
+    '{"template-id":"http-title-exposed","info":{"name":"Exposed HTTP Title",'
+    '"severity":"high","description":"UNIQUE_DESC_TITLE_7f3a",'
+    '"remediation":"UNIQUE_REM_TITLE_7f3a"},"host":"a.example.com",'
+    '"matched-at":"https://a.example.com/"}\n'
+    '{"template-id":"tls-weak-cipher","info":{"name":"Weak TLS Cipher",'
+    '"severity":"critical","description":"UNIQUE_DESC_TLS_9b1c",'
+    '"remediation":"UNIQUE_REM_TLS_9b1c"},"host":"b.example.com",'
+    '"matched-at":"https://b.example.com/"}\n'
+    '{"template-id":"exposed-panel","info":{"name":"Exposed Admin Panel",'
+    '"severity":"high","description":"UNIQUE_DESC_PANEL_2d4e",'
+    '"remediation":"UNIQUE_REM_PANEL_2d4e"},"host":"c.example.com",'
+    '"matched-at":"https://c.example.com/"}\n'
+)
+
+_RECORD_CONTENT_MARKERS = [
+    "UNIQUE_DESC_TITLE_7f3a", "UNIQUE_REM_TITLE_7f3a",
+    "UNIQUE_DESC_TLS_9b1c", "UNIQUE_REM_TLS_9b1c",
+    "UNIQUE_DESC_PANEL_2d4e", "UNIQUE_REM_PANEL_2d4e",
 ]
 
 
-@pytest.fixture
-def findings_file(tmp_path: Path) -> Path:
-    p = tmp_path / "findings.jsonl"
-    p.write_text("".join(json.dumps(f) + "\n" for f in FINDINGS), encoding="utf-8")
+def _write(tmp_path, content, name="findings.jsonl"):
+    p = tmp_path / name
+    p.write_text(content, encoding="utf-8", newline="\n")
     return p
 
 
-def run(*args: str) -> subprocess.CompletedProcess:
+def _run(*args):
     return subprocess.run(
-        [sys.executable, str(GIZMODUCK), *args],
-        capture_output=True,
-        text=True,
+        [sys.executable, str(_SCRIPT), *args],
+        capture_output=True, text=True, check=False,
     )
 
 
-def tickets(findings_file: Path, *extra: str) -> dict:
-    proc = run("tickets", str(findings_file), *extra)
-    assert proc.returncode == 0, proc.stderr
-    return json.loads(proc.stdout)
+def _extract_digest(stdout):
+    """Pull the digest out of the rerun command the preview prints - the line
+    containing the script's own name and a trailing `--yes <digest>`."""
+    for line in stdout.splitlines():
+        if _SCRIPT.name in line and "--yes" in line:
+            return line.strip().rsplit("--yes", 1)[-1].strip()
+    raise AssertionError(f"no rerun command with --yes found in preview stdout: {stdout!r}")
 
 
-# -- the gate ---------------------------------------------------------------
+# -- must-block: no --yes ----------------------------------------------------
 
 
-def test_preview_carries_no_fileable_body(findings_file: Path):
-    """The assertion the whole gate rests on.
+def test_must_block_no_yes_exits_3_with_marker_and_no_records(tmp_path):
+    findings = _write(tmp_path, _MULTI_FINDINGS)
+    result = _run("tickets", str(findings), "--min-severity", "high")
 
-    Not "is it labelled a preview" - whether the payload a `sdp_create` call
-    needs exists at all. It must not, so that a caller which ignores every
-    warning still has nothing to file.
-    """
-    payload = tickets(findings_file)
+    # The control this gate exists for: no record content - descriptions,
+    # remediation text, anything that names what would actually be filed - may
+    # reach stdout without --yes. A whole-stdout JSON-parse failure is not
+    # enough on its own: an implementation could print the preview and then
+    # dump the records afterward, which still fails to whole-parse as JSON
+    # while leaking everything.
+    leaked = [m for m in _RECORD_CONTENT_MARKERS if m in result.stdout]
+    assert not leaked, (
+        f"record content leaked into stdout without --yes, defeating "
+        f"{_MARKER}: {leaked!r} found in stdout={result.stdout!r}"
+    )
 
-    assert payload["tickets"], "a preview must still name what would be ticketed"
-    for record in payload["tickets"]:
-        assert "description" not in record, (
-            "the preview generated a fileable ticket body - the gate is a label, "
-            "not a gate"
+    assert result.returncode == 3, (
+        f"expected the gate to exit 3, got {result.returncode} "
+        f"(stdout={result.stdout!r}, stderr={result.stderr!r})"
+    )
+    assert _MARKER in result.stdout
+
+
+def test_preview_lists_exactly_the_records_yes_would_emit(tmp_path):
+    findings = _write(tmp_path, _MULTI_FINDINGS)
+
+    preview = _run("tickets", str(findings), "--min-severity", "high")
+    assert preview.returncode == 3
+    preview_lines = [ln for ln in preview.stdout.splitlines() if ln.startswith("  [")]
+    digest = _extract_digest(preview.stdout)
+
+    approved = _run("tickets", str(findings), "--min-severity", "high", "--yes", digest)
+    assert approved.returncode == 0, (
+        f"expected the matching digest to be accepted, got {approved.returncode} "
+        f"(stdout={approved.stdout!r})"
+    )
+    records = json.loads(approved.stdout)
+
+    assert len(preview_lines) == len(records) == 3, (
+        f"preview showed {len(preview_lines)} ticket(s) ({preview_lines!r}) but "
+        f"--yes would emit {len(records)} record(s) ({records!r}) - the preview "
+        f"must show exactly the batch --yes creates, not a truncated view of it"
+    )
+
+
+# -- must-allow: --yes plus the matching digest -------------------------------
+
+
+def test_must_allow_yes_with_matching_digest_exits_0_with_expected_record_count(tmp_path):
+    findings = _write(tmp_path, _HIGH_FINDING)
+
+    preview = _run("tickets", str(findings), "--min-severity", "high")
+    assert preview.returncode == 3
+    digest = _extract_digest(preview.stdout)
+
+    result = _run("tickets", str(findings), "--min-severity", "high", "--yes", digest)
+    assert result.returncode == 0, (
+        f"expected --yes <matching digest> to succeed, got {result.returncode} "
+        f"(stderr={result.stderr!r})"
+    )
+    records = json.loads(result.stdout)
+    assert len(records) == 1
+    assert records[0]["severity"] == "High"
+
+
+# -- the approval-scope escape: --yes must be bound to the previewed batch ---
+
+
+def test_bare_yes_with_no_digest_value_is_rejected(tmp_path):
+    findings = _write(tmp_path, _MULTI_FINDINGS)
+    # A bare `--yes` (no digest) must fail to parse, not fall through to
+    # emitting every record at the tool's default floor - the exact widening
+    # this finding closes (previously: preview at --min-severity critical
+    # showed 1 ticket, then a bare `--yes` emitted every High as well).
+    result = _run("tickets", str(findings), "--min-severity", "critical", "--yes")
+    assert result.returncode == 2, (
+        f"a bare --yes with no digest must be rejected by argparse, not "
+        f"treated as approval - got {result.returncode} (stdout={result.stdout!r})"
+    )
+    try:
+        json.loads(result.stdout)
+    except json.JSONDecodeError:
+        pass
+    else:
+        raise AssertionError("a bare --yes must not emit ticket records")
+
+
+def test_yes_digest_from_a_narrower_batch_does_not_unlock_a_wider_one(tmp_path):
+    findings = _write(tmp_path, _MULTI_FINDINGS)
+
+    # Preview at `critical`: strictly fewer records than the tool's default
+    # `high` floor would produce.
+    narrow = _run("tickets", str(findings), "--min-severity", "critical")
+    assert narrow.returncode == 3
+    narrow_digest = _extract_digest(narrow.stdout)
+    narrow_records = json.loads(
+        _run("tickets", str(findings), "--min-severity", "critical",
+             "--yes", narrow_digest).stdout
+    )
+
+    # Reusing that digest against the wider (default `high`) batch must be
+    # refused, not honoured, even though a valid-looking digest was supplied.
+    wide = _run("tickets", str(findings), "--yes", narrow_digest)
+    assert wide.returncode != 0, (
+        "a digest approved for a narrower batch must not unlock a wider one"
+    )
+    assert "GIZMODUCK_APPROVAL_MISMATCH" in wide.stdout, (
+        f"expected the mismatch marker, got stdout={wide.stdout!r}"
+    )
+    try:
+        json.loads(wide.stdout)
+    except json.JSONDecodeError:
+        pass
+    else:
+        raise AssertionError(
+            f"a mismatched digest must not emit ticket records - got {len(json.loads(wide.stdout))} "
+            f"records for a batch approved as {len(narrow_records)}"
         )
 
 
-def test_preview_says_it_is_a_preview_and_is_not_authorized(findings_file: Path):
-    payload = tickets(findings_file)
+# -- non-ASCII fixture: must not crash (BLOCK 1) ------------------------------
 
-    assert payload["mode"] == "preview"
-    assert payload["authorized"] is False
-    assert "--create" in payload["instruction"], (
-        "the preview must name the flag that releases it, or the caller cannot proceed"
+
+def test_non_ascii_finding_name_does_not_crash_the_preview(tmp_path):
+    findings = _write(tmp_path, _UNICODE_FINDING)
+    result = _run("tickets", str(findings), "--min-severity", "high")
+
+    assert result.returncode == 3, (
+        "a non-ASCII finding name must still hit the gate (exit 3), not crash "
+        f"with a generic failure - got {result.returncode} (stderr={result.stderr!r})"
+    )
+    assert _MARKER in result.stdout
+
+
+def test_non_ascii_finding_name_still_emits_records_with_yes(tmp_path):
+    findings = _write(tmp_path, _UNICODE_FINDING)
+
+    preview = _run("tickets", str(findings), "--min-severity", "high")
+    assert preview.returncode == 3
+    digest = _extract_digest(preview.stdout)
+
+    result = _run("tickets", str(findings), "--min-severity", "high", "--yes", digest)
+    assert result.returncode == 0
+    records = json.loads(result.stdout)
+    assert len(records) == 1
+
+
+# -- abbreviation: --ye/--y must NOT satisfy the gate (FIX 3) -----------------
+
+
+def test_abbreviated_yes_flag_is_rejected_not_honoured(tmp_path):
+    findings = _write(tmp_path, _HIGH_FINDING)
+    result = _run("tickets", str(findings), "--min-severity", "high", "--ye")
+
+    # allow_abbrev=False means argparse must refuse this as an unrecognized
+    # argument (exit 2) rather than silently treating it as --yes (exit 0).
+    assert result.returncode == 2, (
+        f"--ye must be rejected, not accepted as an abbreviation of --yes - "
+        f"got returncode {result.returncode} (stdout={result.stdout!r})"
+    )
+    assert _MARKER not in result.stdout
+    try:
+        json.loads(result.stdout)
+    except json.JSONDecodeError:
+        pass
+    else:
+        raise AssertionError("an abbreviated --ye must not emit ticket records")
+
+
+# -- the shipped command prose is part of the gate ----------------------------
+#
+# The CLI gate above can only refuse what it is asked to do; what it is asked
+# is decided by the command files, because prose is what the model actually
+# follows. A `scan.md` whose FIRST `gizmoduck.py tickets` line already carried
+# `--yes` would satisfy every test above while filing tickets nobody previewed
+# - the gate would hold and the batch would still never be shown to anyone.
+#
+# Only backticked spans and fenced blocks are read, never the surrounding
+# sentences. Scoped by line instead, this test reported a false positive on its
+# first run: `scan.md`'s own prose says "(no `--yes`)", and a line-scoped match
+# read that as the flag being passed. The command, never the prose about it.
+
+_COMMANDS = Path(__file__).resolve().parents[2] / "commands"
+
+# Fenced block first, so its ``` fences are never mistaken for inline spans.
+# An inline span may contain a newline - `scan.md`'s preview invocation wraps
+# mid-command - so `[^`]` deliberately allows one.
+_CODE_SPAN_RE = re.compile(r"```[a-z]*\n(.*?)```|`([^`]+)`", re.S)
+
+
+def _tickets_invocations(name):
+    """Every `gizmoduck.py tickets ...` command in `commands/<name>`, in order."""
+    text = (_COMMANDS / name).read_text(encoding="utf-8")
+    found = []
+    for block, span in _CODE_SPAN_RE.findall(text):
+        for chunk in (block.splitlines() if block else [span]):
+            flat = " ".join(chunk.split())
+            if "gizmoduck.py tickets" in flat:
+                found.append(flat)
+    return found
+
+
+@pytest.mark.parametrize("command", ["scan.md", "tickets.md"])
+def test_the_first_shipped_tickets_invocation_omits_yes(command):
+    invocations = _tickets_invocations(command)
+
+    assert invocations, f"commands/{command} invokes gizmoduck.py tickets nowhere"
+    assert "--yes" not in invocations[0], (
+        f"commands/{command}'s FIRST gizmoduck.py tickets invocation carries "
+        f"--yes: {invocations[0]!r}. The first run is the preview the user is "
+        f"shown; approving a batch nobody previewed is the gate failing open "
+        f"while every CLI test here still passes."
     )
 
 
-def test_preview_still_identifies_every_finding(findings_file: Path):
-    """Withholding the body must not withhold the decision.
+@pytest.mark.parametrize("command", ["scan.md", "tickets.md"])
+def test_the_shipped_rerun_carries_yes_with_a_digest(command):
+    """The other half: a command file that never reaches --yes cannot file."""
+    invocations = _tickets_invocations(command)
 
-    A preview nobody can act on would push callers straight to --create, which
-    is the opposite of the point.
-    """
-    record = tickets(findings_file)["tickets"][0]
-
-    for field in ("ref", "template_id", "severity", "subject", "instances"):
-        assert field in record, f"preview dropped {field}, which the user needs to decide"
-    assert "CVE-2021-44228" in record["subject"]
-
-
-def test_create_releases_the_body(findings_file: Path):
-    payload = tickets(findings_file, "--create")
-
-    assert payload["mode"] == "create"
-    assert payload["authorized"] is True
-    for record in payload["tickets"]:
-        assert record["description"], "--create must produce a fileable body"
-    assert "CVSS: 10.0" in payload["tickets"][0]["description"]
-
-
-def test_create_and_preview_agree_on_which_findings(findings_file: Path):
-    """The preview must not under-report what --create will file.
-
-    A preview showing fewer tickets than the authorized run is worse than no
-    preview: the user consents to a list, and a longer one gets written.
-    """
-    preview = tickets(findings_file)
-    created = tickets(findings_file, "--create")
-
-    assert preview["count"] == created["count"]
-    assert [t["ref"] for t in preview["tickets"]] == [t["ref"] for t in created["tickets"]]
-
-
-# -- the severity floor, which decides what reaches the gate ----------------
-
-
-def test_the_floor_is_high_so_a_medium_never_reaches_a_ticket(findings_file: Path):
-    """`_FLOORS["tickets"] = "high"`. A Medium is worth reading in a report
-    without being worth opening a ticket for."""
-    refs = [t["ref"] for t in tickets(findings_file)["tickets"]]
-
-    assert "nuclei:CVE-2021-44228" in refs
-    assert "nuclei:tls-version" not in refs, "a Medium reached the ticket list"
-
-
-def test_an_explicit_min_severity_can_still_widen_the_floor(findings_file: Path):
-    """Deliberate, and worth pinning: the floor is a default, not a ceiling.
-    `commands/scan.md` must therefore NOT pass `$2` through to it - that would
-    let a report-widening flag widen the write."""
-    refs = [t["ref"] for t in tickets(findings_file, "--min-severity", "medium")["tickets"]]
-
-    assert "nuclei:tls-version" in refs
-
-
-# -- the flag itself --------------------------------------------------------
-
-
-def test_create_is_rejected_on_every_other_command(findings_file: Path):
-    """A flag ignored on five of six commands is one rename away from being
-    honoured on all of them."""
-    proc = run("report", str(findings_file), "--create")
-
-    assert proc.returncode != 0
-    assert "--create applies to `tickets` only" in proc.stderr
-
-
-def test_the_default_is_the_safe_one(findings_file: Path):
-    """No flag at all means preview. Stated as its own test because a default
-    that flips is the whole failure this gate exists to prevent."""
-    assert tickets(findings_file)["authorized"] is False
-
-# -- what the gate does NOT do ---------------------------------------------
-#
-# `--create` is an ordinary CLI switch. Nothing in argv can verify that a human
-# said yes, so this gate makes the write DELIBERATE, not AUTHORIZED: a caller
-# that decides to pass the flag gets the payload. What it removes is the
-# incidental write - the one that happens because a preview already carried a
-# fileable body and prose was the only thing saying "ask first".
-#
-# Authorization lives one layer up, in a permission rule on the `sdp_*` MCP
-# tools. That is machine configuration, not repository content, so no test here
-# can assert it. These two tests cover the part that IS in this repo: the
-# shipped command files must not pass `--create` in their preview step.
-
-
-def _command_text(name: str) -> str:
-    p = Path(__file__).resolve().parent.parent.parent / "commands" / f"{name}.md"
-    return p.read_text(encoding="utf-8")
-
-
-@pytest.mark.parametrize("command", ["scan", "tickets"])
-def test_the_first_shipped_tickets_invocation_omits_create(command: str):
-    """The prose is what the model actually follows, so it is part of the gate.
-
-    Both commands invoke `tickets` twice: once to preview, once after a yes. The
-    FIRST invocation must not carry the flag - a command whose preview step
-    passes --create files tickets on a run the user only asked to see. Asserted
-    against the invocation itself rather than any sentence about it, so a
-    rewording cannot silently retire the check.
-    """
-    # Only the command itself - a backticked span or a fenced block - never the
-    # prose around it. `scan.md` legitimately says "**without** `--create`" on
-    # the same line as its preview invocation, and a line-scoped match reads
-    # that sentence as the flag being passed.
-    text = _command_text(command)
-    invocations = [
-        span for span in re.findall(r"`([^`\n]*gizmoduck\.py tickets[^`\n]*)`", text)
-    ] + [
-        line.strip()
-        for block in re.findall(r"```[a-z]*\n(.*?)```", text, re.S)
-        for line in block.splitlines()
-        if "gizmoduck.py tickets" in line
-    ]
-
-    assert invocations, f"commands/{command}.md invokes gizmoduck.py tickets nowhere"
-    assert "--create" not in invocations[0], (
-        f"commands/{command}.md's FIRST tickets invocation passes --create, so its "
-        "preview step files real tickets"
-    )
-
-
-@pytest.mark.parametrize("command", ["scan", "tickets"])
-def test_the_shipped_command_asks_before_it_creates(command: str):
-    """A command that reached --create without a question would be a gate with
-    nobody behind it."""
-    text = _command_text(command).lower()
-
-    assert "ask" in text, f"commands/{command}.md never asks the user anything"
-    assert "yes" in text, (
-        f"commands/{command}.md does not condition --create on an explicit yes"
+    assert any("--yes" in inv for inv in invocations[1:]), (
+        f"commands/{command} never reaches a `--yes <digest>` rerun: "
+        f"{invocations!r}"
     )

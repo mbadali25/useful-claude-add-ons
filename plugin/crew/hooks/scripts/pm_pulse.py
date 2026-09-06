@@ -82,6 +82,11 @@ _MAX_PULSES_PER_SESSION = 12
 # SessionStart brief still reports them -- but they describe a standing
 # condition rather than something that just happened, and blocking the end of
 # a turn to mention one is the noise this hook is designed not to be.
+#
+# endpointUnscanned deliberately does NOT belong here: a new endpoint with no
+# scan yet is exactly the "something just happened" case this set exists to
+# exclude, not a standing condition like a review-health ratio -- the turn
+# that just built the endpoint is the turn that should hear about it.
 _QUIET_TRIGGERS = frozenset({"ticketsTooLarge", "reviewNotWorking"})
 
 

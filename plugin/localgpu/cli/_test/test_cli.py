@@ -845,3 +845,103 @@ def test_an_unrecognized_flag_on_prompt_is_an_error():
     """Only `shell` forwards leftovers; a typo here must not be sent as a prompt."""
     with pytest.raises(SystemExit):
         cli.parse_args(["prompt", "hi", "--not-a-real-flag"])
+# --- mcp-init -----------------------------------------------------------
+#
+# `mcp-init` writes a file into a repository and can update one that already
+# exists, so the cases that matter are the destructive ones: it must merge
+# rather than clobber, and it must refuse rather than silently rewrite. The
+# happy path is the least interesting test here.
+
+
+@pytest.fixture
+def fake_install(tmp_path, monkeypatch):
+    """A LOCALGPU_HOME whose interpreter and server.py actually exist.
+
+    `mcp-init` verifies both before writing, so a test that does not create
+    them exercises only the refusal path.
+    """
+    home = tmp_path / "home"
+    py = home / ("venv/Scripts/python.exe" if cli.os.name == "nt"
+                 else "venv/bin/python")
+    py.parent.mkdir(parents=True)
+    py.write_text("", encoding="utf-8")
+    server = cli.PLUGIN_ROOT / "mcp" / "server.py"
+    assert server.is_file(), "the real server.py is expected to exist"
+    monkeypatch.setattr(cli.localgpu_config, "localgpu_home", lambda: home)
+    return home
+
+
+def _run(repo, *argv):
+    args = cli.parse_args(["mcp-init", str(repo), *argv])
+    return args.func(args)
+
+
+def test_mcp_init_writes_literal_paths(tmp_path, fake_install):
+    assert _run(tmp_path) == 0
+    doc = cli.json.loads((tmp_path / ".mcp.json").read_text(encoding="utf-8"))
+    entry = doc["mcpServers"]["localgpu"]
+    # No placeholder or shell-ism may survive: Claude Code reads this file
+    # directly and expands neither, so either one yields a server that fails
+    # to spawn with no readable error.
+    blob = cli.json.dumps(entry)
+    # `}}` is deliberately NOT checked: it occurs naturally as adjacent
+    # closing braces in nested JSON. `{{` cannot, because an object value is
+    # always preceded by its key.
+    for bad in ("{{", "~", "${", "LOCALGPU_PYTHON", "LOCALGPU_PLUGIN_ROOT"):
+        assert bad not in blob, f"unexpanded {bad!r} in {blob}"
+    assert entry["env"]["LOCALGPU_HOME"]
+
+
+def test_mcp_init_is_idempotent(tmp_path, fake_install):
+    assert _run(tmp_path) == 0
+    before = (tmp_path / ".mcp.json").read_text(encoding="utf-8")
+    assert _run(tmp_path) == 0
+    assert (tmp_path / ".mcp.json").read_text(encoding="utf-8") == before
+
+
+def test_mcp_init_preserves_other_servers(tmp_path, fake_install):
+    (tmp_path / ".mcp.json").write_text(cli.json.dumps(
+        {"mcpServers": {"other": {"type": "stdio", "command": "keep-me"}}}),
+        encoding="utf-8")
+    assert _run(tmp_path) == 0
+    doc = cli.json.loads((tmp_path / ".mcp.json").read_text(encoding="utf-8"))
+    assert doc["mcpServers"]["other"] == {"type": "stdio", "command": "keep-me"}
+    assert "localgpu" in doc["mcpServers"]
+
+
+def test_mcp_init_refuses_to_overwrite_a_different_entry(tmp_path, fake_install):
+    stale = {"mcpServers": {"localgpu": {"command": "C:/old/0.1.9/python.exe"}}}
+    (tmp_path / ".mcp.json").write_text(cli.json.dumps(stale), encoding="utf-8")
+    assert _run(tmp_path) == 1
+    # Unchanged: a refusal that still wrote would be the worst outcome.
+    doc = cli.json.loads((tmp_path / ".mcp.json").read_text(encoding="utf-8"))
+    assert doc["mcpServers"]["localgpu"]["command"] == "C:/old/0.1.9/python.exe"
+    assert _run(tmp_path, "--force") == 0
+    doc = cli.json.loads((tmp_path / ".mcp.json").read_text(encoding="utf-8"))
+    assert "0.1.9" not in doc["mcpServers"]["localgpu"]["command"]
+
+
+def test_mcp_init_refuses_invalid_json_rather_than_overwriting(tmp_path, fake_install):
+    (tmp_path / ".mcp.json").write_text("{ not json", encoding="utf-8")
+    assert _run(tmp_path) == 1
+    assert (tmp_path / ".mcp.json").read_text(encoding="utf-8") == "{ not json"
+
+
+def test_mcp_init_refuses_when_the_interpreter_is_missing(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli.localgpu_config, "localgpu_home",
+                        lambda: tmp_path / "nowhere")
+    assert _run(tmp_path) == 1
+    assert not (tmp_path / ".mcp.json").exists()
+
+
+def test_mcp_init_gitignore_is_added_once_and_optional(tmp_path, fake_install):
+    assert _run(tmp_path) == 0
+    gi = tmp_path / ".gitignore"
+    assert gi.read_text(encoding="utf-8").count(".mcp.json\n") == 1
+    assert _run(tmp_path, "--force") == 0
+    assert gi.read_text(encoding="utf-8").count(".mcp.json\n") == 1
+
+    other = tmp_path / "other"
+    other.mkdir()
+    assert _run(other, "--no-gitignore") == 0
+    assert not (other / ".gitignore").exists()

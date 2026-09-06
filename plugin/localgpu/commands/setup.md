@@ -113,24 +113,41 @@ loopback URL.
 
 ## Step 6 — register the MCP server
 
-Copy `${CLAUDE_PLUGIN_ROOT}/skills/localgpu/templates/mcp.json` to the repo root as
-`.mcp.json`, or merge the `localgpu` entry into an existing one. Substitute all
-three placeholders with absolute paths:
+One command. It resolves every path itself:
 
-| Placeholder | Becomes |
-|---|---|
-| `{{LOCALGPU_PYTHON}}` | `$LOCALGPU_HOME/venv/bin/python`, or `$LOCALGPU_HOME\venv\Scripts\python.exe` on Windows |
-| `{{LOCALGPU_PLUGIN_ROOT}}` | The expanded value of `${CLAUDE_PLUGIN_ROOT}` |
-| `{{LOCALGPU_HOME}}` | The path from step 1 |
+```bash
+"$LOCALGPU_HOME/venv/bin/localgpu" mcp-init <repo>            # Linux, macOS, WSL
+"$LOCALGPU_HOME\venv\Scripts\localgpu.exe" mcp-init <repo>   # Windows
+```
 
-Expand them yourself and write literal paths. `.mcp.json` is read by Claude Code,
-not by a shell, so `${CLAUDE_PLUGIN_ROOT}` and `~` left in the file are strings
-that resolve to nothing and produce a server that fails to spawn with no useful
-error.
+**Do not hand-substitute a template.** The three values it needs are already
+known to the process doing the work — `sys.executable` is the venv interpreter,
+`PLUGIN_ROOT` is `__file__`'s parent, and `localgpu_home()` resolves the install
+root — so a model copying placeholders by hand is a step that can go wrong and
+buys nothing. That is why `mcp-init` exists.
 
-`LOCALGPU_HOME` is set in the entry's `env` block deliberately. An MCP server is
-spawned by Claude Code, not by a login shell, so it does not inherit a profile
-that exports it.
+What it does, all of it detecting before acting:
+
+- **Verifies before writing.** If the interpreter or `mcp/server.py` is not
+  actually on disk it refuses and names the missing path, rather than writing a
+  registration that produces a server failing to spawn with no readable error.
+- **Merges, never clobbers.** An existing `.mcp.json` keeps its other servers.
+  Invalid JSON is refused, not overwritten.
+- **Idempotent.** An entry that already matches reports "already registered" and
+  writes nothing, exit 0.
+- **Refuses a silent overwrite.** An entry that *differs* is shown as a diff and
+  left alone unless `--force`. That difference is usually a plugin path pinned
+  to an older localgpu, and quietly rewriting it hides that an upgrade happened.
+- **Ignores the file by default.** `--no-gitignore` opts out. The paths inside
+  are machine-specific, so a committed copy points at one box; everyone else
+  runs `mcp-init` and gets their own.
+
+Exit codes are honest: `0` written or already correct, `1` refused. A script may
+branch on it.
+
+**Re-run it after every localgpu upgrade.** `args` contains the plugin
+directory, which is version-pinned — bump the plugin and the old path stops
+existing. `mcp-init --force` re-pins it.
 
 Then tell the user to run `/mcp` and approve the server. A project-scope
 `.mcp.json` requires explicit approval and will not connect silently — a setup

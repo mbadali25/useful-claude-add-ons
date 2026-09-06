@@ -23,26 +23,68 @@ When it does exist, report the current `dev.provider`, `qa.provider` and
 
 ## Step 1 — the constraint, stated first
 
-**crew's provider set is closed. `localgpu` cannot be a crew provider.**
+**`localgpu` is not a provider crew dispatches a role to. Not on the dev side,
+not on the QA side.**
 
-`default_config()` in `plugin/crew/hooks/scripts/crew_config.py` hardcodes the
-whole set:
+The provider set in `plugin/crew/hooks/scripts/crew_config.py` is the same
+three names on both sides:
 
 ```python
-"qa":  {"provider": "auto", "order": ["codex", "copilot", "claude"], ...}
-"dev": {"provider": "claude", ...}
+DEV_PROVIDERS = ("claude", "codex", "copilot")
+QA_PROVIDERS  = ("claude", "codex", "copilot")
 ```
 
-and `/crew:model` validates `dev.provider` against exactly `claude`, `codex`,
-`copilot`. Every downstream consumer — `/crew:review`'s reviewer selection, the
-same-family interlock that strikes the author's family from QA, `/crew:roster`'s
-staffing report — reads those names and nothing else.
+`localgpu` was briefly admitted to `DEV_PROVIDERS` alone, on the reasoning
+that a local 7B is legitimate for work whose failure is *visible* — an
+explorer that returns the wrong file, a scribe note that reads badly, a docs
+draft a human edits. That reasoning is still correct, and the admission was
+still wrong: `dev.provider` backs the `developer` role, and step 2's own table
+below has always said `developer` is `No — code lands. A 7B's failures are
+fluent and pass a skim.` A provider slot that contradicts the role table two
+rows below it is not a narrower gate, it is the same defect approached from
+the other side. It was reverted.
 
-Making `localgpu` a first-class provider means editing crew. That is out of scope
-for this plugin, and it is out of scope on purpose: the review gate is the one
-thing crew exists to hold, and a plugin that reached into another plugin's config
-schema to add itself to that gate is doing the exact thing the gate is there to
-catch.
+**Where a local model actually earns its keep is one level down: role
+tooling, not provider selection.** `explorer`, `scribe` and `docs-writer`
+already list `mcp__localgpu__search_code` among their tools, and
+`/crew:onboard` and `/crew:diagram` inherit the same capability for free —
+both locate code by spawning `crew:explorer`, and explorer's tool list is
+what carries it. No separate wiring, no config flag, no provider name. See
+step 2.
+
+**Why an invalid name is refused rather than ignored, on both the write path
+and the read path.** crew's gates fail *open* against a provider name nothing
+resolves: an unrecognised entry in `qa.order` is not an error at review time,
+it is a rung the selector walks past in silence, leaving `/crew:review` on the
+fallback while the config file goes on claiming a reviewer is configured. So
+the name is rejected at the write boundary (`crew_config.validate_providers`,
+reached from `/crew:model` and `/crew:config`'s global write) — but
+hand-editing `.crew/config.json` was always the way past that boundary, so the
+read path refuses it too, in two places: `crew_state.resolve_role` bars a `qa`
+provider outside `QA_PROVIDERS` outright, before family is even asked about —
+an unrecognised name is not merely unproven-independent, it is not a reviewer
+at all — and `crew_config.order_candidates` refuses the same name in
+`qa.order` before PATH or family are even consulted. `resolve_config` still
+promises never to raise on a malformed file, and `provider_problems` reports
+what a hand-edited config got wrong in the same words `validate_providers`
+would have raised, so a reader of `/crew:model`'s report sees it even when
+nothing wrote it through the guarded path.
+
+**Why QA specifically refuses everything outside the three names.** Not
+because a 7B reads code badly. Because review's whole value is a second,
+*differently*-wrong reader, and a weaker model does not review — it agrees,
+fluently, and produces output indistinguishable from a real pass. crew already
+refuses a reviewer from the author's own family for exactly this reason; a
+weaker-family reviewer is the same failure wearing a better disguise.
+
+**PATH note.** `localgpu` is deliberately *not* on PATH — the bootstrap
+installs the console script into `$LOCALGPU_HOME/venv` so the venv's Python is
+never shadowed. `crew_config.localgpu_which()` therefore checks PATH first and
+then the install root; a bare `which("localgpu")` answers None on a correctly
+installed machine and would mark it missing exactly where it works. This is
+still used to report whether the CLI itself is present (for the MCP tools and
+the shell route below) — it has nothing to do with provider validity, which
+is closed regardless of what is installed.
 
 ## Step 2 — which roles are plausible, and which are not
 
@@ -51,6 +93,9 @@ Judge on one axis: what does being wrong cost, and would anyone notice?
 | Role | Offload to a local 7B? | Why |
 |---|---|---|
 | `explorer` | **Partly — via the MCP tools, not the chat model** | Its job is locating code and returning excerpts. `search_code` does that on the GPU for free. What it must not offload is the judgement about what the excerpts mean |
+| `/crew:onboard` (codemap) | **Partly, same terms as `explorer`** | Locates code the same way, through the same role. `localgpu ask` may produce a first draft of a codemap note; a human or frontier model edits it against the code before it lands, and the edited version is what lands — never the last pass |
+| `/crew:diagram` | **Partly, same terms as `explorer`** | Same locate-then-judge split. A first-draft diagram shape from `localgpu ask` is fine; the shape is checked against the code before it is written, never taken as-is |
+| graph building (`graphify`) | **No tie-in at all** | `graphify` is a CLI with no model in it. There is nothing at that layer for a local model to plug into — say so rather than inventing one |
 | `scribe` | Plausible | Mechanical capture. A clumsy note is visibly clumsy and costs a re-read |
 | `docs-writer` | Plausible as a first draft only | A human or a frontier model edits it before it lands. Never as the last pass |
 | `researcher` | Marginal | A 7B with no browsing is a worse search engine than search. Use it to triage what to read, not to conclude |
@@ -62,15 +107,25 @@ Judge on one axis: what does being wrong cost, and would anyone notice?
 | `smoke-author`, `browser-tester` | No | A test that passes for the wrong reason is worse than no test |
 | `pm` | No | It owns the gates. A gatekeeper that cannot reason about the gate is decorative |
 
-**`qa-reviewer` is the categorical one.** Review's whole value is that a second,
-differently-wrong reader looks at code the first one wrote. A weaker model does not
-review — it agrees, fluently, on almost everything, and produces output that is
-indistinguishable from a real pass. crew already refuses a same-family reviewer for
-this reason; a weaker-family reviewer is the same failure with a better disguise.
+**`qa-reviewer` is the categorical never, with no exception for a first draft.**
+Review's whole value is that a second, differently-wrong reader looks at code
+the first one wrote. A weaker model does not review — it agrees, fluently, on
+almost everything, and produces output that is indistinguishable from a real
+pass. crew already refuses a same-family reviewer for this reason; a
+weaker-family reviewer is the same failure with a better disguise. Unlike a
+codemap note or a diagram, there is no "edit it before it lands" step that
+rescues a review: the whole point of a review is to be the check nobody
+re-derives, and a first draft nobody re-derives is exactly the failure this
+gate exists to prevent.
 
-Say the honest summary out loud: **the useful offload here is retrieval, not
-judgement.** The MCP tools save real context on every crew task without touching a
-single gate. That is the win. `chat_model` doing a role's thinking is not.
+The boundary across every row above is the same one: **mechanical capture and
+locating code, yes; any judgement that gets committed unreviewed, no.**
+
+Say the honest summary out loud: **the useful offload here is retrieval and
+first drafts, not judgement.** The MCP tools save real context on every crew
+task without touching a single gate, and a draft note or diagram shape saves
+a blank page without touching what actually lands. Neither is a role a
+config file dispatches to, and neither is review.
 
 ## Step 3 — the one supported route: a separate proxy session
 
@@ -135,23 +190,29 @@ than failing halfway in. `/localgpu:doctor` check 3 runs the same three-way test
 Three specific things, each of which would look like a feature and behave like a
 regression:
 
-- **It will not write `"provider": "localgpu"` into `.crew/config.json`.** crew
-  resolves providers by name against a known set. An unrecognised name does not
-  error — it falls through provider selection, and `/crew:review` ends up on the
-  `qa-reviewer` fallback while the config file says a reviewer is configured. That
-  is a silently degraded review gate, which is precisely the failure crew was built
-  to prevent. If a user asks for this, refuse and show them this paragraph.
+- **It will not write `"provider": "localgpu"` into `.crew/config.json` —
+  neither side.** It would raise on the `qa` side (`validate_providers`) and,
+  since the revert, on the `dev` side too — there is no provider slot this is
+  legal in any more. Even where it were legal, this command would not be the
+  one to write it: changing which model backs a role is `/crew:model`'s job,
+  and a report command that edits config is how a "report only" promise stops
+  meaning anything.
 - **It will not shadow `codex` or `copilot` on `PATH`.** A wrapper named `codex`
   that routes to Ollama makes every crew probe pass, every review return, and every
   `/crew:roster` line read "on PATH". The gate then reports green forever while a
   7B writes the reviews. Do not do this, and do not describe it as an option.
-- **It will not add itself to `qa.order`.** Same failure as the first, one level
-  down: a name in `order` that resolves to nothing is a rung the selector walks past
-  in silence.
+- **It will not add `localgpu` to `qa.order` or `dev.provider`.**
+  `validate_providers` refuses both at the write boundary, and `resolve_role` /
+  `order_candidates` refuse the QA side again on read, in case a config ever
+  gets there without going through the write path. Do not go looking for a way
+  around either guard — the guard is the feature.
 
-The common thread: crew's gates fail *open* against an unknown provider. Anything
-that puts an unknown name where crew expects a known one converts a hard failure
-into a green light, and green lights are load-bearing here.
+The common thread: crew's gates fail *open* against a provider name nothing
+resolves. `localgpu` is not a name the provider table resolves at all, on
+either side, and that is deliberate — the work it is genuinely good at lives
+one layer down, in role tooling (step 2), where a wrong answer is a location a
+human re-checks or a draft a human edits, never a diff or a review that lands
+unreviewed.
 
 ## Step 4 — end with one recommendation
 
@@ -159,9 +220,10 @@ Pick the one that fits what you found, and stop:
 
 | If | Say |
 |---|---|
-| MCP tools are registered and crew is set up | Use `search_code` during crew tasks; leave the config alone |
+| MCP tools are registered and crew is set up | Use `search_code` during crew tasks, onboard and diagram passes included; leave the config alone |
 | MCP tools are not registered | `/localgpu:setup`, then re-run this |
-| The user wants a local reviewer | There is not one. Codex or Copilot, per `crew:crew-providers` |
+| The user wants a local reviewer | There is not one, in any provider slot, and `crew_config` refuses the config that would claim otherwise on both write and read. Codex or Copilot, per `crew:crew-providers` |
+| The user wants a local first draft of a codemap note or a diagram | Fine, on the same terms as `docs-writer`: `localgpu ask` drafts, a human or frontier model edits it against the code, and the edited version is what lands |
 | The user wants to experiment | `localgpu shell`, and not for gate commands |
 
-Do not list all four. A report that ends in a menu made no judgement.
+Do not list all five. A report that ends in a menu made no judgement.

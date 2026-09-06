@@ -94,6 +94,18 @@ else
   skip "localgpu: CLI and proxy unit tests" "venv or cli/_test/ missing - run /localgpu:setup"
 fi
 
+# 3c. gizmoduck's `tickets` confirmation-gate regression suite. Stdlib-only
+#     subprocess tests (no venv needed, unlike localgpu above) - until now
+#     nothing ran it: plugin/** and **/*.py route to smoke.sh + ruff, neither
+#     of which runs pytest, and this file itself only ran mcp/_test and
+#     cli/_test for localgpu. A gate nothing runs is not a gate.
+if "$PY" -c "import pytest" >/dev/null 2>&1; then
+  run "gizmoduck: tickets confirmation-gate regression suite" 120 \
+      "$PY" -m pytest plugin/gizmoduck/scripts/_test/ -q
+else
+  skip "gizmoduck: tickets confirmation-gate regression suite" "pytest not installed for $PY"
+fi
+
 # 4. The audit's label()/canon() contract.
 run "crew-setup: CLAUDE.md heading round-trip" 60 \
     bash plugin/crew/skills/crew-setup/scripts/_test/round-trip.sh

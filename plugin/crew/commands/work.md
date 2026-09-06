@@ -40,7 +40,7 @@ nobody trusts a notification channel.
 
    Record what RAN, never the pin. If the pinned model was gone and
    `dev.fallback` fired, the fallback is the value that goes in — a record naming
-   the pin after the fallback ran makes step 8 bar a family that did not write
+   the pin after the fallback ran makes step 9 bar a family that did not write
    this diff and clear the one that did, which is worse than no record at all.
    Omit `--model` only for `claude`, an in-session subagent with no model flag.
    Re-record on every later implementation pass, including the one that fixes
@@ -55,22 +55,39 @@ nobody trusts a notification channel.
 7. If the change touches auth, input, SQL, secrets, or IaC -> `crew:security`.
    If it touches a migration, schema, or a big-table query and the `dba` role is
    enabled in `.crew/config.json` -> `crew:dba`.
-8. `/crew:review`.
-9. If this added behaviour with no coverage, add a check: `crew:smoke-author` for
-   API and data paths, `crew:browser-tester` for UI, CSS, or user flows. Those
-   agents write the `.crew/verify.json` rule as part of writing the check and
-   prove it fires — confirm both happened. A check nobody mapped never runs, and
-   it reads as coverage while it does not.
-   If the change touched migrations, schema, or procedures, the rule must cover
-   fresh apply, rollback apply, and a round trip.
-10. If this ticket involved an operational procedure that will be repeated, is
+8. If this ticket made a new endpoint externally reachable — a route, an
+   Ingress, an API Gateway/API Management resource, an OpenAPI path — declare
+   it now, the only way a candidate becomes an authoritative fact:
+
+   ```bash
+   python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_state.py --root . \
+     --declare-endpoint "<url or host>" --location <path:line> --ticket $1
+   ```
+
+   Name a URL or a bare host, not a free-text description (BLOCK 3) — the scan
+   artifact later has to prove it covered THIS target by literally containing
+   what you write here, and prose has nothing in it to search for.
+
+   Do this even if `endpointUnscanned` never fired — that trigger only sees a
+   candidate while its diff line is still uncommitted against HEAD; a ticket
+   that merges without declaring the endpoint it just created loses the scan
+   obligation entirely, silently, the moment the diff lands.
+9. `/crew:review`.
+10. If this added behaviour with no coverage, add a check: `crew:smoke-author` for
+    API and data paths, `crew:browser-tester` for UI, CSS, or user flows. Those
+    agents write the `.crew/verify.json` rule as part of writing the check and
+    prove it fires — confirm both happened. A check nobody mapped never runs, and
+    it reads as coverage while it does not.
+    If the change touched migrations, schema, or procedures, the rule must cover
+    fresh apply, rollback apply, and a round trip.
+11. If this ticket involved an operational procedure that will be repeated, is
     destructive, or lived only in someone's head, run `/crew:runbook
     --from-ticket $1`. Build it from the commands actually run, not from memory.
-11. Run `/crew:docs` — decide which documents this change should touch, per the
+12. Run `/crew:docs` — decide which documents this change should touch, per the
     `crew-docs` trigger table. "None" is the common and correct answer. If this
     is a Terraform module, run `terraform-docs .` rather than editing inside the
     `BEGIN_TF_DOCS` markers, which would be overwritten.
-12. Update ticket status and a one-line Result. Files mode: edit the ticket and
+13. Update ticket status and a one-line Result. Files mode: edit the ticket and
     its INDEX line. Jira mode: `/crew:jira-sync $1 --push`. ServiceDesk Plus mode:
     `/crew:sdp-sync $1 --push` - which writes one note and transitions the
     request, and does not close it unless `sdp.closeOnDone` says to. Obsidian
@@ -80,7 +97,7 @@ nobody trusts a notification channel.
     line too, the way files mode does. Obsidian mode keeps an INDEX because its
     keys are `T-####`, which the session brief can read.
 
-13. Delete `.work/HANDOFF.md` if it exists. A stale handoff gets injected into
+14. Delete `.work/HANDOFF.md` if it exists. A stale handoff gets injected into
     every later session as though it were current, and that session has no way
     to know it is reading history.
 

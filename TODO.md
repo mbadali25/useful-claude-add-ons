@@ -358,6 +358,207 @@ derivable from `ls plugin/crew/agents/*.md` and `commands/*.md`, so a smoke chec
 comparing the installer's advertised numbers against the directory contents is
 about ten lines and would cover every plugin's menu line, not just crew's.
 
+## The staleness triggers are unsatisfiable for tracked artifacts
+
+`crew_state.py` flags `graphStale`, `diagramsStale` and `knowledgeBehind` on a
+strict `anchor != HEAD` comparison. All three artifacts are tracked
+(`graphify-out/graph.json`, `docs/diagrams/*.mmd`, `.crew/codemap/*.md`), so
+committing a refresh advances HEAD past the sha the refresh just recorded. The
+condition is true the instant it is fixed and can never be cleared.
+
+Evidence, at HEAD `dc32c12` against anchor `b56d41f`:
+
+    $ git diff --name-only b56d41f..HEAD
+    .crew/codemap/UPGRADE.md
+    .crew/codemap/crew.md
+    .crew/codemap/localgpu.md
+    .crew/codemap/marketplace-registration.md
+    .crew/codemap/verification-harness.md
+    .gitignore
+    docs/diagrams/architecture.mmd
+    docs/diagrams/data-flow.mmd
+    docs/diagrams/process.mmd
+    graphify-out/graph.json
+
+Ten files, and **not one is a source file** — the maps, the diagrams, the graph
+and a comment-only `.gitignore` change. Every subsystem the codemap documents is
+current in substance; the lag is the self-reference, not drift. Re-running
+`/crew:onboard --refresh` or `/crew:diagram refresh` here would rewrite files
+byte-for-byte identical and advance HEAD again.
+
+The comparison needs to be "has any path this artifact documents changed since
+its anchor", not "does its anchor equal HEAD". Until then the pulse reports
+three permanent false positives, which is how a real staleness signal gets
+trained away.
+
+`plugin/crew/hooks/scripts/crew_state.py` — the anchor comparison.
+
+## `/localgpu:ask` has no empty-argument branch
+
+`plugin/localgpu/commands/ask.md:8` interpolates `$ARGUMENTS` straight into
+prose — "`$ARGUMENTS` is the question" — and nothing in the file branches on it
+being empty. Invoked with no question the command renders its whole body,
+including the retrieval procedure and the VRAM warning, with a blank where the
+question should be. There is no instruction for that state, so the reading model
+has to invent one.
+
+Observed twice in one session, both times as a bare `/localgpu:ask`.
+
+The fix is a guard at the top: if `$ARGUMENTS` is empty, print the
+`argument-hint` line (`<question> [--k N] [--glob <pattern>]`) and stop, without
+loading the rest. Cheap, and it turns a confusing non-response into a usable one.
+
+**Check the sibling commands for the same shape before fixing just this one.**
+`/localgpu:search` takes the same flags and almost certainly has the same gap;
+`gizmoduck`'s `scan`, `report`, `tickets` and `diff` all take required
+arguments. A command whose entire body is instructions for work it cannot do is
+worse than an error, because it reads as though it is working.
+
+`plugin/localgpu/commands/ask.md:3` carries a correct `argument-hint` already —
+the metadata is right, nothing consumes it on the empty path.
+
+## `resolve_role` accepts any provider name, and the review gate fails open
+
+**Security. The gate this repo puts in front of SQL against deployed databases
+and authorization DENY paths can be disabled by two individually-valid config
+edits, with no error and no announcement.**
+
+Verified by execution at `1394aab6`, not inferred.
+
+### No code validates a provider name
+
+The closed set `{claude, codex, copilot}` appears three times in the Python and
+is never a check:
+
+- `crew_config.py:792` — builds a dict of names for the report
+- `crew_config.py:794` — `onPath` probe for codex/copilot
+- `crew_state.py:1334` — the default `qa.order`
+
+`resolve_role` (`crew_state.py:1612`) takes the name verbatim:
+
+    provider = pin.get("provider") or block.get("provider") or "claude"
+
+The only validation that exists is **prose in `commands/model.md:105-119`,
+executed by a model**. Hand-editing `.crew/config.json` bypasses it completely,
+and so does a model that reads the table imprecisely.
+
+### The table itself has two holes
+
+| Key | Documented rule | Hole |
+|---|---|---|
+| `dev.provider` | `claude`, `codex`, or `copilot` | closed |
+| `qa.provider` | `auto`, or a name in `qa.order` | **`qa.order` has no rule, so adding `localgpu` there makes `qa.provider: localgpu` valid** |
+| `qa.roles.<role>` | "a `{provider, model}` object. Any role name is accepted" | **says nothing about the provider VALUE. `qa.roles.review.provider: localgpu` passes.** |
+
+So the restriction on `dev.provider` is real and the same restriction on the
+reviewer seat does not exist.
+
+### What resolve_role then returns
+
+Config: `dev.provider: codex` / `gpt-6-astra` (author family `gpt`), reviewer
+pinned to `localgpu`.
+
+    provider   = 'localgpu'
+    model      = 'qwen2.5-coder:7b-instruct-q4_K_M'
+    family     = 'qwen'
+    barred     = False
+    announce   = []
+
+`qwen != gpt`, so the family-independence guard **passes cleanly**. The 7B is
+affirmatively cleared to review GPT-authored code.
+
+Unpinned is worse. `qa.provider: localgpu` with no model:
+
+    family     = None
+    barred     = False
+    announce   = []
+
+`family` is `None`, and the guard reads
+`if out["family"] is not None and out["family"] in authors` — so it **does not
+run at all**. Not "a different family cleared it": the check is skipped.
+
+### The part that makes it undetectable
+
+`announce` is `[]` in both cases, against a docstring that states the contract
+directly (`crew_state.py:1643-1646`):
+
+> `announce` is never empty when something happened. A review that quietly ran
+> on the fallback is indistinguishable from one that ran on the pin, and the
+> difference matters most exactly when the pin was chosen to get a different
+> family onto the diff.
+
+An unknown provider is precisely "something happened", and nothing is said. The
+config file reports a reviewer is configured, `resolve_role` agrees, and a 7B
+that agrees fluently produces output indistinguishable from a real pass. Same
+shape as every other defect in this file: **the signal and its absence look
+identical.**
+
+### Fix shape
+
+`resolve_role` must not silently accept a provider it has no runner for. Either
+bar it, or at minimum append to `announce` — a review that ran on an unknown
+provider must never be reportable as clean without saying so. `family()`
+returning `None` for an unrecognised provider must not be treated as "no family
+conflict"; unknown is not the same as independent.
+
+Needs must-block / must-allow regression cases and sabotage testing per
+CLAUDE.md, since it governs a gate that can block.
+
+## `sabotage.py` can leave a live mutation in the tree and still report PASS
+
+Landed in `d362a2bd`: `plugin/crew/hooks/scripts/crew_state.py:1191` shipped as
+`if False:
+        frozen = frozen` instead of the real
+`if isinstance(frozen, str): frozen = frozen.replace("\\", "/")`. That is the
+"frozen artifact path is stored with native separators" mutation. A path frozen
+on Windows then never matches on Linux, so a completed scan reads as unscanned
+forever on any other machine. Found by review, not by any gate.
+
+`plugin/crew/tests/sabotage.py` mutates real source in place: `apply_mutation`
+(:980) copies `target` to `target + ".bak"`, writes the mutation, and `restore`
+(:1024) does `shutil.move(backup, target)`. `main` (:1041-1043) wraps only the
+`run_test` call in `try/finally: restore(target)`.
+
+Four distinct defects, in the order they bite:
+
+1. **`finally` does not survive a kill.** It unwinds on exceptions, including
+   `KeyboardInterrupt` -- but a `SIGTERM` or `SIGKILL` from an external timeout
+   terminates without unwinding, so neither `restore` nor any cleanup runs. The
+   mutated file and its `.bak` both survive. This is the most likely cause here:
+   the run was killed by a harness timeout mid-mutation.
+
+2. **The next run destroys the only good copy.** After a killed run leaves
+   `crew_state.py.bak`, the next `apply_mutation` does
+   `shutil.copy(target, target + ".bak")` unconditionally -- overwriting the
+   good backup with the ALREADY-MUTATED file. The harness's own mutation table
+   flags exactly this class for the code under test (:174-176, *"Skipping the
+   backup when the name is taken destroys the newer original and then reports
+   that it was saved"*) and the harness itself does it. There is no startup
+   guard that refuses to run, or recovers, when a stale `.bak` is present.
+
+3. **The restore is never verified.** Nothing compares the file to its pre-run
+   content after `restore`. `main` prints PASS from `ok`, which tracks only
+   whether each mutation went red -- so a restore that silently failed is
+   indistinguishable from one that worked. Signal and absence identical, which
+   is the failure mode this repo keeps shipping.
+
+4. **`crew_state.py.bak` is tracked in HEAD** (`7c420e90`, swept in by
+   `git add -A`; the removal in `d362a2bd` did not take). It is not stray lane
+   litter -- it IS the harness's backup, and a `.bak` appearing in `git status`
+   is the diagnostic tell that a run died mid-mutation. Tracking it removes that
+   signal and makes defect 2 permanent, since the file is always present.
+
+Fix shape: restore on every exit path including signals (`signal` handlers plus
+`atexit`, not `finally` alone); refuse to start -- or recover from -- a stale
+`.bak` rather than overwriting it; verify the restored bytes against a hash
+taken before the first mutation and fail the suite loudly if they differ;
+untrack the `.bak` and add it to `.gitignore`. Consider mutating a copy under a
+temp tree instead of real source, which removes the whole class.
+
+Verified while scoping this: exactly one sabotage-shaped line exists in all of
+HEAD's Python (`crew_state.py:1191`), and the HEAD-vs-worktree diff for that
+file is exactly those two lines -- so the working-tree restore is complete and
+nothing else was left mutated.
 ## `render.sh` cannot render a diagram on Windows — it hands `mmdc` a `/tmp` path
 
 `skills/crew-diagrams/scripts/render.sh` writes a puppeteer config to a Git
@@ -389,3 +590,33 @@ would have passed it.
 Found while re-anchoring the diagrams after PR #69, 2026-09-05. Anchor
 `3167721f`. Measured, not inferred: both the failing and the passing
 invocations were run.
+
+## `crew_state.py` is 3283 lines and should be split
+
+It went 2154 -> 3283 on the endpoint-ledger branch, a 52% increase in one
+module. `.pylintrc`'s `max-module-lines` was raised 2400 -> 3300 to let CI pass,
+which unblocks a branch and fixes nothing: the ceiling now tracks the file
+rather than constraining it, and that is the second time it has been raised for
+exactly that reason (2000 -> 2400 before it).
+
+The module now holds at least five separable concerns: config/schema resolution,
+the dispatch record, the codemap and diagram anchor comparisons, the provider
+and family guards, and the endpoint ledger. The last is the newest and the most
+self-contained -- `read_endpoints`, `declare_endpoint`, `scan_artifact_path`,
+`_candidate_record`, `_artifact_confirms_scan`, `gizmoduck_installed` and the
+monorepo detection - and is the obvious first extraction.
+
+Two things make this harder than it looks, and both belong in the ticket rather
+than being discovered halfway:
+
+- **Every `path:line` citation in `.crew/codemap/crew.md` points into this
+  file.** A split invalidates all of them at once, so the codemap refresh is
+  part of the work, not a follow-up.
+- **`sabotage.py`'s mutation table addresses this file by line-anchored
+  content.** Mutations that no longer match anything do not fail loudly -- they
+  are simply not applied, and the suite still reports PASS. Any split has to
+  re-verify that every mutation still binds, or the harness silently covers less
+  while looking identical. That is the same signal-and-absence failure this file
+  is full of.
+
+Do not raise `max-module-lines` a third time.

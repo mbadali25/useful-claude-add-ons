@@ -385,6 +385,79 @@ def test_diagram_findings_name_the_stale_files():
     assert "/crew:diagram refresh" in out
 
 
+def test_endpoint_finding_distinguishes_declared_from_candidate():
+    """The hard requirement: a candidate must never read as a confirmed fact.
+
+    Both counts appear, but only the declared one is described as unscanned
+    outright -- the candidate text has to say it still needs research.
+    """
+    out = "\n".join(pm_brief.render(dict(
+        HEALTHY, triggers=["endpointUnscanned"],
+        endpoints={"installed": True, "unscanned": [
+            {"id": "ep-0001", "endpoint": "https://api.example/v1/widgets",
+             "source": "declared", "status": "open",
+             "path": "docs/security-scans/ep-0001.md"},
+            {"id": "cand-0001", "endpoint": "a Flask/FastAPI route decorator",
+             "source": "inferred", "status": "candidate",
+             "path": "docs/security-scans/cand-0001.md"},
+        ]})))
+    assert "1 declared endpoint(s)" in out
+    assert "https://api.example/v1/widgets" in out
+    assert "1 inferred candidate(s)" in out
+    assert "NOT confirmed" in out
+    assert "gizmoduck:scan" in out
+
+
+def test_endpoint_finding_keys_on_status_not_source():
+    """Finding 10: `status` -- not `source` -- is authoritative. A hit whose
+    fields disagree (a bug writing source="declared", status="candidate")
+    must still render as a candidate, never as a confirmed fact."""
+    out = "\n".join(pm_brief.render(dict(
+        HEALTHY, triggers=["endpointUnscanned"],
+        endpoints={"installed": True, "unscanned": [
+            {"id": "ep-0001", "endpoint": "https://api.example/v1/mixed",
+             "source": "declared", "status": "candidate",
+             "path": "docs/security-scans/ep-0001.md"},
+        ]})))
+    assert "declared endpoint(s)" not in out
+    assert "1 inferred candidate(s)" in out
+    assert "NOT confirmed" in out
+
+
+def test_endpoint_finding_omits_the_empty_half():
+    """Nit 13: a candidates-only state must not also claim "0 declared
+    endpoint(s)" with an action naming none of them."""
+    out = "\n".join(pm_brief.render(dict(
+        HEALTHY, triggers=["endpointUnscanned"],
+        endpoints={"installed": True, "unscanned": [
+            {"id": "cand-0001", "endpoint": "a Flask/FastAPI route decorator",
+             "source": "inferred", "status": "candidate",
+             "path": "docs/security-scans/cand-0001.md"},
+        ]})))
+    assert "declared endpoint(s)" not in out
+    assert "1 inferred candidate(s)" in out
+    assert "gizmoduck:scan" not in out
+
+
+def test_endpoint_finding_omits_gracefully_with_no_hits():
+    """endpointUnscanned never fires with an empty ledger, but the field
+    builder still has to survive being asked for one -- same contract as
+    _diagram_fields with no diagrams at all."""
+    out = "\n".join(pm_brief.render(dict(HEALTHY, triggers=["upgradeNeeded"],
+                                         schema=1)))
+    assert "endpoint(s)" not in out
+
+
+def test_endpoint_fields_ignore_non_dict_hits():
+    """Nit 14: a malformed `unscanned` entry (not a dict) must not raise --
+    crew_state.dict_or_empty's docstring warns against .get() on an
+    unchecked list element."""
+    state = dict(HEALTHY, triggers=["endpointUnscanned"],
+                 endpoints={"installed": True, "unscanned": ["not-a-dict"]})
+    out = "\n".join(pm_brief.render(state))  # must not raise
+    assert "no endpoints currently need a scan" in out
+
+
 def test_quiet_mode_config_never_expands():
     state = dict(HEALTHY, schema=1, triggers=["upgradeNeeded"],
                  pm=dict(HEALTHY["pm"], mode="quiet"))

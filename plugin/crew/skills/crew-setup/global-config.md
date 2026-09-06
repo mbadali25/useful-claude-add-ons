@@ -42,10 +42,11 @@ column. Run it even when nothing needs changing.
   the filter is overridable per repo. One project may legitimately want a
   different reviewer, and step 1's `source` column is what shows which layer
   a value actually came from.
-- **`graph.obsidian.confirmed` is not settable here, ever.** It is consent to
-  write into the user's own notes outside the repo, not a capability. Only the
-  user, in session, grants it. Doubly un-grantable since 0.16.0: refused on
-  the write path, and dropped on the read path however it got into the file.
+- **`graph.obsidian.*` no longer exists.** Removed in 0.16.13 -- the code graph
+  lives on the filesystem as `graph.json` and there is no vault export to
+  consent to. A global config still carrying the key is not misconfigured,
+  just old; the repo-key filter drops it like any other unknown key, and
+  `crew_upgrade.py` names it as removed rather than migrating it.
 
 ## 1. Show what is in effect, and where each value comes from
 

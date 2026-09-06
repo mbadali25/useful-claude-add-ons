@@ -11,7 +11,14 @@ Usage:
   gizmoduck.py report  <findings.jsonl> [--min-severity medium] [--format md|html|pdf] [--out FILE] [--title "..."]
                        # itemises Critical/High/Medium; Low and Info are counted only.
                        # --min-severity raises that floor, never lowers it.
-  gizmoduck.py tickets <findings.jsonl> [--min-severity high]
+  gizmoduck.py tickets <findings.jsonl> [--min-severity high] [--yes DIGEST]
+                       # without --yes: prints a human-readable preview of the tickets that
+                       # WOULD be created, a digest over that exact batch, and the rerun
+                       # command carrying it; exits 3 without emitting ticket records.
+                       # with --yes DIGEST: emits the ticket records (JSON) for creation,
+                       # but only if DIGEST matches the batch as recomputed right now -
+                       # a stale or wrong digest (a different findings file, a different
+                       # --min-severity) is refused rather than silently widened.
   gizmoduck.py diff    <baseline.jsonl> <current.jsonl> [--min-severity high]   # what's new since last scan
   gizmoduck.py update                                                            # update nuclei + templates
   gizmoduck.py doctor                                                            # check the local toolchain
@@ -19,6 +26,7 @@ Usage:
 A "target" is a URL (https://site) or a host/IP; a targets file has one per line.
 """
 import argparse
+import hashlib
 import json
 import os
 import shutil
@@ -80,7 +88,7 @@ def cmd_scan(target, out, severity, extra):
                  f"no findings file written (a failed scan is not a clean scan)")
     with open(out, "w", encoding="utf-8") as fh:
         fh.write("\n".join(lines) + ("\n" if lines else ""))
-    print(f"wrote {len(lines)} findings to {out}")
+    safe_print(f"wrote {len(lines)} findings to {out}")
     return out
 
 
@@ -88,6 +96,49 @@ def write_text(path, text):
     """Write `text` to `path` as UTF-8, closing the handle on the way out."""
     with open(path, "w", encoding="utf-8") as fh:
         fh.write(text)
+
+
+def safe_print(s=""):
+    """print() that cannot raise UnicodeEncodeError. Nuclei template names are
+    attacker-influenced free text; on Windows Git Bash's python3, sys.stdout.encoding
+    is cp1252, so a non-ASCII name (accented characters, an emoji) would otherwise
+    crash mid-preview with a generic exit 1 - hiding the gated command's exit 3
+    marker and inviting a caller to rerun with --yes without ever seeing a preview.
+
+    Every stdout path that can carry finding-derived text (report/diff output,
+    not just the tickets preview) goes through this, not print() directly.
+
+    errors="backslashreplace", not "replace": "replace" collapses every
+    unencodable character to the same "?", so an operator approving what the
+    preview shows is approving a string ("Caf? ? TLS ?") that is strictly
+    lossy versus the record actually filed ("Café — TLS ⚠") - two different
+    inputs could render identically. backslashreplace keeps each codepoint
+    distinguishable (\\u26a0 etc.), so the preview and the payload differ only
+    in how a character is spelled, never in what was approved."""
+    enc = sys.stdout.encoding or "utf-8"
+    print(s.encode(enc, errors="backslashreplace").decode(enc))
+
+
+def _records_digest(records):
+    """Short digest over the exact ticket records a preview showed.
+
+    Binds a `--yes` rerun to that batch: the value must match what
+    re-deriving `cmd_tickets` from the same findings file and --min-severity
+    produces right now, or the rerun is refused (see the gate in main()).
+    Not a cryptographic approval - both preview and rerun compute it from the
+    same untrusted input - it only catches the batch having silently changed
+    shape between the two: a wider or narrower --min-severity, a different
+    findings file passed by mistake, or findings edited in between. Without
+    it, nothing bound --yes to what was actually shown - a preview at
+    --min-severity critical (one ticket) followed by a bare --yes at the
+    tool's default floor emitted every High as well.
+
+    sort_keys + compact separators + ensure_ascii so the same records always
+    hash the same regardless of dict insertion order or which platform ran
+    json.dumps.
+    """
+    canon = json.dumps(records, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    return hashlib.sha256(canon.encode("utf-8")).hexdigest()[:12]
 
 
 def load(path):
@@ -286,52 +337,26 @@ def html_to_pdf(html_str, out_path):
         return False
 
 
-def cmd_tickets(findings, min_sev, create=False):
-    """Ticket records for findings at or above `min_sev`.
-
-    `create` is the opt-in gate, and it withholds rather than annotates. Without
-    it the payload a `sdp_create` call needs - the `description` body - is never
-    built, so a preview cannot be turned into a ticket by a caller that reads
-    past a warning. That distinction is the whole point: an earlier design
-    emitted the full records under an `authorized: false` label, which is a gate
-    in name and a create-ready payload in fact.
-
-    A preview still names every finding that would be ticketed, its severity and
-    how many targets it affects - enough for a person to decide, and enough for
-    the caller to say what the `--create` run will do.
-    """
-    tickets = []
+def cmd_tickets(findings, min_sev):
+    """Build the SDP-ready ticket records. Does not create anything and does not gate -
+    the gate lives in main(), between this and whatever calls the SDP tools."""
+    out = []
     for f in sorted(dedupe(findings), key=lambda f: (-f["severity"], f["name"])):
         if f["severity"] < min_sev:
             continue
+        cvss = f["cvss"] or "n/a"
+        cves = ", ".join(f["cve"]) if f["cve"] else "none"
         subject = f"[Nuclei {f['template_id']}] {f['name']} ({f['instances']} target(s))"
-        record = {"ref": f"nuclei:{f['template_id']}", "template_id": f["template_id"],
-                  "severity": f["severity_name"], "subject": subject,
-                  "instances": f["instances"]}
-        if create:
-            cvss = f["cvss"] or "n/a"
-            cves = ", ".join(f["cve"]) if f["cve"] else "none"
-            lines = [f"Severity: {f['severity_name']} | CVSS: {cvss} | CVE: {cves} | Type: {f['type']}",
-                     f"Affected: {', '.join(f['affected'])}"]
-            if f["description"]:
-                lines.append(f"\nDetail: {f['description'].strip()}")
-            if f["remediation"]:
-                lines.append(f"\nRemediation: {f['remediation'].strip()}")
-            record["description"] = "\n".join(lines)
-        tickets.append(record)
-
-    if create:
-        return {"mode": "create", "authorized": True, "count": len(tickets),
-                "instruction": "Authorized. For each ticket, search ServiceDesk Plus for an "
-                               "open request whose subject contains the same [Nuclei <id>] tag; "
-                               "add a note if one exists, create the request if none does.",
-                "tickets": tickets}
-    return {"mode": "preview", "authorized": False, "count": len(tickets),
-            "instruction": "PREVIEW ONLY - no ticket body was generated, so nothing here can be "
-                           "filed. Show this list to the user and ask whether to open these "
-                           "tickets. Only on an explicit yes, re-run the same command with "
-                           "--create.",
-            "tickets": tickets}
+        lines = [f"Severity: {f['severity_name']} | CVSS: {cvss} | CVE: {cves} | Type: {f['type']}",
+                 f"Affected: {', '.join(f['affected'])}"]
+        if f["description"]:
+            lines.append(f"\nDetail: {f['description'].strip()}")
+        if f["remediation"]:
+            lines.append(f"\nRemediation: {f['remediation'].strip()}")
+        out.append({"ref": f"nuclei:{f['template_id']}", "template_id": f["template_id"],
+                    "severity": f["severity_name"], "subject": subject,
+                    "description": "\n".join(lines)})
+    return out
 
 
 def cmd_diff(baseline, current, min_sev, title):
@@ -370,7 +395,7 @@ def cmd_doctor():
         mark = "OK " if good else "!! "
         if not good:
             ok = False
-        print(f"{mark}{label}: {val}")
+        safe_print(f"{mark}{label}: {val}")
 
     exe = find_nuclei()
     if exe:
@@ -404,18 +429,23 @@ def cmd_update():
         sys.exit("nuclei not found. Run bootstrap.sh (Linux/WSL) or bootstrap.ps1 (Windows) first.")
     failures = []
     for label, flag in (("engine", "-update"), ("templates", "-update-templates")):
-        print(f">> updating nuclei {label}...")
+        safe_print(f">> updating nuclei {label}...")
         if subprocess.run([exe, flag, "-silent"], check=False).returncode != 0:
             failures.append(label)
     if failures:
         # "done." over a failed update is how a scan ends up running last
         # quarter's templates against this quarter's CVEs.
         sys.exit(f"update failed for: {', '.join(failures)}")
-    print("done.")
+    safe_print("done.")
 
 
 def main():
-    p = argparse.ArgumentParser(description="Gizmoduck: run Nuclei and process its output.")
+    # allow_abbrev=False: argparse's default abbreviation matching would let
+    # `--y`/`--ye` satisfy `--yes` below, since no other flag starts with `y` -
+    # the gate must be asked for by name, not by whatever prefix happens to be
+    # unambiguous today.
+    p = argparse.ArgumentParser(description="Gizmoduck: run Nuclei and process its output.",
+                                 allow_abbrev=False)
     p.add_argument("command",
                    choices=["scan", "summary", "parse", "report", "tickets", "diff", "doctor", "update"])
     p.add_argument("target", nargs="?", help="target/host/URL/file, or findings.jsonl")
@@ -431,18 +461,25 @@ def main():
     p.add_argument("--title", default="Nuclei Vulnerability Report")
     p.add_argument("--format", default="md", choices=["md", "html", "pdf"])
     p.add_argument("--out", default=None)
-    p.add_argument("--create", action="store_true",
-                   help="tickets: emit fileable ticket bodies. Without it, `tickets` returns a "
-                        "preview naming each finding but carrying no description, so nothing in "
-                        "the output can be filed. Pass this only after the user has said yes to "
-                        "the preview.")
+    # `tickets` files REAL ServiceDesk Plus tickets. Default is gated: without this
+    # flag, `tickets` prints a preview of what it WOULD create and stops - see the
+    # gate below. Must be asked for by name (allow_abbrev=False above); there is no
+    # way to trip it by accident. Its value must also be the digest the preview
+    # printed for THIS batch - a bare "yes I approve" is not enough, because
+    # nothing then stopped a rerun from silently picking up a wider batch than
+    # what was shown (a missing/different --min-severity, a different findings
+    # file). Pass it only after a human has approved the exact batch the preview
+    # showed - that can be an attended session (the documented flow: preview,
+    # show the user, get one go-ahead, rerun with --yes DIGEST) or a truly
+    # unattended run that has its own out-of-band approval; it is never the default.
+    p.add_argument("--yes", metavar="DIGEST", default=None,
+                   help="tickets: emit ticket records for creation. Value must be the "
+                        "digest the preview printed for this exact batch (paste the "
+                        "rerun command the preview shows, verbatim) - a missing or "
+                        "mismatched digest is refused, never treated as a bare "
+                        "go-ahead (default is gated; this flag does not mean "
+                        "unattended-only)")
     a = p.parse_args()
-
-    # `--create` means one thing on one command. Accepting it silently elsewhere
-    # would teach the habit of passing it, and a flag that is ignored on five of
-    # six commands is one rename away from being honoured on all of them.
-    if a.create and a.command != "tickets":
-        p.error("--create applies to `tickets` only")
 
     # `command` is positional and `target`/`baseline2` are not, so argparse
     # accepts `scan` with no target and the failure surfaces later as a
@@ -452,6 +489,12 @@ def main():
                 f"{'target (URL, host, or a file of targets)' if a.command == 'scan' else 'findings.jsonl path'}")
     if a.command == "diff" and not a.baseline2:
         p.error("diff needs two findings files: <baseline.jsonl> <current.jsonl>")
+    # `--yes` is a top-level flag (argparse has no per-subcommand parsers here),
+    # so nothing stops `gizmoduck.py scan --yes` from parsing - it would just be
+    # silently ignored. Say so rather than letting a typo look like it did
+    # something, since --yes is the one flag in this tool that changes behaviour.
+    if a.yes and a.command != "tickets":
+        p.error(f"--yes only applies to the 'tickets' command, not '{a.command}'")
 
     # Per command, matching what each command file passes, because one default
     # cannot be right for all of them. `report` and `tickets` are High and above
@@ -461,7 +504,7 @@ def main():
     # `summary` and `parse` are the machine-readable dumps and take everything.
     # `report` defaults to medium so the report itemises Critical/High/Medium -
     # see REPORT_DETAIL_FLOOR. `tickets` stays at high on purpose: a Medium is
-    # worth reading in a report without being worth auto-opening a ticket for.
+    # worth reading in a report without being worth a ticket of its own.
     _FLOORS = {"report": "medium", "tickets": "high", "diff": "low"}
     min_sev = SEV_NUM[a.min_severity or _FLOORS.get(a.command, "info")]
 
@@ -476,34 +519,73 @@ def main():
         return
     if a.command == "diff":
         title = a.title if a.title != "Nuclei Vulnerability Report" else "Scan Diff"
-        print(cmd_diff(a.target, a.baseline2, min_sev, title))
+        safe_print(cmd_diff(a.target, a.baseline2, min_sev, title))
         return
 
     findings = load(a.target)
 
     if a.command == "summary":
-        print(json.dumps(cmd_summary(findings), indent=2))
+        safe_print(json.dumps(cmd_summary(findings), indent=2))
     elif a.command == "parse":
-        print(json.dumps([f for f in findings if f["severity"] >= min_sev], indent=2))
+        safe_print(json.dumps([f for f in findings if f["severity"] >= min_sev], indent=2))
     elif a.command == "tickets":
-        print(json.dumps(cmd_tickets(findings, min_sev, a.create), indent=2))
+        records = cmd_tickets(findings, min_sev)
+        # The gate: `tickets` files REAL SDP tickets, and the caller (a skill
+        # following prose) previously had no confirmation step at all. Without
+        # --yes, print a human-readable preview - severity + subject, one line
+        # each - and stop *without emitting the JSON records a caller would use
+        # to actually create anything*. That JSON is what downstream tooling
+        # parses, so withholding it is what makes the gate real rather than
+        # advisory. --yes must be asked for by name; there is no default that
+        # skips this.
+        #
+        # A name alone is not enough either: nothing bound an earlier bare
+        # --yes to the batch a preview actually showed, so a caller who saw a
+        # narrow preview (say --min-severity critical, one ticket) and then
+        # reran with a wider or missing --min-severity got every record at the
+        # tool's default floor instead - four tickets approved as one. The
+        # digest closes that: it is computed over the exact record set the
+        # preview shows, and --yes must carry the matching value or the rerun
+        # is refused, however plausible it looks.
+        if records:
+            digest = _records_digest(records)
+            if a.yes is None:
+                safe_print(f"# {len(records)} ticket(s) would be created - confirm with "
+                           f"the user before creating any, then rerun with the exact "
+                           f"command below (only this batch's digest is accepted):")
+                for r in records:
+                    safe_print(f"  [{r['severity']}] {r['subject']}")
+                rerun = " ".join([sys.executable, *sys.argv, "--yes", digest])
+                safe_print(f"  {rerun}")
+                safe_print("GIZMODUCK_CONFIRMATION_REQUIRED: no ticket records emitted. "
+                           "Get explicit go-ahead for this batch, then rerun the command "
+                           "above verbatim.")
+                sys.exit(3)
+            if a.yes != digest:
+                safe_print(f"GIZMODUCK_APPROVAL_MISMATCH: the supplied --yes digest does "
+                           f"not match this batch ({len(records)} record(s)). A digest is "
+                           f"only valid for the exact findings file and --min-severity it "
+                           f"was previewed with - re-run without --yes to see the current "
+                           f"batch and its digest.")
+                sys.exit(3)
+        safe_print(json.dumps(records, indent=2))
     elif a.command == "report":
         if a.format == "md":
             md = cmd_report(findings, min_sev, a.title)
             if a.out:
                 write_text(a.out, md)
-                print(f"wrote {a.out}")
+                safe_print(f"wrote {a.out}")
             else:
-                print(md)
+                safe_print(md)
         elif a.format == "html":
             out = a.out or "nuclei-report.html"
             write_text(out, render_html(findings, min_sev, a.title))
-            print(f"wrote {out}")
+            safe_print(f"wrote {out}")
         elif a.format == "pdf":
             out = a.out or "nuclei-report.pdf"
             doc = render_html(findings, min_sev, a.title)
             if html_to_pdf(doc, out):
-                print(f"wrote {out}")
+                safe_print(f"wrote {out}")
             else:
                 fb = os.path.splitext(out)[0] + ".html"
                 write_text(fb, doc)
