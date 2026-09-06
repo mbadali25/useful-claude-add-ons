@@ -4,6 +4,55 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Fixed
+
+- **crew 0.16.23 -> 0.16.24: the sabotage harness can no longer report PASS
+  over a tree it corrupted.** `tests/sabotage.py` mutates real source in place,
+  and `d362a2bd` shipped `crew_state.py` with one of those mutations still in
+  it — a killed run skipped the `finally`, the next run's `shutil.copy` put the
+  mutated file over the good backup, and the suite printed PASS because nothing
+  compared the restored bytes to anything. Found by a human reading a diff,
+  which is the one thing a regression suite exists to stop being the only
+  detector.
+
+  Four guards, in the order the defects bite. `main` **refuses to start** when
+  a `<file>.bak` is present — that file is the only surviving original, so the
+  run that would destroy it stops, names it, and prints the `mv` that undoes
+  the mutation still in the tree. `install_exit_handlers` restores on `atexit`
+  and on SIGTERM/SIGINT/SIGBREAK/SIGHUP, each looked up by name because
+  SIGBREAK is Windows-only and SIGHUP POSIX-only; `finally` unwinds on an
+  exception and on KeyboardInterrupt but not on the external timeout that
+  actually kills these runs. `apply_mutation` raises rather than copying over
+  an existing backup. And a sha256 per target, taken before the first mutation,
+  is compared after **every** restore — a mismatch prints both digests and
+  fails the suite, so the PASS line can no longer outrun the tree it describes.
+  SIGKILL stays uncatchable; the startup refusal is what covers it, on the next
+  run.
+
+  `*.bak` is now in `.gitignore` — the existing `env.bak/` and `venv.bak/`
+  entries are directories and never matched a backup file, which is how one got
+  committed and turned the "a `.bak` in `git status`" diagnostic permanently
+  off. 11 tests in `tests/test_sabotage_harness.py`, none of which touch a real
+  source file, plus six independent mutations of the new guards themselves,
+  6/6 red.
+
+- **`mcp-servers`: a per-package test run can no longer exercise last build's
+  code.** Every package points `main`/`exports` — and its tests — at `dist/`,
+  so editing `packages/core/src` and running `npm test -w packages/graph`
+  skipped the root build and tested a stale core, invisibly: the consumer's own
+  build was current and the behaviour under test was not. `scripts/check-dist-fresh.mjs`
+  is now each package's `pretest`; it compares the newest `.ts` under `src/`
+  and `test/` (plus `core/src/` for anything depending on core) against the
+  newest `.js` under `dist/`, treats equal timestamps as fresh, and refuses the
+  run while naming the directory that moved. Ten tests of its own, wired into
+  the root `npm test`.
+
+  The TODO entry that opened this asked for "a CI check that rebuilds and
+  diffs". That was aimed at a hole that does not exist — `dist/` is untracked,
+  and the root `test` script already builds core first, so CI cannot test stale
+  JS. The entry was rewritten to say what is actually true rather than ticked
+  against its original wording.
+
 ### Added
 
 - **crew 0.16.22 -> 0.16.23: twelve domain specialists, and the drift check the
