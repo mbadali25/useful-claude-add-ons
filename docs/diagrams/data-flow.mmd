@@ -6,29 +6,29 @@ flowchart TB
 
     subgraph Refresh["index_refresh - files to disk"]
         direction TB
-        R0["caller invokes<br/>index_refresh(root)<br/>server.py:187"]
-        R1["acquire in-process lock<br/>+ cross-process RefreshLock<br/>server.py:187-204 / store.py"]
+        R0["caller invokes<br/>index_refresh(root)<br/>plugin/localgpu/mcp/server.py:187"]
+        R1["acquire in-process lock<br/>+ cross-process RefreshLock<br/>plugin/localgpu/mcp/server.py:187-204 / store.py"]
         R2["require_models([embed_model])<br/>against Ollama<br/>server.py ~211"]
-        R3["Indexer.refresh(roots)<br/>indexer.py:401"]
-        GATE2["GATE: _check_embed_model()<br/>indexer.py:403<br/>*fires BEFORE any Ollama call*<br/>rejects mismatched model/dim"]
-        R4["iter_files(root, ignore)<br/>indexer.py:155"]
-        IGNORE["ignore filter<br/>DEFAULT_IGNORE (config.py:30-86)<br/>incl. credential patterns:<br/>.env, .env.*, *.pem, *.key,<br/>*.p12, *.pfx, id_rsa*, credentials.json<br/>(config.py:73-86)<br/>+ root .gitignore merged in<br/>(indexer.py:169-171)<br/>+ 'unignore' config key may lift<br/>any pattern EXCEPT the floor<br/>{.git, .localgpu, node_modules}<br/>(config.py:94, 241-249)"]
+        R3["Indexer.refresh(roots)<br/>plugin/localgpu/mcp/indexer.py:401"]
+        GATE2["GATE: _check_embed_model()<br/>plugin/localgpu/mcp/indexer.py:403<br/>*fires BEFORE any Ollama call*<br/>rejects mismatched model/dim"]
+        R4["iter_files(root, ignore)<br/>plugin/localgpu/mcp/indexer.py:155"]
+        IGNORE["ignore filter<br/>DEFAULT_IGNORE (plugin/localgpu/mcp/config.py:30-86)<br/>incl. credential patterns:<br/>.env, .env.*, *.pem, *.key,<br/>*.p12, *.pfx, id_rsa*, credentials.json<br/>(plugin/localgpu/mcp/config.py:73-86)<br/>+ root .gitignore merged in<br/>(plugin/localgpu/mcp/indexer.py:169-171)<br/>+ 'unignore' config key may lift<br/>any pattern EXCEPT the floor<br/>{.git, .localgpu, node_modules}<br/>(plugin/localgpu/mcp/config.py:94, 241-249)"]
         R5["files that PASS the filter<br/>are chunked"]
-        R6["chunks -> Ollama embed()<br/>ollama.py:123<br/>HTTP loopback, keep_alive=30s<br/>(ollama.py:26 DEFAULT_KEEP_ALIVE)"]
-        R7["store.add(vectors, meta)<br/>store.py:364<br/>append to vectors file<br/>open(vectors_path, 'ab')<br/>store.py:387"]
-        R8["store.write_manifest()<br/>store.py:757 - records<br/>embed model + dim used"]
+        R6["chunks -> Ollama embed()<br/>plugin/localgpu/mcp/ollama.py:123<br/>HTTP loopback, keep_alive=30s<br/>(plugin/localgpu/mcp/ollama.py:26 DEFAULT_KEEP_ALIVE)"]
+        R7["store.add(vectors, meta)<br/>plugin/localgpu/mcp/store.py:364<br/>append to vectors file<br/>open(vectors_path, 'ab')<br/>plugin/localgpu/mcp/store.py:387"]
+        R8["store.write_manifest()<br/>plugin/localgpu/mcp/store.py:757 - records<br/>embed model + dim used"]
 
         R0 --> R1 --> R2 --> R3 --> GATE2 --> R4 --> IGNORE --> R5 --> R6 --> R7 --> R8
     end
 
     subgraph Search["search_code - query to hits"]
         direction TB
-        S0["caller invokes<br/>search_code(query, k, root, glob)<br/>server.py:73"]
-        S1["_open_store(settings)<br/>server.py:62"]
-        S2["store.counts()<br/>empty index -> early return<br/>server.py:97-101"]
-        GATE1["GATE: check_embed_model()<br/>store.read_manifest() vs<br/>settings.embed_model<br/>server.py:109-113<br/>*fires BEFORE any Ollama call*<br/>prevents cross-model cosine<br/>similarity on mismatched vectors"]
-        S3["client.embed(query_text(query))<br/>ollama.py:123 - HTTP loopback,<br/>keep_alive=30s"]
-        S4["store.search(vector, k, root,<br/>path_glob)<br/>store.py:471 - cosine similarity<br/>over on-disk vectors"]
+        S0["caller invokes<br/>search_code(query, k, root, glob)<br/>plugin/localgpu/mcp/server.py:73"]
+        S1["_open_store(settings)<br/>plugin/localgpu/mcp/server.py:62"]
+        S2["store.counts()<br/>empty index -> early return<br/>plugin/localgpu/mcp/server.py:97-101"]
+        GATE1["GATE: check_embed_model()<br/>store.read_manifest() vs<br/>settings.embed_model<br/>plugin/localgpu/mcp/server.py:109-113<br/>*fires BEFORE any Ollama call*<br/>prevents cross-model cosine<br/>similarity on mismatched vectors"]
+        S3["client.embed(query_text(query))<br/>plugin/localgpu/mcp/ollama.py:123 - HTTP loopback,<br/>keep_alive=30s"]
+        S4["store.search(vector, k, root,<br/>path_glob)<br/>plugin/localgpu/mcp/store.py:471 - cosine similarity<br/>over on-disk vectors"]
         S5["hits formatted as<br/>file:line + <=3-line excerpt<br/>(server.py module docstring)"]
 
         S0 --> S1 --> S2 --> GATE1 --> S3 --> S4 --> S5
