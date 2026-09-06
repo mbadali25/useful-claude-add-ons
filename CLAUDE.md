@@ -108,12 +108,14 @@ overwrote, so they survived in nothing tracked and were then cited twice, at two
 this file's policy — while living in no commit at all. Every one below carries the evidence that
 earned it, precisely so nobody has to take it on faith the way those citations asked people to.
 
-The section took three review rounds to stop overclaiming, which is the most useful thing in it.
-Round 1 said a guard is "usually" wrong again after a fix — a frequency drawn from one guard.
-Round 2 replaced "usually" with "the normal outcome", which is the same claim reworded. Round 3
-also caught "the exit code never tells you what failed", a universal that is simply false. If a
-section arguing that claims outrun their evidence outran its own three times, assume yours does
-too, and get someone who did not write it to check.
+It took repeated review to stop overclaiming, which is the most useful thing in it. The first draft
+said a guard is "usually" wrong again after a fix — a frequency drawn from one guard — and that an
+exit-code-only check "would have passed" a run that exited 1. The second draft replaced "usually"
+with "the normal outcome", which is the same claim reworded rather than narrowed, and asserted that
+an exit code "never" tells you what failed, a universal that is false wherever a tool encodes
+categories in its status. Each fix reworded the previous claim instead of shrinking it to the
+evidence. If a section arguing that claims outrun their evidence did exactly that twice over,
+assume yours does too, and get a reader who did not write it.
 
 - **The recurring bug is an unknown collapsing into the safe-looking value.** Not a wrong answer —
   a *missing* answer wearing the label of a check that happened. `crew_config.py --models` derives
