@@ -287,10 +287,23 @@ check_stderr_lacks "and not as a frontmatter one" \
 # This case pins the narrow reading: under the broad implementation it exits 0
 # with nothing checked, so it is what keeps `fm_optional` honest.
 # Codex round 4: every frontmatter-bearing case used README.md, so an
-# implementation that ran the full checks for README and returned early for
-# the other three passed the whole suite. Parameterised over all four names.
+# implementation that ran the full checks for README and returned early for the
+# other three passed the whole suite. Round 5: parameterising only the title
+# case left the same hole one rung narrower - required-keys and updated-date
+# were still README-only, so an implementation that ran the title check for all
+# four and those two for README alone passed 39 of 39. Every frontmatter-bearing
+# case below is parameterised over all four names, so each check is pinned for
+# each name independently.
+#
+# Codex round 3: the title case alone still left a wrong implementation that
+# runs ONLY the title check for an exempt file and skips the rest. The other
+# two cases pin those checks separately, each naming its own violation - a
+# guard that blocked the file for some other reason is not a pass.
 for exempt_name in CLAUDE.md README.md AGENTS.md GEMINI.md; do
+  # The title must equal the filename stem in the two cases that are NOT about
+  # the title, or the title check fires instead of the one being pinned.
   stem="${exempt_name%.md}"
+
   fm_note="---
 type: concept
 title: \"not-the-filename\"
@@ -305,32 +318,24 @@ A real note that happens to be called $exempt_name."
   check "$exempt_name WITH frontmatter is fully contract-checked" 2 "$(run_guard "$f" "$home_on_win")"
   check_stderr_has "and for $exempt_name it is the title check that caught it" \
     "does not match filename" "$(guard_stderr "$f" "$home_on_win")"
-done
-# frontmatter-bearing README outright, which is a different wrong answer. Name
-# the violation, the same way the ASCII pair above does.
-check_stderr_has "and it is the title check that caught it" \
-  "does not match filename" "$(guard_stderr "$f" "$home_on_win")"
 
-# Codex round 3: the title case alone still left a wrong implementation that
-# runs ONLY the title check for an exempt file and skips the rest. These two
-# pin the other checks independently, each naming its own violation.
-readme_missing="---
+  fm_missing="---
 type: concept
-title: \"README\"
+title: \"$stem\"
 created: 2026-08-20
 updated: $today
 tags:
   - concept
 ---
 Required key status: is absent."
-f=$(write_and_payload "wiki/concepts/README.md" "$readme_missing")
-check "an exempt basename is still held to the required keys" 2 "$(run_guard "$f" "$home_on_win")"
-check_stderr_has "and the missing key is named" \
-  "MISSING required frontmatter" "$(guard_stderr "$f" "$home_on_win")"
+  f=$(write_and_payload "wiki/concepts/$exempt_name" "$fm_missing")
+  check "$exempt_name is still held to the required keys" 2 "$(run_guard "$f" "$home_on_win")"
+  check_stderr_has "and for $exempt_name the missing key is named" \
+    "MISSING required frontmatter" "$(guard_stderr "$f" "$home_on_win")"
 
-readme_stale="---
+  fm_stale="---
 type: concept
-title: \"README\"
+title: \"$stem\"
 created: 2026-08-20
 updated: 2020-01-01
 status: seed
@@ -338,10 +343,11 @@ tags:
   - concept
 ---
 The updated date is stale."
-f=$(write_and_payload "wiki/concepts/README.md" "$readme_stale")
-check "an exempt basename is still held to the updated date" 2 "$(run_guard "$f" "$home_on_win")"
-check_stderr_has "and the stale date is named" \
-  "bump to" "$(guard_stderr "$f" "$home_on_win")"
+  f=$(write_and_payload "wiki/concepts/$exempt_name" "$fm_stale")
+  check "$exempt_name is still held to the updated date" 2 "$(run_guard "$f" "$home_on_win")"
+  check_stderr_has "and for $exempt_name the stale date is named" \
+    "bump to" "$(guard_stderr "$f" "$home_on_win")"
+done
 
 echo "== vault_guard.py: config-off means silent (sabotage: prove the toggle matters) =="
 

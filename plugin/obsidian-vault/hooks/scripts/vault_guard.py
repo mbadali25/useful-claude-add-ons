@@ -5,10 +5,12 @@ Generalized from a personal ~/.claude/hooks/obsidian-vault-guard.py written for
 one vault's own contract. The checks below are the same mechanics, but every
 one is now a config toggle under ~/.claude/obsidian/config.json -> "guard",
 because a vault's frontmatter contract, ASCII rule and tag vocabulary are that
-vault's decision, not this plugin's. Defaults are all OFF: a fresh install must
-not suddenly reject edits against rules a different vault chose. /obsidian-vault:init
-turns a toggle on only when it finds the matching rule stated in the target
-vault's own CLAUDE.md, and says so when it does.
+vault's decision, not this plugin's. The frontmatter and ASCII rules default
+OFF: a fresh install must not suddenly reject edits against rules a different
+vault chose. checkCanvas is the one exception and defaults ON (see below).
+/obsidian-vault:init turns one of the other two on only when it finds the
+matching rule stated in the target vault's own CLAUDE.md, and says so when it
+does.
 
   guard.asciiOnly           bool, default false
   guard.requireFrontmatter  bool, default false
