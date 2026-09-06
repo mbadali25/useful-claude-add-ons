@@ -157,27 +157,14 @@ def read_metrics(root, window=METRICS_WINDOW):
     numeric is skipped -- which is how the header and separator rows are
     filtered without hard-coding their text.
 
-    A ticket reviewed more than once (a fix round after a BLOCK) writes one
-    row per round, not one row per ticket -- `cells[1]` is the ticket, and it
-    repeats. Grouping by that cell before counting is load-bearing: without
-    it, `tickets` is a row count wearing a ticket-shaped name, and a single
-    ticket sent back for revision reads as multiple tickets. `rate` stays
-    findings-per-ticket to match how pm_brief.py and crew-pm/SKILL.md already
-    describe it ("BLOCK+FIX per ticket") -- a per-row rate would let extra
-    review rounds on ONE ticket dilute the denominator and under-report how
-    bad that ticket's findings rate actually is. A blank ticket cell counts as its own
-    ticket per row rather than pooling with every other blank one: the numbers
-    it carries are real findings and still count, but an unknown identity must
-    not become a shared one. Pooling them would merge unrelated malformed rows
-    into a single pseudo-ticket, shrinking the window and inflating that
-    entry -- the same unknown-collapsing-into-one-value bug this function
-    already had once.
+    A ticket reviewed more than once writes one row per round -- `cells[1]`
+    repeats. Grouping by it is load-bearing: ungrouped, the extra row is a
+    DIVISOR, so the rate reads too LOW (9 findings, 3 rows, 2 tickets: 3.0
+    where the truth is 4.5). `rate` stays findings-per-ticket.
 
     `window` bounds distinct tickets, not rows, and "last" means last
-    REVIEWED -- a ticket is moved to the end of `by_ticket` every time a
-    row for it is seen, so a ticket whose rounds are interleaved with other
-    tickets' rows (T-1, T-2, T-1) is windowed by its most recent row, not
-    the position of its first.
+    REVIEWED: a ticket moves to the end of `by_ticket` on every row for it,
+    so interleaved rounds (T-1, T-2, T-1) window by the most recent row.
     """
     empty = {"tickets": 0, "findings": 0, "rate": None, "verdict": "no data"}
     text = read_text(os.path.join(root, ".crew", "metrics.md"))
@@ -192,21 +179,12 @@ def read_metrics(root, window=METRICS_WINDOW):
         block, fix = _leading_int(cells[3]), _leading_int(cells[4])
         if block is None or fix is None:
             continue
-        # A blank ticket cell is an unknown, not a shared identity. Grouping
-        # every such row under "" would merge unrelated malformed rows into one
-        # pseudo-ticket, which both shrinks the distinct-ticket window and
-        # inflates that one entry's findings - an unknown collapsing into a
-        # single safe-looking value, which is the bug this function already had
-        # once. Each blank row is its own ticket instead: its BLOCK/FIX numbers
-        # are real findings and still count, but they cannot pool.
-        #
-        # The sentinel is a TUPLE, not a string. `cells[1]` is always a str, so
-        # no row this parser can read - however malformed, however adversarial -
-        # can ever collide with a key of this type. A string sentinel, however
-        # improbable its prefix, is a value the input could in principle carry,
-        # and "improbable" is how the collapse being guarded against gets in.
-        # Nothing outside this function sees these keys: only `.values()` is
-        # read below.
+        # A blank ticket cell is an unknown, not a shared identity: pooling
+        # every one under "" merges unrelated rows into one pseudo-ticket -
+        # the unknown-collapsing-into-one-value bug this function already had.
+        # Each blank row is its own ticket. The sentinel is a TUPLE: `cells[1]`
+        # is always a str, so no row can collide with it, and only `.values()`
+        # is read below, so the key never escapes.
         ticket = cells[1] or ("\x00unlabelled", len(by_ticket))
         total = by_ticket.pop(ticket, 0) + block + fix
         by_ticket[ticket] = total
