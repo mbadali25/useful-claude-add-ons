@@ -233,11 +233,17 @@ check "file outside the vault is ignored" 0 "$(run_guard "$payload_file" "$home_
 
 echo "== vault_guard.py: FRONTMATTER_EXEMPT_NAMES (TODO #4) =="
 
-# These four basenames are agent-instruction files, not notes. They can never
-# carry the six-key contract - a YAML header in CLAUDE.md is read as part of
-# Claude's instructions - so demanding one is a false report on every legitimate
-# edit. The guard is PostToolUse, so exit 2 does not prevent the write; it hands
-# Claude stderr and tells it to go back and "fix" a file that is not broken.
+# These four basenames are agent-instruction files, not notes, so the guard must
+# not DEMAND frontmatter of them - a YAML header in CLAUDE.md is read as part of
+# Claude's instructions. The guard is PostToolUse, so exit 2 does not prevent the
+# write; it hands Claude stderr and tells it to go back and "fix" a file that is
+# not broken.
+#
+# "Can never carry the contract" is what an earlier version of this comment
+# said, and it is wrong: a genuine note that happens to be called README.md can
+# carry frontmatter, and when it does it is held to all of it. The exemption is
+# only from the demand. The frontmatter-bearing cases further down are the ones
+# that pin that.
 #
 # Every case here lives UNDER "wiki/" on purpose. notesPrefix is "wiki/", so a
 # vault-root CLAUDE.md never reaches check_note at all and would pass with or
@@ -255,8 +261,10 @@ f=$(write_and_payload "wiki/CLAUDE.md" "Instructions for this vault. No frontmat
 check_stderr_empty "an exempt file reports nothing at all on stderr" \
   "$(guard_stderr "$f" "$home_on_win")"
 
-# The exemption is frontmatter-only. An exempt basename is still held to every
-# other rule the vault turned on, so the ASCII check must still fire here.
+# The exemption is frontmatter-only. README.md is used here rather than
+# CLAUDE.md because CLAUDE.md is ALSO in ASCII_EXEMPT_NAMES, by a separate and
+# older decision - "still held to every other rule" is true of three of the four
+# names, not all of them.
 ascii_readme="README carrying an em dash that should still be caught: EMDASH"
 ascii_readme="${ascii_readme/EMDASH/$'\xe2\x80\x94'}"
 f=$(write_and_payload "wiki/ascii/README.md" "$ascii_readme")
@@ -278,7 +286,12 @@ check_stderr_lacks "and not as a frontmatter one" \
 #
 # This case pins the narrow reading: under the broad implementation it exits 0
 # with nothing checked, so it is what keeps `fm_optional` honest.
-readme_note="---
+# Codex round 4: every frontmatter-bearing case used README.md, so an
+# implementation that ran the full checks for README and returned early for
+# the other three passed the whole suite. Parameterised over all four names.
+for exempt_name in CLAUDE.md README.md AGENTS.md GEMINI.md; do
+  stem="${exempt_name%.md}"
+  fm_note="---
 type: concept
 title: \"not-the-filename\"
 created: 2026-08-20
@@ -287,10 +300,12 @@ status: seed
 tags:
   - concept
 ---
-A real note that happens to be called README.md."
-f=$(write_and_payload "wiki/concepts/README.md" "$readme_note")
-check "an exempt basename WITH frontmatter is fully contract-checked" 2 "$(run_guard "$f" "$home_on_win")"
-# Exit 2 alone would also be satisfied by an implementation that rejects every
+A real note that happens to be called $exempt_name."
+  f=$(write_and_payload "wiki/concepts/$exempt_name" "$fm_note")
+  check "$exempt_name WITH frontmatter is fully contract-checked" 2 "$(run_guard "$f" "$home_on_win")"
+  check_stderr_has "and for $exempt_name it is the title check that caught it" \
+    "does not match filename" "$(guard_stderr "$f" "$home_on_win")"
+done
 # frontmatter-bearing README outright, which is a different wrong answer. Name
 # the violation, the same way the ASCII pair above does.
 check_stderr_has "and it is the title check that caught it" \
