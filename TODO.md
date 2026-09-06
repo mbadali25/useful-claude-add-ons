@@ -48,7 +48,24 @@ at minimum be loud.
 
 ## Correctness and verification gaps
 
-### 4. `vault_guard.py` blocks every edit to a vault's own `CLAUDE.md`
+### 4. ~~`vault_guard.py` blocks every edit to a vault's own `CLAUDE.md`~~ — DONE
+
+**Shipped 2026-09-05 as `obsidian-vault` 0.3.2, PR #69 (`3167721f`).** Seven
+review rounds; the seventh ran against the merged head and came back CLEAN.
+
+The fix is narrower than the plan below, and deliberately so. An early version
+skipped `check_note` entirely for the exempt basenames — which also dropped the
+required-keys, title-matches-filename and updated-date checks, while the comment
+beside it still claimed the exemption was "frontmatter-only". A guarantee written
+narrower than the code it describes is the same defect class as a guard that
+fails open while looking like it checked. What shipped instead is an
+`fm_optional` parameter suppressing **exactly one** issue, `NO FRONTMATTER`, so a
+`README.md` that does carry frontmatter is still held to every other rule.
+`ASCII_EXEMPT_NAMES` stays `{"claude.md"}` and was **not** widened. The suite
+went from 44 to 57 assertions, each exempt name checked in both directions and
+asserting the specific violation text rather than only an exit code.
+
+The original entry follows, for the record.
 
 `plugin/obsidian-vault/hooks/scripts/vault_guard.py:35` exempts `CLAUDE.md`
 from the ASCII check **by design**, but not from the frontmatter check — so the
@@ -317,3 +334,35 @@ whether the check that would have caught it is worth writing: the counts are
 derivable from `ls plugin/crew/agents/*.md` and `commands/*.md`, so a smoke check
 comparing the installer's advertised numbers against the directory contents is
 about ten lines and would cover every plugin's menu line, not just crew's.
+
+## `render.sh` cannot render a diagram on Windows — it hands `mmdc` a `/tmp` path
+
+`skills/crew-diagrams/scripts/render.sh` writes a puppeteer config to a Git
+Bash `/tmp/puppeteer-XXXX.json` and passes that POSIX path to `mmdc`, which is
+a Windows Node program that cannot resolve it. Every render fails identically:
+
+```
+FAIL  architecture.svg
+Configuration file "/tmp/puppeteer-DQrB.json" doesn't exist
+```
+
+Six for six on 2026-09-05 (`architecture`, `data-flow`, `process`, `.svg` and
+`.png` each), exit 1.
+
+**This is not a Mermaid problem, and that is the part worth writing down.** The
+same three sources render cleanly when `mmdc` is invoked directly with a
+Windows-resolvable output path — 71632, 40140 and 75882 bytes of SVG. Anyone
+reading only the render log would conclude the diagrams are broken and start
+editing correct Mermaid, which is the expensive wrong turn this entry exists to
+prevent.
+
+Fix shape when it is picked up: resolve the temp path through `cygpath -w`
+(or write the config beside the output directory) before handing it to `mmdc`,
+on the branch that already knows it is on Windows. The `_test` fixture should
+assert a non-zero output file, not just exit 0 — the failure above still wrote
+`docs/diagrams/out/` and reported a summary line, so an exit-code-only check
+would have passed it.
+
+Found while re-anchoring the diagrams after PR #69, 2026-09-05. Anchor
+`3167721f`. Measured, not inferred: both the failing and the passing
+invocations were run.

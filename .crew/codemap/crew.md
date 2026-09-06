@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@b56d41f
+anchor: useful-claude-add-ons@3167721f
 
 # crew
 
@@ -10,6 +10,35 @@ version `0.16.12`, matching `plugin/crew/.claude-plugin/plugin.json:2-3`.
 CI fixes, `0.16.12` for the scrub rewrite described below. Both sites move
 together — `check_versions` compares "has the directory changed since the
 version was set", which `_verify/smoke.sh` does not run.)
+
+## Re-anchor provenance - b56d41f -> 3167721f, 2026-09-05
+
+The anchor moved because the exposure was re-checked, not because the sha
+looked old. Recording that here is the point: an anchor on its own cannot
+distinguish an earned bump from an unearned one, and a gating reviewer reading
+only "this note tested behind" is right to call the bump unearned. This section
+is what makes the difference checkable.
+
+`git diff --name-only b56d41f..3167721f -- <this note's cited paths>` returned
+`.claude-plugin/marketplace.json` and `plugin/PLUGINS.md`, plus the codemap
+files this note cites - notes citing each other, which is self-triggering and
+carries no information about crew.
+
+Re-checked against source, not inferred:
+
+- crew's version is `0.16.12` in **both** `.claude-plugin/marketplace.json` and
+  `plugin/crew/.claude-plugin/plugin.json`, and
+  `plugin/crew/.claude-plugin/plugin.json:2-3` really is where `name` and
+  `version` sit.
+- Every `path:line` anchor in this note resolves to an existing file with the
+  cited line in range. 9 of them did not before this pass: they were written
+  relative to `plugin/crew/hooks/scripts/`, which resolves by eye and cannot be
+  pasted into the diff command above.
+
+**Not re-verified at this anchor:** every DERIVED claim about `crew_state.py`'s
+internals below. Those files did not move in the diff window, so their claims
+were not re-read. If `plugin/crew/hooks/scripts/` appears in a future diff
+against this anchor, treat this section's guarantee as spent.
 
 ## Inventory — and a stale description found while checking it
 
@@ -26,7 +55,7 @@ context-isolated agents (14 tiered, 3 domain specialists), 24 slash commands,
 17 bundled skills" — this agrees exactly with the counts above. The three new
 names are `agents/node-developer.md`, `agents/power-automate-specialist.md`
 and `agents/sharepoint-developer.md`; each sits off the tier ladder in
-`crew_state.SPECIALIST_ROLES` (`crew_state.py:656-659`) rather than being
+`crew_state.SPECIALIST_ROLES` (`plugin/crew/hooks/scripts/crew_state.py:656-659`) rather than being
 granted by `roles_for_tier`, and is onboarded per repo with
 `/crew:pm onboard <role>` rather than by scaling. See
 `plugin/PLUGINS.md`'s specialist paragraph (added in this same diff) for why:
@@ -63,7 +92,7 @@ confirming the current file actually does it.
 ## The 0.16.7 guard defects, and the dispatch.d rewrite that fixed the largest one
 
 `plugin/crew/hooks/scripts/crew_state.py` gained 926 lines between the old
-anchor and this one (`git diff --stat 2b0972d..HEAD -- plugin/crew` —
+anchor and this one (`git diff --stat 2b0972d..b56d41f -- plugin/crew` —
 matches the brief's "roughly 900" closely enough to confirm rather than
 round further), with smaller additions to `crew_config.py` (+153/-…),
 `crew_platform.py` (+101/-…) and `pm_brief.py` (+8/-…). All four files
@@ -89,9 +118,9 @@ defects were:
 The substantive fix for (1) and (2) is the rewrite this codemap's earlier
 paragraph describes only briefly: `dispatch.json` (one shared, mutable file)
 is replaced by `.work/dispatch.d/`, one immutable file per dispatch
-(`crew_state.py:1006-1026`, `DISPATCH_DIR = (".work", "dispatch.d")`), with
+(`plugin/crew/hooks/scripts/crew_state.py:1006-1026`, `DISPATCH_DIR = (".work", "dispatch.d")`), with
 the legacy single file still read as a lower-priority fallback
-(`crew_state.py:1348-1350`) so an older record is not silently discarded.
+(`plugin/crew/hooks/scripts/crew_state.py:1348-1350`) so an older record is not silently discarded.
 Anyone who gitignores crew's working files by hand needs to add
 `.work/dispatch.d/`, not just `dispatch.json` — `/crew:init` does both.
 
@@ -108,7 +137,7 @@ skipping the `py` launcher and exiting 0 with nothing on stderr when neither
 resolved — fixed in `0131d0f0` to use the shared `crew_py()` in `_common.sh`
 and to print to stderr on failure instead of failing silently.
 
-**DERIVED (`run-tests.sh:74-135`, verified at `b56d41f`): that PATH scrub was
+**DERIVED (`plugin/crew/hooks/scripts/_test/run-tests.sh:74-135`, verified at `b56d41f`): that PATH scrub was
 fixed twice more after `0bf0c2f3`, and the reason is worth carrying — CI was
 red for both.** It compared `PATH` entries as *strings*, so on a merged-`/usr`
 Linux — every GitHub runner — dropping the literal `/usr/bin` left `/bin`
@@ -146,20 +175,20 @@ turns it into `knowledge.subsystems` for the PM's SessionStart brief. This
 matters directly to the writer of any codemap file, so it is recorded here
 rather than assumed:
 
-- `read_knowledge()` (`crew_state.py:399-428`) lists every file directly
+- `read_knowledge()` (`plugin/crew/hooks/scripts/crew_state.py:399-428`) lists every file directly
   under `.crew/codemap/`. A file counts as a subsystem if its name ends in
   `.md` **and** is not in `_NOT_SUBSYSTEMS`
-  (`crew_state.py:225`: `frozenset({"INDEX.md", "UPGRADE.md", "MIGRATION.md"})`).
+  (`plugin/crew/hooks/scripts/crew_state.py:225`: `frozenset({"INDEX.md", "UPGRADE.md", "MIGRATION.md"})`).
   This codemap therefore contributes 4 subsystems: `marketplace-registration.md`,
   `localgpu.md`, `crew.md` (this file), `verification-harness.md`. `INDEX.md`
   is deliberately excluded by name.
 - Each counted file is checked for an anchor line matching
-  `_ANCHOR_RE` (`crew_state.py:220-222`):
+  `_ANCHOR_RE` (`plugin/crew/hooks/scripts/crew_state.py:220-222`):
   `^anchor:\s*(?:\S*@)?([0-9a-f]{7,40})\s*$`, case-insensitive, matched
   anywhere in the file (`re.MULTILINE`). If the captured hash's first 7 chars
   do not equal the current HEAD's first 7 chars, the file's stem is added to
   `knowledge.behind` — surfaced later as the `knowledgeBehind` trigger
-  (`crew_state.py:2015`). Every file in this codemap opens with
+  (`plugin/crew/hooks/scripts/crew_state.py:2015`). Every file in this codemap opens with
   `anchor: useful-claude-add-ons@<short-hash>` for exactly this reason. **The
   line numbers in this section moved by roughly +900 between the old anchor
   and this one** because `crew_state.py` grew that much (see above) —
@@ -167,7 +196,7 @@ rather than assumed:
   previous refresh, which is exactly the kind of citation that silently rots
   when a file this central gets a 900-line change.
 - `diagramsMissing` only fires once `knowledge.subsystems` is truthy
-  (`crew_state.py:2017-2022`, comment: *"A repo with no codemap has not
+  (`plugin/crew/hooks/scripts/crew_state.py:2017-2022`, comment: *"A repo with no codemap has not
   decided what its subsystems ARE yet"*) — so writing this codemap is also
   what turns on the future nag for missing per-subsystem diagrams. That is a
   second-order effect of this task worth naming, not something this task

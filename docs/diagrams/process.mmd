@@ -1,7 +1,8 @@
-%% anchor: useful-claude-add-ons@b56d41f
+%% anchor: useful-claude-add-ons@3167721f
+%% Anchors: plugin/localgpu/bootstrap.ps1, plugin/localgpu/bootstrap.sh, plugin/localgpu/commands/setup.md, plugin/localgpu/mcp/requirements.txt, plugin/localgpu/skills/localgpu/templates/mcp.json
 %% localgpu: /localgpu:setup (7 steps, agent-driven) calls bootstrap.{sh,ps1} (6 steps, script-driven).
 %% NOTE: ground truth handed to this lane said "six-step" setup flow; commands/setup.md
-%% actually says "Seven steps, in order" (setup.md:2) - corrected here, see report.
+%% actually says "Seven steps, in order" (plugin/localgpu/commands/setup.md:2) - corrected here, see report.
 %% Verified against source on 2026-09-05; see comments for path:line.
 flowchart TB
 
@@ -28,7 +29,7 @@ flowchart TB
         B2["2. Ollama installed<br/>[SCRIPT]"]
         B3["3. venv + numpy<br/>(+ mcp/requirements.txt,<br/>editable console script)<br/>[SCRIPT]"]
         B4["4. both models pulled<br/>(idempotent - checks<br/>/api/tags first)<br/>[SCRIPT]"]
-        B5["5. VRAM discipline:<br/>export OLLAMA_MAX_LOADED_MODELS=1<br/>bootstrap.sh:646-715<br/>[SCRIPT]"]
+        B5["5. VRAM discipline:<br/>export OLLAMA_MAX_LOADED_MODELS=1<br/>plugin/localgpu/bootstrap.sh:646-715<br/>[SCRIPT]"]
         B6["6. VERIFY: real embed request,<br/>then 'ollama ps' proving GPU<br/>residency, not CPU offload<br/>bootstrap.sh header comment<br/>[SCRIPT]"]
 
         B1 --> B2 --> B3 --> B4 --> B5 --> B6
@@ -37,7 +38,7 @@ flowchart TB
     S4 -- "bash bootstrap.sh (Linux/macOS/WSL)<br/>OR pwsh -File bootstrap.ps1 (Windows)<br/>setup.md Step 4" --> B1
     B6 -- "returns control" --> S5
 
-    Note["Every step in both flows detects before<br/>it acts - re-running either is a no-op<br/>where the target already exists<br/>(bootstrap.sh:1-4 header, setup.md throughout)"]
+    Note["Every step in both flows detects before<br/>it acts - re-running either is a no-op<br/>where the target already exists<br/>(plugin/localgpu/bootstrap.sh:1-4 header, setup.md throughout)"]
 
     style S4 fill:#5a4a1a,stroke:#b7861a,color:#fff
     style S6 fill:#5a4a1a,stroke:#b7861a,color:#fff

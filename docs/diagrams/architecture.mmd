@@ -1,4 +1,5 @@
-%% anchor: useful-claude-add-ons@b56d41f
+%% anchor: useful-claude-add-ons@3167721f
+%% Anchors: plugin/localgpu/bootstrap.sh, plugin/localgpu/cli/anthropic_proxy.py, plugin/localgpu/cli/localgpu_cli.py, plugin/localgpu/commands/setup.md, plugin/localgpu/mcp/ollama.py, plugin/localgpu/mcp/server.py, plugin/localgpu/skills/localgpu/templates/mcp.json
 %% localgpu: two independent process trees sharing one Ollama.
 %% Verified against source on 2026-09-05; see comments for path:line.
 flowchart TB
@@ -9,7 +10,7 @@ flowchart TB
         Setup["/localgpu:setup step 6<br/>commands/setup.md<br/>*agent-performed, no script*"]
         Template["templates/mcp.json<br/>skills/localgpu/templates/mcp.json<br/>placeholders: LOCALGPU_PYTHON,<br/>LOCALGPU_PLUGIN_ROOT, LOCALGPU_HOME"]
         MCPJson[".mcp.json<br/>*written to repo root by the agent -<br/>not checked into THIS repo*"]
-        Server["mcp/server.py<br/>server.py:1 - stdio MCP server,<br/>3 tools: search_code, index_status,<br/>index_refresh"]
+        Server["mcp/server.py<br/>plugin/localgpu/mcp/server.py:1 - stdio MCP server,<br/>3 tools: search_code, index_status,<br/>index_refresh"]
 
         CC1 -- "spawns stdio child via<br/>install venv's python<br/>(command from .mcp.json)" --> Server
         Setup -- "reads template, substitutes<br/>placeholders itself (no script)" --> Template
@@ -21,8 +22,8 @@ flowchart TB
         direction TB
         User(["user runs<br/>`localgpu shell`"])
         CLI["cli/localgpu_cli.py:96<br/>cmd_shell()"]
-        ProxyThread["anthropic_proxy server<br/>localgpu_cli.py:103-115<br/>threading.Thread(daemon=True)<br/>*background thread, NOT a subprocess*"]
-        CC2["second Claude Code session<br/>localgpu_cli.py:125<br/>subprocess.run([claude, ...])<br/>ANTHROPIC_BASE_URL -> proxy port"]
+        ProxyThread["anthropic_proxy server<br/>plugin/localgpu/cli/localgpu_cli.py:103-115<br/>threading.Thread(daemon=True)<br/>*background thread, NOT a subprocess*"]
+        CC2["second Claude Code session<br/>plugin/localgpu/cli/localgpu_cli.py:125<br/>subprocess.run([claude, ...])<br/>ANTHROPIC_BASE_URL -> proxy port"]
 
         User --> CLI
         CLI -- "starts on a background thread<br/>inside the CLI's own process" --> ProxyThread
@@ -33,9 +34,9 @@ flowchart TB
     Ollama[["Ollama<br/>http://127.0.0.1:11434<br/>ONE instance, shared by both trees"]]
 
     Server -- "HTTP loopback<br/>ollama.py: embed()" --> Ollama
-    ProxyThread -- "HTTP loopback<br/>anthropic_proxy.py: chat, keep_alive=5m<br/>DEFAULT_KEEP_ALIVE (anthropic_proxy.py:50)" --> Ollama
+    ProxyThread -- "HTTP loopback<br/>anthropic_proxy.py: chat, keep_alive=5m<br/>DEFAULT_KEEP_ALIVE (plugin/localgpu/cli/anthropic_proxy.py:50)" --> Ollama
 
-    Constraint["OLLAMA_MAX_LOADED_MODELS=1<br/>bootstrap.sh:11,646-715<br/>+ embed keep_alive=30s (ollama.py:26)<br/>vs chat keep_alive=5m (anthropic_proxy.py:50)<br/>-- because ONE Ollama can only keep<br/>one 8GB-VRAM model resident at a time"]
+    Constraint["OLLAMA_MAX_LOADED_MODELS=1<br/>plugin/localgpu/bootstrap.sh:11,646-715<br/>+ embed keep_alive=30s (plugin/localgpu/mcp/ollama.py:26)<br/>vs chat keep_alive=5m (plugin/localgpu/cli/anthropic_proxy.py:50)<br/>-- because ONE Ollama can only keep<br/>one 8GB-VRAM model resident at a time"]
     Ollama -.-> Constraint
 
     style Ollama fill:#4a5568,stroke:#2d3748,color:#fff
