@@ -108,6 +108,13 @@ overwrote, so they survived in nothing tracked and were then cited twice, at two
 this file's policy — while living in no commit at all. Every one below carries the evidence that
 earned it, precisely so nobody has to take it on faith the way those citations asked people to.
 
+The section took three review rounds to stop overclaiming, which is the most useful thing in it.
+Round 1 said a guard is "usually" wrong again after a fix — a frequency drawn from one guard.
+Round 2 replaced "usually" with "the normal outcome", which is the same claim reworded. Round 3
+also caught "the exit code never tells you what failed", a universal that is simply false. If a
+section arguing that claims outrun their evidence outran its own three times, assume yours does
+too, and get someone who did not write it to check.
+
 - **The recurring bug is an unknown collapsing into the safe-looking value.** Not a wrong answer —
   a *missing* answer wearing the label of a check that happened. `crew_config.py --models` derives
   "author family" from config describing the NEXT run, and on a Claude-authored diff barred Codex,
@@ -120,9 +127,10 @@ earned it, precisely so nobody has to take it on faith the way those citations a
   day: seven consecutive review rounds on `vault_guard.py`, every fix right about the case it aimed
   at and one rung short of its neighbour — frontmatter, then ASCII, then the three config defaults,
   then the comment justifying the interpreter stand-down, then a count corrected in one of the two
-  places that stated it. Seven for seven, no exception. That is one guard, not a measured rate
-  across this repo, so treat it as a prior worth acting on rather than a frequency: a fix narrowed
-  to the reported case is the normal outcome, and the neighbouring case is where to look next.
+  places that stated it. Seven for seven, no exception — on one guard, over one day. No rate across
+  this repo has been measured, and none is claimed. The heuristic that follows is cheap regardless:
+  when a guard fix lands, check the neighbouring case before closing it, because in the one run
+  anyone has measured that is where the next defect was, every time.
 
 - **Put the check where the evidence is dropped.** `read_metrics` averages BLOCK+FIX per *row* and
   returns that count under the key `tickets`, so one ticket reviewed twice reads as two and the
@@ -130,12 +138,15 @@ earned it, precisely so nobody has to take it on faith the way those citations a
   column, filled in by every row — is never referenced. A correction written in prose beneath the
   table fixed nothing, because the parser never reads prose.
 
-- **The exit code tells you THAT it failed, never WHAT failed.** `render.sh` exited 1 and printed
-  six `FAIL` lines — correctly, so an exit-code check would have caught it. The trap was the next
-  inference: the cause was a `/tmp` path a Windows `mmdc` cannot open, not broken Mermaid, and the
-  same three sources rendered cleanly when invoked directly. Acting on the log alone would have
-  sent someone editing correct diagrams. It also printed a summary line and created its output
-  directory while producing nothing, so check the artifact, not the summary.
+- **A failing gate names the failure, not the cause.** `render.sh` exited 1 and printed six `FAIL`
+  lines — correctly, so an exit-code check would have caught it. The trap was the next inference:
+  the cause was a `/tmp` path a Windows `mmdc` cannot open, not broken Mermaid, and the same three
+  sources rendered cleanly when invoked directly. Acting on that log alone would have sent someone
+  editing correct diagrams. Some tools do encode categories in the status — `pylint` uses a
+  bitmask — so read the status before assuming it is a bare pass/fail; here it was bare, and the
+  distinction that decided what to fix ("the input is bad" versus "the tool could not run") was in
+  neither the status nor the log. `render.sh` also printed a summary line and created
+  its output directory while producing nothing, so check the artifact, not the summary.
 
 - **Run the states; do not reason about them.** A guard suite reported 24 passed / 33 failed, and
   the cause was `MSYS_NO_PATHCONV=1` in the *runner's* environment mangling `/c/repos/...` into
