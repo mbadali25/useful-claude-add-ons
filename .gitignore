@@ -385,3 +385,11 @@ docs/diagrams/out/
 # the reports and track a minimal receipt per endpoint (id, timestamp,
 # tool+version, counts by severity) and repoint `_artifact_confirms_scan` at
 # the receipt - which is real work with its own tests, not a one-line flip.
+
+# The sabotage harness backs a source file up as `<file>.bak` before it
+# mutates it. `7c420e90` swept `crew_state.py.bak` into a commit with
+# `git add -A`, which removed the one diagnostic that says a run died
+# mid-mutation: a `.bak` in `git status`. Ignoring it keeps that signal --
+# `plugin/crew/tests/sabotage.py` now REFUSES to start when one is present,
+# and a tracked backup would have made that refusal permanent.
+*.bak
