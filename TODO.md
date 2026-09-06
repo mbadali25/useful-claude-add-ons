@@ -463,3 +463,59 @@ conflict"; unknown is not the same as independent.
 
 Needs must-block / must-allow regression cases and sabotage testing per
 CLAUDE.md, since it governs a gate that can block.
+
+## `sabotage.py` can leave a live mutation in the tree and still report PASS
+
+Landed in `d362a2bd`: `plugin/crew/hooks/scripts/crew_state.py:1191` shipped as
+`if False:
+        frozen = frozen` instead of the real
+`if isinstance(frozen, str): frozen = frozen.replace("\\", "/")`. That is the
+"frozen artifact path is stored with native separators" mutation. A path frozen
+on Windows then never matches on Linux, so a completed scan reads as unscanned
+forever on any other machine. Found by review, not by any gate.
+
+`plugin/crew/tests/sabotage.py` mutates real source in place: `apply_mutation`
+(:980) copies `target` to `target + ".bak"`, writes the mutation, and `restore`
+(:1024) does `shutil.move(backup, target)`. `main` (:1041-1043) wraps only the
+`run_test` call in `try/finally: restore(target)`.
+
+Four distinct defects, in the order they bite:
+
+1. **`finally` does not survive a kill.** It unwinds on exceptions, including
+   `KeyboardInterrupt` -- but a `SIGTERM` or `SIGKILL` from an external timeout
+   terminates without unwinding, so neither `restore` nor any cleanup runs. The
+   mutated file and its `.bak` both survive. This is the most likely cause here:
+   the run was killed by a harness timeout mid-mutation.
+
+2. **The next run destroys the only good copy.** After a killed run leaves
+   `crew_state.py.bak`, the next `apply_mutation` does
+   `shutil.copy(target, target + ".bak")` unconditionally -- overwriting the
+   good backup with the ALREADY-MUTATED file. The harness's own mutation table
+   flags exactly this class for the code under test (:174-176, *"Skipping the
+   backup when the name is taken destroys the newer original and then reports
+   that it was saved"*) and the harness itself does it. There is no startup
+   guard that refuses to run, or recovers, when a stale `.bak` is present.
+
+3. **The restore is never verified.** Nothing compares the file to its pre-run
+   content after `restore`. `main` prints PASS from `ok`, which tracks only
+   whether each mutation went red -- so a restore that silently failed is
+   indistinguishable from one that worked. Signal and absence identical, which
+   is the failure mode this repo keeps shipping.
+
+4. **`crew_state.py.bak` is tracked in HEAD** (`7c420e90`, swept in by
+   `git add -A`; the removal in `d362a2bd` did not take). It is not stray lane
+   litter -- it IS the harness's backup, and a `.bak` appearing in `git status`
+   is the diagnostic tell that a run died mid-mutation. Tracking it removes that
+   signal and makes defect 2 permanent, since the file is always present.
+
+Fix shape: restore on every exit path including signals (`signal` handlers plus
+`atexit`, not `finally` alone); refuse to start -- or recover from -- a stale
+`.bak` rather than overwriting it; verify the restored bytes against a hash
+taken before the first mutation and fail the suite loudly if they differ;
+untrack the `.bak` and add it to `.gitignore`. Consider mutating a copy under a
+temp tree instead of real source, which removes the whole class.
+
+Verified while scoping this: exactly one sabotage-shaped line exists in all of
+HEAD's Python (`crew_state.py:1191`), and the HEAD-vs-worktree diff for that
+file is exactly those two lines -- so the working-tree restore is complete and
+nothing else was left mutated.

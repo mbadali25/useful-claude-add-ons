@@ -1188,8 +1188,8 @@ def scan_artifact_path(root, record):
         default = os.path.join("docs", "security-scans", filename)
 
     frozen = record.get("artifactPath")
-    if False:
-        frozen = frozen
+    if isinstance(frozen, str):
+        frozen = frozen.replace("\\", "/")
     if frozen is not None:
         return _relative_safe(root, frozen, default)
     return default
