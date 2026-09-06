@@ -45,9 +45,12 @@ three mutations below are the ones actually confirmed to defeat it:
   Restore all mutations afterward.
 """
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
+
+import pytest
 
 _SCRIPT = Path(__file__).resolve().parent.parent / "gizmoduck.py"
 
@@ -285,3 +288,96 @@ def test_abbreviated_yes_flag_is_rejected_not_honoured(tmp_path):
         pass
     else:
         raise AssertionError("an abbreviated --ye must not emit ticket records")
+
+
+# -- the shipped command prose is part of the gate ----------------------------
+#
+# The CLI gate above can only refuse what it is asked to do; what it is asked
+# is decided by the command files, because prose is what the model actually
+# follows. A `scan.md` whose FIRST `gizmoduck.py tickets` line already carried
+# `--yes` would satisfy every test above while filing tickets nobody previewed
+# - the gate would hold and the batch would still never be shown to anyone.
+#
+# WHAT THIS DOES NOT COVER, stated rather than implied: only backticked spans
+# and fenced blocks are read, never the surrounding sentences. An instruction
+# written as bare prose - Run gizmoduck.py tickets f.jsonl --yes $d, with no
+# backticks - is invisible here, and the model could still follow it. Checking
+# outside code spans was tried and rejected: an earlier line-scoped version
+# false-positived on `scan.md`'s own sentence "(no `--yes`)", and a rule that
+# fires wherever the command text appears in a sentence reopens that from the
+# other side. The claim these tests make is exactly "the shipped commands, AS
+# WRITTEN IN CODE SPANS, preview before they approve" - not that no other
+# phrasing could exist.
+
+_COMMANDS = Path(__file__).resolve().parents[2] / "commands"
+
+# Fenced block first, so its ``` fences are never mistaken for inline spans.
+# An inline span may contain a newline - `scan.md`'s preview invocation wraps
+# mid-command - so `[^`]` deliberately allows one.
+#
+# `\r?\n` is not decoration: `scan.md` is LF on disk and `tickets.md` is CRLF,
+# so a fence regex pinned to `\n` would silently stop seeing fenced blocks in
+# whichever file gets normalised next - and a test that sees nothing here has
+# only its "invokes it nowhere" assertion left to fail on.
+_CODE_SPAN_RE = re.compile(r"```[a-z]*\r?\n(.*?)```|`([^`]+)`", re.S)
+
+# `--yes` as an argument, not as four characters inside a word or a path.
+_YES_RE = re.compile(r"(?:^|\s)--yes(?=$|[\s=])")
+# `--yes` followed by something to approve. `(?!-)` stops the next FLAG being
+# read as the digest, so a trailing `--yes --json` does not count as approval.
+_YES_WITH_VALUE_RE = re.compile(r"(?:^|\s)--yes[\s=](?!-)(\S+)")
+
+
+def _tickets_invocations(name):
+    """Every `gizmoduck.py tickets ...` command in `commands/<name>`, in order.
+
+    Backslash continuations are joined before splitting. A fenced block that
+    wraps its rerun across two lines would otherwise be read as a first line
+    carrying no `--yes`, with the approval hidden on line two - the gate
+    passing on a file that approves immediately, which is the whole failure
+    these tests exist to catch.
+
+    Trailing `#` comments are dropped for the mirror-image reason: a correct
+    preview line annotated `# deliberately no --yes` is not an invocation that
+    passes the flag.
+    """
+    text = (_COMMANDS / name).read_text(encoding="utf-8")
+    found = []
+    for block, span in _CODE_SPAN_RE.findall(text):
+        chunks = re.sub(r"\\\r?\n", " ", block).splitlines() if block else [span]
+        for chunk in chunks:
+            flat = " ".join(re.sub(r"\s+#.*$", "", chunk).split())
+            if "gizmoduck.py tickets" in flat:
+                found.append(flat)
+    return found
+
+
+@pytest.mark.parametrize("command", ["scan.md", "tickets.md"])
+def test_the_first_shipped_tickets_invocation_omits_yes(command):
+    invocations = _tickets_invocations(command)
+
+    assert invocations, f"commands/{command} invokes gizmoduck.py tickets nowhere"
+    assert not _YES_RE.search(invocations[0]), (
+        f"commands/{command}'s FIRST gizmoduck.py tickets invocation carries "
+        f"--yes: {invocations[0]!r}. The first run is the preview the user is "
+        f"shown; approving a batch nobody previewed is the gate failing open "
+        f"while every CLI test here still passes."
+    )
+
+
+@pytest.mark.parametrize("command", ["scan.md", "tickets.md"])
+def test_the_shipped_rerun_carries_yes_and_a_digest_to_approve(command):
+    """The other half: a command file that never reaches `--yes <digest>`.
+
+    The value is asserted, not just the flag. A bare `--yes` is rejected by
+    argparse (see `test_bare_yes_with_no_digest_value_is_rejected`), so a
+    command file shipping one would tell the model to run something that
+    cannot work - and a flag-only assertion would have called that a gate.
+    """
+    invocations = _tickets_invocations(command)
+    approving = [inv for inv in invocations[1:] if _YES_WITH_VALUE_RE.search(inv)]
+
+    assert approving, (
+        f"commands/{command} never reaches a `--yes <digest>` rerun. "
+        f"Invocations found: {invocations!r}"
+    )

@@ -11,7 +11,7 @@ Read the **Hooks** section of any plugin before installing it. Commands and agen
 | | |
 |---|---|
 | **Source** | [`crew/`](crew) |
-| **Version** | 0.16.7 |
+| **Version** | 0.16.20 |
 | **Install** | `claude plugin install crew@useful-claude-add-ons` |
 | **Menu item** | 21, `repo-plugins` — **off by default**. Menu item 22, `graphify`, is a separate, also-off-by-default install of the `graphify` CLI this plugin's graph feature depends on — see **The code graph** below. |
 | **Registers** | 17 agents, 24 commands, 17 skills, 20 hook entries (10 scripts × `.sh`/`.ps1`) across 5 events |
@@ -448,7 +448,7 @@ The hooks go with it. To keep the plugin but stop the `Stop` gate, set `verifyGa
 | | |
 |---|---|
 | **Source** | [`gizmoduck/`](gizmoduck) |
-| **Version** | 0.2.3 |
+| **Version** | 0.2.5 |
 | **Install** | `claude plugin install gizmoduck@useful-claude-add-ons` |
 | **Registers** | 6 commands, 1 skill. **No agents, no hooks** — nothing runs unless you type a command |
 | **Upstream guide** | [`gizmoduck/README.md`](gizmoduck/README.md) |
@@ -476,6 +476,8 @@ Everything is one Python file, `scripts/gizmoduck.py`, with `scan`, `summary`, `
 
 `tickets` does not call ServiceDesk Plus itself, and it is gated: without `--yes` it prints a preview of the candidate tickets (severity + subject, one per line), a digest over that exact batch, and the rerun command carrying it, then exits 3 with a `GIZMODUCK_CONFIRMATION_REQUIRED` marker, emitting no records at all. Only with `--yes <digest>` — the digest the preview just printed, passed after the batch has been shown to and approved by the user — does it emit one ticket payload per finding: subject prefixed `[Nuclei <template-id>]`, severity, CVSS, CVE, affected hosts, remediation. A `--yes` whose digest does not match what `tickets` recomputes right now — a different findings file, a different `--min-severity`, findings that changed in between — is refused with `GIZMODUCK_APPROVAL_MISMATCH` rather than silently creating whatever the current batch turns out to be. The session then opens or updates the approved records through the ServiceDesk Plus tools it already has. The template-id prefix is what makes the second run idempotent: a finding whose ticket is still open gets a note instead of a duplicate.
 
+Those payloads are behind `--create`, and the flag withholds rather than warns. A plain `tickets` run returns `"mode": "preview"` with each finding's subject, severity and target count and **no description field at all** — there is no body to file, so a caller that skips the prose still cannot open a ticket from it. `--create` is what generates the bodies, and the command files that ship with the plugin only reach for it after the user has been shown the preview and answered. The `[Nuclei <id>]` de-dupe search is not that confirmation: it chooses between creating a request and noting an existing one, and both of those write.
+
 Findings are deduplicated by template and location before anything is reported or ticketed, so one misconfiguration across forty hosts is one finding with forty affected targets rather than forty findings.
 
 ### What it needs installed
@@ -499,7 +501,7 @@ Nothing keeps running afterwards — there were no hooks. The Nuclei binary and 
 | | |
 |---|---|
 | **Source** | [`localgpu/`](localgpu) |
-| **Version** | 0.1.1 |
+| **Version** | 0.1.16 |
 | **Install** | `claude plugin install localgpu@useful-claude-add-ons` |
 | **Registers** | 6 commands, 1 skill. **No agents, no hooks** — nothing runs unless you type a command. `/localgpu:setup` additionally writes one stdio MCP server into the repository's own `.mcp.json`, which you approve through `/mcp`. The bootstrap separately installs a `localgpu` console script into `$LOCALGPU_HOME/venv`, which Claude Code neither registers nor runs |
 | **Upstream guide** | [`localgpu/README.md`](localgpu/README.md) |
@@ -596,7 +598,7 @@ Nothing keeps running afterwards — there were no hooks. Ollama, the models it 
 | | |
 |---|---|
 | **Source** | [`obsidian-vault/`](obsidian-vault) |
-| **Version** | 0.1.2 |
+| **Version** | 0.3.6 |
 | **Install** | `claude plugin install obsidian-vault@useful-claude-add-ons` |
 | **Registers** | 2 agents, 11 commands, 3 skills, 8 hook entries (3 scripts × `.sh`/`.ps1`) across 4 events |
 | **Upstream guide** | [`obsidian-vault/README.md`](obsidian-vault/README.md) |

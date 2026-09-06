@@ -149,20 +149,29 @@ def _verdict(rate):
 
 
 def read_metrics(root, window=METRICS_WINDOW):
-    """BLOCK+FIX per ticket over the last `window` review rows.
+    """BLOCK+FIX per ticket over the last `window` distinct tickets.
 
     Rows are appended by /crew:review as
     `<date> | <ticket> | <reviewer> | <n BLOCK> | <n FIX>`. Leading and
     trailing pipes are tolerated, and any row whose BLOCK/FIX cells are not
     numeric is skipped -- which is how the header and separator rows are
     filtered without hard-coding their text.
+
+    A ticket reviewed more than once writes one row per round -- `cells[1]`
+    repeats. Grouping by it is load-bearing: ungrouped, the extra row is a
+    DIVISOR, so the rate reads too LOW (9 findings, 3 rows, 2 tickets: 3.0
+    where the truth is 4.5). `rate` stays findings-per-ticket.
+
+    `window` bounds distinct tickets, not rows, and "last" means last
+    REVIEWED: a ticket moves to the end of `by_ticket` on every row for it,
+    so interleaved rounds (T-1, T-2, T-1) window by the most recent row.
     """
     empty = {"tickets": 0, "findings": 0, "rate": None, "verdict": "no data"}
     text = read_text(os.path.join(root, ".crew", "metrics.md"))
     if not text:
         return empty
 
-    totals = []
+    by_ticket = {}
     for line in text.splitlines():
         cells = [c.strip() for c in line.strip().strip("|").split("|")]
         if len(cells) < 5:
@@ -170,9 +179,17 @@ def read_metrics(root, window=METRICS_WINDOW):
         block, fix = _leading_int(cells[3]), _leading_int(cells[4])
         if block is None or fix is None:
             continue
-        totals.append(block + fix)
+        # A blank ticket cell is an unknown, not a shared identity: pooling
+        # every one under "" merges unrelated rows into one pseudo-ticket -
+        # the unknown-collapsing-into-one-value bug this function already had.
+        # Each blank row is its own ticket. The sentinel is a TUPLE: `cells[1]`
+        # is always a str, so no row can collide with it, and only `.values()`
+        # is read below, so the key never escapes.
+        ticket = cells[1] or ("\x00unlabelled", len(by_ticket))
+        total = by_ticket.pop(ticket, 0) + block + fix
+        by_ticket[ticket] = total
 
-    recent = totals[-window:]
+    recent = list(by_ticket.values())[-window:]
     if not recent:
         return empty
     findings = sum(recent)

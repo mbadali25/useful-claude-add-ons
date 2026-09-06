@@ -15,6 +15,8 @@ in this file ever starts a process.
 from __future__ import annotations
 
 import argparse
+import io
+import json
 import sys
 from pathlib import Path
 
@@ -571,6 +573,291 @@ def test_banner_states_the_thing_nothing_enforces():
     assert "/crew:*" in text, "the warning about gate commands is the point of the banner"
 
 
+# -- prompt / models --------------------------------------------------------
+#
+# The success path is stubbed here because it cannot be exercised for real on
+# every machine - and on this one, at the time of writing, not at all: Ollama
+# answers /api/generate with "CUDA error: a PTX JIT compilation failed", which
+# a raw curl reproduces identically, so it is the server's problem and not the
+# CLI's. That is exactly why these tests assert on the request that was built
+# and the error that came back, rather than on any model output.
+
+PROMPT_CFG = {
+    "chat_model": "qwen2.5-coder:7b-instruct-q4_K_M",
+    "embed_model": "nomic-embed-text",
+    "ollama_url": "http://127.0.0.1:11434",
+}
+
+
+class StubGenerator:
+    """Enough of OllamaClient for `prompt` and `models`, recording every call."""
+
+    answer = "stub answer"
+    models: list[str] = ["qwen2.5-coder:7b-instruct-q4_K_M", "nomic-embed-text:latest"]
+    raises = None
+    last: dict | None = None
+
+    def __init__(self, url, keep_alive=None):
+        StubGenerator.last = {"url": url, "keep_alive": keep_alive}
+
+    def require_models(self, models):
+        # pylint: disable=unsupported-assignment-operation
+        assert StubGenerator.last is not None
+        StubGenerator.last["required"] = list(models)
+        if StubGenerator.raises is not None:
+            raise StubGenerator.raises
+
+    def generate(self, prompt, model, system=None, options=None, timeout=None):
+        # pylint: disable=unsupported-assignment-operation
+        assert StubGenerator.last is not None
+        StubGenerator.last["generate"] = {
+            "prompt": prompt, "model": model, "system": system,
+            "options": options, "timeout": timeout,
+        }
+        if StubGenerator.raises is not None:
+            raise StubGenerator.raises
+        return StubGenerator.answer
+
+    def list_models(self):
+        if StubGenerator.raises is not None:
+            raise StubGenerator.raises
+        return list(StubGenerator.models)
+
+
+@pytest.fixture
+def stub_generator(monkeypatch):
+    StubGenerator.raises = None
+    StubGenerator.last = None
+    StubGenerator.answer = "stub answer"
+    StubGenerator.models = ["qwen2.5-coder:7b-instruct-q4_K_M", "nomic-embed-text:latest"]
+    monkeypatch.setattr(ollama_client, "OllamaClient", StubGenerator)
+    monkeypatch.setattr(cli.localgpu_config, "load_config", lambda: dict(PROMPT_CFG))
+    return StubGenerator
+
+
+def _prompt_args(**over):
+    base = {"prompt": "hello", "model": None, "system": None, "temperature": None,
+            "num_predict": None, "timeout": 300.0,
+            "keep_alive": ollama_client.DEFAULT_KEEP_ALIVE, "json": False}
+    base.update(over)
+    return argparse.Namespace(**base)
+
+
+def test_prompt_sends_the_configured_model_and_returns_zero(stub_generator, capsys):
+    assert cli.cmd_prompt(_prompt_args()) == 0
+
+    sent = stub_generator.last["generate"]
+    assert sent["model"] == PROMPT_CFG["chat_model"]
+    assert sent["prompt"] == "hello"
+    assert stub_generator.last["url"] == PROMPT_CFG["ollama_url"]
+    assert "stub answer" in capsys.readouterr().out
+
+
+def test_prompt_does_not_take_the_shells_five_minute_lease(stub_generator):
+    """A one-shot that pins the model for 5m costs the next index run a reload."""
+    cli.cmd_prompt(_prompt_args())
+
+    assert stub_generator.last["keep_alive"] == "30s"
+    assert ollama_client.DEFAULT_KEEP_ALIVE == "30s"
+
+
+def test_prompt_labels_the_answer_with_the_model_on_stderr(stub_generator, capsys):
+    cli.cmd_prompt(_prompt_args())
+
+    captured = capsys.readouterr()
+    assert captured.out.strip() == "stub answer", "stdout is the answer alone, for pipes"
+    assert PROMPT_CFG["chat_model"] in captured.err
+    assert "ungrounded" in captured.err, "the missing retrieval is the caveat that matters"
+
+
+def test_prompt_model_override_is_the_one_checked_and_used(stub_generator):
+    cli.cmd_prompt(_prompt_args(model="llama3.2:3b"))
+
+    assert stub_generator.last["required"] == ["llama3.2:3b"]
+    assert stub_generator.last["generate"]["model"] == "llama3.2:3b"
+
+
+def test_prompt_passes_system_and_options_through(stub_generator):
+    cli.cmd_prompt(_prompt_args(system="be terse", temperature=0.1, num_predict=64))
+
+    sent = stub_generator.last["generate"]
+    assert sent["system"] == "be terse"
+    assert sent["options"] == {"temperature": 0.1, "num_predict": 64}
+
+
+def test_prompt_sends_no_options_block_when_none_were_asked_for(stub_generator):
+    """`options: {}` is not the same as no options - it overrides the modelfile."""
+    cli.cmd_prompt(_prompt_args())
+
+    assert stub_generator.last["generate"]["options"] is None
+
+
+def test_prompt_json_carries_the_model_and_says_it_is_ungrounded(stub_generator, capsys):
+    cli.cmd_prompt(_prompt_args(json=True))
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["model"] == PROMPT_CFG["chat_model"]
+    assert payload["response"] == "stub answer"
+    assert payload["grounded"] is False, "a consumer must not mistake this for /localgpu:ask"
+
+
+def test_prompt_missing_model_exits_naming_the_pull(stub_generator):
+    stub_generator.raises = ollama_client.ModelNotPulled(
+        "Ollama does not have the model 'x'.\nPull it with:  ollama pull x")
+
+    with pytest.raises(SystemExit) as excinfo:
+        cli.cmd_prompt(_prompt_args(model="x"))
+
+    assert "ollama pull x" in str(excinfo.value)
+
+
+def test_prompt_a_generate_failure_is_reported_not_swallowed(stub_generator, monkeypatch):
+    """The live failure this was written against: HTTP 500 out of /api/generate."""
+
+    class OnlyGenerateFails(StubGenerator):
+        def require_models(self, models):
+            pass
+
+        def generate(self, prompt, model, system=None, options=None, timeout=None):
+            raise ollama_client.OllamaError(
+                "Ollama returned HTTP 500 from /api/generate: CUDA error")
+
+    monkeypatch.setattr(ollama_client, "OllamaClient", OnlyGenerateFails)
+
+    with pytest.raises(SystemExit) as excinfo:
+        cli.cmd_prompt(_prompt_args())
+
+    assert "HTTP 500" in str(excinfo.value)
+
+
+def test_read_prompt_prefers_the_argument():
+    assert cli._read_prompt("from argv") == "from argv"
+
+
+def test_read_prompt_reads_stdin_on_a_dash(monkeypatch):
+    monkeypatch.setattr(cli.sys, "stdin", io.StringIO("from stdin"))
+
+    assert cli._read_prompt("-") == "from stdin"
+
+
+def test_read_prompt_reads_a_pipe_with_no_argument(monkeypatch):
+    monkeypatch.setattr(cli.sys, "stdin", io.StringIO("piped in"))
+
+    assert cli._read_prompt(None) == "piped in"
+
+
+def test_read_prompt_on_a_bare_terminal_says_what_to_do_instead_of_hanging(monkeypatch):
+    class Tty(io.StringIO):
+        def isatty(self):
+            return True
+
+    monkeypatch.setattr(cli.sys, "stdin", Tty(""))
+
+    with pytest.raises(SystemExit) as excinfo:
+        cli._read_prompt(None)
+
+    assert "no prompt" in str(excinfo.value)
+
+
+@pytest.mark.parametrize("empty", ["", "   ", "\n"])
+def test_read_prompt_rejects_an_empty_argument_the_same_way_as_an_empty_pipe(empty):
+    """`localgpu prompt ""` is the same nothing as an empty pipe, not a request.
+
+    Accepting it here while rejecting it on stdin sent one of the two straight
+    to /api/generate, paying a model load to answer nothing.
+    """
+    with pytest.raises(SystemExit) as excinfo:
+        cli._read_prompt(empty)
+
+    assert "empty" in str(excinfo.value)
+
+
+def test_read_prompt_rejects_an_empty_pipe(monkeypatch):
+    monkeypatch.setattr(cli.sys, "stdin", io.StringIO("   \n"))
+
+    with pytest.raises(SystemExit) as excinfo:
+        cli._read_prompt("-")
+
+    assert "empty" in str(excinfo.value)
+
+
+def test_models_marks_which_pulled_model_is_configured_for_what(stub_generator, capsys):
+    assert cli.cmd_models(argparse.Namespace(json=False)) == 0
+
+    out = capsys.readouterr().out
+    assert "chat_model" in out and "embed_model" in out
+
+
+def test_models_reports_a_configured_model_that_was_never_pulled(stub_generator, capsys):
+    stub_generator.models = ["nomic-embed-text:latest"]
+
+    cli.cmd_models(argparse.Namespace(json=False))
+
+    err = capsys.readouterr().err
+    assert PROMPT_CFG["chat_model"] in err
+    assert "ollama pull" in err, "naming the fix is the point of the warning"
+
+
+def test_models_json_lists_what_is_on_disk(stub_generator, capsys):
+    cli.cmd_models(argparse.Namespace(json=True))
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["models"] == stub_generator.models
+    assert payload["chat_model"] == PROMPT_CFG["chat_model"]
+
+
+def test_models_unreachable_ollama_exits_naming_the_fix(stub_generator):
+    stub_generator.raises = ollama_client.OllamaUnavailable(
+        "Cannot reach Ollama at http://127.0.0.1:11434 (refused).\nStart it with:  ollama serve")
+
+    with pytest.raises(SystemExit) as excinfo:
+        cli.cmd_models(argparse.Namespace(json=False))
+
+    assert "ollama serve" in str(excinfo.value)
+
+
+# -- prompt / models argument parsing ---------------------------------------
+
+
+def test_prompt_defaults():
+    args = cli.build_parser().parse_args(["prompt", "why is the sky blue"])
+
+    assert args.prompt == "why is the sky blue"
+    assert args.model is None
+    assert args.json is False
+    assert args.keep_alive == ollama_client.DEFAULT_KEEP_ALIVE
+    assert args.timeout == ollama_client.DEFAULT_GENERATE_TIMEOUT
+    assert args.func is cli.cmd_prompt
+
+
+def test_prompt_options_parse():
+    args = cli.build_parser().parse_args(
+        ["prompt", "-", "--model", "llama3.2:3b", "--system", "be terse",
+         "--temperature", "0.2", "--num-predict", "128", "--timeout", "45",
+         "--keep-alive", "0", "--json"])
+
+    assert (args.prompt, args.model, args.system) == ("-", "llama3.2:3b", "be terse")
+    assert (args.temperature, args.num_predict) == (0.2, 128)
+    assert (args.timeout, args.keep_alive, args.json) == (45.0, "0", True)
+
+
+def test_prompt_with_no_positional_parses_for_the_pipe_case():
+    args = cli.build_parser().parse_args(["prompt"])
+
+    assert args.prompt is None
+
+
+def test_models_defaults():
+    args = cli.build_parser().parse_args(["models"])
+
+    assert args.json is False
+    assert args.func is cli.cmd_models
+
+
+def test_an_unrecognized_flag_on_prompt_is_an_error():
+    """Only `shell` forwards leftovers; a typo here must not be sent as a prompt."""
+    with pytest.raises(SystemExit):
+        cli.parse_args(["prompt", "hi", "--not-a-real-flag"])
 # --- mcp-init -----------------------------------------------------------
 #
 # `mcp-init` writes a file into a repository and can update one that already

@@ -136,11 +136,19 @@ did not write it.
   when a guard fix lands, check the neighbouring case before closing it, because in the one run
   anyone has measured that is where the next defect was, every time.
 
-- **Put the check where the evidence is dropped.** `read_metrics` averages BLOCK+FIX per *row* and
-  returns that count under the key `tickets`, so one ticket reviewed twice reads as two and the
-  health signal recommends "cut ticket scope" on a 90-line docs diff. `cells[1]` — the ticket
-  column, filled in by every row — is never referenced. A correction written in prose beneath the
-  table fixed nothing, because the parser never reads prose.
+- **Put the check where the evidence is dropped.** `read_metrics` averaged BLOCK+FIX per *row* and
+  returned that row count under the key `tickets`, so one ticket reviewed twice read as two.
+  `cells[1]` — the ticket column, filled in by every row — was never referenced. A correction
+  written in prose beneath the table fixed nothing, because the parser never reads prose.
+
+  This entry previously said the miscount made the health signal recommend "cut ticket scope" on a
+  90-line docs diff. That is backwards, and worth keeping visible rather than quietly deleting: the
+  extra row is a **divisor**, so the bug *understates* the rate. On the real file that exposed it,
+  three rows carrying nine findings across two tickets read as 9/3 = 3.0 where the truth is
+  9/2 = 4.5 — the direction that hides a ticket-scope problem rather than inventing one. A wrong
+  claim about which way a metric errs sends the next reader hunting the opposite bug. Fixed in
+  `crew_state.py`'s `read_metrics`, which now groups by `cells[1]`; a blank cell gets a per-row
+  tuple key, so two unknown identities can never pool into one known ticket.
 
 - **A failing gate names the failure, not the cause.** `render.sh` exited 1 and printed six `FAIL`
   lines — correctly, so an exit-code check would have caught it. The trap was the next inference:
@@ -151,6 +159,13 @@ did not write it.
   distinction that decided what to fix ("the input is bad" versus "the tool could not run") was in
   neither the status nor the log. `render.sh` also printed a summary line and created
   its output directory while producing nothing, so check the artifact, not the summary.
+
+  Narrowed since: `render.sh` fails this way only when `MSYS_NO_PATHCONV=1` is set in the calling
+  environment, which is what stopped Git Bash rewriting the puppeteer config path into a form the
+  native `mmdc` could open. Without that variable the same command renders. So the reproduction
+  requires the variable, and a report of "render.sh is broken" that does not name the environment
+  it ran in is not yet a bug report. `render.sh` now converts that path with `cygpath` itself and
+  carries a regression check for it in `scripts/_test/render.sh`.
 
 - **Run the states; do not reason about them.** A guard suite reported 24 passed / 33 failed, and
   the cause was `MSYS_NO_PATHCONV=1` in the *runner's* environment mangling `/c/repos/...` into

@@ -1,4 +1,13 @@
-"""The `localgpu` command. Mainly: `localgpu shell`.
+"""The `localgpu` command: `shell`, `proxy`, `prompt`, `models`.
+
+`localgpu prompt` is the small one - a single question straight to Ollama's
+`/api/generate`, answer on stdout, nothing retrieved first. It is the developer
+and research path: try a model, draft something, get a throwaway second reading,
+pipe an answer into a script. Because nothing was retrieved, nothing can be
+checked against sources, so it is the wrong tool for a claim about this
+repository that will be acted on - `/localgpu:ask` retrieves excerpts and
+reports them beside the answer, and that is what makes it checkable.
+`localgpu models` says what is actually on disk to point `--model` at.
 
 `localgpu shell` launches a **separate** Claude Code session pointed at the
 local 7B, by starting :mod:`anthropic_proxy` on a loopback port and setting
@@ -21,6 +30,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 
 PLUGIN_ROOT = Path(__file__).resolve().parent.parent
@@ -180,6 +190,127 @@ def cmd_proxy(args: argparse.Namespace) -> int:
     return 0
 
 
+def _read_prompt(text: str | None) -> str:
+    """The prompt, from the argument or from stdin.
+
+    `-` means stdin explicitly; a missing positional means stdin only when
+    something is actually piped in. A bare `localgpu prompt` on a terminal is a
+    mistake, not a request to sit and read - saying so beats hanging with no
+    output while the user wonders whether the model is loading.
+    """
+    if text is not None and text != "-":
+        # An empty argument is the same nothing an empty pipe is, and it must
+        # be refused the same way. `localgpu prompt ""` used to reach
+        # /api/generate and bill a model load to answer nothing, while
+        # `printf " " | localgpu prompt -` was rejected two lines below - the
+        # same input treated as a mistake through one door and a request
+        # through the other.
+        if not text.strip():
+            raise SystemExit("localgpu: the prompt was empty.")
+        return text
+    if text is None and sys.stdin.isatty():
+        raise SystemExit(
+            "localgpu: no prompt. Pass one as an argument, pipe it in, or use `-` "
+            "to read stdin:\n"
+            '  localgpu prompt "explain this error"\n'
+            "  localgpu prompt - < question.txt"
+        )
+    body = sys.stdin.read()
+    if not body.strip():
+        raise SystemExit("localgpu: the prompt on stdin was empty.")
+    return body
+
+
+def cmd_prompt(args: argparse.Namespace) -> int:
+    """One question to a local model, with no retrieval in front of it.
+
+    This is the raw path, and the difference from `/localgpu:ask` is the whole
+    reason it exists: `ask` retrieves repository excerpts first and reports them
+    beside the answer, so a claim can be checked against what the model was
+    given. Here there is nothing to check against. That makes it the right tool
+    for exploring, drafting and throwaway research, and the wrong one for any
+    answer about this codebase that will be acted on.
+    """
+    cfg = localgpu_config.load_config()
+    model = args.model or cfg["chat_model"]
+    prompt = _read_prompt(args.prompt)
+
+    client = ollama_client.OllamaClient(cfg["ollama_url"], keep_alive=args.keep_alive)
+    try:
+        client.require_models([model])
+    except ollama_client.OllamaError as exc:
+        raise SystemExit(f"localgpu: {exc}") from exc
+
+    options: dict[str, object] = {}
+    if args.temperature is not None:
+        options["temperature"] = args.temperature
+    if args.num_predict is not None:
+        options["num_predict"] = args.num_predict
+
+    started = time.monotonic()
+    try:
+        answer = client.generate(
+            prompt,
+            model,
+            system=args.system,
+            options=options or None,
+            timeout=args.timeout,
+        )
+    except ollama_client.OllamaError as exc:
+        raise SystemExit(f"localgpu: {exc}") from exc
+    elapsed = time.monotonic() - started
+
+    if args.json:
+        print(json.dumps({
+            "model": model,
+            "ollama_url": cfg["ollama_url"],
+            "prompt": prompt,
+            "response": answer,
+            "elapsed_s": round(elapsed, 2),
+            "grounded": False,
+        }, indent=2))
+    else:
+        print(answer.rstrip())
+        # On stderr so a pipeline gets the answer alone, and a person still gets
+        # told which model produced it. An unlabelled local answer read later as
+        # a frontier one is the failure this line exists to prevent.
+        print(f"\n-- {model} (local, ungrounded, {elapsed:.1f}s)", file=sys.stderr)
+    return 0
+
+
+def cmd_models(args: argparse.Namespace) -> int:
+    """What this Ollama actually has, so `--model` is a choice and not a guess."""
+    cfg = localgpu_config.load_config()
+    client = ollama_client.OllamaClient(cfg["ollama_url"])
+    try:
+        names = client.list_models()
+    except ollama_client.OllamaError as exc:
+        raise SystemExit(f"localgpu: {exc}") from exc
+    if args.json:
+        print(json.dumps({"ollama_url": cfg["ollama_url"],
+                          "chat_model": cfg["chat_model"],
+                          "embed_model": cfg["embed_model"],
+                          "models": names}, indent=2))
+        return 0
+    if not names:
+        print(f"No models on {cfg['ollama_url']}. Pull one with:  ollama pull <name>")
+        return 0
+    configured = {cfg["chat_model"], cfg["embed_model"]}
+    bare = {n.split(":", 1)[0] for n in names}
+    for name in names:
+        marks = []
+        if name == cfg["chat_model"] or name.split(":", 1)[0] == cfg["chat_model"]:
+            marks.append("chat_model")
+        if name == cfg["embed_model"] or name.split(":", 1)[0] == cfg["embed_model"]:
+            marks.append("embed_model")
+        print(f"  {name}" + (f"   <- {', '.join(marks)}" if marks else ""))
+    # A configured model that is not on disk is the error every other command
+    # hits at the worst moment; report it here where it costs nothing.
+    for want in sorted(configured):
+        if want not in names and want not in bare:
+            print(f"\nConfigured but not pulled: {want}\n  ollama pull {want}",
+                  file=sys.stderr)
+    return 0
 SERVER_NAME = "localgpu"
 
 
@@ -345,6 +476,35 @@ def build_parser() -> argparse.ArgumentParser:
     proxy.add_argument("--keep-alive", default=anthropic_proxy.DEFAULT_KEEP_ALIVE)
     proxy.set_defaults(func=cmd_proxy)
 
+    prompt = sub.add_parser(
+        "prompt",
+        help="ask a local model one question directly, with no retrieval",
+        description="One question to Ollama's /api/generate and the answer on stdout. "
+                    "Nothing is retrieved first, so the answer cannot be checked against "
+                    "sources - use /localgpu:ask when it needs to be.",
+    )
+    prompt.add_argument("prompt", nargs="?",
+                        help="the prompt; `-` or omitted-with-a-pipe reads stdin")
+    prompt.add_argument("--model", help="override the configured chat_model")
+    prompt.add_argument("--system", help="system prompt")
+    prompt.add_argument("--temperature", type=float, default=None)
+    prompt.add_argument("--num-predict", type=int, default=None,
+                        help="cap the answer length in tokens")
+    prompt.add_argument("--timeout", type=float,
+                        default=ollama_client.DEFAULT_GENERATE_TIMEOUT,
+                        help="seconds to wait for the answer (default: %(default)g)")
+    # 30s, not the shell's 5m lease. A one-shot that pins 4.7 GB for five
+    # minutes costs the next index run a reload for a single answer.
+    prompt.add_argument("--keep-alive", default=ollama_client.DEFAULT_KEEP_ALIVE,
+                        help="how long Ollama holds the model afterwards "
+                             "(default: %(default)s)")
+    prompt.add_argument("--json", action="store_true",
+                        help="emit the answer with its model and timing as JSON")
+    prompt.set_defaults(func=cmd_prompt)
+
+    models = sub.add_parser("models", help="list the models this Ollama has pulled")
+    models.add_argument("--json", action="store_true")
+    models.set_defaults(func=cmd_models)
     mcp_init = sub.add_parser(
         "mcp-init",
         help="write <repo>/.mcp.json so Claude Code can reach the server",

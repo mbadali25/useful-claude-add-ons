@@ -166,7 +166,34 @@ class OllamaClient:
         if options:
             payload["options"] = options
         data = self._post("/api/generate", payload, timeout, model)
-        return str(data.get("response", ""))
+        # A 200 carrying no `response` key is a malformed answer, not an empty
+        # one, and the two must not collapse into the same value. Defaulting to
+        # "" printed a blank line as though the model had replied - the failure
+        # wearing the shape of a success. Ollama returns this on at least one
+        # real path: a model that loaded but could not run.
+        if "response" not in data:
+            raise OllamaError(
+                f"Ollama returned HTTP 200 from /api/generate using '{model}' with no "
+                f"'response' field (keys: {', '.join(sorted(data)) or 'none'}).\n"
+                "That is a malformed reply, not an empty one. Check `ollama ps` and the "
+                "server log; a model that loads but cannot run answers this way."
+            )
+        # The key being present is not the same as an answer being there. A
+        # `null`, a list or an object all satisfy the check above and then
+        # `str()` turns them into "None" or a Python repr, printed as though a
+        # model had said it - the same failure this guard was added to close,
+        # one rung further in. `""` stays valid: an empty string is a real
+        # answer the server chose to send.
+        answer = data["response"]
+        if not isinstance(answer, str):
+            raise OllamaError(
+                f"Ollama returned HTTP 200 from /api/generate using '{model}' with a "
+                f"'response' that is {type(answer).__name__}, not a string "
+                f"({answer!r}).\n"
+                "That is a malformed reply. Rendering it would print a Python repr as "
+                "though the model had said it."
+            )
+        return answer
 
     def list_models(self, timeout: float = DEFAULT_CONNECT_TIMEOUT) -> list[str]:
         """Model names the server already has. Raises the same errors as the rest."""
