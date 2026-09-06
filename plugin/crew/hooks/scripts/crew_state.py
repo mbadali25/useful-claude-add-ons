@@ -164,9 +164,13 @@ def read_metrics(root, window=METRICS_WINDOW):
     findings-per-ticket to match how pm_brief.py and crew-pm/SKILL.md already
     describe it ("BLOCK+FIX per ticket") -- a per-row rate would let extra
     review rounds on ONE ticket dilute the denominator and under-report how
-    bad that ticket's findings rate actually is. A blank ticket cell still
-    groups together as one ticket rather than being dropped, since the
-    BLOCK/FIX numbers it carries are real findings.
+    bad that ticket's findings rate actually is. A blank ticket cell counts as its own
+    ticket per row rather than pooling with every other blank one: the numbers
+    it carries are real findings and still count, but an unknown identity must
+    not become a shared one. Pooling them would merge unrelated malformed rows
+    into a single pseudo-ticket, shrinking the window and inflating that
+    entry -- the same unknown-collapsing-into-one-value bug this function
+    already had once.
 
     `window` bounds distinct tickets, not rows, and "last" means last
     REVIEWED -- a ticket is moved to the end of `by_ticket` every time a
@@ -187,7 +191,14 @@ def read_metrics(root, window=METRICS_WINDOW):
         block, fix = _leading_int(cells[3]), _leading_int(cells[4])
         if block is None or fix is None:
             continue
-        ticket = cells[1]
+        # A blank ticket cell is an unknown, not a shared identity. Grouping
+        # every such row under "" would merge unrelated malformed rows into one
+        # pseudo-ticket, which both shrinks the distinct-ticket window and
+        # inflates that one entry's findings - an unknown collapsing into a
+        # single safe-looking value, which is the bug this function already had
+        # once. Each blank row is its own ticket instead: its BLOCK/FIX numbers
+        # are real findings and still count, but they cannot pool.
+        ticket = cells[1] or f"\x00unlabelled:{len(by_ticket)}"
         total = by_ticket.pop(ticket, 0) + block + fix
         by_ticket[ticket] = total
 

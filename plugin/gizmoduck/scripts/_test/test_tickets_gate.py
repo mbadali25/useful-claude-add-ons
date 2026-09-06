@@ -20,6 +20,7 @@ Run: python -m pytest plugin/gizmoduck/scripts/_test/ -q
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -184,3 +185,64 @@ def test_the_default_is_the_safe_one(findings_file: Path):
     """No flag at all means preview. Stated as its own test because a default
     that flips is the whole failure this gate exists to prevent."""
     assert tickets(findings_file)["authorized"] is False
+
+# -- what the gate does NOT do ---------------------------------------------
+#
+# `--create` is an ordinary CLI switch. Nothing in argv can verify that a human
+# said yes, so this gate makes the write DELIBERATE, not AUTHORIZED: a caller
+# that decides to pass the flag gets the payload. What it removes is the
+# incidental write - the one that happens because a preview already carried a
+# fileable body and prose was the only thing saying "ask first".
+#
+# Authorization lives one layer up, in a permission rule on the `sdp_*` MCP
+# tools. That is machine configuration, not repository content, so no test here
+# can assert it. These two tests cover the part that IS in this repo: the
+# shipped command files must not pass `--create` in their preview step.
+
+
+def _command_text(name: str) -> str:
+    p = Path(__file__).resolve().parent.parent.parent / "commands" / f"{name}.md"
+    return p.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("command", ["scan", "tickets"])
+def test_the_first_shipped_tickets_invocation_omits_create(command: str):
+    """The prose is what the model actually follows, so it is part of the gate.
+
+    Both commands invoke `tickets` twice: once to preview, once after a yes. The
+    FIRST invocation must not carry the flag - a command whose preview step
+    passes --create files tickets on a run the user only asked to see. Asserted
+    against the invocation itself rather than any sentence about it, so a
+    rewording cannot silently retire the check.
+    """
+    # Only the command itself - a backticked span or a fenced block - never the
+    # prose around it. `scan.md` legitimately says "**without** `--create`" on
+    # the same line as its preview invocation, and a line-scoped match reads
+    # that sentence as the flag being passed.
+    text = _command_text(command)
+    invocations = [
+        span for span in re.findall(r"`([^`\n]*gizmoduck\.py tickets[^`\n]*)`", text)
+    ] + [
+        line.strip()
+        for block in re.findall(r"```[a-z]*\n(.*?)```", text, re.S)
+        for line in block.splitlines()
+        if "gizmoduck.py tickets" in line
+    ]
+
+    assert invocations, f"commands/{command}.md invokes gizmoduck.py tickets nowhere"
+    assert "--create" not in invocations[0], (
+        f"commands/{command}.md's FIRST tickets invocation passes --create, so its "
+        "preview step files real tickets"
+    )
+
+
+@pytest.mark.parametrize("command", ["scan", "tickets"])
+def test_the_shipped_command_asks_before_it_creates(command: str):
+    """A command that reached --create without a question would be a gate with
+    nobody behind it."""
+    text = _command_text(command).lower()
+
+    assert "ask" in text, f"commands/{command}.md never asks the user anything"
+    assert "yes" in text, (
+        f"commands/{command}.md does not condition --create on an explicit yes"
+    )

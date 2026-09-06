@@ -112,11 +112,18 @@ def test_metrics_window_orders_by_last_review_not_first(tmp_path):
     assert got["findings"] == 3
 
 
-def test_metrics_blank_ticket_cell_still_groups_as_one_ticket(tmp_path):
+def test_metrics_blank_ticket_cells_do_not_pool_into_one_ticket(tmp_path):
+    """A blank ticket cell is an unknown identity, not a shared one.
+
+    Pooling every blank row under "" would merge unrelated malformed rows into
+    a single pseudo-ticket: the distinct-ticket window shrinks and that one
+    entry's findings inflate. The findings themselves are real and must still
+    count - what must not happen is two unknowns becoming one known.
+    """
     root = crew_fixtures.make_repo(tmp_path, metrics=[("", 1, 1), ("", 2, 0)])
     got = crew_state.read_metrics(str(root))
-    assert got["tickets"] == 1
-    assert got["findings"] == 4
+    assert got["tickets"] == 2, "two rows of unknown identity are not one ticket"
+    assert got["findings"] == 4, "the findings themselves must still count"
 
 
 def test_metrics_window_keeps_only_the_last_n(tmp_path):

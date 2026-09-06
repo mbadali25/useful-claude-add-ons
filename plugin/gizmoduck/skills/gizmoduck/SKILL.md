@@ -86,13 +86,27 @@ Runs on Linux/WSL and Windows. On Linux call the CLI with `python3`; on Windows 
 
    Don't prompt per ticket — the one question was asked at the preview. Do **not**
    reimplement ticketing; use the org `infra-work-ticketing` skill / the SDP tools.
-   Print a created-vs-updated summary afterward. Medium/Low/Info never generate
-   tickets.
+   Print a created-vs-updated summary afterward.
+
+   **The `high` floor is a default, not a ceiling.** `--min-severity medium`
+   widens it and Mediums do become tickets. That is why `/gizmoduck:scan` floors
+   tickets at `high` explicitly rather than passing its `$2` through: `$2` is the
+   report severity, and widening a report to read about Mediums is not a request
+   to open a ticket for each one.
 
    **The de-dupe search is not the confirmation.** Searching for an open request
    decides *create versus note*; both of those write to ServiceDesk Plus. The only
    thing standing between a scan and a ticket the user did not ask for is the
    preview above, so never skip it because the search "will catch duplicates".
+
+   **What `--create` does not do.** It is an ordinary CLI switch, and nothing in
+   a command line can verify that a person said yes. So it makes the write
+   *deliberate* rather than *authorized*: a caller that decides to pass the flag
+   gets the payload. What it removes is the **incidental** write — the one that
+   happened because the preview already carried a fileable body and prose was
+   the only thing saying "ask first". Authorization is a permission rule on the
+   `sdp_*` tools, which is machine configuration and lives outside this
+   repository. Do not read the flag as consent you did not obtain.
 
 ## Notes
 - Severity: critical/high/medium/low/info map to Critical…Info. Reports itemise
