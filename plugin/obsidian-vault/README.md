@@ -86,9 +86,10 @@ docstring: env var and Obsidian's own registry apply only to the default
 vault; a named non-default vault is only ever what config says it is.
 
 **`vault-guard` is the one hook that can block**, and it ships a committed,
-sabotage-tested regression suite: `hooks/scripts/_test/run-tests.sh` (57
+sabotage-tested regression suite: `hooks/scripts/_test/run-tests.sh` (65
 assertions, must-block and must-allow, including a case proving the config
-toggles actually gate the checks).
+toggles actually gate the checks, and three that hold the defaults above to a
+config with no `guard` key at all).
 
 ## Commands
 
