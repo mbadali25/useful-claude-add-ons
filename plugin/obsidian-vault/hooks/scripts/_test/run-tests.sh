@@ -44,8 +44,10 @@ mkdir -p "$home_on/.claude/obsidian" "$home_off/.claude/obsidian" \
          "$home_default/.claude/obsidian"
 
 # Config: turn every toggle ON so the suite exercises the checks, mirroring a
-# vault whose CLAUDE.md declared all three rules - the defaults ship OFF, but
-# the guard's LOGIC must still be correct when a vault turns them on. Built via
+# vault whose CLAUDE.md declared all three rules. asciiOnly and requireFrontmatter
+# ship OFF; checkCanvas ships ON (vault_guard.py:243, `is not False`), so this
+# config overrides two defaults and restates the third. Either way the guard's
+# LOGIC must be correct when a vault turns them on. Built via
 # json.dumps (not a shell heredoc) so a Windows path's backslashes escape
 # correctly no matter what the path looks like.
 "$PY" - "$vault_win" "$home_on/.claude/obsidian/config.json" <<'PYEOF'
