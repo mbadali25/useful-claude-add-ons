@@ -90,14 +90,26 @@ tier grants them — see below:
 | `sharepoint-developer` | SharePoint work done as general web development, so permission inheritance, list schema and Graph throttling are learned in production | — |
 | `power-automate-specialist` | flows edited in the portal with no record of the change, and a trigger that was already live before anyone reviewed it | — |
 | `node-developer` | Node work where the async model, the module system or the dependency tree is the hard part, done by a generalist who reads it as ordinary JavaScript | — |
+| `php-pro` | PHP written against the newest release rather than the one `composer.json` allows, and framework conveniences that turn a missing row into a failed job | — |
+| `python-pro` | mutable defaults, widened `except` blocks, and blocking calls inside `async def` — the failures a suite that never exercises the path reports as green | — |
+| `dotnet-core-expert` | DI lifetime and EF Core tracking defects that appear only under concurrency, and `async void` swallowing the exception that explains them | — |
+| `dotnet-framework-4.8-expert` | legacy .NET changed as if it were .NET Core — the deadlock, the missing binding redirect, the `web.config` edit that recycles the pool | — |
+| `angular-architect` | subscriptions that outlive their component, and `OnPush` views that stop updating because an object was mutated rather than replaced | — |
+| `react-specialist` | effect dependency arrays that capture a stale value or refetch forever, and client-only code that breaks hydration | — |
+| `rust-engineer` | borrow-checker complaints silenced with `clone`, `RefCell` or `unsafe` instead of an ownership change, and blocking calls inside async tasks | — |
+| `sql-pro` | queries written for correctness and merged without a plan, and index changes whose lock duration nobody named | — |
+| `terraform-engineer` | a plan read for its summary line rather than for what it replaces, and state or secrets left where the next apply can lose them | — |
+| `network-engineer` | "it cannot connect" answered without naming which layer failed, and cutovers planned without the TTL or the return path | — |
+| `windows-infra-admin` | bulk directory changes made without a pre-change export, a `-WhatIf` run, or a rollback that a human can follow | — |
+| `qa-researcher` | claims about the outside world — a deprecated API, an EOL runtime, an advisory on a new dependency — answered from a model's memory instead of a live source | — |
 
 `pm` is not on the ladder. It is not sized in or out by `/crew:scale` — it is
 the thing doing the sizing.
 
 ### Domain specialists are justified by the stack, not by metrics
 
-The tier column is empty for the three specialists on purpose, and it is the
-only part of this file that overrides the evidence bar above.
+The tier column is empty for every specialist on purpose, and it is the only
+part of this file that overrides the evidence bar above.
 
 Every ladder role closes a defect class **any** repo can have, which is what
 makes "show me the pattern in `.crew/metrics.md`" the right question for it.
@@ -114,9 +126,27 @@ So the bar for a specialist is the same shape as `developer`'s — a question,
 not a metric: **does this repo's work actually run on that platform?** Answer
 it from what is in the repo, out loud, and name the file that says so: a
 `package.json` with a server entry point, an `.sppkg` or an SPFx
-`config/package-solution.json`, an exported flow definition or a solution zip.
-A specialist onboarded because someone expects to do that work *later* costs a
-context load per dispatch decision and closes nothing.
+`config/package-solution.json`, an exported flow definition or a solution zip,
+a `composer.json`, a `Cargo.toml`, a `*.tf`, an `angular.json`. Each agent file
+names the one it expects. A specialist onboarded because someone expects to do
+that work *later* costs a context load per dispatch decision and closes
+nothing.
+
+**`qa-researcher` is the one whose evidence is not a stack.** What it needs
+present is the Perplexity MCP server, because every finding it makes is a
+fetched source rather than a read of the diff. Confirm the server is configured
+on this machine before onboarding it, and say plainly that it complements a
+code reviewer rather than replacing one — a change reviewed only by it has not
+been reviewed.
+
+**Three specialists sit next to a ladder role and do not replace it.**
+`sql-pro` writes the query `dba` reviews; `terraform-engineer` writes the HCL
+whose topology `infrastructure-architect` reviews; `network-engineer` owns the
+packet path where `infrastructure-architect` owns AWS account and VPC
+structure. Where both are on the crew, the specialist's output goes to the
+ladder role — never the reverse, and never the same agent doing both. Where the
+ladder role is not on the crew, say so when you confirm, because the review
+half is then missing.
 
 Onboarding one changes `roles` and does **not** change `tier` — there is no
 rung to recompute, and moving the tier because a specialist joined would tell

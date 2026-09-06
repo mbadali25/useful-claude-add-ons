@@ -113,10 +113,12 @@ against, so you can tell how stale it is. Neither changes what runs.
 
 ### `agents` can name any installed subagent
 
-Crew ships eleven roles. A machine usually has many more — domain specialists
-from other marketplaces, and whatever the user wrote themselves. A rule may name
-any of them, and the point is that a path match dispatches the right expert
-*from evidence* instead of when somebody happens to remember it exists:
+Crew ships the roles in `ROLE_TIERS` and `SPECIALIST_ROLES` — read them there
+rather than trusting a count written down here, which is wrong one release
+after it is written. A machine usually has more: agents from other
+marketplaces, and whatever the user wrote themselves. A rule may name any of
+them, and the point is that a path match dispatches the right expert *from
+evidence* instead of when somebody happens to remember it exists:
 
 ```json
 { "paths": ["**/*.ps1", "**/*.psm1"],
@@ -132,6 +134,14 @@ Resolution order for a bare name: crew's own role first (`security` →
 `crew:security`), then any other installed agent of that name. Namespace it
 (`crew:security`, `voltagent:security-auditor`) when both exist and you mean the
 other one.
+
+**That order is why a crew release can change what an existing rule
+dispatches.** 0.16.23 added twelve specialists under names that also exist in
+other collections — `php-pro`, `python-pro`, `react-specialist`,
+`terraform-engineer`, `network-engineer` and the rest. A rule that named one of
+those bare, meaning the one from another marketplace, now resolves to crew's.
+Nothing errors, and the finding style simply changes. Namespace the name if you
+meant the other agent.
 
 **A named agent that is not installed is a reported gap, never a silent skip.**
 This is the whole risk of the feature: `.crew/verify.json` is committed and

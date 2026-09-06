@@ -1,12 +1,18 @@
-"""The role ladder has one definition in code and two descriptions in prose.
+"""The role ladder has one definition in code and three descriptions in prose.
 
 `crew_state.ROLE_TIERS` is what `/crew:upgrade` computes a tier from.
-`skills/crew-scaling/SKILL.md` and `skills/crew-pm/onboarding.md` are what a
-human reads. Neither markdown table is parsed at runtime -- doing that would
-make a heading in a skill file decide what an upgrade writes -- so a test is
-the only thing keeping the three honest. A row added to one table and not the
+`skills/crew-scaling/SKILL.md`, `skills/crew-pm/onboarding.md` and `README.md`
+are what a human reads. No markdown table is parsed at runtime -- doing that
+would make a heading in a skill file decide what an upgrade writes -- so a test
+is the only thing keeping the four honest. A row added to one table and not the
 dict (or the reverse) fails here rather than shipping as a `/crew:scale` that
 proposes a role no upgrade recognises.
+
+`SPECIALIST_ROLES` gets the same treatment, in both directions and one more
+place: the set against onboarding.md's and README's tables, and every
+`agents/*.md` against the set. That last direction is the one nothing used to
+check -- a specialist can ship as a file nobody registered, and the only
+symptom is `/crew:pm onboard <name>` calling it unrecognised forever.
 
 The third thing checked here is that every ladder role has an agent definition
 behind it: a name in `config.json.roles` with no `agents/<role>.md` dispatches
@@ -22,6 +28,7 @@ _PLUGIN = os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir)
 _SCALING = os.path.join(_PLUGIN, "skills", "crew-scaling", "SKILL.md")
 _ONBOARDING = os.path.join(_PLUGIN, "skills", "crew-pm", "onboarding.md")
 _AGENTS = os.path.join(_PLUGIN, "agents")
+_README = os.path.join(_PLUGIN, "README.md")
 
 
 def _read(path):
@@ -152,6 +159,85 @@ def test_a_specialist_is_a_known_role_even_though_it_has_no_tier():
     for name in crew_state.ROLE_TIERS:
         assert crew_state.known_role(name) is True, name
     assert crew_state.known_role("wharrgarbl") is False
+
+
+def _onboarding_specialists():
+    """`| `role` | closes | — |` rows from the specialist table.
+
+    The em dash in the tier column is what separates these rows from the
+    ladder table above, and it is deliberately matched rather than skipped:
+    a specialist row that acquired a number would then fail BOTH tables
+    instead of silently moving between them. The name pattern allows digits
+    and dots because `dotnet-framework-4.8-expert` has both.
+    """
+    return set(re.findall(
+        r"^\|\s*`([a-z0-9.-]+)`\s*\|[^|]*\|\s*(?:—|-)\s*\|\s*$",
+        _read(_ONBOARDING), re.MULTILINE))
+
+
+def test_onboarding_specialist_table_matches_the_code_set():
+    """The other half of the ladder drift check, for the roles with no tier.
+
+    Nothing in the runtime parses this table, so without this a specialist
+    could ship registered in code and undocumented -- or documented and
+    unregistered, which is worse: `/crew:pm onboard <role>` then reports a
+    name the README told the user to use as one crew does not recognise.
+    """
+    assert _onboarding_specialists() == set(crew_state.SPECIALIST_ROLES)
+
+
+def test_every_agent_definition_is_a_role_crew_knows():
+    """The file -> code direction. `test_every_specialist_has_an_agent_definition`
+    checks the reverse and cannot see this one: an `agents/<name>.md` that was
+    never added to `SPECIALIST_ROLES` dispatches nothing, and the only symptom
+    is `/crew:pm onboard <name>` calling it unrecognised forever.
+
+    `pm` is the one deliberate exception -- it is outside the ladder because it
+    is the thing doing the sizing, not because it was forgotten.
+    """
+    outside_the_ladder = {"pm"}
+    for entry in sorted(os.listdir(_AGENTS)):
+        if not entry.endswith(".md"):
+            continue
+        name = entry[:-len(".md")]
+        if name in outside_the_ladder:
+            continue
+        assert crew_state.known_role(name) is True, (
+            f"agents/{entry} is not in ROLE_TIERS or SPECIALIST_ROLES, so no "
+            f"repo can onboard it and nothing dispatches it")
+
+
+def _readme_roster():
+    """`| `role` | tools | model | tier | what it closes |` rows from the README.
+
+    Returns (ladder, specialists). The tier cell is what sorts them: a number
+    is a ladder rung, an em dash is a role no tier grants. `pm` carries the
+    dash too and is removed by the caller -- it is off the ladder because it
+    is the thing doing the sizing, which is a third case, not a specialist.
+    """
+    ladder, specialists = {}, set()
+    for name, tier in re.findall(
+            r"^\|\s*`([a-z0-9.-]+)`\s*\|[^|]*\|[^|]*\|\s*(—|-|\d+)\s*\|",
+            _read(_README), re.MULTILINE):
+        if tier.isdigit():
+            ladder[name] = int(tier)
+        else:
+            specialists.add(name)
+    return ladder, specialists
+
+
+def test_the_readme_roster_table_matches_the_code():
+    """The third copy of the roster, and the one a user reads first.
+
+    `onboarding.md` is checked above; this table is what someone installing
+    the plugin sees, and it drifts the same way. Both halves in one test
+    because a row moving between them -- a specialist that acquired a tier --
+    is the failure that leaves each half individually plausible.
+    """
+    ladder, specialists = _readme_roster()
+    assert ladder == crew_state.ROLE_TIERS
+    assert specialists - {"pm"} == set(crew_state.SPECIALIST_ROLES)
+    assert "pm" in specialists, "the README stopped listing pm at all"
 
 
 def test_a_specialist_contributes_no_tier():

@@ -139,14 +139,15 @@ yes/no. Only on yes: add the role to `.crew/config.json` -> `roles` and
 recompute `tier` from `crew-scaling`'s tier table.
 
 **Domain specialists take the same command and a different justification.**
-`sharepoint-developer`, `power-automate-specialist` and `node-developer` are
-real roles with real agent definitions and no tier — no amount of scaling ever
-grants one, because "this repo does SharePoint" is a fact about a checkout
-rather than a defect class every repo can have. For these, the evidence is the
-repo's own stack rather than `.crew/metrics.md`: name the file that proves it
-(a `package.json` with a server entry point, an SPFx
-`config/package-solution.json`, an exported flow definition) and say so before
-asking. On yes, add it to `roles` and **leave `tier` alone** — there is no rung
+The specialists are real roles with real agent definitions and no tier — no
+amount of scaling ever grants one, because "this repo does SharePoint" is a
+fact about a checkout rather than a defect class every repo can have.
+`crew_state.SPECIALIST_ROLES` is the list, and onboarding.md's specialist table
+is the readable copy of it; do not enumerate them here, because a list in two
+places drifts and this one is not the one a test checks. For these, the
+evidence is the repo's own stack rather than `.crew/metrics.md`: name the file
+that proves it — the agent's own file says which one it expects — and say so
+before asking. On yes, add it to `roles` and **leave `tier` alone** — there is no rung
 to recompute, and a tier that moved would tell `/crew:scale` the crew had grown
 when it has only specialised. See onboarding.md's "Domain specialists are
 justified by the stack, not by metrics".

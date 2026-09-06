@@ -335,7 +335,7 @@ both read:
 crew                    - Virtual dev team: 11 agents, 21 commands, safety hooks
 ```
 
-Actual on disk after the 0.16.10 merge: **17 agents, 24 commands.** The two
+Actual on disk after the 0.16.23 merge: **29 agents, 24 commands.** The two
 scripts agree with each other, so the matched-pair rule is satisfied — they are
 consistently wrong, which is why no check catches it. `check-marketplace.py`
 compares the *menu keys* between the two scripts, not the descriptive text, and
@@ -591,7 +591,20 @@ Found while re-anchoring the diagrams after PR #69, 2026-09-05. Anchor
 `3167721f`. Measured, not inferred: both the failing and the passing
 invocations were run.
 
-## `crew_state.py` is 3283 lines and should be split
+## `crew_state.py` is 3283 lines and should be split — CLOSED 2026-09-06
+
+**Done in crew 0.16.22** (PR #76, `ac93221d`). Split three ways:
+`crew_state.py` 3300 -> 2293 lines, the endpoint ledger into
+`crew_endpoints.py`, and the three shared readers into `crew_common.py`.
+`max-module-lines` was not raised. Both hazards named below were real and were
+handled: the codemap citations were re-anchored, and every `sabotage.py` anchor
+was re-verified as matching exactly once in the file its mutation names. A
+third hazard the entry did not predict turned up and is worth carrying forward
+— a re-export is a second binding, so `monkeypatch.setattr(crew_state, "<moved
+name>")` now succeeds and rebinds a name nothing reads;
+`tests/test_module_split.py` is the guard for it.
+
+The original entry, kept because its reasoning is what made the split safe:
 
 It went 2154 -> 3283 on the endpoint-ledger branch, a 52% increase in one
 module. `.pylintrc`'s `max-module-lines` was raised 2400 -> 3300 to let CI pass,
@@ -620,3 +633,37 @@ than being discovered halfway:
   is full of.
 
 Do not raise `max-module-lines` a third time.
+
+## Perplexity is an agent, not a `qa.provider` — the routing half is not done
+
+Opened 2026-09-06 with crew 0.16.23, which added `crew:qa-researcher`
+(`plugin/crew/agents/qa-researcher.md`): a domain specialist holding the
+`mcp__perplexity__*` tools that checks what a diff assumes about the outside
+world against live sources. That half shipped and is usable today.
+
+What did not ship is Perplexity as a selectable reviewer. `qa.provider` and
+`qa.roles.*` still resolve to the same set they did before
+(`plugin/crew/hooks/scripts/crew_config.py`), so `/crew:review`'s routing, the
+fallback chain and the self-review family guard are untouched. That was
+deliberate — the guard bars a reviewer whose family matches the author's, and
+Perplexity's family, fallback behaviour and what "the model that reviewed this"
+even means for a web-grounded answer all need deciding before a name is added
+to that table. `resolve_role` accepting any provider name (the open entry above)
+is the reason a half-answer here would fail open rather than loudly.
+
+Three questions to settle before writing any code:
+
+- **What family does it report?** A wrong answer either bars a reviewer that is
+  genuinely independent, or clears one that is not. "Could not tell" has to
+  survive into every row derived from it.
+- **What does it review?** It is strong on "is this deprecated / is there an
+  advisory" and weak at reading a diff's logic. A `qa.provider` slot implies the
+  second, which is the thing it is worst at.
+- **What happens when the MCP server is absent?** The agent stops and says so.
+  A provider entry would need the same, and `qa.fallback` is the existing
+  mechanism — but a fallback that silently produces a different kind of review
+  is not the same check.
+
+Until then, the honest description is the one in crew's README section 12b:
+Perplexity is an opt-in second pass alongside the code review, not a reviewer
+crew can route to.
