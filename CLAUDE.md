@@ -58,9 +58,12 @@ one, which meant the map lived on one machine and reached nobody who cloned.
 
 - **`.crew/codemap/`** — the prose map: one file per subsystem, every claim marked DERIVED (with a
   `path:line` to re-check) or JUDGEMENT, each carrying an `anchor:` commit. `INDEX.md` is the table
-  of contents. Refresh with `/crew:onboard --refresh <subsystem>`; **anchor with `git rev-parse
-  --short=7`** — `crew_state.py` compares at 7 while the regex accepts 7-40, so an 8-char anchor
-  parses fine and then never matches.
+  of contents. Refresh with `/crew:onboard --refresh <subsystem>`. Anchor length does not matter:
+  `_ANCHOR_RE` accepts 7-40 and `crew_state.py:421` compares `found.group(1)[:7] != head[:7]`,
+  truncating **both** sides, so 8 and 40-char anchors match exactly as well as 7. (This line
+  previously warned that an 8-char anchor "parses fine and then never matches". It was wrong,
+  and wrong in the expensive direction — it sends you rewriting correct anchors and distrusting
+  working ones. Corrected 2026-09-05 by reading the comparison.)
 - **`graphify-out/graph.json`** — the mechanical graph. Refresh with `graphify . --no-viz
   --code-only`; a post-commit hook does it automatically.
 
@@ -97,3 +100,62 @@ Decisions in `docs/adr/`; the rest of `.crew/` is machine-local and stays ignore
   Repair with `git checkout -- <path>`, then confirm the same way.
 
 Skills follow `Skill-Authoring-Standard.md`; changes follow `Skill-Pipeline.md`.
+
+## Lessons - each one cost real time here, more than once
+
+Recovered 2026-09-05. These existed only as an uncommitted local edit that a CLAUDE.md rewrite
+overwrote, so they survived in nothing tracked and were then cited twice, at two other sessions, as
+this file's policy — while living in no commit at all. Every one below carries the evidence that
+earned it, precisely so nobody has to take it on faith the way those citations asked people to.
+
+- **The recurring bug is an unknown collapsing into the safe-looking value.** Not a wrong answer —
+  a *missing* answer wearing the label of a check that happened. `crew_config.py --models` derives
+  "author family" from config describing the NEXT run, and on a Claude-authored diff barred Codex,
+  the only independent reviewer, while clearing Claude. It declares that uncertainty once in prose
+  and then prints `BARRED` / `ELIGIBLE` with no caveat on any row drawn from it. Where a probe can
+  fail, "could not tell" has to be its own value that survives into every line derived from it, or
+  the guard fails open while looking like it checked.
+
+- **A guard is usually wrong again in the fix for the last time it was wrong.** Seven consecutive
+  review rounds on `vault_guard.py`, each fix right about the case it aimed at and one rung short
+  of its neighbour: frontmatter, then ASCII, then the three config defaults, then the comment
+  justifying the interpreter stand-down, then a count corrected in one of the two places that
+  stated it. Fixes to a guard need *more* adversarial reading than the original, not less.
+
+- **Put the check where the evidence is dropped.** `read_metrics` averages BLOCK+FIX per *row* and
+  returns that count under the key `tickets`, so one ticket reviewed twice reads as two and the
+  health signal recommends "cut ticket scope" on a 90-line docs diff. `cells[1]` — the ticket
+  column, filled in by every row — is never referenced. A correction written in prose beneath the
+  table fixed nothing, because the parser never reads prose.
+
+- **Judge every gate by exit code, and read what it actually printed.** `render.sh` prints a
+  summary line and creates its output directory while exiting 1 and rendering nothing; its six
+  `FAIL` lines were a `/tmp` path a Windows `mmdc` cannot open, not broken Mermaid. An
+  exit-code-only check would have passed it; a log-only read would have sent someone editing
+  correct diagrams.
+
+- **Run the states; do not reason about them.** A guard suite reported 24 passed / 33 failed, and
+  the cause was `MSYS_NO_PATHCONV=1` in the *runner's* environment mangling `/c/repos/...` into
+  `C:\c\repos\...`. Settled tree, same commit: 65/0. Check what you changed about the measurement
+  before reporting a regression.
+
+- **Attach the ref and the layer to every measurement.** "The suite passes 65/0 on main" was false
+  — the shared worktree was on another session's branch and `main` ran 57. Two agents disagreed
+  about `dev.provider` for an hour because one read `.crew/config.json` and the other
+  `~/.claude/crew/config.json`, and neither named which. A number without its ref can only be
+  believed, not checked.
+
+- **Check `ListAgents` before assuming a diff, a branch, or a dirty tree is yours.** Three sessions
+  worked this repo in one night; the checkout was switched under a running measurement, and commits
+  appeared on `main` from elsewhere mid-task.
+
+- **Write anchors repo-relative.** Write `plugin/localgpu/mcp/config.py:99`, never a bare
+  `config.py` with a line number after it. The bare form resolves by eye and cannot be pasted into
+  `git diff --name-only <anchor>..HEAD -- <paths>`, which is the entire re-verification mechanism.
+  60 were in that shape — 30 in the codemap, 30 more inside the diagrams. The bad form is described
+  rather than shown here on purpose: a checker walking these citations cannot tell a counter-example
+  from a broken one, and would report this section as containing an unresolvable anchor forever.
+
+- **A self-referential count changes itself.** Recording "87 anchors" in a note took the total to
+  88, and the commit correcting the figure took it to 89. State the invariant and how to
+  re-measure instead; a number wrong by one is worse than no number, because it looks measured.
