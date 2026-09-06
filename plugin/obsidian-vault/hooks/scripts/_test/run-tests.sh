@@ -39,7 +39,9 @@ mkdir -p "$vault/wiki/concepts" "$vault/wiki/templates" "$vault/wiki/canvases" "
 
 home_on="$work/home"
 home_off="$work/home-off"
-mkdir -p "$home_on/.claude/obsidian" "$home_off/.claude/obsidian"
+home_default="$work/home-default"
+mkdir -p "$home_on/.claude/obsidian" "$home_off/.claude/obsidian" \
+         "$home_default/.claude/obsidian"
 
 # Config: turn every toggle ON so the suite exercises the checks, mirroring a
 # vault whose CLAUDE.md declared all three rules - the defaults ship OFF, but
@@ -59,6 +61,19 @@ vault, out = sys.argv[1], sys.argv[2]
 json.dump({"vaultPath": vault, "guard": {"asciiOnly": False, "requireFrontmatter": False,
                                           "checkCanvas": False}},
           open(out, "w", encoding="utf-8"))
+PYEOF
+
+# A third config carrying vaultPath and NO "guard" key at all - the shape a
+# fresh install has before /obsidian-vault:init writes anything. The two above
+# set every toggle explicitly, so neither can tell a DEFAULT apart from an
+# override, and the defaults are stated as a promise in six places (the guard's
+# own docstring, PLUGINS.md, plugin/README.md, this plugin's README, the root
+# README and both manifest descriptions). This config is what the DEFAULTS
+# section below holds them to.
+"$PY" - "$vault_win" "$home_default/.claude/obsidian/config.json" <<'PYEOF'
+import json, sys
+vault, out = sys.argv[1], sys.argv[2]
+json.dump({"vaultPath": vault}, open(out, "w", encoding="utf-8"))
 PYEOF
 
 # Writes the note/canvas to disk for real (the guard reads file content from
@@ -134,6 +149,7 @@ check_stderr_empty() {
 
 home_on_win="$(winpath "$home_on")"
 home_off_win="$(winpath "$home_off")"
+home_default_win="$(winpath "$home_default")"
 today="$(date +%F)"
 
 echo "== vault_guard.py: must BLOCK (exit 2) =="
@@ -370,6 +386,67 @@ echo "== vault_guard.py: config-off means silent (sabotage: prove the toggle mat
 
 f=$(write_and_payload "wiki/concepts/no-frontmatter-2.md" "Still no frontmatter block.")
 check "all toggles off: the same broken note is allowed" 0 "$(run_guard "$f" "$home_off_win")"
+
+echo "== vault_guard.py: the DEFAULTS, under a config with no 'guard' key =="
+
+# Codex round 7: every case above runs under a config that writes all three
+# toggles explicitly, so flipping any ONE default in main() - checkCanvas to
+# OFF, requireFrontmatter to ON, asciiOnly to ON - passed all 57 of them. The
+# defaults are a stated promise in six places; nothing shipped could tell that
+# promise from a lie. These run under $home_default, whose config has no
+# "guard" key at all, and each pins exactly one default.
+
+f=$(write_and_payload "wiki/canvases/default-broken.canvas" "{not valid json")
+check "default config: checkCanvas defaults ON, so a malformed canvas blocks" 2 \
+  "$(run_guard "$f" "$home_default_win")"
+check_stderr_has "and it is the canvas parse failure that is reported" \
+  "DOES NOT PARSE" "$(guard_stderr "$f" "$home_default_win")"
+
+# A basename that is NOT in FRONTMATTER_EXEMPT_NAMES, or the exemption carries
+# this case and a requireFrontmatter default flipped ON stays green.
+f=$(write_and_payload "wiki/concepts/plain-note.md" "Just prose, no frontmatter block.")
+check "default config: requireFrontmatter defaults OFF, so a bare note is allowed" 0 \
+  "$(run_guard "$f" "$home_default_win")"
+check_stderr_empty "and the bare note reports nothing at all" \
+  "$(guard_stderr "$f" "$home_default_win")"
+
+# Frontmatter that satisfies the whole contract - required keys, title equal to
+# the filename stem, today's updated date - so the em dash is the ONLY thing
+# wrong with this note. Without that, a requireFrontmatter default flipped ON
+# blocks it for a frontmatter reason and the asciiOnly default stays unpinned.
+default_ascii="---
+type: concept
+title: \"default-em-dash\"
+created: 2026-08-20
+updated: $today
+status: seed
+tags:
+  - concept
+---
+Body has an em dash - right here: EMDASH"
+default_ascii="${default_ascii/EMDASH/$'\xe2\x80\x94'}"
+f=$(write_and_payload "wiki/concepts/default-em-dash.md" "$default_ascii")
+check "default config: asciiOnly defaults OFF, so a non-ASCII note is allowed" 0 \
+  "$(run_guard "$f" "$home_default_win")"
+check_stderr_empty "and the non-ASCII note reports nothing at all" \
+  "$(guard_stderr "$f" "$home_default_win")"
+
+echo "== vault_guard.py: notesPrefix scopes the note contract =="
+
+# Every frontmatter case above sits under "wiki/", which is exactly what
+# notesPrefix is set to in the ON config, so none of them discriminates on it.
+# Codex round 7: deleting the scoping check in check_note outright - the guard
+# then demands the six-key contract of every .md in the vault, including
+# scratch files, attachments and anything a non-note tool wrote - passed all 57
+# cases. This file is inside the vault and outside notesPrefix; its basename is
+# not frontmatter-exempt, it is not under templates/, and it is pure ASCII, so
+# the note contract is the only rule that could fire here and it must not.
+f=$(write_and_payload "attachments/stray-note.md" \
+  "A scratch file outside notesPrefix. No frontmatter, by design.")
+check "a note outside notesPrefix is not held to the frontmatter contract" 0 \
+  "$(run_guard "$f" "$home_on_win")"
+check_stderr_empty "and the out-of-prefix note reports nothing at all" \
+  "$(guard_stderr "$f" "$home_on_win")"
 
 echo "== python suites (own temp HOME, no live Obsidian, no sockets) =="
 
