@@ -1,11 +1,15 @@
-anchor: useful-claude-add-ons@62b1c7a
+anchor: useful-claude-add-ons@b56d41f
 
 # crew
 
 The `crew` plugin: a virtual dev team of context-isolated agents, slash
 commands, bundled skills, and deterministic hooks. Registered in
 `.claude-plugin/marketplace.json` (name `crew`, source `./plugin/crew`) at
-version `0.16.10`, matching `plugin/crew/.claude-plugin/plugin.json:2-3`.
+version `0.16.12`, matching `plugin/crew/.claude-plugin/plugin.json:2-3`.
+(Was `0.16.10` at the previous anchor; `0.16.11` bumped for the pylint and jq
+CI fixes, `0.16.12` for the scrub rewrite described below. Both sites move
+together — `check_versions` compares "has the directory changed since the
+version was set", which `_verify/smoke.sh` does not run.)
 
 ## Inventory — and a stale description found while checking it
 
@@ -103,6 +107,24 @@ used to resolve Python with `command -v python3 || command -v python`,
 skipping the `py` launcher and exiting 0 with nothing on stderr when neither
 resolved — fixed in `0131d0f0` to use the shared `crew_py()` in `_common.sh`
 and to print to stderr on failure instead of failing silently.
+
+**DERIVED (`run-tests.sh:74-135`, verified at `b56d41f`): that PATH scrub was
+fixed twice more after `0bf0c2f3`, and the reason is worth carrying — CI was
+red for both.** It compared `PATH` entries as *strings*, so on a merged-`/usr`
+Linux — every GitHub runner — dropping the literal `/usr/bin` left `/bin`
+behind pointing at the same directory, jq stayed reachable, and the suite
+FATAL'd rather than run. Fixed by resolving each entry with `cd … && pwd -P`
+before comparing. That exposed the real problem: the scrub removed jq's whole
+*directory*, because `PATH` has directory granularity while the thing being
+hidden is one file — and on Linux that directory is `/usr/bin`, holding
+`python3` and `sh`, the interpreter the no-jq fallback runs on. It now
+**substitutes** rather than subtracts: mirrors the directory into a temp dir as
+symlinks minus every spelling of jq (`jq`, `jq.exe`, `jq.bat`, …; the bare name
+alone was not enough on Windows, where the binary is `jq.exe` plus a chocolatey
+`jq.bat` shim), and puts the mirror at the same `PATH` position. The mirror
+proves itself — if `command -v jq` still resolves under it the suite FATALs and
+names the cause, because a scrub that silently does nothing is the exact false
+green this section exists to prevent.
 
 **Known open issue, not fixed, recorded in `TODO.md` (repo root) rather than
 here:** `crew_py()` (`plugin/crew/hooks/scripts/_common.sh:38-43`) returns

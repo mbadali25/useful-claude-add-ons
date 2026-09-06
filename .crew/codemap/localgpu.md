@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@62b1c7a
+anchor: useful-claude-add-ons@b56d41f
 
 # localgpu
 
@@ -219,3 +219,29 @@ process.
 **Verdict: the "same six steps, same order, same flag names" claim in both
 headers is accurate.** The one asymmetry above is a justified simplification
 on the Windows side, not evidence the pair has drifted apart.
+## Entry points
+
+- `plugin/localgpu/mcp/server.py:253` — `main()`, which calls `mcp.run("stdio")` at :254. Claude Code spawns this as a stdio child using the venv interpreter named in the repo's generated `.mcp.json`
+- `plugin/localgpu/mcp/server.py:73` — `search_code`, MCP tool
+- `plugin/localgpu/mcp/server.py:157` — `index_status`, MCP tool
+- `plugin/localgpu/mcp/server.py:187` — `index_refresh`, MCP tool
+- `plugin/localgpu/cli/localgpu_cli.py:247` — `main()`, the `localgpu` console script declared at `plugin/localgpu/pyproject.toml:16`
+- `plugin/localgpu/cli/localgpu_cli.py:100` — `cmd_shell`, starts the proxy on a background thread in THIS process and launches a child Claude Code against it
+- `plugin/localgpu/cli/localgpu_cli.py:146` — `cmd_proxy`, the same proxy in the foreground with no child session
+- `plugin/localgpu/bootstrap.sh` and `plugin/localgpu/bootstrap.ps1` — the install entry point, a matched pair
+
+## Owns data
+
+- `vectors.f16` — rows x dim little-endian float16, memmapped, via `plugin/localgpu/mcp/store.py:254`
+- `meta.sqlite` — one row per chunk (path, line span, file sha256), via `plugin/localgpu/mcp/store.py:255`
+- `refresh.lock` — the cross-process refresh lock, via `plugin/localgpu/mcp/store.py:149`
+- `manifest.json` — records `embed_model` and `dim`; the record `check_embed_model` reads on every later call, written by `plugin/localgpu/mcp/indexer.py`'s `refresh()`
+- all four live under `$LOCALGPU_HOME/index/`, resolved by `plugin/localgpu/mcp/config.py`
+
+## Calls out to
+
+- Ollama `/api/embed` at `plugin/localgpu/mcp/ollama.py:137` — text to vectors
+- Ollama `/api/tags` at `plugin/localgpu/mcp/ollama.py:173` — model presence check behind `require_models`
+- Ollama `/api/show` at `plugin/localgpu/cli/anthropic_proxy.py:286` — reads the model's own advertised context length
+- Ollama `/api/chat` — the proxy's translation target, `plugin/localgpu/cli/anthropic_proxy.py:9`; default URL `http://127.0.0.1:11434` at :45
+- the real `claude` binary as a child process at `plugin/localgpu/cli/localgpu_cli.py:129`, with `ANTHROPIC_BASE_URL` pointed at the loopback proxy

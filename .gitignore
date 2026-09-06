@@ -340,3 +340,11 @@ graphify-out/*
 # Per-repo config carries absolute, machine-specific paths; the index itself
 # lives under %LOCALAPPDATA%\localgpu and never enters the tree.
 .localgpu/
+
+# Rendered diagram output. `render.sh` regenerates every PNG/SVG from the
+# tracked `.mmd` sources beside them, and a binary that changes on every
+# re-render is pure diff churn - the same reason graphify-out/ is ignored
+# except for the one file that must travel. The .mmd IS the source of truth
+# and is tracked; anyone who wants the pictures runs:
+#   bash <crew>/skills/crew-diagrams/scripts/render.sh docs/diagrams
+docs/diagrams/out/

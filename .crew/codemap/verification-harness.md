@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@62b1c7a
+anchor: useful-claude-add-ons@b56d41f
 
 # Verification harness
 
