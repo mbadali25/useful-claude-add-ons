@@ -20,10 +20,36 @@ an existing open `[Nuclei <template-id>]` only.
 A scan of a noisy target can therefore file real tickets in a real system
 unattended.
 
-**Unresolved, and it decides the fix:** whether the `infra-work-ticketing`
-skill or the SDP MCP tools impose their own confirmation. That file was not
-read. If they do gate it, this is documentation-only. If they do not, this
-needs a gate or an explicit opt-in flag.
+**Resolved 2026-09-05: neither gates it, so this is not documentation-only.**
+Both candidate gates were checked, and both came back negative:
+
+- **The `infra-work-ticketing` skill does not gate — it instructs the
+  opposite.** `skills/infra-work-ticketing/SKILL.md:209-211`: "If you're
+  confident about what the work is, create the ticket and report what you made
+  in the same turn - no confirmation round-trip." The machine-installed copy at
+  `~/.claude/skills/infra-work-ticketing/SKILL.md` was diffed against this
+  repo's copy at `eec8620a` and is byte-identical, so the shipped text is the
+  text that actually runs. `:213` does list things worth asking about first —
+  which system, which environment, planned versus incident — but every one is a
+  missing-fact question, not a confirmation of the write.
+- **The SDP MCP tools carry no permission gate either.** No `sdp_*` entry
+  appears in `allow`, `ask` or `deny` in any settings layer — user
+  `settings.json`, user `settings.local.json`, or this repo's
+  `.claude/settings.local.json` — and the global `permissions.defaultMode` is
+  `auto`. Nothing prompts before `sdp_create`.
+
+So the two layers that might have caught it both decline to, and the entry's
+own conclusion applies: this **needs a gate or an explicit opt-in flag**.
+
+**Put the check where the ticket is created, not in the command prose.**
+`plugin/gizmoduck/scripts/gizmoduck.py:426` is where the `high` floor lives;
+`commands/scan.md` and `commands/tickets.md` are documentation and enforce
+nothing on their own. This repo has twice shipped a correct downstream check
+that never fired because an upstream filter discarded the input silently, so a
+gate written only into the command prose would reproduce that failure.
+
+Recorded from evidence rather than left unread a second time; a future reader
+should treat the question as closed unless the cited lines move.
 
 ### 2. `mcp-servers/core` credential chain caches its winner permanently
 
