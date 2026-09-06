@@ -283,6 +283,41 @@ still reports `current: true` while being stale against what is actually on
 disk. If the user is mid-edit on a file the graph would need to describe,
 say so explicitly rather than trusting `current` alone.
 
+## When `localgpu` is installed
+
+Nothing to switch on, and one thing that is not a config edit.
+
+The tie-in is at the **role-tooling** layer and is already wired: `explorer`,
+`scribe` and `docs-writer` carry `mcp__localgpu__search_code`, so those
+dispatches get GPU-side semantic search whenever the sidecar is present.
+`/crew:onboard` and `/crew:diagram` inherit it for free, because both locate
+code by spawning `crew:explorer` -- there is no second wiring to add and no
+reason to mention it in a brief. A role using a tool it was given is not an
+event.
+
+`localgpu ask` may produce a **first draft** of a codemap note or a diagram's
+shape, on the condition `docs-writer` already enforces: a human or frontier
+model edits it against the code, and the edited version is what lands. Never
+the last pass. Graph **building** is out of scope -- `graphify` is a CLI with
+no model in it, so there is nothing there for a local model to do.
+
+**It is never a provider.** `DEV_PROVIDERS` and `QA_PROVIDERS` are both closed
+to `claude`, `codex` and `copilot`, and that is a decision, not an oversight
+awaiting a fix. The same-family interlock -- striking the author's own model
+family from review -- is the one gate crew exists to hold, and it is enforced
+by matching those names. An unrecognised provider has no family to compare, and
+`family()` returning `None` must never read as "no conflict": unknown is not
+independent. `resolve_role` bars it and says so in `announce`, and
+`provider_problems` reports it on the read path, so a hand-edited
+`.crew/config.json` cannot slip a local model into the reviewer seat quietly.
+`qa-reviewer` is the categorical never -- a 7B agrees fluently and produces a
+pass indistinguishable from a real one, in front of gates that sit on SQL
+against deployed databases and on authorization DENY paths.
+
+If someone asks for localgpu as a provider, that is a change to crew's review
+model and a decision for the user -- not something you edit into the config.
+See `plugin/localgpu/commands/crew.md`.
+
 ## Routing
 
 This skill reports and recommends; it does not reimplement the procedures

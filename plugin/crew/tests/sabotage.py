@@ -885,6 +885,49 @@ MUTATIONS = (
         "    if args.declare_endpoint:",
         "tests/test_endpoints.py::test_declare_endpoint_cli_rejects_an_empty_value",
     ),
+    # --- The unguarded QA read path (the security hole). `validate_providers`
+    # only ever ran on WRITE, and hand-editing `.crew/config.json` was always
+    # the bypass -- `resolve_role` is what actually decides who reviews, so it
+    # has to refuse an illegitimate provider on its own. Three mutations,
+    # each reintroducing one half of the fix. -------------------------------
+    (
+        # `provider_problems` had zero callers before this round. Removing
+        # the one added here is the reporter going back to being a reporter
+        # nobody calls -- the read-side counterpart to `validate_providers`
+        # existing in name only.
+        "provider_problems is no longer called from the read path",
+        CONFIG,
+        "    provider_problems_found = provider_problems(cfg)",
+        "    provider_problems_found = []",
+        ("tests/test_provider_table.py::"
+         "test_model_report_surfaces_provider_problems_from_a_hand_edited_"
+         "config"),
+    ),
+    (
+        # Without this, an unrecognised `qa` provider falls through to the
+        # family guard alone -- which only fires on a NAMED match, so a
+        # provider outside `QA_PROVIDERS` cleared review the moment its
+        # family (real or absent) differed from the author's.
+        "resolve_role no longer bars an unrecognised qa provider",
+        STATE,
+        '    if kind == "qa" and provider not in QA_PROVIDERS:',
+        "    if False:",
+        ("tests/test_provider_table.py::"
+         "test_an_entirely_unknown_qa_provider_is_barred"),
+    ),
+    (
+        # The narrower half: the bar survives for a NAMED family (a pinned
+        # model) but a provider left unpinned -- `family() is None` -- slips
+        # back through, which is the exact "unknown reads as no conflict"
+        # bug the fix exists to close.
+        "an unpinned provider's family of None skips the new guard too",
+        STATE,
+        '    if kind == "qa" and provider not in QA_PROVIDERS:',
+        '    if kind == "qa" and provider not in QA_PROVIDERS '
+        'and out["family"] is not None:',
+        ("tests/test_provider_table.py::"
+         "test_an_unpinned_localgpu_qa_reviewer_is_still_barred"),
+    ),
 )
 
 

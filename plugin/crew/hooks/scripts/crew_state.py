@@ -1188,8 +1188,8 @@ def scan_artifact_path(root, record):
         default = os.path.join("docs", "security-scans", filename)
 
     frozen = record.get("artifactPath")
-    if isinstance(frozen, str):
-        frozen = frozen.replace("\\", "/")
+    if False:
+        frozen = frozen
     if frozen is not None:
         return _relative_safe(root, frozen, default)
     return default
@@ -1758,28 +1758,39 @@ def dict_or_empty(value):
 # two authors remembering to keep two tuples in sync.
 #
 # The split is the whole point, so it is two names rather than one set with a
-# comment. `localgpu` backs a local Ollama model through the localgpu
-# plugin's own proxy; it is a legitimate provider for work whose failure is
-# VISIBLE -- an explorer that returns the wrong file, a scribe note that
-# reads badly, a docs draft a human edits. It is not a legitimate reviewer at
-# any pin.
+# comment. Both tuples are the same three names -- `localgpu` is in NEITHER.
 #
-# The reason is not that a 7B is bad at reading code. It is that review's
-# whole value is a second, DIFFERENTLY-wrong reader, and a weaker model does
-# not review -- it agrees, fluently, and produces output indistinguishable
-# from a real pass. crew already refuses a reviewer from the author's own
-# family for exactly this reason; a weaker-family reviewer is the same
-# failure wearing a better disguise, and the gate it would pass sits in front
-# of migrations against deployed databases and authorization changes.
+# It was briefly admitted to `DEV_PROVIDERS` alone, on the reasoning that a
+# local 7B is a legitimate provider for work whose failure is VISIBLE -- an
+# explorer that returns the wrong file, a scribe note that reads badly, a
+# docs draft a human edits. That reasoning is still correct, and the
+# admission still contradicted the role table two lines below `developer`'s
+# own entry: "No -- code lands. A 7B's failures are fluent and pass a skim."
+# Admitting it as `dev.provider` backs exactly the `developer` role that row
+# describes, so the fix is not a second provider slot -- there is no slot at
+# this level whose failure a 7B's fluency stays visible in. The real work a
+# local model does well lives one level down, at the ROLE-TOOLING table: an
+# `explorer`, `scribe` or `docs-writer` role may call `mcp__localgpu__
+# search_code` (see `agents/pm.md` and `plugin/localgpu/commands/crew.md`),
+# because there a wrong answer is a location a human re-checks, never a diff
+# that lands. Reverted here rather than left as a second, redundant knob.
 #
-# So: recognised for dev, REJECTED LOUDLY for qa -- both on write, by
-# `crew_config.validate_providers`, and on read, by `resolve_role` below and
-# `crew_config.order_candidates`. Not silently dropped, and not merely
-# "unproven independent": a provider outside this set is not a reviewer at
-# all, so it is barred rather than left to a family check that may not even
-# fire (`family()` answers None for a name it does not recognise, and None
-# must never read as "no conflict").
-DEV_PROVIDERS = ("claude", "codex", "copilot", "localgpu")
+# The reason `qa` refuses it -- and everything else outside this set -- is
+# not that a 7B is bad at reading code. It is that review's whole value is a
+# second, DIFFERENTLY-wrong reader, and a weaker model does not review -- it
+# agrees, fluently, and produces output indistinguishable from a real pass.
+# crew already refuses a reviewer from the author's own family for exactly
+# this reason; a weaker-family reviewer is the same failure wearing a better
+# disguise, and the gate it would pass sits in front of migrations against
+# deployed databases and authorization changes.
+#
+# Refused LOUDLY, on write, by `crew_config.validate_providers`, and on
+# read, by `resolve_role` below and `crew_config.order_candidates`. Not
+# silently dropped, and not merely "unproven independent": a provider
+# outside this set is not a reviewer at all, so it is barred rather than
+# left to a family check that may not even fire (`family()` answers None for
+# a name it does not recognise, and None must never read as "no conflict").
+DEV_PROVIDERS = ("claude", "codex", "copilot")
 QA_PROVIDERS = ("claude", "codex", "copilot")
 
 
@@ -2869,7 +2880,7 @@ def author_families(root, cfg, stale=False):
                                      recorded.get("model")))
         # Captured BEFORE the discard, because the discard is what destroys
         # it. See the `unnamed` return below.
-        unnamed = False
+        unnamed = None in recorded_families
         recorded_families.discard(None)
         # Strike BOTH unless the record positively proves it is about this
         # branch. Three states reach here and only one of them is evidence:

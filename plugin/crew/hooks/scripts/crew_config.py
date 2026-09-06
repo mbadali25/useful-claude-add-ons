@@ -183,9 +183,10 @@ def validate_providers(cfg):
     if qa_provider not in (None, "auto") and qa_provider not in QA_PROVIDERS:
         raise ProviderError(
             "qa.provider = {!r} is not a QA provider. QA accepts {}. "
-            "`localgpu` is recognised by crew but barred from the review gate "
-            "on purpose -- a weaker model does not review, it agrees, and its "
-            "output is indistinguishable from a real pass.".format(
+            "A weaker model does not review, it agrees, and its output is "
+            "indistinguishable from a real pass -- that is refused here "
+            "whether the name is a typo or a real provider crew simply does "
+            "not dispatch a reviewer to.".format(
                 qa_provider, ", ".join("`%s`" % p for p in QA_PROVIDERS)))
 
     for name in qa.get("order") or []:

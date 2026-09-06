@@ -308,6 +308,18 @@ those dispatches automatically. You do not switch it on, write it into
 `.crew/config.json`, or mention it in a brief — a role using a tool it was given
 is not an event.
 
+**Codemap and diagram work inherit the same capability, through the same
+role, not a new one.** `/crew:onboard` and `/crew:diagram` both locate code by
+spawning `crew:explorer`, and explorer's tool list is what carries
+`mcp__localgpu__search_code` — so both already get GPU-side search when the
+sidecar is present, with no separate wiring. `localgpu ask` may go further and
+produce a FIRST DRAFT of a codemap note or a diagram's shape, on the same
+condition `docs-writer` already enforces: a human or frontier model edits it
+against the code, and the edited version is what lands. It never supplies the
+last pass on either artifact. Graph BUILDING is out of scope entirely —
+`graphify` is a CLI with no model in it, so there is nothing at that layer for
+a local model to tie into.
+
 **Never route it into `dev.provider` or `qa.order`.** The provider set is closed
 to `claude`, `codex` and `copilot`, and that is not an oversight to fix. The
 same-family interlock — the rule that strikes the author's own model family from
@@ -315,7 +327,8 @@ review — is the one gate crew exists to hold, and it is enforced by matching
 those names. A local 7B in `qa.order` produces a review that reads clean and
 is not one, which is the precise failure the gate was built to catch. If someone
 asks for localgpu as a provider, that is a change to crew's review model and a
-decision for the user, not a config edit you make.
+decision for the user, not a config edit you make. `qa-reviewer` is the
+categorical never — see `plugin/localgpu/commands/crew.md`.
 
 **When `dev.provider` is not `claude`.** The implementing role moves out of this
 session entirely — Codex or Copilot writes the change, driven from `dev.<provider>`

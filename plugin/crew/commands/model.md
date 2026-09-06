@@ -112,8 +112,22 @@ at the one moment it matters:
 | `qa.codex.reasoningEffort` | one of `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`. Codex rejects anything else with a 400 |
 | `qa.copilot.model` | must not start with `claude-`. Copilot's own default is `claude-sonnet-4.6`; a Claude reviewer of Claude-written code is the failure this ordering exists to avoid |
 | `qa.provider` | `auto`, or a name that appears in `qa.order` |
-| `dev.provider` | `claude`, `codex`, `copilot`, or `localgpu` (`crew_config.DEV_PROVIDERS`) |
-| `qa.provider` / `qa.order` / `qa.roles.<role>.provider` | `claude`, `codex` or `copilot` only (`crew_config.QA_PROVIDERS`). **`localgpu` is refused here on purpose** — it is a recognised dev provider, but a weaker model does not review, it agrees, and its output is indistinguishable from a real pass. The refusal is a raised `ProviderError` naming the key, not a silent drop |
+| `dev.provider` | `claude`, `codex` or `copilot` only (`crew_config.DEV_PROVIDERS`) |
+| `qa.provider` / `qa.order` / `qa.roles.<role>.provider` | `claude`, `codex` or `copilot` only (`crew_config.QA_PROVIDERS`) |
+
+**`localgpu` is refused in every one of these slots**, `dev.provider` included —
+it is not a provider crew dispatches a role to at all. Admitting it to
+`dev.provider` alone once looked like the right split (a local 7B's failures
+are visible where they land), but `dev.provider` backs the `developer` role,
+and this same command's role table says `developer` is `No — code lands. A
+7B's failures are fluent and pass a skim.` A provider slot that contradicts
+that row is the defect from the other direction. Where a local model earns
+its keep is the ROLE-TOOLING level, one layer down: `mcp__localgpu__
+search_code` on `explorer`, `scribe`, `docs-writer`, and the mechanical
+capture in `/crew:onboard` and `/crew:diagram` — never as a `provider` value,
+and never for `qa-reviewer`. See `plugin/localgpu/commands/crew.md`. The
+refusal here, as everywhere else in this table, is a raised `ProviderError`
+naming the key, not a silent drop.
 | `dev.copilot.model` | required when `dev.provider` is `copilot` — the review interlock in step 3 cannot work without knowing which family wrote the code |
 | `qa.roles.<role>` / `dev.roles.<role>` | a `{"provider": ..., "model": ...}` object. Any role name is accepted, including one crew does not ship |
 | `qa.fallback` / `dev.fallback` | a model name. Default `claude-sonnet-5`; configurable precisely because model names churn |
