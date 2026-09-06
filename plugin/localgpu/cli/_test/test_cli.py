@@ -922,6 +922,31 @@ def test_mcp_init_preserves_other_servers(tmp_path, fake_install):
     assert "localgpu" in doc["mcpServers"]
 
 
+def test_a_failed_serialisation_leaves_the_existing_mcp_json_intact(
+        tmp_path, fake_install, monkeypatch):
+    """`open(p, "w")` truncates at open time, so the order is the guard.
+
+    Serialised inside the `with`, a raising `json.dumps` leaves a zero-byte
+    `.mcp.json` - every other server in it gone, and the run looking like it
+    simply failed. Nothing reaching that line can raise today; this pins the
+    ordering so the next value added upstream cannot make it possible.
+    """
+    original = {"mcpServers": {"other": {"type": "stdio", "command": "keep-me"}}}
+    target = tmp_path / ".mcp.json"
+    target.write_text(cli.json.dumps(original), encoding="utf-8")
+    before = target.read_text(encoding="utf-8")
+
+    def refuse(*_args, **_kwargs):
+        raise TypeError("Object of type object is not JSON serializable")
+
+    monkeypatch.setattr(cli.json, "dumps", refuse)
+    with pytest.raises(TypeError):
+        _run(tmp_path)
+
+    assert target.read_text(encoding="utf-8") == before, (
+        "the file was truncated before the payload existed")
+
+
 def test_mcp_init_refuses_to_overwrite_a_different_entry(tmp_path, fake_install):
     stale = {"mcpServers": {"localgpu": {"command": "C:/old/0.1.9/python.exe"}}}
     (tmp_path / ".mcp.json").write_text(cli.json.dumps(stale), encoding="utf-8")

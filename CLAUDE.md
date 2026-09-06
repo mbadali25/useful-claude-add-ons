@@ -59,11 +59,13 @@ one, which meant the map lived on one machine and reached nobody who cloned.
 - **`.crew/codemap/`** — the prose map: one file per subsystem, every claim marked DERIVED (with a
   `path:line` to re-check) or JUDGEMENT, each carrying an `anchor:` commit. `INDEX.md` is the table
   of contents. Refresh with `/crew:onboard --refresh <subsystem>`. Anchor length does not matter:
-  `_ANCHOR_RE` accepts 7-40 and `crew_state.py:421` compares `found.group(1)[:7] != head[:7]`,
-  truncating **both** sides, so 8 and 40-char anchors match exactly as well as 7. (This line
-  previously warned that an 8-char anchor "parses fine and then never matches". It was wrong,
-  and wrong in the expensive direction — it sends you rewriting correct anchors and distrusting
-  working ones. Corrected 2026-09-05 by reading the comparison.)
+  `_ANCHOR_RE` accepts 7-40 and `plugin/crew/hooks/scripts/crew_state.py:409` compares
+  `found.group(1)[:7] != head[:7]`, truncating **both** sides, so 8 and 40-char anchors match
+  exactly as well as 7. The same comparison appears again at `:467` for diagrams — grep the
+  expression rather than trusting either number, both moved when `crew_state.py` was split.
+  (This line previously warned that an 8-char anchor "parses fine and then never matches". It was
+  wrong, and wrong in the expensive direction — it sends you rewriting correct anchors and
+  distrusting working ones. Corrected 2026-09-05 by reading the comparison.)
 - **`graphify-out/graph.json`** — the mechanical graph. Refresh with `graphify . --no-viz
   --code-only`; a post-commit hook does it automatically.
 
@@ -90,6 +92,38 @@ Decisions in `docs/adr/`; the rest of `.crew/` is machine-local and stays ignore
   *wraps* throws off the cursor-up redraw count and smears the menu over what was above it.
 - **Both install scripts are idempotent** — a new step needs a detection branch reporting "already
   installed".
+- **`open(p, "w")` truncates at open time, before the payload exists.** So a
+  write whose *argument expression* raises leaves a zero-byte file where the
+  original was. It happened here: a script ran
+  `open(scan, "w").write(parts[0] + ... + parts[1] + ...)`, `parts[1]` raised
+  `IndexError`, and `plugin/gizmoduck/commands/scan.md` was already empty. The
+  second-order failure is the expensive one — the next script read the emptied
+  file as its baseline and reported "restored byte-identical: True" against
+  nothing, so the *check* said the file was fine. Only the test suite caught
+  it, with `commands/scan.md invokes gizmoduck.py tickets nowhere`. Compute the
+  full text into a variable, then open. `pathlib.write_text(expr)` is not this
+  trap — `expr` is evaluated before the call — but the `with open(...) as fh:`
+  form is, and that is the form in this repo. Repair with `git checkout --`.
+
+  Measured across every tracked `*.py`, by AST rather than by grep — a write
+  inside a truncating `open` whose first argument is neither a bare name nor a
+  constant. Eight carry that shape. Three are test fixtures. One
+  (`plugin/localgpu/mcp/store.py:646`) writes a temp file that is then
+  `os.replace`d, so a raising argument costs the temp and nothing else — that
+  is the immune construction, and it is one file here, not the general case.
+  `plugin/localgpu/cli/localgpu_cli.py` was reordered in this change because
+  its target is a repo's whole `.mcp.json`; nothing reaching that line can
+  raise today, and the ordering is what keeps that a fact about today.
+  Three remain, unfixed and each in a different marketplace entry that would
+  need its own bump: `plugin/gizmoduck/scripts/gizmoduck.py:90` (a `str.join`
+  over a list of `str` — no reachable raise),
+  `skills/aws-opensearch/scripts/opensearch_client.py:405` (`resp.text`, already
+  materialised on the line above), and
+  `skills/intune-graph/scripts/export_report.py:90` — which is the live one:
+  `dst.write(src.read())` on a zip member, and `src.read()` raises `BadZipFile`
+  on a corrupt archive, leaving a zero-byte extract behind. Re-run the scan
+  rather than trusting this count; it is a fact about one commit.
+
 - **`pathlib.write_text` converts a `.sh` to CRLF on Windows** — it is text mode, so every `\n`
   becomes `\r\n` and the script dies on its shebang as `bad interpreter: ...^M`. Pass
   `newline="\n"`. `.gitattributes`' `*.sh text eol=lf` does *not* save you: it governs what git

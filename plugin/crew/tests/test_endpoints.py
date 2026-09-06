@@ -15,6 +15,14 @@ import os
 
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_fixtures
+import crew_endpoints
+# The endpoint ledger moved to `crew_endpoints` in 0.16.21. The patches below
+# name that module rather than `crew_state`, and the distinction is not
+# cosmetic: `read_endpoints` looks `gizmoduck_installed` up in ITS OWN module
+# globals, so patching a re-exported copy on `crew_state` would rebind a name
+# nothing reads -- every gizmoduck-installed test would then run against the
+# real detector and pass for the wrong reason. `crew_state` deliberately does
+# not re-export it.
 import crew_state
 
 
@@ -53,7 +61,7 @@ def _write_settings(dirpath, enabled_plugins, name="settings.json"):
 def test_gizmoduck_not_installed_by_default(tmp_path, monkeypatch):
     _fake_home(monkeypatch, tmp_path)
     root = crew_fixtures.make_repo(tmp_path)
-    assert not crew_state.gizmoduck_installed(str(root))
+    assert not crew_endpoints.gizmoduck_installed(str(root))
 
 
 def test_gizmoduck_installed_via_global_settings(tmp_path, monkeypatch):
@@ -61,14 +69,14 @@ def test_gizmoduck_installed_via_global_settings(tmp_path, monkeypatch):
     _write_settings(home / ".claude",
                     {"gizmoduck@useful-claude-add-ons": True})
     root = crew_fixtures.make_repo(tmp_path)
-    assert crew_state.gizmoduck_installed(str(root))
+    assert crew_endpoints.gizmoduck_installed(str(root))
 
 
 def test_gizmoduck_installed_via_project_settings(tmp_path, monkeypatch):
     _fake_home(monkeypatch, tmp_path)
     root = crew_fixtures.make_repo(tmp_path)
     _write_settings(root / ".claude", {"gizmoduck@a-fork": True})
-    assert crew_state.gizmoduck_installed(str(root))
+    assert crew_endpoints.gizmoduck_installed(str(root))
 
 
 def test_gizmoduck_installed_via_project_local_settings(tmp_path, monkeypatch):
@@ -76,7 +84,7 @@ def test_gizmoduck_installed_via_project_local_settings(tmp_path, monkeypatch):
     root = crew_fixtures.make_repo(tmp_path)
     _write_settings(root / ".claude", {"gizmoduck@a-fork": True},
                     name="settings.local.json")
-    assert crew_state.gizmoduck_installed(str(root))
+    assert crew_endpoints.gizmoduck_installed(str(root))
 
 
 def test_gizmoduck_disabled_value_does_not_count(tmp_path, monkeypatch):
@@ -84,7 +92,7 @@ def test_gizmoduck_disabled_value_does_not_count(tmp_path, monkeypatch):
     _write_settings(home / ".claude",
                     {"gizmoduck@useful-claude-add-ons": False})
     root = crew_fixtures.make_repo(tmp_path)
-    assert not crew_state.gizmoduck_installed(str(root))
+    assert not crew_endpoints.gizmoduck_installed(str(root))
 
 
 def test_project_explicit_false_wins_over_global_true(tmp_path, monkeypatch):
@@ -95,7 +103,7 @@ def test_project_explicit_false_wins_over_global_true(tmp_path, monkeypatch):
     _write_settings(home / ".claude", {"gizmoduck@m": True})
     root = crew_fixtures.make_repo(tmp_path)
     _write_settings(root / ".claude", {"gizmoduck@m": False})
-    assert not crew_state.gizmoduck_installed(str(root))
+    assert not crew_endpoints.gizmoduck_installed(str(root))
 
 
 def test_project_local_settings_outrank_project_settings(tmp_path, monkeypatch):
@@ -104,7 +112,7 @@ def test_project_local_settings_outrank_project_settings(tmp_path, monkeypatch):
     _write_settings(root / ".claude", {"gizmoduck@m": True})
     _write_settings(root / ".claude", {"gizmoduck@m": False},
                     name="settings.local.json")
-    assert not crew_state.gizmoduck_installed(str(root))
+    assert not crew_endpoints.gizmoduck_installed(str(root))
 
 
 def test_string_false_does_not_count_as_installed(tmp_path, monkeypatch):
@@ -113,7 +121,7 @@ def test_string_false_does_not_count_as_installed(tmp_path, monkeypatch):
     home = _fake_home(monkeypatch, tmp_path)
     _write_settings(home / ".claude", {"gizmoduck@m": "false"})
     root = crew_fixtures.make_repo(tmp_path)
-    assert not crew_state.gizmoduck_installed(str(root))
+    assert not crew_endpoints.gizmoduck_installed(str(root))
 
 
 def test_malformed_project_settings_defers_to_global(tmp_path, monkeypatch):
@@ -125,7 +133,7 @@ def test_malformed_project_settings_defers_to_global(tmp_path, monkeypatch):
     root = crew_fixtures.make_repo(tmp_path)
     (root / ".claude").mkdir(parents=True, exist_ok=True)
     (root / ".claude" / "settings.json").write_text("{not json", encoding="utf-8")
-    assert crew_state.gizmoduck_installed(str(root))
+    assert crew_endpoints.gizmoduck_installed(str(root))
 
 
 def test_global_settings_local_json_is_consulted(tmp_path, monkeypatch):
@@ -133,7 +141,7 @@ def test_global_settings_local_json_is_consulted(tmp_path, monkeypatch):
     _write_settings(home / ".claude", {"gizmoduck@m": True},
                     name="settings.local.json")
     root = crew_fixtures.make_repo(tmp_path)
-    assert crew_state.gizmoduck_installed(str(root))
+    assert crew_endpoints.gizmoduck_installed(str(root))
 
 
 def test_in_repo_source_directory_is_not_installation(tmp_path, monkeypatch):
@@ -146,7 +154,7 @@ def test_in_repo_source_directory_is_not_installation(tmp_path, monkeypatch):
     (root / "plugin" / "gizmoduck").mkdir(parents=True)
     (root / "plugin" / "gizmoduck" / "SKILL.md").write_text(
         "source, not installed", encoding="utf-8")
-    assert not crew_state.gizmoduck_installed(str(root))
+    assert not crew_endpoints.gizmoduck_installed(str(root))
 
 
 # -- scan_artifact_path: single repo ------------------------------------------
@@ -154,7 +162,7 @@ def test_in_repo_source_directory_is_not_installation(tmp_path, monkeypatch):
 def test_single_repo_path_rule(tmp_path):
     root = crew_fixtures.make_repo(tmp_path)
     record = {"id": "ep-0001", "location": "src/app.py:10"}
-    got = crew_state.scan_artifact_path(str(root), record)
+    got = crew_endpoints.scan_artifact_path(str(root), record)
     assert got == os.path.join("docs", "security-scans", "ep-0001.md")
 
 
@@ -162,7 +170,7 @@ def test_scan_artifact_path_rejects_a_traversal_id(tmp_path):
     """Finding 3: a hand-edited id must never reach a path join at all."""
     root = crew_fixtures.make_repo(tmp_path)
     record = {"id": "../../../unrelated", "location": "src/app.py:10"}
-    assert crew_state.scan_artifact_path(str(root), record) is None
+    assert crew_endpoints.scan_artifact_path(str(root), record) is None
 
 
 # -- scan_artifact_path: mono-repo ---------------------------------------------
@@ -178,7 +186,7 @@ def test_monorepo_path_rule_attributes_to_owning_package(tmp_path):
                                               encoding="utf-8")
 
     record = {"id": "ep-0002", "location": "packages/api/src/index.ts:5"}
-    got = crew_state.scan_artifact_path(str(root), record)
+    got = crew_endpoints.scan_artifact_path(str(root), record)
     assert got == os.path.join("packages", "api", "docs", "security-scans",
                                "ep-0002.md")
 
@@ -191,7 +199,7 @@ def test_monorepo_detected_by_multiple_go_modules(tmp_path):
                                                      encoding="utf-8")
     (root / "services" / "b" / "go.mod").write_text("module b\n",
                                                      encoding="utf-8")
-    assert crew_state._is_monorepo(str(root))  # pylint: disable=protected-access
+    assert crew_endpoints._is_monorepo(str(root))  # pylint: disable=protected-access
 
 
 def test_monorepo_falls_back_to_root_when_unattributable(tmp_path):
@@ -208,14 +216,14 @@ def test_monorepo_falls_back_to_root_when_unattributable(tmp_path):
                                                      encoding="utf-8")
 
     record = {"id": "ep-0003", "location": "JIRA-123"}
-    got = crew_state.scan_artifact_path(str(root), record)
+    got = crew_endpoints.scan_artifact_path(str(root), record)
     assert got == os.path.join("docs", "security-scans", "ep-0003.md")
 
 
 def test_single_go_mod_at_root_is_not_a_monorepo(tmp_path):
     root = crew_fixtures.make_repo(tmp_path)
     (root / "go.mod").write_text("module solo\n", encoding="utf-8")
-    assert not crew_state._is_monorepo(str(root))  # pylint: disable=protected-access
+    assert not crew_endpoints._is_monorepo(str(root))  # pylint: disable=protected-access
 
 
 def test_frozen_artifact_path_survives_a_later_monorepo_flip(tmp_path):
@@ -227,7 +235,7 @@ def test_frozen_artifact_path_survives_a_later_monorepo_flip(tmp_path):
     root = crew_fixtures.make_repo(tmp_path)
     (root / "a").mkdir()
     record = {"id": "ep-0001", "location": "a/app.py:10"}
-    single_repo_path = crew_state.scan_artifact_path(str(root), record)
+    single_repo_path = crew_endpoints.scan_artifact_path(str(root), record)
     assert single_repo_path == os.path.join("docs", "security-scans",
                                             "ep-0001.md")
 
@@ -237,32 +245,32 @@ def test_frozen_artifact_path_survives_a_later_monorepo_flip(tmp_path):
     (root / "b").mkdir()
     (root / "a" / "go.mod").write_text("module a\n", encoding="utf-8")
     (root / "b" / "go.mod").write_text("module b\n", encoding="utf-8")
-    assert crew_state._is_monorepo(str(root))  # pylint: disable=protected-access
+    assert crew_endpoints._is_monorepo(str(root))  # pylint: disable=protected-access
 
     # A record with NO frozen path recomputes and moves -- that is the
     # documented, accepted behaviour for anything not yet scanned.
-    moved = crew_state.scan_artifact_path(str(root), record)
+    moved = crew_endpoints.scan_artifact_path(str(root), record)
     assert moved != single_repo_path
 
     # But a record that already landed a scan keeps its own frozen path --
     # read back POSIX-normalised (finding 12), regardless of the separator
     # style the caller happened to freeze it with.
     frozen_record = dict(record, artifactPath=single_repo_path)
-    assert (crew_state.scan_artifact_path(str(root), frozen_record)
+    assert (crew_endpoints.scan_artifact_path(str(root), frozen_record)
             == single_repo_path.replace(os.sep, "/"))
 
 
 # -- read_endpoints / declared endpointUnscanned ------------------------------
 
 def test_trigger_fires_when_artifact_is_missing(tmp_path, monkeypatch):
-    monkeypatch.setattr(crew_state, "gizmoduck_installed", lambda root=None: True)
+    monkeypatch.setattr(crew_endpoints, "gizmoduck_installed", lambda root=None: True)
     root = crew_fixtures.make_repo(tmp_path)
     _write_ledger(root, [{
         "id": "ep-0001", "endpoint": "https://api.example/v1/widgets",
         "source": "declared", "status": "open",
         "location": "src/app.py:10", "createdAt": "2026-09-01T00:00:00Z",
     }])
-    endpoints = crew_state.read_endpoints(str(root), {})
+    endpoints = crew_endpoints.read_endpoints(str(root), {})
     assert endpoints["unscanned"]
     state = {"schema": crew_state.SCHEMA_CURRENT, "endpoints": endpoints}
     assert "endpointUnscanned" in crew_state.evaluate_triggers(state)
@@ -277,7 +285,7 @@ _REAL_REPORT_MARKER = "**Total finding instances:** 0\n"
 def test_trigger_does_not_fire_once_a_real_artifact_exists(tmp_path, monkeypatch):
     """A real scan artifact: non-empty, carrying the scan marker (finding
     2/BLOCK 4), AND mentioning the endpoint it covers (finding 2)."""
-    monkeypatch.setattr(crew_state, "gizmoduck_installed", lambda root=None: True)
+    monkeypatch.setattr(crew_endpoints, "gizmoduck_installed", lambda root=None: True)
     root = crew_fixtures.make_repo(tmp_path)
     record = {
         "id": "ep-0001", "endpoint": "https://api.example/v1/widgets",
@@ -285,14 +293,14 @@ def test_trigger_does_not_fire_once_a_real_artifact_exists(tmp_path, monkeypatch
         "location": "src/app.py:10", "createdAt": "2026-09-01T00:00:00Z",
     }
     _write_ledger(root, [record])
-    artifact = crew_state.scan_artifact_path(str(root), record)
+    artifact = crew_endpoints.scan_artifact_path(str(root), record)
     artifact_path = root / artifact
     artifact_path.parent.mkdir(parents=True, exist_ok=True)
     artifact_path.write_text(
         "scanned clean: https://api.example/v1/widgets\n"
         + _REAL_REPORT_MARKER, encoding="utf-8")
 
-    endpoints = crew_state.read_endpoints(str(root), {})
+    endpoints = crew_endpoints.read_endpoints(str(root), {})
     assert endpoints["unscanned"] == []
     state = {"schema": crew_state.SCHEMA_CURRENT, "endpoints": endpoints}
     assert "endpointUnscanned" not in crew_state.evaluate_triggers(state)
@@ -301,7 +309,7 @@ def test_trigger_does_not_fire_once_a_real_artifact_exists(tmp_path, monkeypatch
 def test_empty_artifact_does_not_discharge_the_obligation(tmp_path, monkeypatch):
     """Finding 2, half 1: `touch docs/security-scans/ep-0001.md` (0 bytes)
     must not permanently discharge the obligation."""
-    monkeypatch.setattr(crew_state, "gizmoduck_installed", lambda root=None: True)
+    monkeypatch.setattr(crew_endpoints, "gizmoduck_installed", lambda root=None: True)
     root = crew_fixtures.make_repo(tmp_path)
     record = {
         "id": "ep-0001", "endpoint": "https://api.example/v1/widgets",
@@ -309,12 +317,12 @@ def test_empty_artifact_does_not_discharge_the_obligation(tmp_path, monkeypatch)
         "location": "src/app.py:10", "createdAt": "2026-09-01T00:00:00Z",
     }
     _write_ledger(root, [record])
-    artifact = crew_state.scan_artifact_path(str(root), record)
+    artifact = crew_endpoints.scan_artifact_path(str(root), record)
     artifact_path = root / artifact
     artifact_path.parent.mkdir(parents=True, exist_ok=True)
     artifact_path.touch()
 
-    endpoints = crew_state.read_endpoints(str(root), {})
+    endpoints = crew_endpoints.read_endpoints(str(root), {})
     assert endpoints["unscanned"]
 
 
@@ -322,7 +330,7 @@ def test_artifact_for_a_different_endpoint_does_not_confirm_this_one(
         tmp_path, monkeypatch):
     """Finding 2, half 1: non-empty is necessary but not sufficient -- the
     text must actually reference THIS endpoint."""
-    monkeypatch.setattr(crew_state, "gizmoduck_installed", lambda root=None: True)
+    monkeypatch.setattr(crew_endpoints, "gizmoduck_installed", lambda root=None: True)
     root = crew_fixtures.make_repo(tmp_path)
     record = {
         "id": "ep-0001", "endpoint": "https://api.example/v1/widgets",
@@ -330,14 +338,14 @@ def test_artifact_for_a_different_endpoint_does_not_confirm_this_one(
         "location": "src/app.py:10", "createdAt": "2026-09-01T00:00:00Z",
     }
     _write_ledger(root, [record])
-    artifact = crew_state.scan_artifact_path(str(root), record)
+    artifact = crew_endpoints.scan_artifact_path(str(root), record)
     artifact_path = root / artifact
     artifact_path.parent.mkdir(parents=True, exist_ok=True)
     artifact_path.write_text(
         "scanned clean: https://api.example/v1/OTHER\n"
         + _REAL_REPORT_MARKER, encoding="utf-8")
 
-    endpoints = crew_state.read_endpoints(str(root), {})
+    endpoints = crew_endpoints.read_endpoints(str(root), {})
     assert endpoints["unscanned"]
 
 
@@ -346,7 +354,7 @@ def test_todo_note_does_not_confirm_a_scan(tmp_path, monkeypatch):
     evidence a scan actually ran. `echo "TODO: scan <url> later" > ...` used
     to discharge the obligation for free because the old check was a bare
     substring match with no proof a scan tool produced the file."""
-    monkeypatch.setattr(crew_state, "gizmoduck_installed", lambda root=None: True)
+    monkeypatch.setattr(crew_endpoints, "gizmoduck_installed", lambda root=None: True)
     root = crew_fixtures.make_repo(tmp_path)
     record = {
         "id": "ep-0001", "endpoint": "https://api.example.com/pay",
@@ -354,13 +362,13 @@ def test_todo_note_does_not_confirm_a_scan(tmp_path, monkeypatch):
         "location": "src/app.py:10", "createdAt": "2026-09-01T00:00:00Z",
     }
     _write_ledger(root, [record])
-    artifact = crew_state.scan_artifact_path(str(root), record)
+    artifact = crew_endpoints.scan_artifact_path(str(root), record)
     artifact_path = root / artifact
     artifact_path.parent.mkdir(parents=True, exist_ok=True)
     artifact_path.write_text(
         "TODO: scan https://api.example.com/pay later\n", encoding="utf-8")
 
-    endpoints = crew_state.read_endpoints(str(root), {})
+    endpoints = crew_endpoints.read_endpoints(str(root), {})
     assert endpoints["unscanned"]
 
 
@@ -370,7 +378,7 @@ def test_declared_bare_description_endpoint_fails_closed_with_no_needle(
     free-text description (the exact shape `work.md` used to invite) yields
     no matchable needle -- and must fail CLOSED, not be discharged by any
     non-empty (even marker-carrying) file at the computed path."""
-    monkeypatch.setattr(crew_state, "gizmoduck_installed", lambda root=None: True)
+    monkeypatch.setattr(crew_endpoints, "gizmoduck_installed", lambda root=None: True)
     root = crew_fixtures.make_repo(tmp_path)
     record = {
         "id": "ep-0002", "endpoint": "the payments admin console",
@@ -378,13 +386,13 @@ def test_declared_bare_description_endpoint_fails_closed_with_no_needle(
         "location": "src/app.py:10", "createdAt": "2026-09-01T00:00:00Z",
     }
     _write_ledger(root, [record])
-    artifact = crew_state.scan_artifact_path(str(root), record)
+    artifact = crew_endpoints.scan_artifact_path(str(root), record)
     artifact_path = root / artifact
     artifact_path.parent.mkdir(parents=True, exist_ok=True)
     artifact_path.write_text("# Report\n\n" + _REAL_REPORT_MARKER,
                              encoding="utf-8")
 
-    endpoints = crew_state.read_endpoints(str(root), {})
+    endpoints = crew_endpoints.read_endpoints(str(root), {})
     assert endpoints["unscanned"]
 
 
@@ -392,7 +400,7 @@ def test_endpoint_needle_covers_a_bare_hostname(tmp_path, monkeypatch):
     """BLOCK 3: the docs also invite a bare host (`report.md`: "a host or
     URL"); the needle derivation must cover that shape, not just a full
     URL or an absolute path."""
-    monkeypatch.setattr(crew_state, "gizmoduck_installed", lambda root=None: True)
+    monkeypatch.setattr(crew_endpoints, "gizmoduck_installed", lambda root=None: True)
     root = crew_fixtures.make_repo(tmp_path)
     record = {
         "id": "ep-0003", "endpoint": "payments.internal.example.com",
@@ -400,14 +408,14 @@ def test_endpoint_needle_covers_a_bare_hostname(tmp_path, monkeypatch):
         "location": "src/app.py:10", "createdAt": "2026-09-01T00:00:00Z",
     }
     _write_ledger(root, [record])
-    artifact = crew_state.scan_artifact_path(str(root), record)
+    artifact = crew_endpoints.scan_artifact_path(str(root), record)
     artifact_path = root / artifact
     artifact_path.parent.mkdir(parents=True, exist_ok=True)
     artifact_path.write_text(
         "scanned payments.internal.example.com\n" + _REAL_REPORT_MARKER,
         encoding="utf-8")
 
-    endpoints = crew_state.read_endpoints(str(root), {})
+    endpoints = crew_endpoints.read_endpoints(str(root), {})
     assert endpoints["unscanned"] == []
 
 
@@ -415,7 +423,7 @@ def test_endpoint_needle_rejects_a_bare_slash(tmp_path):
     """Finding 4's related bug: `_endpoint_needle('/')` used to return '/',
     which matches almost any markdown file containing a slash anywhere --
     not a needle at all."""
-    assert crew_state._endpoint_needle("/") is None  # pylint: disable=protected-access
+    assert crew_endpoints._endpoint_needle("/") is None  # pylint: disable=protected-access
 
 
 def test_empty_artifact_does_not_discharge_a_candidate_with_no_specific_target(
@@ -425,31 +433,31 @@ def test_empty_artifact_does_not_discharge_a_candidate_with_no_specific_target(
     specific to search for, so non-empty is ALL that can be required -- but
     it must still be required. An empty file must not pass just because
     there was nothing to cross-check."""
-    monkeypatch.setattr(crew_state, "gizmoduck_installed", lambda root=None: True)
+    monkeypatch.setattr(crew_endpoints, "gizmoduck_installed", lambda root=None: True)
     root = crew_fixtures.make_repo(tmp_path)
     record = {
         "id": "cand-aaaaaaaa", "endpoint": "a Flask/FastAPI route decorator",
         "source": "inferred", "status": "candidate",
         "location": "app.py:1",
     }
-    artifact = crew_state.scan_artifact_path(str(root), record)
+    artifact = crew_endpoints.scan_artifact_path(str(root), record)
     artifact_path = root / artifact
     artifact_path.parent.mkdir(parents=True, exist_ok=True)
     artifact_path.touch()
-    assert not crew_state._artifact_confirms_scan(str(root), artifact, record)  # pylint: disable=protected-access
+    assert not crew_endpoints._artifact_confirms_scan(str(root), artifact, record)  # pylint: disable=protected-access
 
 
 def test_a_traversal_id_reads_as_unscanned_not_as_scanned(tmp_path, monkeypatch):
     """Finding 3: an unsafe id must fail safe -- reported as unscanned,
     never silently treated as scanned by probing a path outside the repo."""
-    monkeypatch.setattr(crew_state, "gizmoduck_installed", lambda root=None: True)
+    monkeypatch.setattr(crew_endpoints, "gizmoduck_installed", lambda root=None: True)
     root = crew_fixtures.make_repo(tmp_path)
     _write_ledger(root, [{
         "id": "../../../unrelated", "endpoint": "https://api.example/v1/x",
         "source": "declared", "status": "open",
         "location": "src/app.py:10", "createdAt": "2026-09-01T00:00:00Z",
     }])
-    endpoints = crew_state.read_endpoints(str(root), {})
+    endpoints = crew_endpoints.read_endpoints(str(root), {})
     assert len(endpoints["unscanned"]) == 1
     assert endpoints["unscanned"][0]["path"] is None
 
@@ -465,35 +473,35 @@ def test_trigger_does_not_fire_when_gizmoduck_absent(tmp_path, monkeypatch):
         "source": "declared", "status": "open",
         "location": "src/app.py:10", "createdAt": "2026-09-01T00:00:00Z",
     }])
-    endpoints = crew_state.read_endpoints(str(root), {})
+    endpoints = crew_endpoints.read_endpoints(str(root), {})
     assert endpoints == {"installed": False, "unscanned": []}
     state = {"schema": crew_state.SCHEMA_CURRENT, "endpoints": endpoints}
     assert "endpointUnscanned" not in crew_state.evaluate_triggers(state)
 
 
 def test_closed_records_never_count_as_unscanned(tmp_path, monkeypatch):
-    monkeypatch.setattr(crew_state, "gizmoduck_installed", lambda root=None: True)
+    monkeypatch.setattr(crew_endpoints, "gizmoduck_installed", lambda root=None: True)
     root = crew_fixtures.make_repo(tmp_path)
     _write_ledger(root, [{
         "id": "ep-0001", "endpoint": "decommissioned",
         "source": "declared", "status": "closed",
         "location": "src/app.py:10", "createdAt": "2026-09-01T00:00:00Z",
     }])
-    endpoints = crew_state.read_endpoints(str(root), {})
+    endpoints = crew_endpoints.read_endpoints(str(root), {})
     assert endpoints["unscanned"] == []
 
 
 def test_unscanned_hit_carries_status_not_just_source(tmp_path, monkeypatch):
     """Finding 10: `status` -- not `source` -- is the authoritative field.
     A record whose fields disagree must still be checkable by `status`."""
-    monkeypatch.setattr(crew_state, "gizmoduck_installed", lambda root=None: True)
+    monkeypatch.setattr(crew_endpoints, "gizmoduck_installed", lambda root=None: True)
     root = crew_fixtures.make_repo(tmp_path)
     _write_ledger(root, [{
         "id": "ep-0001", "endpoint": "https://api.example/v1/widgets",
         "source": "declared", "status": "candidate",
         "location": "src/app.py:10", "createdAt": "2026-09-01T00:00:00Z",
     }])
-    endpoints = crew_state.read_endpoints(str(root), {})
+    endpoints = crew_endpoints.read_endpoints(str(root), {})
     assert endpoints["unscanned"][0]["status"] == "candidate"
 
 
@@ -501,12 +509,12 @@ def test_unscanned_hit_carries_status_not_just_source(tmp_path, monkeypatch):
 
 def test_declare_endpoint_writes_an_authoritative_open_record(tmp_path):
     root = crew_fixtures.make_repo(tmp_path)
-    record = crew_state.declare_endpoint(
+    record = crew_endpoints.declare_endpoint(
         str(root), "https://api.example/v1/widgets", "src/app.py:10",
         ticket="T-0100")
     assert record["source"] == "declared"
     assert record["status"] == "open"
-    stored = crew_state.load_endpoints(str(root))
+    stored = crew_endpoints.load_endpoints(str(root))
     assert stored == [record]
 
 
@@ -524,20 +532,20 @@ def test_declare_endpoint_cli_rejects_an_empty_value(tmp_path, capsys):
 def test_declare_endpoint_rejects_an_unsafe_endpoint_id(tmp_path):
     """Finding 3: sanitise at MINT time too -- reject rather than mangle."""
     root = crew_fixtures.make_repo(tmp_path)
-    result = crew_state.declare_endpoint(
+    result = crew_endpoints.declare_endpoint(
         str(root), "https://api.example/v1/x", "src/app.py:10",
         endpoint_id="../../../unrelated")
     assert "error" in result
-    assert crew_state.load_endpoints(str(root)) == []
+    assert crew_endpoints.load_endpoints(str(root)) == []
 
 
 def test_declare_endpoint_ids_do_not_collide_after_a_deletion(tmp_path):
     """Finding 7: declare a, declare b, delete a (hand-edit the committed
     ledger), declare c -- c must not mint b's id."""
     root = crew_fixtures.make_repo(tmp_path)
-    first = crew_state.declare_endpoint(str(root), "https://a.example/x",
+    first = crew_endpoints.declare_endpoint(str(root), "https://a.example/x",
                                         "a.py:1")
-    second = crew_state.declare_endpoint(str(root), "https://b.example/x",
+    second = crew_endpoints.declare_endpoint(str(root), "https://b.example/x",
                                          "b.py:1")
     assert first["id"] != second["id"]
 
@@ -549,7 +557,7 @@ def test_declare_endpoint_ids_do_not_collide_after_a_deletion(tmp_path):
     (root / ".crew" / "endpoints.json").write_text(
         json.dumps(doc), encoding="utf-8")
 
-    third = crew_state.declare_endpoint(str(root), "https://c.example/x",
+    third = crew_endpoints.declare_endpoint(str(root), "https://c.example/x",
                                         "c.py:1")
     assert third["id"] not in (first["id"], second["id"])
 
@@ -558,7 +566,7 @@ def test_declare_endpoint_is_atomic(tmp_path):
     """Finding 8: the write goes through a temp file plus os.replace, not
     write-in-place -- no lingering .tmp file after a normal write."""
     root = crew_fixtures.make_repo(tmp_path)
-    crew_state.declare_endpoint(str(root), "https://a.example/x", "a.py:1")
+    crew_endpoints.declare_endpoint(str(root), "https://a.example/x", "a.py:1")
     leftovers = [p for p in (root / ".crew").iterdir() if p.suffix == ".tmp"]
     assert leftovers == []
 
@@ -572,14 +580,14 @@ def test_write_endpoints_leaves_the_original_intact_if_replace_fails(
     detected -- this is what distinguishes atomic from merely "no leftover
     .tmp file", which a naive write-in-place also satisfies trivially."""
     root = crew_fixtures.make_repo(tmp_path)
-    crew_state.declare_endpoint(str(root), "https://a.example/x", "a.py:1")
+    crew_endpoints.declare_endpoint(str(root), "https://a.example/x", "a.py:1")
     original = (root / ".crew" / "endpoints.json").read_bytes()
 
     def boom(*_a, **_kw):
         raise OSError("simulated replace failure")
-    monkeypatch.setattr(crew_state.os, "replace", boom)
+    monkeypatch.setattr(crew_endpoints.os, "replace", boom)
 
-    crew_state.declare_endpoint(str(root), "https://b.example/x", "b.py:1")
+    crew_endpoints.declare_endpoint(str(root), "https://b.example/x", "b.py:1")
     assert (root / ".crew" / "endpoints.json").read_bytes() == original
 
 
@@ -589,7 +597,7 @@ def test_ephemeral_candidate_ids_differ_by_location(tmp_path):
     would make one scan artifact silently discharge both."""
     same_signal_a = {"signal": "python-route", "location": "a.py:1"}
     same_signal_b = {"signal": "python-route", "location": "b.py:1"}
-    ids = {crew_state._candidate_record(c)["id"]  # pylint: disable=protected-access
+    ids = {crew_endpoints._candidate_record(c)["id"]  # pylint: disable=protected-access
           for c in (same_signal_a, same_signal_b)}
     assert len(ids) == 2
 
@@ -598,27 +606,27 @@ def test_written_ledger_uses_lf_not_crlf(tmp_path):
     """Nit 12: the newline="\\n" the write comment argues for, actually
     checked against the bytes on disk."""
     root = crew_fixtures.make_repo(tmp_path)
-    crew_state.declare_endpoint(str(root), "https://a.example/x", "a.py:1")
+    crew_endpoints.declare_endpoint(str(root), "https://a.example/x", "a.py:1")
     raw = (root / ".crew" / "endpoints.json").read_bytes()
     assert b"\r\n" not in raw
 
 
 def test_record_scan_artifact_freezes_the_path(tmp_path):
     root = crew_fixtures.make_repo(tmp_path)
-    record = crew_state.declare_endpoint(str(root), "https://a.example/x",
+    record = crew_endpoints.declare_endpoint(str(root), "https://a.example/x",
                                          "a.py:1")
-    path = crew_state.record_scan_artifact(str(root), record["id"])
+    path = crew_endpoints.record_scan_artifact(str(root), record["id"])
     # POSIX-normalised (finding 12); the freshly-computed default from
     # scan_artifact_path itself still uses native separators.
-    assert path == crew_state.scan_artifact_path(
+    assert path == crew_endpoints.scan_artifact_path(
         str(root), record).replace(os.sep, "/")
-    stored = crew_state.load_endpoints(str(root))[0]
+    stored = crew_endpoints.load_endpoints(str(root))[0]
     assert stored["artifactPath"] == path
 
 
 def test_record_scan_artifact_is_none_for_an_unknown_id(tmp_path):
     root = crew_fixtures.make_repo(tmp_path)
-    assert crew_state.record_scan_artifact(str(root), "ep-9999") is None
+    assert crew_endpoints.record_scan_artifact(str(root), "ep-9999") is None
 
 
 # -- inferred candidates: computed, never persisted (BLOCK 1) -----------------
@@ -633,14 +641,14 @@ def test_infer_endpoints_flags_a_new_flask_route(tmp_path):
     # invisible to it until staged, same as an ordinary `git add` before a
     # commit.
     crew_fixtures._git(root, "add", "app.py")  # pylint: disable=protected-access
-    hits = crew_state.infer_endpoints(str(root))
+    hits = crew_endpoints.infer_endpoints(str(root))
     assert any(h["signal"] == "python-route" and h["location"].startswith("app.py")
                for h in hits)
 
 
 def test_infer_endpoints_empty_with_no_diff(tmp_path):
     root = crew_fixtures.make_repo(tmp_path)
-    assert crew_state.infer_endpoints(str(root)) == []
+    assert crew_endpoints.infer_endpoints(str(root)) == []
 
 
 def test_infer_endpoints_ignores_a_commented_out_example(tmp_path):
@@ -650,7 +658,7 @@ def test_infer_endpoints_ignores_a_commented_out_example(tmp_path):
     (root / "app.js").write_text(
         '// see app.post("/foo") for the pattern\n', encoding="utf-8")
     crew_fixtures._git(root, "add", "app.js")  # pylint: disable=protected-access
-    assert crew_state.infer_endpoints(str(root)) == []
+    assert crew_endpoints.infer_endpoints(str(root)) == []
 
 
 def test_infer_endpoints_ignores_a_match_inside_someone_elses_string(tmp_path):
@@ -660,7 +668,7 @@ def test_infer_endpoints_ignores_a_match_inside_someone_elses_string(tmp_path):
     (root / "app.js").write_text(
         'const description = "app.get(\'/x\')";\n', encoding="utf-8")
     crew_fixtures._git(root, "add", "app.js")  # pylint: disable=protected-access
-    assert crew_state.infer_endpoints(str(root)) == []
+    assert crew_endpoints.infer_endpoints(str(root)) == []
 
 
 def test_infer_endpoints_ignores_its_own_signal_comment_in_crew_source(tmp_path):
@@ -676,7 +684,7 @@ def test_infer_endpoints_ignores_its_own_signal_comment_in_crew_source(tmp_path)
         encoding="utf-8")
     crew_fixtures._git(root, "add",
                        "plugin/crew/hooks/scripts/crew_state.py")
-    assert crew_state.infer_endpoints(str(root)) == []
+    assert crew_endpoints.infer_endpoints(str(root)) == []
 
 
 def test_infer_endpoints_excludes_crews_own_source_even_without_a_comment(
@@ -692,7 +700,7 @@ def test_infer_endpoints_excludes_crews_own_source_even_without_a_comment(
         '@app.route("/real-thing")\ndef handler():\n    pass\n',
         encoding="utf-8")
     crew_fixtures._git(root, "add", "plugin/crew/hooks/scripts/other.py")
-    assert crew_state.infer_endpoints(str(root)) == []
+    assert crew_endpoints.infer_endpoints(str(root)) == []
 
 
 def test_infer_endpoints_gates_openapi_path_to_spec_files(tmp_path):
@@ -702,7 +710,7 @@ def test_infer_endpoints_gates_openapi_path_to_spec_files(tmp_path):
     root = crew_fixtures.make_repo(tmp_path)
     (root / "setup.sh").write_text("  /usr/local/bin:\n", encoding="utf-8")
     crew_fixtures._git(root, "add", "setup.sh")  # pylint: disable=protected-access
-    assert crew_state.infer_endpoints(str(root)) == []
+    assert crew_endpoints.infer_endpoints(str(root)) == []
 
 
 def test_read_endpoints_surfaces_an_inferred_hit_as_an_ephemeral_candidate(
@@ -711,34 +719,34 @@ def test_read_endpoints_surfaces_an_inferred_hit_as_an_ephemeral_candidate(
     persisted. A fresh inferred hit with no matching declared record must
     surface in `unscanned` as a candidate, and the ledger file on disk must
     still hold nothing."""
-    monkeypatch.setattr(crew_state, "gizmoduck_installed", lambda root=None: True)
+    monkeypatch.setattr(crew_endpoints, "gizmoduck_installed", lambda root=None: True)
     root = crew_fixtures.make_repo(tmp_path)
     (root / "app.py").write_text(
         '@app.route("/new-thing")\ndef handler():\n    pass\n',
         encoding="utf-8")
     crew_fixtures._git(root, "add", "app.py")  # pylint: disable=protected-access
 
-    endpoints = crew_state.read_endpoints(str(root), {})
+    endpoints = crew_endpoints.read_endpoints(str(root), {})
     hits = [h for h in endpoints["unscanned"] if h["source"] == "inferred"]
     assert len(hits) == 1
     assert hits[0]["status"] == "candidate"
     # Never written -- load_endpoints (the ledger on disk) stays empty.
-    assert crew_state.load_endpoints(str(root)) == []
+    assert crew_endpoints.load_endpoints(str(root)) == []
 
 
 def test_ephemeral_candidate_id_is_stable_across_reads(tmp_path, monkeypatch):
     """The same diff line must resolve to the same artifact path on every
     read, even though nothing about it is ever saved -- a scan written for
     it today has to be found tomorrow."""
-    monkeypatch.setattr(crew_state, "gizmoduck_installed", lambda root=None: True)
+    monkeypatch.setattr(crew_endpoints, "gizmoduck_installed", lambda root=None: True)
     root = crew_fixtures.make_repo(tmp_path)
     (root / "app.py").write_text(
         '@app.route("/new-thing")\ndef handler():\n    pass\n',
         encoding="utf-8")
     crew_fixtures._git(root, "add", "app.py")  # pylint: disable=protected-access
 
-    first = crew_state.read_endpoints(str(root), {})
-    second = crew_state.read_endpoints(str(root), {})
+    first = crew_endpoints.read_endpoints(str(root), {})
+    second = crew_endpoints.read_endpoints(str(root), {})
     first_ids = sorted(h["id"] for h in first["unscanned"])
     second_ids = sorted(h["id"] for h in second["unscanned"])
     assert first_ids == second_ids
@@ -749,19 +757,19 @@ def test_a_promoted_location_no_longer_surfaces_as_a_fresh_candidate(
     """Once a location is covered by a persisted (declared) record, the same
     diff line must not ALSO surface as an inferred candidate under a
     different id."""
-    monkeypatch.setattr(crew_state, "gizmoduck_installed", lambda root=None: True)
+    monkeypatch.setattr(crew_endpoints, "gizmoduck_installed", lambda root=None: True)
     root = crew_fixtures.make_repo(tmp_path)
     (root / "app.py").write_text(
         '@app.route("/new-thing")\ndef handler():\n    pass\n',
         encoding="utf-8")
     crew_fixtures._git(root, "add", "app.py")  # pylint: disable=protected-access
-    inferred = crew_state.infer_endpoints(str(root))
+    inferred = crew_endpoints.infer_endpoints(str(root))
     assert inferred
     location = inferred[0]["location"]
 
-    crew_state.declare_endpoint(str(root), "https://example.com/new-thing",
+    crew_endpoints.declare_endpoint(str(root), "https://example.com/new-thing",
                                location)
-    endpoints = crew_state.read_endpoints(str(root), {})
+    endpoints = crew_endpoints.read_endpoints(str(root), {})
     sources = [h["source"] for h in endpoints["unscanned"]
               if h.get("path") is not None
               or h.get("source") == "inferred"]
@@ -792,8 +800,8 @@ def test_a_promoted_location_no_longer_surfaces_as_a_fresh_candidate(
 
 def test_candidate_id_is_stable_across_calls():
     cand = {"signal": "route", "location": "src/api.py:42", "label": "/health"}
-    first = crew_state._candidate_record(cand)
-    second = crew_state._candidate_record(dict(cand))
+    first = crew_endpoints._candidate_record(cand)
+    second = crew_endpoints._candidate_record(dict(cand))
     assert first["id"] == second["id"]
     assert first["id"].startswith("cand-")
 
@@ -806,14 +814,14 @@ def test_candidate_id_matches_the_documented_hash():
     cand = {"signal": "ingress", "location": "infra/main.tf:7"}
     expected = hashlib.sha1(
         b"ingress:infra/main.tf:7").hexdigest()[:8]
-    assert crew_state._candidate_record(cand)["id"] == f"cand-{expected}"
+    assert crew_endpoints._candidate_record(cand)["id"] == f"cand-{expected}"
 
 
 def test_candidate_id_varies_with_signal_and_location():
     base = {"signal": "route", "location": "src/api.py:42"}
     other_loc = dict(base, location="src/api.py:43")
     other_sig = dict(base, signal="ingress")
-    ids = {crew_state._candidate_record(c)["id"]
+    ids = {crew_endpoints._candidate_record(c)["id"]
            for c in (base, other_loc, other_sig)}
     assert len(ids) == 3, "distinct (signal, location) must not collide"
 
@@ -821,9 +829,9 @@ def test_candidate_id_varies_with_signal_and_location():
 def test_candidate_id_ignores_the_label():
     # The label is display text and may be improved later; changing it must
     # not relocate the artifact path and orphan an existing scan.
-    a = crew_state._candidate_record(
+    a = crew_endpoints._candidate_record(
         {"signal": "route", "location": "src/api.py:42", "label": "/health"})
-    b = crew_state._candidate_record(
+    b = crew_endpoints._candidate_record(
         {"signal": "route", "location": "src/api.py:42", "label": "/healthz"})
     assert a["id"] == b["id"]
 
@@ -837,14 +845,14 @@ def test_candidate_id_ignores_the_label():
 
 def test_relative_safe_rejects_a_traversal_value(tmp_path):
     root = crew_fixtures.make_repo(tmp_path)
-    got = crew_state._relative_safe(  # pylint: disable=protected-access
+    got = crew_endpoints._relative_safe(  # pylint: disable=protected-access
         str(root), "../../../../etc/passwd", "default.md")
     assert got == "default.md"
 
 
 def test_relative_safe_accepts_a_value_that_stays_inside(tmp_path):
     root = crew_fixtures.make_repo(tmp_path)
-    got = crew_state._relative_safe(  # pylint: disable=protected-access
+    got = crew_endpoints._relative_safe(  # pylint: disable=protected-access
         str(root), "docs/security-scans/ep-0001.md", "default.md")
     assert got == "docs/security-scans/ep-0001.md"
 
@@ -857,46 +865,46 @@ def test_frozen_artifact_path_traversal_falls_back_to_the_computed_default(
     root = crew_fixtures.make_repo(tmp_path)
     record = {"id": "ep-0001", "location": "src/app.py:10",
               "artifactPath": "../../../../etc/passwd"}
-    got = crew_state.scan_artifact_path(str(root), record)
+    got = crew_endpoints.scan_artifact_path(str(root), record)
     assert got == os.path.join("docs", "security-scans", "ep-0001.md")
 
 
 # --- Finding 7: `location` travels on an unscanned hit -----------------------
 
 def test_unscanned_hit_surfaces_location(tmp_path, monkeypatch):
-    monkeypatch.setattr(crew_state, "gizmoduck_installed", lambda root=None: True)
+    monkeypatch.setattr(crew_endpoints, "gizmoduck_installed", lambda root=None: True)
     root = crew_fixtures.make_repo(tmp_path)
     _write_ledger(root, [{
         "id": "ep-0001", "endpoint": "https://api.example/v1/widgets",
         "source": "declared", "status": "open",
         "location": "src/app.py:10", "createdAt": "2026-09-01T00:00:00Z",
     }])
-    endpoints = crew_state.read_endpoints(str(root), {})
+    endpoints = crew_endpoints.read_endpoints(str(root), {})
     assert endpoints["unscanned"][0]["location"] == "src/app.py:10"
 
 
 def test_unsafe_id_hit_surfaces_location_too(tmp_path, monkeypatch):
     """Finding 7 on the OTHER branch of `_unscanned_hit`: an unsafe id still
     has to name where it was declared, not just a safe id's hit."""
-    monkeypatch.setattr(crew_state, "gizmoduck_installed", lambda root=None: True)
+    monkeypatch.setattr(crew_endpoints, "gizmoduck_installed", lambda root=None: True)
     root = crew_fixtures.make_repo(tmp_path)
     _write_ledger(root, [{
         "id": "../../../unrelated", "endpoint": "https://api.example/v1/x",
         "source": "declared", "status": "open",
         "location": "src/app.py:10", "createdAt": "2026-09-01T00:00:00Z",
     }])
-    endpoints = crew_state.read_endpoints(str(root), {})
+    endpoints = crew_endpoints.read_endpoints(str(root), {})
     assert endpoints["unscanned"][0]["location"] == "src/app.py:10"
 
 
 def test_candidate_hit_surfaces_location_too(tmp_path, monkeypatch):
-    monkeypatch.setattr(crew_state, "gizmoduck_installed", lambda root=None: True)
+    monkeypatch.setattr(crew_endpoints, "gizmoduck_installed", lambda root=None: True)
     root = crew_fixtures.make_repo(tmp_path)
     (root / "app.py").write_text(
         '@app.route("/new-thing")\ndef handler():\n    pass\n',
         encoding="utf-8")
     crew_fixtures._git(root, "add", "app.py")  # pylint: disable=protected-access
-    endpoints = crew_state.read_endpoints(str(root), {})
+    endpoints = crew_endpoints.read_endpoints(str(root), {})
     hits = [h for h in endpoints["unscanned"] if h["source"] == "inferred"]
     assert hits[0]["location"].startswith("app.py")
 
@@ -908,7 +916,7 @@ def test_unfrozen_confirmed_scan_is_surfaced(tmp_path, monkeypatch):
     default path, but was never frozen there with --record-scan-artifact,
     must be detectable -- the missing freeze step is otherwise silent until
     a repo-shape change orphans the artifact."""
-    monkeypatch.setattr(crew_state, "gizmoduck_installed", lambda root=None: True)
+    monkeypatch.setattr(crew_endpoints, "gizmoduck_installed", lambda root=None: True)
     root = crew_fixtures.make_repo(tmp_path)
     record = {
         "id": "ep-0001", "endpoint": "https://api.example/v1/widgets",
@@ -916,32 +924,32 @@ def test_unfrozen_confirmed_scan_is_surfaced(tmp_path, monkeypatch):
         "location": "src/app.py:10", "createdAt": "2026-09-01T00:00:00Z",
     }
     _write_ledger(root, [record])
-    artifact = crew_state.scan_artifact_path(str(root), record)
+    artifact = crew_endpoints.scan_artifact_path(str(root), record)
     artifact_path = root / artifact
     artifact_path.parent.mkdir(parents=True, exist_ok=True)
     artifact_path.write_text(
         "scanned clean: https://api.example/v1/widgets\n"
         + _REAL_REPORT_MARKER, encoding="utf-8")
 
-    endpoints = crew_state.read_endpoints(str(root), {})
+    endpoints = crew_endpoints.read_endpoints(str(root), {})
     assert endpoints["unscanned"] == []
     assert endpoints["unfrozen"]
     assert endpoints["unfrozen"][0]["id"] == "ep-0001"
 
 
 def test_a_frozen_scan_is_not_reported_as_unfrozen(tmp_path, monkeypatch):
-    monkeypatch.setattr(crew_state, "gizmoduck_installed", lambda root=None: True)
+    monkeypatch.setattr(crew_endpoints, "gizmoduck_installed", lambda root=None: True)
     root = crew_fixtures.make_repo(tmp_path)
-    record = crew_state.declare_endpoint(
+    record = crew_endpoints.declare_endpoint(
         str(root), "https://api.example/v1/widgets", "src/app.py:10")
-    artifact = crew_state.record_scan_artifact(str(root), record["id"])
+    artifact = crew_endpoints.record_scan_artifact(str(root), record["id"])
     artifact_path = root / artifact
     artifact_path.parent.mkdir(parents=True, exist_ok=True)
     artifact_path.write_text(
         "scanned clean: https://api.example/v1/widgets\n"
         + _REAL_REPORT_MARKER, encoding="utf-8")
 
-    endpoints = crew_state.read_endpoints(str(root), {})
+    endpoints = crew_endpoints.read_endpoints(str(root), {})
     assert endpoints["unscanned"] == []
     assert endpoints["unfrozen"] == []
 
@@ -954,20 +962,20 @@ def test_a_closed_records_location_does_not_surface_as_a_fresh_candidate(
     research findings) must not keep re-surfacing forever as a NEW inferred
     candidate under a different id -- its location has to stay excluded
     from fresh inference exactly like an open one does."""
-    monkeypatch.setattr(crew_state, "gizmoduck_installed", lambda root=None: True)
+    monkeypatch.setattr(crew_endpoints, "gizmoduck_installed", lambda root=None: True)
     root = crew_fixtures.make_repo(tmp_path)
     (root / "app.py").write_text(
         '@app.route("/new-thing")\ndef handler():\n    pass\n',
         encoding="utf-8")
     crew_fixtures._git(root, "add", "app.py")  # pylint: disable=protected-access
-    location = crew_state.infer_endpoints(str(root))[0]["location"]
+    location = crew_endpoints.infer_endpoints(str(root))[0]["location"]
 
     _write_ledger(root, [{
         "id": "ep-0001", "endpoint": "researched and dismissed",
         "source": "declared", "status": "closed",
         "location": location, "createdAt": "2026-09-01T00:00:00Z",
     }])
-    endpoints = crew_state.read_endpoints(str(root), {})
+    endpoints = crew_endpoints.read_endpoints(str(root), {})
     assert not any(h.get("source") == "inferred" for h in endpoints["unscanned"])
 
 
@@ -985,14 +993,14 @@ def test_vendored_manifests_do_not_count_toward_monorepo_detection(tmp_path):
         "", encoding="utf-8")
     (root / "vendor" / "dep" / "go.mod").write_text(
         "module dep\n", encoding="utf-8")
-    assert not crew_state._is_monorepo(str(root))  # pylint: disable=protected-access
+    assert not crew_endpoints._is_monorepo(str(root))  # pylint: disable=protected-access
 
 
 # --- Finding 11: re-declaring an existing id must not reopen it -------------
 
 def test_redeclare_does_not_reopen_a_closed_record(tmp_path):
     root = crew_fixtures.make_repo(tmp_path)
-    record = crew_state.declare_endpoint(
+    record = crew_endpoints.declare_endpoint(
         str(root), "https://a.example/x", "a.py:1")
     doc = json.loads((root / ".crew" / "endpoints.json").read_text(
         encoding="utf-8"))
@@ -1002,7 +1010,7 @@ def test_redeclare_does_not_reopen_a_closed_record(tmp_path):
     (root / ".crew" / "endpoints.json").write_text(
         json.dumps(doc), encoding="utf-8")
 
-    updated = crew_state.declare_endpoint(
+    updated = crew_endpoints.declare_endpoint(
         str(root), "https://a.example/x-renamed", "a.py:2",
         endpoint_id=record["id"])
     assert updated["status"] == "closed"
@@ -1013,9 +1021,9 @@ def test_redeclare_preserves_an_open_record_status_too(tmp_path):
     """Not just "never reopens" -- re-declaring must not disturb status at
     all, in either direction."""
     root = crew_fixtures.make_repo(tmp_path)
-    record = crew_state.declare_endpoint(
+    record = crew_endpoints.declare_endpoint(
         str(root), "https://a.example/x", "a.py:1")
-    updated = crew_state.declare_endpoint(
+    updated = crew_endpoints.declare_endpoint(
         str(root), "https://a.example/x", "a.py:2", endpoint_id=record["id"])
     assert updated["status"] == "open"
 
@@ -1024,10 +1032,10 @@ def test_redeclare_preserves_an_open_record_status_too(tmp_path):
 
 def test_record_scan_artifact_stores_posix_separators(tmp_path):
     root = crew_fixtures.make_repo(tmp_path)
-    record = crew_state.declare_endpoint(
+    record = crew_endpoints.declare_endpoint(
         str(root), "https://a.example/x", "a.py:1")
-    crew_state.record_scan_artifact(str(root), record["id"])
-    stored = crew_state.load_endpoints(str(root))[0]
+    crew_endpoints.record_scan_artifact(str(root), record["id"])
+    stored = crew_endpoints.load_endpoints(str(root))[0]
     assert "\\" not in stored["artifactPath"]
     assert stored["artifactPath"] == "docs/security-scans/" + record["id"] + ".md"
 
@@ -1042,7 +1050,7 @@ def test_scan_artifact_path_normalises_backslashes_in_a_frozen_path(tmp_path):
     root = crew_fixtures.make_repo(tmp_path)
     record = {"id": "ep-0001", "location": "src/app.py:10",
               "artifactPath": "docs\\security-scans\\ep-0001.md"}
-    got = crew_state.scan_artifact_path(str(root), record)
+    got = crew_endpoints.scan_artifact_path(str(root), record)
     assert got == "docs/security-scans/ep-0001.md"
 
 
@@ -1052,7 +1060,7 @@ def test_a_backslash_frozen_path_still_resolves_to_a_real_file(
     freezing on Windows produced before this fix -- must still find its
     artifact on ANY OS, not read as permanently unscanned because a
     backslash-joined string is not a path separator here."""
-    monkeypatch.setattr(crew_state, "gizmoduck_installed", lambda root=None: True)
+    monkeypatch.setattr(crew_endpoints, "gizmoduck_installed", lambda root=None: True)
     root = crew_fixtures.make_repo(tmp_path)
     (root / "docs" / "security-scans").mkdir(parents=True)
     (root / "docs" / "security-scans" / "ep-0001.md").write_text(
@@ -1064,7 +1072,7 @@ def test_a_backslash_frozen_path_still_resolves_to_a_real_file(
         "location": "src/app.py:10", "createdAt": "2026-09-01T00:00:00Z",
         "artifactPath": "docs\\security-scans\\ep-0001.md",
     }])
-    endpoints = crew_state.read_endpoints(str(root), {})
+    endpoints = crew_endpoints.read_endpoints(str(root), {})
     assert endpoints["unscanned"] == []
 
 
@@ -1082,7 +1090,7 @@ def test_concurrent_threads_declaring_distinct_endpoints_all_survive(tmp_path):
 
     def declare(i):
         barrier.wait()
-        crew_state.declare_endpoint(
+        crew_endpoints.declare_endpoint(
             str(root), f"https://svc-{i}.example/x", f"svc_{i}.py:1")
 
     threads = [threading.Thread(target=declare, args=(i,)) for i in range(n)]
@@ -1091,6 +1099,6 @@ def test_concurrent_threads_declaring_distinct_endpoints_all_survive(tmp_path):
     for t in threads:
         t.join()
 
-    records = crew_state.load_endpoints(str(root))
+    records = crew_endpoints.load_endpoints(str(root))
     assert len(records) == n
     assert len({r["id"] for r in records}) == n

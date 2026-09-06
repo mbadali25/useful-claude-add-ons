@@ -403,11 +403,24 @@ def cmd_mcp_init(args: argparse.Namespace) -> int:
         return 1
 
     servers[SERVER_NAME] = entry
-    # newline="\n" is not cosmetic here: Python text mode rewrites every
-    # \n to \\r\\n on Windows, and the damage lands in the working tree after any
+    # Serialise BEFORE opening. `open(..., "w")` truncates at open time, so a
+    # write whose argument raises leaves a zero-byte file behind - and `doc`
+    # here is the user's whole `.mcp.json`, every other server in it included.
+    # Nothing that reaches this line can make `json.dumps` raise TODAY (`doc`
+    # came out of `json.loads`, `entry` is str-only), so this is not a fix for
+    # a live bug. It is the ordering that MAKES that a fact about today rather
+    # than something the next editor has to re-derive: with the call inside the
+    # `with`, adding one non-JSON value anywhere upstream turns "localgpu could
+    # not register itself" into "every MCP server in this repo is gone", and
+    # that failure looks like nothing happened. `_test/test_cli.py` pins the
+    # order by making the serialisation raise and checking the file survives.
+    #
+    # newline="\n" is not cosmetic either: Python text mode rewrites every
+    # \n to \r\n on Windows, and the damage lands in the working tree after any
     # checkout that might have fixed it.
+    body = json.dumps(doc, indent=2) + "\n"
     with io.open(target, "w", encoding="utf-8", newline="\n") as fh:
-        fh.write(json.dumps(doc, indent=2) + "\n")
+        fh.write(body)
     print(f"{'updated' if existing else 'wrote'}: {target}")
 
     if args.gitignore:
