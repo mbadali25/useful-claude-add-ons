@@ -20,8 +20,12 @@ an existing open `[Nuclei <template-id>]` only.
 A scan of a noisy target can therefore file real tickets in a real system
 unattended.
 
-**Resolved 2026-09-05: neither gates it, so this is not documentation-only.**
-Both candidate gates were checked, and both came back negative:
+**Question closed 2026-09-05 — and the answer makes this worse, not
+documentation-only. The defect is UNFIXED.** What was resolved is the blocking
+question below; nothing about the behaviour has changed. A `gizmoduck` scan of a
+noisy target can still file real tickets into a real service desk unattended.
+
+Both candidate gates were checked, and neither one confirms the write:
 
 - **The `infra-work-ticketing` skill does not gate — it instructs the
   opposite.** `skills/infra-work-ticketing/SKILL.md:209-211`: "If you're
@@ -32,24 +36,43 @@ Both candidate gates were checked, and both came back negative:
   text that actually runs. `:213` does list things worth asking about first —
   which system, which environment, planned versus incident — but every one is a
   missing-fact question, not a confirmation of the write.
-- **The SDP MCP tools carry no permission gate either.** No `sdp_*` entry
-  appears in `allow`, `ask` or `deny` in any settings layer — user
-  `settings.json`, user `settings.local.json`, or this repo's
-  `.claude/settings.local.json` — and the global `permissions.defaultMode` is
-  `auto`. Nothing prompts before `sdp_create`.
+- **No *permission rule* gates the SDP MCP tools.** No `sdp_*` entry appears in
+  `allow`, `ask` or `deny` in any settings layer — user `settings.json`, user
+  `settings.local.json`, or this repo's `.claude/settings.local.json` — and the
+  global `permissions.defaultMode` is `auto`. **Scope this claim carefully:** it
+  is a property of one machine's permission *configuration*, not of the
+  software. Whether the SDP MCP server itself confirms internally before
+  `sdp_create` is **UNVERIFIED** — that server's code was not read. A different
+  machine may also be configured differently.
 
-So the two layers that might have caught it both decline to, and the entry's
-own conclusion applies: this **needs a gate or an explicit opt-in flag**.
+So one layer actively declines to confirm and the other has no permission rule
+standing in the way, with its internal behaviour unknown. The entry's own
+conclusion applies: this **needs a gate or an explicit opt-in flag**.
 
-**Put the check where the ticket is created, not in the command prose.**
-`plugin/gizmoduck/scripts/gizmoduck.py:426` is where the `high` floor lives;
-`commands/scan.md` and `commands/tickets.md` are documentation and enforce
-nothing on their own. This repo has twice shipped a correct downstream check
-that never fired because an upstream filter discarded the input silently, so a
-gate written only into the command prose would reproduce that failure.
+**Where a gate can go — and the awkward part: nothing in this repo creates the
+ticket.** `cmd_tickets` (`plugin/gizmoduck/scripts/gizmoduck.py:289-306`) builds
+a list of payload dicts and `main` prints them as JSON. The script makes no SDP
+call, and nothing anywhere under `plugin/gizmoduck/` mentions `sdp_create`,
+`sdp_search` or ServiceDesk Plus. Creation happens one layer up:
+`commands/tickets.md:5-7` tells the model to "auto-create one ServiceDesk Plus
+ticket per finding", which it does through the SDP MCP tools.
+
+So "put the check where the ticket is created" has no target inside this plugin.
+The three places that could actually hold one:
+
+- the severity floor at `:426` (`_FLOORS["tickets"] = "high"`) — real, and it
+  limits which payloads are emitted, but it never gates the write;
+- a permission rule on `sdp_create` — none exists today, see above;
+- the SDP MCP server itself — behaviour UNVERIFIED.
+
+Command prose cannot enforce anything on its own, and this repo has twice
+shipped a correct downstream check that never fired because an upstream filter
+discarded the input silently. But prose is currently the *only* thing standing
+between a scan and a filed ticket, which is the shape of the problem.
 
 Recorded from evidence rather than left unread a second time; a future reader
-should treat the question as closed unless the cited lines move.
+should treat the question as closed unless the cited lines move — and should
+treat the SDP MCP server's internal behaviour as still open.
 
 ### 2. `mcp-servers/core` credential chain caches its winner permanently
 
