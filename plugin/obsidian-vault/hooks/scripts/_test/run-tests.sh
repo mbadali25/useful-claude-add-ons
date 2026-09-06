@@ -15,7 +15,15 @@
 # harmless.
 set -uo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PY=$(command -v python3 || command -v python)
+PY=""
+for cand in python3 python py; do
+  if command -v "$cand" >/dev/null 2>&1; then PY="$cand"; break; fi
+done
+if [ -z "$PY" ]; then
+  echo "FATAL: no Python interpreter found. Tried python3, python, py on PATH." >&2
+  echo "Git Bash ships without python3; install Python or put it on PATH." >&2
+  exit 1
+fi
 PASS=0
 FAIL=0
 
@@ -80,6 +88,14 @@ run_guard() {
   echo $?
 }
 
+guard_stderr() {
+  # Same call, but returns what the guard wrote to stderr instead of its exit
+  # code. The redirect order matters: `2>&1 >/dev/null` dups stderr onto the
+  # still-original stdout and only then sends stdout to the bin, so what is
+  # captured is stderr alone. The reverse order captures nothing.
+  HOME="$2" "$PY" "$DIR/vault_guard.py" < "$1" 2>&1 >/dev/null
+}
+
 check() {
   local desc="$1" expect="$2" got="$3"
   if [ "$got" = "$expect" ]; then
@@ -87,6 +103,32 @@ check() {
   else
     FAIL=$((FAIL+1))
     echo "FAIL: $desc (expected exit $expect, got $got)"
+  fi
+}
+
+check_stderr_has() {
+  local desc="$1" needle="$2" got="$3"
+  case "$got" in
+    *"$needle"*) PASS=$((PASS+1)) ;;
+    *) FAIL=$((FAIL+1)); echo "FAIL: $desc (stderr did not contain '$needle'; got: $got)" ;;
+  esac
+}
+
+check_stderr_lacks() {
+  local desc="$1" needle="$2" got="$3"
+  case "$got" in
+    *"$needle"*) FAIL=$((FAIL+1)); echo "FAIL: $desc (stderr contained '$needle'; got: $got)" ;;
+    *) PASS=$((PASS+1)) ;;
+  esac
+}
+
+check_stderr_empty() {
+  local desc="$1" got="$2"
+  if [ -z "$got" ]; then
+    PASS=$((PASS+1))
+  else
+    FAIL=$((FAIL+1))
+    echo "FAIL: $desc (expected silent stderr, got: $got)"
   fi
 }
 
@@ -110,6 +152,8 @@ Body.
 
 f=$(write_and_payload "wiki/concepts/no-frontmatter.md" "Just prose, no frontmatter block.")
 check "note with no frontmatter" 2 "$(run_guard "$f" "$home_on_win")"
+check_stderr_has "note with no frontmatter names the violation on stderr" \
+  "NO FRONTMATTER" "$(guard_stderr "$f" "$home_on_win")"
 
 bad_fm="---
 type: concept
@@ -186,6 +230,124 @@ import json, sys
 print(json.dumps({"tool_input": {"file_path": sys.argv[1], "content": sys.argv[2]}}))
 PYEOF
 check "file outside the vault is ignored" 0 "$(run_guard "$payload_file" "$home_on_win")"
+
+echo "== vault_guard.py: FRONTMATTER_EXEMPT_NAMES (TODO #4) =="
+
+# These four basenames are agent-instruction files, not notes, so the guard must
+# not DEMAND frontmatter of them - a YAML header in CLAUDE.md is read as part of
+# Claude's instructions. The guard is PostToolUse, so exit 2 does not prevent the
+# write; it hands Claude stderr and tells it to go back and "fix" a file that is
+# not broken.
+#
+# "Can never carry the contract" is what an earlier version of this comment
+# said, and it is wrong: a genuine note that happens to be called README.md can
+# carry frontmatter, and when it does it is held to all of it. The exemption is
+# only from the demand. The frontmatter-bearing cases further down are the ones
+# that pin that.
+#
+# Every case here lives UNDER "wiki/" on purpose. notesPrefix is "wiki/", so a
+# vault-root CLAUDE.md never reaches check_note at all and would pass with or
+# without the exemption - it proves nothing. Only these go red when
+# FRONTMATTER_EXEMPT_NAMES is emptied.
+for exempt_name in CLAUDE.md README.md AGENTS.md GEMINI.md; do
+  f=$(write_and_payload "wiki/$exempt_name" "Instructions for this vault. No frontmatter, by design.")
+  check "$exempt_name inside notesPrefix is frontmatter-exempt" 0 "$(run_guard "$f" "$home_on_win")"
+done
+
+f=$(write_and_payload "wiki/Readme.MD" "Mixed-case basename. Still no frontmatter, still exempt.")
+check "the exemption is case-insensitive (Readme.MD)" 0 "$(run_guard "$f" "$home_on_win")"
+
+f=$(write_and_payload "wiki/CLAUDE.md" "Instructions for this vault. No frontmatter, by design.")
+check_stderr_empty "an exempt file reports nothing at all on stderr" \
+  "$(guard_stderr "$f" "$home_on_win")"
+
+# The exemption is frontmatter-only. README.md is used here rather than
+# CLAUDE.md because CLAUDE.md is ALSO in ASCII_EXEMPT_NAMES, by a separate and
+# older decision - "still held to every other rule" is true of three of the four
+# names, not all of them.
+ascii_readme="README carrying an em dash that should still be caught: EMDASH"
+ascii_readme="${ascii_readme/EMDASH/$'\xe2\x80\x94'}"
+f=$(write_and_payload "wiki/ascii/README.md" "$ascii_readme")
+check "an exempt basename is still ASCII-checked" 2 "$(run_guard "$f" "$home_on_win")"
+check_stderr_has "and it is reported as an ASCII violation" \
+  "NON-ASCII" "$(guard_stderr "$f" "$home_on_win")"
+# The "not a frontmatter one" half has to be asserted, not just named: without
+# this, stderr carrying both needles keeps the check above green.
+check_stderr_lacks "and not as a frontmatter one" \
+  "NO FRONTMATTER" "$(guard_stderr "$f" "$home_on_win")"
+
+# Codex, on PR #68: the first version of this exemption skipped check_note
+# ENTIRELY, which also dropped the required-keys, title-matches-filename and
+# updated-date checks -- while the comment beside it claimed the exemption was
+# "frontmatter-only". For CLAUDE.md that difference is invisible: a file with no
+# frontmatter never reaches those checks anyway. It is visible exactly here -- a
+# genuine note that happens to be called README.md and DOES carry frontmatter
+# was silently excused from the entire contract.
+#
+# This case pins the narrow reading: under the broad implementation it exits 0
+# with nothing checked, so it is what keeps `fm_optional` honest.
+# Codex round 4: every frontmatter-bearing case used README.md, so an
+# implementation that ran the full checks for README and returned early for the
+# other three passed the whole suite. Round 5: parameterising only the title
+# case left the same hole one rung narrower - required-keys and updated-date
+# were still README-only, so an implementation that ran the title check for all
+# four and those two for README alone passed 39 of 39. Every frontmatter-bearing
+# case below is parameterised over all four names, so each check is pinned for
+# each name independently.
+#
+# Codex round 3: the title case alone still left a wrong implementation that
+# runs ONLY the title check for an exempt file and skips the rest. The other
+# two cases pin those checks separately, each naming its own violation - a
+# guard that blocked the file for some other reason is not a pass.
+for exempt_name in CLAUDE.md README.md AGENTS.md GEMINI.md; do
+  # The title must equal the filename stem in the two cases that are NOT about
+  # the title, or the title check fires instead of the one being pinned.
+  stem="${exempt_name%.md}"
+
+  fm_note="---
+type: concept
+title: \"not-the-filename\"
+created: 2026-08-20
+updated: $today
+status: seed
+tags:
+  - concept
+---
+A real note that happens to be called $exempt_name."
+  f=$(write_and_payload "wiki/concepts/$exempt_name" "$fm_note")
+  check "$exempt_name WITH frontmatter is fully contract-checked" 2 "$(run_guard "$f" "$home_on_win")"
+  check_stderr_has "and for $exempt_name it is the title check that caught it" \
+    "does not match filename" "$(guard_stderr "$f" "$home_on_win")"
+
+  fm_missing="---
+type: concept
+title: \"$stem\"
+created: 2026-08-20
+updated: $today
+tags:
+  - concept
+---
+Required key status: is absent."
+  f=$(write_and_payload "wiki/concepts/$exempt_name" "$fm_missing")
+  check "$exempt_name is still held to the required keys" 2 "$(run_guard "$f" "$home_on_win")"
+  check_stderr_has "and for $exempt_name the missing key is named" \
+    "MISSING required frontmatter" "$(guard_stderr "$f" "$home_on_win")"
+
+  fm_stale="---
+type: concept
+title: \"$stem\"
+created: 2026-08-20
+updated: 2020-01-01
+status: seed
+tags:
+  - concept
+---
+The updated date is stale."
+  f=$(write_and_payload "wiki/concepts/$exempt_name" "$fm_stale")
+  check "$exempt_name is still held to the updated date" 2 "$(run_guard "$f" "$home_on_win")"
+  check_stderr_has "and for $exempt_name the stale date is named" \
+    "bump to" "$(guard_stderr "$f" "$home_on_win")"
+done
 
 echo "== vault_guard.py: config-off means silent (sabotage: prove the toggle matters) =="
 
