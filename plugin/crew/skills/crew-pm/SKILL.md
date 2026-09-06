@@ -107,6 +107,7 @@ The shape that matters:
 | `knowledge.graph.present` / `.current` | Whether a graphify graph exists and was built at HEAD. |
 | `diagrams.total` / `.behind` | Committed Mermaid sources, and which of their anchors are not HEAD. A diagram with no `anchor:` header counts as behind — unknown provenance resolves to stale, same as a graph with no `built_at_commit`. |
 | `diagrams.missing` | Which of architecture / data-flow / process has no file at all. Matched on filename stem prefix, so `data-flow-orders.mmd` satisfies `data-flow`. |
+| `endpoints.installed` / `.unscanned` | `installed` is false, and `unscanned` always `[]`, on any machine without gizmoduck — the trigger this feeds must be inert there. Each unscanned hit carries `source`: `declared` (a ticket said this endpoint exists — a fact) or `inferred` (a diff-line pattern match — a candidate that needs research before it is reported as real, never as confirmed). |
 | `incident.present` / `.active` / `.expired` | An emergency lane. Three separate questions: a state file exists, it is unexpired and permitted to stand gates down, it is past its expiry. Never collapse them — `present and not active` is the case that still owes a debt list. |
 | `incident.skips` / `.minutesLeft` | How many distinct gates went unrun, and how long is left before the gates come back on their own. |
 | `triggers` | The hook's own list of reasons to speak up, already prioritized. Report these first. |

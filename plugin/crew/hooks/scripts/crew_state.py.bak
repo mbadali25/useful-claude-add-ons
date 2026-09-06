@@ -2869,7 +2869,7 @@ def author_families(root, cfg, stale=False):
                                      recorded.get("model")))
         # Captured BEFORE the discard, because the discard is what destroys
         # it. See the `unnamed` return below.
-        unnamed = False
+        unnamed = None in recorded_families
         recorded_families.discard(None)
         # Strike BOTH unless the record positively proves it is about this
         # branch. Three states reach here and only one of them is evidence:

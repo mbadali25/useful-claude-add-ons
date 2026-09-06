@@ -159,10 +159,14 @@ def test_default_config_returns_a_fresh_object_each_call():
     """Mutating one call's result must not affect the next call's."""
     first = crew_config.default_config()
     first["pm"]["authority"] = "act"
-    first["graph"]["obsidian"]["confirmed"] = True
+    first["graph"]["mode"] = "mutated"
+    first["qa"]["codex"]["model"] = "mutated"
     second = crew_config.default_config()
     assert second["pm"]["authority"] == "report-only"
-    assert second["graph"]["obsidian"]["confirmed"] is False
+    assert second["graph"]["mode"] == "code-only"
+    # A nested dict too: a shallow copy would pass the two above and still
+    # let one caller mutate every later caller's `qa.codex`.
+    assert second["qa"]["codex"]["model"] is None
 
 
 def test_default_config_json_round_trips():
@@ -383,11 +387,16 @@ def test_memory_mode_is_globally_settable_and_the_template_ships_it():
     assert crew_config.is_global_path("memory.mode") is True
 
 
-def test_obsidian_confirmed_is_ungrantable_on_both_paths(tmp_path, monkeypatch):
-    """Consent to write into the user's own notes outside the repo, not a
-    capability. Two independent guards since 0.16.0, because the filtering
-    change created a second way to try: the walkthrough refuses to WRITE it,
-    and the resolver refuses to READ it however it got there."""
+def test_graph_obsidian_never_reaches_a_resolved_config(tmp_path, monkeypatch):
+    """0.16.13 removed the Obsidian export outright. The key was previously
+    consent-gated rather than absent, so an old global config on a real
+    machine can still carry it -- including with `confirmed: true`, which
+    used to mean something. It must not survive into a resolved config under
+    any spelling, and it must still be refused on the write path.
+
+    Asserting absence rather than a false-y value is the point. A key that
+    resolves to `{"enabled": false}` reads as a feature switched off, and the
+    next person to look turns it on."""
     path = _global(tmp_path, monkeypatch, contents={
         "graph": {"obsidian": {"enabled": True, "dir": "/v",
                                "confirmed": True}}})
@@ -396,11 +405,13 @@ def test_obsidian_confirmed_is_ungrantable_on_both_paths(tmp_path, monkeypatch):
 
     # Read path: hand-written into the global file by any means at all.
     resolved = crew_config.resolve_config(str(root))
-    assert resolved["graph"]["obsidian"]["confirmed"] is False
-    assert resolved["graph"]["obsidian"]["enabled"] is False
-    assert resolved["graph"]["obsidian"]["dir"] is None
+    assert "obsidian" not in resolved["graph"]
+    # The rest of the graph block is unharmed by the drop.
+    assert resolved["graph"]["mode"] == "code-only"
 
-    # Write path: refused by name, and the file is left exactly as it was.
+    # Write path: still refused by name, and the file is left exactly as it
+    # was. `graph.*` is repo scope entirely, so this holds for a key that no
+    # longer exists just as it did for one that did.
     before = path.read_bytes()
     with pytest.raises(crew_config.GlobalWriteRefused):
         crew_config.write_global_config(

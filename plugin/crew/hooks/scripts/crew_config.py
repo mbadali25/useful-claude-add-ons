@@ -99,26 +99,25 @@ GLOBAL_CONFIG_PATH = os.path.join(
 
 # The provider names crew RECOGNISES, split by what the role decides.
 #
-# The split is the whole point, so it is two names rather than one set with a
-# comment. `localgpu` backs a local Ollama model through this plugin's own
-# proxy; it is a legitimate provider for work whose failure is VISIBLE -- an
-# explorer that returns the wrong file, a scribe note that reads badly, a docs
-# draft a human edits. It is not a legitimate reviewer at any pin.
+# Canonical in `crew_state`, not here: `crew_state.resolve_role`'s read-side
+# guard needs to know which names are legitimate, and `crew_state` must not
+# import this module (see this module's own docstring), so the tuples live
+# where the guard can see them and this module aliases them rather than
+# keeping a second copy that could drift. See `crew_state`'s comment above
+# `DEV_PROVIDERS` for the reasoning behind the split. Kept under these same
+# names because `/crew:model`'s CLI, this module's own callers, and the test
+# suite already spell it `crew_config.DEV_PROVIDERS` / `crew_config.
+# QA_PROVIDERS`.
 #
-# The reason is not that a 7B is bad at reading code. It is that review's whole
-# value is a second, DIFFERENTLY-wrong reader, and a weaker model does not
-# review -- it agrees, fluently, and produces output indistinguishable from a
-# real pass. crew already refuses a reviewer from the author's own family for
-# exactly this reason; a weaker-family reviewer is the same failure wearing a
-# better disguise, and the gate it would pass sits in front of migrations
-# against deployed databases and authorization changes.
-#
-# So: recognised for dev, REJECTED LOUDLY for qa. Not silently dropped --
-# `validate_providers` raises and names the key, because crew's gates fail
-# OPEN against a provider name nothing resolves, and an unrecognised name in
-# `qa.order` is a rung the selector walks past without a word.
-DEV_PROVIDERS = ("claude", "codex", "copilot", "localgpu")
-QA_PROVIDERS = ("claude", "codex", "copilot")
+# Not silently dropped -- `validate_providers` raises and names the key,
+# because crew's gates fail OPEN against a provider name nothing resolves,
+# and an unrecognised name in `qa.order` is a rung the selector walks past
+# without a word. `resolve_role` and `order_candidates` enforce the same
+# refusal on the READ side, so a hand-edited config -- one `/crew:model`
+# never wrote -- cannot reach the review gate through the one path
+# `validate_providers` does not sit in front of.
+DEV_PROVIDERS = crew_state.DEV_PROVIDERS
+QA_PROVIDERS = crew_state.QA_PROVIDERS
 
 # Providers that are a CLI on PATH, and so have a meaningful `which()` answer.
 # `claude` is an in-session subagent, not a binary. `localgpu` is a binary but
@@ -512,6 +511,14 @@ def provider_problems(cfg):
     An empty list means clean. It is deliberately a list of the SAME messages
     the exception carries, so a user sees identical wording whether the
     problem was caught on the way in or noticed on the way out.
+
+    Called from `model_report`, which is the actually-exercised read path --
+    `/crew:model` and `commands/review.md` step 1 both run through it. A
+    reporter with no caller is the same defect in a new coat: `resolve_role`
+    now bars an illegitimate `qa` provider outright on its own, so this
+    function's job is narrower than it was -- naming the config-level
+    problem in one place, in `validate_providers`' own words, rather than
+    leaving a reader to infer it from which rows came back BARRED.
     """
     try:
         validate_providers(cfg)
@@ -808,10 +815,17 @@ def order_candidates(cfg, author, which=None, probe=None):
     One entry per provider in `qa.order`, in order, each
     `{"provider", "model", "family", "onPath", "eligible", "why"}`. `why` is
     None when the candidate is eligible and otherwise names the single reason
-    it is not, in the order the walk itself would find them: absent from PATH,
-    then family unknown, then same family as the author, then a failed probe.
-    A `copilot` with no `qa.copilot.model` has NO knowable family -- that is
-    why the walkthroughs insist on pinning it before Copilot may review at all.
+    it is not, in the order the walk itself would find them: not a provider
+    QA recognises, then absent from PATH, then family unknown, then same
+    family as the author, then a failed probe. A `copilot` with no
+    `qa.copilot.model` has NO knowable family -- that is why the walkthroughs
+    insist on pinning it before Copilot may review at all.
+
+    The first check is not cosmetic. `qa.order` is a hand-editable list, and
+    a name outside `QA_PROVIDERS` -- `localgpu`, a typo, a provider crew has
+    never heard of -- must never be reported eligible on the strength of
+    being on PATH and a different family: it is not a reviewer at all, so
+    PATH and family are never even consulted for it.
 
     **Being on PATH is not being able to review.** An installed CLI that is
     logged out, rate-limited or disabled by policy resolves on PATH and then
@@ -845,7 +859,9 @@ def order_candidates(cfg, author, which=None, probe=None):
             on_path = bool(localgpu_which(which))
         else:
             on_path = bool(which(provider))
-        if not on_path:
+        if provider not in QA_PROVIDERS:
+            why = f"`{provider}` is not a provider QA recognises"
+        elif not on_path:
             why = "not on PATH"
         elif fam is None:
             why = f"no `qa.{provider}.model` pinned, so its family is unknown"
@@ -873,8 +889,15 @@ def model_report(root, which=None, stale=False):
 
     Returns:
 
-        {"authorFamily", "authorSource", "dispatch", "qaOrder", "onPath",
-         "dev": [row, ...], "qa": [row, ...]}
+        {"providerProblems", "authorFamily", "authorSource", "dispatch",
+         "qaOrder", "onPath", "dev": [row, ...], "qa": [row, ...]}
+
+    `providerProblems` is `provider_problems(cfg)` -- the read-side check
+    that a config `/crew:model` never wrote (hand-edited, or written by an
+    older release) may still name a provider nothing resolves. An empty list
+    means clean; a non-empty one is printed ahead of the table, not folded
+    into it, because it is a fact about the CONFIG rather than about any one
+    role's resolution.
 
     Each row is `crew_state.resolve_role`'s dict plus a `display` field. The
     `qa` rows are resolved WITH the author family, so the family guard is
@@ -889,6 +912,13 @@ def model_report(root, which=None, stale=False):
     """
     which = shutil.which if which is None else which
     cfg = resolve_config(root)
+    # `provider_problems` is the read-side counterpart to `validate_providers`
+    # -- a config `/crew:model` never wrote (hand-edited, or written by an
+    # older release) may name a provider `resolve_role` below will already
+    # refuse per role, but a reader of THIS report deserves the same words
+    # `validate_providers` would have raised on write, in one place, rather
+    # than reconstructing them from which rows came back BARRED.
+    provider_problems_found = provider_problems(cfg)
     authors, author_source = crew_state.author_families(root, cfg,
                                                        stale=stale)
 
@@ -922,6 +952,8 @@ def model_report(root, which=None, stale=False):
 
     candidates = order_candidates(cfg, authors, which)
     return {
+        # Never empty means clean, exactly as `provider_problems` documents.
+        "providerProblems": provider_problems_found,
         "authorFamily": ", ".join(sorted(authors)) or None,
         "authorFamilies": sorted(authors),
         "authorSource": author_source,
@@ -1001,7 +1033,10 @@ def role_status(row):
     Four states, and the last one is why this is a function rather than three
     lines inside the printer:
 
-      * `BARRED` -- the resolved family is one that wrote this diff.
+      * `BARRED` -- the resolved family is one that wrote this diff, or the
+        provider is not one QA recognises at all (`barredBy` is None in that
+        second case -- there is no family to name, only a name nothing
+        resolves).
       * `walks qa.order` -- `auto` is an instruction, not a provider; the
         guard is applied to the candidates rather than to this row.
       * `NOT ON PATH` -- the CLI that would run is not installed.
@@ -1031,7 +1066,10 @@ def role_status(row):
     if row["kind"] == "dev":
         return "implements (the guard governs review, not authorship)"
     if row["barred"]:
-        return f"BARRED - same `{row['barredBy']}` family as the author"
+        if row["barredBy"]:
+            return f"BARRED - same `{row['barredBy']}` family as the author"
+        return (f"BARRED - `{row['provider']}` is not a provider QA "
+                "recognises")
     if row["provider"] == "auto":
         return "walks qa.order"
     if not row["providerOnPath"]:
@@ -1043,6 +1081,14 @@ def role_status(row):
 
 
 def _print_models(report):
+    # A fact about the CONFIG, printed ahead of anything role-shaped -- a
+    # hand-edited file naming a provider nothing resolves is a problem with
+    # what was read, not with any one row's resolution.
+    if report.get("providerProblems"):
+        print("PROVIDER PROBLEMS in the resolved config:")
+        for problem in report["providerProblems"]:
+            print(f"  ! {problem}")
+        print()
     origin = _ORIGINS.get(report["authorSource"], report["authorSource"])
     print(f"author family: {report['authorFamily'] or 'unknown'}  ({origin})")
     if report["dispatch"]:

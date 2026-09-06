@@ -352,3 +352,114 @@ three permanent false positives, which is how a real staleness signal gets
 trained away.
 
 `plugin/crew/hooks/scripts/crew_state.py` — the anchor comparison.
+
+## `/localgpu:ask` has no empty-argument branch
+
+`plugin/localgpu/commands/ask.md:8` interpolates `$ARGUMENTS` straight into
+prose — "`$ARGUMENTS` is the question" — and nothing in the file branches on it
+being empty. Invoked with no question the command renders its whole body,
+including the retrieval procedure and the VRAM warning, with a blank where the
+question should be. There is no instruction for that state, so the reading model
+has to invent one.
+
+Observed twice in one session, both times as a bare `/localgpu:ask`.
+
+The fix is a guard at the top: if `$ARGUMENTS` is empty, print the
+`argument-hint` line (`<question> [--k N] [--glob <pattern>]`) and stop, without
+loading the rest. Cheap, and it turns a confusing non-response into a usable one.
+
+**Check the sibling commands for the same shape before fixing just this one.**
+`/localgpu:search` takes the same flags and almost certainly has the same gap;
+`gizmoduck`'s `scan`, `report`, `tickets` and `diff` all take required
+arguments. A command whose entire body is instructions for work it cannot do is
+worse than an error, because it reads as though it is working.
+
+`plugin/localgpu/commands/ask.md:3` carries a correct `argument-hint` already —
+the metadata is right, nothing consumes it on the empty path.
+
+## `resolve_role` accepts any provider name, and the review gate fails open
+
+**Security. The gate this repo puts in front of SQL against deployed databases
+and authorization DENY paths can be disabled by two individually-valid config
+edits, with no error and no announcement.**
+
+Verified by execution at `1394aab6`, not inferred.
+
+### No code validates a provider name
+
+The closed set `{claude, codex, copilot}` appears three times in the Python and
+is never a check:
+
+- `crew_config.py:792` — builds a dict of names for the report
+- `crew_config.py:794` — `onPath` probe for codex/copilot
+- `crew_state.py:1334` — the default `qa.order`
+
+`resolve_role` (`crew_state.py:1612`) takes the name verbatim:
+
+    provider = pin.get("provider") or block.get("provider") or "claude"
+
+The only validation that exists is **prose in `commands/model.md:105-119`,
+executed by a model**. Hand-editing `.crew/config.json` bypasses it completely,
+and so does a model that reads the table imprecisely.
+
+### The table itself has two holes
+
+| Key | Documented rule | Hole |
+|---|---|---|
+| `dev.provider` | `claude`, `codex`, or `copilot` | closed |
+| `qa.provider` | `auto`, or a name in `qa.order` | **`qa.order` has no rule, so adding `localgpu` there makes `qa.provider: localgpu` valid** |
+| `qa.roles.<role>` | "a `{provider, model}` object. Any role name is accepted" | **says nothing about the provider VALUE. `qa.roles.review.provider: localgpu` passes.** |
+
+So the restriction on `dev.provider` is real and the same restriction on the
+reviewer seat does not exist.
+
+### What resolve_role then returns
+
+Config: `dev.provider: codex` / `gpt-6-astra` (author family `gpt`), reviewer
+pinned to `localgpu`.
+
+    provider   = 'localgpu'
+    model      = 'qwen2.5-coder:7b-instruct-q4_K_M'
+    family     = 'qwen'
+    barred     = False
+    announce   = []
+
+`qwen != gpt`, so the family-independence guard **passes cleanly**. The 7B is
+affirmatively cleared to review GPT-authored code.
+
+Unpinned is worse. `qa.provider: localgpu` with no model:
+
+    family     = None
+    barred     = False
+    announce   = []
+
+`family` is `None`, and the guard reads
+`if out["family"] is not None and out["family"] in authors` — so it **does not
+run at all**. Not "a different family cleared it": the check is skipped.
+
+### The part that makes it undetectable
+
+`announce` is `[]` in both cases, against a docstring that states the contract
+directly (`crew_state.py:1643-1646`):
+
+> `announce` is never empty when something happened. A review that quietly ran
+> on the fallback is indistinguishable from one that ran on the pin, and the
+> difference matters most exactly when the pin was chosen to get a different
+> family onto the diff.
+
+An unknown provider is precisely "something happened", and nothing is said. The
+config file reports a reviewer is configured, `resolve_role` agrees, and a 7B
+that agrees fluently produces output indistinguishable from a real pass. Same
+shape as every other defect in this file: **the signal and its absence look
+identical.**
+
+### Fix shape
+
+`resolve_role` must not silently accept a provider it has no runner for. Either
+bar it, or at minimum append to `announce` — a review that ran on an unknown
+provider must never be reportable as clean without saying so. `family()`
+returning `None` for an unrecognised provider must not be treated as "no family
+conflict"; unknown is not the same as independent.
+
+Needs must-block / must-allow regression cases and sabotage testing per
+CLAUDE.md, since it governs a gate that can block.

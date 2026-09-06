@@ -192,10 +192,15 @@ def upgrade_config(cfg):
     # carrying it forward: a key that survives an upgrade but no longer has a
     # consumer reads, to anyone inspecting the config, as a feature that is
     # merely switched off. Naming it is what tells them it is gone.
-    if isinstance(crew_state.dict_or_empty(cfg.get("graph")).get("obsidian"),
-                  dict):
-        notes["droppedKeys"].append("graph.obsidian")
-    out["graph"].pop("obsidian", None)
+    # `out["graph"]` is only a dict when the supplied block was well-typed.
+    # A wrong-typed block (`"graph": "oops"`) is kept VERBATIM and reported in
+    # `unmigrated` -- popping a key off it raises AttributeError and takes the
+    # whole migration down partway, after run() has already written the file.
+    if isinstance(out.get("graph"), dict):
+        if isinstance(crew_state.dict_or_empty(cfg.get("graph")).get("obsidian"),
+                      dict):
+            notes["droppedKeys"].append("graph.obsidian")
+        out["graph"].pop("obsidian", None)
 
     supplied_roles = cfg.get("roles", _ABSENT)
     if supplied_roles is not _ABSENT and not (
