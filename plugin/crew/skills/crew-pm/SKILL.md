@@ -101,7 +101,7 @@ The shape that matters:
 |---|---|
 | `isCrew` | Whether `.crew/config.json` exists at all. `false` means every other field is a default, not a finding. |
 | `tier` / `roles` | Current crew composition, straight from config. |
-| `health.rate` | BLOCK+FIX findings per ticket, last 10 reviews. `null` means no reviews have run yet — not a healthy 0. |
+| `health.rate` | BLOCK+FIX findings per ticket, last 10 distinct tickets (a ticket reviewed more than once counts once). `null` means no reviews have run yet — not a healthy 0. |
 | `work.ticket` / `work.handoffPending` | What is open and whether a handoff note is waiting to be read. |
 | `knowledge.subsystems` / `knowledge.behind` | Codemap file count, and which of those files' anchors are not HEAD. |
 | `knowledge.graph.present` / `.current` | Whether a graphify graph exists and was built at HEAD. |

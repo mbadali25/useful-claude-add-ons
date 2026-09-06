@@ -286,24 +286,52 @@ def html_to_pdf(html_str, out_path):
         return False
 
 
-def cmd_tickets(findings, min_sev):
-    out = []
+def cmd_tickets(findings, min_sev, create=False):
+    """Ticket records for findings at or above `min_sev`.
+
+    `create` is the opt-in gate, and it withholds rather than annotates. Without
+    it the payload a `sdp_create` call needs - the `description` body - is never
+    built, so a preview cannot be turned into a ticket by a caller that reads
+    past a warning. That distinction is the whole point: an earlier design
+    emitted the full records under an `authorized: false` label, which is a gate
+    in name and a create-ready payload in fact.
+
+    A preview still names every finding that would be ticketed, its severity and
+    how many targets it affects - enough for a person to decide, and enough for
+    the caller to say what the `--create` run will do.
+    """
+    tickets = []
     for f in sorted(dedupe(findings), key=lambda f: (-f["severity"], f["name"])):
         if f["severity"] < min_sev:
             continue
-        cvss = f["cvss"] or "n/a"
-        cves = ", ".join(f["cve"]) if f["cve"] else "none"
         subject = f"[Nuclei {f['template_id']}] {f['name']} ({f['instances']} target(s))"
-        lines = [f"Severity: {f['severity_name']} | CVSS: {cvss} | CVE: {cves} | Type: {f['type']}",
-                 f"Affected: {', '.join(f['affected'])}"]
-        if f["description"]:
-            lines.append(f"\nDetail: {f['description'].strip()}")
-        if f["remediation"]:
-            lines.append(f"\nRemediation: {f['remediation'].strip()}")
-        out.append({"ref": f"nuclei:{f['template_id']}", "template_id": f["template_id"],
-                    "severity": f["severity_name"], "subject": subject,
-                    "description": "\n".join(lines)})
-    return out
+        record = {"ref": f"nuclei:{f['template_id']}", "template_id": f["template_id"],
+                  "severity": f["severity_name"], "subject": subject,
+                  "instances": f["instances"]}
+        if create:
+            cvss = f["cvss"] or "n/a"
+            cves = ", ".join(f["cve"]) if f["cve"] else "none"
+            lines = [f"Severity: {f['severity_name']} | CVSS: {cvss} | CVE: {cves} | Type: {f['type']}",
+                     f"Affected: {', '.join(f['affected'])}"]
+            if f["description"]:
+                lines.append(f"\nDetail: {f['description'].strip()}")
+            if f["remediation"]:
+                lines.append(f"\nRemediation: {f['remediation'].strip()}")
+            record["description"] = "\n".join(lines)
+        tickets.append(record)
+
+    if create:
+        return {"mode": "create", "authorized": True, "count": len(tickets),
+                "instruction": "Authorized. For each ticket, search ServiceDesk Plus for an "
+                               "open request whose subject contains the same [Nuclei <id>] tag; "
+                               "add a note if one exists, create the request if none does.",
+                "tickets": tickets}
+    return {"mode": "preview", "authorized": False, "count": len(tickets),
+            "instruction": "PREVIEW ONLY - no ticket body was generated, so nothing here can be "
+                           "filed. Show this list to the user and ask whether to open these "
+                           "tickets. Only on an explicit yes, re-run the same command with "
+                           "--create.",
+            "tickets": tickets}
 
 
 def cmd_diff(baseline, current, min_sev, title):
@@ -403,7 +431,18 @@ def main():
     p.add_argument("--title", default="Nuclei Vulnerability Report")
     p.add_argument("--format", default="md", choices=["md", "html", "pdf"])
     p.add_argument("--out", default=None)
+    p.add_argument("--create", action="store_true",
+                   help="tickets: emit fileable ticket bodies. Without it, `tickets` returns a "
+                        "preview naming each finding but carrying no description, so nothing in "
+                        "the output can be filed. Pass this only after the user has said yes to "
+                        "the preview.")
     a = p.parse_args()
+
+    # `--create` means one thing on one command. Accepting it silently elsewhere
+    # would teach the habit of passing it, and a flag that is ignored on five of
+    # six commands is one rename away from being honoured on all of them.
+    if a.create and a.command != "tickets":
+        p.error("--create applies to `tickets` only")
 
     # `command` is positional and `target`/`baseline2` are not, so argparse
     # accepts `scan` with no target and the failure surfaces later as a
@@ -447,7 +486,7 @@ def main():
     elif a.command == "parse":
         print(json.dumps([f for f in findings if f["severity"] >= min_sev], indent=2))
     elif a.command == "tickets":
-        print(json.dumps(cmd_tickets(findings, min_sev), indent=2))
+        print(json.dumps(cmd_tickets(findings, min_sev, a.create), indent=2))
     elif a.command == "report":
         if a.format == "md":
             md = cmd_report(findings, min_sev, a.title)

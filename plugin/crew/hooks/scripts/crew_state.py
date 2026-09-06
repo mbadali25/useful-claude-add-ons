@@ -148,20 +148,38 @@ def _verdict(rate):
 
 
 def read_metrics(root, window=METRICS_WINDOW):
-    """BLOCK+FIX per ticket over the last `window` review rows.
+    """BLOCK+FIX per ticket over the last `window` distinct tickets.
 
     Rows are appended by /crew:review as
     `<date> | <ticket> | <reviewer> | <n BLOCK> | <n FIX>`. Leading and
     trailing pipes are tolerated, and any row whose BLOCK/FIX cells are not
     numeric is skipped -- which is how the header and separator rows are
     filtered without hard-coding their text.
+
+    A ticket reviewed more than once (a fix round after a BLOCK) writes one
+    row per round, not one row per ticket -- `cells[1]` is the ticket, and it
+    repeats. Grouping by that cell before counting is load-bearing: without
+    it, `tickets` is a row count wearing a ticket-shaped name, and a single
+    ticket sent back for revision reads as multiple tickets. `rate` stays
+    findings-per-ticket to match how pm_brief.py and crew-pm/SKILL.md already
+    describe it ("BLOCK+FIX per ticket") -- a per-row rate would let extra
+    review rounds on ONE ticket dilute the denominator and under-report how
+    bad that ticket's findings rate actually is. A blank ticket cell still
+    groups together as one ticket rather than being dropped, since the
+    BLOCK/FIX numbers it carries are real findings.
+
+    `window` bounds distinct tickets, not rows, and "last" means last
+    REVIEWED -- a ticket is moved to the end of `by_ticket` every time a
+    row for it is seen, so a ticket whose rounds are interleaved with other
+    tickets' rows (T-1, T-2, T-1) is windowed by its most recent row, not
+    the position of its first.
     """
     empty = {"tickets": 0, "findings": 0, "rate": None, "verdict": "no data"}
     text = read_text(os.path.join(root, ".crew", "metrics.md"))
     if not text:
         return empty
 
-    totals = []
+    by_ticket = {}
     for line in text.splitlines():
         cells = [c.strip() for c in line.strip().strip("|").split("|")]
         if len(cells) < 5:
@@ -169,9 +187,11 @@ def read_metrics(root, window=METRICS_WINDOW):
         block, fix = _leading_int(cells[3]), _leading_int(cells[4])
         if block is None or fix is None:
             continue
-        totals.append(block + fix)
+        ticket = cells[1]
+        total = by_ticket.pop(ticket, 0) + block + fix
+        by_ticket[ticket] = total
 
-    recent = totals[-window:]
+    recent = list(by_ticket.values())[-window:]
     if not recent:
         return empty
     findings = sum(recent)

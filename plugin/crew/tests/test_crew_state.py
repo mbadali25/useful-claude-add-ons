@@ -85,6 +85,40 @@ def test_metrics_header_and_separator_rows_are_skipped(tmp_path):
     assert crew_state.read_metrics(str(root))["tickets"] == 1
 
 
+def test_metrics_groups_multiple_rounds_of_the_same_ticket(tmp_path):
+    # Modeled on the real .crew/metrics.md that exposed this bug: one ticket
+    # reviewed twice (a BLOCK round, then a FIX round) plus one other ticket.
+    # A row count would report 3 tickets and a rate of 3.0; grouped by ticket
+    # it's 2 tickets, 9 findings, rate 4.5.
+    root = crew_fixtures.make_repo(
+        tmp_path, metrics=[("T-1", 4, 1), ("T-1", 1, 3), ("T-2", 0, 0)]
+    )
+    got = crew_state.read_metrics(str(root))
+    assert got["tickets"] == 2
+    assert got["findings"] == 9
+    assert got["rate"] == 4.5
+
+
+def test_metrics_window_orders_by_last_review_not_first(tmp_path):
+    # T-1 is reviewed, then T-2, then T-1 again. T-1's most recent row is
+    # LAST, so a window of 1 must keep T-1 (3 findings), not T-2 -- ordering
+    # by first appearance would keep T-2 instead and silently drop the
+    # ticket that was actually reviewed most recently.
+    root = crew_fixtures.make_repo(
+        tmp_path, metrics=[("T-1", 1, 0), ("T-2", 0, 1), ("T-1", 2, 0)]
+    )
+    got = crew_state.read_metrics(str(root), window=1)
+    assert got["tickets"] == 1
+    assert got["findings"] == 3
+
+
+def test_metrics_blank_ticket_cell_still_groups_as_one_ticket(tmp_path):
+    root = crew_fixtures.make_repo(tmp_path, metrics=[("", 1, 1), ("", 2, 0)])
+    got = crew_state.read_metrics(str(root))
+    assert got["tickets"] == 1
+    assert got["findings"] == 4
+
+
 def test_metrics_window_keeps_only_the_last_n(tmp_path):
     rows = [(f"T-{i}", 5, 5) for i in range(12)] + [("T-last", 0, 0)]
     root = crew_fixtures.make_repo(tmp_path, metrics=rows)

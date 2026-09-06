@@ -2,8 +2,9 @@
 name: gizmoduck
 description: >-
   Run a Nuclei vulnerability scan against a website, host, or list of targets,
-  produce a triaged report, and auto-open ServiceDesk Plus tickets for the serious
-  findings. Use whenever the user wants to scan a new site they deployed, check a
+  produce a triaged report, and open ServiceDesk Plus tickets for the serious
+  findings once the user has confirmed the previewed list. Use whenever the user
+  wants to scan a new site they deployed, check a
   host or their environment for vulnerabilities, mentions Nuclei, or points at a
   targets file or a Nuclei JSONL output. Works on WSL/Linux and Windows.
 ---
@@ -61,20 +62,37 @@ Runs on Linux/WSL and Windows. On Linux call the CLI with `python3`; on Windows 
    silently produces an unstyled column rather than an error. Verify any change in
    the PDF, not just a browser.
 
-4. **Ticketing — one ticket per finding, auto-create Critical + High.** Get the
-   SDP-ready records:
+4. **Ticketing — preview, ask once, then open Critical + High.** Two runs, and the
+   first one is not optional:
    ```bash
    python3 ${CLAUDE_PLUGIN_ROOT}/scripts/gizmoduck.py tickets findings.jsonl --min-severity high
    ```
-   Each record has a stable `[Nuclei <template-id>]` subject. For each, **before
-   creating**, search ServiceDesk Plus for an existing **open** request whose
-   subject contains that same tag:
+   That is the preview. It returns `"mode": "preview"` and each record's subject,
+   severity and target count — **and no `description`**, because the body a ticket
+   needs is not generated at all without `--create`. So a preview cannot be filed
+   even by a caller that reads past the warning; the flag withholds rather than
+   labels. Show the list and ask the user, once, whether to open these tickets.
+
+   On an explicit yes, and only then:
+   ```bash
+   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/gizmoduck.py tickets findings.jsonl \
+     --min-severity high --create
+   ```
+   Now each record has a stable `[Nuclei <template-id>]` subject and a body. For
+   each, **before creating**, search ServiceDesk Plus for an existing **open**
+   request whose subject contains that same tag:
    - exists → **add a note** updating the affected-target list;
    - none → **create** the request.
 
-   This is auto-create — don't prompt per ticket. Do **not** reimplement ticketing;
-   use the org `infra-work-ticketing` skill / the SDP tools. Print a created-vs-updated
-   summary afterward. Medium/Low/Info never generate tickets.
+   Don't prompt per ticket — the one question was asked at the preview. Do **not**
+   reimplement ticketing; use the org `infra-work-ticketing` skill / the SDP tools.
+   Print a created-vs-updated summary afterward. Medium/Low/Info never generate
+   tickets.
+
+   **The de-dupe search is not the confirmation.** Searching for an open request
+   decides *create versus note*; both of those write to ServiceDesk Plus. The only
+   thing standing between a scan and a ticket the user did not ask for is the
+   preview above, so never skip it because the search "will catch duplicates".
 
 ## Notes
 - Severity: critical/high/medium/low/info map to Critical…Info. Reports itemise

@@ -52,12 +52,35 @@ to an unanswerable question, but it is not a useful one.
 
 ## Files
 
-| File | Covers |
-|---|---|
-| [`marketplace-registration.md`](marketplace-registration.md) | The marketplace itself: what registers a skill vs. a plugin, the two install scripts, and the two separate version-check paths (`check-marketplace.py` vs. `_verify/smoke.sh`). |
-| [`localgpu.md`](localgpu.md) | The `localgpu` plugin: its two independent process trees, the shared-Ollama constraint that drives `OLLAMA_MAX_LOADED_MODELS=1`, the embed-model mismatch guard, `.mcp.json` provisioning, and the bootstrap.sh/bootstrap.ps1 parity verdict. |
-| [`crew.md`](crew.md) | The `crew` plugin: hooks, agents, commands, skills inventory, and how `crew_state.py` reads this very directory. |
-| [`verification-harness.md`](verification-harness.md) | `_verify/smoke.sh`, `_verify/run-all.sh`, `scripts/check-marketplace.py`, and `.crew/verify.json` — what each actually runs, and where they overlap or don't. |
+| File | Anchor | Covers |
+|---|---|---|
+| [`marketplace-registration.md`](marketplace-registration.md) | `3167721f` | The marketplace itself: what registers a skill vs. a plugin, the two install scripts, and the two separate version-check paths (`check-marketplace.py` vs. `_verify/smoke.sh`). |
+| [`localgpu.md`](localgpu.md) | `3167721f` | The `localgpu` plugin: its two independent process trees, the shared-Ollama constraint that drives `OLLAMA_MAX_LOADED_MODELS=1`, the embed-model mismatch guard, `.mcp.json` provisioning, and the bootstrap.sh/bootstrap.ps1 parity verdict. |
+| [`crew.md`](crew.md) | `3167721f` | The `crew` plugin: hooks, agents, commands, skills inventory, and how `crew_state.py` reads this very directory. |
+| [`verification-harness.md`](verification-harness.md) | `3167721f` | `_verify/smoke.sh`, `_verify/run-all.sh`, `scripts/check-marketplace.py`, and `.crew/verify.json` — what each actually runs, and where they overlap or don't. **`.crew/verify.json` does not exist**; see below. |
+| [`obsidian-vault.md`](obsidian-vault.md) | `a02331ee` | The `obsidian-vault` plugin: four hook events registered as bash+PowerShell pairs, the three guard checks and their **unequal defaults**, the two differently-sized exemption sets, and per-vault MCP registration. |
+| [`mcp-servers.md`](mcp-servers.md) | `a02331ee` | The TypeScript monorepo — four stdio MCP servers over one shared `core`. Holds the two recorded `adminAuth.ts` defects (TODO #2 and #3), re-verified unchanged. Not a marketplace plugin; nothing registers it. |
+| [`install-scripts.md`](install-scripts.md) | `a02331ee` | The `install-prerequisites.{sh,ps1}` matched pair: catalog parity (confirmed in sync), the `pick_fit`/`Format-PickerLine` no-bypass rule, idempotency branches, and hook-plugins-default-off on both sides. |
+| [`skills-itsm.md`](skills-itsm.md) | `a02331ee` | `infra-work-ticketing` + `notify`. Records that **`SKILL.md:209-211` instructs an unconfirmed ticket creation** against a live service desk, and that its `:213` list is missing-fact questions, not write confirmation. |
+| [`skills-security-ops.md`](skills-security-ops.md) | `a02331ee` | `cisco-meraki` + `wazuh-onprem`. Records that **Wazuh's generic `post`/`put`/`delete` have no gate in code** — only prose — and that the skill with the ungated verbs is the one with no tests. |
+| [`repo-docs.md`](repo-docs.md) | `a02331ee` | `docs/` and `CHANGELOG.md`. Records that **`docs/adr/` does not exist** despite two documents citing it, and that TODO.md's `render.sh` entry is stale — the `cygpath -w` fix is in source. |
+
+## Coverage — and what is still unmapped
+
+Ten subsystems, covering 76% of graph nodes at `a02331ee` (5056 of 6614 with a `source_file`).
+What remains unmapped is almost entirely the single-skill directories under `skills/` — the largest
+are `work-log-reporter`, `web-testing-playwright`, `visio-diagrams`, `intune-graph`,
+`aws-opensearch`, `claude-code-tuneup`, `sophos-central` and `repo-docs`, none individually large.
+
+That percentage is a measurement, not a target, and it moves whenever the graph is rebuilt.
+Re-measure instead of trusting it: group node `source_file` values by top-level directory and
+subtract the prefixes each file above claims.
+
+The four `3167721f` anchors were checked per-path on 2026-09-06 and are **current despite the lag**
+— the only commits touching their cited paths since that sha are an `obsidian-vault` version bump
+and a `PLUGINS.md` assertion count inside the obsidian-vault section, neither of which any of the
+four describes. They were deliberately not re-anchored: an anchor bump is a freshness claim, and a
+path diff cannot see prose that has gone stale in ways the paths do not reveal.
 
 ## How to read these files
 

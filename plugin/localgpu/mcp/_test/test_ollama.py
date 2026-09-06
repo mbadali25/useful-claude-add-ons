@@ -167,6 +167,32 @@ def test_a_short_answer_is_not_silently_padded(stub):
     assert "nomic-embed-text" in str(caught.value)
 
 
+def test_a_200_with_no_response_field_is_an_error_not_an_empty_answer(stub):
+    """The generate-side twin of the test above, and the same defect class.
+
+    `data.get("response", "")` turned a malformed 200 into an empty string, which
+    the CLI then printed as a successful blank answer - a failure wearing the
+    shape of a success. The caller cannot tell "the model said nothing" from
+    "the server sent something we could not read", so the two must not collapse.
+    """
+    stub.reply("/api/generate", 200, {"done": True, "model": "chat-model"})
+    with pytest.raises(OllamaError) as caught:
+        OllamaClient(stub.url).generate("q", "chat-model")
+
+    message = str(caught.value)
+    assert "chat-model" in message
+    assert "no 'response' field" in message
+    assert "done, model" in message, "the message must name what DID come back"
+
+
+def test_a_genuinely_empty_response_is_still_returned(stub):
+    """The other side of it: an empty answer the server actually sent is data,
+    not an error. Guarding the missing key must not reject a present one."""
+    stub.reply("/api/generate", 200, {"response": ""})
+
+    assert OllamaClient(stub.url).generate("q", "chat-model") == ""
+
+
 def test_require_models_accepts_a_latest_tag(stub):
     stub.reply(
         "/api/tags",
