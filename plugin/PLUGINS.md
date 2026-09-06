@@ -11,7 +11,7 @@ Read the **Hooks** section of any plugin before installing it. Commands and agen
 | | |
 |---|---|
 | **Source** | [`crew/`](crew) |
-| **Version** | 0.16.7 |
+| **Version** | 0.16.13 |
 | **Install** | `claude plugin install crew@useful-claude-add-ons` |
 | **Menu item** | 21, `repo-plugins` — **off by default**. Menu item 22, `graphify`, is a separate, also-off-by-default install of the `graphify` CLI this plugin's graph feature depends on — see **The code graph** below. |
 | **Registers** | 17 agents, 24 commands, 17 skills, 20 hook entries (10 scripts × `.sh`/`.ps1`) across 5 events |
@@ -448,12 +448,12 @@ The hooks go with it. To keep the plugin but stop the `Stop` gate, set `verifyGa
 | | |
 |---|---|
 | **Source** | [`gizmoduck/`](gizmoduck) |
-| **Version** | 0.2.0 |
+| **Version** | 0.3.0 |
 | **Install** | `claude plugin install gizmoduck@useful-claude-add-ons` |
 | **Registers** | 6 commands, 1 skill. **No agents, no hooks** — nothing runs unless you type a command |
 | **Upstream guide** | [`gizmoduck/README.md`](gizmoduck/README.md) |
 
-Runs [Nuclei](https://github.com/projectdiscovery/nuclei) against hosts and websites, then does the part that usually gets skipped: diffs the run against a baseline so you see what is genuinely new, renders a triaged report, and turns Critical and High findings into ServiceDesk Plus tickets. Nuclei is MIT-licensed and self-hosted, so the whole loop runs locally — no export step, no API quota, no findings leaving the machine.
+Runs [Nuclei](https://github.com/projectdiscovery/nuclei) against hosts and websites, then does the part that usually gets skipped: diffs the run against a baseline so you see what is genuinely new, renders a triaged report, and turns Critical and High findings into ServiceDesk Plus tickets once you have said yes to the previewed list. Nuclei is MIT-licensed and self-hosted, so the whole loop runs locally — no export step, no API quota, no findings leaving the machine.
 
 **Only scan assets you own or have written permission to test.** The bundled skill says so in its first paragraph and tells the session to confirm authorisation when a target does not look like the user's. That is a prompt, not an enforcement mechanism: nothing here can tell whose host an IP is, so the check is yours to actually make.
 
@@ -461,9 +461,9 @@ Runs [Nuclei](https://github.com/projectdiscovery/nuclei) against hosts and webs
 
 | Command | Does |
 |---|---|
-| `/gizmoduck:scan <target> [sev]` | Scan a URL, host, or a file of one target per line; summarise, report, and open tickets for Critical and High |
+| `/gizmoduck:scan <target> [sev]` | Scan a URL, host, or a file of one target per line; summarise, report, and offer to open tickets for Critical and High |
 | `/gizmoduck:report <findings.jsonl> [sev]` | Re-render a report from findings already captured — Markdown, HTML, or PDF — without paying for another scan |
-| `/gizmoduck:tickets <findings.jsonl> [sev]` | Open or sync ServiceDesk Plus tickets from a findings file |
+| `/gizmoduck:tickets <findings.jsonl> [sev]` | Preview the tickets a findings file would produce, then open or sync them in ServiceDesk Plus on your yes |
 | `/gizmoduck:diff <old.jsonl> <new.jsonl> [sev]` | What is present in the new run and absent from the old, keyed on template plus location |
 | `/gizmoduck:update` | Update the Nuclei engine and the community template set |
 | `/gizmoduck:doctor` | Which half of the toolchain is missing — `nuclei`, templates, `python`, or the PDF renderer |
@@ -475,6 +475,8 @@ Runs [Nuclei](https://github.com/projectdiscovery/nuclei) against hosts and webs
 Everything is one Python file, `scripts/gizmoduck.py`, with `scan`, `summary`, `report`, `tickets`, `diff`, `doctor`, and `update` subcommands. It is usable directly, which matters for scheduling: a cron job or a scheduled task can run the scan and the diff without a Claude session in the loop.
 
 `tickets` does not call ServiceDesk Plus itself. It emits one ticket payload per finding — subject prefixed `[Nuclei <template-id>]`, severity, CVSS, CVE, affected hosts, remediation — and the session opens or updates them through the ServiceDesk Plus tools it already has. The template-id prefix is what makes the second run idempotent: a finding whose ticket is still open gets a note instead of a duplicate.
+
+Those payloads are behind `--create`, and the flag withholds rather than warns. A plain `tickets` run returns `"mode": "preview"` with each finding's subject, severity and target count and **no description field at all** — there is no body to file, so a caller that skips the prose still cannot open a ticket from it. `--create` is what generates the bodies, and the command files that ship with the plugin only reach for it after the user has been shown the preview and answered. The `[Nuclei <id>]` de-dupe search is not that confirmation: it chooses between creating a request and noting an existing one, and both of those write.
 
 Findings are deduplicated by template and location before anything is reported or ticketed, so one misconfiguration across forty hosts is one finding with forty affected targets rather than forty findings.
 
@@ -499,7 +501,7 @@ Nothing keeps running afterwards — there were no hooks. The Nuclei binary and 
 | | |
 |---|---|
 | **Source** | [`localgpu/`](localgpu) |
-| **Version** | 0.1.1 |
+| **Version** | 0.2.0 |
 | **Install** | `claude plugin install localgpu@useful-claude-add-ons` |
 | **Registers** | 6 commands, 1 skill. **No agents, no hooks** — nothing runs unless you type a command. `/localgpu:setup` additionally writes one stdio MCP server into the repository's own `.mcp.json`, which you approve through `/mcp`. The bootstrap separately installs a `localgpu` console script into `$LOCALGPU_HOME/venv`, which Claude Code neither registers nor runs |
 | **Upstream guide** | [`localgpu/README.md`](localgpu/README.md) |
@@ -596,7 +598,7 @@ Nothing keeps running afterwards — there were no hooks. Ollama, the models it 
 | | |
 |---|---|
 | **Source** | [`obsidian-vault/`](obsidian-vault) |
-| **Version** | 0.1.2 |
+| **Version** | 0.3.6 |
 | **Install** | `claude plugin install obsidian-vault@useful-claude-add-ons` |
 | **Registers** | 2 agents, 11 commands, 3 skills, 8 hook entries (3 scripts × `.sh`/`.ps1`) across 4 events |
 | **Upstream guide** | [`obsidian-vault/README.md`](obsidian-vault/README.md) |
