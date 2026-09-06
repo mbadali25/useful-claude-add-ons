@@ -30,7 +30,7 @@ Re-checked against source, not inferred:
   `plugin/crew/.claude-plugin/plugin.json`, and
   `plugin/crew/.claude-plugin/plugin.json:2-3` really is where `name` and
   `version` sit.
-- All 14 `path:line` anchors in this note resolve to an existing file with the
+- Every `path:line` anchor in this note resolves to an existing file with the
   cited line in range. 9 of them did not before this pass: they were written
   relative to `plugin/crew/hooks/scripts/`, which resolves by eye and cannot be
   pasted into the diff command above.

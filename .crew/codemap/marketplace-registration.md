@@ -22,8 +22,8 @@ web this note describes - no entry was added or removed, and neither install
 script moved.
 
 Re-checked against source: 29 entries total, 25 skills and 4 plugins, matching
-the table below and `check-marketplace.py`'s own output. All 11 `path:line`
-anchors resolve with the cited line in range.
+the table below and `check-marketplace.py`'s own output. Every `path:line`
+anchor here resolves with the cited line in range.
 
 **Not re-verified at this anchor:** `check_menu_parity` and
 `check_group_parity`, which the last section already declares unverified, and

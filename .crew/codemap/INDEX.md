@@ -28,10 +28,22 @@ Comparison is by path, never by `path:line`. Run on 2026-09-05 across
 **Every `path:line` here is repo-relative, and that is load-bearing rather than
 cosmetic** — an anchor written relative to its subsystem root (`config.py:99`
 instead of `plugin/localgpu/mcp/config.py:99`) resolves fine by eye and cannot
-be pasted into the command above, so nobody can re-verify it. 30 of 87 anchors
-were in that shape and were rewritten on 2026-09-05; 86 of the remaining 87 now
-resolve in range, and the one that does not is `127.0.0.1:11434`, a loopback
-URL rather than a file.
+be pasted into the command above, so nobody can re-verify it. 30 anchors here
+and 30 more in `docs/diagrams/` were in that shape and were rewritten on
+2026-09-05 (`server.py:187` -> `plugin/localgpu/mcp/server.py:187`).
+
+**The invariant, rather than a count:** every `path:line` in this directory
+resolves to an existing file with the cited line in range. The only exceptions
+are `127.0.0.1:11434` in `localgpu.md`, a loopback URL that a naive
+`name.ext:digits` regex reads as a path and which is not one.
+
+A total is deliberately not stated. Writing "N anchors" into a note *changes*
+N — the provenance sections added on 2026-09-05 cite files of their own, and
+the sentence recording the number moved the number twice while being written.
+Re-measure instead of trusting a figure: walk the `` `path:line` `` tokens in
+these files, skip anything whose "extension" is all digits, and confirm each
+resolves. A number that is wrong by one is worse than no number, because it
+looks measured.
 
 Diagrams under `docs/diagrams/` carry the same contract via a
 `%% Anchors: <comma-separated paths>` header. All three were missing one, which

@@ -5,6 +5,34 @@ anchor: useful-claude-add-ons@3167721f
 Local models on the user's own GPU via Ollama. Two halves that never call
 each other directly, both reaching the same Ollama server on loopback.
 
+## Re-anchor provenance - b56d41f -> 3167721f, 2026-09-05
+
+This note is the one that was **already current**, and saying so explicitly
+matters as much as the three that were not: an anchor that advanced for a
+different reason than its neighbours, with no note of it, is indistinguishable
+from one that advanced carelessly.
+
+`git diff --name-only b56d41f..3167721f -- <this note's 14 cited paths>`
+returned **nothing**. `plugin/localgpu/` did not move in that window, so every
+claim below stands where it did at `b56d41f` and none needed re-reading. The
+anchor advanced to record that the test was run and came back clean - not to
+assert a fresh re-read that did not happen.
+
+What did change here is that the note became checkable at all: **21** of its
+`path:line` anchors were written relative to `plugin/localgpu/mcp/`,
+`plugin/localgpu/cli/` or the plugin root, so they resolved by eye and could not
+be pasted into the command above. Every anchor here now resolves to an existing
+file with the cited line in range, with one class of exception:
+`127.0.0.1:11434`, a loopback URL that a `name.ext:digits` regex reads as a path
+and which is not one.
+
+No total is given on purpose - see INDEX.md. Writing the number into the note
+changes it, and this paragraph moved it twice while being written.
+
+**Not re-verified at this anchor:** nothing was re-read, because nothing moved.
+If `plugin/localgpu/` appears in a future diff against this anchor, this
+section's guarantee is spent and the claims below need an actual re-read.
+
 ## Two independent process trees, one shared Ollama
 
 **DERIVED, confirmed by reading the entry points:**

@@ -19,8 +19,8 @@ points.
 
 Re-checked against source: `python scripts/check-marketplace.py` exits 0 and
 prints `marketplace: 25 skills, 4 plugins` - the one claim here that the moved
-file could have invalidated. All 15 `path:line` anchors resolve with the cited
-line in range.
+file could have invalidated. Every `path:line` anchor here resolves with the
+cited line in range.
 
 **Not re-verified at this anchor:** the line-by-line behaviour of
 `_verify/smoke.sh`'s 10 checks. They did not move, so they were not re-read.
