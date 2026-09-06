@@ -116,11 +116,13 @@ earned it, precisely so nobody has to take it on faith the way those citations a
   fail, "could not tell" has to be its own value that survives into every line derived from it, or
   the guard fails open while looking like it checked.
 
-- **A guard is usually wrong again in the fix for the last time it was wrong.** Seven consecutive
-  review rounds on `vault_guard.py`, each fix right about the case it aimed at and one rung short
-  of its neighbour: frontmatter, then ASCII, then the three config defaults, then the comment
-  justifying the interpreter stand-down, then a count corrected in one of the two places that
-  stated it. Fixes to a guard need *more* adversarial reading than the original, not less.
+- **Re-review the fix to a guard as hard as the guard.** The measured case is one guard over one
+  day: seven consecutive review rounds on `vault_guard.py`, every fix right about the case it aimed
+  at and one rung short of its neighbour — frontmatter, then ASCII, then the three config defaults,
+  then the comment justifying the interpreter stand-down, then a count corrected in one of the two
+  places that stated it. Seven for seven, no exception. That is one guard, not a measured rate
+  across this repo, so treat it as a prior worth acting on rather than a frequency: a fix narrowed
+  to the reported case is the normal outcome, and the neighbouring case is where to look next.
 
 - **Put the check where the evidence is dropped.** `read_metrics` averages BLOCK+FIX per *row* and
   returns that count under the key `tickets`, so one ticket reviewed twice reads as two and the
@@ -128,11 +130,12 @@ earned it, precisely so nobody has to take it on faith the way those citations a
   column, filled in by every row — is never referenced. A correction written in prose beneath the
   table fixed nothing, because the parser never reads prose.
 
-- **Judge every gate by exit code, and read what it actually printed.** `render.sh` prints a
-  summary line and creates its output directory while exiting 1 and rendering nothing; its six
-  `FAIL` lines were a `/tmp` path a Windows `mmdc` cannot open, not broken Mermaid. An
-  exit-code-only check would have passed it; a log-only read would have sent someone editing
-  correct diagrams.
+- **The exit code tells you THAT it failed, never WHAT failed.** `render.sh` exited 1 and printed
+  six `FAIL` lines — correctly, so an exit-code check would have caught it. The trap was the next
+  inference: the cause was a `/tmp` path a Windows `mmdc` cannot open, not broken Mermaid, and the
+  same three sources rendered cleanly when invoked directly. Acting on the log alone would have
+  sent someone editing correct diagrams. It also printed a summary line and created its output
+  directory while producing nothing, so check the artifact, not the summary.
 
 - **Run the states; do not reason about them.** A guard suite reported 24 passed / 33 failed, and
   the cause was `MSYS_NO_PATHCONV=1` in the *runner's* environment mangling `/c/repos/...` into
