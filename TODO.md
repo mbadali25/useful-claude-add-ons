@@ -56,12 +56,13 @@ would be to call it — which would file a real ticket. That is not an acceptabl
 way to answer a documentation question, so the unknown stands.
 
 **The conclusion is therefore conditional, and that is the point.** Every
-safeguard anyone has been able to name is absent: the skill declines to confirm,
-no permission rule intervenes, the plugin holds no gate, and de-dupe prevents
-only duplicates. Whether a ticket is actually filed unattended turns entirely on
-an unread server. An auto-filing path into a live service desk whose last
-possible safeguard is unidentified is not a demonstrated-unsafe path — it is an
-unaudited one, and that is true whichever way the unknown resolves. So this
+safeguard that could be *checked* is absent: the skill declines to confirm, no
+permission rule intervenes, the plugin holds no gate, and de-dupe prevents only
+duplicates. Exactly one named candidate remains unchecked — the SDP MCP server —
+and whether a ticket is filed unattended turns on it. An auto-filing path into a
+live service desk whose one remaining candidate safeguard is unverified is not a
+demonstrated-unsafe path; it is an unaudited one, and that is true whichever way
+the unknown resolves. So this
 **needs a gate or an explicit opt-in flag**, *or* it needs that server's
 behaviour established and written down here.
 
@@ -78,9 +79,10 @@ metadata: `.claude-plugin/plugin.json:4`, `commands/scan.md:7`,
 `:70`. That split is the finding — the plugin is entirely instructions about
 ticketing with no implementation of it. Creation is directed one layer up:
 `commands/tickets.md:5-7` tells the model to "auto-create one ServiceDesk Plus
-ticket per finding". The SDP MCP tools are the only ticket-creating capability
-in reach, so that is the presumed path — but the citation shows an
-*instruction*, not an observed execution. No run was traced.
+ticket per finding". The SDP MCP tools are the ticket-creating capability this
+plugin's own prose points at, so that is the presumed path — but the citation
+shows an *instruction*, not an observed execution. No run was traced, and no
+wider audit of what else might be reachable was done.
 
 `SKILL.md:70` is worth reading before mistaking it for the missing gate. It says
 that **before creating**, the model searches for an existing *open* request with
@@ -96,9 +98,8 @@ The three places that could actually hold one:
 - a permission rule on `sdp_create` — none exists today, see above;
 - the SDP MCP server itself — behaviour UNVERIFIED.
 
-Command prose cannot enforce anything on its own, and this repo has twice
-shipped a correct downstream check that never fired because an upstream filter
-discarded the input silently. **No verified barrier stands between a scan and a
+Command prose cannot enforce anything on its own. **No verified barrier stands
+between a scan and a
 filed ticket** — and the prose is not a weak barrier, it is the instruction to
 write: it does not restrain the call, it orders it. Whether the SDP MCP server
 confirms internally is unread, so whether *any* barrier exists is unknown along
