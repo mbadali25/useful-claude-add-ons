@@ -113,9 +113,11 @@ said a guard is "usually" wrong again after a fix — a frequency drawn from one
 exit-code-only check "would have passed" a run that exited 1. The second draft replaced "usually"
 with "the normal outcome", which is the same claim reworded rather than narrowed, and asserted that
 an exit code "never" tells you what failed, a universal that is false wherever a tool encodes
-categories in its status. Each fix reworded the previous claim instead of shrinking it to the
-evidence. If a section arguing that claims outrun their evidence did exactly that twice over,
-assume yours does too, and get a reader who did not write it.
+categories in its status. The two failed differently, and the difference is the useful part: the
+first fix reworded the claim without shrinking it, while the second swapped one unsupported claim
+for a different unsupported claim. Neither moved toward the evidence. If a section arguing that
+claims outrun their evidence did exactly that twice, assume yours does too, and get a reader who
+did not write it.
 
 - **The recurring bug is an unknown collapsing into the safe-looking value.** Not a wrong answer —
   a *missing* answer wearing the label of a check that happened. `crew_config.py --models` derives
