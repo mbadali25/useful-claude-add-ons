@@ -501,7 +501,7 @@ Nothing keeps running afterwards — there were no hooks. The Nuclei binary and 
 | | |
 |---|---|
 | **Source** | [`localgpu/`](localgpu) |
-| **Version** | 0.2.0 |
+| **Version** | 0.2.1 |
 | **Install** | `claude plugin install localgpu@useful-claude-add-ons` |
 | **Registers** | 6 commands, 1 skill. **No agents, no hooks** — nothing runs unless you type a command. `/localgpu:setup` additionally writes one stdio MCP server into the repository's own `.mcp.json`, which you approve through `/mcp`. The bootstrap separately installs a `localgpu` console script into `$LOCALGPU_HOME/venv`, which Claude Code neither registers nor runs |
 | **Upstream guide** | [`localgpu/README.md`](localgpu/README.md) |
