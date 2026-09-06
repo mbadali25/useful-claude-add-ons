@@ -20,34 +20,50 @@ an existing open `[Nuclei <template-id>]` only.
 A scan of a noisy target can therefore file real tickets in a real system
 unattended.
 
-**Question closed 2026-09-05 — and the answer makes this worse, not
-documentation-only. The defect is UNFIXED.** What was resolved is the blocking
-question below; nothing about the behaviour has changed. A `gizmoduck` scan of a
-noisy target can still file real tickets into a real service desk unattended.
+**Question HALF closed 2026-09-05. The defect is UNFIXED and its severity is
+UNESTABLISHED** — which is itself the finding. The paragraph above states the
+symptom as originally reported; the qualification below supersedes it.
 
-Both candidate gates were checked, and neither one confirms the write:
+The entry asked whether the `infra-work-ticketing` skill *or* the SDP MCP tools
+impose their own confirmation. The skill half is answered. The MCP half is not,
+and cannot be answered from this machine without filing a real ticket to find
+out.
+
+**Proven:**
 
 - **The `infra-work-ticketing` skill does not gate — it instructs the
   opposite.** `skills/infra-work-ticketing/SKILL.md:209-211`: "If you're
   confident about what the work is, create the ticket and report what you made
-  in the same turn - no confirmation round-trip." The machine-installed copy at
-  `~/.claude/skills/infra-work-ticketing/SKILL.md` was diffed against this
-  repo's copy at `eec8620a` and is byte-identical, so the shipped text is the
-  text that actually runs. `:213` does list things worth asking about first —
-  which system, which environment, planned versus incident — but every one is a
-  missing-fact question, not a confirmation of the write.
-- **No *permission rule* gates the SDP MCP tools.** No `sdp_*` entry appears in
-  `allow`, `ask` or `deny` in any settings layer — user `settings.json`, user
-  `settings.local.json`, or this repo's `.claude/settings.local.json` — and the
-  global `permissions.defaultMode` is `auto`. **Scope this claim carefully:** it
+  in the same turn - no confirmation round-trip." The installed copy at
+  `~/.claude/skills/infra-work-ticketing/SKILL.md` is byte-identical to this
+  repo's copy at `eec8620a` — so the two have not diverged, which is a fact
+  about those files and not proof of which path a given run loads. `:213` lists
+  things worth asking about first (which system, which environment, planned
+  versus incident) but each is a missing-fact question, not a confirmation of
+  the write.
+- **No *permission rule* gates the SDP MCP tools on this machine.** No `sdp_*`
+  entry appears in `allow`, `ask` or `deny` in any settings layer — user
+  `settings.json`, user `settings.local.json`, or this repo's
+  `.claude/settings.local.json` — and `permissions.defaultMode` is `auto`. That
   is a property of one machine's permission *configuration*, not of the
-  software. Whether the SDP MCP server itself confirms internally before
-  `sdp_create` is **UNVERIFIED** — that server's code was not read. A different
-  machine may also be configured differently.
+  software; another machine may differ.
+- **No code in the plugin gates the write, or performs it** — see below.
+- **De-dupe is not confirmation** — see below.
 
-So one layer actively declines to confirm and the other has no permission rule
-standing in the way, with its internal behaviour unknown. The entry's own
-conclusion applies: this **needs a gate or an explicit opt-in flag**.
+**Unknown, and decisive:** whether the SDP MCP server itself confirms before
+`sdp_create`. Its code was not read, and the only way to settle it from here
+would be to call it — which would file a real ticket. That is not an acceptable
+way to answer a documentation question, so the unknown stands.
+
+**The conclusion is therefore conditional, and that is the point.** Every
+safeguard anyone has been able to name is absent: the skill declines to confirm,
+no permission rule intervenes, the plugin holds no gate, and de-dupe prevents
+only duplicates. Whether a ticket is actually filed unattended turns entirely on
+an unread server. An auto-filing path into a live service desk whose last
+possible safeguard is unidentified is not a demonstrated-unsafe path — it is an
+unaudited one, and that is true whichever way the unknown resolves. So this
+**needs a gate or an explicit opt-in flag**, *or* it needs that server's
+behaviour established and written down here.
 
 **Where a gate can go — and the awkward part: no code in this plugin creates the
 ticket.** `cmd_tickets` (`plugin/gizmoduck/scripts/gizmoduck.py:289-306`) builds
@@ -60,9 +76,11 @@ The plugin does name ServiceDesk Plus in six places, every one of them prose or
 metadata: `.claude-plugin/plugin.json:4`, `commands/scan.md:7`,
 `commands/tickets.md:6`, `README.md:5`, and `skills/gizmoduck/SKILL.md:5` and
 `:70`. That split is the finding — the plugin is entirely instructions about
-ticketing with no implementation of it. Creation happens one layer up:
+ticketing with no implementation of it. Creation is directed one layer up:
 `commands/tickets.md:5-7` tells the model to "auto-create one ServiceDesk Plus
-ticket per finding", which it does through the SDP MCP tools.
+ticket per finding". The SDP MCP tools are the only ticket-creating capability
+in reach, so that is the presumed path — but the citation shows an
+*instruction*, not an observed execution. No run was traced.
 
 `SKILL.md:70` is worth reading before mistaking it for the missing gate. It says
 that **before creating**, the model searches for an existing *open* request with
@@ -86,9 +104,11 @@ write: it does not restrain the call, it orders it. Whether the SDP MCP server
 confirms internally is unread, so whether *any* barrier exists is unknown along
 with it. That is the shape of the problem.
 
-Recorded from evidence rather than left unread a second time; a future reader
-should treat the question as closed unless the cited lines move — and should
-treat the SDP MCP server's internal behaviour as still open.
+Recorded from evidence rather than left unread a second time. A future reader
+should treat the **skill** half as closed unless the cited lines move, and the
+**MCP server** half as still open — it is the one measurement that would settle
+whether this is a live exposure or only an unaudited path, and taking it needs a
+safe way to observe `sdp_create` without filing a ticket.
 
 ### 2. `mcp-servers/core` credential chain caches its winner permanently
 
