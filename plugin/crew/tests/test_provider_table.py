@@ -2146,3 +2146,86 @@ def test_a_legacy_slot_holding_nothing_is_a_record_that_was_lost(tmp_path):
         "a slot that was written and lost read as a slot never written"
     assert families == frozenset({"claude"}), \
         "the family that provably ran stopped being struck"
+
+
+# --------------------------------------------------------------------------
+# `localgpu` as a recognised DEV provider, and its exclusion from the gate.
+#
+# The split is the contract: recognised where being wrong is visible, refused
+# where being wrong is a green light. These assert the refusal is LOUD -- an
+# unrecognised name in `qa.order` is not an error at review time, it is a rung
+# the selector walks past in silence, and that is the failure being prevented.
+# --------------------------------------------------------------------------
+
+def test_localgpu_is_a_dev_provider_but_not_a_qa_provider():
+    assert "localgpu" in crew_config.DEV_PROVIDERS
+    assert "localgpu" not in crew_config.QA_PROVIDERS
+
+
+@pytest.mark.parametrize("cfg", [
+    {"dev": {"provider": "localgpu"}},
+    {"dev": {"roles": {"explorer": {"provider": "localgpu"}}}},
+    {"dev": {"roles": {"scribe": {"provider": "localgpu"}}}},
+])
+def test_localgpu_is_accepted_on_the_dev_side(cfg):
+    assert crew_config.validate_providers(cfg) is cfg
+
+
+@pytest.mark.parametrize("cfg,needle", [
+    ({"qa": {"provider": "localgpu"}}, "qa.provider"),
+    ({"qa": {"order": ["codex", "localgpu", "claude"]}}, "qa.order"),
+    ({"qa": {"roles": {"qa-reviewer": {"provider": "localgpu"}}}},
+     "qa.roles.qa-reviewer.provider"),
+])
+def test_localgpu_is_refused_on_the_qa_side_and_the_key_is_named(cfg, needle):
+    with pytest.raises(crew_config.ProviderError) as excinfo:
+        crew_config.validate_providers(cfg)
+    # The key, so a user can find it. Not merely "invalid provider".
+    assert needle in str(excinfo.value)
+
+
+def test_an_unknown_provider_is_refused_rather_than_ignored():
+    """The fail-open case this whole guard exists for.
+
+    A name crew does not resolve must not reach provider selection. Before
+    this guard it fell through to the `qa-reviewer` fallback while the config
+    file went on claiming a reviewer was configured.
+    """
+    with pytest.raises(crew_config.ProviderError):
+        crew_config.validate_providers({"qa": {"order": ["codex", "nope"]}})
+    with pytest.raises(crew_config.ProviderError):
+        crew_config.validate_providers({"dev": {"provider": "nope"}})
+
+
+def test_a_clean_config_passes_unchanged():
+    cfg = {"dev": {"provider": "codex"},
+           "qa": {"provider": "auto",
+                  "order": ["codex", "copilot", "claude"]}}
+    assert crew_config.validate_providers(cfg) is cfg
+
+
+def test_qa_provider_auto_is_an_instruction_not_a_provider_name():
+    """`auto` is not in QA_PROVIDERS and must still be accepted."""
+    assert "auto" not in crew_config.QA_PROVIDERS
+    cfg = {"qa": {"provider": "auto"}}
+    assert crew_config.validate_providers(cfg) is cfg
+
+
+def test_localgpu_is_found_off_path_not_on_it():
+    """`localgpu` lives in the venv, which is deliberately not on PATH.
+
+    A bare `which("localgpu")` answers None on a correctly installed machine,
+    so a plain PATH probe would mark the provider missing exactly where it
+    works. The resolver must consult `LOCALGPU_HOME` as well.
+    """
+    # PATH wins when it does answer, so a deliberate PATH install is honoured.
+    assert crew_config.localgpu_which(
+        which=lambda name: "/somewhere/localgpu") == "/somewhere/localgpu"
+    # And a PATH miss does not end the search.
+    assert crew_config.localgpu_which(which=lambda name: None) != False  # noqa: E712
+
+
+def test_localgpu_which_returns_none_when_the_home_is_empty(tmp_path,
+                                                            monkeypatch):
+    monkeypatch.setenv("LOCALGPU_HOME", str(tmp_path))
+    assert crew_config.localgpu_which(which=lambda name: None) is None

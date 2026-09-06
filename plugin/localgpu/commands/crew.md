@@ -23,26 +23,44 @@ When it does exist, report the current `dev.provider`, `qa.provider` and
 
 ## Step 1 — the constraint, stated first
 
-**crew's provider set is closed. `localgpu` cannot be a crew provider.**
+**`localgpu` is a recognised DEV provider. It is refused at the QA gate, and
+that refusal is the point.**
 
-`default_config()` in `plugin/crew/hooks/scripts/crew_config.py` hardcodes the
-whole set:
+Since crew 0.16.14 the provider set is two names, not one, in
+`plugin/crew/hooks/scripts/crew_config.py`:
 
 ```python
-"qa":  {"provider": "auto", "order": ["codex", "copilot", "claude"], ...}
-"dev": {"provider": "claude", ...}
+DEV_PROVIDERS = ("claude", "codex", "copilot", "localgpu")
+QA_PROVIDERS  = ("claude", "codex", "copilot")
 ```
 
-and `/crew:model` validates `dev.provider` against exactly `claude`, `codex`,
-`copilot`. Every downstream consumer — `/crew:review`'s reviewer selection, the
-same-family interlock that strikes the author's family from QA, `/crew:roster`'s
-staffing report — reads those names and nothing else.
+So `dev.provider`, and any `dev.roles.<role>.provider` pin, may name
+`localgpu`. `qa.provider`, `qa.order` and `qa.roles.<role>.provider` may not —
+`crew_config.validate_providers` raises `ProviderError` naming the offending
+key.
 
-Making `localgpu` a first-class provider means editing crew. That is out of scope
-for this plugin, and it is out of scope on purpose: the review gate is the one
-thing crew exists to hold, and a plugin that reached into another plugin's config
-schema to add itself to that gate is doing the exact thing the gate is there to
-catch.
+**Why it raises rather than ignoring.** crew's gates fail *open* against a
+provider name nothing resolves: an unrecognised entry in `qa.order` is not an
+error at review time, it is a rung the selector walks past in silence, leaving
+`/crew:review` on the fallback while the config file goes on claiming a
+reviewer is configured. A silently degraded review gate is precisely the
+failure crew exists to prevent, so the name is rejected at the write boundary
+(`plan_global_write`) instead. The read path only ever reports
+(`provider_problems`), because `resolve_config` promises never to raise and a
+malformed file must not wedge the session hook.
+
+**Why QA specifically.** Not because a 7B reads code badly. Because review's
+whole value is a second, *differently*-wrong reader, and a weaker model does
+not review — it agrees, fluently, and produces output indistinguishable from a
+real pass. crew already refuses a reviewer from the author's own family for
+exactly this reason; a weaker-family reviewer is the same failure wearing a
+better disguise.
+
+**PATH note.** `localgpu` is deliberately *not* on PATH — the bootstrap
+installs the console script into `$LOCALGPU_HOME/venv` so the venv's Python is
+never shadowed. `crew_config.localgpu_which()` therefore checks PATH first and
+then the install root; a bare `which("localgpu")` answers None on a correctly
+installed machine and would mark the provider missing exactly where it works.
 
 ## Step 2 — which roles are plausible, and which are not
 
@@ -135,23 +153,25 @@ than failing halfway in. `/localgpu:doctor` check 3 runs the same three-way test
 Three specific things, each of which would look like a feature and behave like a
 regression:
 
-- **It will not write `"provider": "localgpu"` into `.crew/config.json`.** crew
-  resolves providers by name against a known set. An unrecognised name does not
-  error — it falls through provider selection, and `/crew:review` ends up on the
-  `qa-reviewer` fallback while the config file says a reviewer is configured. That
-  is a silently degraded review gate, which is precisely the failure crew was built
-  to prevent. If a user asks for this, refuse and show them this paragraph.
+- **It will not write `"provider": "localgpu"` into `.crew/config.json` — on
+  either side.** For `qa` that is now enforced in code and would raise anyway.
+  For `dev` it is legal since 0.16.14, and still not this command's to write:
+  changing which model backs a role is `/crew:model`'s job, and a report command
+  that edits config is how a "report only" promise stops meaning anything.
 - **It will not shadow `codex` or `copilot` on `PATH`.** A wrapper named `codex`
   that routes to Ollama makes every crew probe pass, every review return, and every
   `/crew:roster` line read "on PATH". The gate then reports green forever while a
   7B writes the reviews. Do not do this, and do not describe it as an option.
-- **It will not add itself to `qa.order`.** Same failure as the first, one level
-  down: a name in `order` that resolves to nothing is a rung the selector walks past
-  in silence.
+- **It will not add `localgpu` to `qa.order`.** `validate_providers` refuses it
+  at the write boundary, so the attempt fails loudly rather than degrading — but
+  do not go looking for a way around that guard, because the guard is the
+  feature.
 
-The common thread: crew's gates fail *open* against an unknown provider. Anything
-that puts an unknown name where crew expects a known one converts a hard failure
-into a green light, and green lights are load-bearing here.
+The common thread: crew's gates fail *open* against a provider name nothing
+resolves. That is why `localgpu` was made a RECOGNISED name on the dev side and a
+REJECTED one on the QA side, rather than left unknown to both — an unknown name
+converts a hard failure into a green light, and green lights are load-bearing
+here.
 
 ## Step 4 — end with one recommendation
 
@@ -161,7 +181,7 @@ Pick the one that fits what you found, and stop:
 |---|---|
 | MCP tools are registered and crew is set up | Use `search_code` during crew tasks; leave the config alone |
 | MCP tools are not registered | `/localgpu:setup`, then re-run this |
-| The user wants a local reviewer | There is not one. Codex or Copilot, per `crew:crew-providers` |
+| The user wants a local reviewer | There is not one, and `crew_config` now refuses the config that would claim otherwise. Codex or Copilot, per `crew:crew-providers` |
 | The user wants to experiment | `localgpu shell`, and not for gate commands |
 
 Do not list all four. A report that ends in a menu made no judgement.

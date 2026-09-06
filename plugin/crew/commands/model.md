@@ -112,7 +112,8 @@ at the one moment it matters:
 | `qa.codex.reasoningEffort` | one of `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`. Codex rejects anything else with a 400 |
 | `qa.copilot.model` | must not start with `claude-`. Copilot's own default is `claude-sonnet-4.6`; a Claude reviewer of Claude-written code is the failure this ordering exists to avoid |
 | `qa.provider` | `auto`, or a name that appears in `qa.order` |
-| `dev.provider` | `claude`, `codex`, or `copilot` |
+| `dev.provider` | `claude`, `codex`, `copilot`, or `localgpu` (`crew_config.DEV_PROVIDERS`) |
+| `qa.provider` / `qa.order` / `qa.roles.<role>.provider` | `claude`, `codex` or `copilot` only (`crew_config.QA_PROVIDERS`). **`localgpu` is refused here on purpose** — it is a recognised dev provider, but a weaker model does not review, it agrees, and its output is indistinguishable from a real pass. The refusal is a raised `ProviderError` naming the key, not a silent drop |
 | `dev.copilot.model` | required when `dev.provider` is `copilot` — the review interlock in step 3 cannot work without knowing which family wrote the code |
 | `qa.roles.<role>` / `dev.roles.<role>` | a `{"provider": ..., "model": ...}` object. Any role name is accepted, including one crew does not ship |
 | `qa.fallback` / `dev.fallback` | a model name. Default `claude-sonnet-5`; configurable precisely because model names churn |

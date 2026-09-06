@@ -97,6 +97,133 @@ GLOBAL_CONFIG_PATH = os.path.join(
     os.path.expanduser("~"), ".claude", "crew", "config.json")
 
 
+# The provider names crew RECOGNISES, split by what the role decides.
+#
+# The split is the whole point, so it is two names rather than one set with a
+# comment. `localgpu` backs a local Ollama model through this plugin's own
+# proxy; it is a legitimate provider for work whose failure is VISIBLE -- an
+# explorer that returns the wrong file, a scribe note that reads badly, a docs
+# draft a human edits. It is not a legitimate reviewer at any pin.
+#
+# The reason is not that a 7B is bad at reading code. It is that review's whole
+# value is a second, DIFFERENTLY-wrong reader, and a weaker model does not
+# review -- it agrees, fluently, and produces output indistinguishable from a
+# real pass. crew already refuses a reviewer from the author's own family for
+# exactly this reason; a weaker-family reviewer is the same failure wearing a
+# better disguise, and the gate it would pass sits in front of migrations
+# against deployed databases and authorization changes.
+#
+# So: recognised for dev, REJECTED LOUDLY for qa. Not silently dropped --
+# `validate_providers` raises and names the key, because crew's gates fail
+# OPEN against a provider name nothing resolves, and an unrecognised name in
+# `qa.order` is a rung the selector walks past without a word.
+DEV_PROVIDERS = ("claude", "codex", "copilot", "localgpu")
+QA_PROVIDERS = ("claude", "codex", "copilot")
+
+# Providers that are a CLI on PATH, and so have a meaningful `which()` answer.
+# `claude` is an in-session subagent, not a binary. `localgpu` is a binary but
+# is deliberately NOT on PATH -- see `localgpu_which`.
+PATH_PROVIDERS = ("codex", "copilot")
+
+
+def localgpu_which(which=None):
+    """Absolute path to the `localgpu` CLI, or None.
+
+    Needed as its own resolver because a bare `which("localgpu")` answers
+    False on a correctly installed machine. The bootstrap installs the console
+    script into `$LOCALGPU_HOME/venv`, and nothing puts that directory on
+    PATH -- by design, so the venv's Python is never shadowed.
+
+    A plain PATH probe would therefore report the provider missing on exactly
+    the machines where it works, and `order_candidates` would mark it
+    ineligible with `NOT ON PATH` -- a fall-through that reads like a
+    configuration error and is not one.
+
+    PATH is still checked first: someone who has put it on PATH deliberately
+    should not be overridden by a guess at the install root.
+    """
+    which = which or shutil.which
+    found = which("localgpu")
+    if found:
+        return found
+    home = os.environ.get("LOCALGPU_HOME")
+    if not home:
+        home = (os.path.join(os.environ.get("LOCALAPPDATA", ""), "localgpu")
+                if os.name == "nt"
+                else os.path.join(os.path.expanduser("~"), ".local", "share",
+                                  "localgpu"))
+    candidates = (
+        os.path.join(home, "venv", "Scripts", "localgpu.exe"),
+        os.path.join(home, "venv", "bin", "localgpu"),
+    )
+    for candidate in candidates:
+        if os.path.isfile(candidate):
+            return candidate
+    return None
+
+
+class ProviderError(ValueError):
+    """A provider name is not usable where the config puts it."""
+
+
+def validate_providers(cfg):
+    """Raise if a config names a provider the role may not use.
+
+    Returns the config unchanged when it is clean, so a caller can wrap a read
+    in it. Raises `ProviderError` naming the offending key and why -- never
+    warns and continues, and never silently rewrites the value.
+
+    The QA checks are the load-bearing ones. `dev` is checked too, but a bad
+    `dev.provider` degrades loudly at dispatch; a bad `qa.provider` degrades
+    into a green light.
+    """
+    qa = crew_state.dict_or_empty(cfg.get("qa"))
+    dev = crew_state.dict_or_empty(cfg.get("dev"))
+
+    qa_provider = qa.get("provider")
+    if qa_provider not in (None, "auto") and qa_provider not in QA_PROVIDERS:
+        raise ProviderError(
+            "qa.provider = {!r} is not a QA provider. QA accepts {}. "
+            "`localgpu` is recognised by crew but barred from the review gate "
+            "on purpose -- a weaker model does not review, it agrees, and its "
+            "output is indistinguishable from a real pass.".format(
+                qa_provider, ", ".join("`%s`" % p for p in QA_PROVIDERS)))
+
+    for name in qa.get("order") or []:
+        if name not in QA_PROVIDERS:
+            raise ProviderError(
+                "qa.order contains {!r}, which is not a QA provider. QA "
+                "accepts {}. A name here that nothing resolves is not an "
+                "error at review time -- it is a rung the selector walks past "
+                "in silence, leaving the gate reporting green.".format(
+                    name, ", ".join("`%s`" % p for p in QA_PROVIDERS)))
+
+    dev_provider = dev.get("provider")
+    if dev_provider is not None and dev_provider not in DEV_PROVIDERS:
+        raise ProviderError(
+            "dev.provider = {!r} is not a dev provider. dev accepts {}.".format(
+                dev_provider, ", ".join("`%s`" % p for p in DEV_PROVIDERS)))
+
+    for role, block in crew_state.dict_or_empty(dev.get("roles")).items():
+        pin = crew_state.dict_or_empty(block).get("provider")
+        if pin is not None and pin not in DEV_PROVIDERS:
+            raise ProviderError(
+                "dev.roles.{}.provider = {!r} is not a dev provider. dev "
+                "accepts {}.".format(
+                    role, pin, ", ".join("`%s`" % p for p in DEV_PROVIDERS)))
+
+    for role, block in crew_state.dict_or_empty(qa.get("roles")).items():
+        pin = crew_state.dict_or_empty(block).get("provider")
+        if pin is not None and pin not in QA_PROVIDERS:
+            raise ProviderError(
+                "qa.roles.{}.provider = {!r} is not a QA provider. QA accepts "
+                "{}. A pin is evaluated AFTER the family guard, so a pin here "
+                "would not merely add a reviewer -- it would name one.".format(
+                    role, pin, ", ".join("`%s`" % p for p in QA_PROVIDERS)))
+
+    return cfg
+
+
 def default_config():
     """A fresh, current `.crew/config.json`, as a plain dict.
 
@@ -372,6 +499,25 @@ def read_global_config(path=None):
     except ValueError:
         return {}
     return parsed if isinstance(parsed, dict) else {}
+
+
+def provider_problems(cfg):
+    """Provider problems in `cfg` as a list of strings. Never raises.
+
+    The read-side counterpart to `validate_providers`. `resolve_config`
+    promises never to raise -- a malformed config must not wedge the session
+    hook -- so the read path reports and lets the caller decide how loud to
+    be, while `plan_global_write` refuses outright.
+
+    An empty list means clean. It is deliberately a list of the SAME messages
+    the exception carries, so a user sees identical wording whether the
+    problem was caught on the way in or noticed on the way out.
+    """
+    try:
+        validate_providers(cfg)
+    except ProviderError as exc:
+        return [str(exc)]
+    return []
 
 
 def resolve_config(root):
@@ -693,7 +839,12 @@ def order_candidates(cfg, author, which=None, probe=None):
         sub = crew_state.dict_or_empty(block.get(provider))
         model = sub.get("model")
         fam = crew_state.family(provider, model)
-        on_path = True if provider == "claude" else bool(which(provider))
+        if provider == "claude":
+            on_path = True          # in-session subagent, not a binary
+        elif provider == "localgpu":
+            on_path = bool(localgpu_which(which))
+        else:
+            on_path = bool(which(provider))
         if not on_path:
             why = "not on PATH"
         elif fam is None:
@@ -763,6 +914,8 @@ def model_report(root, which=None, stale=False):
             # guess is what made it disagree with the gate.
             row["providerOnPath"] = (
                 True if row["provider"] in ("claude", "auto")
+                else bool(localgpu_which(which))
+                if row["provider"] == "localgpu"
                 else bool(which(row["provider"])))
             out.append(row)
         return out
@@ -789,9 +942,14 @@ def model_report(root, which=None, stale=False):
                     crew_state.dict_or_empty(cfg.get("qa")).get(name)
                 ).get("reasoningEffort"),
             }
-            for name in ("codex", "copilot", "claude")
+            for name in QA_PROVIDERS
         },
-        "onPath": {tool: bool(which(tool)) for tool in ("codex", "copilot")},
+        # `localgpu` is asked for by its own resolver, not by `which`: the
+        # console script lives in the venv and is deliberately off PATH, so a
+        # plain probe reports it missing on the machines where it works.
+        "onPath": dict(
+            [(tool, bool(which(tool))) for tool in PATH_PROVIDERS]
+            + [("localgpu", bool(localgpu_which(which)))]),
         "dev": rows("dev", crew_state.DEV_ROLE_KINDS, None),
         "qa": rows("qa", crew_state.QA_ROLE_KINDS, authors),
         "qaFallThrough": candidates,
@@ -988,6 +1146,19 @@ def plan_global_write(updates, path=None):
         )
 
     merged = copy.deepcopy(read_global_config(path))
+
+    # Refuse a bad provider HERE, at the boundary where the value enters,
+    # rather than where it is read. `resolve_config` documents "never raises"
+    # and that contract is load-bearing -- a malformed file must not wedge the
+    # session hook. So a write that would put an unusable provider name into
+    # the file is rejected outright, and the read path only ever REPORTS (see
+    # `provider_problems`). Validating the MERGED result, not `updates`, so a
+    # write is judged on the file it would produce.
+    _probe = copy.deepcopy(merged)
+    for dotted, value in updates.items():
+        _set_path(_probe, dotted.split("."), value)
+    validate_providers(_probe)
+
     changes = []
     for dotted, value in updates.items():
         parts = dotted.split(".")
