@@ -1039,7 +1039,9 @@ def main():
             ok = False
             continue
         try:
-            code, output = run_test(test)
+            # `output` is deliberately dropped: a mutation's job is to make
+            # the suite go red, and the failure text is the suite's to report.
+            code, _ = run_test(test)
         finally:
             restore(target)
         if code == 0:

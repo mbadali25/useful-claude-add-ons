@@ -64,6 +64,15 @@ KNOWN_TOOLS = {
     # The standing PM is reached by name rather than respawned, which needs both
     # of these: ListAgents to find it, SendMessage to continue it.
     "ListAgents", "SendMessage",
+    # A crew SUBAGENT cannot prompt -- `AskUserQuestion` is documented as
+    # unavailable in agents spawned via the Task tool, and a subagent blocking
+    # on a prompt would stall a dispatch nobody is watching. So a role that
+    # needs a decision ends its report with a `**Decision needed:**` block, and
+    # the main session RENDERS it. That renderer is a command, not an agent,
+    # which is why this name belongs here: `/crew:pm` carries it in
+    # `allowed-tools`, and without it the command is told to ask and has no
+    # tool to ask with -- it does not error, it quietly does something else.
+    "AskUserQuestion",
 }
 
 # An MCP tool's name is `mcp__<server>__<tool>`, and which servers exist is a

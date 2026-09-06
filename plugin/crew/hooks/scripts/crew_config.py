@@ -180,46 +180,49 @@ def validate_providers(cfg):
     dev = crew_state.dict_or_empty(cfg.get("dev"))
 
     qa_provider = qa.get("provider")
+    # Built once each: the accepted-name lists appear in five messages below,
+    # and formatting them at each site is what made this block ten separate
+    # pylint C0209 findings.
+    qa_names = ", ".join(f"`{p}`" for p in QA_PROVIDERS)
+    dev_names = ", ".join(f"`{p}`" for p in DEV_PROVIDERS)
+
     if qa_provider not in (None, "auto") and qa_provider not in QA_PROVIDERS:
         raise ProviderError(
-            "qa.provider = {!r} is not a QA provider. QA accepts {}. "
-            "A weaker model does not review, it agrees, and its output is "
-            "indistinguishable from a real pass -- that is refused here "
-            "whether the name is a typo or a real provider crew simply does "
-            "not dispatch a reviewer to.".format(
-                qa_provider, ", ".join("`%s`" % p for p in QA_PROVIDERS)))
+            f"qa.provider = {qa_provider!r} is not a QA provider. QA accepts "
+            f"{qa_names}. A weaker model does not review, it agrees, and its "
+            "output is indistinguishable from a real pass -- that is refused "
+            "here whether the name is a typo or a real provider crew simply "
+            "does not dispatch a reviewer to.")
 
     for name in qa.get("order") or []:
         if name not in QA_PROVIDERS:
             raise ProviderError(
-                "qa.order contains {!r}, which is not a QA provider. QA "
-                "accepts {}. A name here that nothing resolves is not an "
-                "error at review time -- it is a rung the selector walks past "
-                "in silence, leaving the gate reporting green.".format(
-                    name, ", ".join("`%s`" % p for p in QA_PROVIDERS)))
+                f"qa.order contains {name!r}, which is not a QA provider. QA "
+                f"accepts {qa_names}. A name here that nothing resolves is not "
+                "an error at review time -- it is a rung the selector walks "
+                "past in silence, leaving the gate reporting green.")
 
     dev_provider = dev.get("provider")
     if dev_provider is not None and dev_provider not in DEV_PROVIDERS:
         raise ProviderError(
-            "dev.provider = {!r} is not a dev provider. dev accepts {}.".format(
-                dev_provider, ", ".join("`%s`" % p for p in DEV_PROVIDERS)))
+            f"dev.provider = {dev_provider!r} is not a dev provider. "
+            f"dev accepts {dev_names}.")
 
     for role, block in crew_state.dict_or_empty(dev.get("roles")).items():
         pin = crew_state.dict_or_empty(block).get("provider")
         if pin is not None and pin not in DEV_PROVIDERS:
             raise ProviderError(
-                "dev.roles.{}.provider = {!r} is not a dev provider. dev "
-                "accepts {}.".format(
-                    role, pin, ", ".join("`%s`" % p for p in DEV_PROVIDERS)))
+                f"dev.roles.{role}.provider = {pin!r} is not a dev provider. "
+                f"dev accepts {dev_names}.")
 
     for role, block in crew_state.dict_or_empty(qa.get("roles")).items():
         pin = crew_state.dict_or_empty(block).get("provider")
         if pin is not None and pin not in QA_PROVIDERS:
             raise ProviderError(
-                "qa.roles.{}.provider = {!r} is not a QA provider. QA accepts "
-                "{}. A pin is evaluated AFTER the family guard, so a pin here "
-                "would not merely add a reviewer -- it would name one.".format(
-                    role, pin, ", ".join("`%s`" % p for p in QA_PROVIDERS)))
+                f"qa.roles.{role}.provider = {pin!r} is not a QA provider. QA "
+                f"accepts {qa_names}. A pin is evaluated AFTER the family "
+                "guard, so a pin here would not merely add a reviewer -- it "
+                "would name one.")
 
     return cfg
 

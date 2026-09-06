@@ -1083,7 +1083,9 @@ def _is_monorepo(root):
             pass
 
     hits = 0
-    for dirpath, dirnames, filenames in os.walk(root):
+    # `_` for the directory path: os.walk yields it, but only `dirnames`
+    # (pruned in place, below) and `filenames` are read here.
+    for _, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if d not in _MONOREPO_SKIP_DIRS
                         and not d.startswith(".")]
         if any(marker in filenames for marker in _MONOREPO_MARKER_FILES):

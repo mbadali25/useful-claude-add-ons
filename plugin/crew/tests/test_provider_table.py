@@ -2233,7 +2233,10 @@ def test_localgpu_is_found_off_path_not_on_it():
     assert crew_config.localgpu_which(
         which=lambda name: "/somewhere/localgpu") == "/somewhere/localgpu"
     # And a PATH miss does not end the search.
-    assert crew_config.localgpu_which(which=lambda name: None) != False  # noqa: E712
+    # `is not False`, not `!= False`: the point is that a PATH miss returns
+    # something other than the singleton, and `!= False` is also satisfied by
+    # 0, "" and [] -- none of which would mean "the search continued".
+    assert crew_config.localgpu_which(which=lambda name: None) is not False
 
 
 def test_localgpu_which_returns_none_when_the_home_is_empty(tmp_path,

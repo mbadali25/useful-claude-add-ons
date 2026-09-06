@@ -653,3 +653,33 @@ would have passed it.
 Found while re-anchoring the diagrams after PR #69, 2026-09-05. Anchor
 `3167721f`. Measured, not inferred: both the failing and the passing
 invocations were run.
+
+## `crew_state.py` is 3283 lines and should be split
+
+It went 2154 -> 3283 on the endpoint-ledger branch, a 52% increase in one
+module. `.pylintrc`'s `max-module-lines` was raised 2400 -> 3300 to let CI pass,
+which unblocks a branch and fixes nothing: the ceiling now tracks the file
+rather than constraining it, and that is the second time it has been raised for
+exactly that reason (2000 -> 2400 before it).
+
+The module now holds at least five separable concerns: config/schema resolution,
+the dispatch record, the codemap and diagram anchor comparisons, the provider
+and family guards, and the endpoint ledger. The last is the newest and the most
+self-contained -- `read_endpoints`, `declare_endpoint`, `scan_artifact_path`,
+`_candidate_record`, `_artifact_confirms_scan`, `gizmoduck_installed` and the
+monorepo detection - and is the obvious first extraction.
+
+Two things make this harder than it looks, and both belong in the ticket rather
+than being discovered halfway:
+
+- **Every `path:line` citation in `.crew/codemap/crew.md` points into this
+  file.** A split invalidates all of them at once, so the codemap refresh is
+  part of the work, not a follow-up.
+- **`sabotage.py`'s mutation table addresses this file by line-anchored
+  content.** Mutations that no longer match anything do not fail loudly -- they
+  are simply not applied, and the suite still reports PASS. Any split has to
+  re-verify that every mutation still binds, or the harness silently covers less
+  while looking identical. That is the same signal-and-absence failure this file
+  is full of.
+
+Do not raise `max-module-lines` a third time.
