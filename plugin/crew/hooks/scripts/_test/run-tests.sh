@@ -239,6 +239,41 @@ expect 2 'kubectl get secret db -o yaml'
 expect 2 'cat .env'
 expect 2 'cat .env.production'
 
+echo "== guard.sh: recursive delete - depth, not any leading slash =="
+# The rule was `rm -rf` followed by any `/`, with no depth check and no
+# argument-position check. That is wrong in BOTH directions, and every case
+# below was measured against the old rule before this section was written:
+#
+#   blocked `rm -rf /c/tmp/crewgraph`   - a three-deep scratch path
+#   blocked `echo 'do not rm -rf / ever'` - the pattern inside quoted data
+#   allowed `rm -rf ~` and `rm -rf $HOME` - the two most likely ways to lose
+#                                           a home directory
+#
+# The floor is: a target that is root, a home reference, or fewer than three
+# path segments. Three segments is what separates `/c/repos` (a checkout
+# parent, and a real loss) from `/c/tmp/crewgraph` (scratch).
+expect 2 'rm -rf /'
+expect 2 'rm -rf /*'
+expect 2 'rm -rf ~'
+expect 2 'rm -rf ~/'
+expect 2 'rm -rf $HOME'
+expect 2 'rm -rf ${HOME}'
+expect 2 'rm -rf /usr'
+expect 2 'rm -rf /c/repos'
+expect 2 'sudo rm -rf /'
+# `.` at a repo root deletes the checkout; the guard cannot know the cwd, so
+# a bare `.` or `./` target is refused on the same floor.
+expect 2 'rm -rf .'
+expect 2 'rm -rf ./'
+# Deep enough to be a scratch path, and the pattern appearing inside quoted
+# text is discussion, not a command.
+expect 0 'rm -rf /c/tmp/crewgraph'
+expect 0 'rm -rf /tmp/build/out'
+expect 0 'rm -rf build'
+expect 0 'rm -rf ./node_modules'
+expect 0 'rm -rf .work/review'
+expect 0 "echo 'do not rm -rf / ever'"
+
 echo "== guard.sh: must ALLOW (exit 0) =="
 expect 0 'terraform plan'
 expect 0 'terraform fmt -recursive -check'

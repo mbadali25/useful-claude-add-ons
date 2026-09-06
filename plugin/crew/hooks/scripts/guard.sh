@@ -31,7 +31,51 @@ echo "$CMD" | grep -qE "${GIT_PRE}push\b.*(--force|-f)\b" && block "force push."
 # `git push origin +main` is a force push with no --force token in it.
 echo "$CMD" | grep -qE "${GIT_PRE}push\b[^;&|]*[[:space:]]\+[^[:space:];&|]" && block "force push (leading-plus refspec)."
 echo "$CMD" | grep -qE "${GIT_PRE}(reset[[:space:]]+--hard|clean[[:space:]]+-[a-z]*f)" && block "destroys uncommitted work."
-echo "$CMD" | grep -qE '\brm[[:space:]]+-[a-z]*rf?[[:space:]]+/' && block "recursive delete from root."
+# Recursive delete: judge the TARGET, not the presence of a slash. The old
+# rule was `rm -rf` followed by any `/`, anywhere in the command text. It was
+# wrong in both directions, and every case here was measured before it changed:
+# it BLOCKED `rm -rf /c/tmp/crewgraph` (three deep, disposable) and any command
+# that merely quoted the pattern in prose, while ALLOWING `rm -rf ~` and
+# `rm -rf $HOME` - the two likeliest ways to lose a home directory. Same
+# argument-position discipline as the infra-CLI rule below: `rm` must be the
+# program invoked, not a word inside someone's quoted text.
+rm_target_unsafe() {
+  local t="${1%/}"                 # a trailing slash is not depth
+  case "$t" in
+    ''|.|..|'/*'|'~'|'$HOME'|'${HOME}') return 0 ;;
+  esac
+  local rest n=1
+  case "$t" in
+    '~/'*)     rest="${t#'~/'}" ;;
+    '$HOME/'*) rest="${t#'$HOME/'}" ;;
+    /*)        rest="${t#/}" ;;
+    *)         return 1 ;;         # relative and deeper than `.` - allowed
+  esac
+  # Fewer than three segments is a root, a mount, or a checkout parent. Three
+  # is what separates `/c/repos` (a real loss) from `/c/tmp/crewgraph`.
+  while [ "$rest" != "${rest#*/}" ]; do rest="${rest#*/}"; n=$((n + 1)); done
+  [ "$n" -lt 3 ]
+}
+while IFS= read -r _seg; do
+  _seg="${_seg#"${_seg%%[![:space:]]*}"}"
+  case "$_seg" in sudo\ *|env\ *|time\ *|nice\ *|xargs\ *) _seg="${_seg#* }" ;; esac
+  _seg="${_seg#"${_seg%%[![:space:]]*}"}"
+  case "$_seg" in rm\ *) ;; *) continue ;; esac
+  read -ra _toks <<< "$_seg"
+  _recursive=0 _target=""
+  for _t in "${_toks[@]:1}"; do
+    case "$_t" in
+      --recursive) _recursive=1 ;;
+      -*r*)        _recursive=1 ;;
+      -*)          ;;
+      *)           [ -z "$_target" ] && _target="$_t" ;;
+    esac
+  done
+  [ "$_recursive" = 1 ] && [ -n "$_target" ] && rm_target_unsafe "$_target" &&
+    block "recursive delete of '$_target' is too close to a root. Name a deeper path."
+done <<EOF
+$(printf '%s' "$CMD" | tr ';&|' '\n')
+EOF
 # Argument-position match, not substring presence. The old check matched
 # "prod"/"production" as a whole word ANYWHERE in the command text, plus one
 # of a handful of infra CLI names ANYWHERE in that same text - so it blocked
