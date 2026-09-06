@@ -639,8 +639,9 @@ defaults true, so a canvas that does not parse is rejected on a fresh install.
 
 **`vault-guard` is the one hook that can block**, and ships a committed,
 sabotage-tested regression suite: `obsidian-vault/hooks/scripts/_test/run-tests.sh`
-(57 assertions, must-block and must-allow, including one proving the config
-toggles actually gate the checks). Sabotage-tested means exactly that: the ASCII check
+(65 assertions, must-block and must-allow, including one proving the config
+toggles actually gate the checks, and three holding the three defaults above to
+a config that carries no `guard` key at all). Sabotage-tested means exactly that: the ASCII check
 was disabled once during development to confirm the suite goes red rather than
 staying green, per this repo's rule that a hook allowed to block needs proof
 its suite can catch a real regression, not just that the suite exists.
