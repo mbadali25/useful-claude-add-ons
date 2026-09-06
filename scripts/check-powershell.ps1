@@ -77,6 +77,21 @@ $externallyProvided = @{
     'New-ScheduledTaskSettingsSet'  = 'ScheduledTasks (Windows-only)'
     'Register-ScheduledTask'        = 'ScheduledTasks (Windows-only)'
     'Start-ScheduledTask'           = 'ScheduledTasks (Windows-only)'
+    # Here for a DIFFERENT reason than everything above, which is why it is
+    # commented separately: nvidia-smi is not a cmdlet from an unimportable
+    # module, it is an ordinary external binary shipped with the NVIDIA driver.
+    # The Verb-Noun filter below is what drags it in - `nvidia-smi` matches
+    # '^[A-Za-z]+-[A-Za-z0-9]+$' as cleanly as `Get-ChildItem` does, so a bare
+    # program with a hyphen in its name gets judged as a cmdlet. It resolves on
+    # any machine with the driver and on no CI runner, so this check passed
+    # locally and failed only on CI. plugin/localgpu/bootstrap.ps1.
+    #
+    # Fixing the filter to demand an approved verb (Get-Verb) would cover every
+    # hyphenated binary at once - docker-compose, pip-compile - but it would
+    # also stop judging a typo like 'Gett-ChildItem', whose verb is equally
+    # unapproved. That trades one false positive for a class of false
+    # negatives, so the name goes here instead.
+    'nvidia-smi'                    = 'NVIDIA driver (external binary, not a cmdlet)'
 }
 
 $problems = @()

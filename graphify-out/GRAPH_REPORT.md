@@ -1,7 +1,7 @@
 # Graph Report - useful-claude-add-ons  (2026-09-05)
 
 ## Corpus Check
-- 500 files · ~696,427 words
+- 500 files · ~696,756 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
@@ -10,7 +10,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `84e36829`
+- Built from commit: `a429b3dd`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -2163,7 +2163,7 @@ Cohesion: 0.07
 Nodes (24): crew, `crew_state.py` and this very directory, Hooks, Inventory — and a stale description found while checking it, The 0.16.7 guard defects, and the dispatch.d rewrite that fixed the largest one, What this file does not cover, Code map — index, Files (+16 more)
 
 ## Knowledge Gaps
-- **1873 isolated node(s):** `localgpu`, `CreatedServer`, `CreatedServer`, `CreatedServer`, `CreatedServer` (+1868 more)
+- **1873 isolated node(s):** `CLAUDE_PROJECT_DIR`, `CreatedServer`, `CreatedServer`, `CreatedServer`, `CreatedServer` (+1868 more)
   These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 3417 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
 - **177 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
@@ -2171,16 +2171,16 @@ Nodes (24): crew, `crew_state.py` and this very directory, Hooks, Inventory — 
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `order_candidates()` connect `resolve_config` to `bridge_status.py`, `crew_config.py`, `check_env.py`?**
-  _High betweenness centrality (0.124) - this node is a cross-community bridge._
+  _High betweenness centrality (0.127) - this node is a cross-community bridge._
 - **Why does `probe()` connect `bridge_status.py` to `resolve_config`?**
-  _High betweenness centrality (0.124) - this node is a cross-community bridge._
+  _High betweenness centrality (0.126) - this node is a cross-community bridge._
 - **Why does `build_parser()` connect `worklog.py` to `localgpu_cli.py`?**
-  _High betweenness centrality (0.106) - this node is a cross-community bridge._
+  _High betweenness centrality (0.104) - this node is a cross-community bridge._
 - **Are the 31 inferred relationships involving `MerakiClient` (e.g. with `MerakiError` and `TestNetworkLookup`) actually correct?**
   _`MerakiClient` has 31 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 17 inferred relationships involving `MerakiError` (e.g. with `MerakiClient` and `ConfigTool`) actually correct?**
   _`MerakiError` has 17 INFERRED edges - model-reasoned connections that need verification._
-- **What connects `localgpu`, `CreatedServer`, `CreatedServer` to the rest of the system?**
+- **What connects `CLAUDE_PROJECT_DIR`, `CreatedServer`, `CreatedServer` to the rest of the system?**
   _1873 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `install-prerequisites.sh` be split into smaller, more focused modules?**
   _Cohesion score 0.05694980694980695 - nodes in this community are weakly interconnected._
