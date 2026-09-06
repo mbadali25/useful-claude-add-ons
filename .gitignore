@@ -348,3 +348,15 @@ graphify-out/*
 # and is tracked; anyone who wants the pictures runs:
 #   bash <crew>/skills/crew-diagrams/scripts/render.sh docs/diagrams
 docs/diagrams/out/
+
+# Project-scope MCP registration. Written by `/localgpu:setup` with LITERAL
+# absolute paths - the venv interpreter, the plugin cache directory (version-
+# pinned), and LOCALGPU_HOME - because Claude Code reads this file directly and
+# does not expand `~` or a variable. Every one of those is machine-specific, so
+# a committed copy spawns a server pointing at paths that exist on exactly one
+# box. Same reasoning as `.localgpu/` two lines up.
+#
+# It also pins the plugin version: bump localgpu and this file points at a
+# cache directory that no longer exists, and the server fails to spawn with no
+# useful error. Re-run `/localgpu:setup` after a localgpu upgrade.
+.mcp.json

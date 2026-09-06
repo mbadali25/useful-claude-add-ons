@@ -14,6 +14,8 @@ for exploring and drafting, not for gates.
 from __future__ import annotations
 
 import argparse
+import io
+import json
 import os
 import shutil
 import subprocess
@@ -178,6 +180,137 @@ def cmd_proxy(args: argparse.Namespace) -> int:
     return 0
 
 
+SERVER_NAME = "localgpu"
+
+
+def _entry(home) -> dict:
+    """The `.mcp.json` entry for this machine, with every path already literal.
+
+    Nothing here is a placeholder. `.mcp.json` is read by Claude Code, not by a
+    shell, so a `~` or a `${VAR}` left in it is a string that resolves to
+    nothing and produces a server that fails to spawn with no useful error.
+    That is precisely the failure this subcommand exists to remove: the paths
+    are resolved by the process that already knows them, rather than
+    substituted by hand into a template.
+
+    `LOCALGPU_HOME` goes in `env` deliberately - an MCP server is spawned by
+    Claude Code, not by a login shell, so it inherits no profile that exports
+    it.
+    """
+    return {
+        "type": "stdio",
+        "command": str(localgpu_config.venv_python(home)).replace("\\", "/"),
+        "args": [str(PLUGIN_ROOT / "mcp" / "server.py").replace("\\", "/")],
+        "env": {"LOCALGPU_HOME": str(home).replace("\\", "/")},
+    }
+
+
+def cmd_mcp_init(args: argparse.Namespace) -> int:
+    """Write (or update) `<repo>/.mcp.json` so this repo can reach the server.
+
+    Idempotent by contract: an entry that already matches is reported as
+    already registered and nothing is written. An entry that differs is
+    reported as a diff and left alone unless `--force`, because the difference
+    is usually a version-pinned plugin path from an older localgpu and
+    silently rewriting it hides that an upgrade happened.
+    """
+    home = localgpu_config.localgpu_home()
+    repo = Path(args.repo).resolve()
+    if not repo.is_dir():
+        print(f"localgpu: not a directory: {repo}", file=sys.stderr)
+        return 1
+
+    entry = _entry(home)
+
+    # Verify before writing. A correct-looking path to a file that is not
+    # there produces a dead server and no error anyone can read, so the check
+    # belongs here rather than in whatever discovers it later.
+    missing = [p for p in (entry["command"], entry["args"][0]) if not Path(p).is_file()]
+    if missing:
+        print("localgpu: refusing to write a registration that cannot spawn.",
+              file=sys.stderr)
+        for p in missing:
+            print(f"  missing: {p}", file=sys.stderr)
+        print("Run the bootstrap first:\n"
+              f"  {'pwsh -File' if os.name == 'nt' else 'bash'} "
+              f"{PLUGIN_ROOT / ('bootstrap.ps1' if os.name == 'nt' else 'bootstrap.sh')}",
+              file=sys.stderr)
+        return 1
+
+    target = repo / ".mcp.json"
+    doc = {}
+    if target.is_file():
+        try:
+            doc = json.loads(target.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            print(f"localgpu: {target} is not valid JSON ({exc}). "
+                  "Fix or remove it; refusing to overwrite.", file=sys.stderr)
+            return 1
+        if not isinstance(doc, dict):
+            print(f"localgpu: {target} is not a JSON object. Refusing to "
+                  "overwrite.", file=sys.stderr)
+            return 1
+
+    servers = doc.setdefault("mcpServers", {})
+    if not isinstance(servers, dict):
+        print(f"localgpu: {target} has a non-object `mcpServers`. Refusing to "
+              "overwrite.", file=sys.stderr)
+        return 1
+
+    existing = servers.get(SERVER_NAME)
+    if existing == entry:
+        print(f"already registered: {target}")
+        print("  (unchanged - nothing written)")
+        return 0
+    if existing is not None and not args.force:
+        print(f"localgpu: {SERVER_NAME} is already in {target}, but differs:",
+              file=sys.stderr)
+        print(f"  on disk: {json.dumps(existing, sort_keys=True)}", file=sys.stderr)
+        print(f"  correct: {json.dumps(entry, sort_keys=True)}", file=sys.stderr)
+        print("This is usually a plugin path pinned to an older localgpu "
+              "version. Re-run with --force to update it.", file=sys.stderr)
+        return 1
+
+    servers[SERVER_NAME] = entry
+    # newline="\n" is not cosmetic here: Python text mode rewrites every
+    # \n to \\r\\n on Windows, and the damage lands in the working tree after any
+    # checkout that might have fixed it.
+    with io.open(target, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(json.dumps(doc, indent=2) + "\n")
+    print(f"{'updated' if existing else 'wrote'}: {target}")
+
+    if args.gitignore:
+        _ignore(repo)
+
+    print()
+    print("Run /mcp in Claude Code and approve `localgpu`. A project-scope "
+          ".mcp.json needs explicit approval and will not connect on its own.")
+    return 0
+
+
+_IGNORE_NOTE = """
+# Project-scope MCP registration, written by `localgpu mcp-init`. It holds
+# LITERAL absolute paths - the venv interpreter, the plugin directory, and
+# LOCALGPU_HOME - because Claude Code reads this file directly and expands
+# neither `~` nor a variable. All three are machine-specific, so a committed
+# copy spawns a server pointing at paths that exist on exactly one box.
+# Everyone else runs `localgpu mcp-init` and gets their own.
+.mcp.json
+"""
+
+
+def _ignore(repo: Path) -> None:
+    """Add `.mcp.json` to the repo's `.gitignore`, once."""
+    gi = repo / ".gitignore"
+    text = gi.read_text(encoding="utf-8") if gi.is_file() else ""
+    if any(line.strip() == ".mcp.json" for line in text.splitlines()):
+        print("  .gitignore: already ignores .mcp.json")
+        return
+    with io.open(gi, "a", encoding="utf-8", newline="\n") as fh:
+        fh.write(("" if text.endswith("\n") or not text else "\n") + _IGNORE_NOTE)
+    print("  .gitignore: added .mcp.json")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="localgpu",
@@ -211,6 +344,21 @@ def build_parser() -> argparse.ArgumentParser:
     proxy.add_argument("--port", type=int, default=8817)
     proxy.add_argument("--keep-alive", default=anthropic_proxy.DEFAULT_KEEP_ALIVE)
     proxy.set_defaults(func=cmd_proxy)
+
+    mcp_init = sub.add_parser(
+        "mcp-init",
+        help="write <repo>/.mcp.json so Claude Code can reach the server",
+    )
+    mcp_init.add_argument(
+        "repo", nargs="?", default=".",
+        help="repository to register in (default: current directory)")
+    mcp_init.add_argument(
+        "--force", action="store_true",
+        help="overwrite an existing localgpu entry that differs")
+    mcp_init.add_argument(
+        "--gitignore", action=argparse.BooleanOptionalAction, default=True,
+        help="also add .mcp.json to the repo's .gitignore (default: yes)")
+    mcp_init.set_defaults(func=cmd_mcp_init)
 
     return parser
 
