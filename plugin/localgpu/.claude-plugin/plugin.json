@@ -1,6 +1,6 @@
 {
   "name": "localgpu",
-  "version": "0.1.16",
+  "version": "0.1.17",
   "description": "Local models on your own GPU via Ollama, in two halves: three MCP tools that index a repo or folder into an on-disk vector store, search it, and answer from it inside your current session; and a `localgpu` shell/proxy that launches a separate Claude Code session running entirely on a local chat model, through a proxy translating the Anthropic Messages API into Ollama's chat API. Six commands cover setup, health checks, indexing, search, ask, and an honest account of which crew roles a local 7B can and cannot take over. No hooks and no agents; nothing leaves 127.0.0.1.",
   "author": {
     "name": "Matthew Badali",
