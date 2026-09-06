@@ -160,6 +160,19 @@
       "source_location": "L92"
     },
     {
+      "id": "plugin_localgpu_mcp_store_storeerror",
+      "label": "StoreError",
+      "_callable": true,
+      "_callable_class": true,
+      "_origin": "ast",
+      "community": 11,
+      "community_name": "VectorStore",
+      "file_type": "code",
+      "norm_label": "storeerror",
+      "source_file": "plugin/localgpu/mcp/store.py",
+      "source_location": "L202"
+    },
+    {
       "id": "plugin_localgpu_mcp_store_vectorstore",
       "label": "VectorStore",
       "_callable": true,
@@ -251,6 +264,19 @@
       "source_location": "L21"
     },
     {
+      "id": "plugin_localgpu_mcp_indexer_embedmodelmismatch",
+      "label": "EmbedModelMismatch",
+      "_callable": true,
+      "_callable_class": true,
+      "_origin": "ast",
+      "community": 13,
+      "community_name": "write",
+      "file_type": "code",
+      "norm_label": "embedmodelmismatch",
+      "source_file": "plugin/localgpu/mcp/indexer.py",
+      "source_location": "L218"
+    },
+    {
       "id": "plugin_localgpu_mcp_indexer_indexer",
       "label": "Indexer",
       "_callable": true,
@@ -262,6 +288,19 @@
       "norm_label": "indexer",
       "source_file": "plugin/localgpu/mcp/indexer.py",
       "source_location": "L293"
+    },
+    {
+      "id": "plugin_localgpu_mcp_test_test_embed_model_flakyembedder",
+      "label": "FlakyEmbedder",
+      "_callable": true,
+      "_callable_class": true,
+      "_origin": "ast",
+      "community": 13,
+      "community_name": "write",
+      "file_type": "code",
+      "norm_label": "flakyembedder",
+      "source_file": "plugin/localgpu/mcp/_test/test_embed_model.py",
+      "source_location": "L22"
     },
     {
       "id": "plugin_localgpu_mcp_test_test_incremental_flakyembedder",
@@ -1005,19 +1044,6 @@
       "source_location": "L122"
     },
     {
-      "id": "plugin_localgpu_mcp_store_storeerror",
-      "label": "StoreError",
-      "_callable": true,
-      "_callable_class": true,
-      "_origin": "ast",
-      "community": 40,
-      "community_name": "ChunkRecord",
-      "file_type": "code",
-      "norm_label": "storeerror",
-      "source_file": "plugin/localgpu/mcp/store.py",
-      "source_location": "L202"
-    },
-    {
       "id": "plugin_localgpu_mcp_indexer_chunk",
       "label": "Chunk",
       "_callable": true,
@@ -1406,32 +1432,6 @@
       "norm_label": "stubollama",
       "source_file": "plugin/localgpu/mcp/_test/test_ollama.py",
       "source_location": "L21"
-    },
-    {
-      "id": "plugin_localgpu_mcp_indexer_embedmodelmismatch",
-      "label": "EmbedModelMismatch",
-      "_callable": true,
-      "_callable_class": true,
-      "_origin": "ast",
-      "community": 712,
-      "community_name": "test_embed_model.py",
-      "file_type": "code",
-      "norm_label": "embedmodelmismatch",
-      "source_file": "plugin/localgpu/mcp/indexer.py",
-      "source_location": "L218"
-    },
-    {
-      "id": "plugin_localgpu_mcp_test_test_embed_model_flakyembedder",
-      "label": "FlakyEmbedder",
-      "_callable": true,
-      "_callable_class": true,
-      "_origin": "ast",
-      "community": 712,
-      "community_name": "test_embed_model.py",
-      "file_type": "code",
-      "norm_label": "flakyembedder",
-      "source_file": "plugin/localgpu/mcp/_test/test_embed_model.py",
-      "source_location": "L22"
     },
     {
       "id": "skills_notify_scripts_inbox_inboxlocked",
@@ -2333,6 +2333,30 @@
       "source_location": "L373"
     },
     {
+      "id": "plugin_localgpu_mcp_store_match_glob",
+      "label": "match_glob()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 102,
+      "community_name": "test_ranking.py",
+      "file_type": "code",
+      "norm_label": "match_glob()",
+      "source_file": "plugin/localgpu/mcp/store.py",
+      "source_location": "L785"
+    },
+    {
+      "id": "plugin_localgpu_mcp_test_conftest_store",
+      "label": "store()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 102,
+      "community_name": "test_ranking.py",
+      "file_type": "code",
+      "norm_label": "store()",
+      "source_file": "plugin/localgpu/mcp/_test/conftest.py",
+      "source_location": "L80"
+    },
+    {
       "id": "plugin_localgpu_mcp_test_test_ranking_add",
       "label": "add()",
       "_callable": true,
@@ -2391,6 +2415,18 @@
       "norm_label": "test_magnitude_does_not_beat_direction()",
       "source_file": "plugin/localgpu/mcp/_test/test_ranking.py",
       "source_location": "L50"
+    },
+    {
+      "id": "plugin_localgpu_mcp_test_test_ranking_test_match_glob_handles_both_separators",
+      "label": "test_match_glob_handles_both_separators()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 102,
+      "community_name": "test_ranking.py",
+      "file_type": "code",
+      "norm_label": "test_match_glob_handles_both_separators()",
+      "source_file": "plugin/localgpu/mcp/_test/test_ranking.py",
+      "source_location": "L106"
     },
     {
       "id": "plugin_localgpu_mcp_test_test_ranking_test_path_glob_filter",
@@ -2523,6 +2559,18 @@
       "norm_label": ".vector()",
       "source_file": "plugin/localgpu/mcp/_test/conftest.py",
       "source_location": "L44"
+    },
+    {
+      "id": "plugin_localgpu_mcp_test_conftest_hash_token",
+      "label": "hash_token()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 103,
+      "community_name": "FakeEmbedder",
+      "file_type": "code",
+      "norm_label": "hash_token()",
+      "source_file": "plugin/localgpu/mcp/_test/conftest.py",
+      "source_location": "L57"
     },
     {
       "id": "plugin_localgpu_mcp_test_test_server_fakeclient_embed",
@@ -2765,18 +2813,6 @@
       "source_location": "L66"
     },
     {
-      "id": "plugin_localgpu_mcp_test_conftest_hash_token",
-      "label": "hash_token()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 105,
-      "community_name": "_test/conftest.py",
-      "file_type": "code",
-      "norm_label": "hash_token()",
-      "source_file": "plugin/localgpu/mcp/_test/conftest.py",
-      "source_location": "L57"
-    },
-    {
       "id": "plugin_localgpu_mcp_test_conftest_home",
       "label": "home()",
       "_callable": true,
@@ -2799,18 +2835,6 @@
       "norm_label": "repo()",
       "source_file": "plugin/localgpu/mcp/_test/conftest.py",
       "source_location": "L86"
-    },
-    {
-      "id": "plugin_localgpu_mcp_test_conftest_store",
-      "label": "store()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 105,
-      "community_name": "_test/conftest.py",
-      "file_type": "code",
-      "norm_label": "store()",
-      "source_file": "plugin/localgpu/mcp/_test/conftest.py",
-      "source_location": "L80"
     },
     {
       "id": "plugin_localgpu_mcp_test_conftest_write",
@@ -3161,6 +3185,18 @@
       "source_location": "L313"
     },
     {
+      "id": "plugin_localgpu_mcp_store_vectorstore_live_rows",
+      "label": "._live_rows()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 11,
+      "community_name": "VectorStore",
+      "file_type": "code",
+      "norm_label": "._live_rows()",
+      "source_file": "plugin/localgpu/mcp/store.py",
+      "source_location": "L565"
+    },
+    {
       "id": "plugin_localgpu_mcp_store_vectorstore_matrix",
       "label": "._matrix()",
       "_callable": true,
@@ -3279,18 +3315,6 @@
       "norm_label": ".tombstone_ratio()",
       "source_file": "plugin/localgpu/mcp/store.py",
       "source_location": "L608"
-    },
-    {
-      "id": "plugin_localgpu_mcp_store_vectorstore_upsert_file",
-      "label": ".upsert_file()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 11,
-      "community_name": "VectorStore",
-      "file_type": "code",
-      "norm_label": ".upsert_file()",
-      "source_file": "plugin/localgpu/mcp/store.py",
-      "source_location": "L423"
     },
     {
       "id": "plugin_localgpu_mcp_store_vectorstore_write_manifest",
@@ -4106,7 +4130,7 @@
       "file_type": "code",
       "norm_label": "apply_mutation()",
       "source_file": "plugin/crew/tests/sabotage.py",
-      "source_location": "L1081"
+      "source_location": "L1125"
     },
     {
       "id": "plugin_crew_tests_sabotage_digest",
@@ -4118,7 +4142,7 @@
       "file_type": "code",
       "norm_label": "digest()",
       "source_file": "plugin/crew/tests/sabotage.py",
-      "source_location": "L1001"
+      "source_location": "L1003"
     },
     {
       "id": "plugin_crew_tests_sabotage_install_exit_handlers",
@@ -4130,7 +4154,7 @@
       "file_type": "code",
       "norm_label": "install_exit_handlers()",
       "source_file": "plugin/crew/tests/sabotage.py",
-      "source_location": "L1060"
+      "source_location": "L1104"
     },
     {
       "id": "plugin_crew_tests_sabotage_main",
@@ -4142,7 +4166,7 @@
       "file_type": "code",
       "norm_label": "main()",
       "source_file": "plugin/crew/tests/sabotage.py",
-      "source_location": "L1148"
+      "source_location": "L1201"
     },
     {
       "id": "plugin_crew_tests_sabotage_on_signal",
@@ -4154,7 +4178,7 @@
       "file_type": "code",
       "norm_label": "_on_signal()",
       "source_file": "plugin/crew/tests/sabotage.py",
-      "source_location": "L1051"
+      "source_location": "L1094"
     },
     {
       "id": "plugin_crew_tests_sabotage_read",
@@ -4166,7 +4190,7 @@
       "file_type": "code",
       "norm_label": "read()",
       "source_file": "plugin/crew/tests/sabotage.py",
-      "source_location": "L991"
+      "source_location": "L993"
     },
     {
       "id": "plugin_crew_tests_sabotage_restore",
@@ -4178,7 +4202,7 @@
       "file_type": "code",
       "norm_label": "restore()",
       "source_file": "plugin/crew/tests/sabotage.py",
-      "source_location": "L1137"
+      "source_location": "L1190"
     },
     {
       "id": "plugin_crew_tests_sabotage_restore_all",
@@ -4190,7 +4214,7 @@
       "file_type": "code",
       "norm_label": "_restore_all()",
       "source_file": "plugin/crew/tests/sabotage.py",
-      "source_location": "L1042"
+      "source_location": "L1072"
     },
     {
       "id": "plugin_crew_tests_sabotage_run_test",
@@ -4202,7 +4226,7 @@
       "file_type": "code",
       "norm_label": "run_test()",
       "source_file": "plugin/crew/tests/sabotage.py",
-      "source_location": "L970"
+      "source_location": "L972"
     },
     {
       "id": "plugin_crew_tests_sabotage_stale_backups",
@@ -4214,7 +4238,19 @@
       "file_type": "code",
       "norm_label": "stale_backups()",
       "source_file": "plugin/crew/tests/sabotage.py",
-      "source_location": "L1018"
+      "source_location": "L1020"
+    },
+    {
+      "id": "plugin_crew_tests_sabotage_verify",
+      "label": "_verify()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 119,
+      "community_name": "test_sabotage_harness.py",
+      "file_type": "code",
+      "norm_label": "_verify()",
+      "source_file": "plugin/crew/tests/sabotage.py",
+      "source_location": "L1051"
     },
     {
       "id": "plugin_crew_tests_test_sabotage_harness_no_live_targets",
@@ -4238,7 +4274,19 @@
       "file_type": "code",
       "norm_label": "_target()",
       "source_file": "plugin/crew/tests/test_sabotage_harness.py",
-      "source_location": "L47"
+      "source_location": "L60"
+    },
+    {
+      "id": "plugin_crew_tests_test_sabotage_harness_test_a_backup_is_never_left_partial",
+      "label": "test_a_backup_is_never_left_partial()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 119,
+      "community_name": "test_sabotage_harness.py",
+      "file_type": "code",
+      "norm_label": "test_a_backup_is_never_left_partial()",
+      "source_file": "plugin/crew/tests/test_sabotage_harness.py",
+      "source_location": "L184"
     },
     {
       "id": "plugin_crew_tests_test_sabotage_harness_test_a_clean_run_reports_pass_and_leaves_no_backup",
@@ -4250,7 +4298,19 @@
       "file_type": "code",
       "norm_label": "test_a_clean_run_reports_pass_and_leaves_no_backup()",
       "source_file": "plugin/crew/tests/test_sabotage_harness.py",
-      "source_location": "L222"
+      "source_location": "L354"
+    },
+    {
+      "id": "plugin_crew_tests_test_sabotage_harness_test_a_failed_restore_stays_registered_for_the_next_attempt",
+      "label": "test_a_failed_restore_stays_registered_for_the_next_attempt()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 119,
+      "community_name": "test_sabotage_harness.py",
+      "file_type": "code",
+      "norm_label": "test_a_failed_restore_stays_registered_for_the_next_attempt()",
+      "source_file": "plugin/crew/tests/test_sabotage_harness.py",
+      "source_location": "L135"
     },
     {
       "id": "plugin_crew_tests_test_sabotage_harness_test_a_mutation_is_restored_byte_for_byte",
@@ -4262,7 +4322,7 @@
       "file_type": "code",
       "norm_label": "test_a_mutation_is_restored_byte_for_byte()",
       "source_file": "plugin/crew/tests/test_sabotage_harness.py",
-      "source_location": "L61"
+      "source_location": "L74"
     },
     {
       "id": "plugin_crew_tests_test_sabotage_harness_test_an_anchor_that_is_not_unique_mutates_nothing",
@@ -4274,7 +4334,7 @@
       "file_type": "code",
       "norm_label": "test_an_anchor_that_is_not_unique_mutates_nothing()",
       "source_file": "plugin/crew/tests/test_sabotage_harness.py",
-      "source_location": "L74"
+      "source_location": "L87"
     },
     {
       "id": "plugin_crew_tests_test_sabotage_harness_test_apply_mutation_refuses_to_overwrite_an_existing_backup",
@@ -4286,7 +4346,7 @@
       "file_type": "code",
       "norm_label": "test_apply_mutation_refuses_to_overwrite_an_existing_backup()",
       "source_file": "plugin/crew/tests/test_sabotage_harness.py",
-      "source_location": "L82"
+      "source_location": "L95"
     },
     {
       "id": "plugin_crew_tests_test_sabotage_harness_test_digest_changes_when_one_byte_does",
@@ -4298,7 +4358,7 @@
       "file_type": "code",
       "norm_label": "test_digest_changes_when_one_byte_does()",
       "source_file": "plugin/crew/tests/test_sabotage_harness.py",
-      "source_location": "L53"
+      "source_location": "L66"
     },
     {
       "id": "plugin_crew_tests_test_sabotage_harness_test_install_exit_handlers_takes_sigterm_and_survives_this_platform",
@@ -4310,7 +4370,19 @@
       "file_type": "code",
       "norm_label": "test_install_exit_handlers_takes_sigterm_and_survives_this_platform()",
       "source_file": "plugin/crew/tests/test_sabotage_harness.py",
-      "source_location": "L135"
+      "source_location": "L267"
+    },
+    {
+      "id": "plugin_crew_tests_test_sabotage_harness_test_main_discards_an_interrupted_backup_before_it_mutates",
+      "label": "test_main_discards_an_interrupted_backup_before_it_mutates()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 119,
+      "community_name": "test_sabotage_harness.py",
+      "file_type": "code",
+      "norm_label": "test_main_discards_an_interrupted_backup_before_it_mutates()",
+      "source_file": "plugin/crew/tests/test_sabotage_harness.py",
+      "source_location": "L212"
     },
     {
       "id": "plugin_crew_tests_test_sabotage_harness_test_main_refuses_to_start_when_a_backup_is_present",
@@ -4322,7 +4394,7 @@
       "file_type": "code",
       "norm_label": "test_main_refuses_to_start_when_a_backup_is_present()",
       "source_file": "plugin/crew/tests/test_sabotage_harness.py",
-      "source_location": "L168"
+      "source_location": "L300"
     },
     {
       "id": "plugin_crew_tests_test_sabotage_harness_test_main_reports_a_restore_that_did_not_take",
@@ -4334,7 +4406,7 @@
       "file_type": "code",
       "norm_label": "test_main_reports_a_restore_that_did_not_take()",
       "source_file": "plugin/crew/tests/test_sabotage_harness.py",
-      "source_location": "L195"
+      "source_location": "L327"
     },
     {
       "id": "plugin_crew_tests_test_sabotage_harness_test_restore_all_puts_back_every_live_target",
@@ -4346,7 +4418,19 @@
       "file_type": "code",
       "norm_label": "test_restore_all_puts_back_every_live_target()",
       "source_file": "plugin/crew/tests/test_sabotage_harness.py",
-      "source_location": "L102"
+      "source_location": "L115"
+    },
+    {
+      "id": "plugin_crew_tests_test_sabotage_harness_test_restore_all_verifies_and_does_not_raise_from_signal_context",
+      "label": "test_restore_all_verifies_and_does_not_raise_from_signal_context()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 119,
+      "community_name": "test_sabotage_harness.py",
+      "file_type": "code",
+      "norm_label": "test_restore_all_verifies_and_does_not_raise_from_signal_context()",
+      "source_file": "plugin/crew/tests/test_sabotage_harness.py",
+      "source_location": "L162"
     },
     {
       "id": "plugin_crew_tests_test_sabotage_harness_test_stale_backups_names_only_the_targets_that_have_one",
@@ -4358,7 +4442,7 @@
       "file_type": "code",
       "norm_label": "test_stale_backups_names_only_the_targets_that_have_one()",
       "source_file": "plugin/crew/tests/test_sabotage_harness.py",
-      "source_location": "L155"
+      "source_location": "L287"
     },
     {
       "id": "plugin_crew_tests_test_sabotage_harness_test_the_signal_handler_restores_then_exits_128_plus_signum",
@@ -4370,7 +4454,31 @@
       "file_type": "code",
       "norm_label": "test_the_signal_handler_restores_then_exits_128_plus_signum()",
       "source_file": "plugin/crew/tests/test_sabotage_harness.py",
-      "source_location": "L122"
+      "source_location": "L254"
+    },
+    {
+      "id": "plugin_crew_tests_test_sabotage_harness_test_verify_is_silent_about_a_target_it_has_no_answer_key_for",
+      "label": "test_verify_is_silent_about_a_target_it_has_no_answer_key_for()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 119,
+      "community_name": "test_sabotage_harness.py",
+      "file_type": "code",
+      "norm_label": "test_verify_is_silent_about_a_target_it_has_no_answer_key_for()",
+      "source_file": "plugin/crew/tests/test_sabotage_harness.py",
+      "source_location": "L179"
+    },
+    {
+      "id": "plugin_crew_tests_test_sabotage_harness_text",
+      "label": "_text()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 119,
+      "community_name": "test_sabotage_harness.py",
+      "file_type": "code",
+      "norm_label": "_text()",
+      "source_file": "plugin/crew/tests/test_sabotage_harness.py",
+      "source_location": "L49"
     },
     {
       "id": "plugin_obsidian_vault_hooks_scripts_test_test_vault_ops_check",
@@ -5522,7 +5630,115 @@
       "file_type": "code",
       "norm_label": "write()",
       "source_file": "plugin/crew/tests/sabotage.py",
-      "source_location": "L996"
+      "source_location": "L998"
+    },
+    {
+      "id": "plugin_localgpu_mcp_test_test_embed_model_flakyembedder_call",
+      "label": ".__call__()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 13,
+      "community_name": "write",
+      "file_type": "code",
+      "norm_label": ".__call__()",
+      "source_file": "plugin/localgpu/mcp/_test/test_embed_model.py",
+      "source_location": "L35"
+    },
+    {
+      "id": "plugin_localgpu_mcp_test_test_embed_model_flakyembedder_init",
+      "label": ".__init__()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 13,
+      "community_name": "write",
+      "file_type": "code",
+      "norm_label": ".__init__()",
+      "source_file": "plugin/localgpu/mcp/_test/test_embed_model.py",
+      "source_location": "L30"
+    },
+    {
+      "id": "plugin_localgpu_mcp_test_test_embed_model_make_indexer",
+      "label": "make_indexer()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 13,
+      "community_name": "write",
+      "file_type": "code",
+      "norm_label": "make_indexer()",
+      "source_file": "plugin/localgpu/mcp/_test/test_embed_model.py",
+      "source_location": "L15"
+    },
+    {
+      "id": "plugin_localgpu_mcp_test_test_embed_model_test_failed_initial_refresh_does_not_let_a_later_model_switch_through",
+      "label": "test_failed_initial_refresh_does_not_let_a_later_model_switch_through()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 13,
+      "community_name": "write",
+      "file_type": "code",
+      "norm_label": "test_failed_initial_refresh_does_not_let_a_later_model_switch_through()",
+      "source_file": "plugin/localgpu/mcp/_test/test_embed_model.py",
+      "source_location": "L113"
+    },
+    {
+      "id": "plugin_localgpu_mcp_test_test_embed_model_test_fresh_build_records_embed_model",
+      "label": "test_fresh_build_records_embed_model()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 13,
+      "community_name": "write",
+      "file_type": "code",
+      "norm_label": "test_fresh_build_records_embed_model()",
+      "source_file": "plugin/localgpu/mcp/_test/test_embed_model.py",
+      "source_location": "L42"
+    },
+    {
+      "id": "plugin_localgpu_mcp_test_test_embed_model_test_indexer_without_embed_model_skips_the_check_entirely",
+      "label": "test_indexer_without_embed_model_skips_the_check_entirely()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 13,
+      "community_name": "write",
+      "file_type": "code",
+      "norm_label": "test_indexer_without_embed_model_skips_the_check_entirely()",
+      "source_file": "plugin/localgpu/mcp/_test/test_embed_model.py",
+      "source_location": "L152"
+    },
+    {
+      "id": "plugin_localgpu_mcp_test_test_embed_model_test_legacy_manifest_with_no_embed_model_key_is_not_treated_as_a_match",
+      "label": "test_legacy_manifest_with_no_embed_model_key_is_not_treated_as_a_match()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 13,
+      "community_name": "write",
+      "file_type": "code",
+      "norm_label": "test_legacy_manifest_with_no_embed_model_key_is_not_treated_as_a_match()",
+      "source_file": "plugin/localgpu/mcp/_test/test_embed_model.py",
+      "source_location": "L90"
+    },
+    {
+      "id": "plugin_localgpu_mcp_test_test_embed_model_test_same_dim_different_model_is_detected",
+      "label": "test_same_dim_different_model_is_detected()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 13,
+      "community_name": "write",
+      "file_type": "code",
+      "norm_label": "test_same_dim_different_model_is_detected()",
+      "source_file": "plugin/localgpu/mcp/_test/test_embed_model.py",
+      "source_location": "L71"
+    },
+    {
+      "id": "plugin_localgpu_mcp_test_test_embed_model_test_same_model_reload_passes",
+      "label": "test_same_model_reload_passes()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 13,
+      "community_name": "write",
+      "file_type": "code",
+      "norm_label": "test_same_model_reload_passes()",
+      "source_file": "plugin/localgpu/mcp/_test/test_embed_model.py",
+      "source_location": "L53"
     },
     {
       "id": "plugin_localgpu_mcp_test_test_incremental_flakyembedder_call",
@@ -5726,54 +5942,6 @@
       "file_type": "code",
       "norm_label": "test_env_pem_and_gitignored_secrets_never_reach_the_embedder()",
       "source_file": "plugin/localgpu/mcp/_test/test_secrets.py",
-      "source_location": "L25"
-    },
-    {
-      "id": "plugin_localgpu_mcp_test_test_unignore_make_indexer",
-      "label": "make_indexer()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 13,
-      "community_name": "write",
-      "file_type": "code",
-      "norm_label": "make_indexer()",
-      "source_file": "plugin/localgpu/mcp/_test/test_unignore.py",
-      "source_location": "L20"
-    },
-    {
-      "id": "plugin_localgpu_mcp_test_test_unignore_test_hard_floor_survives_an_unignore_attempt",
-      "label": "test_hard_floor_survives_an_unignore_attempt()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 13,
-      "community_name": "write",
-      "file_type": "code",
-      "norm_label": "test_hard_floor_survives_an_unignore_attempt()",
-      "source_file": "plugin/localgpu/mcp/_test/test_unignore.py",
-      "source_location": "L54"
-    },
-    {
-      "id": "plugin_localgpu_mcp_test_test_unignore_test_unignoring_a_liftable_default_lets_the_file_through",
-      "label": "test_unignoring_a_liftable_default_lets_the_file_through()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 13,
-      "community_name": "write",
-      "file_type": "code",
-      "norm_label": "test_unignoring_a_liftable_default_lets_the_file_through()",
-      "source_file": "plugin/localgpu/mcp/_test/test_unignore.py",
-      "source_location": "L30"
-    },
-    {
-      "id": "plugin_localgpu_mcp_test_test_unignore_write_json",
-      "label": "write_json()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 13,
-      "community_name": "write",
-      "file_type": "code",
-      "norm_label": "write_json()",
-      "source_file": "plugin/localgpu/mcp/_test/test_unignore.py",
       "source_location": "L25"
     },
     {
@@ -12821,16 +12989,40 @@
       "source_location": "L13"
     },
     {
+      "id": "mcp_servers_scripts_check_dist_fresh_checkownbuild",
+      "label": "checkOwnBuild()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 236,
+      "community_name": "check-dist-fresh.mjs",
+      "file_type": "code",
+      "norm_label": "checkownbuild()",
+      "source_file": "mcp-servers/scripts/check-dist-fresh.mjs",
+      "source_location": "L69"
+    },
+    {
       "id": "mcp_servers_scripts_check_dist_fresh_checkpackage",
       "label": "checkPackage()",
       "_callable": true,
       "_origin": "ast",
       "community": 236,
-      "community_name": "check-dist-fresh.test.mjs",
+      "community_name": "check-dist-fresh.mjs",
       "file_type": "code",
       "norm_label": "checkpackage()",
       "source_file": "mcp-servers/scripts/check-dist-fresh.mjs",
-      "source_location": "L58"
+      "source_location": "L109"
+    },
+    {
+      "id": "mcp_servers_scripts_check_dist_fresh_fail",
+      "label": "fail()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 236,
+      "community_name": "check-dist-fresh.mjs",
+      "file_type": "code",
+      "norm_label": "fail()",
+      "source_file": "mcp-servers/scripts/check-dist-fresh.mjs",
+      "source_location": "L64"
     },
     {
       "id": "mcp_servers_scripts_check_dist_fresh_main",
@@ -12838,11 +13030,11 @@
       "_callable": true,
       "_origin": "ast",
       "community": 236,
-      "community_name": "check-dist-fresh.test.mjs",
+      "community_name": "check-dist-fresh.mjs",
       "file_type": "code",
       "norm_label": "main()",
       "source_file": "mcp-servers/scripts/check-dist-fresh.mjs",
-      "source_location": "L88"
+      "source_location": "L126"
     },
     {
       "id": "mcp_servers_scripts_check_dist_fresh_newestmtime",
@@ -12850,11 +13042,11 @@
       "_callable": true,
       "_origin": "ast",
       "community": 236,
-      "community_name": "check-dist-fresh.test.mjs",
+      "community_name": "check-dist-fresh.mjs",
       "file_type": "code",
       "norm_label": "newestmtime()",
       "source_file": "mcp-servers/scripts/check-dist-fresh.mjs",
-      "source_location": "L30"
+      "source_location": "L44"
     },
     {
       "id": "mcp_servers_scripts_test_check_dist_fresh_test_fixture",
@@ -12862,7 +13054,7 @@
       "_callable": true,
       "_origin": "ast",
       "community": 236,
-      "community_name": "check-dist-fresh.test.mjs",
+      "community_name": "check-dist-fresh.mjs",
       "file_type": "code",
       "norm_label": "fixture()",
       "source_file": "mcp-servers/scripts/_test/check-dist-fresh.test.mjs",
@@ -12874,11 +13066,11 @@
       "_callable": true,
       "_origin": "ast",
       "community": 236,
-      "community_name": "check-dist-fresh.test.mjs",
+      "community_name": "check-dist-fresh.mjs",
       "file_type": "code",
       "norm_label": "touch()",
       "source_file": "mcp-servers/scripts/_test/check-dist-fresh.test.mjs",
-      "source_location": "L37"
+      "source_location": "L43"
     },
     {
       "id": "plugin_crew_tests_test_provider_table_all_cli",
@@ -13949,30 +14141,6 @@
       "source_location": "L29"
     },
     {
-      "id": "plugin_localgpu_mcp_indexer_check_embed_model",
-      "label": "check_embed_model()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 256,
-      "community_name": "server.py",
-      "file_type": "code",
-      "norm_label": "check_embed_model()",
-      "source_file": "plugin/localgpu/mcp/indexer.py",
-      "source_location": "L240"
-    },
-    {
-      "id": "plugin_localgpu_mcp_indexer_indexer_check_embed_model",
-      "label": "._check_embed_model()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 256,
-      "community_name": "server.py",
-      "file_type": "code",
-      "norm_label": "._check_embed_model()",
-      "source_file": "plugin/localgpu/mcp/indexer.py",
-      "source_location": "L315"
-    },
-    {
       "id": "plugin_localgpu_mcp_indexer_query_text",
       "label": "query_text()",
       "_callable": true,
@@ -14067,18 +14235,6 @@
       "norm_label": "_settings()",
       "source_file": "plugin/localgpu/mcp/server.py",
       "source_location": "L58"
-    },
-    {
-      "id": "plugin_localgpu_mcp_store_match_glob",
-      "label": "match_glob()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 257,
-      "community_name": "store.py",
-      "file_type": "code",
-      "norm_label": "match_glob()",
-      "source_file": "plugin/localgpu/mcp/store.py",
-      "source_location": "L785"
     },
     {
       "id": "plugin_localgpu_mcp_store_prefix_key",
@@ -14199,30 +14355,6 @@
       "norm_label": ".__init__()",
       "source_file": "plugin/localgpu/mcp/store.py",
       "source_location": "L250"
-    },
-    {
-      "id": "plugin_localgpu_mcp_store_vectorstore_live_rows",
-      "label": "._live_rows()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 257,
-      "community_name": "store.py",
-      "file_type": "code",
-      "norm_label": "._live_rows()",
-      "source_file": "plugin/localgpu/mcp/store.py",
-      "source_location": "L565"
-    },
-    {
-      "id": "plugin_localgpu_mcp_test_test_ranking_test_match_glob_handles_both_separators",
-      "label": "test_match_glob_handles_both_separators()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 257,
-      "community_name": "store.py",
-      "file_type": "code",
-      "norm_label": "test_match_glob_handles_both_separators()",
-      "source_file": "plugin/localgpu/mcp/_test/test_ranking.py",
-      "source_location": "L106"
     },
     {
       "id": "skills_cisco_meraki_scripts_meraki_diff_diff_rules",
@@ -18629,6 +18761,18 @@
       "source_location": "L148"
     },
     {
+      "id": "plugin_localgpu_mcp_indexer_check_embed_model",
+      "label": "check_embed_model()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 41,
+      "community_name": "indexer.py",
+      "file_type": "code",
+      "norm_label": "check_embed_model()",
+      "source_file": "plugin/localgpu/mcp/indexer.py",
+      "source_location": "L240"
+    },
+    {
       "id": "plugin_localgpu_mcp_indexer_document_text",
       "label": "document_text()",
       "_callable": true,
@@ -18651,6 +18795,18 @@
       "norm_label": "excerpt()",
       "source_file": "plugin/localgpu/mcp/indexer.py",
       "source_location": "L520"
+    },
+    {
+      "id": "plugin_localgpu_mcp_indexer_indexer_check_embed_model",
+      "label": "._check_embed_model()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 41,
+      "community_name": "indexer.py",
+      "file_type": "code",
+      "norm_label": "._check_embed_model()",
+      "source_file": "plugin/localgpu/mcp/indexer.py",
+      "source_location": "L315"
     },
     {
       "id": "plugin_localgpu_mcp_indexer_indexer_index_file",
@@ -18747,6 +18903,30 @@
       "norm_label": "_tokenise()",
       "source_file": "plugin/localgpu/mcp/indexer.py",
       "source_location": "L570"
+    },
+    {
+      "id": "plugin_localgpu_mcp_store_vectorstore_upsert_file",
+      "label": ".upsert_file()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 41,
+      "community_name": "indexer.py",
+      "file_type": "code",
+      "norm_label": ".upsert_file()",
+      "source_file": "plugin/localgpu/mcp/store.py",
+      "source_location": "L423"
+    },
+    {
+      "id": "plugin_localgpu_mcp_test_test_chunking_test_binary_and_oversized_files_are_not_text",
+      "label": "test_binary_and_oversized_files_are_not_text()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 41,
+      "community_name": "indexer.py",
+      "file_type": "code",
+      "norm_label": "test_binary_and_oversized_files_are_not_text()",
+      "source_file": "plugin/localgpu/mcp/_test/test_chunking.py",
+      "source_location": "L97"
     },
     {
       "id": "plugin_crew_tests_test_endpoints_fake_home",
@@ -19157,6 +19337,18 @@
       "source_location": "L206"
     },
     {
+      "id": "plugin_localgpu_mcp_test_test_ollama_test_a_response_that_is_not_a_string_is_an_error_not_a_repr",
+      "label": "test_a_response_that_is_not_a_string_is_an_error_not_a_repr()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 44,
+      "community_name": "OllamaClient",
+      "file_type": "code",
+      "norm_label": "test_a_response_that_is_not_a_string_is_an_error_not_a_repr()",
+      "source_file": "plugin/localgpu/mcp/_test/test_ollama.py",
+      "source_location": "L189"
+    },
+    {
       "id": "plugin_localgpu_mcp_test_test_ollama_test_a_short_answer_is_not_silently_padded",
       "label": "test_a_short_answer_is_not_silently_padded()",
       "_callable": true,
@@ -19251,6 +19443,18 @@
       "norm_label": "test_list_models_also_reports_an_absent_server()",
       "source_file": "plugin/localgpu/mcp/_test/test_ollama.py",
       "source_location": "L157"
+    },
+    {
+      "id": "plugin_localgpu_mcp_test_test_ollama_test_missing_endpoint_is_not_reported_as_a_missing_model",
+      "label": "test_missing_endpoint_is_not_reported_as_a_missing_model()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 44,
+      "community_name": "OllamaClient",
+      "file_type": "code",
+      "norm_label": "test_missing_endpoint_is_not_reported_as_a_missing_model()",
+      "source_file": "plugin/localgpu/mcp/_test/test_ollama.py",
+      "source_location": "L139"
     },
     {
       "id": "plugin_localgpu_mcp_test_test_ollama_test_missing_model_names_the_pull_command",
@@ -26921,18 +27125,6 @@
       "source_location": "L45"
     },
     {
-      "id": "plugin_localgpu_mcp_test_test_ollama_test_missing_endpoint_is_not_reported_as_a_missing_model",
-      "label": "test_missing_endpoint_is_not_reported_as_a_missing_model()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 693,
-      "community_name": "OllamaError",
-      "file_type": "code",
-      "norm_label": "test_missing_endpoint_is_not_reported_as_a_missing_model()",
-      "source_file": "plugin/localgpu/mcp/_test/test_ollama.py",
-      "source_location": "L139"
-    },
-    {
       "id": "plugin_localgpu_mcp_test_test_server_test_ollama_failures_come_back_as_the_fix_not_a_traceback",
       "label": "test_ollama_failures_come_back_as_the_fix_not_a_traceback()",
       "_callable": true,
@@ -27821,124 +28013,52 @@
       "source_location": "L984"
     },
     {
-      "id": "plugin_localgpu_mcp_test_test_embed_model_flakyembedder_call",
-      "label": ".__call__()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 712,
-      "community_name": "test_embed_model.py",
-      "file_type": "code",
-      "norm_label": ".__call__()",
-      "source_file": "plugin/localgpu/mcp/_test/test_embed_model.py",
-      "source_location": "L35"
-    },
-    {
-      "id": "plugin_localgpu_mcp_test_test_embed_model_flakyembedder_init",
-      "label": ".__init__()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 712,
-      "community_name": "test_embed_model.py",
-      "file_type": "code",
-      "norm_label": ".__init__()",
-      "source_file": "plugin/localgpu/mcp/_test/test_embed_model.py",
-      "source_location": "L30"
-    },
-    {
-      "id": "plugin_localgpu_mcp_test_test_embed_model_make_indexer",
+      "id": "plugin_localgpu_mcp_test_test_unignore_make_indexer",
       "label": "make_indexer()",
       "_callable": true,
       "_origin": "ast",
       "community": 712,
-      "community_name": "test_embed_model.py",
+      "community_name": "test_unignore.py",
       "file_type": "code",
       "norm_label": "make_indexer()",
-      "source_file": "plugin/localgpu/mcp/_test/test_embed_model.py",
-      "source_location": "L15"
+      "source_file": "plugin/localgpu/mcp/_test/test_unignore.py",
+      "source_location": "L20"
     },
     {
-      "id": "plugin_localgpu_mcp_test_test_embed_model_test_failed_initial_refresh_does_not_let_a_later_model_switch_through",
-      "label": "test_failed_initial_refresh_does_not_let_a_later_model_switch_through()",
+      "id": "plugin_localgpu_mcp_test_test_unignore_test_hard_floor_survives_an_unignore_attempt",
+      "label": "test_hard_floor_survives_an_unignore_attempt()",
       "_callable": true,
       "_origin": "ast",
       "community": 712,
-      "community_name": "test_embed_model.py",
+      "community_name": "test_unignore.py",
       "file_type": "code",
-      "norm_label": "test_failed_initial_refresh_does_not_let_a_later_model_switch_through()",
-      "source_file": "plugin/localgpu/mcp/_test/test_embed_model.py",
-      "source_location": "L113"
+      "norm_label": "test_hard_floor_survives_an_unignore_attempt()",
+      "source_file": "plugin/localgpu/mcp/_test/test_unignore.py",
+      "source_location": "L54"
     },
     {
-      "id": "plugin_localgpu_mcp_test_test_embed_model_test_fresh_build_records_embed_model",
-      "label": "test_fresh_build_records_embed_model()",
+      "id": "plugin_localgpu_mcp_test_test_unignore_test_unignoring_a_liftable_default_lets_the_file_through",
+      "label": "test_unignoring_a_liftable_default_lets_the_file_through()",
       "_callable": true,
       "_origin": "ast",
       "community": 712,
-      "community_name": "test_embed_model.py",
+      "community_name": "test_unignore.py",
       "file_type": "code",
-      "norm_label": "test_fresh_build_records_embed_model()",
-      "source_file": "plugin/localgpu/mcp/_test/test_embed_model.py",
-      "source_location": "L42"
+      "norm_label": "test_unignoring_a_liftable_default_lets_the_file_through()",
+      "source_file": "plugin/localgpu/mcp/_test/test_unignore.py",
+      "source_location": "L30"
     },
     {
-      "id": "plugin_localgpu_mcp_test_test_embed_model_test_indexer_without_embed_model_skips_the_check_entirely",
-      "label": "test_indexer_without_embed_model_skips_the_check_entirely()",
+      "id": "plugin_localgpu_mcp_test_test_unignore_write_json",
+      "label": "write_json()",
       "_callable": true,
       "_origin": "ast",
       "community": 712,
-      "community_name": "test_embed_model.py",
+      "community_name": "test_unignore.py",
       "file_type": "code",
-      "norm_label": "test_indexer_without_embed_model_skips_the_check_entirely()",
-      "source_file": "plugin/localgpu/mcp/_test/test_embed_model.py",
-      "source_location": "L152"
-    },
-    {
-      "id": "plugin_localgpu_mcp_test_test_embed_model_test_legacy_manifest_with_no_embed_model_key_is_not_treated_as_a_match",
-      "label": "test_legacy_manifest_with_no_embed_model_key_is_not_treated_as_a_match()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 712,
-      "community_name": "test_embed_model.py",
-      "file_type": "code",
-      "norm_label": "test_legacy_manifest_with_no_embed_model_key_is_not_treated_as_a_match()",
-      "source_file": "plugin/localgpu/mcp/_test/test_embed_model.py",
-      "source_location": "L90"
-    },
-    {
-      "id": "plugin_localgpu_mcp_test_test_embed_model_test_same_dim_different_model_is_detected",
-      "label": "test_same_dim_different_model_is_detected()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 712,
-      "community_name": "test_embed_model.py",
-      "file_type": "code",
-      "norm_label": "test_same_dim_different_model_is_detected()",
-      "source_file": "plugin/localgpu/mcp/_test/test_embed_model.py",
-      "source_location": "L71"
-    },
-    {
-      "id": "plugin_localgpu_mcp_test_test_embed_model_test_same_model_reload_passes",
-      "label": "test_same_model_reload_passes()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 712,
-      "community_name": "test_embed_model.py",
-      "file_type": "code",
-      "norm_label": "test_same_model_reload_passes()",
-      "source_file": "plugin/localgpu/mcp/_test/test_embed_model.py",
-      "source_location": "L53"
-    },
-    {
-      "id": "plugin_localgpu_mcp_test_test_ollama_test_a_response_that_is_not_a_string_is_an_error_not_a_repr",
-      "label": "test_a_response_that_is_not_a_string_is_an_error_not_a_repr()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 713,
-      "community_name": "test_a_response_that_is_not_a_string_is_an_error_not_a_repr",
-      "file_type": "code",
-      "norm_label": "test_a_response_that_is_not_a_string_is_an_error_not_a_repr()",
-      "source_file": "plugin/localgpu/mcp/_test/test_ollama.py",
-      "source_location": "L189"
+      "norm_label": "write_json()",
+      "source_file": "plugin/localgpu/mcp/_test/test_unignore.py",
+      "source_location": "L25"
     },
     {
       "id": "plugin_gizmoduck_scripts_test_test_tickets_gate_extract_digest",
@@ -28143,18 +28263,6 @@
       "norm_label": "spans()",
       "source_file": "plugin/localgpu/mcp/_test/test_chunking.py",
       "source_location": "L11"
-    },
-    {
-      "id": "plugin_localgpu_mcp_test_test_chunking_test_binary_and_oversized_files_are_not_text",
-      "label": "test_binary_and_oversized_files_are_not_text()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 73,
-      "community_name": "test_chunking.py",
-      "file_type": "code",
-      "norm_label": "test_binary_and_oversized_files_are_not_text()",
-      "source_file": "plugin/localgpu/mcp/_test/test_chunking.py",
-      "source_location": "L97"
     },
     {
       "id": "plugin_localgpu_mcp_test_test_chunking_test_chunk_text_is_the_lines_verbatim",
@@ -33884,6 +33992,17 @@
       "source_location": ""
     },
     {
+      "id": "plugin_localgpu_mcp_store_rationale_786",
+      "label": "Forgiving glob match against a full path or its basename. ``*`` crosses\u2026",
+      "_origin": "ast",
+      "community": 102,
+      "community_name": "test_ranking.py",
+      "file_type": "rationale",
+      "norm_label": "forgiving glob match against a full path or its basename. ``*`` crosses...",
+      "source_file": "plugin/localgpu/mcp/store.py",
+      "source_location": "L786"
+    },
+    {
       "id": "plugin_localgpu_mcp_test_test_ranking_rationale_1",
       "label": "Cosine ranking, and the filters that narrow it.",
       "_origin": "ast",
@@ -33926,6 +34045,17 @@
       "norm_label": "deterministic bag-of-words vectors. same text in, same vector out. stands in...",
       "source_file": "plugin/localgpu/mcp/_test/conftest.py",
       "source_location": "L27"
+    },
+    {
+      "id": "plugin_localgpu_mcp_test_conftest_rationale_58",
+      "label": "A stable hash - Python's is salted per process.",
+      "_origin": "ast",
+      "community": 103,
+      "community_name": "FakeEmbedder",
+      "file_type": "rationale",
+      "norm_label": "a stable hash - python's is salted per process.",
+      "source_file": "plugin/localgpu/mcp/_test/conftest.py",
+      "source_location": "L58"
     },
     {
       "id": "plugin_localgpu_mcp_test_test_server_rationale_22",
@@ -34058,17 +34188,6 @@
       "norm_label": "write a file and stamp it with a fresh mtime.",
       "source_file": "plugin/localgpu/mcp/_test/conftest.py",
       "source_location": "L110"
-    },
-    {
-      "id": "plugin_localgpu_mcp_test_conftest_rationale_58",
-      "label": "A stable hash - Python's is salted per process.",
-      "_origin": "ast",
-      "community": 105,
-      "community_name": "_test/conftest.py",
-      "file_type": "rationale",
-      "norm_label": "a stable hash - python's is salted per process.",
-      "source_file": "plugin/localgpu/mcp/_test/conftest.py",
-      "source_location": "L58"
     },
     {
       "id": "plugin_localgpu_mcp_test_conftest_rationale_72",
@@ -34868,6 +34987,17 @@
       "source_location": ""
     },
     {
+      "id": "plugin_localgpu_mcp_store_rationale_203",
+      "label": "The index on disk cannot be used as-is.",
+      "_origin": "ast",
+      "community": 11,
+      "community_name": "VectorStore",
+      "file_type": "rationale",
+      "norm_label": "the index on disk cannot be used as-is.",
+      "source_file": "plugin/localgpu/mcp/store.py",
+      "source_location": "L203"
+    },
+    {
       "id": "plugin_localgpu_mcp_store_rationale_238",
       "label": "L2-normalise to float32. A zero vector stays zero rather than becoming NaN.",
       "_origin": "ast",
@@ -34965,6 +35095,17 @@
       "norm_label": "brute-force cosine over every live row, best first.",
       "source_file": "plugin/localgpu/mcp/store.py",
       "source_location": "L478"
+    },
+    {
+      "id": "plugin_localgpu_mcp_store_rationale_571",
+      "label": "Live chunks that pass the filters, keyed by vector row. ``limit`` bounds which\u2026",
+      "_origin": "ast",
+      "community": 11,
+      "community_name": "VectorStore",
+      "file_type": "rationale",
+      "norm_label": "live chunks that pass the filters, keyed by vector row. ``limit`` bounds which...",
+      "source_file": "plugin/localgpu/mcp/store.py",
+      "source_location": "L571"
     },
     {
       "id": "plugin_localgpu_mcp_store_rationale_614",
@@ -36354,7 +36495,7 @@
       "source_location": "L1"
     },
     {
-      "id": "plugin_crew_tests_sabotage_rationale_1002",
+      "id": "plugin_crew_tests_sabotage_rationale_1004",
       "label": "sha256 of the bytes on disk. Taken once per target before the first mutation\u2026",
       "_origin": "ast",
       "community": 119,
@@ -36362,10 +36503,10 @@
       "file_type": "rationale",
       "norm_label": "sha256 of the bytes on disk. taken once per target before the first mutation...",
       "source_file": "plugin/crew/tests/sabotage.py",
-      "source_location": "L1002"
+      "source_location": "L1004"
     },
     {
-      "id": "plugin_crew_tests_sabotage_rationale_1019",
+      "id": "plugin_crew_tests_sabotage_rationale_1021",
       "label": "Targets that already have a `.bak` beside them, before anything runs. A `.bak`\u2026",
       "_origin": "ast",
       "community": 119,
@@ -36373,10 +36514,32 @@
       "file_type": "rationale",
       "norm_label": "targets that already have a `.bak` beside them, before anything runs. a `.bak`...",
       "source_file": "plugin/crew/tests/sabotage.py",
-      "source_location": "L1019"
+      "source_location": "L1021"
     },
     {
-      "id": "plugin_crew_tests_sabotage_rationale_1061",
+      "id": "plugin_crew_tests_sabotage_rationale_1052",
+      "label": "Print and return False when `target` is not what it was. Never raises. Called\u2026",
+      "_origin": "ast",
+      "community": 119,
+      "community_name": "test_sabotage_harness.py",
+      "file_type": "rationale",
+      "norm_label": "print and return false when `target` is not what it was. never raises. called...",
+      "source_file": "plugin/crew/tests/sabotage.py",
+      "source_location": "L1052"
+    },
+    {
+      "id": "plugin_crew_tests_sabotage_rationale_1073",
+      "label": "Restore every live target, verify each, and keep the ones that failed. `_LIVE`\u2026",
+      "_origin": "ast",
+      "community": 119,
+      "community_name": "test_sabotage_harness.py",
+      "file_type": "rationale",
+      "norm_label": "restore every live target, verify each, and keep the ones that failed. `_live`...",
+      "source_file": "plugin/crew/tests/sabotage.py",
+      "source_location": "L1073"
+    },
+    {
+      "id": "plugin_crew_tests_sabotage_rationale_1105",
       "label": "Restore on every exit path this process can observe. SIGBREAK exists only on\u2026",
       "_origin": "ast",
       "community": 119,
@@ -36384,10 +36547,10 @@
       "file_type": "rationale",
       "norm_label": "restore on every exit path this process can observe. sigbreak exists only on...",
       "source_file": "plugin/crew/tests/sabotage.py",
-      "source_location": "L1061"
+      "source_location": "L1105"
     },
     {
-      "id": "plugin_crew_tests_sabotage_rationale_1082",
+      "id": "plugin_crew_tests_sabotage_rationale_1126",
       "label": "Patch `target`, backing it up. False when the anchor is not unique. The backup\u2026",
       "_origin": "ast",
       "community": 119,
@@ -36395,10 +36558,10 @@
       "file_type": "rationale",
       "norm_label": "patch `target`, backing it up. false when the anchor is not unique. the backup...",
       "source_file": "plugin/crew/tests/sabotage.py",
-      "source_location": "L1082"
+      "source_location": "L1126"
     },
     {
-      "id": "plugin_crew_tests_sabotage_rationale_1138",
+      "id": "plugin_crew_tests_sabotage_rationale_1191",
       "label": "Put `target` back if a backup is present. Safe to call twice.",
       "_origin": "ast",
       "community": 119,
@@ -36406,10 +36569,10 @@
       "file_type": "rationale",
       "norm_label": "put `target` back if a backup is present. safe to call twice.",
       "source_file": "plugin/crew/tests/sabotage.py",
-      "source_location": "L1138"
+      "source_location": "L1191"
     },
     {
-      "id": "plugin_crew_tests_sabotage_rationale_1149",
+      "id": "plugin_crew_tests_sabotage_rationale_1202",
       "label": "Run every mutation; return 0 only when all of them go red FOR REAL -- a genuine\u2026",
       "_origin": "ast",
       "community": 119,
@@ -36417,10 +36580,10 @@
       "file_type": "rationale",
       "norm_label": "run every mutation; return 0 only when all of them go red for real -- a genuine...",
       "source_file": "plugin/crew/tests/sabotage.py",
-      "source_location": "L1149"
+      "source_location": "L1202"
     },
     {
-      "id": "plugin_crew_tests_sabotage_rationale_971",
+      "id": "plugin_crew_tests_sabotage_rationale_973",
       "label": "Run one pytest target from the crew directory; return (exit_code,\u2026",
       "_origin": "ast",
       "community": 119,
@@ -36428,7 +36591,7 @@
       "file_type": "rationale",
       "norm_label": "run one pytest target from the crew directory; return (exit_code,...",
       "source_file": "plugin/crew/tests/sabotage.py",
-      "source_location": "L971"
+      "source_location": "L973"
     },
     {
       "id": "plugin_crew_tests_test_sabotage_harness_rationale_1",
@@ -36442,7 +36605,7 @@
       "source_location": "L1"
     },
     {
-      "id": "plugin_crew_tests_test_sabotage_harness_rationale_103",
+      "id": "plugin_crew_tests_test_sabotage_harness_rationale_116",
       "label": "What the signal and atexit paths call. `finally` unwinds on an exception and on\u2026",
       "_origin": "ast",
       "community": 119,
@@ -36450,51 +36613,51 @@
       "file_type": "rationale",
       "norm_label": "what the signal and atexit paths call. `finally` unwinds on an exception and on...",
       "source_file": "plugin/crew/tests/test_sabotage_harness.py",
-      "source_location": "L103"
+      "source_location": "L116"
     },
     {
       "id": "plugin_crew_tests_test_sabotage_harness_rationale_136",
-      "label": "The names are looked up rather than referenced: `signal.SIGBREAK` is Windows-\u2026",
+      "label": "`_restore_all` must not clear `_LIVE` wholesale. A signal-path restore that\u2026",
       "_origin": "ast",
       "community": 119,
       "community_name": "test_sabotage_harness.py",
       "file_type": "rationale",
-      "norm_label": "the names are looked up rather than referenced: `signal.sigbreak` is windows-...",
+      "norm_label": "`_restore_all` must not clear `_live` wholesale. a signal-path restore that...",
       "source_file": "plugin/crew/tests/test_sabotage_harness.py",
       "source_location": "L136"
     },
     {
-      "id": "plugin_crew_tests_test_sabotage_harness_rationale_170",
-      "label": "Defect 1 and 2 together, at the level a user meets them: the run that would\u2026",
+      "id": "plugin_crew_tests_test_sabotage_harness_rationale_163",
+      "label": "The signal and atexit paths verify too, not just the loop's `finally`.\u2026",
       "_origin": "ast",
       "community": 119,
       "community_name": "test_sabotage_harness.py",
       "file_type": "rationale",
-      "norm_label": "defect 1 and 2 together, at the level a user meets them: the run that would...",
+      "norm_label": "the signal and atexit paths verify too, not just the loop's `finally`....",
       "source_file": "plugin/crew/tests/test_sabotage_harness.py",
-      "source_location": "L170"
+      "source_location": "L163"
     },
     {
-      "id": "plugin_crew_tests_test_sabotage_harness_rationale_197",
-      "label": "Defect 3. The mutation goes red as it should, so `ok` from the mutation alone\u2026",
+      "id": "plugin_crew_tests_test_sabotage_harness_rationale_185",
+      "label": "Defect 4. The startup guard treats any `.bak` as the only good copy and tells\u2026",
       "_origin": "ast",
       "community": 119,
       "community_name": "test_sabotage_harness.py",
       "file_type": "rationale",
-      "norm_label": "defect 3. the mutation goes red as it should, so `ok` from the mutation alone...",
+      "norm_label": "defect 4. the startup guard treats any `.bak` as the only good copy and tells...",
       "source_file": "plugin/crew/tests/test_sabotage_harness.py",
-      "source_location": "L197"
+      "source_location": "L185"
     },
     {
-      "id": "plugin_crew_tests_test_sabotage_harness_rationale_224",
-      "label": "must-allow. A guard that only ever refuses is not a guard.",
+      "id": "plugin_crew_tests_test_sabotage_harness_rationale_215",
+      "label": "A `.bak.partial` is litter, not evidence: the target was never touched, which\u2026",
       "_origin": "ast",
       "community": 119,
       "community_name": "test_sabotage_harness.py",
       "file_type": "rationale",
-      "norm_label": "must-allow. a guard that only ever refuses is not a guard.",
+      "norm_label": "a `.bak.partial` is litter, not evidence: the target was never touched, which...",
       "source_file": "plugin/crew/tests/test_sabotage_harness.py",
-      "source_location": "L224"
+      "source_location": "L215"
     },
     {
       "id": "plugin_crew_tests_test_sabotage_harness_rationale_25",
@@ -36508,7 +36671,62 @@
       "source_location": "L25"
     },
     {
-      "id": "plugin_crew_tests_test_sabotage_harness_rationale_83",
+      "id": "plugin_crew_tests_test_sabotage_harness_rationale_268",
+      "label": "The names are looked up rather than referenced: `signal.SIGBREAK` is Windows-\u2026",
+      "_origin": "ast",
+      "community": 119,
+      "community_name": "test_sabotage_harness.py",
+      "file_type": "rationale",
+      "norm_label": "the names are looked up rather than referenced: `signal.sigbreak` is windows-...",
+      "source_file": "plugin/crew/tests/test_sabotage_harness.py",
+      "source_location": "L268"
+    },
+    {
+      "id": "plugin_crew_tests_test_sabotage_harness_rationale_302",
+      "label": "Defect 1 and 2 together, at the level a user meets them: the run that would\u2026",
+      "_origin": "ast",
+      "community": 119,
+      "community_name": "test_sabotage_harness.py",
+      "file_type": "rationale",
+      "norm_label": "defect 1 and 2 together, at the level a user meets them: the run that would...",
+      "source_file": "plugin/crew/tests/test_sabotage_harness.py",
+      "source_location": "L302"
+    },
+    {
+      "id": "plugin_crew_tests_test_sabotage_harness_rationale_329",
+      "label": "Defect 3. The mutation goes red as it should, so `ok` from the mutation alone\u2026",
+      "_origin": "ast",
+      "community": 119,
+      "community_name": "test_sabotage_harness.py",
+      "file_type": "rationale",
+      "norm_label": "defect 3. the mutation goes red as it should, so `ok` from the mutation alone...",
+      "source_file": "plugin/crew/tests/test_sabotage_harness.py",
+      "source_location": "L329"
+    },
+    {
+      "id": "plugin_crew_tests_test_sabotage_harness_rationale_356",
+      "label": "must-allow. A guard that only ever refuses is not a guard.",
+      "_origin": "ast",
+      "community": 119,
+      "community_name": "test_sabotage_harness.py",
+      "file_type": "rationale",
+      "norm_label": "must-allow. a guard that only ever refuses is not a guard.",
+      "source_file": "plugin/crew/tests/test_sabotage_harness.py",
+      "source_location": "L356"
+    },
+    {
+      "id": "plugin_crew_tests_test_sabotage_harness_rationale_50",
+      "label": "A file's whole contents. A named helper rather than `open(...).read()` inline:\u2026",
+      "_origin": "ast",
+      "community": 119,
+      "community_name": "test_sabotage_harness.py",
+      "file_type": "rationale",
+      "norm_label": "a file's whole contents. a named helper rather than `open(...).read()` inline:...",
+      "source_file": "plugin/crew/tests/test_sabotage_harness.py",
+      "source_location": "L50"
+    },
+    {
+      "id": "plugin_crew_tests_test_sabotage_harness_rationale_96",
       "label": "Defect 2: the next run destroying the only good copy. The `.bak` here holds the\u2026",
       "_origin": "ast",
       "community": 119,
@@ -36516,7 +36734,7 @@
       "file_type": "rationale",
       "norm_label": "defect 2: the next run destroying the only good copy. the `.bak` here holds the...",
       "source_file": "plugin/crew/tests/test_sabotage_harness.py",
-      "source_location": "L83"
+      "source_location": "L96"
     },
     {
       "id": "plugin_obsidian_vault_hooks_scripts_test_test_vault_ops",
@@ -37847,6 +38065,28 @@
       "source_location": "L90"
     },
     {
+      "id": "plugin_localgpu_mcp_indexer_py_runtimeerror",
+      "label": "RuntimeError",
+      "_origin": "ast",
+      "community": 13,
+      "community_name": "write",
+      "file_type": "code",
+      "norm_label": "runtimeerror",
+      "source_file": "",
+      "source_location": ""
+    },
+    {
+      "id": "plugin_localgpu_mcp_test_test_embed_model",
+      "label": "test_embed_model.py",
+      "_origin": "ast",
+      "community": 13,
+      "community_name": "write",
+      "file_type": "code",
+      "norm_label": "test_embed_model.py",
+      "source_file": "plugin/localgpu/mcp/_test/test_embed_model.py",
+      "source_location": "L1"
+    },
+    {
       "id": "plugin_localgpu_mcp_test_test_incremental",
       "label": "test_incremental.py",
       "_origin": "ast",
@@ -37869,15 +38109,15 @@
       "source_location": "L1"
     },
     {
-      "id": "plugin_localgpu_mcp_test_test_unignore",
-      "label": "test_unignore.py",
+      "id": "plugin_localgpu_mcp_indexer_rationale_219",
+      "label": "The index on disk was built with a different embedding model. Vectors from two\u2026",
       "_origin": "ast",
       "community": 13,
       "community_name": "write",
-      "file_type": "code",
-      "norm_label": "test_unignore.py",
-      "source_file": "plugin/localgpu/mcp/_test/test_unignore.py",
-      "source_location": "L1"
+      "file_type": "rationale",
+      "norm_label": "the index on disk was built with a different embedding model. vectors from two...",
+      "source_file": "plugin/localgpu/mcp/indexer.py",
+      "source_location": "L219"
     },
     {
       "id": "plugin_localgpu_mcp_indexer_rationale_294",
@@ -37889,6 +38129,61 @@
       "norm_label": "drives one refresh pass over the configured roots.",
       "source_file": "plugin/localgpu/mcp/indexer.py",
       "source_location": "L294"
+    },
+    {
+      "id": "plugin_localgpu_mcp_test_test_embed_model_rationale_1",
+      "label": "Swapping the embed model for a different one of the same width must not be\u2026",
+      "_origin": "ast",
+      "community": 13,
+      "community_name": "write",
+      "file_type": "rationale",
+      "norm_label": "swapping the embed model for a different one of the same width must not be...",
+      "source_file": "plugin/localgpu/mcp/_test/test_embed_model.py",
+      "source_location": "L1"
+    },
+    {
+      "id": "plugin_localgpu_mcp_test_test_embed_model_rationale_116",
+      "label": "model-a indexes alpha.py, then fails embedding beta.py before the manifest is\u2026",
+      "_origin": "ast",
+      "community": 13,
+      "community_name": "write",
+      "file_type": "rationale",
+      "norm_label": "model-a indexes alpha.py, then fails embedding beta.py before the manifest is...",
+      "source_file": "plugin/localgpu/mcp/_test/test_embed_model.py",
+      "source_location": "L116"
+    },
+    {
+      "id": "plugin_localgpu_mcp_test_test_embed_model_rationale_155",
+      "label": "Backward compatibility: a call site that never passes embed_model keeps working\u2026",
+      "_origin": "ast",
+      "community": 13,
+      "community_name": "write",
+      "file_type": "rationale",
+      "norm_label": "backward compatibility: a call site that never passes embed_model keeps working...",
+      "source_file": "plugin/localgpu/mcp/_test/test_embed_model.py",
+      "source_location": "L155"
+    },
+    {
+      "id": "plugin_localgpu_mcp_test_test_embed_model_rationale_23",
+      "label": "Wraps a real embedder but raises once a call budget is exhausted. Stands in for\u2026",
+      "_origin": "ast",
+      "community": 13,
+      "community_name": "write",
+      "file_type": "rationale",
+      "norm_label": "wraps a real embedder but raises once a call budget is exhausted. stands in for...",
+      "source_file": "plugin/localgpu/mcp/_test/test_embed_model.py",
+      "source_location": "L23"
+    },
+    {
+      "id": "plugin_localgpu_mcp_test_test_embed_model_rationale_72",
+      "label": "The whole point of this check: two models of equal width, silently swapped.",
+      "_origin": "ast",
+      "community": 13,
+      "community_name": "write",
+      "file_type": "rationale",
+      "norm_label": "the whole point of this check: two models of equal width, silently swapped.",
+      "source_file": "plugin/localgpu/mcp/_test/test_embed_model.py",
+      "source_location": "L72"
     },
     {
       "id": "plugin_localgpu_mcp_test_test_incremental_rationale_1",
@@ -37954,17 +38249,6 @@
       "file_type": "rationale",
       "norm_label": "secrets must never reach the vector store. two independent guards are exercised...",
       "source_file": "plugin/localgpu/mcp/_test/test_secrets.py",
-      "source_location": "L1"
-    },
-    {
-      "id": "plugin_localgpu_mcp_test_test_unignore_rationale_1",
-      "label": "`unignore` re-includes a file `DEFAULT_IGNORE` would otherwise swallow. Same\u2026",
-      "_origin": "ast",
-      "community": 13,
-      "community_name": "write",
-      "file_type": "rationale",
-      "norm_label": "`unignore` re-includes a file `default_ignore` would otherwise swallow. same...",
-      "source_file": "plugin/localgpu/mcp/_test/test_unignore.py",
       "source_location": "L1"
     },
     {
@@ -51141,7 +51425,7 @@
       "label": "check-dist-fresh.mjs",
       "_origin": "ast",
       "community": 236,
-      "community_name": "check-dist-fresh.test.mjs",
+      "community_name": "check-dist-fresh.mjs",
       "file_type": "code",
       "norm_label": "check-dist-fresh.mjs",
       "source_file": "mcp-servers/scripts/check-dist-fresh.mjs",
@@ -51152,7 +51436,7 @@
       "label": "check-dist-fresh.test.mjs",
       "_origin": "ast",
       "community": 236,
-      "community_name": "check-dist-fresh.test.mjs",
+      "community_name": "check-dist-fresh.mjs",
       "file_type": "code",
       "norm_label": "check-dist-fresh.test.mjs",
       "source_file": "mcp-servers/scripts/_test/check-dist-fresh.test.mjs",
@@ -52771,10 +53055,10 @@
       "node_kind": "heading",
       "norm_label": "added",
       "source_file": "CHANGELOG.md",
-      "source_location": "L56"
+      "source_location": "L84"
     },
     {
-      "id": "changelog_added_1641",
+      "id": "changelog_added_1669",
       "label": "Added",
       "_origin": "ast",
       "community": 251,
@@ -52783,10 +53067,10 @@
       "node_kind": "heading",
       "norm_label": "added",
       "source_file": "CHANGELOG.md",
-      "source_location": "L1641"
+      "source_location": "L1669"
     },
     {
-      "id": "changelog_added_1890",
+      "id": "changelog_added_1918",
       "label": "Added",
       "_origin": "ast",
       "community": 251,
@@ -52795,10 +53079,10 @@
       "node_kind": "heading",
       "norm_label": "added",
       "source_file": "CHANGELOG.md",
-      "source_location": "L1890"
+      "source_location": "L1918"
     },
     {
-      "id": "changelog_added_1998",
+      "id": "changelog_added_2026",
       "label": "Added",
       "_origin": "ast",
       "community": 251,
@@ -52807,10 +53091,10 @@
       "node_kind": "heading",
       "norm_label": "added",
       "source_file": "CHANGELOG.md",
-      "source_location": "L1998"
+      "source_location": "L2026"
     },
     {
-      "id": "changelog_added_2012",
+      "id": "changelog_added_2040",
       "label": "Added",
       "_origin": "ast",
       "community": 251,
@@ -52819,10 +53103,10 @@
       "node_kind": "heading",
       "norm_label": "added",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2012"
+      "source_location": "L2040"
     },
     {
-      "id": "changelog_added_207",
+      "id": "changelog_added_2334",
       "label": "Added",
       "_origin": "ast",
       "community": 251,
@@ -52831,10 +53115,10 @@
       "node_kind": "heading",
       "norm_label": "added",
       "source_file": "CHANGELOG.md",
-      "source_location": "L207"
+      "source_location": "L2334"
     },
     {
-      "id": "changelog_added_2306",
+      "id": "changelog_added_235",
       "label": "Added",
       "_origin": "ast",
       "community": 251,
@@ -52843,10 +53127,10 @@
       "node_kind": "heading",
       "norm_label": "added",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2306"
+      "source_location": "L235"
     },
     {
-      "id": "changelog_added_2865",
+      "id": "changelog_added_2893",
       "label": "Added",
       "_origin": "ast",
       "community": 251,
@@ -52855,10 +53139,10 @@
       "node_kind": "heading",
       "norm_label": "added",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2865"
+      "source_location": "L2893"
     },
     {
-      "id": "changelog_added_3140",
+      "id": "changelog_added_3168",
       "label": "Added",
       "_origin": "ast",
       "community": 251,
@@ -52867,10 +53151,10 @@
       "node_kind": "heading",
       "norm_label": "added",
       "source_file": "CHANGELOG.md",
-      "source_location": "L3140"
+      "source_location": "L3168"
     },
     {
-      "id": "changelog_added_3344",
+      "id": "changelog_added_3372",
       "label": "Added",
       "_origin": "ast",
       "community": 251,
@@ -52879,10 +53163,10 @@
       "node_kind": "heading",
       "norm_label": "added",
       "source_file": "CHANGELOG.md",
-      "source_location": "L3344"
+      "source_location": "L3372"
     },
     {
-      "id": "changelog_added_3459",
+      "id": "changelog_added_3487",
       "label": "Added",
       "_origin": "ast",
       "community": 251,
@@ -52891,10 +53175,10 @@
       "node_kind": "heading",
       "norm_label": "added",
       "source_file": "CHANGELOG.md",
-      "source_location": "L3459"
+      "source_location": "L3487"
     },
     {
-      "id": "changelog_added_3541",
+      "id": "changelog_added_3569",
       "label": "Added",
       "_origin": "ast",
       "community": 251,
@@ -52903,10 +53187,10 @@
       "node_kind": "heading",
       "norm_label": "added",
       "source_file": "CHANGELOG.md",
-      "source_location": "L3541"
+      "source_location": "L3569"
     },
     {
-      "id": "changelog_added_3582",
+      "id": "changelog_added_3610",
       "label": "Added",
       "_origin": "ast",
       "community": 251,
@@ -52915,7 +53199,7 @@
       "node_kind": "heading",
       "norm_label": "added",
       "source_file": "CHANGELOG.md",
-      "source_location": "L3582"
+      "source_location": "L3610"
     },
     {
       "id": "changelog_changed",
@@ -52927,10 +53211,10 @@
       "node_kind": "heading",
       "norm_label": "changed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L138"
+      "source_location": "L166"
     },
     {
-      "id": "changelog_changed_1595",
+      "id": "changelog_changed_1623",
       "label": "Changed",
       "_origin": "ast",
       "community": 251,
@@ -52939,10 +53223,10 @@
       "node_kind": "heading",
       "norm_label": "changed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L1595"
+      "source_location": "L1623"
     },
     {
-      "id": "changelog_changed_1856",
+      "id": "changelog_changed_1884",
       "label": "Changed",
       "_origin": "ast",
       "community": 251,
@@ -52951,10 +53235,10 @@
       "node_kind": "heading",
       "norm_label": "changed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L1856"
+      "source_location": "L1884"
     },
     {
-      "id": "changelog_changed_1934",
+      "id": "changelog_changed_1962",
       "label": "Changed",
       "_origin": "ast",
       "community": 251,
@@ -52963,10 +53247,10 @@
       "node_kind": "heading",
       "norm_label": "changed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L1934"
+      "source_location": "L1962"
     },
     {
-      "id": "changelog_changed_2704",
+      "id": "changelog_changed_2732",
       "label": "Changed",
       "_origin": "ast",
       "community": 251,
@@ -52975,10 +53259,10 @@
       "node_kind": "heading",
       "norm_label": "changed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2704"
+      "source_location": "L2732"
     },
     {
-      "id": "changelog_changed_2840",
+      "id": "changelog_changed_2868",
       "label": "Changed",
       "_origin": "ast",
       "community": 251,
@@ -52987,10 +53271,10 @@
       "node_kind": "heading",
       "norm_label": "changed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2840"
+      "source_location": "L2868"
     },
     {
-      "id": "changelog_changed_3222",
+      "id": "changelog_changed_3250",
       "label": "Changed",
       "_origin": "ast",
       "community": 251,
@@ -52999,10 +53283,10 @@
       "node_kind": "heading",
       "norm_label": "changed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L3222"
+      "source_location": "L3250"
     },
     {
-      "id": "changelog_changed_3701",
+      "id": "changelog_changed_3729",
       "label": "Changed",
       "_origin": "ast",
       "community": 251,
@@ -53011,10 +53295,10 @@
       "node_kind": "heading",
       "norm_label": "changed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L3701"
+      "source_location": "L3729"
     },
     {
-      "id": "changelog_changed_3790",
+      "id": "changelog_changed_3818",
       "label": "Changed",
       "_origin": "ast",
       "community": 251,
@@ -53023,7 +53307,7 @@
       "node_kind": "heading",
       "norm_label": "changed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L3790"
+      "source_location": "L3818"
     },
     {
       "id": "changelog_fixed",
@@ -53038,7 +53322,7 @@
       "source_location": "L7"
     },
     {
-      "id": "changelog_fixed_1437",
+      "id": "changelog_fixed_1465",
       "label": "Fixed",
       "_origin": "ast",
       "community": 251,
@@ -53047,10 +53331,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L1437"
+      "source_location": "L1465"
     },
     {
-      "id": "changelog_fixed_1531",
+      "id": "changelog_fixed_1559",
       "label": "Fixed",
       "_origin": "ast",
       "community": 251,
@@ -53059,10 +53343,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L1531"
+      "source_location": "L1559"
     },
     {
-      "id": "changelog_fixed_1573",
+      "id": "changelog_fixed_1601",
       "label": "Fixed",
       "_origin": "ast",
       "community": 251,
@@ -53071,10 +53355,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L1573"
+      "source_location": "L1601"
     },
     {
-      "id": "changelog_fixed_1621",
+      "id": "changelog_fixed_1649",
       "label": "Fixed",
       "_origin": "ast",
       "community": 251,
@@ -53083,10 +53367,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L1621"
+      "source_location": "L1649"
     },
     {
-      "id": "changelog_fixed_1755",
+      "id": "changelog_fixed_1783",
       "label": "Fixed",
       "_origin": "ast",
       "community": 251,
@@ -53095,10 +53379,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L1755"
+      "source_location": "L1783"
     },
     {
-      "id": "changelog_fixed_2095",
+      "id": "changelog_fixed_2123",
       "label": "Fixed",
       "_origin": "ast",
       "community": 251,
@@ -53107,10 +53391,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2095"
+      "source_location": "L2123"
     },
     {
-      "id": "changelog_fixed_2281",
+      "id": "changelog_fixed_2309",
       "label": "Fixed",
       "_origin": "ast",
       "community": 251,
@@ -53119,10 +53403,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2281"
+      "source_location": "L2309"
     },
     {
-      "id": "changelog_fixed_2297",
+      "id": "changelog_fixed_2325",
       "label": "Fixed",
       "_origin": "ast",
       "community": 251,
@@ -53131,10 +53415,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2297"
+      "source_location": "L2325"
     },
     {
-      "id": "changelog_fixed_2604",
+      "id": "changelog_fixed_2632",
       "label": "Fixed",
       "_origin": "ast",
       "community": 251,
@@ -53143,10 +53427,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2604"
+      "source_location": "L2632"
     },
     {
-      "id": "changelog_fixed_2725",
+      "id": "changelog_fixed_2753",
       "label": "Fixed",
       "_origin": "ast",
       "community": 251,
@@ -53155,10 +53439,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2725"
+      "source_location": "L2753"
     },
     {
-      "id": "changelog_fixed_2818",
+      "id": "changelog_fixed_2846",
       "label": "Fixed",
       "_origin": "ast",
       "community": 251,
@@ -53167,10 +53451,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2818"
+      "source_location": "L2846"
     },
     {
-      "id": "changelog_fixed_2850",
+      "id": "changelog_fixed_2878",
       "label": "Fixed",
       "_origin": "ast",
       "community": 251,
@@ -53179,10 +53463,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2850"
+      "source_location": "L2878"
     },
     {
-      "id": "changelog_fixed_2998",
+      "id": "changelog_fixed_3026",
       "label": "Fixed",
       "_origin": "ast",
       "community": 251,
@@ -53191,10 +53475,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2998"
+      "source_location": "L3026"
     },
     {
-      "id": "changelog_fixed_3213",
+      "id": "changelog_fixed_3241",
       "label": "Fixed",
       "_origin": "ast",
       "community": 251,
@@ -53203,10 +53487,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L3213"
+      "source_location": "L3241"
     },
     {
-      "id": "changelog_fixed_3292",
+      "id": "changelog_fixed_3320",
       "label": "Fixed",
       "_origin": "ast",
       "community": 251,
@@ -53215,10 +53499,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L3292"
+      "source_location": "L3320"
     },
     {
-      "id": "changelog_fixed_3393",
+      "id": "changelog_fixed_3421",
       "label": "Fixed",
       "_origin": "ast",
       "community": 251,
@@ -53227,10 +53511,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L3393"
+      "source_location": "L3421"
     },
     {
-      "id": "changelog_fixed_354",
+      "id": "changelog_fixed_3591",
       "label": "Fixed",
       "_origin": "ast",
       "community": 251,
@@ -53239,10 +53523,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L354"
+      "source_location": "L3591"
     },
     {
-      "id": "changelog_fixed_3563",
+      "id": "changelog_fixed_3738",
       "label": "Fixed",
       "_origin": "ast",
       "community": 251,
@@ -53251,10 +53535,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L3563"
+      "source_location": "L3738"
     },
     {
-      "id": "changelog_fixed_3710",
+      "id": "changelog_fixed_382",
       "label": "Fixed",
       "_origin": "ast",
       "community": 251,
@@ -53263,10 +53547,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L3710"
+      "source_location": "L382"
     },
     {
-      "id": "changelog_fixed_3837",
+      "id": "changelog_fixed_3865",
       "label": "Fixed",
       "_origin": "ast",
       "community": 251,
@@ -53275,10 +53559,10 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L3837"
+      "source_location": "L3865"
     },
     {
-      "id": "changelog_fixed_937",
+      "id": "changelog_fixed_965",
       "label": "Fixed",
       "_origin": "ast",
       "community": 251,
@@ -53287,7 +53571,7 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L937"
+      "source_location": "L965"
     },
     {
       "id": "changelog_removed",
@@ -53299,10 +53583,10 @@
       "node_kind": "heading",
       "norm_label": "removed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L2789"
+      "source_location": "L2817"
     },
     {
-      "id": "changelog_removed_3130",
+      "id": "changelog_removed_3158",
       "label": "Removed",
       "_origin": "ast",
       "community": 251,
@@ -53311,10 +53595,10 @@
       "node_kind": "heading",
       "norm_label": "removed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L3130"
+      "source_location": "L3158"
     },
     {
-      "id": "changelog_removed_3516",
+      "id": "changelog_removed_3544",
       "label": "Removed",
       "_origin": "ast",
       "community": 251,
@@ -53323,10 +53607,10 @@
       "node_kind": "heading",
       "norm_label": "removed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L3516"
+      "source_location": "L3544"
     },
     {
-      "id": "changelog_removed_3687",
+      "id": "changelog_removed_3715",
       "label": "Removed",
       "_origin": "ast",
       "community": 251,
@@ -53335,10 +53619,10 @@
       "node_kind": "heading",
       "norm_label": "removed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L3687"
+      "source_location": "L3715"
     },
     {
-      "id": "changelog_removed_3812",
+      "id": "changelog_removed_3840",
       "label": "Removed",
       "_origin": "ast",
       "community": 251,
@@ -53347,7 +53631,7 @@
       "node_kind": "heading",
       "norm_label": "removed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L3812"
+      "source_location": "L3840"
     },
     {
       "id": "changelog_unreleased",
@@ -53716,17 +54000,6 @@
       "source_location": "L60"
     },
     {
-      "id": "plugin_localgpu_mcp_indexer_py_any",
-      "label": "Any",
-      "_origin": "ast",
-      "community": 256,
-      "community_name": "server.py",
-      "file_type": "code",
-      "norm_label": "any",
-      "source_file": "",
-      "source_location": ""
-    },
-    {
       "id": "plugin_localgpu_mcp_server",
       "label": "server.py",
       "_origin": "ast",
@@ -53758,28 +54031,6 @@
       "norm_label": "tool",
       "source_file": "",
       "source_location": ""
-    },
-    {
-      "id": "plugin_localgpu_mcp_indexer_rationale_246",
-      "label": "Raise :class:`EmbedModelMismatch` if ``manifest`` was not built with\u2026",
-      "_origin": "ast",
-      "community": 256,
-      "community_name": "server.py",
-      "file_type": "rationale",
-      "norm_label": "raise :class:`embedmodelmismatch` if ``manifest`` was not built with...",
-      "source_file": "plugin/localgpu/mcp/indexer.py",
-      "source_location": "L246"
-    },
-    {
-      "id": "plugin_localgpu_mcp_indexer_rationale_316",
-      "label": "Refuse to touch an index built with a different embedding model. Absent is not\u2026",
-      "_origin": "ast",
-      "community": 256,
-      "community_name": "server.py",
-      "file_type": "rationale",
-      "norm_label": "refuse to touch an index built with a different embedding model. absent is not...",
-      "source_file": "plugin/localgpu/mcp/indexer.py",
-      "source_location": "L316"
     },
     {
       "id": "plugin_localgpu_mcp_server_rationale_1",
@@ -53892,17 +54143,6 @@
       "source_location": "L450"
     },
     {
-      "id": "plugin_localgpu_mcp_store_rationale_571",
-      "label": "Live chunks that pass the filters, keyed by vector row. ``limit`` bounds which\u2026",
-      "_origin": "ast",
-      "community": 257,
-      "community_name": "store.py",
-      "file_type": "rationale",
-      "norm_label": "live chunks that pass the filters, keyed by vector row. ``limit`` bounds which...",
-      "source_file": "plugin/localgpu/mcp/store.py",
-      "source_location": "L571"
-    },
-    {
       "id": "plugin_localgpu_mcp_store_rationale_776",
       "label": "A normalised ``root`` that only matches whole path components.",
       "_origin": "ast",
@@ -53912,17 +54152,6 @@
       "norm_label": "a normalised ``root`` that only matches whole path components.",
       "source_file": "plugin/localgpu/mcp/store.py",
       "source_location": "L776"
-    },
-    {
-      "id": "plugin_localgpu_mcp_store_rationale_786",
-      "label": "Forgiving glob match against a full path or its basename. ``*`` crosses\u2026",
-      "_origin": "ast",
-      "community": 257,
-      "community_name": "store.py",
-      "file_type": "rationale",
-      "norm_label": "forgiving glob match against a full path or its basename. ``*`` crosses...",
-      "source_file": "plugin/localgpu/mcp/store.py",
-      "source_location": "L786"
     },
     {
       "id": "plugin_localgpu_mcp_store_rationale_81",
@@ -63101,7 +63330,7 @@
       "node_kind": "heading",
       "norm_label": "how the windows half works",
       "source_file": "plugin/crew/README.md",
-      "source_location": "L2122"
+      "source_location": "L2127"
     },
     {
       "id": "plugin_crew_readme_3_requirements_and_platforms",
@@ -67487,10 +67716,10 @@
       "node_kind": "heading",
       "norm_label": "[2026-07-28]",
       "source_file": "CHANGELOG.md",
-      "source_location": "L3851"
+      "source_location": "L3879"
     },
     {
-      "id": "changelog_added_3853",
+      "id": "changelog_added_3881",
       "label": "Added",
       "_origin": "ast",
       "community": 393,
@@ -67499,7 +67728,7 @@
       "node_kind": "heading",
       "norm_label": "added",
       "source_file": "CHANGELOG.md",
-      "source_location": "L3853"
+      "source_location": "L3881"
     },
     {
       "id": "changelog_changelog",
@@ -67514,7 +67743,7 @@
       "source_location": "L1"
     },
     {
-      "id": "changelog_fixed_3862",
+      "id": "changelog_fixed_3890",
       "label": "Fixed",
       "_origin": "ast",
       "community": 393,
@@ -67523,7 +67752,7 @@
       "node_kind": "heading",
       "norm_label": "fixed",
       "source_file": "CHANGELOG.md",
-      "source_location": "L3862"
+      "source_location": "L3890"
     },
     {
       "id": "changelog_skills_present_as_of_this_baseline",
@@ -67535,7 +67764,7 @@
       "node_kind": "heading",
       "norm_label": "skills present as of this baseline",
       "source_file": "CHANGELOG.md",
-      "source_location": "L3866"
+      "source_location": "L3894"
     },
     {
       "id": "skills_terraform_docs_readme_assets_readme_skeleton",
@@ -68114,17 +68343,6 @@
       "source_location": "L123"
     },
     {
-      "id": "plugin_localgpu_mcp_store_rationale_203",
-      "label": "The index on disk cannot be used as-is.",
-      "_origin": "ast",
-      "community": 40,
-      "community_name": "ChunkRecord",
-      "file_type": "rationale",
-      "norm_label": "the index on disk cannot be used as-is.",
-      "source_file": "plugin/localgpu/mcp/store.py",
-      "source_location": "L203"
-    },
-    {
       "id": "plugin_localgpu_mcp_store_rationale_208",
       "label": "One window of one file, before it has a row number.",
       "_origin": "ast",
@@ -68680,6 +68898,17 @@
       "source_location": "L1"
     },
     {
+      "id": "plugin_localgpu_mcp_indexer_py_any",
+      "label": "Any",
+      "_origin": "ast",
+      "community": 41,
+      "community_name": "indexer.py",
+      "file_type": "code",
+      "norm_label": "any",
+      "source_file": "",
+      "source_location": ""
+    },
+    {
       "id": "plugin_localgpu_mcp_indexer_py_path",
       "label": "Path",
       "_origin": "ast",
@@ -68744,6 +68973,28 @@
       "norm_label": "what actually gets embedded: a locator line, then the code.",
       "source_file": "plugin/localgpu/mcp/indexer.py",
       "source_location": "L206"
+    },
+    {
+      "id": "plugin_localgpu_mcp_indexer_rationale_246",
+      "label": "Raise :class:`EmbedModelMismatch` if ``manifest`` was not built with\u2026",
+      "_origin": "ast",
+      "community": 41,
+      "community_name": "indexer.py",
+      "file_type": "rationale",
+      "norm_label": "raise :class:`embedmodelmismatch` if ``manifest`` was not built with...",
+      "source_file": "plugin/localgpu/mcp/indexer.py",
+      "source_location": "L246"
+    },
+    {
+      "id": "plugin_localgpu_mcp_indexer_rationale_316",
+      "label": "Refuse to touch an index built with a different embedding model. Absent is not\u2026",
+      "_origin": "ast",
+      "community": 41,
+      "community_name": "indexer.py",
+      "file_type": "rationale",
+      "norm_label": "refuse to touch an index built with a different embedding model. absent is not...",
+      "source_file": "plugin/localgpu/mcp/indexer.py",
+      "source_location": "L316"
     },
     {
       "id": "plugin_localgpu_mcp_indexer_rationale_335",
@@ -70352,6 +70603,17 @@
       "source_location": "L1"
     },
     {
+      "id": "plugin_localgpu_mcp_test_test_ollama_py_parametrize",
+      "label": "parametrize",
+      "_origin": "ast",
+      "community": 44,
+      "community_name": "OllamaClient",
+      "file_type": "code",
+      "norm_label": "parametrize",
+      "source_file": "",
+      "source_location": ""
+    },
+    {
       "id": "plugin_localgpu_mcp_ollama_rationale_34",
       "label": "Nothing is listening, or it hung up mid-request.",
       "_origin": "ast",
@@ -70405,6 +70667,17 @@
       "norm_label": "the generate-side twin of the test above, and the same defect class....",
       "source_file": "plugin/localgpu/mcp/_test/test_ollama.py",
       "source_location": "L171"
+    },
+    {
+      "id": "plugin_localgpu_mcp_test_test_ollama_rationale_190",
+      "label": "One rung further in than the test above, which is where guard fixes fail. A\u2026",
+      "_origin": "ast",
+      "community": 44,
+      "community_name": "OllamaClient",
+      "file_type": "rationale",
+      "norm_label": "one rung further in than the test above, which is where guard fixes fail. a...",
+      "source_file": "plugin/localgpu/mcp/_test/test_ollama.py",
+      "source_location": "L190"
     },
     {
       "id": "plugin_localgpu_mcp_test_test_ollama_rationale_207",
@@ -81734,114 +82007,26 @@
       "source_location": "L985"
     },
     {
-      "id": "plugin_localgpu_mcp_indexer_py_runtimeerror",
-      "label": "RuntimeError",
+      "id": "plugin_localgpu_mcp_test_test_unignore",
+      "label": "test_unignore.py",
       "_origin": "ast",
       "community": 712,
-      "community_name": "test_embed_model.py",
+      "community_name": "test_unignore.py",
       "file_type": "code",
-      "norm_label": "runtimeerror",
-      "source_file": "",
-      "source_location": ""
-    },
-    {
-      "id": "plugin_localgpu_mcp_test_test_embed_model",
-      "label": "test_embed_model.py",
-      "_origin": "ast",
-      "community": 712,
-      "community_name": "test_embed_model.py",
-      "file_type": "code",
-      "norm_label": "test_embed_model.py",
-      "source_file": "plugin/localgpu/mcp/_test/test_embed_model.py",
+      "norm_label": "test_unignore.py",
+      "source_file": "plugin/localgpu/mcp/_test/test_unignore.py",
       "source_location": "L1"
     },
     {
-      "id": "plugin_localgpu_mcp_indexer_rationale_219",
-      "label": "The index on disk was built with a different embedding model. Vectors from two\u2026",
+      "id": "plugin_localgpu_mcp_test_test_unignore_rationale_1",
+      "label": "`unignore` re-includes a file `DEFAULT_IGNORE` would otherwise swallow. Same\u2026",
       "_origin": "ast",
       "community": 712,
-      "community_name": "test_embed_model.py",
+      "community_name": "test_unignore.py",
       "file_type": "rationale",
-      "norm_label": "the index on disk was built with a different embedding model. vectors from two...",
-      "source_file": "plugin/localgpu/mcp/indexer.py",
-      "source_location": "L219"
-    },
-    {
-      "id": "plugin_localgpu_mcp_test_test_embed_model_rationale_1",
-      "label": "Swapping the embed model for a different one of the same width must not be\u2026",
-      "_origin": "ast",
-      "community": 712,
-      "community_name": "test_embed_model.py",
-      "file_type": "rationale",
-      "norm_label": "swapping the embed model for a different one of the same width must not be...",
-      "source_file": "plugin/localgpu/mcp/_test/test_embed_model.py",
+      "norm_label": "`unignore` re-includes a file `default_ignore` would otherwise swallow. same...",
+      "source_file": "plugin/localgpu/mcp/_test/test_unignore.py",
       "source_location": "L1"
-    },
-    {
-      "id": "plugin_localgpu_mcp_test_test_embed_model_rationale_116",
-      "label": "model-a indexes alpha.py, then fails embedding beta.py before the manifest is\u2026",
-      "_origin": "ast",
-      "community": 712,
-      "community_name": "test_embed_model.py",
-      "file_type": "rationale",
-      "norm_label": "model-a indexes alpha.py, then fails embedding beta.py before the manifest is...",
-      "source_file": "plugin/localgpu/mcp/_test/test_embed_model.py",
-      "source_location": "L116"
-    },
-    {
-      "id": "plugin_localgpu_mcp_test_test_embed_model_rationale_155",
-      "label": "Backward compatibility: a call site that never passes embed_model keeps working\u2026",
-      "_origin": "ast",
-      "community": 712,
-      "community_name": "test_embed_model.py",
-      "file_type": "rationale",
-      "norm_label": "backward compatibility: a call site that never passes embed_model keeps working...",
-      "source_file": "plugin/localgpu/mcp/_test/test_embed_model.py",
-      "source_location": "L155"
-    },
-    {
-      "id": "plugin_localgpu_mcp_test_test_embed_model_rationale_23",
-      "label": "Wraps a real embedder but raises once a call budget is exhausted. Stands in for\u2026",
-      "_origin": "ast",
-      "community": 712,
-      "community_name": "test_embed_model.py",
-      "file_type": "rationale",
-      "norm_label": "wraps a real embedder but raises once a call budget is exhausted. stands in for...",
-      "source_file": "plugin/localgpu/mcp/_test/test_embed_model.py",
-      "source_location": "L23"
-    },
-    {
-      "id": "plugin_localgpu_mcp_test_test_embed_model_rationale_72",
-      "label": "The whole point of this check: two models of equal width, silently swapped.",
-      "_origin": "ast",
-      "community": 712,
-      "community_name": "test_embed_model.py",
-      "file_type": "rationale",
-      "norm_label": "the whole point of this check: two models of equal width, silently swapped.",
-      "source_file": "plugin/localgpu/mcp/_test/test_embed_model.py",
-      "source_location": "L72"
-    },
-    {
-      "id": "plugin_localgpu_mcp_test_test_ollama_py_parametrize",
-      "label": "parametrize",
-      "_origin": "ast",
-      "community": 713,
-      "community_name": "test_a_response_that_is_not_a_string_is_an_error_not_a_repr",
-      "file_type": "code",
-      "norm_label": "parametrize",
-      "source_file": "",
-      "source_location": ""
-    },
-    {
-      "id": "plugin_localgpu_mcp_test_test_ollama_rationale_190",
-      "label": "One rung further in than the test above, which is where guard fixes fail. A\u2026",
-      "_origin": "ast",
-      "community": 713,
-      "community_name": "test_a_response_that_is_not_a_string_is_an_error_not_a_repr",
-      "file_type": "rationale",
-      "norm_label": "one rung further in than the test above, which is where guard fixes fail. a...",
-      "source_file": "plugin/localgpu/mcp/_test/test_ollama.py",
-      "source_location": "L190"
     },
     {
       "id": "plugin_gizmoduck_scripts_test_test_tickets_gate",
@@ -83732,7 +83917,7 @@
       "node_kind": "heading",
       "norm_label": "what is not proven by these tests",
       "source_file": "mcp-servers/README.md",
-      "source_location": "L476"
+      "source_location": "L489"
     },
     {
       "id": "mcp_servers_readme_what_s_new",
@@ -84329,7 +84514,7 @@
       "node_kind": "heading",
       "norm_label": "26. troubleshooting",
       "source_file": "plugin/crew/README.md",
-      "source_location": "L2144"
+      "source_location": "L2149"
     },
     {
       "id": "plugin_crew_readme_2_where_it_runs",
@@ -84413,7 +84598,7 @@
       "node_kind": "heading",
       "norm_label": "a note on the bundled find-skills",
       "source_file": "plugin/crew/README.md",
-      "source_location": "L2193"
+      "source_location": "L2198"
     },
     {
       "id": "plugin_crew_readme_contents",
@@ -84449,7 +84634,7 @@
       "node_kind": "heading",
       "norm_label": "on combining with other plugins",
       "source_file": "plugin/crew/README.md",
-      "source_location": "L2222"
+      "source_location": "L2227"
     },
     {
       "id": "plugin_crew_readme_three_things_this_plugin_will_tell_you_that_you_did_not_ask_to_hear",
@@ -84461,7 +84646,7 @@
       "node_kind": "heading",
       "norm_label": "three things this plugin will tell you that you did not ask to hear",
       "source_file": "plugin/crew/README.md",
-      "source_location": "L2243"
+      "source_location": "L2248"
     },
     {
       "id": "plugin_crew_readme_visio",
@@ -85154,7 +85339,7 @@
       "node_kind": "heading",
       "norm_label": "6. `check_skill_manifests` is unread",
       "source_file": "TODO.md",
-      "source_location": "L144"
+      "source_location": "L159"
     },
     {
       "id": "todo_7_the_install_scripts_matched_pair_rule_has_an_enforcer_closed_2026_09_06",
@@ -85166,7 +85351,7 @@
       "node_kind": "heading",
       "norm_label": "7. the install-scripts matched-pair rule has an enforcer \u2014 closed 2026-09-06",
       "source_file": "TODO.md",
-      "source_location": "L152"
+      "source_location": "L167"
     },
     {
       "id": "todo_blast_radius_act_on_these_first",
@@ -85190,7 +85375,7 @@
       "node_kind": "heading",
       "norm_label": "briefing style: state claims as claims, and say that refuting them is a win",
       "source_file": "TODO.md",
-      "source_location": "L338"
+      "source_location": "L353"
     },
     {
       "id": "todo_changelog_md_s_0_16_8_the_machine_global_config_entries_are_mislabeled",
@@ -85202,7 +85387,7 @@
       "node_kind": "heading",
       "norm_label": "`changelog.md`'s \"0.16.8: the machine-global config...\" entries are mislabeled",
       "source_file": "TODO.md",
-      "source_location": "L216"
+      "source_location": "L231"
     },
     {
       "id": "todo_correction_nothing_under_crew_is_committed_and_one_commit_message_says_otherwise",
@@ -85214,7 +85399,7 @@
       "node_kind": "heading",
       "norm_label": "correction: nothing under `.crew/` is committed, and one commit message says otherwise",
       "source_file": "TODO.md",
-      "source_location": "L272"
+      "source_location": "L287"
     },
     {
       "id": "todo_correctness_and_verification_gaps",
@@ -85238,7 +85423,7 @@
       "node_kind": "heading",
       "norm_label": "`crew_py` can hand back a python that is not a python",
       "source_file": "TODO.md",
-      "source_location": "L185"
+      "source_location": "L200"
     },
     {
       "id": "todo_crew_state_py_is_3283_lines_and_should_be_split_closed_2026_09_06",
@@ -85250,7 +85435,7 @@
       "node_kind": "heading",
       "norm_label": "`crew_state.py` is 3283 lines and should be split \u2014 closed 2026-09-06",
       "source_file": "TODO.md",
-      "source_location": "L676"
+      "source_location": "L698"
     },
     {
       "id": "todo_deferred_by_design_not_oversight",
@@ -85262,7 +85447,7 @@
       "node_kind": "heading",
       "norm_label": "deferred by design, not oversight",
       "source_file": "TODO.md",
-      "source_location": "L171"
+      "source_location": "L186"
     },
     {
       "id": "todo_fix_shape",
@@ -85274,7 +85459,7 @@
       "node_kind": "heading",
       "norm_label": "fix shape",
       "source_file": "TODO.md",
-      "source_location": "L553"
+      "source_location": "L568"
     },
     {
       "id": "todo_found_during_the_0_16_8_merge_review_deferred_as_out_of_scope",
@@ -85286,7 +85471,7 @@
       "node_kind": "heading",
       "norm_label": "found during the 0.16.8 merge review, deferred as out of scope",
       "source_file": "TODO.md",
-      "source_location": "L183"
+      "source_location": "L198"
     },
     {
       "id": "todo_landmine_candidate_an_8_character_anchor_can_never_match_and_fails_silently",
@@ -85298,7 +85483,7 @@
       "node_kind": "heading",
       "norm_label": "landmine candidate: an 8-character anchor can never match, and fails silently",
       "source_file": "TODO.md",
-      "source_location": "L310"
+      "source_location": "L325"
     },
     {
       "id": "todo_localgpu_ask_has_no_empty_argument_branch",
@@ -85310,7 +85495,7 @@
       "node_kind": "heading",
       "norm_label": "`/localgpu:ask` has no empty-argument branch",
       "source_file": "TODO.md",
-      "source_location": "L427"
+      "source_location": "L442"
     },
     {
       "id": "todo_moved_to_claude_md_pathlib_write_text_converts_a_sh_to_crlf_on_windows",
@@ -85322,7 +85507,7 @@
       "node_kind": "heading",
       "norm_label": "moved to claude.md: `pathlib.write_text` converts a `.sh` to crlf on windows",
       "source_file": "TODO.md",
-      "source_location": "L247"
+      "source_location": "L262"
     },
     {
       "id": "todo_nit_the_request_body_is_translated_twice_per_request",
@@ -85334,7 +85519,7 @@
       "node_kind": "heading",
       "norm_label": "nit: the request body is translated twice per request",
       "source_file": "TODO.md",
-      "source_location": "L253"
+      "source_location": "L268"
     },
     {
       "id": "todo_no_code_validates_a_provider_name",
@@ -85346,7 +85531,7 @@
       "node_kind": "heading",
       "norm_label": "no code validates a provider name",
       "source_file": "TODO.md",
-      "source_location": "L485"
+      "source_location": "L500"
     },
     {
       "id": "todo_perplexity_is_an_agent_not_a_qa_provider_the_routing_half_is_not_done",
@@ -85358,7 +85543,7 @@
       "node_kind": "heading",
       "norm_label": "perplexity is an agent, not a `qa.provider` \u2014 the routing half is not done",
       "source_file": "TODO.md",
-      "source_location": "L719"
+      "source_location": "L741"
     },
     {
       "id": "todo_render_sh_cannot_render_a_diagram_on_windows_it_hands_mmdc_a_tmp_path",
@@ -85370,7 +85555,7 @@
       "node_kind": "heading",
       "norm_label": "`render.sh` cannot render a diagram on windows \u2014 it hands `mmdc` a `/tmp` path",
       "source_file": "TODO.md",
-      "source_location": "L644"
+      "source_location": "L666"
     },
     {
       "id": "todo_resolve_role_accepted_any_provider_name_and_the_review_gate_failed_open_closed_2026_09_06",
@@ -85382,7 +85567,7 @@
       "node_kind": "heading",
       "norm_label": "`resolve_role` accepted any provider name, and the review gate failed open \u2014 closed 2026-09-06",
       "source_file": "TODO.md",
-      "source_location": "L451"
+      "source_location": "L466"
     },
     {
       "id": "todo_sabotage_py_could_leave_a_live_mutation_in_the_tree_and_still_report_pass_closed_2026_09_06",
@@ -85394,7 +85579,7 @@
       "node_kind": "heading",
       "norm_label": "`sabotage.py` could leave a live mutation in the tree and still report pass \u2014 closed 2026-09-06",
       "source_file": "TODO.md",
-      "source_location": "L567"
+      "source_location": "L582"
     },
     {
       "id": "todo_the_installer_menu_undersells_crew_by_six_agents_and_three_commands",
@@ -85406,7 +85591,7 @@
       "node_kind": "heading",
       "norm_label": "the installer menu undersells crew by six agents and three commands",
       "source_file": "TODO.md",
-      "source_location": "L360"
+      "source_location": "L375"
     },
     {
       "id": "todo_the_part_that_makes_it_undetectable",
@@ -85418,7 +85603,7 @@
       "node_kind": "heading",
       "norm_label": "the part that makes it undetectable",
       "source_file": "TODO.md",
-      "source_location": "L537"
+      "source_location": "L552"
     },
     {
       "id": "todo_the_staleness_triggers_are_unsatisfiable_for_tracked_artifacts",
@@ -85430,7 +85615,7 @@
       "node_kind": "heading",
       "norm_label": "the staleness triggers are unsatisfiable for tracked artifacts",
       "source_file": "TODO.md",
-      "source_location": "L392"
+      "source_location": "L407"
     },
     {
       "id": "todo_the_table_itself_has_two_holes",
@@ -85442,7 +85627,7 @@
       "node_kind": "heading",
       "norm_label": "the table itself has two holes",
       "source_file": "TODO.md",
-      "source_location": "L502"
+      "source_location": "L517"
     },
     {
       "id": "todo_todo",
@@ -85466,7 +85651,7 @@
       "node_kind": "heading",
       "norm_label": "what resolve_role then returns",
       "source_file": "TODO.md",
-      "source_location": "L513"
+      "source_location": "L528"
     },
     {
       "id": "namespace",
@@ -87960,7 +88145,7 @@
       "weight": 1.0
     },
     {
-      "source": "mcp_servers_scripts_check_dist_fresh_checkpackage",
+      "source": "mcp_servers_scripts_check_dist_fresh_checkownbuild",
       "target": "mcp_servers_scripts_check_dist_fresh_newestmtime",
       "relation": "calls",
       "_origin": "ast",
@@ -87968,7 +88153,43 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "mcp-servers/scripts/check-dist-fresh.mjs",
+      "source_location": "L71",
+      "weight": 1.0
+    },
+    {
+      "source": "mcp_servers_scripts_check_dist_fresh_checkownbuild",
+      "target": "mcp_servers_scripts_check_dist_fresh_fail",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "mcp-servers/scripts/check-dist-fresh.mjs",
       "source_location": "L72",
+      "weight": 1.0
+    },
+    {
+      "source": "mcp_servers_scripts_check_dist_fresh_checkpackage",
+      "target": "mcp_servers_scripts_check_dist_fresh_checkownbuild",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "mcp-servers/scripts/check-dist-fresh.mjs",
+      "source_location": "L113",
+      "weight": 1.0
+    },
+    {
+      "source": "mcp_servers_scripts_check_dist_fresh_checkpackage",
+      "target": "mcp_servers_scripts_check_dist_fresh_fail",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "mcp-servers/scripts/check-dist-fresh.mjs",
+      "source_location": "L120",
       "weight": 1.0
     },
     {
@@ -87980,7 +88201,19 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "mcp-servers/scripts/check-dist-fresh.mjs",
-      "source_location": "L91",
+      "source_location": "L131",
+      "weight": 1.0
+    },
+    {
+      "source": "mcp_servers_scripts_test_check_dist_fresh_test_fixture",
+      "target": "mcp_servers_scripts_test_check_dist_fresh_test_touch",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "mcp-servers/scripts/_test/check-dist-fresh.test.mjs",
+      "source_location": "L36",
       "weight": 1.0
     },
     {
@@ -91808,7 +92041,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/crew/tests/sabotage.py",
-      "source_location": "L1090",
+      "source_location": "L1134",
       "weight": 1.0
     },
     {
@@ -91820,7 +92053,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/crew/tests/sabotage.py",
-      "source_location": "L1124",
+      "source_location": "L1177",
       "weight": 1.0
     },
     {
@@ -91832,7 +92065,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/crew/tests/sabotage.py",
-      "source_location": "L1130",
+      "source_location": "L1183",
       "weight": 1.0
     },
     {
@@ -91844,7 +92077,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/crew/tests/sabotage.py",
-      "source_location": "L1157",
+      "source_location": "L1210",
       "weight": 1.0
     },
     {
@@ -91856,7 +92089,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/crew/tests/sabotage.py",
-      "source_location": "L1171",
+      "source_location": "L1235",
       "weight": 1.0
     },
     {
@@ -91868,7 +92101,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/crew/tests/sabotage.py",
-      "source_location": "L1174",
+      "source_location": "L1240",
       "weight": 1.0
     },
     {
@@ -91880,7 +92113,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/crew/tests/sabotage.py",
-      "source_location": "L1178",
+      "source_location": "L1244",
       "weight": 1.0
     },
     {
@@ -91892,7 +92125,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/crew/tests/sabotage.py",
-      "source_location": "L1185",
+      "source_location": "L1251",
       "weight": 1.0
     },
     {
@@ -91904,7 +92137,19 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/crew/tests/sabotage.py",
-      "source_location": "L1187",
+      "source_location": "L1253",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_crew_tests_sabotage_main",
+      "target": "plugin_crew_tests_sabotage_verify",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "plugin/crew/tests/sabotage.py",
+      "source_location": "L1254",
       "weight": 1.0
     },
     {
@@ -91916,7 +92161,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/crew/tests/sabotage.py",
-      "source_location": "L1052",
+      "source_location": "L1095",
       "weight": 1.0
     },
     {
@@ -91928,7 +92173,31 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/crew/tests/sabotage.py",
-      "source_location": "L1045",
+      "source_location": "L1084",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_crew_tests_sabotage_restore_all",
+      "target": "plugin_crew_tests_sabotage_verify",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "plugin/crew/tests/sabotage.py",
+      "source_location": "L1089",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_crew_tests_sabotage_verify",
+      "target": "plugin_crew_tests_sabotage_digest",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "plugin/crew/tests/sabotage.py",
+      "source_location": "L1061",
       "weight": 1.0
     },
     {
@@ -96540,6 +96809,18 @@
       "weight": 1.0
     },
     {
+      "source": "plugin_crew_tests_test_sabotage_harness_test_a_backup_is_never_left_partial",
+      "target": "plugin_crew_tests_test_sabotage_harness_target",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "plugin/crew/tests/test_sabotage_harness.py",
+      "source_location": "L189",
+      "weight": 1.0
+    },
+    {
       "source": "plugin_crew_tests_test_sabotage_harness_test_a_clean_run_reports_pass_and_leaves_no_backup",
       "target": "plugin_crew_tests_test_sabotage_harness_target",
       "relation": "calls",
@@ -96548,7 +96829,31 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/crew/tests/test_sabotage_harness.py",
-      "source_location": "L225",
+      "source_location": "L357",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_crew_tests_test_sabotage_harness_test_a_failed_restore_stays_registered_for_the_next_attempt",
+      "target": "plugin_crew_tests_test_sabotage_harness_target",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "plugin/crew/tests/test_sabotage_harness.py",
+      "source_location": "L142",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_crew_tests_test_sabotage_harness_test_a_failed_restore_stays_registered_for_the_next_attempt",
+      "target": "plugin_crew_tests_test_sabotage_harness_text",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "plugin/crew/tests/test_sabotage_harness.py",
+      "source_location": "L159",
       "weight": 1.0
     },
     {
@@ -96560,7 +96865,19 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/crew/tests/test_sabotage_harness.py",
-      "source_location": "L62",
+      "source_location": "L75",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_crew_tests_test_sabotage_harness_test_a_mutation_is_restored_byte_for_byte",
+      "target": "plugin_crew_tests_test_sabotage_harness_text",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "plugin/crew/tests/test_sabotage_harness.py",
+      "source_location": "L79",
       "weight": 1.0
     },
     {
@@ -96572,7 +96889,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/crew/tests/test_sabotage_harness.py",
-      "source_location": "L75",
+      "source_location": "L88",
       "weight": 1.0
     },
     {
@@ -96584,7 +96901,19 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/crew/tests/test_sabotage_harness.py",
-      "source_location": "L89",
+      "source_location": "L102",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_crew_tests_test_sabotage_harness_test_apply_mutation_refuses_to_overwrite_an_existing_backup",
+      "target": "plugin_crew_tests_test_sabotage_harness_text",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "plugin/crew/tests/test_sabotage_harness.py",
+      "source_location": "L112",
       "weight": 1.0
     },
     {
@@ -96596,7 +96925,19 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/crew/tests/test_sabotage_harness.py",
-      "source_location": "L54",
+      "source_location": "L67",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_crew_tests_test_sabotage_harness_test_main_discards_an_interrupted_backup_before_it_mutates",
+      "target": "plugin_crew_tests_test_sabotage_harness_target",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "plugin/crew/tests/test_sabotage_harness.py",
+      "source_location": "L227",
       "weight": 1.0
     },
     {
@@ -96608,7 +96949,19 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/crew/tests/test_sabotage_harness.py",
-      "source_location": "L173",
+      "source_location": "L305",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_crew_tests_test_sabotage_harness_test_main_refuses_to_start_when_a_backup_is_present",
+      "target": "plugin_crew_tests_test_sabotage_harness_text",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "plugin/crew/tests/test_sabotage_harness.py",
+      "source_location": "L324",
       "weight": 1.0
     },
     {
@@ -96620,7 +96973,31 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/crew/tests/test_sabotage_harness.py",
-      "source_location": "L200",
+      "source_location": "L332",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_crew_tests_test_sabotage_harness_test_main_reports_a_restore_that_did_not_take",
+      "target": "plugin_crew_tests_test_sabotage_harness_text",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "plugin/crew/tests/test_sabotage_harness.py",
+      "source_location": "L350",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_crew_tests_test_sabotage_harness_test_restore_all_verifies_and_does_not_raise_from_signal_context",
+      "target": "plugin_crew_tests_test_sabotage_harness_target",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "plugin/crew/tests/test_sabotage_harness.py",
+      "source_location": "L170",
       "weight": 1.0
     },
     {
@@ -96632,7 +97009,19 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "plugin/crew/tests/test_sabotage_harness.py",
-      "source_location": "L123",
+      "source_location": "L255",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_crew_tests_test_sabotage_harness_test_verify_is_silent_about_a_target_it_has_no_answer_key_for",
+      "target": "plugin_crew_tests_test_sabotage_harness_target",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "plugin/crew/tests/test_sabotage_harness.py",
+      "source_location": "L180",
       "weight": 1.0
     },
     {
@@ -134268,24 +134657,24 @@
     },
     {
       "source": "changelog_2026_07_28",
-      "target": "changelog_added_3853",
+      "target": "changelog_added_3881",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L3853",
+      "source_location": "L3881",
       "weight": 1.0
     },
     {
       "source": "changelog_2026_07_28",
-      "target": "changelog_fixed_3862",
+      "target": "changelog_fixed_3890",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L3862",
+      "source_location": "L3890",
       "weight": 1.0
     },
     {
@@ -134296,7 +134685,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L3866",
+      "source_location": "L3894",
       "weight": 1.0
     },
     {
@@ -134307,7 +134696,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L3851",
+      "source_location": "L3879",
       "weight": 1.0
     },
     {
@@ -134323,233 +134712,233 @@
     },
     {
       "source": "changelog_unreleased",
+      "target": "changelog_fixed_1465",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "CHANGELOG.md",
+      "source_location": "L1465",
+      "weight": 1.0
+    },
+    {
+      "source": "changelog_unreleased",
+      "target": "changelog_fixed_1559",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "CHANGELOG.md",
+      "source_location": "L1559",
+      "weight": 1.0
+    },
+    {
+      "source": "changelog_unreleased",
+      "target": "changelog_fixed_1601",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "CHANGELOG.md",
+      "source_location": "L1601",
+      "weight": 1.0
+    },
+    {
+      "source": "changelog_unreleased",
+      "target": "changelog_changed_1623",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "CHANGELOG.md",
+      "source_location": "L1623",
+      "weight": 1.0
+    },
+    {
+      "source": "changelog_unreleased",
+      "target": "changelog_fixed_1649",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "CHANGELOG.md",
+      "source_location": "L1649",
+      "weight": 1.0
+    },
+    {
+      "source": "changelog_unreleased",
       "target": "changelog_changed",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L138",
+      "source_location": "L166",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_1437",
+      "target": "changelog_added_1669",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L1437",
+      "source_location": "L1669",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_1531",
+      "target": "changelog_fixed_1783",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L1531",
+      "source_location": "L1783",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_1573",
+      "target": "changelog_changed_1884",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L1573",
+      "source_location": "L1884",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_changed_1595",
+      "target": "changelog_added_1918",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L1595",
+      "source_location": "L1918",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_1621",
+      "target": "changelog_changed_1962",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L1621",
+      "source_location": "L1962",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_added_1641",
+      "target": "changelog_added_2026",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L1641",
+      "source_location": "L2026",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_1755",
+      "target": "changelog_added_2040",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L1755",
+      "source_location": "L2040",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_changed_1856",
+      "target": "changelog_fixed_2123",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L1856",
+      "source_location": "L2123",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_added_1890",
+      "target": "changelog_fixed_2309",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L1890",
+      "source_location": "L2309",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_changed_1934",
+      "target": "changelog_fixed_2325",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L1934",
+      "source_location": "L2325",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_added_1998",
+      "target": "changelog_added_2334",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L1998",
+      "source_location": "L2334",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_added_2012",
+      "target": "changelog_added_235",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2012",
+      "source_location": "L235",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_added_207",
+      "target": "changelog_fixed_2632",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L207",
+      "source_location": "L2632",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_2095",
+      "target": "changelog_changed_2732",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2095",
+      "source_location": "L2732",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_2281",
+      "target": "changelog_fixed_2753",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2281",
-      "weight": 1.0
-    },
-    {
-      "source": "changelog_unreleased",
-      "target": "changelog_fixed_2297",
-      "relation": "contains",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "CHANGELOG.md",
-      "source_location": "L2297",
-      "weight": 1.0
-    },
-    {
-      "source": "changelog_unreleased",
-      "target": "changelog_added_2306",
-      "relation": "contains",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "CHANGELOG.md",
-      "source_location": "L2306",
-      "weight": 1.0
-    },
-    {
-      "source": "changelog_unreleased",
-      "target": "changelog_fixed_2604",
-      "relation": "contains",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "CHANGELOG.md",
-      "source_location": "L2604",
-      "weight": 1.0
-    },
-    {
-      "source": "changelog_unreleased",
-      "target": "changelog_changed_2704",
-      "relation": "contains",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "CHANGELOG.md",
-      "source_location": "L2704",
-      "weight": 1.0
-    },
-    {
-      "source": "changelog_unreleased",
-      "target": "changelog_fixed_2725",
-      "relation": "contains",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "CHANGELOG.md",
-      "source_location": "L2725",
+      "source_location": "L2753",
       "weight": 1.0
     },
     {
@@ -134560,282 +134949,271 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2789",
+      "source_location": "L2817",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_2818",
+      "target": "changelog_fixed_2846",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2818",
+      "source_location": "L2846",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_changed_2840",
+      "target": "changelog_changed_2868",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2840",
+      "source_location": "L2868",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_2850",
+      "target": "changelog_fixed_2878",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2850",
+      "source_location": "L2878",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_added_2865",
+      "target": "changelog_added_2893",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2865",
+      "source_location": "L2893",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_2998",
+      "target": "changelog_fixed_3026",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L2998",
+      "source_location": "L3026",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_removed_3130",
+      "target": "changelog_removed_3158",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L3130",
+      "source_location": "L3158",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_added_3140",
+      "target": "changelog_added_3168",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L3140",
+      "source_location": "L3168",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_3213",
+      "target": "changelog_fixed_3241",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L3213",
+      "source_location": "L3241",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_changed_3222",
+      "target": "changelog_changed_3250",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L3222",
+      "source_location": "L3250",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_3292",
+      "target": "changelog_fixed_3320",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L3292",
+      "source_location": "L3320",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_added_3344",
+      "target": "changelog_added_3372",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L3344",
+      "source_location": "L3372",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_3393",
+      "target": "changelog_fixed_3421",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L3393",
+      "source_location": "L3421",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_added_3459",
+      "target": "changelog_added_3487",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L3459",
+      "source_location": "L3487",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_removed_3516",
+      "target": "changelog_removed_3544",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L3516",
+      "source_location": "L3544",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_354",
+      "target": "changelog_added_3569",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L354",
+      "source_location": "L3569",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_added_3541",
+      "target": "changelog_fixed_3591",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L3541",
+      "source_location": "L3591",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_3563",
+      "target": "changelog_added_3610",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L3563",
+      "source_location": "L3610",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_added_3582",
+      "target": "changelog_removed_3715",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L3582",
+      "source_location": "L3715",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_removed_3687",
+      "target": "changelog_changed_3729",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L3687",
+      "source_location": "L3729",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_changed_3701",
+      "target": "changelog_fixed_3738",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L3701",
+      "source_location": "L3738",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_3710",
+      "target": "changelog_changed_3818",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L3710",
+      "source_location": "L3818",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_changed_3790",
+      "target": "changelog_fixed_382",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L3790",
+      "source_location": "L382",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_removed_3812",
+      "target": "changelog_removed_3840",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L3812",
+      "source_location": "L3840",
       "weight": 1.0
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_3837",
+      "target": "changelog_fixed_3865",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L3837",
-      "weight": 1.0
-    },
-    {
-      "source": "changelog_unreleased",
-      "target": "changelog_added",
-      "relation": "contains",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "CHANGELOG.md",
-      "source_location": "L56",
+      "source_location": "L3865",
       "weight": 1.0
     },
     {
@@ -134851,13 +135229,24 @@
     },
     {
       "source": "changelog_unreleased",
-      "target": "changelog_fixed_937",
+      "target": "changelog_added",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L937",
+      "source_location": "L84",
+      "weight": 1.0
+    },
+    {
+      "source": "changelog_unreleased",
+      "target": "changelog_fixed_965",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "CHANGELOG.md",
+      "source_location": "L965",
       "weight": 1.0
     },
     {
@@ -141512,7 +141901,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "mcp-servers/README.md",
-      "source_location": "L476",
+      "source_location": "L489",
       "weight": 1.0
     },
     {
@@ -141583,24 +141972,13 @@
     },
     {
       "source": "mcp_servers_scripts_check_dist_fresh",
-      "target": "mcp_servers_scripts_check_dist_fresh_newestmtime",
-      "relation": "contains",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "mcp-servers/scripts/check-dist-fresh.mjs",
-      "source_location": "L30",
-      "weight": 1.0
-    },
-    {
-      "source": "mcp_servers_scripts_check_dist_fresh",
       "target": "mcp_servers_scripts_check_dist_fresh_checkpackage",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "mcp-servers/scripts/check-dist-fresh.mjs",
-      "source_location": "L58",
+      "source_location": "L109",
       "weight": 1.0
     },
     {
@@ -141611,7 +141989,40 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "mcp-servers/scripts/check-dist-fresh.mjs",
-      "source_location": "L88",
+      "source_location": "L126",
+      "weight": 1.0
+    },
+    {
+      "source": "mcp_servers_scripts_check_dist_fresh",
+      "target": "mcp_servers_scripts_check_dist_fresh_newestmtime",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "mcp-servers/scripts/check-dist-fresh.mjs",
+      "source_location": "L44",
+      "weight": 1.0
+    },
+    {
+      "source": "mcp_servers_scripts_check_dist_fresh",
+      "target": "mcp_servers_scripts_check_dist_fresh_fail",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "mcp-servers/scripts/check-dist-fresh.mjs",
+      "source_location": "L64",
+      "weight": 1.0
+    },
+    {
+      "source": "mcp_servers_scripts_check_dist_fresh",
+      "target": "mcp_servers_scripts_check_dist_fresh_checkownbuild",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "mcp-servers/scripts/check-dist-fresh.mjs",
+      "source_location": "L69",
       "weight": 1.0
     },
     {
@@ -141633,7 +142044,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "mcp-servers/scripts/_test/check-dist-fresh.test.mjs",
-      "source_location": "L37",
+      "source_location": "L43",
       "weight": 1.0
     },
     {
@@ -147375,7 +147786,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/README.md",
-      "source_location": "L2122",
+      "source_location": "L2127",
       "weight": 1.0
     },
     {
@@ -147727,7 +148138,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/README.md",
-      "source_location": "L2144",
+      "source_location": "L2149",
       "weight": 1.0
     },
     {
@@ -147738,7 +148149,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/README.md",
-      "source_location": "L2193",
+      "source_location": "L2198",
       "weight": 1.0
     },
     {
@@ -147749,7 +148160,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/README.md",
-      "source_location": "L2222",
+      "source_location": "L2227",
       "weight": 1.0
     },
     {
@@ -147760,7 +148171,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/README.md",
-      "source_location": "L2243",
+      "source_location": "L2248",
       "weight": 1.0
     },
     {
@@ -151390,7 +151801,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/tests/sabotage.py",
-      "source_location": "L1001",
+      "source_location": "L1003",
       "weight": 1.0
     },
     {
@@ -151401,23 +151812,12 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/tests/sabotage.py",
-      "source_location": "L1018",
+      "source_location": "L1020",
       "weight": 1.0
     },
     {
       "source": "plugin_crew_tests_sabotage",
-      "target": "plugin_crew_tests_sabotage_restore_all",
-      "relation": "contains",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "plugin/crew/tests/sabotage.py",
-      "source_location": "L1042",
-      "weight": 1.0
-    },
-    {
-      "source": "plugin_crew_tests_sabotage",
-      "target": "plugin_crew_tests_sabotage_on_signal",
+      "target": "plugin_crew_tests_sabotage_verify",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -151428,13 +151828,35 @@
     },
     {
       "source": "plugin_crew_tests_sabotage",
+      "target": "plugin_crew_tests_sabotage_restore_all",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "plugin/crew/tests/sabotage.py",
+      "source_location": "L1072",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_crew_tests_sabotage",
+      "target": "plugin_crew_tests_sabotage_on_signal",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "plugin/crew/tests/sabotage.py",
+      "source_location": "L1094",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_crew_tests_sabotage",
       "target": "plugin_crew_tests_sabotage_install_exit_handlers",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/tests/sabotage.py",
-      "source_location": "L1060",
+      "source_location": "L1104",
       "weight": 1.0
     },
     {
@@ -151445,7 +151867,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/tests/sabotage.py",
-      "source_location": "L1081",
+      "source_location": "L1125",
       "weight": 1.0
     },
     {
@@ -151456,7 +151878,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/tests/sabotage.py",
-      "source_location": "L1137",
+      "source_location": "L1190",
       "weight": 1.0
     },
     {
@@ -151467,7 +151889,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/tests/sabotage.py",
-      "source_location": "L1148",
+      "source_location": "L1201",
       "weight": 1.0
     },
     {
@@ -151478,7 +151900,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/tests/sabotage.py",
-      "source_location": "L970",
+      "source_location": "L972",
       "weight": 1.0
     },
     {
@@ -151489,7 +151911,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/tests/sabotage.py",
-      "source_location": "L991",
+      "source_location": "L993",
       "weight": 1.0
     },
     {
@@ -151500,7 +151922,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/tests/sabotage.py",
-      "source_location": "L996",
+      "source_location": "L998",
       "weight": 1.0
     },
     {
@@ -158122,23 +158544,12 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/tests/test_sabotage_harness.py",
-      "source_location": "L102",
+      "source_location": "L115",
       "weight": 1.0
     },
     {
       "source": "plugin_crew_tests_test_sabotage_harness",
-      "target": "plugin_crew_tests_test_sabotage_harness_test_the_signal_handler_restores_then_exits_128_plus_signum",
-      "relation": "contains",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "plugin/crew/tests/test_sabotage_harness.py",
-      "source_location": "L122",
-      "weight": 1.0
-    },
-    {
-      "source": "plugin_crew_tests_test_sabotage_harness",
-      "target": "plugin_crew_tests_test_sabotage_harness_test_install_exit_handlers_takes_sigterm_and_survives_this_platform",
+      "target": "plugin_crew_tests_test_sabotage_harness_test_a_failed_restore_stays_registered_for_the_next_attempt",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -158149,46 +158560,46 @@
     },
     {
       "source": "plugin_crew_tests_test_sabotage_harness",
-      "target": "plugin_crew_tests_test_sabotage_harness_test_stale_backups_names_only_the_targets_that_have_one",
+      "target": "plugin_crew_tests_test_sabotage_harness_test_restore_all_verifies_and_does_not_raise_from_signal_context",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/tests/test_sabotage_harness.py",
-      "source_location": "L155",
+      "source_location": "L162",
       "weight": 1.0
     },
     {
       "source": "plugin_crew_tests_test_sabotage_harness",
-      "target": "plugin_crew_tests_test_sabotage_harness_test_main_refuses_to_start_when_a_backup_is_present",
+      "target": "plugin_crew_tests_test_sabotage_harness_test_verify_is_silent_about_a_target_it_has_no_answer_key_for",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/tests/test_sabotage_harness.py",
-      "source_location": "L168",
+      "source_location": "L179",
       "weight": 1.0
     },
     {
       "source": "plugin_crew_tests_test_sabotage_harness",
-      "target": "plugin_crew_tests_test_sabotage_harness_test_main_reports_a_restore_that_did_not_take",
+      "target": "plugin_crew_tests_test_sabotage_harness_test_a_backup_is_never_left_partial",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/tests/test_sabotage_harness.py",
-      "source_location": "L195",
+      "source_location": "L184",
       "weight": 1.0
     },
     {
       "source": "plugin_crew_tests_test_sabotage_harness",
-      "target": "plugin_crew_tests_test_sabotage_harness_test_a_clean_run_reports_pass_and_leaves_no_backup",
+      "target": "plugin_crew_tests_test_sabotage_harness_test_main_discards_an_interrupted_backup_before_it_mutates",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/tests/test_sabotage_harness.py",
-      "source_location": "L222",
+      "source_location": "L212",
       "weight": 1.0
     },
     {
@@ -158204,13 +158615,90 @@
     },
     {
       "source": "plugin_crew_tests_test_sabotage_harness",
+      "target": "plugin_crew_tests_test_sabotage_harness_test_the_signal_handler_restores_then_exits_128_plus_signum",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "plugin/crew/tests/test_sabotage_harness.py",
+      "source_location": "L254",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_crew_tests_test_sabotage_harness",
+      "target": "plugin_crew_tests_test_sabotage_harness_test_install_exit_handlers_takes_sigterm_and_survives_this_platform",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "plugin/crew/tests/test_sabotage_harness.py",
+      "source_location": "L267",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_crew_tests_test_sabotage_harness",
+      "target": "plugin_crew_tests_test_sabotage_harness_test_stale_backups_names_only_the_targets_that_have_one",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "plugin/crew/tests/test_sabotage_harness.py",
+      "source_location": "L287",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_crew_tests_test_sabotage_harness",
+      "target": "plugin_crew_tests_test_sabotage_harness_test_main_refuses_to_start_when_a_backup_is_present",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "plugin/crew/tests/test_sabotage_harness.py",
+      "source_location": "L300",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_crew_tests_test_sabotage_harness",
+      "target": "plugin_crew_tests_test_sabotage_harness_test_main_reports_a_restore_that_did_not_take",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "plugin/crew/tests/test_sabotage_harness.py",
+      "source_location": "L327",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_crew_tests_test_sabotage_harness",
+      "target": "plugin_crew_tests_test_sabotage_harness_test_a_clean_run_reports_pass_and_leaves_no_backup",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "plugin/crew/tests/test_sabotage_harness.py",
+      "source_location": "L354",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_crew_tests_test_sabotage_harness",
+      "target": "plugin_crew_tests_test_sabotage_harness_text",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "plugin/crew/tests/test_sabotage_harness.py",
+      "source_location": "L49",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_crew_tests_test_sabotage_harness",
       "target": "plugin_crew_tests_test_sabotage_harness_target",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/tests/test_sabotage_harness.py",
-      "source_location": "L47",
+      "source_location": "L60",
       "weight": 1.0
     },
     {
@@ -158221,7 +158709,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/tests/test_sabotage_harness.py",
-      "source_location": "L53",
+      "source_location": "L66",
       "weight": 1.0
     },
     {
@@ -158232,7 +158720,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/tests/test_sabotage_harness.py",
-      "source_location": "L61",
+      "source_location": "L74",
       "weight": 1.0
     },
     {
@@ -158243,7 +158731,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/tests/test_sabotage_harness.py",
-      "source_location": "L74",
+      "source_location": "L87",
       "weight": 1.0
     },
     {
@@ -158254,7 +158742,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/tests/test_sabotage_harness.py",
-      "source_location": "L82",
+      "source_location": "L95",
       "weight": 1.0
     },
     {
@@ -185930,7 +186418,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "TODO.md",
-      "source_location": "L144",
+      "source_location": "L159",
       "weight": 1.0
     },
     {
@@ -185941,7 +186429,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "TODO.md",
-      "source_location": "L152",
+      "source_location": "L167",
       "weight": 1.0
     },
     {
@@ -185963,7 +186451,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "TODO.md",
-      "source_location": "L185",
+      "source_location": "L200",
       "weight": 1.0
     },
     {
@@ -185974,7 +186462,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "TODO.md",
-      "source_location": "L216",
+      "source_location": "L231",
       "weight": 1.0
     },
     {
@@ -185985,7 +186473,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "TODO.md",
-      "source_location": "L485",
+      "source_location": "L500",
       "weight": 1.0
     },
     {
@@ -185996,7 +186484,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "TODO.md",
-      "source_location": "L502",
+      "source_location": "L517",
       "weight": 1.0
     },
     {
@@ -186007,7 +186495,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "TODO.md",
-      "source_location": "L513",
+      "source_location": "L528",
       "weight": 1.0
     },
     {
@@ -186018,7 +186506,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "TODO.md",
-      "source_location": "L537",
+      "source_location": "L552",
       "weight": 1.0
     },
     {
@@ -186029,7 +186517,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "TODO.md",
-      "source_location": "L553",
+      "source_location": "L568",
       "weight": 1.0
     },
     {
@@ -186051,7 +186539,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "TODO.md",
-      "source_location": "L171",
+      "source_location": "L186",
       "weight": 1.0
     },
     {
@@ -186062,7 +186550,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "TODO.md",
-      "source_location": "L183",
+      "source_location": "L198",
       "weight": 1.0
     },
     {
@@ -186073,7 +186561,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "TODO.md",
-      "source_location": "L247",
+      "source_location": "L262",
       "weight": 1.0
     },
     {
@@ -186084,7 +186572,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "TODO.md",
-      "source_location": "L253",
+      "source_location": "L268",
       "weight": 1.0
     },
     {
@@ -186095,7 +186583,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "TODO.md",
-      "source_location": "L272",
+      "source_location": "L287",
       "weight": 1.0
     },
     {
@@ -186106,7 +186594,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "TODO.md",
-      "source_location": "L310",
+      "source_location": "L325",
       "weight": 1.0
     },
     {
@@ -186117,7 +186605,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "TODO.md",
-      "source_location": "L338",
+      "source_location": "L353",
       "weight": 1.0
     },
     {
@@ -186128,7 +186616,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "TODO.md",
-      "source_location": "L360",
+      "source_location": "L375",
       "weight": 1.0
     },
     {
@@ -186139,7 +186627,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "TODO.md",
-      "source_location": "L392",
+      "source_location": "L407",
       "weight": 1.0
     },
     {
@@ -186150,7 +186638,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "TODO.md",
-      "source_location": "L427",
+      "source_location": "L442",
       "weight": 1.0
     },
     {
@@ -186161,7 +186649,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "TODO.md",
-      "source_location": "L451",
+      "source_location": "L466",
       "weight": 1.0
     },
     {
@@ -186172,7 +186660,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "TODO.md",
-      "source_location": "L567",
+      "source_location": "L582",
       "weight": 1.0
     },
     {
@@ -186183,7 +186671,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "TODO.md",
-      "source_location": "L644",
+      "source_location": "L666",
       "weight": 1.0
     },
     {
@@ -186194,18 +186682,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "TODO.md",
-      "source_location": "L676",
-      "weight": 1.0
-    },
-    {
-      "source": "todo_todo",
-      "target": "todo_perplexity_is_an_agent_not_a_qa_provider_the_routing_half_is_not_done",
-      "relation": "contains",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "TODO.md",
-      "source_location": "L719",
+      "source_location": "L698",
       "weight": 1.0
     },
     {
@@ -186217,6 +186694,17 @@
       "confidence_score": 1.0,
       "source_file": "TODO.md",
       "source_location": "L72",
+      "weight": 1.0
+    },
+    {
+      "source": "todo_todo",
+      "target": "todo_perplexity_is_an_agent_not_a_qa_provider_the_routing_half_is_not_done",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "TODO.md",
+      "source_location": "L741",
       "weight": 1.0
     },
     {
@@ -197440,80 +197928,102 @@
       "weight": 1.0
     },
     {
-      "source": "plugin_crew_tests_sabotage_rationale_1002",
+      "source": "plugin_crew_tests_sabotage_rationale_1004",
       "target": "plugin_crew_tests_sabotage_digest",
       "relation": "rationale_for",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/tests/sabotage.py",
-      "source_location": "L1002",
+      "source_location": "L1004",
       "weight": 1.0
     },
     {
-      "source": "plugin_crew_tests_sabotage_rationale_1019",
+      "source": "plugin_crew_tests_sabotage_rationale_1021",
       "target": "plugin_crew_tests_sabotage_stale_backups",
       "relation": "rationale_for",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/tests/sabotage.py",
-      "source_location": "L1019",
+      "source_location": "L1021",
       "weight": 1.0
     },
     {
-      "source": "plugin_crew_tests_sabotage_rationale_1061",
+      "source": "plugin_crew_tests_sabotage_rationale_1052",
+      "target": "plugin_crew_tests_sabotage_verify",
+      "relation": "rationale_for",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "plugin/crew/tests/sabotage.py",
+      "source_location": "L1052",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_crew_tests_sabotage_rationale_1073",
+      "target": "plugin_crew_tests_sabotage_restore_all",
+      "relation": "rationale_for",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "plugin/crew/tests/sabotage.py",
+      "source_location": "L1073",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_crew_tests_sabotage_rationale_1105",
       "target": "plugin_crew_tests_sabotage_install_exit_handlers",
       "relation": "rationale_for",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/tests/sabotage.py",
-      "source_location": "L1061",
+      "source_location": "L1105",
       "weight": 1.0
     },
     {
-      "source": "plugin_crew_tests_sabotage_rationale_1082",
+      "source": "plugin_crew_tests_sabotage_rationale_1126",
       "target": "plugin_crew_tests_sabotage_apply_mutation",
       "relation": "rationale_for",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/tests/sabotage.py",
-      "source_location": "L1082",
+      "source_location": "L1126",
       "weight": 1.0
     },
     {
-      "source": "plugin_crew_tests_sabotage_rationale_1138",
+      "source": "plugin_crew_tests_sabotage_rationale_1191",
       "target": "plugin_crew_tests_sabotage_restore",
       "relation": "rationale_for",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/tests/sabotage.py",
-      "source_location": "L1138",
+      "source_location": "L1191",
       "weight": 1.0
     },
     {
-      "source": "plugin_crew_tests_sabotage_rationale_1149",
+      "source": "plugin_crew_tests_sabotage_rationale_1202",
       "target": "plugin_crew_tests_sabotage_main",
       "relation": "rationale_for",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/tests/sabotage.py",
-      "source_location": "L1149",
+      "source_location": "L1202",
       "weight": 1.0
     },
     {
-      "source": "plugin_crew_tests_sabotage_rationale_971",
+      "source": "plugin_crew_tests_sabotage_rationale_973",
       "target": "plugin_crew_tests_sabotage_run_test",
       "relation": "rationale_for",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/tests/sabotage.py",
-      "source_location": "L971",
+      "source_location": "L973",
       "weight": 1.0
     },
     {
@@ -200575,19 +201085,19 @@
       "weight": 1.0
     },
     {
-      "source": "plugin_crew_tests_test_sabotage_harness_rationale_103",
+      "source": "plugin_crew_tests_test_sabotage_harness_rationale_116",
       "target": "plugin_crew_tests_test_sabotage_harness_test_restore_all_puts_back_every_live_target",
       "relation": "rationale_for",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/tests/test_sabotage_harness.py",
-      "source_location": "L103",
+      "source_location": "L116",
       "weight": 1.0
     },
     {
       "source": "plugin_crew_tests_test_sabotage_harness_rationale_136",
-      "target": "plugin_crew_tests_test_sabotage_harness_test_install_exit_handlers_takes_sigterm_and_survives_this_platform",
+      "target": "plugin_crew_tests_test_sabotage_harness_test_a_failed_restore_stays_registered_for_the_next_attempt",
       "relation": "rationale_for",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -200597,36 +201107,36 @@
       "weight": 1.0
     },
     {
-      "source": "plugin_crew_tests_test_sabotage_harness_rationale_170",
-      "target": "plugin_crew_tests_test_sabotage_harness_test_main_refuses_to_start_when_a_backup_is_present",
+      "source": "plugin_crew_tests_test_sabotage_harness_rationale_163",
+      "target": "plugin_crew_tests_test_sabotage_harness_test_restore_all_verifies_and_does_not_raise_from_signal_context",
       "relation": "rationale_for",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/tests/test_sabotage_harness.py",
-      "source_location": "L170",
+      "source_location": "L163",
       "weight": 1.0
     },
     {
-      "source": "plugin_crew_tests_test_sabotage_harness_rationale_197",
-      "target": "plugin_crew_tests_test_sabotage_harness_test_main_reports_a_restore_that_did_not_take",
+      "source": "plugin_crew_tests_test_sabotage_harness_rationale_185",
+      "target": "plugin_crew_tests_test_sabotage_harness_test_a_backup_is_never_left_partial",
       "relation": "rationale_for",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/tests/test_sabotage_harness.py",
-      "source_location": "L197",
+      "source_location": "L185",
       "weight": 1.0
     },
     {
-      "source": "plugin_crew_tests_test_sabotage_harness_rationale_224",
-      "target": "plugin_crew_tests_test_sabotage_harness_test_a_clean_run_reports_pass_and_leaves_no_backup",
+      "source": "plugin_crew_tests_test_sabotage_harness_rationale_215",
+      "target": "plugin_crew_tests_test_sabotage_harness_test_main_discards_an_interrupted_backup_before_it_mutates",
       "relation": "rationale_for",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/tests/test_sabotage_harness.py",
-      "source_location": "L224",
+      "source_location": "L215",
       "weight": 1.0
     },
     {
@@ -200641,14 +201151,69 @@
       "weight": 1.0
     },
     {
-      "source": "plugin_crew_tests_test_sabotage_harness_rationale_83",
+      "source": "plugin_crew_tests_test_sabotage_harness_rationale_268",
+      "target": "plugin_crew_tests_test_sabotage_harness_test_install_exit_handlers_takes_sigterm_and_survives_this_platform",
+      "relation": "rationale_for",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "plugin/crew/tests/test_sabotage_harness.py",
+      "source_location": "L268",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_crew_tests_test_sabotage_harness_rationale_302",
+      "target": "plugin_crew_tests_test_sabotage_harness_test_main_refuses_to_start_when_a_backup_is_present",
+      "relation": "rationale_for",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "plugin/crew/tests/test_sabotage_harness.py",
+      "source_location": "L302",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_crew_tests_test_sabotage_harness_rationale_329",
+      "target": "plugin_crew_tests_test_sabotage_harness_test_main_reports_a_restore_that_did_not_take",
+      "relation": "rationale_for",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "plugin/crew/tests/test_sabotage_harness.py",
+      "source_location": "L329",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_crew_tests_test_sabotage_harness_rationale_356",
+      "target": "plugin_crew_tests_test_sabotage_harness_test_a_clean_run_reports_pass_and_leaves_no_backup",
+      "relation": "rationale_for",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "plugin/crew/tests/test_sabotage_harness.py",
+      "source_location": "L356",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_crew_tests_test_sabotage_harness_rationale_50",
+      "target": "plugin_crew_tests_test_sabotage_harness_text",
+      "relation": "rationale_for",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "plugin/crew/tests/test_sabotage_harness.py",
+      "source_location": "L50",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_crew_tests_test_sabotage_harness_rationale_96",
       "target": "plugin_crew_tests_test_sabotage_harness_test_apply_mutation_refuses_to_overwrite_an_existing_backup",
       "relation": "rationale_for",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "plugin/crew/tests/test_sabotage_harness.py",
-      "source_location": "L83",
+      "source_location": "L96",
       "weight": 1.0
     },
     {
@@ -207259,7 +207824,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L3401",
+      "source_location": "L3429",
       "weight": 1.0
     },
     {
@@ -207270,7 +207835,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "CHANGELOG.md",
-      "source_location": "L3868",
+      "source_location": "L3896",
       "weight": 1.0
     },
     {
@@ -208099,7 +208664,7 @@
       "confidence_score": 0.85,
       "context": "argument",
       "source_file": "plugin/crew/tests/sabotage.py",
-      "source_location": "L1068",
+      "source_location": "L1112",
       "weight": 1.0
     },
     {
@@ -208111,7 +208676,7 @@
       "confidence_score": 0.85,
       "context": "argument",
       "source_file": "plugin/crew/tests/sabotage.py",
-      "source_location": "L1074",
+      "source_location": "L1118",
       "weight": 1.0
     },
     {
@@ -212365,5 +212930,5 @@
     }
   ],
   "hyperedges": [],
-  "built_at_commit": "7d702890cb2fc097d3293252984852ac6cfa830e"
+  "built_at_commit": "9011b58b821ccafe38dbde64b55640f6e24fc68c"
 }

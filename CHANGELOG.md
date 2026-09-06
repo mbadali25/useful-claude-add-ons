@@ -6,7 +6,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
-- **crew 0.16.23 -> 0.16.24: the sabotage harness can no longer report PASS
+- **crew 0.16.23 -> 0.16.25: the sabotage harness can no longer report PASS
   over a tree it corrupted.** `tests/sabotage.py` mutates real source in place,
   and `d362a2bd` shipped `crew_state.py` with one of those mutations still in
   it — a killed run skipped the `finally`, the next run's `shutil.copy` put the
