@@ -7,7 +7,8 @@
   ],
   "scripts": {
     "build": "npm run build -w packages/core && npm run build --workspaces --if-present",
-    "test": "npm run build && npm run test --workspaces --if-present",
+    "test": "npm run build && npm run test:scripts && npm run test --workspaces --if-present",
+    "test:scripts": "node --test \"scripts/_test/check-dist-fresh.test.mjs\"",
     "clean": "npm run clean --workspaces --if-present"
   },
   "devDependencies": {
