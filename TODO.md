@@ -49,13 +49,26 @@ So one layer actively declines to confirm and the other has no permission rule
 standing in the way, with its internal behaviour unknown. The entry's own
 conclusion applies: this **needs a gate or an explicit opt-in flag**.
 
-**Where a gate can go — and the awkward part: nothing in this repo creates the
+**Where a gate can go — and the awkward part: no code in this plugin creates the
 ticket.** `cmd_tickets` (`plugin/gizmoduck/scripts/gizmoduck.py:289-306`) builds
 a list of payload dicts and `main` prints them as JSON. The script makes no SDP
-call, and nothing anywhere under `plugin/gizmoduck/` mentions `sdp_create`,
-`sdp_search` or ServiceDesk Plus. Creation happens one layer up:
+call, and no `sdp_create`, `sdp_search`, `sdp_update` or `sdp_add_note` appears
+anywhere under `plugin/gizmoduck/`. **Scope that claim:** the audit covered
+direct execution inside this plugin, not the whole repo.
+
+The plugin does name ServiceDesk Plus in six places, every one of them prose or
+metadata: `.claude-plugin/plugin.json:4`, `commands/scan.md:7`,
+`commands/tickets.md:6`, `README.md:5`, and `skills/gizmoduck/SKILL.md:5` and
+`:70`. That split is the finding — the plugin is entirely instructions about
+ticketing with no implementation of it. Creation happens one layer up:
 `commands/tickets.md:5-7` tells the model to "auto-create one ServiceDesk Plus
 ticket per finding", which it does through the SDP MCP tools.
+
+`SKILL.md:70` is worth reading before mistaking it for the missing gate. It says
+that **before creating**, the model searches for an existing *open* request with
+the same `[Nuclei <template-id>]` subject and adds a note instead. **De-dupe is
+not confirmation:** it prevents a second ticket for a finding already filed, not
+a first ticket nobody wanted.
 
 So "put the check where the ticket is created" has no target inside this plugin.
 The three places that could actually hold one:
@@ -67,8 +80,11 @@ The three places that could actually hold one:
 
 Command prose cannot enforce anything on its own, and this repo has twice
 shipped a correct downstream check that never fired because an upstream filter
-discarded the input silently. But prose is currently the *only* thing standing
-between a scan and a filed ticket, which is the shape of the problem.
+discarded the input silently. **No verified barrier stands between a scan and a
+filed ticket** — and the prose is not a weak barrier, it is the instruction to
+write: it does not restrain the call, it orders it. Whether the SDP MCP server
+confirms internally is unread, so whether *any* barrier exists is unknown along
+with it. That is the shape of the problem.
 
 Recorded from evidence rather than left unread a second time; a future reader
 should treat the question as closed unless the cited lines move — and should
