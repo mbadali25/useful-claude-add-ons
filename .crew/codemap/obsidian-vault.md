@@ -28,7 +28,8 @@ found. Naming a vault is consent; being on the same disk is not.
 - `hooks/scripts/vault_ops.py` — `run_command()`, the single execution boundary
   so a test can replace it and assert nothing ran.
 - `hooks/scripts/bridge_status.py` — the `SessionStart` bridge report.
-- `hooks/scripts/vault_guard.py` — `PostToolUse` contract guard, off by default.
+- `hooks/scripts/vault_guard.py` — `PostToolUse` contract guard; the frontmatter
+  and ASCII rules default off, the canvas shape check defaults on.
 - `hooks/scripts/vault_capture.py` — `SessionEnd` / `PreCompact` capture into
   the vault's `inbox/`.
 

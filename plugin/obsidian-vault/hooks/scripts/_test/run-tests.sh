@@ -261,20 +261,37 @@ f=$(write_and_payload "wiki/CLAUDE.md" "Instructions for this vault. No frontmat
 check_stderr_empty "an exempt file reports nothing at all on stderr" \
   "$(guard_stderr "$f" "$home_on_win")"
 
-# The exemption is frontmatter-only. README.md is used here rather than
-# CLAUDE.md because CLAUDE.md is ALSO in ASCII_EXEMPT_NAMES, by a separate and
-# older decision - "still held to every other rule" is true of three of the four
-# names, not all of them.
-ascii_readme="README carrying an em dash that should still be caught: EMDASH"
-ascii_readme="${ascii_readme/EMDASH/$'\xe2\x80\x94'}"
-f=$(write_and_payload "wiki/ascii/README.md" "$ascii_readme")
-check "an exempt basename is still ASCII-checked" 2 "$(run_guard "$f" "$home_on_win")"
-check_stderr_has "and it is reported as an ASCII violation" \
-  "NON-ASCII" "$(guard_stderr "$f" "$home_on_win")"
-# The "not a frontmatter one" half has to be asserted, not just named: without
-# this, stderr carrying both needles keeps the check above green.
-check_stderr_lacks "and not as a frontmatter one" \
-  "NO FRONTMATTER" "$(guard_stderr "$f" "$home_on_win")"
+# The exemption is frontmatter-only for three of the four names. CLAUDE.md is
+# ALSO in ASCII_EXEMPT_NAMES, by a separate and older decision, so "still held
+# to every other rule" is true of README/AGENTS/GEMINI and false of CLAUDE.md.
+#
+# Codex round 6: this pair ran on README.md alone, which is the frontmatter
+# hole one axis over. Narrowing ASCII_EXEMPT_NAMES to
+# {"claude.md","agents.md","gemini.md"} - silently ASCII-exempting two names the
+# hook table, the setup skill and the guard's own comment all promise are
+# checked - passed the whole suite. Each name is pinned on its own now.
+for ascii_name in README.md AGENTS.md GEMINI.md; do
+  ascii_body="$ascii_name carrying an em dash that should still be caught: EMDASH"
+  ascii_body="${ascii_body/EMDASH/$'\xe2\x80\x94'}"
+  f=$(write_and_payload "wiki/ascii/$ascii_name" "$ascii_body")
+  check "$ascii_name is frontmatter-exempt but still ASCII-checked" 2 "$(run_guard "$f" "$home_on_win")"
+  check_stderr_has "and for $ascii_name it is reported as an ASCII violation" \
+    "NON-ASCII" "$(guard_stderr "$f" "$home_on_win")"
+  # The "not a frontmatter one" half has to be asserted, not just named: without
+  # this, stderr carrying both needles keeps the check above green.
+  check_stderr_lacks "and for $ascii_name not as a frontmatter one" \
+    "NO FRONTMATTER" "$(guard_stderr "$f" "$home_on_win")"
+done
+
+# The mirror image, and it has to be here: the exemption that IS real must be
+# pinned as tightly as the three that are not, or the next narrowing of
+# ASCII_EXEMPT_NAMES drops CLAUDE.md's unnoticed. Under "wiki/" so it sits
+# beside the three above - the ASCII check is not gated by notesPrefix, so this
+# is the same assertion the vault-root case makes, held one directory deeper.
+claude_ascii="CLAUDE.md may carry the real character, by design: EMDASH"
+claude_ascii="${claude_ascii/EMDASH/$'\xe2\x80\x94'}"
+f=$(write_and_payload "wiki/ascii/CLAUDE.md" "$claude_ascii")
+check "CLAUDE.md inside notesPrefix is ASCII-exempt" 0 "$(run_guard "$f" "$home_on_win")"
 
 # Codex, on PR #68: the first version of this exemption skipped check_note
 # ENTIRELY, which also dropped the required-keys, title-matches-filename and
