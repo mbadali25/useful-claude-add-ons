@@ -169,8 +169,9 @@ _AUTHORITY_NOTES = {
     "act": (
         "The manager acts on these itself - it dispatches crew roles and "
         "refreshes diagrams without being asked. Say what you want prioritised "
-        "and that wins over its own ordering. It still asks before removing a "
-        "role or deleting anything."
+        "and that wins over its own ordering. It researches a finding before "
+        "raising it, so a question from it should arrive with what it already "
+        "checked. It still asks before removing a role or deleting anything."
     ),
 }
 

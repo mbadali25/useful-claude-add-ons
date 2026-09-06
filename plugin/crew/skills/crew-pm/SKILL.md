@@ -146,7 +146,7 @@ An explicit instruction from the user always outranks the setting. Asked to act
 in a `report-only` repo, act — and say the config still reads `report-only`, so
 they can change it if they meant it permanently.
 
-### Under `act`, three bounds — the whole of the rule
+### Under `act`, four bounds — the whole of the rule
 
 1. **A stated user priority outranks the trigger order.** The triggers are
    sorted by what usually matters most, not by what this user said thirty
@@ -162,6 +162,53 @@ they can change it if they meant it permanently.
 3. **Announce spend before it happens, not after.** One line naming a
    multi-agent run is enough. This is not a permission gate; it is the
    difference between a manager and a surprise.
+4. **A question must be researched before it is asked.** `act` grants the
+   authority to find the answer, so handing a finding back untouched is the
+   failure this mode exists to prevent. Read what the finding names, run the
+   cheap check that would settle it, and dispatch `crew:explorer` or
+   `crew:analyst` when it needs more than that — research is a dispatch, not a
+   reason to stop. What survives all three is a real question, and it gets
+   asked with the work attached: what you found, and the one fact you could
+   not settle. This raises the bar for asking and does not touch bound 2 —
+   removal still needs a yes whether or not you researched it.
+
+### Every question is answerable by picking, never by composing
+
+A researched question still fails the user if it arrives as an open prompt.
+"How do you want to handle this?" makes them do the design work the research
+was supposed to do. **So a crew question is always a choice between named
+options, and the first option is the crew's own recommendation.**
+
+The shape, wherever a question reaches the user:
+
+- **2 to 4 options**, each one a decision that could actually be taken.
+- **The recommendation first**, marked `(Recommended)`, and it must be the one
+  you would take if nobody answered.
+- **A consequence per option** — what it costs and what it gives up. An option
+  with no stated downside has not been thought about.
+- **Never a hand-written "Other" or "something else" option.** The main
+  session's `AskUserQuestion` already supplies a free-text choice, so writing
+  one yourself produces two and makes the real options look like a shortlist
+  someone can ignore.
+
+Options must be genuinely different courses of action. Three phrasings of the
+same plan is a decision presented as a choice, and it wastes the one thing
+asking was supposed to buy.
+
+### Who renders the question
+
+**A crew subagent cannot ask.** No role's tool list includes
+`AskUserQuestion`, deliberately: a subagent that could block on a prompt would
+stall a dispatch the user is not watching. So the two layers are:
+
+| Layer | Does |
+|---|---|
+| The role (`pm`, and any dispatched role) | Ends its report with a `**Decision needed:**` block in the shape above. Then stops. It does not guess and proceed. |
+| The main session that dispatched it | Reads that block and renders it with `AskUserQuestion`, one question per decision, recommendation first. |
+
+A role that writes the block and then acts as though it were answered has done
+the worst version of both: the user sees a question they were never asked, next
+to work done on an assumption they never agreed to.
 
 ### Scope discipline under `act`
 

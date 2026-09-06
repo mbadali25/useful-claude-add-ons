@@ -317,3 +317,38 @@ whether the check that would have caught it is worth writing: the counts are
 derivable from `ls plugin/crew/agents/*.md` and `commands/*.md`, so a smoke check
 comparing the installer's advertised numbers against the directory contents is
 about ten lines and would cover every plugin's menu line, not just crew's.
+
+## The staleness triggers are unsatisfiable for tracked artifacts
+
+`crew_state.py` flags `graphStale`, `diagramsStale` and `knowledgeBehind` on a
+strict `anchor != HEAD` comparison. All three artifacts are tracked
+(`graphify-out/graph.json`, `docs/diagrams/*.mmd`, `.crew/codemap/*.md`), so
+committing a refresh advances HEAD past the sha the refresh just recorded. The
+condition is true the instant it is fixed and can never be cleared.
+
+Evidence, at HEAD `dc32c12` against anchor `b56d41f`:
+
+    $ git diff --name-only b56d41f..HEAD
+    .crew/codemap/UPGRADE.md
+    .crew/codemap/crew.md
+    .crew/codemap/localgpu.md
+    .crew/codemap/marketplace-registration.md
+    .crew/codemap/verification-harness.md
+    .gitignore
+    docs/diagrams/architecture.mmd
+    docs/diagrams/data-flow.mmd
+    docs/diagrams/process.mmd
+    graphify-out/graph.json
+
+Ten files, and **not one is a source file** — the maps, the diagrams, the graph
+and a comment-only `.gitignore` change. Every subsystem the codemap documents is
+current in substance; the lag is the self-reference, not drift. Re-running
+`/crew:onboard --refresh` or `/crew:diagram refresh` here would rewrite files
+byte-for-byte identical and advance HEAD again.
+
+The comparison needs to be "has any path this artifact documents changed since
+its anchor", not "does its anchor equal HEAD". Until then the pulse reports
+three permanent false positives, which is how a real staleness signal gets
+trained away.
+
+`plugin/crew/hooks/scripts/crew_state.py` — the anchor comparison.
