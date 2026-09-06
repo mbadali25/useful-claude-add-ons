@@ -61,7 +61,8 @@ All notable changes to this repository are documented here. Format follows [Keep
   lines, which turns that test red on the message it names. The stub raises
   only for the whole-document dict and records that it did, so an *earlier*
   `json.dumps` on another branch cannot abort the run before the write and
-  leave the file intact for the wrong reason. 276 passed, 1 skipped.
+  leave the file intact for the wrong reason. 274 -> 275 passed, 1
+  skipped.
 
   The same trap emptied `plugin/gizmoduck/commands/scan.md` to zero bytes
   during this work, and the "restore" that followed then succeeded against the

@@ -30,8 +30,9 @@ _SCRIPTS = os.path.join(os.path.dirname(_TESTS), "hooks", "scripts")
 
 def _reexported():
     """Names `crew_state` imports from the two split modules, by reading it."""
-    source = open(os.path.join(_SCRIPTS, "crew_state.py"),
-                  encoding="utf-8").read()
+    with open(os.path.join(_SCRIPTS, "crew_state.py"),
+              encoding="utf-8") as handle:
+        source = handle.read()
     names = {}
     for node in ast.parse(source).body:
         if (isinstance(node, ast.ImportFrom)
@@ -87,7 +88,8 @@ def test_nothing_patches_a_re_exported_name_through_crew_state():
     for path in _python_files():
         if os.path.basename(path) == os.path.basename(__file__):
             continue
-        tree = ast.parse(open(path, encoding="utf-8").read())
+        with open(path, encoding="utf-8") as handle:
+            tree = ast.parse(handle.read())
         for node in ast.walk(tree):
             if not (isinstance(node, ast.Call)
                     and isinstance(node.func, ast.Attribute)
