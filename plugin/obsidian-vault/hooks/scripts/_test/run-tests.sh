@@ -65,13 +65,15 @@ json.dump({"vaultPath": vault, "guard": {"asciiOnly": False, "requireFrontmatter
           open(out, "w", encoding="utf-8"))
 PYEOF
 
-# A third config carrying vaultPath and NO "guard" key at all - the shape a
-# fresh install has before /obsidian-vault:init writes anything. The two above
-# set every toggle explicitly, so neither can tell a DEFAULT apart from an
-# override, and the defaults are stated as a promise in six places (the guard's
-# own docstring, PLUGINS.md, plugin/README.md, this plugin's README, the root
-# README and both manifest descriptions). This config is what the DEFAULTS
-# section below holds them to.
+# A third config carrying vaultPath and NO "guard" key at all - a config with
+# a vault and no guard block, which is what /obsidian-vault:init leaves behind
+# when a vault's CLAUDE.md states no rule to turn on. (Not "a fresh install":
+# before init runs there may be no config file at all, and this fixture has a
+# vaultPath.) The two above set every toggle explicitly, so neither can tell a
+# DEFAULT apart from an override, and the defaults are stated as a promise in
+# seven places (the guard's own docstring, PLUGINS.md, plugin/README.md, this
+# plugin's README, the root README, and both manifest descriptions). This
+# config is what the DEFAULTS section below holds them to.
 "$PY" - "$vault_win" "$home_default/.claude/obsidian/config.json" <<'PYEOF'
 import json, sys
 vault, out = sys.argv[1], sys.argv[2]

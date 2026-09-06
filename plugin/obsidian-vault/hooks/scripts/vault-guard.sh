@@ -7,8 +7,14 @@
 # vault's own CLAUDE.md turns one on, so losing those is no worse than the
 # guard never being configured. The canvas shape check does NOT: checkCanvas
 # defaults ON (vault_guard.py:243), so a missing interpreter does drop one
-# check that would otherwise be running. Still not worth failing closed on
-# every edit - but it must say so loudly rather than exiting silently.
+# check that would otherwise be running.
+#
+# Exit 0 is still right, and PostToolUse is why: the write has already landed
+# by the time this runs, so exit 2 does not prevent a malformed canvas - it
+# only reports one. Failing closed here would report a violation the guard
+# never actually checked for, on every write, because python is missing. A
+# false report is worse than a loud stand-down, so it must say so on stderr
+# rather than exiting silently.
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PY=$(command -v python3 || command -v python || command -v py)
 if [ -z "$PY" ]; then

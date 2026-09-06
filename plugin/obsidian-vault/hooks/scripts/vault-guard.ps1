@@ -7,7 +7,12 @@
 # vault's own CLAUDE.md turns one on, so losing those is no worse than the
 # guard never being configured. The canvas shape check does NOT: checkCanvas
 # defaults ON (vault_guard.py:243), so a missing interpreter does drop one
-# check that would otherwise be running - it must say so loudly.
+# check that would otherwise be running.
+#
+# Exit 0 is still right, and PostToolUse is why: the write has already landed,
+# so exit 2 would not prevent a malformed canvas - it would only report one
+# the guard never checked for, on every write, because python is missing. A
+# false report is worse than a loud stand-down, so it says so on stderr.
 $dir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $py = (Get-Command python3, python, py -ErrorAction SilentlyContinue |
        Select-Object -First 1).Source
