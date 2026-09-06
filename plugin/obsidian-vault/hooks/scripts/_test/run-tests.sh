@@ -396,12 +396,12 @@ echo "== vault_guard.py: the DEFAULTS, under a config with no 'guard' key =="
 # Codex round 7: every case above runs under a config that writes all three
 # toggles explicitly, so flipping any ONE default in main() - checkCanvas to
 # OFF, requireFrontmatter to ON, asciiOnly to ON - passed all 57 of them. The
-# defaults are a stated promise in six places; nothing shipped could tell that
+# defaults are a stated promise in seven places; nothing shipped could tell that
 # promise from a lie. These run under $home_default, whose config has no
 # "guard" key at all, and each pins exactly one default.
 
 f=$(write_and_payload "wiki/canvases/default-broken.canvas" "{not valid json")
-check "default config: checkCanvas defaults ON, so a malformed canvas blocks" 2 \
+check "default config: checkCanvas defaults ON, so a malformed canvas is reported (exit 2)" 2 \
   "$(run_guard "$f" "$home_default_win")"
 check_stderr_has "and it is the canvas parse failure that is reported" \
   "DOES NOT PARSE" "$(guard_stderr "$f" "$home_default_win")"
