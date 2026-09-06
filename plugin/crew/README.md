@@ -21,6 +21,7 @@ Built for the awkward case: several repositories, mixed stacks, legacy code, and
 10. [The daily loop](#10-the-daily-loop)
 11. [Configuration reference](#11-configuration-reference)
 12. [Optional: Codex as reviewer](#12-optional-codex-as-reviewer-gemini-as-design-partner)
+12b. [Optional: Perplexity MCP for web-grounded QA](#12b-optional-perplexity-mcp-for-web-grounded-qa)
 13. [Optional: Jira via MCP](#13-optional-jira-via-mcp)
 13b. [Optional: ServiceDesk Plus via MCP](#13b-optional-servicedesk-plus-via-mcp)
 13c. [Optional: an Obsidian Kanban board](#13c-optional-an-obsidian-kanban-board)
@@ -941,6 +942,52 @@ bash skills/crew-setup/scripts/providers.sh
 Presence on `PATH` is not working auth, and the difference shows up later as a
 gate that never fails. Phase 2 of `/crew:init` requires one real round trip per
 configured provider before marking itself done.
+
+---
+
+## 12b. Optional: Perplexity MCP for web-grounded QA
+
+A code reviewer reads the diff. It cannot tell you that the API the diff calls
+was deprecated four months ago, that the runtime it pins went EOL last quarter,
+or that the dependency it adds has an open advisory — none of that is in the
+diff, and a model answering from memory is guessing with confidence about
+exactly the class of fact that rots fastest.
+
+`crew:qa-researcher` is that second pass. It is a **domain specialist**, opted
+into per repo:
+
+```
+/crew:pm onboard qa-researcher
+```
+
+and what justifies it is not a stack but a server: the Perplexity MCP has to be
+configured on the machine, because every finding it returns is a fetched source
+rather than a read of the code. crew does not install or configure it — set it
+up the way you set up any other MCP server, with your own API key, and confirm
+it in `/mcp`.
+
+Three things to be clear about before onboarding it:
+
+- **It complements a code reviewer; it never replaces one.** A change reviewed
+  only by `qa-researcher` has not been reviewed. It says so itself when it is
+  the only QA that ran.
+- **It is not the family-independence check either.** That guard lives in QA
+  routing and compares the reviewing model's family against the author's. A
+  clean web-grounded pass proves the diff's external claims hold, not that
+  anything independent read its logic.
+- **When the server is absent it stops and says so.** It does not fall back to
+  answering from memory — a report that quietly ran without its source is the
+  failure mode this whole role exists to close.
+
+`crew:researcher` is the neighbouring role, and the seam is the question rather
+than the tool: `researcher` answers "how does this library work" *before* the
+code is written, from Context7 and vendor docs; `qa-researcher` audits a diff
+that already exists.
+
+Not yet done, and worth saying rather than leaving to be discovered: Perplexity
+is not selectable as a `qa.provider`, so `/crew:review`'s reviewer routing and
+the self-review family guard are untouched by this. That is tracked in
+`TODO.md`.
 
 ---
 
@@ -1954,9 +2001,21 @@ a worktree each, so a half-applied one cannot land on top of the other.
 | `sharepoint-developer` | read/write | `sonnet` | — | SPFx, Graph and REST, list and library schema, permissions. Never changes a live tenant unasked |
 | `power-automate-specialist` | read/write | `sonnet` | — | Flows and the Power Platform around them. A flow with a trigger is already live, so it never edits a production flow unasked |
 | `node-developer` | read/write | `sonnet` | — | Node work where the async model, the module system or the dependency tree is the hard part |
+| `php-pro` | read/write | `sonnet` | — | PHP 8.x, Laravel and Symfony. Writes against the version `composer.json` allows, not the newest one |
+| `python-pro` | read/write | `sonnet` | — | Python 3.x — typing, the async model, packaging, and the platform-conditional behaviour a green suite hides |
+| `dotnet-core-expert` | read/write | `sonnet` | — | .NET 6+ — DI lifetimes, EF Core tracking, the async model. Reads the `TargetFramework` before it writes |
+| `dotnet-framework-4.8-expert` | read/write | `sonnet` | — | Legacy .NET on Windows — Web Forms, WCF, `web.config`, binding redirects. Fixes on 4.8; does not start a port |
+| `angular-architect` | read/write | `sonnet` | — | Angular — subscription lifetime, change detection, the injector hierarchy. Writes in the major version the repo is on |
+| `react-specialist` | read/write | `sonnet` | — | React — effect timing, re-render behaviour, the server/client boundary |
+| `rust-engineer` | read/write | `sonnet` | — | Rust — ownership, trait bounds, async runtimes. Every `unsafe` carries its safety invariant |
+| `sql-pro` | read/write | `sonnet` | — | Writes and optimises SQL, and returns the plan. `dba` reviews it; it never reviews itself |
+| `terraform-engineer` | read/write | `sonnet` | — | Writes HCL and returns a plan. Never runs `apply`, `destroy` or a state operation |
+| `network-engineer` | read/write | `sonnet` | — | Routing, DNS, firewalls, TLS, hybrid links. Names the layer that failed; never changes a live device |
+| `windows-infra-admin` | read/write | `sonnet` | — | AD, GPO, DNS and DHCP automation with an export and a rollback. Never runs the change against a live domain |
+| `qa-researcher` | read-only + Perplexity MCP | `sonnet` | — | Checks what a diff assumes about the outside world against live sources. Complements a code reviewer; never replaces one |
 | `pm` | read/write, scoped to `.crew/` and generated diagrams | `opus` | — | The standing manager: scope, onboarding, communication, ticket hygiene, and dispatch |
 
-17 agents — 14 on the tier ladder, 3 domain specialists off it. `pm` sits outside the tier ladder — it is not sized in or out by `/crew:scale`, it is the thing doing the sizing.
+29 agents — 13 on the tier ladder, 15 domain specialists off it, and `pm`. `pm` sits outside the tier ladder — it is not sized in or out by `/crew:scale`, it is the thing doing the sizing. The specialist rows above are a readable copy of `crew_state.SPECIALIST_ROLES`; `tests/test_role_ladder.py` checks that copy against the code in both directions, so a row here with no registration behind it, or an `agents/<name>.md` nobody registered, fails the suite rather than shipping as a role `/crew:pm onboard` calls unrecognised.
 
 **No tier grants a specialist, and that is deliberate.** Every ladder role closes a defect class any repo can have, so `roles_for_tier` hands out every rung up to the declared tier — which is exactly how a repo with no database ends up with `dba`. "This repo does SharePoint" is not a defect class; it is a fact about one checkout, and it is knowable on day one. Put these on the ladder and every tier-2 repo on the machine gets a SharePoint developer it will never dispatch. So they are opted into per repo with `/crew:pm onboard <role>`, justified by what is actually in the repo — a `package.json` with a server entry point, an SPFx `config/package-solution.json`, an exported flow definition — rather than by a pattern in `.crew/metrics.md`, and onboarding one leaves `tier` where it was: the crew has specialised, not grown.
 
@@ -2025,7 +2084,7 @@ pytest tests/                                     # 234 cases - the python modul
 | `validate-prompts.py` | Frontmatter parses, tools are real, referenced agents and paths exist, read-only agents hold no write tools, commands that spawn subagents are permitted to | **whether the prompts produce good work** |
 | `pytest tests/` | The python modules, and that the `.sh` and `.ps1` flavours of `context-watch`, `verify-gate` and `promote-gate` agree - including the emergency lane's expiry, which is the one property that keeps a forgotten incident from ungating a repo forever | anything on a platform the suite is not running on; the Windows-only cases skip elsewhere |
 
-That last gap is real and no test closes it. The 24 commands and 17 agents are
+That last gap is real and no test closes it. The 24 commands and 29 agents are
 instructions to a model; only a live session running a real ticket exercises
 them. Setup Phase 7 exists for exactly that, and it is the one thing here that
 has to be done by hand.

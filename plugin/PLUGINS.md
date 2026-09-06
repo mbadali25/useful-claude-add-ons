@@ -14,7 +14,7 @@ Read the **Hooks** section of any plugin before installing it. Commands and agen
 | **Version** | 0.16.22 |
 | **Install** | `claude plugin install crew@useful-claude-add-ons` |
 | **Menu item** | 21, `repo-plugins` — **off by default**. Menu item 22, `graphify`, is a separate, also-off-by-default install of the `graphify` CLI this plugin's graph feature depends on — see **The code graph** below. |
-| **Registers** | 17 agents, 24 commands, 17 skills, 20 hook entries (10 scripts × `.sh`/`.ps1`) across 5 events |
+| **Registers** | 29 agents, 24 commands, 17 skills, 20 hook entries (10 scripts × `.sh`/`.ps1`) across 5 events |
 | **Upstream guide** | [`crew/README.md`](crew/README.md) — 25 sections, the authoritative version |
 
 Built for the awkward case: several repositories, mixed stacks, legacy code, and almost no test coverage. The workflow is file-backed tickets, one implementation session, an independent reviewer, and deterministic gates that block on failure rather than offering an opinion.
@@ -172,23 +172,47 @@ Tier 0 installs with everyone; tiers 1 and 2 are added as the work demands. `/cr
 | `sharepoint-developer` | read/write | `sonnet` | — (specialist) | One scoped change against SharePoint Online — SPFx, Graph and REST, list and library schema, permissions. Never changes a live tenant unasked, never breaks permission inheritance to make something work |
 | `power-automate-specialist` | read/write | `sonnet` | — (specialist) | Power Automate flows and the Power Platform around them — triggers, connectors, connection references, environment promotion, solution packaging. A flow with a trigger is already live, so it never edits a production flow unasked |
 | `node-developer` | read/write | `sonnet` | — (specialist) | One scoped change in a Node.js codebase where the async model, the module system or the dependency tree is the hard part |
+| `php-pro` | read/write | `sonnet` | — (specialist) | PHP 8.x, Laravel and Symfony — written against the version `composer.json` allows rather than the newest release |
+| `python-pro` | read/write | `sonnet` | — (specialist) | Python 3.x — typing, the async model, packaging, and the platform-conditional behaviour a passing suite hides |
+| `dotnet-core-expert` | read/write | `sonnet` | — (specialist) | .NET 6+ — DI lifetimes, EF Core change tracking, the async model. Reads the `TargetFramework` before writing |
+| `dotnet-framework-4.8-expert` | read/write | `sonnet` | — (specialist) | Legacy .NET on Windows — Web Forms, WCF, `web.config`, binding redirects. Fixes on 4.8 rather than starting a port |
+| `angular-architect` | read/write | `sonnet` | — (specialist) | Angular — subscription lifetime, change detection, the injector hierarchy, in the major version the repo is on |
+| `react-specialist` | read/write | `sonnet` | — (specialist) | React — effect timing, re-render behaviour, hydration and the server/client boundary |
+| `rust-engineer` | read/write | `sonnet` | — (specialist) | Rust — ownership, trait bounds, async runtimes. Every `unsafe` carries its safety invariant |
+| `sql-pro` | read/write | `sonnet` | — (specialist) | Writes and optimises SQL and returns the plan that justifies it. `dba` reviews it; it never reviews itself |
+| `terraform-engineer` | read/write | `sonnet` | — (specialist) | Writes HCL and returns a plan, quoting what it replaces. Never runs `apply`, `destroy` or a state operation |
+| `network-engineer` | read/write | `sonnet` | — (specialist) | Routing, DNS, firewalls, TLS, MTU, hybrid links. Names the layer that failed; never changes a live device |
+| `windows-infra-admin` | read/write | `sonnet` | — (specialist) | AD, GPO, DNS and DHCP automation with a pre-change export, a `-WhatIf` run and a rollback. Never runs it against a live domain |
+| `qa-researcher` | read-only + Perplexity MCP | `sonnet` | — (specialist) | Checks what a diff assumes about the outside world — deprecated APIs, EOL runtimes, advisories, limits — against live sources. Complements a code reviewer, never replaces one |
 | `pm` | read/write + `Agent` | `opus` | — (outside the ladder) | The standing manager. Reads state, decides what the crew does next, and — **when `pm.authority` is `act`** — dispatches the roles that do it. Under the default `report-only` it recommends and stops. Also does the heavy analysis that would cost more context in the main session than the answer is worth: correlating defect classes across `.crew/metrics.md`, auditing codemap anchors, assembling tier-change evidence |
 
 `explorer`, `qa-reviewer`, `security`, `analyst`, `planner`, `dba`, `infrastructure-architect` and `researcher` are read-only — a restricted tool set is one of the three things that earns a role its place. `researcher`'s read-only set is the seam that keeps it out of the codebase: it holds web and Context7 tools and no `Grep`, because anything inside this repository belongs to `explorer` or `analyst`.
 
-**Three domain specialists sit off the ladder entirely**, and no tier ever
+**Fifteen domain specialists sit off the ladder entirely**, and no tier ever
 grants one. Every ladder role closes a defect class *any* repo can have, which
 is why `roles_for_tier` hands out every rung up to the declared tier — and why
 a repo with no database gets `dba`. "This repo does SharePoint" is not a defect
 class; it is a fact about one checkout, knowable before a single ticket exists.
-So `sharepoint-developer`, `power-automate-specialist` and `node-developer` are
-opted into per repo with `/crew:pm onboard <role>`, justified by the repo's own
-stack rather than by `.crew/metrics.md`, and onboarding one does not move
-`tier`. They live in `crew_state.SPECIALIST_ROLES`, which is what stops
-`/crew:upgrade` from reporting a deliberately-onboarded specialist as an
+So each of the specialist rows above is opted into per repo with `/crew:pm
+onboard <role>`, justified by the repo's own stack — the agent file names the
+file it expects to find — rather than by `.crew/metrics.md`, and onboarding one
+does not move `tier`. They live in `crew_state.SPECIALIST_ROLES`, which is what
+stops `/crew:upgrade` from reporting a deliberately-onboarded specialist as an
 unrecognised name on every run.
 
-**The three agents added in 0.15.x joined the ladder in 0.16.0**, at tier 2, alongside `dba` and `docs-writer` — each closes a defect class that only appears once a repo is doing enough of that kind of work to have the evidence. `/crew:scale` proposes them, `/crew:pm` can onboard them, and `/crew:upgrade` adds them to any config already at tier 2. The ladder itself lives in `crew_state.ROLE_TIERS`; the two markdown tables that describe it (`crew-scaling/SKILL.md` and `crew-pm/onboarding.md`) are checked against that dict by a committed test rather than parsed at runtime.
+`qa-researcher` is the one whose evidence is not a stack: what it needs present
+is the Perplexity MCP server, because every finding it returns is a fetched
+source rather than a read of the diff. It says so and stops when the server is
+absent, rather than answering from memory.
+
+Three specialists sit next to a ladder role without replacing it — `sql-pro`
+writes what `dba` reviews, `terraform-engineer` writes the HCL whose topology
+`infrastructure-architect` reviews, and `network-engineer` owns the packet path
+where `infrastructure-architect` owns AWS account and VPC structure. The
+specialist's output goes to the ladder role, never the reverse and never the
+same agent doing both.
+
+**The three agents added in 0.15.x joined the ladder in 0.16.0**, at tier 2, alongside `dba` and `docs-writer` — each closes a defect class that only appears once a repo is doing enough of that kind of work to have the evidence. `/crew:scale` proposes them, `/crew:pm` can onboard them, and `/crew:upgrade` adds them to any config already at tier 2. The ladder itself lives in `crew_state.ROLE_TIERS`; the three markdown tables that describe it (`crew-scaling/SKILL.md`, `crew-pm/onboarding.md` and crew's own `README.md`) are checked against that dict by a committed test rather than parsed at runtime. The same test checks `SPECIALIST_ROLES` against its tables, and checks every `agents/*.md` back against the code — a specialist file nobody registered would otherwise ship as a role `/crew:pm onboard` reports as unrecognised, forever.
 
 **Model tiers.** `opus` for the PM, because every dispatch decision derives from the project picture it holds and a bad assignment is inherited by every role below it. `opus` for `qa-reviewer`, because it is the same model family as the author and the tier is the only compensation left when Codex is absent. `sonnet` for the working roles: narrow brief, clean context, one deliverable. QA itself defaults to Codex — `qa.provider` ships as `auto`, so a machine with `codex` on `PATH` gets a different model family reviewing, and `/crew:review` says out loud which reviewer ran. These are tiers, not pinned versions; a plugin cannot pin a point release.
 
@@ -427,7 +451,7 @@ Four committed suites, all sabotage-tested - three under `plugin/crew/hooks/scri
 | `validate-prompts.py` | 110 | Frontmatter, tool names, referenced agents and paths, read-only agents holding no write tools |
 | `tests/` (pytest, one level up) | 324 | The Python behind the hooks: `crew_state`, `pm_brief`, `pm_pulse`, both flavours of `context-watch`, and the two gates that stand down. Run it — it is the suite that catches renderer regressions the shell suite cannot see, such as a new brief line squeezing the top finding out of a capped brief |
 
-What none of them proves is whether the prompts produce good work. The 24 commands and 17 agents are instructions to a model; only a live session on a real ticket exercises those, which is what setup phase 7 is for.
+What none of them proves is whether the prompts produce good work. The 24 commands and 29 agents are instructions to a model; only a live session on a real ticket exercises those, which is what setup phase 7 is for.
 
 ### Optional integrations
 

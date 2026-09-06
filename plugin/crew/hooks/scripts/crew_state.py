@@ -649,10 +649,29 @@ TIER_PARALLEL = 3
 # `scribe` and `researcher` had: those were general-purpose roles that had
 # simply been forgotten off the ladder, and being unreachable was the defect.
 # Here it is the design, which is why a test asserts it rather than a comment.
+#
+# Two kinds of justification live in this set. Most entries are a stack, and
+# the agent file names the file that proves it -- a `composer.json` for
+# `php-pro`, a `*.tf` for `terraform-engineer`. `qa-researcher` is the other
+# kind: what it needs present is the Perplexity MCP server, not a language.
+# Both are facts about one checkout rather than defect classes every repo can
+# have, which is the property that keeps them all off the ladder.
 SPECIALIST_ROLES = frozenset({
     "sharepoint-developer",
     "power-automate-specialist",
     "node-developer",
+    "php-pro",
+    "python-pro",
+    "dotnet-core-expert",
+    "dotnet-framework-4.8-expert",
+    "angular-architect",
+    "react-specialist",
+    "rust-engineer",
+    "sql-pro",
+    "terraform-engineer",
+    "network-engineer",
+    "windows-infra-admin",
+    "qa-researcher",
 })
 
 
