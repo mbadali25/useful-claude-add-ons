@@ -178,7 +178,22 @@ class OllamaClient:
                 "That is a malformed reply, not an empty one. Check `ollama ps` and the "
                 "server log; a model that loads but cannot run answers this way."
             )
-        return str(data["response"])
+        # The key being present is not the same as an answer being there. A
+        # `null`, a list or an object all satisfy the check above and then
+        # `str()` turns them into "None" or a Python repr, printed as though a
+        # model had said it - the same failure this guard was added to close,
+        # one rung further in. `""` stays valid: an empty string is a real
+        # answer the server chose to send.
+        answer = data["response"]
+        if not isinstance(answer, str):
+            raise OllamaError(
+                f"Ollama returned HTTP 200 from /api/generate using '{model}' with a "
+                f"'response' that is {type(answer).__name__}, not a string "
+                f"({answer!r}).\n"
+                "That is a malformed reply. Rendering it would print a Python repr as "
+                "though the model had said it."
+            )
+        return answer
 
     def list_models(self, timeout: float = DEFAULT_CONNECT_TIMEOUT) -> list[str]:
         """Model names the server already has. Raises the same errors as the rest."""

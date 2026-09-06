@@ -759,6 +759,19 @@ def test_read_prompt_on_a_bare_terminal_says_what_to_do_instead_of_hanging(monke
     assert "no prompt" in str(excinfo.value)
 
 
+@pytest.mark.parametrize("empty", ["", "   ", "\n"])
+def test_read_prompt_rejects_an_empty_argument_the_same_way_as_an_empty_pipe(empty):
+    """`localgpu prompt ""` is the same nothing as an empty pipe, not a request.
+
+    Accepting it here while rejecting it on stdin sent one of the two straight
+    to /api/generate, paying a model load to answer nothing.
+    """
+    with pytest.raises(SystemExit) as excinfo:
+        cli._read_prompt(empty)
+
+    assert "empty" in str(excinfo.value)
+
+
 def test_read_prompt_rejects_an_empty_pipe(monkeypatch):
     monkeypatch.setattr(cli.sys, "stdin", io.StringIO("   \n"))
 

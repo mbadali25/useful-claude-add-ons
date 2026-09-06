@@ -185,6 +185,24 @@ def test_a_200_with_no_response_field_is_an_error_not_an_empty_answer(stub):
     assert "done, model" in message, "the message must name what DID come back"
 
 
+@pytest.mark.parametrize("bad", [None, ["a"], {"text": "a"}, 7])
+def test_a_response_that_is_not_a_string_is_an_error_not_a_repr(stub, bad):
+    """One rung further in than the test above, which is where guard fixes fail.
+
+    A present-but-null `response` satisfies the key check and `str()` then turns
+    it into the four characters "None" - printed as a successful model answer.
+    A list or an object becomes a Python repr with the same authority. The key
+    being there is not the same as an answer being there.
+    """
+    stub.reply("/api/generate", 200, {"done": True, "response": bad})
+    with pytest.raises(OllamaError) as caught:
+        OllamaClient(stub.url).generate("q", "chat-model")
+
+    message = str(caught.value)
+    assert type(bad).__name__ in message, "the message must name what came back"
+    assert "chat-model" in message
+
+
 def test_a_genuinely_empty_response_is_still_returned(stub):
     """The other side of it: an empty answer the server actually sent is data,
     not an error. Guarding the missing key must not reject a present one."""

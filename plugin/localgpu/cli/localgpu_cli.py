@@ -199,6 +199,14 @@ def _read_prompt(text: str | None) -> str:
     output while the user wonders whether the model is loading.
     """
     if text is not None and text != "-":
+        # An empty argument is the same nothing an empty pipe is, and it must
+        # be refused the same way. `localgpu prompt ""` used to reach
+        # /api/generate and bill a model load to answer nothing, while
+        # `printf " " | localgpu prompt -` was rejected two lines below - the
+        # same input treated as a mistake through one door and a request
+        # through the other.
+        if not text.strip():
+            raise SystemExit("localgpu: the prompt was empty.")
         return text
     if text is None and sys.stdin.isatty():
         raise SystemExit(

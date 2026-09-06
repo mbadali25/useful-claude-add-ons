@@ -150,6 +150,23 @@ def test_metrics_blank_ticket_cells_do_not_pool_into_one_ticket(tmp_path):
     assert got["findings"] == 4, "the findings themselves must still count"
 
 
+def test_metrics_a_ticket_named_like_the_blank_sentinel_still_stands_alone(tmp_path):
+    """The sentinel for "no identity" must be unreachable from the input.
+
+    While the sentinel was a string (`"\\x00unlabelled:0"`), a row carrying that
+    exact text as its ticket - however unlikely a name - pooled with the first
+    blank row, and two tickets read as one. That is the same collapse the blank
+    handling exists to prevent, arriving through the fix rather than the bug.
+    A tuple key cannot collide: `cells[1]` is always a str.
+    """
+    root = crew_fixtures.make_repo(
+        tmp_path, metrics=[("", 1, 0), ("\x00unlabelled:0", 2, 0)]
+    )
+    got = crew_state.read_metrics(str(root))
+    assert got["tickets"] == 2, "a named ticket must never pool with a blank one"
+    assert got["findings"] == 3
+
+
 def test_metrics_window_keeps_only_the_last_n(tmp_path):
     rows = [(f"T-{i}", 5, 5) for i in range(12)] + [("T-last", 0, 0)]
     root = crew_fixtures.make_repo(tmp_path, metrics=rows)

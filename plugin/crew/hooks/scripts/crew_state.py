@@ -199,7 +199,15 @@ def read_metrics(root, window=METRICS_WINDOW):
         # single safe-looking value, which is the bug this function already had
         # once. Each blank row is its own ticket instead: its BLOCK/FIX numbers
         # are real findings and still count, but they cannot pool.
-        ticket = cells[1] or f"\x00unlabelled:{len(by_ticket)}"
+        #
+        # The sentinel is a TUPLE, not a string. `cells[1]` is always a str, so
+        # no row this parser can read - however malformed, however adversarial -
+        # can ever collide with a key of this type. A string sentinel, however
+        # improbable its prefix, is a value the input could in principle carry,
+        # and "improbable" is how the collapse being guarded against gets in.
+        # Nothing outside this function sees these keys: only `.values()` is
+        # read below.
+        ticket = cells[1] or ("\x00unlabelled", len(by_ticket))
         total = by_ticket.pop(ticket, 0) + block + fix
         by_ticket[ticket] = total
 
