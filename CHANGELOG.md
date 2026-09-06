@@ -4,6 +4,83 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Fixed
+
+- **crew 0.16.23 -> 0.16.25: the sabotage harness can no longer report PASS
+  over a tree it corrupted.** `tests/sabotage.py` mutates real source in place,
+  and `d362a2bd` shipped `crew_state.py` with one of those mutations still in
+  it — a killed run skipped the `finally`, the next run's `shutil.copy` put the
+  mutated file over the good backup, and the suite printed PASS because nothing
+  compared the restored bytes to anything. Found by a human reading a diff,
+  which is the one thing a regression suite exists to stop being the only
+  detector.
+
+  Five guards, in the order the defects bite. `main` **refuses to start** when
+  a `<file>.bak` is present — that file is the only surviving original, so the
+  run that would destroy it stops, names it, and prints the `mv` that undoes
+  the mutation still in the tree. `install_exit_handlers` restores on `atexit`
+  and on SIGTERM/SIGINT/SIGBREAK/SIGHUP, each looked up by name because
+  SIGBREAK is Windows-only and SIGHUP POSIX-only; `finally` unwinds on an
+  exception and on KeyboardInterrupt but not on the external timeout that
+  actually kills these runs — and a restore that *fails* there stays registered
+  so the atexit pass retries it, rather than being cleared and forgotten.
+  `apply_mutation` raises rather than copying over an existing backup, and
+  writes each backup under `.bak.partial` before renaming it into place, so a
+  `.bak` is never half-written: the startup guard trusts that name as the only
+  good copy, and a partial one would turn its `mv` instruction into the thing
+  that destroys an intact source. And a sha256 per target, taken before the
+  first mutation, is compared after **every** restore — on the loop's path, the
+  signal path and the atexit path alike, since verifying one and claiming all
+  four is this repo's own signature defect. A mismatch prints both digests and
+  fails the suite, so the PASS line can no longer outrun the tree it describes.
+  SIGKILL stays uncatchable; the startup refusal is what covers it, on the next
+  run.
+
+  `*.bak` and `*.bak.partial` are now in `.gitignore` — the existing `env.bak/`
+  and `venv.bak/` entries are directories and never matched a backup file,
+  which is how one got committed. A *tracked* `.bak` is the damaging case now
+  that the harness refuses to start when it sees one: it would gate the suite
+  off permanently on every clone. Ignoring does not preserve any `git status`
+  signal (ignored files are hidden from it); the filesystem check at startup is
+  what replaces that, and `git status --ignored` shows one by eye.
+
+  16 tests in `tests/test_sabotage_harness.py`, none of which touch a real
+  source file, plus ten independent mutations of the new guards themselves,
+  10/10 red. That independent run earned its keep immediately: it caught one of
+  these new tests being **vacuous** — it asserted a `.bak.partial` was gone
+  after the run, which `apply_mutation` makes true whether or not the sweep
+  that removes it exists.
+
+- **`mcp-servers`: a per-package test run can no longer exercise last build's
+  code.** Every package points `main`/`exports` — and its tests — at `dist/`,
+  so editing `packages/core/src` and running `npm test -w packages/graph`
+  skipped the root build and tested a stale core, invisibly: the consumer's own
+  build was current and the behaviour under test was not. `scripts/check-dist-fresh.mjs`
+  is now each package's `pretest`; it compares the newest `.ts` under `src/`
+  and `test/` against the newest `.js` under `dist/`, and refuses the run while
+  naming the directory that moved. 14 tests of its own, wired into the root
+  `npm test`.
+
+  A consumer is checked by checking **core itself, recursively** — not by
+  comparing the consumer's `dist` against `core/src`. The distinction is the
+  whole point: a consumer imports `core/dist` at runtime, so a consumer
+  rebuilt after a core source edit has a `dist` newer than everything and still
+  loads stale core. Two other fail-open shapes went with it. An unreadable
+  source directory now raises instead of contributing mtime `0`, which compares
+  older than everything and reads as fresh — the guard passing on a tree it
+  could not see. And equal timestamps are **stale**, not fresh: measured on
+  this repo, a real `npm run build` leaves every package's newest `dist/*.js`
+  strictly newer than its newest `src/*.ts` (11.9s for core) with
+  sub-millisecond mtime fractions, because tsc reads before it writes — so
+  accepting equal only ever admits a genuine edit landing in the same coarse
+  tick as an older build.
+
+  The TODO entry that opened this asked for "a CI check that rebuilds and
+  diffs". That was aimed at a hole that does not exist — `dist/` is untracked,
+  and the root `test` script already builds core first, so CI cannot test stale
+  JS. The entry was rewritten to say what is actually true rather than ticked
+  against its original wording.
+
 ### Added
 
 - **crew 0.16.22 -> 0.16.23: twelve domain specialists, and the drift check the

@@ -2092,6 +2092,25 @@ has to be done by hand.
 All four are sabotage-tested - reintroduce a bug each is meant to catch and it
 goes red. If you add a rule, add the case that proves it, then break it once.
 
+`tests/sabotage.py` is what does that, and it edits real source in place, so
+putting the file back is as load-bearing as the mutation. A release once
+shipped with a live mutation still in `crew_state.py`: a killed run skipped the
+`finally`, the next run copied the mutated file over the good backup, and the
+suite printed PASS because nothing compared the restored bytes to anything.
+Four things prevent that now. It **refuses to start** when a `<file>.bak` is
+present - that backup is the only good copy, and it prints the `mv` line that
+undoes the mutation still sitting in your tree. It restores on `atexit` and on
+SIGTERM/SIGINT rather than on `finally` alone, since an external timeout kills
+without unwinding, and a restore that *fails* on that path stays registered so
+the next pass retries it. It writes each backup under `.bak.partial` and
+renames it into place, so a `.bak` is never half-written — the startup refusal
+treats one as the only good copy and tells you to move it over the target, so a
+partial would turn that instruction into the thing that destroys your source.
+And every restore, on all three paths, is checked against a sha256 taken before
+the first mutation, so a restore that silently did nothing fails the suite
+instead of passing quietly. SIGKILL is still uncatchable by anything, which is
+why the startup refusal exists.
+
 `run-tests.sh` is 77 cases: 20 the guard must block, 14 it must allow, 12 for the
 promotion gate, 15 for the emergency lane (including that the guard still blocks
 during one, and that an expired incident gates again), plus the verify gate's

@@ -11,6 +11,19 @@ claim "this is tested" is checked here rather than asserted.
 A mutation whose anchor no longer matches is a FAILURE, not a skip: the anchor
 drifting is how this suite would quietly stop testing anything.
 
+It edits real source in place, so putting the file back is as load-bearing as
+the mutation. `d362a2bd` shipped `crew_state.py` with a live mutation still in
+it -- a killed run had skipped the `finally`, the next run copied the mutated
+file over the good backup, and nothing compared the restored bytes to anything,
+so the suite reported PASS over a corrupted tree. Four things prevent that now:
+`main` refuses to start when a `.bak` is present, `install_exit_handlers`
+restores on SIGTERM and on interpreter exit rather than on `finally` alone,
+`apply_mutation` writes its backup under a second name and renames it into
+place so a `.bak` is never partial, and every restore -- on the loop's path,
+the signal path and the atexit path alike -- is verified against a sha256
+taken before the first mutation. SIGKILL is still uncatchable; the startup
+refusal is what covers it, on the next run.
+
 Which is why a mutation whose CODE is deliberately deleted must be deleted
 here too, with the reason written down -- never re-anchored onto whatever line
 is nearest. Five went when the dispatch record stopped being a single shared
@@ -18,9 +31,12 @@ file: they proved things about a lock, a retry loop and a self-verifying write
 that an append-only directory cannot get wrong, and a suite still listing them
 would have read as concurrency coverage while testing nothing.
 """
+import atexit
+import hashlib
 import io
 import os
 import shutil
+import signal
 import subprocess
 import sys
 
@@ -984,6 +1000,128 @@ def write(target, text):
         handle.write(text)
 
 
+def digest(target):
+    """sha256 of the bytes on disk.
+
+    Taken once per target before the first mutation and compared after every
+    restore. Without it `restore` is assumed rather than checked, and a restore
+    that silently did nothing is indistinguishable from one that worked -- the
+    suite still prints PASS because `ok` tracks only whether each mutation went
+    red. That is this repo's recurring shape: the signal and its absence look
+    identical.
+    """
+    sha = hashlib.sha256()
+    with open(target, "rb") as handle:
+        for chunk in iter(lambda: handle.read(65536), b""):
+            sha.update(chunk)
+    return sha.hexdigest()
+
+
+def stale_backups(targets):
+    """Targets that already have a `.bak` beside them, before anything runs.
+
+    A `.bak` present at startup means a previous run died between
+    `apply_mutation` and `restore` -- so the file in the tree is MUTATED and
+    the `.bak` is the only good copy. Running anyway would `shutil.copy` the
+    mutated file over that backup and destroy the original permanently, which
+    is the exact defect class this suite's own mutation table flags for the
+    code under test.
+    """
+    return [t for t in sorted(set(targets)) if os.path.exists(t + ".bak")]
+
+
+# Targets with a mutation applied RIGHT NOW. `finally` unwinds on an exception
+# and on KeyboardInterrupt, but a SIGTERM from an external timeout -- how this
+# script is actually killed in practice -- terminates without unwinding, so
+# neither the `finally` nor anything after it runs. This set plus the handlers
+# below are what put the file back on those paths. SIGKILL and a hard process
+# kill still cannot be caught by anything; `stale_backups` above is what covers
+# that case on the NEXT run, which is why it refuses to start rather than
+# repairing silently.
+_LIVE = set()
+
+# target -> sha256 of its bytes before the first mutation. Module state rather
+# than a local in `main` because the signal and atexit paths restore too, and a
+# restore nobody verified is the defect this whole section exists to close --
+# verifying only on the path that happens to be convenient would leave the
+# claim "every restore is verified" true of one path and false of three.
+_PRISTINE = {}
+
+
+def _verify(target):
+    """Print and return False when `target` is not what it was. Never raises.
+
+    Called from signal and atexit context, where an exception would replace
+    the reason the process is exiting with a traceback about the cleanup.
+    """
+    expected = _PRISTINE.get(target)
+    if expected is None:
+        return True  # Nothing was recorded for it, so there is nothing to claim.
+    try:
+        found = digest(target)
+    except OSError as err:
+        print(f"WARNING: could not verify {target}: {err}")
+        return False
+    if found != expected:
+        print(f"RESTORE FAILED -- source left modified\n  {target}\n"
+              f"  expected {expected}\n  found    {found}")
+        return False
+    return True
+
+
+def _restore_all(*_args):
+    """Restore every live target, verify each, and keep the ones that failed.
+
+    `_LIVE` is NOT cleared wholesale. `restore` discards a target only after
+    its move succeeded, so a failure leaves the name in the set and the atexit
+    pass tries again -- which is what the comment in `restore` promises. An
+    unconditional clear here would silently make that promise false, and the
+    only symptom would be a file left mutated after a signal.
+    """
+    ok = True
+    for target in sorted(_LIVE):
+        try:
+            restore(target)
+        except OSError as err:
+            print(f"WARNING: could not restore {target}: {err}")
+            ok = False
+            continue
+        if not _verify(target):
+            ok = False
+    return ok
+
+
+def _on_signal(signum, _frame):
+    _restore_all()
+    # SystemExit unwinds, so atexit still runs -- and every target restored
+    # here is already out of `_LIVE`, which is why restoring twice is safe and
+    # why one that FAILED here gets a second attempt there. Exiting 128+signum
+    # is the shell convention for "killed by this signal" and keeps the
+    # caller's timeout distinguishable from a suite failure.
+    sys.exit(128 + signum)
+
+
+def install_exit_handlers():
+    """Restore on every exit path this process can observe.
+
+    SIGBREAK exists only on Windows and SIGHUP only on POSIX, so both are
+    looked up by name rather than referenced -- an unguarded `signal.SIGBREAK`
+    is an AttributeError on Linux, which would take the whole suite down at
+    import time on the platform CI runs.
+    """
+    atexit.register(_restore_all)
+    for name in ("SIGTERM", "SIGINT", "SIGBREAK", "SIGHUP"):
+        num = getattr(signal, name, None)
+        if num is None:
+            continue
+        try:
+            signal.signal(num, _on_signal)
+        except (ValueError, OSError, RuntimeError):
+            # Not the main thread, or a platform that refuses this signal.
+            # A handler crew could not install is not a reason to skip the run.
+            pass
+
+
 def apply_mutation(target, find, replace):
     """Patch `target`, backing it up. False when the anchor is not unique.
 
@@ -997,23 +1135,44 @@ def apply_mutation(target, find, replace):
     if text.count(find) != 1:
         return False
 
-    # The copy and the write fail in ways that need opposite responses, so
-    # they cannot share a handler. `shutil.copy` never modifies the SOURCE:
-    # if it fails the original is still intact and the `.bak` is the damaged
+    # Never copy over an existing backup. `main` refuses to start when one is
+    # present, so reaching here means a restore failed mid-run; overwriting
+    # would replace the last good copy with the already-mutated file.
+    if os.path.exists(target + ".bak"):
+        raise RuntimeError(
+            f"{target}.bak already exists -- the previous mutation was not "
+            f"restored. Refusing to overwrite the only good copy.")
+
+    # The backup is built beside the target and RENAMED into place, so
+    # `<target>.bak` never exists in a partial state. That matters because the
+    # startup guard treats any `.bak` it finds as the only good copy and tells
+    # the user to move it over the target: a half-written backup left by a
+    # signal during a plain `shutil.copy` would make that instruction destroy
+    # the intact source. `os.replace` is atomic on both platforms.
+    #
+    # The copy and the write still fail in ways that need opposite responses,
+    # so they cannot share a handler. `shutil.copy` never modifies the SOURCE:
+    # if it fails the original is intact and the partial copy is the damaged
     # one, so restoring from it is precisely what would corrupt the file this
-    # is trying to protect. Discard the partial backup instead.
+    # is trying to protect. Discard the partial instead.
+    partial = target + ".bak.partial"
     try:
-        shutil.copy(target, target + ".bak")
+        shutil.copy(target, partial)
+        os.replace(partial, target + ".bak")
     except BaseException:
         try:
-            if os.path.exists(target + ".bak"):
-                os.remove(target + ".bak")
+            if os.path.exists(partial):
+                os.remove(partial)
         except OSError as cleanup_error:
-            print(f"WARNING: stray backup at {target}.bak: {cleanup_error}")
+            print(f"WARNING: stray partial backup at {partial}: {cleanup_error}")
         raise
 
     # Past this point the backup is known complete, so a failed write is the
     # case restoring exists for.
+    # Registered BEFORE the write: a signal arriving mid-write must still find
+    # this target in `_LIVE`, because the backup is already complete and the
+    # file on disk is already the thing that needs putting back.
+    _LIVE.add(target)
     try:
         write(target, text.replace(find, replace, 1))
     except BaseException:
@@ -1033,12 +1192,53 @@ def restore(target):
     backup = target + ".bak"
     if os.path.exists(backup):
         shutil.move(backup, target)
+    # Discarded only after the move succeeded. A move that raised leaves the
+    # target registered, so the atexit pass tries again rather than treating a
+    # failed restore as a finished one.
+    _LIVE.discard(target)
 
 
 def main():
     """Run every mutation; return 0 only when all of them go red FOR REAL --
     a genuine assertion failure in the named test, not merely a non-zero
     exit code (finding 13)."""
+    targets = [m[1] for m in MUTATIONS]
+
+    # Before anything is touched. A stale `.bak` means the tree already holds
+    # a mutation from a killed run, and the next `shutil.copy` would destroy
+    # the only original. Refuse, name the files, and say how to recover.
+    stale = stale_backups(targets)
+    if stale:
+        print("REFUSING TO RUN -- a previous run left a backup behind, so the "
+              "file in the tree is the MUTATED one:")
+        for target in stale:
+            print(f"  {target}.bak")
+        print("\nRecover by moving each backup over its target, which undoes "
+              "the mutation:")
+        for target in stale:
+            print(f"  mv {target}.bak {target}")
+        print("Then re-run. (`git checkout -- <target>` works too, and also "
+              "discards any real edit you had in that file.)")
+        return 2
+
+    # A `.bak.partial` is a backup that was interrupted before it was renamed
+    # into place. The target is intact in that case -- that is the point of
+    # building it under a second name -- so it is litter, not evidence, and
+    # removing it is safe where removing a `.bak` never is.
+    for target in sorted(set(targets)):
+        partial = target + ".bak.partial"
+        if os.path.exists(partial):
+            print(f"note: discarding an interrupted backup at {partial} "
+                  f"(the target was never modified)")
+            os.remove(partial)
+
+    install_exit_handlers()
+    # The answer key for every restore, on every path. Module state, because
+    # the signal and atexit handlers verify too. Taken here, once, from files
+    # known unmutated because of the guard above.
+    _PRISTINE.clear()
+    _PRISTINE.update({target: digest(target) for target in sorted(set(targets))})
+
     ok = True
     for label, target, find, replace, test in MUTATIONS:
         if not apply_mutation(target, find, replace):
@@ -1051,6 +1251,9 @@ def main():
             code, _ = run_test(test)
         finally:
             restore(target)
+            if not _verify(target):
+                print(f"{'  ^ above, restoring for':40} {label}")
+                ok = False
         if code == 0:
             print(f"{'STILL GREEN -- TEST IS VACUOUS':40} {label}")
             ok = False

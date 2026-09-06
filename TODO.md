@@ -110,17 +110,51 @@ shipping it: it has no regression test, and `CLAUDE.md` requires one for a
 hook that can block. `git stash pop` it, add the must-block/must-allow cases,
 bump `obsidian-vault` to 0.3.1.
 
-### 5. `core` consumers import the built artifact; `dist/` staleness is unchecked
+### 5. `core` consumers import the built artifact; `dist/` staleness — CLOSED 2026-09-06
 
-`mcp-servers/packages/core/package.json:11-14` points `main`, `types` and
-`exports` at `./dist/src/index.js`. Editing `src/*.ts` without `npm run build`
-leaves `graph`, `intune`, `o365-admin` and `o365-user` on stale compiled JS,
-with nothing in the edit path warning.
+**The premise this was opened on was wrong in the direction that matters, and
+the fix is narrower than the entry asked for.** Rewritten rather than ticked,
+because a closure citing the wrong hole sends the next reader hunting a CI
+problem that does not exist.
 
-Every `src` file currently has a matching `.js`/`.d.ts`/`.map`, so it was built
-at some commit — but no timestamp or hash comparison was done. **Inferred risk,
-not confirmed staleness.** A CI check that rebuilds and diffs would settle it
-permanently.
+What is true: `mcp-servers/packages/core/package.json:11-14` does point `main`,
+`types` and `exports` at `./dist/src/index.js`, and the tests import `dist/`
+too, so compiled output really is what runs.
+
+What is not: **`dist/` is untracked** — `git ls-files mcp-servers/packages/core/dist`
+returns nothing — so "a CI check that rebuilds and diffs" has nothing to diff
+against. And CI cannot test stale JS in the first place: `mcp-servers/package.json`'s
+`test` is `npm run build && ...`, whose `build` is `npm run build -w packages/core
+&& npm run build --workspaces`, so core is rebuilt first on every run.
+
+The real hole is one invocation wide: `npm test -w packages/graph`, run after
+editing `packages/core/src`, skips the root build and tests last build's core.
+The consumer cannot see it — its own `dist` is current, its own tests compile,
+and the behaviour under test is stale.
+
+Closed by `mcp-servers/scripts/check-dist-fresh.mjs`, wired as every package's
+`pretest`: newest `.ts` under `src/` and `test/` against newest `.js` under
+`dist/`. A consumer is checked by checking **core itself, recursively** —
+comparing the consumer's `dist` to `core/src` was the first shape and it is
+wrong in the fail-open direction, since a consumer rebuilt after a core edit
+then has the newest `dist` in the tree and still loads a stale `core/dist` at
+runtime.
+
+Two more fail-open shapes closed with it. An unreadable source directory raises
+rather than contributing mtime `0` — `0` compares older than everything and
+reads as fresh, so the guard would pass having seen nothing. And equal
+timestamps are **stale**: measured on this repo, `npm run build` leaves every
+package's newest `dist/*.js` strictly newer than its newest `src/*.ts` (11.9s
+for core) with sub-millisecond mtime fractions, because tsc reads before it
+writes — so accepting equal only ever admits a real edit landing in the same
+coarse tick as an older build.
+
+14 tests at `mcp-servers/scripts/_test/check-dist-fresh.test.mjs`, run by
+`npm run test:scripts` which the root `npm test` now includes. Verified by
+execution, not by reasoning: `touch packages/core/src/index.ts` then `npm test
+-w packages/graph` exits 1 with `STALE BUILD -- @badali404/mcp-ms-core:
+compiled output is not newer than core/src -- and @badali404/mcp-msgraph
+imports it at runtime`, and passes again after `npm run build`.
 
 ### 6. `check_skill_manifests` is unread
 
@@ -130,12 +164,24 @@ fields it cross-checks against the marketplace entry is unknown, so
 `.crew/codemap/skills.md` records the four-place registration rule without
 being able to say what this function adds to it.
 
-### 7. The install-scripts matched-pair rule has no identified enforcer
+### 7. The install-scripts matched-pair rule has an enforcer — CLOSED 2026-09-06
 
-`CLAUDE.md` requires `install-prerequisites.sh` and `.ps1` to keep identical
-menu keys, order and default flags — otherwise `--select 3,7` means different
-things on Windows and Linux. `scripts/check-marketplace.py` is said to enforce
-it; the specific check was not located. Either find it and cite it, or write it.
+Found, not written. `scripts/check-marketplace.py:194` `check_menu_parity`
+parses `MENU_KEYS` out of the `.sh` and `Key = '...'` out of the `.ps1`'s
+`$script:Catalog`, and fails when the two lists differ **as lists** — so a row
+present in one, or the same rows in a different order, is caught, which is what
+makes `--select 3,7` mean the same thing on both platforms. The same function
+compares `MENU_DEFAULT` against the `.ps1`'s `Default = $true|$false` and names
+each row that is ticked by default in one script and not the other, which is
+the "default flags" half of CLAUDE.md's rule.
+
+`scripts/check-marketplace.py:233` `check_group_parity` does the same for all
+four sub-pickers (`own-skills`, `team`, `community`, `repo-plugins`), and also
+fails an empty group — a sub-picker that would render nothing.
+
+Nothing to build. The entry was opened because the check had not been located,
+which is a different finding from it being absent, and the two are worth
+keeping distinguishable.
 
 ## Deferred by design, not oversight
 
@@ -417,13 +463,39 @@ worse than an error, because it reads as though it is working.
 `plugin/localgpu/commands/ask.md:3` carries a correct `argument-hint` already —
 the metadata is right, nothing consumes it on the empty path.
 
-## `resolve_role` accepts any provider name, and the review gate fails open
+## `resolve_role` accepted any provider name, and the review gate failed open — CLOSED 2026-09-06
 
-**Security. The gate this repo puts in front of SQL against deployed databases
-and authorization DENY paths can be disabled by two individually-valid config
-edits, with no error and no announcement.**
+**Fixed before this closure was written, not by it.** The analysis below is
+kept verbatim because it is the record of what the hole was; what follows
+immediately is where each half of it is now closed, cited so the claim can be
+re-checked rather than believed.
 
-Verified by execution at `1394aab6`, not inferred.
+- `plugin/crew/hooks/scripts/crew_state.py` defines `QA_PROVIDERS` and bars an
+  unrecognised QA provider as **item 0 of `resolve_role`, before the family
+  check is reached** — with the reason this entry asked for stated in the
+  announce line: an unrecognised name "is not a reviewer at all, and
+  `family() is None` for it must never read as no conflict."
+- The write side refuses too: `crew_config.validate_providers` rejects a
+  provider outside the set and **names the offending key**, covering
+  `qa.provider`, `qa.order` and `qa.roles.<role>.provider` — the two holes the
+  table below called out. `crew_config.order_candidates` marks such a row
+  ineligible with the same reason, so `auto` cannot walk into one either.
+- Regression coverage exists on both sides, in
+  `plugin/crew/tests/test_provider_table.py`: must-block for a pinned
+  `localgpu` reviewer, for an unpinned one (the worse case — `family` is
+  `None`), and for a name crew has never heard of; refusal-with-key-named for
+  each of the three config shapes; must-allow for `auto`, which is not in
+  `QA_PROVIDERS` and must still resolve.
+
+One thing deliberately left as it is: the bar sets `barred: True` and appends
+to `announce` but leaves `barredBy: None`. That is not an oversight —
+`crew_config.py:1041` documents it and `:1073` branches on it, because
+`barredBy` names a *family* and an unrecognised provider has none. "BARRED —
+same `None` family as the author" would be a worse line than the one that
+actually prints.
+
+Verified by execution at `1394aab6`, not inferred — that ref is the state the
+entry describes, which predates the fix.
 
 ### No code validates a provider name
 
@@ -504,7 +576,39 @@ conflict"; unknown is not the same as independent.
 Needs must-block / must-allow regression cases and sabotage testing per
 CLAUDE.md, since it governs a gate that can block.
 
-## `sabotage.py` can leave a live mutation in the tree and still report PASS
+**Taken, in full: barred rather than merely announced.** See the closure at the
+top of this entry for where each part lives.
+
+## `sabotage.py` could leave a live mutation in the tree and still report PASS — CLOSED 2026-09-06
+
+Fixed in crew 0.16.24. All four defects below are closed; the analysis is kept
+because it is what the fix was built against, and because defect 1's residue is
+permanent and needs to stay visible.
+
+| Defect | Where it is closed now |
+|---|---|
+| 1. `finally` does not survive a kill | `install_exit_handlers` registers `atexit` plus SIGTERM/SIGINT/SIGBREAK/SIGHUP, each looked up with `getattr(signal, name, None)` because SIGBREAK is Windows-only and SIGHUP POSIX-only. A restore that FAILS on that path stays in `_LIVE` so the atexit pass retries it. **SIGKILL is still uncatchable and always will be** — defect 2's guard is what covers it, on the next run. |
+| 2. The next run destroys the only good copy | `main` calls `stale_backups` before touching anything, prints the `mv <target>.bak <target>` line that undoes the mutation still in the tree, and exits 2 without mutating. `apply_mutation` raises rather than copying over an existing `.bak`, and builds each backup as `<target>.bak.partial` before `os.replace`-ing it into position — so a `.bak` is complete or absent, never half-written. That last part is not decoration: the startup guard tells the user to move a `.bak` over the target, so a partial one would make that instruction the thing that destroys an intact source. |
+| 3. The restore is never verified | A sha256 per target is taken before the first mutation, held in module state, and compared after every restore **on all three paths** — the loop's `finally`, the signal handler and atexit. A mismatch prints both digests and fails the suite, so `PASS` can no longer be printed over a modified tree. Verifying only the loop's path while claiming all three would be the same defect wearing the fix's label. |
+| 4. `crew_state.py.bak` is tracked | It is no longer tracked (`git ls-files '*.bak'` is empty), and `*.bak` plus `*.bak.partial` are in `.gitignore` — the existing `env.bak/`/`venv.bak/` entries are directories and never matched a file. The reason recorded there is that a **tracked** `.bak` now gates the suite off on every clone, since the harness refuses to start when it sees one. Ignoring does not preserve a `git status` signal; ignored files are hidden from it, and the filesystem check at startup is what replaces that. |
+
+Coverage: `plugin/crew/tests/test_sabotage_harness.py`, 16 tests, none of which
+touch a real source file — a regression suite for a harness that corrupts files
+must not be able to corrupt what it is testing against. Sabotage-tested
+independently: ten mutations, one per guard, 10/10 red.
+
+That independent run paid for itself on the first pass by catching one of these
+new tests being **vacuous**: it asserted a `.bak.partial` was gone after the
+run, which `apply_mutation` makes true whether or not the sweep that removes it
+exists. It now observes the state at the moment the first mutation is applied,
+which only the sweep can produce. Worth recording because it is the exact thing
+this suite exists to find, found in the suite's own coverage.
+
+**Not taken: mutating a copy under a temp tree.** It removes the whole class,
+and it is the right answer eventually. It is not this change because `run_test`
+invokes pytest against the real checkout, so relocating the mutation means
+relocating the suite it is trying to make go red — a bigger change than the
+four guards above, and one that would land untested alongside them.
 
 Landed in `d362a2bd`: `plugin/crew/hooks/scripts/crew_state.py:1191` shipped as
 `if False:

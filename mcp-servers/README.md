@@ -452,6 +452,30 @@ npm test
 
 This builds every package (tests run against compiled `dist/test/*.test.js`, using
 Node's built-in test runner -- no extra test framework dependency) and runs all suites.
+
+Because the tests import `dist/` rather than `src/`, running one package's suite on its
+own -- `npm test -w packages/graph` -- skips that root build and would silently exercise
+the PREVIOUS compile, including a stale `packages/core` that the consumer cannot see is
+stale. Every package therefore has a `pretest` that runs
+`scripts/check-dist-fresh.mjs`: it compares the newest `.ts` under the package's `src/`
+and `test/` against the newest `.js` under its `dist/`, and refuses to run the suite
+when the build is behind, naming the directory that moved.
+
+A consumer is checked by checking **`core` itself, recursively** — not by comparing the
+consumer's `dist` against `core/src`. A consumer imports `core/dist` at runtime, so what
+has to be current is core's own build against core's own sources; comparing the
+consumer's output instead passes the moment the consumer is rebuilt, while `core/dist`
+sits untouched and stale.
+
+Equal timestamps count as **stale**. Measured rather than argued: after `npm run build`,
+every package's newest `dist/*.js` here is strictly newer than its newest `src/*.ts` —
+11.9 seconds for `core` — and mtimes carry sub-millisecond fractions. tsc reads its
+sources before it writes its output, so that ordering is structural, and accepting equal
+would only ever admit a real edit landing in the same coarse tick as an older build. An
+unreadable source directory is an error, not a pass, for the same reason.
+
+The check has its own tests (`scripts/_test/check-dist-fresh.test.mjs`, run by
+`npm run test:scripts`, which the root `npm test` includes).
 Every package's `test` script passes an explicit glob (`node --test "dist/test/**/*.test.js"`)
 rather than a bare directory path -- CI and local testing here have only been verified
 on Node 26; `engines` says `>=18` as a floor but that is unverified below 26.
