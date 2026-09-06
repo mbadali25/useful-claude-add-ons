@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@b56d41f
+anchor: useful-claude-add-ons@3167721f
 
 # Marketplace and registration
 
@@ -26,14 +26,14 @@ them:
 **A recent change checked against this table rather than assumed to fit it:**
 crew 0.16.7 added three agents (`node-developer`, `power-automate-specialist`,
 `sharepoint-developer`) inside `plugin/crew/agents/`. `git diff --stat
-2b0972d..HEAD -- .claude-plugin/marketplace.json` shows exactly one entry
+2b0972d..b56d41f -- .claude-plugin/marketplace.json` shows exactly one entry
 touched, 2 lines changed: the existing `crew` row's `description` (agent
 count 14 -> 17) and `version` (`0.16.9` -> `0.16.10`) fields. No new
 `plugins` array entry was added, `plugin/PLUGINS.md` and `plugin/README.md`
 gained prose (a new specialists paragraph and a `### crew 0.16.10` /
 `### crew 0.16.7` changelog section) rather than new catalog rows, and both
 install scripts are byte-identical to the old anchor
-(`git diff --stat 2b0972d..HEAD -- scripts/install-prerequisites.sh
+(`git diff --stat 2b0972d..b56d41f -- scripts/install-prerequisites.sh
 scripts/install-prerequisites.ps1` produces no output). Total marketplace
 entries stayed at 29 (25 skills, 4 plugins) throughout.
 

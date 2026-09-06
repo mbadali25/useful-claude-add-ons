@@ -11,6 +11,33 @@ has since moved past that hash, `crew_state.py` will list the file under
 `knowledge.behind` at the next SessionStart — that is a prompt to re-check the
 claims, not proof they are wrong.
 
+**That prompt is much coarser than the real test, and treating the two as the
+same thing is how the trigger stops meaning anything.** `crew_state.py` compares
+the anchor to HEAD as a *string*, so any commit at all — including one that
+touches only this directory — marks every note behind. The test that actually
+decides is the path diff:
+
+```bash
+git diff --name-only <anchor>..HEAD -- <the paths the note cites>
+```
+
+Comparison is by path, never by `path:line`. Run on 2026-09-05 across
+`b56d41f..3167721f`, that test found `localgpu.md` and all three diagrams
+*current* while the sha test called all seven behind.
+
+**Every `path:line` here is repo-relative, and that is load-bearing rather than
+cosmetic** — an anchor written relative to its subsystem root (`config.py:99`
+instead of `plugin/localgpu/mcp/config.py:99`) resolves fine by eye and cannot
+be pasted into the command above, so nobody can re-verify it. 30 of 87 anchors
+were in that shape and were rewritten on 2026-09-05; 86 of the remaining 87 now
+resolve in range, and the one that does not is `127.0.0.1:11434`, a loopback
+URL rather than a file.
+
+Diagrams under `docs/diagrams/` carry the same contract via a
+`%% Anchors: <comma-separated paths>` header. All three were missing one, which
+left them permanently unfalsifiable — "stale by default" is the honest answer
+to an unanswerable question, but it is not a useful one.
+
 ## Files
 
 | File | Covers |

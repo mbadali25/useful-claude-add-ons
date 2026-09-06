@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@b56d41f
+anchor: useful-claude-add-ons@3167721f
 
 # localgpu
 
@@ -35,7 +35,7 @@ without a manual step.
 
 ## `check_embed_model` — corrected line numbers
 
-The ground truth handed into this task cited `mcp/indexer.py:266-281` for the
+The ground truth handed into this task cited `plugin/localgpu/mcp/indexer.py:266-281` for the
 function and `:354` as its refresh-path call site. Re-checked against source:
 
 - **DERIVED.** `check_embed_model` is defined at
@@ -82,14 +82,14 @@ use instead, because that cannot be told apart from an ordinary dotted filename 
 name alone — recorded as a known miss, not fixed.
 
 **DERIVED.** A new `unignore` config key (added to `CONFIG_KEYS` via `DEFAULTS`,
-`config.py:99`, and to `_LIST_KEYS`, line 112) subtracts from the effective
+`plugin/localgpu/mcp/config.py:99`, and to `_LIST_KEYS`, line 112) subtracts from the effective
 `ignore` list. Confirmed **pattern removal, not path exemption** —
-`load_config`'s own docstring says so explicitly (`config.py:203-207`) and
+`load_config`'s own docstring says so explicitly (`plugin/localgpu/mcp/config.py:203-207`) and
 `test_unignoring_a_liftable_default_lets_the_file_through`
-(`mcp/_test/test_unignore.py:28-49`) proves it end to end: `"unignore": ["*.key"]`
+(`plugin/localgpu/mcp/_test/test_unignore.py:28-49`) proves it end to end: `"unignore": ["*.key"]`
 lets a `.strings.key` file's *content* reach the embedder while a `.env` in the
 same repo, not covered by the lifted pattern, stays excluded. `unignore` layers
-as a union exactly like `ignore` does (`config.py:224-229`, and
+as a union exactly like `ignore` does (`plugin/localgpu/mcp/config.py:224-229`, and
 `test_unignore_accumulates_across_layers_like_ignore`,
 `mcp/_test/test_config.py`) and is type-checked the same way — a bare string
 raises `ConfigError` rather than being shredded into single-character globs
@@ -97,24 +97,24 @@ raises `ConfigError` rather than being shredded into single-character globs
 
 `.git`, `.localgpu`, and `node_modules` are an unliftable floor —
 `UNLIFTABLE_IGNORE = frozenset({".git", ".localgpu", "node_modules"})`, defined
-at `config.py:94` with its rationale in the comment immediately above
-(`config.py:89-93`: "not a preference anyone holds ... a mistake"). Confirmed by
+at `plugin/localgpu/mcp/config.py:94` with its rationale in the comment immediately above
+(`plugin/localgpu/mcp/config.py:89-93`: "not a preference anyone holds ... a mistake"). Confirmed by
 `test_unignore_cannot_lift_the_hard_floor` (`mcp/_test/test_config.py`) and by
 `test_hard_floor_survives_an_unignore_attempt`
-(`mcp/_test/test_unignore.py:52-71`), which additionally proves it at the content
+(`plugin/localgpu/mcp/_test/test_unignore.py:52-71`), which additionally proves it at the content
 level: a `node_modules/pkg/index.js` file's text never reaches the embedder even
 when a repo config explicitly asks to lift `node_modules`.
 
 **JUDGEMENT, correcting the brief handed into this task.** The claim that "a user
 who tries to lift one is told, not silently ignored" does not hold against the
 code as it stands. `load_config` computes `lifted = set(unignore) - UNLIFTABLE_IGNORE`
-(`config.py:236`) and filters `ignore` against `lifted` — an unliftable name the
+(`plugin/localgpu/mcp/config.py:236`) and filters `ignore` against `lifted` — an unliftable name the
 user listed in `unignore` is simply absent from `lifted`, with no `ConfigError`,
 no log line, no return value flagging the rejection anywhere in `config.py`,
 `indexer.py`, `server.py`, or `localgpu_cli.py` (checked by grepping all four for
 `cannot lift`, `floor`, and `UNLIFTABLE_IGNORE` — the only hits are the docstring
 and comment prose already cited above). The "telling" that exists is entirely in
-documentation a human reads ahead of time — `commands/index.md:28-29` and
+documentation a human reads ahead of time — `plugin/localgpu/commands/index.md:28-29` and
 `skills/localgpu/SKILL.md`'s config table — not anything the running code
 surfaces back to whoever wrote the unliftable name into `unignore`. Anyone
 relying on the tool to notice and complain will not be told; they will just see
@@ -122,13 +122,13 @@ relying on the tool to notice and complain will not be told; they will just see
 
 **DERIVED, and this one predates the anchor rather than following it** — added by
 commit `0131d0f0`, which is an ancestor of `c635aca8`, so the previous map's gap
-here was an omission, not staleness. `iter_files` (`mcp/indexer.py:155-179`)
+here was an omission, not staleness. `iter_files` (`plugin/localgpu/mcp/indexer.py:155-179`)
 merges a `.gitignore` found directly under the root being walked into the active
 pattern list before the `os.walk` (lines 169-171). Two limits are documented in
-the block comment above `GITIGNORE_NAME` (`mcp/indexer.py:127-136`) and hold up
+the block comment above `GITIGNORE_NAME` (`plugin/localgpu/mcp/indexer.py:127-136`) and hold up
 against the parsing code:
 - **`!` negation is dropped, not applied.** `_parse_gitignore`
-  (`mcp/indexer.py:140-152`) skips any line starting with `!` outright
+  (`plugin/localgpu/mcp/indexer.py:140-152`) skips any line starting with `!` outright
   (`line.startswith("!")` in the same `continue` branch as comments and blanks) —
   a negated rule some other tool would use to re-include a path is silently
   discarded rather than acted on either way.
@@ -172,7 +172,7 @@ about whether its bytes were the ones that never got read.
 
 **Structurally faithful:**
 - Same six steps, same order, same numbering in output (`1/6` NVIDIA driver
-  through `6/6` VERIFY) — `bootstrap.sh:910-926`, `bootstrap.ps1:854-871`.
+  through `6/6` VERIFY) — `plugin/localgpu/bootstrap.sh:910-926`, `plugin/localgpu/bootstrap.ps1:854-871`.
 - Same flag *meanings* under each shell's own convention:
   `--yes/-y` ↔ `-Yes`, `--dry-run` ↔ `-DryRun`, `--skip-models` ↔
   `-SkipModels`, `--verify-only` ↔ `-VerifyOnly`, `--install-root` ↔
@@ -183,13 +183,13 @@ about whether its bytes were the ones that never got read.
   same install root shape (`$LOCALGPU_HOME/venv`, `/index`), same
   editable-install self-check logic for the `localgpu` console script
   (compares `localgpu_cli.__file__`'s real path against `$SCRIPT_DIR/cli` —
-  bash `bootstrap.sh:552-571`, ps1 `bootstrap.ps1:524-550`, byte-for-byte the
+  bash `plugin/localgpu/bootstrap.sh:552-571`, ps1 `plugin/localgpu/bootstrap.ps1:524-550`, byte-for-byte the
   same embedded Python).
 - Same GPU-offload assertion (`assert_on_gpu` / `Assert-ModelOnGpu`) with the
   same ordering bug they both deliberately avoid: checking for `*CPU*` before
   `*GPU*` so a partial split like `38%/62% CPU/GPU` is caught rather than
   matched as a pass — both scripts carry the identical comment explaining why
-  the order matters (`bootstrap.sh:788-790`, `bootstrap.ps1:721-723`).
+  the order matters (`plugin/localgpu/bootstrap.sh:788-790`, `plugin/localgpu/bootstrap.ps1:721-723`).
 
 **One real behavioral asymmetry found, worth flagging as JUDGEMENT (minor,
 not a defect):** the bash script's `embed_dimension` (lines 739-758) has a
@@ -198,9 +198,9 @@ no parser found but the body looks like it contains an embedding → **warn
 and continue**; no embedding-shaped content at all → **die**. The
 `"no JSON parser was available"` warn-only branch exists because Git Bash
 ships without `python3` and this script cannot assume one is resolvable.
-PowerShell's `Get-EmbedDimension` (`bootstrap.ps1:669-687`) has no equivalent
+PowerShell's `Get-EmbedDimension` (`plugin/localgpu/bootstrap.ps1:669-687`) has no equivalent
 tolerant branch — `ConvertFrom-Json` is always available on PowerShell 5.1+,
-so `Invoke-Verification` (`bootstrap.ps1:808-813`) either gets a dimension or
+so `Invoke-Verification` (`plugin/localgpu/bootstrap.ps1:808-813`) either gets a dimension or
 calls `Stop-Bootstrap` outright. This is not a bug: the case the bash
 tolerance branch exists for (no parser found) cannot occur on PowerShell.
 But it means the two scripts are not byte-for-byte equivalent state machines
