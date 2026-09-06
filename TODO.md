@@ -771,3 +771,107 @@ Three questions to settle before writing any code:
 Until then, the honest description is the one in crew's README section 12b:
 Perplexity is an opt-in second pass alongside the code review, not a reviewer
 crew can route to.
+
+## Session transcripts and subagent tool-result files write raw file content to disk with no secret redaction
+
+Filed from a consumer repo (TheSelectSource), where the pattern was found
+concretely and is tracked there as `TO-DO.md` F155/F157, and cross-referenced
+against SRL's own counterpart ticket `SRL-997`. Recorded here per that repo's
+own `.crew/secrets.md` §10: "a value printed into a tool result... is written
+to the session transcript on disk, carried into every compaction summary, and
+repeated into every subagent that inherits that context. It cannot be
+un-printed." That is a property of this harness's transcript persistence, not
+of any one project, so fixing it only in the consumer repo leaves it live in
+every other repo this plugin touches.
+
+**What was actually observed, twice, in one session, in that repo — despite
+the operator having already read the exact warning beforehand:** a `Read`/`sed
+-n` pass over that repo's committed `config/env.{development,production}.php`
+files printed a production and a development database password verbatim into
+the session's own tool-result output and `.jsonl` transcript; a later `grep`
+for a literal username value did the same for a production DB username. Both
+are now sitting in plaintext in local transcript/tool-result files
+(`~/.claude/projects/<repo>/**/*.jsonl` and equivalent subagent transcript
+files) purely as a side effect of reading files the project's own convention
+already flagged as sensitive — no malice, no unusual command, just the
+default behavior of a normal file-read tool call in this harness.
+
+**Why "just don't do that" is not a fix.** Two independent lanes in that
+repo's history made the identical mistake on the same day, one via a `sed`
+redaction with a quoting bug that printed the value it was trying to hide, one
+via an early `grep` used to locate a value before comparing it. A third
+instance (this one) happened in a *different* session, after the operator had
+read the written-down rule immediately beforehand. A rule that only humans (or
+Claude) have to remember correctly, every single time, forever, across every
+project, is not a control — it is hope with a docs page. The actual fix has
+to sit in the harness or the plugin's tool-interception layer, not in prose a
+lane might not re-read at the right moment.
+
+**Where this plugin already has the right shape of hook, and could extend
+it:**
+
+- `plugin/crew/hooks/hooks.json:11-19` already registers a `PreToolUse`
+  matcher on `Bash` (`guard.sh`/`guard.ps1`) that runs *before* every shell
+  command and can `exit 2` to block it outright — see the `block()` helper and
+  the destructive-operation rules in `plugin/crew/hooks/scripts/guard.sh:17-32`
+  (terraform apply/destroy, destructive DDL, force-push, `rm -rf /`, etc.).
+  That is the exact interception point a "do not raw-read a declared secret
+  file" rule would need, and the file already has the regex-and-`block()`
+  idiom to add it in.
+- **What such a rule could plausibly catch:** a `cat`/`sed`/`grep`/`echo`/`type`
+  (or shell redirection like `< file`) invocation whose argument matches a
+  project-declared secret-bearing path. A repo that documents its own
+  secret-bearing files (as `.crew/secrets.md` already asks every onboarded
+  repo to do, listing exact paths) gives the hook a concrete, low-noise
+  denylist to match against, rather than needing a generic entropy heuristic.
+  Denying the raw read and pointing at the hash-compare procedure
+  (`.crew/secrets.md` §10's own "hash, do not read" idiom) would close the
+  *shell-command* half of this exposure — the half both real incidents and
+  this one went through.
+- **What that fix does NOT close, and is the harder half:** any read of such a
+  file through the `Read` tool itself (not `Bash`), which is a first-class,
+  non-shell tool this plugin's hooks do not currently intercept at all before
+  a repo-declared secret path — and which is exactly the tool that produced
+  the specific 2026-09-06 exposure described above (a direct `Read`/file-view
+  call on the config files, not a shell command). A `PreToolUse` matcher on
+  `Read` (this harness does support multi-tool matchers the same way it
+  supports `Bash`/`PowerShell` today) checking `tool_input.file_path` against
+  the same declared-secret-path list would be the natural second half.
+- **What neither of the above closes:** once a tool call is *allowed* to run
+  and returns content, this harness's own transcript writer persists that
+  content to the `.jsonl` file on disk with no redaction pass, and no hook in
+  this plugin runs *after* that point with write access back into the
+  transcript file. A `PostToolUse` hook could observe the outbound content and
+  warn, but by the time it fires the content is already on disk — the
+  transcript-writing step itself is core-harness behavior outside this
+  plugin's reach, and closing this half would need a request into the host
+  CLI/SDK, not a plugin change. Recorded here as the ceiling on what a
+  plugin-side fix can achieve, not skipped over.
+
+**Fix shape, in priority order (each independently useful, none complete on
+its own):**
+
+1. Extend `guard.sh`/`guard.ps1`'s existing `PreToolUse`/`Bash` matcher with a
+   `block()` rule for raw-read commands against paths a project declares
+   secret-bearing (read that project's own `.crew/secrets.md` "declared"
+   locations, if present, as the denylist source — no new config surface
+   needed).
+2. Add a parallel `PreToolUse` matcher on the `Read` tool (and any other
+   first-class file-reading tool this harness exposes) applying the same
+   denylist to `tool_input.file_path`.
+3. File the transcript-redaction gap as a request against the host CLI/SDK
+   itself, since no hook available to a plugin today can act on content
+   already written to a `.jsonl` transcript.
+
+**Not fixed here — this is the finding, not the patch.** No code in this pass
+was changed; `TheSelectSource/TO-DO.md` F157 is the record of the concrete
+2026-09-06 instance and the workaround applied there (comparing secret values
+by `strpos()`/hash entirely inside a single script process rather than via any
+shell command, going forward, in that one repo, for that one task).
+
+**Related.** `SRL-997` (the same check-shape gap, filed independently in a
+different consumer repo); `TheSelectSource/TO-DO.md` F155 (the original,
+broader finding — committed secrets appearing in transcripts generally) and
+F157 (this specific incident plus the `_verify` control that incident's task
+was building); `TheSelectSource/.crew/secrets.md` §9-§10 (the procedure this
+gap makes hard to follow reliably by hand).
