@@ -936,13 +936,25 @@ def test_a_failed_serialisation_leaves_the_existing_mcp_json_intact(
     target.write_text(cli.json.dumps(original), encoding="utf-8")
     before = target.read_text(encoding="utf-8")
 
-    def refuse(*_args, **_kwargs):
-        raise TypeError("Object of type object is not JSON serializable")
+    real_dumps = cli.json.dumps
+    raised = []
+
+    def refuse(obj, *args, **kwargs):
+        # Only the final whole-document serialisation. `cmd_mcp_init` calls
+        # json.dumps on other paths (the differing-entry diff), and a blanket
+        # raise would let an EARLIER call abort the run before the write was
+        # ever reached - the file would survive for the wrong reason, and the
+        # test would pass with the dangerous order restored.
+        if isinstance(obj, dict) and "mcpServers" in obj:
+            raised.append(obj)
+            raise TypeError("Object of type object is not JSON serializable")
+        return real_dumps(obj, *args, **kwargs)
 
     monkeypatch.setattr(cli.json, "dumps", refuse)
     with pytest.raises(TypeError):
         _run(tmp_path)
 
+    assert raised, "the document serialisation was never reached"
     assert target.read_text(encoding="utf-8") == before, (
         "the file was truncated before the payload existed")
 

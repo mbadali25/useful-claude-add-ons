@@ -6,7 +6,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
-- **crew 0.16.20 -> 0.16.21: `crew_state.py` split at the endpoint ledger.**
+- **crew 0.16.20 -> 0.16.22: `crew_state.py` split at the endpoint ledger.**
   It reached pylint's `max-module-lines=3300` in the previous release and was
   merged five lines under the ceiling, which made the next comment a CI
   failure. No behaviour moves. The seam is the endpoint ledger (lines
@@ -29,10 +29,27 @@ All notable changes to this repository are documented here. Format follows [Keep
   it; the tests name `crew_endpoints`. `tests/sabotage.py` treats a
   non-matching anchor as a failure rather than a skip, so its 35 moved
   mutations were repointed by matching each anchor's text against the three
-  modules rather than by hand. 741 passed, 1 skipped; sabotage suite PASS;
+  modules rather than by hand.
+
+  **The compatibility claim is narrower than "nothing changed", and the
+  review was right to say so.** Calling `crew_state.read_text(...)` still
+  works and still returns the same thing. *Patching* `crew_state.read_text` —
+  or `git_out`, `dict_or_empty`, `load_endpoints`, `scan_artifact_path`, or
+  either remaining re-export — no longer changes what the moved functions do,
+  because they resolve those names in their own module. Nothing in the repo
+  does that today (swept by AST, not grep), so no test regressed; but the next
+  one to try it would get a `setattr` that succeeds and accomplishes nothing,
+  which is this repo's recurring bug class exactly. `tests/test_module_split.py`
+  is the structural guard: it fails on any string-keyed patch of a re-exported
+  name through `crew_state`, names the module to patch instead, asserts each
+  re-export `is` the owner's object rather than merely present, and asserts
+  `gizmoduck_installed` stays un-re-exported. All three sabotage-tested
+  independently.
+
+  744 passed, 1 skipped; sabotage suite PASS;
   `plugin/crew/hooks/scripts/_test/run-tests.sh` 128 passed.
 
-- **localgpu 0.1.16 -> 0.1.17: `mcp-init` serialises before it opens.**
+- **localgpu 0.1.16 -> 0.1.18: `mcp-init` serialises before it opens.**
   `open(p, "w")` truncates at open time, so a write whose argument raises
   leaves a zero-byte file — and the target here is a repo's entire
   `.mcp.json`, every other server in it included. Nothing that reaches that
@@ -41,8 +58,10 @@ All notable changes to this repository are documented here. Format follows [Keep
   what keeps that a fact about today rather than something the next editor has
   to re-derive. `cli/_test/test_cli.py` pins it by making the serialisation
   raise and asserting the file survives; sabotage-tested by reversing the two
-  lines, which turns that test red on the message it names. 276 passed, 1
-  skipped.
+  lines, which turns that test red on the message it names. The stub raises
+  only for the whole-document dict and records that it did, so an *earlier*
+  `json.dumps` on another branch cannot abort the run before the write and
+  leave the file intact for the wrong reason. 276 passed, 1 skipped.
 
   The same trap emptied `plugin/gizmoduck/commands/scan.md` to zero bytes
   during this work, and the "restore" that followed then succeeded against the
