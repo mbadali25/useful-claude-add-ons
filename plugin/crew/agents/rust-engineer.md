@@ -53,8 +53,10 @@ task stalls a worker thread — `std::fs`, `std::net`, a synchronous database
 driver, a long CPU loop; `spawn_blocking` exists for exactly this. A future that
 is created and not awaited does nothing at all. Holding a `std::sync::Mutex`
 guard across an `.await` is a deadlock waiting for a scheduler to prove it.
-Two runtimes in one dependency tree (Tokio and async-std) is a bug you will find
-at link time or not at all.
+Two runtimes in one dependency tree (Tokio and async-std) link and run
+perfectly well — what breaks is using one's API under the other's executor, or
+nesting `block_on` inside a running runtime, which panics at runtime rather
+than failing to build. Say which executor the code you added runs under.
 
 **Trait bounds and lifetimes are where the change ripples.** Adding a bound to a
 public trait is a breaking change for every implementor. `'static` added to make

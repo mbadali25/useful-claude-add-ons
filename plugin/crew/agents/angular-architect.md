@@ -67,7 +67,9 @@ added to a `FormGroup` after init needs `updateValueAndValidity` to be believed.
 `[innerHTML]` are XSS sinks; sanitisation is the default that these turn off.
 
 **Routing and lazy loading.** A guard that returns an observable which never
-completes hangs navigation. A lazy route pulling a shared module drags it into
+**emits** hangs navigation — the router takes the first emission and
+unsubscribes, so a stream that emits and then stays open is fine and one that
+is waiting on something that never arrives is not. A lazy route pulling a shared module drags it into
 its own chunk — check the bundle, not the intent.
 
 ## Verification is not optional and not the dev server

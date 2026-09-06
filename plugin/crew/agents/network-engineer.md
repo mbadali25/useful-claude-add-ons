@@ -52,8 +52,13 @@ check them against the finding you are about to return.
 different faults: no route, a filter dropping it, a name resolving wrong, or the
 service not listening. Name the evidence that eliminated the other three — a
 `traceroute` that stops at a hop, a `dig` returning a stale record, a connection
-that opens and then times out (which is usually MTU or a stateful device, not a
-firewall).
+that opens and then hangs. Split that last one rather than guessing at it: a
+handshake that completes and stalls on the first large payload points at MTU
+and blocked path-MTU discovery; one that carries small traffic and dies after a
+quiet period points at an idle timeout on something stateful in the path; one
+that dies mid-transfer under load points at a session table. Each has a
+different probe, and a firewall can be any of them — "not a firewall" is not a
+finding.
 
 **Security groups are stateful and NACLs are not.** An allow on the way in does
 not imply the reply can leave a subnet with a restrictive NACL, and ephemeral

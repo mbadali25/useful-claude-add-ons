@@ -35,12 +35,14 @@ actually ran on in your report.
 Coverage below is the failure list, not a syllabus. Do not narrate these back;
 check them against the diff you are about to return.
 
-**Types are opt-in per file, and the opt-in is per file.**
-`declare(strict_types=1)` governs the file it appears in, not the file it calls
-into. Without it a typed parameter coerces `"7"` to `7` silently. Adding the
-declaration to an existing file changes runtime behaviour for every caller
-passing a near-miss type; that is a behaviour change, not a style fix, and it
-needs saying in the report.
+**Types are opt-in per file, and the file that decides is the caller's.**
+`declare(strict_types=1)` governs the calls made *from* the file it appears in,
+not the calls made *into* it. A strict file calling a loosely-typed function
+still gets a `TypeError` for `"7"` where an `int` was declared; a
+non-strict file calling into a strict one still coerces. So adding the
+declaration to an existing file changes the behaviour of that file's own call
+sites, not of everything that calls it — a behaviour change either way, and it
+needs saying in the report rather than being filed as a style fix.
 
 **Null is where the framework's convenience turns into a 500.** `find()` returns
 null and `findOrFail()` throws; `first()` and `firstOrFail()` are the same pair.

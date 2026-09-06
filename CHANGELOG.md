@@ -4,6 +4,88 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added
+
+- **crew 0.16.22 -> 0.16.23: twelve domain specialists, and the drift check the
+  registration surface needed once it grew.** Eleven language and platform
+  roles — `php-pro`, `python-pro`, `dotnet-core-expert`,
+  `dotnet-framework-4.8-expert`, `angular-architect`, `react-specialist`,
+  `rust-engineer`, `sql-pro`, `terraform-engineer`, `network-engineer`,
+  `windows-infra-admin` — plus `qa-researcher`, which holds the Perplexity MCP
+  tools and checks what a diff assumes about the outside world against live
+  sources. `SPECIALIST_ROLES` goes 3 -> 15; the tier ladder is unchanged, so
+  no repo gains a role it did not ask for and onboarding one still leaves
+  `tier` alone.
+
+  Coverage was mined from the VoltAgent subagent collection and every file
+  rewritten: the originals open by querying a context manager crew does not
+  have, assert targets nobody can verify ("PHPStan level 9", "coverage
+  exceeding 80%"), and route to agents that do not exist in this marketplace.
+  Each new file instead names the file that proves the repo needs it, the
+  `dev.roles.<name>` key that decides its model, the failures the role
+  actually walks into, and what it refuses to do — `terraform-engineer` never
+  runs `apply` or a state operation, `windows-infra-admin` never runs the
+  change against a live domain, `network-engineer` never touches a live
+  device.
+
+  **Three roles that were requested are not here, and that is the change.**
+  `cloud-architect`, `security-engineer` and `database-administrator` each
+  duplicated a ladder role, so the coverage was folded into the role that
+  already owns the seam rather than shipped as a fourth opinion:
+  `infrastructure-architect` gains multi-cloud and hybrid estates, migration
+  sequencing and RTO/RPO-first DR; `security` gains the CI/CD pipeline, the
+  supply chain, least-privilege grants and per-change threat modelling; `dba`
+  gains backup, replication, failover and pooling as questions a change can
+  invalidate. Three specialists that sit *next to* a ladder role rather than
+  on top of one say so in their own files: `sql-pro` writes what `dba`
+  reviews, `terraform-engineer` writes the HCL whose topology
+  `infrastructure-architect` reviews, and `network-engineer` owns the packet
+  path where `infrastructure-architect` owns AWS account and VPC structure.
+
+  **A registration surface of fifteen needed a guard the surface of three did
+  not.** `tests/test_role_ladder.py` now checks `SPECIALIST_ROLES` against
+  `crew-pm/onboarding.md`'s table *and* crew README's roster table, and checks
+  every `agents/*.md` back against the code. That last direction had no
+  coverage at all before this: a specialist could ship as a file nobody
+  registered, and the only symptom is `/crew:pm onboard <name>` reporting it
+  as unrecognised, forever — silently, on the user's machine. Prose that
+  enumerated the three specialists by name now points at the table, because a
+  list in two places drifts and the prose copy is not the one a test reads.
+  Sabotaged one at a time, all five red: a table row missing from code, a
+  table row that acquired a tier, a ladder row dropped from the README, a name
+  misspelt in `SPECIALIST_ROLES`, and an unregistered agent file.
+
+  **One behaviour change to watch for.** `.crew/verify.json`'s `agents` field
+  resolves a bare name to crew's own role first. Twelve names that previously
+  resolved to another collection's agent — `php-pro`, `react-specialist`,
+  `terraform-engineer` and the rest — now resolve to crew's. Nothing errors;
+  the review simply comes back in a different voice. Namespace the name if you
+  meant the other one. Recorded in `crew-verification/SKILL.md`.
+
+  **Perplexity is an agent, not a `qa.provider`.** `qa.provider`, `qa.roles.*`,
+  the fallback chain and the self-review family guard are untouched, so
+  `/crew:review` routes exactly as it did. What family a web-grounded answer
+  belongs to, and what a fallback that produces a different *kind* of review
+  means, both need deciding before a name goes in that table — and
+  `resolve_role` accepting any provider name (open in `TODO.md`) is why a
+  half-answer there would fail open rather than loudly. The remaining half is
+  tracked in `TODO.md`; crew README section 12b says plainly what does and
+  does not exist today.
+
+  The Codex gate returned seven blocking findings, all of them corrections to
+  claims in the new agent prose, and all seven accepted: `strict_types` is
+  decided by the *calling* file rather than the called one; an Angular guard
+  hangs on an observable that never **emits**, not one that never completes;
+  two Rust async runtimes link and run fine and break on nested `block_on` or
+  a cross-executor API call; a function on an indexed column is non-sargable
+  only against a plain column index, not against an expression or
+  function-based one; `HttpContext.Current` flows across an await under
+  ASP.NET's synchronization context and is lost when you leave it on purpose;
+  "a connection that opens and then hangs" splits into three different faults
+  with three different probes, and "not a firewall" is not one of them; and
+  `netcoreapp*`/`net5.0` had no stated owner between the two .NET roles. Two
+  non-blocking findings were taken as well.
+
 ### Changed
 
 - **crew 0.16.20 -> 0.16.22: `crew_state.py` split at the endpoint ledger.**

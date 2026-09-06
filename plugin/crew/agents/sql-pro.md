@@ -39,10 +39,15 @@ Coverage below is the failure list, not a syllabus. Do not narrate these back;
 check them against the diff you are about to return.
 
 **An index is not used because it exists.** A function or a cast on the indexed
-column (`WHERE lower(email) = ?`, a `date` compared to a `timestamp`, an implicit
-collation change) makes the predicate non-sargable and the plan falls to a scan.
-Leading-column order in a composite index decides which queries it serves; a
-four-column index does not serve the second column alone.
+column (`WHERE lower(email) = ?`, a `date` compared to a `timestamp`, an
+implicit collation change) makes the predicate non-sargable **against a plain
+column index** — the plan then falls to a scan. It is not an absolute: an
+expression or function-based index on `lower(email)`, or an indexed computed
+column, serves that predicate exactly, and some casts are widening enough that
+the optimiser keeps the seek. Which of those is true here is a question for the
+plan and the index list, not for a rule. Leading-column order in a composite
+index decides which queries it serves; a four-column index does not serve the
+second column alone.
 
 **`NULL` is not a value and does not compare.** `NOT IN (subquery)` returns no
 rows the moment the subquery yields one NULL. `= NULL` is never true. An outer

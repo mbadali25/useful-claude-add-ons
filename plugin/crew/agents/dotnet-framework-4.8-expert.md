@@ -47,9 +47,13 @@ check them against the diff you are about to return.
 **`async` here still has the legacy synchronization context.** `.Result`,
 `.Wait()` and `GetAwaiter().GetResult()` deadlock in ASP.NET and WinForms/WPF —
 this is the classic 4.x deadlock, not a theoretical one. `ConfigureAwait(false)`
-in library code is the mitigation. `HttpContext.Current` is null after an await
-that resumed on another thread unless the context flowed; code that reads it
-inside a continuation is a latent NullReferenceException.
+in library code is the mitigation, and it is also what takes
+`HttpContext.Current` away: the ASP.NET synchronization context normally flows
+the request context across an await, so `HttpContext.Current` survives — it is
+null once you left that context on purpose (`ConfigureAwait(false)`, a
+`Task.Run` or a manually started thread, a `SuppressFlow`), or after the
+request has ended under a fire-and-forget continuation. Name which of those
+applies rather than reporting the read itself as the bug.
 
 **`web.config` changes restart the application pool.** Every edit drops in-flight
 requests and clears in-process session state. Say when a change requires one.
