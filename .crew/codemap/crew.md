@@ -202,6 +202,98 @@ rather than assumed:
   second-order effect of this task worth naming, not something this task
   was asked to act on.
 
+## The endpoint ledger and `endpointUnscanned`
+
+**JUDGEMENT, not DERIVED.** Landed in `7c420e90`; This section describes a design
+that changed twice in the same working tree (a first pass, then a review
+round that revised it) and was never committed at either shape. The `1394aab`
+anchor above is HEAD's, but HEAD contains none of this code — confirm with
+`git show 1394aab:plugin/crew/hooks/scripts/crew_state.py | grep -c "def
+declare_endpoint"` (0) — so no `path:line` citation below can be checked
+against it and none is given as one. Re-anchor this section properly
+(`git rev-parse --short=7`, 7 chars exactly) the next time this lands in a
+commit, and re-derive every citation against that commit rather than
+carrying these paragraphs forward unchecked.
+
+The shape as it stands: `.crew/endpoints.json` (re-admitted in `.gitignore`
+next to `.crew/codemap/`, same reasoning — a scan obligation that exists only
+in one clone's untracked state reaches nobody) holds only **declared**
+records — `source: "declared"`, written only by `declare_endpoint`, the one
+function in `crew_state.py` allowed to write that source, and the one entry
+point named in `plugin/crew/agents/pm.md`'s dispatch table and
+`plugin/crew/commands/work.md` for turning a researched candidate into a
+fact. Ids are minted from a sequence counter persisted alongside the records
+(not `len(records) + 1`, which collides the moment a record is deleted from
+this committed, hand-editable file), sanitised against a conservative
+allowlist at both mint and read time (a value with a path separator is
+rejected, never mangled), and the file itself is written via a temp-file-
+then-`os.replace` (never in place), the same pattern `.crew/codemap/crew.md`
+already documents crew abandoning `dispatch.json` for, above.
+
+**Candidates are computed, never persisted** — the redesign's central
+decision. `infer_endpoints` scans `git diff HEAD` for a diff-line pattern
+match and returns candidates fresh; nothing in this module writes one to
+`.crew/endpoints.json`. `read_endpoints` (still a pure read — no write, no
+git or filesystem side effect beyond what its own probing needs) merges two
+sources on every call: the declared records on disk, and `infer_endpoints`'s
+fresh output for any diff line whose location is not already covered by a
+persisted record. An inferred hit's id is a deterministic hash of its signal
+and location, not a counter — stable across repeated reads of the SAME diff
+state, despite never being saved anywhere, which is what lets a scan written
+today be found by a read tomorrow. That stability does NOT survive an edit
+that shifts the line itself: `location` carries a line number, so one line
+inserted above the candidate changes its location and therefore its id,
+orphaning any scan already written for the old one. Finding 6 named this as
+a false promise in an earlier draft of this paragraph and in the function's
+own docstring (`crew_state.py:_candidate_record`); both now say only what is
+true.
+`status` (`"open"` for a declared record, `"candidate"` for an inferred one,
+`"closed"` for either kind once dealt with) is the field every consumer
+(the trigger, and `pm_brief`'s declared/candidate split) treats as
+authoritative — never `source` alone, which a bug could set inconsistently.
+
+The scan-artifact path is decided once per record: single repo →
+`docs/security-scans/<id>.md` at the repo root; mono-repo (more than one
+`go.mod`/`Cargo.toml`/`pyproject.toml` below the root, or a workspace
+manifest) → `<package-dir>/docs/security-scans/<id>.md`, attributed from the
+record's `location`. That classifier is consulted only for a record with no
+scan yet — one that already has a landed scan carries its own frozen path
+(written once, right after the scan, by whatever produced it), so a later
+repo-shape change can move where the NEXT scan goes without relocating or
+orphaning one that already happened. A scan artifact counts as evidence only
+when it is non-empty and, where the record names something specific enough
+to search for, mentions it — a placeholder file or someone else's report
+must not discharge the obligation.
+
+`endpointUnscanned` fires when a record needs an artifact it does not have,
+gated entirely on `gizmoduck_installed` — checked at project
+`.claude/settings.local.json`, project `.claude/settings.json`, user-global
+`~/.claude/settings.local.json`, then user-global `~/.claude/settings.json`,
+in that order, project outranking global and each scope's own `.local.json`
+outranking its `.json`; the first scope with a real JSON boolean wins and
+stops the search, never whether this repo's own `plugin/gizmoduck/` source
+directory exists. Placed in `TRIGGERS` just below `handoffPending` and above
+`graphStale`: a live, unscanned endpoint is an actionable security gap like
+an unfinished handoff, not a documentation-freshness finding like the
+codemap/diagram/graph triggers below it. `pm_brief.FINDINGS["endpointUnscanned"]`
+is the one finding required to say, in its own text, that a candidate is not
+confirmed until researched — the hard requirement behind the whole feature.
+
+Gizmoduck's own `commands/report.md` and `scan.md` document the seam this
+closes: when a scan targets a declared endpoint, the report lands at that
+record's computed path (via a `--scan-artifact-path` lookup) and freezes it
+there (via `--record-scan-artifact`) afterward, rather than at gizmoduck's
+own default location.
+
+## Line numbers below this point predate the 2026-09-06 merge
+
+`crew_state.py` gained the endpoint ledger on this branch while `origin/main`
+independently re-verified 31 anchors (PR #70). Both sets of citations were
+correct when written and neither was taken against the merged tree, so every
+`path:line` in this file is a candidate for drift until a refresh re-derives
+them. Re-check before relying on one; the claims themselves were verified, the
+coordinates were not re-taken.
+
 ## What this file does not cover
 
 Agent role definitions, command bodies, and the config precedence for which

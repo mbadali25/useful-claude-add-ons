@@ -121,6 +121,18 @@ FINDINGS = {
         "finish or delete it - a stale handoff is injected into every "
         "session as though it were current",
     ),
+    # gizmoduck is installed, so this is enforced: a declared hit is a fact
+    # (a ticket said the endpoint exists), a candidate hit is NOT -- it is a
+    # regex hit on a diff line that needs research before it is treated as a
+    # real endpoint at all, let alone a scanned one. Both halves are built by
+    # _endpoint_fields into one summary/action pair, because at least one of
+    # the two is always empty for a real trigger firing (see its docstring):
+    # a state with only candidates must not still say "0 declared
+    # endpoint(s)" and tell the user to run gizmoduck:scan for none of them.
+    "endpointUnscanned": (
+        "{endpointSummary}",
+        "{endpointAction}",
+    ),
     "graphStale": (
         "the code graph is missing or older than HEAD",
         "run /crew:onboard, or graphify . --no-viz --code-only to refresh it",
@@ -169,8 +181,9 @@ _AUTHORITY_NOTES = {
     "act": (
         "The manager acts on these itself - it dispatches crew roles and "
         "refreshes diagrams without being asked. Say what you want prioritised "
-        "and that wins over its own ordering. It still asks before removing a "
-        "role or deleting anything."
+        "and that wins over its own ordering. It researches a finding before "
+        "raising it, so a question from it should arrive with what it already "
+        "checked. It still asks before removing a role or deleting anything."
     ),
 }
 
@@ -233,6 +246,86 @@ def _diagram_fields(state):
     }
 
 
+def _endpoint_fields(state):
+    """Values the endpointUnscanned finding interpolates. Always every key.
+
+    Same contract as _incident_fields and _diagram_fields. Declared and
+    candidate hits are split here rather than left for the finding text to
+    sort out, because the whole point of the split is that they must never
+    be described the same way.
+
+    Keyed on `status` (finding 10), NOT `source` -- `status` is the field
+    the ledger's design makes authoritative (see crew_state.declare_endpoint
+    and _unscanned_hit), and a record whose `source` and `status` disagree
+    -- a bug writing `source="declared", status="candidate"` -- must still
+    render here as a candidate, never as a confirmed fact. Hit dicts are
+    guarded with isinstance rather than trusted, per crew_state.dict_or_empty's
+    docstring warning against `.get()` on an unchecked element -- `state` can
+    arrive hand-built from a test or a stale cache, not only from
+    crew_state.read_endpoints.
+
+    `endpointSummary`/`endpointAction` are pre-composed so the finding text
+    never mentions a half that has no hits: a candidates-only state must not
+    read "0 declared endpoint(s) have no security scan yet (none)" with an
+    action telling the user to scan none of them.
+
+    Each name carries its `location` (finding 7) when the hit has one --
+    `an endpoint (src/app.py:10)` rather than the bare endpoint text -- so
+    twenty candidates sharing the same generic label ("a Flask/FastAPI route
+    decorator") still read as twenty distinct, findable lines rather than
+    one indistinguishable repeated string.
+    """
+    endpoints = crew_state.dict_or_empty(state.get("endpoints"))
+    raw_hits = endpoints.get("unscanned") or []
+    hits = [hit for hit in raw_hits if isinstance(hit, dict)]
+    candidates = [hit for hit in hits if hit.get("status") == "candidate"]
+    declared = [hit for hit in hits if hit.get("status") != "candidate"]
+
+    def _label(hit):
+        endpoint = hit.get("endpoint") or "an endpoint"
+        location = hit.get("location")
+        return f"{endpoint} ({location})" if location else endpoint
+
+    summary_parts = []
+    if declared:
+        summary_parts.append(
+            f"{len(declared)} declared endpoint(s) have no security scan "
+            f"yet ({_names([_label(hit) for hit in declared])})"
+        )
+    if candidates:
+        # "also" only makes sense when a declared half is present too --
+        # a candidates-only brief must not read "also lack one" with
+        # nothing else in the sentence for "also" to refer to (nit 14).
+        verb = "also lack one" if declared else "lack one"
+        summary_parts.append(
+            f"{len(candidates)} inferred candidate(s) {verb} "
+            f"({_names([_label(hit) for hit in candidates])}) - "
+            "candidates are NOT confirmed endpoints until researched"
+        )
+    summary = " and ".join(summary_parts) if summary_parts else (
+        "no endpoints currently need a scan"
+    )
+
+    action_parts = []
+    if declared:
+        action_parts.append("run gizmoduck:scan for each declared endpoint now")
+    if candidates:
+        action_parts.append(
+            "research each candidate first (promote it or close it with "
+            "the evidence) before scanning it or reporting it as real"
+        )
+    action = "; ".join(action_parts) if action_parts else "no action needed"
+
+    return {
+        "declaredCount": len(declared),
+        "declaredNames": _names([_label(hit) for hit in declared]),
+        "candidateCount": len(candidates),
+        "candidateNames": _names([_label(hit) for hit in candidates]),
+        "endpointSummary": summary,
+        "endpointAction": action,
+    }
+
+
 def _fill(text, fields):
     """`text` with {placeholders} substituted. Returns it unchanged if it has
     none, or if it has one this does not know -- a finding that renders as a
@@ -278,6 +371,7 @@ def render(state):
     # says nothing about it, which is worse than omitting it entirely.
     fields = dict(_incident_fields(state))
     fields.update(_diagram_fields(state))
+    fields.update(_endpoint_fields(state))
     pairs = []
     for name in triggers:
         entry = FINDINGS.get(name)

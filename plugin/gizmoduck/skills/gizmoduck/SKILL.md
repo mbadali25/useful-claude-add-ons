@@ -2,8 +2,8 @@
 name: gizmoduck
 description: >-
   Run a Nuclei vulnerability scan against a website, host, or list of targets,
-  produce a triaged report, and auto-open ServiceDesk Plus tickets for the serious
-  findings. Use whenever the user wants to scan a new site they deployed, check a
+  produce a triaged report, and open ServiceDesk Plus tickets for the serious
+  findings after one batch confirmation. Use whenever the user wants to scan a new site they deployed, check a
   host or their environment for vulnerabilities, mentions Nuclei, or points at a
   targets file or a Nuclei JSONL output. Works on WSL/Linux and Windows.
 ---
@@ -61,20 +61,45 @@ Runs on Linux/WSL and Windows. On Linux call the CLI with `python3`; on Windows 
    silently produces an unstyled column rather than an error. Verify any change in
    the PDF, not just a browser.
 
-4. **Ticketing — one ticket per finding, auto-create Critical + High.** Get the
-   SDP-ready records:
+4. **Ticketing — one ticket per finding, one confirmation for the whole batch.**
+   `tickets` files REAL ServiceDesk Plus tickets, so it is gated by default, and the
+   rerun is bound to the exact batch the preview showed - a bare "yes" is not enough.
+   First, get the preview (no `--yes`):
    ```bash
    python3 ${CLAUDE_PLUGIN_ROOT}/scripts/gizmoduck.py tickets findings.jsonl --min-severity high
    ```
-   Each record has a stable `[Nuclei <template-id>]` subject. For each, **before
-   creating**, search ServiceDesk Plus for an existing **open** request whose
-   subject contains that same tag:
-   - exists → **add a note** updating the affected-target list;
-   - none → **create** the request.
+   Without `--yes` this prints the candidate list, a digest over that exact batch, and
+   the rerun command carrying it, then exits 3 with `GIZMODUCK_CONFIRMATION_REQUIRED` —
+   it does **not** emit the JSON records, so there is nothing yet that a ticketing step
+   could act on. (Zero qualifying findings has nothing to confirm: it prints `[]` and
+   exits 0 either way.) Each candidate has a stable `[Nuclei <template-id>]` subject.
+   For each, search ServiceDesk Plus for an existing **open** request whose subject
+   contains that same tag, to split the batch into:
+   - exists → would **add a note** updating the affected-target list;
+   - none → would **create** the request.
 
-   This is auto-create — don't prompt per ticket. Do **not** reimplement ticketing;
-   use the org `infra-work-ticketing` skill / the SDP tools. Print a created-vs-updated
-   summary afterward. Medium/Low/Info never generate tickets.
+   Show the user the full batch in one message — severity + subject per line, plus
+   the create-vs-update split — and get one explicit go-ahead for the whole batch.
+   **Do not prompt per ticket**; that is unusable at N findings. Only after that
+   go-ahead, run **the exact command the preview printed** — it already restates the
+   identical `findings.jsonl` and `--min-severity`, plus `--yes` and the batch's
+   digest, so there is nothing to retype and nothing to widen or narrow:
+   ```bash
+   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/gizmoduck.py tickets findings.jsonl --min-severity high --yes <digest-from-the-preview>
+   ```
+   A `--yes` whose digest does not match what `tickets` recomputes right now — a
+   different findings file, a different `--min-severity`, findings that changed in
+   between — is refused with `GIZMODUCK_APPROVAL_MISMATCH`, never silently widened to
+   whatever the current batch turns out to be. If the batch needs to change, get a
+   fresh preview and a fresh digest, and confirm again — never edit the rerun's
+   `--min-severity` or target file by hand.
+
+   Act on the records — create or add-a-note per the split above. Do **not** reimplement
+   ticketing; use the org `infra-work-ticketing` skill / the SDP tools. Print a
+   created-vs-updated summary afterward. Medium/Low/Info never generate tickets.
+   `--yes` is gated, not unattended-only: passing it *is* the documented attended
+   flow, but only after the user has approved the exact batch shown in the preview
+   — never pass it before that approval.
 
 ## Notes
 - Severity: critical/high/medium/low/info map to Critical…Info. Reports itemise

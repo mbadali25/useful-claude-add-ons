@@ -210,6 +210,26 @@ If you're confident about what the work is, create the ticket and report what yo
 made in the same turn - no confirmation round-trip. Tickets are editable and a
 follow-up note can correct anything.
 
+**Exception: a batch of tickets from an automated security scan, but only when the
+upstream approval is something you actually saw happen.** A batch generated from an
+automated scanner's findings (for example, a Nuclei run via the `gizmoduck` plugin)
+is not exempt from confirmation merely by being scanner-generated - "it came from a
+scanner" is a claim this skill cannot verify and a pasted Nessus or Qualys export
+that was never gated makes exactly the same claim. It is exempt only when this
+conversation shows the confirmation having already happened upstream: the scanning
+tool's own gate firing (its exit-3-and-marker preview, e.g.
+`GIZMODUCK_CONFIRMATION_REQUIRED`), the user giving an explicit go-ahead on the exact
+batch that preview showed, and then the tool being rerun with its own approval value
+(e.g. `--yes <digest>`) to produce the records now in front of you. If you can point
+to that sequence having happened in this conversation, treat the batch as already
+confirmed and create without re-asking - do not make the user approve it twice. If you
+cannot - the batch just appears as findings or ticket records with no visible
+gate-and-approval exchange, however it got there - it has no observed upstream
+approval, and this skill's normal confirmation applies: show the batch and get one
+explicit go-ahead before creating anything. This carve-out is narrow: it does not add
+a confirmation requirement to this skill's other callers or to hand-typed,
+conversational ticket requests, which keep the fast path exactly as described above.
+
 Ask first only when a fact you genuinely need is missing and unguessable. The
 things actually worth asking about:
 

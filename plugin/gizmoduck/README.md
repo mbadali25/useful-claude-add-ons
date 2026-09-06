@@ -11,9 +11,9 @@ step, no API restrictions. **Only scan assets you own or have written permission
 ## Commands
 | Command | Does |
 |---|---|
-| `/gizmoduck:scan <target> [sev]` | Scan → report (md/html/pdf) → auto-ticket Crit+High |
+| `/gizmoduck:scan <target> [sev]` | Scan → report (md/html/pdf) → confirm batch → ticket Crit+High |
 | `/gizmoduck:report <findings.jsonl> [sev]` | Rebuild a report from findings (no rescan) |
-| `/gizmoduck:tickets <findings.jsonl> [sev]` | Open/sync SDP tickets from findings |
+| `/gizmoduck:tickets <findings.jsonl> [sev]` | Confirm batch → open/sync SDP tickets from findings |
 | `/gizmoduck:diff <old.jsonl> <new.jsonl> [sev]` | What's new since a previous scan |
 | `/gizmoduck:update` | Update the Nuclei engine + templates |
 | `/gizmoduck:doctor` | Check the toolchain (nuclei, templates, python, PDF) |
@@ -47,6 +47,19 @@ somebody is expected to fix. The report states how many it suppressed, so nothin
 silently missing, and the complete detail stays in the JSONL.
 
 `--min-severity` raises that floor but never lowers it.
+
+## Ticketing is gated
+
+`tickets` files REAL ServiceDesk Plus tickets, so it is confirmed by default whenever there
+is anything to confirm. Without `--yes`, `gizmoduck.py tickets` prints the candidate list
+(severity + subject), a digest over that exact batch, and the rerun command carrying it, then
+exits 3 without emitting the JSON records a ticketing step would act on. Pass `--yes
+<digest>` only after the whole batch has been shown to the user and approved — one
+confirmation for the batch, not one per ticket — and only the digest the preview just printed:
+a stale or mismatched one (a different findings file, a different `--min-severity`, findings
+that changed in between) is refused with `GIZMODUCK_APPROVAL_MISMATCH` rather than silently
+creating whatever the current batch turns out to be. Zero qualifying findings has nothing to
+confirm: it prints `[]` and exits 0 either way, `--yes` or not.
 
 ## Manual CLI (Linux: `python3`, Windows: `python`)
 ```bash

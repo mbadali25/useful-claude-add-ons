@@ -201,7 +201,10 @@ def test_upgrade_config_adds_pm_and_graph_blocks():
     assert got["pm"]["mode"] == "adaptive"
     assert got["pm"]["authority"] == "report-only"
     assert got["graph"]["mode"] == "code-only"
-    assert got["graph"]["obsidian"]["confirmed"] is False
+    # `graph.obsidian` was removed in 0.16.13. Asserting its ABSENCE is the
+    # point: a key with no consumer that survives an upgrade reads, to anyone
+    # inspecting the config, as a feature merely switched off.
+    assert "obsidian" not in got["graph"]
 
 
 def test_a_specialist_role_is_kept_and_not_reported_as_unknown():
@@ -253,12 +256,16 @@ def test_a_wrong_typed_nested_block_is_kept_and_reported_not_destroyed():
     contract now matches what the report has always claimed -- "left exactly
     as written".
     """
+    # Uses `qa.codex` as the nested block. It was `graph.obsidian` until
+    # 0.16.13 removed that key; the behaviour under test is the MERGE's
+    # handling of a wrong-typed nested value, not anything about the
+    # particular block, so any surviving nested dict serves.
     for bad in ("yes", 1, ["a"], None, 0, True):
-        got, notes = crew_upgrade.upgrade_config({"graph": {"obsidian": bad}})
+        got, notes = crew_upgrade.upgrade_config({"qa": {"codex": bad}})
         # Kept verbatim, not replaced by the default block.
-        assert got["graph"]["obsidian"] == bad, bad
+        assert got["qa"]["codex"] == bad, bad
         # Named, so the operator can fix it by hand.
-        assert "graph.obsidian" in notes["unmigrated"], bad
+        assert "qa.codex" in notes["unmigrated"], bad
         # And NOT claimed as current, so the next run retries it.
         assert notes["schemaStamped"] is False, bad
         assert got.get("schema") != crew_state.SCHEMA_CURRENT, bad
@@ -266,26 +273,48 @@ def test_a_wrong_typed_nested_block_is_kept_and_reported_not_destroyed():
 
 def test_a_legitimate_nested_override_still_wins():
     got = _cfg(
-        {"pm": {"quietLines": 3}, "graph": {"obsidian": {"dir": "/vault"}}}
+        {"pm": {"quietLines": 3}, "qa": {"codex": {"model": "gpt-5.6-luna"}}}
     )
     assert got["pm"]["quietLines"] == 3
     assert got["pm"]["mode"] == "adaptive"          # default still filled in
-    assert got["graph"]["obsidian"]["dir"] == "/vault"
-    assert got["graph"]["obsidian"]["confirmed"] is False
+    assert got["qa"]["codex"]["model"] == "gpt-5.6-luna"
+    # sibling defaults inside the same overridden block still fill in
+    assert got["qa"]["codex"]["reasoningEffort"] is None
+    # and an untouched block is still defaulted whole
+    assert got["graph"]["mode"] == "code-only"
 
 
-def test_obsidian_confirmed_defaults_false_even_if_dir_is_set():
-    got = _cfg(
-        {"graph": {"obsidian": {"dir": "/somewhere"}}}
-    )
-    assert got["graph"]["obsidian"]["dir"] == "/somewhere"
-    assert got["graph"]["obsidian"]["confirmed"] is False
+def test_graph_obsidian_is_dropped_and_reported_not_migrated():
+    """0.16.13 removed the Obsidian export. A config still carrying the key
+    must lose it AND be told so: a silent drop is indistinguishable from the
+    key never having been there, and the operator cannot tell whether a
+    setting they chose was removed or was never read."""
+    got, notes = crew_upgrade.upgrade_config(
+        {"graph": {"obsidian": {"dir": "/somewhere", "confirmed": True}}})
+    assert "obsidian" not in got["graph"]
+    assert notes["droppedKeys"] == ["graph.obsidian"]
+    assert any("removed, not migrated" in line
+               for line in crew_upgrade._config_lines(notes))
+
+
+def test_a_config_that_never_had_obsidian_reports_nothing():
+    """The other half. A removal notice on every upgrade forever would train
+    the reader to skip the line that matters."""
+    _, notes = crew_upgrade.upgrade_config({"graph": {"enabled": True}})
+    assert notes["droppedKeys"] == []
+    assert not any("removed, not migrated" in line
+                   for line in crew_upgrade._config_lines(notes))
 
 
 def test_upgrade_config_does_not_alias_the_shared_graph_block():
     got = _cfg({})
-    assert got["graph"]["obsidian"] is not crew_upgrade.GRAPH_BLOCK["obsidian"]
-    assert crew_upgrade.GRAPH_BLOCK["obsidian"]["confirmed"] is False
+    # The block is flat since 0.16.13, so the aliasing risk is the block
+    # itself rather than a nested dict inside it. GRAPH_BLOCK is module-level
+    # and deep-copied by default_config(); a shared reference would let one
+    # repo's config mutate the template every other repo is built from.
+    assert got["graph"] is not crew_upgrade.GRAPH_BLOCK
+    got["graph"]["mode"] = "mutated"
+    assert crew_upgrade.GRAPH_BLOCK["mode"] == "code-only"
 
 
 def test_backup_is_taken_before_any_write(tmp_path):

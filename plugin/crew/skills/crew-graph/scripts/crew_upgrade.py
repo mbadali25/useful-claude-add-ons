@@ -53,17 +53,12 @@ GRAPH_BLOCK = {
     "out": crew_state.GRAPH_OUT_DEFAULT,
     "mode": "code-only",
     "commitHook": False,
-    # "layout" governs how crew-graph's Obsidian export SKILL documents the
-    # target directory it asks the user to confirm -- it does not compute a
-    # path in code, since the export itself is a manual, consent-gated CLI
-    # invocation the skill drives, never something crew runs unattended.
-    # "flat": `dir` is the export target verbatim, e.g. `<vault>/codegraphs/
-    # <repo>/` -- the only layout that existed before this key, kept as the
-    # default so an existing config's behaviour does not change underneath
-    # it. "org/repo": `dir` is a per-org folder (e.g. `<vault>/<org>`) and
-    # the skill appends `/<repo>` under it -- see crew-graph/SKILL.md.
-    "obsidian": {"enabled": False, "dir": None, "layout": "flat",
-                 "confirmed": False},
+    # There is deliberately no Obsidian export key here. The graph lives on
+    # the filesystem as `graph.json` and nowhere else -- see crew-graph/
+    # SKILL.md, "Why there is no Obsidian export". A config written before
+    # 0.16.13 may still carry `graph.obsidian`; `upgrade_config` drops it and
+    # names it in `notes["droppedKeys"]` rather than migrating it, because
+    # there is no longer anything for it to mean.
 }
 
 _ANCHOR_LINE_RE = re.compile(r"^(anchor:\s*\S*@?)([0-9a-f]{7,40})",
@@ -144,7 +139,11 @@ def upgrade_config(cfg):
     notes = {"unmigrated": [], "rolesAdded": [], "rolesUnknown": [],
              "tierFrom": 0, "tierTo": 0,
              "schemaFrom": crew_state.int_or(cfg.get("schema", 1), 1),
-             "providerKeysAdded": [], "schemaStamped": False}
+             "providerKeysAdded": [], "schemaStamped": False,
+             # Keys this upgrade removed outright. Distinct from
+             # "unmigrated", which blocks the schema stamp: a dropped key is
+             # a completed migration, not a failed one.
+             "droppedKeys": []}
 
     for key, block in CONFIG_BLOCKS:
         supplied = cfg.get(key, _ABSENT)
@@ -189,15 +188,19 @@ def upgrade_config(cfg):
         if leaf not in supplied:
             notes["providerKeysAdded"].append(dotted)
 
-    if not _block_untouched(notes, "graph"):
-        # obsidian.confirmed is consent to write into the user's own notes
-        # outside the repo, not a capability. An upgrade must never grant it
-        # -- only the user, in session, can.
-        out["graph"]["obsidian"]["confirmed"] = (
-            crew_state.dict_or_empty(
-                crew_state.dict_or_empty(cfg.get("graph")).get("obsidian")
-            ).get("confirmed") is True
-        )
+    # `graph.obsidian` was removed in 0.16.13. Drop it loudly rather than
+    # carrying it forward: a key that survives an upgrade but no longer has a
+    # consumer reads, to anyone inspecting the config, as a feature that is
+    # merely switched off. Naming it is what tells them it is gone.
+    # `out["graph"]` is only a dict when the supplied block was well-typed.
+    # A wrong-typed block (`"graph": "oops"`) is kept VERBATIM and reported in
+    # `unmigrated` -- popping a key off it raises AttributeError and takes the
+    # whole migration down partway, after run() has already written the file.
+    if isinstance(out.get("graph"), dict):
+        if isinstance(crew_state.dict_or_empty(cfg.get("graph")).get("obsidian"),
+                      dict):
+            notes["droppedKeys"].append("graph.obsidian")
+        out["graph"].pop("obsidian", None)
 
     supplied_roles = cfg.get("roles", _ABSENT)
     if supplied_roles is not _ABSENT and not (
@@ -341,6 +344,14 @@ def _config_lines(notes):
         "Moving UP a tier is `/crew:scale`; removing a role is "
         "`/crew:pm offboard`, which still stops for an explicit yes."
     )
+    if notes["droppedKeys"]:
+        lines.append(
+            "- removed, not migrated: " + ", ".join(notes["droppedKeys"])
+            + ". The code graph lives on the filesystem as `graph.json`; the "
+            "Obsidian export was withdrawn in 0.16.13 because exporting one "
+            "note per node made vaults unusably slow. Nothing to re-enable, "
+            "and no setting was silently switched off."
+        )
     if notes["providerKeysAdded"]:
         lines.append(
             "- schema "

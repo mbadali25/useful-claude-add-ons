@@ -2146,3 +2146,232 @@ def test_a_legacy_slot_holding_nothing_is_a_record_that_was_lost(tmp_path):
         "a slot that was written and lost read as a slot never written"
     assert families == frozenset({"claude"}), \
         "the family that provably ran stopped being struck"
+
+
+# --------------------------------------------------------------------------
+# `localgpu` is not a provider in EITHER slot. It was briefly admitted to
+# `DEV_PROVIDERS` alone and that admission is reverted here: `dev.provider`
+# backs the `developer` role, and the role ladder's own row for `developer`
+# reads "No -- code lands. A 7B's failures are fluent and pass a skim." A
+# provider slot that contradicts the role table two lines below it is not a
+# narrower gate, it is the same defect from the other direction. The real
+# work a local model does well is at the ROLE-TOOLING level (`mcp__localgpu__
+# search_code` on `explorer`/`scribe`/`docs-writer`/`onboard`/`diagram`), not
+# as a provider crew dispatches a role to -- see `plugin/localgpu/commands/
+# crew.md`.
+# --------------------------------------------------------------------------
+
+def test_localgpu_is_not_a_provider_in_either_slot():
+    assert "localgpu" not in crew_config.DEV_PROVIDERS
+    assert "localgpu" not in crew_config.QA_PROVIDERS
+
+
+@pytest.mark.parametrize("cfg,needle", [
+    ({"dev": {"provider": "localgpu"}}, "dev.provider"),
+    ({"dev": {"roles": {"explorer": {"provider": "localgpu"}}}},
+     "dev.roles.explorer.provider"),
+    ({"dev": {"roles": {"scribe": {"provider": "localgpu"}}}},
+     "dev.roles.scribe.provider"),
+])
+def test_localgpu_is_refused_on_the_dev_side_and_the_key_is_named(cfg, needle):
+    """The reverted half: `localgpu` naming a dev slot must fail exactly as
+    loudly as it always has on the qa side, key named, nothing silently
+    dropped."""
+    with pytest.raises(crew_config.ProviderError) as excinfo:
+        crew_config.validate_providers(cfg)
+    assert needle in str(excinfo.value)
+
+
+@pytest.mark.parametrize("cfg,needle", [
+    ({"qa": {"provider": "localgpu"}}, "qa.provider"),
+    ({"qa": {"order": ["codex", "localgpu", "claude"]}}, "qa.order"),
+    ({"qa": {"roles": {"qa-reviewer": {"provider": "localgpu"}}}},
+     "qa.roles.qa-reviewer.provider"),
+])
+def test_localgpu_is_refused_on_the_qa_side_and_the_key_is_named(cfg, needle):
+    with pytest.raises(crew_config.ProviderError) as excinfo:
+        crew_config.validate_providers(cfg)
+    # The key, so a user can find it. Not merely "invalid provider".
+    assert needle in str(excinfo.value)
+
+
+def test_an_unknown_provider_is_refused_rather_than_ignored():
+    """The fail-open case this whole guard exists for.
+
+    A name crew does not resolve must not reach provider selection. Before
+    this guard it fell through to the `qa-reviewer` fallback while the config
+    file went on claiming a reviewer was configured.
+    """
+    with pytest.raises(crew_config.ProviderError):
+        crew_config.validate_providers({"qa": {"order": ["codex", "nope"]}})
+    with pytest.raises(crew_config.ProviderError):
+        crew_config.validate_providers({"dev": {"provider": "nope"}})
+
+
+def test_a_clean_config_passes_unchanged():
+    cfg = {"dev": {"provider": "codex"},
+           "qa": {"provider": "auto",
+                  "order": ["codex", "copilot", "claude"]}}
+    assert crew_config.validate_providers(cfg) is cfg
+
+
+def test_qa_provider_auto_is_an_instruction_not_a_provider_name():
+    """`auto` is not in QA_PROVIDERS and must still be accepted."""
+    assert "auto" not in crew_config.QA_PROVIDERS
+    cfg = {"qa": {"provider": "auto"}}
+    assert crew_config.validate_providers(cfg) is cfg
+
+
+def test_localgpu_is_found_off_path_not_on_it():
+    """`localgpu` lives in the venv, which is deliberately not on PATH.
+
+    A bare `which("localgpu")` answers None on a correctly installed machine,
+    so a plain PATH probe would mark the provider missing exactly where it
+    works. The resolver must consult `LOCALGPU_HOME` as well.
+    """
+    # PATH wins when it does answer, so a deliberate PATH install is honoured.
+    assert crew_config.localgpu_which(
+        which=lambda name: "/somewhere/localgpu") == "/somewhere/localgpu"
+    # And a PATH miss does not end the search.
+    # `is not False`, not `!= False`: the point is that a PATH miss returns
+    # something other than the singleton, and `!= False` is also satisfied by
+    # 0, "" and [] -- none of which would mean "the search continued".
+    assert crew_config.localgpu_which(which=lambda name: None) is not False
+
+
+def test_localgpu_which_returns_none_when_the_home_is_empty(tmp_path,
+                                                            monkeypatch):
+    monkeypatch.setenv("LOCALGPU_HOME", str(tmp_path))
+    assert crew_config.localgpu_which(which=lambda name: None) is None
+
+
+# -----------------------------------------------------------------------
+# The READ path was unguarded. `validate_providers` only ever ran on WRITE
+# (`/crew:model`, `/crew:config`'s global write), and hand-editing
+# `.crew/config.json` was always the bypass -- these fixtures write it
+# directly, exactly as a hand edit would, and never go near
+# `validate_providers` at all. `resolve_role` is what actually decides who
+# reviews, so it -- not merely a reporter -- has to refuse an illegitimate
+# provider on its own.
+# -----------------------------------------------------------------------
+
+
+def test_a_pinned_localgpu_qa_reviewer_is_barred_not_cleared(tmp_path):
+    """must-block: `qa.roles.review.provider: localgpu`, pinned WITH a model.
+    `family()` resolves a real family for the pinned model (`qwen`, here) and
+    that family is not the `gpt` author's, so the family guard alone cleared
+    it. The provider itself is the problem, not its family."""
+    cfg = {"qa": {"roles": {"review": {
+        "provider": "localgpu",
+        "model": "qwen2.5-coder:7b-instruct-q4_K_M",
+    }}}}
+    root = crew_fixtures.make_repo(tmp_path, config=cfg, git=False)
+
+    resolved = crew_config.resolve_config(str(root))  # must not raise
+    got = crew_state.resolve_role(resolved, "qa", "review", author="gpt")
+
+    assert got["family"] == "qwen", "fixture precondition: a real family"
+    assert got["barred"] is True
+    assert got["announce"], "a barred read must announce, never silently pass"
+
+
+def test_an_unpinned_localgpu_qa_reviewer_is_still_barred(tmp_path):
+    """must-block: no model pinned, so `family()` answers None. The family
+    guard only fires on a NAMED match, so `family is None` walked straight
+    past it before this fix -- that must never read as "no conflict"."""
+    cfg = {"qa": {"roles": {"review": {"provider": "localgpu"}}}}
+    root = crew_fixtures.make_repo(tmp_path, config=cfg, git=False)
+
+    resolved = crew_config.resolve_config(str(root))  # must not raise
+    got = crew_state.resolve_role(resolved, "qa", "review", author="gpt")
+
+    assert got["family"] is None, "fixture precondition: no model pinned"
+    assert got["barred"] is True
+    assert got["announce"]
+
+
+def test_an_entirely_unknown_qa_provider_is_barred(tmp_path):
+    """must-block: a name QA has never heard of, not merely `localgpu`."""
+    cfg = {"qa": {"roles": {"review": {"provider": "windsurf",
+                                       "model": "swe-1"}}}}
+    root = crew_fixtures.make_repo(tmp_path, config=cfg, git=False)
+
+    resolved = crew_config.resolve_config(str(root))  # must not raise
+    got = crew_state.resolve_role(resolved, "qa", "review", author="claude")
+
+    assert got["barred"] is True
+    assert got["announce"]
+
+
+def test_qa_order_naming_an_invalid_provider_is_never_eligible(tmp_path):
+    """must-block: `qa.order` is a hand-editable list, not only a pin, and an
+    invalid name in it must be refused before PATH or family are even asked --
+    or an installed CLI under a name nothing resolves reports eligible."""
+    cfg = {"qa": {"order": ["localgpu", "claude"],
+                  "localgpu": {"model": "qwen2.5-coder:7b-instruct-q4_K_M"}}}
+    root = crew_fixtures.make_repo(tmp_path, config=cfg, git=False)
+    resolved = crew_config.resolve_config(str(root))  # must not raise
+
+    candidates = crew_config.order_candidates(
+        resolved, "gpt", which=lambda _n: "/usr/bin/localgpu")
+
+    localgpu_row = next(c for c in candidates if c["provider"] == "localgpu")
+    assert localgpu_row["eligible"] is False
+    assert "not a provider QA recognises" in localgpu_row["why"]
+
+
+def test_a_legitimate_reviewer_against_a_claude_authored_diff_still_resolves(
+        tmp_path):
+    """must-allow: codex/copilot/claude reviewers are not casualties of the
+    new bar. An unpinned codex reviewer (family `gpt`) against a
+    claude-authored diff is not barred."""
+    cfg = {"qa": {"roles": {"review": {"provider": "codex"}}}}
+    root = crew_fixtures.make_repo(tmp_path, config=cfg, git=False)
+
+    resolved = crew_config.resolve_config(str(root))  # must not raise
+    got = crew_state.resolve_role(resolved, "qa", "review", author="claude")
+
+    assert got["barred"] is False
+    assert got["provider"] == "codex"
+    assert got["family"] == "gpt"
+
+
+def test_resolve_config_never_raises_on_any_provider_the_guard_now_bars(
+        tmp_path):
+    """The promise, checked directly rather than assumed: a config carrying a
+    provider nothing recognises must resolve, not raise -- `resolve_config`
+    is read from a SessionStart hook, and a broken config must not wedge
+    every session opened in the repo."""
+    configs = [
+        {"qa": {"roles": {"review": {"provider": "localgpu",
+                                     "model": "qwen2.5-coder:7b"}}}},
+        {"qa": {"roles": {"review": {"provider": "localgpu"}}}},
+        {"qa": {"roles": {"review": {"provider": "windsurf",
+                                     "model": "swe-1"}}}},
+        {"qa": {"order": ["localgpu", "claude"]}},
+    ]
+    for index, cfg in enumerate(configs):
+        case_dir = tmp_path / f"case{index}"
+        case_dir.mkdir()
+        root = crew_fixtures.make_repo(case_dir, config=cfg, git=False)
+        crew_config.resolve_config(str(root))  # must not raise
+
+
+def test_model_report_surfaces_provider_problems_from_a_hand_edited_config(
+        tmp_path):
+    """Task 1, item 1: `provider_problems` gets a real caller. A config
+    `/crew:model` never wrote -- pinning `qa.roles.review` to `localgpu` by
+    hand -- must be named in the report `commands/review.md` step 1 actually
+    reads, not left to a reporter nobody calls."""
+    cfg = {"qa": {"roles": {"review": {"provider": "localgpu",
+                                       "model": "qwen2.5-coder:7b"}}}}
+    root = crew_fixtures.make_repo(tmp_path, config=cfg, git=False)
+
+    report = crew_config.model_report(str(root), which=lambda _n: None)
+
+    assert report["providerProblems"], \
+        "a config no writer ever validated must be named in the report"
+    assert any("qa.roles.review" in p for p in report["providerProblems"])
+    # And the row itself is barred, independent of the reporter.
+    review_row = next(r for r in report["qa"] if r["role"] == "review")
+    assert review_row["barred"] is True

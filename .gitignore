@@ -290,6 +290,13 @@ __marimo__/
 # and a second copy is a second thing to drift.
 !.crew/codemap/
 
+# ...and the endpoint ledger gizmoduck's security-scan trigger reads
+# (crew_state.py's read_endpoints). Same reasoning as the codemap above: a
+# scan obligation that only exists in one clone's untracked `.crew/` is not
+# an obligation anyone else can see or discharge, so the ledger has to
+# travel with the repo like the code it describes does.
+!.crew/endpoints.json
+
 # Written by the GitHub Copilot CLI when --model is passed; pins the model for
 # anyone running `copilot` in this repo. crew owns provider model choice
 # (qa.copilot.model / dev.copilot.model), so this file must not shadow it.
@@ -348,3 +355,33 @@ graphify-out/*
 # and is tracked; anyone who wants the pictures runs:
 #   bash <crew>/skills/crew-diagrams/scripts/render.sh docs/diagrams
 docs/diagrams/out/
+
+# Project-scope MCP registration. Written by `/localgpu:setup` with LITERAL
+# absolute paths - the venv interpreter, the plugin cache directory (version-
+# pinned), and LOCALGPU_HOME - because Claude Code reads this file directly and
+# does not expand `~` or a variable. Every one of those is machine-specific, so
+# a committed copy spawns a server pointing at paths that exist on exactly one
+# box. Same reasoning as `.localgpu/` two lines up.
+#
+# It also pins the plugin version: bump localgpu and this file points at a
+# cache directory that no longer exists, and the server fails to spawn with no
+# useful error. Re-run `/localgpu:setup` after a localgpu upgrade.
+.mcp.json
+
+# docs/security-scans/ is TRACKED, and that is a decision, not an oversight.
+# It was previously committed only by omission - no entry here, so the default
+# applied and nobody had chosen. Recorded so it is not later "fixed" by someone
+# assuming the absence was an accident.
+#
+# The tradeoff was weighed and taken deliberately: a scan report names
+# hostnames, live endpoints and unpatched findings, and committing it puts that
+# in git history where it survives deletion and travels to every clone and
+# fork. Against that, the evidence a promote gate checks has to exist on a
+# fresh checkout - `crew_state._artifact_confirms_scan` reads the artifact and
+# requires gizmoduck's own `**Total finding instances:**` marker, so an ignored
+# report means CI sees every endpoint as permanently unscanned.
+#
+# Tracked wins. If that trade is ever revisited, the alternative is to ignore
+# the reports and track a minimal receipt per endpoint (id, timestamp,
+# tool+version, counts by severity) and repoint `_artifact_confirms_scan` at
+# the receipt - which is real work with its own tests, not a one-line flip.

@@ -1,7 +1,7 @@
 ---
 description: Talk to the crew's manager - status, assign work, set its authority, onboarding, offboarding
 argument-hint: [assign | authority [report-only|act] | onboard <role> | offboard <role>]
-allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, ListAgents, SendMessage
+allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, ListAgents, SendMessage, AskUserQuestion
 ---
 
 Talk to the crew's manager. Arguments: $ARGUMENTS
@@ -39,6 +39,28 @@ itself a teammate — the runtime enforces a flat roster. Do not retry it and do
 not silently fall back: dispatch the `crew:pm` subagent unnamed, and tell me in
 one line that the PM will not persist past this invocation, so I know why it
 asks the same questions next time.
+
+## A `**Decision needed:**` block is yours to render, not to relay
+
+The PM cannot ask — `AskUserQuestion` is not in its tool list, on purpose. So it
+ends a report that needs a decision with a `**Decision needed:**` block: the
+question, two to four options with its recommendation first, and the research
+behind it. **You render that with `AskUserQuestion`.**
+
+- One `AskUserQuestion` call per decision; several decisions can be several
+  questions in the same call.
+- Keep the PM's recommendation as the first option and keep its `(Recommended)`
+  marker. Reordering it hides the crew's own judgement, which is most of what
+  the block is for.
+- Carry each option's stated cost into its `description`. An option list with
+  no downsides reads as a formality.
+- **Do not add an "Other" option.** `AskUserQuestion` already offers free text;
+  a hand-written one makes two.
+
+Pasting the block through as prose is the failure here. The user then has to
+type an answer to a question that was built to be picked, which is the whole
+thing this is meant to avoid. If a report has a decision block, you ask it — you
+do not summarise it and you do not answer it on their behalf.
 
 ## Relay what it did, never what it said it would do
 

@@ -1,7 +1,7 @@
 ---
 name: docs-writer
 description: Generates and updates architecture, data flow, and process documentation from actual code. Tier 2 role — enable via /crew:scale. Runs on demand, never on every change.
-tools: Read, Grep, Glob, Bash, Write, Edit, Skill
+tools: Read, Grep, Glob, Bash, Write, Edit, Skill, mcp__localgpu__search_code
 model: sonnet
 ---
 
@@ -76,3 +76,17 @@ Under 200 words:
 Do not paste the documents. Communications are concise: the reader opens the
 files themselves, and a summary that reproduces its own source is one more thing
 that goes stale.
+
+## Local GPU, when it is there
+
+If `mcp__localgpu__search_code` is in your tool list, use it to locate the code
+you are documenting — it answers "where does X happen" without the context cost
+of a grep sweep. Open every `path:line` it returns and confirm it before you
+document it; an embedding match is a similarity score, not a fact.
+
+**A local model may draft; it must never be the last pass.** If you use
+`localgpu ask` for a first cut of a section, you edit it against the code
+afterwards and the edited version is what lands. Documentation is read by
+people who cannot check it against the source, which is exactly the condition
+under which a fluent wrong sentence does the most damage. If the tool is
+absent, write it yourself — that is a normal run, not a degraded one.
