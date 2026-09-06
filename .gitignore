@@ -387,9 +387,16 @@ docs/diagrams/out/
 # the receipt - which is real work with its own tests, not a one-line flip.
 
 # The sabotage harness backs a source file up as `<file>.bak` before it
-# mutates it. `7c420e90` swept `crew_state.py.bak` into a commit with
-# `git add -A`, which removed the one diagnostic that says a run died
-# mid-mutation: a `.bak` in `git status`. Ignoring it keeps that signal --
-# `plugin/crew/tests/sabotage.py` now REFUSES to start when one is present,
-# and a tracked backup would have made that refusal permanent.
+# mutates it, and `<file>.bak.partial` while that backup is being written.
+# `7c420e90` swept `crew_state.py.bak` into a commit via `git add -A`, and a
+# TRACKED backup is the damaging case: `plugin/crew/tests/sabotage.py` refuses
+# to start when one is present, so a committed `.bak` gates the suite off
+# permanently on every clone.
+#
+# Ignoring it is what stops that happening again. It does NOT preserve any
+# `git status` signal -- ignored files are hidden from `git status`, so this
+# trades one diagnostic for another and the trade is worth naming: the harness
+# checks the FILESYSTEM at startup, which is a check that runs whether or not
+# anybody looks at `git status`. Use `git status --ignored` to see one by eye.
 *.bak
+*.bak.partial

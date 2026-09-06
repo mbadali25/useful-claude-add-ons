@@ -133,13 +133,28 @@ The consumer cannot see it — its own `dist` is current, its own tests compile,
 and the behaviour under test is stale.
 
 Closed by `mcp-servers/scripts/check-dist-fresh.mjs`, wired as every package's
-`pretest`: newest `.ts` under `src/` and `test/` (plus `core/src/` for anything
-that depends on core) against newest `.js` under `dist/`, equal counting as
-fresh. Ten tests at `mcp-servers/scripts/_test/check-dist-fresh.test.mjs`, run
-by `npm run test:scripts` which the root `npm test` now includes. Verified by
+`pretest`: newest `.ts` under `src/` and `test/` against newest `.js` under
+`dist/`. A consumer is checked by checking **core itself, recursively** —
+comparing the consumer's `dist` to `core/src` was the first shape and it is
+wrong in the fail-open direction, since a consumer rebuilt after a core edit
+then has the newest `dist` in the tree and still loads a stale `core/dist` at
+runtime.
+
+Two more fail-open shapes closed with it. An unreadable source directory raises
+rather than contributing mtime `0` — `0` compares older than everything and
+reads as fresh, so the guard would pass having seen nothing. And equal
+timestamps are **stale**: measured on this repo, `npm run build` leaves every
+package's newest `dist/*.js` strictly newer than its newest `src/*.ts` (11.9s
+for core) with sub-millisecond mtime fractions, because tsc reads before it
+writes — so accepting equal only ever admits a real edit landing in the same
+coarse tick as an older build.
+
+14 tests at `mcp-servers/scripts/_test/check-dist-fresh.test.mjs`, run by
+`npm run test:scripts` which the root `npm test` now includes. Verified by
 execution, not by reasoning: `touch packages/core/src/index.ts` then `npm test
--w packages/graph` exits 1 with `STALE BUILD -- @badali404/mcp-msgraph:
-compiled output is older than core/src`, and passes again after `npm run build`.
+-w packages/graph` exits 1 with `STALE BUILD -- @badali404/mcp-ms-core:
+compiled output is not newer than core/src -- and @badali404/mcp-msgraph
+imports it at runtime`, and passes again after `npm run build`.
 
 ### 6. `check_skill_manifests` is unread
 
@@ -572,15 +587,22 @@ permanent and needs to stay visible.
 
 | Defect | Where it is closed now |
 |---|---|
-| 1. `finally` does not survive a kill | `install_exit_handlers` registers `atexit` plus SIGTERM/SIGINT/SIGBREAK/SIGHUP, each looked up with `getattr(signal, name, None)` because SIGBREAK is Windows-only and SIGHUP POSIX-only. **SIGKILL is still uncatchable and always will be** — defect 2's guard is what covers it, on the next run. |
-| 2. The next run destroys the only good copy | `main` calls `stale_backups` before touching anything, prints the `mv <target>.bak <target>` line that undoes the mutation still in the tree, and exits 2 without mutating. `apply_mutation` also raises rather than copying over an existing `.bak`, for a restore that fails mid-run. |
-| 3. The restore is never verified | A sha256 per target is taken before the first mutation and compared after every restore; a mismatch prints both digests and fails the suite, so `PASS` can no longer be printed over a modified tree. |
-| 4. `crew_state.py.bak` is tracked | It is no longer tracked (`git ls-files '*.bak'` is empty), and `*.bak` is now in `.gitignore` with the reason — the existing `env.bak/`/`venv.bak/` entries are directories and never matched this. |
+| 1. `finally` does not survive a kill | `install_exit_handlers` registers `atexit` plus SIGTERM/SIGINT/SIGBREAK/SIGHUP, each looked up with `getattr(signal, name, None)` because SIGBREAK is Windows-only and SIGHUP POSIX-only. A restore that FAILS on that path stays in `_LIVE` so the atexit pass retries it. **SIGKILL is still uncatchable and always will be** — defect 2's guard is what covers it, on the next run. |
+| 2. The next run destroys the only good copy | `main` calls `stale_backups` before touching anything, prints the `mv <target>.bak <target>` line that undoes the mutation still in the tree, and exits 2 without mutating. `apply_mutation` raises rather than copying over an existing `.bak`, and builds each backup as `<target>.bak.partial` before `os.replace`-ing it into position — so a `.bak` is complete or absent, never half-written. That last part is not decoration: the startup guard tells the user to move a `.bak` over the target, so a partial one would make that instruction the thing that destroys an intact source. |
+| 3. The restore is never verified | A sha256 per target is taken before the first mutation, held in module state, and compared after every restore **on all three paths** — the loop's `finally`, the signal handler and atexit. A mismatch prints both digests and fails the suite, so `PASS` can no longer be printed over a modified tree. Verifying only the loop's path while claiming all three would be the same defect wearing the fix's label. |
+| 4. `crew_state.py.bak` is tracked | It is no longer tracked (`git ls-files '*.bak'` is empty), and `*.bak` plus `*.bak.partial` are in `.gitignore` — the existing `env.bak/`/`venv.bak/` entries are directories and never matched a file. The reason recorded there is that a **tracked** `.bak` now gates the suite off on every clone, since the harness refuses to start when it sees one. Ignoring does not preserve a `git status` signal; ignored files are hidden from it, and the filesystem check at startup is what replaces that. |
 
-Coverage: `plugin/crew/tests/test_sabotage_harness.py`, 11 tests, none of which
+Coverage: `plugin/crew/tests/test_sabotage_harness.py`, 16 tests, none of which
 touch a real source file — a regression suite for a harness that corrupts files
 must not be able to corrupt what it is testing against. Sabotage-tested
-independently: six mutations, one per new guard, 6/6 red.
+independently: ten mutations, one per guard, 10/10 red.
+
+That independent run paid for itself on the first pass by catching one of these
+new tests being **vacuous**: it asserted a `.bak.partial` was gone after the
+run, which `apply_mutation` makes true whether or not the sweep that removes it
+exists. It now observes the state at the moment the first mutation is applied,
+which only the sweep can produce. Worth recording because it is the exact thing
+this suite exists to find, found in the suite's own coverage.
 
 **Not taken: mutating a copy under a temp tree.** It removes the whole class,
 and it is the right answer eventually. It is not this change because `run_test`

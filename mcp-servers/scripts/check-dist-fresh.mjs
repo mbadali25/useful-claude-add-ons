@@ -16,79 +16,126 @@
 // build entirely. That is the case this check covers, and it is wired as each
 // package's `pretest` so it fires exactly there.
 //
-// A consumer's sources include core's, because a consumer imports core's build
-// output. A stale core is invisible from inside the consumer otherwise: its
-// own dist is current, its own tests compile, and the behaviour under test is
-// last week's.
+// A consumer is checked by checking CORE ITSELF, recursively -- not by
+// comparing the consumer's `dist` against `core/src`. The difference is the
+// whole finding: a consumer imports `core/dist` at RUNTIME, so what has to be
+// current is core's own build against core's own sources. Comparing the
+// consumer's `dist` to `core/src` passes the moment the consumer is rebuilt,
+// even though `core/dist` is untouched and still stale -- preserving exactly
+// the failure this file exists to stop.
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const CORE = "@badali404/mcp-ms-core";
 
-/** Newest mtime under `dir` for files matching `ext`, or 0 when there are none. */
+/**
+ * Newest mtime under `dir` for files matching `ext`.
+ *
+ * `{ mtime, missing }` -- and it THROWS on any read error that is not
+ * "does not exist". A directory that cannot be read is an unknown, and an
+ * unknown returned as `0` compares older than everything and reads as fresh:
+ * the guard would then pass having checked nothing, which is the failure mode
+ * it exists to prevent, wearing its own label. `missing` is a separate value
+ * for the same reason -- the caller decides whether an absent directory is
+ * legitimate (`test/`) or a broken tree (`src/`), and it cannot decide that
+ * from a number.
+ */
 export function newestMtime(dir, ext) {
-  let newest = 0;
   let entries;
   try {
     entries = fs.readdirSync(dir, { withFileTypes: true });
-  } catch {
-    return 0; // A directory that does not exist contributes nothing.
+  } catch (err) {
+    if (err.code === "ENOENT") return { mtime: 0, missing: true };
+    throw err;
   }
+  let newest = 0;
   for (const entry of entries) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
-      newest = Math.max(newest, newestMtime(full, ext));
+      newest = Math.max(newest, newestMtime(full, ext).mtime);
     } else if (entry.name.endsWith(ext)) {
       newest = Math.max(newest, fs.statSync(full).mtimeMs);
     }
   }
-  return newest;
+  return { mtime: newest, missing: false };
+}
+
+function fail(reason) {
+  return { ok: false, reason };
+}
+
+/** One package against its OWN sources. Nothing about its dependencies. */
+function checkOwnBuild(pkgDir, name) {
+  const dist = path.join(pkgDir, "dist");
+  const built = newestMtime(dist, ".js");
+  if (built.missing) return fail(`${name}: dist/ does not exist`);
+  if (built.mtime === 0) return fail(`${name}: dist/ holds no .js`);
+
+  const src = newestMtime(path.join(pkgDir, "src"), ".ts");
+  if (src.missing) return fail(`${name}: src/ does not exist`);
+
+  // `test/` is genuinely optional; `src/` is not. Both are compiled into
+  // dist/ when present, so both gate the build.
+  const tests = newestMtime(path.join(pkgDir, "test"), ".ts");
+
+  // STRICT. Equal mtimes are stale, not fresh.
+  //
+  // An earlier revision accepted equal as fresh, reasoning that a build fast
+  // enough to land in the same filesystem tick as its edit would otherwise
+  // fail every time -- and a check that cries wolf on a correct tree gets
+  // disabled. Measured on this repo instead of argued: after `npm run build`,
+  // every package's newest dist/*.js is strictly newer than its newest
+  // src/*.ts, by 11.9 seconds for core and more elsewhere, with mtimes carrying
+  // sub-millisecond fractions. tsc reads the source before it writes the
+  // output, so on any filesystem whose resolution is finer than a build, that
+  // ordering is structural rather than lucky. Accepting equal would leave a
+  // real edit landing in the same coarse tick as an older build reading as
+  // fresh -- the guard passing on exactly the input it was built to catch.
+  const stale = [];
+  if (src.mtime >= built.mtime) stale.push("src");
+  if (!tests.missing && tests.mtime >= built.mtime) stale.push("test");
+  if (stale.length) {
+    return fail(`${name}: compiled output is not newer than `
+      + stale.map((d) => `${path.basename(pkgDir)}/${d}`).join(", "));
+  }
+  return { ok: true, reason: null };
 }
 
 /**
- * `{ ok, reason, sources }` for one package directory.
- *
- * Equal timestamps are FRESH, not stale. A build fast enough to land in the
- * same filesystem tick as the edit that triggered it is a normal outcome on a
- * small package, and a strict `>=` would fail it every time -- a check that
- * cries wolf on a correct tree gets disabled, which is worse than not having
- * one.
+ * `{ ok, reason }` for one package, including every workspace dependency it
+ * imports the build output of.
  */
 export function checkPackage(pkgDir, packagesDir) {
   const manifest = JSON.parse(
     fs.readFileSync(path.join(pkgDir, "package.json"), "utf8"));
-  const dist = path.join(pkgDir, "dist");
-  if (!fs.existsSync(dist)) {
-    return { ok: false, reason: `${manifest.name}: dist/ does not exist`, sources: [] };
-  }
 
-  const sources = [path.join(pkgDir, "src"), path.join(pkgDir, "test")];
+  const own = checkOwnBuild(pkgDir, manifest.name);
+  if (!own.ok) return own;
+
   const deps = { ...manifest.dependencies, ...manifest.devDependencies };
   if (manifest.name !== CORE && Object.hasOwn(deps, CORE)) {
-    sources.push(path.join(packagesDir, "core", "src"));
+    const core = checkOwnBuild(path.join(packagesDir, "core"), CORE);
+    if (!core.ok) {
+      return fail(`${core.reason} -- and ${manifest.name} imports it at runtime`);
+    }
   }
-
-  const builtAt = newestMtime(dist, ".js");
-  if (builtAt === 0) {
-    return { ok: false, reason: `${manifest.name}: dist/ holds no .js`, sources };
-  }
-  const stale = sources.filter((dir) => newestMtime(dir, ".ts") > builtAt);
-  if (stale.length) {
-    return {
-      ok: false,
-      reason: `${manifest.name}: compiled output is older than `
-        + stale.map((d) => path.relative(packagesDir, d).replace(/\\/g, "/")).join(", "),
-      sources,
-    };
-  }
-  return { ok: true, reason: null, sources };
+  return { ok: true, reason: null };
 }
 
 function main() {
   const pkgDir = process.argv[2] ? path.resolve(process.argv[2]) : process.cwd();
   const packagesDir = path.dirname(pkgDir);
-  const result = checkPackage(pkgDir, packagesDir);
+  let result;
+  try {
+    result = checkPackage(pkgDir, packagesDir);
+  } catch (err) {
+    // An unreadable directory is not a pass. Say what could not be read.
+    process.stderr.write(`\nSTALE-BUILD CHECK COULD NOT RUN -- ${err.message}\n`
+      + "This is not a pass: the build's freshness is unknown, so the tests "
+      + "below it would prove nothing.\n\n");
+    return 1;
+  }
   if (result.ok) return 0;
   process.stderr.write(
     `\nSTALE BUILD -- ${result.reason}.\n`
