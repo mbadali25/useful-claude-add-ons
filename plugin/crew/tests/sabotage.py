@@ -28,6 +28,13 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(
     os.path.dirname(os.path.abspath(__file__)))))
 CREW = os.path.join(ROOT, "plugin", "crew")
 STATE = os.path.join(CREW, "hooks", "scripts", "crew_state.py")
+# The endpoint ledger and the three shared readers left crew_state.py in
+# 0.16.21. A mutation patches the file its anchor actually lives in --
+# an anchor that no longer matches is a FAILURE here, not a skip, so a
+# split that left these pointing at the old file would have been caught
+# by this suite rather than by the absence of one.
+ENDPOINTS = os.path.join(CREW, "hooks", "scripts", "crew_endpoints.py")
+COMMON = os.path.join(CREW, "hooks", "scripts", "crew_common.py")
 LADDER_DOC = os.path.join(CREW, "skills", "crew-scaling", "SKILL.md")
 PLATFORM = os.path.join(CREW, "hooks", "scripts", "crew_platform.py")
 CONFIG = os.path.join(CREW, "hooks", "scripts", "crew_config.py")
@@ -428,7 +435,7 @@ MUTATIONS = (
         # This repo SHIPS plugin/gizmoduck/ as source; that must never read
         # as installation on its own.
         "in-repo plugin/gizmoduck/ counts as installed",
-        STATE,
+        ENDPOINTS,
         '    scopes = []\n    if root:\n        scopes.append(os.path.join('
         'root, ".claude", "settings.local.json"))',
         '    if root and os.path.isdir(os.path.join(root, "plugin", '
@@ -442,7 +449,7 @@ MUTATIONS = (
         # `"false"` (a JSON string) is truthy in Python -- only a real
         # boolean may decide this.
         "a truthy non-bool value counts as installed",
-        STATE,
+        ENDPOINTS,
         '        if not isinstance(value, bool):\n            continue\n'
         '        return value\n    return False',
         '        if value:\n            return True\n    return False',
@@ -452,7 +459,7 @@ MUTATIONS = (
         # Project scope must win over global; reordering the scope list
         # undoes that.
         "global scope is consulted before project scope",
-        STATE,
+        ENDPOINTS,
         '    scopes = []\n    if root:\n        scopes.append(os.path.join('
         'root, ".claude", "settings.local.json"))\n        scopes.append('
         'os.path.join(root, ".claude", "settings.json"))\n    home = '
@@ -472,7 +479,7 @@ MUTATIONS = (
         # More than one manifest anywhere below root must flip _is_monorepo;
         # `hits > 0` fires on the FIRST one instead.
         "a single manifest counts as a monorepo",
-        STATE,
+        ENDPOINTS,
         "            if hits > 1:\n                return True",
         "            if hits > 0:\n                return True",
         ("tests/test_endpoints.py::"
@@ -482,7 +489,7 @@ MUTATIONS = (
         # scan_artifact_path must reject an id it cannot safely use in a
         # path, not merely at mint time.
         "an unsafe id is not rejected at read time",
-        STATE,
+        ENDPOINTS,
         '    record_id = record.get("id")\n    if not _valid_endpoint_id('
         'record_id):\n        return None',
         '    record_id = record.get("id")',
@@ -493,7 +500,7 @@ MUTATIONS = (
         # declare_endpoint must refuse an unsafe caller-supplied id, not
         # only scan_artifact_path reading one back later.
         "an unsafe id is not rejected at mint time",
-        STATE,
+        ENDPOINTS,
         '    if endpoint_id is not None and not _valid_endpoint_id('
         'endpoint_id):\n        return {"error": f"refusing to declare an '
         'unsafe endpoint id: {endpoint_id!r}"}',
@@ -505,7 +512,7 @@ MUTATIONS = (
         # A record that already landed a scan must keep ITS OWN frozen
         # path; recomputing ignores finding 6 entirely.
         "a frozen scan-artifact path is recomputed instead of kept",
-        STATE,
+        ENDPOINTS,
         '    frozen = record.get("artifactPath")\n    if isinstance(frozen, '
         'str):\n        frozen = frozen.replace("\\\\", "/")\n    if frozen '
         'is not None:\n        return _relative_safe(root, frozen, '
@@ -518,7 +525,7 @@ MUTATIONS = (
         # BLOCK 5: a hand-edited artifactPath that escapes the repo must
         # fall back to the computed default, never be trusted as-is.
         "the traversal guard on a frozen artifact path is deleted",
-        STATE,
+        ENDPOINTS,
         "    return value if inside else default",
         "    return value",
         ("tests/test_endpoints.py::"
@@ -530,7 +537,7 @@ MUTATIONS = (
         # that froze it -- a legacy/hand-edited native-separator value must
         # be normalised before use.
         "a frozen artifact path is not normalised to POSIX on read",
-        STATE,
+        ENDPOINTS,
         '    if isinstance(frozen, str):\n        frozen = frozen.replace('
         '"\\\\", "/")',
         "    if False:\n        frozen = frozen",
@@ -541,7 +548,7 @@ MUTATIONS = (
         # `len(records) + 1` collides the moment any record is removed from
         # the committed, hand-editable ledger.
         "declared endpoint ids are minted from record count, not a sequence",
-        STATE,
+        ENDPOINTS,
         "        else:\n            doc[\"nextSeq\"] += 1\n            "
         "new_id = f\"ep-{doc['nextSeq']:04d}\"",
         '        else:\n            new_id = f"ep-{len(records) + 1:04d}"',
@@ -553,7 +560,7 @@ MUTATIONS = (
         # untouched; write-in-place already clobbers it before any failure
         # can be detected.
         "the ledger write is not atomic",
-        STATE,
+        ENDPOINTS,
         '        # newline="\\n": this file is JSON, not one of the `.sh` '
         'scripts the\n        # CRLF landmine names, but pinning it costs '
         'nothing and keeps every\n        # file this module writes '
@@ -573,7 +580,7 @@ MUTATIONS = (
         # A gate that stops running still has to be REMOVABLE -- a mutation
         # that deletes the early return must be caught, not just trusted.
         "the gizmoduck gate is removed from read_endpoints",
-        STATE,
+        ENDPOINTS,
         '    if not gizmoduck_installed(root):\n        return {"installed"'
         ': False, "unscanned": []}',
         '    if False:\n        return {"installed": False, "unscanned": []}',
@@ -582,7 +589,7 @@ MUTATIONS = (
     ),
     (
         "closed records are still counted as unscanned",
-        STATE,
+        ENDPOINTS,
         '        if record.get("status") not in ("open", "candidate"):\n'
         '            continue',
         '        if False:\n            continue',
@@ -592,7 +599,7 @@ MUTATIONS = (
         # Non-empty is necessary but not sufficient -- the text must
         # actually reference the endpoint it claims to cover.
         "a scan artifact for a different endpoint still confirms this one",
-        STATE,
+        ENDPOINTS,
         "    needle = _endpoint_needle(record.get(\"endpoint\"))\n    if "
         "needle is None:\n        return record.get(\"source\") != "
         '"declared"\n    return needle.lower() in text.lower()',
@@ -604,7 +611,7 @@ MUTATIONS = (
         # BLOCK 4: the scan marker itself -- without it, a hand-typed note
         # that merely mentions the URL passes for free.
         "the scan marker is not required to confirm a scan",
-        STATE,
+        ENDPOINTS,
         '    if not _SCAN_MARKER_RE.search(text):\n        return False',
         "    if False:\n        return False",
         "tests/test_endpoints.py::test_todo_note_does_not_confirm_a_scan",
@@ -613,7 +620,7 @@ MUTATIONS = (
         # BLOCK 3: a declared record with no matchable needle must fail
         # CLOSED, not pass on the marker alone.
         "a declared record with no needle fails open instead of closed",
-        STATE,
+        ENDPOINTS,
         '    if needle is None:\n        return record.get("source") != '
         '"declared"',
         "    if needle is None:\n        return True",
@@ -625,7 +632,7 @@ MUTATIONS = (
         # BLOCK 3: the needle derivation must cover a bare hostname, not
         # only a URL or an absolute path.
         "the needle derivation does not cover a bare hostname",
-        STATE,
+        ENDPOINTS,
         '    if stripped.startswith("/") or _HOSTNAME_RE.match(stripped):\n'
         "        return stripped",
         '    if stripped.startswith("/"):\n        return stripped',
@@ -635,7 +642,7 @@ MUTATIONS = (
         # Finding 4's related bug: a bare "/" would match almost any
         # markdown file that contains a slash anywhere.
         "a bare slash is treated as a specific needle",
-        STATE,
+        ENDPOINTS,
         '    if stripped == "/":\n        return None',
         "    if False:\n        return None",
         "tests/test_endpoints.py::test_endpoint_needle_rejects_a_bare_slash",
@@ -644,7 +651,7 @@ MUTATIONS = (
         # Attribution to the owning package is the whole point of the
         # mono-repo path rule; ignoring it silently falls back to root.
         "mono-repo scan artifacts ignore package attribution",
-        STATE,
+        ENDPOINTS,
         '        package_dir = _owning_package_dir(root, record.get('
         '"location"))',
         '        package_dir = ""',
@@ -654,7 +661,7 @@ MUTATIONS = (
     (
         # BLOCK 1: candidates are computed, never persisted as declared.
         "an ephemeral candidate is built as a declared record",
-        STATE,
+        ENDPOINTS,
         '        "id": f"cand-{digest}",\n        "endpoint": candidate.get'
         '("label") or "unidentified endpoint candidate",\n        "source":'
         ' "inferred", "status": "candidate",',
@@ -670,7 +677,7 @@ MUTATIONS = (
         # source="declared", status="open" -- a status downgrade here is
         # the whole guarantee failing at its one writer.
         "declare_endpoint writes status=candidate instead of open",
-        STATE,
+        ENDPOINTS,
         '        record = {\n            "id": new_id, "endpoint": '
         'endpoint, "source": "declared",\n            "status": "open", '
         '"location": location, "ticket": ticket,\n            "createdAt": '
@@ -687,7 +694,7 @@ MUTATIONS = (
         # or two different diff lines sharing a signal collide onto one id
         # and one scan artifact silently discharges both.
         "an ephemeral candidate id ignores location",
-        STATE,
+        ENDPOINTS,
         "    digest = hashlib.sha1(\n        f\"{candidate.get('signal')}:"
         "{candidate.get('location')}\".encode(\"utf-8\")\n    ).hexdigest()"
         "[:8]",
@@ -700,7 +707,7 @@ MUTATIONS = (
         # A location already covered by a persisted record must not ALSO
         # surface as a fresh inferred candidate under a different id.
         "a promoted location still surfaces as a fresh candidate",
-        STATE,
+        ENDPOINTS,
         '        if candidate.get("location") in covered_locations:\n'
         '            continue',
         "        if False:\n            continue",
@@ -711,7 +718,7 @@ MUTATIONS = (
         # Finding 9: a comment describing the shape must not itself be read
         # as the shape.
         "inference does not skip comment lines",
-        STATE,
+        ENDPOINTS,
         '        stripped = added.strip()\n        if stripped.startswith('
         '_COMMENT_PREFIXES):\n            next_line += 1\n            '
         "continue",
@@ -721,7 +728,7 @@ MUTATIONS = (
     ),
     (
         "inference does not skip a match inside someone else's string",
-        STATE,
+        ENDPOINTS,
         'if match and not _inside_quoted_string(added, match.start()):',
         "if match:",
         ("tests/test_endpoints.py::test_infer_endpoints_ignores_a_match_"
@@ -732,7 +739,7 @@ MUTATIONS = (
         # it is what stops the trigger crying wolf on every session opened
         # in this repo.
         "inference no longer excludes crew's own source",
-        STATE,
+        ENDPOINTS,
         "        if current_excluded:\n            next_line += 1\n"
         "            continue",
         "        if False:\n            next_line += 1\n            continue",
@@ -742,7 +749,7 @@ MUTATIONS = (
     ),
     (
         "inference no longer gates openapi-path to spec-shaped files",
-        STATE,
+        ENDPOINTS,
         "            if extensions and current_ext not in extensions:\n"
         "                continue",
         "            if False:\n                continue",
@@ -776,7 +783,7 @@ MUTATIONS = (
     (
         # Finding 7: an unsafe-id hit must still carry location.
         "an unsafe-id unscanned hit drops location",
-        STATE,
+        ENDPOINTS,
         '            "status": record.get("status"),\n            '
         '"location": record.get("location"),\n            "path": None,',
         '            "status": record.get("status"),\n            '
@@ -786,7 +793,7 @@ MUTATIONS = (
     (
         # Finding 7: an ordinary unscanned hit must carry location too.
         "an unscanned hit drops location",
-        STATE,
+        ENDPOINTS,
         '        "status": record.get("status"),\n        "location": '
         'record.get("location"),\n        "path": artifact,',
         '        "status": record.get("status"),\n        "path": '
@@ -797,7 +804,7 @@ MUTATIONS = (
         # Finding 8: a confirmed-but-never-frozen scan must be surfaced,
         # not silently indistinguishable from a properly frozen one.
         "a confirmed but never-frozen scan is not surfaced",
-        STATE,
+        ENDPOINTS,
         '        elif (record.get("source") == "declared"\n              '
         'and record.get("artifactPath") is None):',
         "        elif False:",
@@ -807,7 +814,7 @@ MUTATIONS = (
         # Finding 9: a closed record's location must ALSO stay excluded
         # from fresh inference, not just an open/candidate one.
         "a closed record's location re-surfaces as a fresh candidate",
-        STATE,
+        ENDPOINTS,
         'covered_locations = {record.get("location") for record in '
         'declared}',
         'covered_locations = {record.get("location") for record in '
@@ -820,7 +827,7 @@ MUTATIONS = (
         # Finding 10: a vendored/generated tree with its own manifests must
         # not itself flip a repo into monorepo classification.
         "the monorepo skip-dirs list is emptied",
-        STATE,
+        ENDPOINTS,
         '_MONOREPO_SKIP_DIRS = frozenset({\n    "node_modules", '
         '"graphify-out", "vendor", ".venv", "venv", "dist", "build",\n})',
         "_MONOREPO_SKIP_DIRS = frozenset()",
@@ -831,7 +838,7 @@ MUTATIONS = (
         # Finding 11: re-declaring an existing id must not silently reopen
         # a record a human deliberately closed.
         "re-declaring an existing id forces status back to open",
-        STATE,
+        ENDPOINTS,
         '                    record.update(endpoint=endpoint, '
         'source="declared",\n                                  '
         "location=location, ticket=ticket,\n                                  "
@@ -847,7 +854,7 @@ MUTATIONS = (
         # Finding 12: record_scan_artifact must store POSIX separators
         # regardless of the OS this runs on.
         "the frozen artifact path is stored with native separators",
-        STATE,
+        ENDPOINTS,
         '                path = path.replace("\\\\", "/")',
         "                pass",
         ("tests/test_endpoints.py::"
@@ -858,7 +865,7 @@ MUTATIONS = (
         # whole read-modify-write cycle, or concurrent callers lose each
         # other's records with no error raised on either side.
         "declare_endpoint no longer holds the endpoints lock",
-        STATE,
+        ENDPOINTS,
         '    """\n    path = _endpoints_path(root) + ".lock"\n    deadline'
         " = time.time() + _ENDPOINTS_LOCK_TIMEOUT_SECONDS",
         '    """\n    return None\n    path = _endpoints_path(root) + '

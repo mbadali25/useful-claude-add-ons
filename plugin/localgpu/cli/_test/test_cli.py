@@ -922,6 +922,43 @@ def test_mcp_init_preserves_other_servers(tmp_path, fake_install):
     assert "localgpu" in doc["mcpServers"]
 
 
+def test_a_failed_serialisation_leaves_the_existing_mcp_json_intact(
+        tmp_path, fake_install, monkeypatch):
+    """`open(p, "w")` truncates at open time, so the order is the guard.
+
+    Serialised inside the `with`, a raising `json.dumps` leaves a zero-byte
+    `.mcp.json` - every other server in it gone, and the run looking like it
+    simply failed. Nothing reaching that line can raise today; this pins the
+    ordering so the next value added upstream cannot make it possible.
+    """
+    original = {"mcpServers": {"other": {"type": "stdio", "command": "keep-me"}}}
+    target = tmp_path / ".mcp.json"
+    target.write_text(cli.json.dumps(original), encoding="utf-8")
+    before = target.read_text(encoding="utf-8")
+
+    real_dumps = cli.json.dumps
+    raised = []
+
+    def refuse(obj, *args, **kwargs):
+        # Only the final whole-document serialisation. `cmd_mcp_init` calls
+        # json.dumps on other paths (the differing-entry diff), and a blanket
+        # raise would let an EARLIER call abort the run before the write was
+        # ever reached - the file would survive for the wrong reason, and the
+        # test would pass with the dangerous order restored.
+        if isinstance(obj, dict) and "mcpServers" in obj:
+            raised.append(obj)
+            raise TypeError("Object of type object is not JSON serializable")
+        return real_dumps(obj, *args, **kwargs)
+
+    monkeypatch.setattr(cli.json, "dumps", refuse)
+    with pytest.raises(TypeError):
+        _run(tmp_path)
+
+    assert raised, "the document serialisation was never reached"
+    assert target.read_text(encoding="utf-8") == before, (
+        "the file was truncated before the payload existed")
+
+
 def test_mcp_init_refuses_to_overwrite_a_different_entry(tmp_path, fake_install):
     stale = {"mcpServers": {"localgpu": {"command": "C:/old/0.1.9/python.exe"}}}
     (tmp_path / ".mcp.json").write_text(cli.json.dumps(stale), encoding="utf-8")
