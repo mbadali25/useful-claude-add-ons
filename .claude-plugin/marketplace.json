@@ -134,6 +134,12 @@
       "version": "1.1.0"
     },
     {
+      "name": "report-builder",
+      "source": "./skills/report-builder",
+      "description": "Professional human-facing reports as HTML that convert cleanly to DOCX and PDF through Word - masthead, lede, summary cards, severity chips, and the exact CSS Word silently drops.",
+      "version": "1.0.0"
+    },
+    {
       "name": "shipstation",
       "source": "./skills/shipstation",
       "description": "ShipStation across V2, legacy V1, and ShipEngine - shipments, labels, rates, carriers, warehouses, inventory, products, orders, tracking, batches, manifests.",
@@ -179,7 +185,7 @@
       "name": "crew",
       "source": "./plugin/crew",
       "description": "Virtual dev team for multi-repo legacy work - 29 context-isolated agents (13 tiered, 15 domain specialists opted into per repo, and the standing manager), 24 slash commands, 17 bundled skills, and deterministic hooks that block unsafe commands, gate unverified turns, brief the PM at session start, re-engage it to assign work when project state changes, carry a handoff across compaction, recreate a missing or broken .crew/config.json from a single-source template, and layer a guided, walkthrough-written machine-global config under the per-repo one.",
-      "version": "0.16.29"
+      "version": "0.16.30"
     },
     {
       "name": "gizmoduck",

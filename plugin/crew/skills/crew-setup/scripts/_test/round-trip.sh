@@ -32,7 +32,7 @@ for f in canon label; do
   declare -F "$f" >/dev/null || { echo "FAIL: could not extract $f() from claude-md-audit.sh"; exit 1; }
 done
 
-CONCERNS="commands where-things-are scope stop-and-ask promotion reporting memory"
+CONCERNS="commands where-things-are scope stop-and-ask promotion documentation reporting memory"
 
 fails=0
 checked=0
@@ -57,8 +57,15 @@ done
 
 # A silently-empty loop must not pass. If the concern list or the extraction
 # breaks, this catches it rather than reporting a green run over zero cases.
-if [ "$checked" -ne 7 ]; then
-  echo "FAIL: expected 7 concerns, checked $checked - the extraction or list is broken"
+# Derived from CONCERNS rather than hardcoded. The count was literally `7` and
+# adding an eighth concern failed here with "the extraction or list is broken" -
+# a message that accuses the extraction when the list is what moved. A count
+# that has to be edited in two places to add one concern is a tripwire on the
+# maintainer, not on the contract.
+EXPECTED=$(printf '%s
+' $CONCERNS | grep -c .)
+if [ "$checked" -ne "$EXPECTED" ]; then
+  echo "FAIL: CONCERNS lists $EXPECTED, checked $checked - label() is missing an arm, or the extraction is broken"
   exit 1
 fi
 

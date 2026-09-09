@@ -31,6 +31,7 @@ canon() {
     scope*|discipline*)                                      echo "scope" ;;
     stop*|ask*|escalat*)                                     echo "stop-and-ask" ;;
     promotion*|production*|deploy*|release*|environments*)   echo "promotion" ;;
+    documentation*|docs*|doc\ format*)                        echo "documentation" ;;
     reporting*|output*|communicat*)                          echo "reporting" ;;
     memory*|context*|notes*)                                 echo "memory" ;;
     *)                                                       echo "other:$1" ;;
@@ -44,6 +45,7 @@ label() {
     scope)            echo "## Scope discipline - fix the ticket, not what you notice nearby" ;;
     stop-and-ask)     echo "## Stop and ask - the conditions that should halt work" ;;
     promotion)        echo "## Promotion: development -> qa -> production - smoke, regression, verify" ;;
+    documentation)    echo "## Documentation - HTML/PDF/DOCX for humans, Markdown for the repo, all under docs/" ;;
     reporting)        echo "## Reporting - errors verbatim, say what you did NOT verify" ;;
     memory)           echo "## Memory - where the code map and runbooks live" ;;
   esac
