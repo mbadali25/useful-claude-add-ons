@@ -48,7 +48,7 @@ jira_get_cloud_id() (
 # loops) adds one. A key is usually alnum-plus-hyphen and looks safe to
 # interpolate raw - right up to the caller who passes `PROJ-1?expand=changelog`
 # and silently changes the request.
-_jira_uri() { jq -rn --arg v "$1" '$v | @uri' || return $?; }
+_jira_uri() { jq -rn --arg v "$1" '$v | @uri'; }
 
 _jira_curl() (
   # _jira_curl METHOD PATH [JSON_BODY]
@@ -91,7 +91,9 @@ jira_list_projects() {
 
 jira_project_issue_types() {
   # jira_project_issue_types PROJECTKEY
-  _jira_curl GET "/issue/createmeta?projectKeys=$(_jira_uri "$1")&expand=projects.issuetypes"
+  local key
+  key=$(_jira_uri "$1") || return $?
+  _jira_curl GET "/issue/createmeta?projectKeys=${key}&expand=projects.issuetypes"
 }
 
 ### Reading issues ###
@@ -99,7 +101,13 @@ jira_project_issue_types() {
 jira_get_issue() {
   # jira_get_issue ISSUEKEY [fields_csv]
   local fields="${2:-summary,status,assignee,reporter,priority,labels,description,updated}"
-  _jira_curl GET "/issue/$(_jira_uri "$1")?fields=$(_jira_uri "${fields}")"
+  local key enc
+  # Assigned, then checked. Inside a larger string, `$( )` swallows the
+  # failure: with jq absent this built `/issue/?fields=` and returned 0, so
+  # the caller saw a 404 blaming the issue key rather than a missing jq.
+  key=$(_jira_uri "$1") || return $?
+  enc=$(_jira_uri "${fields}") || return $?
+  _jira_curl GET "/issue/${key}?fields=${enc}"
 }
 
 jira_search() {

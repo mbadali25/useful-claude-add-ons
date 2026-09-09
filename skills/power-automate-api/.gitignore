@@ -1,13 +1,19 @@
 # Runtime output, never committed.
 #
-# `pa.py` writes a pre-change snapshot of a flow here before it patches, so a
-# rollback has something to restore from. Those files are a verbatim dump of a
-# live tenant: environment and flow GUIDs, connection references, SharePoint
-# site URLs, and whatever the flow's own actions embed.
+# `pa.py` no longer writes here -- since the SNAPSHOT_DIR fix it writes to
+# `~/.pa-api-cache/snapshots`, outside any checkout and outside the installed
+# plugin, so no ignore rule is load-bearing for it any more.
 #
-# One was committed and pushed to this PUBLIC repo before anyone noticed --
-# found by a review, not by a person reading the diff, because a 51KB JSON blob
-# in a 59-file changeset is exactly what nobody opens. The snapshot directory is
-# ignored wholesale rather than per-file so the next one cannot arrive the same
-# way.
+# This rule stays as a net, not as documentation. Two earlier versions of that
+# constant DID write into a repo: a CWD-relative path put live-tenant dumps at
+# whatever directory pa.py was launched from, and an anchor on `__file__` put
+# them right here. A checkout that ran either still has the directory, and the
+# rule is what keeps it out of a commit.
+#
+# What those files are, and why it matters: a verbatim dump of a live tenant --
+# environment and flow GUIDs, connection references, SharePoint site URLs, and
+# whatever the flow's own actions embed. One was committed and pushed to this
+# PUBLIC repo before anyone noticed, found by a review rather than by a person
+# reading the diff, because a 51KB JSON blob in a 59-file changeset is exactly
+# what nobody opens.
 scripts/pa-snapshots/

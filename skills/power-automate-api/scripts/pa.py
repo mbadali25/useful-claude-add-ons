@@ -435,17 +435,39 @@ def snapshot(name, content):
         die("cannot create the snapshot directory %s: %s\n"
             "Nothing was written and no PATCH was attempted -- a patch without "
             "a rollback is not worth the risk." % (SNAPSHOT_DIR, exc))
+    try:
+        # Owner-only. The FILES are already 0600 (tempfile opens with that mode),
+        # but the directory took the umask default, and these names embed flow
+        # GUIDs. Best-effort: Windows has no POSIX mode, which is why the token
+        # chmod above is wrapped the same way.
+        os.chmod(SNAPSHOT_DIR, 0o700)
+    except OSError:
+        pass
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     # Exclusive creation prevents concurrent processes overwriting rollback state.
+    path = None
     try:
         with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=SNAPSHOT_DIR,
                                          prefix="%s.%s." % (name, stamp), suffix=".json",
                                          delete=False) as out:
+            path = Path(out.name)
             out.write(content)
     except OSError as exc:
+        # Remove the partial file BEFORE dying. `delete=False` means the file
+        # already exists by the time a write fails, so bailing out here left a
+        # ZERO-BYTE snapshot carrying a valid-looking name -- and because these
+        # sort by timestamp, it became the NEWEST rollback for that flow. That is
+        # this repo's documented `open(p,"w")` landmine in another costume: the
+        # second-order failure is the next reader taking the empty file as its
+        # baseline and every check reporting success against nothing.
+        if path is not None:
+            try:
+                path.unlink()
+            except OSError:
+                pass
         die("cannot write a snapshot into %s: %s\n"
-            "Nothing was written and no PATCH was attempted." % (SNAPSHOT_DIR, exc))
-    return Path(out.name)
+            "Nothing was left behind and no PATCH was attempted." % (SNAPSHOT_DIR, exc))
+    return path
 
 
 # --------------------------------------------------------------------------
@@ -568,9 +590,20 @@ def cmd_patch(args):
         # cmd.exe and PowerShell do not read POSIX single-quoting, and no single
         # string is correct in all three. Two labelled lines beat one that is
         # right nowhere -- see `_arg`.
-        print('Rollback (cmd.exe / PowerShell): pa.py patch --org "%s" '
-              '--flow "%s" --tenant "%s" --clientdata "%s" --force'
-              % (args.org, args.flow, args.tenant, before))
+        #
+        # Plain double quotes, no escaping, and SUPPRESSED rather than mangled
+        # when a value carries a character that would break them: `"` ends the
+        # quote in both shells, `%VAR%` is expanded by cmd.exe, and `$` or a
+        # backtick is expanded by PowerShell. Every value this tool actually
+        # produces -- an org URL, a flow GUID, a tenant, a snapshot path -- is
+        # safe, so the line is printed in practice and withheld exactly when it
+        # would be wrong. Printing a line that silently mis-quotes is worse than
+        # printing one line and saying which shell it is for.
+        windows_unsafe = '"' + "%$" + chr(96)
+        vals = [args.org, args.flow, args.tenant, str(before)]
+        if not any(c in v for v in vals for c in windows_unsafe):
+            print('Rollback (cmd.exe / PowerShell): pa.py patch --org "%s" '
+                  '--flow "%s" --tenant "%s" --clientdata "%s" --force' % tuple(vals))
 
 
 def cmd_runs(args):
