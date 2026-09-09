@@ -48,7 +48,7 @@ jira_get_cloud_id() (
 # loops) adds one. A key is usually alnum-plus-hyphen and looks safe to
 # interpolate raw - right up to the caller who passes `PROJ-1?expand=changelog`
 # and silently changes the request.
-_jira_uri() { jq -rn --arg v "$1" '$v | @uri'; }
+_jira_uri() { jq -rn --arg v "$1" '$v | @uri' || return $?; }
 
 _jira_curl() (
   # _jira_curl METHOD PATH [JSON_BODY]
@@ -99,7 +99,7 @@ jira_project_issue_types() {
 jira_get_issue() {
   # jira_get_issue ISSUEKEY [fields_csv]
   local fields="${2:-summary,status,assignee,reporter,priority,labels,description,updated}"
-  _jira_curl GET "/issue/$(_jira_uri "$1")?fields=${fields}"
+  _jira_curl GET "/issue/$(_jira_uri "$1")?fields=$(_jira_uri "${fields}")"
 }
 
 jira_search() {
@@ -133,7 +133,7 @@ jira_edit_issue() {
   local key="$1" fields_json="$2"
   local body
   body=$(jq -n --argjson fields "$fields_json" '{fields: $fields}')
-  _jira_curl PUT "/issue/$key" "$body" || return $?
+  _jira_curl PUT "/issue/$(_jira_uri "$key")" "$body" || return $?
   echo "(no content on success = 204)"
 }
 
@@ -159,7 +159,7 @@ jira_assign() {
   else
     body=$(jq -n --arg id "$account_id" '{fields: {assignee: {accountId: $id}}}')
   fi
-  _jira_curl PUT "/issue/$key" "$body" || return $?
+  _jira_curl PUT "/issue/$(_jira_uri "$key")" "$body" || return $?
   echo "(no content on success = 204)"
 }
 
@@ -167,7 +167,7 @@ jira_assign() {
 
 jira_get_transitions() {
   # jira_get_transitions ISSUEKEY
-  _jira_curl GET "/issue/$1/transitions"
+  _jira_curl GET "/issue/$(_jira_uri "$1")/transitions"
 }
 
 jira_transition() {
@@ -175,7 +175,7 @@ jira_transition() {
   local key="$1" transition_id="$2"
   local body
   body=$(jq -n --arg id "$transition_id" '{transition: {id: $id}}')
-  _jira_curl POST "/issue/$key/transitions" "$body" || return $?
+  _jira_curl POST "/issue/$(_jira_uri "$key")/transitions" "$body" || return $?
   echo "(no content on success = 204)"
 }
 
@@ -191,7 +191,7 @@ jira_add_comment() {
   local key="$1" text="$2"
   local body
   body=$(jq -n --argjson body "$(_adf "$text")" '{body: $body}')
-  _jira_curl POST "/issue/$key/comment" "$body"
+  _jira_curl POST "/issue/$(_jira_uri "$key")/comment" "$body"
 }
 
 jira_add_worklog() {
@@ -204,7 +204,7 @@ jira_add_worklog() {
   else
     body=$(jq -n --arg t "$time_spent" '{timeSpent: $t}')
   fi
-  _jira_curl POST "/issue/$key/worklog" "$body"
+  _jira_curl POST "/issue/$(_jira_uri "$key")/worklog" "$body"
 }
 
 ### Issue links ###
@@ -228,6 +228,6 @@ jira_delete_issue() {
   # DESTRUCTIVE AND IRREVERSIBLE. jira_delete_issue ISSUEKEY
   # Only call this after explicit, unambiguous user confirmation (see SKILL.md).
   local key="$1"
-  _jira_curl DELETE "/issue/$key" || return $?
+  _jira_curl DELETE "/issue/$(_jira_uri "$key")" || return $?
   echo "(no content on success = 204 — issue is permanently gone)"
 }

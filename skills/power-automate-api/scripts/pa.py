@@ -21,6 +21,7 @@ import argparse
 import http.client
 import json
 import os
+import shlex
 import socket
 import sys
 import tempfile
@@ -36,12 +37,22 @@ from pathlib import Path
 DEFAULT_CLIENT_ID = "04b07795-8ddb-461a-bbee-02f9e1bf7b46"
 
 CACHE_DIR = Path(os.path.expanduser("~")) / ".pa-api-cache"
-# Anchored to THIS FILE, not the process CWD. `.gitignore` protects
-# `scripts/pa-snapshots/`; a CWD-relative path put the same tenant dumps in
-# `pa-snapshots/` at whatever directory pa.py was launched from, outside the
-# ignore rule. A snapshot is a verbatim dump of a live tenant, and one has
-# already been committed to a public repo from exactly this class of mistake.
-SNAPSHOT_DIR = Path(__file__).resolve().parent / "pa-snapshots"
+# Beside the token cache, in the user's home -- NOT in the repo and NOT in the
+# installed skill.
+#
+# Two wrong answers were tried first. `Path("pa-snapshots")` is relative to the
+# process CWD, so running pa.py from a repo root wrote verbatim live-tenant
+# dumps to a path no ignore rule covered; a snapshot committed to a public repo
+# is exactly how that fails, and it has already happened once here.
+# `Path(__file__).parent` fixed the ignore problem and introduced worse ones:
+# it writes into the installed plugin, so `claude plugin update` can delete the
+# only copy of a rollback, every repo and tenant share one directory, and a
+# read-only install turns `pa.py patch` into an unhandled traceback BEFORE the
+# PATCH -- no rollback and no explanation.
+#
+# `CACHE_DIR` above already had the right shape: user-owned, outside any
+# checkout, survives reinstall, needs no ignore rule anywhere.
+SNAPSHOT_DIR = CACHE_DIR / "snapshots"
 
 # scope = resource URI + "/.default". A resource URI that already ends in "/"
 # therefore yields a double slash, which is correct. See references/auth.md.
@@ -223,19 +234,28 @@ def device_code_login(resource, tenant, client_id=DEFAULT_CLIENT_ID):
 
 
 def _arg(value):
-    """Quote one argument for a command line a HUMAN will paste.
+    r"""Quote one argument for the POSIX shell, using the stdlib.
 
-    Not `shlex.quote`: that emits POSIX single-quote quoting, and this string is
-    printed on Windows as often as not, where cmd.exe treats `'...'` as part of
-    the value. Double quotes are understood by cmd.exe, PowerShell and POSIX
-    shells alike, so quote only when there is whitespace and leave the common
-    case bare and readable.
+    This is `shlex.quote` and nothing else, deliberately. An earlier version of
+    this function tried to be correct for cmd.exe, PowerShell and sh at once by
+    using double quotes and only when it saw whitespace. It was wrong in all
+    three, and wrong in the direction that matters here:
+
+      * A Windows snapshot path has no whitespace and no quote, so it came back
+        BARE -- and bash then eats every backslash, turning
+        `C:\Users\...\f.json` into `C:Usersd3ade...json`. That is exactly the
+        failure ticket 4 was filed for, re-introduced by ticket 4's own fix.
+      * Bare `a&b` in cmd.exe runs `b` as a second command.
+      * `\"` is the Windows CRT convention, not PowerShell's escape.
+      * `$`, a backtick and `\` were left unprotected for POSIX, so a crafted
+        path in the printed line becomes command substitution when pasted.
+
+    Git Bash is the paste target on this platform and the shell this repo's own
+    tooling runs, so POSIX quoting is the right single answer. `cmd_patch`
+    prints a cmd.exe-flavoured line beside it rather than trying to make one
+    string correct everywhere.
     """
-    text = str(value)
-    unsafe = '"' + "'"
-    if text and not any(c.isspace() or c in unsafe for c in text):
-        return text
-    return '"%s"' % text.replace('"', '\\"')
+    return shlex.quote(str(value))
 
 
 def token_for(resource, tenant, interactive=True, client_id=DEFAULT_CLIENT_ID):
@@ -244,9 +264,12 @@ def token_for(resource, tenant, interactive=True, client_id=DEFAULT_CLIENT_ID):
         return cached
     if not interactive:
         die("no cached token for %s -- run 'pa.py login' first" % resource)
-    # client_id is threaded through: without it a custom --client-id is lost the
-    # moment the refresh token is gone and this falls back to interactive login,
-    # which is exactly when the user is least able to tell why the app id changed.
+    # Threaded through rather than defaulted here. Today every caller passes
+    # interactive=False and dies above, so this line is unreachable and the
+    # parameter changes no behaviour -- said plainly because a reviewer checked
+    # and found it a no-op. It is kept because the alternative is a signature
+    # that silently drops a custom client id the moment anyone adds an
+    # interactive caller, which is the bug this whole ticket was about.
     return device_code_login(resource, tenant, client_id)
 
 
@@ -397,13 +420,31 @@ def load_clientdata_file(path):
 
 
 def snapshot(name, content):
-    SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
+    """Write a pre-change copy and return its path. Never returns silently
+    without one -- `cmd_patch` calls this BEFORE the PATCH, so a failure here
+    must stop the patch rather than let it proceed with no rollback.
+
+    Both calls are guarded. An unhandled OSError from either would surface as a
+    traceback at the worst possible moment: after the caller decided to patch
+    and before anything was saved, leaving "no rollback and no explanation" --
+    the same shape as the network tracebacks this file already diagnoses.
+    """
+    try:
+        SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        die("cannot create the snapshot directory %s: %s\n"
+            "Nothing was written and no PATCH was attempted -- a patch without "
+            "a rollback is not worth the risk." % (SNAPSHOT_DIR, exc))
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     # Exclusive creation prevents concurrent processes overwriting rollback state.
-    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=SNAPSHOT_DIR,
-                                     prefix="%s.%s." % (name, stamp), suffix=".json",
-                                     delete=False) as out:
-        out.write(content)
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=SNAPSHOT_DIR,
+                                         prefix="%s.%s." % (name, stamp), suffix=".json",
+                                         delete=False) as out:
+            out.write(content)
+    except OSError as exc:
+        die("cannot write a snapshot into %s: %s\n"
+            "Nothing was written and no PATCH was attempted." % (SNAPSHOT_DIR, exc))
     return Path(out.name)
 
 
@@ -519,9 +560,17 @@ def cmd_patch(args):
     # normal case - so the saved definition usually still carries the problems
     # reported above. Without --force the printed command hits "Refusing to
     # PATCH" and exits 2 at the one moment anyone needs it.
-    print("Rollback: pa.py patch --org %s --flow %s --tenant %s --clientdata %s "
-          "--force" % (_arg(args.org), _arg(args.flow), _arg(args.tenant),
-                       _arg(str(before))))
+    rollback = ("pa.py patch --org %s --flow %s --tenant %s --clientdata %s "
+                "--force" % (_arg(args.org), _arg(args.flow), _arg(args.tenant),
+                             _arg(str(before))))
+    print("Rollback (bash / Git Bash): " + rollback)
+    if os.name == "nt":
+        # cmd.exe and PowerShell do not read POSIX single-quoting, and no single
+        # string is correct in all three. Two labelled lines beat one that is
+        # right nowhere -- see `_arg`.
+        print('Rollback (cmd.exe / PowerShell): pa.py patch --org "%s" '
+              '--flow "%s" --tenant "%s" --clientdata "%s" --force'
+              % (args.org, args.flow, args.tenant, before))
 
 
 def cmd_runs(args):

@@ -5,7 +5,7 @@ description: Full read/write access to Jira Cloud via direct REST API calls, aut
 
 # Jira Manager (direct API, env-var auth)
 
-Full CRUD-style workflow for Jira Cloud using the Jira REST API v3 directly over `curl` — no MCP connector, no OAuth flow. Works anywhere with `curl` + `jq` available (Claude Code, Cowork, a terminal, this sandbox).
+Full CRUD-style workflow for Jira Cloud using the Jira REST API v3 directly over `curl` — no MCP connector, no OAuth flow. Works anywhere with `curl` **7.76+** (March 2021) and `jq` available (Claude Code, Cowork, a terminal, this sandbox). The version floor is `--fail-with-body`, which is what makes a 4xx return non-zero **and** still hand you Jira's `errorMessages` — the only thing that says whether it was a bad field, a stale transition id or a missing token scope. On an older curl (RHEL 8 ships 7.61, Ubuntu 20.04 7.68, Debian 11 7.74) every call aborts with `curl: option --fail-with-body: is unknown` before making a request: loud and precisely named, so it diagnoses itself.
 
 ## Required environment variables
 
