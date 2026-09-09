@@ -84,6 +84,7 @@ CONFIG_BLOCKS = (
     ("graph", GRAPH_BLOCK),
     ("qa", crew_state.QA_DEFAULTS),
     ("dev", crew_state.DEV_DEFAULTS),
+    ("worktree", crew_state.WORKTREE_DEFAULTS),
 )
 
 # The keys schema 3 introduced. Named here rather than diffed generically so

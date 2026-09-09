@@ -6,6 +6,231 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **crew 0.16.27: a repo `null` no longer shadows a machine-global value.**
+  The bug the `worktree.root` work exposed, and it was never about
+  `worktree.root`: `/crew:init` writes `templates/config.template.json`, which
+  spells out EVERY key including the ones whose default is `null`.
+  `merge_defaults` treats that null as a supplied value, so it beat the global
+  layer -- and the machine-global file therefore did nothing for any repo crew
+  had ever initialised, which is every managed repo.
+
+  Measured on the committed template, with a global value set for each:
+  `memory.vaultPath`, `qa.codex.model`, `notify.chatId`,
+  `secondOpinion.model` and `worktree.root` all resolved to `None`. Five keys,
+  not one. The global layer has been advertised since 0.16.0 and was inert for
+  all of them.
+
+  Fixed as `crew_config.null_shadows` / `without_null_shadows`, which is
+  `_layer_supplies`' existing rule one case wider -- an empty dict "mentions a
+  key without deciding its value", and so does a null. Deliberately NARROW: it
+  fires only where the global layer actually supplies something, so
+  `context.reserveTokens: null` still means "off" rather than silently becoming
+  the 100000 default. A blanket "null means unset" would have broken that, and
+  the README documents it.
+
+  Deliberately NOT fixed in `merge_defaults`: `crew_upgrade.upgrade_config`
+  shares that function, and changing null semantics there would rewrite users'
+  files during migration rather than only resolving them for a read.
+
+  Both `resolve_config` and `/crew:config`'s source column call the same
+  helper, so the value the run uses and the layer the report names cannot
+  disagree -- the failure this module already carries scar tissue for.
+
+  The regression suite is sabotage-tested, and the first version of it FAILED
+  that test: it exercised the helper directly, so deleting the call from
+  `resolve_config` left it green. Two end-to-end tests through `resolve_config`
+  and `explain_config` were added for exactly that gap; removing either call
+  site now fails one named test.
+
+- **crew 0.16.27: `worktree_path` neutralises both separators, and `:`.** The
+  shipped regex was `[\/]+`, which inside a character class is an escaped
+  forward slash and matches `/` alone, so a backslash travelled through intact
+  and `feat\x` resolved one directory DEEPER than every other worktree. Found
+  by re-running the control rather than reading it, and independently by the
+  security review. `_SEPARATORS` is now derived from `os.sep`/`os.altsep`
+  instead of written as a regex literal, because the escaping is what went
+  wrong -- the same trap then bit twice more in this change's own docstrings.
+
+  `:` joins them for a Windows-only reason: `myrepo-release:v1` is NTFS
+  alternate-data-stream syntax, naming a stream rather than a directory. git's
+  ref-format forbids both `\` and `:`, so neither is reachable from a real
+  branch -- but this function's signature is a string, and a contract nothing
+  tests is a comment.
+
+- **crew 0.16.27: the worktree leaf carries a repo digest.** The leaf was
+  `<basename>-<branch>`, and an earlier docstring claimed that let several
+  repos share one root safely. It does not: two checkouts called `myrepo` under
+  different parents -- two clients, one project name -- produce the same leaf
+  for the same branch, so one repo's `/crew:emergency` worktree lands in or is
+  mistaken for the other's, with both directories looking correct. Raised by
+  the security review. A 6-character `blake2b` of `normcase(realpath())`
+  disambiguates them and is stable across symlinks, drive-letter case and
+  separator spelling.
+
+- **crew 0.16.27: `worktree.root` is reachable from a command.** Codex called
+  the key unused and was right -- it resolved, and nothing a command could run
+  returned the answer, so two lanes placing worktrees would each invent their
+  own path. `crew_state.py --worktree-path <branch>` (or `-` for the root)
+  prints it, resolved through `crew_config.resolve_config` so the machine-global
+  file actually applies. `/crew:emergency` and `/crew:scale` now call it.
+
+  Both commands' prose was also corrected: a subagent's `isolation: worktree`
+  is placed by the harness and crew cannot redirect it. The first draft of this
+  change implied otherwise, which would have sent someone setting
+  `worktree.root` and watching it do nothing.
+
+- **The AWS Pricing installer row refuses to register when `uv` fails.**
+  `claude mcp add` records a command without running it, so a failed
+  `pip install uv` followed by an unconditional add registered a server whose
+  executable was absent -- surfacing later, inside a session, with nothing
+  pointing back at the install step. Both scripts now check the install and the
+  resulting PATH, and skip with a reason. Raised by Codex against both halves.
+
+### Security
+
+- **A real Power Automate tenant snapshot was committed and pushed to this
+  public repository.** `skills/power-automate-api/scripts/pa-snapshots/flow-*.json`
+  carried two SharePoint site URLs and 68 GUIDs (flow, connection-reference,
+  list and environment ids). No tokens, passwords or email addresses. Found by
+  the Codex QA review of PR #81, not by a human reading the diff -- a 51KB JSON
+  blob in a 59-file changeset is precisely what nobody opens.
+
+  The owner's decision, recorded rather than paraphrased: leave what is already
+  published, and stop it recurring. Nothing was rewritten or force-pushed. The
+  file is untracked and `skills/power-automate-api/.gitignore` now ignores the
+  snapshot directory wholesale, so the next one cannot arrive the same way.
+  `pa.py` writes those snapshots at runtime as rollback state; they were never
+  meant to be tracked.
+
+
+### Added
+
+- **`VoltAgent/awesome-claude-code-subagents` joins the community row**, as
+  `voltagent-infra` and `voltagent-qa-sec`. It goes in the existing `COMMUNITY`
+  group rather than a new menu row, so no sub-picker group was added and
+  `check_group_parity` needed no new case.
+
+  Chosen from evidence in this repo rather than from a listing: the 21 agent
+  files added to `plugin/crew/agents/` in this same release map onto VoltAgent's
+  ten bundles almost one-to-one -- `penetration-tester`, `code-reviewer` and
+  `compliance-auditor` are `voltagent-qa-sec`; `platform-engineer` and
+  `database-administrator` are `voltagent-infra`; `fintech-engineer` and
+  `payment-integration` are `voltagent-domains` -- and `agents/design-bridge.md`
+  already names `VoltAgent/awesome-design-md` in its own description. The repo
+  was already consuming this source by copy-paste.
+
+  That is the argument for registering it rather than copying from it. The
+  copy-paste route is what produced the defect fixed above: 21 files landed in
+  `agents/` registered in nothing, so `/crew:pm onboard <name>` called every one
+  of them unrecognised and `test_every_agent_definition_is_a_role_crew_knows`
+  went red. Installed plugins also carry version bumps; a pasted file is a
+  frozen snapshot.
+
+  Only two of the ten bundles are listed, the two that match what this repo
+  does. `wshobson/agents` (marketplace `claude-code-workflows`) was the
+  runner-up and is genuinely relevant -- it is multi-harness across Codex and
+  Copilot, which suits crew's QA providers -- but it publishes 94 plugins, and a
+  94-row sub-picker is the opposite of the context trimming this release is
+  otherwise doing.
+
+  `scripts/_test/menu-groups.sh` moves with it: the community group is 7 plugins
+  across 4 marketplaces now, not 5 across 3, and the `all` case selects 7. Those
+  numbers are the dedup assertion -- a marketplace behind several plugins is
+  registered once -- so they have to be restated, not relaxed.
+
+- **Three documentation MCP servers, as menu rows 22-24.** `aws-docs-mcp`
+  registers AWS Knowledge (`https://knowledge-mcp.global.api.aws/mcp`),
+  `aws-pricing-mcp` installs `awslabs.aws-pricing-mcp-server` over `uvx`, and
+  `ms-learn-mcp` registers Microsoft Learn
+  (`https://learn.microsoft.com/api/mcp`). All three are appended to the end of
+  `MENU_KEYS`, so nothing already numbered moved and a saved `--select` keeps
+  meaning what it meant. All three default to off, like every other MCP row.
+
+  Two of the three are remote HTTP endpoints with **no credentials at all** —
+  nothing to install, nothing to expire, which is the reliability argument for
+  preferring them. Both were probed live before being added: each answered a
+  real MCP `initialize` and returned its tool list. AWS Knowledge is separate
+  from the existing `aws-mcp` row on purpose — that one reads a real account
+  and this one reads published documentation, so a machine that may not have
+  the first can still have the second. AWS Pricing is the one that does need
+  credentials, because the Price List API is an API call rather than a document
+  fetch and the role needs `pricing:*`; the calls themselves are free.
+
+  Microsoft Learn is one server for three of this repo's domains rather than
+  three servers: `learn.microsoft.com` carries the Azure, SharePoint and Power
+  Automate / Power Platform documentation, so `intune-graph`,
+  `power-automate-api` and the SharePoint skills all resolve against it.
+
+- **Three skills join the marketplace: `jira-manager`, `knowbe4-admin` and
+  `power-automate-api`.** Each is registered in every place a registration has
+  to touch at once — the marketplace entry, both README catalog tables, both
+  install scripts' skill catalogs, and `INSTALLATION.md`'s per-skill install
+  commands — so `scripts/check-marketplace.py` passes rather than reporting a
+  half-registration nobody can tell the intent of. `skills/knowbe4-admin/`
+  arrived nested one level too deep (`skills/knowbe4-admin/knowbe4-admin/`),
+  which put `SKILL.md` where the checker's manifest rule cannot see it; it is
+  flattened here.
+
+  `skills/task-observer/` also arrived, and is NOT registered. Menu item 8 of
+  both install scripts already clones the same skill from
+  `rebelytics/one-skill-to-rule-them-all`, and the two copies were
+  byte-identical, so registering it would have shipped the skill twice to
+  anyone who ticked both rows. The upstream row stays; the repo copy was
+  removed. Menu numbering is unchanged, which is the point — `--select 9,12`
+  keeps meaning what it meant.
+
+- **crew 0.16.26: `worktree.root`, and 21 more domain specialists.**
+
+  `worktree.root` says where `git worktree add` puts a crew worktree.
+  `/crew:emergency` runs two candidate fixes in a worktree each and tier 3 in
+  `/crew:scale` is parallel sessions across worktrees, so the directory they
+  land in was already a real question with no answer but git's habit of the
+  checkout's parent — which is the wrong disk on a machine whose repos live on
+  a small system drive, and an index rebuild per worktree on one that syncs
+  that parent to cloud storage. It is inheritable from
+  `~/.claude/crew/config.json`, because which disk has room is a fact about the
+  machine and not about a checkout.
+
+  The setting resolves in one place, `crew_state.worktree_root` /
+  `worktree_path`, rather than at each call site: two emergency lanes started
+  seconds apart have to agree on the path or the second adds a worktree the
+  first cannot find. `null` keeps the old behaviour exactly, so a config that
+  never gains the key behaves as it always did and no worktree already on disk
+  is stranded. `~` and environment variables are expanded — `~/worktrees` is
+  what a person types, and without the expansion `os.path.join` makes a literal
+  `~` directory that looks like it worked. A relative path resolves against the
+  repo rather than the process's working directory, because a hook runs from
+  wherever the session happens to be. The leaf carries the repo name
+  (`<repo>-<branch>`), which is what lets several repos share one root without
+  two branches called `fix` colliding, and a `/` in a branch name becomes `-`
+  so the worktree does not land a directory level deeper than everything that
+  lists the root.
+
+  The 21 new agent files were sitting in `plugin/crew/agents/` unregistered.
+  That is the exact defect `test_every_agent_definition_is_a_role_crew_knows`
+  exists to catch: an `agents/<name>.md` in neither `ROLE_TIERS` nor
+  `SPECIALIST_ROLES` dispatches nothing, and the only symptom is
+  `/crew:pm onboard <name>` calling it unrecognised forever. All 21 are
+  registered as specialists — they carry no evidence about how much crew a repo
+  needs, so no tier grants them — in `crew_state.SPECIALIST_ROLES` and in both
+  markdown tables the committed tests check it against. `SPECIALIST_ROLES` goes
+  15 -> 36; the tier ladder is unchanged at 13. Sixteen of the files also
+  declared `model: opus` or `model: haiku`, which `validate-prompts.py` rejects:
+  every role but `pm` and `qa-reviewer` runs on `sonnet` by design, and
+  inheriting or raising the tier per agent makes the model depend on whoever
+  spawned it.
+
+### Changed
+
+- **The installer no longer registers the `claude-code-plugins` marketplace.**
+  It existed solely to carry `frontend-design`, which `claude-plugins-official`
+  also publishes and which the installer already registers for `superpowers`.
+  `TEAM_SPEC` in both scripts now points there, so the plugin still installs
+  and one fewer marketplace gets cloned and refreshed on every machine. Nothing
+  in the catalog is lost.
+
+### Fixed
+
 - **crew 0.16.23 -> 0.16.25: the sabotage harness can no longer report PASS
   over a tree it corrupted.** `tests/sabotage.py` mutates real source in place,
   and `d362a2bd` shipped `crew_state.py` with one of those mutations still in

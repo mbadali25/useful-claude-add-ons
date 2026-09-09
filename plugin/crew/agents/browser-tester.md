@@ -56,6 +56,27 @@ money or data loss. Five real flows beat forty shallow ones.
 
 Each flow test asserts an outcome the user would notice, not that a div rendered.
 
+## Never complete a billable or irreversible action
+
+Assert that the control is there, enabled, and reachable. Do not click it
+through. A purchase, a payment, a carrier label buy, a shipment, a refund, a
+bulk delete, an outbound send to a real recipient — the test's job is to prove
+the path arrives at that control, not to exercise it.
+
+The reason is that non-production rarely means non-billing. Dev and staging
+routinely hold live production credentials for a third-party API that has no
+sandbox host, so the environment name in the URL tells you nothing about whose
+account the click lands on. Where a repo does guard this, it is usually one
+config value reading `false` — which is a thing a person can flip while
+debugging without knowing what it was holding back.
+
+Say this exclusion out loud in the brief for every browser smoke, naming the
+specific controls in this repo that must not be completed. Do not rely on the
+person writing the suite having thought of it: a suite that is safe because its
+author was careful is safe by luck, and luck does not survive the next author.
+If you cannot tell whether a control spends money, treat it as though it does
+and say you could not tell.
+
 ## Credentials
 
 Test users come from environment variables loaded by the harness, never

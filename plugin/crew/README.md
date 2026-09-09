@@ -860,6 +860,7 @@ omit the block and assume.
 | `sdp.closeOnDone` | `true`, `false` (default) | Whether completing a ticket closes the request or only transitions it. `false` leaves closure to whoever owns the queue. |
 | `sdp.portal` | string or `null` | Only needed where the connector serves more than one SDP instance. |
 | `memory.mode` | `repo`, `obsidian` | Where the code map lives. `obsidian` also needs `vaultPath`. |
+| `worktree.root` | directory path or `null` | Where `git worktree add` puts a crew worktree — `/crew:emergency` running two candidate fixes side by side, and tier-3 parallel sessions. `null` (the default) means the checkout's parent, which is what crew did before the key existed. Crew adds `<repo>-<branch>` beneath it, so several repos can share one root. `~` and environment variables are expanded; a relative path resolves against the repo, not the working directory. Inheritable from the global file — which disk has room is a fact about the machine. |
 | `tier` / `roles` | see §22 | Which agents are in play. Managed by `/crew:scale`. |
 | `context.autoWrapUp` | `true`, `false` (default `false`) | At `warnAt`, instructs the session to reach a stopping point and write the handoff, instead of just asking. The `/clear` itself stays manual either way — no hook can trigger one. See §16. |
 | `context.autoResume` | `true`, `false` (default `false`) | Opens the next `SessionStart` already holding the last handoff as `additionalContext`. See §16 — read the limitation before enabling it. |
@@ -2013,9 +2014,30 @@ a worktree each, so a half-applied one cannot land on top of the other.
 | `network-engineer` | read/write | `sonnet` | — | Routing, DNS, firewalls, TLS, hybrid links. Names the layer that failed; never changes a live device |
 | `windows-infra-admin` | read/write | `sonnet` | — | AD, GPO, DNS and DHCP automation with an export and a rollback. Never runs the change against a live domain |
 | `qa-researcher` | read-only + Perplexity MCP | `sonnet` | — | Checks what a diff assumes about the outside world against live sources. Complements a code reviewer; never replaces one |
+| `ad-security-reviewer` | read/write | `sonnet` | — | AD privilege paths, delegation and authentication hardening reviewed by eye instead of enumerated |
+| `ai-writing-auditor` | read/write | `sonnet` | — | Audits prose for AI writing tells and rewrites them out |
+| `api-designer` | read/write | `sonnet` | — | REST and GraphQL surface design, OpenAPI, auth patterns and versioning before the endpoints exist |
+| `architect-reviewer` | read/write | `sonnet` | — | Second opinion on system design, patterns and technology choice at the macro level |
+| `backend-developer` | read/write | `sonnet` | — | Server-side APIs and services, built with the scaling and operability story attached |
+| `code-reviewer` | read/write | `sonnet` | — | Quality, security and best-practice review of a diff |
+| `compliance-auditor` | read-only | `sonnet` | — | GDPR, HIPAA, PCI DSS, SOC 2 and ISO control gaps, and audit preparation |
+| `database-administrator` | read/write | `sonnet` | — | Performance, high availability, disaster recovery and the rest of running a production database |
+| `design-bridge` | read/write + web | `sonnet` | — | Turns a DESIGN.md brand spec into UI instructions that actually match it |
+| `fintech-engineer` | read/write | `sonnet` | — | Payment and financial systems where accuracy and regulatory fit are the requirement |
+| `git-workflow-manager` | read/write | `sonnet` | — | Branching strategy, merge management and the workflow a team actually follows |
+| `graphql-architect` | read/write | `sonnet` | — | Federated schema design across services, and query performance in a distributed graph |
+| `kimi-consult` | read-only (Bash) | `sonnet` | — | A second opinion from a different model family, through the Copilot CLI |
+| `legacy-modernizer` | read/write | `sonnet` | — | Incremental migration of a legacy system without stopping the business |
+| `microservices-architect` | read/write | `sonnet` | — | Service decomposition and the communication patterns between the pieces |
+| `multi-agent-coordinator` | read/write, no Bash | `sonnet` | — | State sharing, synchronisation and failure handling across concurrent agents |
+| `payment-integration` | read/write | `sonnet` | — | Gateway integration, PCI scope, and fraud handling on the money path |
+| `penetration-tester` | read-only + Bash | `sonnet` | — | Authorized offensive testing that proves a vulnerability rather than reporting a possibility |
+| `platform-engineer` | read/write | `sonnet` | — | Internal developer platforms, golden paths and self-service infrastructure |
+| `powershell-security-hardening` | read/write | `sonnet` | — | PowerShell automation and remoting hardened to an enterprise baseline |
+| `workflow-orchestrator` | read/write, no Bash | `sonnet` | — | Multi-state business processes, with error handling and transaction management |
 | `pm` | read/write, scoped to `.crew/` and generated diagrams | `opus` | — | The standing manager: scope, onboarding, communication, ticket hygiene, and dispatch |
 
-29 agents — 13 on the tier ladder, 15 domain specialists off it, and `pm`. `pm` sits outside the tier ladder — it is not sized in or out by `/crew:scale`, it is the thing doing the sizing. The specialist rows above are a readable copy of `crew_state.SPECIALIST_ROLES`; `tests/test_role_ladder.py` checks that copy against the code in both directions, so a row here with no registration behind it, or an `agents/<name>.md` nobody registered, fails the suite rather than shipping as a role `/crew:pm onboard` calls unrecognised.
+50 agents — 13 on the tier ladder, 36 domain specialists off it, and `pm`. `pm` sits outside the tier ladder — it is not sized in or out by `/crew:scale`, it is the thing doing the sizing. The specialist rows above are a readable copy of `crew_state.SPECIALIST_ROLES`; `tests/test_role_ladder.py` checks that copy against the code in both directions, so a row here with no registration behind it, or an `agents/<name>.md` nobody registered, fails the suite rather than shipping as a role `/crew:pm onboard` calls unrecognised.
 
 **No tier grants a specialist, and that is deliberate.** Every ladder role closes a defect class any repo can have, so `roles_for_tier` hands out every rung up to the declared tier — which is exactly how a repo with no database ends up with `dba`. "This repo does SharePoint" is not a defect class; it is a fact about one checkout, and it is knowable on day one. Put these on the ladder and every tier-2 repo on the machine gets a SharePoint developer it will never dispatch. So they are opted into per repo with `/crew:pm onboard <role>`, justified by what is actually in the repo — a `package.json` with a server entry point, an SPFx `config/package-solution.json`, an exported flow definition — rather than by a pattern in `.crew/metrics.md`, and onboarding one leaves `tier` where it was: the crew has specialised, not grown.
 

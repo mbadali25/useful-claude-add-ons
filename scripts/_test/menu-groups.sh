@@ -79,7 +79,7 @@ check "a range"             "4" "$(group_selected_count SKILL)"
 expand_group_spec COMMUNITY 'none'
 check "none"                "0" "$(group_selected_count COMMUNITY)"
 expand_group_spec COMMUNITY 'all'
-check "all"                 "5" "$(group_selected_count COMMUNITY)"
+check "all"                 "7" "$(group_selected_count COMMUNITY)"
 warned "ignoring unknown team plugin 'not-a-plugin'" \
   expand_group_spec TEAM 'superpowers,not-a-plugin' && got=yes || got=no
 check "unknown name warns, in the singular"    yes "$got"
@@ -147,7 +147,8 @@ case "$out" in *"Team plugins: 1 of 3"*) got=yes ;; *) got=no ;; esac
 check "--team narrows the row label"         yes "$got"
 
 echo "7. a marketplace behind several plugins is registered once, not once per plugin"
-# Three of the community row's five plugins come from claude-settings. Before
+# Three of the community row's seven plugins come from claude-settings, and two
+# more share voltagent-subagents. Before
 # install_group that was three separate "Marketplace:" steps, and a marketplace refresh
 # re-clones the repo. A stub 'claude' makes this observable without installing anything.
 mkdir -p "$TMP/bin"
@@ -156,11 +157,11 @@ chmod +x "$TMP/bin/claude"
 steps="$(CLAUDE_CONFIG_DIR="$TMP/cfg" PATH="$TMP/bin:$PATH" \
   bash "$SCRIPT" --select community --community all 2>&1 \
   | sed 's/\x1b\[[0-9;]*m//g' | grep -c '^==> Marketplace:')"
-check "5 community plugins -> 3 marketplace steps" "3" "$steps"
+check "7 community plugins -> 4 marketplace steps" "4" "$steps"
 plugins="$(CLAUDE_CONFIG_DIR="$TMP/cfg" PATH="$TMP/bin:$PATH" \
   bash "$SCRIPT" --select community --community all 2>&1 \
   | sed 's/\x1b\[[0-9;]*m//g' | grep -c '^==> Plugin:')"
-check "and 5 plugin steps"                         "5" "$plugins"
+check "and 7 plugin steps"                         "7" "$plugins"
 one="$(CLAUDE_CONFIG_DIR="$TMP/cfg" PATH="$TMP/bin:$PATH" \
   bash "$SCRIPT" --select community --community ppt-master 2>&1 \
   | sed 's/\x1b\[[0-9;]*m//g' | grep -c '^==> Marketplace:')"

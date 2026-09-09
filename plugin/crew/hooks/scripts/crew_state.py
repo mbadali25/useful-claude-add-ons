@@ -7,6 +7,7 @@ traceback.
 """
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -587,6 +588,71 @@ DEV_DEFAULTS = {
     "roles": {},
 }
 
+# Where `git worktree add` puts a crew worktree. `/crew:emergency` runs two
+# candidate fixes in a worktree each, and tier 3 in `/crew:scale` is parallel
+# sessions across worktrees, so the directory they land in is a real question
+# and until 0.16.26 there was no answer but git's own habit of the checkout's
+# parent -- which on a machine whose repos live on a small system disk is the
+# wrong disk, and on a machine that syncs its repo parent to cloud storage is
+# an index rebuild per worktree.
+#
+# `root` is a DIRECTORY worktrees are created under, not a worktree path:
+# crew adds `<repo name>-<branch>` beneath it, so several repos can share one
+# root without colliding. `null` keeps the old behaviour exactly -- the
+# checkout's parent -- so an existing config that never gains this key
+# behaves as it always did.
+#
+# It is inheritable from the global file (see `default_global_config`)
+# because which disk has room is a fact about the machine, not about a
+# checkout: someone who keeps worktrees on D:\ keeps them there for every
+# repo, and saying so once per repo is the friction the global layer exists
+# to remove. A repo that genuinely needs its own answer still overrides it.
+WORKTREE_DEFAULTS = {
+    "root": None,
+}
+
+# Every path separator this platform honours, for flattening a branch name into
+# one directory level. Derived rather than written as a regex character class:
+# the literal form of that class is `[\\/]+`, the near-miss `[\/]+` is a legal
+# regex that silently matches only `/`, and the two are indistinguishable by
+# eye. Deriving it removes the escaping from the problem entirely. `os.altsep`
+# is `/` on Windows and None on POSIX, where `os.sep` is already `/`; the extra
+# literal `/` keeps a POSIX-authored branch name flattening the same way on
+# both, since a config and a branch travel between machines and the directory
+# name must not depend on which one resolved it.
+_SEPARATORS = tuple(
+    dict.fromkeys(s for s in (os.sep, os.altsep, "/", "\\") if s)
+)
+
+
+def _repo_digest(repo_root, length=6):
+    """A short, stable digest of which checkout this is.
+
+    The worktree leaf carries it because a directory BASENAME does not say
+    which repo: two checkouts called `myrepo` under different parents share
+    one leaf, and with a shared `worktree.root` one repo's worktree lands in
+    the other's. Both directories look correct, which is what makes the
+    collision expensive rather than merely wrong.
+
+    `normcase(realpath())` is the input so that one checkout has one digest no
+    matter how it was reached -- through a symlink, with a different
+    drive-letter case, or over a mapped drive. `realpath` touches the
+    filesystem and can raise on a path that no longer exists or that the user
+    cannot stat; a hook must not die for that, so it degrades to `abspath`,
+    which still normalises separators and `..` without needing the path to be
+    real.
+
+    Not a security boundary and deliberately short: this disambiguates
+    neighbouring directories for a human reading `ls`, it does not authenticate
+    anything, so `blake2b` at 6 hex characters is chosen for readability.
+    """
+    try:
+        resolved = os.path.realpath(repo_root)
+    except OSError:
+        resolved = os.path.abspath(repo_root)
+    key = os.path.normcase(resolved).encode("utf-8", "surrogatepass")
+    return hashlib.blake2b(key, digest_size=8).hexdigest()[:length]
+
 # The role names each block's `roles` table is expected to carry. Not a
 # validation list -- a repo may pin a role crew has never heard of, and
 # `resolve_role` answers for any name -- but the set `/crew:model` reports on
@@ -672,6 +738,27 @@ SPECIALIST_ROLES = frozenset({
     "network-engineer",
     "windows-infra-admin",
     "qa-researcher",
+    "ad-security-reviewer",
+    "ai-writing-auditor",
+    "api-designer",
+    "architect-reviewer",
+    "backend-developer",
+    "code-reviewer",
+    "compliance-auditor",
+    "database-administrator",
+    "design-bridge",
+    "fintech-engineer",
+    "git-workflow-manager",
+    "graphql-architect",
+    "kimi-consult",
+    "legacy-modernizer",
+    "microservices-architect",
+    "multi-agent-coordinator",
+    "payment-integration",
+    "penetration-tester",
+    "platform-engineer",
+    "powershell-security-hardening",
+    "workflow-orchestrator",
 })
 
 
@@ -2061,6 +2148,89 @@ def int_or(value, default):
     return default
 
 
+
+def worktree_root(cfg, repo_root):
+    """The directory a crew worktree for `repo_root` should be created under.
+
+    `worktree.root` is resolved here rather than at each call site so the
+    answer is the same one every time: `/crew:emergency` running two candidate
+    fixes side by side and a tier-3 parallel session have to agree, or the
+    second one adds a worktree the first cannot find.
+
+    An unset, blank or non-string `root` means the checkout's parent, which is
+    git's own habit and what crew did before the key existed. `~` and
+    environment variables are expanded because this value is typed by hand
+    into a config file, where `~/worktrees` is what a person writes and
+    `os.path.join` would otherwise create a literal `~` directory. A relative
+    path is resolved against `repo_root`, not against the process's working
+    directory: a hook runs from wherever the session happens to be, so
+    anything else would put worktrees somewhere different depending on which
+    directory the user was in when the gate fired.
+
+    Returns an absolute path. It is NOT created here -- a resolver that makes
+    directories cannot be called to report what the setting says.
+    """
+    root = dict_or_empty(cfg.get("worktree")).get("root")
+    if not isinstance(root, str) or not root.strip():
+        return os.path.abspath(os.path.join(repo_root, os.pardir))
+    expanded = os.path.expanduser(os.path.expandvars(root.strip()))
+    if not os.path.isabs(expanded):
+        expanded = os.path.join(repo_root, expanded)
+    return os.path.abspath(expanded)
+
+
+def worktree_path(cfg, repo_root, branch):
+    r"""Where the worktree for `branch` goes: `<worktree_root>/<repo>-<branch>`.
+
+    The repo name is in the leaf so that several repos can share one root
+    without two branches called `fix` colliding -- which is the failure mode a
+    shared root introduces and the reason the setting is a directory rather
+    than a worktree path. Path separators in a branch name (`feat/x`) become
+    `-`: git allows them, a single directory level does not.
+
+    The BASENAME is not enough to say which repo, and an earlier version of
+    this docstring claimed it was. Two checkouts called `myrepo` under
+    different parents -- two clients, the same project name, which is the
+    normal shape of the estate this plugin is used on -- produce the same leaf
+    for the same branch, so one repo's `/crew:emergency` worktree lands in or
+    is mistaken for the other's. That is worse than the collision the repo
+    name was added to prevent, because both directories look right. A short
+    digest of the RESOLVED repo path disambiguates them; it is taken over
+    `normcase(realpath())` so the same checkout reached through a symlink, a
+    different drive-letter case, or a mapped drive still hashes to one value.
+
+    BOTH separators, not just `/`. The first version of this line read
+    `[\/]+`, which inside a character class is an escaped forward slash and
+    therefore matches `/` alone -- so a backslash travelled through intact and
+    `feat\x` resolved one directory DEEPER than every other worktree, where
+    nothing listing the root would find it. git itself refuses `\` in a ref
+    name, so no real branch could reach it, but this function takes a string
+    and its contract is to neutralise separators. `_SEPARATORS` is built from
+    `os.sep`/`os.altsep` rather than written as a regex literal, because the
+    escaping is exactly what went wrong.
+
+    A leaf that would be only dots or empty (`.`, `..`, `   `) cannot escape --
+    the repo name and the `-` are always in front of it -- but it still makes
+    an unreadable directory, so it degrades to `detached`.
+
+    `:` is neutralised alongside the separators, for a Windows-only reason
+    that is not obvious: `myrepo-release:v1` is NTFS alternate-data-stream
+    syntax, so it names a STREAM on `myrepo-release` rather than a directory.
+    git's ref-format forbids `:` as it forbids `\`, so neither is reachable
+    from a real branch -- but both are reachable from this function's actual
+    signature, which is a string.
+    """
+    cleaned = branch.strip()
+    for sep in _SEPARATORS + (":",):
+        cleaned = cleaned.replace(sep, "-")
+    cleaned = re.sub(r"-{2,}", "-", cleaned).strip("-")
+    if not cleaned or set(cleaned) <= {"."}:
+        cleaned = "detached"
+    leaf = "%s-%s-%s" % (os.path.basename(os.path.abspath(repo_root)),
+                         _repo_digest(repo_root), cleaned)
+    return os.path.join(worktree_root(cfg, repo_root), leaf)
+
+
 def evaluate_triggers(state):
     """Reasons the PM should speak up, in TRIGGERS order."""
     knowledge = state.get("knowledge") or {}
@@ -2237,9 +2407,40 @@ def main(argv=None):
     parser.add_argument("--record-scan-artifact", metavar="ID", default=None,
                         help="freeze the current scan-artifact path onto a "
                              "ledger record, right after that scan lands")
+    parser.add_argument("--worktree-path", metavar="BRANCH", default=None,
+                        help="print where a worktree for BRANCH belongs, per "
+                             "the resolved worktree.root, and exit. Creates "
+                             "nothing. Pass '-' for the root directory alone")
     args = parser.parse_args(argv)
 
     root = args.root or os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
+    if args.worktree_path is not None:
+        # A command that has to place a worktree shells out to THIS, rather
+        # than composing a path from the config itself. Without it the setting
+        # was only prose: `worktree.root` existed, `worktree_path` computed the
+        # answer, and nothing a command could actually run returned it -- so
+        # two lanes placing worktrees seconds apart would each invent their
+        # own. Raised by the Codex review of this change, which called the key
+        # unused and was right.
+        #
+        # Layered, not raw: `crew_config.resolve_config` is what applies the
+        # machine-global file, and reading `.crew/config.json` here directly
+        # would ignore the global setting this key exists to support. Imported
+        # inside the function because `crew_config` imports this module at
+        # top level and the pair must not import each other eagerly.
+        try:
+            import crew_config  # pylint: disable=import-outside-toplevel
+            cfg = crew_config.resolve_config(root)
+        except Exception:  # pylint: disable=broad-except
+            # A hook must not die because the config layer is unhappy; the
+            # unconfigured answer is the checkout's parent, which is what
+            # crew did before this key existed.
+            cfg = {}
+        if args.worktree_path == "-":
+            print(worktree_root(cfg, root))
+        else:
+            print(worktree_path(cfg, root, args.worktree_path))
+        return 0
     if args.record_dispatch:
         if not args.role or not args.provider:
             # Loud, not silent. A dispatch recorded without a provider would

@@ -34,6 +34,9 @@
     },
     "roles": {}
   },
+  "worktree": {
+    "root": null
+  },
   "secondOpinion": {
     "provider": "none",
     "mode": "cli",

@@ -15,7 +15,7 @@ One script per OS. Both are idempotent (safe to re-run) and, by default, also bo
   ----------------------
     [x] Prerequisites: git, nodejs, npm, python3, pip3 (needs root or sudo)
     [x] Claude Code CLI (@anthropic-ai/claude-code) + PATH export + update check
-  > [x] This repo's marketplace + 25 of 25 skills  >
+  > [x] This repo's marketplace + 28 of 28 skills  >
     [x] Team plugins: superpowers, frontend-design, excalidraw-generator
     ...
     [ ] Strix AI pentesting CLI (needs Docker + an LLM API key)
@@ -41,7 +41,7 @@ One script per OS. Both are idempotent (safe to re-run) and, by default, also bo
 
 | Row | What → picks | Non-interactive equivalent |
 |---|---|---|
-| 3 | the 25 skills in this repo | `--skills` / `-Skills` |
+| 3 | the 28 skills in this repo | `--skills` / `-Skills` |
 | 4 | superpowers, frontend-design, excalidraw-generator | `--team` / `-Team` |
 | 6 | the 5 community plugins | `--community` / `-Community` |
 | 19 | this repo's own plugins (`crew`, `gizmoduck`, `localgpu`, `obsidian-vault`) | `--plugins` / `-Plugins` |
@@ -158,8 +158,11 @@ claude plugin install drata@useful-claude-add-ons
 claude plugin install i-have-adhd@useful-claude-add-ons
 claude plugin install infra-work-ticketing@useful-claude-add-ons
 claude plugin install intune-graph@useful-claude-add-ons
+claude plugin install jira-manager@useful-claude-add-ons
+claude plugin install knowbe4-admin@useful-claude-add-ons
 claude plugin install mermaid-svg-bitbucket@useful-claude-add-ons
 claude plugin install notify@useful-claude-add-ons
+claude plugin install power-automate-api@useful-claude-add-ons
 claude plugin install repo-docs@useful-claude-add-ons
 claude plugin install shipstation@useful-claude-add-ons
 claude plugin install sophos-central@useful-claude-add-ons
@@ -205,11 +208,14 @@ If a new skill is added to the marketplace, add it to the `SKILL_KEYS` / `SKILL_
 
 ### Optional: MCP servers
 
-Four MCP servers are menu rows, all off by default:
+Seven MCP servers are menu rows, all off by default:
 
 - **AWS** — ensures `uv`/`uvx` is on `PATH` (installing it via `pip install --user uv` if missing), then runs `claude mcp add aws-api -- uvx awslabs.aws-api-mcp-server@latest`. You still need your own AWS credentials configured (`aws configure`) for it to work at runtime.
 - **Azure** — runs `claude mcp add azure -- npx -y @azure/mcp@latest server start`. You still need to run `az login` yourself for it to work at runtime.
 - **Playwright** — runs `claude mcp add playwright -- npx @playwright/mcp@latest`. Playwright downloads its browsers on first use; `npx playwright install` does it ahead of time.
+- **AWS Knowledge** (row 22) — `claude mcp add --transport http aws-knowledge https://knowledge-mcp.global.api.aws/mcp`. AWS docs, API references and regional availability, hosted by AWS. **No credentials and no AWS account**; public and rate-limited. Distinct from the AWS row above, which reads a real account.
+- **AWS Pricing** (row 23) — ensures `uv`/`uvx` is present, then `claude mcp add aws-pricing -- uvx awslabs.aws-pricing-mcp-server@latest`. The only one of the three that needs credentials: the Price List API is an API call, and the role needs `pricing:*`. The calls themselves are free. If the `uv` install fails the item **refuses to register** rather than recording a command whose executable is absent.
+- **Microsoft Learn** (row 24) — `claude mcp add --transport http microsoft-learn https://learn.microsoft.com/api/mcp`. Azure, SharePoint and Power Automate / Power Platform documentation plus code samples, in one server. **No credentials.**
 - **Obsidian vault server** (12) — the odd one out: it registers an **HTTP** endpoint rather than a command to launch, because the MCP server is the `obsidian-local-rest-api` plugin already running inside the vault-server container. That plugin listens on the *server's* loopback, so the URL is normally a local port you forwarded over SSH — hence the `http://127.0.0.1:27123/mcp/` default, overridable with `--obsidian-mcp-url` / `-ObsidianMcpUrl`. The key is per-deployment and cannot be baked into the script, so without `--obsidian-mcp-key` / `-ObsidianMcpKey` the item prints how to read it (`sudo ./obsidian-vault-server.sh apikey` on the vault host) and **skips rather than failing**. Never overwrite an existing key — everything already pointing at the vault stops working. Whole setup: the [`obsidian-vault-server`](skills/obsidian-vault-server/) skill.
 
 The first three can be added later by hand with the same `claude mcp add` command; the Obsidian one takes a URL and an `Authorization` header instead. Any of them is removed with `claude mcp remove <name>`.

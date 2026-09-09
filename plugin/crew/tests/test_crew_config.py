@@ -1044,3 +1044,167 @@ def test_a_global_pin_reaches_a_role_the_repo_never_mentions(
     assert got["provider"] == "copilot"
     assert got["family"] == "kimi"
     assert got["source"] == "role-pin"
+
+
+# --- a repo null must not shadow a global value ------------------------------
+# `/crew:init` writes templates/config.template.json, which spells out EVERY
+# key including the ones whose default is null. merge_defaults treated that
+# null as a supplied value, so it beat the machine-global layer and the global
+# file did nothing for any repo crew had ever initialised. Found by the Codex
+# review of the `worktree.root` change; it affected five keys, not one.
+
+_NULLABLE_GLOBAL_KEYS = (
+    ("memory", "vaultPath"),
+    ("worktree", "root"),
+    ("qa", "codex", "model"),
+    ("notify", "chatId"),
+    ("secondOpinion", "model"),
+)
+
+
+def _nest(parts, value):
+    """{'a': {'b': value}} from ('a','b')."""
+    out = value
+    for part in reversed(parts):
+        out = {part: out}
+    return out
+
+
+def _dig_plain(node, parts):
+    for part in parts:
+        node = node[part]
+    return node
+
+
+def _committed_template():
+    with open(_TEMPLATE_PATH, encoding="utf-8") as handle:
+        return json.load(handle)
+
+
+def test_a_repo_null_does_not_shadow_a_global_value():
+    """The bug, on every nullable key the global layer is allowed to carry.
+
+    Parameterised over the real committed template rather than a hand-built
+    dict, because the template IS the repo layer for every managed repo -- a
+    test that built its own `{}` would pass while every real repo failed.
+    """
+    defaults = crew_config.default_config()
+    template = _committed_template()
+    for parts in _NULLABLE_GLOBAL_KEYS:
+        assert _dig_plain(template, parts) is None, (
+            "%s stopped being null in the template; this test's premise is "
+            "gone and it needs rewriting, not deleting" % ".".join(parts))
+        wanted = "SET-BY-GLOBAL"
+        global_cfg = _nest(parts, wanted)
+        pruned = crew_config.without_null_shadows(template, global_cfg, defaults)
+        merged = crew_state.merge_defaults(
+            crew_state.merge_defaults(defaults, global_cfg), pruned)
+        assert _dig_plain(merged, parts) == wanted, ".".join(parts)
+
+
+def test_a_real_repo_value_still_beats_the_global():
+    """The prune must not turn the layering upside down. `null` is the only
+    thing that stops deciding; a value the repo actually set still wins."""
+    defaults = crew_config.default_config()
+    for parts in _NULLABLE_GLOBAL_KEYS:
+        repo_cfg = _nest(parts, "SET-BY-REPO")
+        global_cfg = _nest(parts, "SET-BY-GLOBAL")
+        pruned = crew_config.without_null_shadows(repo_cfg, global_cfg, defaults)
+        merged = crew_state.merge_defaults(
+            crew_state.merge_defaults(defaults, global_cfg), pruned)
+        assert _dig_plain(merged, parts) == "SET-BY-REPO", ".".join(parts)
+
+
+def test_a_repo_null_survives_when_no_global_supplies_that_key():
+    """The narrowing that keeps `null` meaningful.
+
+    A blanket "null means unset" would break `context.reserveTokens: null`,
+    which the README documents as the way to turn the headroom floor OFF -- it
+    would silently become the 100000 default. The prune only fires where the
+    global layer actually supplies something, so with no global file nothing
+    is touched at all.
+    """
+    template = _committed_template()
+    pruned = crew_config.without_null_shadows(template, {})
+    assert pruned == template
+    assert pruned["context"]["reserveTokens"] ==         template["context"]["reserveTokens"]
+
+
+def test_without_null_shadows_does_not_mutate_its_input():
+    """It is handed `crew_state.load_config`'s dict, which callers reuse."""
+    defaults = crew_config.default_config()
+    repo_cfg = {"worktree": {"root": None}, "tracker": "files"}
+    before = copy.deepcopy(repo_cfg)
+    crew_config.without_null_shadows(
+        repo_cfg, {"worktree": {"root": "G:"}}, defaults)
+    assert repo_cfg == before
+
+
+def test_context_keys_are_out_of_scope_because_they_are_not_global():
+    """`null_shadows` walks `default_global_config()` leaves only, so a
+    repo-only block can never be pruned however null it is. Asserted rather
+    than assumed, because the narrowing above depends on it."""
+    leaves = crew_config.leaf_paths(crew_config.default_global_config())
+    assert not [p for p in leaves if p.startswith("context.")]
+    assert not [p for p in leaves if p.startswith("emergency.")]
+
+
+def test_resolve_config_inherits_a_global_through_the_init_template(
+        tmp_path, monkeypatch):
+    """END TO END, through `resolve_config`, with the REAL /crew:init template
+    as the repo file. The helper tests above pass with the prune deleted from
+    `resolve_config` -- they exercise `without_null_shadows` directly and never
+    touch the wiring. This is the test that fails when the call site goes.
+
+    That gap is the point: the first version of this suite tested the helper
+    and called the bug fixed, and a sabotage run (remove the call from
+    `resolve_config`, re-run) came back green.
+    """
+    _global(tmp_path, monkeypatch, contents={
+        "worktree": {"root": "G:" + os.sep + "shared"},
+        "memory": {"vaultPath": "V:" + os.sep + "vault"},
+    })
+    root = crew_fixtures.make_repo(
+        tmp_path, config=_committed_template(), git=False)
+
+    resolved = crew_config.resolve_config(str(root))
+
+    assert resolved["worktree"]["root"] == "G:" + os.sep + "shared"
+    assert resolved["memory"]["vaultPath"] == "V:" + os.sep + "vault"
+
+
+def test_resolve_config_lets_the_repo_override_the_global_it_now_inherits(
+        tmp_path, monkeypatch):
+    """The other side of the same wiring: the prune must not make the repo
+    layer unable to win. A repo that names a real value still decides."""
+    _global(tmp_path, monkeypatch, contents={
+        "worktree": {"root": "G:" + os.sep + "shared"}})
+    cfg = _committed_template()
+    cfg["worktree"]["root"] = "R:" + os.sep + "mine"
+    root = crew_fixtures.make_repo(tmp_path, config=cfg, git=False)
+
+    resolved = crew_config.resolve_config(str(root))
+
+    assert resolved["worktree"]["root"] == "R:" + os.sep + "mine"
+
+
+def test_explain_config_credits_global_not_repo_for_an_inherited_null(
+        tmp_path, monkeypatch):
+    """The report has to apply the same rule as the run.
+
+    `/crew:config`'s source column is built from `_layer_supplies` against the
+    repo layer. If only `resolve_config` pruned, the column would say `repo`
+    for a value the run took from `global` -- the precise failure this
+    module's own scar tissue is about ("mentioning a key is not deciding its
+    value").
+    """
+    path = _global(tmp_path, monkeypatch, contents={
+        "worktree": {"root": "G:" + os.sep + "shared"}})
+    root = crew_fixtures.make_repo(
+        tmp_path, config=_committed_template(), git=False)
+
+    rows = crew_config.explain_config(str(root), path=str(path))
+    row = next(r for r in rows if r["path"] == "worktree.root")
+
+    assert row["value"] == "G:" + os.sep + "shared"
+    assert row["source"] == "global", row

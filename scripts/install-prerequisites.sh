@@ -723,15 +723,16 @@ MENU_KEYS=(
   "aws-mcp" "azure-mcp" "playwright-mcp" "obsidian-mcp"
   "supabase" "context7" "playwright-cli" "skillui" "strix" "obsidian"
   "repo-plugins" "graphify" "ms-mcp"
+  "aws-docs-mcp" "aws-pricing-mcp" "ms-learn-mcp"
 )
-MENU_DEFAULT=(1 1 1 1 1 1 1 1 0 0 0 0 0 0 0 0 0 0 0 0 0)
+MENU_DEFAULT=(1 1 1 1 1 1 1 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
 MENU_NAME=(
   "Prerequisites: git, nodejs, npm, python3, pip3 (needs root or sudo)"
   "Claude Code CLI (@anthropic-ai/claude-code) + PATH export + update check"
   "This repo's marketplace + its skills"
   "Team plugins: superpowers, frontend-design, excalidraw-generator"
   "find-skills skill (vercel-labs/skills)"
-  "Community marketplaces + plugins (adhd-output-style, azure-tools, ppt-master, ...)"
+  "Community marketplaces + plugins (adhd-output-style, azure-tools, voltagent, ...)"
   "claude-code-setup plugin (anthropics/claude-plugins-official)"
   "task-observer skill (rebelytics/one-skill-to-rule-them-all)"
   "MCP server: AWS (awslabs.aws-api-mcp-server)"
@@ -747,6 +748,9 @@ MENU_NAME=(
   "This repo's plugins: crew, gizmoduck, localgpu, obsidian-vault (agents, hooks)"
   "graphify code graph (uv tool install graphifyy; per-repo, not global)"
   "Microsoft MCP servers (mcp-servers/): Graph, Intune, Office 365 user/admin - needs az login or tenant credentials"
+  "MCP server: AWS Knowledge (docs + API refs, hosted by AWS, no credentials)"
+  "MCP server: AWS Pricing (Price List API - needs AWS creds with pricing:*)"
+  "MCP server: Microsoft Learn (Azure, SharePoint and Power Automate docs, no credentials)"
 )
 
 SELECTED=""
@@ -804,8 +808,9 @@ SKILL_KEYS=(
   "aws-opensearch" "bitbucket" "checkpoint-email" "cisco-meraki"
   "claude-code-defaults" "claude-code-tuneup" "claude-memories-canvas"
   "claude-memories-vault" "cloudflare" "drata" "i-have-adhd"
-  "infra-work-ticketing" "intune-graph" "mermaid-svg-bitbucket" "notify"
-  "obsidian-canvas" "obsidian-vault-server"
+  "infra-work-ticketing" "intune-graph" "jira-manager" "knowbe4-admin"
+  "mermaid-svg-bitbucket" "notify"
+  "obsidian-canvas" "obsidian-vault-server" "power-automate-api"
   "repo-docs" "shipstation" "sophos-central" "terraform-docs-readme" "visio-diagrams"
   "wazuh-onprem" "web-testing-playwright" "work-log-reporter"
 )
@@ -823,10 +828,13 @@ SKILL_NAME=(
   "i-have-adhd             - ADHD-friendly output: next action first, numbered steps"
   "infra-work-ticketing    - ServiceDesk Plus / Jira: open tickets, log work notes"
   "intune-graph            - Intune via Graph: devices, compliance, app deployment"
+  "jira-manager            - Jira Cloud REST API: JQL, create, transition, worklog"
+  "knowbe4-admin           - KnowBe4 KSAT: SCIM sync diagnosis, reporting, writes"
   "mermaid-svg-bitbucket   - Pre-render Mermaid to SVG so Bitbucket displays it"
   "notify                  - Ping your phone or inbox: Telegram bot (two-way) or email"
   "obsidian-canvas         - Obsidian .canvas files as JSON: maps, boards, diagrams"
   "obsidian-vault-server   - Self-hosted Obsidian on Ubuntu: Sync, REST/MCP endpoint"
+  "power-automate-api      - Power Automate flows via API: definitions, auth errors"
   "repo-docs               - Whole doc set: CLAUDE.md, READMEs, architecture, handoff"
   "shipstation             - ShipStation V2/V1/ShipEngine: labels, rates, orders"
   "sophos-central          - Sophos Central: isolate endpoints, triage alerts, XDR"
@@ -883,7 +891,7 @@ TEAM_NAME=(
 )
 TEAM_SPEC=(
   "superpowers@claude-plugins-official|anthropics/claude-plugins-official|claude-plugins-official"
-  "frontend-design@claude-code-plugins|anthropics/claude-code|claude-code-plugins"
+  "frontend-design@claude-plugins-official|anthropics/claude-plugins-official|claude-plugins-official"
   "excalidraw-generator@excalidraw-generator|lexiaoyao20/excalidraw-generator|excalidraw-generator"
 )
 TEAM_STATE=()
@@ -893,6 +901,7 @@ unset _i
 # --- Community plugins (menu item 6) ------------------------------------------
 COMMUNITY_KEYS=(
   "adhd-output-style" "azure-tools" "anthropic-office-skills" "agent-browser" "ppt-master"
+  "voltagent-infra" "voltagent-qa-sec"
 )
 COMMUNITY_NAME=(
   "adhd-output-style       - ADHD-friendly output style"
@@ -900,6 +909,8 @@ COMMUNITY_NAME=(
   "anthropic-office-skills - Anthropic's docx/pptx/xlsx/pdf skills"
   "agent-browser           - vercel-labs browser agent"
   "ppt-master              - PowerPoint deck generation"
+  "voltagent-infra         - VoltAgent DevOps/cloud subagents: k8s, Terraform, AWS/Azure, SRE"
+  "voltagent-qa-sec        - VoltAgent testing/security subagents: review, pentest, QA"
 )
 COMMUNITY_SPEC=(
   "adhd-output-style@claude-settings|fcakyon/claude-codex-settings|claude-settings"
@@ -907,6 +918,8 @@ COMMUNITY_SPEC=(
   "anthropic-office-skills@claude-settings|fcakyon/claude-codex-settings|claude-settings"
   "agent-browser@agent-browser|vercel-labs/agent-browser|agent-browser"
   "ppt-master@ppt-master|hugohe3/ppt-master|ppt-master"
+  "voltagent-infra@voltagent-subagents|VoltAgent/awesome-claude-code-subagents|voltagent-subagents"
+  "voltagent-qa-sec@voltagent-subagents|VoltAgent/awesome-claude-code-subagents|voltagent-subagents"
 )
 COMMUNITY_STATE=()
 for _i in "${!COMMUNITY_KEYS[@]}"; do COMMUNITY_STATE+=(1); done
@@ -2009,6 +2022,66 @@ install_azure_mcp() {
 }
 if is_selected "azure-mcp"; then
   run_step "Install Azure MCP server" install_azure_mcp
+fi
+
+# The two hosted documentation endpoints are HTTP, not launched commands, so they
+# go through add_mcp_http_server and need neither uv nor a credential. That is the
+# whole reason they are separate rows from `aws-mcp`: the AWS API server reads a
+# real account and the Knowledge server reads published documentation, and a
+# machine that is not allowed the first can still have the second.
+install_aws_docs_mcp() {
+  add_mcp_http_server "aws-knowledge" "https://knowledge-mcp.global.api.aws/mcp" || return 1
+  ok "AWS Knowledge is public and rate-limited; no AWS account or credentials are used."
+}
+if is_selected "aws-docs-mcp"; then
+  run_step "Register the AWS Knowledge MCP endpoint" install_aws_docs_mcp
+fi
+
+# Pricing is the one of the three that DOES need credentials: the Price List API
+# is an AWS API call, not a document fetch, and it needs `pricing:*`. The calls
+# themselves are free of charge, which is worth saying because "pricing API" reads
+# like something that bills.
+install_aws_pricing_mcp() {
+  if ! have uv && ! have uvx; then
+    # The install must be CHECKED, not merely attempted. `claude mcp add`
+    # records a command without running it, so a failed `pip install uv`
+    # followed by an unconditional add registers a server whose executable is
+    # absent -- and the failure then surfaces later, inside a session, as an
+    # MCP server that will not start, with nothing pointing back at this step.
+    # The existing `aws-mcp` row has the same shape and the same bug; this one
+    # is the row being added, so it is the one fixed here.
+    if have pip3; then
+      pip3 install --user uv || { warn "pip3 install uv failed - not registering aws-pricing."; return 1; }
+    elif have pip; then
+      pip install --user uv || { warn "pip install uv failed - not registering aws-pricing."; return 1; }
+    else
+      warn "pip not found - install python3-pip first, then re-run to install uv."
+      return 1
+    fi
+    export PATH="$HOME/.local/bin:$PATH"
+    if ! have uv && ! have uvx; then
+      warn "uv installed but neither 'uv' nor 'uvx' is on PATH - not registering aws-pricing."
+      warn "Open a new shell (or add ~/.local/bin to PATH) and re-run this item."
+      return 1
+    fi
+  fi
+  add_mcp_server "aws-pricing" "-" uvx awslabs.aws-pricing-mcp-server@latest || return 1
+  ok "Needs AWS credentials whose role allows pricing:*. The Price List calls are free."
+}
+if is_selected "aws-pricing-mcp"; then
+  run_step "Install AWS Pricing MCP server" install_aws_pricing_mcp
+fi
+
+# One endpoint for three of this repo's domains: learn.microsoft.com carries the
+# Azure, SharePoint and Power Automate / Power Platform documentation, so the
+# `intune-graph`, `power-automate-api` and SharePoint skills all resolve against
+# the same server rather than three.
+install_ms_learn_mcp() {
+  add_mcp_http_server "microsoft-learn" "https://learn.microsoft.com/api/mcp" || return 1
+  ok "Covers Azure, SharePoint and Power Automate docs plus code samples. No credentials."
+}
+if is_selected "ms-learn-mcp"; then
+  run_step "Register the Microsoft Learn MCP endpoint" install_ms_learn_mcp
 fi
 
 install_playwright_mcp() {

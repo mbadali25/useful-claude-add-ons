@@ -1,4 +1,5 @@
 """Tests for the crew state reader."""
+import re
 import subprocess
 
 import os
@@ -793,3 +794,173 @@ def test_a_graph_out_pointing_outside_the_repo_is_ignored(tmp_path):
     got = crew_state._read_graph(str(root), cfg)  # pylint: disable=protected-access
 
     assert got["present"] is False, "must not read the escaped graph"
+
+
+def test_worktree_root_defaults_to_the_checkout_parent(tmp_path):
+    """The behaviour crew had before `worktree.root` existed, kept exactly.
+
+    An existing config never gains this key by itself -- `/crew:upgrade` adds
+    it, but a repo that never upgrades still has to put worktrees somewhere,
+    and moving them silently would strand every worktree already on disk.
+    """
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    expected = os.path.abspath(str(tmp_path))
+    for cfg in ({}, {"worktree": {}}, {"worktree": {"root": None}},
+                {"worktree": {"root": ""}}, {"worktree": {"root": "   "}},
+                {"worktree": {"root": 42}}, {"worktree": {"root": ["a"]}},
+                {"worktree": "nonsense"}):
+        assert crew_state.worktree_root(cfg, str(repo)) == expected, cfg
+
+
+def test_worktree_root_expands_a_hand_written_path(tmp_path, monkeypatch):
+    """`~/worktrees` is what a person types into a config file. Without the
+    expansion `os.path.join` makes a literal `~` directory next to the repo,
+    which looks like it worked until someone goes looking for the worktree."""
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    monkeypatch.setenv("CREW_TEST_WT", str(tmp_path / "fromenv"))
+    repo = str(tmp_path / "repo")
+
+    assert crew_state.worktree_root({"worktree": {"root": "~/wt"}}, repo) == \
+        os.path.abspath(str(home / "wt"))
+    assert crew_state.worktree_root(
+        {"worktree": {"root": "$CREW_TEST_WT"}}, repo) == \
+        os.path.abspath(str(tmp_path / "fromenv"))
+
+
+def test_a_relative_worktree_root_resolves_against_the_repo(tmp_path):
+    """Not against the process's cwd. A hook runs from wherever the session
+    happens to be, so a cwd-relative answer puts worktrees in a different
+    place depending on which directory the user was standing in."""
+    repo = tmp_path / "a" / "repo"
+    repo.mkdir(parents=True)
+    got = crew_state.worktree_root({"worktree": {"root": "../wt"}}, str(repo))
+    assert got == os.path.abspath(str(tmp_path / "a" / "wt"))
+
+
+def test_worktree_path_names_the_repo_so_two_repos_can_share_a_root(tmp_path):
+    """The failure a shared root introduces: two repos each with a `fix`
+    branch, one worktree directory. The repo name in the leaf is what keeps
+    the setting a directory rather than a per-repo worktree path."""
+    root = str(tmp_path / "wt")
+    one = str(tmp_path / "alpha")
+    two = str(tmp_path / "beta")
+    cfg = {"worktree": {"root": root}}
+
+    first = crew_state.worktree_path(cfg, one, "fix")
+    second = crew_state.worktree_path(cfg, two, "fix")
+
+    assert first != second
+    assert re.fullmatch(r"alpha-[0-9a-f]{6}-fix", os.path.basename(first)), first
+    assert re.fullmatch(r"beta-[0-9a-f]{6}-fix", os.path.basename(second)), second
+
+
+def test_a_slash_in_a_branch_name_does_not_become_a_directory_level(tmp_path):
+    """git allows `feat/x`; a single directory level does not. Left alone the
+    worktree lands one level deeper than every other one, which nothing that
+    lists the root will find."""
+    cfg = {"worktree": {"root": str(tmp_path / "wt")}}
+    got = crew_state.worktree_path(cfg, str(tmp_path / "repo"), "feat/x")
+    assert re.fullmatch(r"repo-[0-9a-f]{6}-feat-x", os.path.basename(got)), got
+    assert os.path.dirname(got) == os.path.abspath(str(tmp_path / "wt"))
+
+
+def test_a_backslash_in_a_branch_name_is_flattened_too(tmp_path):
+    r"""The near-miss that shipped in the first draft of this function.
+
+    The separator class was written `[\/]+`, which inside a regex character
+    class is an ESCAPED FORWARD SLASH -- a legal pattern matching `/` alone.
+    A backslash travelled through intact and the worktree landed one directory
+    deeper than every other one, where nothing listing the root would find it.
+    The two spellings are indistinguishable by eye, which is why the code now
+    derives its separators from `os.sep`/`os.altsep` instead of writing them.
+
+    git refuses `\` in a ref name, so no real branch reaches this -- but the
+    function takes a string and its contract is to neutralise separators, and
+    a contract nothing tests is a comment.
+    """
+    cfg = {"worktree": {"root": str(tmp_path / "wt")}}
+    got = crew_state.worktree_path(cfg, str(tmp_path / "repo"), "feat" + chr(92) + "x")
+    assert re.fullmatch(r"repo-[0-9a-f]{6}-feat-x", os.path.basename(got)), got
+    assert os.path.dirname(got) == os.path.abspath(str(tmp_path / "wt"))
+
+
+def test_a_branch_that_flattens_to_nothing_gets_a_readable_name(tmp_path):
+    """`.`, `..`, `///` and blank all reduce to an empty or dot-only leaf.
+
+    None of them can ESCAPE -- the repo name and a `-` are always in front --
+    but `repo-..` and a bare trailing `repo-` are directories a person cannot
+    read, and `repo-.` is hidden on POSIX. They degrade to a name instead.
+    """
+    cfg = {"worktree": {"root": str(tmp_path / "wt")}}
+    for branch in (".", "..", "///", "   ", "-", chr(92)):
+        got = crew_state.worktree_path(cfg, str(tmp_path / "repo"), branch)
+        assert re.fullmatch(r"repo-[0-9a-f]{6}-detached", os.path.basename(got)), (branch, got)
+        assert os.path.dirname(got) == os.path.abspath(str(tmp_path / "wt"))
+
+
+def test_two_repos_with_the_same_basename_do_not_share_a_leaf(tmp_path):
+    """The collision the repo NAME alone does not prevent, and an earlier
+    version of the docstring wrongly claimed it did.
+
+    Two checkouts called `myrepo` under different parents -- two clients, one
+    project name -- sharing one global `worktree.root` produced the identical
+    leaf for the identical branch, so one repo's /crew:emergency worktree lands
+    in or is mistaken for the other's. Both directories look right, which is
+    what makes it expensive. Raised by the security review of this change.
+    """
+    cfg = {"worktree": {"root": str(tmp_path / "wt")}}
+    one = tmp_path / "clientA" / "myrepo"
+    two = tmp_path / "clientB" / "myrepo"
+    one.mkdir(parents=True)
+    two.mkdir(parents=True)
+
+    first = crew_state.worktree_path(cfg, str(one), "fix")
+    second = crew_state.worktree_path(cfg, str(two), "fix")
+
+    assert os.path.basename(first).startswith("myrepo-")
+    assert os.path.basename(second).startswith("myrepo-")
+    assert first != second, "same basename must not collapse to one worktree"
+
+
+def test_the_repo_digest_is_stable_across_spellings_of_one_path(tmp_path):
+    """One checkout, one digest -- otherwise the disambiguator becomes the
+    collision. Reached through a trailing separator, a `..` hop or (on
+    Windows) different case, it is still the same directory and must still
+    resolve to the same worktree, or two sessions on one repo would each make
+    their own."""
+    repo = tmp_path / "repos" / "thing"
+    repo.mkdir(parents=True)
+    base = crew_state._repo_digest(str(repo))  # pylint: disable=protected-access
+    for spelling in (str(repo) + os.sep,
+                     os.path.join(str(repo), "sub", os.pardir),
+                     str(repo).replace(os.sep, "/")):
+        assert crew_state._repo_digest(spelling) == base, spelling  # pylint: disable=protected-access
+
+
+def test_a_colon_in_a_branch_name_cannot_become_an_ntfs_stream(tmp_path):
+    """`myrepo-release:v1` is alternate-data-stream syntax on NTFS: it names a
+    STREAM on `myrepo-release`, not a directory. git's ref-format forbids `:`
+    so no real branch reaches it, but this function takes a string. Raised by
+    the security review of this change."""
+    cfg = {"worktree": {"root": str(tmp_path / "wt")}}
+    got = crew_state.worktree_path(cfg, str(tmp_path / "repo"), "release:v1")
+    assert ":" not in os.path.basename(got), got
+    assert os.path.basename(got).endswith("-release-v1"), got
+
+
+def test_traversal_in_a_branch_name_cannot_leave_the_worktree_root(tmp_path):
+    """The security question, answered explicitly rather than by implication.
+
+    `a/../../b` flattens to dashes before it is ever a path component, so the
+    `..` is text inside one directory name and not a level to walk up. Asserted
+    on the REALPATH so a normalising join could not quietly rescue it.
+    """
+    root = tmp_path / "wt"
+    cfg = {"worktree": {"root": str(root)}}
+    got = crew_state.worktree_path(cfg, str(tmp_path / "repo"), "a/../../b")
+    assert os.path.dirname(got) == os.path.abspath(str(root))
+    assert os.path.abspath(got).startswith(os.path.abspath(str(root)) + os.sep)

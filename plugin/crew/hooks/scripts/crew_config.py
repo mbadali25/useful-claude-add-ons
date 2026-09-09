@@ -245,6 +245,7 @@ def default_config():
         "roles": ["explorer", "qa-reviewer"],
         "qa": copy.deepcopy(crew_state.QA_DEFAULTS),
         "dev": copy.deepcopy(crew_state.DEV_DEFAULTS),
+        "worktree": copy.deepcopy(crew_state.WORKTREE_DEFAULTS),
         "secondOpinion": {
             "provider": "none",
             "mode": "cli",
@@ -355,6 +356,12 @@ def default_global_config():
         machine, plus `sendsCode`, which is a standing decision by the person
         rather than by the project.
       * `notify` -- the person's own chat, not the project's.
+      * `worktree.root` -- which disk has room for a worktree, and which
+        directory is not synced to cloud storage, are facts about the
+        machine. Someone who keeps worktrees on a second drive keeps them
+        there for every repo; making them say so once per checkout is the
+        friction this layer exists to remove. A repo that genuinely needs
+        its own answer still overrides it.
       * `memory` -- BOTH keys. `mode` is here alongside `vaultPath` because
         the user ruled in 2026-09-05's global/repo split that memory is a
         property of the person, not of the checkout: someone who keeps their
@@ -375,6 +382,7 @@ def default_global_config():
     return {
         "qa": copy.deepcopy(crew_state.QA_DEFAULTS),
         "dev": copy.deepcopy(crew_state.DEV_DEFAULTS),
+        "worktree": copy.deepcopy(crew_state.WORKTREE_DEFAULTS),
         "secondOpinion": {
             "provider": "none",
             "mode": "cli",
@@ -407,6 +415,75 @@ def leaf_paths(node, prefix=()):
             out.extend(leaf_paths(value, here))
         else:
             out.append(".".join(here))
+    return out
+
+
+def null_shadows(repo_cfg, global_cfg, defaults=None):
+    """Paths where the repo layer holds an explicit `null` over a global value.
+
+    `/crew:init` writes `templates/config.template.json`, which spells out
+    EVERY key including the ones whose default is `null`. `merge_defaults`
+    treats that null as a supplied value, so it beat the machine-global layer
+    and the global file did nothing for any repo that had been initialised --
+    which is every managed repo. Measured on this template: `memory.vaultPath`,
+    `qa.codex.model`, `notify.chatId`, `secondOpinion.model` and
+    `worktree.root` all resolved to `None` with a global value set.
+
+    That is `_layer_supplies`' own rule, one case wider: an empty dict
+    "mentions a key without deciding its value", and so does a null. The
+    docstring there already argues it for `{}`; this is the same argument for
+    `None`.
+
+    Deliberately NARROW -- only where the global layer actually supplies
+    something. A repo null with no global value underneath is left alone, so
+    `context.reserveTokens: null` still means "off" rather than silently
+    becoming the 100000 default. That case is real and documented in the
+    README, and a blanket "null means unset" would have broken it.
+
+    Not fixed inside `merge_defaults`: `crew_upgrade.upgrade_config` shares
+    that function, and changing null semantics there would rewrite users'
+    files on migration rather than only resolving them for a read.
+    """
+    if defaults is None:
+        defaults = default_config()
+    out = []
+    for dotted in leaf_paths(default_global_config()):
+        parts = tuple(dotted.split("."))
+        # The repo must actually hold the key, and hold it as null. `_MISSING`
+        # means the key is absent, which already inherits and needs no help.
+        if _dig(repo_cfg, parts) is not None:
+            continue
+        # And the global must decide a real value there -- `_layer_supplies`
+        # rather than a bare `_dig`, so a scalar-over-dict or an empty dict is
+        # judged by the same rules the merge itself applies.
+        if not _layer_supplies(global_cfg, parts, defaults):
+            continue
+        if _dig(global_cfg, parts) in (None, _MISSING):
+            continue
+        out.append(dotted)
+    return out
+
+
+def without_null_shadows(repo_cfg, global_cfg, defaults=None):
+    """`repo_cfg` with every `null_shadows` leaf removed. Does not mutate.
+
+    Both `resolve_config` and the `/crew:config` source column run this, so
+    the value the run uses and the layer the report names cannot disagree --
+    the failure this module already carries scar tissue for.
+    """
+    shadows = null_shadows(repo_cfg, global_cfg, defaults)
+    if not shadows:
+        return repo_cfg
+    out = copy.deepcopy(repo_cfg)
+    for dotted in shadows:
+        parts = dotted.split(".")
+        node = out
+        for part in parts[:-1]:
+            node = node.get(part) if isinstance(node, dict) else None
+            if not isinstance(node, dict):
+                break
+        if isinstance(node, dict):
+            node.pop(parts[-1], None)
     return out
 
 
@@ -560,6 +637,10 @@ def resolve_config(root):
     """
     repo_cfg = crew_state.load_config(root)
     global_cfg, _ = filter_global(read_global_config())
+    # A repo null does not shadow a global value -- see `null_shadows`. The
+    # /crew:init template spells out every nullable key, so without this the
+    # machine-global layer was inert for every repo crew had ever set up.
+    repo_cfg = without_null_shadows(repo_cfg, global_cfg)
     merged = crew_state.merge_defaults(default_config(), global_cfg)
     merged = crew_state.merge_defaults(merged, repo_cfg)
     if "schema" in repo_cfg:
@@ -667,6 +748,10 @@ def explain_config(root, path=None):
     defaults = default_config()
     repo_cfg = crew_state.load_config(root)
     global_cfg, _ = filter_global(read_global_config(path))
+    # Same prune as `resolve_config`, for the same reason and from the same
+    # helper: if the report applied a different rule from the run, the source
+    # column would credit `repo` for a value the run took from `global`.
+    repo_cfg = without_null_shadows(repo_cfg, global_cfg, defaults)
     resolved = crew_state.merge_defaults(
         crew_state.merge_defaults(defaults, global_cfg), repo_cfg)
 
