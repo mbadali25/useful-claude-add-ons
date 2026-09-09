@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@1f97e51c
+anchor: useful-claude-add-ons@d61342c3
 
 # crew
 
@@ -468,3 +468,20 @@ traced here; this note covers `crew` at the level of "what exists and how it
 is wired". `crew:reference` or `crew:roster` are the existing tools for the
 finer grain and were not re-derived here. The other nine subsystem notes in
 `.crew/codemap/` cover their own areas; `INDEX.md` is the table of contents.
+## Entry points
+
+- `plugin/crew/hooks/scripts/crew_state.py:2152` — `worktree_root(cfg, repo_root)`, the one resolver for `worktree.root`. Unset/blank/non-string means the checkout's parent, which is what crew did before the key existed.
+- `plugin/crew/hooks/scripts/crew_state.py:2182` — `worktree_path(cfg, repo_root, branch)`, `<worktree_root>/<repo>-<digest>-<branch>`. Flattens every separator and `:` so a branch name cannot add a directory level.
+- `plugin/crew/hooks/scripts/crew_state.py:2410` — the `--worktree-path BRANCH` CLI flag (`-` for the root alone). This is the only way a command can obtain the path; without it the setting resolved and nothing runnable returned it.
+- `plugin/crew/hooks/scripts/crew_config.py:421` — `null_shadows`, and `:467` `without_null_shadows`: the rule that a repo `null` does not shadow a machine-global value. Called from `resolve_config` (`:611`) and `explain_config` (`:731`), the same helper in both so the run and the report cannot disagree.
+
+## Owns data
+
+- `worktree.root` in `.crew/config.json` and `~/.claude/crew/config.json`, defaulting from `crew_state.WORKTREE_DEFAULTS` (`plugin/crew/hooks/scripts/crew_state.py:610`). Inheritable globally — it is a fact about which disk has room, not about a checkout.
+- `crew_state.SPECIALIST_ROLES` (`plugin/crew/hooks/scripts/crew_state.py:725`) — 36 domain specialists off the tier ladder, up from 15. `ROLE_TIERS` is unchanged at 13; with `pm` that is the 50 files in `plugin/crew/agents/`.
+
+## Calls out to
+
+- `crew_config.resolve_config` from `crew_state.main`'s `--worktree-path` branch, imported INSIDE the function — the two modules must not import each other at top level.
+- `crew_state._repo_digest` (`plugin/crew/hooks/scripts/crew_state.py:628`) hashes `normcase(realpath(repo_root))` with `blake2b`, degrading to `abspath` when `realpath` raises, so a hook never dies for an unstattable path.
+- `_SEPARATORS` (`plugin/crew/hooks/scripts/crew_state.py:623`) is derived from `os.sep`/`os.altsep` rather than written as a regex character class.

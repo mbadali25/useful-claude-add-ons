@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@1f97e51c
+anchor: useful-claude-add-ons@d61342c3
 verified: 2026-09-06
 
 ## Does
@@ -23,6 +23,7 @@ own package managers (see **Calls out to**). DERIVED.
   (Previously cited as `:20`. Line 20 sets `REPO`, not `SCRIPT`.)
 
 ## Owns data
+
 - Nothing of its own. It shells out to `claude plugin marketplace add` / `install` / `update`.
 - Installed-plugin state is read **once** into `PLUGINS_CACHE` by `load_plugins`, whose
   `claude plugin list --json` call is at `scripts/install-prerequisites.sh:242` (PowerShell
@@ -33,8 +34,10 @@ own package managers (see **Calls out to**). DERIVED.
 - The re-run fast path deliberately avoids the CLI: `install_plugin` compares the marketplace HEAD
   sha against the sha recorded for the installed copy (`scripts/install-prerequisites.sh:636-643`),
   two file reads instead of a process launch. DERIVED.
+- The `claude-code-plugins` marketplace is no longer registered by either script. It carried only `frontend-design`, now sourced from `claude-plugins-official`.
 
 ## Calls out to
+
 - The `claude` CLI: `claude plugin list --json` at `scripts/install-prerequisites.sh:242`,
   `claude plugin install` at `:383`, `claude plugin update` at `:666`, `claude mcp add` at `:558`.
   DERIVED.
@@ -43,6 +46,8 @@ own package managers (see **Calls out to**). DERIVED.
   `scripts/install-prerequisites.sh:2324`, with `uv` itself bootstrapped via `pip3`/`pip` just
   above. DERIVED. (`:2307` was cited here previously; that line is the *idempotence* skip, not the
   install.)
+- `https://knowledge-mcp.global.api.aws/mcp` and `https://learn.microsoft.com/api/mcp` — registered, not called by the installer. Both were probed live before being added and answered a real MCP `initialize`.
+- `uvx awslabs.aws-pricing-mcp-server@latest`, recorded by `claude mcp add` rather than executed, which is why the `uv` check above has to happen first.
 
 ## Landmines
 - **Matched pair, and confirmed in sync at this anchor - by mechanical diff, not by eye.**

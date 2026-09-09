@@ -61,7 +61,33 @@ GRAPH_BLOCK = {
     # there is no longer anything for it to mean.
 }
 
-_ANCHOR_LINE_RE = re.compile(r"^(anchor:\s*\S*@?)([0-9a-f]{7,40})",
+# The sha group must run to END OF LINE, and the prefix must be LAZY. Both,
+# not either.
+#
+# The previous form was `^(anchor:\s*\S*@?)([0-9a-f]{7,40})` with a greedy
+# `\S*` and no end anchor, and `[0-9a-f]{7,40}` is satisfied by the LAST seven
+# hex characters on the line. So the prefix ate everything before them and the
+# rewrite left them attached:
+#
+#   anchor: repo@1f97e51c   (8 chars)  ->  anchor: repo@1d61342c
+#   anchor: repo@<40 chars>            ->  anchor: repo@<first 33><new sha>
+#
+# A 7-character anchor was the ONLY length that survived, which is why this
+# shipped: every anchor this repo wrote by hand was seven. The corrupted value
+# still parses -- `crew_state._ANCHOR_RE` reads `1d61342c` as a perfectly
+# well-formed sha -- it just names a commit that does not exist, so the
+# freshness check reports the map behind HEAD forever and no amount of
+# refreshing fixes it. Silent, permanent, and invisible in review.
+#
+# Note this does NOT contradict CLAUDE.md's "anchor length does not matter":
+# that entry is about `crew_state._ANCHOR_RE`, the COMPARISON, which is
+# correct and already end-anchored. This is the writer, and it is a different
+# regex in a different file.
+#
+# `(?=\s*$)` is a lookahead so `sub` does not consume the trailing whitespace
+# it matched; `\S*?` is lazy so the prefix stops at the earliest point where a
+# run of hex reaches the end of the line.
+_ANCHOR_LINE_RE = re.compile(r"^(anchor:\s*\S*?@?)([0-9a-f]{7,40})(?=\s*$)",
                              re.MULTILINE | re.IGNORECASE)
 
 

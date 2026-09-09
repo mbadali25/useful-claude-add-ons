@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@1f97e51c
+anchor: useful-claude-add-ons@d61342c3
 
 # Marketplace and registration
 
@@ -278,3 +278,16 @@ other, matched to no source of truth.
 
 Listed under "Re-anchor provenance" above rather than repeated here: three check
 function bodies, and the worked example's historical git ranges.
+## Entry points
+
+- `.claude-plugin/marketplace.json` — 28 skills and 4 plugins. `jira-manager`, `knowbe4-admin` and `power-automate-api` were added this release; `crew` is 0.16.27.
+- `scripts/check-marketplace.py:166` — `check_catalogs`, which requires `SKILL_KEYS` (.sh) and `$script:SkillCatalog` (.ps1) to match marketplace.json in the same ORDER, not merely as sets.
+- `scripts/check-marketplace.py:233` — `check_group_parity`, which hardcodes exactly four sub-picker groups. Reusing `COMMUNITY` for VoltAgent rather than adding a fifth group is why this file needed no change.
+
+## Owns data
+
+- `skills/power-automate-api/.gitignore` — ignores `scripts/pa-snapshots/` wholesale. `pa.py` writes live-tenant flow dumps there as rollback state; one was committed and pushed to this public repo before a review caught it.
+
+## Calls out to
+
+- Nothing at runtime. Registration is a set of files that must agree; `_verify/smoke.sh` runs the checker as its first gate.

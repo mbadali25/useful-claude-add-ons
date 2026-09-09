@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@1f97e51c
+anchor: useful-claude-add-ons@d61342c3
 
 # Verification harness
 
@@ -222,3 +222,16 @@ reproduced at 1f97e51c, and both should be treated as unverified here.
 `_verify/run-all.sh` was not run then and has not been run now — it drives
 pytest suites against a bootstrapped localgpu venv and a real PowerShell, and
 its own header estimates minutes, not seconds (`_verify/run-all.sh:3`).
+## Entry points
+
+- `plugin/crew/tests/test_crew_config.py:1152` — `test_resolve_config_inherits_a_global_through_the_init_template`, the END-TO-END null-shadow test. The helper-level tests above it (`:1084`) pass with the call site deleted from `resolve_config`; this one does not. That gap was found by sabotage, not by review.
+- `plugin/crew/tests/test_crew_state.py:871` — `test_a_backslash_in_a_branch_name_is_flattened_too`, which catches the `[\/]+` character class that matched `/` alone.
+- `plugin/crew/tests/test_crew_state.py:905` — `test_two_repos_with_the_same_basename_do_not_share_a_leaf`, the cross-repo worktree collision the security review raised.
+
+## Owns data
+
+- `.work/PROMOTIONS.md` — machine-local (`.gitignore:268` ignores `.work/`), so it is THIS machine's promotion history and never travels to another clone. `promote-gate.sh` reads it; `verify-gate.sh` refuses to end a turn after a deploy that wrote no row.
+
+## Calls out to
+
+- `pwsh` from `plugin/crew/tests/test_verify_gate_bash_resolver.py`, which is where two tests fail on this machine: they replace `PATH` and `SystemRoot` with fake trees and pwsh cannot then initialise (`Win32Exception 126`). Environmental and pre-existing — confirmed identical at `1f97e51c`.

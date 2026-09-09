@@ -6,6 +6,82 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **crew 0.16.28: the codemap anchor WRITER corrupted every sha that was not
+  exactly seven characters.** `crew_upgrade.py`'s `_ANCHOR_LINE_RE` was
+  `^(anchor:\s*\S*@?)([0-9a-f]{7,40})` -- a greedy prefix and no end anchor.
+  `[0-9a-f]{7,40}` is satisfied by the LAST seven hex characters on the line,
+  so the prefix absorbed everything before them and the rewrite left them
+  attached:
+
+      anchor: repo@1f97e51c   (8 chars)  ->  anchor: repo@1d61342c
+      anchor: repo@<40 chars>            ->  anchor: repo@<first 33><new sha>
+
+  Seven was the only length that survived, which is why it shipped: every
+  anchor written by hand in this repo was seven, and the committed test
+  (`test_anchor_is_bumped_only_on_a_touched_file`) asserts `head in text` --
+  a SUBSTRING check that a corrupted `repo@1<head>` also passes -- against a
+  fixture whose anchor is `0000000`. The test and the fixture were each one
+  rung short of the defect.
+
+  The corrupted value still parses: `crew_state._ANCHOR_RE` reads `1d61342c`
+  as a well-formed sha. It simply names a commit that does not exist, so the
+  freshness check reports that map behind HEAD forever and refreshing it never
+  clears the warning. Found by running `/crew:onboard --refresh` and reading
+  what it wrote, not by review.
+
+  This does NOT contradict CLAUDE.md's "anchor length does not matter" note.
+  That entry is about `crew_state._ANCHOR_RE`, the COMPARISON, which is
+  correct and already end-anchored, and it is silent on the writer -- a
+  different regex in a different file. Both are now covered.
+
+  Fixed with a lazy prefix and an end-of-line lookahead:
+  `^(anchor:\s*\S*?@?)([0-9a-f]{7,40})(?=\s*$)`. Verified at 7, 8, 12 and 40
+  characters, on a bare `anchor: <sha>` with no repo name, on a repo named
+  `deadbeef` (hex, so a greedy or eager pattern would eat the NAME), and with
+  trailing whitespace. Three regression tests assert the anchor READS BACK as
+  head through `_ANCHOR_RE` and RESOLVES to a real commit -- never that head
+  appears somewhere in the file. Sabotage-tested: restoring the old pattern
+  turns all three red.
+
+  The five anchors this bug wrote during the refresh (`crew`, `repo-docs`,
+  `marketplace-registration`, `verification-harness`, `install-scripts`) are
+  repaired to `d61342c3`, and each was checked with `git rev-parse` rather
+  than assumed.
+
+### Changed
+
+- **Five codemap subsystems refreshed and re-anchored to `d61342c3`.** Chosen
+  by the per-path check CLAUDE.md prescribes, not by the anchor lag: the pulse
+  reported all ten maps behind HEAD, and `git diff --name-only <anchor>..HEAD
+  -- <paths the map documents>` showed only five with real changes behind them.
+  `localgpu`, `mcp-servers`, `obsidian-vault`, `skills-itsm` and
+  `skills-security-ops` come out empty and are deliberately left at
+  `1f97e51c`; re-anchoring them would assert a verification nobody performed.
+
+- **`repo-docs.md`'s `render.sh` citations are repo-relative.** They read
+  `render.sh:20` and `render.sh:32-35`, and TWO files carry that name --
+  `plugin/crew/skills/crew-diagrams/scripts/render.sh` and its `_test/`
+  sibling -- so the bare form was ambiguous as well as unpasteable into
+  `git diff -- <path>`, which is the whole re-verification mechanism. All
+  three cited lines were checked before rewriting: `:20` creates `out/`,
+  `:32-35` is the `cygpath` block, `:45` is the `mmdc` call.
+
+  Worth recording that the reconcile's own 62-item conflict list did NOT flag
+  this. Every one of those items is a map token graphify has no AST node for
+  -- bash variables, `pscustomobject` keys, CLI strings -- and all 16 cited
+  paths were checked and exist. On a repo that is mostly shell and markdown
+  that list is ~100% false positives, while a genuinely broken anchor passes
+  silently, because the graph has no node for either `render.sh`.
+
+- **`.crew/config.json` gained the eight tier-2 roles it was already entitled
+  to** (`smoke-author`, `dba`, `browser-tester`, `analyst`, `planner`,
+  `infrastructure-architect`, `scribe`, `researcher`), taking the roster from
+  5 to 13. `--force` fills in the ladder the declared tier already grants; the
+  tier itself is unchanged. Kept at the user's direction.
+
+
+### Fixed
+
 - **crew 0.16.27: a repo `null` no longer shadows a machine-global value.**
   The bug the `worktree.root` work exposed, and it was never about
   `worktree.root`: `/crew:init` writes `templates/config.template.json`, which

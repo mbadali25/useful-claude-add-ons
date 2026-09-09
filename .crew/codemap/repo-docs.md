@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@1f97e51c
+anchor: useful-claude-add-ons@d61342c3
 verified: 2026-09-06
 
 ## Does
@@ -12,6 +12,7 @@ anywhere as a rule; it is inferred from there being no writer. The one script th
 mirrored README sections and does not write it - DERIVED.)
 
 ## Entry points
+
 - DERIVED `docs/diagrams/architecture.mmd:1-2` - and `data-flow.mmd:1-2`, `process.mmd:1-2`
   alongside it. Line 1 is `%% anchor: useful-claude-add-ons@<sha>`, line 2 is `%% Anchors: <paths>`.
   All three currently read `1f97e51c`, i.e. HEAD - they are not behind at this anchor.
@@ -23,8 +24,11 @@ mirrored README sections and does not write it - DERIVED.)
   fails on `main`, a plugin ships with a broken `version`, or an install-script change breaks a
   fresh machine. Carries `last verified: 2026-09-05` at `:3`.
 - DERIVED `CHANGELOG.md:5` - the `## [Unreleased]` heading, exactly at line 5.
+- `README.md:12` and `:18` — the bootstrap one-liners, pinned to a commit SHA. They must be re-pinned after any change to either install script, or the documented command installs the previous script.
+- `TODO.md` — 8 Codex findings inside `pa.py` and `jira-api.sh`, each with its repro, plus the recorded decision NOT to rewrite the published tenant snapshot.
 
 ## Owns data
+
 - DERIVED `docs/diagrams/out/*.svg` and `*.png` (six files, three names x two formats), produced by
   `plugin/crew/skills/crew-diagrams/scripts/render.sh` - output dir created at `:20`, `mmdc`
   invoked at `:45` and again at `:49` on the failure path. **`out/` is gitignored**
@@ -33,10 +37,13 @@ mirrored README sections and does not write it - DERIVED.)
 - DERIVED `docs/superpowers/` is hand-written: `plans/` (2 files) and `specs/` (5 files). Nothing
   in the repo reads either directory back at runtime - a repo-wide grep for `docs/superpowers`
   outside `docs/` itself and this codemap returns nothing.
+- Counts that drift silently and are checked by nothing: `28 skills` (README, INSTALLATION), `50 agents` (plugin/README.md), community `7 of 4 marketplaces`, `Seven MCP servers` (INSTALLATION.md).
 
 ## Calls out to
+
 - DERIVED `mmdc` (mermaid-cli), at `plugin/crew/skills/crew-diagrams/scripts/render.sh:45`
   (`-s 2`, silenced) and `:49` (the retry that prints the last five lines of stderr on FAIL).
+- `raw.githubusercontent.com` at the pinned sha. Verified after the merge rather than assumed: the `.ps1` returns 200 and the `.sh` at that sha contains the new menu keys.
 
 ## Landmines
 - **`docs/adr/` does not exist, and three documents about *this* repo say otherwise.** DERIVED:
@@ -156,5 +163,8 @@ below was resolved by reading the line, not by grep alone.
   `docs/adr/`, actually three). The `docs/adr/` absence, the three anchored diagrams, `CHANGELOG.md:5`,
   the `cygpath` fix and the `mmdc` call site were confirmed.
 - Two citations were right about the file and wrong about the line, and were shifted rather than
-  dropped: the `cygpath` block is `render.sh:32-35`, not `:33-36`; and `docs/diagrams/out/` is
-  produced at `render.sh:20` and `:45`, not at `:1`, which is the shebang.
+  dropped: the `cygpath` block is `plugin/crew/skills/crew-diagrams/scripts/render.sh:32-35`, not
+  `:33-36`; and `docs/diagrams/out/` is produced at `plugin/crew/skills/crew-diagrams/scripts/render.sh:20`
+  and `:45`, not at `:1`, which is the shebang. Written repo-relative because TWO files are
+  named `render.sh` — this one and `plugin/crew/skills/crew-diagrams/scripts/_test/render.sh` —
+  so the bare form is ambiguous as well as unpasteable into `git diff -- <path>`.

@@ -723,3 +723,80 @@ def test_the_report_says_so_when_nothing_was_added(tmp_path):
     out = crew_upgrade.run(str(root), {})
     assert "roles added: none" in out["report"]
     assert "tier: 0 (unchanged)" in out["report"]
+
+
+# --- the anchor REWRITE, at every sha length -------------------------------
+# `test_anchor_is_bumped_only_on_a_touched_file` above asserts `head in auth`,
+# a SUBSTRING check, and the fixture anchor is `0000000` -- seven characters.
+# Seven was the only length the old rewrite handled, and a substring check
+# passes on a corrupted `repo@1<head>` too, so the two together let a real bug
+# ship: `\S*` was greedy and `[0-9a-f]{7,40}` is satisfied by the LAST seven
+# hex characters, so an 8-char anchor kept its first character and a 40-char
+# one kept thirty-three.
+#
+# The corrupted value still PARSES -- `crew_state._ANCHOR_RE` reads `1d61342c`
+# as a well-formed sha -- it just names a commit that does not exist, so the
+# freshness check reports the map behind HEAD forever and refreshing never
+# fixes it. Assert the anchor READS BACK as head, never that head appears.
+
+_SHA_LENGTHS = (7, 8, 12, 40)
+
+
+def _map_with_anchor(anchor):
+    return V1_MAP.replace("anchor: repo@0000000", "anchor: repo@" + anchor)
+
+
+def test_the_rewritten_anchor_reads_back_as_head_at_every_length(tmp_path):
+    """One repo per starting length; all four must land on exactly head."""
+    for length in _SHA_LENGTHS:
+        start = ("abcdef0123456789" * 3)[:length]
+        root = crew_fixtures.make_repo(
+            tmp_path / ("len%d" % length), config={"tier": 0},
+            codemap={"auth": _map_with_anchor(start)},
+        )
+        crew_upgrade.run(str(root), {
+            "auth": {"Entry points": ["- `src/cron.py:1` — scheduler"]}})
+        head = crew_fixtures.head_sha(root)
+        text = (root / ".crew" / "codemap" / "auth.md").read_text(
+            encoding="utf-8")
+        found = crew_state._ANCHOR_RE.search(text)
+        assert found, "anchor line no longer parses at length %d" % length
+        assert found.group(1) == head, (
+            "length %d: anchor reads %r, head is %r"
+            % (length, found.group(1), head))
+
+
+def test_the_rewritten_anchor_is_a_commit_that_exists(tmp_path):
+    """The failure the substring check cannot see. `repo@1<head>` contains
+    head and parses cleanly; it simply names no commit, so every later
+    freshness check reports the map stale and no refresh can clear it."""
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"tier": 0},
+        codemap={"auth": _map_with_anchor("1f97e51c")},
+    )
+    crew_upgrade.run(str(root), {
+        "auth": {"Entry points": ["- `src/cron.py:1` — scheduler"]}})
+    text = (root / ".crew" / "codemap" / "auth.md").read_text(encoding="utf-8")
+    found = crew_state._ANCHOR_RE.search(text)
+    resolved = subprocess.run(
+        ["git", "-C", str(root), "rev-parse", "-q", "--verify",
+         found.group(1) + "^{commit}"],
+        capture_output=True, text=True, check=False)
+    assert resolved.returncode == 0, (
+        "anchor %r does not resolve to a commit" % found.group(1))
+
+
+def test_a_repo_name_made_of_hex_does_not_confuse_the_rewrite(tmp_path):
+    """The prefix is lazy now, so it stops at the first run of hex that
+    reaches end of line. A repo literally named `deadbeef` must not have its
+    NAME rewritten as though it were the sha."""
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"tier": 0},
+        codemap={"auth": V1_MAP.replace("anchor: repo@0000000",
+                                        "anchor: deadbeef@1f97e51c")},
+    )
+    crew_upgrade.run(str(root), {
+        "auth": {"Entry points": ["- `src/cron.py:1` — scheduler"]}})
+    text = (root / ".crew" / "codemap" / "auth.md").read_text(encoding="utf-8")
+    head = crew_fixtures.head_sha(root)
+    assert "anchor: deadbeef@" + head in text, text.splitlines()[1]
