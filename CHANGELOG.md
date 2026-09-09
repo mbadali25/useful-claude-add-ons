@@ -4,6 +4,105 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Fixed
+
+- **crew 0.16.27: a repo `null` no longer shadows a machine-global value.**
+  The bug the `worktree.root` work exposed, and it was never about
+  `worktree.root`: `/crew:init` writes `templates/config.template.json`, which
+  spells out EVERY key including the ones whose default is `null`.
+  `merge_defaults` treats that null as a supplied value, so it beat the global
+  layer -- and the machine-global file therefore did nothing for any repo crew
+  had ever initialised, which is every managed repo.
+
+  Measured on the committed template, with a global value set for each:
+  `memory.vaultPath`, `qa.codex.model`, `notify.chatId`,
+  `secondOpinion.model` and `worktree.root` all resolved to `None`. Five keys,
+  not one. The global layer has been advertised since 0.16.0 and was inert for
+  all of them.
+
+  Fixed as `crew_config.null_shadows` / `without_null_shadows`, which is
+  `_layer_supplies`' existing rule one case wider -- an empty dict "mentions a
+  key without deciding its value", and so does a null. Deliberately NARROW: it
+  fires only where the global layer actually supplies something, so
+  `context.reserveTokens: null` still means "off" rather than silently becoming
+  the 100000 default. A blanket "null means unset" would have broken that, and
+  the README documents it.
+
+  Deliberately NOT fixed in `merge_defaults`: `crew_upgrade.upgrade_config`
+  shares that function, and changing null semantics there would rewrite users'
+  files during migration rather than only resolving them for a read.
+
+  Both `resolve_config` and `/crew:config`'s source column call the same
+  helper, so the value the run uses and the layer the report names cannot
+  disagree -- the failure this module already carries scar tissue for.
+
+  The regression suite is sabotage-tested, and the first version of it FAILED
+  that test: it exercised the helper directly, so deleting the call from
+  `resolve_config` left it green. Two end-to-end tests through `resolve_config`
+  and `explain_config` were added for exactly that gap; removing either call
+  site now fails one named test.
+
+- **crew 0.16.27: `worktree_path` neutralises both separators, and `:`.** The
+  shipped regex was `[\/]+`, which inside a character class is an escaped
+  forward slash and matches `/` alone, so a backslash travelled through intact
+  and `feat\x` resolved one directory DEEPER than every other worktree. Found
+  by re-running the control rather than reading it, and independently by the
+  security review. `_SEPARATORS` is now derived from `os.sep`/`os.altsep`
+  instead of written as a regex literal, because the escaping is what went
+  wrong -- the same trap then bit twice more in this change's own docstrings.
+
+  `:` joins them for a Windows-only reason: `myrepo-release:v1` is NTFS
+  alternate-data-stream syntax, naming a stream rather than a directory. git's
+  ref-format forbids both `\` and `:`, so neither is reachable from a real
+  branch -- but this function's signature is a string, and a contract nothing
+  tests is a comment.
+
+- **crew 0.16.27: the worktree leaf carries a repo digest.** The leaf was
+  `<basename>-<branch>`, and an earlier docstring claimed that let several
+  repos share one root safely. It does not: two checkouts called `myrepo` under
+  different parents -- two clients, one project name -- produce the same leaf
+  for the same branch, so one repo's `/crew:emergency` worktree lands in or is
+  mistaken for the other's, with both directories looking correct. Raised by
+  the security review. A 6-character `blake2b` of `normcase(realpath())`
+  disambiguates them and is stable across symlinks, drive-letter case and
+  separator spelling.
+
+- **crew 0.16.27: `worktree.root` is reachable from a command.** Codex called
+  the key unused and was right -- it resolved, and nothing a command could run
+  returned the answer, so two lanes placing worktrees would each invent their
+  own path. `crew_state.py --worktree-path <branch>` (or `-` for the root)
+  prints it, resolved through `crew_config.resolve_config` so the machine-global
+  file actually applies. `/crew:emergency` and `/crew:scale` now call it.
+
+  Both commands' prose was also corrected: a subagent's `isolation: worktree`
+  is placed by the harness and crew cannot redirect it. The first draft of this
+  change implied otherwise, which would have sent someone setting
+  `worktree.root` and watching it do nothing.
+
+- **The AWS Pricing installer row refuses to register when `uv` fails.**
+  `claude mcp add` records a command without running it, so a failed
+  `pip install uv` followed by an unconditional add registered a server whose
+  executable was absent -- surfacing later, inside a session, with nothing
+  pointing back at the install step. Both scripts now check the install and the
+  resulting PATH, and skip with a reason. Raised by Codex against both halves.
+
+### Security
+
+- **A real Power Automate tenant snapshot was committed and pushed to this
+  public repository.** `skills/power-automate-api/scripts/pa-snapshots/flow-*.json`
+  carried two SharePoint site URLs and 68 GUIDs (flow, connection-reference,
+  list and environment ids). No tokens, passwords or email addresses. Found by
+  the Codex QA review of PR #81, not by a human reading the diff -- a 51KB JSON
+  blob in a 59-file changeset is precisely what nobody opens.
+
+  The owner's decision, recorded rather than paraphrased: leave what is already
+  published, and stop it recurring. Nothing was rewritten or force-pushed. The
+  file is untracked and `skills/power-automate-api/.gitignore` now ignores the
+  snapshot directory wholesale, so the next one cannot arrive the same way.
+  `pa.py` writes those snapshots at runtime as rollback state; they were never
+  meant to be tracked.
+
+
 ### Added
 
 - **`VoltAgent/awesome-claude-code-subagents` joins the community row**, as

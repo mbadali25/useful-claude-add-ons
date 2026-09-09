@@ -372,7 +372,7 @@ claims to check, and say explicitly that refuting the brief is a valid and value
 outcome. A lane that believes its brief is a lane that can only find the bugs you
 already suspected.
 
-## The installer menu undersells crew by six agents and three commands
+## Crew's agent count is wrong in three places, right in four
 
 `scripts/install-prerequisites.sh:859` and `scripts/install-prerequisites.ps1:843`
 both read:
@@ -381,7 +381,28 @@ both read:
 crew                    - Virtual dev team: 11 agents, 21 commands, safety hooks
 ```
 
-Actual on disk after the 0.16.23 merge: **29 agents, 24 commands.** The two
+Actual on disk: **29 agents, 24 commands** (`ls plugin/crew/agents/*.md`,
+`ls plugin/crew/commands/*.md` — re-measure rather than trusting this line).
+
+The installer is not the only wrong site. Verified 2026-09-06 at `1f97e51c`:
+
+| Location | Says | Actual |
+|---|---|---|
+| `scripts/install-prerequisites.sh:859`, `.ps1:843` | `11 agents, 21 commands` | 29 / 24 |
+| `plugin/PLUGINS.md:153` | `Agents — 14, tiered plus the manager` | 29 |
+| `README.md:162` | `17 subagents` (its `24 slash commands` is correct) | 29 |
+
+Correct in four places, so this is drift and not a convention:
+`.claude-plugin/marketplace.json`'s crew description, `plugin/PLUGINS.md:17`,
+`plugin/README.md:370`, `README.md:773` — all four read 29 agents, 24 commands.
+
+**Why no check catches it.** `check_catalogs`, `check_menu_parity` and
+`check_group_parity` compare keys and booleans, never descriptive strings, so
+four separate places can state the count wrongly while the gate stays green.
+`check_docs` (`scripts/check-marketplace.py:263-277`) reads three files and
+never opens `plugin/PLUGINS.md` at all.
+
+The two
 scripts agree with each other, so the matched-pair rule is satisfied — they are
 consistently wrong, which is why no check catches it. `check-marketplace.py`
 compares the *menu keys* between the two scripts, not the descriptive text, and
@@ -875,3 +896,148 @@ broader finding — committed secrets appearing in transcripts generally) and
 F157 (this specific incident plus the `_verify` control that incident's task
 was building); `TheSelectSource/.crew/secrets.md` §9-§10 (the procedure this
 gap makes hard to follow reliably by hand).
+
+
+## Two install-script invariants CLAUDE.md states that the scripts do not hold
+
+Both verified 2026-09-06 at `1f97e51c` by reading the worktree. Found while
+re-reading `.crew/codemap/install-scripts.md`, whose per-path diff against its
+anchor was **empty** — neither of these is drift; both were true at the previous
+anchor too.
+
+### 1. `json_query` resolves `python3` only — not `python`, not `py`
+
+`scripts/install-prerequisites.sh:164-176` tries `jq`, then `python3`, then
+`return 1`. CLAUDE.md's landmine says: "Git Bash ships without `python3`.
+Resolve `python3`/`python`/`py` and fail loudly on stderr rather than
+suppressing the error and exiting 0." Both back ends carry `2>/dev/null`, so a
+back end that runs and fails is indistinguishable from one that is absent.
+
+`jq` is tried first, so this bites only where `jq` is absent AND `python3` is
+absent while `python` or `py` is present — an ordinary Git Bash box with the
+Windows Python launcher.
+
+Traced consequence: `json_query` returns 1 -> `PLUGINS_CACHE` is empty
+(`:248`) -> `plugin_version` returns 1 for every name (`:260`) -> every plugin
+reads as not-installed and is reinstalled. That is loud rather than silent,
+which is the only reason this is not urgent. It still violates the stated rule,
+and the `2>/dev/null` is the part that makes a diagnosis expensive.
+
+### 2. The scroll line bypasses `pick_fit` / `Format-PickerLine`
+
+CLAUDE.md: "Nothing may bypass `pick_fit` / `Format-PickerLine`. Clipping is
+degradation; a line that *wraps* throws off the cursor-up redraw count and
+smears the menu over what was above it."
+
+The `showing N-M of T` line is printed directly in both scripts —
+`scripts/install-prerequisites.sh:1271-1272` (`printf`) and
+`scripts/install-prerequisites.ps1:1140-1141` (`Write-Host ... PadRight`) —
+without passing through either clipper.
+
+It cannot wrap today: the string is bounded near 24 characters and both scripts
+floor the width at 40 columns (`sh:1150`, `ps1:1105`). So this is currently
+harmless *by arithmetic, not by construction* — the invariant is stated
+absolutely and holds only incidentally. Worth either routing through the
+clipper or amending CLAUDE.md to name the exemption; leaving it undocumented is
+what makes the next reader distrust the rule.
+
+Related: the two clippers are **not** interchangeable — `pick_fit` reserves one
+character for a single-character ellipsis, `Format-PickerLine` reserves three
+for `...` and additionally pads. A line tuned against one can overflow the
+other.
+
+
+## `wazuh-onprem` writes production config with no confirmation, and redacts nothing
+
+Both verified 2026-09-06 at `1f97e51c` by reading the worktree. Found while
+re-reading `.crew/codemap/skills-security-ops.md`, whose per-path diff against
+its anchor was **empty**. Neither is drift.
+
+### 1. `manager_config.py apply` has no confirmation of any kind
+
+The `apply` subparser (`skills/wazuh-onprem/scripts/manager_config.py:251-254`)
+accepts only `--block`, `--anchor` and `--restart`. There is no `--yes`, because
+there is no prompt: a grep of the whole file for `input(`, `confirm`, `--yes`,
+`_auto_confirm` and `getpass` returns nothing.
+
+`cmd_apply` (`:170-223`) backs up, then `sudo cp`s the candidate over the live
+`ossec.conf` at `:200`, in one non-interactive run. It does validate after the
+copy and roll back on failure — real, enforced, and worth keeping — but the
+rollback protects against a *bad config*, not against an *unintended run*.
+
+The only restraint on intent is prose at `skills/wazuh-onprem/SKILL.md:144`.
+Compare `meraki_config.py`, the sibling skill: its apply is safe by control
+flow — `:152-187` cannot reach the PUT at `:176` without taking the snapshot
+at `:157` — and it carries `HARD_BLOCKS`/`check_hard_block` plus batch caps.
+One skill enforces; the other describes.
+
+### 2. Zero redaction, while two commands emit the whole config
+
+`grep -rniE 'redact|scrub|mask|sanitiz' skills/wazuh-onprem/scripts/` returns
+nothing. Meanwhile `cmd_diff` writes the full live `ossec.conf` to stdout
+(`:167`) and `cmd_fetch` writes it to `--out` (`:148`). That file carries
+integration webhook URLs and authd keys.
+
+This compounds the already-recorded finding that session transcripts write raw
+secret content with no redaction (commit `1f97e51c`): the output of a single
+`manager_config.py diff` lands verbatim in a transcript.
+
+`meraki_diff.py:32-42` does display-path redaction, so the pattern exists in
+this repo already and was simply not applied here.
+
+
+## Queued 2026-09-08 — Codex QA findings on the new skills' own scripts
+
+Raised by the Codex review of PR #81 (`gpt-5.6-luna`, `model_reasoning_effort=high`)
+against `1f97e51c...HEAD`. Every one is **inside the two new skills' scripts**, not
+in the marketplace wiring that PR added — they are pre-existing bugs in code that
+was written before the PR and merely registered by it, which is why they were
+ticketed rather than fixed in the same change. Anchor: `9370ad02`.
+
+Not independently re-verified line by line; each is the reviewer's own repro,
+kept in its words so a reader can check it rather than trust it.
+
+### `skills/power-automate-api/scripts/pa.py`
+
+1. **`pa.py:143` — a custom `--client-id` is not cached**, so a token refresh
+   silently falls back to `DEFAULT_CLIENT_ID` and later SharePoint calls fail.
+   Repro: log in with `--client-id`, expire the token, run a command that
+   refreshes.
+2. **`pa.py:360` — snapshot filenames use second-resolution timestamps**, so two
+   patches of the same flow inside one second overwrite each other's rollback
+   state. Repro: start two same-flow patch processes within one second and list
+   the snapshot files. (Note this is the rollback safety net, so the failure is
+   silent until a rollback is actually needed.)
+3. **`pa.py:69` — DNS, connection, timeout and non-JSON responses escape as
+   unhandled tracebacks** rather than a diagnosed error. Repro: point a command
+   at an unreachable or malformed endpoint.
+4. **`pa.py:472` — the rollback command it prints omits the required `--org` and
+   `--flow` arguments**, so copying it verbatim fails immediately. Repro:
+   complete a patch and run the printed command. Worst of the four: the one
+   moment a user needs it, it does not work.
+
+### `skills/jira-manager/scripts/jira-api.sh`
+
+5. **`jira-api.sh:33` — the documented no-auth cloud-ID helper is unusable**,
+   because sourcing the file requires the email and API-token variables first.
+   Repro: set only `JIRA_WORKSPACE`, source, call `jira_get_cloud_id`.
+6. **`jira-api.sh:31` — sourcing permanently enables `nounset` and `pipefail` in
+   the CALLER's shell.** A helper meant to be sourced must not change the shell
+   it is sourced into. Repro: source it in a shell with `set +u`, then expand an
+   unset variable.
+7. **`jira-api.sh:124` — mutation helpers return success and print completion
+   text on 4xx/5xx.** Repro: edit or delete a nonexistent issue, check `$?`.
+   This is the "fails open while looking like it worked" shape this repo keeps
+   paying for.
+8. **`jira-api.sh:131` — account-search values are not URL-encoded**, so any
+   name with a space fails lookup. Repro: `jira_find_account_id "Jane Doe"`.
+
+### Not ticketed, decided instead
+
+The review's one BLOCK — a real tenant snapshot committed under
+`skills/power-automate-api/scripts/pa-snapshots/` and pushed to this public
+repo — was raised with the user on 2026-09-08. They chose to leave what is
+already published and stop it recurring: the file is untracked and
+`skills/power-automate-api/.gitignore` now ignores the whole snapshot
+directory. Nothing was rewritten or force-pushed. Recorded here because "we
+decided not to" is the half that otherwise gets rediscovered as a new finding.

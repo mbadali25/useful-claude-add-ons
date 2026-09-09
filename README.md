@@ -151,10 +151,10 @@ For this repo's own skills, [`scripts/check-marketplace.py`](scripts/check-marke
 | 3 This repo | The `useful-claude-add-ons` marketplace and, by default, all 28 skills in [`skills/`](skills/) — narrow it with → in the menu or `--skills` | this repo |
 | 4 Team plugins | `superpowers`, `frontend-design`, `excalidraw-generator` | 3 marketplaces (only the ones behind a ticked plugin) |
 | 5 find-skills | The `find-skills` skill, into the user skills dir | `vercel-labs/skills` |
-| 6 Community | `adhd-output-style`, `azure-tools`, `anthropic-office-skills`, `agent-browser`, `ppt-master` | 3 marketplaces (only the ones behind a ticked plugin) |
+| 6 Community | `adhd-output-style`, `azure-tools`, `anthropic-office-skills`, `agent-browser`, `ppt-master`, `voltagent-infra`, `voltagent-qa-sec` | 4 marketplaces (only the ones behind a ticked plugin) |
 | 7 claude-code-setup | Analyses a codebase and recommends hooks/skills/MCP servers | `anthropics/claude-plugins-official` |
 | 8 task-observer | Watches a session for reusable-skill opportunities | `rebelytics/one-skill-to-rule-them-all` |
-| 9–11 MCP servers | AWS, Azure, Playwright | `claude mcp add` |
+| 9–11 MCP servers | AWS API, Azure, Playwright | `claude mcp add` |
 | 12 Obsidian MCP | The `obsidian-server` HTTP MCP endpoint (`obsidian-local-rest-api`'s built-in MCP route), bearer-authenticated with `--obsidian-mcp-key` — skipped with instructions when no key is given | `claude mcp add` |
 | 13 Supabase | The `supabase` plugin — project, database, and edge-function tooling | `anthropics/claude-plugins-official` |
 | 14 Context7 | `ctx7 setup` — wires up version-accurate library docs for your agents | npx |

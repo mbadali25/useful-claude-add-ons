@@ -1883,8 +1883,21 @@ if (Test-Selected 'aws-pricing-mcp') {
             if (-not (Get-Command pip -ErrorAction SilentlyContinue)) {
                 throw "pip not found - install Python first (choco install python), then re-run to install uv."
             }
+            # Checked, not merely attempted. 'claude mcp add' records a command
+            # without running it, so a failed pip install followed by an
+            # unconditional add registers a server whose executable is absent,
+            # and the failure surfaces later inside a session with nothing
+            # pointing back here. $LASTEXITCODE is the only signal pip gives -
+            # it is a native command, so a non-zero exit is not a PS error and
+            # does not throw on its own.
             pip install --user uv
+            if ($LASTEXITCODE -ne 0) {
+                throw "'pip install --user uv' failed (exit $LASTEXITCODE) - not registering aws-pricing."
+            }
             Sync-SessionEnvironment
+            if (-not (Get-Command uv -ErrorAction SilentlyContinue) -and -not (Get-Command uvx -ErrorAction SilentlyContinue)) {
+                throw "uv installed but neither 'uv' nor 'uvx' is on PATH - not registering aws-pricing. Open a new shell and re-run this item."
+            }
         }
         Add-McpServer -Name 'aws-pricing' -CommandArgs @('uvx', 'awslabs.aws-pricing-mcp-server@latest') `
             -Note "Needs AWS credentials whose role allows pricing:*. The Price List calls are free."

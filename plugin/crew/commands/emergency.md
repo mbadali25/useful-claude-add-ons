@@ -57,10 +57,19 @@ The module is standard library only.
    Lanes are **read-only investigators**. They do not fix anything. If two
    plausible fixes need trying at once, that is a separate call with
    `isolation: worktree` per fix, so a half-applied fix cannot land on top of
-   another one in the same tree. Where those worktrees go is `worktree.root`
-   in the resolved config — `crew_state.worktree_path(cfg, repo_root, branch)`
-   is the answer, not a path you compose here, so two lanes started seconds
-   apart agree on it. Unset, it is the checkout's parent, as before.
+   another one in the same tree.
+
+   `isolation: worktree` places its own worktree and crew cannot redirect it —
+   that is the harness's choice, not this plugin's. `worktree.root` governs a
+   worktree **you** place with `git worktree add`. Ask for the path rather than
+   composing one, so two lanes started seconds apart agree:
+
+   ```bash
+   python "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_state.py"      --root . --worktree-path <branch>
+   ```
+
+   Unset, that answers the checkout's parent, which is what crew did before the
+   setting existed.
 4. While the lanes run, **do the cheapest observation yourself** — the log line,
    the health endpoint, the last deploy's sha. Do not wait idle on agents.
 5. When the lanes report: one paragraph on the most probable cause, the

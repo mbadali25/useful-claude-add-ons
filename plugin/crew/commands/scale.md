@@ -37,9 +37,11 @@ work instead, or say it cannot be split.
 - Tier 2: + dba, docs-writer. Add when migrations are frequent, or when
   onboarding a person costs more than generating docs would.
 - Tier 3: parallel sessions across repos or worktrees. Only with green smoke in
-  every repo involved. Worktrees land under `worktree.root` (the checkout's
-  parent when unset); set it globally when the checkout's parent is the wrong
-  disk or a synced folder. Requires `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` if you
+  every repo involved. A worktree you place yourself lands under
+  `worktree.root` — ask `crew_state.py --worktree-path <branch>` for the path
+  rather than composing one. It defaults to the checkout's parent; set it
+  globally when that is the wrong disk or a synced folder. It does not govern
+  a subagent's own `isolation: worktree`, which the harness places. Requires `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` if you
   want native coordination, which is experimental with known rough edges.
 
 Update `.crew/config.json` -> `roles` and `tier` with what I approve. Add nothing

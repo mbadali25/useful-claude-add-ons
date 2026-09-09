@@ -2043,15 +2043,27 @@ fi
 # like something that bills.
 install_aws_pricing_mcp() {
   if ! have uv && ! have uvx; then
+    # The install must be CHECKED, not merely attempted. `claude mcp add`
+    # records a command without running it, so a failed `pip install uv`
+    # followed by an unconditional add registers a server whose executable is
+    # absent -- and the failure then surfaces later, inside a session, as an
+    # MCP server that will not start, with nothing pointing back at this step.
+    # The existing `aws-mcp` row has the same shape and the same bug; this one
+    # is the row being added, so it is the one fixed here.
     if have pip3; then
-      pip3 install --user uv
+      pip3 install --user uv || { warn "pip3 install uv failed - not registering aws-pricing."; return 1; }
     elif have pip; then
-      pip install --user uv
+      pip install --user uv || { warn "pip install uv failed - not registering aws-pricing."; return 1; }
     else
       warn "pip not found - install python3-pip first, then re-run to install uv."
       return 1
     fi
     export PATH="$HOME/.local/bin:$PATH"
+    if ! have uv && ! have uvx; then
+      warn "uv installed but neither 'uv' nor 'uvx' is on PATH - not registering aws-pricing."
+      warn "Open a new shell (or add ~/.local/bin to PATH) and re-run this item."
+      return 1
+    fi
   fi
   add_mcp_server "aws-pricing" "-" uvx awslabs.aws-pricing-mcp-server@latest || return 1
   ok "Needs AWS credentials whose role allows pricing:*. The Price List calls are free."
