@@ -6,6 +6,62 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
+- **`VoltAgent/awesome-claude-code-subagents` joins the community row**, as
+  `voltagent-infra` and `voltagent-qa-sec`. It goes in the existing `COMMUNITY`
+  group rather than a new menu row, so no sub-picker group was added and
+  `check_group_parity` needed no new case.
+
+  Chosen from evidence in this repo rather than from a listing: the 21 agent
+  files added to `plugin/crew/agents/` in this same release map onto VoltAgent's
+  ten bundles almost one-to-one -- `penetration-tester`, `code-reviewer` and
+  `compliance-auditor` are `voltagent-qa-sec`; `platform-engineer` and
+  `database-administrator` are `voltagent-infra`; `fintech-engineer` and
+  `payment-integration` are `voltagent-domains` -- and `agents/design-bridge.md`
+  already names `VoltAgent/awesome-design-md` in its own description. The repo
+  was already consuming this source by copy-paste.
+
+  That is the argument for registering it rather than copying from it. The
+  copy-paste route is what produced the defect fixed above: 21 files landed in
+  `agents/` registered in nothing, so `/crew:pm onboard <name>` called every one
+  of them unrecognised and `test_every_agent_definition_is_a_role_crew_knows`
+  went red. Installed plugins also carry version bumps; a pasted file is a
+  frozen snapshot.
+
+  Only two of the ten bundles are listed, the two that match what this repo
+  does. `wshobson/agents` (marketplace `claude-code-workflows`) was the
+  runner-up and is genuinely relevant -- it is multi-harness across Codex and
+  Copilot, which suits crew's QA providers -- but it publishes 94 plugins, and a
+  94-row sub-picker is the opposite of the context trimming this release is
+  otherwise doing.
+
+  `scripts/_test/menu-groups.sh` moves with it: the community group is 7 plugins
+  across 4 marketplaces now, not 5 across 3, and the `all` case selects 7. Those
+  numbers are the dedup assertion -- a marketplace behind several plugins is
+  registered once -- so they have to be restated, not relaxed.
+
+- **Three documentation MCP servers, as menu rows 22-24.** `aws-docs-mcp`
+  registers AWS Knowledge (`https://knowledge-mcp.global.api.aws/mcp`),
+  `aws-pricing-mcp` installs `awslabs.aws-pricing-mcp-server` over `uvx`, and
+  `ms-learn-mcp` registers Microsoft Learn
+  (`https://learn.microsoft.com/api/mcp`). All three are appended to the end of
+  `MENU_KEYS`, so nothing already numbered moved and a saved `--select` keeps
+  meaning what it meant. All three default to off, like every other MCP row.
+
+  Two of the three are remote HTTP endpoints with **no credentials at all** —
+  nothing to install, nothing to expire, which is the reliability argument for
+  preferring them. Both were probed live before being added: each answered a
+  real MCP `initialize` and returned its tool list. AWS Knowledge is separate
+  from the existing `aws-mcp` row on purpose — that one reads a real account
+  and this one reads published documentation, so a machine that may not have
+  the first can still have the second. AWS Pricing is the one that does need
+  credentials, because the Price List API is an API call rather than a document
+  fetch and the role needs `pricing:*`; the calls themselves are free.
+
+  Microsoft Learn is one server for three of this repo's domains rather than
+  three servers: `learn.microsoft.com` carries the Azure, SharePoint and Power
+  Automate / Power Platform documentation, so `intune-graph`,
+  `power-automate-api` and the SharePoint skills all resolve against it.
+
 - **Three skills join the marketplace: `jira-manager`, `knowbe4-admin` and
   `power-automate-api`.** Each is registered in every place a registration has
   to touch at once — the marketplace entry, both README catalog tables, both

@@ -753,7 +753,7 @@ $script:Catalog = @(
     [pscustomobject]@{ Key = 'own-skills';        Default = $true;  Name = "This repo's marketplace + its skills" }
     [pscustomobject]@{ Key = 'team';              Default = $true;  Name = 'Team plugins: superpowers, frontend-design, excalidraw-generator' }
     [pscustomobject]@{ Key = 'find-skills';       Default = $true;  Name = 'find-skills skill (vercel-labs/skills)' }
-    [pscustomobject]@{ Key = 'community';         Default = $true;  Name = 'Community marketplaces + plugins (adhd-output-style, azure-tools, ppt-master, ...)' }
+    [pscustomobject]@{ Key = 'community';         Default = $true;  Name = 'Community marketplaces + plugins (adhd-output-style, azure-tools, voltagent, ...)' }
     [pscustomobject]@{ Key = 'claude-code-setup'; Default = $true;  Name = 'claude-code-setup plugin (anthropics/claude-plugins-official)' }
     [pscustomobject]@{ Key = 'task-observer';     Default = $true;  Name = 'task-observer skill (rebelytics/one-skill-to-rule-them-all)' }
     [pscustomobject]@{ Key = 'aws-mcp';           Default = $false; Name = 'MCP server: AWS (awslabs.aws-api-mcp-server)' }
@@ -769,6 +769,9 @@ $script:Catalog = @(
     [pscustomobject]@{ Key = 'repo-plugins';      Default = $false; Name = "This repo's plugins: crew, gizmoduck, localgpu, obsidian-vault (agents, hooks)" }
     [pscustomobject]@{ Key = 'graphify';          Default = $false; Name = 'graphify code graph (uv tool install graphifyy; per-repo, not global)' }
     [pscustomobject]@{ Key = 'ms-mcp';            Default = $false; Name = 'Microsoft MCP servers (mcp-servers/): Graph, Intune, Office 365 user/admin - needs az login or tenant credentials' }
+    [pscustomobject]@{ Key = 'aws-docs-mcp';      Default = $false; Name = 'MCP server: AWS Knowledge (docs + API refs, hosted by AWS, no credentials)' }
+    [pscustomobject]@{ Key = 'aws-pricing-mcp';   Default = $false; Name = 'MCP server: AWS Pricing (Price List API - needs AWS creds with pricing:*)' }
+    [pscustomobject]@{ Key = 'ms-learn-mcp';      Default = $false; Name = 'MCP server: Microsoft Learn (Azure, SharePoint and Power Automate docs, no credentials)' }
 )
 
 $script:Selected = @{}
@@ -872,6 +875,8 @@ $script:CommunityCatalog = @(
     [pscustomobject]@{ Key = 'anthropic-office-skills'; Selected = $true; Name = "anthropic-office-skills - Anthropic's docx/pptx/xlsx/pdf skills";      Spec = 'anthropic-office-skills@claude-settings|fcakyon/claude-codex-settings|claude-settings' }
     [pscustomobject]@{ Key = 'agent-browser';           Selected = $true; Name = 'agent-browser           - vercel-labs browser agent';                 Spec = 'agent-browser@agent-browser|vercel-labs/agent-browser|agent-browser' }
     [pscustomobject]@{ Key = 'ppt-master';              Selected = $true; Name = 'ppt-master              - PowerPoint deck generation';                Spec = 'ppt-master@ppt-master|hugohe3/ppt-master|ppt-master' }
+    [pscustomobject]@{ Key = 'voltagent-infra';   Selected = $true; Name = 'voltagent-infra         - VoltAgent DevOps/cloud subagents: k8s, Terraform, AWS/Azure, SRE'; Spec = 'voltagent-infra@voltagent-subagents|VoltAgent/awesome-claude-code-subagents|voltagent-subagents' }
+    [pscustomobject]@{ Key = 'voltagent-qa-sec';  Selected = $true; Name = 'voltagent-qa-sec        - VoltAgent testing/security subagents: review, pentest, QA';      Spec = 'voltagent-qa-sec@voltagent-subagents|VoltAgent/awesome-claude-code-subagents|voltagent-subagents' }
 )
 
 # --- Sub-picker groups --------------------------------------------------------
@@ -1853,6 +1858,47 @@ if (Test-Selected 'azure-mcp') {
         }
         Add-McpServer -Name 'azure' -CommandArgs @('npx', '-y', '@azure/mcp@latest', 'server', 'start') `
             -Note "Make sure you have run 'az login' before using it."
+    }
+}
+
+# The two hosted documentation endpoints are HTTP, not launched commands, so they
+# go through Add-McpServer's -Url form and need neither uv nor a credential. That
+# is the whole reason they are separate rows from 'aws-mcp': the AWS API server
+# reads a real account and the Knowledge server reads published documentation, and
+# a machine that is not allowed the first can still have the second.
+if (Test-Selected 'aws-docs-mcp') {
+    Invoke-Step "Register the AWS Knowledge MCP endpoint" {
+        Add-McpServer -Name 'aws-knowledge' -Url 'https://knowledge-mcp.global.api.aws/mcp' `
+            -Note "AWS Knowledge is public and rate-limited; no AWS account or credentials are used."
+    }
+}
+
+# Pricing is the one of the three that DOES need credentials: the Price List API
+# is an AWS API call, not a document fetch, and it needs pricing:*. The calls
+# themselves are free of charge, which is worth saying because "pricing API" reads
+# like something that bills.
+if (Test-Selected 'aws-pricing-mcp') {
+    Invoke-Step "Install AWS Pricing MCP server" {
+        if (-not (Get-Command uv -ErrorAction SilentlyContinue) -and -not (Get-Command uvx -ErrorAction SilentlyContinue)) {
+            if (-not (Get-Command pip -ErrorAction SilentlyContinue)) {
+                throw "pip not found - install Python first (choco install python), then re-run to install uv."
+            }
+            pip install --user uv
+            Sync-SessionEnvironment
+        }
+        Add-McpServer -Name 'aws-pricing' -CommandArgs @('uvx', 'awslabs.aws-pricing-mcp-server@latest') `
+            -Note "Needs AWS credentials whose role allows pricing:*. The Price List calls are free."
+    }
+}
+
+# One endpoint for three of this repo's domains: learn.microsoft.com carries the
+# Azure, SharePoint and Power Automate / Power Platform documentation, so the
+# intune-graph, power-automate-api and SharePoint skills all resolve against the
+# same server rather than three.
+if (Test-Selected 'ms-learn-mcp') {
+    Invoke-Step "Register the Microsoft Learn MCP endpoint" {
+        Add-McpServer -Name 'microsoft-learn' -Url 'https://learn.microsoft.com/api/mcp' `
+            -Note "Covers Azure, SharePoint and Power Automate docs plus code samples. No credentials."
     }
 }
 

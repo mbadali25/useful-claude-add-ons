@@ -82,6 +82,9 @@ Terminals that can't read a key press one at a time — no `stty`, `TERM=dumb`, 
 | 19 | This repo's plugins — `crew`, `gizmoduck`, `localgpu`, `obsidian-vault` (agents, commands, **hooks**) — **→ picks which** | |
 | 20 | `graphify` code graph (`uv tool install graphifyy`; per-repo, not global) | |
 | 21 | Microsoft MCP servers (`mcp-servers/`) — Graph, Intune, Office 365 user/admin — **needs `az login` or tenant credentials** | |
+| 22 | MCP server: **AWS Knowledge** — AWS docs, API references and regional availability, hosted by AWS. **No credentials** | |
+| 23 | MCP server: **AWS Pricing** — the Price List API. **Needs AWS credentials whose role allows `pricing:*`**; the calls themselves are free | |
+| 24 | MCP server: **Microsoft Learn** — Azure, SharePoint and Power Automate / Power Platform docs plus code samples. **No credentials** | |
 
 Menu numbers are identical on Windows and Linux, and an already-registered MCP server, marketplace, or plugin is reported and skipped rather than re-added. Numbers can shift as items are added, so scripted runs should prefer the stable keys (`--select supabase,strix`) over positions.
 
@@ -162,6 +165,9 @@ For this repo's own skills, [`scripts/check-marketplace.py`](scripts/check-marke
 | 19 This repo's plugins | The `crew` plugin from [`plugin/`](plugin/) — 50 subagents, 24 slash commands, 17 bundled skills, and 20 hook entries (10 scripts × `.sh`/`.ps1`) across 5 events — `obsidian-vault` — 2 agents, 11 slash commands, 3 skills, and 8 hook entries (3 scripts × `.sh`/`.ps1`) — `gizmoduck` — 6 slash commands and 1 skill, no hooks, no agents — and `localgpu` — 6 slash commands, 1 skill, and a local MCP server, no hooks, no agents. Off by default because hooks execute whether or not Claude agrees with them | this repo |
 | 20 `graphify` | The `graphify` CLI (`graphifyy` on PyPI), registered per-repository with `graphify install --project`. Off by default; not installed globally | `uv tool install` |
 | 21 Microsoft MCP servers | Registers up to 4 servers via npx — `mcp-msgraph`, `mcp-intune`, `mcp-o365-admin` (app-only via `MS_ADMIN_*`, OR delegated via an existing `az login` session, checked with `az account show` — no app registration required for the latter), `mcp-o365-user` (delegated device-code, needs `MS_USER_CLIENT_ID`). Skipped with instructions when neither an `az login` session nor credentials are found | npm (`@badali404/mcp-*`) + `claude mcp add` |
+| 22 AWS Knowledge | A remote HTTP endpoint (`https://knowledge-mcp.global.api.aws/mcp`), not a launched command — nothing to install and no AWS account involved. Separate from row 9 on purpose: row 9's server reads a real account, this one reads published documentation, so a machine that may not have the first can still have the second. Public and rate-limited | `claude mcp add --transport http` |
+| 23 AWS Pricing | `uvx awslabs.aws-pricing-mcp-server@latest`, installing `uv` first if it is absent — the same bootstrap row 9 does. The one of these three that **does** need credentials: the Price List API is an AWS API call, not a document fetch, and the role needs `pricing:*`. The calls are free of charge | `uvx` + `claude mcp add` |
+| 24 Microsoft Learn | A remote HTTP endpoint (`https://learn.microsoft.com/api/mcp`). One server for three of this repo's domains — `learn.microsoft.com` carries the Azure, SharePoint and Power Automate / Power Platform documentation, so `intune-graph`, `power-automate-api` and the SharePoint skills all resolve against it rather than against three separate servers | `claude mcp add --transport http` |
 
 Items 1–8 are the default set. Everything from 9 on is opt-in.
 
