@@ -31,6 +31,7 @@ canon() {
     scope*|discipline*)                                      echo "scope" ;;
     stop*|ask*|escalat*)                                     echo "stop-and-ask" ;;
     promotion*|production*|deploy*|release*|environments*)   echo "promotion" ;;
+    documentation*|docs*|doc\ format*)                        echo "documentation" ;;
     reporting*|output*|communicat*)                          echo "reporting" ;;
     memory*|context*|notes*)                                 echo "memory" ;;
     *)                                                       echo "other:$1" ;;
@@ -44,6 +45,7 @@ label() {
     scope)            echo "## Scope discipline - fix the ticket, not what you notice nearby" ;;
     stop-and-ask)     echo "## Stop and ask - the conditions that should halt work" ;;
     promotion)        echo "## Promotion: development -> qa -> production - smoke, regression, verify" ;;
+    documentation)    echo "## Documentation - HTML/PDF/DOCX for humans, Markdown for the repo, all under docs/" ;;
     reporting)        echo "## Reporting - errors verbatim, say what you did NOT verify" ;;
     memory)           echo "## Memory - where the code map and runbooks live" ;;
   esac
@@ -68,7 +70,11 @@ MISSING=0
 echo "CLAUDE.md audit: $TARGET"
 echo
 echo "Sections the template expects:"
-for k in commands where-things-are scope stop-and-ask promotion reporting memory; do
+# The list the audit REPORTS on. It is deliberately the same set as the test's
+# CONCERNS and as label()'s arms: adding a heading to canon() and label() but
+# not here made the audit silently accept a CLAUDE.md with no Documentation
+# section - recognised, and never asked for.
+for k in commands where-things-are scope stop-and-ask promotion documentation reporting memory; do
   if printf '%s' "$HAVE" | grep -qx "$k"; then
     echo "  present  $(label "$k" | sed 's/ - .*//')"
   else

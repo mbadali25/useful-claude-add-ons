@@ -47,6 +47,19 @@
   whole sequence again from the start. Never resume mid-sequence.
 - Never `terraform apply`, never DDL against prod, never force push.
 
+## Documentation
+- Documentation a HUMAN will read ships as **HTML, PDF or DOCX** - not Markdown.
+  A person opening a document expects something rendered and printable, not a
+  source file they have to preview.
+- Markdown stays correct for the repo itself (README, CLAUDE.md, CHANGELOG,
+  ADRs, code maps) and for your own notes. Those are read as source by people
+  already in the repo. The rule is not "never Markdown" - it is "do not hand a
+  human a `.md` file and call it the documentation".
+- All of it lives under a folder named `docs`, at the repository root or at the
+  root of the project folder it belongs to. Not beside the code it describes,
+  and not `documentation/` or `guides/`. In a repo with several projects, the
+  nearest project root is the right level; only repo-wide docs go at the top.
+
 ## Reporting
 - Report failures and error text verbatim. Never paraphrase an error.
 - Say what you did NOT verify. Silence reads as confirmation.

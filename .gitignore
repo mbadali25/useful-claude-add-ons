@@ -400,3 +400,11 @@ docs/diagrams/out/
 # anybody looks at `git status`. Use `git status --ignored` to see one by eye.
 *.bak
 *.bak.partial
+
+# Generated reports. `report-builder` writes here, and these documents name
+# accounts, hosts and weak configuration - they read as an attack plan and must
+# never reach the remote. Ignored wholesale rather than per-file, for the same
+# reason skills/power-automate-api/ ignores its snapshot directory: one such
+# file already reached this public repo, and it was a review that caught it
+# rather than a person reading the diff.
+reports/

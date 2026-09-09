@@ -4,6 +4,64 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added
+
+- **`report-builder` skill.** Human-facing reports authored as HTML and
+  converted to `.docx` / `.pdf` by Word. Built from an existing hard-won spec
+  rather than invented: **the browser is not the target, Word's HTML parser
+  is**, and it drops correct CSS *silently and completely* -- no error, no
+  console message, just a flat document that reads as though nobody styled it.
+
+  Five traps, each measured against the Word object model rather than assumed.
+  Two are worse than unstyled because they produce invisible text: `var()` does
+  not degrade, it drops the whole declaration, so
+  `background:var(--x); color:#fff` renders white on white; and two class names
+  on one element (`class="chip chip-fail"`) applies **neither** rule. Also
+  `:nth-child` and the structural pseudo-classes, `::before`/`::after`, and
+  flex/grid -- including `display:block` on a `<span>`.
+
+  The skill defaults to a **concise** report: one-paragraph lede carrying the
+  headline, at most five summary cards, one findings table. When the depth
+  genuinely matters it writes a second `-Detail-` document rather than
+  inflating the first. Length is not thoroughness; it is the main reason a
+  report goes unread.
+
+  `scripts/_test/checklist.sh` runs the skill's own pre-ship checklist against
+  an artifact the builder actually emitted -- 15 assertions. That exists
+  because the builder **failed its own checklist on the first run**: its
+  emitted stylesheet carried a CSS comment reading ":nth-child does nothing
+  here", which is inert to Word and indistinguishable from the real defect to
+  the grep the skill tells readers to run. A check that cannot tell a violation
+  from a mention of the violation is not a check.
+
+  `reports/` and `docs/` are deliberately different places. `docs/` holds
+  documentation that describes the system and lives in git; `reports/` holds
+  dated generated output about a point in time, is gitignored, and reads as an
+  attack plan if it leaks.
+
+### Changed
+
+- **crew 0.16.30: the repo CLAUDE.md template gains a `## Documentation`
+  section**, so it reaches every repo `/crew:init` sets up and `/crew:upgrade`
+  refreshes. Documentation a human reads ships as HTML, PDF or DOCX; Markdown
+  stays correct for the repo itself (README, CLAUDE.md, CHANGELOG, ADRs, code
+  maps) and for working notes. The rule is not "never Markdown" -- it is "do
+  not hand a human a `.md` file and call it the documentation". All of it lives
+  under a folder named `docs`, at the repository root or at the root of the
+  project folder it belongs to.
+
+  Wired through `claude-md-audit.sh`'s `canon()` and `label()` as well as the
+  template, because a heading the audit does not recognise is reported as an
+  EXTRA -- the audit would have recommended against the very section the
+  template ships.
+
+  While doing it: `round-trip.sh` hardcoded `-ne 7` for the concern count and
+  failed with "the extraction or list is broken" when the LIST was what moved.
+  The count now derives from `CONCERNS`. A count that must be edited in two
+  places to add one concern is a tripwire on the maintainer, not on the
+  contract.
+
+
 ### Fixed
 
 - **crew 0.16.29: the verify gate told a matcher that could not RUN apart from

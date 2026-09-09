@@ -164,6 +164,7 @@ claude plugin install mermaid-svg-bitbucket@useful-claude-add-ons
 claude plugin install notify@useful-claude-add-ons
 claude plugin install power-automate-api@useful-claude-add-ons
 claude plugin install repo-docs@useful-claude-add-ons
+claude plugin install report-builder@useful-claude-add-ons
 claude plugin install shipstation@useful-claude-add-ons
 claude plugin install sophos-central@useful-claude-add-ons
 claude plugin install terraform-docs-readme@useful-claude-add-ons
