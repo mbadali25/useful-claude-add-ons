@@ -4,6 +4,80 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Fixed
+
+- **`jira-manager` 1.0.1 and `power-automate-api` 1.0.1: fifteen defects, across
+  three review rounds.** Implemented by Codex (gpt-6-astra), reviewed three
+  times by Claude Sonnet 5. The dispatch was RECORDED before the run, so the
+  independence guard read `author family: gpt (recorded at dispatch)` rather
+  than inferring it from config -- the reviewer was provably a different family
+  from the author, which is the first time in this release that claim rested on
+  a fact instead of a guess.
+
+  The eight ticketed defects came from the Codex review of #81 and were
+  deliberately left in `TODO.md` at the time. In `pa.py`: a custom
+  `--client-id` was not cached, so refresh silently fell back to the default;
+  snapshot filenames used second resolution, so two patches of one flow inside
+  a second overwrote each other's ROLLBACK state; DNS, connection, timeout and
+  decode errors escaped as tracebacks; and the printed rollback command omitted
+  `--org` and `--flow`. In `jira-api.sh`: the no-auth cloud-id helper was
+  unusable because sourcing demanded credentials first; sourcing permanently
+  enabled `nounset` and `pipefail` in the CALLER's shell; mutation helpers
+  returned success and printed completion text on 4xx/5xx; and account-search
+  values were not URL-encoded.
+
+  **Round 2 found two BLOCKs.** `curl --fail` made "return non-zero on 4xx/5xx"
+  literally true by DISCARDING the response body -- every error across all
+  twenty helpers became `curl: (22) ... error: 400`, and Jira's
+  `errorMessages` payload is the only thing separating "field not on screen"
+  from "invalid transition id" from "token missing read:jira-work", which
+  `SKILL.md`'s own recovery steps depend on reading. It regressed the READ
+  helpers too, which nothing asked to change. Now `--fail-with-body`, which
+  keeps both the status and the body; `SKILL.md` states the resulting
+  `curl >= 7.76` floor and names the distros that ship older.
+
+  The second BLOCK was neither skill's version being bumped, so
+  `claude plugin update` would have reported "already at the latest version"
+  and left every installed copy on the broken scripts forever. Caused by this
+  session's own brief to Codex, which said "do not bump any version".
+
+  **Round 3 found a regression introduced by round 2's own fix.** `_arg`
+  replaced `shlex.quote` with double-quoting applied only when it saw
+  whitespace -- and a Windows snapshot path has neither whitespace nor a quote,
+  so it came back BARE and bash ate every backslash: `C:\Users\...\f.json`
+  arrived as `C:Usersd3ade...json`. That is the failure ticket 4 was filed for,
+  re-introduced by ticket 4's fix. It was also wrong in all three shells it
+  targeted. Reverted to `shlex.quote`, with a separate labelled
+  cmd.exe/PowerShell line that is SUPPRESSED rather than mis-quoted when a
+  value contains a character plain double quotes cannot carry.
+
+  `SNAPSHOT_DIR` was wrong twice before it was right. CWD-relative wrote
+  verbatim live-tenant dumps to a path no ignore rule covered -- how a real
+  snapshot reached this public repo earlier in this release. Anchoring it to
+  `__file__` fixed that and introduced worse: writing inside the installed
+  plugin, where `claude plugin update` can delete the only copy of a rollback.
+  It is now `~/.pa-api-cache/snapshots`, the shape `CACHE_DIR` already had.
+
+  And round 3 caught the landmine this repo documents in another costume:
+  `snapshot()` caught the write error and died cleanly, but
+  `NamedTemporaryFile(delete=False)` had ALREADY created the file, so a failed
+  write left a ZERO-BYTE snapshot carrying a valid-looking name -- which, since
+  these sort by timestamp, became the NEWEST rollback for that flow. The
+  partial file is now removed before `die()`.
+
+  One NIT filed as cosmetic turned out to be a destructive path traversal.
+  curl applies RFC 3986 dot-segment removal, so `PROJ-1/../PROJ-2` RETARGETS
+  the request -- and `jira_delete_issue` was one of seven unencoded
+  interpolations. All ten path segments now go through a shared `_jira_uri`
+  helper. Verified: `PROJ-1%2F..%2FPROJ-2`, with `PROJ-123` untouched.
+
+  Everything above was verified by RUNNING it rather than reading it: the
+  quoted path round-tripping through `bash -c` byte-identically, `pipefail`
+  giving exit 28 where it gave exit 0, `--fail-with-body` returning the JSON
+  body alongside exit 22, the zero-byte leak leaving an empty directory, and
+  jq-absent producing rc=127 naming jq instead of rc=0 and a bogus request.
+
+
 ### Added
 
 - **`report-builder` skill.** Human-facing reports authored as HTML and
