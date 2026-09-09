@@ -811,7 +811,7 @@ SKILL_KEYS=(
   "infra-work-ticketing" "intune-graph" "jira-manager" "knowbe4-admin"
   "mermaid-svg-bitbucket" "notify"
   "obsidian-canvas" "obsidian-vault-server" "power-automate-api"
-  "repo-docs" "shipstation" "sophos-central" "terraform-docs-readme" "visio-diagrams"
+  "repo-docs" "report-builder" "shipstation" "sophos-central" "terraform-docs-readme" "visio-diagrams"
   "wazuh-onprem" "web-testing-playwright" "work-log-reporter"
 )
 SKILL_NAME=(
@@ -836,6 +836,7 @@ SKILL_NAME=(
   "obsidian-vault-server   - Self-hosted Obsidian on Ubuntu: Sync, REST/MCP endpoint"
   "power-automate-api      - Power Automate flows via API: definitions, auth errors"
   "repo-docs               - Whole doc set: CLAUDE.md, READMEs, architecture, handoff"
+  "report-builder          - Pro reports: HTML -> DOCX/PDF via Word, no silent CSS loss"
   "shipstation             - ShipStation V2/V1/ShipEngine: labels, rates, orders"
   "sophos-central          - Sophos Central: isolate endpoints, triage alerts, XDR"
   "terraform-docs-readme   - Regenerate a Terraform module README with terraform-docs"

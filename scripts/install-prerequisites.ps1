@@ -827,6 +827,7 @@ $script:SkillCatalog = @(
     [pscustomobject]@{ Key = 'obsidian-vault-server'; Selected = $true; Name = 'obsidian-vault-server   - Self-hosted Obsidian on Ubuntu: Sync, REST/MCP endpoint' }
     [pscustomobject]@{ Key = 'power-automate-api';    Selected = $true; Name = 'power-automate-api      - Power Automate flows via API: definitions, auth errors' }
     [pscustomobject]@{ Key = 'repo-docs';             Selected = $true; Name = 'repo-docs               - Whole doc set: CLAUDE.md, READMEs, architecture, handoff' }
+    [pscustomobject]@{ Key = 'report-builder';        Selected = $true; Name = 'report-builder          - Pro reports: HTML -> DOCX/PDF via Word, no silent CSS loss' }
     [pscustomobject]@{ Key = 'shipstation';           Selected = $true; Name = 'shipstation             - ShipStation V2/V1/ShipEngine: labels, rates, orders' }
     [pscustomobject]@{ Key = 'sophos-central';        Selected = $true; Name = 'sophos-central          - Sophos Central: isolate endpoints, triage alerts, XDR' }
     [pscustomobject]@{ Key = 'terraform-docs-readme'; Selected = $true; Name = 'terraform-docs-readme   - Regenerate a Terraform module README with terraform-docs' }
