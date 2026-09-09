@@ -1,7 +1,10 @@
-%% anchor: useful-claude-add-ons@3167721f
+%% anchor: useful-claude-add-ons@1f97e51c
 %% Anchors: plugin/localgpu/mcp/config.py, plugin/localgpu/mcp/indexer.py, plugin/localgpu/mcp/ollama.py, plugin/localgpu/mcp/server.py, plugin/localgpu/mcp/store.py
 %% localgpu: how a file becomes a searchable vector, and how a query becomes a hit.
-%% Verified against source on 2026-09-05; see comments for path:line.
+%% Verified against source on 2026-09-06; see comments for path:line.
+%% ollama.py changed at ac93221d, but only inside generate() (the chat path, from :150).
+%% This diagram draws the embed path only; embed() is still :123 and DEFAULT_KEEP_ALIVE
+%% still :26, so the shape is unchanged and only the anchor moved.
 flowchart TB
 
     subgraph Refresh["index_refresh - files to disk"]
