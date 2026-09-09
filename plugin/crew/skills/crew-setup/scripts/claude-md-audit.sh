@@ -70,7 +70,11 @@ MISSING=0
 echo "CLAUDE.md audit: $TARGET"
 echo
 echo "Sections the template expects:"
-for k in commands where-things-are scope stop-and-ask promotion reporting memory; do
+# The list the audit REPORTS on. It is deliberately the same set as the test's
+# CONCERNS and as label()'s arms: adding a heading to canon() and label() but
+# not here made the audit silently accept a CLAUDE.md with no Documentation
+# section - recognised, and never asked for.
+for k in commands where-things-are scope stop-and-ask promotion documentation reporting memory; do
   if printf '%s' "$HAVE" | grep -qx "$k"; then
     echo "  present  $(label "$k" | sed 's/ - .*//')"
   else

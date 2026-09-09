@@ -41,33 +41,55 @@ DOC=$(ls "$TMP/out"/*.html 2>/dev/null | head -1)
 echo "== emitted artifact must not contain what Word silently drops =="
 # Checklist items 1, 2 and 4 from references/word-traps.md. Each is a literal
 # substring, so a mention inside a comment fails too -- deliberately, see above.
+# Whitespace-normalised: `display: flex` with a space is the same defect as
+# `display:flex`, and a scan that only matched the tight form passed a file
+# carrying the loose one. Colons keep their optional space; everything else is
+# a literal substring.
+NORM="$TMP/normalised.html"
+sed 's/:[[:space:]][[:space:]]*/:/g' "$DOC" > "$NORM"
 for pat in 'var(--' ':nth-child' ':first-child' ':last-of-type' '::before' '::after' ':hover' 'display:flex' 'display:grid'; do
-  if grep -qF -- "$pat" "$DOC"; then
+  if grep -qF -- "$pat" "$NORM"; then
     fail "emitted report contains '$pat'"
   else
     pass "no '$pat'"
   fi
 done
 
+# Rule 5's other half: `display:block` on a <span> is ignored by Word, so a
+# card's number and label must be real block elements. Checked as a selector
+# rather than as a bare string, since `div.n { display:block }` is fine.
+if grep -qE 'span[^{}]*\{[^}]*display:block' "$NORM"; then
+  fail "a <span> selector carries display:block"
+else
+  pass "no display:block on a span selector"
+fi
+
 echo "== checklist item 3: no element carries two class names =="
 # `class="a b"` applies NEITHER rule in Word. Grouped selectors in the
 # stylesheet are fine and are not what this looks at - this is elements only.
-if grep -oE 'class="[A-Za-z0-9_-]+[[:space:]]+[A-Za-z0-9_-]+' "$DOC" | grep -q .; then
-  fail "an element carries two class names"
+# Counted, not piped into `grep -q`: under pipefail a short-circuiting reader
+# can SIGPIPE the upstream grep, and the pipeline then reports the SUCCESS
+# branch on a file with many offending attributes.
+TWO_CLASS=$(grep -coE 'class="[A-Za-z0-9_-]+[[:space:]]+[A-Za-z0-9_-]+' "$DOC" || true)
+if [ "${TWO_CLASS:-0}" -gt 0 ]; then
+  fail "$TWO_CLASS element(s) carry two class names"
 else
   pass "every element carries at most one class"
 fi
 
 echo "== checklist item 5: every table has a thead and a border =="
 NT=$(grep -c '<table' "$DOC")
+ND=$(grep -c '<table class="data">' "$DOC")
 NH=$(grep -c '<thead>' "$DOC")
-# The masthead, meta and cards tables are layout, not data; only data tables
-# carry a thead. Assert the data table has one rather than asserting a count
-# that changes whenever the furniture does.
-if grep -q '<table class="data">' "$DOC" && [ "$NH" -ge 1 ]; then
-  pass "the data table has a thead ($NT tables, $NH thead)"
+# EVERY data table, not "at least one". The masthead, meta and cards tables are
+# layout and correctly carry no thead - word-traps.md rule 3 is about tables a
+# reader reads, and a header that does not repeat is unreadable the moment the
+# table crosses a page break. Comparing the two COUNTS is what makes a second
+# data table without a thead fail; `-ge 1` would have passed it.
+if [ "$ND" -ge 1 ] && [ "$ND" -eq "$NH" ]; then
+  pass "every data table has a thead ($ND data of $NT tables, $NH thead)"
 else
-  fail "the data table has no thead ($NT tables, $NH thead)"
+  fail "data tables and theads disagree ($ND data of $NT tables, $NH thead)"
 fi
 if grep -q 'border:1px solid' "$DOC"; then
   pass "tables carry a visible border"
@@ -97,10 +119,14 @@ else
 fi
 
 echo "== unverified is its own severity, not folded into pass =="
-if grep -q 'chip-unverified' "$DOC"; then
-  pass "unverified renders distinctly"
+# Must match a rendered CHIP, not the stylesheet. `grep -q chip-unverified`
+# matched the CSS rule, which is always present, so this passed with no
+# unverified chip in the document at all - vacuous in precisely the way this
+# suite exists to catch.
+if grep -qE '<span class="chip-unverified">[^<]+</span>' "$DOC"; then
+  pass "unverified renders as a distinct chip, with its word"
 else
-  fail "unverified is missing - a check that could not run must not read as pass"
+  fail "no rendered chip-unverified element - a check that could not run must not read as pass"
 fi
 
 echo

@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as _dt
+import uuid as _uuid
 import html
 import json
 import os
@@ -150,7 +151,15 @@ div.l { font-size:11px; color:%(muted)s; }
 
 
 def column_widths(labels, rows):
-    """Percent widths summing to exactly 100, weighted by rendered length.
+    """Percent widths weighted by what each column actually renders.
+
+    Sums to exactly 100 for any table with 100 columns or fewer, which is every
+    real one. Past that the guarantee is impossible rather than merely hard --
+    each column has a 1% floor because a 0% column is invisible, so 102 columns
+    need 102%. The floor wins: a table that wide is already unreadable, and a
+    zero-width column would hide data rather than merely crowd it. Stated here
+    because an earlier docstring promised "exactly 100" unconditionally and the
+    code quietly returned a NEGATIVE width instead.
 
     Deriving widths from column NAMES does not work and was tried in both
     directions: a numeric column headed `Passwords` came out at 6% and collided
@@ -177,9 +186,25 @@ def column_widths(labels, rows):
     pcts = [int(round(w * 100.0 / total)) for w in weights]
     # Push rounding drift into the widest column: a row totalling 101 pushes the
     # table past the margin.
+    # Every column gets at least 1%: with many equal columns the rounding drift
+    # is larger than a single share, and dumping it all on the widest produced a
+    # NEGATIVE width (102 equal columns -> one -1%). Clamp first, then settle any
+    # remaining drift one point at a time across the widest columns, so no single
+    # column can be driven below the floor.
+    pcts = [max(1, p) for p in pcts]
     drift = 100 - sum(pcts)
-    if drift:
-        pcts[pcts.index(max(pcts))] += drift
+    order = sorted(range(len(pcts)), key=lambda i: pcts[i], reverse=True)
+    step = 1 if drift > 0 else -1
+    idx = 0
+    while drift != 0 and order:
+        i = order[idx % len(order)]
+        if step < 0 and pcts[i] <= 1:
+            if all(p <= 1 for p in pcts):
+                break  # cannot shrink further without going below the floor
+        else:
+            pcts[i] += step
+            drift -= step
+        idx += 1
     return pcts
 
 
@@ -363,23 +388,37 @@ def to_word(html_path, want_docx, want_pdf):
         return 1
     import win32com.client as win32  # pylint: disable=import-outside-toplevel
 
+    # The try must open IMMEDIATELY after Dispatch, and doc must be tracked from
+    # None. An earlier version set Visible/DisplayAlerts and computed `base`
+    # outside any handler, so a failure in that window left a headless WINWORD
+    # process running with no window to close it from -- and one that opened a
+    # document before failing left it open too. On a machine that generates
+    # reports on a schedule those accumulate until Word refuses to start.
     word = win32.Dispatch("Word.Application")
-    word.Visible = False
-    word.DisplayAlerts = 0
+    doc = None
     try:
-        doc = word.Documents.Open(os.path.abspath(html_path), False, True)
+        word.Visible = False
+        word.DisplayAlerts = 0
         base = os.path.splitext(os.path.abspath(html_path))[0]
-        try:
-            if want_docx:
-                doc.SaveAs2(base + ".docx", 16)   # wdFormatDocumentDefault
-                print("wrote %s.docx" % base)
-            if want_pdf:
-                doc.SaveAs2(base + ".pdf", 17)    # wdFormatPDF
-                print("wrote %s.pdf" % base)
-        finally:
-            doc.Close(False)
+        doc = word.Documents.Open(os.path.abspath(html_path), False, True)
+        if want_docx:
+            doc.SaveAs2(base + ".docx", 16)   # wdFormatDocumentDefault
+            print("wrote %s.docx" % base)
+        if want_pdf:
+            doc.SaveAs2(base + ".pdf", 17)    # wdFormatPDF
+            print("wrote %s.pdf" % base)
     finally:
-        word.Quit()
+        # Both closes are individually guarded: if Close raises, Quit must still
+        # run, or the failure that broke the save also leaks the process.
+        if doc is not None:
+            try:
+                doc.Close(False)
+            except Exception:  # pylint: disable=broad-except
+                pass
+        try:
+            word.Quit()
+        except Exception:  # pylint: disable=broad-except
+            pass
     return 0
 
 
@@ -411,7 +450,10 @@ def main(argv=None):
     # a zero-byte file where the original was.
     text = build(doc)
 
-    stamp = _dt.datetime.now().strftime("%Y%m%d%H%M")
+    # Seconds, not minutes, plus a short random tail. Minute precision let two
+    # runs of the same report inside one minute overwrite each other - and the
+    # converted .docx/.pdf too, since they derive from this basename.
+    stamp = _dt.datetime.now().strftime("%Y%m%d%H%M%S") + "-" + _uuid.uuid4().hex[:4]
     base = args.name or "".join(
         c if c.isalnum() else "-" for c in doc.get("title", "Report")
     ).strip("-")

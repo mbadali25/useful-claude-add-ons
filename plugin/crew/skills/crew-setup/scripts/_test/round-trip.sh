@@ -64,6 +64,13 @@ done
 # maintainer, not on the contract.
 EXPECTED=$(printf '%s
 ' $CONCERNS | grep -c .)
+# An empty CONCERNS gives EXPECTED=0 and checked=0, and `0 -ne 0` is false -
+# so the suite would report PASS having exercised nothing. Deriving the count
+# fixed a hardcoded tripwire and introduced a vacuous pass; this closes it.
+if [ "$EXPECTED" -eq 0 ]; then
+  echo "FAIL: CONCERNS is empty, so this suite would pass having checked nothing"
+  exit 1
+fi
 if [ "$checked" -ne "$EXPECTED" ]; then
   echo "FAIL: CONCERNS lists $EXPECTED, checked $checked - label() is missing an arm, or the extraction is broken"
   exit 1
