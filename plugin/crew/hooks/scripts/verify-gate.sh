@@ -132,9 +132,20 @@ fi
 
 PY=$(crew_py) || { echo "crew verify-gate: no python - cannot read .crew/verify.json" >&2; exit 0; }
 
-MATCHED=$("$PY" - "$CHANGED" << 'PY'
-import json,sys,fnmatch
-changed=[l for l in sys.argv[1].split("\n") if l.strip()]
+# The changed-file list goes through a temp FILE, never argv. E2BIG counts argv
+# PLUS the environment, so a hook invoked with a large environment fails to exec
+# here even when the list itself is small - which was then misreported below as a
+# corrupt verify.json. Measured 2026-09-07: 74 files / 2.6KB of paths, env 7.9KB,
+# and the exec still failed with 'Argument list too long'.
+# NOTE: deliberately no trap. A `trap ... EXIT INT TERM` above already releases
+# the lock, and a second EXIT trap would REPLACE it and leak the lock directory.
+CHANGED_FILE=$(mktemp 2>/dev/null) || { echo "VERIFY GATE: cannot create temp file. Verification did NOT run. Work is not complete." >&2; exit 2; }
+printf '%s
+' "$CHANGED" > "$CHANGED_FILE"
+
+MATCHED=$("$PY" - "$CHANGED_FILE" << 'PY'
+import json,sys,fnmatch,io
+changed=[l for l in io.open(sys.argv[1],encoding="utf-8").read().split("\n") if l.strip()]
 try:
     cfg=json.load(open(".crew/verify.json"))
 except (OSError, ValueError) as e:
@@ -167,8 +178,17 @@ print("\x1e".join(unmatched))
 PY
 )
 PY_STATUS=$?
-if [ "$PY_STATUS" -ne 0 ]; then
+rm -f "$CHANGED_FILE"
+# Exit 3 is the ONLY status meaning "verify.json is bad" - it is raised by the
+# explicit json.load guard above. Any other non-zero status means the matcher
+# could not RUN at all, and reporting that as a parse error sends the reader
+# off to debug a healthy file. Both still fail CLOSED - the severity was never
+# the bug, the diagnosis was.
+if [ "$PY_STATUS" -eq 3 ]; then
   echo "VERIFY GATE: .crew/verify.json could not be parsed. Verification did NOT run. Work is not complete." >&2
+  exit 2
+elif [ "$PY_STATUS" -ne 0 ]; then
+  echo "VERIFY GATE: could not RUN the matcher - python exited $PY_STATUS before parsing. .crew/verify.json was NOT shown to be invalid; do not go looking for corruption there. Verification did NOT run. Work is not complete." >&2
   exit 2
 fi
 CMDS=$(echo "$MATCHED" | sed -n 1p | tr '\036' '\n')

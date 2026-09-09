@@ -6,6 +6,47 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **crew 0.16.29: the verify gate told a matcher that could not RUN apart from
+  a `verify.json` that could not be PARSED.** Two bugs in one path, authored in
+  an earlier session and landed here with the regression suite CLAUDE.md
+  requires of a blocking guard.
+
+  The changed-file list went to the embedded matcher on **argv**, and `E2BIG`
+  counts argv PLUS the environment — so a hook invoked with a large environment
+  failed to exec even when the list itself was small. Measured 2026-09-07: 74
+  files, 2.6KB of paths, a 7.9KB environment, `Argument list too long`. The
+  list now goes through a temp file.
+
+  The second bug is the one that cost the time. Any non-zero status from the
+  matcher was reported as `.crew/verify.json could not be parsed`, so an exec
+  failure sent the reader off to debug a healthy config. Exit 3 — raised only
+  by the explicit `json.load` guard — now means the file is bad; every other
+  non-zero status says the matcher could not run and says so in as many words.
+  **Both still fail CLOSED.** The severity was never the bug; the diagnosis
+  was. This is the same shape as `render.sh`, `1d61342c` and the null-shadow
+  fix earlier in this release: a wrong answer that is indistinguishable from a
+  right one until someone acts on it.
+
+  Three cases added to `hooks/scripts/_test/run-tests.sh`, two must-block and
+  one must-allow, and sabotage-tested in both directions: reverting the
+  diagnosis split misreports the unrunnable matcher as a parse failure and
+  turns exactly that test red; removing the temp-file indirection turns three
+  red. The suite is 134/0 restored.
+
+  **`verify-gate.ps1` needs no matching change, which is worth recording**
+  because a `.sh`/`.ps1` pair diverging is a standing landmine here. The
+  PowerShell half is structurally immune to both defects: it matches
+  in-process, so there is no exec to overflow, and its `try/catch` wraps only
+  `ConvertFrom-Json`, so "could not be parsed" is only ever printed when
+  parsing is what failed. The bash half has been brought to parity with what
+  PowerShell already did correctly, rather than the usual direction.
+
+  The `.bak-20260907-145114` sibling that had been sitting beside the script is
+  removed rather than committed — a stray backup of a guard is exactly the file
+  someone later mistakes for the live one.
+
+### Fixed
+
 - **crew 0.16.28: the codemap anchor WRITER corrupted every sha that was not
   exactly seven characters.** `crew_upgrade.py`'s `_ANCHOR_LINE_RE` was
   `^(anchor:\s*\S*@?)([0-9a-f]{7,40})` -- a greedy prefix and no end anchor.

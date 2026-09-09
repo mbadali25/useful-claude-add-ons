@@ -306,6 +306,103 @@ echo '{}' | bash "$SCRIPTS/verify-gate.sh" >/dev/null 2>&1
 echo '{"stop_hook_active":true}' | bash "$SCRIPTS/verify-gate.sh" >/dev/null 2>&1
 [ "$?" = "0" ] && pass || fail "verify-gate: stop_hook_active must exit 0 or the session wedges"
 
+# --- the matcher's two failure modes must be told apart -----------------------
+# The gate used to report ANY non-zero status from the embedded python as
+# ".crew/verify.json could not be parsed". It is not the only way that exec can
+# fail, and the wrong diagnosis sends the reader to debug a healthy file. Both
+# still fail CLOSED - the severity was never the bug.
+
+# must-BLOCK, and must say PARSE: a genuinely corrupt verify.json (python exits 3
+# from the explicit json.load guard).
+CORRUPT=$(mktemp -d) || exit 1
+(
+  cd "$CORRUPT" || exit 1
+  git init -q .
+  mkdir -p .crew
+  echo '{}' > .crew/config.json
+  printf '{"rules": [ THIS IS NOT JSON' > .crew/verify.json
+  touch main.tf
+)
+export CLAUDE_PROJECT_DIR="$CORRUPT"
+OUT=$(echo '{}' | bash "$SCRIPTS/verify-gate.sh" 2>&1); RC=$?
+[ "$RC" = "2" ] && pass || fail "verify-gate: a corrupt verify.json must block the turn (got $RC)"
+case "$OUT" in
+  *"could not be parsed"*) pass ;;
+  *) fail "verify-gate: a corrupt verify.json must be REPORTED as a parse failure, got: $OUT" ;;
+esac
+unset CLAUDE_PROJECT_DIR
+
+# must-BLOCK, and must NOT say PARSE: the matcher cannot run at all. Simulated by
+# pointing CREW_PY at an interpreter that exits non-zero without ever reading the
+# config - the same observable shape as the E2BIG exec failure this fix was for.
+UNRUNNABLE=$(mktemp -d) || exit 1
+(
+  cd "$UNRUNNABLE" || exit 1
+  git init -q .
+  mkdir -p .crew
+  echo '{}' > .crew/config.json
+  printf '{"version":1,"rules":[],"always":[],"default":[],"unmapped":"fail"}' > .crew/verify.json
+  touch main.tf
+  mkdir -p fakebin
+  # crew_py resolves python3/python/py off PATH, so shadow it there rather than
+  # inventing an override the gate does not have. Exits 9 without reading
+  # anything: the same observable shape as the E2BIG exec failure this fix is
+  # for, and deliberately NOT 3, which is the parse status.
+  printf '#!/bin/sh
+exit 9
+' > fakebin/python3
+  printf '#!/bin/sh
+exit 9
+' > fakebin/python
+  printf '#!/bin/sh
+exit 9
+' > fakebin/py
+  chmod +x fakebin/python3 fakebin/python fakebin/py
+)
+export CLAUDE_PROJECT_DIR="$UNRUNNABLE"
+SAVED_PATH="$PATH"
+export PATH="$UNRUNNABLE/fakebin:$PATH"
+OUT=$(echo '{}' | bash "$SCRIPTS/verify-gate.sh" 2>&1); RC=$?
+[ "$RC" = "2" ] && pass || fail "verify-gate: a matcher that cannot run must still block (got $RC)"
+case "$OUT" in
+  *"could not be parsed"*)
+    fail "verify-gate: a matcher that could not RUN was misreported as a parse failure: $OUT" ;;
+  *"could not RUN the matcher"*) pass ;;
+  *) fail "verify-gate: unrecognised message for an unrunnable matcher: $OUT" ;;
+esac
+export PATH="$SAVED_PATH"
+unset CLAUDE_PROJECT_DIR
+
+# must-ALLOW: a large changed-file list must not blow the exec. E2BIG counts argv
+# PLUS the environment, so this pads the environment too - the measured failure
+# was 74 files / 2.6KB of paths against a 7.9KB environment, which argv alone
+# would not have reproduced.
+BIG=$(mktemp -d) || exit 1
+(
+  cd "$BIG" || exit 1
+  git init -q .
+  mkdir -p .crew
+  echo '{}' > .crew/config.json
+  # `**` as well as `**/*.txt`: the fixture's own .crew/*.json files are changed
+  # files too, and leaving them unmapped would fail this case for a reason that
+  # has nothing to do with the size of the list it is here to measure.
+  printf '{"version":1,"rules":[{"paths":["**/*.txt","**"],"run":["true"]}],"always":[],"default":[],"unmapped":"fail"}' > .crew/verify.json
+  i=0
+  while [ "$i" -lt 400 ]; do
+    printf 'x' > "a-very-long-file-name-to-make-argv-large-$i.txt"
+    i=$((i+1))
+  done
+)
+export CLAUDE_PROJECT_DIR="$BIG"
+export CREW_TEST_PAD="$(head -c 60000 /dev/zero 2>/dev/null | tr ' ' 'p')"
+OUT=$(echo '{}' | bash "$SCRIPTS/verify-gate.sh" 2>&1); RC=$?
+case "$OUT" in
+  *"could not be parsed"*|*"could not RUN the matcher"*)
+    fail "verify-gate: 400 changed files + a padded environment broke the matcher: $OUT" ;;
+  *) pass ;;
+esac
+[ "$RC" = "0" ] && pass || fail "verify-gate: 400 mapped files should pass the gate (got $RC): $OUT"
+unset CREW_TEST_PAD
 unset CLAUDE_PROJECT_DIR
 
 echo "== promote-gate.sh =="
