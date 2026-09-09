@@ -816,10 +816,13 @@ $script:SkillCatalog = @(
     [pscustomobject]@{ Key = 'i-have-adhd';           Selected = $true; Name = 'i-have-adhd             - ADHD-friendly output: next action first, numbered steps' }
     [pscustomobject]@{ Key = 'infra-work-ticketing';  Selected = $true; Name = 'infra-work-ticketing    - ServiceDesk Plus / Jira: open tickets, log work notes' }
     [pscustomobject]@{ Key = 'intune-graph';          Selected = $true; Name = 'intune-graph            - Intune via Graph: devices, compliance, app deployment' }
+    [pscustomobject]@{ Key = 'jira-manager';          Selected = $true; Name = 'jira-manager            - Jira Cloud REST API: JQL, create, transition, worklog' }
+    [pscustomobject]@{ Key = 'knowbe4-admin';         Selected = $true; Name = 'knowbe4-admin           - KnowBe4 KSAT: SCIM sync diagnosis, reporting, writes' }
     [pscustomobject]@{ Key = 'mermaid-svg-bitbucket'; Selected = $true; Name = 'mermaid-svg-bitbucket   - Pre-render Mermaid to SVG so Bitbucket displays it' }
     [pscustomobject]@{ Key = 'notify';                Selected = $true; Name = 'notify                  - Ping your phone or inbox: Telegram bot (two-way) or email' }
     [pscustomobject]@{ Key = 'obsidian-canvas';       Selected = $true; Name = 'obsidian-canvas         - Obsidian .canvas files as JSON: maps, boards, diagrams' }
     [pscustomobject]@{ Key = 'obsidian-vault-server'; Selected = $true; Name = 'obsidian-vault-server   - Self-hosted Obsidian on Ubuntu: Sync, REST/MCP endpoint' }
+    [pscustomobject]@{ Key = 'power-automate-api';    Selected = $true; Name = 'power-automate-api      - Power Automate flows via API: definitions, auth errors' }
     [pscustomobject]@{ Key = 'repo-docs';             Selected = $true; Name = 'repo-docs               - Whole doc set: CLAUDE.md, READMEs, architecture, handoff' }
     [pscustomobject]@{ Key = 'shipstation';           Selected = $true; Name = 'shipstation             - ShipStation V2/V1/ShipEngine: labels, rates, orders' }
     [pscustomobject]@{ Key = 'sophos-central';        Selected = $true; Name = 'sophos-central          - Sophos Central: isolate endpoints, triage alerts, XDR' }
@@ -855,7 +858,7 @@ $script:PluginCatalog = @(
 # 'superpowers-marketplace' registration plus a second, disabled copy.
 $script:TeamCatalog = @(
     [pscustomobject]@{ Key = 'superpowers';          Selected = $true; Name = 'superpowers             - Workflow skills: brainstorm, plans, TDD, code review'; Spec = 'superpowers@claude-plugins-official|anthropics/claude-plugins-official|claude-plugins-official' }
-    [pscustomobject]@{ Key = 'frontend-design';      Selected = $true; Name = "frontend-design         - Anthropic's frontend design skill";                   Spec = 'frontend-design@claude-code-plugins|anthropics/claude-code|claude-code-plugins' }
+    [pscustomobject]@{ Key = 'frontend-design';      Selected = $true; Name = "frontend-design         - Anthropic's frontend design skill";                   Spec = 'frontend-design@claude-plugins-official|anthropics/claude-plugins-official|claude-plugins-official' }
     [pscustomobject]@{ Key = 'excalidraw-generator'; Selected = $true; Name = 'excalidraw-generator    - Excalidraw diagrams from a description';              Spec = 'excalidraw-generator@excalidraw-generator|lexiaoyao20/excalidraw-generator|excalidraw-generator' }
 )
 

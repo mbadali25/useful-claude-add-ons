@@ -139,6 +139,7 @@ still writes only the repo file.
     "copilot": { "model": null },
     "roles": {}
   },
+  "worktree": { "root": null },
   "secondOpinion": { "provider": "none", "mode": "cli", "model": null, "keyEnv": "GEMINI_API_KEY", "sendsCode": false },
   "tracker": "files",
   "jira": { "project": null },

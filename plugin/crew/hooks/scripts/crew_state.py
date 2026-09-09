@@ -587,6 +587,29 @@ DEV_DEFAULTS = {
     "roles": {},
 }
 
+# Where `git worktree add` puts a crew worktree. `/crew:emergency` runs two
+# candidate fixes in a worktree each, and tier 3 in `/crew:scale` is parallel
+# sessions across worktrees, so the directory they land in is a real question
+# and until 0.16.26 there was no answer but git's own habit of the checkout's
+# parent -- which on a machine whose repos live on a small system disk is the
+# wrong disk, and on a machine that syncs its repo parent to cloud storage is
+# an index rebuild per worktree.
+#
+# `root` is a DIRECTORY worktrees are created under, not a worktree path:
+# crew adds `<repo name>-<branch>` beneath it, so several repos can share one
+# root without colliding. `null` keeps the old behaviour exactly -- the
+# checkout's parent -- so an existing config that never gains this key
+# behaves as it always did.
+#
+# It is inheritable from the global file (see `default_global_config`)
+# because which disk has room is a fact about the machine, not about a
+# checkout: someone who keeps worktrees on D:\ keeps them there for every
+# repo, and saying so once per repo is the friction the global layer exists
+# to remove. A repo that genuinely needs its own answer still overrides it.
+WORKTREE_DEFAULTS = {
+    "root": None,
+}
+
 # The role names each block's `roles` table is expected to carry. Not a
 # validation list -- a repo may pin a role crew has never heard of, and
 # `resolve_role` answers for any name -- but the set `/crew:model` reports on
@@ -672,6 +695,27 @@ SPECIALIST_ROLES = frozenset({
     "network-engineer",
     "windows-infra-admin",
     "qa-researcher",
+    "ad-security-reviewer",
+    "ai-writing-auditor",
+    "api-designer",
+    "architect-reviewer",
+    "backend-developer",
+    "code-reviewer",
+    "compliance-auditor",
+    "database-administrator",
+    "design-bridge",
+    "fintech-engineer",
+    "git-workflow-manager",
+    "graphql-architect",
+    "kimi-consult",
+    "legacy-modernizer",
+    "microservices-architect",
+    "multi-agent-coordinator",
+    "payment-integration",
+    "penetration-tester",
+    "platform-engineer",
+    "powershell-security-hardening",
+    "workflow-orchestrator",
 })
 
 
@@ -2059,6 +2103,51 @@ def int_or(value, default):
         except ValueError:
             return default
     return default
+
+
+
+def worktree_root(cfg, repo_root):
+    """The directory a crew worktree for `repo_root` should be created under.
+
+    `worktree.root` is resolved here rather than at each call site so the
+    answer is the same one every time: `/crew:emergency` running two candidate
+    fixes side by side and a tier-3 parallel session have to agree, or the
+    second one adds a worktree the first cannot find.
+
+    An unset, blank or non-string `root` means the checkout's parent, which is
+    git's own habit and what crew did before the key existed. `~` and
+    environment variables are expanded because this value is typed by hand
+    into a config file, where `~/worktrees` is what a person writes and
+    `os.path.join` would otherwise create a literal `~` directory. A relative
+    path is resolved against `repo_root`, not against the process's working
+    directory: a hook runs from wherever the session happens to be, so
+    anything else would put worktrees somewhere different depending on which
+    directory the user was in when the gate fired.
+
+    Returns an absolute path. It is NOT created here -- a resolver that makes
+    directories cannot be called to report what the setting says.
+    """
+    root = dict_or_empty(cfg.get("worktree")).get("root")
+    if not isinstance(root, str) or not root.strip():
+        return os.path.abspath(os.path.join(repo_root, os.pardir))
+    expanded = os.path.expanduser(os.path.expandvars(root.strip()))
+    if not os.path.isabs(expanded):
+        expanded = os.path.join(repo_root, expanded)
+    return os.path.abspath(expanded)
+
+
+def worktree_path(cfg, repo_root, branch):
+    """Where the worktree for `branch` goes: `<worktree_root>/<repo>-<branch>`.
+
+    The repo name is in the leaf so that several repos can share one root
+    without two branches called `fix` colliding -- which is the failure mode a
+    shared root introduces and the reason the setting is a directory rather
+    than a worktree path. Path separators in a branch name (`feat/x`) become
+    `-`: git allows them, a single directory level does not.
+    """
+    leaf = "%s-%s" % (os.path.basename(os.path.abspath(repo_root)),
+                      re.sub(r"[\/]+", "-", branch.strip()))
+    return os.path.join(worktree_root(cfg, repo_root), leaf)
 
 
 def evaluate_triggers(state):

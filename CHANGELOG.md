@@ -4,6 +4,76 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added
+
+- **Three skills join the marketplace: `jira-manager`, `knowbe4-admin` and
+  `power-automate-api`.** Each is registered in every place a registration has
+  to touch at once — the marketplace entry, both README catalog tables, both
+  install scripts' skill catalogs, and `INSTALLATION.md`'s per-skill install
+  commands — so `scripts/check-marketplace.py` passes rather than reporting a
+  half-registration nobody can tell the intent of. `skills/knowbe4-admin/`
+  arrived nested one level too deep (`skills/knowbe4-admin/knowbe4-admin/`),
+  which put `SKILL.md` where the checker's manifest rule cannot see it; it is
+  flattened here.
+
+  `skills/task-observer/` also arrived, and is NOT registered. Menu item 8 of
+  both install scripts already clones the same skill from
+  `rebelytics/one-skill-to-rule-them-all`, and the two copies were
+  byte-identical, so registering it would have shipped the skill twice to
+  anyone who ticked both rows. The upstream row stays; the repo copy was
+  removed. Menu numbering is unchanged, which is the point — `--select 9,12`
+  keeps meaning what it meant.
+
+- **crew 0.16.26: `worktree.root`, and 21 more domain specialists.**
+
+  `worktree.root` says where `git worktree add` puts a crew worktree.
+  `/crew:emergency` runs two candidate fixes in a worktree each and tier 3 in
+  `/crew:scale` is parallel sessions across worktrees, so the directory they
+  land in was already a real question with no answer but git's habit of the
+  checkout's parent — which is the wrong disk on a machine whose repos live on
+  a small system drive, and an index rebuild per worktree on one that syncs
+  that parent to cloud storage. It is inheritable from
+  `~/.claude/crew/config.json`, because which disk has room is a fact about the
+  machine and not about a checkout.
+
+  The setting resolves in one place, `crew_state.worktree_root` /
+  `worktree_path`, rather than at each call site: two emergency lanes started
+  seconds apart have to agree on the path or the second adds a worktree the
+  first cannot find. `null` keeps the old behaviour exactly, so a config that
+  never gains the key behaves as it always did and no worktree already on disk
+  is stranded. `~` and environment variables are expanded — `~/worktrees` is
+  what a person types, and without the expansion `os.path.join` makes a literal
+  `~` directory that looks like it worked. A relative path resolves against the
+  repo rather than the process's working directory, because a hook runs from
+  wherever the session happens to be. The leaf carries the repo name
+  (`<repo>-<branch>`), which is what lets several repos share one root without
+  two branches called `fix` colliding, and a `/` in a branch name becomes `-`
+  so the worktree does not land a directory level deeper than everything that
+  lists the root.
+
+  The 21 new agent files were sitting in `plugin/crew/agents/` unregistered.
+  That is the exact defect `test_every_agent_definition_is_a_role_crew_knows`
+  exists to catch: an `agents/<name>.md` in neither `ROLE_TIERS` nor
+  `SPECIALIST_ROLES` dispatches nothing, and the only symptom is
+  `/crew:pm onboard <name>` calling it unrecognised forever. All 21 are
+  registered as specialists — they carry no evidence about how much crew a repo
+  needs, so no tier grants them — in `crew_state.SPECIALIST_ROLES` and in both
+  markdown tables the committed tests check it against. `SPECIALIST_ROLES` goes
+  15 -> 36; the tier ladder is unchanged at 13. Sixteen of the files also
+  declared `model: opus` or `model: haiku`, which `validate-prompts.py` rejects:
+  every role but `pm` and `qa-reviewer` runs on `sonnet` by design, and
+  inheriting or raising the tier per agent makes the model depend on whoever
+  spawned it.
+
+### Changed
+
+- **The installer no longer registers the `claude-code-plugins` marketplace.**
+  It existed solely to carry `frontend-design`, which `claude-plugins-official`
+  also publishes and which the installer already registers for `superpowers`.
+  `TEAM_SPEC` in both scripts now points there, so the plugin still installs
+  and one fewer marketplace gets cloned and refreshed on every machine. Nothing
+  in the catalog is lost.
+
 ### Fixed
 
 - **crew 0.16.23 -> 0.16.25: the sabotage harness can no longer report PASS

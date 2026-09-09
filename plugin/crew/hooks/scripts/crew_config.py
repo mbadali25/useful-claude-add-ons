@@ -245,6 +245,7 @@ def default_config():
         "roles": ["explorer", "qa-reviewer"],
         "qa": copy.deepcopy(crew_state.QA_DEFAULTS),
         "dev": copy.deepcopy(crew_state.DEV_DEFAULTS),
+        "worktree": copy.deepcopy(crew_state.WORKTREE_DEFAULTS),
         "secondOpinion": {
             "provider": "none",
             "mode": "cli",
@@ -355,6 +356,12 @@ def default_global_config():
         machine, plus `sendsCode`, which is a standing decision by the person
         rather than by the project.
       * `notify` -- the person's own chat, not the project's.
+      * `worktree.root` -- which disk has room for a worktree, and which
+        directory is not synced to cloud storage, are facts about the
+        machine. Someone who keeps worktrees on a second drive keeps them
+        there for every repo; making them say so once per checkout is the
+        friction this layer exists to remove. A repo that genuinely needs
+        its own answer still overrides it.
       * `memory` -- BOTH keys. `mode` is here alongside `vaultPath` because
         the user ruled in 2026-09-05's global/repo split that memory is a
         property of the person, not of the checkout: someone who keeps their
@@ -375,6 +382,7 @@ def default_global_config():
     return {
         "qa": copy.deepcopy(crew_state.QA_DEFAULTS),
         "dev": copy.deepcopy(crew_state.DEV_DEFAULTS),
+        "worktree": copy.deepcopy(crew_state.WORKTREE_DEFAULTS),
         "secondOpinion": {
             "provider": "none",
             "mode": "cli",

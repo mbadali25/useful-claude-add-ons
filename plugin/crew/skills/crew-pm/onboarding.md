@@ -102,6 +102,27 @@ tier grants them — see below:
 | `network-engineer` | "it cannot connect" answered without naming which layer failed, and cutovers planned without the TTL or the return path | — |
 | `windows-infra-admin` | bulk directory changes made without a pre-change export, a `-WhatIf` run, or a rollback that a human can follow | — |
 | `qa-researcher` | claims about the outside world — a deprecated API, an EOL runtime, an advisory on a new dependency — answered from a model's memory instead of a live source | — |
+| `ad-security-reviewer` | delegation, privilege paths and authentication protocol settings in Active Directory audited by eye, so the escalation route nobody drew is the one that gets used | — |
+| `ai-writing-auditor` | documentation and prose that reads as machine-written — the tells a human reviewer notices and cannot name, so nobody edits them out | — |
+| `api-designer` | endpoints designed one at a time, so pagination, error shape, auth and versioning end up inconsistent across a surface nobody can version later | — |
+| `architect-reviewer` | a design reviewed only at the diff level, so the pattern or technology choice that costs a rewrite is never the thing under review | — |
+| `backend-developer` | server-side work written to pass its own test and no further — no scaling story, no failure story, no operability | — |
+| `code-reviewer` | a diff read for whether it works rather than for what it costs — quality, security and convention drift that only surface once the code is load-bearing | — |
+| `compliance-auditor` | controls assumed present because the framework was named — the gap that only appears when an auditor asks for the evidence | — |
+| `database-administrator` | a database run as a place to put rows: no HA story, no tested restore, and performance work done only after the incident | — |
+| `design-bridge` | a brand replicated from screenshots and adjectives, so the result is close enough to look wrong and nobody can say which part | — |
+| `fintech-engineer` | financial code written to normal application standards, where a rounding rule or a missing regulatory control is a defect nobody catches in review | — |
+| `git-workflow-manager` | a branching model chosen once and never revisited, so merges get resolved by whoever is least afraid of the history | — |
+| `graphql-architect` | a schema grown per service, so federation, N+1 resolvers and query cost are discovered in production | — |
+| `kimi-consult` | a design, diff or stubborn bug checked only by Claude, which shares its own blind spots with itself | — |
+| `legacy-modernizer` | a modernisation planned as a rewrite, so it is cancelled halfway and leaves two systems where there was one | — |
+| `microservices-architect` | a monolith split along the org chart rather than along the data, so every request becomes a distributed transaction | — |
+| `multi-agent-coordinator` | concurrent agents that share state by assumption, so a partial failure leaves the work in a state nothing can resume | — |
+| `payment-integration` | a payment path treated as an API call — PCI scope widened by accident, retries that double-charge, and no fraud story | — |
+| `penetration-tester` | a scanner finding filed as a risk with nothing behind it, so real exploitability and noise get the same priority | — |
+| `platform-engineer` | infrastructure exposed as tickets rather than as a platform, so every team re-solves the same problem and none of them the same way | — |
+| `powershell-security-hardening` | PowerShell automation written for the happy path with remoting wide open, credentials in scope, and no logging an incident could read | — |
+| `workflow-orchestrator` | a business process implemented as a sequence of calls, so there is no state to resume from and no transaction boundary to roll back to | — |
 
 `pm` is not on the ladder. It is not sized in or out by `/crew:scale` — it is
 the thing doing the sizing.

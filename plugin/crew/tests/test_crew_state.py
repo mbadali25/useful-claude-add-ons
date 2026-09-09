@@ -793,3 +793,75 @@ def test_a_graph_out_pointing_outside_the_repo_is_ignored(tmp_path):
     got = crew_state._read_graph(str(root), cfg)  # pylint: disable=protected-access
 
     assert got["present"] is False, "must not read the escaped graph"
+
+
+def test_worktree_root_defaults_to_the_checkout_parent(tmp_path):
+    """The behaviour crew had before `worktree.root` existed, kept exactly.
+
+    An existing config never gains this key by itself -- `/crew:upgrade` adds
+    it, but a repo that never upgrades still has to put worktrees somewhere,
+    and moving them silently would strand every worktree already on disk.
+    """
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    expected = os.path.abspath(str(tmp_path))
+    for cfg in ({}, {"worktree": {}}, {"worktree": {"root": None}},
+                {"worktree": {"root": ""}}, {"worktree": {"root": "   "}},
+                {"worktree": {"root": 42}}, {"worktree": {"root": ["a"]}},
+                {"worktree": "nonsense"}):
+        assert crew_state.worktree_root(cfg, str(repo)) == expected, cfg
+
+
+def test_worktree_root_expands_a_hand_written_path(tmp_path, monkeypatch):
+    """`~/worktrees` is what a person types into a config file. Without the
+    expansion `os.path.join` makes a literal `~` directory next to the repo,
+    which looks like it worked until someone goes looking for the worktree."""
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    monkeypatch.setenv("CREW_TEST_WT", str(tmp_path / "fromenv"))
+    repo = str(tmp_path / "repo")
+
+    assert crew_state.worktree_root({"worktree": {"root": "~/wt"}}, repo) == \
+        os.path.abspath(str(home / "wt"))
+    assert crew_state.worktree_root(
+        {"worktree": {"root": "$CREW_TEST_WT"}}, repo) == \
+        os.path.abspath(str(tmp_path / "fromenv"))
+
+
+def test_a_relative_worktree_root_resolves_against_the_repo(tmp_path):
+    """Not against the process's cwd. A hook runs from wherever the session
+    happens to be, so a cwd-relative answer puts worktrees in a different
+    place depending on which directory the user was standing in."""
+    repo = tmp_path / "a" / "repo"
+    repo.mkdir(parents=True)
+    got = crew_state.worktree_root({"worktree": {"root": "../wt"}}, str(repo))
+    assert got == os.path.abspath(str(tmp_path / "a" / "wt"))
+
+
+def test_worktree_path_names_the_repo_so_two_repos_can_share_a_root(tmp_path):
+    """The failure a shared root introduces: two repos each with a `fix`
+    branch, one worktree directory. The repo name in the leaf is what keeps
+    the setting a directory rather than a per-repo worktree path."""
+    root = str(tmp_path / "wt")
+    one = str(tmp_path / "alpha")
+    two = str(tmp_path / "beta")
+    cfg = {"worktree": {"root": root}}
+
+    first = crew_state.worktree_path(cfg, one, "fix")
+    second = crew_state.worktree_path(cfg, two, "fix")
+
+    assert first != second
+    assert os.path.basename(first) == "alpha-fix"
+    assert os.path.basename(second) == "beta-fix"
+
+
+def test_a_slash_in_a_branch_name_does_not_become_a_directory_level(tmp_path):
+    """git allows `feat/x`; a single directory level does not. Left alone the
+    worktree lands one level deeper than every other one, which nothing that
+    lists the root will find."""
+    cfg = {"worktree": {"root": str(tmp_path / "wt")}}
+    got = crew_state.worktree_path(cfg, str(tmp_path / "repo"), "feat/x")
+    assert os.path.basename(got) == "repo-feat-x"
+    assert os.path.dirname(got) == os.path.abspath(str(tmp_path / "wt"))

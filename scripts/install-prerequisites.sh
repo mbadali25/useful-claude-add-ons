@@ -804,8 +804,9 @@ SKILL_KEYS=(
   "aws-opensearch" "bitbucket" "checkpoint-email" "cisco-meraki"
   "claude-code-defaults" "claude-code-tuneup" "claude-memories-canvas"
   "claude-memories-vault" "cloudflare" "drata" "i-have-adhd"
-  "infra-work-ticketing" "intune-graph" "mermaid-svg-bitbucket" "notify"
-  "obsidian-canvas" "obsidian-vault-server"
+  "infra-work-ticketing" "intune-graph" "jira-manager" "knowbe4-admin"
+  "mermaid-svg-bitbucket" "notify"
+  "obsidian-canvas" "obsidian-vault-server" "power-automate-api"
   "repo-docs" "shipstation" "sophos-central" "terraform-docs-readme" "visio-diagrams"
   "wazuh-onprem" "web-testing-playwright" "work-log-reporter"
 )
@@ -823,10 +824,13 @@ SKILL_NAME=(
   "i-have-adhd             - ADHD-friendly output: next action first, numbered steps"
   "infra-work-ticketing    - ServiceDesk Plus / Jira: open tickets, log work notes"
   "intune-graph            - Intune via Graph: devices, compliance, app deployment"
+  "jira-manager            - Jira Cloud REST API: JQL, create, transition, worklog"
+  "knowbe4-admin           - KnowBe4 KSAT: SCIM sync diagnosis, reporting, writes"
   "mermaid-svg-bitbucket   - Pre-render Mermaid to SVG so Bitbucket displays it"
   "notify                  - Ping your phone or inbox: Telegram bot (two-way) or email"
   "obsidian-canvas         - Obsidian .canvas files as JSON: maps, boards, diagrams"
   "obsidian-vault-server   - Self-hosted Obsidian on Ubuntu: Sync, REST/MCP endpoint"
+  "power-automate-api      - Power Automate flows via API: definitions, auth errors"
   "repo-docs               - Whole doc set: CLAUDE.md, READMEs, architecture, handoff"
   "shipstation             - ShipStation V2/V1/ShipEngine: labels, rates, orders"
   "sophos-central          - Sophos Central: isolate endpoints, triage alerts, XDR"
@@ -883,7 +887,7 @@ TEAM_NAME=(
 )
 TEAM_SPEC=(
   "superpowers@claude-plugins-official|anthropics/claude-plugins-official|claude-plugins-official"
-  "frontend-design@claude-code-plugins|anthropics/claude-code|claude-code-plugins"
+  "frontend-design@claude-plugins-official|anthropics/claude-plugins-official|claude-plugins-official"
   "excalidraw-generator@excalidraw-generator|lexiaoyao20/excalidraw-generator|excalidraw-generator"
 )
 TEAM_STATE=()
