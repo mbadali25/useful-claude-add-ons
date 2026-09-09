@@ -28,41 +28,54 @@
 #   jira_get_issue PROJ-123
 #   jira_search 'assignee = currentUser() AND resolution = Unresolved'
 
-set -uo pipefail
-
-: "${JIRA_EMAIL:?Set JIRA_EMAIL to the Atlassian account email}"
-: "${JIRA_API_TOKEN:?Set JIRA_API_TOKEN (create one at https://id.atlassian.com/manage-profile/security/api-tokens)}"
-
 # Look up a site's Cloud ID with no auth required — useful when the user only has
 # JIRA_WORKSPACE and needs JIRA_CLOUD_ID to use a scoped token.
-jira_get_cloud_id() {
-  # jira_get_cloud_id WORKSPACE   (e.g. jira_get_cloud_id acme)
-  curl -s "https://$1.atlassian.net/_edge/tenant_info" | jq -r '.cloudId'
-}
+jira_get_cloud_id() (
+  # jira_get_cloud_id [WORKSPACE]   (defaults to JIRA_WORKSPACE)
+  local workspace="${1:-${JIRA_WORKSPACE:-}}"
+  : "${workspace:?Pass a workspace or set JIRA_WORKSPACE}"
+  # pipefail is set HERE, inside this function's subshell, not at source time -
+  # sourcing must not change the caller's shell. Without it, a curl that fails
+  # WITHOUT output (timeout 28, DNS 6, TLS 35, proxy 7) feeds jq empty stdin; jq
+  # exits 0 printing nothing, the pipeline is 0, and this returns EMPTY WITH
+  # SUCCESS - from the documented onboarding step for scoped tokens.
+  set -o pipefail
+  curl -sS --fail-with-body --connect-timeout 10 "https://${workspace}.atlassian.net/_edge/tenant_info" | jq -r '.cloudId'
+)
 
-if [[ -n "${JIRA_CLOUD_ID:-}" ]]; then
-  # Scoped-token mode: must go through the Atlassian API gateway.
-  JIRA_BASE_URL="https://api.atlassian.com/ex/jira/${JIRA_CLOUD_ID}"
-elif [[ -z "${JIRA_BASE_URL:-}" ]]; then
-  # Classic-token mode: direct site domain.
-  : "${JIRA_WORKSPACE:?Set JIRA_WORKSPACE (e.g. 'acme' for acme.atlassian.net), or JIRA_BASE_URL, or JIRA_CLOUD_ID for a scoped token}"
-  JIRA_BASE_URL="https://${JIRA_WORKSPACE}.atlassian.net"
-fi
+# Percent-encode one value for a URL path or query. jq's @uri, because jq is
+# already a hard dependency of this file and every alternative (python, printf
+# loops) adds one. A key is usually alnum-plus-hyphen and looks safe to
+# interpolate raw - right up to the caller who passes `PROJ-1?expand=changelog`
+# and silently changes the request.
+_jira_uri() { jq -rn --arg v "$1" '$v | @uri'; }
 
-_JIRA_API="${JIRA_BASE_URL}/rest/api/3"
-_JIRA_AUTH="${JIRA_EMAIL}:${JIRA_API_TOKEN}"
-
-_jira_curl() {
+_jira_curl() (
   # _jira_curl METHOD PATH [JSON_BODY]
   local method="$1" path="$2" body="${3:-}"
+  : "${JIRA_EMAIL:?Set JIRA_EMAIL to the Atlassian account email}"
+  : "${JIRA_API_TOKEN:?Set JIRA_API_TOKEN (create one at https://id.atlassian.com/manage-profile/security/api-tokens)}"
+
+  if [[ -n "${JIRA_CLOUD_ID:-}" ]]; then
+    # Scoped-token mode: must go through the Atlassian API gateway.
+    JIRA_BASE_URL="https://api.atlassian.com/ex/jira/${JIRA_CLOUD_ID}"
+  elif [[ -z "${JIRA_BASE_URL:-}" ]]; then
+    # Classic-token mode: direct site domain.
+    : "${JIRA_WORKSPACE:?Set JIRA_WORKSPACE (e.g. 'acme' for acme.atlassian.net), or JIRA_BASE_URL, or JIRA_CLOUD_ID for a scoped token}"
+    JIRA_BASE_URL="https://${JIRA_WORKSPACE}.atlassian.net"
+  fi
+
+  local _JIRA_API="${JIRA_BASE_URL}/rest/api/3"
+  local _JIRA_AUTH="${JIRA_EMAIL}:${JIRA_API_TOKEN}"
+
   if [[ -n "$body" ]]; then
-    curl -s -u "$_JIRA_AUTH" -X "$method" \
+    curl -sS --fail-with-body -u "$_JIRA_AUTH" -X "$method" \
       -H "Content-Type: application/json" -H "Accept: application/json" \
       -d "$body" "${_JIRA_API}${path}"
   else
-    curl -s -u "$_JIRA_AUTH" -X "$method" -H "Accept: application/json" "${_JIRA_API}${path}"
+    curl -sS --fail-with-body -u "$_JIRA_AUTH" -X "$method" -H "Accept: application/json" "${_JIRA_API}${path}"
   fi
-}
+)
 
 # Wrap plain text into the minimal Atlassian Document Format (ADF) required
 # by API v3 for descriptions and comments.
@@ -78,7 +91,7 @@ jira_list_projects() {
 
 jira_project_issue_types() {
   # jira_project_issue_types PROJECTKEY
-  _jira_curl GET "/issue/createmeta?projectKeys=$1&expand=projects.issuetypes"
+  _jira_curl GET "/issue/createmeta?projectKeys=$(_jira_uri "$1")&expand=projects.issuetypes"
 }
 
 ### Reading issues ###
@@ -86,7 +99,7 @@ jira_project_issue_types() {
 jira_get_issue() {
   # jira_get_issue ISSUEKEY [fields_csv]
   local fields="${2:-summary,status,assignee,reporter,priority,labels,description,updated}"
-  _jira_curl GET "/issue/$1?fields=${fields}"
+  _jira_curl GET "/issue/$(_jira_uri "$1")?fields=${fields}"
 }
 
 jira_search() {
@@ -120,7 +133,7 @@ jira_edit_issue() {
   local key="$1" fields_json="$2"
   local body
   body=$(jq -n --argjson fields "$fields_json" '{fields: $fields}')
-  _jira_curl PUT "/issue/$key" "$body"
+  _jira_curl PUT "/issue/$key" "$body" || return $?
   echo "(no content on success = 204)"
 }
 
@@ -128,7 +141,9 @@ jira_edit_issue() {
 
 jira_find_account_id() {
   # jira_find_account_id "name or email"
-  _jira_curl GET "/user/search?query=$1"
+  local query
+  query=$(_jira_uri "$1") || return $?
+  _jira_curl GET "/user/search?query=${query}"
 }
 
 jira_whoami() {
@@ -144,7 +159,7 @@ jira_assign() {
   else
     body=$(jq -n --arg id "$account_id" '{fields: {assignee: {accountId: $id}}}')
   fi
-  _jira_curl PUT "/issue/$key" "$body"
+  _jira_curl PUT "/issue/$key" "$body" || return $?
   echo "(no content on success = 204)"
 }
 
@@ -160,7 +175,7 @@ jira_transition() {
   local key="$1" transition_id="$2"
   local body
   body=$(jq -n --arg id "$transition_id" '{transition: {id: $id}}')
-  _jira_curl POST "/issue/$key/transitions" "$body"
+  _jira_curl POST "/issue/$key/transitions" "$body" || return $?
   echo "(no content on success = 204)"
 }
 
@@ -213,6 +228,6 @@ jira_delete_issue() {
   # DESTRUCTIVE AND IRREVERSIBLE. jira_delete_issue ISSUEKEY
   # Only call this after explicit, unambiguous user confirmation (see SKILL.md).
   local key="$1"
-  _jira_curl DELETE "/issue/$key"
+  _jira_curl DELETE "/issue/$key" || return $?
   echo "(no content on success = 204 — issue is permanently gone)"
 }

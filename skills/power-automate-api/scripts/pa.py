@@ -18,9 +18,12 @@ Standard library only. Python 3.8+.
 """
 
 import argparse
+import http.client
 import json
 import os
+import socket
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.parse
@@ -33,7 +36,12 @@ from pathlib import Path
 DEFAULT_CLIENT_ID = "04b07795-8ddb-461a-bbee-02f9e1bf7b46"
 
 CACHE_DIR = Path(os.path.expanduser("~")) / ".pa-api-cache"
-SNAPSHOT_DIR = Path("pa-snapshots")
+# Anchored to THIS FILE, not the process CWD. `.gitignore` protects
+# `scripts/pa-snapshots/`; a CWD-relative path put the same tenant dumps in
+# `pa-snapshots/` at whatever directory pa.py was launched from, outside the
+# ignore rule. A snapshot is a verbatim dump of a live tenant, and one has
+# already been committed to a public repo from exactly this class of mistake.
+SNAPSHOT_DIR = Path(__file__).resolve().parent / "pa-snapshots"
 
 # scope = resource URI + "/.default". A resource URI that already ends in "/"
 # therefore yields a double slash, which is correct. See references/auth.md.
@@ -67,16 +75,29 @@ def request(method, url, token=None, body=None, headers=None, form=False):
             hdrs["Content-Type"] = "application/json"
     req = urllib.request.Request(url, data=data, headers=hdrs, method=method)
     try:
-        with urllib.request.urlopen(req) as resp:
-            raw = resp.read().decode("utf-8") or "{}"
-            return resp.status, (json.loads(raw) if raw.strip() else {})
-    except urllib.error.HTTPError as exc:
-        raw = exc.read().decode("utf-8", "replace")
         try:
-            parsed = json.loads(raw)
-        except ValueError:
-            parsed = {"raw": raw}
-        return exc.code, parsed
+            with urllib.request.urlopen(req) as resp:
+                raw = resp.read().decode("utf-8") or "{}"
+                return resp.status, (json.loads(raw) if raw.strip() else {})
+        except urllib.error.HTTPError as exc:
+            raw = exc.read().decode("utf-8", "replace")
+            try:
+                parsed = json.loads(raw)
+            except ValueError:
+                parsed = {"raw": raw}
+            return exc.code, parsed
+    except urllib.error.URLError as exc:
+        if isinstance(exc.reason, socket.gaierror):
+            die("DNS lookup failed for %s: %s" % (url, exc.reason))
+        if isinstance(exc.reason, (TimeoutError, socket.timeout)):
+            die("request timed out for %s: %s" % (url, exc.reason))
+        die("connection failed for %s: %s" % (url, exc.reason))
+    except (TimeoutError, socket.timeout) as exc:
+        die("request timed out for %s: %s" % (url, exc))
+    except (OSError, http.client.HTTPException) as exc:
+        die("connection failed for %s: %s" % (url, exc))
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        die("non-JSON response from %s: %s" % (url, exc))
 
 
 def die(msg, detail=None):
@@ -119,17 +140,19 @@ def load_cached(resource):
     if blob.get("expires_at", 0) > time.time() + 120:
         return blob["access_token"]
     if blob.get("refresh_token"):
-        return refresh(resource, blob["refresh_token"], blob.get("tenant", "organizations"))
+        return refresh(resource, blob["refresh_token"], blob.get("tenant", "organizations"),
+                       blob.get("client_id", DEFAULT_CLIENT_ID))
     return None
 
 
-def save_cached(resource, payload, tenant):
+def save_cached(resource, payload, tenant, client_id=DEFAULT_CLIENT_ID):
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     blob = {
         "access_token": payload["access_token"],
         "refresh_token": payload.get("refresh_token"),
         "expires_at": time.time() + int(payload.get("expires_in", 3600)),
         "tenant": tenant,
+        "client_id": client_id,
     }
     path = cache_path(resource)
     path.write_text(json.dumps(blob))
@@ -140,13 +163,13 @@ def save_cached(resource, payload, tenant):
     return blob["access_token"]
 
 
-def refresh(resource, refresh_token, tenant):
+def refresh(resource, refresh_token, tenant, client_id=DEFAULT_CLIENT_ID):
     status, payload = request(
         "POST",
         "https://login.microsoftonline.com/%s/oauth2/v2.0/token" % tenant,
         body={
             "grant_type": "refresh_token",
-            "client_id": DEFAULT_CLIENT_ID,
+            "client_id": client_id,
             "refresh_token": refresh_token,
             "scope": scope_for(resource) + " offline_access",
         },
@@ -154,7 +177,7 @@ def refresh(resource, refresh_token, tenant):
     )
     if status != 200:
         return None
-    return save_cached(resource, payload, tenant)
+    return save_cached(resource, payload, tenant, client_id)
 
 
 def device_code_login(resource, tenant, client_id=DEFAULT_CLIENT_ID):
@@ -188,7 +211,7 @@ def device_code_login(resource, tenant, client_id=DEFAULT_CLIENT_ID):
         )
         if status == 200:
             print("Signed in. Token cached.")
-            return save_cached(resource, tok, tenant)
+            return save_cached(resource, tok, tenant, client_id)
         err = tok.get("error")
         if err == "authorization_pending":
             continue
@@ -199,13 +222,32 @@ def device_code_login(resource, tenant, client_id=DEFAULT_CLIENT_ID):
     die("device code expired before sign-in completed")
 
 
-def token_for(resource, tenant, interactive=True):
+def _arg(value):
+    """Quote one argument for a command line a HUMAN will paste.
+
+    Not `shlex.quote`: that emits POSIX single-quote quoting, and this string is
+    printed on Windows as often as not, where cmd.exe treats `'...'` as part of
+    the value. Double quotes are understood by cmd.exe, PowerShell and POSIX
+    shells alike, so quote only when there is whitespace and leave the common
+    case bare and readable.
+    """
+    text = str(value)
+    unsafe = '"' + "'"
+    if text and not any(c.isspace() or c in unsafe for c in text):
+        return text
+    return '"%s"' % text.replace('"', '\\"')
+
+
+def token_for(resource, tenant, interactive=True, client_id=DEFAULT_CLIENT_ID):
     cached = load_cached(resource)
     if cached:
         return cached
     if not interactive:
         die("no cached token for %s -- run 'pa.py login' first" % resource)
-    return device_code_login(resource, tenant)
+    # client_id is threaded through: without it a custom --client-id is lost the
+    # moment the refresh token is gone and this falls back to interactive login,
+    # which is exactly when the user is least able to tell why the app id changed.
+    return device_code_login(resource, tenant, client_id)
 
 
 # --------------------------------------------------------------------------
@@ -357,9 +399,12 @@ def load_clientdata_file(path):
 def snapshot(name, content):
     SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    path = SNAPSHOT_DIR / ("%s.%s.json" % (name, stamp))
-    path.write_text(content, encoding="utf-8")
-    return path
+    # Exclusive creation prevents concurrent processes overwriting rollback state.
+    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=SNAPSHOT_DIR,
+                                     prefix="%s.%s." % (name, stamp), suffix=".json",
+                                     delete=False) as out:
+        out.write(content)
+    return Path(out.name)
 
 
 # --------------------------------------------------------------------------
@@ -469,7 +514,14 @@ def cmd_patch(args):
     print("PATCH %d -- written." % status)
     print("\n204 means stored, not runnable. Reload the designer to confirm the "
           "flow checker is clean, then launch it once.")
-    print("Rollback: pa.py patch --clientdata %s" % before)
+    # --force is not optional here. The rollback target is the definition that
+    # was live BEFORE this patch, and patching to FIX a validation problem is the
+    # normal case - so the saved definition usually still carries the problems
+    # reported above. Without --force the printed command hits "Refusing to
+    # PATCH" and exits 2 at the one moment anyone needs it.
+    print("Rollback: pa.py patch --org %s --flow %s --tenant %s --clientdata %s "
+          "--force" % (_arg(args.org), _arg(args.flow), _arg(args.tenant),
+                       _arg(str(before))))
 
 
 def cmd_runs(args):

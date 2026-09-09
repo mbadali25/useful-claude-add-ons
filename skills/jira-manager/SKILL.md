@@ -35,7 +35,7 @@ If missing, tell the user which specific variable(s) are unset and how to get th
 source scripts/jira-api.sh
 ```
 
-This defines all the functions below. It validates the required env vars are present and will fail loudly (not silently) if any are missing.
+This defines all the functions below. **Sourcing succeeds even with no credentials set** -- deliberately, so `jira_get_cloud_id` (which needs none) is usable during setup, and so sourcing never changes the shell it is sourced into. Each function that needs credentials checks at CALL time and fails loudly then. A clean `source` is therefore not evidence that `JIRA_EMAIL` and `JIRA_API_TOKEN` are set; call `jira_whoami` if you want that confirmed.
 
 ## Looking up projects
 

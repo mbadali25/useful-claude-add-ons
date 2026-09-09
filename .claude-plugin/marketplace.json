@@ -89,7 +89,7 @@
       "name": "jira-manager",
       "source": "./skills/jira-manager",
       "description": "Jira Cloud over the REST API with email + API token - JQL search, create, update, assign, transition, comment, log work. No MCP connector.",
-      "version": "1.0.0"
+      "version": "1.0.1"
     },
     {
       "name": "knowbe4-admin",
@@ -125,7 +125,7 @@
       "name": "power-automate-api",
       "source": "./skills/power-automate-api",
       "description": "Power Automate cloud flows through the API instead of the maker portal - definitions, expressions, triggers, connection references, run history, and the Flow/BAP auth errors.",
-      "version": "1.0.0"
+      "version": "1.0.1"
     },
     {
       "name": "repo-docs",
