@@ -1,0 +1,4 @@
+# Virtual environment preflight.py --venv creates for this skill's dependencies.
+.venv/
+# Word owner files left beside a document it has open.
+~$*

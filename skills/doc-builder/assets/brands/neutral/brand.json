@@ -1,0 +1,61 @@
+{
+  "_comment": "The neutral brand pack: what doc-builder uses when no sibling skill supplies assets/brand.json. Every key here is the full schema; a brand pack may omit any key and inherit this value. Colours are literal hex because Word's HTML parser drops CSS var() - see references/word-traps.md rule 1.",
+  "name": "neutral",
+  "organisation": "",
+  "fonts": {
+    "body": "Calibri",
+    "heading": "Calibri",
+    "report_stack": "'Segoe UI',Calibri,Arial,sans-serif"
+  },
+  "report": {
+    "navy": "#1F4E79",
+    "navy_dark": "#143A5A",
+    "accent": "#4A90C2",
+    "org_ink": "#A8C8E4",
+    "classification": "#8B1A13",
+    "ink": "#1B1B1F",
+    "muted": "#5C5F6B",
+    "grid": "#B8BCC6",
+    "zebra": "#EEF3F8",
+    "panel": "#F6F7F9",
+    "rule": "#DCDEE5",
+    "severity": {
+      "critical": ["#FDE8E6", "#A01B12"],
+      "high": ["#FFEDD5", "#9A3412"],
+      "medium": ["#FDF3D7", "#8A6100"],
+      "low": ["#E3F4EA", "#1C6B3F"],
+      "info": ["#E8EFF8", "#2F4B7C"],
+      "unverified": ["#EDEEF1", "#5C5F6B"]
+    },
+    "output_dir": "reports"
+  },
+  "sop": {
+    "accent": "1F4E79",
+    "image_border": "FF0000",
+    "heading": "1F4E79",
+    "title": "404040",
+    "caption": "7F7F7F",
+    "body": "000000",
+    "link": "0563C1",
+    "title_pt": 20.0,
+    "subtitle_pt": 12.0,
+    "heading_pt": 13.5,
+    "caption_pt": 9.5,
+    "margins_in": {"top": 0.8, "bottom": 0.6, "left": 0.5, "right": 0.5},
+    "template": null,
+    "masters_dir": null,
+    "assets_dir": null,
+    "specs_dir": null,
+    "footer": {
+      "left": "Internal use only",
+      "centre": "",
+      "required_text": ["Internal use only"],
+      "optional_text": []
+    },
+    "help_contact": ""
+  },
+  "screenshots": {
+    "stand_in_email": "firstname.lastname@example.com",
+    "stand_in_user": "user"
+  }
+}

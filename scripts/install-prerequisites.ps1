@@ -806,35 +806,40 @@ function Expand-SelectionSpec {
 # Keep in sync with .claude-plugin/marketplace.json. Everything is on by default:
 # picking a subset is the exception, and a fresh machine wants the lot.
 $script:SkillCatalog = @(
-    [pscustomobject]@{ Key = 'aws-opensearch';        Selected = $true; Name = 'aws-opensearch          - AWS OpenSearch: health, shards, reindex, ISM, snapshots' }
-    [pscustomobject]@{ Key = 'bitbucket';             Selected = $true; Name = 'bitbucket               - Bitbucket Cloud: git auth, PRs, pipelines, REST API' }
-    [pscustomobject]@{ Key = 'checkpoint-email';      Selected = $true; Name = 'checkpoint-email        - Check Point Email Security: phishing triage, quarantine' }
-    [pscustomobject]@{ Key = 'cisco-meraki';          Selected = $true; Name = 'cisco-meraki            - Meraki Dashboard API: inventory, events, config changes' }
-    [pscustomobject]@{ Key = 'claude-code-defaults';  Selected = $true; Name = 'claude-code-defaults    - Claude Code config: settings.json, permissions, hooks' }
-    [pscustomobject]@{ Key = 'claude-code-tuneup';    Selected = $true; Name = 'claude-code-tuneup      - Audit a slow Claude Code setup: dupes, hooks, context' }
-    [pscustomobject]@{ Key = 'claude-memories-canvas';Selected = $true; Name = 'claude-memories-canvas  - claude-memories vault: wiki/maps .canvas conventions' }
-    [pscustomobject]@{ Key = 'claude-memories-vault'; Selected = $true; Name = 'claude-memories-vault   - claude-memories vault: layout, frontmatter, write lock' }
-    [pscustomobject]@{ Key = 'cloudflare';            Selected = $true; Name = 'cloudflare              - Cloudflare v4: DNS, WAF, cache, Workers, Zero Trust' }
-    [pscustomobject]@{ Key = 'drata';                 Selected = $true; Name = 'drata                   - Drata: controls, monitors, evidence, audit prep' }
-    [pscustomobject]@{ Key = 'i-have-adhd';           Selected = $true; Name = 'i-have-adhd             - ADHD-friendly output: next action first, numbered steps' }
-    [pscustomobject]@{ Key = 'infra-work-ticketing';  Selected = $true; Name = 'infra-work-ticketing    - ServiceDesk Plus / Jira: open tickets, log work notes' }
-    [pscustomobject]@{ Key = 'intune-graph';          Selected = $true; Name = 'intune-graph            - Intune via Graph: devices, compliance, app deployment' }
-    [pscustomobject]@{ Key = 'jira-manager';          Selected = $true; Name = 'jira-manager            - Jira Cloud REST API: JQL, create, transition, worklog' }
-    [pscustomobject]@{ Key = 'knowbe4-admin';         Selected = $true; Name = 'knowbe4-admin           - KnowBe4 KSAT: SCIM sync diagnosis, reporting, writes' }
-    [pscustomobject]@{ Key = 'mermaid-svg-bitbucket'; Selected = $true; Name = 'mermaid-svg-bitbucket   - Pre-render Mermaid to SVG so Bitbucket displays it' }
-    [pscustomobject]@{ Key = 'notify';                Selected = $true; Name = 'notify                  - Ping your phone or inbox: Telegram bot (two-way) or email' }
-    [pscustomobject]@{ Key = 'obsidian-canvas';       Selected = $true; Name = 'obsidian-canvas         - Obsidian .canvas files as JSON: maps, boards, diagrams' }
-    [pscustomobject]@{ Key = 'obsidian-vault-server'; Selected = $true; Name = 'obsidian-vault-server   - Self-hosted Obsidian on Ubuntu: Sync, REST/MCP endpoint' }
-    [pscustomobject]@{ Key = 'power-automate-api';    Selected = $true; Name = 'power-automate-api      - Power Automate flows via API: definitions, auth errors' }
-    [pscustomobject]@{ Key = 'repo-docs';             Selected = $true; Name = 'repo-docs               - Whole doc set: CLAUDE.md, READMEs, architecture, handoff' }
-    [pscustomobject]@{ Key = 'report-builder';        Selected = $true; Name = 'report-builder          - Pro reports: HTML -> DOCX/PDF via Word, no silent CSS loss' }
-    [pscustomobject]@{ Key = 'shipstation';           Selected = $true; Name = 'shipstation             - ShipStation V2/V1/ShipEngine: labels, rates, orders' }
-    [pscustomobject]@{ Key = 'sophos-central';        Selected = $true; Name = 'sophos-central          - Sophos Central: isolate endpoints, triage alerts, XDR' }
-    [pscustomobject]@{ Key = 'terraform-docs-readme'; Selected = $true; Name = 'terraform-docs-readme   - Regenerate a Terraform module README with terraform-docs' }
-    [pscustomobject]@{ Key = 'visio-diagrams';        Selected = $true; Name = 'visio-diagrams          - Native .vsdx diagrams from a spec, or via Visio COM' }
-    [pscustomobject]@{ Key = 'wazuh-onprem';          Selected = $true; Name = 'wazuh-onprem            - Self-hosted Wazuh: server, indexer, dashboards, ossec.conf' }
-    [pscustomobject]@{ Key = 'web-testing-playwright';Selected = $true; Name = 'web-testing-playwright  - Real-browser testing: screenshots, console, form flows' }
-    [pscustomobject]@{ Key = 'work-log-reporter';     Selected = $true; Name = 'work-log-reporter       - Session work log + emailed PDF report over SMTP' }
+    [pscustomobject]@{ Key = 'aws-opensearch';          Selected = $true; Name = 'aws-opensearch          - AWS OpenSearch: health, shards, reindex, ISM, snapshots' }
+    [pscustomobject]@{ Key = 'bitbucket';               Selected = $true; Name = 'bitbucket               - Bitbucket Cloud: git auth, PRs, pipelines, REST API' }
+    [pscustomobject]@{ Key = 'checkpoint-email';        Selected = $true; Name = 'checkpoint-email        - Check Point Email Security: phishing triage, quarantine' }
+    [pscustomobject]@{ Key = 'cisco-meraki';            Selected = $true; Name = 'cisco-meraki            - Meraki Dashboard API: inventory, events, config changes' }
+    [pscustomobject]@{ Key = 'claude-code-defaults';    Selected = $true; Name = 'claude-code-defaults    - Claude Code config: settings.json, permissions, hooks' }
+    [pscustomobject]@{ Key = 'claude-code-tuneup';      Selected = $true; Name = 'claude-code-tuneup      - Audit a slow Claude Code setup: dupes, hooks, context' }
+    [pscustomobject]@{ Key = 'claude-memories-canvas';  Selected = $true; Name = 'claude-memories-canvas  - claude-memories vault: wiki/maps .canvas conventions' }
+    [pscustomobject]@{ Key = 'claude-memories-vault';   Selected = $true; Name = 'claude-memories-vault   - claude-memories vault: layout, frontmatter, write lock' }
+    [pscustomobject]@{ Key = 'cloudflare';              Selected = $true; Name = 'cloudflare              - Cloudflare v4: DNS, WAF, cache, Workers, Zero Trust' }
+    [pscustomobject]@{ Key = 'doc-builder';             Selected = $true; Name = 'doc-builder             - Reports + SOPs -> DOCX/PDF via Word, brand pack sets the style' }
+    [pscustomobject]@{ Key = 'drata';                   Selected = $true; Name = 'drata                   - Drata: controls, monitors, evidence, audit prep' }
+    [pscustomobject]@{ Key = 'exchange-mailbox-cleanup';Selected = $true; Name = 'exchange-mailbox-cleanup - M365 offboarding walkthrough: hold, preserve, delete, export' }
+    [pscustomobject]@{ Key = 'exchange-mailbox-restore';Selected = $true; Name = 'exchange-mailbox-restore - M365 restore walkthrough: triage, then one of five paths' }
+    [pscustomobject]@{ Key = 'i-have-adhd';             Selected = $true; Name = 'i-have-adhd             - ADHD-friendly output: next action first, numbered steps' }
+    [pscustomobject]@{ Key = 'infra-work-ticketing';    Selected = $true; Name = 'infra-work-ticketing    - ServiceDesk Plus / Jira: open tickets, log work notes' }
+    [pscustomobject]@{ Key = 'intune-graph';            Selected = $true; Name = 'intune-graph            - Intune via Graph: devices, compliance, app deployment' }
+    [pscustomobject]@{ Key = 'jira-manager';            Selected = $true; Name = 'jira-manager            - Jira Cloud REST API: JQL, create, transition, worklog' }
+    [pscustomobject]@{ Key = 'knowbe4-admin';           Selected = $true; Name = 'knowbe4-admin           - KnowBe4 KSAT: SCIM sync diagnosis, reporting, writes' }
+    [pscustomobject]@{ Key = 'mermaid-svg-bitbucket';   Selected = $true; Name = 'mermaid-svg-bitbucket   - Pre-render Mermaid to SVG so Bitbucket displays it' }
+    [pscustomobject]@{ Key = 'notify';                  Selected = $true; Name = 'notify                  - Ping your phone or inbox: Telegram bot (two-way) or email' }
+    [pscustomobject]@{ Key = 'obsidian-canvas';         Selected = $true; Name = 'obsidian-canvas         - Obsidian .canvas files as JSON: maps, boards, diagrams' }
+    [pscustomobject]@{ Key = 'obsidian-vault-server';   Selected = $true; Name = 'obsidian-vault-server   - Self-hosted Obsidian on Ubuntu: Sync, REST/MCP endpoint' }
+    [pscustomobject]@{ Key = 'power-automate-api';      Selected = $true; Name = 'power-automate-api      - Power Automate flows via API: definitions, auth errors' }
+    [pscustomobject]@{ Key = 'repo-docs';               Selected = $true; Name = 'repo-docs               - Whole doc set: CLAUDE.md, READMEs, architecture, handoff' }
+    [pscustomobject]@{ Key = 'report-builder';          Selected = $true; Name = 'report-builder          - Deprecated - use doc-builder' }
+    [pscustomobject]@{ Key = 'shipstation';             Selected = $true; Name = 'shipstation             - ShipStation V2/V1/ShipEngine: labels, rates, orders' }
+    [pscustomobject]@{ Key = 'solomon-doc-builder';     Selected = $true; Name = 'solomon-doc-builder     - Brand pack only: Solomon house style for doc-builder' }
+    [pscustomobject]@{ Key = 'solomon-sop-maker';       Selected = $true; Name = 'solomon-sop-maker       - Deprecated - use doc-builder + solomon-doc-builder' }
+    [pscustomobject]@{ Key = 'sophos-central';          Selected = $true; Name = 'sophos-central          - Sophos Central: isolate endpoints, triage alerts, XDR' }
+    [pscustomobject]@{ Key = 'terraform-docs-readme';   Selected = $true; Name = 'terraform-docs-readme   - Regenerate a Terraform module README with terraform-docs' }
+    [pscustomobject]@{ Key = 'visio-diagrams';          Selected = $true; Name = 'visio-diagrams          - Native .vsdx diagrams from a spec, or via Visio COM' }
+    [pscustomobject]@{ Key = 'wazuh-onprem';            Selected = $true; Name = 'wazuh-onprem            - Self-hosted Wazuh: server, indexer, dashboards, ossec.conf' }
+    [pscustomobject]@{ Key = 'web-testing-playwright';  Selected = $true; Name = 'web-testing-playwright  - Real-browser testing: screenshots, console, form flows' }
+    [pscustomobject]@{ Key = 'work-log-reporter';       Selected = $true; Name = 'work-log-reporter       - Session work log + emailed PDF report over SMTP' }
 )
 
 foreach ($sk in $script:SkillCatalog) {

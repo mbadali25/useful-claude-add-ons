@@ -193,6 +193,9 @@ did not apply. The usual cause is rule 1 or rule 2.
 
 ## Checklist before shipping a report change
 
+Items 1–7 are mechanical and `scripts/_test/checklist.sh` runs them against a report the
+builder actually emitted (16 checks, exit 0 = pass). Items 8 and 9 need a person.
+
 1. No `var(--` anywhere in the emitted stylesheet.
 2. No `:nth-child`, `::before`, `::after`, `:hover`.
 3. No element carries two class names (`class="a b"`).

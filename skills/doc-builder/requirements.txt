@@ -1,0 +1,9 @@
+# doc-builder Python dependencies. Install under the USER profile, never system-wide:
+#   python -m pip install --user -r requirements.txt
+# or let scripts/preflight.py do it after one confirmation. Keep in step with
+# PACKAGES in scripts/preflight.py.
+python-docx>=1.1      # OOXML SOP path: build_sop, check_conformance, fix_effect_extent, extract_spec, make_template
+pywin32>=306          # Word COM: --to-docx / --to-pdf (Windows only; Word itself must be installed)
+PyMuPDF>=1.24         # verify_borders (Gate 2) renders the PDF at 300 dpi
+Pillow>=10            # verify_borders pixel buffer; screenshot anonymisation
+numpy>=1.26           # verify_borders edge-coverage measurement

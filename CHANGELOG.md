@@ -6,6 +6,170 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
+- **`exchange-mailbox-cleanup` 1.0.0 and `exchange-mailbox-restore` 1.0.0: two
+  Exchange Online runbooks turned into operator walkthroughs.** Built from
+  `Mailbox-Cleanup-Training-Runbook` (41 steps, Phases A-E) and
+  `Mailbox-Restore-And-Hold-Removal-Runbook` (triage plus five mutually
+  exclusive paths) in the `infrastructure-scripts` repo. The audience is a
+  non-technical operator, so the skills ask one question at a time and validate
+  before advancing.
+
+  **The skills print commands; the operator runs them.** `Connect-ExchangeOnline`
+  and `Connect-IPPSSession` are interactive and a tool call cannot answer a
+  modern-auth prompt, so the skill prints an exact command, the operator pastes
+  it into their own window, and the skill reads back the CSV or log it wrote.
+  The credential never reaches the agent.
+
+  Targeted at **Windows PowerShell 5.1**, gated by `#Requires -PSEdition Desktop`
+  and written in the subset that also runs on 7.6+. Two experts argued opposite
+  sides and both concluded 5.1; the deciding fact came from the one arguing
+  against it -- `ExchangeOnlineManagement` 3.10.1 raised its PowerShell 7 floor
+  to 7.6 ("Windows PowerShell 5.1 is not affected"), and this repo's own CI runs
+  7.4, already below it. 5.1 imposes no such floor and is in-box on both machines
+  the operator touches, so there is one icon to recognise.
+
+  Six real defects in the source runbooks are worked around and documented. The
+  worst is silent rather than destructive: the preservation baseline ran at
+  Step 4 but the eDiscovery grant that makes it work was Step 14, so the first
+  compliance search returned zero and read as "nothing to preserve" -- on a
+  mailbox about to be deleted. The grant now runs first. Separately, all three
+  driver scripts call `Disconnect-ExchangeOnline` in a `finally` block, tearing
+  down the operator's session mid-runbook, so a reconnect is printed after every
+  script step.
+
+  Every irreversible step needs a typed phrase naming the count -- `DELETE 3`,
+  `RECOVER 1`, `DESTROY 1`. A bare `yes` never proceeds. Licence removal is
+  refused outright rather than gated, because removing it disconnects the mailbox
+  permanently after 30 days regardless of hold state.
+
+  Logs are read through `read_log.py`, which decodes defensively: UTF-16 BOM
+  first, then strict `utf-8-sig`, then BOM-less UTF-16 by NUL position, and
+  `cp1252` last because it never raises. The scripts write `.csv` with
+  `-Encoding UTF8` but `.log` with bare `Add-Content`, which lands in cp1252 --
+  and a reader that assumes UTF-8 turns every accented name into mojibake with
+  no error.
+
+- **`doc-builder` 1.0.0 and `solomon-doc-builder` 1.0.0: `report-builder` and
+  `solomon-sop-maker` merged into one implementation with a swappable brand
+  pack.** Both original pipelines survive because neither can do the other's
+  job: findings and tabular content go HTML-to-Word, step-by-step procedures
+  with screenshots go python-docx OOXML, which is the only path that writes
+  `a:ln` and `wp:effectExtent` -- without them Word strokes a picture border
+  outside `wp:extent` and clips it. A routing rule at the top of `SKILL.md`
+  picks before writing starts.
+
+  **A brand pack that is installed is applied.** `resolve_brand.py` scans
+  sibling skill directories at runtime, so installing `solomon-doc-builder`
+  makes Solomon the default for every document rather than something to
+  remember to ask for. That also takes it out of the trigger space entirely --
+  it is a data directory, not a rival skill. `--brand` always overrides, two
+  packs with no `--brand` refuses and names them, none falls back to neutral.
+
+  `preflight.py` detects, installs and verifies dependencies. Installs go
+  `pip install --user` or into a skill-owned venv, never system-wide, because a
+  managed workstation rarely has local administrator rights. Probes run in a
+  fresh interpreter -- CPython caches a failed import for the life of a process,
+  so probe-install-reprobe in one process reports "still missing" even when the
+  wheel landed. Word's presence is read from the registry without starting Word,
+  and a locked target is detected and named before Word is ever launched.
+
+- **Four crew agents: `powershell-5.1-expert`, `powershell-7-expert`,
+  `exchange-online-specialist`, `skill-author`.** The two PowerShell files are
+  written to argue honestly rather than loyally -- each names the strongest
+  argument against its own position and states that conceding is a successful
+  outcome. Two advocates who both spin produce a debate with no answer.
+
+### Changed
+
+- **`report-builder` 2.0.0 and `solomon-sop-maker` 2.0.0 are now redirect
+  stubs.** Both descriptions open with "Do NOT use this skill - use
+  `doc-builder` instead", so nothing referencing the old names breaks and
+  neither wins a trigger. `solomon-sop-maker` was never registered in
+  `marketplace.json` at all; it is now, as a deprecated stub.
+
+  `solomon-sop-maker` arrived carrying a **nested `.git/`** -- a real repository
+  with two commits and no remote, so its history existed in exactly one place
+  and would have vendored as an empty gitlink. It was bundled to
+  `docs/archive/solomon-sop-maker-history.bundle`, the bundle was proved to
+  restore both commits with authorship intact, and only then was the nested
+  repository removed.
+
+### Fixed
+
+- **`jira-manager` 1.0.1 and `power-automate-api` 1.0.1: fifteen defects, across
+  three review rounds.** Implemented by Codex (gpt-6-astra), reviewed three
+  times by Claude Sonnet 5. The dispatch was RECORDED before the run, so the
+  independence guard read `author family: gpt (recorded at dispatch)` rather
+  than inferring it from config -- the reviewer was provably a different family
+  from the author, which is the first time in this release that claim rested on
+  a fact instead of a guess.
+
+  The eight ticketed defects came from the Codex review of #81 and were
+  deliberately left in `TODO.md` at the time. In `pa.py`: a custom
+  `--client-id` was not cached, so refresh silently fell back to the default;
+  snapshot filenames used second resolution, so two patches of one flow inside
+  a second overwrote each other's ROLLBACK state; DNS, connection, timeout and
+  decode errors escaped as tracebacks; and the printed rollback command omitted
+  `--org` and `--flow`. In `jira-api.sh`: the no-auth cloud-id helper was
+  unusable because sourcing demanded credentials first; sourcing permanently
+  enabled `nounset` and `pipefail` in the CALLER's shell; mutation helpers
+  returned success and printed completion text on 4xx/5xx; and account-search
+  values were not URL-encoded.
+
+  **Round 2 found two BLOCKs.** `curl --fail` made "return non-zero on 4xx/5xx"
+  literally true by DISCARDING the response body -- every error across all
+  twenty helpers became `curl: (22) ... error: 400`, and Jira's
+  `errorMessages` payload is the only thing separating "field not on screen"
+  from "invalid transition id" from "token missing read:jira-work", which
+  `SKILL.md`'s own recovery steps depend on reading. It regressed the READ
+  helpers too, which nothing asked to change. Now `--fail-with-body`, which
+  keeps both the status and the body; `SKILL.md` states the resulting
+  `curl >= 7.76` floor and names the distros that ship older.
+
+  The second BLOCK was neither skill's version being bumped, so
+  `claude plugin update` would have reported "already at the latest version"
+  and left every installed copy on the broken scripts forever. Caused by this
+  session's own brief to Codex, which said "do not bump any version".
+
+  **Round 3 found a regression introduced by round 2's own fix.** `_arg`
+  replaced `shlex.quote` with double-quoting applied only when it saw
+  whitespace -- and a Windows snapshot path has neither whitespace nor a quote,
+  so it came back BARE and bash ate every backslash: `C:\Users\...\f.json`
+  arrived as `C:Usersd3ade...json`. That is the failure ticket 4 was filed for,
+  re-introduced by ticket 4's fix. It was also wrong in all three shells it
+  targeted. Reverted to `shlex.quote`, with a separate labelled
+  cmd.exe/PowerShell line that is SUPPRESSED rather than mis-quoted when a
+  value contains a character plain double quotes cannot carry.
+
+  `SNAPSHOT_DIR` was wrong twice before it was right. CWD-relative wrote
+  verbatim live-tenant dumps to a path no ignore rule covered -- how a real
+  snapshot reached this public repo earlier in this release. Anchoring it to
+  `__file__` fixed that and introduced worse: writing inside the installed
+  plugin, where `claude plugin update` can delete the only copy of a rollback.
+  It is now `~/.pa-api-cache/snapshots`, the shape `CACHE_DIR` already had.
+
+  And round 3 caught the landmine this repo documents in another costume:
+  `snapshot()` caught the write error and died cleanly, but
+  `NamedTemporaryFile(delete=False)` had ALREADY created the file, so a failed
+  write left a ZERO-BYTE snapshot carrying a valid-looking name -- which, since
+  these sort by timestamp, became the NEWEST rollback for that flow. The
+  partial file is now removed before `die()`.
+
+  One NIT filed as cosmetic turned out to be a destructive path traversal.
+  curl applies RFC 3986 dot-segment removal, so `PROJ-1/../PROJ-2` RETARGETS
+  the request -- and `jira_delete_issue` was one of seven unencoded
+  interpolations. All ten path segments now go through a shared `_jira_uri`
+  helper. Verified: `PROJ-1%2F..%2FPROJ-2`, with `PROJ-123` untouched.
+
+  Everything above was verified by RUNNING it rather than reading it: the
+  quoted path round-tripping through `bash -c` byte-identically, `pipefail`
+  giving exit 28 where it gave exit 0, `--fail-with-body` returning the JSON
+  body alongside exit 22, the zero-byte leak leaving an empty directory, and
+  jq-absent producing rc=127 naming jq instead of rc=0 and a bogus request.
+
+
+### Added
+
 - **`report-builder` skill.** Human-facing reports authored as HTML and
   converted to `.docx` / `.pdf` by Word. Built from an existing hard-won spec
   rather than invented: **the browser is not the target, Word's HTML parser
