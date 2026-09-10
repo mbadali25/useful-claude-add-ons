@@ -1,0 +1,40 @@
+{
+  "_comment": "Solomon brand pack for doc-builder. Values measured 2026-08-25 from the onboarding SOP masters (see doc-builder/references/template-spec.md). Keys not present here inherit from doc-builder/assets/brands/neutral/brand.json. Do not tidy the numbers.",
+  "name": "solomon",
+  "organisation": "HSB Solomon Associates LLC",
+  "fonts": {
+    "body": "Franklin Gothic Book",
+    "heading": "Georgia",
+    "report_stack": "'Franklin Gothic Book','Segoe UI',Calibri,Arial,sans-serif"
+  },
+  "report": {
+    "navy": "#0E2841",
+    "navy_dark": "#081A2C",
+    "accent": "#EF483D",
+    "org_ink": "#B9C4D6"
+  },
+  "sop": {
+    "accent": "EF483D",
+    "image_border": "FF0000",
+    "heading": "0E2841",
+    "title": "404040",
+    "caption": "7F7F7F",
+    "body": "000000",
+    "link": "0563C1",
+    "template": "sop_template.docx",
+    "masters_dir": "C:\\repos\\OnboardingSOPs\\sops_new",
+    "assets_dir": "C:\\repos\\OnboardingSOPs\\assets",
+    "specs_dir": "specs",
+    "footer": {
+      "left": "Proprietary and Confidential / \u00a9 2026 HSB Solomon Associates LLC",
+      "centre": "SolomonInsight.com",
+      "required_text": ["Proprietary and Confidential", "HSB Solomon Associates LLC"],
+      "optional_text": ["SolomonInsight.com"]
+    },
+    "help_contact": "ithelpdesk@solomoninsight.com"
+  },
+  "screenshots": {
+    "stand_in_email": "firstname.lastname@solomoninsight.com",
+    "stand_in_user": "user"
+  }
+}

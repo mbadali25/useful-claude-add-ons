@@ -4,6 +4,96 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added
+
+- **`exchange-mailbox-cleanup` 1.0.0 and `exchange-mailbox-restore` 1.0.0: two
+  Exchange Online runbooks turned into operator walkthroughs.** Built from
+  `Mailbox-Cleanup-Training-Runbook` (41 steps, Phases A-E) and
+  `Mailbox-Restore-And-Hold-Removal-Runbook` (triage plus five mutually
+  exclusive paths) in the `infrastructure-scripts` repo. The audience is a
+  non-technical operator, so the skills ask one question at a time and validate
+  before advancing.
+
+  **The skills print commands; the operator runs them.** `Connect-ExchangeOnline`
+  and `Connect-IPPSSession` are interactive and a tool call cannot answer a
+  modern-auth prompt, so the skill prints an exact command, the operator pastes
+  it into their own window, and the skill reads back the CSV or log it wrote.
+  The credential never reaches the agent.
+
+  Targeted at **Windows PowerShell 5.1**, gated by `#Requires -PSEdition Desktop`
+  and written in the subset that also runs on 7.6+. Two experts argued opposite
+  sides and both concluded 5.1; the deciding fact came from the one arguing
+  against it -- `ExchangeOnlineManagement` 3.10.1 raised its PowerShell 7 floor
+  to 7.6 ("Windows PowerShell 5.1 is not affected"), and this repo's own CI runs
+  7.4, already below it. 5.1 imposes no such floor and is in-box on both machines
+  the operator touches, so there is one icon to recognise.
+
+  Six real defects in the source runbooks are worked around and documented. The
+  worst is silent rather than destructive: the preservation baseline ran at
+  Step 4 but the eDiscovery grant that makes it work was Step 14, so the first
+  compliance search returned zero and read as "nothing to preserve" -- on a
+  mailbox about to be deleted. The grant now runs first. Separately, all three
+  driver scripts call `Disconnect-ExchangeOnline` in a `finally` block, tearing
+  down the operator's session mid-runbook, so a reconnect is printed after every
+  script step.
+
+  Every irreversible step needs a typed phrase naming the count -- `DELETE 3`,
+  `RECOVER 1`, `DESTROY 1`. A bare `yes` never proceeds. Licence removal is
+  refused outright rather than gated, because removing it disconnects the mailbox
+  permanently after 30 days regardless of hold state.
+
+  Logs are read through `read_log.py`, which decodes defensively: UTF-16 BOM
+  first, then strict `utf-8-sig`, then BOM-less UTF-16 by NUL position, and
+  `cp1252` last because it never raises. The scripts write `.csv` with
+  `-Encoding UTF8` but `.log` with bare `Add-Content`, which lands in cp1252 --
+  and a reader that assumes UTF-8 turns every accented name into mojibake with
+  no error.
+
+- **`doc-builder` 1.0.0 and `solomon-doc-builder` 1.0.0: `report-builder` and
+  `solomon-sop-maker` merged into one implementation with a swappable brand
+  pack.** Both original pipelines survive because neither can do the other's
+  job: findings and tabular content go HTML-to-Word, step-by-step procedures
+  with screenshots go python-docx OOXML, which is the only path that writes
+  `a:ln` and `wp:effectExtent` -- without them Word strokes a picture border
+  outside `wp:extent` and clips it. A routing rule at the top of `SKILL.md`
+  picks before writing starts.
+
+  **A brand pack that is installed is applied.** `resolve_brand.py` scans
+  sibling skill directories at runtime, so installing `solomon-doc-builder`
+  makes Solomon the default for every document rather than something to
+  remember to ask for. That also takes it out of the trigger space entirely --
+  it is a data directory, not a rival skill. `--brand` always overrides, two
+  packs with no `--brand` refuses and names them, none falls back to neutral.
+
+  `preflight.py` detects, installs and verifies dependencies. Installs go
+  `pip install --user` or into a skill-owned venv, never system-wide, because a
+  managed workstation rarely has local administrator rights. Probes run in a
+  fresh interpreter -- CPython caches a failed import for the life of a process,
+  so probe-install-reprobe in one process reports "still missing" even when the
+  wheel landed. Word's presence is read from the registry without starting Word,
+  and a locked target is detected and named before Word is ever launched.
+
+- **Four crew agents: `powershell-5.1-expert`, `powershell-7-expert`,
+  `exchange-online-specialist`, `skill-author`.** The two PowerShell files are
+  written to argue honestly rather than loyally -- each names the strongest
+  argument against its own position and states that conceding is a successful
+  outcome. Two advocates who both spin produce a debate with no answer.
+
+### Changed
+
+- **`report-builder` 2.0.0 and `solomon-sop-maker` 2.0.0 are now redirect
+  stubs.** Both descriptions open with "Do NOT use this skill - use
+  `doc-builder` instead", so nothing referencing the old names breaks and
+  neither wins a trigger. `solomon-sop-maker` was never registered in
+  `marketplace.json` at all; it is now, as a deprecated stub.
+
+  `solomon-sop-maker` arrived carrying a **nested `.git/`** -- a real repository
+  with two commits and no remote, so its history existed in exactly one place
+  and would have vendored as an empty gitlink. It was bundled to
+  `docs/archive/solomon-sop-maker-history.bundle`, the bundle was proved to
+  restore both commits with authorship intact, and only then was the nested
+  repository removed.
+
 ### Fixed
 
 - **`jira-manager` 1.0.1 and `power-automate-api` 1.0.1: fifteen defects, across

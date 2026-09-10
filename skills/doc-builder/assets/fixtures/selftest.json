@@ -1,0 +1,25 @@
+{
+  "_comment": "Throwaway spec exercising every block type on one page. No \"output\": run it with --out <scratch>/selftest.docx so nothing lands in a masters directory. Used to verify the SOP toolchain end to end after changes, under any brand.",
+  "title": "Toolchain Self-Test",
+  "subtitle": "Every block type, one page",
+  "body": [
+    { "type": "para", "text": "This document exercises every block type the generator supports. It has **bold spans**, a [link](https://example.com), headings, steps, bullets, a screenshot with a caption, and a tip." },
+    { "type": "heading", "text": "Numbered steps" },
+    { "type": "step", "text": "First step, with a **bold UI label**." },
+    { "type": "step", "text": "Second step. Numbers auto-increment." },
+    { "type": "step", "text": "Explicit number override.", "number": 7 },
+    { "type": "heading", "text": "Bullets and a screenshot" },
+    { "type": "bullet", "text": "A bullet with a **bold span**." },
+    { "type": "bullet", "text": "Numbering resets at each heading - the next step should be 1." },
+    { "type": "step", "text": "Confirms the reset." },
+    {
+      "type": "image",
+      "path": "selftest.png",
+      "width_in": 5.0,
+      "caption": "A caption in 9.5pt grey italic, attached to the image."
+    },
+    { "type": "tip", "text": "Tip: this is a bold call-out line." },
+    { "type": "heading", "text": "Need help?" },
+    { "type": "para", "text": "Contact the service desk." }
+  ]
+}
