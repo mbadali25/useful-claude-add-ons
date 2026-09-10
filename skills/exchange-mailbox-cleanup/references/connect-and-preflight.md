@@ -256,9 +256,8 @@ powershell.exe -NoProfile -File "{SkillDir}\scripts\Read-ScriptLog.ps1" -Path C:
 powershell.exe -NoProfile -File "{SkillDir}\scripts\Read-ScriptLog.ps1" -Path C:\scripts\logs\Test-MailboxPreservation-20260910.log -Grep unproven -AsJson
 ```
 
-Windows PowerShell 5.1 only - nothing else is guaranteed on a corporate workstation. `read_log.py`
-and `parse_user_input.py` remain in `scripts/` as the reference implementations but no step depends
-on them.
+Windows PowerShell 5.1 only - nothing else is guaranteed on a corporate workstation. This skill
+needs no Python at all.
 
 Every ad hoc export the skill prints is the explicit form:
 `... | Export-Csv -Path 'C:\scripts\reports\{Name}.csv' -NoTypeInformation -Encoding UTF8`.

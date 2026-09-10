@@ -4,8 +4,8 @@
     Normalise operator input for the Exchange mailbox skills - one address or a CSV.
 
 .DESCRIPTION
-    Windows PowerShell 5.1 port of parse_user_input.py, so the skill needs nothing but
-    the in-box shell. Never touches the tenant.
+    Normalises what the operator supplied into a clean address list. Windows PowerShell
+    5.1 only, so the skill needs nothing but the in-box shell. Never touches the tenant.
 
     Accepts a single email address / UPN, or the path to a CSV or text file, and writes
     the one-column CSV (header UserPrincipalName) that Invoke-M365OffboardingHold.ps1
