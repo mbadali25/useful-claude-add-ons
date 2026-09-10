@@ -1,9 +1,11 @@
 # Mailbox Restore and Hold Removal - setup, triage, five paths
 
 Work **setup**, then **Step 0**, then **exactly one path**, one step per turn. Every command is
-printed for the operator's Windows PowerShell 5.1 window. `$Admin`, `$Repo`, `$User`, `$LogDir`
-are set at S3. Shared references live in `../exchange-mailbox-cleanup/references/`; the step
-numbers below refer to this file.
+printed for the operator's blue Windows PowerShell window **already filled in** - no session
+variables, no directory change. Braces (`{Admin}`, `{User}`, `{ExchangeGuid}`, `{Repo}`,
+`{SkillDir}`) are values the skill substitutes before printing; the operator never sees one. The
+shared references (`connect-and-preflight.md`, `hold-and-mailbox-states.md`, `operator-safety.md`)
+are this skill's own copies under `references/`; the step numbers below refer to this file.
 
 Legend: **Proves** - what the operator learns. **Good** - what the artifact must show before
 advancing. **Read** - the file the skill reads back.
@@ -19,21 +21,27 @@ one-line want. Validate the UPN (one `@`, no spaces, dotted domain). Do not ask 
 roles yet. Normalise with the shared helper if it arrived as a file:
 
 ```powershell
-python "$CleanupDir\scripts\parse_user_input.py" "<address-or-path>" --json
+powershell.exe -NoProfile -File "{SkillDir}\scripts\Resolve-OperatorInput.ps1" -Value "{AddressOrPath}" -AsJson
 ```
 
-### S2 - The ticket
+### S2 - The ticket (advisory - never a blocker)
 
 *"Do you have a ServiceDesk Plus ticket for this, or should I open one?"* Via `infra-work-ticketing`.
 Title `M365 mailbox restore - {UPN} - {want}`. Never create without confirmation.
 `ticketctl.py redact-check --body-file note.md --emit > note.clean.md` before every `sdp_*` write -
 run by the skill in its Bash tool, never printed for the operator (`>` in a 5.1 window is UTF-16LE).
 
-### S3 - Preflight and session variables
+If the `sdp_*` tools are not loaded, or S3's preflight reports `TicketingUnavailable`, say once -
+*"Ticketing is not reachable from here, so I will keep the record in the closing report instead."* -
+and skip every later ticket note. The restore never waits on a ticket. Path 5's written
+authorisation is still required; it goes in the closing report if there is no ticket.
 
-Skill runs `exo_preflight.ps1 -Check` (read-only). If anything is missing, confirm once and run
-`-Install` - it installs under the user profile (`-Scope CurrentUser`), never machine-wide, and
-verifies what landed. Then the edition check comes first:
+### S3 - Preflight, edition check, admin UPN
+
+Skill runs `exo_preflight.ps1 -Check` (read-only). If anything is missing, say what and offer to fix
+it in the same message; on one yes, run `-Install` - it installs under the user profile
+(`-Scope CurrentUser`), never machine-wide, creates the two directories, and verifies what landed.
+Then the edition check comes first:
 
 ```powershell
 $PSVersionTable.PSEdition
@@ -41,43 +49,39 @@ $PSVersionTable.PSEdition
 
 **Good**: `Desktop`. If `Core`: *"Close this window. Open the Start menu, type Windows PowerShell, and
 open the blue icon whose title bar says Windows PowerShell - not the one that says PowerShell 7."*
-Then:
+Then ask for the one value the skill cannot know - *"Which account do you sign in to Microsoft 365
+admin with? Paste the full address."* - validate it, and use it as `{Admin}` everywhere. Never print
+a sample address for them to replace.
 
-```powershell
-# Blue "Windows PowerShell" window, as yourself, not elevated
-$Admin  = "admin@contoso.com"
-$Repo   = "C:\repos\solomon\infrastructure-scripts\Powershell\Exchange"
-$User   = "first.last@contoso.com"
-$LogDir = "C:\scripts\logs"
-Set-Location $Repo
-```
-
-Read `*.log` files back through `python "$CleanupDir\scripts\read_log.py" <file>` - they are cp1252
-under 5.1; the `*.csv` files are UTF-8 with a BOM and read directly.
+Read `*.log` files back through
+`powershell.exe -NoProfile -File "{SkillDir}\scripts\Read-ScriptLog.ps1" -Path {File}` - they are
+cp1252 under 5.1; the `*.csv` files are UTF-8 with a BOM and read directly.
 
 ### S4 - Import and connect (Graph first, IPPS last)
 
 ```powershell
-Import-Module Microsoft.Graph.Authentication
-Import-Module Microsoft.Graph.Users
-Import-Module Microsoft.Graph.Identity.DirectoryManagement
+Import-Module Microsoft.Graph.Authentication -RequiredVersion 2.39.0
+Import-Module Microsoft.Graph.Users -RequiredVersion 2.39.0
+Import-Module Microsoft.Graph.Users.Actions -RequiredVersion 2.39.0
+Import-Module Microsoft.Graph.Identity.DirectoryManagement -RequiredVersion 2.39.0
 Import-Module ExchangeOnlineManagement
 
-Connect-ExchangeOnline -UserPrincipalName $Admin -ShowBanner:$false
+Connect-ExchangeOnline -UserPrincipalName '{Admin}' -ShowBanner:$false
 Connect-MgGraph -Scopes 'Organization.Read.All','User.ReadWrite.All','Directory.AccessAsUser.All','User.RevokeSessions.All' -NoWelcome
-Connect-IPPSSession -UserPrincipalName $Admin
+Connect-IPPSSession -UserPrincipalName '{Admin}'
 Get-Mailbox -ResultSize 1 | Select-Object DisplayName
 Get-MgContext | Select-Object Account
 ```
 
 The scope list is the union of both runbooks (cleanup defect 4). Path 4 needs
-`Directory.AccessAsUser.All`; the others need `User.ReadWrite.All`. **Good**: no red, one mailbox row,
-`Account = $Admin`.
+`Directory.AccessAsUser.All`; the others need `User.ReadWrite.All`. `-RequiredVersion 2.39.0` is the
+version the upstream driver scripts import; keeping the operator's imports on it means
+no driver can demand a restart after the logins. **Good**: no red, one mailbox row, `Account = {Admin}`.
 
 ### S5 - Roles, in the same window
 
 ```powershell
-& "$CleanupDir\scripts\exo_preflight.ps1" -Roles -AdminUpn $Admin
+& "{SkillDir}\scripts\exo_preflight.ps1" -Roles -AdminUpn '{Admin}'
 ```
 
 **Good**: `PASS` Exchange Administrator. eDiscovery Manager is only needed if Step 0 will run a
@@ -97,20 +101,34 @@ compliance search (it does not by default) - a `FAIL` there does not block resto
 ## Step 0 - Triage: what state is the mailbox actually in?
 
 ```powershell
-.\Test-MailboxPreservation.ps1 -Identity $User -AdminUpn $Admin -LogPath $LogDir |
+& "{Repo}\Test-MailboxPreservation.ps1" -Identity '{User}' -AdminUpn '{Admin}' -LogPath 'C:\scripts\logs' |
     Format-List Identity, MailboxState, LitigationHoldEnabled, HoldMechanism, InPlaceHolds, ExchangeGuid, WhenSoftDeleted, ItemCount, MailboxSizeGB, Verdict, Detail
 ```
 
 **Read**: `C:\scripts\logs\MailboxPreservation-{timestamp}.csv`. Then **reconnect** - the script
-disconnected the operator:
+disconnected the operator's Exchange sessions, and the other upstream drivers also drop Graph, so
+restore all three every time:
 
 ```powershell
-Connect-ExchangeOnline -UserPrincipalName $Admin -ShowBanner:$false
-Connect-IPPSSession -UserPrincipalName $Admin
+Connect-ExchangeOnline -UserPrincipalName '{Admin}' -ShowBanner:$false
+Connect-IPPSSession -UserPrincipalName '{Admin}'
+Connect-MgGraph -Scopes 'Organization.Read.All','User.ReadWrite.All','Directory.AccessAsUser.All','User.RevokeSessions.All' -NoWelcome
 ```
 
 Record `ExchangeGuid` immediately. It is the identity for every later command on an inactive
-mailbox.
+mailbox. Two more facts decide the path and come from one extra read:
+
+```powershell
+Get-Mailbox -InactiveMailboxOnly -Identity '{User}' | Format-List ExchangeGuid, ExternalDirectoryObjectId, AutoExpandingArchiveEnabled, ArchiveStatus, LegacyExchangeDN
+```
+
+- `ExternalDirectoryObjectId` **has a value** -> the account was deleted less than 30 days ago and
+  Microsoft Learn says "you can't use the New-Mailbox -InactiveMailbox command to recover it. You
+  need to recover it by restoring the corresponding user account" - that is Path 4, even when the
+  requester says "recover".
+- `AutoExpandingArchiveEnabled = True` -> Learn: "You can't recover or restore an inactive mailbox
+  that's configured with an auto-expanding archive." Neither Path 2 nor Path 3 will work; the
+  content is reachable only through a Purview content search export. Say so and stop.
 
 | `MailboxState` | Meaning | Go to |
 |---|---|---|
@@ -127,7 +145,7 @@ Then map the requester's want:
 | "Manager needs to read the ex-employee's mail" | 2 | Restore into a shared mailbox - **most common** |
 | "They're coming back and want their mailbox" | 3 | Recover the inactive mailbox - **destroys the preserved copy** |
 | "We deleted them by mistake, days ago" | 4 | Undelete the account - 30-day window |
-| "Retention expired, destroy it - authorised in writing" | 5 | Remove the last hold - **permanent** |
+| "Retention expired, destroy it - authorised in writing" | 5 | Remove the last hold from an **inactive** mailbox - **permanent** |
 
 State the path and the reason in two sentences. If state and want conflict (e.g. `Inactive` but
 "deleted by mistake, bring them back"), explain that Path 3 is what brings the *person* back and
@@ -143,7 +161,7 @@ next pass, so say so.
 ### 1.1 - Record what is there now
 
 ```powershell
-Get-Mailbox -Identity $User |
+Get-Mailbox -Identity '{User}' |
     Format-List DisplayName, LitigationHoldEnabled, LitigationHoldDate, LitigationHoldDuration, LitigationHoldOwner,
                 RetentionComment, RetentionPolicy, InPlaceHolds, ComplianceTagHoldApplied, DelayHoldApplied
 ```
@@ -157,14 +175,14 @@ holds are present.** Removing Litigation Hold releases the mailbox only if it is
 State: *"This removes Litigation Hold from {User}. `InPlaceHolds` shows {decoded}. Continue?"* On yes:
 
 ```powershell
-Set-Mailbox -Identity $User -LitigationHoldEnabled $false
-Set-Mailbox -Identity $User -RetentionComment $null     # or it keeps appearing in the -Termination confirmation report
+Set-Mailbox -Identity '{User}' -LitigationHoldEnabled $false
+Set-Mailbox -Identity '{User}' -RetentionComment $null     # or it keeps appearing in the -Termination confirmation report
 ```
 
 ### 1.3 - Verify
 
 ```powershell
-Get-Mailbox -Identity $User | Format-List LitigationHoldEnabled, RetentionComment, InPlaceHolds, DelayHoldApplied
+Get-Mailbox -Identity '{User}' | Format-List LitigationHoldEnabled, RetentionComment, InPlaceHolds, DelayHoldApplied
 ```
 
 **Good**: `LitigationHoldEnabled = False`, `RetentionComment` empty. `DelayHoldApplied = True` is
@@ -173,7 +191,7 @@ normal for ~30 days and is not a failure.
 ### 1.4 - The temporary licence (a read, not a change)
 
 ```powershell
-Get-MgUserLicenseDetail -UserId $User | Select-Object SkuPartNumber
+Get-MgUserLicenseDetail -UserId '{User}' | Select-Object SkuPartNumber
 ```
 
 If the cleanup assigned a temporary `SPE_E3` seat purely to enable the hold and the person is
@@ -199,15 +217,14 @@ against once the account is gone - which is why the mail is copied somewhere per
 Get-Mailbox -InactiveMailboxOnly -ResultSize Unlimited |
     Format-Table DisplayName, PrimarySmtpAddress, WhenSoftDeleted, ExchangeGuid
 
-Get-Mailbox -InactiveMailboxOnly -Identity $User |
+Get-Mailbox -InactiveMailboxOnly -Identity '{User}' |
     Format-List DisplayName, PrimarySmtpAddress, ExchangeGuid, DistinguishedName, WhenSoftDeleted, LitigationHoldEnabled, ArchiveStatus
 
-$Guid = "00000000-0000-0000-0000-000000000000"     # <- paste the ExchangeGuid
 ```
 
 **Use the GUID, not the address, from here on.** An inactive mailbox can share an SMTP address with
 a live one and the address resolves to the wrong mailbox without error. **Good**: exactly one row
-for `$User`; `LitigationHoldEnabled = True`. Note `ArchiveStatus` - `Active` means a second restore
+for `'{User}'`; `LitigationHoldEnabled = True`. Note `ArchiveStatus` - `Active` means a second restore
 for the archive at 2.3.
 
 ### 2.2 - Create the target shared mailbox
@@ -215,10 +232,12 @@ for the archive at 2.3.
 Ask *who* needs access and *what to call it*. A shared mailbox under 50 GB needs no licence.
 
 ```powershell
-New-Mailbox -Shared -Name "Archive-first.last" -DisplayName "Archive - First Last" -PrimarySmtpAddress "archive-first.last@contoso.com"
+New-Mailbox -Shared -Name '{ArchiveName}' -DisplayName '{ArchiveDisplayName}' -PrimarySmtpAddress '{ArchiveAddress}'
 ```
 
-**Good**: one row returned, `RecipientTypeDetails = SharedMailbox`.
+**Good**: one row returned, `RecipientTypeDetails = SharedMailbox`, `ArchiveStatus = None`. **A new
+shared mailbox has no archive.** If Step 0 showed the source `ArchiveStatus = Active`, decide now
+where its archive goes - see 2.3.
 
 ### 2.3 - Start the restore
 
@@ -226,8 +245,8 @@ State: *"This copies {ItemCount} items into `archive-first.last`. The inactive m
 Continue?"* On yes:
 
 ```powershell
-New-MailboxRestoreRequest -SourceMailbox $Guid -TargetMailbox "archive-first.last@contoso.com" `
-    -TargetRootFolder "First Last - Archive" -AllowLegacyDNMismatch
+New-MailboxRestoreRequest -SourceMailbox '{ExchangeGuid}' -TargetMailbox '{ArchiveAddress}' `
+    -TargetRootFolder '{ArchiveFolder}' -AllowLegacyDNMismatch
 ```
 
 | Parameter | Why |
@@ -235,12 +254,27 @@ New-MailboxRestoreRequest -SourceMailbox $Guid -TargetMailbox "archive-first.las
 | `-AllowLegacyDNMismatch` | **Required** whenever source and target are different people - every handover. Without it the request fails outright |
 | `-TargetRootFolder` | Puts everything in one subfolder instead of merging into the target's Inbox. **Always** |
 
-If `ArchiveStatus` was `Active`, the online archive is a separate request:
+`-AllowLegacyDNMismatch` is the cmdlet's documented way past the `LegacyExchangeDN` check. Microsoft
+Learn's *Restore an inactive mailbox* page takes the other route - "add the LegacyExchangeDN of the
+inactive mailbox to the target mailbox, as an X500 proxy address" - which also works and leaves a
+trace on the target; either is acceptable, use one.
+
+If the source `ArchiveStatus` was `Active`, the online archive is a separate request, and **the
+target created at 2.2 has no archive**, so `-TargetIsArchive` would fail. Learn shows the form that
+needs none: "you can run this command to restore the archive from the inactive mailbox into the
+primary mailbox of the target mailbox" -
 
 ```powershell
-New-MailboxRestoreRequest -SourceMailbox $Guid -SourceIsArchive -TargetMailbox "archive-first.last@contoso.com" -TargetIsArchive `
-    -TargetRootFolder "First Last - Archive" -AllowLegacyDNMismatch
+New-MailboxRestoreRequest -SourceMailbox '{ExchangeGuid}' -SourceIsArchive -TargetMailbox '{ArchiveAddress}' `
+    -TargetRootFolder '{ArchiveFolder} (Online Archive)' -AllowLegacyDNMismatch
 ```
+
+Use that by default. Only if primary + archive would exceed the shared mailbox's 50 GB does the target
+need its own archive - `Enable-Mailbox -Identity '{ArchiveAddress}' -Archive`, which on a shared
+mailbox requires an Exchange Online Plan 2 or Exchange Online Archiving licence assigned to it first -
+and then the `-TargetIsArchive` form. Check the sizes before choosing:
+`Get-MailboxStatistics -Identity '{ExchangeGuid}' -IncludeSoftDeletedRecipients | Select TotalItemSize` and
+the same with `-Archive`.
 
 ### 2.4 - Monitor to completion
 
@@ -256,7 +290,7 @@ and quote it verbatim.
 ### 2.5 - Grant access to the SHARED mailbox
 
 ```powershell
-Add-MailboxPermission -Identity "archive-first.last@contoso.com" -User "manager@contoso.com" -AccessRights FullAccess -AutoMapping:$false
+Add-MailboxPermission -Identity '{ArchiveAddress}' -User '{ManagerUpn}' -AccessRights FullAccess -AutoMapping:$false
 ```
 
 `-AutoMapping:$false` is deliberate - automapping a large archive slows Outlook noticeably. The
@@ -265,11 +299,11 @@ manager adds it as a secondary mailbox by hand. Print the two-line Outlook instr
 ### 2.6 - Confirm the source is still preserved, then tidy up
 
 ```powershell
-Get-Mailbox -InactiveMailboxOnly -Identity $Guid | Format-List DisplayName, LitigationHoldEnabled, LitigationHoldDuration
+Get-Mailbox -InactiveMailboxOnly -Identity '{ExchangeGuid}' | Format-List DisplayName, LitigationHoldEnabled, LitigationHoldDuration
 
 # Scope the tidy-up to THIS target mailbox. Review the list before removing anything.
-Get-MailboxRestoreRequest -TargetMailbox "archive-first.last@contoso.com" -Status Completed
-Get-MailboxRestoreRequest -TargetMailbox "archive-first.last@contoso.com" -Status Completed | Remove-MailboxRestoreRequest -Confirm:$false
+Get-MailboxRestoreRequest -TargetMailbox '{ArchiveAddress}' -Status Completed
+Get-MailboxRestoreRequest -TargetMailbox '{ArchiveAddress}' -Status Completed | Remove-MailboxRestoreRequest -Confirm:$false
 ```
 
 **Two things about that last line, both deliberate.**
@@ -298,23 +332,42 @@ After recovery it is a normal licensed mailbox and the inactive copy no longer e
 preservation ends. If anyone might still need the preserved copy for legal or HR, **Path 2 instead**,
 or export from eDiscovery first.
 
+**Path 3 applies only when both are true**, per Microsoft Learn (*Recover an inactive mailbox*):
+
+1. The 30-day soft-delete window has passed - `ExternalDirectoryObjectId` is **empty** (Step 0).
+   "If an inactive mailbox was soft-deleted less than 30 days ago, you can't use the New-Mailbox
+   -InactiveMailbox command to recover it. You need to recover it by restoring the corresponding
+   user account." Inside the window this is **Path 4**, whatever the requester called it.
+2. The returning person will be **cloud-only**. `New-Mailbox -InactiveMailbox` creates a *new* user:
+   "Be sure that the values specified for the Name and MicrosoftOnlineServicesID parameters are
+   unique within your organization." It cannot recover onto an account that already exists - so it
+   cannot target a user created on-premises and synced. In this tenant most accounts are synced,
+   so the usual answer for a returning employee is: create the on-prem user, sync, licence (a new
+   empty mailbox appears), then run **Path 2** targeting that mailbox - Learn lists "that employee
+   returns to your organization" as a *restore* use case too. The preserved copy then survives,
+   which is the better outcome anyway.
+
 ### 3.1 - Identifiers
 
 ```powershell
-Get-Mailbox -InactiveMailboxOnly -Identity $User |
+Get-Mailbox -InactiveMailboxOnly -Identity '{User}' |
     Format-List Name, DisplayName, ExchangeGuid, DistinguishedName, PrimarySmtpAddress, LitigationHoldEnabled, ItemCount
-$Guid = "<ExchangeGuid>"
 ```
+
+Record `ExchangeGuid`; it is `{ExchangeGuid}` in every later command on this path.
 
 ### 3.2 - Decide where the new account lives - before running anything
 
-In a hybrid directory recovery interacts with sync and a mismatch is painful to unpick. Ask: *"Will
-this person be created in on-premises AD (and synced), or cloud-only?"* Most of this tenant is
-synced, so the usual answer is: create the AD user on-premises first, let the delta sync run,
-confirm `Get-MgUser -UserId $User -Property OnPremisesSyncEnabled` shows `True`, **then** recover
-onto it. The sync is the one step on another machine - say so: *"Connect to AWSPRDINFAAD01 with
-Remote Desktop, open the same blue Windows PowerShell window there, run these two lines, then come
-back."* `ADSync` has no PowerShell 7 build.
+Ask: *"Will this person be created in on-premises AD (and synced), or cloud-only?"*
+
+| Answer | Route |
+|---|---|
+| On-premises, synced (the usual case here) | **Not Path 3.** Create the AD user on-premises, run the delta sync, licence the new cloud user so an empty mailbox appears, then run **Path 2** with that mailbox as the target. `New-Mailbox -InactiveMailbox` cannot attach to an existing account |
+| Cloud-only | Continue to 3.3. Confirm `Get-MgUser -UserId '{User}'` returns nothing (`Request_ResourceNotFound`) - the `MicrosoftOnlineServicesID` must not already exist |
+
+The sync is the one step on another machine - say so: *"Connect to AWSPRDINFAAD01 with Remote
+Desktop, open the same blue Windows PowerShell window there, run these two lines, then come back."*
+`ADSync` has no PowerShell 7 build.
 
 ```powershell
 Import-Module ADSync
@@ -329,9 +382,13 @@ Run **Gate 2** from the shared `operator-safety.md`: what is lost, Path 2 still 
 `RECOVER 1`. On exactly that:
 
 ```powershell
-New-Mailbox -InactiveMailbox $Guid -Name "First Last" -FirstName First -LastName Last -DisplayName "First Last" `
-    -MicrosoftOnlineServicesID $User -Password (Read-Host -AsSecureString "New password")
+New-Mailbox -InactiveMailbox '{ExchangeGuid}' -Name '{DisplayName}' -FirstName '{FirstName}' -LastName '{LastName}' -DisplayName '{DisplayName}' `
+    -MicrosoftOnlineServicesID '{User}' -Password (Read-Host -AsSecureString "New password") -ResetPasswordOnNextLogon $true
 ```
+
+`-Name` and `-MicrosoftOnlineServicesID` must both be unique in the tenant (Learn). Recovery
+creates the user; the licence is assigned afterwards (3.4). Learn also notes the recovered mailbox
+gets a 30-day retention hold and 30-day single-item recovery, and suggests enabling an archive.
 
 ### 3.4 - Assign a licence and verify
 
@@ -339,8 +396,8 @@ Recovery consumes a seat. Assign the licence through normal licensing (portal or
 process - this skill does not print a licence assignment). Then:
 
 ```powershell
-Get-Mailbox -Identity $User | Format-List DisplayName, RecipientTypeDetails, PrimarySmtpAddress, LitigationHoldEnabled, IsInactiveMailbox
-Get-Mailbox -InactiveMailboxOnly -ResultSize Unlimited | Where-Object PrimarySmtpAddress -eq $User     # should return nothing
+Get-Mailbox -Identity '{User}' | Format-List DisplayName, RecipientTypeDetails, PrimarySmtpAddress, LitigationHoldEnabled, IsInactiveMailbox
+Get-Mailbox -InactiveMailboxOnly -ResultSize Unlimited | Where-Object PrimarySmtpAddress -eq '{User}'     # should return nothing
 ```
 
 **Good**: a `UserMailbox` exists, `IsInactiveMailbox = False`, and the inactive list no longer
@@ -362,7 +419,7 @@ Get-Mailbox -SoftDeletedMailbox -ResultSize Unlimited |
                   @{n='DaysLeft';e={30 - ((Get-Date) - $_.WhenSoftDeleted).Days}} | Format-Table -AutoSize
 ```
 
-Print `DaysLeft` for `$User` back to the operator immediately. Under 3 days: say so, and do not
+Print `DaysLeft` for `'{User}'` back to the operator immediately. Under 3 days: say so, and do not
 spend a turn on the ticket until 4.3 is done - log it afterwards.
 
 ### 4.2 - Find the account in the Entra recycle bin (Graph)
@@ -371,7 +428,7 @@ spend a turn on the ticket until 4.3 is done - log it afterwards.
 Get-MgDirectoryDeletedItemAsUser -All | Select-Object Id, UserPrincipalName, DisplayName, DeletedDateTime | Format-Table -AutoSize
 ```
 
-**Good**: `$User` listed. Record `Id`. Not listed and `DaysLeft > 0`: the *mailbox* is soft-deleted
+**Good**: `'{User}'` listed. Record `Id`. Not listed and `DaysLeft > 0`: the *mailbox* is soft-deleted
 but the *user* is not in the bin - the account was probably de-licensed, not deleted. Re-licensing
 the existing user reattaches the mailbox; skip 4.3.
 
@@ -380,7 +437,7 @@ the existing user reattaches the mailbox; skip 4.3.
 State: *"This restores the Entra account {UPN}. Reversible (it can be deleted again). Continue?"*
 
 ```powershell
-Restore-MgDirectoryDeletedItem -DirectoryObjectId "<Id from 4.2>"
+Restore-MgDirectoryDeletedItem -DirectoryObjectId '{DeletedItemId}'
 ```
 
 Portal equivalent: entra.microsoft.com > Users > Deleted users > select > Restore user.
@@ -393,8 +450,8 @@ If the account was on-prem synced, the AD object must be restored on-premises to
 Licence through normal licensing. Then:
 
 ```powershell
-Get-Mailbox -Identity $User | Format-List DisplayName, RecipientTypeDetails, IsInactiveMailbox, LitigationHoldEnabled
-Get-MailboxStatistics -Identity $User | Select-Object ItemCount, TotalItemSize
+Get-Mailbox -Identity '{User}' | Format-List DisplayName, RecipientTypeDetails, IsInactiveMailbox, LitigationHoldEnabled
+Get-MailboxStatistics -Identity '{User}' | Select-Object ItemCount, TotalItemSize
 ```
 
 The mailbox does not reattach instantly. Allow hours after restoring and re-licensing before
@@ -413,58 +470,105 @@ No undo, no support path. Only with written authorisation, only once the retenti
 genuinely ended. Record who authorised it, when, and against which retention schedule, in the ticket
 **before** any command.
 
+Path 5 is for **inactive** mailboxes only. Every command below names the target as
+`-InactiveMailbox -Identity '{ExchangeGuid}'` - Microsoft Learn's own form in *Delete an inactive
+mailbox* - and never by address. Learn: "the best way to do this is by using its Distinguished Name
+or Exchange GUID value. Using one of these values instead of the SMTP address helps prevent
+accidentally specifying the wrong mailbox." With a reused address, `Set-Mailbox -Identity '{User}'`
+modifies the **live** mailbox - outside anything `DESTROY 1` authorised.
+
+### 5.0 - Resolve the target and check for an address collision
+
+```powershell
+# Is there a LIVE mailbox at this address? (expect: nothing)
+Get-Mailbox -Identity '{User}' -ErrorAction SilentlyContinue |
+    Format-List RecipientTypeDetails, PrimarySmtpAddress, ExchangeGuid, IsInactiveMailbox, WhenCreated
+
+# The INACTIVE mailbox the authorisation is about
+Get-Mailbox -InactiveMailboxOnly -Identity '{User}' -ErrorAction SilentlyContinue |
+    Format-List RecipientTypeDetails, PrimarySmtpAddress, ExchangeGuid, DistinguishedName, IsInactiveMailbox, WhenSoftDeleted
+```
+
+Show the operator both results and say which one is the target, in words: *"The inactive mailbox
+is {ExchangeGuid}, deleted {WhenSoftDeleted}. That is the only thing the next commands touch."*
+
+| First command returned | Second command returned | Do |
+|---|---|---|
+| nothing | one mailbox | Proceed. `{ExchangeGuid}` is the second result's |
+| **a live mailbox** | one mailbox | **The address has been reused.** Refuse unless the written authorisation names the `ExchangeGuid` itself. If it names only the address, stop: *"A live mailbox now has this address. I will not proceed on an address alone - the authorisation needs to name the inactive mailbox's ExchangeGuid {ExchangeGuid}."* If it does name it, proceed, and tell the operator the live mailbox ({ActiveExchangeGuid}) will not be touched |
+| anything | nothing | Not inactive. Either `SoftDeleted` (Path 4 clock) or already purged. Path 5 does not apply |
+| anything | **more than one** | Two inactive mailboxes share the address. Pick by `WhenSoftDeleted` against the authorisation, and name the GUID in the ticket before going on |
+
 ### 5.1 - Confirm every hold, not just Litigation Hold
 
 ```powershell
-Get-Mailbox -InactiveMailboxOnly -Identity $Guid |
+Get-Mailbox -InactiveMailboxOnly -Identity '{ExchangeGuid}' |
     Format-List DisplayName, LitigationHoldEnabled, LitigationHoldDate, LitigationHoldDuration, InPlaceHolds,
                 ComplianceTagHoldApplied, DelayHoldApplied, DelayReleaseHoldApplied
 ```
 
-(For an active mailbox drop `-InactiveMailboxOnly` and use `$User`.) Exchange purges only once the
-**last** hold is removed. If `InPlaceHolds` still lists `UniH` or `mbx`, removing Litigation Hold
-changes nothing - a safety feature, not a fault. **Stop** and say which hold remains and who owns
-its release (the case owner; the retention policy admin). Do not proceed until 5.1 shows Litigation
-Hold as the only hold.
+Exchange purges only once the **last** hold is removed. If `InPlaceHolds` still lists `UniH` or
+`mbx`, removing Litigation Hold changes nothing - a safety feature, not a fault. **Stop** and say
+which hold remains and who owns its release (the case owner; the retention policy admin). Learn adds
+one hard stop: "if the inactive mailbox has one or more retention labels configured to retain items
+... you can't remove the hold" - `ComplianceTagHoldApplied = True` ends Path 5 here. Do not proceed
+until 5.1 shows Litigation Hold as the only hold.
 
 ### 5.2 - The gate, then remove the hold
 
-Run **Gate 3** from the shared `operator-safety.md`: authorisation reference on file, what is lost,
-typed `DESTROY 1`. On exactly that:
+Run **Gate 3** from `references/operator-safety.md`: authorisation reference on file, 5.0 collision
+result stated, what is lost, typed `DESTROY 1`. On exactly that:
 
 ```powershell
-# Inactive mailbox - by ExchangeGuid
-Set-Mailbox -InactiveMailbox -Identity $Guid -LitigationHoldEnabled $false
-
-# Active mailbox
-Set-Mailbox -Identity $User -LitigationHoldEnabled $false
+Set-Mailbox -InactiveMailbox -Identity '{ExchangeGuid}' -LitigationHoldEnabled $false
 ```
 
-Print only the one that applies.
+That is Learn's verbatim form ("Remove a Litigation hold from an inactive mailbox"). Nothing on this
+path ever takes `'{User}'`.
 
-### 5.3 - Clear the delay hold (verify against Microsoft Learn first)
+### 5.3 - Clear the delay hold
 
-Exchange applies a delay hold for ~30 days after the last hold is removed. If the intent is genuine
-destruction, clear it explicitly - **after** confirming both parameters still exist on current
-Microsoft Learn (`Set-Mailbox` reference) in this session:
+Learn: "After you remove any other type of hold, Microsoft 365 automatically applies a delay hold so
+that content isn't purged immediately ... A delay hold expires automatically after 30 days. To remove
+it sooner, run one or both of the following commands, depending on which property is set to True."
+Read first, then remove only what is set:
 
 ```powershell
-Set-Mailbox -Identity $User -RemoveDelayHoldApplied
-Set-Mailbox -Identity $User -RemoveDelayReleaseHoldApplied
+Get-Mailbox -InactiveMailbox -Identity '{ExchangeGuid}' | Format-List *Delay*
+
+Set-Mailbox -InactiveMailbox -Identity '{ExchangeGuid}' -RemoveDelayHoldApplied
+Set-Mailbox -InactiveMailbox -Identity '{ExchangeGuid}' -RemoveDelayReleaseHoldApplied
 ```
 
-Being wrong here is unrecoverable in one direction and merely embarrassing in the other.
+The `-InactiveMailbox` targeting is supported by the cmdlet itself, not inferred: the `Set-Mailbox`
+reference says of **both** switches, "You can use this switch with the GroupMailbox or
+InactiveMailbox switch to remove delay holds from group mailboxes or inactive mailboxes", and of
+`-InactiveMailbox`: "use the DistinguishedName or ExchangeGuid property values for the Identity
+parameter (values guaranteed to be unique)". Learn: "You must be assigned the Legal Hold role in
+Exchange Online to use the RemoveDelayHoldApplied or RemoveDelayReleaseHoldApplied parameters" - an
+access-denied here is that role, not a wrong identity. And: "Removing the delay hold also recalculates the hold status of the mailbox. If no
+other holds remain, the mailbox stops being an inactive mailbox and becomes a soft-deleted mailbox"
+- purged 30 days later. Being wrong here is unrecoverable in one direction and merely embarrassing
+in the other.
 
-### 5.4 - Record the outcome
+### 5.4 - Confirm the transition and record the outcome
 
 ```powershell
+# It should now be soft-deleted, no longer inactive, with a retire time set
+Get-Mailbox -SoftDeletedMailbox -Identity '{ExchangeGuid}' |
+    Format-List Name, PrimarySmtpAddress, ExchangeGuid, LitigationHoldEnabled, InPlaceHolds, IsInactiveMailbox, WasInactiveMailbox, InactiveMailboxRetireTime
+
+# Tenant-wide record of what is still held
 Get-Mailbox -ResultSize Unlimited | Where-Object { $_.LitigationHoldEnabled } |
     Select-Object DisplayName, PrimarySmtpAddress, LitigationHoldDate, LitigationHoldDuration, LitigationHoldOwner, RetentionComment |
     Export-Csv "C:\scripts\reports\LitigationHold-AfterRemoval-$(Get-Date -Format yyyyMMddHHmm).csv" -NoTypeInformation -Encoding UTF8
 ```
 
-Keep that CSV with the written authorisation. Ticket note: the authorisation reference, the gate
-(who typed it, when), the 5.1 output, the CSV path.
+**Good**: `IsInactiveMailbox = False`, `WasInactiveMailbox = True`, `InactiveMailboxRetireTime` set
+(purge is 30 days after it). If it still reads `IsInactiveMailbox = True`, a hold remains - go back to
+5.1; Learn: "Recalculating the hold status doesn't remove a hold." Keep the CSV with the written
+authorisation. Ticket note (or closing report): the authorisation reference, the 5.0 collision
+result, the gate (who typed it, when), the 5.1 output, the 5.4 output, the CSV path.
 
 ---
 
@@ -472,13 +576,13 @@ Keep that CSV with the written authorisation. Ticket note: the authorisation ref
 
 | Path | Situation | Key command |
 |---|---|---|
-| 0 | What state is it in? | `Test-MailboxPreservation.ps1 -Identity $User -AdminUpn $Admin -LogPath $LogDir` |
-| 1 | Held by mistake, still active | `Set-Mailbox -Identity $User -LitigationHoldEnabled $false` |
-| 2 | Manager needs to read the mail | `New-MailboxRestoreRequest -SourceMailbox $Guid -TargetMailbox X -TargetRootFolder Y -AllowLegacyDNMismatch` |
-| 3 | Employee returning | `New-Mailbox -InactiveMailbox $Guid -MicrosoftOnlineServicesID $User -Password ...` - **gated** |
-| 4 | Deleted by mistake, < 30 days | `Restore-MgDirectoryDeletedItem -DirectoryObjectId <Id>` |
-| 5 | Retention expired, authorised | `Set-Mailbox -InactiveMailbox -Identity $Guid -LitigationHoldEnabled $false` - **gated** |
-| - | Find the ExchangeGuid | `Get-Mailbox -InactiveMailboxOnly -Identity $User \| FL ExchangeGuid` |
+| 0 | What state is it in? | `Test-MailboxPreservation.ps1 -Identity '{User}' -AdminUpn '{Admin}' -LogPath 'C:\scripts\logs'` |
+| 1 | Held by mistake, still active | `Set-Mailbox -Identity '{User}' -LitigationHoldEnabled $false` |
+| 2 | Manager needs to read the mail | `New-MailboxRestoreRequest -SourceMailbox '{ExchangeGuid}' -TargetMailbox X -TargetRootFolder Y -AllowLegacyDNMismatch` |
+| 3 | Employee returning, cloud-only, > 30 days deleted | `New-Mailbox -InactiveMailbox '{ExchangeGuid}' -MicrosoftOnlineServicesID '{User}' -Password ...` - **gated**. Synced tenant or < 30 days: Path 2 / Path 4 |
+| 4 | Deleted by mistake, < 30 days | `Restore-MgDirectoryDeletedItem -DirectoryObjectId '{DeletedItemId}'` |
+| 5 | Retention expired, authorised, **inactive only** | 5.0 collision check, then `Set-Mailbox -InactiveMailbox -Identity '{ExchangeGuid}' -LitigationHoldEnabled $false` - **gated** |
+| - | Find the ExchangeGuid | `Get-Mailbox -InactiveMailboxOnly -Identity '{User}' \| FL ExchangeGuid, WhenSoftDeleted` - the address is how you *find* the GUID, and it is ambiguous if reused: confirm `WhenSoftDeleted` matches the person before using the GUID |
 | - | Monitor a restore | `Get-MailboxRestoreRequest \| Get-MailboxRestoreRequestStatistics` |
 
 ## The six traps (each a confident wrong answer, not an error)

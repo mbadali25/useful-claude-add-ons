@@ -23,17 +23,21 @@ description: >
 
 # Exchange Mailbox Cleanup (operator walkthrough)
 
-Drives the *Mailbox Cleanup - Manual Runbook* (`Powershell/Exchange/Mailbox-Cleanup-Training-Runbook.html`
+Drives the *Mailbox Cleanup - Manual Runbook* (upstream: `Powershell/Exchange/Mailbox-Cleanup-Training-Runbook.html`
 in `infrastructure-scripts`) for an operator who is not an Exchange engineer. Two Exchange Online
-sessions plus Microsoft Graph, four PowerShell scripts, 41 steps in five phases, and one irreversible
-step in the middle.
+sessions plus Microsoft Graph, six PowerShell scripts vendored under `scripts/vendored/` (four the
+walkthrough drives, two for the scoping pass), 41 steps in five phases, and one irreversible step in
+the middle. Self-contained: no repository clone, no Python, nothing but Windows PowerShell 5.1.
 
-## Installs together with `exchange-mailbox-restore`
+## Standalone
 
-This skill owns the shared machinery - `references/` and `scripts/` - and `exchange-mailbox-restore`
-reads them by relative path (`../exchange-mailbox-cleanup/...`). **Install both or neither.**
-`scripts/exo_preflight.ps1` fails with the named error `SiblingSkillMissing` when the sibling
-directory is absent, and that error means the install is incomplete, not that the tenant is wrong.
+This skill depends on nothing outside its own folder - no repo clone, no Python, no other skill.
+`exchange-mailbox-restore` is a separate, equally standalone skill for the reverse operations; it
+carries its own copies of `references/connect-and-preflight.md`, `hold-and-mailbox-states.md`,
+`operator-safety.md`, the three helper scripts and the driver script it uses. The marketplace
+installs each plugin into its own versioned cache, so a `../sibling` path never resolves even when
+both are installed; duplication is the accepted cost. When one copy of a shared file changes, change
+the other.
 
 ## Which skill?
 
@@ -41,7 +45,7 @@ directory is absent, and that error means the install is incomplete, not that th
 |---|---|
 | Put a leaver on hold, delete the account, keep the mail searchable, reclaim the seat | **this one** |
 | Take a hold off, read an ex-employee's mail, bring a mailbox or account back, destroy a held mailbox | `exchange-mailbox-restore` |
-| A report of shared mailboxes and who has access | `Get-SharedMailboxInventory.ps1` in `infrastructure-scripts` - not a skill |
+| A report of shared mailboxes and who has access | `scripts\vendored\Get-SharedMailboxInventory.ps1` - bundled, but not walked by either skill |
 
 ## The contract: the skill prints, the operator runs
 
@@ -53,14 +57,16 @@ cannot see or answer a modern-auth prompt. So:
    harness.
 2. Wait for the operator to paste back the output, or name the file the command wrote.
 3. Read the artifact back: `*.csv` under `C:\scripts\logs` / `C:\scripts\reports` directly (UTF-8
-   with BOM); `*.log` through `scripts/read_log.py` (the scripts write logs with `Add-Content` and
-   no `-Encoding`, so under 5.1 they are cp1252 and a UTF-8 reader turns every accented name into
-   mojibake silently). Tell the operator what it says, in their words.
+   with BOM); `*.log` through `scripts/Read-ScriptLog.ps1` (the scripts write logs with `Add-Content`
+   and no `-Encoding`, so under 5.1 they are cp1252 and a UTF-8 reader turns every accented name
+   into mojibake silently). Tell the operator what it says, in their words.
 4. Only then move to the next step.
 
 Never call `Connect-*`, `Set-Mailbox`, `Remove-MgUser`, `Add-RoleGroupMember` or any of the four
-scripts from a Bash or PowerShell tool call. Read-only file reads and the three helper scripts in
-`scripts/` are the only things this skill executes itself.
+scripts from a Bash or PowerShell tool call. Read-only file reads and the helper scripts in
+`scripts/` (`exo_preflight.ps1`, `Resolve-OperatorInput.ps1`, `Read-ScriptLog.ps1` - all Windows
+PowerShell 5.1, no Python) are the only things this skill executes itself. `parse_user_input.py` and
+`read_log.py` remain as reference implementations; nothing depends on them.
 
 ### One edition, one window, two machines
 
@@ -77,26 +83,36 @@ Every printed command stays inside the 5.1 subset - no ternary, no `??`, no `&&`
 `ForEach-Object -Parallel`, no `-SkipCertificateCheck`, no `ConvertFrom-Json -AsHashtable` - so a
 command pasted into the wrong window by accident still behaves rather than throwing a parse error.
 Never print `>` or `Out-File`: on 5.1 they write UTF-16LE. Ad hoc exports are always
-`... | Export-Csv -Path 'C:\scripts\reports\<name>.csv' -NoTypeInformation -Encoding UTF8`.
+`... | Export-Csv -Path 'C:\scripts\reports\{Name}.csv' -NoTypeInformation -Encoding UTF8`.
 
 The one genuinely confusing part is the machine boundary, so say it once at Step 6 and again at the
 sync step: *"Every step runs in a blue Windows PowerShell window - on your own PC for everything
 except the sync step, which you run in the same kind of window on the server AWSPRDINFAAD01 after
 connecting with Remote Desktop, and then you come back."*
 
-## Resolving this skill's paths
+## Resolving this skill's paths - all-in-one, no repo clone
 
-The working directory is the operator's, not this skill's. Resolve once per session:
+Everything the walkthrough runs ships inside this skill. The six driver scripts are vendored
+byte-for-byte in `scripts/vendored/` (provenance, upstream commit and SHA-256 per file in
+`scripts/vendored/PROVENANCE.md`); `exo_preflight.ps1 -Check` fails with the named error
+`DriverScriptMissing` if any is absent and reports `DriverScriptModified` if a hash drifts. The
+operator needs **no clone of `infrastructure-scripts`**, and no printed command may contain a path to
+one.
 
-```powershell
-# Windows PowerShell 5.1 - pick whichever exists
-$SkillDir = "$env:USERPROFILE\.claude\skills\exchange-mailbox-cleanup"
-$SkillDir = "C:\repos\personal\useful-claude-add-ons\skills\exchange-mailbox-cleanup"
-$Repo     = "C:\repos\solomon\infrastructure-scripts\Powershell\Exchange"   # the four scripts
-```
+**Zero setup for the operator.** The skill resolves its own location and prints every command
+already filled in. Nothing is assigned to a variable, nothing is `cd`'d into, nothing is edited before
+pasting. Three values are substituted for braces before a command is printed:
 
-If neither `$SkillDir` exists, locate this `SKILL.md` before running anything. Never fall back to a
-bare `scripts/...`, which resolves against the operator's directory and fails confusingly.
+| Brace | Filled with | How the skill knows |
+|---|---|---|
+| `{SkillDir}` | The folder holding this `SKILL.md` | Its own location - personal install `$env:USERPROFILE\.claude\skills\exchange-mailbox-cleanup`, or the project `.claude\skills\` folder. Locate it; never guess |
+| `{Repo}` | `{SkillDir}\scripts\vendored` | Computed from the above |
+| `{Admin}` | The operator's own admin UPN | The **one** question the skill asks at Step 6. Never print a sample address for them to replace |
+
+Everything else - `C:\scripts\reports\holdlist.csv`, `C:\scripts\logs`, `SPE_E3` - is a fixed literal
+in the printed command. Later braces (`{User}`, `{ExchangeGuid}`, `{DeletedItemId}`) are read from an
+earlier step's artifact. The operator never sees a brace. Invocations are fully qualified
+(`& "{Repo}\Invoke-M365OffboardingHold.ps1" ...`), so the operator's current directory is irrelevant.
 
 ## The one rule
 
@@ -111,7 +127,7 @@ sentences. It is the single most common irreversible mistake in this process.
 Read `references/runbook-steps.md` and work it **in order, one step per turn**. For each step:
 
 - **Say what the step proves** in one sentence, in plain language.
-- **Print the command**, filled in with the operator's real values (`$Admin`, `$Csv`, `$Sku`).
+- **Print the command already filled in** - `{Admin}`, `{Repo}`, `{User}` and every other brace replaced with the real value. No variables to set, no directory to change into, no sample value to find and replace.
 - **State what "good" looks like**, so they can tell before you do.
 - **Read the artifact** the step produced and confirm it matches before advancing. If it does not,
   stop, quote the error text verbatim, and fix that step - never skip ahead.
@@ -139,9 +155,9 @@ Accept either. Normalise with the helper, which reads `utf-8-sig`, auto-detects 
 reports bad rows instead of dropping them, and writes the one-column CSV the hold script wants:
 
 ```powershell
-python "$SkillDir\scripts\parse_user_input.py" "j.doe@contoso.com" --out C:\scripts\reports\holdlist.csv
-python "$SkillDir\scripts\parse_user_input.py" C:\temp\leavers.csv --out C:\scripts\reports\holdlist.csv
-python "$SkillDir\scripts\parse_user_input.py" C:\temp\hr-export.csv --email-column "Work Email" --json
+powershell.exe -NoProfile -File "{SkillDir}\scripts\Resolve-OperatorInput.ps1" -Value "{User}" -OutPath 'C:\scripts\reports\holdlist.csv'
+powershell.exe -NoProfile -File "{SkillDir}\scripts\Resolve-OperatorInput.ps1" -Value C:\temp\leavers.csv -OutPath 'C:\scripts\reports\holdlist.csv'
+powershell.exe -NoProfile -File "{SkillDir}\scripts\Resolve-OperatorInput.ps1" -Value C:\temp\hr-export.csv -EmailColumn "Work Email" -AsJson
 ```
 
 Exit 0 = every row valid. Exit 3 = valid rows written but some rejected - show the operator the
@@ -151,32 +167,37 @@ usable; do not continue.
 ### Reading logs back
 
 ```powershell
-python "$SkillDir\scripts\read_log.py" C:\scripts\logs\Invoke-M365OffboardingHold-20260910.log --tail 40
-python "$SkillDir\scripts\read_log.py" C:\scripts\logs\Test-MailboxPreservation-20260910.log --grep unproven
-python "$SkillDir\scripts\read_log.py" C:\scripts\logs\MailboxPreservation-202609101455.csv --json
+powershell.exe -NoProfile -File "{SkillDir}\scripts\Read-ScriptLog.ps1" -Path C:\scripts\logs\Invoke-M365OffboardingHold-20260910.log -Tail 40
+powershell.exe -NoProfile -File "{SkillDir}\scripts\Read-ScriptLog.ps1" -Path C:\scripts\logs\Test-MailboxPreservation-20260910.log -Grep unproven
+powershell.exe -NoProfile -File "{SkillDir}\scripts\Read-ScriptLog.ps1" -Path C:\scripts\logs\MailboxPreservation-202609101455.csv -AsJson
 ```
 
-Opens as bytes, tries `utf-8-sig`, falls back to `cp1252`, and reports which one won. Use it for
-every `*.log`; CSVs may go through it or the Read tool.
+Reads bytes, tries UTF-16 BOM, strict UTF-8, BOM-less UTF-16, then `cp1252`, and reports which one
+won. Use it for every `*.log`; CSVs may go through it or the Read tool.
 
 ### Preflight before the first mutating step
 
 ```powershell
-powershell.exe -NoProfile -File "$SkillDir\scripts\exo_preflight.ps1" -Check     # read-only
-powershell.exe -NoProfile -File "$SkillDir\scripts\exo_preflight.ps1" -Install   # after one confirmation
-& "$SkillDir\scripts\exo_preflight.ps1" -Roles -AdminUpn admin@contoso.com       # in the operator's connected window
+powershell.exe -NoProfile -File "{SkillDir}\scripts\exo_preflight.ps1" -Check     # read-only
+powershell.exe -NoProfile -File "{SkillDir}\scripts\exo_preflight.ps1" -Install   # after one confirmation
+& "{SkillDir}\scripts\exo_preflight.ps1" -Roles -AdminUpn '{Admin}'       # in the operator's connected window
 ```
 
-`-Check` never changes anything: edition and version, TLS 1.2, module presence and version
-(ExchangeOnlineManagement must be 3.9.0 or later), the two directories, TCP reachability, and a notice
-if the old `C:\scripts\log` path still has content.
+`-Check` never changes anything: bundled driver scripts and their hashes, ticketing availability
+(advisory), edition, TLS 1.2, module presence and version - `ExchangeOnlineManagement` 3.9.0 or later,
+and the **four** Graph sub-modules (`Authentication`, `Users`, `Users.Actions`,
+`Identity.DirectoryManagement`) at **exactly 2.39.0**, the version the driver scripts import with
+`-RequiredVersion`; a newer-only install is a `FAIL` - the two directories, TCP reachability, and a
+notice if the old `C:\scripts\log` path still has content.
 
 `-Install` **actually installs** - a non-technical operator handed a list of prerequisites is stuck
 at step one. Confirm once ("Shall I install these under your user profile?"), then it sets TLS 1.2,
 bootstraps NuGet, runs `Install-Module -Scope CurrentUser -Force -AllowClobber` for each missing
-module (`ExchangeOnlineManagement` plus the three Graph sub-modules it needs, not the whole
-`Microsoft.Graph` meta-module), verifies `Name, Version, ModuleBase` for what landed, and creates
-the two directories. **Never machine-wide, never elevated** - a managed workstation's operator
+module (`ExchangeOnlineManagement`, plus the four Graph sub-modules at `-RequiredVersion 2.39.0` -
+never the whole `Microsoft.Graph` meta-module), verifies `Name, Version, ModuleBase` for what landed,
+and creates the two directories. **It runs before any login** (Step 5, ahead of Steps 7-9): if a
+Graph version change means a fresh window, the preflight says so in the operator's words and it costs
+nothing, because nothing has been signed into yet. Done later by the driver it costs three logins. **Never machine-wide, never elevated** - a managed workstation's operator
 usually cannot answer a UAC prompt. It leaves the PSGallery repository policy alone, reports (does
 not fix) a OneDrive-redirected module path, and on the first failure prints the verbatim error and
 stops. Tell the operator the Graph modules take a few minutes each so a pause does not read as a hang.
@@ -189,6 +210,31 @@ the missing role specifically rather than "access denied".
 Every script call gets `-LogPath 'C:\scripts\logs'` **explicitly**. The scripts default to
 `C:\scripts\log` (singular) and are not modified. Reports you write go to `C:\scripts\reports`.
 Both directories are created by `-Install`. Historic logs stay in the old path; the preflight says so.
+
+## Two bundled scripts this walkthrough never calls: the scoping pass
+
+`scripts\vendored\Get-SharedMailboxInventory.ps1` and `scripts\vendored\Split-MailboxCleanupReports.ps1`
+are bundled on purpose and **no step in the 41 calls them**. They belong to the *scoping* track that
+runs before any of this: deciding **who** the cleanup candidates are. The inventory writes two CSVs
+(`Mailbox-Inventory-{timestamp}.csv`, `Mailbox-Access-{timestamp}.csv`: every mailbox by type, its
+account state, and every FullAccess / SendAs / SendOnBehalf delegate); the splitter divides them into
+five audience reports plus a delegate contact list. Someone reviews those and hands this skill a
+list. If the operator arrives with a `holdlist.csv`, the scoping pass already happened and these two
+are not needed.
+
+For the person who has to produce that list, the pair runs like this (same connect rules, same
+reconnect-after; pass `-OutputPath` explicitly or the inventory writes into the skill's own folder):
+
+```powershell
+& "{Repo}\Get-SharedMailboxInventory.ps1" -AuthMode Interactive -AdminUpn '{Admin}' -OutputPath 'C:\scripts\reports\cleanup-project'
+& "{Repo}\Split-MailboxCleanupReports.ps1" -InventoryCsv 'C:\scripts\reports\cleanup-project\Mailbox-Inventory-{timestamp}.csv' -AccessCsv 'C:\scripts\reports\cleanup-project\Mailbox-Access-{timestamp}.csv' -OutputPath 'C:\scripts\reports\cleanup-project' -WhatIf
+```
+
+Drop `-WhatIf` once the file list looks right. Room and equipment mailboxes appear in the inventory
+and are **never** cleanup candidates - idle is their normal state; `RecipientTypeDetails` is the
+column to filter on. The inventory's own traps (`LastUserActionTime` is empty on every shared
+mailbox; a throttled permissions call is not an empty result) are documented in its comment-based
+help - read it before interpreting the CSVs.
 
 ## Safety rails
 
@@ -207,8 +253,11 @@ Full confirmation scripts are in `references/operator-safety.md`. The rules:
   look like the whole tenant.
 - **`Export-Terminated-Mailbox-to-PST.ps1` is deprecated and throws if run.** Never offer it.
   Export is a Purview portal action (Step 39).
-- **SDP ticket first.** Step 3 asks once; never create a ticket without the operator's confirmation;
-  run `ticketctl.py redact-check --emit` on every note before an `sdp_*` write.
+- **SDP ticket first, but advisory.** Step 3 asks once; never create a ticket without the
+  operator's confirmation; run `ticketctl.py redact-check --emit` on every note before an `sdp_*`
+  write. If the `infra-work-ticketing` skill is not loaded, or the SDP connector is unavailable
+  (preflight `TicketingUnavailable`), say so once and continue - the record goes in the closing report. The
+  approver's name at Step 28 is still required; where it is written is not.
 
 ## Six runbook defects this walkthrough corrects
 
@@ -217,9 +266,10 @@ The runbook and scripts are not modified; the skill reorders or reinterprets, an
 | # | Defect | What the skill does instead |
 |---|---|---|
 | 1 | Runbook Step 4 baselines with `-RunComplianceSearch` **before** the eDiscovery grant at Step 14; the first search returns zero silently | Grant (Step 13), wait for propagation (Step 20), then baseline (Step 21) |
-| 2 | `Test-MailboxPreservation.ps1` - and in fact all three driver scripts - call `Disconnect-ExchangeOnline` in `finally`, killing the operator's session | Print the reconnect block immediately after every script step (18, 22, 25, 34) |
+| 2 | `Test-MailboxPreservation.ps1` - and in fact all three driver scripts - call `Disconnect-ExchangeOnline` in `finally`, and two of them `Disconnect-MgGraph` too, killing all of the operator's sessions | Print the reconnect block - EXO, IPPS **and** `Connect-MgGraph` - immediately after every script step (18, 22, 25, 34) |
 | 3 | Runbook formats `TotalItemSizeMB`; the script emits `MailboxSizeGB` | Read `MailboxSizeGB` and `ItemCount` from the CSV the script actually writes |
 | 4 | The two runbooks request non-overlapping Graph scopes | Step 8 requests the union - see `references/connect-and-preflight.md` |
+| 4b | Neither runbook names `Microsoft.Graph.Users.Actions` or the exact Graph pin (`2.39.0`) the drivers import with `-RequiredVersion`; the driver installs it mid-run and throws "close this session", after the three logins | Preflight pins all four Graph sub-modules to 2.39.0 and installs **before** any login (Step 5); the operator's own imports carry `-RequiredVersion 2.39.0` |
 | 5 | Role group is `eDiscoveryManager` in one place, `eDiscovery Manager` in another; `eDiscovery Administrator` is not a role group at all | Resolve by `Get-RoleGroup` lookup on Name *or* DisplayName; use `Add-eDiscoveryCaseAdmin` for administrators |
 | 6 | SDP appears nowhere in either runbook | Step 3 opens or confirms the ticket before anything changes; Steps 23, 28, 40, 41 add notes |
 
@@ -227,6 +277,7 @@ The runbook and scripts are not modified; the skill reorders or reinterprets, an
 
 | Read | When |
 |---|---|
+| `docs/` | The operator guide (PDF) ships here, inside the skill. Point the operator at it; nothing external |
 | `references/runbook-steps.md` | Every run. The 41 steps with commands, "good looks like", and what to read back |
 | `references/connect-and-preflight.md` | Step 6-10, or any `Connect-*` failure, module error, or "cmdlet not found" |
 | `references/hold-and-mailbox-states.md` | Step 15, 33, or whenever a hold column or `MailboxState` needs interpreting |

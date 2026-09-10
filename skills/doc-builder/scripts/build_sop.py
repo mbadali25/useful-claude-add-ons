@@ -53,6 +53,7 @@ import os
 import re
 import shutil
 import sys
+import uuid as _uuid
 
 import docx
 from docx.enum.section import WD_ORIENT
@@ -437,10 +438,19 @@ class SopBuilder(object):
         self._runs(p, text)
         return p
 
-    def heading(self, text):
-        """Section heading. Resets step numbering."""
+    def heading(self, text, keep_with_next=False):
+        """Section heading. Resets step numbering.
+
+        keep_with_next is OPT-IN and off by default: the measured masters carry
+        no w:keepNext anywhere, so emitting it unasked would make every
+        generated document differ from the set. A text-only document has no
+        `width_in` to reflow with, so it is the one lever against a heading
+        stranded alone at the foot of a page."""
         self._step_no = 0
         p = self.doc.add_paragraph()
+        if keep_with_next:
+            # Schema order puts keepNext before spacing in w:pPr; insert first.
+            p._p.get_or_add_pPr().insert(0, _el("w:keepNext"))
         _spacing(p, before=240, after=100)
         st = self.style
         self._runs(p, text, size_pt=st.HEADING_PT, color=st.HEADING_NAVY,
@@ -586,7 +596,7 @@ class SopBuilder(object):
 # --------------------------------------------------------------------------
 _DISPATCH = {
     "para": lambda b, blk: b.para(blk["text"]),
-    "heading": lambda b, blk: b.heading(blk["text"]),
+    "heading": lambda b, blk: b.heading(blk["text"], bool(blk.get("keep_with_next", False))),
     "step": lambda b, blk: b.step(blk["text"], blk.get("number")),
     "bullet": lambda b, blk: b.bullet(blk["text"]),
     "tip": lambda b, blk: b.tip(blk["text"]),
@@ -643,9 +653,12 @@ def build_from_spec(spec, base_dir=".", out=None, brand=None, dry_run=False):
     exists = os.path.exists(out)
     backup = None
     if exists:
-        backup = os.path.join(os.path.dirname(out),
-                              "_backup_%s" % _dt.date.today().strftime("%Y%m%d"),
-                              os.path.basename(out))
+        # Unique per RUN, not per day. A per-day folder meant the second
+        # rebuild of the day replaced the original master's backup with the
+        # first generated revision - the safety net held a copy of the thing
+        # it was protecting against. Seconds plus a random tail cannot collide.
+        stamp = _dt.datetime.now().strftime("%Y%m%d-%H%M%S") + "-" + _uuid.uuid4().hex[:4]
+        backup = os.path.join(os.path.dirname(out), "_backup_%s" % stamp, os.path.basename(out))
     if dry_run:
         print("DRY RUN - nothing written.")
         print("  brand   : %s" % brand.name)
@@ -659,6 +672,8 @@ def build_from_spec(spec, base_dir=".", out=None, brand=None, dry_run=False):
     if backup:
         # Never overwrite a production master without keeping the previous
         # one. Git may not be watching the masters directory.
+        if os.path.exists(backup):
+            raise SystemExit("Refusing to overwrite an existing backup: %s" % backup)
         os.makedirs(os.path.dirname(backup), exist_ok=True)
         shutil.copy2(out, backup)
         print("Backed up previous master to %s" % backup)

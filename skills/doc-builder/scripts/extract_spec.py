@@ -659,14 +659,19 @@ def _finalize_and_write(doc, spec, master_path, slug, out_path, assets_dir,
     # That happened once during this tool's own development. Redirect a
     # scratch extraction's output to a scratch .docx instead, and say so.
     _norm = lambda p: os.path.normcase(os.path.normpath(os.path.abspath(p)))
-    if _norm(spec_dir) != _norm(_specs_dir()):
+    # The brand's specs directory is only a DEFAULT. A pack with none (neutral)
+    # must not stop an extraction whose --out was given explicitly; such an
+    # extraction is simply always "scratch" and gets the redirect below.
+    real_specs = BRAND.specs_dir if BRAND else None
+    if real_specs is None or _norm(spec_dir) != _norm(real_specs):
         scratch_docx = os.path.splitext(os.path.basename(out_path))[0] + ".docx"
         spec["output"] = scratch_docx
         spec.setdefault("_warnings", []).append(
             "Extracted outside %s, so \"output\" was redirected to the local "
             "%r rather than the real master, to stop a rebuild overwriting "
             "production. Point it at the master deliberately if that is what "
-            "you want." % (_specs_dir(), scratch_docx))
+            "you want." % (real_specs or "the brand's specs directory (this pack has none)",
+                           scratch_docx))
         sys.stderr.write(
             "note: extracted outside specs/, so \"output\" points at %r rather\n"
             "      than the real master -- building this spec will not\n"

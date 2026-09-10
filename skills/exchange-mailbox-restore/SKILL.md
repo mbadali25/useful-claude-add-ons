@@ -27,20 +27,23 @@ Drives the *Mailbox Restore & Hold Removal - Manual Runbook*
 the reverse of the cleanup. One triage step, then **exactly one** of five paths. Two of the five
 destroy something.
 
-## Installs together with `exchange-mailbox-cleanup`
+## Standalone
 
-This skill has no `scripts/` and only one reference of its own. Everything else is read from the
-sibling by relative path:
+This skill depends on nothing outside its own folder - no repo clone, no Python, no other skill.
+`references/connect-and-preflight.md`, `hold-and-mailbox-states.md` and `operator-safety.md` are
+identical copies of the files in `exchange-mailbox-cleanup`; `scripts/` carries its own
+`exo_preflight.ps1`, `Resolve-OperatorInput.ps1`, `Read-ScriptLog.ps1`; `scripts/vendored/` carries
+the one driver script this walkthrough runs (`Test-MailboxPreservation.ps1`) with its SHA-256 in
+`PROVENANCE.md`. The marketplace installs each plugin into its own versioned cache, so a `../sibling`
+path never resolves even when both skills are installed; duplication is the accepted cost. When one
+copy of a shared file changes, change the other.
 
-| Needed for | Path |
+| Needed for | Read |
 |---|---|
-| Connect block, module order, TLS, Graph scope union, roles, reconnect, directories | `../exchange-mailbox-cleanup/references/connect-and-preflight.md` |
-| Four hold types, `InPlaceHolds` decoding, the three mailbox states, verdicts | `../exchange-mailbox-cleanup/references/hold-and-mailbox-states.md` |
-| The typed-confirmation scripts for Path 3 and Path 5, the licence refusal | `../exchange-mailbox-cleanup/references/operator-safety.md` |
-| Preflight and input parsing | `../exchange-mailbox-cleanup/scripts/exo_preflight.ps1`, `parse_user_input.py` |
-
-**Install both or neither.** If `../exchange-mailbox-cleanup/SKILL.md` does not exist beside this
-file, stop and tell the user the install is incomplete - do not improvise the missing content.
+| Connect block, module order and the exact Graph pin, TLS, scope union, roles, reconnect, directories | `references/connect-and-preflight.md` |
+| Four hold types, `InPlaceHolds` decoding, the three mailbox states, verdicts | `references/hold-and-mailbox-states.md` |
+| The typed-confirmation scripts for Path 3 and Path 5, the licence refusal | `references/operator-safety.md` |
+| Preflight, input parsing, log reading | `scripts/exo_preflight.ps1`, `Resolve-OperatorInput.ps1`, `Read-ScriptLog.ps1` - Windows PowerShell 5.1, no Python |
 
 ## Which skill?
 
@@ -68,26 +71,34 @@ Identical to `exchange-mailbox-cleanup`. Print exact commands for the operator's
 PowerShell" window** (5.1, `PSEdition = Desktop` - the first thing printed is
 `$PSVersionTable.PSEdition`, and on `Core` the operator is told to close it and open the blue icon
 whose title bar says Windows PowerShell). Wait for the output or the file, read `*.csv` back
-directly and `*.log` through `../exchange-mailbox-cleanup/scripts/read_log.py` (5.1 writes them in
-cp1252), then advance. Never call `Connect-*`, `Set-Mailbox`, `New-Mailbox`,
+directly and `*.log` through `scripts/Read-ScriptLog.ps1` (5.1 writes them in cp1252), then
+advance. Never call `Connect-*`, `Set-Mailbox`, `New-Mailbox`,
 `New-MailboxRestoreRequest` or `Restore-MgDirectoryDeletedItem` from a tool call. Never print `>`
 or `Out-File`; every export is `Export-Csv ... -NoTypeInformation -Encoding UTF8`. Every printed
 command stays in the 5.1 subset (no ternary, `??`, `&&`/`||`, `-Parallel`, `-AsHashtable`).
 
-## Resolving paths
+## Resolving paths - all-in-one, no repo clone
 
-```powershell
-$SkillDir   = "$env:USERPROFILE\.claude\skills\exchange-mailbox-restore"
-$SkillDir   = "C:\repos\personal\useful-claude-add-ons\skills\exchange-mailbox-restore"
-$CleanupDir = Join-Path (Split-Path $SkillDir) 'exchange-mailbox-cleanup'
-$Repo       = "C:\repos\solomon\infrastructure-scripts\Powershell\Exchange"
-```
+The driver script is vendored in this skill's own `scripts/vendored/` (provenance and hash in its
+`PROVENANCE.md`), so the operator needs no clone of `infrastructure-scripts` and no printed command
+may contain a path to one. **Zero setup for the operator**: no variables, no `cd`, no editing before
+pasting. The skill substitutes these before printing:
+
+| Brace | Filled with |
+|---|---|
+| `{SkillDir}` | The folder holding this `SKILL.md` (personal install `$env:USERPROFILE\.claude\skills\exchange-mailbox-restore`). Locate it; never guess |
+| `{Repo}` | `{SkillDir}\scripts\vendored` |
+| `{Admin}` | The operator's admin UPN - the one question asked at S3 |
+| `{User}`, `{ExchangeGuid}`, `{DeletedItemId}`, `{ArchiveAddress}`, `{ManagerUpn}` | Values from the request or from an earlier step's output |
+
+The operator never sees a brace. Invocations are fully qualified
+(`& "{Repo}\Test-MailboxPreservation.ps1" ...`), so their current directory is irrelevant.
 
 ## How to run the walkthrough
 
 Read `references/runbook-paths.md` and follow it. The shape is fixed:
 
-1. **Setup** - ticket, preflight, connect (steps S1-S6). Reuses the cleanup's Steps 3-10 verbatim.
+1. **Setup** - ticket, preflight, connect (steps S1-S6). Same shape as the cleanup's Steps 3-10.
 2. **Step 0 - triage.** Run `Test-MailboxPreservation.ps1` once. `MailboxState` decides the path.
    Do not let the requester's wording decide it; a manager who says "restore his mailbox" about a
    *soft-deleted* mailbox is on Path 4 with a clock running, whatever they said.
@@ -116,9 +127,9 @@ confirmation and installs under the user profile only (`-Scope CurrentUser`, nev
 verifying what landed; `-Roles` runs in the operator's connected window:
 
 ```powershell
-powershell.exe -NoProfile -File "$CleanupDir\scripts\exo_preflight.ps1" -Check
-powershell.exe -NoProfile -File "$CleanupDir\scripts\exo_preflight.ps1" -Roles -AdminUpn admin@contoso.com
-python "$CleanupDir\scripts\parse_user_input.py" "first.last@contoso.com" --json
+powershell.exe -NoProfile -File "{SkillDir}\scripts\exo_preflight.ps1" -Check
+& "{SkillDir}\scripts\exo_preflight.ps1" -Roles -AdminUpn '{Admin}'          # in the operator's connected window
+powershell.exe -NoProfile -File "{SkillDir}\scripts\Resolve-OperatorInput.ps1" -Value '{User}' -AsJson
 ```
 
 Restore work is almost always one identity. If a CSV arrives, parse it, then triage **each**
@@ -126,7 +137,8 @@ identity separately - a list can contain an `Active`, an `Inactive` and a `SoftD
 they are on three different paths.
 
 Pass `-LogPath 'C:\scripts\logs'` on every `Test-MailboxPreservation.ps1` call and print the
-reconnect block after it - the script disconnects the operator's session on exit.
+reconnect block - EXO, IPPS **and** `Connect-MgGraph` - after it; the drivers disconnect the
+operator's sessions on exit.
 
 ## Safety rails
 
@@ -150,8 +162,20 @@ The full scripts are in the shared `operator-safety.md`. What applies here:
   the manager's Outlook and slows it noticeably.
 - **Path 4 has a clock.** Print `DaysLeft` (Path 4 step 4.1) in the first reply and do not spend a
   turn on anything else until the operator has seen it.
-- **SDP ticket first.** Same as the cleanup: ask once, never create without confirmation,
-  `ticketctl.py redact-check --emit` before every `sdp_*` write.
+- **SDP ticket first, but advisory.** Same as the cleanup: ask once, never create without
+  confirmation, `ticketctl.py redact-check --emit` before every `sdp_*` write - and if the
+  `infra-work-ticketing` skill is not loaded or the connector is unavailable (preflight
+  `TicketingUnavailable`), say so once and keep the record in the closing report. Path 5's written
+  authorisation is still required; where it is filed is not.
+- **Path 5 targets the inactive mailbox by `ExchangeGuid` with `-InactiveMailbox`, never by
+  address.** Step 5.0 first resolves `'{User}'` as an active mailbox; if one exists, the address is
+  reused and the skill refuses unless the written authorisation names the `ExchangeGuid`. Every 5.2
+  and 5.3 command carries `-InactiveMailbox -Identity '{ExchangeGuid}'` - Microsoft Learn's own
+  form - so a live mailbox sharing the address cannot be touched.
+- **Path 3 is for cloud-only accounts whose 30-day soft-delete window has passed.** Inside 30 days
+  (`ExternalDirectoryObjectId` still set) the account is restored instead (Path 4); in a synced
+  directory the returning person gets a new synced mailbox and the mail is *restored* into it
+  (Path 2), because `New-Mailbox -InactiveMailbox` creates a new user whose ID must be unique.
 - **`-ResultSize Unlimited`** on every `Get-Mailbox -InactiveMailboxOnly` / `-SoftDeletedMailbox`.
 - **Verify `-RemoveDelayHoldApplied` / `-RemoveDelayReleaseHoldApplied` against Microsoft Learn**
   in the session before printing them (Path 5 step 5.3). Hold behaviour changes.
@@ -160,10 +184,11 @@ The full scripts are in the shared `operator-safety.md`. What applies here:
 
 | Read | When |
 |---|---|
+| `docs/` | The operator guide (PDF) ships here, inside the skill. Point the operator at it; nothing external |
 | `references/runbook-paths.md` | Every run. Setup, triage, and the five paths with commands and "good looks like" |
-| `../exchange-mailbox-cleanup/references/connect-and-preflight.md` | Setup, any `Connect-*` failure, "cmdlet not found", reconnect after a script |
-| `../exchange-mailbox-cleanup/references/hold-and-mailbox-states.md` | Step 0, Path 1 step 1.1, Path 5 step 5.1 - interpreting hold columns and states |
-| `../exchange-mailbox-cleanup/references/operator-safety.md` | Before the first command of Path 3 or Path 5, and whenever a licence removal is requested |
+| `references/connect-and-preflight.md` | Setup, any `Connect-*` failure, "cmdlet not found", reconnect after a script |
+| `references/hold-and-mailbox-states.md` | Step 0, Path 1 step 1.1, Path 5 step 5.1 - interpreting hold columns and states |
+| `references/operator-safety.md` | Before the first command of Path 3 or Path 5, and whenever a licence removal is requested |
 
 ## Report back to the operator
 

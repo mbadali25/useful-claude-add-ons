@@ -88,12 +88,18 @@ Two things the preflight can only **report**, because pip cannot fix them:
 
 Every script resolves its brand the same way and prints the result to stderr:
 
-1. `--brand <name>` (or `DOC_BUILDER_BRAND`) always wins. `neutral` is the built-in pack.
-2. Otherwise scan sibling skill directories for `assets/brand.json`. Exactly one -> that is
-   the default for every document.
-3. More than one -> the scripts stop and name them. **Ask the user which brand the document
-   is for**; do not guess - a guess puts one client's footer on another's report.
-4. None -> neutral.
+1. `--brand <name>` always wins. `neutral` is the built-in pack.
+2. `DOC_BUILDER_BRAND` in the environment.
+3. Sibling skill directories (`skills/*/assets/brand.json`) - a git checkout.
+4. The plugin cache - a marketplace install puts each plugin in its own versioned directory,
+   so the search climbs from doc-builder's own location and also looks under
+   `~/.claude/skills` and `~/.claude/plugins/cache`.
+5. None found -> neutral, **announced with every location searched**. If the user expected
+   branding and the line says neutral, read that list back to them - it is the diagnosis.
+
+Exactly one pack -> the default for every document. Several different packs -> the scripts
+stop and name them; **ask the user which brand the document is for**, do not guess - a guess
+puts one client's footer on another's report.
 
 ```powershell
 python resolve_brand.py            # what would be used, and why

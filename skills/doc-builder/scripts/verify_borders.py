@@ -39,11 +39,27 @@ PRESENT = 0.90    # >= this fraction of the edge painted => border present
 MISSING = 0.50    # <  this fraction => border missing
 
 
-def _red_mask(page):
+TOLERANCE = 90    # per-channel distance from the brand's border colour that still counts as its ink
+
+
+def _target_rgb():
+    h = IMAGE_BORDER_RED.lstrip("#")
+    return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+
+
+def _ink_mask(page):
+    """Pixels close to the ACTIVE BRAND's border colour. Was hard-coded to
+    pure red, which failed a correctly built document under any pack whose
+    sop.image_border is not red - a false failure on the one gate that exists
+    because a real defect shipped for four months."""
     pix = page.get_pixmap(dpi=DPI)
     a = np.asarray(Image.frombytes("RGB", (pix.width, pix.height), pix.samples)).astype(int)
-    r, g, b = a[:, :, 0], a[:, :, 1], a[:, :, 2]
-    return (r > 170) & (g < 110) & (b < 110)
+    tr, tg, tb = _target_rgb()
+    return ((abs(a[:, :, 0] - tr) < TOLERANCE) & (abs(a[:, :, 1] - tg) < TOLERANCE)
+            & (abs(a[:, :, 2] - tb) < TOLERANCE))
+
+
+_red_mask = _ink_mask  # old name, kept for any caller that imported it
 
 
 def _coverage(mask, x0, y0, x1, y1):
@@ -81,7 +97,13 @@ def _expected_bordered_count(pdf_path):
         d = _docx.Document(docx_path)
         n = 0
         for inline in d.element.body.findall(".//" + _qn("wp:inline")):
-            if "<a:ln" in inline.xml and IMAGE_BORDER_RED in inline.xml.upper():
+            # ANY outlined inline counts, whatever its colour. Counting only the
+            # brand colour let a document bordered in the WRONG colour pass
+            # this gate with "0 bordered screenshots" - the PDF showed no ink
+            # of the expected colour and the docx declared none of it either.
+            # Gate 1 names the colour mismatch; this makes Gate 2 fail loudly
+            # on it too instead of agreeing with the wrong answer.
+            if "<a:ln" in inline.xml:
                 n += 1
         return n
     except Exception:

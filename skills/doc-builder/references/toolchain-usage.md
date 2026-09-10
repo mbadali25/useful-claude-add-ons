@@ -44,8 +44,14 @@ python resolve_brand.py --list           # every pack visible from skills/
 python resolve_brand.py --brand neutral --json
 ```
 
-Order: `--brand` / `DOC_BUILDER_BRAND` → the single sibling `assets/brand.json` → ask if
-several → neutral. Every script prints `brand: <name> -- <reason> (<path>)` to stderr.
+Order: `--brand` → `DOC_BUILDER_BRAND` → sibling skill directories (a git checkout) → the
+plugin cache (a marketplace install puts each plugin in its own versioned directory, so
+siblings find nothing there; the search climbs from doc-builder's own location and also
+looks under `~/.claude/skills` and `~/.claude/plugins/cache`) → neutral, **announced with
+every location searched**. Several different packs at one location → the scripts stop and
+name them. The same pack in several versions → the most recently modified copy, printed.
+Every script prints `brand: <name> -- <reason> (<path>)` to stderr; `--list` shows every
+location and what it holds.
 
 Environment overrides:
 
@@ -160,6 +166,10 @@ the generator, the checker or a brand pack.
 - Paths are relative to the spec file. `output` is optional: without it and without
   `--out`, the document goes to `<masters_dir>\<title>.docx`.
 - `step` numbers auto-increment and **reset at each `heading`**; override with `"number": 3`.
+- `"keep_with_next": true` on a `heading` emits `w:keepNext` so it cannot land alone at the foot
+  of a page. **Opt-in, off by default** - the measured masters carry no keepNext, so it is for
+  text-only documents that have no `width_in` to reflow with. Both gates are blind to
+  pagination; render and look.
 - `width_in` is optional — images otherwise scale down to fit 7.5" × 6.5", never up.
 - Screenshot borders, the accent bar, indents and spacing are applied automatically.
 - A malformed `[label](url` is reported on stderr and rendered as literal text; the build

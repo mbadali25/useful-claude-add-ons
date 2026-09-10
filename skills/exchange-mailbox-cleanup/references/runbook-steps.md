@@ -1,9 +1,12 @@
 # Mailbox Cleanup - the 41 steps
 
-Work these **in order, one per turn**. Every command is printed for the operator's Windows
-PowerShell 5.1 window unless the step says otherwise. `$Admin`, `$Repo`, `$Csv`, `$Sku` are set at
-Step 6 and reused. Reads of `C:\scripts\logs\*.csv` and `C:\scripts\reports\*` are done by the skill
-with the Read tool.
+Work these **in order, one per turn**. Every command is printed for the operator's blue Windows
+PowerShell window unless the step says otherwise, **already filled in**: there are no session
+variables to set and no directory to change into. Anything in braces - `{Admin}`, `{Repo}`,
+`{SkillDir}`, `{User}`, `{ExchangeGuid}` - is a value the skill substitutes *before* printing (the
+operator's admin UPN from Step 6, the resolved `scripts\vendored` folder, a value read from an
+earlier artifact). The operator never sees a brace and never edits a command. Reads of
+`C:\scripts\logs\*` and `C:\scripts\reports\*` are done by the skill.
 
 Ordering differs from the printed runbook on purpose - the eDiscovery grant (runbook Step 14) is
 brought forward to Step 13 here so the baseline search at Step 21 has a propagated role behind it.
@@ -14,9 +17,10 @@ advancing. **Read** - the artifact the skill reads back.
 
 **Reading artifacts back.** The scripts' `*.csv` files are UTF-8 with a BOM and read cleanly. Their
 `*.log` files are written with `Add-Content` and no `-Encoding`, so under 5.1 they are cp1252 - read
-them through `python "$SkillDir\scripts\read_log.py" <file> [--tail N] [--grep TEXT]`, which decodes
-defensively and says which encoding won. Never print `>` or `Out-File` for the operator: on 5.1 they
-write UTF-16LE. Every ad hoc export is `... | Export-Csv -Path 'C:\scripts\reports\<name>.csv'
+them through `powershell.exe -NoProfile -File "{SkillDir}\scripts\Read-ScriptLog.ps1" -Path {File} [-Tail N] [-Grep TEXT]`,
+which decodes defensively and says which encoding won. Windows PowerShell only; nothing else is
+assumed on the workstation. Never print `>` or `Out-File` for the operator: on 5.1 they
+write UTF-16LE. Every ad hoc export is `... | Export-Csv -Path 'C:\scripts\reports\{Name}.csv'
 -NoTypeInformation -Encoding UTF8`.
 
 ---
@@ -34,32 +38,40 @@ about the ticket, the SKU or anything else in the same message.
 Skill runs (not the operator):
 
 ```powershell
-python "$SkillDir\scripts\parse_user_input.py" "<address-or-path>" --out C:\scripts\reports\holdlist.csv --json
+powershell.exe -NoProfile -File "{SkillDir}\scripts\Resolve-OperatorInput.ps1" -Value "{AddressOrPath}" -OutPath 'C:\scripts\reports\holdlist.csv' -AsJson
 ```
 
 **Proves** the list is what the operator thinks it is. **Good**: exit 0, `count` matches their
 expectation, every address echoed back. Exit 3: show `rejected` rows with their reasons and ask
 *"Proceed with the {n} valid rows, or fix the file?"* Exit 1/2: stop, quote the error.
 
-If `C:\scripts\reports` does not exist yet, write to `%TEMP%\holdlist.csv` for now and move it at
-Step 5.
-
 Say the count back: *"3 mailboxes: a, b, c. Correct?"* Wait for yes.
 
-### Step 3 - The ticket
+### Step 3 - The ticket (advisory - never a blocker)
 
-Ask once: *"Do you have a ServiceDesk Plus ticket for this offboarding, or should I open one?"*
-Use the `infra-work-ticketing` skill. If opening one: title `M365 offboarding - mailbox cleanup -
-{N} user(s) - {yyyy-MM-dd}`, description listing the UPNs and "Litigation Hold, account deletion,
-inactive-mailbox validation, eDiscovery export". **Never create without the operator confirming the
-title and list.** Before any `sdp_create` / `sdp_add_note`:
+Ticketing is **advisory**. Ask once: *"Do you have a ServiceDesk Plus ticket for this offboarding, or
+should I open one?"* Use the `infra-work-ticketing` skill. If opening one: title `M365 offboarding -
+mailbox cleanup - {N} user(s) - {yyyy-MM-dd}`, description listing the UPNs and "Litigation Hold,
+account deletion, inactive-mailbox validation, eDiscovery export". **Never create without the
+operator confirming the title and list.**
+
+If ticketing is not available - the `infra-work-ticketing` skill is not in this session's loaded
+skill list, the `sdp_*` tools are not loaded, or Step 4's preflight reports `TicketingUnavailable`
+(the SDP connector's health endpoint does not answer) - say so **once**, in one sentence: *"Ticketing is
+not reachable from here, so I will keep the record in the closing report instead."* Then skip every
+later ticket note (Steps 23, 28, 40, 41) and carry on. Never stall the offboarding on a ticket.
+
+When ticketing is available, scrub every note before an `sdp_create` / `sdp_add_note`:
 
 ```powershell
-python <infra-work-ticketing>\scripts\ticketctl.py redact-check --body-file note.md --emit > note.clean.md
+python "{TicketingSkillDir}\scripts\ticketctl.py" redact-check --body-file note.md --emit > note.clean.md
 ```
 
-That line is run by the **skill in its Bash tool**, never printed for the operator: in a 5.1 window
-`>` writes UTF-16LE and the scrubbed note would arrive in the ticket as garbage.
+`{TicketingSkillDir}` is wherever the `infra-work-ticketing` skill is installed - the skill knows
+this from its own loaded-skill list; the preflight cannot see other plugins and does not try. That line is run by the **skill in its Bash tool**, never
+printed for the operator: in a 5.1 window `>` writes UTF-16LE. If `python` is absent (the preflight
+says so), review the note for secrets by eye before writing it and say in the note that it was
+hand-reviewed.
 
 Record the ticket number; every later note goes to it.
 
@@ -68,11 +80,12 @@ Record the ticket number; every later note goes to it.
 Skill runs:
 
 ```powershell
-powershell.exe -NoProfile -File "$SkillDir\scripts\exo_preflight.ps1" -Check
+powershell.exe -NoProfile -File "{SkillDir}\scripts\exo_preflight.ps1" -Check
 ```
 
-**Proves** the workstation can do this. **Good**: exit 0. Exit 2 = `SiblingSkillMissing` - install
-`exchange-mailbox-restore` beside this skill and re-run. Exit 1: list every `FAIL` line to the
+**Proves** the workstation can do this. **Good**: exit 0. Exit 2 = `ProvenanceMissing` - the
+bundled `scripts\vendored\PROVENANCE.md` is absent, so the skill install is incomplete; reinstall.
+Exit 1: list every `FAIL` line to the
 operator in plain words ("ExchangeOnlineManagement is missing", "C:\scripts\logs does not exist").
 Note any `NOTICE` about content in the old `C:\scripts\log` path.
 
@@ -80,23 +93,31 @@ Note any `NOTICE` about content in the old `C:\scripts\log` path.
 
 Only if Step 4 reported a missing module or directory. A non-technical operator handed a list of
 prerequisites is stuck, so the skill installs them - **under the user profile, never machine-wide,
-no admin prompt**. Say exactly what will be installed (the three Graph sub-modules and
-ExchangeOnlineManagement take a few minutes each) and ask once: *"Shall I install these under your
-user profile?"* On yes, skill runs:
+no admin prompt**. Offer the fix **in the same message as the Step 4 result**, not as a separate
+step: *"Two things are missing - ExchangeOnlineManagement and the C:\scripts folders. Shall I install
+and create them under your user profile? The module takes a few minutes."* One yes, then the skill
+runs:
 
 ```powershell
-powershell.exe -NoProfile -File "$SkillDir\scripts\exo_preflight.ps1" -Install
+powershell.exe -NoProfile -File "{SkillDir}\scripts\exo_preflight.ps1" -Install
 ```
 
 The script sets TLS 1.2, bootstraps NuGet, runs `Install-Module -Scope CurrentUser -Force
--AllowClobber` per module, then shows `Name, Version, ModuleBase` for what landed. It stops on the
-first failure with the verbatim error - quote it to the operator, do not retry, do not suggest an
-elevated window. A `NOTICE` about a OneDrive-redirected module path is reported, not fixed. Then
-re-run `-Check` and require exit 0.
+-AllowClobber` per module - `-RequiredVersion 2.39.0` for the four Graph sub-modules, because the
+driver scripts import exactly that version and refuse any other - then shows `Name, Version,
+ModuleBase` for what landed. It stops on the first failure with the verbatim error - quote it to the
+operator, do not retry, do not suggest an elevated window. A `NOTICE` about a OneDrive-redirected
+module path is reported, not fixed.
 
-### Step 6 - Open the operator's window and set session variables
+**This is why the install happens here, before Step 7.** If a Graph module was installed, the
+preflight prints: *"If a PowerShell window is already open on this PC with a Microsoft Graph module
+loaded, close it and open a fresh blue Windows PowerShell window before signing in. Nothing is lost -
+you have not signed in to anything yet."* Relay that sentence. Done here it costs nothing; done by
+the driver at Step 16 it costs all three logins. Then re-run `-Check` and require exit 0.
 
-The first thing printed, before anything else, is the edition check:
+### Step 6 - Open the operator's window and take the admin UPN
+
+Nothing is set up here. The first thing printed, before anything else, is the edition check:
 
 ```powershell
 $PSVersionTable.PSEdition
@@ -104,19 +125,11 @@ $PSVersionTable.PSEdition
 
 **Good**: `Desktop`. If it prints `Core`, say exactly: *"Close this window. Open the Start menu, type
 Windows PowerShell, and open the blue icon whose title bar says Windows PowerShell - not the one that
-says PowerShell 7."* Do not look for `pwsh`; the skill never needs it. Then:
+says PowerShell 7."* Do not look for `pwsh`; the skill never needs it.
 
-```powershell
-# Blue "Windows PowerShell" window. Run as yourself, not elevated.
-$Admin = "admin@contoso.com"        # <- your admin UPN
-$Repo  = "C:\repos\solomon\infrastructure-scripts\Powershell\Exchange"
-$Csv   = "C:\scripts\reports\holdlist.csv"
-$Sku   = "SPE_E3"                   # the only SKU in this tenant that grants Litigation Hold
-$LogDir = "C:\scripts\logs"
-Set-Location $Repo
-```
-
-Ask for `$Admin` if not already known. Tell the operator once, here: *"Every step runs in a blue
+Then ask the one thing the skill cannot know: *"Which account do you sign in to Microsoft 365 admin
+with? Paste the full address."* Validate it (one `@`, dotted domain) and use it as `{Admin}` in every
+command from here on - never print a sample address for them to replace. Tell the operator once, here: *"Every step runs in a blue
 Windows PowerShell window - on your own PC for everything except the sync step, which you run in the
 same kind of window on the server AWSPRDINFAAD01 after connecting with Remote Desktop, and then you
 come back."*
@@ -124,14 +137,18 @@ come back."*
 ### Step 7 - Import modules and connect to Exchange Online
 
 ```powershell
-Import-Module Microsoft.Graph.Authentication
-Import-Module Microsoft.Graph.Users
-Import-Module Microsoft.Graph.Identity.DirectoryManagement
+Import-Module Microsoft.Graph.Authentication -RequiredVersion 2.39.0
+Import-Module Microsoft.Graph.Users -RequiredVersion 2.39.0
+Import-Module Microsoft.Graph.Users.Actions -RequiredVersion 2.39.0
+Import-Module Microsoft.Graph.Identity.DirectoryManagement -RequiredVersion 2.39.0
 Import-Module ExchangeOnlineManagement          # AFTER Graph - the other order breaks Graph on 5.1
 
-Connect-ExchangeOnline -UserPrincipalName $Admin -ShowBanner:$false
+Connect-ExchangeOnline -UserPrincipalName '{Admin}' -ShowBanner:$false
 Get-Mailbox -ResultSize 1 | Select-Object DisplayName
 ```
+
+`-RequiredVersion 2.39.0` matches what the driver scripts import at Step 16; a different version
+loaded here makes the driver stop and demand a fresh window, after the logins.
 
 **Good**: one mailbox row, no red. On `0x80070002` / WAM error: add `-DisableWAM`.
 
@@ -142,13 +159,13 @@ Connect-MgGraph -Scopes 'Organization.Read.All','User.ReadWrite.All','Directory.
 Get-MgContext | Select-Object Account, @{n='Scopes';e={$_.Scopes -join ', '}}
 ```
 
-**Good**: `Account = $Admin`, all four scopes listed. If the browser never appears:
+**Good**: `Account = {Admin}`, all four scopes listed. If the browser never appears:
 `Connect-MgGraph -UseDeviceCode -Scopes ...`.
 
 ### Step 9 - Connect to Security & Compliance (Purview)
 
 ```powershell
-Connect-IPPSSession -UserPrincipalName $Admin
+Connect-IPPSSession -UserPrincipalName '{Admin}'
 Get-ConnectionInformation | Select-Object ConnectionUri, State, UserPrincipalName
 ```
 
@@ -161,8 +178,7 @@ Connect IPPS **last** so role-group cmdlets resolve to Purview.
 `powershell.exe -File` would start a fresh process with no sessions and report exit 3. Print:
 
 ```powershell
-$SkillDir = "C:\repos\personal\useful-claude-add-ons\skills\exchange-mailbox-cleanup"   # or the ~\.claude\skills path
-& "$SkillDir\scripts\exo_preflight.ps1" -Roles -AdminUpn $Admin
+& "{SkillDir}\scripts\exo_preflight.ps1" -Roles -AdminUpn '{Admin}'
 ```
 
 **Proves** the missing role is named before it costs an hour. **Good**: `PASS` for Exchange
@@ -175,8 +191,8 @@ not fixable by this skill; stop and route to whoever holds Global Administrator.
 ### Step 11 - Validate the CSV the way the script will read it
 
 ```powershell
-Import-Csv $Csv | Select-Object UserPrincipalName
-(Import-Csv $Csv).Count
+Import-Csv 'C:\scripts\reports\holdlist.csv' | Select-Object UserPrincipalName
+(Import-Csv 'C:\scripts\reports\holdlist.csv').Count
 ```
 
 **Good**: the header is exactly `UserPrincipalName`, the rows match Step 2, the count matches. The
@@ -189,7 +205,7 @@ why a shared mailbox named after a person is held here but skipped by the automa
 
 ```powershell
 Get-MgSubscribedSku -All |
-    Where-Object SkuPartNumber -eq $Sku |
+    Where-Object SkuPartNumber -eq 'SPE_E3' |
     Select-Object SkuPartNumber, ConsumedUnits, @{n='Purchased';e={$_.PrepaidUnits.Enabled}}
 ```
 
@@ -209,17 +225,17 @@ Phase boundary report: ticket number, N mailboxes, seats available, modules and 
 Resolve the role group by lookup, never by literal (defect 5):
 
 ```powershell
-Connect-IPPSSession -UserPrincipalName $Admin      # again, so Get-RoleGroup resolves to Purview
+Connect-IPPSSession -UserPrincipalName '{Admin}'      # again, so Get-RoleGroup resolves to Purview
 $rg = Get-RoleGroup -ResultSize Unlimited | Where-Object { $_.Name -eq 'eDiscoveryManager' -or $_.DisplayName -eq 'eDiscovery Manager' }
 $rg | Select-Object Name, DisplayName
-Add-RoleGroupMember -Identity $rg.Name -Member $Admin
+Add-RoleGroupMember -Identity $rg.Name -Member '{Admin}'
 ```
 
 Confirm before printing `Add-RoleGroupMember` (reversible, but stated count - see
 `operator-safety.md`). Optionally, for one or two people only:
 
 ```powershell
-Add-eDiscoveryCaseAdmin -User $Admin     # there is NO role group named "eDiscovery Administrator"
+Add-eDiscoveryCaseAdmin -User '{Admin}'     # there is NO role group named "eDiscovery Administrator"
 ```
 
 **Good**: `$rg` returns exactly one row; `Add-RoleGroupMember` returns silently. If the member is
@@ -232,7 +248,7 @@ Get-RoleGroupMember -Identity $rg.Name -ResultSize Unlimited | Select-Object Nam
 Get-Date -Format 'yyyy-MM-dd HH:mm'          # write this down
 ```
 
-**Good**: `$Admin` in the list. Tell the operator: *"Propagation takes 30-60 minutes. Until then
+**Good**: `{Admin}` in the list. Tell the operator: *"Propagation takes 30-60 minutes. Until then
 every search returns zero with no error. The clock started at {time}; we will not run the baseline
 before {time + 60 min}. There is nothing to debug in that window."* Portal check: Purview > Help >
 `Diag:edisRBACdiag` > UPN > Run Tests.
@@ -242,7 +258,7 @@ Use the wait: Steps 15-19 do not need the role.
 ### Step 15 - Pre-hold state: check all four holds on every mailbox
 
 ```powershell
-Import-Csv $Csv | ForEach-Object {
+Import-Csv 'C:\scripts\reports\holdlist.csv' | ForEach-Object {
     Get-Mailbox -Identity $_.UserPrincipalName |
         Select-Object DisplayName, RecipientTypeDetails, LitigationHoldEnabled, LitigationHoldDuration,
                       RetentionComment, InPlaceHolds, ComplianceTagHoldApplied, DelayHoldApplied
@@ -258,7 +274,7 @@ stop and ask.
 ### Step 16 - Dry-run the hold
 
 ```powershell
-.\Invoke-M365OffboardingHold.ps1 -UserList $Csv -TemporaryLicenseSku $Sku -AdminUpn $Admin -MaxUser 30 -LogPath $LogDir -WhatIf
+& "{Repo}\Invoke-M365OffboardingHold.ps1" -UserList 'C:\scripts\reports\holdlist.csv' -TemporaryLicenseSku 'SPE_E3' -AdminUpn '{Admin}' -MaxUser 30 -LogPath 'C:\scripts\logs' -WhatIf
 ```
 
 **Never skip this.** **Good**: every address appears, each as "would apply hold" or "already on
@@ -271,7 +287,7 @@ State: *"This applies a seven-year hold to {N} mailboxes and assigns a temporary
 that lack one. Reversible. Continue?"* On yes:
 
 ```powershell
-.\Invoke-M365OffboardingHold.ps1 -UserList $Csv -TemporaryLicenseSku $Sku -AdminUpn $Admin -MaxUser 30 -LogPath $LogDir
+& "{Repo}\Invoke-M365OffboardingHold.ps1" -UserList 'C:\scripts\reports\holdlist.csv' -TemporaryLicenseSku 'SPE_E3' -AdminUpn '{Admin}' -MaxUser 30 -LogPath 'C:\scripts\logs'
 ```
 
 The script polls up to 300 s for a new licence to reach Exchange (`-LicenseWaitSeconds`). Applying
@@ -280,14 +296,22 @@ are skipped.
 
 **Read**: `C:\scripts\logs\M365OffboardingHold-{timestamp}.csv` - columns `UserPrincipalName`,
 `HoldApplied`, `HoldTag`, `LitigationHoldDuration`, `TemporaryLicenseAssigned`, `MailboxSizeGB`,
-`Status`, `Detail`. **Good**: `Status` success for every row, `HoldTag` ends `-Termination`.
+`Status`, `Detail`. **Good**: `Status` is `HoldApplied` or `AlreadyOnHold` on every row and `HoldTag`
+ends `-Termination`. Any other value stops that identity: `NotProcessed` (the `-MaxUser` cap or an
+earlier abort), `NoMailbox`, `FailedLicenseRequired`, `FailedLicenseAssignment`, `FailedHold`,
+`FailedVerification` - quote `Detail` verbatim. `WhatIf` only appears from Step 16.
 
 ### Step 18 - Reconnect (the script disconnected you - defect 2)
 
+The driver tore down all three sessions: `Disconnect-ExchangeOnline` and `Disconnect-MgGraph` in
+its `finally`. Without the Graph line here, Step 27's `Get-MgUser` fails with an auth error.
+
 ```powershell
-Connect-ExchangeOnline -UserPrincipalName $Admin -ShowBanner:$false
-Connect-IPPSSession -UserPrincipalName $Admin
+Connect-ExchangeOnline -UserPrincipalName '{Admin}' -ShowBanner:$false
+Connect-IPPSSession -UserPrincipalName '{Admin}'
+Connect-MgGraph -Scopes 'Organization.Read.All','User.ReadWrite.All','Directory.AccessAsUser.All','User.RevokeSessions.All' -NoWelcome
 Get-Mailbox -ResultSize 1 | Select-Object DisplayName
+Get-MgContext | Select-Object Account
 ```
 
 ### Step 19 - Verify the hold actually stamped
@@ -295,7 +319,7 @@ Get-Mailbox -ResultSize 1 | Select-Object DisplayName
 `Set-Mailbox` reporting success does not mean the hold landed. Re-read:
 
 ```powershell
-Import-Csv $Csv | ForEach-Object {
+Import-Csv 'C:\scripts\reports\holdlist.csv' | ForEach-Object {
     Get-Mailbox -Identity $_.UserPrincipalName |
         Select-Object DisplayName, LitigationHoldEnabled, LitigationHoldDate, LitigationHoldDuration, LitigationHoldOwner, RetentionComment
 } | Format-Table -AutoSize
@@ -314,8 +338,8 @@ teaches the operator that zero is normal.
 ### Step 21 - Baseline: prove the mail exists and is reachable
 
 ```powershell
-Import-Csv $Csv | ForEach-Object {
-    .\Test-MailboxPreservation.ps1 -Identity $_.UserPrincipalName -AdminUpn $Admin -RunComplianceSearch -LogPath $LogDir
+Import-Csv 'C:\scripts\reports\holdlist.csv' | ForEach-Object {
+    & "{Repo}\Test-MailboxPreservation.ps1" -Identity $_.UserPrincipalName -AdminUpn '{Admin}' -RunComplianceSearch -LogPath 'C:\scripts\logs'
 } | Format-Table Identity, MailboxState, LitigationHoldEnabled, ItemCount, MailboxSizeGB, SearchItemCount, SafeToDeleteAccount
 ```
 
@@ -335,7 +359,8 @@ Same block as Step 18.
 ### Step 23 - Record the baseline in the ticket
 
 Write `note.md`: per mailbox UPN, `ItemCount`, `MailboxSizeGB`, `HoldTag`, `LitigationHoldDate`;
-plus the paths of the two CSVs. `redact-check --emit`, then `sdp_add_note ... public=false`.
+plus the paths of the two CSVs. `redact-check --emit`, then `sdp_add_note ... public=false`. If
+ticketing is unavailable (Step 3), keep this content for the closing report and move on.
 
 Phase boundary report: N held and verified, baseline counts, file paths.
 
@@ -346,7 +371,7 @@ Phase boundary report: N held and verified, baseline counts, file paths.
 ### Step 24 - Stage 2 sign-off report
 
 ```powershell
-.\Get-M365OffboardingStatus.ps1 -AdminUpn $Admin -LogPath $LogDir |
+& "{Repo}\Get-M365OffboardingStatus.ps1" -AdminUpn '{Admin}' -LogPath 'C:\scripts\logs' |
     Format-Table UserPrincipalName, DaysOnHold, Stage2Ready, LicenseSkus, SafeToRemoveLicense, BlockingIssue
 ```
 
@@ -371,7 +396,7 @@ from this batch. Say which are in and which are out, and why. If none are in, Ph
 ### Step 27 - Where is each account mastered?
 
 ```powershell
-Import-Csv $Csv | ForEach-Object {
+Import-Csv 'C:\scripts\reports\holdlist.csv' | ForEach-Object {
     Get-MgUser -UserId $_.UserPrincipalName -Property Id, UserPrincipalName, OnPremisesSyncEnabled |
         Select-Object UserPrincipalName, Id, OnPremisesSyncEnabled
 } | Format-Table -AutoSize
@@ -386,9 +411,11 @@ Record the answer per UPN. Most of this tenant is synced.
 
 ### Step 28 - Sign-off
 
-Write `note.md`: the Stage 2 CSV path, the list cleared for deletion, the on-prem/cloud decision
-per UPN, and *who approved deletion*. Ask for the approver's name. `redact-check --emit`,
-`sdp_add_note`. Do not proceed until the note is on the ticket.
+Ask for the approver's name - that is the gate's precondition and it is not optional. Write
+`note.md`: the Stage 2 CSV path, the list cleared for deletion, the on-prem/cloud decision per UPN,
+and *who approved deletion*. `redact-check --emit`, `sdp_add_note`. Do not proceed until the
+approver's name is recorded - on the ticket when ticketing is available, otherwise in the closing
+report the skill is building. The ticket is advisory; the approver's name is not.
 
 ### Step 29 - The gate
 
@@ -402,14 +429,14 @@ For the **first** identity only:
 Cloud-only:
 
 ```powershell
-Remove-MgUser -UserId "first.last@contoso.com" -Confirm
+Remove-MgUser -UserId '{User}' -Confirm
 ```
 
 On-prem synced - on a domain-joined admin host with RSAT:
 
 ```powershell
-Get-ADUser -Identity "first.last" -Properties UserPrincipalName, Enabled | Format-List
-Remove-ADUser -Identity "first.last" -Confirm
+Get-ADUser -Identity '{SamAccountName}' -Properties UserPrincipalName, Enabled | Format-List
+Remove-ADUser -Identity '{SamAccountName}' -Confirm
 ```
 
 then the sync. Say it in these words: *"This one step runs on the server AWSPRDINFAAD01. Connect
@@ -427,8 +454,8 @@ remainder is a second batch with its own `DELETE {N-1}` gate.
 ### Step 31 - Confirm the cloud object is gone
 
 ```powershell
-Get-MgUser -UserId "first.last@contoso.com" -ErrorAction SilentlyContinue; $?
-Get-MgDirectoryDeletedItemAsUser -All | Where-Object UserPrincipalName -like "first.last*" | Select-Object UserPrincipalName, DeletedDateTime
+Get-MgUser -UserId '{User}' -ErrorAction SilentlyContinue; $?
+Get-MgDirectoryDeletedItemAsUser -All | Where-Object UserPrincipalName -like '{Alias}*' | Select-Object UserPrincipalName, DeletedDateTime
 ```
 
 **Good**: first line `False` (not found), second shows the object in the recycle bin with today's
@@ -456,7 +483,7 @@ this is the failure case and the 30-day clock is running. Go to `exchange-mailbo
 ### Step 33 - Confirm the hold survived deletion (the key check)
 
 ```powershell
-Get-Mailbox -InactiveMailboxOnly -Identity "<ExchangeGuid>" |
+Get-Mailbox -InactiveMailboxOnly -Identity '{ExchangeGuid}' |
     Format-List DisplayName, PrimarySmtpAddress, ExchangeGuid, WhenSoftDeleted, LitigationHoldEnabled,
                 LitigationHoldDate, LitigationHoldDuration, LitigationHoldOwner, RetentionComment, InPlaceHolds
 ```
@@ -466,7 +493,7 @@ Get-Mailbox -InactiveMailboxOnly -Identity "<ExchangeGuid>" |
 ### Step 34 - Post-deletion count against the baseline
 
 ```powershell
-.\Test-MailboxPreservation.ps1 -Identity "<ExchangeGuid>" -AdminUpn $Admin -RunComplianceSearch -LogPath $LogDir -Verbose
+& "{Repo}\Test-MailboxPreservation.ps1" -Identity '{ExchangeGuid}' -AdminUpn '{Admin}' -RunComplianceSearch -LogPath 'C:\scripts\logs' -Verbose
 ```
 
 **Read**: the new `MailboxPreservation-*.csv`. **Good**: `MailboxState = Inactive`,
@@ -498,7 +525,7 @@ A hold can come from somewhere other than Litigation Hold (retention policy, cas
 ### Step 36 - Confirm the seat came back
 
 ```powershell
-Get-MgSubscribedSku -All | Where-Object SkuPartNumber -eq $Sku |
+Get-MgSubscribedSku -All | Where-Object SkuPartNumber -eq 'SPE_E3' |
     Select-Object SkuPartNumber, ConsumedUnits, @{n='Purchased';e={$_.PrepaidUnits.Enabled}}
 ```
 
@@ -514,11 +541,11 @@ If a batch remainder is waiting from Step 30, return to Step 29 now.
 ### Step 37 - Prove the deleted mailbox is still searchable (IPPS session)
 
 ```powershell
-New-ComplianceSearch -Name "Cleanup-<alias>-Review-$(Get-Date -Format yyyyMMdd)" `
-    -ExchangeLocation "first.last@contoso.com" -AllowNotFoundExchangeLocationsEnabled $true
-Start-ComplianceSearch -Identity "Cleanup-<alias>-Review-<date>"
-Get-ComplianceSearch -Identity "Cleanup-<alias>-Review-<date>" | Format-List Name, Status, Items, Size
-(Get-ComplianceSearch -Identity "Cleanup-<alias>-Review-<date>").SearchStatistics
+New-ComplianceSearch -Name 'Cleanup-{Alias}-Review-{yyyyMMdd}' `
+    -ExchangeLocation '{User}' -AllowNotFoundExchangeLocationsEnabled $true
+Start-ComplianceSearch -Identity 'Cleanup-{Alias}-Review-{yyyyMMdd}'
+Get-ComplianceSearch -Identity 'Cleanup-{Alias}-Review-{yyyyMMdd}' | Format-List Name, Status, Items, Size
+(Get-ComplianceSearch -Identity 'Cleanup-{Alias}-Review-{yyyyMMdd}').SearchStatistics
 ```
 
 `-AllowNotFoundExchangeLocationsEnabled $true` is **mandatory**: an inactive mailbox's address no
@@ -548,13 +575,16 @@ export is a liability the moment it exists.
 ### Step 40 - Chain of custody in the ticket
 
 If an export was made: who requested, who approved, why, where it is, when it is deleted.
-`redact-check --emit`, `sdp_add_note`.
+`redact-check --emit`, `sdp_add_note` - or into the closing report if ticketing is unavailable.
 
 ### Step 41 - Close out
 
 Final note: per mailbox `ExchangeGuid`, state, hold, baseline vs post count; seat delta; every CSV
-and log path under `C:\scripts\logs` and `C:\scripts\reports`; what was **not** verified. Ask before
-closing the ticket (`sdp_close`) - it is the operator's to close.
+and log path under `C:\scripts\logs` and `C:\scripts\reports`; what was **not** verified; and, if
+ticketing was unavailable, everything Steps 23, 28 and 40 would have written. Ask before closing the
+ticket (`sdp_close`) - it is the operator's to close. No ticket means the closing report *is* the
+record - write it to `C:\scripts\reports\cleanup-report-{yyyyMMddHHmm}.md` so it survives the
+window.
 
 ---
 
@@ -562,21 +592,21 @@ closing the ticket (`sdp_close`) - it is the operator's to close.
 
 | # | Step | Command |
 |---|---|---|
-| 2 | Parse input | `parse_user_input.py <addr-or-csv> --out C:\scripts\reports\holdlist.csv` |
+| 2 | Parse input | `Resolve-OperatorInput.ps1 -Value {AddressOrPath} -OutPath 'C:\scripts\reports\holdlist.csv'` |
 | 4 | Preflight | `exo_preflight.ps1 -Check` |
-| 7-9 | Connect | `Connect-ExchangeOnline` / `Connect-MgGraph -Scopes <union>` / `Connect-IPPSSession` |
-| 10 | Roles | `& exo_preflight.ps1 -Roles -AdminUpn $Admin` (same window) |
-| 12 | Seats | `Get-MgSubscribedSku -All \| ? SkuPartNumber -eq $Sku` |
+| 7-9 | Connect | `Import-Module Microsoft.Graph.* -RequiredVersion 2.39.0`, then `Connect-ExchangeOnline` / `Connect-MgGraph -Scopes {the four scopes}` / `Connect-IPPSSession` |
+| 10 | Roles | `& exo_preflight.ps1 -Roles -AdminUpn '{Admin}'` (same window) |
+| 12 | Seats | `Get-MgSubscribedSku -All \| ? SkuPartNumber -eq 'SPE_E3'` |
 | 13 | eDiscovery grant | `Get-RoleGroup \| ? { Name -eq 'eDiscoveryManager' -or DisplayName -eq 'eDiscovery Manager' }` then `Add-RoleGroupMember` |
-| 16 | Dry run | `Invoke-M365OffboardingHold.ps1 -UserList $Csv -TemporaryLicenseSku $Sku -AdminUpn $Admin -LogPath $LogDir -WhatIf` |
+| 16 | Dry run | `Invoke-M365OffboardingHold.ps1 -UserList 'C:\scripts\reports\holdlist.csv' -TemporaryLicenseSku 'SPE_E3' -AdminUpn '{Admin}' -LogPath 'C:\scripts\logs' -WhatIf` |
 | 17 | Apply | same, no `-WhatIf` |
 | 19 | Verify | `Get-Mailbox X \| FL *Hold*, RetentionComment` |
-| 21 | Baseline | `Test-MailboxPreservation.ps1 -Identity X -AdminUpn $Admin -RunComplianceSearch -LogPath $LogDir` |
-| 24 | Sign-off report | `Get-M365OffboardingStatus.ps1 -AdminUpn $Admin -LogPath $LogDir` |
+| 21 | Baseline | `Test-MailboxPreservation.ps1 -Identity X -AdminUpn '{Admin}' -RunComplianceSearch -LogPath 'C:\scripts\logs'` |
+| 24 | Sign-off report | `Get-M365OffboardingStatus.ps1 -AdminUpn '{Admin}' -LogPath 'C:\scripts\logs'` |
 | 27 | Mastered where? | `Get-MgUser -UserId X -Property OnPremisesSyncEnabled` |
 | 30 | Delete | `Remove-ADUser` + `Start-ADSyncSyncCycle -PolicyType Delta` on AWSPRDINFAAD01 (5.1), or `Remove-MgUser -UserId X -Confirm` |
 | 32 | Inactive? | `Get-Mailbox -InactiveMailboxOnly -ResultSize Unlimited` |
-| 33 | Hold survived? | `Get-Mailbox -InactiveMailboxOnly -Identity <Guid> \| FL *Hold*, InPlaceHolds` |
-| 36 | Seat back? | `Get-MgSubscribedSku -All \| ? SkuPartNumber -eq $Sku` |
+| 33 | Hold survived? | `Get-Mailbox -InactiveMailboxOnly -Identity '{ExchangeGuid}' \| FL *Hold*, InPlaceHolds` |
+| 36 | Seat back? | `Get-MgSubscribedSku -All \| ? SkuPartNumber -eq 'SPE_E3'` |
 | 37 | Search | `New-ComplianceSearch -ExchangeLocation X -AllowNotFoundExchangeLocationsEnabled $true` |
 | 39 | Export | Purview portal > case > review set > export |

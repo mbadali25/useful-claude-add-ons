@@ -65,20 +65,31 @@ def decode(raw: bytes) -> tuple[str, str]:
     if raw[:2] in (b"\xff\xfe", b"\xfe\xff"):
         return raw.decode("utf-16"), "utf-16"
 
-    # 2. UTF-8, with or without a BOM. Strict, so a wrong guess raises rather than
-    #    producing mojibake. This is what `Export-Csv -Encoding UTF8` writes on 5.1.
-    try:
-        return raw.decode("utf-8-sig"), "utf-8-sig"
-    except UnicodeDecodeError:
-        pass
-
-    # 3. BOM-less UTF-16, by NUL position.
+    # 2. BOM-less UTF-16, by NUL position. THIS MUST COME BEFORE UTF-8.
+    #
+    #    NUL is U+0000 -- a perfectly valid UTF-8 codepoint -- so strict UTF-8
+    #    does NOT raise on UTF-16-encoded ASCII. `"Mailbox preserved"` encoded
+    #    UTF-16LE decodes as utf-8-sig into "M\x00a\x00i\x00l..." and is
+    #    reported as UTF-8, exit 0. Every character in a normal log line is
+    #    ASCII, so this is the COMMON case, not an edge case.
+    #
+    #    An earlier version of this function tried UTF-8 first and was tested
+    #    only with fixtures containing accented characters -- those DO make
+    #    UTF-8 raise, so the tests passed while the real case stayed broken.
+    #    Order matters more than the individual checks.
     guess = _looks_like_utf16(raw)
     if guess:
         try:
             return raw.decode(guess), guess
         except UnicodeDecodeError:
             pass
+
+    # 3. UTF-8, with or without a BOM. Strict, so a wrong guess raises rather than
+    #    producing mojibake. This is what `Export-Csv -Encoding UTF8` writes on 5.1.
+    try:
+        return raw.decode("utf-8-sig"), "utf-8-sig"
+    except UnicodeDecodeError:
+        pass
 
     # 4. cp1252 - what `Add-Content` with no -Encoding writes under 5.1. Never fails,
     #    so it must stay last.

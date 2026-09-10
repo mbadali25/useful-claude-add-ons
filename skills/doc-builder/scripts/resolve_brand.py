@@ -1,31 +1,40 @@
 #!/usr/bin/env python3
 """Decide which brand pack doc-builder renders with, and say why.
 
-A brand pack is a sibling skill directory carrying `assets/brand.json`
-(`skills/solomon-doc-builder/assets/brand.json`, for example). Brand is
-CONFIGURATION, not a trigger: an installed pack is applied without anyone
-asking for it, so the document an operator forgets to ask about is still
-styled correctly.
+A brand pack is a skill directory carrying `assets/brand.json`
+(`solomon-doc-builder/assets/brand.json`, for example). Brand is CONFIGURATION,
+not a trigger: an installed pack is applied without anyone asking for it, so
+the document an operator forgets to ask about is still styled correctly.
 
-Resolution order, in full:
+Resolution order, in full, and every script prints which step matched:
 
-    1. `--brand <name>` (or DOC_BUILDER_BRAND in the environment) always wins.
-       `neutral` names the built-in pack; a path to a brand.json also works.
-    2. Otherwise scan the sibling skill directories for assets/brand.json.
-       Exactly one found  -> that is the default for every document.
-    3. More than one found -> stop and ask which, naming them. Guessing here
-       would put one client's footer on another client's report.
-    4. None found -> the neutral pack in assets/brands/neutral/.
+    1. `--brand <name>` always wins. `neutral` names the built-in pack; a path
+       to a brand.json, or to a directory holding one, also works.
+    2. DOC_BUILDER_BRAND in the environment, same values.
+    3. Sibling skill directories of doc-builder - correct in a git checkout,
+       where every skill sits under one `skills/`.
+    4. The plugin cache. A marketplace install puts each plugin in its OWN
+       versioned directory (`.../plugins/cache/<marketplace>/<plugin>/<version>/`),
+       so doc-builder's "siblings" there are only its own other versions and
+       step 3 finds nothing. This step walks up from doc-builder's own location
+       and looks a bounded depth beneath each ancestor, then under the user's
+       `~/.claude/skills` and `~/.claude/plugins/cache`. The layout is treated
+       as undocumented: anything unexpected falls through, nothing raises.
+    5. The neutral pack - announced LOUDLY, naming every location searched.
+       A silent fallback to neutral is the defect this order exists to prevent;
+       an announced one is a diagnosis.
 
-Whatever the outcome, the resolved brand and the REASON are printed to stderr
-so a surprising result is diagnosable rather than mysterious.
+Exactly one pack found at the first step that finds any -> that is the brand.
+Several different packs -> stop and ask which, naming them; guessing here puts
+one client's footer on another client's report. The same pack found in several
+versions -> the most recently modified copy, and that choice is printed.
 
 Every other script in scripts/ imports this module instead of computing paths
 or colours itself, so the toolchain moves as a unit. Stdlib only.
 
 Usage:
     resolve_brand.py                 # print what would be used, and why
-    resolve_brand.py --list          # every pack visible from here
+    resolve_brand.py --list          # every pack visible from here, by location
     resolve_brand.py --brand solomon --json   # merged values, for inspection
 """
 
@@ -42,11 +51,16 @@ SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
 SKILL_ROOT = os.path.normpath(os.path.join(SCRIPTS_DIR, os.pardir))
 NEUTRAL_JSON = os.path.join(SKILL_ROOT, "assets", "brands", "neutral", "brand.json")
 
-# The directory holding every installed skill. Overridable so the discovery
-# rules can be tested against a scratch tree with zero, one and two packs.
+# The directory holding every installed skill in a checkout. Overridable so the
+# discovery rules can be tested against a scratch tree with zero, one and two packs.
 SKILLS_DIR_ENV = "DOC_BUILDER_SKILLS_DIR"
 BRAND_ENV = "DOC_BUILDER_BRAND"
 MASTERS_DIR_ENV = "DOC_BUILDER_MASTERS_DIR"
+
+# How many ancestors of doc-builder's own directory the plugin-cache search
+# climbs. Four reaches `cache/` from `cache/<marketplace>/doc-builder/<version>/`
+# with one to spare; a drive root is never searched.
+CACHE_CLIMB = 4
 
 
 class BrandError(SystemExit):
@@ -54,12 +68,12 @@ class BrandError(SystemExit):
 
 
 class BrandAmbiguous(BrandError):
-    def __init__(self, names):
+    def __init__(self, names, where):
         self.names = list(names)
         super().__init__(
-            "More than one brand pack is installed: %s.\n"
+            "More than one brand pack is installed (%s): %s.\n"
             "Pass --brand <name> (or set %s) to say which one this document is for."
-            % (", ".join(self.names), BRAND_ENV))
+            % (where, ", ".join(self.names), BRAND_ENV))
 
 
 class BrandNotFound(BrandError):
@@ -73,16 +87,61 @@ def skills_dir() -> str:
     return os.path.normpath(os.environ.get(SKILLS_DIR_ENV) or os.path.join(SKILL_ROOT, os.pardir))
 
 
-def discover(root=None) -> list:
-    """Every sibling skill's assets/brand.json, sorted. Never doc-builder's own."""
-    root = root or skills_dir()
+def _is_own(path) -> bool:
+    """True when `path` is inside doc-builder itself (its neutral pack, or a
+    copy of doc-builder in another version directory)."""
+    p = os.path.normcase(os.path.normpath(path))
+    return p.startswith(os.path.normcase(SKILL_ROOT) + os.sep) or \
+        os.path.basename(os.path.dirname(os.path.dirname(path))).lower() == "doc-builder"
+
+
+def _glob_many(patterns) -> list:
     found = []
-    for path in sorted(glob.glob(os.path.join(root, "*", "assets", "brand.json"))):
-        skill = os.path.normpath(os.path.join(path, os.pardir, os.pardir))
-        if os.path.normcase(skill) == os.path.normcase(SKILL_ROOT):
+    for pat in patterns:
+        try:
+            found.extend(glob.glob(pat))
+        except (OSError, ValueError):
             continue
-        found.append(os.path.normpath(path))
-    return found
+    out = []
+    seen = set()
+    for f in found:
+        f = os.path.normpath(f)
+        key = os.path.normcase(f)
+        if key in seen or _is_own(f) or not os.path.isfile(f):
+            continue
+        seen.add(key)
+        out.append(f)
+    return sorted(out)
+
+
+def search_locations() -> list:
+    """Ordered [(label, [glob patterns])]. Step 3 first, then step 4's shapes."""
+    j = os.path.join
+    locs = [("sibling skill directories under %s" % skills_dir(),
+             [j(skills_dir(), "*", "assets", "brand.json")])]
+    if os.environ.get(SKILLS_DIR_ENV):
+        return locs  # a test tree: do not also wander the real machine
+    ancestor = SKILL_ROOT
+    for _ in range(CACHE_CLIMB):
+        parent = os.path.dirname(ancestor)
+        if not parent or parent == ancestor or os.path.dirname(parent) == parent:
+            break  # reached a drive root; never search that
+        ancestor = parent
+        locs.append(("plugin cache beneath %s" % ancestor, [
+            j(ancestor, "*", "*", "assets", "brand.json"),
+            j(ancestor, "*", "*", "*", "assets", "brand.json"),
+            j(ancestor, "*", "*", "skills", "*", "assets", "brand.json"),
+            j(ancestor, "*", "*", "*", "skills", "*", "assets", "brand.json"),
+        ]))
+    home = os.path.join(os.path.expanduser("~"), ".claude")
+    locs.append(("user skills under %s" % j(home, "skills"),
+                 [j(home, "skills", "*", "assets", "brand.json")]))
+    cache = j(home, "plugins", "cache")
+    locs.append(("user plugin cache under %s" % cache, [
+        j(cache, "*", "*", "*", "assets", "brand.json"),
+        j(cache, "*", "*", "*", "skills", "*", "assets", "brand.json"),
+    ]))
+    return locs
 
 
 def _load(path) -> dict:
@@ -90,6 +149,46 @@ def _load(path) -> dict:
         data = json.load(fh)
     data.pop("_comment", None)
     return data
+
+
+def _pack_name(path) -> str:
+    skill_dir = os.path.basename(os.path.dirname(os.path.dirname(path)))
+    try:
+        return _load(path).get("name") or skill_dir
+    except (OSError, ValueError):
+        return skill_dir
+
+
+def discover(root=None):
+    """(packs, label, searched_labels): the packs at the FIRST location that
+    holds any, that location's label, and every label searched up to it.
+    `root` overrides the sibling directory (tests)."""
+    if root:
+        os.environ[SKILLS_DIR_ENV] = root
+    searched = []
+    for label, patterns in search_locations():
+        searched.append(label)
+        packs = _glob_many(patterns)
+        if packs:
+            return packs, label, searched
+    return [], None, searched
+
+
+def _dedupe_versions(packs):
+    """Several copies of the SAME pack (versioned installs) -> newest by mtime.
+    Returns ({name: path}, notes)."""
+    by_name = {}
+    notes = []
+    for p in packs:
+        name = _pack_name(p)
+        if name in by_name:
+            keep, drop = sorted([by_name[name], p], key=os.path.getmtime, reverse=True)
+            by_name[name] = keep
+            notes.append("%s found in more than one version; using the most recently "
+                         "modified copy (%s)" % (name, keep))
+        else:
+            by_name[name] = p
+    return by_name, notes
 
 
 def _merge(base, over):
@@ -211,39 +310,51 @@ def _match_explicit(wanted, packs):
     names = []
     for path in packs:
         skill_dir = os.path.basename(os.path.dirname(os.path.dirname(path)))
-        try:
-            name = _load(path).get("name") or skill_dir
-        except (OSError, ValueError):
-            name = skill_dir
+        name = _pack_name(path)
         names.append(name)
         if wanted.lower() in (name.lower(), skill_dir.lower()):
             return path, "--brand %s given" % wanted
     raise BrandNotFound(wanted, names)
 
 
+def _all_packs():
+    """Every pack at every location, for --brand <name> lookups and --list."""
+    seen, out = set(), []
+    for _, patterns in search_locations():
+        for p in _glob_many(patterns):
+            if os.path.normcase(p) not in seen:
+                seen.add(os.path.normcase(p))
+                out.append(p)
+    return out
+
+
 def resolve(explicit=None, root=None, announce=True) -> Brand:
-    """Apply the four rules. Prints the outcome to stderr unless told not to."""
-    packs = discover(root)
+    """Apply the five steps. Prints the outcome to stderr unless told not to."""
+    if root:
+        os.environ[SKILLS_DIR_ENV] = root
     wanted = explicit or os.environ.get(BRAND_ENV)
+    notes = []
     if wanted:
-        path, reason = _match_explicit(wanted, packs)
+        path, reason = _match_explicit(wanted, _all_packs())
         if not explicit:
             reason = "%s=%s set in the environment" % (BRAND_ENV, wanted)
-    elif len(packs) == 1:
-        path, reason = packs[0], "the only brand pack installed under %s" % skills_dir()
-    elif len(packs) > 1:
-        names = []
-        for p in packs:
-            try:
-                names.append(_load(p).get("name") or os.path.basename(os.path.dirname(os.path.dirname(p))))
-            except (OSError, ValueError):
-                names.append(os.path.basename(os.path.dirname(os.path.dirname(p))))
-        raise BrandAmbiguous(names)
     else:
-        path, reason = NEUTRAL_JSON, "no sibling skill under %s supplies assets/brand.json" % skills_dir()
+        packs, label, searched = discover()
+        if packs:
+            by_name, notes = _dedupe_versions(packs)
+            if len(by_name) > 1:
+                raise BrandAmbiguous(sorted(by_name), label)
+            (name, path), = by_name.items()
+            reason = "the only brand pack found in %s" % label
+        else:
+            path = NEUTRAL_JSON
+            reason = ("no brand pack found - using neutral. Searched: "
+                      + "; ".join(searched))
     brand = Brand(path, reason)
     if announce:
         brand.announce()
+        for n in notes:
+            print("brand: note: " + n, file=sys.stderr)
     return brand
 
 
@@ -259,19 +370,19 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     add_brand_argument(ap)
-    ap.add_argument("--list", action="store_true", help="list every visible brand pack and exit")
+    ap.add_argument("--list", action="store_true", help="list every visible brand pack, by location, and exit")
     ap.add_argument("--json", action="store_true", help="print the merged brand values")
     args = ap.parse_args(argv)
 
     if args.list:
-        packs = discover()
         print("neutral  %s  (built in)" % NEUTRAL_JSON)
-        for p in packs:
-            try:
-                name = _load(p).get("name") or "?"
-            except (OSError, ValueError) as exc:
-                name = "UNREADABLE (%s)" % exc
-            print("%-8s %s" % (name, p))
+        for label, patterns in search_locations():
+            packs = _glob_many(patterns)
+            print("\n%s:" % label)
+            for p in packs:
+                print("  %-8s %s" % (_pack_name(p), p))
+            if not packs:
+                print("  (none)")
         return 0
 
     brand = resolve(args.brand, announce=not args.json)
