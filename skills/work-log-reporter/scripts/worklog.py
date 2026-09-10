@@ -67,8 +67,23 @@ def write_notes(session: dict, root: Path) -> Path:
     the two can never drift apart.
     """
     def fmt(value, pattern):
+        # `%-d` and `%-I` (no zero padding) are a glibc extension. Windows uses
+        # MSVC's strftime, which rejects them with ValueError -- so on Windows
+        # this crashed AFTER session.json was written but BEFORE notes.md,
+        # leaving a half-created session directory behind. Substitute the two
+        # values ourselves before strftime ever sees the pattern, so callers
+        # keep the readable format string and it works on every platform.
         dt = parse_iso(value)
-        return dt.strftime(pattern) if dt else "-"
+        if not dt:
+            return "-"
+        pattern = (pattern
+                   .replace("%-d", str(dt.day))
+                   .replace("%-I", str(dt.hour % 12 or 12))
+                   .replace("%-m", str(dt.month))
+                   .replace("%-H", str(dt.hour))
+                   .replace("%-M", str(dt.minute))
+                   .replace("%-S", str(dt.second)))
+        return dt.strftime(pattern)
 
     lines = [
         f"# {session.get('title') or session['session_id']}",

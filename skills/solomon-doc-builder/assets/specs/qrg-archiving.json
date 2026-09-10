@@ -1,0 +1,62 @@
+{
+  "_comment": "Rebuilt 2026-08-25 onto the house template. Screenshots are the originals from the 2022 QRG, anonymized (see assets/qrg-archiving). Build with: python solomon_sop.py specs/qrg-archiving.json",
+  "title": "Quick Reference Guide for Archiving Emails",
+  "subtitle": "M365 Outlook archiving",
+  "output": "../../OnboardingSOPs/sops_new/QRG - Archiving Emails within Outlook.docx",
+  "body": [
+    {
+      "type": "para",
+      "text": "Archiving moves older emails out of your mailbox into a local archive (**.pst**) file, helping keep your mailbox within its size limit. Follow the four steps below."
+    },
+    { "type": "heading", "text": "Archiving your mailbox" },
+    {
+      "type": "step",
+      "text": "In Outlook, click **File** at the top left, then go to **Tools > Clean Up Old Items**."
+    },
+    {
+      "type": "image",
+      "path": "../../OnboardingSOPs/assets/qrg-archiving/01-file-tools-cleanup.png",
+      "width_in": 6.28,
+      "caption": "The Outlook File page. Select Tools, then Clean Up Old Items."
+    },
+    {
+      "type": "step",
+      "text": "Make changes to the settings as appropriate — choose the folder, your account, the cut-off date under **Archive items older than**, and the archive file location — then click **OK**."
+    },
+    {
+      "type": "image",
+      "path": "../../OnboardingSOPs/assets/qrg-archiving/02-archive-settings.png",
+      "width_in": 3.3,
+      "caption": "The Archive window. Select Archive this folder and all subfolders, then set the cut-off date and file location."
+    },
+    {
+      "type": "step",
+      "text": "Archiving begins as soon as you click OK. Progress is shown in the Outlook status bar."
+    },
+    {
+      "type": "image",
+      "path": "../../OnboardingSOPs/assets/qrg-archiving/03-archiving-progress.png",
+      "width_in": 4.2,
+      "caption": "Archiving progress appears in the Outlook status bar."
+    },
+    {
+      "type": "step",
+      "text": "When archiving has finished, copy the **Archive** file to your Home drive for safe keeping."
+    },
+    {
+      "type": "image",
+      "path": "../../OnboardingSOPs/assets/qrg-archiving/04-copy-archive-pst.png",
+      "width_in": 5.6,
+      "caption": "Copy the archive .pst file to your Home drive as a backup."
+    },
+    {
+      "type": "tip",
+      "text": "Tip: archiving can take several minutes. Do not close Outlook while it is running."
+    },
+    { "type": "heading", "text": "Need help?" },
+    {
+      "type": "para",
+      "text": "Contact the Solomon IT Service Desk at **ithelpdesk@solomoninsight.com**."
+    }
+  ]
+}

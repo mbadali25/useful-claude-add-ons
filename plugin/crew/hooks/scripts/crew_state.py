@@ -758,6 +758,10 @@ SPECIALIST_ROLES = frozenset({
     "penetration-tester",
     "platform-engineer",
     "powershell-security-hardening",
+    "powershell-5.1-expert",
+    "powershell-7-expert",
+    "exchange-online-specialist",
+    "skill-author",
     "workflow-orchestrator",
 })
 
