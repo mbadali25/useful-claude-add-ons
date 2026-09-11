@@ -137,31 +137,47 @@ def run(target, outdir, opts):
     if result.timed_out:
         return None, result
 
-    session_dir = _find_session_dir(outdir)
+    session_dir = _find_session_dir(outdir, target)
     if not (session_dir / "log").is_file() and not (session_dir / "session.sqlite").is_file():
         # sqlmap exits 0 whether or not it found anything (spec 13.9), and
         # can also exit 0 having written nothing at all - so success here is
         # decided by whether a session actually landed on disk, never by
-        # result.returncode.
+        # result.returncode. Note this is deliberately NOT the same check as
+        # "does parse() have something to read" - session.sqlite alone still
+        # counts as a session having happened here; parse() is where an
+        # incomplete session (session.sqlite but no log) turns into an error
+        # instead of a silent empty result. See parse()'s docstring.
         return None, result
     return str(outdir), result
 
 
-def _find_session_dir(raw_path):
+def _find_session_dir(raw_path, target):
     """Locate the per-host session folder holding `log` under raw_path.
 
     sqlmap creates a subfolder per target host under --output-dir. Accept
     raw_path pointing either directly at that folder (what our fixtures and
     tests use) or at the --output-dir root sqlmap itself was given (what
     run() actually passes as outdir), searching one level down for whichever
-    child looks like a session folder.
+    child belongs to `target`'s host.
+
+    That host match matters: a bare --output-dir root can (and in practice
+    will, across repeated runs against different hosts) hold more than one
+    child folder. Picking "whichever child has artifacts, alphabetically
+    first" - the previous behaviour - attributes findings to a host that was
+    never tested, and lets an alphabetically-earlier empty session hide a
+    later vulnerable one for a different host entirely. Only a folder whose
+    name actually matches the requested host is eligible; if none does, we
+    fall through to raw_path itself, which parse() then reads as having no
+    log/session.sqlite for this target - i.e. zero findings, never someone
+    else's.
     """
     raw_path = Path(raw_path)
     if (raw_path / "log").is_file() or (raw_path / "session.sqlite").is_file():
         return raw_path
     if raw_path.is_dir():
+        host = (urlparse(target).hostname or target).lower()
         for child in sorted(raw_path.iterdir()):
-            if child.is_dir() and (
+            if child.is_dir() and child.name.lower() == host and (
                 (child / "log").is_file() or (child / "session.sqlite").is_file()
             ):
                 return child
@@ -181,12 +197,28 @@ def _iter_confirmed(text):
 
 
 def parse(raw_path, target):
-    session_dir = _find_session_dir(raw_path)
+    session_dir = _find_session_dir(raw_path, target)
     log_path = session_dir / "log"
     if not log_path.is_file():
-        # No log at all means no session ran, or nothing survived long
-        # enough to be persisted - either way, zero findings, never a
-        # low-severity "nothing found" placeholder (spec 13.9).
+        if (session_dir / "session.sqlite").is_file():
+            # session.sqlite is proof sqlmap actually started against this
+            # host, but `log` - the only file this parser ever reads facts
+            # from - never got written. That is not "ran clean", it is
+            # "we don't know what this run found" (most likely --time-limit
+            # or a kill cut it off mid-scan, before it persisted results).
+            # run() and parse() must agree on what counts as usable evidence:
+            # run() reports a session happened (raw_path is not None), and
+            # parse() is where an unusable one becomes an explicit error
+            # rather than silently collapsing into zero findings - the
+            # single worst outcome for the one adapter here that fires real
+            # attack traffic (base.ParseError's docstring; spec 13.9).
+            raise base.ParseError(
+                "sqlmap session at %r has session.sqlite but no log - the "
+                "scan was interrupted before results were persisted; this "
+                "is not a clean run" % str(session_dir))
+        # No artifacts at all means no session ever ran for this host -
+        # zero findings, never a low-severity "nothing found" placeholder
+        # (spec 13.9).
         return []
 
     text = log_path.read_text(errors="replace")

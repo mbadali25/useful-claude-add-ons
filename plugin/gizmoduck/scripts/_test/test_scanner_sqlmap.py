@@ -117,6 +117,74 @@ def test_run_returns_none_path_when_no_session_artifacts_were_written(monkeypatc
     assert result.returncode == 0
 
 
+# --- CRITICAL defect: run() and parse() must agree on usable evidence -----
+#
+# run() previously accepted `log` OR `session.sqlite` as proof a session
+# landed, while parse() only ever reads `log`. That let a session sqlmap
+# interrupted before it wrote its log (e.g. --time-limit firing mid-request)
+# come back as returncode 0, a non-null raw_path, and parse() silently
+# returning [] - a scan that was cut short presented as a clean target. The
+# fix must turn that combination into an error, never an empty list.
+
+def test_run_then_parse_on_interrupted_session_is_an_error_not_a_clean_scan(
+        monkeypatch, tmp_path):
+    # sqlmap wrote its HashDB cache (proof it started) but was cut off
+    # before persisting the human-readable `log` sqlmap.parse() reads.
+    def fake_run_tool(argv, timeout, cwd=None):
+        (tmp_path / "session.sqlite").write_bytes(b"fake-hashdb-zlib-pickle-blob")
+        return base.ToolResult(0, "", "", False)
+
+    monkeypatch.setattr(base, "run_tool", fake_run_tool)
+
+    raw_path, result = sqlmap.run("http://example.test/page?id=1", str(tmp_path),
+                                  {"confirm": "APPROVED-BY-ME"})
+
+    # run() still reports "a session happened" - that part of the contract
+    # doesn't change; it's what parse() does with it that must change.
+    assert raw_path is not None
+    assert result.returncode == 0
+
+    with pytest.raises(base.ParseError):
+        sqlmap.parse(raw_path, "http://example.test/page?id=1")
+
+
+def test_session_sqlite_without_log_is_a_parse_error(fixture):
+    with pytest.raises(base.ParseError):
+        sqlmap.parse(fixture("sqlmap-session/interrupted"),
+                     "http://example.test/page?id=1")
+
+
+# --- HIGH defect: the session directory must match the requested host -----
+#
+# _find_session_dir() previously returned the first alphabetical child under
+# an --output-dir root that merely *contained* artifacts, with no check that
+# it belonged to the target being parsed. That misattributes findings to a
+# host that was never tested, and lets an alphabetically-earlier empty
+# session hide a later vulnerable one.
+
+def test_parse_does_not_misattribute_an_unrelated_hosts_session(fixture):
+    # sqlmap-session/ holds "confirmed" and "empty" children from other
+    # tests - neither is named after this host, so nothing here belongs to
+    # it. Picking either one (as the old alphabetical-first logic did) would
+    # attribute injection findings to a host that was never scanned.
+    findings = sqlmap.parse(fixture("sqlmap-session"), "http://unrelated.example/?id=1")
+    assert findings == []
+
+
+def test_parse_picks_the_matching_host_not_the_alphabetically_first_one(fixture):
+    # alpha.example sorts before victim.example and has its own confirmed
+    # injection (on a *different* parameter) - if the session directory
+    # were still picked alphabetically, we'd get alpha's "user" finding
+    # instead of victim's "id" finding, or victim's real vulnerability would
+    # never surface at all.
+    findings = sqlmap.parse(fixture("sqlmap-session/multi-host"),
+                            "http://victim.example/page?id=1")
+
+    assert len(findings) == 1
+    assert findings[0]["host"] == "victim.example"
+    assert findings[0]["template_id"].startswith("sqlmap:id-get-")
+
+
 # --- parsing: confirmed session yields findings, empty session yields none -
 
 def test_confirmed_session_yields_two_findings_high_and_critical(fixture):
