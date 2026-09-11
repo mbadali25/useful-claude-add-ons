@@ -667,6 +667,24 @@ A declined active scan must be distinguishable from a failure: it is `skipped-ac
 
 **`trivy.parse()` takes a third argument.** `parse(raw_path, target, kind=None)` — it serves both `deps` and `iac` and reads only the array matching the kind, resolving it from the kwarg or from `target.kind`. It also writes kind-suffixed natives (`trivy-deps.json`, `trivy-iac.json`), which is how a caller tells which kind a given call served.
 
+**`parse()` must never convert a parse failure into an empty finding list.**
+
+This is the single most important rule in the adapter layer, and the first QA pass found every adapter breaking it. An empty or corrupt report currently yields `[]`, which is byte-identical to "this target is clean" — the exact false-assurance the coverage table exists to prevent, reintroduced one layer below it.
+
+Three distinct outcomes, three distinct signals:
+
+| Outcome | Signal |
+|---|---|
+| Tool ran, found nothing | `[]` — and only this |
+| Tool output unreadable (empty, truncated, malformed JSON/XML/CSV, wrong shape) | **raise `base.ParseError`** |
+| Tool ran but reported failures of its own (Checkov `parsing_errors`, testssl `WARN`/`FATAL`) | `parse_errors()` |
+
+`base.ParseError` is new. `routine` catches it and records `error:parse:<detail>` for that cell — never `ran` with zero findings. Letting `JSONDecodeError` or `ParseError` escape uncaught is equally wrong: it fails the whole run rather than the one cell.
+
+Shape validation counts as parse failure: `{"site": [null]}` and `{"results": {"failed_checks": [null]}}` must raise, not `AttributeError`.
+
+**And never fabricate a finding from unvalidatable input.** A truncated Nikto CSV row, or a diagnostic line, must not be padded into a `medium` finding — that manufactures a vulnerability that does not exist. Validate the required columns; raise `ParseError` if they are absent.
+
 **`parse_errors(raw_path, target) -> list[dict]` — optional, second output channel.**
 
 `parse()` returns findings about the *target*. Some tools also report failures of the *scan itself* in the same output file, and those must never reach the findings list. testssl.sh is the case that forced this: its `severity` enum includes `WARN` and `FATAL`, which mean the scan hit a client-side error — mapping them as severities would make a broken scan read as a vulnerability.
