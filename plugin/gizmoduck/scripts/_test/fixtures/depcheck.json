@@ -7,6 +7,9 @@
     {
       "fileName": "lodash-4.17.15.tgz",
       "filePath": "/scan/node_modules/lodash/package.json",
+      "packages": [
+        {"id": "pkg:npm/lodash@4.17.15", "confidence": "HIGHEST"}
+      ],
       "vulnerabilities": [
         {
           "source": "NVD",

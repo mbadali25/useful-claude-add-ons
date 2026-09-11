@@ -17,6 +17,7 @@ missing cvssv3 block first would silently drop those findings to info.
 """
 import json
 import os
+import re
 
 import normalize
 from . import base
@@ -101,6 +102,52 @@ def _best_score(vuln):
     return ""
 
 
+# A Package URL (https://github.com/package-url/purl-spec), e.g.
+# "pkg:npm/lodash@4.17.15" or "pkg:maven/org.apache.commons/commons-lang3@3.9".
+# Namespace is optional and folded into the captured name group along with
+# the leaf name, since the deps merge key wants a single package identifier
+# to compare against Trivy's `PkgName`, not a namespace/name pair.
+_PURL_RE = re.compile(r"^pkg:[^/]+/(?P<name>.+)@(?P<version>[^@]+)$")
+
+_CONFIDENCE_ORDER = {"HIGHEST": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
+
+
+def _package_and_version(dep):
+    """Best-effort (package, version) for the deps merge key `(CVE, package,
+    version)` - each returned as None when unresolved, never guessed, per the
+    "absent slot means does not merge" rule: a wrong package name would merge
+    two unrelated CVEs.
+
+    Dependency-Check does not expose a clean name/version pair the way Trivy's
+    `PkgName`/`InstalledVersion` do. The most reliable structured source in
+    the real schema is `packages[].id`, a Package URL (PURL) such as
+    "pkg:npm/lodash@4.17.15", which dependency-check itself tags with a
+    `confidence` level (HIGHEST/HIGH/MEDIUM/LOW) - we prefer the
+    highest-confidence entry. `evidenceCollected`'s vendor/product/version
+    arrays are free-text guesses scraped from file contents and are
+    deliberately NOT used here; they're a weaker signal than a PURL the tool
+    already committed to.
+
+    Confidence in this extraction: reasonably high for the common ecosystems
+    (npm, Maven, PyPI, NuGet) where dependency-check reliably emits a
+    well-formed PURL, but not verified against a real 9.x/10.x report end to
+    end - flagged for reviewer follow-up per spec §13.11's pattern for
+    secondhand schema details.
+    """
+    packages = dep.get("packages") or []
+    if not packages:
+        return None, None
+    ordered = sorted(
+        packages,
+        key=lambda p: _CONFIDENCE_ORDER.get((p.get("confidence") or "").upper(), 99),
+    )
+    for pkg in ordered:
+        m = _PURL_RE.match(pkg.get("id") or "")
+        if m:
+            return m.group("name"), m.group("version")
+    return None, None
+
+
 def parse(raw_path, target):
     with open(raw_path, encoding="utf-8") as fh:
         data = json.load(fh)
@@ -108,11 +155,12 @@ def parse(raw_path, target):
     findings = []
     for dep in data.get("dependencies") or []:
         file_name = dep.get("fileName", "")
+        package, version = _package_and_version(dep)
         for vuln in dep.get("vulnerabilities") or []:
             rule_id = vuln.get("name", "")
             sev, known = _severity(vuln)
             refs = [r.get("url") for r in (vuln.get("references") or []) if r.get("url")]
-            findings.append(normalize.make_finding(
+            finding = normalize.make_finding(
                 tool=NAME,
                 target=target,
                 rule_id=rule_id,
@@ -125,5 +173,13 @@ def parse(raw_path, target):
                 description=vuln.get("description", ""),
                 reference=refs,
                 tags=list(vuln.get("cwes") or []),
-            ))
+            )
+            # Optional deps-merge-key fields (plan Global Constraints,
+            # spec Task 18): additive, alongside matched_at, and omitted
+            # entirely rather than guessed when unresolved.
+            if package is not None:
+                finding["package"] = package
+            if version is not None:
+                finding["version"] = version
+            findings.append(finding)
     return findings

@@ -79,6 +79,30 @@ def test_fully_unscored_vulnerability_falls_back_to_info_and_is_flagged(fixture)
     assert "severity-assigned" in f["tags"]
 
 
+def test_package_and_version_resolve_from_the_highest_confidence_purl(fixture):
+    """Both vulnerabilities on the lodash dependency share its one
+    `packages[]` entry, so both must carry the same (package, version)
+    resolved from the PURL "pkg:npm/lodash@4.17.15".
+    """
+    findings = _parse(fixture)
+    for cve in ("CVE-2020-8203", "CVE-2021-23337"):
+        f = _by_cve(findings, cve)
+        assert f["package"] == "lodash"
+        assert f["version"] == "4.17.15"
+
+
+def test_package_and_version_are_omitted_when_unresolvable(fixture):
+    """The second fixture dependency carries no `packages[]` block at all -
+    the merge key must treat that as "does not merge on it" rather than
+    guessing, so the fields must be absent entirely, not empty strings.
+    """
+    findings = _parse(fixture)
+    for cve in ("GHSA-xxxx-yyyy-zzzz", "CVE-2019-99999"):
+        f = _by_cve(findings, cve)
+        assert "package" not in f
+        assert "version" not in f
+
+
 def test_is_available_delegates_to_which(monkeypatch):
     monkeypatch.setattr(base, "which", lambda name: "/usr/bin/dependency-check")
     assert depcheck.is_available() is True
