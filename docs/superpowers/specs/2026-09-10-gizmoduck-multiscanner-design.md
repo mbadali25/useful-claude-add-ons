@@ -410,13 +410,73 @@ completion whether or not anything was found).
   (`parent.parent`, `.parents[2]`), so tests nested deeper need matching path
   math.
 
-### 13.11 Still unverified at plan time
+### 13.11 Resolved — the three gaps, answered
 
-- Nmap `-oX` structured `<script>` output for `vuln` NSE, and which scripts emit
-  a machine-readable `state: VULNERABLE`.
-- testssl.sh `--jsonfile` vs `--jsonfile-pretty` schema difference and the
-  complete `severity` value set.
-- The ZAP Automation Framework's exit-code contract, and whether its
-  `traditional-json` report job emits the same schema as `-J`.
+**Nmap `vuln` NSE.** Results live in `<script id=... output=...>` inside `<port>`,
+with nested `<table>` elements holding `<elem key="...">value</elem>` children.
+The structure comes from NSE's shared `vulns.lua` library, whose fields are
+`title, state, IDS, risk_factor, scores, description, dates, check_results,
+exploit_results, extra_info, references`. Machine-readable state values:
+`NOT VULNERABLE`, `LIKELY VULNERABLE`, `VULNERABLE`, `VULNERABLE (DoS)`,
+`VULNERABLE (Exploitable)`. Only the last four are reported by default —
+`NOT VULNERABLE` appears only when a script sets `vulns.showall`.
+*The exact `<table>`/`<elem>` key names are secondhand.* Lock the parser against
+one real `nmap --script vuln -oX` run before trusting the paths.
 
-These block only their own adapter tasks; every other task can proceed.
+**testssl.sh.** Use `--jsonfile`, which is flat — one self-contained object per
+check. `--jsonfile-pretty` nests under a header block and **can emit invalid
+JSON** (issue #1699). Per-finding fields: `id, ip, port, severity, finding`, plus
+`cve`/`cwe` where the check maps to one.
+
+The `severity` enum is eight values, all real: `OK, INFO, LOW, MEDIUM, HIGH,
+CRITICAL, WARN, FATAL`. **`WARN` and `FATAL` are not security ratings** — they
+mean the scan itself hit a client-side error. They must be recorded as a tool
+error in the run manifest, never emitted as a finding about the target, or a
+broken scan reports as a vulnerability.
+
+**ZAP Automation Framework.** Default contract for `zap.bat -cmd -autorun`:
+`0` = completed clean, `1` = at least one job error, `2` = warnings but no
+errors. These are keyed to **job-level** errors and warnings, not to alert risk —
+unlike `zap-baseline.py`, whose codes track FAIL/WARN alert counts. To make the
+exit code reflect alert risk you must add an explicit `exitStatus` job to the
+plan; it is not the default. Two open bugs touch this path (#7833 alertFilter
+broken under AF, #8875 exitStatus ignoring False Positive confidence), so it is
+less battle-tested than the older script.
+
+Whether an AF `report` job with `template: traditional-json` emits a schema
+identical to the standalone add-on's `-J` output **could not be confirmed from
+primary documentation**. Both are documented as the same template name in the
+same Report Generation add-on, which strongly implies one generator — but
+Task 6 must run both once and diff the structure before committing a single
+parser to serve both paths. That is a five-minute check that removes the guess.
+
+### 13.12 Two more exit-code traps — six of nine tools now
+
+The "never infer findings from an exit code" constraint is broader than §13.7
+and §13.9 implied:
+
+| Tool | Exit-code behaviour |
+|---|---|
+| Nuclei | 0 normally |
+| **Nikto** | **Non-zero regardless of outcome** (issue #837) — check output file content, never status |
+| **testssl.sh** | 0 ok, 1 error, **50–200 reserved for a severity-scored exit**, 242–255 internal errors. Non-zero ≠ failure |
+| ZAP (AF) | 0/1/2 on job errors and warnings, not alert risk (§13.11) |
+| Trivy | 0 regardless of findings unless `--exit-code` passed (§13.7) |
+| sqlmap | 0 whether or not an injection was found (§13.9) |
+| **Nmap** | **0 on a completed scan regardless of findings** — the one tool where the exit code is a clean success signal |
+| Dependency-Check, Checkov | conventional |
+
+Every adapter decides from parsed output. The only tool whose exit code may gate
+success is Nmap.
+
+### 13.13 Timeouts: most tools have no whole-scan cap
+
+Nikto's `-timeout` is **per-request**. Nmap has `--host-timeout` and
+`--script-timeout` but no total cap. testssl.sh has `--connect-timeout` and
+`--openssl-timeout` but no total cap. Only Trivy (`--timeout`) and sqlmap
+(`--time-limit`) cap total wall-clock.
+
+So §8's "per-tool timeouts so one hung scanner can't stall the run" **cannot be
+delegated to the tools**. `base.run_tool`'s own `subprocess` timeout is the real
+enforcement for Nikto, Nmap and testssl; their native flags are a refinement, not
+the guard.

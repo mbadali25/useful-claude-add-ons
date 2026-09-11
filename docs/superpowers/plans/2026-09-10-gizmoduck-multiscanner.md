@@ -19,7 +19,8 @@ Every task's requirements implicitly include this section.
 - **Finding dict keys** (exact, from `gizmoduck.py:144-173`): `template_id, name, severity, severity_name, type, timestamp, host, matched_at, cve, cvss, description, remediation, reference, tags`. New keys added by this work: `tool`, `target`, `tools`, `merged_from`.
 - **`severity` is an int**, `severity_name` is the display string. Canonical maps: `SEV_NUM`, `SEV_NAME`, `SEV_COLOR`, `ORDER=[4,3,2,1,0]` at `gizmoduck.py:38-41`.
 - **Severity vocabulary:** `critical`(4) `high`(3) `medium`(2) `low`(1) `info`(0). No other values.
-- **Never infer findings from an exit code.** Trivy and sqlmap both exit 0 with findings present; ZAP's wrapper exit codes do not apply to the Automation Framework.
+- **Never infer findings from an exit code.** Six of the nine tools mislead here (spec §13.12): Nikto exits **non-zero regardless of outcome**; testssl.sh reserves **50–200 for a severity-scored exit**; Trivy and sqlmap exit **0 with findings present**; ZAP's Automation Framework codes track job errors, not alert risk. **Nmap is the only tool whose exit code is a clean success signal.** Every adapter decides from parsed output.
+- **`base.run_tool`'s timeout is the real guard** (spec §13.13). Nikto's `-timeout` is per-request; Nmap and testssl.sh have per-host/per-check caps but no total cap. Only Trivy and sqlmap cap total wall-clock. Never rely on a tool's own flag to stop a hung scan.
 - **Detail floor exists twice** — `REPORT_DETAIL_FLOOR`/`detail_floor()` (`gizmoduck.py:50`, `204-210`) and `ACTION_THRESHOLD` (`report_template.py:34`). Any report change must satisfy both.
 - **PDF is Qt WebKit 4.8.** No flexbox, no CSS grid, no custom properties. Tables and floats only. Verify in the PDF, not a browser.
 - **No `__init__.py` exists in `scripts/` today.** Imports rely on the script's own directory heading `sys.path`, with a `spec_from_file_location` fallback at `gizmoduck.py:274-291`. Follow that pattern; do not assume a package import works.
@@ -638,10 +639,10 @@ Every adapter task follows the identical five-step shape below. The per-tool tab
 | # | Tool | KINDS | ACTIVE | Native file | Command core | Severity source | **Edge case the test MUST cover** |
 |---|---|---|---|---|---|---|---|
 | 5 | `nuclei` | web, host | False | `nuclei.jsonl` | reuse `cmd_scan`'s existing argv (`gizmoduck.py:63`) | `info.severity` via `sev_from_text` | Byte-identical findings to today's `load()` for the same input — assert against `gizmoduck.load()` directly |
-| 6 | `zap` | web | active only | `zap.json` | `zap.bat -cmd -autorun <plan>.yaml`, plan has a `report` job `template: traditional-json` | `riskcode` via `sev_from_riskcode` | `site[].alerts[].instances[]` fan-out — one alert with 3 instances must yield 3 `matched_at` values, and a `riskcode` of 9 must land `info` + `severity-assigned` |
-| 7 | `nikto` | web | False | `nikto.csv` | `nikto -h <url> -Format csv -output <file>` | none — heuristic | **No severity field exists.** Every finding is `medium` unless the message matches a banner/version pattern → `info`, and all of them carry `severity-assigned` |
-| 8 | `nmap` | web, host | `vuln` NSE only | `nmap.xml` | `nmap -oX <file> -sV <host>`; `--script vuln` only when `opts.nmap_vuln` | open ports → `info`; `<script>` `state: VULNERABLE` → `sev_from_text` | An open port with no script yields `info`; a `<script id="vulners">` with a structured `<table>` yields its own finding |
-| 9 | `testssl` | web, host | False | `testssl.json` | `testssl.sh --jsonfile <file> <host>` | `severity` field via `sev_from_text` | `OK` and `INFO` are both non-findings at `info`; `WARN`/`FATAL` are unrecognized → `info` + `severity-assigned` (§13.11 — verify the real value set before finalizing) |
+| 6 | `zap` | web | active only | `zap.json` | `zap.bat -cmd -autorun <plan>.yaml`, plan has a `report` job `template: traditional-json` | `riskcode` via `sev_from_riskcode` | `site[].alerts[].instances[]` fan-out — one alert with 3 instances must yield 3 `matched_at` values, and a `riskcode` of 9 must land `info` + `severity-assigned`. **Before writing the parser, run both the AF `report` job and a standalone `-J` once and diff the JSON structurally** — spec §13.11 could not confirm they match, and one parser serving both paths depends on it |
+| 7 | `nikto` | web | False | `nikto.csv` | `nikto -h <url> -Format csv -output <file>` | none — heuristic | **No severity field exists.** Every finding is `medium` unless the message matches a banner/version pattern → `info`, and all carry `severity-assigned`. **Nikto exits non-zero even on success** (issue #837) — decide success by whether the output file has parseable content, never by status |
+| 8 | `nmap` | web, host | `vuln` NSE only | `nmap.xml` | `nmap -oX <file> -sV <host>`; `--script vuln` only when `opts.nmap_vuln` | open ports → `info`; vulns.lua `state` via `sev_from_text` | An open port with no script yields `info`. A `<script>` with a nested `<table>`/`<elem key=...>` yields its own finding. States: `VULNERABLE`, `VULNERABLE (DoS)`, `VULNERABLE (Exploitable)`, `LIKELY VULNERABLE` — `NOT VULNERABLE` is not a finding. **Lock the elem key paths against one real `--script vuln -oX` run first**; §13.11's key names are secondhand |
+| 9 | `testssl` | web, host | False | `testssl.json` | `testssl.sh --jsonfile <file> <host>` — **not `--jsonfile-pretty`**, which can emit invalid JSON (issue #1699) | `severity` field via `sev_from_text` | Enum is eight values: `OK, INFO, LOW, MEDIUM, HIGH, CRITICAL, WARN, FATAL`. **`WARN` and `FATAL` are scan errors, not target findings** — they must be recorded as a tool error in the run manifest and MUST NOT become findings, or a broken scan reports as a vulnerability. `OK`/`INFO` map to `info` |
 | 10 | `trivy` | deps, iac | False | `trivy.json` | `trivy fs --format json --scanners vuln` (deps) or `--scanners misconfig` (iac), always `--timeout` | `Severity` via `sev_from_text` | **One adapter, two kinds**: `Results[]` may carry `Vulnerabilities[]` and `Misconfigurations[]` in one file — parse only the array matching the kind. `UNKNOWN` → `info` + `severity-assigned`. Exit code 0 with findings must still yield findings |
 | 11 | `depcheck` | deps | False | `depcheck.json` | `dependency-check --format JSON --out <dir> --scan <path>` | fallback chain | **CVSS v3 absent**: a vulnerability with `severity: "HIGH"` and no `cvssv3` block must still resolve to 3. Order: text `severity` → `cvssv2.score` → `cvssv3.baseScore` |
 | 12 | `checkov` | iac | False | `checkov.json` | `checkov -d <path> -o json` | `severity` with `default="medium"` | **Two shapes**: the fixture must be a JSON *array* of framework reports; a single-object fixture is a second test case. Every `failed_checks` entry has `severity: null` → `medium` + `severity-assigned`. `passed_checks` are ignored |
@@ -862,15 +863,19 @@ Both are currently single fail-fast scripts (`set -euo pipefail`). Spec §9 requ
 
 ---
 
-## Open items carried from spec §13.11
+## Open items — all three answered (spec §13.11)
 
-These block **only** their own adapter task; every other task proceeds without them.
+Schemas and exit-code contracts are now documented. What remains is **one lab
+confirmation per tool**, folded into its own adapter task rather than blocking
+anything:
 
-| Item | Blocks | How to resolve |
+| Confirmation | In task | Why it still matters |
 |---|---|---|
-| Nmap `-oX` structured `<script>` output for `vuln` NSE; which scripts emit `state: VULNERABLE` | Task 8 | Run `nmap --script vuln -oX` against a known-vulnerable local target and read the XML |
-| testssl.sh `--jsonfile` vs `--jsonfile-pretty` schema; the complete `severity` value set | Task 9 | Run testssl.sh against any HTTPS host and enumerate the severities present |
-| ZAP Automation Framework exit codes; whether its `traditional-json` report matches `-J` | Task 6 | Run one `zap.bat -cmd -autorun` with a report job and compare |
+| Lock the Nmap `<table>`/`<elem key=...>` paths against one real `--script vuln -oX` run | 8 | The vulns.lua field names are secondhand; a wrong path yields zero findings silently |
+| Diff the ZAP AF `traditional-json` report against a standalone `-J` report | 6 | One parser serving both delivery paths depends on them matching, and no primary source asserts it |
+| Confirm the testssl.sh severities a real run emits | 9 | The eight-value enum is confirmed, but `WARN`/`FATAL` handling is the correctness risk — they must not become findings |
+
+Each is a five-minute check inside the task that needs it. None blocks another task.
 
 ---
 
