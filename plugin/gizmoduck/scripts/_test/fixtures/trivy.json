@@ -1,0 +1,75 @@
+{
+  "SchemaVersion": 2,
+  "ArtifactName": "myrepo",
+  "ArtifactType": "filesystem",
+  "Results": [
+    {
+      "Target": "requirements.txt",
+      "Class": "lang-pkgs",
+      "Type": "python-pkg",
+      "Vulnerabilities": [
+        {
+          "VulnerabilityID": "CVE-2023-1234",
+          "PkgName": "requests",
+          "InstalledVersion": "2.25.0",
+          "FixedVersion": "2.31.0",
+          "Severity": "HIGH",
+          "Title": "requests: improper certificate validation",
+          "Description": "requests before 2.31.0 does not validate certificates correctly.",
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2023-1234",
+          "CweIDs": ["CWE-295"],
+          "CVSS": {
+            "nvd": {"V2Score": 5.0, "V3Score": 7.4}
+          },
+          "References": ["https://example.com/advisory-1234"]
+        },
+        {
+          "VulnerabilityID": "CVE-2024-9999",
+          "PkgName": "urllib3",
+          "InstalledVersion": "1.26.0",
+          "FixedVersion": "",
+          "Severity": "UNKNOWN",
+          "Title": "urllib3: unassessed vulnerability",
+          "Description": "Severity has not yet been assessed upstream.",
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2024-9999",
+          "CweIDs": [],
+          "CVSS": {},
+          "References": []
+        }
+      ]
+    },
+    {
+      "Target": "main.tf",
+      "Class": "config",
+      "Type": "terraform",
+      "Misconfigurations": [
+        {
+          "Type": "Terraform Security Check",
+          "ID": "AVD-AWS-0001",
+          "Title": "S3 Bucket has an ACL defined which allows public access.",
+          "Description": "S3 bucket permission should not be public.",
+          "Severity": "CRITICAL",
+          "PrimaryURL": "https://avd.aquasec.com/misconfig/avd-aws-0001",
+          "Resolution": "Remove the public ACL or use a private ACL.",
+          "CauseMetadata": {
+            "StartLine": 12,
+            "EndLine": 18
+          }
+        },
+        {
+          "Type": "Terraform Security Check",
+          "ID": "AVD-AWS-0002",
+          "Title": "IAM policy grants full admin access.",
+          "Description": "IAM policy allows wildcard actions.",
+          "Severity": "MEDIUM",
+          "PrimaryURL": "https://avd.aquasec.com/misconfig/avd-aws-0002",
+          "Resolution": "Scope the IAM policy to required actions.",
+          "CauseMetadata": {
+            "StartLine": 30,
+            "EndLine": 40
+          }
+        }
+      ]
+    }
+  ]
+}
