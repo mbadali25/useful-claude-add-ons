@@ -1,0 +1,74 @@
+{
+  "_comment": "Generating input for Running-a-Mailbox-Job.pdf. Rebuild from the doc-builder skill: python build_sop.py <this file> --to-pdf, then check_conformance.py and verify_borders.py. This guide covers HOW TO DRIVE the two Exchange skills; what each step means is in the per-skill operator guides under each skill's docs/. Source of truth is skills/exchange-mailbox-cleanup/SKILL.md, skills/exchange-mailbox-restore/SKILL.md and the repo README's install one-liners. No screenshots exist for this process - none are used. Headings carry keep_with_next because a text-only document reflows on any wording change.",
+  "title": "Running a Mailbox Job",
+  "subtitle": "How to use the two mailbox skills - what to install, what to type, and what the assistant will ask you for",
+  "output": "Running-a-Mailbox-Job",
+  "body": [
+    { "type": "para", "text": "Two skills do the mailbox work for staff who have left and staff who are coming back. You do not need to know PowerShell. The assistant reads the runbook, works out which step you are on, and prints each command already filled in - you paste it into a window and tell it what came back." },
+    { "type": "para", "text": "**This guide is about driving the skills.** What each step means, and why, is in the operator guide that ships inside each skill." },
+
+    { "type": "heading", "keep_with_next": true, "text": "1. Which skill you need" },
+    { "type": "para", "text": "Pick by what the request actually is. If you pick wrong, the assistant will say so and switch." },
+    { "type": "bullet", "text": "**Mailbox Cleanup** - someone has left. Keep their mail for seven years and free the licence. 41 steps, about half a day of elapsed time." },
+    { "type": "bullet", "text": "**Mailbox Restore and Hold Removal** - something has to be done with a mailbox that is already on hold: read it, bring it back, release it, or destroy it. One triage step, then exactly one of five paths." },
+    { "type": "tip", "text": "If you are not sure, describe the request in your own words and let the assistant choose. \"Sarah left on Friday\" and \"the manager needs to read Sarah's email\" go to different skills, and it will tell you which one it picked and why." },
+
+    { "type": "heading", "keep_with_next": true, "text": "2. Set up, once per computer" },
+    { "type": "para", "text": "One command. It installs the skills and everything they need. In Windows PowerShell:" },
+    { "type": "step", "text": "`irm 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/b678e3cf33ae8990814800302f37bd083d15a47b/scripts/install-prerequisites.ps1' | iex`" },
+    { "type": "step", "text": "Pick **exchange-mailbox-cleanup** and **exchange-mailbox-restore** from the list it shows. Take **infra-work-ticketing** as well if you want the assistant to open ServiceDesk Plus tickets for you - it works without it and keeps the record in the closing report instead." },
+    { "type": "tip", "text": "There is nothing else to install. The skills carry their own scripts, so there is no repository to clone and no path to set. Anything else they need - the Exchange and Graph modules - the assistant checks for and installs under your own user profile after asking you once, so it never needs an administrator prompt." },
+
+    { "type": "heading", "keep_with_next": true, "text": "3. Start a job" },
+    { "type": "para", "text": "Open Claude Code and say what happened, in plain words. You do not have to name the skill - it starts on the request. Any of these works:" },
+    { "type": "bullet", "text": "\"Sarah left on Friday - put her mailbox on hold and free up the licence.\"" },
+    { "type": "bullet", "text": "\"I have a CSV of leavers from HR, walk me through the offboarding cleanup.\"" },
+    { "type": "bullet", "text": "\"The manager needs to read an ex-employee's mail, can we get it back?\"" },
+    { "type": "bullet", "text": "\"We deleted someone by mistake last week.\"" },
+    { "type": "bullet", "text": "\"Take Dave off litigation hold, he's staying.\"" },
+
+    { "type": "heading", "keep_with_next": true, "text": "4. The three things it asks you for" },
+    { "type": "para", "text": "Everything else arrives already filled in." },
+    { "type": "step", "text": "**Your admin sign-in address.** Asked once, near the start. It goes into every command printed afterwards, so you never type it again." },
+    { "type": "step", "text": "**Who the job is for.** One email address, or the path to a spreadsheet saved as CSV with the addresses in a column. A column headed \"Work Email\" is fine - it finds it." },
+    { "type": "step", "text": "**What came back.** After you paste a command, tell it what you saw, or point it at the file the command wrote. It reads the file itself." },
+
+    { "type": "heading", "keep_with_next": true, "text": "5. What a session looks like" },
+    { "type": "para", "text": "Shortened, but this is the shape of it. **You:** \"Sarah Whitfield left on Friday. Put her mailbox on hold and free up the licence.\"" },
+    { "type": "para", "text": "**Assistant:** \"That is the mailbox cleanup process - 41 steps, and I will take them one at a time. First: which account do you sign in to the Microsoft 365 admin centre with?\"" },
+    { "type": "para", "text": "**You:** your admin address. **Assistant:** \"Checked your machine. Two things are missing - the Exchange module, and the two folders reports get written to. Shall I install them under your user profile? Nothing needs an administrator.\"" },
+    { "type": "para", "text": "**You:** \"yes\". **Assistant:** \"Done - all checks pass. Open a blue Windows PowerShell window and paste `$PSVersionTable.PSEdition`, then tell me what it prints.\"" },
+    { "type": "para", "text": "**You:** \"Desktop\". **Assistant:** \"Right window. Next, sign in to Exchange - paste this. A browser sign-in will pop up.\" And so on, one step at a time, for 41 steps." },
+    { "type": "tip", "text": "Why you paste instead of it running: signing in opens a Microsoft window that only you can answer. The assistant never holds your credentials - it writes the commands, you run them, and it reads the files they produce." },
+
+    { "type": "heading", "keep_with_next": true, "text": "6. Confirming something that cannot be undone" },
+    { "type": "para", "text": "Three steps across the two skills destroy something. Each one stops and makes you type a phrase that carries the count." },
+    { "type": "bullet", "text": "**DELETE 3** - deleting the accounts. The number is how many; it tells you the count and you type it back. The mail is kept and stays searchable; the sign-in, OneDrive and Teams history go." },
+    { "type": "bullet", "text": "**RECOVER 1** - bringing a preserved mailbox back to life for a returning employee. The preserved copy stops existing. Usually you want **PATH 2** instead, which copies the mail and keeps the original." },
+    { "type": "bullet", "text": "**DESTROY 1** - permanent destruction after a retention period has ended. Needs written authorisation on the ticket first." },
+    { "type": "tip", "text": "Typing \"yes\" will not work. A bare yes, y, ok, or pressing Enter does not proceed at these steps, on purpose. If you did not mean to be there, say so and the assistant will back out." },
+
+    { "type": "heading", "keep_with_next": true, "text": "7. Where your files end up" },
+    { "type": "para", "text": "Both folders are created for you the first time they are needed." },
+    { "type": "bullet", "text": "`C:\\scripts\\reports` - the reports. This is what you attach to the ticket when the job is done." },
+    { "type": "bullet", "text": "`C:\\scripts\\logs` - the detailed logs, named after the check and the time it ran. The assistant reads these itself; you should not need to open them." },
+
+    { "type": "heading", "keep_with_next": true, "text": "8. When it refuses" },
+    { "type": "para", "text": "A refusal is usually the process working, not a fault." },
+    { "type": "bullet", "text": "**\"I will not remove the licence.\"** Removing a licence deletes the mailbox after 30 days whether or not it is on hold. The seat is freed by deleting the account instead, which is what the process does." },
+    { "type": "bullet", "text": "**\"A live mailbox now has this address.\"** Someone else has been given the leaver's old address. Destroying by address alone could destroy the wrong person's mail, so the authorisation has to name the mailbox itself." },
+    { "type": "bullet", "text": "**\"That script is deprecated and will throw.\"** An older PST export script still exists but no longer works against Exchange Online." },
+
+    { "type": "heading", "keep_with_next": true, "text": "9. When to stop and get a person" },
+    { "type": "para", "text": "Stop, do not retry, and copy the red text exactly as it appears." },
+    { "type": "bullet", "text": "A command fails and the assistant cannot explain why." },
+    { "type": "bullet", "text": "A mailbox shows as **soft-deleted** rather than inactive - a 30-day clock is running and it needs handling now." },
+    { "type": "bullet", "text": "A mailbox does not appear as inactive after several hours." },
+    { "type": "bullet", "text": "You are asked for something you do not have the authority to give." },
+    { "type": "tip", "text": "Do not retry a failed destructive step. Running it again can repeat a change that already happened. Take the error text to whoever owns the tenant." },
+
+    { "type": "heading", "keep_with_next": true, "text": "Where the detail lives" },
+    { "type": "para", "text": "The full step-by-step guide for each process ships inside its skill, in the docs folder, as a PDF. This guide only covers how to drive them." },
+    { "type": "para", "text": "Nothing in these skills has been run against a live Exchange Online tenant. The restore and destruction paths are transcribed from Microsoft's documentation and reviewed, not exercised." }
+  ]
+}

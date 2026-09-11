@@ -64,8 +64,8 @@
     {
       "name": "doc-builder",
       "source": "./skills/doc-builder",
-      "description": "Finished documents as DOCX and PDF through Word - findings reports via HTML, screenshot SOPs via OOXML - with the house style supplied by whichever brand pack is installed.",
-      "version": "1.0.0"
+      "description": "Finished documents as DOCX and PDF through Word - findings reports via HTML, screenshot SOPs via OOXML - with the house style supplied by whichever brand pack is installed. Also install solomon-doc-builder for automatic Solomon house style; --brand neutral (or DOC_BUILDER_BRAND=neutral) always turns branding off.",
+      "version": "1.1.0"
     },
     {
       "name": "drata",
@@ -83,7 +83,7 @@
       "name": "exchange-mailbox-restore",
       "source": "./skills/exchange-mailbox-restore",
       "description": "Walks a non-technical operator through restoring a mailbox or removing a hold - triage on mailbox state, then exactly one of five mutually exclusive paths.",
-      "version": "1.0.0"
+      "version": "1.0.1"
     },
     {
       "name": "i-have-adhd",
@@ -107,7 +107,7 @@
       "name": "jira-manager",
       "source": "./skills/jira-manager",
       "description": "Jira Cloud over the REST API with email + API token - JQL search, create, update, assign, transition, comment, log work. No MCP connector.",
-      "version": "1.0.1"
+      "version": "1.0.0"
     },
     {
       "name": "knowbe4-admin",
@@ -143,7 +143,7 @@
       "name": "power-automate-api",
       "source": "./skills/power-automate-api",
       "description": "Power Automate cloud flows through the API instead of the maker portal - definitions, expressions, triggers, connection references, run history, and the Flow/BAP auth errors.",
-      "version": "1.0.1"
+      "version": "1.0.0"
     },
     {
       "name": "repo-docs",
@@ -166,8 +166,8 @@
     {
       "name": "solomon-doc-builder",
       "source": "./skills/solomon-doc-builder",
-      "description": "Brand pack only: the Solomon Associates house style for doc-builder. Palette, template and footer, no logic of its own.",
-      "version": "1.0.0"
+      "description": "Brand pack only: the Solomon Associates house style for doc-builder. Palette, template and footer, no logic of its own. Install alongside doc-builder for automatic Solomon branding; doc-builder's --brand neutral always opts back out.",
+      "version": "1.1.0"
     },
     {
       "name": "solomon-sop-maker",
@@ -209,13 +209,13 @@
       "name": "work-log-reporter",
       "source": "./skills/work-log-reporter",
       "description": "Per-session work log in a committed work-log/ directory, plus a formatted email report with a PDF attachment sent over SMTP.",
-      "version": "1.1.0"
+      "version": "1.1.1"
     },
     {
       "name": "crew",
       "source": "./plugin/crew",
-      "description": "Virtual dev team for multi-repo legacy work - 29 context-isolated agents (13 tiered, 15 domain specialists opted into per repo, and the standing manager), 24 slash commands, 17 bundled skills, and deterministic hooks that block unsafe commands, gate unverified turns, brief the PM at session start, re-engage it to assign work when project state changes, carry a handoff across compaction, recreate a missing or broken .crew/config.json from a single-source template, and layer a guided, walkthrough-written machine-global config under the per-repo one.",
-      "version": "0.16.31"
+      "description": "Virtual dev team for multi-repo legacy work - 29 context-isolated agents (13 tiered, 15 domain specialists opted into per repo, and the standing manager), 24 slash commands, 17 bundled skills, and deterministic hooks that block unsafe commands, gate unverified turns, brief the PM at session start, re-engage it to assign work when project state changes, carry a handoff across compaction (archiving one it judges stale rather than injecting it as current), recreate a missing or broken .crew/config.json from a single-source template, and layer a guided, walkthrough-written machine-global config under the per-repo one.",
+      "version": "0.16.33"
     },
     {
       "name": "gizmoduck",

@@ -39,6 +39,35 @@ HANDOFF=$("$PY" -c 'import json;print(json.load(open(".crew/config.json")).get("
 HANDOFF="${HANDOFF:-.work/HANDOFF.md}"
 [ -f "$HANDOFF" ] || exit 0
 
+# Stale-handoff check, right before this note would be injected as though it
+# were current -- the concrete failure this exists to catch: a note still
+# saying "at the spec-review gate" hours after the gate closed and more
+# commits landed past it. Delegates to crew_state.archive_stale_handoff
+# rather than reimplementing its signals in bash; see that function and
+# crew_state.handoff_staleness for what each signal catches and why. Fails
+# open: any error here (bad JSON, python raising, git absent) leaves
+# ARCHIVED_PATH empty and falls through to printing the note unchanged,
+# exactly like every session before this feature existed -- a hook that
+# breaks startup over a staleness check is worse than one honestly-stale
+# note.
+VERDICT=$("$PY" "$DIR/crew_state.py" --archive-stale-handoff 2>/dev/null)
+ARCHIVED_PATH=$(printf '%s' "$VERDICT" | "$PY" -c '
+import json, sys
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    d = {}
+print(d.get("archivedPath", "") if d.get("archived") else "")' 2>/dev/null)
+if [ -n "$ARCHIVED_PATH" ]; then
+  echo "## Handoff from the previous session (${SOURCE})"
+  echo
+  echo "A handoff note was here, but it described a state this repository has"
+  echo "since moved past. It has been archived, not deleted, at"
+  echo "${ARCHIVED_PATH} for the record -- nothing from it is being treated"
+  echo "as current this session."
+  exit 0
+fi
+
 # Plain text, phrased as project information rather than instructions:
 # text framed as out-of-band commands trips prompt-injection defences and gets
 # surfaced to the user instead of being treated as context.

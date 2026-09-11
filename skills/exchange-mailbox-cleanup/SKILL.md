@@ -65,8 +65,7 @@ cannot see or answer a modern-auth prompt. So:
 Never call `Connect-*`, `Set-Mailbox`, `Remove-MgUser`, `Add-RoleGroupMember` or any of the four
 scripts from a Bash or PowerShell tool call. Read-only file reads and the helper scripts in
 `scripts/` (`exo_preflight.ps1`, `Resolve-OperatorInput.ps1`, `Read-ScriptLog.ps1` - all Windows
-PowerShell 5.1, no Python) are the only things this skill executes itself. `parse_user_input.py` and
-`read_log.py` remain as reference implementations; nothing depends on them.
+PowerShell 5.1) are the only things this skill executes itself. This skill needs no Python.
 
 ### One edition, one window, two machines
 

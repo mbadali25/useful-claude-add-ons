@@ -6,6 +6,52 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
+- **`crew` 0.16.33: a lingering handoff note is now archived, not just warned
+  about.** `pm_brief`'s `handoffPending` finding, and `handoff-read`'s printed
+  path, both only ever asked whether `.work/HANDOFF.md` existed -- true the
+  same way for a note written five minutes ago and one still describing a
+  gate that closed hours ago, after two more commits landed on top of it.
+  That happened for real: a handoff said "at the spec-review gate" long after
+  the gate closed, and the next session started acting on a next action that
+  was already done.
+
+  `crew_state.handoff_staleness` now judges the note on two signals before
+  `handoff-read` (and, under `context.autoResume`, `pm_brief` itself) prints
+  or injects it: **age**, from the note's own `written:` line (falling back
+  to file mtime when that line is missing, the weaker of the two since an
+  edited file's mtime moves without the header changing to match), and
+  **reality drift**, comparing the note's `head:`/`branch:` lines against the
+  checkout right now. A `head:` this repository cannot find, or cannot reach
+  from `HEAD`, cannot be verified at all -- the same "unknown resolves to
+  stale" rule the codemap and diagram anchors already use for missing
+  provenance. A verifiable `head:` that is `staleHandoff.maxCommitsBehind` or
+  more commits behind reports exactly how far the note has fallen behind
+  (default 3); a `branch:` that no longer matches the checkout is flagged on
+  its own, since a merge can leave the noted head a true ancestor of `HEAD`
+  while the session has moved off the branch entirely. `staleHandoff.
+  maxAgeHours` defaults to 72 -- generous on purpose, since archiving a note
+  someone is still using is worse than leaving a stale one for one more day.
+
+  A note either signal flags is **archived, never deleted** -- moved to
+  `.crew/handoffs/HANDOFF-<timestamp>.md`, timestamped and never overwritten
+  (`crew_state.archive_stale_handoff`). This is the one automatic action
+  crew's own "ask before removing a role or deleting anything" rule still
+  allows: moving a file sideways into a dated archive is not deleting it, and
+  a stale note left visibly in that archive is recoverable in a way a deleted
+  one never is. A note judged fresh -- or one crew cannot judge at all,
+  because it carries none of the template's header lines -- is left exactly
+  where it was; `read_work`'s plain existence check and the `handoffPending`
+  finding it feeds are untouched.
+
+  Both `handoff-read.sh` and its `.ps1` twin call the same check (through
+  `crew_state.py --archive-stale-handoff`), and `pm_brief._resume_context`
+  calls it directly for the `autoResume` path, which has no human read step
+  to catch a stale note the printed path still leaves in place. Every call
+  fails open: a check that cannot run (no python, no git, a locked file)
+  falls through to the exact behaviour crew had before this feature existed,
+  because a hook that breaks startup over a staleness check is worse than one
+  honestly-stale note.
+
 - **`exchange-mailbox-cleanup` 1.0.0 and `exchange-mailbox-restore` 1.0.0: two
   Exchange Online runbooks turned into operator walkthroughs.** Built from
   `Mailbox-Cleanup-Training-Runbook` (41 steps, Phases A-E) and
@@ -49,7 +95,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   and a reader that assumes UTF-8 turns every accented name into mojibake with
   no error.
 
-- **`doc-builder` 1.0.0 and `solomon-doc-builder` 1.0.0: `report-builder` and
+- **`doc-builder` 1.1.0 and `solomon-doc-builder` 1.1.0: `report-builder` and
   `solomon-sop-maker` merged into one implementation with a swappable brand
   pack.** Both original pipelines survive because neither can do the other's
   job: findings and tabular content go HTML-to-Word, step-by-step procedures
@@ -72,6 +118,30 @@ All notable changes to this repository are documented here. Format follows [Keep
   so probe-install-reprobe in one process reports "still missing" even when the
   wheel landed. Word's presence is read from the registry without starting Word,
   and a locked target is detected and named before Word is ever launched.
+
+  **1.1.0 fixes the packaging gap, without touching `resolve_brand.py`.**
+  `.claude-plugin/marketplace.json` has no field for "installing this also
+  installs that" -- each skill is its own entry, and `claude plugin install`
+  takes exactly one plugin name -- so `doc-builder` alone never brought
+  `solomon-doc-builder` with it. The one mechanism this marketplace has for a
+  single install bringing more than one thing is the `plugin/` bundle
+  (`crew`, `gizmoduck`, `localgpu`, `obsidian-vault`), and it was rejected here
+  on purpose: that bucket defaults **off** in the bootstrap scripts because a
+  plugin can register hooks, and moving a hookless skill and its pure-data
+  brand pack into it would flip them from on-by-default to off-by-default --
+  a regression neither skill needs. A scratch-built plugin-cache fixture
+  (`skills/doc-builder/scripts/_test/test_resolve_brand.py`, new) proved
+  instead that `resolve_brand.py`'s existing "plugin cache" search step
+  already climbs from `doc-builder`'s own installed location to the
+  marketplace folder and finds `solomon-doc-builder` there with zero code
+  changes, whether the two are checkout siblings or two separately installed
+  plugins sharing one marketplace's cache directory. So the fix is entirely
+  documentation: `SKILL.md` for both skills, both marketplace descriptions,
+  `skills/README.md`, the root `README.md` mirror, and `MARKETPLACE.md` all
+  now say plainly that Solomon styling needs `solomon-doc-builder` installed
+  alongside `doc-builder` (one extra command, not a second architecture), and
+  that `--brand neutral` / `DOC_BUILDER_BRAND=neutral` is the opt-out --
+  previously documented only in `resolve_brand.py`'s own module docstring.
 
 - **Four crew agents: `powershell-5.1-expert`, `powershell-7-expert`,
   `exchange-online-specialist`, `skill-author`.** The two PowerShell files are

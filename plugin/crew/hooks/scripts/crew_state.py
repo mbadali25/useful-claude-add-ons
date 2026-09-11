@@ -7,6 +7,7 @@ traceback.
 """
 
 import argparse
+import calendar
 import hashlib
 import json
 import os
@@ -225,6 +226,285 @@ def read_work(root):
             os.path.join(root, ".work", "HANDOFF.md")
         ),
     }
+
+
+# --- Handoff staleness ------------------------------------------------------
+#
+# read_work() above only asks whether a handoff exists -- enough to warn once
+# per session (pm_brief's `handoffPending` finding), not enough to say a note
+# is describing a past state rather than the present one. That needs a second
+# question: does what it claims about the repository still hold. Two
+# independent signals answer it, and each is written down here because the
+# next reader has to tune them, not guess at them:
+#
+#   1. AGE, from the note's own `written:` line. A handoff is a snapshot of
+#      one moment, and every hour past it is an hour the working tree could
+#      have changed underneath it. Weak on its own -- a note can sit untouched
+#      over a quiet weekend and still be exactly right -- so it only settles
+#      staleness on its own when the signal below cannot be computed at all
+#      (no git, no `head:` line, or a `head:` this checkout cannot resolve).
+#   2. REALITY DRIFT, from the note's `head:` and `branch:` lines. Those are a
+#      claim about the repository AT THE MOMENT THE NOTE WAS WRITTEN. If the
+#      noted head is not a commit this checkout can even find, or is not an
+#      ancestor of the current HEAD, the note's account of history cannot be
+#      verified -- and, matching how _read_graph and read_diagrams elsewhere
+#      in this file treat a graph or diagram with no provenance, unknown
+#      resolves to stale. If it CAN be verified, the number of commits landed
+#      since it is a direct read of how far the note has fallen behind --
+#      exactly the "cites a commit that is now many commits behind HEAD" case
+#      this exists to catch. A branch that no longer matches the noted one is
+#      checked separately, because a merge can make the noted head a true
+#      ancestor of HEAD while the session has still moved off the branch the
+#      note describes entirely (the concrete case that motivated this: the
+#      gate the note said was still open had already closed, on a branch two
+#      commits had since moved past).
+#
+# Either signal firing is enough to call the note stale -- see
+# handoff_staleness. Firing is never certain proof, only past every hook here
+# treats "cannot tell" as "assume the human still needs it": read_work's plain
+# existence check is untouched by any of this, and archive_stale_handoff only
+# ever moves a note it has an actual reason to distrust.
+
+_HANDOFF_WRITTEN_RE = re.compile(r"^written:\s*(\S+)", re.IGNORECASE | re.MULTILINE)
+_HANDOFF_BRANCH_RE = re.compile(r"^branch:\s*(\S+)", re.IGNORECASE | re.MULTILINE)
+_HANDOFF_HEAD_RE = re.compile(
+    r"^head:\s*([0-9a-f]{7,40})\b", re.IGNORECASE | re.MULTILINE
+)
+
+# Where a handoff lives when config does not say -- kept in sync by eye with
+# pm_brief._DEFAULT_HANDOFF_PATH and handoff-read.sh's own fallback, the same
+# way crew_state.read_work's hard-coded ".work/HANDOFF.md" already is; see
+# pm_brief's constant for why a single shared literal cannot reach all three
+# languages this runs in.
+_DEFAULT_HANDOFF_PATH = ".work/HANDOFF.md"
+
+# Generous on purpose. Archiving a handoff someone is still using is strictly
+# worse than leaving an honestly-stale one in place for one extra day -- see
+# crew-context/SKILL.md's Housekeeping section, which this enforces rather
+# than replaces.
+STALE_HANDOFF_DEFAULTS = {"maxAgeHours": 72, "maxCommitsBehind": 3}
+
+# Directory archived handoffs move to. Sibling to crew_incident.ARCHIVE_DIR
+# (".crew/incidents") -- same convention, one archive directory per kind of
+# record crew keeps.
+HANDOFF_ARCHIVE_DIR = ".crew/handoffs"
+
+
+def _stale_handoff_config(cfg):
+    """Resolved `{maxAgeHours, maxCommitsBehind}` for this repo.
+
+    Falls back to STALE_HANDOFF_DEFAULTS on anything missing or wrong-typed --
+    config is hand-edited, and a bad value here must degrade to the default,
+    not raise out of a SessionStart hook.
+    """
+    block = dict_or_empty(dict_or_empty(cfg.get("context")).get("staleHandoff"))
+    age = block.get("maxAgeHours")
+    behind = block.get("maxCommitsBehind")
+    return {
+        "maxAgeHours": (
+            age if isinstance(age, (int, float)) and age > 0
+            else STALE_HANDOFF_DEFAULTS["maxAgeHours"]
+        ),
+        "maxCommitsBehind": (
+            behind if isinstance(behind, int) and behind >= 0
+            else STALE_HANDOFF_DEFAULTS["maxCommitsBehind"]
+        ),
+    }
+
+
+def _handoff_field(pattern, text):
+    found = pattern.search(text)
+    return found.group(1).strip() if found else None
+
+
+def _handoff_written_epoch(text):
+    """The note's `written:` timestamp as epoch seconds, or None.
+
+    Only the documented `%Y-%m-%dT%H:%M:%SZ` form parses -- crew-context/
+    SKILL.md's template, and what handoff-write.sh's auto skeleton stamps
+    (`written: <iso> (auto, at <trigger> compact)`, which is why the regex
+    above captures one non-space token rather than the rest of the line). A
+    hand-edited or older note without a parseable line falls back to file
+    mtime in handoff_staleness -- the weaker, last-resort signal, since an
+    edited file's mtime moves even when nobody updated `written:` to match.
+    """
+    raw = _handoff_field(_HANDOFF_WRITTEN_RE, text)
+    if not raw:
+        return None
+    try:
+        return calendar.timegm(time.strptime(raw, "%Y-%m-%dT%H:%M:%SZ"))
+    except ValueError:
+        return None
+
+
+def handoff_path(root, cfg):
+    """Where the handoff note lives, honouring `context.handoffPath`.
+
+    `contained_path`, not a bare join -- this path is read wholesale into hook
+    output and, under `context.autoResume`, into the model's context (see
+    contained_path's own docstring for the exfiltration risk a bad config
+    value carries). Shared by handoff_staleness / archive_stale_handoff so the
+    file they judge and archive is the same one handoff-read.sh prints and
+    pm_brief's `_resume_context` injects -- not a second path convention.
+    """
+    context_cfg = dict_or_empty(cfg.get("context"))
+    configured = context_cfg.get("handoffPath")
+    value = (
+        configured if isinstance(configured, str) and configured
+        else _DEFAULT_HANDOFF_PATH
+    )
+    return contained_path(root, value, _DEFAULT_HANDOFF_PATH)
+
+
+def handoff_staleness(root, handoff_text, cfg=None, now=None, mtime=None):
+    """Whether `handoff_text` describes a past state, and why.
+
+    Returns `{"stale": bool, "reasons": [str, ...], "ageHours": float|None,
+    "commitsBehind": int|None}`. `reasons` is empty exactly when `stale` is
+    False, and is meant to be read by a human -- archive_stale_handoff and
+    handoff-read.sh surface it verbatim rather than a bare `stale: true`.
+
+    `mtime` is the handoff file's own mtime (epoch seconds), passed in by the
+    caller that already stat'd it rather than re-stat'd here, and used only
+    as the age fallback described above _HANDOFF_WRITTEN_RE.
+    """
+    now = time.time() if now is None else now
+    limits = _stale_handoff_config(cfg or {})
+    reasons = []
+
+    written = _handoff_written_epoch(handoff_text)
+    age_source = "written"
+    if written is None:
+        written = mtime
+        age_source = "file mtime, no `written:` line to read"
+    age_hours = None
+    if written is not None:
+        age_hours = max(0.0, (now - written) / 3600.0)
+        if age_hours >= limits["maxAgeHours"]:
+            reasons.append(
+                f"{age_hours:.0f}h old ({age_source}), at or past the "
+                f"configured {limits['maxAgeHours']:.0f}h limit"
+            )
+
+    noted_branch = _handoff_field(_HANDOFF_BRANCH_RE, handoff_text)
+    noted_head = _handoff_field(_HANDOFF_HEAD_RE, handoff_text)
+    commits_behind = None
+
+    # Every git_out call below fails soft to None -- no git, no repository, or
+    # a timeout all read the same as "cannot check". REALITY DRIFT therefore
+    # only ever recommends staleness, never disproves it: when git cannot
+    # answer, this loop contributes no reasons and AGE is what decides.
+    if git_out(root, "rev-parse", "--is-inside-work-tree"):
+        current_branch = git_out(root, "rev-parse", "--abbrev-ref", "HEAD")
+        if noted_branch and current_branch and current_branch != noted_branch:
+            reasons.append(
+                f"notes branch {noted_branch!r}, checkout is now on "
+                f"{current_branch!r}"
+            )
+        if noted_head:
+            if git_out(root, "cat-file", "-e", noted_head) is None:
+                reasons.append(
+                    f"notes head {noted_head[:12]} is not a commit this "
+                    "repository can find (rewritten history, or a different "
+                    "clone) -- its account of the repository cannot be "
+                    "verified"
+                )
+            elif git_out(
+                root, "merge-base", "--is-ancestor", noted_head, "HEAD"
+            ) is None:
+                reasons.append(
+                    f"notes head {noted_head[:12]} is not on the current "
+                    "branch's history -- it was rebased or abandoned past it"
+                )
+            else:
+                count = git_out(
+                    root, "rev-list", "--count", f"{noted_head}..HEAD"
+                )
+                if count and count.isdigit():
+                    commits_behind = int(count)
+                    if commits_behind >= limits["maxCommitsBehind"]:
+                        reasons.append(
+                            f"{commits_behind} commit(s) have landed on top "
+                            "of the noted head, at or past the configured "
+                            f"{limits['maxCommitsBehind']} limit"
+                        )
+
+    return {
+        "stale": bool(reasons),
+        "reasons": reasons,
+        "ageHours": age_hours,
+        "commitsBehind": commits_behind,
+    }
+
+
+def _archived_handoff_name(root, now):
+    """A collision-free filename under HANDOFF_ARCHIVE_DIR for `now`.
+
+    Same shape as crew_incident._new_id: a timestamped base, then a letter
+    suffix if two notes archive in the same minute. Two stale handoffs inside
+    one minute is unlikely and survivable; silently overwriting the first
+    archived copy is not -- that would repeat, one layer down, the exact
+    mistake this feature exists to fix.
+    """
+    base = time.strftime("HANDOFF-%Y%m%d-%H%M", time.gmtime(now))
+    archive_dir = os.path.join(root, HANDOFF_ARCHIVE_DIR)
+    if not os.path.exists(os.path.join(archive_dir, base + ".md")):
+        return base + ".md"
+    for suffix in "bcdefghijklmnopqrstuvwxyz":
+        candidate = f"{base}{suffix}"
+        if not os.path.exists(os.path.join(archive_dir, candidate + ".md")):
+            return candidate + ".md"
+    return base + "-x.md"
+
+
+def archive_stale_handoff(root, cfg, now=None):
+    """Judge the configured handoff and, if it is stale, archive it.
+
+    ARCHIVES, never deletes: the note moves to HANDOFF_ARCHIVE_DIR, timestamped
+    and never overwritten (see _archived_handoff_name). A stale note is
+    visibly wrong and recoverable; a deleted one is invisibly gone -- it was
+    the only record of where a session stopped. pm_brief and pm_pulse both
+    already tell the model "it still asks before removing a role or deleting
+    anything"; this is the automatic action that rule still allows, because
+    moving a file sideways into a dated archive is not deleting it.
+
+    Returns a dict describing what happened and never raises. Every failure
+    mode -- no handoff, a fresh handoff, no permission to move the file --
+    reports `archived: False` with a `reason`, so a caller that ignores the
+    return value loses nothing: the note is simply left exactly where it was,
+    which is what every session did before this feature existed.
+    """
+    now = time.time() if now is None else now
+    cfg = cfg or {}
+    path = handoff_path(root, cfg)
+    text = read_text(path)
+    if text is None or not text.strip():
+        return {"archived": False, "reason": "no handoff", "path": path}
+
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError:
+        mtime = None
+
+    verdict = handoff_staleness(root, text, cfg, now=now, mtime=mtime)
+    if not verdict["stale"]:
+        return {"archived": False, "reason": "fresh", "path": path, **verdict}
+
+    archive_dir = os.path.join(root, HANDOFF_ARCHIVE_DIR)
+    try:
+        os.makedirs(archive_dir, exist_ok=True)
+        dest = os.path.join(archive_dir, _archived_handoff_name(root, now))
+        os.replace(path, dest)
+    except OSError as exc:
+        # Cannot move it -- leave it in place rather than risk losing it.
+        # The caller still gets the verdict, so the handoffPending warning
+        # keeps firing; only the archiving step failed.
+        return {
+            "archived": False, "reason": f"could not archive: {exc}",
+            "path": path, **verdict,
+        }
+
+    return {"archived": True, "path": path, "archivedPath": dest, **verdict}
 
 
 _ANCHOR_RE = re.compile(
@@ -2414,6 +2694,13 @@ def main(argv=None):
                         help="print where a worktree for BRANCH belongs, per "
                              "the resolved worktree.root, and exit. Creates "
                              "nothing. Pass '-' for the root directory alone")
+    parser.add_argument("--archive-stale-handoff", action="store_true",
+                        help="judge the configured handoff note against the "
+                             "staleness signals (age, and whether its noted "
+                             "head/branch still describe reality) and, if it "
+                             "fails them, ARCHIVE it under "
+                             f"{HANDOFF_ARCHIVE_DIR}/ -- never deletes. "
+                             "Prints the verdict as JSON either way")
     args = parser.parse_args(argv)
 
     root = args.root or os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
@@ -2451,6 +2738,21 @@ def main(argv=None):
             print(worktree_root(cfg, root))
         else:
             print(worktree_path(cfg, root, args.worktree_path))
+        return 0
+    if args.archive_stale_handoff:
+        # Same layered config as --worktree-path above, and the same reason:
+        # a bad or absent config must degrade to the unconfigured defaults,
+        # never raise out of a SessionStart hook. Always returns 0 -- this is
+        # a judgment call reported as JSON, not a command that can fail the
+        # caller; handoff-read.sh reads `archived`/`archivedPath` off stdout
+        # and falls through to printing the note unchanged on anything else.
+        try:
+            import crew_config  # pylint: disable=import-outside-toplevel
+            cfg = crew_config.resolve_config(root)
+        except Exception:  # pylint: disable=broad-except
+            cfg = {}
+        print(json.dumps(archive_stale_handoff(root, cfg), indent=2,
+                         sort_keys=True))
         return 0
     if args.record_dispatch:
         if not args.role or not args.provider:

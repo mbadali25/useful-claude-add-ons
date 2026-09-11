@@ -4,8 +4,8 @@
     Read back a log or CSV the Exchange driver scripts wrote, decoding defensively.
 
 .DESCRIPTION
-    Windows PowerShell 5.1 port of read_log.py, so the skill needs nothing but the
-    in-box shell. Never touches the tenant.
+    Reads a log or CSV a driver script wrote, decoding defensively. Windows PowerShell
+    5.1 only, so the skill needs nothing but the in-box shell. Never touches the tenant.
 
     Under 5.1 the driver scripts write their *.csv with Export-Csv -Encoding UTF8
     (UTF-8 with a BOM) but their *.log with Add-Content and no -Encoding, which lands
