@@ -662,6 +662,15 @@ errors = getattr(mod, "parse_errors", lambda *_: [])(raw_path, target)
 
 and fold what comes back into that cell's run-manifest entry.
 
+**`target` is a plain string in both calls — and it is a different string in each.**
+
+Neither the spec nor this plan originally said so, and nine adapters settled on it by reading each other rather than by being told. Pinned now, because Task 15 is what has to honour it:
+
+- `run(target, ...)` receives the **location**: the URL, filesystem path, or host the tool should scan.
+- `parse(raw_path, target)` receives the **manifest `name`**: the identifier stamped onto every finding's `target` field, which is also half the `dedupe()` key (§13.1).
+
+For a manifest entry `{name: www.example.com, kind: web, url: https://www.example.com}` those differ, and conflating them would put a URL where the report expects a target name. Several adapters defensively `getattr(target, "path", ...)` as well, which is harmless — but `routine` must pass strings, not `Target` objects, or the finding's `target` field ends up holding a repr.
+
 **Read every adapter constant defensively.** Task 15 must use `getattr(mod, "ACTIVE_OPTS", [])` rather than `mod.ACTIVE_OPTS`. Single-mode adapters are specified to declare `ACTIVE_OPTS = []`, but an adapter added later by someone reading only the spec's §3 protocol list will not have it, and an `AttributeError` there fails the whole run rather than the one cell.
 
 **The five steps, for every adapter:**
