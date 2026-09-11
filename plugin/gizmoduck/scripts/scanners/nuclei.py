@@ -8,6 +8,14 @@ adapter must not duplicate or let drift from. It borrows only the argv shape,
 then applies base.run_tool's own timeout handling, mirroring cmd_scan's
 "never write a findings file for a failed scan" rule on top.
 
+run() returns the standardized `(raw_path | None, base.ToolResult)` tuple
+(team-lead's cross-adapter contract decision): `raw_path` only when the
+findings file was actually written, `None` otherwise (including a timeout -
+base.run_tool never raises on one, it just sets `result.timed_out`). The
+ToolResult always comes back so routine.py can record `error:timeout` /
+`error:<n>` per-cell in the run manifest - a path string alone can't carry
+that.
+
 parse() delegates entirely to gizmoduck.load() and only adds the `tool`/
 `target` keys the plan's Global Constraints introduce - it must stay
 byte-identical to today's load() output for the same input (see
@@ -92,7 +100,12 @@ def run(target, outdir, opts=None):
     # `-ec`'s "findings exist" signal, not a failure.
     lines = [ln for ln in result.stdout.splitlines() if ln.strip().startswith("{")]
     if result.returncode != 0 and not (result.returncode == 1 and lines):
-        return raw_path, result
+        # No output file written - per the standardized run() contract, that
+        # means the path side of the tuple is None, not a path that doesn't
+        # exist on disk. The ToolResult (including timed_out) still comes
+        # back so routine.py can record error:timeout / error:<returncode>
+        # instead of mistaking "didn't run" for "ran clean".
+        return None, result
     with open(raw_path, "w", encoding="utf-8") as fh:
         fh.write("\n".join(lines) + ("\n" if lines else ""))
     return raw_path, result

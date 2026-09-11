@@ -8,6 +8,7 @@ since a drift here would mean the routine path and the single-scanner path
 silently disagree about what Nuclei found.
 """
 import importlib.util
+import os
 
 import pytest
 
@@ -132,3 +133,42 @@ def test_run_raises_when_nuclei_binary_is_missing(monkeypatch, tmp_path):
     monkeypatch.setattr(gzmod, "find_nuclei", lambda: None)
     with pytest.raises(FileNotFoundError):
         nuclei.run("https://example.com", str(tmp_path), {})
+
+
+def test_run_returns_none_path_on_a_failed_invocation(monkeypatch, tmp_path):
+    """Standardized run() contract (team-lead cross-adapter decision):
+    (None, result) when no output file was written - a plain failure exit,
+    with no findings on stdout to redeem it as `-ec`'s "findings exist" 1.
+    The ToolResult still comes back (with returncode/timed_out intact) so
+    routine.py can record error:<n> / error:timeout per-cell.
+    """
+    gzmod = nuclei._gizmoduck()
+    monkeypatch.setattr(gzmod, "find_nuclei", lambda: "nuclei")
+
+    def fake_run_tool(argv, timeout, cwd=None):
+        from scanners.base import ToolResult
+        return ToolResult(2, "", "connection refused", False)
+
+    monkeypatch.setattr(nuclei.base, "run_tool", fake_run_tool)
+
+    raw_path, result = nuclei.run("https://example.com", str(tmp_path), {})
+
+    assert raw_path is None
+    assert result.returncode == 2
+    assert not os.path.exists(os.path.join(str(tmp_path), "nuclei.jsonl"))
+
+
+def test_run_returns_none_path_on_a_timeout(monkeypatch, tmp_path):
+    gzmod = nuclei._gizmoduck()
+    monkeypatch.setattr(gzmod, "find_nuclei", lambda: "nuclei")
+
+    def fake_run_tool(argv, timeout, cwd=None):
+        from scanners.base import ToolResult
+        return ToolResult(-1, "", "", True)
+
+    monkeypatch.setattr(nuclei.base, "run_tool", fake_run_tool)
+
+    raw_path, result = nuclei.run("https://example.com", str(tmp_path), {})
+
+    assert raw_path is None
+    assert result.timed_out is True
