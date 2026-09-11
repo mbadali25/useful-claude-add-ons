@@ -1,0 +1,4 @@
+# Scratch scan output captured while building fixtures - never committed.
+_capture/
+# Runtime throwaway database (server.py cleans it up, but never track it).
+*.sqlite3

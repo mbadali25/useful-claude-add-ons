@@ -1,0 +1,2 @@
+Fixture file for the labtarget directory-listing endpoint (/files/).
+Not sensitive, not real data.
