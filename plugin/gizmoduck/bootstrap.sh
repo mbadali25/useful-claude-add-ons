@@ -231,6 +231,8 @@ if [[ ${#FAILED[@]} -gt 0 ]]; then
   echo "!! ${#FAILED[@]} tool(s) failed to install: ${FAILED[*]}" >&2
   echo "!! Re-run this script, or install them by hand, then check with:" >&2
   echo "!!   /gizmoduck:doctor" >&2
+  echo "!! If a failure looks like your AV/EDR deleted or quarantined a file (nikto," >&2
+  echo "!! sqlmap, ZAP, a Nuclei template), see docs/antivirus-exclusions.md." >&2
 else
   echo ">> all tools installed."
 fi

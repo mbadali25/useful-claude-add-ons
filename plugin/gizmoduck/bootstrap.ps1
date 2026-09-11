@@ -384,6 +384,8 @@ if ($script:Failed.Count -gt 0) {
   Write-Host "!! $($script:Failed.Count) tool(s) failed to install: $($script:Failed -join ', ')" -ForegroundColor Yellow
   Write-Host "!! Re-run this script, or install them by hand, then check with:"
   Write-Host "!!   /gizmoduck:doctor"
+  Write-Host "!! If a failure looks like your AV/EDR deleted or quarantined a file (nikto," -ForegroundColor Yellow
+  Write-Host "!! sqlmap, ZAP, a Nuclei template), see docs/antivirus-exclusions.md." -ForegroundColor Yellow
 } else {
   Write-Host ">> all tools installed."
 }

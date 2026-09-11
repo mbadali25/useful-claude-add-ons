@@ -25,6 +25,9 @@ step, no API restrictions. **Only scan assets you own or have written permission
 Both fetch the latest prebuilt binary and community templates. PDF reports need
 `wkhtmltopdf` (installed by bootstrap.sh; `winget install wkhtmltopdf` on Windows).
 
+If your antivirus/EDR quarantines or deletes nikto, sqlmap, ZAP, or a Nuclei
+template mid-install, see [`docs/antivirus-exclusions.md`](docs/antivirus-exclusions.md) - that's expected, not a broken install.
+
 ## Dependency-Check: NVD API key (optional)
 
 dependency-check's first run downloads the entire NVD CVE corpus. Without an API
