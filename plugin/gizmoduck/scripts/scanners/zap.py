@@ -94,9 +94,13 @@ def _build_plan(url, context_name, active, report_dir, report_file):
 def run(target, outdir, opts):
     """Write the AF plan and invoke `zap.bat -cmd -autorun <plan>.yaml`.
 
-    The report job writes the native JSON itself (reportDir/reportFile below);
-    this function's job is only to build argv and hand it to base.run_tool -
-    it never inspects the returncode to decide anything (module docstring).
+    Returns `(raw_path | None, ToolResult)` (routine.py contract, standardized
+    across all nine adapters): the report job writes the native JSON itself
+    (reportDir/reportFile below), so success is decided by whether that file
+    landed on disk, never by ToolResult.returncode - the AF's 0/1/2 there
+    track job errors/warnings, not alert risk (module docstring). The
+    ToolResult is returned unconditionally so routine can still record
+    `error:timeout` / `error:<message>` per cell even when raw_path is None.
     """
     opts = opts or {}
     active = bool(opts.get("zap_active"))
@@ -105,6 +109,7 @@ def run(target, outdir, opts):
 
     url = getattr(target, "url", None) or str(target)
     context_name = _context_name(target)
+    report_path = outdir / ("%s.json" % NAME)
     plan = _build_plan(url, context_name, active, outdir, NAME)
 
     plan_path = outdir / "zap-plan.yaml"
@@ -113,10 +118,12 @@ def run(target, outdir, opts):
 
     binary = _zap_binary()
     if binary is None:
-        raise FileNotFoundError("no local ZAP install found (zap.bat/zap.sh)")
+        return None, base.ToolResult(-1, "", "no local ZAP install found (zap.bat/zap.sh)", False)
 
     argv = [binary, "-cmd", "-autorun", str(plan_path)]
-    return base.run_tool(argv, timeout=opts.get("timeout", DEFAULT_TIMEOUT))
+    result = base.run_tool(argv, timeout=opts.get("timeout", DEFAULT_TIMEOUT))
+    raw_path = str(report_path) if report_path.is_file() else None
+    return raw_path, result
 
 
 def parse(raw_path, target):
