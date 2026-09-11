@@ -292,6 +292,91 @@ def test_optional_tools_are_off_by_default(monkeypatch):
     assert "checkov" not in {r.tool for r in runs}
 
 
+# --------------------------------------------------------------------------
+# ZAP: launched from the wrong directory, and exiting 0 while failing
+# --------------------------------------------------------------------------
+
+def test_zap_runs_from_its_own_install_directory(monkeypatch, tmp_path):
+    """REGRESSION. zap.bat and zap.sh invoke their jar by a RELATIVE path
+    (`java -jar zap-2.17.0.jar`), so they only work when the process's working
+    directory is the ZAP install directory. Launched from anywhere else they
+    print "Error: Unable to access jarfile" and exit 0 - so the failure is
+    invisible to a returncode check and the adapter silently contributed zero
+    findings to every scan."""
+    exe = tmp_path / "ZAP" / "zap.bat"
+    exe.parent.mkdir(parents=True)
+    exe.write_text("", encoding="utf-8")
+    seen = {}
+
+    class _Proc:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    def _fake_run(cmd, timeout, cwd=None):
+        seen["cwd"] = cwd
+        # Write the report ZAP would have written, so the adapter proceeds.
+        out = cmd[cmd.index("-quickout") + 1]
+        with open(out, "w", encoding="utf-8") as fh:
+            json.dump({"site": [{"alerts": []}]}, fh)
+        return _Proc()
+
+    monkeypatch.setattr(scanners, "_which", lambda *names: str(exe))
+    monkeypatch.setattr(scanners, "_run", _fake_run)
+    run = scanners.run_zap("https://example.test")
+    assert run.status == "ok"
+    assert seen["cwd"] == str(exe.parent), (
+        "run_zap must set cwd to the ZAP install dir; got " + repr(seen["cwd"]))
+
+
+def test_zap_missing_jar_is_failed_not_clean(monkeypatch, tmp_path):
+    """ZAP exits 0 on this failure. Only the absent report file distinguishes
+    it from a clean run, and the detail has to name the real cause."""
+    exe = tmp_path / "ZAP" / "zap.bat"
+    exe.parent.mkdir(parents=True)
+    exe.write_text("", encoding="utf-8")
+
+    class _Proc:
+        returncode = 0                      # ZAP really does exit 0 here
+        stdout = "Error: Unable to access jarfile zap-2.17.0.jar"
+        stderr = ""
+
+    monkeypatch.setattr(scanners, "_which", lambda *names: str(exe))
+    monkeypatch.setattr(scanners, "_run", lambda cmd, timeout, cwd=None: _Proc())
+    run = scanners.run_zap("https://example.test")
+    assert run.status == "failed"
+    assert "jar" in run.detail
+
+
+def test_zap_severity_mapping(monkeypatch, tmp_path):
+    exe = tmp_path / "ZAP" / "zap.bat"
+    exe.parent.mkdir(parents=True)
+    exe.write_text("", encoding="utf-8")
+    report = {"site": [{"alerts": [
+        {"pluginid": "10038", "alert": "CSP Header Not Set",
+         "riskdesc": "Medium (High)", "desc": "d", "solution": "s",
+         "instances": [{"uri": "https://example.test/"}]},
+        {"pluginid": "10035", "alert": "HSTS Not Set",
+         "riskdesc": "Low (High)", "desc": "d", "solution": "s",
+         "instances": [{"uri": "https://example.test/"}]},
+    ]}]}
+
+    class _Proc:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    def _fake_run(cmd, timeout, cwd=None):
+        with open(cmd[cmd.index("-quickout") + 1], "w", encoding="utf-8") as fh:
+            json.dump(report, fh)
+        return _Proc()
+
+    monkeypatch.setattr(scanners, "_which", lambda *names: str(exe))
+    monkeypatch.setattr(scanners, "_run", _fake_run)
+    run = scanners.run_zap("https://example.test")
+    assert _sevs(run) == ["medium", "low"]
+
+
 def test_every_record_matches_the_nuclei_shape_load_expects():
     """gizmoduck.load() reads template-id / type / host / matched-at / info.*.
     An adapter that drifts from this shape produces findings that silently

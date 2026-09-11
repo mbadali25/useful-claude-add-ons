@@ -101,9 +101,9 @@ def _which(*names):
     return None
 
 
-def _run(cmd, timeout):
+def _run(cmd, timeout, cwd=None):
     return subprocess.run(cmd, capture_output=True, text=True, check=False,
-                          timeout=timeout)
+                          timeout=timeout, cwd=cwd)
 
 
 def _json_from_file(path):
@@ -442,12 +442,26 @@ def run_zap(url, timeout=3600, minutes=5):
                               "on a machine where it is present")
     tmp = os.path.join(tempfile.gettempdir(), f"gizmo-zap-{os.getpid()}.json")
     cmd = [exe, "-cmd", "-quickurl", url, "-quickout", tmp, "-quickprogress"]
+
+    # zap.bat and zap.sh both invoke their jar by a RELATIVE path
+    # (`java -jar zap-2.17.0.jar`), so they only work when the process's working
+    # directory is the ZAP install directory. Launched from anywhere else they
+    # print "Error: Unable to access jarfile zap-2.17.0.jar" - AND EXIT 0. A
+    # returncode check would read that as success, which is why the report file
+    # is what this function actually tests.
+    zap_home = os.path.dirname(os.path.abspath(exe))
     try:
-        _run(cmd, timeout)
+        proc = _run(cmd, timeout, cwd=zap_home)
     except subprocess.TimeoutExpired:
         return ToolRun("zap", "failed", detail=f"timed out after {timeout}s")
     if not os.path.exists(tmp):
-        return ToolRun("zap", "failed", detail="ZAP wrote no report")
+        blob = f"{proc.stdout}\n{proc.stderr}"
+        if "Unable to access jarfile" in blob:
+            return ToolRun("zap", "failed",
+                           detail=f"ZAP could not find its jar from {zap_home}; "
+                                  f"the install looks incomplete")
+        return ToolRun("zap", "failed",
+                       detail="ZAP wrote no report: " + blob.strip()[:200])
     try:
         data = _json_from_file(tmp)
     except (json.JSONDecodeError, OSError) as exc:
