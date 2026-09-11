@@ -1,7 +1,7 @@
 # Gizmoduck multi-scanner routine — design spec
 
 **Date:** 2026-09-10
-**Status:** Draft for review
+**Status:** Approved 2026-09-10 — §12 open questions resolved, see §12
 **Repo:** `useful-claude-add-ons` (plugin: `plugin/gizmoduck`)
 **Branch:** `gizmoduck-multiscanner`
 
@@ -71,6 +71,7 @@ existing command set changes.
 |---|---|---|---|---|
 | Nuclei | web, host | JSONL (existing) | template `info.severity` | no |
 | OWASP ZAP | web | JSON (`-J`) | alert `riskcode` (0–3) | baseline=no, active=yes (opt-in) |
+| ↳ delivery | | local ZAP first, Docker image only as fallback (§12.2) | | |
 | Nikto | web | JSON (`-Format json`) | none → heuristic (`medium`/`info`) | no |
 | Nmap + NSE | web, host | XML (`-oX`) | ports=`info`; `vuln` NSE→map | safe=no, `vuln`=opt-in |
 | testssl.sh | web, host | JSON (`--jsonfile`) | `severity` field | no |
@@ -96,6 +97,10 @@ existing command set changes.
 - `template-id` — synthetic `"<tool>:<rule-or-plugin-id>"` so `dedupe()` (which
   keys on `template-id`) works across tools without collision.
 - `target` — the manifest target it came from.
+- `tools` — list of every tool that reported this finding. Length 1 until the
+  report's cross-tool merge (§7) collapses `deps`/`iac` duplicates.
+- `merged_from` — list of each contributing tool's native rule id, populated
+  only on merged entries so provenance survives the collapse.
 
 Because the shape is unchanged otherwise, `cmd_report`, `cmd_summary`,
 `cmd_diff`, and `cmd_tickets` operate on the combined `findings.jsonl` with no
@@ -149,9 +154,24 @@ is the single source the report and tickets consume.
 ## 7. Combined report
 
 Extend `cmd_report` / `report_template.py`:
-- New optional grouping: **by target, then by category/tool**, when the input
+- New optional grouping: **by target, then by category**, when the input
   carries `target`/`tool` fields (the existing flat mode stays for plain Nuclei
-  JSONL).
+  JSONL). One section per category, not per tool — so `deps` and `iac` each
+  render once even though two tools feed them (§12.3).
+- **Cross-tool merge within a category.** Where two tools report the same
+  issue, the entries collapse to one carrying a `tools` list naming every
+  reporter, and the *highest* severity any of them assigned. Merge keys are
+  deliberately narrow, and nothing merges across categories:
+  - `deps` — merge on `(CVE id, package name, installed version)`. A finding
+    with no CVE id never merges; it renders on its own.
+  - `iac` — merge on `(file path, start line, resource identifier)`. Rule ids
+    differ between Checkov and tfsec and are **not** part of the key.
+  - Every merged entry keeps each contributing tool's native rule id in a
+    `merged_from` list, so provenance survives the merge and an over-merge is
+    visible in the report rather than silent.
+  - Guard: if a merge would combine entries whose normalized titles share no
+    token, keep them separate and record the near-miss in the run manifest —
+    a wrong merge hides a real finding, which costs more than a duplicate.
 - A **coverage table** at the top: rows = targets, columns = tools, cells =
   ran ✓ / skipped(missing) / skipped(active-off) / error. This makes gaps
   explicit so an absent finding is never mistaken for a clean result — directly
@@ -179,12 +199,17 @@ Extend `cmd_report` / `report_template.py`:
 ## 9. Install / doctor
 
 - `bootstrap.sh` / `bootstrap.ps1`: best-effort install of nmap, nikto,
-  testssl.sh, trivy, checkov, tfsec, dependency-check, sqlmap, and ZAP (prefer
-  the `zaproxy/zap-stable` Docker image; fall back to a local ZAP if Docker is
-  absent). Each install is independent — one failure doesn't abort the rest.
-- `doctor`: report present/missing for every tool (and Docker for ZAP), with a
-  one-line install hint per missing tool. Exit non-zero only if *core* (nuclei)
-  is missing; the rest are reported as gaps, not failures.
+  testssl.sh, trivy, checkov, tfsec, dependency-check, sqlmap, and ZAP
+  (**local ZAP install, including its JRE prerequisite**; the
+  `zaproxy/zap-stable` Docker image is only used if a local install is
+  impossible and Docker happens to be present — §12.2). Each install is
+  independent — one failure doesn't abort the rest.
+- `doctor`: report present/missing for every tool, with a one-line install hint
+  per missing tool. For ZAP, report *which* delivery was found
+  (`local` / `docker` / missing) rather than a bare present/absent, so an
+  operator can tell a working local ZAP from a Docker path that will never
+  resolve on this machine. Exit non-zero only if *core* (nuclei) is missing;
+  the rest are reported as gaps, not failures.
 
 ## 10. Testing
 
@@ -210,12 +235,23 @@ Extend `cmd_report` / `report_template.py`:
 - `plugin.json` version bump; README + a `/gizmoduck:routine` command doc;
   SKILL.md updated to describe the routine and the gating.
 
-## 12. Open questions for review
+## 12. Resolved questions (2026-09-10 review)
 
-1. Manifest format: YAML (this spec) vs. reuse the existing plain-text targets
-   file with a sidecar for kinds. YAML chosen for the per-target options; confirm.
-2. ZAP delivery: Docker image (portable, needs Docker) vs. local ZAP install.
-   Spec prefers Docker with local fallback; confirm the environment has Docker.
-3. Both-tools-per-category is in scope (Trivy+Dependency-Check, Checkov+tfsec) —
-   confirm we want the overlap deduped into one section per category rather than
-   shown per tool.
+1. **Manifest format — YAML.** Confirmed as specified in §5. Accepts the
+   `pyyaml` dependency in exchange for per-target `kind`, `options` and
+   `authorized_by` in a single file. The existing plain-text targets file stays
+   as-is for the single-scanner `scan` command; `routine` uses YAML only.
+2. **ZAP delivery — local install preferred, Docker optional.** Reversed from
+   the draft. Docker is **not installed** on the operator machine
+   (`docker: command not found`, verified 2026-09-10), so a Docker-first
+   preference would make ZAP permanently unavailable there. `zap.py` therefore
+   probes for a local ZAP first and falls back to the `zaproxy/zap-stable`
+   image only when Docker is present. `doctor` must distinguish "no ZAP" from
+   "ZAP present via <local|docker>", and `bootstrap` installs local ZAP
+   (including its JRE prerequisite) rather than pulling an image.
+3. **Category overlap — deduped into one section per category.** `deps`
+   (Trivy + Dependency-Check) renders as a single section, and `iac`
+   (Checkov + tfsec) as a single section. Findings the two tools agree on are
+   merged into one entry carrying a `tools` list of every tool that reported
+   it, rather than appearing twice. See §7 for the merge keys and the
+   over-merge guard.
