@@ -17,6 +17,17 @@ Every task's requirements implicitly include this section.
 - **Plugin root:** `plugin/gizmoduck/`. All paths below are relative to it.
 - **Additive only.** `scan`, `summary`, `report`, `tickets`, `diff`, `doctor`, `update` must produce byte-for-byte identical output for plain Nuclei input. This is the acceptance bar for every task that touches an existing file.
 - **Finding dict keys** (exact, from `gizmoduck.py:144-173`): `template_id, name, severity, severity_name, type, timestamp, host, matched_at, cve, cvss, description, remediation, reference, tags`. New keys added by this work: `tool`, `target`, `tools`, `merged_from`.
+- **Merge-key fields — optional, but the merge is inert without them.** Task 18's keys are `(CVE, package, version)` for `deps` and `(path, line, resource)` for `iac`, and none of those existed in the finding shape as originally written. Adapters feeding those categories must emit them as distinct fields *alongside* `matched_at` and `host`, never instead of:
+
+  | Field | Category | Source |
+  |---|---|---|
+  | `package` | deps | Trivy `PkgName`; Dependency-Check's package identifier |
+  | `version` | deps | Trivy `InstalledVersion`; Dependency-Check's installed version |
+  | `path` | iac | the file path alone — **not** `"path:line"` |
+  | `line` | iac | the **start** line as an int |
+  | `resource` | iac | the resource address/identifier |
+
+  Omit a field entirely when the source data doesn't carry it. The merge treats an absent slot as "does not merge on it", which is the safe direction — a wrong `package` would merge two unrelated CVEs. The merge keys on the **start** line only: Checkov and Trivy will not agree on where a block ends, and requiring them to would prevent every real duplicate from merging.
 - **`severity` is an int**, `severity_name` is the display string. Canonical maps: `SEV_NUM`, `SEV_NAME`, `SEV_COLOR`, `ORDER=[4,3,2,1,0]` at `gizmoduck.py:38-41`.
 - **Severity vocabulary:** `critical`(4) `high`(3) `medium`(2) `low`(1) `info`(0). No other values.
 - **Never infer findings from an exit code.** Six of the nine tools mislead here (spec §13.12): Nikto exits **non-zero regardless of outcome**; testssl.sh reserves **50–200 for a severity-scored exit**; Trivy and sqlmap exit **0 with findings present**; ZAP's Automation Framework codes track job errors, not alert risk. **Nmap is the only tool whose exit code is a clean success signal.** Every adapter decides from parsed output.
