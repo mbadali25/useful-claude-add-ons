@@ -65,6 +65,32 @@ def test_matched_at_combines_file_path_and_line_range(fixture):
     assert by_id["checkov:CKV_SECRET_6"]["reference"] == []
 
 
+def test_merge_key_fields_are_populated_alongside_matched_at_and_host(fixture):
+    """Task 18's iac cross-tool merge keys on (path, line, resource) as
+    distinct fields - these must be additive, not a replacement for
+    matched_at/host, and `line` must be the START of the range as an int.
+    """
+    by_id = {f["template_id"]: f for f in _parse(fixture)}
+
+    f = by_id["checkov:CKV_AWS_20"]
+    assert f["path"] == "/main.tf"
+    assert f["line"] == 10
+    assert f["resource"] == "aws_s3_bucket.data"
+    # additive, not instead of:
+    assert f["matched_at"] == "/main.tf:10-25"
+    assert f["host"] == "aws_s3_bucket.data"
+
+    f2 = by_id["checkov:CKV_AWS_21"]
+    assert f2["path"] == "/main.tf"
+    assert f2["line"] == 30
+    assert f2["resource"] == "aws_s3_bucket.data2"
+
+    f3 = by_id["checkov:CKV_SECRET_6"]
+    assert f3["path"] == "/vars.tf"
+    assert f3["line"] == 5
+    assert f3["resource"] == "vars.tf.5"
+
+
 def test_passed_checks_never_become_findings(fixture):
     ids = {f["template_id"] for f in _parse(fixture)}
     assert "checkov:CKV_AWS_18" not in ids  # a passed_checks entry

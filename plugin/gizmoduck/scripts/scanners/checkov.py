@@ -21,6 +21,11 @@ Checkov's own exit code (1 by default when any check fails, unless
 --soft-fail is passed) is the opposite convention from Trivy/sqlmap and is
 never inspected here either way - per the global rule, every adapter decides
 from parsed output, not from status.
+
+Each finding also carries `path`, `line` (the check's START line as an int -
+never the range end), and `resource` as distinct fields, additive alongside
+`matched_at`/`host` - these are the iac category's cross-tool merge key
+(Task 18), so Trivy's misconfig parser must agree on these exact names.
 """
 import json
 import os
@@ -90,6 +95,23 @@ def _line_range(rng):
     return str(rng)
 
 
+def _start_line(rng):
+    """The START line of file_line_range as an int, or None when absent.
+
+    Merge keys on the start line only (Global Constraints) - Checkov and
+    Trivy's misconfig scanner will not agree on where a block ends, and the
+    merge must not be asked to.
+    """
+    if isinstance(rng, (list, tuple)) and rng:
+        try:
+            return int(rng[0])
+        except (TypeError, ValueError):
+            return None
+    if isinstance(rng, int):
+        return rng
+    return None
+
+
 def parse(raw_path, target):
     """Read Checkov's JSON report(s). Pure - no subprocess, no network.
 
@@ -122,7 +144,7 @@ def parse(raw_path, target):
             location = "%s:%s" % (check.get("file_path") or "",
                                    _line_range(check.get("file_line_range")))
 
-            findings.append(n.make_finding(
+            finding = n.make_finding(
                 tool=NAME,
                 target=target,
                 rule_id=rule_id,
@@ -135,5 +157,12 @@ def parse(raw_path, target):
                 remediation=guideline,
                 reference=[guideline] if guideline else [],
                 tags=[check_type] if check_type else [],
-            ))
+            )
+            # Additive merge-key fields for Task 18's iac cross-tool merge
+            # (Global Constraints) - alongside matched_at/host, not instead
+            # of them. `path` is the file path alone, never "path:line".
+            finding["path"] = check.get("file_path") or ""
+            finding["line"] = _start_line(check.get("file_line_range"))
+            finding["resource"] = resource
+            findings.append(finding)
     return findings
