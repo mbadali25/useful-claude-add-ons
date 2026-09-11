@@ -105,10 +105,51 @@ Runs on Linux/WSL and Windows. On Linux call the CLI with `python3`; on Windows 
 - Severity: critical/high/medium/low/info map to Critical…Info. Reports itemise
   Critical/High/Medium and count the rest; `summary`, `parse`, `diff` and
   `tickets` are unaffected and still honour `--min-severity` in full.
-- Nuclei finds what a template exists for — it's a known-issue scanner, not a
-  crawler-driven DAST. For custom app-logic flaws (auth journeys, business logic),
-  note that a tool like OWASP ZAP is the right complement.
 - Keep the template feed fresh: `nuclei -update-templates` before important scans.
+
+## A scan is five tools, not one
+
+`scan` runs a suite and merges every tool's findings into ONE findings file and
+ONE report. Each adapter normalises its output into Nuclei's record shape, so
+`report`, `diff`, `summary` and `tickets` treat them identically and the
+Medium-and-above detail floor applies across the lot.
+
+| Tool | Covers | Needs |
+|---|---|---|
+| **nuclei** | known issues, by template, against the live endpoint | the target |
+| **sslyze** | TLS protocol/cipher/certificate posture | the target |
+| **trivy fs** | dependency CVEs and committed secrets | `--source` |
+| **trivy config** | Terraform/IaC misconfiguration | `--source` |
+| **semgrep** | source analysis — the only tool here that can see a *missing* authorization check | `--source` |
+
+Opt-in, off by default:
+
+- `--with-zap` — OWASP ZAP, the crawler-driven DAST. Nuclei matches templates
+  for known issues, so custom app-logic and auth-journey flaws are outside it by
+  construction. Costs minutes per target and wants authentication to earn its
+  keep.
+- `--with-checkov` — more IaC checks than Trivy, but **Checkov OSS returns
+  `severity: null` on every finding** (the field is populated by the commercial
+  platform). Those are floored at Low, so they will not appear in a
+  Medium-and-above report. Use it when you want IaC breadth and will read the
+  JSONL.
+
+**Why this matters more than it sounds.** Nuclei alone, pointed at an
+authenticated application behind a WAF, finds almost nothing: a real sweep of 18
+such endpoints returned 294 findings, every single one Info-severity
+fingerprinting — missing headers, TLS version, cloud-provider detection. Adding
+the suite to one of those same modules produced 4 High and 7 Medium, including
+live Angular CVEs with fixed versions available. **A clean Nuclei report on an
+authenticated app is close to the expected result and is not evidence the
+application is secure.**
+
+- **`--source` is not optional in spirit.** Without it the three source tools
+  report as `skipped`, and the scan says so out loud. They are never silently
+  omitted: four quiet zero-finding tools next to one clean Nuclei run would read
+  as a clean bill of health, which is the same failure the "a failed scan is not
+  a clean scan" guard exists to prevent.
+- **A missing or failed tool is reported, and the scan is labelled INCOMPLETE.**
+  Check `doctor` before trusting a quiet report.
 
 ## Other actions
 These back the `/gizmoduck:*` commands; all use `gizmoduck.py`:

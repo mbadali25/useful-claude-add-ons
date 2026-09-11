@@ -1,7 +1,18 @@
 ---
-description: Run a Nuclei scan on a target, then report + confirm-then-open SDP tickets
+description: Run the scanner suite on a target, then report + confirm-then-open SDP tickets
 argument-hint: <url-host-or-targets-file> [min-severity]
 ---
+**Pass `--source <dir>` whenever the target's source tree is available.** `scan` runs
+five tools — nuclei and sslyze against the endpoint, and trivy (dependency CVEs,
+committed secrets, IaC) plus semgrep (source analysis) against `--source`. Without it
+those three report as `skipped` and the scan covers the edge only. Nuclei alone on an
+authenticated app behind a WAF returns almost nothing but Info-severity fingerprinting,
+so a quiet report from an endpoint-only scan is close to the expected result rather than
+a clean bill of health. `--with-zap` adds crawler-driven DAST; `--with-checkov` adds IaC
+breadth whose findings land at Low because Checkov OSS emits no severity. All tools merge
+into the same `findings.jsonl` and the same report. If any tool reports `missing` or
+`failed`, say so when presenting results — the scan is incomplete, not clean.
+
 Scan `$1` with the `gizmoduck` skill: run the scan (default `--severity critical,high,medium`,
 writing `findings.jsonl`), show the summary, produce a report at severity `$2` (default: high) as
 inline Markdown plus HTML and PDF, then run `gizmoduck.py tickets findings.jsonl --min-severity

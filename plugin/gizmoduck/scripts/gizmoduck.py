@@ -60,7 +60,21 @@ def find_nuclei():
     return cand if os.path.exists(cand) else None
 
 
-def cmd_scan(target, out, severity, extra):
+def cmd_scan(target, out, severity, extra, source=None, with_zap=False,
+             with_checkov=False, semgrep_config="p/security-audit"):
+    """Run the scanner suite and write ONE findings file.
+
+    Nuclei runs here because it owns the failed-scan-is-not-a-clean-scan rule
+    below. Every other tool runs through scanners.run_suite and is normalised
+    into Nuclei's record shape, so load()/dedupe()/cmd_report merge the lot
+    into a single report at the existing Medium-and-above floor without
+    growing a per-tool branch.
+
+    A tool that is missing or failed is reported as such on stderr and in the
+    returned status list. It is never allowed to look like a clean result -
+    four silent failures next to one clean Nuclei run would read as a clean
+    bill of health, which is the exact failure the Nuclei guard below exists
+    to prevent."""
     exe = find_nuclei()
     if not exe:
         sys.exit("nuclei not found on PATH. Run bootstrap.sh (Linux/WSL) or bootstrap.ps1 (Windows) first.")
@@ -86,9 +100,36 @@ def cmd_scan(target, out, severity, extra):
         sys.stderr.write(proc.stderr)
         sys.exit(f"nuclei exited {proc.returncode} with no findings on stdout; "
                  f"no findings file written (a failed scan is not a clean scan)")
+    # Nuclei is in. Now the rest of the suite. Imported by path rather than by
+    # name: gizmoduck.py is invoked as an absolute path from other directories,
+    # so the script's own directory is not reliably on sys.path.
+    _here = os.path.dirname(os.path.abspath(__file__))
+    if _here not in sys.path:
+        sys.path.insert(0, _here)
+    from scanners import run_suite
+
+    extra_findings, runs = run_suite(
+        target, source=source, with_zap=with_zap, with_checkov=with_checkov,
+        semgrep_config=semgrep_config)
+
+    safe_print(f"  nuclei        ok       {len(lines)} finding(s)")
+    for r in runs:
+        note = f"  - {r.detail}" if r.detail else ""
+        safe_print(f"  {r.tool:<13} {r.status:<8} {len(r.findings)} finding(s){note}")
+
+    failed = [r.tool for r in runs if r.status in ("missing", "failed")]
+    if failed:
+        safe_print(f"!! {len(failed)} tool(s) did not run: {', '.join(failed)}. "
+                   f"This scan is INCOMPLETE - treat a clean report accordingly.")
+
     with open(out, "w", encoding="utf-8") as fh:
-        fh.write("\n".join(lines) + ("\n" if lines else ""))
-    safe_print(f"wrote {len(lines)} findings to {out}")
+        for ln in lines:
+            fh.write(ln + "\n")
+        for rec in extra_findings:
+            fh.write(json.dumps(rec) + "\n")
+
+    total = len(lines) + len(extra_findings)
+    safe_print(f"wrote {total} findings to {out}")
     return out
 
 
@@ -420,6 +461,39 @@ def cmd_doctor():
     wk = shutil.which("wkhtmltopdf")
     line("wkhtmltopdf (PDF)", wk or "not found — HTML reports still work", good=bool(wk))
 
+    # The rest of the suite. Each is reported individually: a scan is only as
+    # complete as the tools that actually ran, and "gizmoduck is set up" has to
+    # mean all of them, not just the one that gave this plugin its name.
+    safe_print("")
+    safe_print("-- scanner suite --")
+    for label, names, why in (
+        ("sslyze (TLS)", ("sslyze",),
+         "TLS protocol/cert posture; nuclei only fingerprints"),
+        ("trivy (deps, secrets, IaC)", ("trivy", "trivy.exe"),
+         "dependency CVEs, committed secrets, Terraform misconfiguration"),
+        ("semgrep (SAST)", ("semgrep", "semgrep.exe"),
+         "source analysis; the only tool here that sees a missing auth gate"),
+    ):
+        p = shutil.which(names[0]) or (shutil.which(names[1]) if len(names) > 1 else None)
+        if not p and names[0] == "sslyze":
+            try:
+                import sslyze  # noqa: F401
+                p = f"{sys.executable} -m sslyze"
+            except ImportError:
+                p = None
+        line(label, p or f"NOT FOUND — {why}", good=bool(p))
+
+    safe_print("")
+    safe_print("-- optional, opt-in --")
+    for label, names, flag in (
+        ("OWASP ZAP", ("zap.sh", "zap.bat", "zap"), "--with-zap"),
+        ("checkov", ("checkov", "checkov.exe", "checkov.cmd"), "--with-checkov"),
+    ):
+        p = next((shutil.which(n) for n in names if shutil.which(n)), None)
+        # Optional tools never fail the doctor: absent is a valid state for them.
+        safe_print(f"{'OK ' if p else '-- '}{label}: "
+                   f"{p or f'not installed (enable with {flag} once present)'}")
+
     sys.exit(0 if ok else 1)
 
 
@@ -458,6 +532,21 @@ def main():
     p.add_argument("--min-severity", default=None, choices=list(SEV_NUM))
     p.add_argument("--severity", default="", help="nuclei -severity filter for scan (e.g. critical,high)")
     p.add_argument("--extra", default="", help="extra args passed through to nuclei")
+    # The source tools (trivy, semgrep, checkov) need a directory, not a URL.
+    # Without this they are reported as SKIPPED rather than silently omitted -
+    # a scan missing three of five tools must not read as a clean scan.
+    p.add_argument("--source", default=None, metavar="DIR",
+                   help="scan: source tree for trivy/semgrep/checkov. Omit and those "
+                        "tools report as skipped, not clean.")
+    p.add_argument("--with-zap", action="store_true",
+                   help="scan: also run OWASP ZAP (crawler-driven DAST; minutes per "
+                        "target). Off by default.")
+    p.add_argument("--with-checkov", action="store_true",
+                   help="scan: also run checkov for IaC breadth. Off by default - "
+                        "checkov OSS returns no severity, so its findings are floored "
+                        "at Low and will not appear in a Medium-and-above report.")
+    p.add_argument("--semgrep-config", default="p/security-audit",
+                   help="scan: semgrep ruleset (default: p/security-audit)")
     p.add_argument("--title", default="Nuclei Vulnerability Report")
     p.add_argument("--format", default="md", choices=["md", "html", "pdf"])
     p.add_argument("--out", default=None)
@@ -515,7 +604,9 @@ def main():
         cmd_update()
         return
     if a.command == "scan":
-        cmd_scan(a.target, a.out or "findings.jsonl", a.severity, a.extra)
+        cmd_scan(a.target, a.out or "findings.jsonl", a.severity, a.extra,
+                 source=a.source, with_zap=a.with_zap, with_checkov=a.with_checkov,
+                 semgrep_config=a.semgrep_config)
         return
     if a.command == "diff":
         title = a.title if a.title != "Nuclei Vulnerability Report" else "Scan Diff"

@@ -47,13 +47,64 @@ if ! nuclei -update-templates -silent; then
   exit 1
 fi
 
+# ---------------------------------------------------------------------------
+# The rest of the scanner suite.
+#
+# Nuclei is a known-issue template scanner. On its own it finds almost nothing
+# on an authenticated app behind a WAF - a real sweep of 18 such endpoints
+# returned 294 findings, every one of them Info-severity fingerprinting. These
+# cover what it structurally cannot: TLS configuration, dependency CVEs,
+# committed secrets, IaC misconfiguration, and source-level flaws such as a
+# missing authorization check.
+#
+# Failures here are reported, not fatal: an incomplete suite is still better
+# than no scanner, and `gizmoduck.py doctor` names exactly what is missing.
+# ---------------------------------------------------------------------------
+echo ""
+echo ">> installing the scanner suite..."
+
+if ! command -v trivy >/dev/null 2>&1; then
+  echo ">> trivy (dependency CVEs, committed secrets, Terraform misconfiguration)"
+  if command -v brew >/dev/null 2>&1; then
+    brew install trivy || echo "!! trivy install failed - install it by hand"
+  elif command -v apt-get >/dev/null 2>&1; then
+    # /usr/local/bin, matching where this script already puts nuclei above.
+    curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
+      | sudo sh -s -- -b /usr/local/bin || echo "!! trivy install failed - install it by hand"
+  else
+    echo "!! no brew or apt-get; install trivy by hand: https://aquasecurity.github.io/trivy"
+  fi
+fi
+
+# sslyze and semgrep are Python tools. --user so they land on PATH for the
+# account running scans rather than inside whatever virtualenv is active now.
+if command -v python3 >/dev/null 2>&1; then
+  for pkg in sslyze semgrep; do
+    if ! command -v "$pkg" >/dev/null 2>&1; then
+      echo ">> $pkg"
+      python3 -m pip install --user --quiet "$pkg" \
+        || echo "!! $pkg install failed - install it by hand"
+    fi
+  done
+else
+  echo "!! python3 not found; sslyze and semgrep not installed"
+fi
+
 cat <<'MSG'
 
-------------------------------------------------------------
- Nuclei is ready. Try:
-   nuclei -u https://example.com -severity critical,high
+>> optional, not installed by default:
+   OWASP ZAP  - authenticated crawler-driven DAST. Minutes per target.
+                Install, then scan with --with-zap.
+   checkov    - more IaC checks than trivy, but checkov OSS returns no
+                severity, so its findings are floored at Low and will not
+                appear in a Medium-and-above report. Scan with --with-checkov.
 
- Or drive it through the plugin:
-   /gizmoduck:scan https://your-new-site.com high
+------------------------------------------------------------
+ Run 'gizmoduck.py doctor' to confirm every tool resolved.
+ Then:
+   /gizmoduck:scan https://your-new-site.com
+
+ Add --source <dir> so trivy and semgrep have a tree to read;
+ without it they report as SKIPPED, not clean.
 ------------------------------------------------------------
 MSG

@@ -54,12 +54,65 @@ if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
   Write-Host "!! Python not found. Install it (winget install Python.Python.3.12) for the report/ticket CLI."
 }
 if (-not (Get-Command wkhtmltopdf -ErrorAction SilentlyContinue)) {
-  Write-Host "!! wkhtmltopdf not found. Install it (winget install wkhtmltopdf) for PDF reports; HTML works without it."
+  Write-Host "!! wkhtmltopdf not found. Installing it for PDF reports..."
+  winget install --id wkhtmltopdf.wkhtmltox --accept-source-agreements --accept-package-agreements --disable-interactivity 2>&1 | Out-Null
+  # winget installs it but does not put it on PATH, so a later `doctor` reports
+  # it missing and the PDF half of every report is silently skipped.
+  $wkDir = "C:\Program Files\wkhtmltopdf\bin"
+  if ((Test-Path (Join-Path $wkDir "wkhtmltopdf.exe")) -and
+      (([Environment]::GetEnvironmentVariable("Path","User") -split ';') -notcontains $wkDir)) {
+    [Environment]::SetEnvironmentVariable(
+      "Path", "$([Environment]::GetEnvironmentVariable('Path','User'));$wkDir", "User")
+    $env:Path += ";$wkDir"
+    Write-Host ">> added $wkDir to your user PATH"
+  }
+}
+
+# ---------------------------------------------------------------------------
+# The rest of the scanner suite.
+#
+# Nuclei is a known-issue template scanner. On its own it finds almost nothing
+# on an authenticated app behind a WAF - a real sweep of 18 such endpoints
+# returned 294 findings, every one of them Info-severity fingerprinting. These
+# four cover what it structurally cannot: TLS configuration, dependency CVEs,
+# committed secrets, IaC misconfiguration, and source-level flaws such as a
+# missing authorization check.
+# ---------------------------------------------------------------------------
+Write-Host ""
+Write-Host ">> installing the scanner suite..."
+
+if (-not (Get-Command trivy -ErrorAction SilentlyContinue)) {
+  Write-Host ">> trivy (dependency CVEs, committed secrets, Terraform misconfiguration)"
+  winget install --id AquaSecurity.Trivy --accept-source-agreements --accept-package-agreements --disable-interactivity 2>&1 | Out-Null
+}
+
+# sslyze and semgrep are Python tools. Installed with --user so they land on
+# PATH for the account running scans rather than inside whatever virtualenv
+# happens to be active when this script runs.
+if (Get-Command python -ErrorAction SilentlyContinue) {
+  foreach ($pkg in @(
+    @{ name = "sslyze";  why = "TLS protocol and certificate posture" },
+    @{ name = "semgrep"; why = "static analysis; the only tool here that sees a missing auth gate" }
+  )) {
+    if (-not (Get-Command $pkg.name -ErrorAction SilentlyContinue)) {
+      Write-Host ">> $($pkg.name) ($($pkg.why))"
+      python -m pip install --user --quiet $pkg.name 2>&1 | Out-Null
+    }
+  }
 }
 
 Write-Host ""
+Write-Host ">> optional, not installed by default:"
+Write-Host "   OWASP ZAP  - authenticated crawler-driven DAST. Minutes per target."
+Write-Host "                Install, then scan with --with-zap."
+Write-Host "   checkov    - more IaC checks than trivy, but checkov OSS returns no"
+Write-Host "                severity, so its findings are floored at Low and will not"
+Write-Host "                appear in a Medium-and-above report. Scan with --with-checkov."
+
+Write-Host ""
 Write-Host "------------------------------------------------------------"
-Write-Host " Nuclei is ready. Try:"
-Write-Host "   nuclei -u https://example.com -severity critical,high"
-Write-Host " Or drive it through the plugin:  /gizmoduck:scan https://your-site.com high"
+Write-Host " Run 'gizmoduck.py doctor' to confirm every tool resolved."
+Write-Host " Then:  /gizmoduck:scan https://your-site.com"
+Write-Host " Add --source <dir> so trivy and semgrep have a tree to read;"
+Write-Host " without it they report as SKIPPED, not clean."
 Write-Host "------------------------------------------------------------"
