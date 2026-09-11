@@ -64,8 +64,8 @@
     {
       "name": "doc-builder",
       "source": "./skills/doc-builder",
-      "description": "Finished documents as DOCX and PDF through Word - findings reports via HTML, screenshot SOPs via OOXML - with the house style supplied by whichever brand pack is installed.",
-      "version": "1.0.0"
+      "description": "Finished documents as DOCX and PDF through Word - findings reports via HTML, screenshot SOPs via OOXML - with the house style supplied by whichever brand pack is installed. Also install solomon-doc-builder for automatic Solomon house style; --brand neutral (or DOC_BUILDER_BRAND=neutral) always turns branding off.",
+      "version": "1.1.0"
     },
     {
       "name": "drata",
@@ -166,8 +166,8 @@
     {
       "name": "solomon-doc-builder",
       "source": "./skills/solomon-doc-builder",
-      "description": "Brand pack only: the Solomon Associates house style for doc-builder. Palette, template and footer, no logic of its own.",
-      "version": "1.0.0"
+      "description": "Brand pack only: the Solomon Associates house style for doc-builder. Palette, template and footer, no logic of its own. Install alongside doc-builder for automatic Solomon branding; doc-builder's --brand neutral always opts back out.",
+      "version": "1.1.0"
     },
     {
       "name": "solomon-sop-maker",

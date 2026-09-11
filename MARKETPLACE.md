@@ -32,6 +32,24 @@ claude plugin install wazuh-onprem@useful-claude-add-ons
 # in skills/README.md.
 ```
 
+`claude plugin install` takes exactly one plugin name, and `marketplace.json` has no
+field for "installing this also installs that" - each skill here is its own entry with
+no dependency the CLI can see. `doc-builder` and its `solomon-doc-builder` brand pack are
+the one pair that matters in practice: install both for automatic Solomon house style,
+`doc-builder` alone for the neutral pack.
+
+```bash
+claude plugin install doc-builder@useful-claude-add-ons
+claude plugin install solomon-doc-builder@useful-claude-add-ons
+```
+
+Once both are on the machine, resolution finds `solomon-doc-builder` on its own -
+`doc-builder/scripts/resolve_brand.py` looks for a sibling brand pack under the same
+marketplace, whether that is a git-checkout sibling directory or two separately
+installed plugins sharing a plugin-cache folder - so there is no third step. Pass
+`--brand neutral` to `doc-builder`'s scripts (or set `DOC_BUILDER_BRAND=neutral`) any
+time to render unbranded regardless of what is installed.
+
 Add `--scope project` to install into the current project's `.claude/` config instead of your user-level config, or `--scope local` for a machine-local, non-shared install.
 
 ### Install a plugin from it

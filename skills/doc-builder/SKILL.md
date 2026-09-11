@@ -44,7 +44,7 @@ SOP path - it is the house template for procedures.
 | The user wants | Use |
 |---|---|
 | A report, SOP, runbook, guide or write-up produced as DOCX/PDF | this skill |
-| Solomon styling on any of those | this skill - the `solomon-doc-builder` pack is applied automatically when installed; it contains no logic |
+| Solomon styling on any of those | this skill, with `solomon-doc-builder` also installed - see "Brand resolution" below for the install command, the opt-out, and choosing between packs |
 | To edit, extract from or find-and-replace in a `.docx` they already have | the `docx` skill (`anthropic-office-skills:docx`) |
 | A slide deck or spreadsheet | `pptx` / `xlsx` skills |
 | Only to know what the house style is, without producing a document | `crew:crew-house-style` |
@@ -85,6 +85,25 @@ Two things the preflight can only **report**, because pip cannot fix them:
 `build_report.py`, `resolve_brand.py` and `preflight.py` are stdlib.
 
 ## Brand resolution - configuration, not a trigger
+
+**Want Solomon house style?** Install `solomon-doc-builder` alongside this skill -
+`claude plugin install solomon-doc-builder@useful-claude-add-ons` - and every document
+this skill produces is Solomon-branded from then on, with no flag and no question asked.
+There is no single install that brings both (`.claude-plugin/marketplace.json` has no
+field for expressing that dependency - each skill is its own entry), so a Solomon operator
+needs that one extra command once. It is the only extra step: after both are installed,
+branding is automatic on every document, forever, on this machine.
+
+**Don't want branded output, or got navy-and-red documents you didn't ask for?**
+Pass `--brand neutral` on any script, or set `DOC_BUILDER_BRAND=neutral` in the
+environment for every run without repeating the flag. Either always wins over
+whatever is installed - it is the off switch, and it needs no Python or config file
+to find.
+
+**Have more than one brand pack installed (an agency with several clients' packs on
+one machine)?** Pass `--brand <name>` to say which one this document is for. With no
+`--brand` and more than one pack found, every script refuses and names the packs
+rather than guessing - guessing puts one client's footer on another client's report.
 
 Every script resolves its brand the same way and prints the result to stderr:
 

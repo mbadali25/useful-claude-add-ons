@@ -17,6 +17,18 @@ A data directory with a marker file. `doc-builder/scripts/resolve_brand.py` find
 `assets/brand.json` here and applies it to every document without being asked, so an
 operator at Solomon never has to remember to request Solomon styling.
 
+**Install this alongside `doc-builder`, not instead of it** - this pack has no builder
+of its own. `claude plugin install doc-builder@useful-claude-add-ons` then
+`claude plugin install solomon-doc-builder@useful-claude-add-ons` (either order); once
+both are on the machine, branding is automatic from then on.
+
+**Not at Solomon, or don't want this pack's styling on a shared machine?** It never has
+to be uninstalled to turn it off: `doc-builder`'s scripts take `--brand neutral` (or
+`DOC_BUILDER_BRAND=neutral` in the environment) and that always wins over this pack, no
+matter how many brand packs are installed. See `doc-builder/SKILL.md`'s "Brand
+resolution" section for the full precedence order and how a machine with several packs
+installed picks between them.
+
 | File | What it is |
 |---|---|
 | `assets/brand.json` | Palette, fonts, footer text, template and directory locations. Keys omitted here inherit from `doc-builder/assets/brands/neutral/brand.json`. |

@@ -95,7 +95,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   and a reader that assumes UTF-8 turns every accented name into mojibake with
   no error.
 
-- **`doc-builder` 1.0.0 and `solomon-doc-builder` 1.0.0: `report-builder` and
+- **`doc-builder` 1.1.0 and `solomon-doc-builder` 1.1.0: `report-builder` and
   `solomon-sop-maker` merged into one implementation with a swappable brand
   pack.** Both original pipelines survive because neither can do the other's
   job: findings and tabular content go HTML-to-Word, step-by-step procedures
@@ -118,6 +118,30 @@ All notable changes to this repository are documented here. Format follows [Keep
   so probe-install-reprobe in one process reports "still missing" even when the
   wheel landed. Word's presence is read from the registry without starting Word,
   and a locked target is detected and named before Word is ever launched.
+
+  **1.1.0 fixes the packaging gap, without touching `resolve_brand.py`.**
+  `.claude-plugin/marketplace.json` has no field for "installing this also
+  installs that" -- each skill is its own entry, and `claude plugin install`
+  takes exactly one plugin name -- so `doc-builder` alone never brought
+  `solomon-doc-builder` with it. The one mechanism this marketplace has for a
+  single install bringing more than one thing is the `plugin/` bundle
+  (`crew`, `gizmoduck`, `localgpu`, `obsidian-vault`), and it was rejected here
+  on purpose: that bucket defaults **off** in the bootstrap scripts because a
+  plugin can register hooks, and moving a hookless skill and its pure-data
+  brand pack into it would flip them from on-by-default to off-by-default --
+  a regression neither skill needs. A scratch-built plugin-cache fixture
+  (`skills/doc-builder/scripts/_test/test_resolve_brand.py`, new) proved
+  instead that `resolve_brand.py`'s existing "plugin cache" search step
+  already climbs from `doc-builder`'s own installed location to the
+  marketplace folder and finds `solomon-doc-builder` there with zero code
+  changes, whether the two are checkout siblings or two separately installed
+  plugins sharing one marketplace's cache directory. So the fix is entirely
+  documentation: `SKILL.md` for both skills, both marketplace descriptions,
+  `skills/README.md`, the root `README.md` mirror, and `MARKETPLACE.md` all
+  now say plainly that Solomon styling needs `solomon-doc-builder` installed
+  alongside `doc-builder` (one extra command, not a second architecture), and
+  that `--brand neutral` / `DOC_BUILDER_BRAND=neutral` is the opt-out --
+  previously documented only in `resolve_brand.py`'s own module docstring.
 
 - **Four crew agents: `powershell-5.1-expert`, `powershell-7-expert`,
   `exchange-online-specialist`, `skill-author`.** The two PowerShell files are
