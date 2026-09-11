@@ -122,12 +122,15 @@ _TRIPLE = re.compile(
     r'\s*Payload:\s*(?P<payload>[^\r\n]+)')
 _TYPE_LINE = re.compile(r'^\s*Type:\s*[^\r\n]+$', re.MULTILINE)
 
-# sqlmap's own timestamped log line, e.g. `[10:14:02] [INFO] testing...` -
-# present even on a genuinely clean run (see the `empty` fixture, which has
-# no Parameter: block at all but plenty of these). Used, alongside
-# _PARAM_HEADER, to tell real-but-empty sqlmap output apart from a file
-# that isn't sqlmap output in the first place (defect 4).
-_LOG_LINE = re.compile(r'^\[\d{2}:\d{2}:\d{2}\]\s*\[[A-Za-z]+\]', re.MULTILINE)
+# CORRECTION (verified against real sqlmap 1.10.9.8#dev output, captured
+# against the labtarget fixture app): the `log` file inside a session
+# directory NEVER carries sqlmap's timestamped `[HH:MM:SS] [LEVEL]` progress
+# lines - those go to stdout/console only. This module originally assumed
+# otherwise (see the removed `_LOG_LINE` regex this comment replaces) and
+# used that assumption to tell a genuinely clean run's `log` apart from
+# garbage. A genuinely clean, fully-completed run's `log` is not "plenty of
+# timestamped lines with no Parameter: block" - it is exactly 0 bytes. See
+# `_genuinely_empty` below for how clean output is actually recognized now.
 
 # Sidecar run() drops in the session directory it actually used, recording
 # the real URL sqlmap was pointed at - see the module docstring's "run()'s
@@ -422,18 +425,20 @@ def _session_location(session_dir, target):
 
 
 def _looks_like_sqlmap_log(text):
-    """Whether `text` carries at least one marker sqlmap itself writes -
-    either a timestamped `[HH:MM:SS] [LEVEL]` log line (present even on a
-    genuinely clean run - see the `empty` fixture, which has no Parameter:
-    block at all but plenty of these) or a `Parameter:` block header.
+    """Whether non-empty `text` carries the one marker sqlmap itself ever
+    writes to `log`: a `Parameter:` block header. (A genuinely clean run
+    never reaches this function at all - see `parse()`'s empty-text branch,
+    which is checked first and is how a real clean run is actually told
+    apart from garbage; sqlmap's `log` carries no other marker of its own
+    to check for, verified against real captured output.)
 
-    Neither marker present means this file isn't sqlmap output at all - a
-    garbage file, an unrelated log, wholly truncated content - which must
-    raise base.ParseError rather than silently being read as zero findings.
-    A real clean run and unreadable output are not the same claim
-    (defect 4; base.ParseError's own docstring).
+    No `Parameter:` header in non-empty text means this file isn't sqlmap
+    output at all - a garbage file, an unrelated log, wholly truncated
+    content - which must raise base.ParseError rather than silently being
+    read as zero findings. A real clean run and unreadable output are not
+    the same claim (defect 4; base.ParseError's own docstring).
     """
-    return bool(_LOG_LINE.search(text) or _PARAM_HEADER.search(text))
+    return bool(_PARAM_HEADER.search(text))
 
 
 def _iter_confirmed(text):
@@ -499,13 +504,38 @@ def parse(raw_path, target):
     except OSError as e:
         raise base.ParseError("could not read sqlmap log %s: %s" % (log_path, e)) from e
 
+    if text.strip() == "":
+        # CORRECTION (verified against real sqlmap 1.10.9.8#dev, captured
+        # against the labtarget fixture app - see the `empty` fixture,
+        # replaced from a hand-built guess to this real capture): a
+        # genuinely clean, fully-completed run's `log` is not "plenty of
+        # timestamped INFO/WARNING/CRITICAL lines with no Parameter: block"
+        # - sqlmap never writes those lines to `log` at all (stdout/console
+        # only). A completed clean run's `log` is exactly 0 bytes.
+        #
+        # An empty `log` alone can't be trusted on its own, though: a run
+        # cut off by --time-limit (or a kill) before it ever finished can
+        # *also* leave an empty `log`, having gotten only as far as creating
+        # the per-host folder and touching the file - a real, captured
+        # example of exactly this sits in the `time-limit-cutoff` fixture.
+        # session.sqlite is what actually distinguishes the two: it is
+        # sqlmap's HashDB cache, and it is only ever present once the run
+        # completed for real. Present + empty log => genuinely clean.
+        # Absent + empty log => cut off before completion, not clean.
+        if (session_dir / "session.sqlite").is_file():
+            return []
+        raise base.ParseError(
+            "sqlmap session at %r has an empty log and no session.sqlite - "
+            "the scan appears to have been cut off (e.g. by --time-limit) "
+            "before it completed; this is not a clean run" % str(session_dir))
+
     # DEFECT 4 fix: a log that exists but isn't readable as sqlmap output at
     # all - a garbage file, an unrelated log, wholly corrupted content -
     # must raise base.ParseError rather than read as a clean scan just
     # because _iter_confirmed's regex happens to find no Parameter: blocks
-    # in it. A genuinely clean sqlmap run still carries its own timestamped
-    # log lines (see the `empty` fixture) even with zero injection points,
-    # so this check does not affect a real clean scan.
+    # in it. A genuinely clean sqlmap run's `log` is caught by the
+    # empty-text branch above, before ever reaching this check, so this
+    # does not affect a real clean scan.
     if not _looks_like_sqlmap_log(text):
         raise base.ParseError(
             "%s does not look like sqlmap log output; refusing to read it "

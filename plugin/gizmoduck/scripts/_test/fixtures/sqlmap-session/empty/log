@@ -1,8 +1,0 @@
-[10:20:01] [INFO] testing connection to the target URL
-[10:20:02] [INFO] testing if the target URL content is stable
-[10:20:03] [INFO] target URL content is stable
-[10:20:04] [INFO] testing if GET parameter 'id' is dynamic
-[10:20:05] [WARNING] GET parameter 'id' does not appear to be dynamic
-[10:20:06] [INFO] heuristic (basic) test shows that GET parameter 'id' might not be injectable
-[10:20:22] [WARNING] GET parameter 'id' does not seem to be injectable
-[10:20:23] [CRITICAL] all tested parameters do not appear to be injectable. Try to increase values for '--level'/'--risk' options if you wish to perform more tests.

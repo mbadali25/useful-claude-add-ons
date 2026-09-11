@@ -278,13 +278,20 @@ def test_parse_raises_rather_than_silently_dropping_an_unresolvable_bare_name(fi
 
 # --- parsing: confirmed session yields findings, empty session yields none -
 
-def test_confirmed_session_yields_two_findings_high_and_critical(fixture):
+def test_confirmed_session_yields_findings_for_every_captured_technique(fixture):
+    # Fixture replaced with a REAL sqlmap capture (1.10.9.8#dev) against the
+    # labtarget fixture app's /item?id= endpoint, run with the exact argv
+    # shape sqlmap.run() itself builds (no --technique/-p/--dump narrowing).
+    # A real confirmed injection on this target reports 4 techniques for the
+    # one parameter, not the 2 a hand-built fixture once guessed: boolean-
+    # based blind, error-based, and time-based blind (all "high" - none is a
+    # _CRITICAL_MARKERS match) plus a UNION query (critical).
     findings = sqlmap.parse(fixture("sqlmap-session/confirmed"),
                             "http://example.test/page?id=1")
 
-    assert len(findings) == 2
+    assert len(findings) == 4
     severities = sorted(f["severity"] for f in findings)
-    assert severities == [3, 4]  # boolean-based blind (high), UNION (critical)
+    assert severities == [3, 3, 3, 4]
 
     for f in findings:
         assert f["template_id"].startswith("sqlmap:id-get-")
@@ -296,13 +303,23 @@ def test_confirmed_session_yields_two_findings_high_and_critical(fixture):
     assert "union" in union_finding["template_id"]
     assert union_finding["severity_name"] == "critical"
 
-    blind_finding = next(f for f in findings if f["severity"] == 3)
-    assert blind_finding["severity_name"] == "high"
+    high_findings = [f for f in findings if f["severity"] == 3]
+    assert len(high_findings) == 3
+    assert all(f["severity_name"] == "high" for f in high_findings)
+    assert {f["template_id"] for f in high_findings} == {
+        "sqlmap:id-get-boolean-based-blind",
+        "sqlmap:id-get-error-based",
+        "sqlmap:id-get-time-based-blind",
+    }
 
 
 def test_empty_session_yields_zero_findings_not_a_low_severity_entry(fixture):
     # Probed-and-negative parameters are never persisted - a clean run must
     # come back as an empty list, never a synthetic "info: nothing found".
+    # Fixture replaced with a REAL capture: sqlmap 1.10.9.8#dev run to
+    # completion (--technique=B) against a decoy, non-injectable parameter
+    # on the labtarget fixture app - `log` is a genuine 0-byte file next to
+    # a real session.sqlite, not a hand-built guess.
     findings = sqlmap.parse(fixture("sqlmap-session/empty"),
                             "http://example.test/page?id=1")
     assert findings == []
@@ -317,7 +334,11 @@ def test_parse_accepts_an_output_dir_root_and_finds_the_host_subfolder(fixture, 
     (hostdir / "log").write_text((fixture("sqlmap-session/confirmed") / "log").read_text())
 
     findings = sqlmap.parse(root, "http://example.test/page?id=1")
-    assert len(findings) == 2
+    # The real captured `confirmed` log records four techniques on the one
+    # injectable parameter (boolean-based blind, error-based, time-based
+    # blind, UNION query) - one finding each. This matches the count the
+    # same fixture asserts through the direct-session-dir path above.
+    assert len(findings) == 4
 
 
 def test_missing_log_yields_zero_findings(tmp_path):
@@ -484,12 +505,30 @@ def test_nonexistent_session_still_yields_zero_findings(tmp_path):
 
 
 def test_a_genuinely_clean_log_still_yields_zero_findings(fixture):
-    # Regression guard: the `empty` fixture is a well-formed sqlmap log
-    # (real timestamped INFO/WARNING/CRITICAL lines) with zero Parameter:
-    # blocks - the defect-4 fix must not turn this into a false error.
+    # Regression guard: the `empty` fixture is a real, fully-completed clean
+    # run - a genuine 0-byte `log` file next to a real session.sqlite - not
+    # the "timestamped INFO/WARNING/CRITICAL lines with no Parameter: block"
+    # shape originally guessed here (real sqlmap never puts those lines in
+    # `log` at all - see the module docstring correction). The defect-4 fix
+    # must not turn this into a false error.
     findings = sqlmap.parse(fixture("sqlmap-session/empty"),
                             "https://example.test/page?id=1")
     assert findings == []
+
+
+def test_empty_log_without_session_sqlite_is_a_parse_error_not_a_clean_scan(fixture):
+    # REAL capture: sqlmap cut off by --time-limit before it finished
+    # testing even one parameter leaves an empty `log` behind with NO
+    # session.sqlite next to it - the mirror image of the
+    # session-sqlite-without-log "interrupted" case above, and the one that
+    # actually occurs in practice (verified against real sqlmap 1.10.9.8#dev:
+    # `log` is created immediately: session.sqlite, sqlmap's HashDB cache, is
+    # only ever written once a run completes). An empty `log` alone is not
+    # enough to call a scan clean; session.sqlite's presence is what
+    # actually distinguishes "clean" from "cut short".
+    with pytest.raises(base.ParseError):
+        sqlmap.parse(fixture("sqlmap-session/time-limit-cutoff"),
+                     "http://example.test/page?id=1")
 
 
 def test_sidecar_with_unparseable_url_is_a_parse_error_not_a_crash(tmp_path):
