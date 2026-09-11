@@ -107,19 +107,93 @@ function Test-PerlHasXmlWriter {
   # check here ("install Strawberry Perl only if no perl is found at all")
   # skipped the install on exactly that kind of machine and left nikto
   # permanently broken. Verify the capability, not just the binary's
-  # existence.
-  if (-not (Get-Command perl -ErrorAction SilentlyContinue)) { return $false }
-  & perl -MXML::Writer -e "1" *> $null
+  # existence. Takes an explicit $PerlExe so both the PATH perl and a
+  # freshly-installed Strawberry Perl can be checked with the same function.
+  param([string]$PerlExe = "perl")
+  if ($PerlExe -eq "perl" -and -not (Get-Command perl -ErrorAction SilentlyContinue)) { return $false }
+  & $PerlExe -MXML::Writer -e "1" *> $null
   return ($LASTEXITCODE -eq 0)
+}
+
+function Install-XmlWriterModule {
+  # XML::Writer is pure Perl - no XS, no compiler needed - so the fix that
+  # actually got nikto running on a Git-for-Windows perl (whose CPAN client
+  # has no CPAN::Author/cpanm to install anything with) was to drop its one
+  # file, Writer.pm, straight into that perl's own vendor_perl. No perl
+  # reinstall, no working CPAN client required.
+  param([Parameter(Mandatory)][string]$PerlExe)
+
+  # Single-quoted so PowerShell passes '$Config::Config{vendorlib}' through
+  # literally for perl to interpolate - a double-quoted string here gets
+  # expanded (to nothing, since no such PowerShell variable exists) by
+  # PowerShell itself before perl ever sees it.
+  $vendorLib = (& $PerlExe -MConfig -e 'print $Config::Config{vendorlib}').Trim()
+  if (-not $vendorLib) { throw "could not determine $PerlExe's vendorlib" }
+
+  $meta = Invoke-RestMethod "https://fastapi.metacpan.org/v1/download_url/XML::Writer"
+  if (-not $meta.download_url) { throw "could not resolve an XML::Writer release from MetaCPAN" }
+
+  $tmp = Join-Path $env:TEMP "gizmoduck-xml-writer.tar.gz"
+  Invoke-WebRequest -Uri $meta.download_url -OutFile $tmp
+
+  $extractDir = Join-Path $env:TEMP "gizmoduck-xml-writer-extract"
+  if (Test-Path $extractDir) { Remove-Item -Recurse -Force $extractDir }
+  New-Item -ItemType Directory -Force -Path $extractDir | Out-Null
+  tar -xzf $tmp -C $extractDir
+  if ($LASTEXITCODE -ne 0) { throw "failed to extract the XML::Writer release tarball" }
+
+  # Verified against the actual current release (XML-Writer-0.900.tar.gz):
+  # Writer.pm sits at the distribution root, not nested under lib/XML/ as
+  # its `package XML::Writer;` declaration might suggest - so this matches
+  # on filename alone rather than assuming a directory shape the real
+  # tarball doesn't have.
+  $writerPm = Get-ChildItem -Recurse -Path $extractDir -Filter "Writer.pm" | Select-Object -First 1
+  if (-not $writerPm) { throw "Writer.pm not found inside the XML::Writer release" }
+
+  $destDir = Join-Path $vendorLib "XML"
+  New-Item -ItemType Directory -Force -Path $destDir | Out-Null
+  Copy-Item $writerPm.FullName (Join-Path $destDir "Writer.pm") -Force
+
+  Remove-Item $tmp -ErrorAction SilentlyContinue
+  Remove-Item -Recurse -Force $extractDir -ErrorAction SilentlyContinue
 }
 
 function Install-Nikto {
   # Nikto is a Perl script with no native Windows package - it needs a Perl
-  # runtime plus the script itself.
+  # runtime plus the script itself. The adapter (scanners/nikto.py) just
+  # uses `base.which("perl")` - whichever perl ends up resolvable on PATH
+  # after this function runs is what nikto will actually be launched with,
+  # so the capability check and fix both have to happen here, not at scan
+  # time.
   Test-WingetAvailable
-  if (-not (Test-PerlHasXmlWriter)) {
+  $perlCmd = Get-Command perl -ErrorAction SilentlyContinue
+  if (-not $perlCmd) {
     winget install --id StrawberryPerl.StrawberryPerl -e --accept-package-agreements --accept-source-agreements
     if ($LASTEXITCODE -ne 0) { throw "winget exited $LASTEXITCODE installing Strawberry Perl" }
+  } elseif (-not (Test-PerlHasXmlWriter $perlCmd.Source)) {
+    Write-Host ">> $($perlCmd.Source) is missing XML::Writer (nikto's hard dependency) - installing it..."
+    try {
+      Install-XmlWriterModule -PerlExe $perlCmd.Source
+    } catch {
+      Write-Host "!! could not add XML::Writer to $($perlCmd.Source): $($_.Exception.Message)" -ForegroundColor Yellow
+      Write-Host "!! falling back to installing Strawberry Perl instead" -ForegroundColor Yellow
+      winget install --id StrawberryPerl.StrawberryPerl -e --accept-package-agreements --accept-source-agreements
+      if ($LASTEXITCODE -ne 0) { throw "winget exited $LASTEXITCODE installing Strawberry Perl" }
+      # scanners/nikto.py just trusts `base.which("perl")` - if the perl
+      # found above (still missing XML::Writer) stays ahead of this new
+      # Strawberry install in PATH search order, nikto would keep resolving
+      # to the broken one. Prepend Strawberry's bin dir so it wins.
+      $strawberryBin = "C:\Strawberry\perl\bin"
+      if (Test-Path (Join-Path $strawberryBin "perl.exe")) {
+        $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+        [Environment]::SetEnvironmentVariable("Path", "$strawberryBin;$userPath", "User")
+        $env:Path = "$strawberryBin;$env:Path"
+      }
+    }
+    if (-not (Test-PerlHasXmlWriter "perl")) {
+      Write-Host "!! nikto may still fail: no perl on PATH could be confirmed to have XML::Writer" -ForegroundColor Yellow
+      Write-Host "!! after this install. Re-run bootstrap once network/CPAN access is available." -ForegroundColor Yellow
+    }
   }
   $dir = Join-Path $ToolsDir "nikto"
   if (Test-Path (Join-Path $dir ".git")) {

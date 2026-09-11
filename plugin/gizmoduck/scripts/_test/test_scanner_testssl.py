@@ -314,3 +314,103 @@ def test_run_does_not_touch_path_when_hexdump_is_already_resolvable(monkeypatch,
     testssl.run("example.com", str(tmp_path), {})
 
     assert captured["path_during_run"] == original_path
+
+
+# ---------------------------------------------------------------------------
+# CORRECTION (installed-toolchain, second verification pass): bootstrap.ps1
+# only ever git-clones testssl.sh on Windows - nothing puts a directly
+# executable testssl.sh/testssl on PATH there (unlike bootstrap.sh's
+# `ln -sf .../testssl.sh /usr/local/bin/testssl.sh` on Linux). The verified
+# working Windows invocation explicitly runs it through bash
+# (`bash testssl.sh ...`, with the MSYS2 hexdump dir prepended to PATH) -
+# this adapter must build that same argv shape when no directly-executable
+# binary is on PATH, and must degrade with a clear, actionable message when
+# `hexdump` cannot be found anywhere, rather than ever invoking testssl.sh
+# and letting its own bare "You need to install hexdump..." reach an
+# operator with no idea what to do about it on Windows.
+# ---------------------------------------------------------------------------
+
+def test_resolve_command_prefers_a_native_binary_when_present(monkeypatch):
+    monkeypatch.setattr(base, "which",
+                         lambda name: "/usr/bin/testssl.sh" if name == "testssl.sh" else None)
+    assert testssl._resolve_command() == ["/usr/bin/testssl.sh"]
+
+
+def test_resolve_command_falls_back_to_bash_plus_the_cloned_script(monkeypatch, tmp_path):
+    script = tmp_path / "testssl.sh"
+    script.write_text("#!/usr/bin/env bash\n# stand-in")
+
+    monkeypatch.setattr(testssl, "_TESTSSL_SCRIPT_CANDIDATES", (str(script),))
+    monkeypatch.setattr(base, "which", lambda name: "/usr/bin/bash" if name == "bash" else None)
+
+    assert testssl._resolve_command() == ["/usr/bin/bash", str(script)]
+
+
+def test_resolve_command_is_none_when_script_found_but_no_bash(monkeypatch, tmp_path):
+    script = tmp_path / "testssl.sh"
+    script.write_text("stand-in")
+
+    monkeypatch.setattr(testssl, "_TESTSSL_SCRIPT_CANDIDATES", (str(script),))
+    monkeypatch.setattr(base, "which", lambda name: None)
+
+    assert testssl._resolve_command() is None
+
+
+def test_resolve_command_is_none_when_nothing_is_found(monkeypatch):
+    monkeypatch.setattr(testssl, "_TESTSSL_SCRIPT_CANDIDATES", ())
+    monkeypatch.setattr(base, "which", lambda name: None)
+
+    assert testssl._resolve_command() is None
+
+
+def test_is_available_true_via_bash_and_the_cloned_script(monkeypatch, tmp_path):
+    script = tmp_path / "testssl.sh"
+    script.write_text("stand-in")
+
+    monkeypatch.setattr(testssl, "_TESTSSL_SCRIPT_CANDIDATES", (str(script),))
+    monkeypatch.setattr(base, "which", lambda name: "/usr/bin/bash" if name == "bash" else None)
+
+    assert testssl.is_available() is True
+
+
+def test_run_uses_bash_and_script_argv_when_no_native_binary_is_found(monkeypatch, tmp_path, fixture):
+    script = tmp_path / "testssl.sh"
+    script.write_text("stand-in")
+
+    monkeypatch.setattr(testssl, "_TESTSSL_SCRIPT_CANDIDATES", (str(script),))
+    monkeypatch.setattr(
+        base, "which",
+        lambda name: {"bash": "/usr/bin/bash", "hexdump": "/usr/bin/hexdump"}.get(name))
+
+    captured = {}
+
+    def fake_run_tool(argv, timeout, cwd=None):
+        captured["argv"] = argv
+        assert argv[2] == "--jsonfile"
+        shutil.copy(fixture("testssl.json"), argv[3])
+        return base.ToolResult(0, "", "", False)
+
+    monkeypatch.setattr(base, "run_tool", fake_run_tool)
+
+    raw_path, result = testssl.run("example.com", str(tmp_path), {})
+
+    assert raw_path == tmp_path / "testssl.json"
+    assert captured["argv"][0] == "/usr/bin/bash"
+    assert captured["argv"][1] == str(script)
+
+
+def test_run_declines_with_a_clear_message_when_hexdump_is_missing_everywhere(monkeypatch, tmp_path):
+    monkeypatch.setattr(base, "which",
+                         lambda name: "/usr/bin/testssl.sh" if name == "testssl.sh" else None)
+    monkeypatch.setattr(testssl, "_MSYS2_HEXDUMP_CANDIDATES", ())
+
+    called = []
+    monkeypatch.setattr(base, "run_tool", lambda *a, **k: called.append(1))
+
+    raw_path, result = testssl.run("example.com", str(tmp_path), {})
+
+    # testssl.sh must never even be invoked - its own bare error message
+    # tells a Windows operator nothing about what to do.
+    assert called == []
+    assert raw_path is None
+    assert "hexdump" in result.stderr.lower()

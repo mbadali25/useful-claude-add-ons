@@ -54,6 +54,20 @@ _MSYS2_HEXDUMP_CANDIDATES = tuple(
     ) if p
 )
 
+# bootstrap.ps1 only ever git-clones testssl.sh on Windows - nothing puts a
+# directly executable testssl.sh/testssl on PATH there the way bootstrap.sh's
+# `ln -sf .../testssl.sh /usr/local/bin/testssl.sh` does on Linux. This is
+# where that clone actually lands (Join-Path $env:LOCALAPPDATA "Programs"
+# "testssl.sh"). A GIZMODUCK_TESTSSL_SH override takes precedence for an
+# operator who put it somewhere else.
+_TESTSSL_SCRIPT_CANDIDATES = tuple(
+    p for p in (
+        os.environ.get("GIZMODUCK_TESTSSL_SH"),
+        (str(Path(os.environ["LOCALAPPDATA"]) / "Programs" / "testssl.sh" / "testssl.sh")
+         if os.environ.get("LOCALAPPDATA") else None),
+    ) if p
+)
+
 _ERROR_SEVERITIES = ("WARN", "FATAL")
 # OK is a confident, documented "this check found nothing" - not an unmapped
 # value - so it is translated to INFO before normalize.sev_from_text ever
@@ -61,8 +75,34 @@ _ERROR_SEVERITIES = ("WARN", "FATAL")
 _OK_ALIAS = "OK"
 
 
+def _find_testssl_script():
+    for candidate in _TESTSSL_SCRIPT_CANDIDATES:
+        if candidate and Path(candidate).is_file():
+            return candidate
+    return None
+
+
+def _resolve_command():
+    """The argv prefix to invoke testssl.sh with, or None if no usable route
+    exists. Prefers a directly-executable testssl.sh/testssl on PATH (the
+    Linux install: bootstrap.sh symlinks it with +x and its own shebang, so
+    the kernel handles the interpreter itself) - else falls back to running
+    the git-cloned script explicitly through bash, since that is the only
+    thing bootstrap.ps1 ever provides on Windows and is the verified working
+    invocation there (`bash testssl.sh ...`).
+    """
+    binary = base.which("testssl.sh") or base.which("testssl")
+    if binary:
+        return [binary]
+    script = _find_testssl_script()
+    bash = base.which("bash")
+    if script and bash:
+        return [bash, script]
+    return None
+
+
 def is_available():
-    return base.which("testssl.sh") is not None or base.which("testssl") is not None
+    return _resolve_command() is not None
 
 
 def _hexdump_dir():
@@ -102,9 +142,12 @@ def run(target, outdir, opts):
     below, which routine should call alongside parse() whenever raw_path is
     not None.
     """
-    binary = base.which("testssl.sh") or base.which("testssl")
-    if not binary:
-        return None, base.ToolResult(-1, "", "testssl.sh not found on PATH", False)
+    command = _resolve_command()
+    if command is None:
+        return None, base.ToolResult(
+            -1, "",
+            "testssl.sh not found (no binary on PATH, and no cloned "
+            "testssl.sh + bash available)", False)
 
     out_path = Path(outdir) / "testssl.json"
 
@@ -117,7 +160,7 @@ def run(target, outdir, opts):
     if out_path.exists():
         out_path.unlink()
 
-    argv = [binary, "--jsonfile", str(out_path)]
+    argv = command + ["--jsonfile", str(out_path)]
     if opts.get("connect_timeout"):
         argv += ["--connect-timeout", str(opts["connect_timeout"])]
     if opts.get("openssl_timeout"):
@@ -126,13 +169,30 @@ def run(target, outdir, opts):
 
     timeout = opts.get("timeout", _DEFAULT_TIMEOUT)
 
+    # testssl.sh hard-requires `hexdump` and fails immediately without it,
+    # with a bare "You need to install hexdump for this program to work."
+    # that gives a Windows operator no idea what to do about it. If it is
+    # not resolvable anywhere - not on PATH, and no MSYS2 candidate found
+    # either - decline right here with an actionable message instead of
+    # ever invoking testssl.sh and burying that behind its own error.
+    hexdump_dir = _hexdump_dir()
+    if hexdump_dir is None and not base.which("hexdump"):
+        return None, base.ToolResult(
+            -1, "",
+            "testssl.sh requires `hexdump`, which is not on PATH and no "
+            "MSYS2 install was found (checked C:\\tools\\msys64\\usr\\bin, "
+            "C:\\msys64\\usr\\bin, and $GIZMODUCK_MSYS2_BIN) - install "
+            "MSYS2, or set GIZMODUCK_MSYS2_BIN to a directory containing "
+            "hexdump.exe, then retry", False)
+
     # Git Bash's own bin has no `hexdump` (module comment); testssl.sh hard-
     # fails before doing anything else without one. base.run_tool has no env
     # parameter (shared plumbing, out of scope here), so this temporarily
     # prepends a directory that does have it to this process's PATH for the
     # one subprocess call, then always restores it - never a permanent
-    # change to this process's environment.
-    hexdump_dir = _hexdump_dir()
+    # change to this process's environment. (hexdump_dir was already
+    # resolved above, to gate the "nowhere to be found" case before ever
+    # building this far.)
     old_path = os.environ.get("PATH", "")
     if hexdump_dir:
         os.environ["PATH"] = hexdump_dir + os.pathsep + old_path

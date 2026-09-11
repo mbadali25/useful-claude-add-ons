@@ -3,93 +3,43 @@ import pytest
 from scanners import base, nikto
 
 
-# --- HIGH defect: "some perl on PATH" is not evidence it can run nikto -----
+# --- HIGH defect: nikto needs a perl + nikto.pl route on Windows -----------
 #
-# nikto hard-requires XML::Writer. A Cygwin/MSYS perl commonly satisfies
-# `which perl` while lacking XML::Writer and having a broken CPAN (no
-# CPAN::Author, no cpanm) with no way to install it. bootstrap.ps1's old
-# "install Strawberry Perl only if no perl is found at all" check skipped the
-# install on exactly such a machine, leaving nikto permanently broken. The
-# adapter itself must independently verify whichever perl it is about to use
-# can actually load XML::Writer, not merely that something called perl
-# exists - and must prefer a known-good Strawberry Perl over a PATH perl that
-# fails that check.
-
-def test_perl_has_xml_writer_probes_via_run_tool(monkeypatch):
-    captured = {}
-
-    def fake_run_tool(argv, timeout, cwd=None):
-        captured["argv"] = argv
-        return base.ToolResult(0, "", "", False)
-
-    monkeypatch.setattr(base, "run_tool", fake_run_tool)
-    assert nikto._perl_has_xml_writer(r"C:\Strawberry\perl\bin\perl.exe") is True
-    assert captured["argv"][0] == r"C:\Strawberry\perl\bin\perl.exe"
-    assert "-MXML::Writer" in captured["argv"]
-
-
-def test_perl_has_xml_writer_false_on_nonzero_exit(monkeypatch):
-    monkeypatch.setattr(base, "run_tool",
-                         lambda *a, **k: base.ToolResult(2, "", "Can't locate XML/Writer.pm", False))
-    assert nikto._perl_has_xml_writer("perl") is False
-
-
-def test_find_working_perl_prefers_strawberry_over_a_broken_path_perl(monkeypatch, tmp_path):
-    # A PATH perl exists but cannot load XML::Writer (the Cygwin/MSYS case);
-    # a Strawberry Perl candidate exists and can. Strawberry must win even
-    # though the PATH perl was "available" first.
-    strawberry = tmp_path / "strawberry-perl.exe"
-    strawberry.write_text("stand-in, never executed directly in this test")
-    monkeypatch.setattr(nikto, "_STRAWBERRY_PERL_CANDIDATES", (str(strawberry),))
-    monkeypatch.setattr(base, "which", lambda name: "/usr/bin/perl" if name == "perl" else None)
-
-    def fake_run_tool(argv, timeout, cwd=None):
-        if argv[0] == str(strawberry):
-            return base.ToolResult(0, "", "", False)
-        return base.ToolResult(2, "", "Can't locate XML/Writer.pm", False)
-
-    monkeypatch.setattr(base, "run_tool", fake_run_tool)
-
-    assert nikto._find_working_perl() == str(strawberry)
-
-
-def test_find_working_perl_falls_back_to_path_perl_when_it_works(monkeypatch):
-    monkeypatch.setattr(nikto, "_STRAWBERRY_PERL_CANDIDATES", ())
-    monkeypatch.setattr(base, "which", lambda name: "/usr/bin/perl" if name == "perl" else None)
-    monkeypatch.setattr(base, "run_tool", lambda *a, **k: base.ToolResult(0, "", "", False))
-
-    assert nikto._find_working_perl() == "/usr/bin/perl"
-
-
-def test_find_working_perl_returns_none_when_nothing_can_run_nikto(monkeypatch):
-    monkeypatch.setattr(nikto, "_STRAWBERRY_PERL_CANDIDATES", ())
-    monkeypatch.setattr(base, "which", lambda name: None)
-
-    assert nikto._find_working_perl() is None
-
+# nikto is a Perl script with no native Windows package (bootstrap.ps1's
+# Install-Nikto comment). Whether the perl on PATH can actually run nikto
+# (it hard-requires XML::Writer) is verified and fixed at BOOTSTRAP time
+# (bootstrap.ps1's Test-PerlHasXmlWriter installs the module or falls back
+# to Strawberry Perl) - by the time this adapter runs, `base.which("perl")`
+# is expected to already work, the same way every other adapter trusts
+# `base.which()` for its own tool. An earlier version of this adapter
+# duplicated that capability check at runtime and hard-coded a preference
+# for Strawberry Perl over PATH; a second, independent verification found
+# PATH perl (Git for Windows' bundled perl, once XML::Writer was present) to
+# be the *better* choice - Strawberry's perl emitted an unrelated warning
+# nikto.pl doesn't hit under Git's perl - so that preference was wrong and
+# has been removed. This adapter now just uses whichever perl is on PATH.
 
 def test_is_available_true_via_native_nikto_binary(monkeypatch):
     monkeypatch.setattr(base, "which", lambda name: "/usr/bin/nikto" if name == "nikto" else None)
     assert nikto.is_available() is True
 
 
-def test_is_available_true_via_nikto_pl_and_a_working_perl(monkeypatch, tmp_path):
+def test_is_available_true_via_nikto_pl_and_path_perl(monkeypatch, tmp_path):
     nikto_pl = tmp_path / "nikto.pl"
     nikto_pl.write_text("# stand-in")
-    monkeypatch.setattr(base, "which", lambda name: None)  # no native nikto, no perl on PATH
+    monkeypatch.setattr(
+        base, "which",
+        lambda name: {"perl": "/usr/bin/perl"}.get(name))  # no native nikto, perl on PATH
     monkeypatch.setattr(nikto, "_NIKTO_PL_CANDIDATES", (str(nikto_pl),))
-    monkeypatch.setattr(nikto, "_STRAWBERRY_PERL_CANDIDATES", ())
-    monkeypatch.setattr(nikto, "_find_working_perl", lambda: r"C:\Strawberry\perl\bin\perl.exe")
 
     assert nikto.is_available() is True
 
 
-def test_is_available_false_when_only_a_broken_perl_is_found(monkeypatch, tmp_path):
+def test_is_available_false_when_no_perl_is_found(monkeypatch, tmp_path):
     nikto_pl = tmp_path / "nikto.pl"
     nikto_pl.write_text("# stand-in")
     monkeypatch.setattr(base, "which", lambda name: None)
     monkeypatch.setattr(nikto, "_NIKTO_PL_CANDIDATES", (str(nikto_pl),))
-    monkeypatch.setattr(nikto, "_find_working_perl", lambda: None)
 
     assert nikto.is_available() is False
 
@@ -97,9 +47,10 @@ def test_is_available_false_when_only_a_broken_perl_is_found(monkeypatch, tmp_pa
 def test_run_uses_perl_and_nikto_pl_when_no_native_binary_is_found(monkeypatch, tmp_path):
     nikto_pl = tmp_path / "nikto.pl"
     nikto_pl.write_text("# stand-in")
-    monkeypatch.setattr(base, "which", lambda name: None)
+    monkeypatch.setattr(
+        base, "which",
+        lambda name: {"perl": "/usr/bin/perl"}.get(name))
     monkeypatch.setattr(nikto, "_NIKTO_PL_CANDIDATES", (str(nikto_pl),))
-    monkeypatch.setattr(nikto, "_find_working_perl", lambda: r"C:\Strawberry\perl\bin\perl.exe")
 
     captured = {}
 
@@ -114,7 +65,7 @@ def test_run_uses_perl_and_nikto_pl_when_no_native_binary_is_found(monkeypatch, 
     result_path, result = nikto.run("https://example.test", str(tmp_path))
 
     assert result_path == str(tmp_path / "nikto.csv")
-    assert captured["argv"][0] == r"C:\Strawberry\perl\bin\perl.exe"
+    assert captured["argv"][0] == "/usr/bin/perl"
     assert captured["argv"][1] == str(nikto_pl)
     assert "-h" in captured["argv"] and "https://example.test" in captured["argv"]
 
