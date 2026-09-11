@@ -219,3 +219,30 @@ def test_load_rejects_a_record_that_is_neither_shape(gz, tmp_path):
                  encoding="utf-8")
     with pytest.raises(Exception):
         gz.load(str(p))
+
+
+# --- CRITICAL defect: an empty finding list discards failed coverage. -----
+#
+# Combined-mode detection was keyed only on findings carrying `target`, so a
+# run where every tool errored (zero findings, but a real run_manifest) fell
+# through to the flat path and printed "No action required" - discarding the
+# coverage table that is the only evidence distinguishing a failed scan from
+# a clean one.
+
+def test_empty_findings_with_a_manifest_still_renders_combined_mode(gz):
+    manifest = {
+        "cells": [{"target": "prod", "tool": "nuclei", "status": "error:timeout",
+                   "mode": None, "error": "timeout", "duration_s": 30.0,
+                   "count": 0, "errors": []}],
+    }
+    out = gz.cmd_report([], 2, "Review", manifest)
+    assert "No action required" not in out
+    assert "## Coverage" in out
+    assert "error:timeout" in out
+
+
+def test_plain_empty_findings_without_a_manifest_still_says_no_action(gz):
+    """No manifest, no findings - the ordinary clean-scan case - must be
+    unaffected by the fix above."""
+    out = gz.cmd_report([], 2, "Review")
+    assert "No action required" in out

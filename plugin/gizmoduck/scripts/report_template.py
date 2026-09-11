@@ -477,7 +477,14 @@ def render_report(uniq, summary, min_sev, title, sev_name, order, findings=None,
     scan_date = _scan_date(findings)
 
     floor_name = e(sev_name.get(floor, "Medium"))
-    if groups:
+    # `groups is not None` rather than a bare truthiness check: a combined
+    # run whose findings list is empty (every tool errored - CRITICAL
+    # defect) still passes `groups=[]`, which is falsy but must NOT fall
+    # through to the "Nothing at or above ... No remediation work follows"
+    # branch below - that branch asserts a clean scan, and an all-errored
+    # run is the opposite of evidence for that. `None` (always the case for
+    # plain Nuclei input) is the only value that should skip this branch.
+    if groups is not None:
         heading = _grouped_sections_html(groups, sev_name, e)
         appendix_source = [f for _, cats in groups for _, _, sh in cats for f in sh]
     elif shown:
@@ -496,7 +503,7 @@ def render_report(uniq, summary, min_sev, title, sev_name, order, findings=None,
                    f"It is not a statement that no vulnerability exists.</p></div>")
         appendix_source = shown
 
-    style = CSS + GROUPED_CSS if (run_manifest or groups) else CSS
+    style = CSS + GROUPED_CSS if (run_manifest or groups is not None) else CSS
     parts = [
         f"<!doctype html><html><head><meta charset='utf-8'><title>{e(title)}</title>"
         f"<style>{style}</style></head><body><div class='wrap'>",

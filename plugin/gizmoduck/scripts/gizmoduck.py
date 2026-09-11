@@ -313,19 +313,34 @@ def detail_floor(min_sev):
     return max(min_sev, REPORT_DETAIL_FLOOR)
 
 
-def _is_combined(findings):
+def _is_combined(findings, run_manifest=None):
     """True when the input is a `routine` combined run rather than plain
-    Nuclei output - decided by the presence of a `target` field, never by
-    whether a run_manifest was supplied (Task 16 step 3: "keyed on the
-    presence of target/tool fields"). Plain Nuclei JSONL carries neither, so
-    this stays False and cmd_report falls through to the untouched flat path -
-    the acceptance bar for every change in this region (Global Constraints,
-    "Additive only")."""
-    return any(f.get("target") for f in findings)
+    Nuclei output.
+
+    Primarily decided by the presence of a `target` field on any finding
+    (Task 16 step 3: "keyed on the presence of target/tool fields"), never
+    merely by whether a run_manifest was supplied - a caller can mistakenly
+    pass an unrelated manifest alongside real flat Nuclei findings, and that
+    must still render the untouched flat path byte-for-byte (Global
+    Constraints, "Additive only";
+    test_plain_nuclei_input_ignores_a_run_manifest_too pins this).
+
+    The one exception is an EMPTY findings list together with a real
+    run_manifest (CRITICAL defect): `target` can only ever appear on an
+    actual finding, so a run where every tool errored or was skipped -
+    zero findings, but a manifest full of `error:*`/`skipped-*` cells -
+    used to fall through to the flat path and print "No action required",
+    discarding the exact evidence (the coverage table) that distinguishes a
+    failed scan from a clean one. `run_manifest` is only ever produced by
+    `routine`, so its presence is sufficient in this one case, where there
+    is no finding to have carried `target` in the first place."""
+    if any(f.get("target") for f in findings):
+        return True
+    return not findings and bool(run_manifest and run_manifest.get("cells"))
 
 
 def cmd_report(findings, min_sev, title, run_manifest=None):
-    if _is_combined(findings):
+    if _is_combined(findings, run_manifest):
         return _cmd_report_combined(findings, min_sev, title, run_manifest)
     floor = detail_floor(min_sev)
     uniq = sorted(dedupe(findings), key=lambda f: (-f["severity"], f["name"]))
@@ -596,7 +611,7 @@ def render_html(findings, min_sev, title, run_manifest=None):
     mapping that produced it.
     """
     uniq = sorted(dedupe(findings), key=lambda f: (-f["severity"], f["name"]))
-    combined = _is_combined(findings)
+    combined = _is_combined(findings, run_manifest)
     groups = _grouped_sections(findings, detail_floor(min_sev)) if combined else None
     return _template_module().render_report(
         uniq=uniq,

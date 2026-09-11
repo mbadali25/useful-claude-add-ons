@@ -108,3 +108,19 @@ def test_ran_cell_with_scan_errors_is_flagged_in_html(gz, combined_findings, run
 def test_authorized_by_is_restated_in_html(gz, combined_findings, run_manifest):
     out = gz.render_html(combined_findings, 0, "Combined Report", run_manifest=run_manifest)
     assert "jane@example.com" in out
+
+
+def test_empty_findings_with_a_manifest_still_renders_combined_mode_html(gz):
+    """HTML mirror of the Markdown defect-2 fix: a manifest whose only cell
+    is an error must still show the coverage table and must not fall back
+    to the "Nothing at or above Medium" clean-scan message, which would
+    hide the fact that every tool failed."""
+    manifest = {
+        "cells": [{"target": "prod", "tool": "nuclei", "status": "error:timeout",
+                   "mode": None, "error": "timeout", "duration_s": 30.0,
+                   "count": 0, "errors": []}],
+    }
+    out = gz.render_html([], 2, "Review", run_manifest=manifest)
+    assert "Coverage" in out
+    assert "error:timeout" in out
+    assert "Nothing at or above" not in out
