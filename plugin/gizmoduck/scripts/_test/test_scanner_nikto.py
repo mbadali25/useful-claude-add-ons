@@ -57,7 +57,7 @@ def test_run_uses_perl_and_nikto_pl_when_no_native_binary_is_found(monkeypatch, 
     def fake_run_tool(argv, timeout, cwd=None):
         captured["argv"] = argv
         (tmp_path / "nikto.csv").write_text(
-            "000001,1,1,1.2.3.4,example.test,443,1,,GET,/,retrieved x-powered-by header,,\n")
+            '"example.test","1.2.3.4","443","","GET","/","Retrieved x-powered-by header: PHP/7.4.3."\n')
         return base.ToolResult(1, "", "", False)
 
     monkeypatch.setattr(base, "run_tool", fake_run_tool)
@@ -88,30 +88,58 @@ def test_run_returns_an_error_when_no_native_binary_and_no_working_perl_route(mo
     assert "perl" in result.stderr.lower() or "nikto" in result.stderr.lower()
 
 
-def test_parses_both_rows_with_derived_severities(fixture):
+def test_parses_the_real_capture_skipping_structural_rows(fixture):
+    # nikto.csv is real `nikto -Format csv` output (v2.6.1) against the lab
+    # target: a one-field version banner, a seven-field scan-start marker
+    # with an empty message, then 13 real finding rows. The parser must skip
+    # the two structural rows and yield exactly the 13 findings.
     findings = nikto.parse(str(fixture("nikto.csv")), "https://example.test")
-    assert len(findings) == 2
+    assert len(findings) == 13
+    # Every message came from the real column 6 (not the port or a doc URL,
+    # which is what the old 13-column indexing produced).
+    assert all(f["name"] for f in findings)
+    assert all(f["severity_name"] in ("info", "medium") for f in findings)
 
-    banner, vuln = findings
-    assert banner["severity"] == 0
-    assert banner["severity_name"] == "info"
-    assert vuln["severity"] == 2
-    assert vuln["severity_name"] == "medium"
+
+def test_uri_and_host_come_from_the_right_columns(fixture):
+    # The directory-indexing row carries a real vuln-id token (CWE-548) in
+    # refs and /files/ in the uri column - proves message/uri/refs land where
+    # they actually are in the 7-column layout, not the old 13-column offsets.
+    findings = nikto.parse(str(fixture("nikto.csv")), "https://example.test")
+    di = [f for f in findings if "Directory indexing" in f["name"]]
+    assert len(di) == 1
+    assert di[0]["matched_at"] == "/files/"
+    assert di[0]["template_id"] == "nikto:CWE-548"
+    assert di[0]["reference"] == ["CWE-548"]
 
 
 def test_every_finding_carries_severity_assigned(fixture):
-    # Nikto has no severity field at all (spec 13.6) - every finding here is
-    # a heuristic assignment, and the marker must say so every time.
+    # Nikto has no severity field at all (spec 13.6) - every finding is a
+    # heuristic assignment, and the marker must say so every time.
     findings = nikto.parse(str(fixture("nikto.csv")), "https://example.test")
-    assert len(findings) == 2
+    assert findings  # non-empty
     for f in findings:
         assert "severity-assigned" in f["tags"]
 
 
-def test_template_id_is_namespaced_by_tool(fixture):
+def test_template_id_falls_back_to_a_message_hash_without_a_ref_token(fixture):
+    # Most Nikto rows have no CWE/OSVDB token - only a doc URL or nothing - so
+    # the id is a stable hash of the message. Same message => same id across
+    # runs, which is what dedupe() keys on.
     findings = nikto.parse(str(fixture("nikto.csv")), "https://example.test")
-    ids = {f["template_id"] for f in findings}
-    assert ids == {"nikto:000001", "nikto:999100"}
+    hashed = [f for f in findings if f["template_id"].startswith("nikto:msg-")]
+    assert hashed  # the outdated-version rows have no ref token
+    # Deterministic: re-parsing yields identical ids.
+    again = nikto.parse(str(fixture("nikto.csv")), "https://example.test")
+    assert [f["template_id"] for f in findings] == [f["template_id"] for f in again]
+
+
+def test_banner_message_classifies_as_info_the_rest_medium():
+    # _is_banner is the whole severity heuristic - a version/banner disclosure
+    # is info, everything else medium. Exercised directly since a given real
+    # scan may or may not contain a banner-matching line.
+    assert nikto._is_banner("Retrieved x-powered-by header: PHP/7.4.3")
+    assert not nikto._is_banner("Directory indexing found.")
 
 
 def test_target_is_set_from_argument(fixture):
@@ -204,7 +232,7 @@ def test_run_returns_the_path_when_a_fresh_csv_is_written(monkeypatch, tmp_path)
 
     def fake_run_tool(argv, timeout, cwd=None):
         (tmp_path / "nikto.csv").write_text(
-            "000001,1,1,1.2.3.4,example.test,443,1,,GET,/,retrieved x-powered-by header,,\n")
+            '"example.test","1.2.3.4","443","","GET","/","Retrieved x-powered-by header: PHP/7.4.3."\n')
         return base.ToolResult(1, "", "", False)  # nikto always exits nonzero
 
     monkeypatch.setattr(base, "run_tool", fake_run_tool)

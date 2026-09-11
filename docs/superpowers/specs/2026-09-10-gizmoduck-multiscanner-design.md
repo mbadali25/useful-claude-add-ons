@@ -349,10 +349,26 @@ aliases `MODERATE` to MEDIUM and `IMPORTANT` to HIGH.
 `-Format json` is documented but emits invalid JSON on 2.1.6 when a target has
 no webserver (duplicate closing brace, issue #721), and the fix is unconfirmed
 on current releases. **CSV or XML is the primary parse path**, not a fallback.
-CSV columns: `id, scanid, testid, ip, hostname, port, tls, refs, httpmethod,
-uri, message, request, response`. Nikto has **no severity field at all**, which
-is what forces section 4's heuristic assignment — the report must label it as
-such.
+
+**CSV columns — corrected against real output, 7 not 13.** An earlier draft of
+this section listed `id, scanid, testid, ip, hostname, port, tls, refs,
+httpmethod, uri, message, request, response`. That is Nikto's SQL/DB export
+schema, not what `-Format csv` emits. Real Nikto 2.6.1 CSV has **seven**
+columns and no header:
+`host, ip, port, refs, httpmethod, uri, message`. There is **no numeric
+id/scanid/testid column** — the `[0xxxxx]`-style plugin ids appear only in the
+human-readable text report — and no request/response columns. The adapter
+therefore synthesises a stable rule id (a bare `CWE-`/`OSVDB-` token from the
+`refs` column when present, else a hash of the message).
+
+Nikto also emits two structural rows on every run that are **not findings**: a
+one-field version banner (`"Nikto - v2.6.1/"`) first, and a seven-field
+scan-start marker with an empty message. Both are skipped; a row that is
+neither and does not have exactly seven columns raises `ParseError` (truncated
+or stray output must never become a finding).
+
+Nikto has **no severity field at all**, which is what forces section 4's
+heuristic assignment — the report must label it as such.
 
 ### 13.7 Trivy: exit code is 0 by default; one binary covers two kinds
 
