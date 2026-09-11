@@ -548,6 +548,33 @@ def test_auto_resume_handoff_with_non_ascii_stays_ascii_on_the_wire(
     assert "—" in parsed["hookSpecificOutput"]["additionalContext"]
 
 
+def test_auto_resume_archives_a_stale_handoff_and_resumes_from_nothing(
+    tmp_path, monkeypatch, capsys
+):
+    # A handoff whose noted head this repository has never heard of cannot
+    # have its account of history verified -- unknown resolves to stale, same
+    # direction crew_state.handoff_staleness takes elsewhere in this module
+    # on missing provenance. autoResume has no human read step to catch a
+    # note like this, so it must be judged and archived here too, not only
+    # on the printed path in handoff-read.sh.
+    config = dict(_BASE_CONFIG, context={"autoResume": True})
+    root = crew_fixtures.make_repo(tmp_path, config=config, graph=True)
+    (root / ".work" / "HANDOFF.md").write_text(
+        "# Handoff\n"
+        "written: 2020-01-01T00:00:00Z\n"
+        "branch: main\n"
+        "head: deadbeefdeadbeefdeadbeefdeadbeefdeadbeef\n\n"
+        "## Next action\nSomething.\n",
+        encoding="utf-8",
+    )
+    out = _run(root, "sess-1", monkeypatch, capsys)
+    assert "additionalContext" not in out
+    assert not (root / ".work" / "HANDOFF.md").exists()
+    archived = list((root / ".crew" / "handoffs").glob("HANDOFF-*.md"))
+    assert len(archived) == 1
+    assert "Something." in archived[0].read_text(encoding="utf-8")
+
+
 def test_auto_resume_second_call_in_one_session_prints_nothing(
     tmp_path, monkeypatch, capsys
 ):

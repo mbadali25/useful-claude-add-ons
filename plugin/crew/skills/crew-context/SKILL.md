@@ -132,6 +132,44 @@ When it is on, `handoff-read` stands down on `clear`/`compact`/`resume`/`fork`
 so `pm_brief` is the handoff's only emitter — otherwise the same handoff would
 be injected twice.
 
+### Staleness and archiving
+
+`pm_brief`'s `handoffPending` finding only ever asked whether `HANDOFF.md`
+exists — it fires the same way for a note written five minutes ago and one
+written before a gate closed and two more commits landed on top of it. The
+second case is a note describing a state that no longer exists, and injecting
+it as though it were current is how a session ends up "resuming" work that a
+different session already finished.
+
+`handoff-read` (and, under `autoResume`, `pm_brief` itself) now judges the
+note before printing or injecting it, on two signals — see
+`crew_state.handoff_staleness` for the full reasoning:
+
+- **Age.** The note's own `written:` line, compared against `staleHandoff.
+  maxAgeHours`. Falls back to the file's mtime when `written:` is missing or
+  unparseable, which is why the fallback is weaker: an edited file's mtime
+  moves even when nobody updated the header to match.
+- **Reality drift.** The note's `branch:` and `head:` lines, compared against
+  the checkout right now. A `head:` this repository cannot find at all, or
+  cannot reach from the current `HEAD`, means the note's account of history
+  cannot be verified at all — the same "unknown resolves to stale" rule
+  `crew-diagrams` and the codemap already apply to missing provenance. A
+  `head:` that IS verifiable but is `staleHandoff.maxCommitsBehind` or more
+  commits behind reports exactly how far the note has fallen behind. A
+  `branch:` that no longer matches the checkout is flagged on its own, since
+  a merge can leave the noted head a true ancestor of `HEAD` while the
+  session has still moved off the branch the note describes.
+
+A note either signal flags is **archived, never deleted** — moved to
+`.crew/handoffs/HANDOFF-<timestamp>.md`, timestamped and never overwritten.
+This is the automatic action crew's own "ask before deleting anything" rule
+still allows: moving a file sideways into a dated archive is not deleting it,
+and a stale note left visibly in that archive is recoverable in a way a
+deleted one never is. Nothing here changes read_work's plain existence check
+or the `handoffPending` finding it feeds — a note that is judged fresh is
+left exactly where it was, which is what every session did before this
+existed.
+
 ## Configuration
 
 ```json
@@ -143,9 +181,19 @@ be injected twice.
   "handoffPath": ".work/HANDOFF.md",
   "autoWrapUp": false,
   "autoResume": false,
-  "keepTranscripts": 5
+  "keepTranscripts": 5,
+  "staleHandoff": {
+    "maxAgeHours": 72,
+    "maxCommitsBehind": 3
+  }
 }
 ```
+
+`staleHandoff` is generous by default on purpose: archiving a note someone is
+still using is worse than leaving an honestly-stale one in place for one more
+day. Tighten `maxCommitsBehind` for a repo where a handoff realistically
+survives no more than a commit or two, or raise `maxAgeHours` for one where a
+session reasonably picks a handoff back up after a quiet weekend.
 
 `keepTranscripts` is honoured by `PreCompact`: that many `.jsonl` snapshots are
 kept under `.crew/transcripts/` and older ones are deleted. `autoWrapUp` and
@@ -238,8 +286,15 @@ including any secret that reached it.
 
 ## Housekeeping
 
-Delete `HANDOFF.md` when the work it describes is finished. A stale handoff is
-worse than none: it gets injected into every subsequent session as though it
-were current, and the next session has no way to know it is reading history.
+Delete `HANDOFF.md` yourself when the work it describes is finished, rather
+than waiting on the staleness check above to catch it later. `/crew:work`
+clears it on ticket completion for this reason, and that is still a real
+delete — the work is done, the note has nothing left to record, and there is
+nothing there worth archiving.
 
-`/crew:work` clears it on ticket completion for this reason.
+The staleness check under "Staleness and archiving" is the backstop for when
+that manual step gets missed, not a replacement for it: it only fires on
+`clear`/`compact`/`resume`/`fork`, and only once age or reality drift gives it
+an actual reason to distrust the note, so a handoff can sit unread for a
+while before it trips. Finishing the work and deleting the note yourself is
+still faster and more certain than waiting for either.
