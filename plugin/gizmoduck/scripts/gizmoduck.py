@@ -173,7 +173,44 @@ def _records_digest(records):
     return hashlib.sha256(canon.encode("utf-8")).hexdigest()[:12]
 
 
+def _is_raw_nuclei_record(r):
+    """True for a raw `nuclei -jsonl` line: a top-level `template-id`
+    (hyphen) alongside a nested `info` object holding name/severity/etc.
+    Both are present on every real Nuclei line and neither ever appears on
+    an already-normalized finding (normalize.make_finding uses `template_id`
+    with an underscore and never nests an `info` dict), so checking both
+    together can't misfire on the normalized shape."""
+    return "template-id" in r and isinstance(r.get("info"), dict)
+
+
+def _is_normalized_record(r):
+    """True for an already-normalized finding (normalize.make_finding's
+    shape, which is what `routine` writes to findings.jsonl - routine.py
+    ~422). `template_id` (underscore) plus `severity_name` are both always
+    present on that shape and neither ever appears at the top level of raw
+    Nuclei output (Nuclei's equivalents are `template-id` and the nested
+    `info.severity`), so the pair can't misfire on a raw record either."""
+    return "template_id" in r and "severity_name" in r
+
+
 def load(path):
+    """Parse a findings.jsonl file. Two, and only two, line shapes are
+    recognized:
+
+    - raw `nuclei -jsonl` output, re-derived into this module's finding
+      dict from `template-id`/`info`/... as it always has been;
+    - an already-normalized finding (normalize.make_finding's shape - what
+      `routine` writes), passed through UNCHANGED.
+
+    Passing normalized records through raw-Nuclei re-derivation was the
+    CRITICAL defect this guards against: a normalized record has no
+    `info` object, so every field the raw path reads from `info` (name,
+    severity, description, remediation, reference, tags) came back blank,
+    severity silently defaulted to Info, and `tool`/`target`/`matched_at`
+    were dropped outright - which made `gizmoduck report <routine's own
+    findings.jsonl>` print "No action required" over a real finding. A
+    line matching neither shape is rejected rather than treated as raw
+    Nuclei with everything blank."""
     findings = []
     with open(path, encoding="utf-8") as fh:
         for line in fh:
@@ -181,6 +218,15 @@ def load(path):
             if not line:
                 continue
             r = json.loads(line)
+            if _is_normalized_record(r):
+                findings.append(r)
+                continue
+            if not _is_raw_nuclei_record(r):
+                raise ValueError(
+                    "%s: line matches neither raw Nuclei JSONL (`template-id` + "
+                    "`info`) nor an already-normalized finding (`template_id` + "
+                    "`severity_name`): %.200r" % (path, line)
+                )
             info = r.get("info", {})
             cls = info.get("classification") or {}
             sev = SEV_NUM.get((info.get("severity") or "unknown").lower(), 0)

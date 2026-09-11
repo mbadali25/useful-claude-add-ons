@@ -21,6 +21,8 @@ import json
 
 import pytest
 
+import normalize as n
+
 
 @pytest.fixture(scope="module")
 def gz(scripts_dir):
@@ -144,3 +146,76 @@ def test_detail_floor_still_applies_within_each_category(gz, combined_findings, 
     out = gz.cmd_report(combined_findings, 0, "Combined Report", run_manifest=run_manifest)
     # The nmap info-level open-port finding on site-a must not be itemised.
     assert "Open port 443/tcp" not in out
+
+
+# --- CRITICAL defect: load() re-derives an already-normalized record from --
+# raw Nuclei field names and silently blanks it (name/template/severity/tool/
+# target all lost, severity reported as Info) instead of passing it through.
+# `routine` writes NORMALIZED findings to findings.jsonl (routine.py:422-424),
+# so `gizmoduck report <that file>` must round-trip them, not re-parse them as
+# if they were raw `nuclei -jsonl` output.
+
+def test_load_passes_an_already_normalized_finding_through_unchanged(gz, tmp_path):
+    finding = n.make_finding(
+        "sqlmap", "prod", "SQLI", "PROVEN_SQL_INJECTION", 3,
+        host="prod", matched_at="https://prod/?id=1",
+    )
+    p = tmp_path / "findings.jsonl"
+    p.write_text(json.dumps(finding) + "\n", encoding="utf-8")
+
+    loaded = gz.load(str(p))
+
+    assert len(loaded) == 1
+    got = loaded[0]
+    # Every field the normalized record carried must survive - not just
+    # `severity`. Blank name/template/tool/target/matched_at is exactly the
+    # silent-data-loss this defect produces.
+    assert got["name"] == "PROVEN_SQL_INJECTION"
+    assert got["template_id"] == finding["template_id"]
+    assert got["severity"] == 3
+    assert got["severity_name"] == "high"
+    assert got["tool"] == "sqlmap"
+    assert got["target"] == "prod"
+    assert got["matched_at"] == "https://prod/?id=1"
+
+
+def test_load_of_a_normalized_finding_through_the_report_path_shows_the_action(gz, tmp_path):
+    """The end-to-end repro from the defect report: a routine findings.jsonl
+    fed to `report` must show the finding it actually contains, not
+    'No action required'.
+
+    Uses `checkov` rather than `sqlmap` deliberately - `sqlmap` gaining a
+    category is a separate defect (see the sqlmap-category tests below);
+    this test isolates the load()-blanking defect from that one."""
+    finding = n.make_finding(
+        "checkov", "prod", "CKV_1", "PROVEN_SQL_INJECTION", 3,
+        host="prod", matched_at="https://prod/?id=1",
+    )
+    p = tmp_path / "findings.jsonl"
+    p.write_text(json.dumps(finding) + "\n", encoding="utf-8")
+
+    findings = gz.load(str(p))
+    out = gz.cmd_report(findings, 2, "Report")
+
+    assert "No action required" not in out
+    assert "PROVEN_SQL_INJECTION" in out
+    assert "High" in out
+
+
+def test_load_still_parses_raw_nuclei_records(gz, fixture):
+    """The other half of the discriminator: real `nuclei -jsonl` output
+    (`template-id` + nested `info`) must still parse exactly as before."""
+    findings = gz.load(str(fixture("nuclei.jsonl")))
+    assert findings
+    assert all(f.get("template_id") for f in findings)
+
+
+def test_load_rejects_a_record_that_is_neither_shape(gz, tmp_path):
+    """A record with neither raw Nuclei's `template-id`+`info` nor a
+    normalized `template_id`+`severity_name` must be rejected outright,
+    rather than silently produced as a blank Info finding."""
+    p = tmp_path / "findings.jsonl"
+    p.write_text(json.dumps({"some": "garbage", "no": "recognizable-shape"}) + "\n",
+                 encoding="utf-8")
+    with pytest.raises(Exception):
+        gz.load(str(p))
