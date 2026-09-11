@@ -634,7 +634,21 @@ Every adapter task follows the identical five-step shape below. The per-tool tab
 
 **Interfaces (per task):**
 - Consumes: `normalize.make_finding`, `normalize.sev_from_*`, `base.run_tool`, `base.which`.
-- Produces: `NAME`, `KINDS`, `ACTIVE`, `DEFAULT_ENABLED`, `is_available()`, `run(target, outdir, opts)`, `parse(raw_path, target)`.
+- Produces: `NAME`, `KINDS`, `ACTIVE`, `ACTIVE_OPTS`, `DEFAULT_ENABLED`, `is_available()`, `run(...)`, `parse(raw_path, target)`.
+
+**`run()`'s exact signature — identical across all nine adapters:**
+
+```python
+run(target, outdir, opts) -> tuple[str | None, base.ToolResult]
+```
+
+Return `(raw_path, result)` on a successful invocation and `(None, result)` when the tool did not run or wrote no output file. **Always return the `ToolResult`, even on failure.**
+
+The spec's §3 `-> raw_path | None` is incomplete and this supersedes it. Two reasons the path alone will not do: `routine` must record `error:timeout` and `error:<message>` per cell in the run manifest (§6 step 5), which it cannot learn from a path; and the native file extension is tool-specific, so `routine` has no other way to find the file the adapter wrote.
+
+Three adapters deviate in what the path *means*, and each says so in its module docstring: `depcheck` writes into an `--out` directory and returns the resolved `dependency-check-report.json`; `sqlmap` returns a session **directory**, not a file; `trivy` must make clear which kind a given call served, since `routine` writes one cell per `(target, tool)`.
+
+A declined active scan must be distinguishable from a failure: it is `skipped-active`, never `error`. Conflating them makes a deliberately-declined sqlmap look like a broken one in the coverage table.
 
 **The five steps, for every adapter:**
 

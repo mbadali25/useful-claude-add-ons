@@ -60,8 +60,11 @@ scripts/
 - `NAME`, `KINDS` (which target kinds it applies to), `ACTIVE` (bool: sends
   attack traffic), `DEFAULT_ENABLED` (bool).
 - `is_available() -> bool` — binary/image present.
-- `run(target, outdir, opts) -> raw_path | None` — invoke the tool, write native
-  output under `outdir`, return its path (or None on skip).
+- `run(target, outdir, opts) -> (raw_path | None, ToolResult)` — invoke the tool,
+  write native output under `outdir`, return its path and the execution result.
+  **The `ToolResult` is not optional**: `routine` records `error:timeout` and
+  `error:<message>` per cell (§6 step 5) and cannot derive either from a path.
+  See §13.14.
 - `parse(raw_path, target) -> list[Finding]` — normalize native output.
 
 `gizmoduck.py` imports the package and adds one subcommand; nothing else in its
@@ -480,3 +483,28 @@ So §8's "per-tool timeouts so one hung scanner can't stall the run" **cannot be
 delegated to the tools**. `base.run_tool`'s own `subprocess` timeout is the real
 enforcement for Nikto, Nmap and testssl; their native flags are a refinement, not
 the guard.
+
+### 13.14 `run()` returns a tuple, not a path
+
+Section 3's `run(target, outdir, opts) -> raw_path | None` was underspecified,
+and nine adapters written in parallel against it would each have invented their
+own convention — which `routine` would then have had to normalize across. The
+contract is:
+
+```python
+run(target, outdir, opts) -> tuple[str | None, base.ToolResult]
+```
+
+`(raw_path, result)` on a successful invocation, `(None, result)` when the tool
+did not run or wrote no output. The `ToolResult` is always returned, including
+on failure, because it carries `timed_out`, `returncode` and `stderr` — the only
+source for the `error:timeout` / `error:<message>` cells the run manifest needs.
+
+Three adapters vary in what the path denotes, and each states it in its module
+docstring: `depcheck` writes into an `--out` directory and returns the resolved
+`dependency-check-report.json`; `sqlmap` returns a session **directory** rather
+than a file; `trivy` must indicate which kind a given call served, since the
+coverage table holds one cell per `(target, tool)`.
+
+A declined active scan is `skipped-active`, never `error`. Conflating the two
+would make a deliberately-declined sqlmap indistinguishable from a broken one.
