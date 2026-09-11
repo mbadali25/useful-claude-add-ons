@@ -14,7 +14,12 @@ if ($cmd -match '(?i)\b(DROP|TRUNCATE)\s+(TABLE|DATABASE|SCHEMA)') { Block "dest
 # and `git --git-dir=... reset --hard` all sailed through. $gitPre swallows any
 # run of leading git options (each optionally followed by its value token).
 $gitPre = '(?i)\bgit\s+(-\S+\s+([^-]\S*\s+)?)*'
-if ($cmd -match "${gitPre}push\b.*(--force|-f)\b")               { Block "force push." }
+# `[^;&|]*`, not `.*`: the greedy form spanned command separators, so an
+# unrelated `-f` later in a compound command blocked an ordinary push.
+# Observed: `git push -q origin br; echo done; [ -f $x ] && ...` was blocked
+# because the `.*` reached the `-f` three commands later. The leading-plus
+# check below already scoped itself this way; this line did not.
+if ($cmd -match "${gitPre}push\b[^;&|]*(--force|-f)\b")          { Block "force push." }
 # `git push origin +main` is a force push with no --force token in it.
 if ($cmd -match "${gitPre}push\b[^;&|]*\s\+[^\s;&|]")            { Block "force push (leading-plus refspec)." }
 if ($cmd -match "${gitPre}(reset\s+--hard|clean\s+-[a-z]*f)")    { Block "destroys uncommitted work." }

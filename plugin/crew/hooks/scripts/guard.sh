@@ -27,7 +27,13 @@ echo "$CMD" | grep -qiE '\b(DROP|TRUNCATE)[[:space:]]+(TABLE|DATABASE|SCHEMA)' &
 # options (each optionally followed by its value token) between `git` and the
 # subcommand, so the rule matches the command rather than one spelling of it.
 GIT_PRE='\bgit[[:space:]]+(-[^[:space:]]+[[:space:]]+([^-][^[:space:]]*[[:space:]]+)?)*'
-echo "$CMD" | grep -qE "${GIT_PRE}push\b.*(--force|-f)\b" && block "force push."
+# `[^;&|]*`, not `.*`: the greedy any-char form spanned command separators, so
+# an unrelated `-f` later in a compound command blocked a perfectly ordinary
+# push. Observed: `git push -q origin branch; echo done; [ -f "$x" ] && ...`
+# was blocked as a force push because the `.*` reached the `-f` in the shell
+# test three commands later. The leading-plus check below already scoped
+# itself this way; this line simply did not.
+echo "$CMD" | grep -qE "${GIT_PRE}push\b[^;&|]*(--force|-f)\b" && block "force push."
 # `git push origin +main` is a force push with no --force token in it.
 echo "$CMD" | grep -qE "${GIT_PRE}push\b[^;&|]*[[:space:]]\+[^[:space:];&|]" && block "force push (leading-plus refspec)."
 echo "$CMD" | grep -qE "${GIT_PRE}(reset[[:space:]]+--hard|clean[[:space:]]+-[a-z]*f)" && block "destroys uncommitted work."

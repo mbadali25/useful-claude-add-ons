@@ -69,6 +69,16 @@ _MUST_ALLOW = [
     "git -C /work/app status",
     'git commit -m "do not force push to main, use -f nowhere"',
     "git push origin refs/heads/main:refs/heads/main",
+    # An unrelated `-f` LATER in a compound command is not a force push. The
+    # force-push rule used `.*`, which is greedy across `;` `&&` `|`, so it
+    # reached a `-f` belonging to an entirely different command and blocked an
+    # ordinary push. Observed in real use with the shell test below; the
+    # leading-plus rule on the next line of guard.sh was already scoped with
+    # `[^;&|]*` and this one was not.
+    'git push -q origin br 2>&1 | tail -1; echo done; [ -f "$x" ] && wc -l "$x"',
+    "git push origin main; [ -f x ] && echo y",
+    "git push origin main && grep -f patterns file.txt",
+    "git push origin main && find . -name '*.py' -delete -f",
     "git clean -n",
     "git stash push -m wip",
     "git -C /work/app stash push -m wip",
