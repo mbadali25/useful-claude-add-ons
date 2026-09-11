@@ -650,6 +650,12 @@ Three adapters deviate in what the path *means*, and each says so in its module 
 
 A declined active scan must be distinguishable from a failure: it is `skipped-active`, never `error`. Conflating them makes a deliberately-declined sqlmap look like a broken one in the coverage table.
 
+**How a decline is signalled:** `result.returncode is None`. `base.run_tool` never produces `None` — a real invocation always yields an int, either the process's own exit status or the `-1` sentinel for a timeout or missing binary. So `None` is an unambiguous "declined before firing anything," distinct at the type level from any real error. Task 15 reads it as `skipped-active`. Currently only `sqlmap` produces it.
+
+**Two adapters return a directory, not a file.** `sqlmap`'s `raw_path` is its `--output-dir` root; `depcheck` returns the resolved `dependency-check-report.json` out of its `--out` directory. Task 15 must not assume `raw_path` names a file.
+
+**`trivy.parse()` takes a third argument.** `parse(raw_path, target, kind=None)` — it serves both `deps` and `iac` and reads only the array matching the kind, resolving it from the kwarg or from `target.kind`. It also writes kind-suffixed natives (`trivy-deps.json`, `trivy-iac.json`), which is how a caller tells which kind a given call served.
+
 **`parse_errors(raw_path, target) -> list[dict]` — optional, second output channel.**
 
 `parse()` returns findings about the *target*. Some tools also report failures of the *scan itself* in the same output file, and those must never reach the findings list. testssl.sh is the case that forced this: its `severity` enum includes `WARN` and `FATAL`, which mean the scan hit a client-side error — mapping them as severities would make a broken scan read as a vulnerability.
