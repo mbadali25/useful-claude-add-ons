@@ -66,13 +66,23 @@ REPORT_DETAIL_FLOOR = 2  # Medium
 # land under `web` here. Widening this precisely would mean normalize.py
 # growing a `kind`/`category` field on every finding - out of scope for this
 # task and not this file's to add.
+# All nine tools (Global Constraints: nuclei, zap, nikto, nmap, testssl,
+# trivy, depcheck, checkov, sqlmap) must resolve to a real category here.
+# sqlmap only ever runs against a `web`-kind target (a concrete injection
+# point - scanners/sqlmap.py), same as nuclei/zap/nikto/nmap/testssl, so it
+# joins them rather than getting a category of its own. Missing an entry
+# here used to mean the finding fell through to "other", which the renderer
+# then never visited at all - a confirmed finding (e.g. a proven SQL
+# injection) existed in the data and never appeared anywhere in the report.
 _TOOL_CATEGORY = {
     "nuclei": "web", "zap": "web", "nikto": "web", "nmap": "web", "testssl": "web",
+    "sqlmap": "web",
     "depcheck": "deps",
     "checkov": "iac",
 }
 CATEGORY_ORDER = ["web", "deps", "iac"]
-CATEGORY_LABEL = {"web": "Web", "deps": "Dependencies", "iac": "Infrastructure as Code"}
+CATEGORY_LABEL = {"web": "Web", "deps": "Dependencies", "iac": "Infrastructure as Code",
+                  "other": "Other"}
 
 
 def category_of(f):
@@ -80,6 +90,20 @@ def category_of(f):
     if tool == "trivy":
         return "iac" if f.get("type") == "misconfiguration" else "deps"
     return _TOOL_CATEGORY.get(tool, "other")
+
+
+def _categories_for(findings):
+    """CATEGORY_ORDER, extended with any category `category_of` returns that
+    isn't already in that fixed list. A finding that exists must never be
+    silently absent from the report just because its tool isn't one of the
+    ones this module knows how to name a section for (HIGH defect: this is
+    exactly how sqlmap's findings went missing before it was added to
+    `_TOOL_CATEGORY` above) - a future/unmapped tool now gets its own
+    "Other"-labelled section instead of vanishing. Extra categories are
+    sorted for a stable order and appended after the fixed three, so
+    today's output (only web/deps/iac ever appear) is unaffected."""
+    extra = sorted({category_of(f) for f in findings} - set(CATEGORY_ORDER))
+    return CATEGORY_ORDER + extra
 
 
 def find_nuclei():
@@ -543,7 +567,7 @@ def _cmd_report_combined(findings, min_sev, title, run_manifest):
         t_findings = [f for f in findings if f.get("target") == t]
         t_uniq = sorted(dedupe(t_findings), key=lambda f: (-f["severity"], f["name"]))
         out += [f"## {t}", ""]
-        for cat in CATEGORY_ORDER:
+        for cat in _categories_for(t_uniq):
             cat_findings = [f for f in t_uniq if category_of(f) == cat]
             if not cat_findings:
                 continue
@@ -591,7 +615,7 @@ def _grouped_sections(findings, floor):
         t_findings = [f for f in findings if f.get("target") == t]
         t_uniq = sorted(dedupe(t_findings), key=lambda f: (-f["severity"], f["name"]))
         cats = []
-        for cat in CATEGORY_ORDER:
+        for cat in _categories_for(t_uniq):
             cat_findings = [f for f in t_uniq if category_of(f) == cat]
             if not cat_findings:
                 continue

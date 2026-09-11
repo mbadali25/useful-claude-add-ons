@@ -246,3 +246,46 @@ def test_plain_empty_findings_without_a_manifest_still_says_no_action(gz):
     unaffected by the fix above."""
     out = gz.cmd_report([], 2, "Review")
     assert "No action required" in out
+
+
+# --- HIGH defect: sqlmap has no category, so its findings render nowhere. -
+
+def test_sqlmap_is_categorized_and_its_finding_is_shown(gz):
+    finding = n.make_finding(
+        "sqlmap", "prod", "SQLI", "PROVEN_SQL_INJECTION", 4,
+        host="prod", matched_at="https://prod/?id=1",
+    )
+    out = gz.cmd_report([finding], 2, "Report")
+    assert "PROVEN_SQL_INJECTION" in out
+    assert gz.category_of(finding) != "other"
+
+
+def test_every_registered_tool_has_a_category(gz):
+    """All nine tools (Global Constraints: nuclei, zap, nikto, nmap, testssl,
+    trivy, depcheck, checkov, sqlmap) must resolve to a real category, not
+    the `other` catch-all - `other` silently swallowed sqlmap's findings
+    before this fix because the grouped renderer only ever visited
+    web/deps/iac."""
+    for tool in ("nuclei", "zap", "nikto", "nmap", "testssl",
+                 "depcheck", "checkov", "sqlmap"):
+        assert gz.category_of({"tool": tool}) != "other", tool
+    assert gz.category_of({"tool": "trivy", "type": "vulnerability"}) == "deps"
+    assert gz.category_of({"tool": "trivy", "type": "misconfiguration"}) == "iac"
+
+
+def test_an_unknown_category_is_rendered_not_dropped(gz):
+    """A finding whose tool maps to no known category must still appear in
+    the report, under a clearly-labelled section - never silently omitted.
+    Renderer must never assume CATEGORY_ORDER is the complete set of
+    categories a finding can carry."""
+    finding = {
+        "template_id": "futuretool:X", "name": "Something new", "severity": 3,
+        "severity_name": "high", "type": "", "timestamp": "", "host": "prod",
+        "matched_at": "prod", "cve": [], "cvss": "", "description": "",
+        "remediation": "", "reference": [], "tags": [],
+        "tool": "futuretool", "target": "prod",
+    }
+    assert gz.category_of(finding) == "other"
+    out = gz.cmd_report([finding], 2, "Report")
+    assert "Something new" in out
+    assert "## prod" in out

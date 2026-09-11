@@ -124,3 +124,27 @@ def test_empty_findings_with_a_manifest_still_renders_combined_mode_html(gz):
     assert "Coverage" in out
     assert "error:timeout" in out
     assert "Nothing at or above" not in out
+
+
+def test_sqlmap_finding_is_shown_in_html(gz):
+    finding = {
+        "template_id": "sqlmap:SQLI", "name": "PROVEN_SQL_INJECTION", "severity": 4,
+        "severity_name": "critical", "type": "", "timestamp": "", "host": "prod",
+        "matched_at": "https://prod/?id=1", "cve": [], "cvss": "", "description": "",
+        "remediation": "", "reference": [], "tags": [],
+        "tool": "sqlmap", "target": "prod",
+    }
+    out = gz.render_html([finding], 2, "Report")
+    assert "PROVEN_SQL_INJECTION" in out
+
+
+def test_an_unknown_category_is_rendered_not_dropped_in_html(gz):
+    finding = {
+        "template_id": "futuretool:X", "name": "Something new", "severity": 3,
+        "severity_name": "high", "type": "", "timestamp": "", "host": "prod",
+        "matched_at": "prod", "cve": [], "cvss": "", "description": "",
+        "remediation": "", "reference": [], "tags": [],
+        "tool": "futuretool", "target": "prod",
+    }
+    out = gz.render_html([finding], 2, "Report")
+    assert "Something new" in out
