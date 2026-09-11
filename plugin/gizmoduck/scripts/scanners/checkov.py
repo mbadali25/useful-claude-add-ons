@@ -50,14 +50,19 @@ def run(target, outdir, opts=None):
     sibling adapter in this package follows (nikto/testssl take a URL/host
     string; depcheck takes a scan-path string) - not a manifest Target object.
 
-    Never gates on availability's caller-side check alone: if the binary
-    disappeared between is_available() and run(), this still returns None
-    rather than letting base.run_tool fail loudly.
+    Returns `(raw_path, result)` — the cross-adapter contract routine.py
+    relies on to record `error:timeout`/`error:<message>` per cell in the run
+    manifest, which a bare path can't carry. `raw_path` is None whenever no
+    output file was produced: the binary is missing, or the run timed out
+    (a timed-out invocation's stdout may be truncated mid-JSON, so nothing is
+    written rather than handing parse() something that looks parseable but
+    isn't trustworthy). `result` is always a ToolResult, even in those cases.
     """
     opts = opts or {}
     binary = base.which("checkov")
     if not binary:
-        return None
+        return None, base.ToolResult(returncode=-1, stdout="",
+                                     stderr="checkov not found on PATH", timed_out=False)
 
     os.makedirs(outdir, exist_ok=True)
     raw_path = os.path.join(outdir, "checkov.json")
@@ -65,9 +70,12 @@ def run(target, outdir, opts=None):
     timeout = opts.get("timeout", DEFAULT_TIMEOUT)
     result = base.run_tool(argv, timeout=timeout, cwd=opts.get("cwd"))
 
+    if result.timed_out:
+        return None, result
+
     with open(raw_path, "w", encoding="utf-8") as fh:
         fh.write(result.stdout)
-    return raw_path
+    return raw_path, result
 
 
 def _line_range(rng):

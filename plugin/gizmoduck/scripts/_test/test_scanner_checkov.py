@@ -130,9 +130,11 @@ def test_is_available_false_when_binary_missing(monkeypatch):
 
 # --- run() ---------------------------------------------------------------
 
-def test_run_returns_none_when_binary_missing(monkeypatch, tmp_path):
+def test_run_returns_none_path_and_a_toolresult_when_binary_missing(monkeypatch, tmp_path):
     monkeypatch.setattr(checkov.base, "which", lambda name: None)
-    assert checkov.run("/repo/terraform/thd-processors", str(tmp_path), {}) is None
+    raw_path, result = checkov.run("/repo/terraform/thd-processors", str(tmp_path), {})
+    assert raw_path is None
+    assert isinstance(result, base.ToolResult)
 
 
 def test_run_builds_argv_and_writes_stdout_verbatim(monkeypatch, tmp_path):
@@ -150,9 +152,10 @@ def test_run_builds_argv_and_writes_stdout_verbatim(monkeypatch, tmp_path):
     monkeypatch.setattr(checkov.base, "run_tool", fake_run_tool)
 
     outdir = tmp_path / "out"
-    raw_path = checkov.run("/repo/terraform/thd-processors", str(outdir), {})
+    raw_path, result = checkov.run("/repo/terraform/thd-processors", str(outdir), {})
 
     assert raw_path == str(outdir / "checkov.json")
+    assert result.returncode == 1
     with open(raw_path, encoding="utf-8") as fh:
         written = fh.read()
     assert json.loads(written)["check_type"] == "terraform"
@@ -171,6 +174,21 @@ def test_run_never_gates_on_checkovs_own_exit_code(monkeypatch, tmp_path):
     monkeypatch.setattr(checkov.base, "run_tool",
                         lambda argv, timeout, cwd=None: base.ToolResult(1, "[]", "", False))
 
-    raw_path = checkov.run("/repo/terraform/thd-processors", str(tmp_path), {})
+    raw_path, result = checkov.run("/repo/terraform/thd-processors", str(tmp_path), {})
     assert raw_path is not None
+    assert result.returncode == 1
     assert checkov.parse(raw_path, "site-a") == []
+
+
+def test_run_returns_none_path_on_timeout(monkeypatch, tmp_path):
+    """A timed-out invocation's stdout may be truncated mid-JSON - run() must
+    not write it out or hand back a path parse() could be tempted to trust.
+    """
+    monkeypatch.setattr(checkov.base, "which", lambda name: "/usr/bin/checkov" if name == "checkov" else None)
+    monkeypatch.setattr(checkov.base, "run_tool",
+                        lambda argv, timeout, cwd=None: base.ToolResult(-1, '{"resu', "", True))
+
+    raw_path, result = checkov.run("/repo/terraform/thd-processors", str(tmp_path), {})
+    assert raw_path is None
+    assert result.timed_out is True
+    assert not (tmp_path / "checkov.json").exists()
