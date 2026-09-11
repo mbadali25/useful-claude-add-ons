@@ -15,6 +15,8 @@ scan errors into the same jsonfile array as real findings, and mapping WARN
 or FATAL as if they were severities would make a broken scan (e.g. a stale
 CRL fetch, a refused connection) read as a vulnerability in the target.
 """
+import pytest
+
 from scanners import base, testssl
 
 
@@ -146,3 +148,65 @@ def test_run_returns_the_jsonfile_path_and_toolresult_on_success(monkeypatch, tm
     assert raw_path == tmp_path / "testssl.json"
     assert result.returncode == 0 and result.timed_out is False
     assert testssl.parse(raw_path, target="site-a")  # the file is really usable
+
+
+# ---------------------------------------------------------------------------
+# DEFECT 1 (CRITICAL): stale artifact must never be returned as this run's
+# evidence.
+# ---------------------------------------------------------------------------
+
+def test_stale_jsonfile_is_not_returned_when_the_run_writes_nothing(monkeypatch, tmp_path):
+    stale = tmp_path / "testssl.json"
+    stale.write_text("[]")  # old clean report from a prior run
+
+    monkeypatch.setattr(base, "which", lambda name: "/usr/bin/testssl.sh")
+
+    def fake_run_tool(argv, timeout, cwd=None):
+        return base.ToolResult(1, "", "boom", False)
+
+    monkeypatch.setattr(base, "run_tool", fake_run_tool)
+
+    raw_path, result = testssl.run("example.com", str(tmp_path), {})
+    assert raw_path is None
+    assert result.returncode == 1
+
+
+# ---------------------------------------------------------------------------
+# DEFECT 2: parse()/parse_errors() must never convert a parse failure into
+# an empty list, and must never let JSONDecodeError/TypeError escape
+# uncaught.
+# ---------------------------------------------------------------------------
+
+def test_empty_file_raises_parse_error(tmp_path):
+    empty = tmp_path / "empty.json"
+    empty.write_text("")
+    with pytest.raises(base.ParseError):
+        testssl.parse(empty, target="site-a")
+
+
+def test_truncated_json_raises_parse_error(tmp_path):
+    bad = tmp_path / "bad.json"
+    bad.write_text("[{")
+    with pytest.raises(base.ParseError):
+        testssl.parse(bad, target="site-a")
+
+
+def test_non_array_top_level_raises_parse_error(tmp_path):
+    bad = tmp_path / "obj-top.json"
+    bad.write_text('{"not": "an array"}')
+    with pytest.raises(base.ParseError):
+        testssl.parse(bad, target="site-a")
+
+
+def test_entry_wrong_shape_raises_parse_error_not_typeerror(tmp_path):
+    bad = tmp_path / "bad-shape.json"
+    bad.write_text("[null]")
+    with pytest.raises(base.ParseError):
+        testssl.parse(bad, target="site-a")
+
+
+def test_parse_errors_also_raises_on_malformed_input(tmp_path):
+    bad = tmp_path / "bad.json"
+    bad.write_text("not json at all")
+    with pytest.raises(base.ParseError):
+        testssl.parse_errors(bad, target="site-a")

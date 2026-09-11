@@ -151,3 +151,150 @@ def test_run_returns_none_path_when_no_output_file_was_produced(monkeypatch, tmp
 def test_active_flags_are_off():
     assert depcheck.ACTIVE is False
     assert depcheck.ACTIVE_OPTS == []
+
+
+# ---------------------------------------------------------------------------
+# DEFECT 1 (CRITICAL): stale artifact must never be returned as this run's
+# evidence.
+# ---------------------------------------------------------------------------
+
+def test_stale_report_is_not_returned_when_the_run_produces_nothing_new(monkeypatch, tmp_path):
+    outdir = tmp_path / "out"
+    outdir.mkdir()
+    stale = outdir / depcheck.REPORT_FILENAME
+    stale.write_text('{"dependencies": []}')  # old clean report from a prior run
+
+    def fake_run_tool(argv, timeout, cwd=None):
+        return base.ToolResult(1, "", "boom", False)
+
+    monkeypatch.setattr(depcheck.base, "run_tool", fake_run_tool)
+    raw_path, result = depcheck.run("/scan/repo", str(outdir), {})
+
+    assert raw_path is None
+    assert result.returncode == 1
+
+
+# ---------------------------------------------------------------------------
+# DEFECT 2: parse() must never convert a parse failure into an empty list,
+# and must never let JSONDecodeError/AttributeError escape uncaught.
+# ---------------------------------------------------------------------------
+
+def test_empty_file_raises_parse_error(tmp_path):
+    empty = tmp_path / "empty.json"
+    empty.write_text("")
+    with pytest.raises(base.ParseError):
+        depcheck.parse(str(empty), "repo-a")
+
+
+def test_truncated_json_raises_parse_error(tmp_path):
+    bad = tmp_path / "bad.json"
+    bad.write_text('{"dependencies": [')
+    with pytest.raises(base.ParseError):
+        depcheck.parse(str(bad), "repo-a")
+
+
+def test_non_object_top_level_raises_parse_error(tmp_path):
+    bad = tmp_path / "list-top.json"
+    bad.write_text("[1, 2, 3]")
+    with pytest.raises(base.ParseError):
+        depcheck.parse(str(bad), "repo-a")
+
+
+def test_dependency_entry_wrong_shape_raises_parse_error_not_attributeerror(tmp_path):
+    bad = tmp_path / "bad-shape.json"
+    bad.write_text('{"dependencies": [null]}')
+    with pytest.raises(base.ParseError):
+        depcheck.parse(str(bad), "repo-a")
+
+
+# ---------------------------------------------------------------------------
+# DEFECT 3: invalid numeric severities (NaN, Infinity, out-of-range) must
+# never be accepted as a real assessment.
+# ---------------------------------------------------------------------------
+
+def test_nan_cvssv2_falls_through_to_a_valid_cvssv3_score(tmp_path):
+    """A record with no text severity, an invalid ("NaN") cvssv2 score, and
+    a valid cvssv3 baseScore of 9.8 must resolve using the valid v3 score -
+    not "recognize" the NaN as a real (info) assessment and stop there.
+    """
+    data = {
+        "dependencies": [{
+            "fileName": "x.jar",
+            "vulnerabilities": [{
+                "name": "CVE-NAN-1",
+                "cwes": [],
+                "references": [],
+                "cvssv2": {"score": "NaN"},
+                "cvssv3": {"baseScore": 9.8},
+            }],
+        }]
+    }
+    p = tmp_path / "nan.json"
+    p.write_text(json.dumps(data))
+    findings = depcheck.parse(str(p), "repo-a")
+    f = findings[0]
+    assert f["severity"] == 4          # critical, from the valid 9.8
+    assert f["severity_name"] == "critical"
+    assert "severity-assigned" not in f["tags"]
+
+
+def test_negative_cvssv2_falls_through_rather_than_being_recognized(tmp_path):
+    data = {
+        "dependencies": [{
+            "fileName": "x.jar",
+            "vulnerabilities": [{
+                "name": "CVE-NEG-1",
+                "cwes": [],
+                "references": [],
+                "cvssv2": {"score": -1},
+                "cvssv3": {"baseScore": 9.8},
+            }],
+        }]
+    }
+    p = tmp_path / "neg.json"
+    p.write_text(json.dumps(data))
+    f = depcheck.parse(str(p), "repo-a")[0]
+    assert f["severity"] == 4
+    assert "severity-assigned" not in f["tags"]
+
+
+def test_infinity_cvssv3_is_rejected_not_recognized_as_critical(tmp_path):
+    data = {
+        "dependencies": [{
+            "fileName": "x.jar",
+            "vulnerabilities": [{
+                "name": "CVE-INF-1",
+                "cwes": [],
+                "references": [],
+                "cvssv3": {"baseScore": "Infinity"},
+            }],
+        }]
+    }
+    p = tmp_path / "inf.json"
+    p.write_text(json.dumps(data))
+    f = depcheck.parse(str(p), "repo-a")[0]
+    assert f["severity"] == 0
+    assert f["severity_name"] == "info"
+    assert "severity-assigned" in f["tags"]
+    assert f["cvss"] == ""
+
+
+def test_out_of_range_cvss_is_rejected_not_recognized_as_critical(tmp_path):
+    data = {
+        "dependencies": [{
+            "fileName": "x.jar",
+            "vulnerabilities": [{
+                "name": "CVE-OOR-1",
+                "cwes": [],
+                "references": [],
+                "cvssv3": {"baseScore": 11},
+            }],
+        }]
+    }
+    p = tmp_path / "oor.json"
+    p.write_text(json.dumps(data))
+    f = depcheck.parse(str(p), "repo-a")[0]
+    assert f["severity"] == 0
+    assert f["severity_name"] == "info"
+    assert "severity-assigned" in f["tags"]
+    assert f["cvss"] == ""

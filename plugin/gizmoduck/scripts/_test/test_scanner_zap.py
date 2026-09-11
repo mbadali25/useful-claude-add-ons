@@ -8,7 +8,9 @@ parser are built directly from the documented traditional-json schema
 (site[] -> alerts[] -> instances[]), which both delivery paths are documented
 to share via the same Report Generation add-on template name.
 """
-from scanners import zap
+import pytest
+
+from scanners import base, zap
 
 
 def test_module_declares_baseline_default_and_active_opt_in():
@@ -74,11 +76,84 @@ def test_riskcode_outside_0_3_lands_info_and_is_flagged(fixture):
     assert "severity-assigned" in odd["tags"]
 
 
-def test_missing_report_file_returns_empty_list_not_a_crash(tmp_path):
-    assert zap.parse(tmp_path / "does-not-exist.json", "site-a") == []
+def test_missing_report_file_raises_parse_error(tmp_path):
+    # DEFECT 2 regression guard: a missing report used to come back as `[]`,
+    # indistinguishable from "scan ran, found nothing." It must now surface
+    # as base.ParseError so routine records error:parse:<detail>, not `ran`
+    # with zero findings.
+    with pytest.raises(base.ParseError):
+        zap.parse(tmp_path / "does-not-exist.json", "site-a")
 
 
-def test_malformed_json_returns_empty_list_not_a_crash(tmp_path):
+def test_malformed_json_raises_parse_error(tmp_path):
     bad = tmp_path / "bad.json"
     bad.write_text("{not valid json")
-    assert zap.parse(bad, "site-a") == []
+    with pytest.raises(base.ParseError):
+        zap.parse(bad, "site-a")
+
+
+def test_empty_file_raises_parse_error_not_empty_findings(tmp_path):
+    empty = tmp_path / "empty.json"
+    empty.write_text("")
+    with pytest.raises(base.ParseError):
+        zap.parse(empty, "site-a")
+
+
+def test_null_site_entry_raises_parse_error_not_attributeerror(tmp_path):
+    # Shape validation counts: {"site": [null]} must raise ParseError, never
+    # let a bare AttributeError escape from `site.get(...)`.
+    bad = tmp_path / "bad-shape.json"
+    bad.write_text('{"site": [null]}')
+    with pytest.raises(base.ParseError):
+        zap.parse(bad, "site-a")
+
+
+def test_non_object_top_level_raises_parse_error(tmp_path):
+    bad = tmp_path / "list-top.json"
+    bad.write_text("[1, 2, 3]")
+    with pytest.raises(base.ParseError):
+        zap.parse(bad, "site-a")
+
+
+def test_fractional_riskcode_is_not_truncated_into_a_real_band(fixture, tmp_path):
+    """DEFECT 3: normalize.sev_from_riskcode does int(code), so a riskcode of
+    0.9 or 3.9 would truncate to a recognized 0 or 3 instead of being
+    rejected as garbage. The adapter must reject a non-integer riskcode
+    before it ever reaches sev_from_riskcode.
+    """
+    import json as _json
+
+    data = _json.loads(fixture("zap.json").read_text())
+    data["site"][0]["alerts"][0]["riskcode"] = 3.9
+    data["site"][0]["alerts"][1]["riskcode"] = 0.9
+    bad = tmp_path / "fractional.json"
+    bad.write_text(_json.dumps(data))
+
+    findings = zap.parse(bad, "site-a")
+    by_id = {f["template_id"]: f for f in findings if f["template_id"] == "zap:40012"}
+    xss = by_id["zap:40012"]
+    assert xss["severity"] == 0
+    assert xss["severity_name"] == "info"
+    assert "severity-assigned" in xss["tags"]
+
+    csp = [f for f in findings if f["template_id"] == "zap:10038"][0]
+    assert csp["severity"] == 0
+    assert "severity-assigned" in csp["tags"]
+
+
+def test_stale_report_is_not_returned_when_the_run_writes_nothing(monkeypatch, tmp_path):
+    # DEFECT 1 (CRITICAL): an old report left in outdir from a previous run
+    # must never be handed back as if it were this run's evidence.
+    stale = tmp_path / "zap.json"
+    stale.write_text('{"site": []}')
+
+    monkeypatch.setattr(zap, "_zap_binary", lambda: "/usr/bin/zap.sh")
+
+    def fake_run_tool(argv, timeout, cwd=None):
+        return base.ToolResult(1, "", "boom", False)
+
+    monkeypatch.setattr(zap.base, "run_tool", fake_run_tool)
+
+    raw_path, result = zap.run("http://example.test", str(tmp_path), {})
+    assert raw_path is None
+    assert result.returncode == 1

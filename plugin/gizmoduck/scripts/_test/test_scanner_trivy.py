@@ -220,3 +220,56 @@ def test_is_available_reflects_which(monkeypatch):
     assert trivy.is_available() is False
     monkeypatch.setattr(trivy.base, "which", lambda b: "/usr/bin/trivy")
     assert trivy.is_available() is True
+
+
+# ---------------------------------------------------------------------------
+# DEFECT 1 (CRITICAL): stale artifact must never be returned as this run's
+# evidence.
+# ---------------------------------------------------------------------------
+
+def test_stale_output_is_not_returned_when_the_run_writes_nothing(tmp_path, monkeypatch):
+    stale = tmp_path / "trivy-deps.json"
+    stale.write_text('{"Results": []}')  # old clean report from a prior run
+
+    def fake_run_tool(argv, timeout, cwd=None):
+        # Simulate a failed invocation that writes nothing new.
+        return base.ToolResult(returncode=1, stdout="", stderr="boom", timed_out=False)
+
+    monkeypatch.setattr(trivy.base, "run_tool", fake_run_tool)
+    raw_path, result = trivy.run("/repos/myrepo", str(tmp_path), {"kind": "deps"})
+
+    assert raw_path is None
+    assert result.returncode == 1
+
+
+# ---------------------------------------------------------------------------
+# DEFECT 2: parse() must never convert a parse failure into an empty list,
+# and must never let JSONDecodeError/AttributeError escape uncaught.
+# ---------------------------------------------------------------------------
+
+def test_empty_file_raises_parse_error(tmp_path):
+    empty = tmp_path / "empty.json"
+    empty.write_text("")
+    with pytest.raises(base.ParseError):
+        trivy.parse(empty, "myrepo", kind="deps")
+
+
+def test_truncated_json_raises_parse_error(tmp_path):
+    bad = tmp_path / "bad.json"
+    bad.write_text('{"Results": [')
+    with pytest.raises(base.ParseError):
+        trivy.parse(bad, "myrepo", kind="deps")
+
+
+def test_non_object_top_level_raises_parse_error(tmp_path):
+    bad = tmp_path / "list-top.json"
+    bad.write_text("[1, 2, 3]")
+    with pytest.raises(base.ParseError):
+        trivy.parse(bad, "myrepo", kind="deps")
+
+
+def test_results_entry_wrong_shape_raises_parse_error_not_attributeerror(tmp_path):
+    bad = tmp_path / "bad-shape.json"
+    bad.write_text('{"Results": [null]}')
+    with pytest.raises(base.ParseError):
+        trivy.parse(bad, "myrepo", kind="deps")
