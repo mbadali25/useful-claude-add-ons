@@ -381,11 +381,26 @@ tree with `log` and `session.sqlite`), `--batch` (non-interactive), and
 `--time-limit=<seconds>` (total wall-clock cap — distinct from `--timeout`, which
 is per-HTTP-request).
 
-A **confirmed** injection is one persisted in `session.sqlite` / the target `log`
-with a recorded injection `Type` and `Payload`; probed-and-negative parameters
-are not persisted. The adapter must read session artifacts, never scrape stdout,
-and must not infer findings from the exit code (sqlmap exits 0 on normal
-completion whether or not anything was found).
+A **confirmed** injection is one sqlmap persisted with a recorded injection
+`Type` and `Payload`; probed-and-negative parameters are not persisted. The
+adapter must read session artifacts, never scrape stdout, and must not infer
+findings from the exit code (sqlmap exits 0 on normal completion whether or not
+anything was found).
+
+**Correction (2026-09-10, found while implementing):** read the **`log` file**,
+not `session.sqlite`. An earlier draft of this section named both. `session.sqlite`
+is sqlmap's internal HashDB cache (`lib/utils/hashdb.py`) — a single `storage`
+table of zlib-compressed pickle blobs keyed by an internal hash, not queryable
+injection rows. Parsing it would mean depending on an undocumented,
+version-fragile internal format *and* unpickling blobs this process did not
+create, for no gain: the `log` file sits beside it in the same output directory
+and carries the same facts as stable, documented plain text
+(`Parameter: X (PLACE)` / `Type:` / `Title:` / `Payload:` blocks, one per
+confirmed technique).
+
+Severity: UNION-query and stacked-queries techniques reach real database content
+→ `critical`. Any other confirmed technique (boolean-, time-, or error-based
+blind) → `high`.
 
 ### 13.10 Existing-code realities that change task shape
 
