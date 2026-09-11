@@ -1,0 +1,194 @@
+{
+  "check_type": "terraform",
+  "results": {
+    "passed_checks": [
+      {
+        "check_id": "CKV_AWS_66",
+        "bc_check_id": "BC_AWS_LOGGING_13",
+        "check_name": "Ensure that CloudWatch Log Group specifies retention days",
+        "check_result": {
+          "result": "PASSED",
+          "evaluated_keys": [
+            "retention_in_days"
+          ]
+        },
+        "code_block": [
+          [
+            14,
+            "resource \"aws_cloudwatch_log_group\" \"lambda\" {\n"
+          ],
+          [
+            15,
+            "  name              = \"/aws/lambda/${local.function_name}\"\n"
+          ],
+          [
+            16,
+            "  retention_in_days = var.log_retention_days\n"
+          ],
+          [
+            17,
+            "}\n"
+          ]
+        ],
+        "file_path": "\\modules\\lambda_processor\\main.tf",
+        "file_abs_path": "C:\\repo\\modules\\lambda_processor\\main.tf",
+        "repo_file_path": "/repo/modules/lambda_processor/main.tf",
+        "file_line_range": [
+          14,
+          17
+        ],
+        "resource": "module.filewatch.module.lambda.aws_cloudwatch_log_group.lambda",
+        "evaluations": null,
+        "check_class": "checkov.terraform.checks.resource.aws.CloudWatchLogGroupRetention",
+        "fixed_definition": null,
+        "entity_tags": null,
+        "caller_file_path": "\\processors\\filewatch\\main.tf",
+        "caller_file_line_range": [
+          7,
+          44
+        ],
+        "resource_address": null,
+        "severity": null,
+        "bc_category": null,
+        "benchmarks": null,
+        "description": null,
+        "short_description": null,
+        "vulnerability_details": null,
+        "connected_node": null,
+        "guideline": "https://docs.prismacloud.io/en/enterprise-edition/policy-reference/aws-policies/aws-logging-policies/logging-13",
+        "details": [],
+        "check_len": null,
+        "definition_context_file_path": "C:\\repo\\modules\\lambda_processor\\main.tf"
+      }
+    ],
+    "failed_checks": [
+      {
+        "check_id": "CKV_AWS_158",
+        "bc_check_id": "BC_AWS_GENERAL_85",
+        "check_name": "Ensure that CloudWatch Log Group is encrypted by KMS",
+        "check_result": {
+          "result": "FAILED",
+          "evaluated_keys": [
+            "kms_key_id"
+          ]
+        },
+        "code_block": [
+          [
+            14,
+            "resource \"aws_cloudwatch_log_group\" \"lambda\" {\n"
+          ],
+          [
+            15,
+            "  name              = \"/aws/lambda/${local.function_name}\"\n"
+          ],
+          [
+            16,
+            "  retention_in_days = var.log_retention_days\n"
+          ],
+          [
+            17,
+            "}\n"
+          ]
+        ],
+        "file_path": "\\modules\\lambda_processor\\main.tf",
+        "file_abs_path": "C:\\repo\\modules\\lambda_processor\\main.tf",
+        "repo_file_path": "/repo/modules/lambda_processor/main.tf",
+        "file_line_range": [
+          14,
+          17
+        ],
+        "resource": "module.filewatch.module.lambda.aws_cloudwatch_log_group.lambda",
+        "evaluations": null,
+        "check_class": "checkov.terraform.checks.resource.aws.CloudWatchLogGroupKMSKey",
+        "fixed_definition": null,
+        "entity_tags": null,
+        "caller_file_path": "\\processors\\filewatch\\main.tf",
+        "caller_file_line_range": [
+          7,
+          44
+        ],
+        "resource_address": null,
+        "severity": null,
+        "bc_category": null,
+        "benchmarks": null,
+        "description": null,
+        "short_description": null,
+        "vulnerability_details": null,
+        "connected_node": null,
+        "guideline": "https://docs.prismacloud.io/en/enterprise-edition/policy-reference/aws-policies/aws-general-policies/ensure-that-cloudwatch-log-group-is-encrypted-by-kms",
+        "details": [],
+        "check_len": null,
+        "definition_context_file_path": "C:\\repo\\modules\\lambda_processor\\main.tf"
+      },
+      {
+        "check_id": "CKV_AWS_272",
+        "bc_check_id": "BC_AWS_General_201",
+        "check_name": "Ensure AWS Lambda function is configured to validate code-signing",
+        "check_result": {
+          "result": "FAILED",
+          "evaluated_keys": [
+            "code_signing_config_arn"
+          ]
+        },
+        "code_block": [
+          [
+            19,
+            "resource \"aws_lambda_function\" \"this\" {\n"
+          ],
+          [
+            20,
+            "  function_name = local.function_name\n"
+          ],
+          [
+            21,
+            "  description   = var.description\n"
+          ],
+          [
+            22,
+            "  role          = var.role_arn\n"
+          ]
+        ],
+        "file_path": "\\modules\\lambda_processor\\main.tf",
+        "file_abs_path": "C:\\repo\\modules\\lambda_processor\\main.tf",
+        "repo_file_path": "/repo/modules/lambda_processor/main.tf",
+        "file_line_range": [
+          19,
+          45
+        ],
+        "resource": "module.filewatch.module.lambda.aws_lambda_function.this",
+        "evaluations": null,
+        "check_class": "checkov.terraform.checks.resource.aws.LambdaCodeSigningConfigured",
+        "fixed_definition": null,
+        "entity_tags": null,
+        "caller_file_path": "\\processors\\filewatch\\main.tf",
+        "caller_file_line_range": [
+          7,
+          44
+        ],
+        "resource_address": null,
+        "severity": null,
+        "bc_category": null,
+        "benchmarks": null,
+        "description": null,
+        "short_description": null,
+        "vulnerability_details": null,
+        "connected_node": null,
+        "guideline": "https://docs.prismacloud.io/en/enterprise-edition/policy-reference/aws-policies/aws-general-policies/bc-aws-272",
+        "details": [],
+        "check_len": null,
+        "definition_context_file_path": "C:\\repo\\modules\\lambda_processor\\main.tf"
+      }
+    ],
+    "skipped_checks": [],
+    "parsing_errors": []
+  },
+  "summary": {
+    "passed": 83,
+    "failed": 26,
+    "skipped": 0,
+    "parsing_errors": 0,
+    "resource_count": 46,
+    "checkov_version": "3.3.17"
+  },
+  "url": "Add an api key '--bc-api-key <api-key>' to see more detailed insights via https://bridgecrew.cloud"
+}

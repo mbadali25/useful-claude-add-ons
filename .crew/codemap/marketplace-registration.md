@@ -286,7 +286,7 @@ function bodies, and the worked example's historical git ranges.
 
 ## Owns data
 
-- `skills/power-automate-api/.gitignore` — ignores `scripts/pa-snapshots/` wholesale. `pa.py` writes live-tenant flow dumps there as rollback state; one was committed and pushed to this public repo before a review caught it.
+- `skills/power-automate-api/.gitignore` — ignores `scripts/pa-snapshots/` wholesale. `pa.py` NO LONGER writes there: since the SNAPSHOT_DIR fix it writes live-tenant flow dumps to `~/.pa-api-cache/snapshots`, outside any checkout. The rule is kept as a net for checkouts that ran an earlier version, not as a description of current behaviour — one such dump was committed and pushed to this public repo before a review caught it.
 
 ## Calls out to
 

@@ -2510,8 +2510,7 @@ def worktree_path(cfg, repo_root, branch):
     cleaned = re.sub(r"-{2,}", "-", cleaned).strip("-")
     if not cleaned or set(cleaned) <= {"."}:
         cleaned = "detached"
-    leaf = "%s-%s-%s" % (os.path.basename(os.path.abspath(repo_root)),
-                         _repo_digest(repo_root), cleaned)
+    leaf = f"{os.path.basename(os.path.abspath(repo_root))}-{_repo_digest(repo_root)}-{cleaned}"
     return os.path.join(worktree_root(cfg, repo_root), leaf)
 
 
@@ -2714,19 +2713,27 @@ def main(argv=None):
         # own. Raised by the Codex review of this change, which called the key
         # unused and was right.
         #
-        # Layered, not raw: `crew_config.resolve_config` is what applies the
-        # machine-global file, and reading `.crew/config.json` here directly
-        # would ignore the global setting this key exists to support. Imported
-        # inside the function because `crew_config` imports this module at
-        # top level and the pair must not import each other eagerly.
-        try:
-            import crew_config  # pylint: disable=import-outside-toplevel
-            cfg = crew_config.resolve_config(root)
-        except Exception:  # pylint: disable=broad-except
-            # A hook must not die because the config layer is unhappy; the
-            # unconfigured answer is the checkout's parent, which is what
-            # crew did before this key existed.
-            cfg = {}
+        # Layered, not raw: the machine-global file has to apply, so the RAW
+        # `.crew/config.json` is the wrong input -- reading it here would
+        # ignore the global setting this key exists to support.
+        #
+        # But this module must NOT import `crew_config`. That is not a style
+        # preference: `crew_config`'s own docstring says `crew_state` importing
+        # it makes "a real cyclic import rather than a stylistic one", and an
+        # earlier version of this branch did it anyway, inside the function, on
+        # the theory that a deferred import is not a cycle. It is -- pylint
+        # reported `crew_config -> crew_state` and `crew_config ->
+        # crew_upgrade -> crew_state` as R0401, and the comment justifying it
+        # sat four lines above the import it was wrong about.
+        #
+        # So the layering is done by the CALLER. `crew_config.py` already
+        # imports this module legitimately, in the one permitted direction, and
+        # carries the `--worktree-path` flag; this path resolves from whatever
+        # config it is handed and defaults to the unconfigured answer. A hook
+        # must never die because the config layer is unhappy, and the
+        # unconfigured answer is the checkout's parent -- what crew did before
+        # this key existed.
+        cfg = load_config(root) or {}
         if args.worktree_path == "-":
             print(worktree_root(cfg, root))
         else:

@@ -18,9 +18,13 @@ Standard library only. Python 3.8+.
 """
 
 import argparse
+import http.client
 import json
 import os
+import shlex
+import socket
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.parse
@@ -33,7 +37,22 @@ from pathlib import Path
 DEFAULT_CLIENT_ID = "04b07795-8ddb-461a-bbee-02f9e1bf7b46"
 
 CACHE_DIR = Path(os.path.expanduser("~")) / ".pa-api-cache"
-SNAPSHOT_DIR = Path("pa-snapshots")
+# Beside the token cache, in the user's home -- NOT in the repo and NOT in the
+# installed skill.
+#
+# Two wrong answers were tried first. `Path("pa-snapshots")` is relative to the
+# process CWD, so running pa.py from a repo root wrote verbatim live-tenant
+# dumps to a path no ignore rule covered; a snapshot committed to a public repo
+# is exactly how that fails, and it has already happened once here.
+# `Path(__file__).parent` fixed the ignore problem and introduced worse ones:
+# it writes into the installed plugin, so `claude plugin update` can delete the
+# only copy of a rollback, every repo and tenant share one directory, and a
+# read-only install turns `pa.py patch` into an unhandled traceback BEFORE the
+# PATCH -- no rollback and no explanation.
+#
+# `CACHE_DIR` above already had the right shape: user-owned, outside any
+# checkout, survives reinstall, needs no ignore rule anywhere.
+SNAPSHOT_DIR = CACHE_DIR / "snapshots"
 
 # scope = resource URI + "/.default". A resource URI that already ends in "/"
 # therefore yields a double slash, which is correct. See references/auth.md.
@@ -67,16 +86,29 @@ def request(method, url, token=None, body=None, headers=None, form=False):
             hdrs["Content-Type"] = "application/json"
     req = urllib.request.Request(url, data=data, headers=hdrs, method=method)
     try:
-        with urllib.request.urlopen(req) as resp:
-            raw = resp.read().decode("utf-8") or "{}"
-            return resp.status, (json.loads(raw) if raw.strip() else {})
-    except urllib.error.HTTPError as exc:
-        raw = exc.read().decode("utf-8", "replace")
         try:
-            parsed = json.loads(raw)
-        except ValueError:
-            parsed = {"raw": raw}
-        return exc.code, parsed
+            with urllib.request.urlopen(req) as resp:
+                raw = resp.read().decode("utf-8") or "{}"
+                return resp.status, (json.loads(raw) if raw.strip() else {})
+        except urllib.error.HTTPError as exc:
+            raw = exc.read().decode("utf-8", "replace")
+            try:
+                parsed = json.loads(raw)
+            except ValueError:
+                parsed = {"raw": raw}
+            return exc.code, parsed
+    except urllib.error.URLError as exc:
+        if isinstance(exc.reason, socket.gaierror):
+            die("DNS lookup failed for %s: %s" % (url, exc.reason))
+        if isinstance(exc.reason, (TimeoutError, socket.timeout)):
+            die("request timed out for %s: %s" % (url, exc.reason))
+        die("connection failed for %s: %s" % (url, exc.reason))
+    except (TimeoutError, socket.timeout) as exc:
+        die("request timed out for %s: %s" % (url, exc))
+    except (OSError, http.client.HTTPException) as exc:
+        die("connection failed for %s: %s" % (url, exc))
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        die("non-JSON response from %s: %s" % (url, exc))
 
 
 def die(msg, detail=None):
@@ -119,17 +151,19 @@ def load_cached(resource):
     if blob.get("expires_at", 0) > time.time() + 120:
         return blob["access_token"]
     if blob.get("refresh_token"):
-        return refresh(resource, blob["refresh_token"], blob.get("tenant", "organizations"))
+        return refresh(resource, blob["refresh_token"], blob.get("tenant", "organizations"),
+                       blob.get("client_id", DEFAULT_CLIENT_ID))
     return None
 
 
-def save_cached(resource, payload, tenant):
+def save_cached(resource, payload, tenant, client_id=DEFAULT_CLIENT_ID):
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     blob = {
         "access_token": payload["access_token"],
         "refresh_token": payload.get("refresh_token"),
         "expires_at": time.time() + int(payload.get("expires_in", 3600)),
         "tenant": tenant,
+        "client_id": client_id,
     }
     path = cache_path(resource)
     path.write_text(json.dumps(blob))
@@ -140,13 +174,13 @@ def save_cached(resource, payload, tenant):
     return blob["access_token"]
 
 
-def refresh(resource, refresh_token, tenant):
+def refresh(resource, refresh_token, tenant, client_id=DEFAULT_CLIENT_ID):
     status, payload = request(
         "POST",
         "https://login.microsoftonline.com/%s/oauth2/v2.0/token" % tenant,
         body={
             "grant_type": "refresh_token",
-            "client_id": DEFAULT_CLIENT_ID,
+            "client_id": client_id,
             "refresh_token": refresh_token,
             "scope": scope_for(resource) + " offline_access",
         },
@@ -154,7 +188,7 @@ def refresh(resource, refresh_token, tenant):
     )
     if status != 200:
         return None
-    return save_cached(resource, payload, tenant)
+    return save_cached(resource, payload, tenant, client_id)
 
 
 def device_code_login(resource, tenant, client_id=DEFAULT_CLIENT_ID):
@@ -188,7 +222,7 @@ def device_code_login(resource, tenant, client_id=DEFAULT_CLIENT_ID):
         )
         if status == 200:
             print("Signed in. Token cached.")
-            return save_cached(resource, tok, tenant)
+            return save_cached(resource, tok, tenant, client_id)
         err = tok.get("error")
         if err == "authorization_pending":
             continue
@@ -199,13 +233,44 @@ def device_code_login(resource, tenant, client_id=DEFAULT_CLIENT_ID):
     die("device code expired before sign-in completed")
 
 
-def token_for(resource, tenant, interactive=True):
+def _arg(value):
+    r"""Quote one argument for the POSIX shell, using the stdlib.
+
+    This is `shlex.quote` and nothing else, deliberately. An earlier version of
+    this function tried to be correct for cmd.exe, PowerShell and sh at once by
+    using double quotes and only when it saw whitespace. It was wrong in all
+    three, and wrong in the direction that matters here:
+
+      * A Windows snapshot path has no whitespace and no quote, so it came back
+        BARE -- and bash then eats every backslash, turning
+        `C:\Users\...\f.json` into `C:Usersd3ade...json`. That is exactly the
+        failure ticket 4 was filed for, re-introduced by ticket 4's own fix.
+      * Bare `a&b` in cmd.exe runs `b` as a second command.
+      * `\"` is the Windows CRT convention, not PowerShell's escape.
+      * `$`, a backtick and `\` were left unprotected for POSIX, so a crafted
+        path in the printed line becomes command substitution when pasted.
+
+    Git Bash is the paste target on this platform and the shell this repo's own
+    tooling runs, so POSIX quoting is the right single answer. `cmd_patch`
+    prints a cmd.exe-flavoured line beside it rather than trying to make one
+    string correct everywhere.
+    """
+    return shlex.quote(str(value))
+
+
+def token_for(resource, tenant, interactive=True, client_id=DEFAULT_CLIENT_ID):
     cached = load_cached(resource)
     if cached:
         return cached
     if not interactive:
         die("no cached token for %s -- run 'pa.py login' first" % resource)
-    return device_code_login(resource, tenant)
+    # Threaded through rather than defaulted here. Today every caller passes
+    # interactive=False and dies above, so this line is unreachable and the
+    # parameter changes no behaviour -- said plainly because a reviewer checked
+    # and found it a no-op. It is kept because the alternative is a signature
+    # that silently drops a custom client id the moment anyone adds an
+    # interactive caller, which is the bug this whole ticket was about.
+    return device_code_login(resource, tenant, client_id)
 
 
 # --------------------------------------------------------------------------
@@ -355,10 +420,53 @@ def load_clientdata_file(path):
 
 
 def snapshot(name, content):
-    SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
+    """Write a pre-change copy and return its path. Never returns silently
+    without one -- `cmd_patch` calls this BEFORE the PATCH, so a failure here
+    must stop the patch rather than let it proceed with no rollback.
+
+    Both calls are guarded. An unhandled OSError from either would surface as a
+    traceback at the worst possible moment: after the caller decided to patch
+    and before anything was saved, leaving "no rollback and no explanation" --
+    the same shape as the network tracebacks this file already diagnoses.
+    """
+    try:
+        SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        die("cannot create the snapshot directory %s: %s\n"
+            "Nothing was written and no PATCH was attempted -- a patch without "
+            "a rollback is not worth the risk." % (SNAPSHOT_DIR, exc))
+    try:
+        # Owner-only. The FILES are already 0600 (tempfile opens with that mode),
+        # but the directory took the umask default, and these names embed flow
+        # GUIDs. Best-effort: Windows has no POSIX mode, which is why the token
+        # chmod above is wrapped the same way.
+        os.chmod(SNAPSHOT_DIR, 0o700)
+    except OSError:
+        pass
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    path = SNAPSHOT_DIR / ("%s.%s.json" % (name, stamp))
-    path.write_text(content, encoding="utf-8")
+    # Exclusive creation prevents concurrent processes overwriting rollback state.
+    path = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=SNAPSHOT_DIR,
+                                         prefix="%s.%s." % (name, stamp), suffix=".json",
+                                         delete=False) as out:
+            path = Path(out.name)
+            out.write(content)
+    except OSError as exc:
+        # Remove the partial file BEFORE dying. `delete=False` means the file
+        # already exists by the time a write fails, so bailing out here left a
+        # ZERO-BYTE snapshot carrying a valid-looking name -- and because these
+        # sort by timestamp, it became the NEWEST rollback for that flow. That is
+        # this repo's documented `open(p,"w")` landmine in another costume: the
+        # second-order failure is the next reader taking the empty file as its
+        # baseline and every check reporting success against nothing.
+        if path is not None:
+            try:
+                path.unlink()
+            except OSError:
+                pass
+        die("cannot write a snapshot into %s: %s\n"
+            "Nothing was left behind and no PATCH was attempted." % (SNAPSHOT_DIR, exc))
     return path
 
 
@@ -469,7 +577,33 @@ def cmd_patch(args):
     print("PATCH %d -- written." % status)
     print("\n204 means stored, not runnable. Reload the designer to confirm the "
           "flow checker is clean, then launch it once.")
-    print("Rollback: pa.py patch --clientdata %s" % before)
+    # --force is not optional here. The rollback target is the definition that
+    # was live BEFORE this patch, and patching to FIX a validation problem is the
+    # normal case - so the saved definition usually still carries the problems
+    # reported above. Without --force the printed command hits "Refusing to
+    # PATCH" and exits 2 at the one moment anyone needs it.
+    rollback = ("pa.py patch --org %s --flow %s --tenant %s --clientdata %s "
+                "--force" % (_arg(args.org), _arg(args.flow), _arg(args.tenant),
+                             _arg(str(before))))
+    print("Rollback (bash / Git Bash): " + rollback)
+    if os.name == "nt":
+        # cmd.exe and PowerShell do not read POSIX single-quoting, and no single
+        # string is correct in all three. Two labelled lines beat one that is
+        # right nowhere -- see `_arg`.
+        #
+        # Plain double quotes, no escaping, and SUPPRESSED rather than mangled
+        # when a value carries a character that would break them: `"` ends the
+        # quote in both shells, `%VAR%` is expanded by cmd.exe, and `$` or a
+        # backtick is expanded by PowerShell. Every value this tool actually
+        # produces -- an org URL, a flow GUID, a tenant, a snapshot path -- is
+        # safe, so the line is printed in practice and withheld exactly when it
+        # would be wrong. Printing a line that silently mis-quotes is worse than
+        # printing one line and saying which shell it is for.
+        windows_unsafe = '"' + "%$" + chr(96)
+        vals = [args.org, args.flow, args.tenant, str(before)]
+        if not any(c in v for v in vals for c in windows_unsafe):
+            print('Rollback (cmd.exe / PowerShell): pa.py patch --org "%s" '
+                  '--flow "%s" --tenant "%s" --clientdata "%s" --force' % tuple(vals))
 
 
 def cmd_runs(args):

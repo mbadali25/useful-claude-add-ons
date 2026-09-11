@@ -1,0 +1,12 @@
+authorized_by: "THDDEV-0000 - Jane Doe, approved 2026-09-10, authorized to test these targets"
+targets:
+  - name: site-a
+    kind: web
+    url: https://a.example.com
+    options: { zap_active: false, nmap_vuln: false, sqlmap: false }
+  - name: infra-iac
+    kind: iac
+    path: ../fixtures/iac
+  - name: infra-deps
+    kind: deps
+    path: ../fixtures/deps

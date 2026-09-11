@@ -5,7 +5,7 @@ description: Full read/write access to Jira Cloud via direct REST API calls, aut
 
 # Jira Manager (direct API, env-var auth)
 
-Full CRUD-style workflow for Jira Cloud using the Jira REST API v3 directly over `curl` — no MCP connector, no OAuth flow. Works anywhere with `curl` + `jq` available (Claude Code, Cowork, a terminal, this sandbox).
+Full CRUD-style workflow for Jira Cloud using the Jira REST API v3 directly over `curl` — no MCP connector, no OAuth flow. Works anywhere with `curl` **7.76+** (March 2021) and `jq` available (Claude Code, Cowork, a terminal, this sandbox). The version floor is `--fail-with-body`, which is what makes a 4xx return non-zero **and** still hand you Jira's `errorMessages` — the only thing that says whether it was a bad field, a stale transition id or a missing token scope. On an older curl (RHEL 8 ships 7.61, Ubuntu 20.04 7.68, Debian 11 7.74) every call aborts with `curl: option --fail-with-body: is unknown` before making a request: loud and precisely named, so it diagnoses itself.
 
 ## Required environment variables
 
@@ -35,7 +35,7 @@ If missing, tell the user which specific variable(s) are unset and how to get th
 source scripts/jira-api.sh
 ```
 
-This defines all the functions below. It validates the required env vars are present and will fail loudly (not silently) if any are missing.
+This defines all the functions below. **Sourcing succeeds even with no credentials set** -- deliberately, so `jira_get_cloud_id` (which needs none) is usable during setup, and so sourcing never changes the shell it is sourced into. Each function that needs credentials checks at CALL time and fails loudly then. A clean `source` is therefore not evidence that `JIRA_EMAIL` and `JIRA_API_TOKEN` are set; call `jira_whoami` if you want that confirmed.
 
 ## Looking up projects
 

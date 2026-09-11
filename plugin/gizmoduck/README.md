@@ -25,6 +25,30 @@ step, no API restrictions. **Only scan assets you own or have written permission
 Both fetch the latest prebuilt binary and community templates. PDF reports need
 `wkhtmltopdf` (installed by bootstrap.sh; `winget install wkhtmltopdf` on Windows).
 
+If your antivirus/EDR quarantines or deletes nikto, sqlmap, ZAP, or a Nuclei
+template mid-install, see [`docs/antivirus-exclusions.md`](docs/antivirus-exclusions.md) - that's expected, not a broken install.
+
+## Dependency-Check: NVD API key (optional)
+
+dependency-check's first run downloads the entire NVD CVE corpus. Without an API
+key, NIST rate-limits that sync to ~5 requests/30s — on a fresh machine, that
+first run can take the better part of an hour with no progress output, which
+looks like a hang but isn't. An API key raises the limit to ~50/30s, roughly 10x.
+
+Get a free key at https://nvd.nist.gov/developers/request-an-api-key (just an
+email + organization, no cost). NIST emails an **activation link**, not the key
+itself — open that link; the key is shown on the page behind it.
+
+Set it as an environment variable before scanning:
+```bash
+export NVD_API_KEY=<your key>          # Linux/WSL
+$env:NVD_API_KEY = '<your key>'        # Windows PowerShell
+```
+It's optional — dependency-check runs fine without it, just slower on the first
+sync. `bootstrap.sh`/`bootstrap.ps1` print this same reminder after installing
+dependency-check; `/gizmoduck:doctor` reports whether the variable is set (never
+the value itself), and an unset key is reported as a gap, not a failure.
+
 ## Layout
 ```
 gizmoduck/

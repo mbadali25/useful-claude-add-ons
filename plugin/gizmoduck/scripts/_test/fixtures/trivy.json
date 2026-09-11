@@ -1,0 +1,224 @@
+{
+  "SchemaVersion": 2,
+  "Trivy": {"Version": "0.74.0"},
+  "ReportID": "01a08e99-f7cd-78b6-9096-dde343d0c7f9",
+  "CreatedAt": "2026-09-10T22:54:10.2535709-05:00",
+  "ArtifactName": "myrepo",
+  "ArtifactType": "filesystem",
+  "Results": [
+    {
+      "Target": "package-lock.json",
+      "Class": "lang-pkgs",
+      "Type": "npm",
+      "Vulnerabilities": [
+        {
+          "VulnerabilityID": "CVE-2026-82417",
+          "VendorIDs": ["GHSA-4mjr-xmp4-gh2g"],
+          "PkgID": "qs@6.15.3",
+          "PkgName": "qs",
+          "PkgIdentifier": {"PURL": "pkg:npm/qs@6.15.3", "UID": "f719990fcfa86ab7"},
+          "InstalledVersion": "6.15.3",
+          "FixedVersion": "6.16.0",
+          "Status": "fixed",
+          "SeveritySource": "ghsa",
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-82417",
+          "DataSource": {
+            "ID": "ghsa",
+            "Name": "GitHub Security Advisory npm",
+            "URL": "https://github.com/advisories?query=type%3Areviewed+ecosystem%3Anpm"
+          },
+          "Fingerprint": "sha256:d99a90c8b71564a59da216a5f45e17f54037bc9242bc7d721dcb3de306d81ba1",
+          "Title": "qs: qs: Denial of Service via improper validation in stringify function",
+          "Description": "qs.stringify throws a TypeError when it serializes an object whose own constructor property has a truthy, non-callable isBuffer member, since utils.isBuffer duck-types buffers without checking the member is callable. Fixed in v6.16.0.",
+          "Severity": "MEDIUM",
+          "CweIDs": ["CWE-248", "CWE-703"],
+          "VendorSeverity": {"ghsa": 2, "redhat": 3},
+          "CVSS": {
+            "ghsa": {
+              "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:L",
+              "V40Vector": "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:N/VI:N/VA:L/SC:N/SI:N/SA:N",
+              "V3Score": 5.3,
+              "V40Score": 6.3
+            },
+            "redhat": {
+              "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+              "V3Score": 7.5
+            }
+          },
+          "References": [
+            "https://access.redhat.com/security/cve/CVE-2026-82417",
+            "https://github.com/ljharb/qs",
+            "https://github.com/ljharb/qs/commit/e83d321ffafb38cf210683ac31714fce6ce1c6c6",
+            "https://github.com/ljharb/qs/security/advisories/GHSA-4mjr-xmp4-gh2g",
+            "https://nvd.nist.gov/vuln/detail/CVE-2026-82417",
+            "https://www.cve.org/CVERecord?id=CVE-2026-82417"
+          ],
+          "PublishedDate": "2026-08-30T00:16:34.657Z",
+          "LastModifiedDate": "2026-09-03T18:00:36.97Z"
+        },
+        {
+          "VulnerabilityID": "CVE-2026-82562",
+          "VendorIDs": ["GHSA-x5fp-wj9c-mxmx"],
+          "PkgID": "qs@6.15.3",
+          "PkgName": "qs",
+          "PkgIdentifier": {"PURL": "pkg:npm/qs@6.15.3", "UID": "f719990fcfa86ab7"},
+          "InstalledVersion": "6.15.3",
+          "FixedVersion": "6.16.0",
+          "Status": "fixed",
+          "SeveritySource": "ghsa",
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-82562",
+          "DataSource": {
+            "ID": "ghsa",
+            "Name": "GitHub Security Advisory npm",
+            "URL": "https://github.com/advisories?query=type%3Areviewed+ecosystem%3Anpm"
+          },
+          "Fingerprint": "sha256:f41c9ca5049367344adb83f36ff3bfef0670800fc101bba46a8b0af97bda98ad",
+          "Title": "qs: qs: Denial of Service via array limit bypass in query string parsing",
+          "Description": "When qs.parse is called with comma: true and throwOnLimitExceeded: true, a comma-separated value under a bracket-push key is split into an array without being compared against arrayLimit, bypassing the configured hard limit. Fixed in v6.16.0.",
+          "Severity": "MEDIUM",
+          "CweIDs": ["CWE-770"],
+          "VendorSeverity": {"ghsa": 2, "redhat": 1},
+          "CVSS": {
+            "ghsa": {
+              "V3Vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:N/A:L",
+              "V40Vector": "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:N/VI:N/VA:L/SC:N/SI:N/SA:N",
+              "V3Score": 3.7,
+              "V40Score": 6.3
+            },
+            "redhat": {
+              "V3Vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:N/A:L",
+              "V3Score": 3.7
+            }
+          },
+          "References": [
+            "https://access.redhat.com/security/cve/CVE-2026-82562",
+            "https://github.com/ljharb/qs",
+            "https://github.com/ljharb/qs/commit/8859c37470e11b42b547b275e4e9bd0bc8cc5464",
+            "https://github.com/ljharb/qs/security/advisories/GHSA-w7fw-mjwx-w883",
+            "https://github.com/ljharb/qs/security/advisories/GHSA-x5fp-wj9c-mxmx",
+            "https://nvd.nist.gov/vuln/detail/CVE-2026-82562",
+            "https://www.cve.org/CVERecord?id=CVE-2026-82562"
+          ],
+          "PublishedDate": "2026-08-30T01:20:32.82Z",
+          "LastModifiedDate": "2026-09-03T18:00:36.97Z"
+        },
+        {
+          "_synthetic_note": "The two entries above are byte-real (trivy 0.74.0 fs scan of a real npm/qs lockfile, captured 2026-09-10). This third entry is HAND-CONSTRUCTED: no UNKNOWN-severity/empty-CVSS finding surfaced during real capture, but trivy's own docs say Severity can be UNKNOWN when NVD has not yet scored a CVE, so this shape is kept deliberately for regression coverage of that fallback path.",
+          "VulnerabilityID": "CVE-2024-9999",
+          "PkgID": "urllib3@1.26.0",
+          "PkgName": "urllib3",
+          "InstalledVersion": "1.26.0",
+          "FixedVersion": "",
+          "Status": "affected",
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2024-9999",
+          "Title": "urllib3: unassessed vulnerability",
+          "Description": "Severity has not yet been assessed upstream.",
+          "Severity": "UNKNOWN",
+          "CweIDs": [],
+          "CVSS": {},
+          "References": []
+        }
+      ]
+    },
+    {
+      "Target": "modules/lambda_processor/main.tf",
+      "Class": "config",
+      "Type": "terraform",
+      "Misconfigurations": [
+        {
+          "Type": "Terraform Security Check",
+          "ID": "AWS-0017",
+          "Title": "CloudWatch log groups should be encrypted using CMK",
+          "Description": "CloudWatch log groups are encrypted by default, however, to get the full benefit of controlling key rotation and other KMS aspects a KMS CMK should be used.\n",
+          "Message": "Log group is not encrypted.",
+          "Namespace": "builtin.aws.cloudwatch.aws0017",
+          "Query": "data.builtin.aws.cloudwatch.aws0017.deny",
+          "Resolution": "Enable CMK encryption of CloudWatch Log Groups",
+          "Severity": "LOW",
+          "PrimaryURL": "https://avd.aquasec.com/misconfig/aws-0017",
+          "References": [
+            "https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/encrypt-log-data-kms.html",
+            "https://avd.aquasec.com/misconfig/aws-0017"
+          ],
+          "Status": "FAIL",
+          "CauseMetadata": {
+            "Resource": "module.filewatch",
+            "Provider": "AWS",
+            "Service": "cloudwatch",
+            "StartLine": 14,
+            "EndLine": 17,
+            "Occurrences": [
+              {"Resource": "module.lambda", "Filename": "processors/filewatch/main.tf",
+               "Location": {"StartLine": 7, "EndLine": 44}},
+              {"Resource": "module.filewatch", "Filename": "main.tf",
+               "Location": {"StartLine": 198, "EndLine": 218}}
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "Target": "modules/shared/main.tf",
+      "Class": "config",
+      "Type": "terraform",
+      "Misconfigurations": [
+        {
+          "Type": "Terraform Security Check",
+          "ID": "AWS-0095",
+          "Title": "Unencrypted SNS topic.",
+          "Description": "Topics should be encrypted to protect their contents.\n",
+          "Message": "Topic does not have encryption enabled.",
+          "Namespace": "builtin.aws.sns.aws0095",
+          "Query": "data.builtin.aws.sns.aws0095.deny",
+          "Resolution": "Turn on SNS Topic encryption",
+          "Severity": "HIGH",
+          "PrimaryURL": "https://avd.aquasec.com/misconfig/aws-0095",
+          "References": [
+            "https://docs.aws.amazon.com/sns/latest/dg/sns-server-side-encryption.html",
+            "https://avd.aquasec.com/misconfig/aws-0095"
+          ],
+          "Status": "FAIL",
+          "CauseMetadata": {
+            "Resource": "module.shared",
+            "Provider": "AWS",
+            "Service": "sns",
+            "StartLine": 290,
+            "EndLine": 292,
+            "Occurrences": [
+              {"Resource": "module.shared", "Filename": "main.tf",
+               "Location": {"StartLine": 141, "EndLine": 157}}
+            ]
+          }
+        },
+        {
+          "Type": "Terraform Security Check",
+          "ID": "AWS-0098",
+          "Title": "Secrets Manager should use customer managed keys",
+          "Description": "Secrets Manager encrypts secrets by default using a default key created by AWS. To ensure control and granularity of secret encryption, CMKs should be used explicitly.\n",
+          "Message": "Secret explicitly uses the default key.",
+          "Namespace": "builtin.aws.ssm.aws0098",
+          "Query": "data.builtin.aws.ssm.aws0098.deny",
+          "Resolution": "Use customer managed keys",
+          "Severity": "LOW",
+          "PrimaryURL": "https://avd.aquasec.com/misconfig/aws-0098",
+          "References": [
+            "https://docs.aws.amazon.com/kms/latest/developerguide/services-secrets-manager.html#asm-encrypt",
+            "https://avd.aquasec.com/misconfig/aws-0098"
+          ],
+          "Status": "FAIL",
+          "CauseMetadata": {
+            "Resource": "module.shared",
+            "Provider": "AWS",
+            "Service": "ssm",
+            "StartLine": 36,
+            "EndLine": 42,
+            "Occurrences": [
+              {"Resource": "module.shared", "Filename": "main.tf",
+               "Location": {"StartLine": 141, "EndLine": 157}}
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

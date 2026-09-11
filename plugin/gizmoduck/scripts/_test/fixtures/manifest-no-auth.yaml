@@ -1,0 +1,4 @@
+targets:
+  - name: site-a
+    kind: web
+    url: https://a.example.com

@@ -49,6 +49,62 @@ ORDER = [4, 3, 2, 1, 0]
 # counts rather than pages of noise.
 REPORT_DETAIL_FLOOR = 2  # Medium
 
+# Combined-report grouping (Task 16 / spec 7, 12.3): findings are grouped by
+# target then by category, not by tool - so `deps` (trivy + depcheck) and
+# `iac` (checkov + trivy) each render as one section per target even though
+# two tools feed them. A finding carries `tool` and `target` but not the
+# target's own `kind`, so category is derived from the reporting tool here.
+# trivy is the one adapter that serves two categories from one binary
+# (scanners/trivy.py); it is disambiguated by the `type` field its own
+# adapter already sets ("vulnerability" -> deps, "misconfiguration" -> iac)
+# rather than by a second lookup, since that field is the one piece of
+# category-bearing data trivy's finding shape already carries.
+#
+# nuclei/nmap/testssl also run against `host`-kind targets (KIND_DEFAULTS'
+# `host` list is a strict subset of `web`'s), but nothing in the finding shape
+# distinguishes a host-kind run from a web-kind one at report time, so those
+# land under `web` here. Widening this precisely would mean normalize.py
+# growing a `kind`/`category` field on every finding - out of scope for this
+# task and not this file's to add.
+# All nine tools (Global Constraints: nuclei, zap, nikto, nmap, testssl,
+# trivy, depcheck, checkov, sqlmap) must resolve to a real category here.
+# sqlmap only ever runs against a `web`-kind target (a concrete injection
+# point - scanners/sqlmap.py), same as nuclei/zap/nikto/nmap/testssl, so it
+# joins them rather than getting a category of its own. Missing an entry
+# here used to mean the finding fell through to "other", which the renderer
+# then never visited at all - a confirmed finding (e.g. a proven SQL
+# injection) existed in the data and never appeared anywhere in the report.
+_TOOL_CATEGORY = {
+    "nuclei": "web", "zap": "web", "nikto": "web", "nmap": "web", "testssl": "web",
+    "sqlmap": "web",
+    "depcheck": "deps",
+    "checkov": "iac",
+}
+CATEGORY_ORDER = ["web", "deps", "iac"]
+CATEGORY_LABEL = {"web": "Web", "deps": "Dependencies", "iac": "Infrastructure as Code",
+                  "other": "Other"}
+
+
+def category_of(f):
+    tool = f.get("tool")
+    if tool == "trivy":
+        return "iac" if f.get("type") == "misconfiguration" else "deps"
+    return _TOOL_CATEGORY.get(tool, "other")
+
+
+def _categories_for(findings):
+    """CATEGORY_ORDER, extended with any category `category_of` returns that
+    isn't already in that fixed list. A finding that exists must never be
+    silently absent from the report just because its tool isn't one of the
+    ones this module knows how to name a section for (HIGH defect: this is
+    exactly how sqlmap's findings went missing before it was added to
+    `_TOOL_CATEGORY` above) - a future/unmapped tool now gets its own
+    "Other"-labelled section instead of vanishing. Extra categories are
+    sorted for a stable order and appended after the fixed three, so
+    today's output (only web/deps/iac ever appear) is unaffected."""
+    extra = sorted({category_of(f) for f in findings} - set(CATEGORY_ORDER))
+    return CATEGORY_ORDER + extra
+
 
 def find_nuclei():
     for name in ("nuclei", "nuclei.exe"):
@@ -141,7 +197,44 @@ def _records_digest(records):
     return hashlib.sha256(canon.encode("utf-8")).hexdigest()[:12]
 
 
+def _is_raw_nuclei_record(r):
+    """True for a raw `nuclei -jsonl` line: a top-level `template-id`
+    (hyphen) alongside a nested `info` object holding name/severity/etc.
+    Both are present on every real Nuclei line and neither ever appears on
+    an already-normalized finding (normalize.make_finding uses `template_id`
+    with an underscore and never nests an `info` dict), so checking both
+    together can't misfire on the normalized shape."""
+    return "template-id" in r and isinstance(r.get("info"), dict)
+
+
+def _is_normalized_record(r):
+    """True for an already-normalized finding (normalize.make_finding's
+    shape, which is what `routine` writes to findings.jsonl - routine.py
+    ~422). `template_id` (underscore) plus `severity_name` are both always
+    present on that shape and neither ever appears at the top level of raw
+    Nuclei output (Nuclei's equivalents are `template-id` and the nested
+    `info.severity`), so the pair can't misfire on a raw record either."""
+    return "template_id" in r and "severity_name" in r
+
+
 def load(path):
+    """Parse a findings.jsonl file. Two, and only two, line shapes are
+    recognized:
+
+    - raw `nuclei -jsonl` output, re-derived into this module's finding
+      dict from `template-id`/`info`/... as it always has been;
+    - an already-normalized finding (normalize.make_finding's shape - what
+      `routine` writes), passed through UNCHANGED.
+
+    Passing normalized records through raw-Nuclei re-derivation was the
+    CRITICAL defect this guards against: a normalized record has no
+    `info` object, so every field the raw path reads from `info` (name,
+    severity, description, remediation, reference, tags) came back blank,
+    severity silently defaulted to Info, and `tool`/`target`/`matched_at`
+    were dropped outright - which made `gizmoduck report <routine's own
+    findings.jsonl>` print "No action required" over a real finding. A
+    line matching neither shape is rejected rather than treated as raw
+    Nuclei with everything blank."""
     findings = []
     with open(path, encoding="utf-8") as fh:
         for line in fh:
@@ -149,6 +242,15 @@ def load(path):
             if not line:
                 continue
             r = json.loads(line)
+            if _is_normalized_record(r):
+                findings.append(r)
+                continue
+            if not _is_raw_nuclei_record(r):
+                raise ValueError(
+                    "%s: line matches neither raw Nuclei JSONL (`template-id` + "
+                    "`info`) nor an already-normalized finding (`template_id` + "
+                    "`severity_name`): %.200r" % (path, line)
+                )
             info = r.get("info", {})
             cls = info.get("classification") or {}
             sev = SEV_NUM.get((info.get("severity") or "unknown").lower(), 0)
@@ -176,7 +278,32 @@ def load(path):
 def dedupe(findings):
     groups = {}
     for f in findings:
-        g = groups.setdefault(f["template_id"], {**f, "affected": [], "raw_count": 0})
+        # Key on (target, template_id), not template_id alone. A combined
+        # routine run holds many targets in one findings list, and keying on
+        # the template alone collapsed the same template across every site -
+        # which also made the per-target report grouping impossible. Plain
+        # Nuclei findings carry no `target`, so they key on (None, id) and
+        # group exactly as they always have.
+        key = (f.get("target"), f["template_id"])
+        g = groups.get(key)
+        if g is None:
+            groups[key] = g = {**f, "affected": [], "raw_count": 0}
+        else:
+            # A group must reflect the HIGHEST severity any member carries,
+            # and must retain the severity-assigned marker if ANY member
+            # has it. `setdefault()` used to keep only the FIRST record's
+            # severity and tags - later records in the same group
+            # contributed only location/count - so a known-severity finding
+            # merged with a later null-severity one silently lost its
+            # severity-assigned marker, and reversing the arrival order of a
+            # low and a critical record for the same group changed the
+            # reported severity. Order must never matter here.
+            if f["severity"] > g["severity"]:
+                g["severity"] = f["severity"]
+                g["severity_name"] = f["severity_name"]
+            if "severity-assigned" in (f.get("tags") or []):
+                if "severity-assigned" not in (g.get("tags") or []):
+                    g["tags"] = list(g.get("tags") or []) + ["severity-assigned"]
         g["affected"].append(f["matched_at"] or f["host"])
         g["raw_count"] += 1
     for g in groups.values():
@@ -210,7 +337,35 @@ def detail_floor(min_sev):
     return max(min_sev, REPORT_DETAIL_FLOOR)
 
 
-def cmd_report(findings, min_sev, title):
+def _is_combined(findings, run_manifest=None):
+    """True when the input is a `routine` combined run rather than plain
+    Nuclei output.
+
+    Primarily decided by the presence of a `target` field on any finding
+    (Task 16 step 3: "keyed on the presence of target/tool fields"), never
+    merely by whether a run_manifest was supplied - a caller can mistakenly
+    pass an unrelated manifest alongside real flat Nuclei findings, and that
+    must still render the untouched flat path byte-for-byte (Global
+    Constraints, "Additive only";
+    test_plain_nuclei_input_ignores_a_run_manifest_too pins this).
+
+    The one exception is an EMPTY findings list together with a real
+    run_manifest (CRITICAL defect): `target` can only ever appear on an
+    actual finding, so a run where every tool errored or was skipped -
+    zero findings, but a manifest full of `error:*`/`skipped-*` cells -
+    used to fall through to the flat path and print "No action required",
+    discarding the exact evidence (the coverage table) that distinguishes a
+    failed scan from a clean one. `run_manifest` is only ever produced by
+    `routine`, so its presence is sufficient in this one case, where there
+    is no finding to have carried `target` in the first place."""
+    if any(f.get("target") for f in findings):
+        return True
+    return not findings and bool(run_manifest and run_manifest.get("cells"))
+
+
+def cmd_report(findings, min_sev, title, run_manifest=None):
+    if _is_combined(findings, run_manifest):
+        return _cmd_report_combined(findings, min_sev, title, run_manifest)
     floor = detail_floor(min_sev)
     uniq = sorted(dedupe(findings), key=lambda f: (-f["severity"], f["name"]))
     s = cmd_summary(findings)
@@ -271,6 +426,170 @@ def cmd_report(findings, min_sev, title):
     return "\n".join(out)
 
 
+def _cell_text(cell):
+    """Render one coverage-table cell. `ran`/`ran(mode)` always carries its
+    finding count, so `ran` with zero findings reads as "ran - 0 findings" and
+    not merely "ran" - indistinguishable-from-clean is the exact failure this
+    table exists to prevent (a WAF blocked a real scan and it read as 0
+    findings = clean). `skipped-missing`, `skipped-active` and `error:*`
+    render as their bare status, which is already visually distinct from any
+    `ran` variant.
+
+    A `ran` cell can still carry a non-empty `errors` list - an adapter's own
+    parse_errors() output (routine.py; currently only testssl's WARN/FATAL
+    entries), which is not a finding and not a cell-level `error:*` status
+    either, because the tool process itself completed. Left unflagged, a
+    target testssl couldn't fully reach would read as "ran - 0 findings",
+    the exact same text as a target that is genuinely clean - so a non-empty
+    `errors` list always appends a scan-error note, however many findings
+    were also found.
+
+    `count` missing entirely or explicitly `null` is not the same thing as
+    a confirmed zero - `cell.get("count") or 0` used to collapse both into
+    "0 findings", manufacturing a definite clean count out of incomplete
+    evidence (MEDIUM defect). Only a real int (0 included) renders a count;
+    anything else renders an explicit "findings unknown" instead."""
+    status = cell.get("status", "")
+    if status == "ran" or status.startswith("ran("):
+        n = cell.get("count")
+        if n is None:
+            text = f"{status} - findings unknown"
+        else:
+            noun = "finding" if n == 1 else "findings"
+            text = f"{status} - {n} {noun}"
+        errs = cell.get("errors") or []
+        if errs:
+            enoun = "scan error" if len(errs) == 1 else "scan errors"
+            text += f" ({len(errs)} {enoun})"
+        return text
+    return status
+
+
+def _coverage_table_md(run_manifest):
+    """Rows = targets, columns = tools, cells = status (spec 7). Column order
+    follows first appearance in `cells` rather than an alphabetical or fixed
+    list, so a manifest naming only the tools it actually used doesn't grow
+    columns for tools no target in this run ever touched."""
+    cells = run_manifest.get("cells") or []
+    if not cells:
+        return []
+    targets = sorted({c["target"] for c in cells})
+    tools = []
+    for c in cells:
+        if c["tool"] not in tools:
+            tools.append(c["tool"])
+    by_pair = {(c["target"], c["tool"]): c for c in cells}
+
+    header = "| Target | " + " | ".join(tools) + " |"
+    sep = "|---" * (len(tools) + 1) + "|"
+    rows = [header, sep]
+    for t in targets:
+        row = [t]
+        for tool in tools:
+            c = by_pair.get((t, tool))
+            row.append(_cell_text(c) if c is not None else "n/a")
+        rows.append("| " + " | ".join(row) + " |")
+    return rows
+
+
+def _render_finding_block_md(f, n):
+    """One itemised finding, grouped-report style. Deliberately not shared
+    with the flat path's identical-looking loop in cmd_report above: the flat
+    path's output is pinned byte-for-byte (Global Constraints, "Additive
+    only") and factoring it out risks a subtle diff neither test would catch
+    reliably. The one addition here is the reporting-tool label, since a
+    grouped report can show findings from several tools in one category."""
+    cvss = f["cvss"] or "n/a"
+    cves = ", ".join(f["cve"]) if f["cve"] else "-"
+    locations = f.get("instances", len(f.get("affected") or []))
+    raw = f.get("raw_count", locations)
+    hits = (f"{raw}" if raw == locations
+            else f"{raw} detections across {locations} location(s)")
+    tools_list = f.get("tools") or ([f["tool"]] if f.get("tool") else [])
+    tool_label = "+".join(t for t in tools_list if t) or "-"
+
+    out = [f"#### {n}. {f['name']} - {SEV_NAME[f['severity']]} ({tool_label})", ""]
+    out += ["| | |", "|---|---|",
+            f"| Template | `{f['template_id']}` |",
+            f"| Type | {f['type'] or '-'} |",
+            f"| CVSS | {cvss} |",
+            f"| CVE | {cves} |",
+            f"| Detections | {hits} |", ""]
+    if f["description"]:
+        out += ["**Detail**", "", f["description"].strip(), ""]
+    if f.get("affected"):
+        out += ["**Affected**", ""]
+        out += [f"- `{a}`" for a in f["affected"]]
+        out.append("")
+    if f["remediation"]:
+        out += ["**Remediation**", "", f["remediation"].strip(), ""]
+    refs = [r for r in (f.get("reference") or []) if r][:4]
+    if refs:
+        out += ["**References**", ""] + [f"- {r}" for r in refs] + [""]
+    return out
+
+
+def _cmd_report_combined(findings, min_sev, title, run_manifest):
+    """The `routine` combined-report path: one section per target, findings
+    within a target grouped by category (not by tool - spec 7/12.3), and a
+    coverage table up top so a `skipped`/`error` cell is never mistaken for a
+    clean result. Kept entirely separate from the flat path in cmd_report
+    above rather than branching partway through it, so the flat path's
+    byte-for-byte output guarantee has nothing new to break it."""
+    floor = detail_floor(min_sev)
+    s = cmd_summary(findings)
+    counts = s["by_severity"]
+    suppressed = sum(counts[SEV_NAME[x]] for x in ORDER if x < floor)
+
+    out = [f"# {title}", ""]
+    if run_manifest and run_manifest.get("authorized_by"):
+        out += [f"**Authorized by:** {run_manifest['authorized_by']}  "]
+    out += [f"**Hosts with findings:** {s['hosts']}  ",
+            f"**Total finding instances:** {s['total_instances']}", ""]
+
+    if run_manifest:
+        out += ["## Coverage", ""]
+        out += _coverage_table_md(run_manifest)
+        out += ["", "_A `ran` cell states its finding count, including zero. "
+                "That is not the same as `skipped-missing` (the tool was not "
+                "installed), `skipped-active` (an active-mode tool was not "
+                "opted in) or an `error` cell (the tool started and did not "
+                "finish) - each of those means no result was produced at all, "
+                "which a bare absence of findings must never be confused "
+                "with._", ""]
+
+    out += ["| Severity | Count | In this report |", "|---|---:|---|"]
+    for x in ORDER:
+        state = "itemised" if x >= floor else "count only"
+        out.append(f"| {SEV_NAME[x]} | {counts[SEV_NAME[x]]} | {state} |")
+    out.append("")
+
+    if suppressed:
+        noun = "finding" if suppressed == 1 else "findings"
+        out += [f"_{suppressed} {noun} below {SEV_NAME[floor]} were recorded and are "
+                f"not itemised. They are inventory - version banners, DNS records, the "
+                f"presence of a form - rather than remediation work. The full detail "
+                f"remains in the JSONL._", ""]
+
+    targets = sorted({f["target"] for f in findings if f.get("target")})
+    for t in targets:
+        t_findings = [f for f in findings if f.get("target") == t]
+        t_uniq = sorted(dedupe(t_findings), key=lambda f: (-f["severity"], f["name"]))
+        out += [f"## {t}", ""]
+        for cat in _categories_for(t_uniq):
+            cat_findings = [f for f in t_uniq if category_of(f) == cat]
+            if not cat_findings:
+                continue
+            shown = [f for f in cat_findings if f["severity"] >= floor]
+            out += [f"### {CATEGORY_LABEL.get(cat, cat)} ({len(cat_findings)})", ""]
+            if not shown:
+                out += [f"Nothing at or above {SEV_NAME[floor]}.", ""]
+                continue
+            for n, f in enumerate(shown, 1):
+                out += _render_finding_block_md(f, n)
+    return "\n".join(out)
+
+
 def _template_module():
     """Load report_template.py, which sits beside this script.
 
@@ -291,14 +610,42 @@ def _template_module():
         return mod
 
 
-def render_html(findings, min_sev, title):
+def _grouped_sections(findings, floor):
+    """Same grouping _cmd_report_combined uses for Markdown (Task 16), built
+    once here so the HTML path (Task 17) gets identical target/category
+    grouping instead of re-deriving it - report_template.py stays presentation
+    -only and never learns what a "category" is.
+
+    Returns [(target, [(category_label, all_findings, shown_findings), ...]), ...]
+    """
+    groups = []
+    targets = sorted({f["target"] for f in findings if f.get("target")})
+    for t in targets:
+        t_findings = [f for f in findings if f.get("target") == t]
+        t_uniq = sorted(dedupe(t_findings), key=lambda f: (-f["severity"], f["name"]))
+        cats = []
+        for cat in _categories_for(t_uniq):
+            cat_findings = [f for f in t_uniq if category_of(f) == cat]
+            if not cat_findings:
+                continue
+            shown = [f for f in cat_findings if f["severity"] >= floor]
+            cats.append((CATEGORY_LABEL.get(cat, cat), cat_findings, shown))
+        groups.append((t, cats))
+    return groups
+
+
+def render_html(findings, min_sev, title, run_manifest=None):
     """Presentation lives in report_template.py; this stays the data prep.
 
     dedupe() and cmd_summary() own what a finding *is*; the template module owns
     only how it looks, and is handed the severity vocabulary rather than
-    redefining it.
+    redefining it. Combined-run grouping (Task 17) follows the same rule:
+    report_template.py is handed already-grouped data, not the tool/category
+    mapping that produced it.
     """
     uniq = sorted(dedupe(findings), key=lambda f: (-f["severity"], f["name"]))
+    combined = _is_combined(findings, run_manifest)
+    groups = _grouped_sections(findings, detail_floor(min_sev)) if combined else None
     return _template_module().render_report(
         uniq=uniq,
         summary=cmd_summary(findings),
@@ -307,6 +654,8 @@ def render_html(findings, min_sev, title):
         sev_name=SEV_NAME,
         order=ORDER,
         findings=findings,
+        run_manifest=run_manifest if combined else None,
+        groups=groups,
     )
 
 
@@ -419,6 +768,20 @@ def cmd_doctor():
 
     wk = shutil.which("wkhtmltopdf")
     line("wkhtmltopdf (PDF)", wk or "not found — HTML reports still work", good=bool(wk))
+
+    # NVD_API_KEY is optional: dependency-check runs fine without it, just
+    # rate-limited by NIST (~5 req/30s vs ~50 with a key) on its first NVD
+    # sync. Reported directly with safe_print rather than via line(), so an
+    # absent key is a visible gap only — it never flips `ok` and never
+    # changes doctor's exit code, matching the convention that only nuclei
+    # and its templates can fail this check. Never print the key itself, not
+    # even partially — presence/absence only.
+    if os.environ.get("NVD_API_KEY"):
+        safe_print("OK NVD_API_KEY: set")
+    else:
+        safe_print("!! NVD_API_KEY: not set — dependency-check's first NVD sync will be "
+                    "rate-limited to ~5 req/30s; get a free key at "
+                    "https://nvd.nist.gov/developers/request-an-api-key")
 
     sys.exit(0 if ok else 1)
 

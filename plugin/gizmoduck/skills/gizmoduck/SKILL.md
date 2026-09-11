@@ -109,6 +109,12 @@ Runs on Linux/WSL and Windows. On Linux call the CLI with `python3`; on Windows 
   crawler-driven DAST. For custom app-logic flaws (auth journeys, business logic),
   note that a tool like OWASP ZAP is the right complement.
 - Keep the template feed fresh: `nuclei -update-templates` before important scans.
+- **NVD API key (optional).** dependency-check's first run syncs the full NVD CVE
+  corpus; without `NVD_API_KEY` set, NIST rate-limits that to ~5 req/30s (~10x
+  slower than with a key), which can look like a hang on a fresh machine. Get a
+  free key at https://nvd.nist.gov/developers/request-an-api-key — NIST emails
+  an activation link, not the key itself; the key is shown on the page behind
+  it. Set `NVD_API_KEY` as an environment variable (never write it to a file).
 
 ## Other actions
 These back the `/gizmoduck:*` commands; all use `gizmoduck.py`:
@@ -120,3 +126,5 @@ These back the `/gizmoduck:*` commands; all use `gizmoduck.py`:
 - **update** — `gizmoduck.py update` refreshes the Nuclei engine and templates.
 - **doctor** — `gizmoduck.py doctor` verifies nuclei, templates, python, and
   wkhtmltopdf; if anything's missing, point the user at the bootstrap scripts.
+  It also reports whether `NVD_API_KEY` is set (never the value) — that's a
+  gap, not a failure, and never changes doctor's exit code.
