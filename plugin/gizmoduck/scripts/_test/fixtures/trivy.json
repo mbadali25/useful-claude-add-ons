@@ -52,6 +52,9 @@
           "PrimaryURL": "https://avd.aquasec.com/misconfig/avd-aws-0001",
           "Resolution": "Remove the public ACL or use a private ACL.",
           "CauseMetadata": {
+            "Resource": "aws_s3_bucket.public_bucket",
+            "Provider": "AWS",
+            "Service": "s3",
             "StartLine": 12,
             "EndLine": 18
           }
@@ -65,6 +68,9 @@
           "PrimaryURL": "https://avd.aquasec.com/misconfig/avd-aws-0002",
           "Resolution": "Scope the IAM policy to required actions.",
           "CauseMetadata": {
+            "Resource": "aws_iam_policy.admin",
+            "Provider": "AWS",
+            "Service": "iam",
             "StartLine": 30,
             "EndLine": 40
           }

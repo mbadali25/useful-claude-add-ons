@@ -143,13 +143,14 @@ def _parse_vulnerabilities(results, target_name):
         for vuln in result.get("Vulnerabilities") or []:
             sev, known = normalize.sev_from_text(vuln.get("Severity"))
             pkg = vuln.get("PkgName", "")
+            installed = vuln.get("InstalledVersion", "")
             fixed = vuln.get("FixedVersion", "")
             rule_id = vuln.get("VulnerabilityID", "")
             primary_url = vuln.get("PrimaryURL")
             references = ([primary_url] if primary_url else []) + \
                 list(vuln.get("References") or [])
             remediation = ("upgrade %s to %s" % (pkg, fixed)) if fixed else ""
-            findings.append(normalize.make_finding(
+            finding = normalize.make_finding(
                 NAME, target_name, rule_id, vuln.get("Title") or rule_id, sev,
                 severity_known=known,
                 type="vulnerability",
@@ -160,7 +161,17 @@ def _parse_vulnerabilities(results, target_name):
                 reference=references,
                 tags=list(vuln.get("CweIDs") or []),
                 matched_at=file_target,
-            ))
+            )
+            # Merge-key fields for Task 18's deps merge (CVE, package,
+            # version) - additive, alongside matched_at rather than instead
+            # of it, and omitted entirely when trivy didn't carry them (plan
+            # Global Constraints: absent means "does not merge on this
+            # slot", never a guessed value).
+            if pkg:
+                finding["package"] = pkg
+            if installed:
+                finding["version"] = installed
+            findings.append(finding)
     return findings
 
 
@@ -176,7 +187,7 @@ def _parse_misconfigurations(results, target_name):
             matched_at = ("%s:%s" % (file_target, start_line)
                           if start_line else file_target)
             primary_url = mis.get("PrimaryURL")
-            findings.append(normalize.make_finding(
+            finding = normalize.make_finding(
                 NAME, target_name, rule_id, mis.get("Title") or rule_id, sev,
                 severity_known=known,
                 type="misconfiguration",
@@ -184,7 +195,22 @@ def _parse_misconfigurations(results, target_name):
                 remediation=mis.get("Resolution", ""),
                 reference=[primary_url] if primary_url else [],
                 matched_at=matched_at,
-            ))
+            )
+            # Merge-key fields for Task 18's iac merge (path, line,
+            # resource) - additive alongside matched_at, not a replacement
+            # for it. `path` is the file alone (matched_at keeps the
+            # "file:line" form the report reads); `line` is the *start*
+            # line only, per plan Global Constraints - Checkov and Trivy
+            # will not agree on where a block ends. Each is omitted when
+            # trivy's own output doesn't carry it.
+            if file_target:
+                finding["path"] = file_target
+            if start_line is not None:
+                finding["line"] = int(start_line)
+            resource = cause.get("Resource")
+            if resource:
+                finding["resource"] = resource
+            findings.append(finding)
     return findings
 
 

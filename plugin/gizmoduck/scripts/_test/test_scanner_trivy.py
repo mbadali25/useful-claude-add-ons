@@ -39,6 +39,22 @@ def test_deps_target_is_set_from_the_argument(fixture):
     assert all(f["target"] == "myrepo" for f in findings)
 
 
+def test_deps_findings_carry_the_merge_key_fields(fixture):
+    """Task 18's deps merge keys on (cve, package, version) - these must be
+    distinct fields alongside matched_at, not folded into it.
+    """
+    findings = trivy.parse(fixture("trivy.json"), "myrepo", kind="deps")
+    by_id = {f["template_id"]: f for f in findings}
+    known = by_id["trivy:CVE-2023-1234"]
+    assert known["package"] == "requests"
+    assert known["version"] == "2.25.0"
+    assert known["matched_at"] == "requirements.txt"  # unchanged shape
+
+    unknown = by_id["trivy:CVE-2024-9999"]
+    assert unknown["package"] == "urllib3"
+    assert unknown["version"] == "1.26.0"
+
+
 # ---------------------------------------------------------------------------
 # parse() - iac kind, same fixture file
 # ---------------------------------------------------------------------------
@@ -63,6 +79,27 @@ def test_iac_findings_have_expected_severities_and_ids(fixture):
 def test_iac_target_is_set_from_the_argument(fixture):
     findings = trivy.parse(fixture("trivy.json"), "myrepo", kind="iac")
     assert all(f["target"] == "myrepo" for f in findings)
+
+
+def test_iac_findings_carry_the_merge_key_fields(fixture):
+    """Task 18's iac merge keys on (path, line, resource) - path is the bare
+    file (not "file:line"), line is the *start* line as an int, and
+    matched_at must stay exactly as it was (the report reads it).
+    """
+    findings = trivy.parse(fixture("trivy.json"), "myrepo", kind="iac")
+    by_id = {f["template_id"]: f for f in findings}
+
+    bucket = by_id["trivy:AVD-AWS-0001"]
+    assert bucket["path"] == "main.tf"
+    assert bucket["line"] == 12
+    assert isinstance(bucket["line"], int)
+    assert bucket["resource"] == "aws_s3_bucket.public_bucket"
+    assert bucket["matched_at"] == "main.tf:12"  # unchanged, report-facing
+
+    policy = by_id["trivy:AVD-AWS-0002"]
+    assert policy["path"] == "main.tf"
+    assert policy["line"] == 30
+    assert policy["resource"] == "aws_iam_policy.admin"
 
 
 def test_kind_is_required_and_must_be_valid(fixture):
