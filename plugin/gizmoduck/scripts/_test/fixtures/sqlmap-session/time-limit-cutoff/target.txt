@@ -1,0 +1,1 @@
+http://127.0.0.1:8900/item?id=1&debug=0 (GET)  # sqlmap.py -u "http://127.0.0.1:8900/item?id=1&debug=0" -p debug --batch --non-interactive --time-limit=90 --output-dir=<out>

@@ -294,6 +294,43 @@ def _append_vuln_findings(findings, script_el, target, host_ip, matched_at):
         ))
 
 
+def parse_errors(raw_path, target):
+    """Return a scan-error record for every host nmap reported DOWN.
+
+    A host that did not respond is not a clean scan - nmap ran, but the
+    target was unreachable, so `parse()` legitimately finds no ports and
+    returns []. Left unsurfaced, that reads in the coverage table exactly
+    like "scanned, nothing found" for a host that was up. This channel
+    (which routine folds into the run manifest, the same way it does
+    testssl's WARN/FATAL) makes "target unreachable" distinct from "clean",
+    shaped nothing like a finding so it can never be mistaken for one.
+
+    Lenient by design: parse() owns raising on malformed XML, so a shape
+    this secondary reader cannot handle simply yields no error records
+    rather than masking parse()'s own ParseError.
+    """
+    errors = []
+    try:
+        root = ET.parse(raw_path).getroot()
+    except (ET.ParseError, OSError):
+        return errors
+    if root.tag != "nmaprun":
+        return errors
+    for host_el in root.findall("host"):
+        status = host_el.find("status")
+        if status is not None and status.get("state") == "down":
+            addr_el = host_el.find("address")
+            errors.append({
+                "tool": NAME,
+                "target": target,
+                "severity": "error",
+                "message": "host reported down (%s) - target unreachable, not scanned"
+                           % (status.get("reason") or "no-response"),
+                "host": addr_el.get("addr") if addr_el is not None else "",
+            })
+    return errors
+
+
 def parse(raw_path, target):
     """Pure parse: no subprocess, no network. Reads nmap's -oX output and
     returns findings for every open port (info), one additional, separate

@@ -338,3 +338,23 @@ def test_real_safe_scan_output_parses_to_the_open_port(fixture):
     assert len(findings) == 1
     assert findings[0]["severity_name"] == "info"
     assert "8922" in findings[0]["matched_at"]
+
+
+def test_down_host_is_surfaced_as_a_scan_error_not_a_clean_result(tmp_path):
+    # A host nmap reports DOWN is unreachable, not clean. parse() finds no
+    # ports (correctly []), and parse_errors() must surface the unreachable
+    # target so the coverage cell does not read like "scanned, nothing found".
+    xml = ('<nmaprun><host><status state="down" reason="no-response"/>'
+           '<address addr="10.0.0.9"/></host></nmaprun>')
+    p = tmp_path / "down.xml"
+    p.write_text(xml)
+    assert nmap.parse(str(p), "10.0.0.9") == []
+    errs = nmap.parse_errors(str(p), "10.0.0.9")
+    assert len(errs) == 1
+    assert errs[0]["severity"] == "error"
+    assert "down" in errs[0]["message"] and "10.0.0.9" in errs[0]["host"]
+
+
+def test_up_host_produces_no_scan_error(fixture):
+    # The real safe-scan capture is an up host - no down-host error records.
+    assert nmap.parse_errors(str(fixture("nmap-safe-real.xml")), "127.0.0.1") == []

@@ -563,3 +563,48 @@ def test_module_constants():
     assert sqlmap.ACTIVE is True
     assert sqlmap.ACTIVE_OPTS == []
     assert sqlmap.DEFAULT_ENABLED is False
+
+
+def _fake_result(stdout="", stderr=""):
+    return base.ToolResult(returncode=0, stdout=stdout, stderr=stderr, timed_out=False)
+
+
+def test_run_marks_a_connection_error_and_parse_errors_surfaces_it(monkeypatch, tmp_path):
+    # A run that cannot reach the target leaves a clean-looking session dir
+    # (0-byte log + session.sqlite); the connection failure is only in
+    # stdout. run() must record it as a marker and parse_errors() surface it,
+    # so an unreachable target does not read as "tested, no injection".
+    outdir = tmp_path / "out"
+    host = outdir / "127.0.0.1"
+    host.mkdir(parents=True)
+    (host / "session.sqlite").write_bytes(b"x")
+    (host / "log").write_text("")
+
+    def fake_run_tool(argv, timeout, cwd=None):
+        return _fake_result(stdout="[01:00:00] [CRITICAL] connection timed out to the target URL")
+    monkeypatch.setattr(base, "run_tool", fake_run_tool)
+    monkeypatch.setattr(sqlmap, "is_available", lambda: True)
+
+    raw, result = sqlmap.run("http://127.0.0.1/item?id=1", str(outdir),
+                             {sqlmap.CONFIRM_KEY: "yes"})
+    errs = sqlmap.parse_errors(raw, "http://127.0.0.1/item?id=1")
+    assert len(errs) == 1 and errs[0]["severity"] == "error"
+
+
+def test_not_injectable_is_clean_not_a_connection_error(monkeypatch, tmp_path):
+    # sqlmap's "all tested parameters do not appear to be injectable" is a
+    # real CLEAN result, not a reachability failure - it must NOT be marked.
+    outdir = tmp_path / "out"
+    host = outdir / "127.0.0.1"
+    host.mkdir(parents=True)
+    (host / "session.sqlite").write_bytes(b"x")
+    (host / "log").write_text("")
+
+    def fake_run_tool(argv, timeout, cwd=None):
+        return _fake_result(stdout="[01:00:00] [CRITICAL] all tested parameters do not appear to be injectable")
+    monkeypatch.setattr(base, "run_tool", fake_run_tool)
+    monkeypatch.setattr(sqlmap, "is_available", lambda: True)
+
+    raw, result = sqlmap.run("http://127.0.0.1/item?id=1", str(outdir),
+                             {sqlmap.CONFIRM_KEY: "yes"})
+    assert sqlmap.parse_errors(raw, "http://127.0.0.1/item?id=1") == []
