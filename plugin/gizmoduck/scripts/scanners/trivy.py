@@ -12,12 +12,23 @@ about - so a Trivy version that reports more than requested still can't leak
 IaC findings into a deps section or vice versa.
 
 `target` (both run() and parse()) is accepted as a plain string (used
-directly as the path to scan / the finding's `target` tag - what routine.py
-will pass once it exists), OR as a dict/object carrying `path`/`name`/`kind`
-attributes for a richer manifest Target. Because one adapter now answers to
-two KINDS, `kind` is threaded explicitly - via `opts["kind"]` for run() and
-an explicit `kind` argument (or `target.kind`) for parse() - rather than
-inferred, since the same fixture/native file must be parsable as either kind.
+directly as the path to scan / the finding's `target` tag), OR as a
+dict/object carrying `path`/`name`/`kind` attributes for a richer manifest
+Target - the same testable-without-routine.py shape nmap.py's `_target_host`
+and depcheck.py's `_scan_path` use. Because one adapter now answers to two
+KINDS, `kind` is threaded explicitly: via `opts["kind"]` for run(), and via
+an explicit `kind` argument (falling back to `target.kind`) for parse() -
+rather than inferred from the file - since the same native/fixture file must
+be parsable as either kind on request.
+
+run() follows the cross-adapter contract pinned in spec 13.14 / plan Tasks
+5-13: `run(target, outdir, opts) -> (raw_path | None, base.ToolResult)`,
+always returning the ToolResult even when raw_path is None, so routine can
+record error:timeout / error:<message> per cell. Per that same note, trivy is
+one of the three adapters whose raw_path needs an extra word of explanation:
+the filename itself (`trivy-deps.json` vs `trivy-iac.json`) is what tells
+routine which kind a given call served, since one adapter now writes one of
+two different native files depending on the call.
 """
 import json
 from pathlib import Path
@@ -76,6 +87,22 @@ def is_available():
 
 
 def run(target, outdir, opts=None):
+    """Returns (raw_path, result) per the pinned adapter contract (spec
+    13.14): raw_path is None whenever trivy did not run or wrote no output -
+    including a timeout - and the ToolResult is always returned so routine
+    can record error:timeout / error:<message> either way.
+
+    Trivy's own exit code is never read to decide any of this: it exits 0
+    regardless of findings unless --exit-code is passed (spec 13.7), so a
+    plain 0/nonzero check would tell us nothing. Whether --output exists is
+    the only success signal used here.
+
+    kind is a required, adapter-specific piece of config - not a tool
+    outcome - so an unresolvable kind raises ValueError immediately, the
+    same way nmap.py's _target_host raises for a target with neither .host
+    nor .url, rather than being folded into the (None, result) tool-failure
+    path.
+    """
     opts = opts or {}
     kind = _resolve_kind(target, None, opts)
     scanner = _SCANNERS[kind]
@@ -90,17 +117,10 @@ def run(target, outdir, opts=None):
             "--timeout", trivy_timeout, "--output", str(raw_path), str(path)]
 
     timeout = opts.get("timeout", DEFAULT_TIMEOUT)
-    result = base.run_tool(argv, timeout=timeout)
-    if result.timed_out:
-        raise TimeoutError(
-            "trivy timed out after %ss scanning %s" % (timeout, path))
-    if not raw_path.exists():
-        # Trivy exits 0 whether or not it found anything, so a missing
-        # output file - not a non-zero return code - is what actually means
-        # the scan failed to produce results.
-        raise RuntimeError(
-            "trivy produced no output for %s: %s" % (path, result.stderr.strip()))
-    return str(raw_path)
+    result = base.run_tool(argv, timeout=timeout, cwd=opts.get("cwd"))
+    if result.timed_out or not raw_path.exists():
+        return None, result
+    return str(raw_path), result
 
 
 def _first_cvss(cvss_block):

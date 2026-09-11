@@ -99,12 +99,13 @@ def test_run_builds_the_expected_argv_per_kind(tmp_path, monkeypatch, fixture):
 
     monkeypatch.setattr(trivy.base, "run_tool", fake_run_tool)
 
-    raw_path = trivy.run("/repos/myrepo", str(tmp_path), {"kind": "deps"})
+    raw_path, result = trivy.run("/repos/myrepo", str(tmp_path), {"kind": "deps"})
 
     assert "--scanners" in captured["argv"]
     assert captured["argv"][captured["argv"].index("--scanners") + 1] == "vuln"
     assert "--timeout" in captured["argv"]
     assert raw_path.endswith("trivy-deps.json")
+    assert result.returncode == 0
 
 
 def test_run_yields_findings_from_a_zero_exit_scan(tmp_path, monkeypatch, fixture):
@@ -122,21 +123,43 @@ def test_run_yields_findings_from_a_zero_exit_scan(tmp_path, monkeypatch, fixtur
 
     monkeypatch.setattr(trivy.base, "run_tool", fake_run_tool)
 
-    raw_path = trivy.run("/repos/myrepo", str(tmp_path), {"kind": "iac"})
+    raw_path, result = trivy.run("/repos/myrepo", str(tmp_path), {"kind": "iac"})
+    assert result.returncode == 0
     findings = trivy.parse(raw_path, "myrepo", kind="iac")
 
     assert len(findings) == 2
     assert all(f["severity"] > 0 for f in findings)
 
 
-def test_run_raises_timeout_error_when_the_process_times_out(tmp_path, monkeypatch):
+def test_run_returns_none_path_when_the_process_times_out(tmp_path, monkeypatch):
+    """Per the pinned (raw_path, ToolResult) contract (spec 13.14): a timeout
+    is reported by returning (None, result) with result.timed_out True, not
+    by raising - routine reads that pair to record error:timeout per cell.
+    """
     def fake_run_tool(argv, timeout, cwd=None):
         return base.ToolResult(returncode=-1, stdout="", stderr="", timed_out=True)
 
     monkeypatch.setattr(trivy.base, "run_tool", fake_run_tool)
 
-    with pytest.raises(TimeoutError):
-        trivy.run("/repos/myrepo", str(tmp_path), {"kind": "deps"})
+    raw_path, result = trivy.run("/repos/myrepo", str(tmp_path), {"kind": "deps"})
+    assert raw_path is None
+    assert result.timed_out is True
+
+
+def test_run_returns_none_path_when_no_output_file_was_written(tmp_path, monkeypatch):
+    """Trivy exits 0 regardless of findings (spec 13.7), so a missing
+    --output file - not the return code - is what actually signals the scan
+    failed to produce results.
+    """
+    def fake_run_tool(argv, timeout, cwd=None):
+        return base.ToolResult(returncode=0, stdout="", stderr="boom", timed_out=False)
+
+    monkeypatch.setattr(trivy.base, "run_tool", fake_run_tool)
+
+    raw_path, result = trivy.run("/repos/myrepo", str(tmp_path), {"kind": "deps"})
+    assert raw_path is None
+    assert result.returncode == 0
+    assert result.stderr == "boom"
 
 
 def test_run_requires_a_resolvable_kind(tmp_path):
