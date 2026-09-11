@@ -1,0 +1,16 @@
+{
+  "authorized_by": "jane@example.com",
+  "generated_at": "2026-09-10T17:00:00Z",
+  "cells": [
+    {"target": "site-a", "tool": "nuclei", "status": "ran", "mode": null, "duration_s": 12.4, "count": 1},
+    {"target": "site-a", "tool": "zap", "status": "skipped-missing", "mode": null, "duration_s": null, "count": 0},
+    {"target": "site-a", "tool": "nikto", "status": "error:timeout", "mode": null, "duration_s": 300.0, "count": 0, "error": "scan exceeded 300s timeout"},
+    {"target": "site-a", "tool": "nmap", "status": "ran(safe)", "mode": "safe", "duration_s": 8.1, "count": 1},
+    {"target": "site-a", "tool": "testssl", "status": "ran", "mode": null, "duration_s": 22.0, "count": 0},
+    {"target": "site-a", "tool": "sqlmap", "status": "skipped-active", "mode": null, "duration_s": null, "count": 0},
+    {"target": "repo-b", "tool": "trivy", "status": "ran", "mode": null, "duration_s": 6.2, "count": 1},
+    {"target": "repo-b", "tool": "depcheck", "status": "ran", "mode": null, "duration_s": 90.5, "count": 1},
+    {"target": "infra-c", "tool": "checkov", "status": "ran", "mode": null, "duration_s": 3.3, "count": 1},
+    {"target": "infra-c", "tool": "trivy", "status": "ran", "mode": null, "duration_s": 5.9, "count": 1}
+  ]
+}

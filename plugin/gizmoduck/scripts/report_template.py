@@ -127,6 +127,28 @@ ul.hosts li { margin: 1pt 0; word-break: break-all; }
         font-size: 8pt; color: #8a919c; }
 """
 
+# Styling for the routine combined-report path only (Task 17): coverage table,
+# per-target/per-category subsections, and the tool-name badge `_card` adds
+# when a finding carries `tool`/`tools`. Kept out of CSS above and appended to
+# the <style> block only when render_report is handed a run_manifest/groups,
+# so a plain single-scanner report's HTML - CSS included - stays byte-for-byte
+# identical to before this task (Global Constraints, "Additive only"). Table
+# markup only here too, same Qt WebKit 4.8 constraint as the rest of the file.
+GROUPED_CSS = """
+table.coverage { border-collapse: collapse; width: 100%; font-size: 8.5pt;
+                 margin: 4pt 0 8pt 0; }
+table.coverage th, table.coverage td { border: 1px solid #dfe3e8; padding: 4pt 6pt;
+                                        text-align: left; vertical-align: top; }
+table.coverage th { background: #f2f4f7; font-weight: 600; color: #4a5568; }
+table.coverage td.cov-target { font-weight: 600; white-space: nowrap; }
+table.coverage td.cov-na { color: #b6bcc6; }
+
+.subsection { margin: 9pt 0 4pt 0; }
+.subsection h3 { font-size: 10.5pt; margin-bottom: 5pt; }
+.toolname { font-size: 7.5pt; font-weight: 400; color: #8a919c; margin-left: 6pt;
+            text-transform: uppercase; letter-spacing: .06em; }
+"""
+
 
 def _pal(sev):
     return PALETTE.get(sev, NEUTRAL)
@@ -266,11 +288,19 @@ def _card(f, sev_name, e, rank=None):
 
     label = e(sev_name.get(sev, "Info"))
     name = e(f.get("name", "") or f.get("template_id", ""))
+    # Plain flat Nuclei findings never carry `tool`/`tools` (gizmoduck.py's
+    # load() doesn't set them), so this stays empty and invisible for the
+    # single-scanner report - only a routine combined run's findings show it,
+    # naming which scanner(s) reported a card that can now come from any of
+    # nine tools instead of always being Nuclei.
+    tools_list = f.get("tools") or ([f["tool"]] if f.get("tool") else [])
+    tool_html = (f"<span class='toolname'>{e('+'.join(t for t in tools_list if t))}</span>"
+                 if tools_list else "")
     return (f"<div class='card' style='border-left-color:{pal['ink']}'>"
             f"<h3>{rank_html}"
             f"<span class='pill' style='background:{pal['bg']};color:{pal['ink']}'>"
             f"{label}</span>"
-            f"<span class='cname'>{name}</span></h3>"
+            f"<span class='cname'>{name}</span>{tool_html}</h3>"
             f"<table class='kv'>{kv_html}</table>"
             f"{desc_blk}{hosts_blk}{fix_blk}{refs_blk}</div>")
 
@@ -313,15 +343,119 @@ def _appendix(uniq, e):
             f"{''.join(blocks)}</div>")
 
 
-def render_report(uniq, summary, min_sev, title, sev_name, order, findings=None):
+def _coverage_cell_text(cell):
+    """Mirrors gizmoduck.py's _cell_text() for the Markdown path (Task 16) -
+    a `ran` cell always states its finding count, including zero, so it never
+    reads the same as `skipped-missing`/`skipped-active`/`error:*`, each of
+    which means no result was produced at all. Not imported from gizmoduck.py:
+    this module stays presentation-only and importable on its own, matching
+    normalize.py's stance at the top of this file structure."""
+    status = cell.get("status", "")
+    if status == "ran" or status.startswith("ran("):
+        n = cell.get("count") or 0
+        noun = "finding" if n == 1 else "findings"
+        return f"{status} - {n} {noun}"
+    return status
+
+
+def _coverage_cell_style(status):
+    if status == "ran" or status.startswith("ran("):
+        return PALETTE[1]  # the "clear"/low green, not a warning colour
+    if status.startswith("error"):
+        return PALETTE[3]  # high-ink amber/red - something did not complete
+    return NEUTRAL  # skipped-missing / skipped-active
+
+
+def _coverage_table_html(run_manifest, e):
+    """Rows = targets, columns = tools, cells = status (spec 7). Built as an
+    actual <table> - no flexbox/grid/custom-properties, per the module
+    docstring - and verified in a real rendered PDF, not just this string."""
+    cells = run_manifest.get("cells") or []
+    if not cells:
+        return ""
+    targets = sorted({c["target"] for c in cells})
+    tools = []
+    for c in cells:
+        if c["tool"] not in tools:
+            tools.append(c["tool"])
+    by_pair = {(c["target"], c["tool"]): c for c in cells}
+
+    thead = "<tr><th>Target</th>" + "".join(f"<th>{e(t)}</th>" for t in tools) + "</tr>"
+    body_rows = []
+    for t in targets:
+        row = [f"<td class='cov-target'>{e(t)}</td>"]
+        for tool in tools:
+            c = by_pair.get((t, tool))
+            if c is None:
+                row.append("<td class='cov-na'>n/a</td>")
+                continue
+            pal = _coverage_cell_style(c.get("status", ""))
+            text = e(_coverage_cell_text(c))
+            row.append(f"<td style='background:{pal['bg']};color:{pal['ink']}'>{text}</td>")
+        body_rows.append("<tr>" + "".join(row) + "</tr>")
+    return (f"<div class='section'><h2>Coverage</h2>"
+            f"<p class='lead'>Every target/tool cell. A <code>ran</code> cell states its "
+            f"finding count, including zero - that is not the same as "
+            f"<code>skipped-missing</code>, <code>skipped-active</code> or an "
+            f"<code>error</code> cell, each of which means no result was produced "
+            f"at all.</p>"
+            f"<table class='coverage'>{thead}{''.join(body_rows)}</table></div>")
+
+
+def _authorized_html(run_manifest, e):
+    ab = run_manifest.get("authorized_by") if run_manifest else None
+    if not ab:
+        return ""
+    return f"<p class='lead'><b>Authorized by:</b> {e(ab)}</p>"
+
+
+def _grouped_sections_html(groups, sev_name, e):
+    """One <div class='section'> per target, one <h3> subsection per category
+    (spec 7/12.3: deps and iac each render once even though two tools feed
+    them). Reuses `_card` - same finding presentation as the flat path, so a
+    grouped report's cards look identical to a single-scanner one, plus the
+    tool badge `_card` already adds when a finding carries `tool`/`tools`.
+
+    groups - [(target_name, [(category_label, all_findings, shown_findings), ...]), ...]
+    """
+    blocks = []
+    for target, cats in groups:
+        cat_blocks = []
+        for label, all_f, shown in cats:
+            if not all_f:
+                continue
+            if shown:
+                cards = "".join(_card(f, sev_name, e, n) for n, f in enumerate(shown, 1))
+                cat_blocks.append(f"<div class='subsection'><h3>{e(label)} "
+                                  f"<span class='count'>({len(all_f)})</span></h3>{cards}</div>")
+            else:
+                cat_blocks.append(f"<div class='subsection'><h3>{e(label)} "
+                                  f"<span class='count'>({len(all_f)})</span></h3>"
+                                  f"<p class='clear'>Nothing itemised at this threshold.</p></div>")
+        blocks.append(f"<div class='section'><h2>{e(target)}</h2>{''.join(cat_blocks)}</div>")
+    return "".join(blocks)
+
+
+def render_report(uniq, summary, min_sev, title, sev_name, order, findings=None,
+                  run_manifest=None, groups=None):
     """Build the full HTML document.
 
-    uniq     - deduped findings, pre-sorted by (-severity, name)
-    summary  - {"hosts": int, "total_instances": int, "by_severity": {name: n}}
-    min_sev  - integer severity floor already chosen by the caller
-    sev_name - {int: "Critical"...} injected so severity naming has one owner
-    order    - severity ints, highest first
-    findings - raw (undeduped) findings, used for scan date and host list
+    uniq         - deduped findings, pre-sorted by (-severity, name)
+    summary      - {"hosts": int, "total_instances": int, "by_severity": {name: n}}
+    min_sev      - integer severity floor already chosen by the caller
+    sev_name     - {int: "Critical"...} injected so severity naming has one owner
+    order        - severity ints, highest first
+    findings     - raw (undeduped) findings, used for scan date and host list
+    run_manifest - optional dict with "authorized_by" and a "cells" list
+                   (target/tool/status/mode/duration_s/count) from a `routine`
+                   run; renders the coverage table when given. None (the
+                   default, and always the case for plain Nuclei input) skips
+                   it entirely, so single-scanner reports are unaffected.
+    groups       - optional [(target, [(category_label, all, shown), ...]), ...]
+                   from a `routine` combined run; replaces the flat "Findings
+                   requiring action" section with one section per target,
+                   grouped by category rather than by tool. None (always the
+                   case for plain Nuclei input) keeps the original flat body.
     """
     e = html.escape
     findings = findings if findings is not None else uniq
@@ -331,29 +465,37 @@ def render_report(uniq, summary, min_sev, title, sev_name, order, findings=None)
     scan_date = _scan_date(findings)
 
     floor_name = e(sev_name.get(floor, "Medium"))
-    if shown:
+    if groups:
+        heading = _grouped_sections_html(groups, sev_name, e)
+        appendix_source = [f for _, cats in groups for _, _, sh in cats for f in sh]
+    elif shown:
         body = "".join(_card(f, sev_name, e, n)
                        for n, f in enumerate(shown, 1))
         heading = (f"<div class='section'><h2>Findings requiring action "
                    f"<span class='count'>({len(shown)})</span></h2>"
                    f"<p class='lead'>Ordered by severity. Each entry is one check, "
                    f"with every location it matched.</p>{body}</div>")
+        appendix_source = shown
     else:
         heading = (f"<div class='section'><h2>Findings requiring action</h2>"
                    f"<p class='clear'>Nothing at or above {floor_name}. No remediation "
                    f"work follows from this scan.</p>"
                    f"<p class='lead'>That reflects what a signature scanner can match. "
                    f"It is not a statement that no vulnerability exists.</p></div>")
+        appendix_source = shown
 
+    style = CSS + GROUPED_CSS if (run_manifest or groups) else CSS
     parts = [
         f"<!doctype html><html><head><meta charset='utf-8'><title>{e(title)}</title>"
-        f"<style>{CSS}</style></head><body><div class='wrap'>",
+        f"<style>{style}</style></head><body><div class='wrap'>",
         _cover(title, findings, summary, scan_date, e),
+        _authorized_html(run_manifest, e),
         _posture(summary, sev_name, order, e, floor),
         _suppressed_note(summary, sev_name, order, floor, e),
+        _coverage_table_html(run_manifest, e) if run_manifest else "",
         _scope(findings, e),
         heading,
-        _appendix(shown, e),
+        _appendix(appendix_source, e),
         f"<div class='foot'>Generated by gizmoduck from nuclei JSONL output. "
         f"Scan date {e(scan_date)}. Critical, High and Medium findings are itemised; "
         f"lower severities are counted only. Only assets owned or explicitly "

@@ -1,0 +1,96 @@
+<!doctype html><html><head><meta charset='utf-8'><title>Flat Regression Report</title><style>
+@page { size: A4; margin: 16mm 14mm 18mm 14mm; }
+body { font: 11pt/1.5 "Segoe UI", -apple-system, Helvetica, Arial, sans-serif;
+       color: #1b2029; margin: 0; padding: 0; background: #fff; }
+.wrap { max-width: 176mm; margin: 0 auto; }
+h1, h2, h3, h4 { margin: 0; font-weight: 600; }
+p { margin: .45em 0; }
+a { color: #1c4f8b; text-decoration: none; word-break: break-all; }
+
+/* ---- cover ---- */
+.cover { border-bottom: 3px solid #1b2029; padding-bottom: 10pt; margin-bottom: 14pt; }
+.eyebrow { font-size: 8pt; letter-spacing: .18em; text-transform: uppercase;
+           color: #6b7280; margin-bottom: 5pt; }
+.cover h1 { font-size: 21pt; line-height: 1.2; margin-bottom: 8pt; }
+table.meta { border-collapse: collapse; width: 100%; font-size: 9.5pt; }
+table.meta td { padding: 2.5pt 0; vertical-align: top; border: 0; }
+table.meta td.k { color: #6b7280; width: 34mm; white-space: nowrap; }
+table.meta td.v { color: #1b2029; font-weight: 600; }
+
+/* ---- posture badges (table, NOT flex - see module docstring) ---- */
+table.badges { border-collapse: separate; border-spacing: 4pt 0;
+               width: 100%; table-layout: fixed; margin: 4pt 0 10pt -4pt; }
+table.badges td { text-align: center; padding: 7pt 2pt; border-radius: 4px;
+                  border: 1px solid #dfe3e8; background: #fafbfc; }
+.badges .n { display: block; font-size: 17pt; font-weight: 700; line-height: 1.1; }
+.badges .l { display: block; font-size: 7.5pt; letter-spacing: .09em;
+             text-transform: uppercase; color: #6b7280; margin-top: 2pt; }
+.verdict { border-left: 3px solid #1b2029; background: #f7f8fa;
+           padding: 7pt 10pt; font-size: 10pt; margin: 0 0 4pt 0; }
+
+/* ---- sections ---- */
+.section { margin-top: 16pt; }
+.section > h2 { font-size: 13pt; padding-bottom: 4pt; border-bottom: 1.5px solid #d5dae1;
+                margin-bottom: 9pt; }
+.count { color: #6b7280; font-weight: 400; font-size: 10pt; }
+.lead { color: #4a5568; font-size: 9.5pt; margin: -4pt 0 9pt 0; }
+
+/* ---- finding card ---- */
+.card { border: 1px solid #dfe3e8; border-left-width: 4px; border-radius: 3px;
+        padding: 9pt 11pt; margin-bottom: 10pt; page-break-inside: avoid; }
+.card h3 { font-size: 12pt; margin-bottom: 6pt; }
+.pill { display: inline-block; font-size: 7.5pt; font-weight: 700;
+        letter-spacing: .09em; text-transform: uppercase; padding: 1.5pt 6pt;
+        border-radius: 2px; margin-right: 7pt; vertical-align: 2pt; }
+table.kv { border-collapse: collapse; width: 100%; font-size: 9pt; margin: 5pt 0 7pt 0; }
+table.kv th { text-align: left; font-weight: 400; color: #6b7280; width: 26mm;
+              padding: 2pt 8pt 2pt 0; vertical-align: top; border: 0; }
+table.kv td { padding: 2pt 0; vertical-align: top; border: 0;
+              font-family: Consolas, "Courier New", monospace; font-size: 8.5pt; }
+.blk { margin-top: 7pt; }
+.blk h4 { font-size: 8pt; letter-spacing: .1em; text-transform: uppercase;
+          color: #6b7280; margin-bottom: 3pt; }
+.blk p { margin: 0; font-size: 9.5pt; }
+ul.hosts { margin: 0; padding-left: 15pt; font-size: 8.5pt;
+           font-family: Consolas, "Courier New", monospace; }
+ul.hosts li { margin: 1pt 0; word-break: break-all; }
+.more { color: #6b7280; font-style: italic; font-family: inherit; font-size: 8.5pt; }
+.fix { background: #f2f7f2; border: 1px solid #cfe3cf; border-radius: 3px;
+       padding: 6pt 9pt; margin-top: 7pt; }
+.fix h4 { color: #2f6b2f; }
+.refs { margin-top: 6pt; font-size: 8.5pt; }
+.refs a { display: block; margin: 1pt 0; }
+
+/* ---- severities counted but not itemised ---- */
+.badges .co { display: block; font-size: 6.5pt; letter-spacing: .06em;
+              text-transform: uppercase; color: #98a1ad; margin-top: 2pt; }
+.suppressed { border: 1px solid #dfe3e8; border-left: 3px solid #c2cad6;
+              background: #fafbfc; border-radius: 3px; padding: 7pt 10pt;
+              margin: 0 0 4pt 0; font-size: 9.5pt; color: #4a5568; }
+.clear { border-left: 3px solid #2f6b2f; background: #f2f7f2;
+         border: 1px solid #cfe3cf; border-radius: 3px; padding: 8pt 11pt;
+         margin: 0 0 7pt 0; font-size: 10.5pt; font-weight: 600;
+         font-family: "Segoe UI", -apple-system, Helvetica, Arial, sans-serif; }
+
+/* ---- finding rank and name ---- */
+.rank { display: inline-block; min-width: 15pt; font-size: 9pt; font-weight: 700;
+        color: #8a919c; font-variant-numeric: tabular-nums; }
+.cname { font-weight: 600; }
+
+/* ---- appendix ---- */
+.appendix { page-break-before: always; }
+.appendix h2 { font-size: 13pt; }
+.apx-group { margin-bottom: 11pt; page-break-inside: avoid; }
+.apx-group h3 { font-size: 9.5pt; font-family: Consolas, "Courier New", monospace; }
+
+.foot { margin-top: 18pt; padding-top: 7pt; border-top: 1px solid #dfe3e8;
+        font-size: 8pt; color: #8a919c; }
+</style></head><body><div class='wrap'>
+<div class='cover'><div class='eyebrow'>Security scan report</div><h1>Flat Regression Report</h1><table class='meta'><tr><td class='k'>Scan date</td><td class='v'>10 September 2026</td></tr><tr><td class='k'>Hosts scanned</td><td class='v'>1</td></tr><tr><td class='k'>Findings</td><td class='v'>3 instances across 3 unique checks</td></tr><tr><td class='k'>Method</td><td class='v'>Unauthenticated external scan, signature-based (nuclei)</td></tr></table></div>
+<table class='badges'><tr><td style='background:#fbeaea;border-color:#d98c8c'><span class='n' style='color:#7a1616'>1</span><span class='l'>Critical</span></td><td style='background:#fafbfc;border-color:#e6e9ed'><span class='n' style='color:#b6bcc6'>0</span><span class='l'>High</span></td><td style='background:#fdf8e3;border-color:#d8c86a'><span class='n' style='color:#8a7400'>1</span><span class='l'>Medium</span></td><td style='background:#fafbfc;border-color:#e6e9ed'><span class='n' style='color:#b6bcc6'>0</span><span class='l'>Low</span><span class='co'>count only</span></td><td style='background:#fafbfc;border-color:#e6e9ed'><span class='n' style='color:#4a5568'>1</span><span class='l'>Info</span><span class='co'>count only</span></td></tr></table><p class='verdict'>Critical exposure present. 1 critical and 0 high-risk finding(s) require immediate remediation.</p>
+<p class='suppressed'><b>1 finding below Medium</b> were recorded and are not itemised here. They are inventory - version banners, DNS records, the presence of a form - rather than remediation work, and listing them buries what is meant to be acted on. The full detail remains in the JSONL.</p>
+<div class='section'><h2>Scope and limitations</h2><div class='blk'><h4>Targets assessed</h4><ul class='hosts'><li>https://example.com</li></ul></div><div class='blk'><h4>Limitations</h4><p>Signature-based detection only: findings are limited to checks a template exists for. Business logic, authorisation and authenticated-session flaws are out of scope and require separate testing. Content behind authentication or a WAF challenge was not assessed. Absence of a finding is not evidence of absence of a vulnerability.</p></div></div>
+<div class='section'><h2>Findings requiring action <span class='count'>(2)</span></h2><p class='lead'>Ordered by severity. Each entry is one check, with every location it matched.</p><div class='card' style='border-left-color:#7a1616'><h3><span class='rank'>1</span><span class='pill' style='background:#fbeaea;color:#7a1616'>Critical</span><span class='cname'>Example CMS - Remote Code Execution</span></h3><table class='kv'><tr><th>Template</th><td>CVE-2023-12345</td></tr><tr><th>Type</th><td>http</td></tr><tr><th>CVSS</th><td>9.8</td></tr><tr><th>CVE</th><td>CVE-2023-12345</td></tr><tr><th>Detections</th><td>1</td></tr></table><div class='blk'><h4>Detail</h4><p>Example CMS versions before 4.2.1 allow unauthenticated remote code execution via crafted upload.</p></div><div class='blk'><h4>Affected</h4><ul class='hosts'><li>https://example.com/upload.php</li></ul></div><div class='fix'><h4>Remediation</h4><p>Upgrade to Example CMS 4.2.1 or later.</p></div><div class='refs'><a href='https://nvd.nist.gov/vuln/detail/CVE-2023-12345'>https://nvd.nist.gov/vuln/detail/CVE-2023-12345</a></div></div><div class='card' style='border-left-color:#8a7400'><h3><span class='rank'>2</span><span class='pill' style='background:#fdf8e3;color:#8a7400'>Medium</span><span class='cname'>Generic Login Panel Detection</span></h3><table class='kv'><tr><th>Template</th><td>exposed-panel-generic</td></tr><tr><th>Type</th><td>http</td></tr><tr><th>CVSS</th><td>n/a</td></tr><tr><th>CVE</th><td>-</td></tr><tr><th>Detections</th><td>1</td></tr></table><div class='blk'><h4>Detail</h4><p>A generic login panel was detected on the host.</p></div><div class='blk'><h4>Affected</h4><ul class='hosts'><li>https://example.com/admin/login</li></ul></div></div></div>
+<div class='section appendix'><h2>Appendix A - full affected inventory</h2><p class='lead'>Every matched location, by check. This is the complete evidence list the summary sections abbreviate.</p><div class='apx-group'><h3>CVE-2023-12345 <span class='count'>(1)</span></h3><ul class='hosts'><li>https://example.com/upload.php</li></ul></div><div class='apx-group'><h3>exposed-panel-generic <span class='count'>(1)</span></h3><ul class='hosts'><li>https://example.com/admin/login</li></ul></div></div>
+<div class='foot'>Generated by gizmoduck from nuclei JSONL output. Scan date 10 September 2026. Critical, High and Medium findings are itemised; lower severities are counted only. Only assets owned or explicitly authorised for testing were assessed.</div>
+</div></body></html>

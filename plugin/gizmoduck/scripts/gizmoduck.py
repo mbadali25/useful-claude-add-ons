@@ -49,6 +49,38 @@ ORDER = [4, 3, 2, 1, 0]
 # counts rather than pages of noise.
 REPORT_DETAIL_FLOOR = 2  # Medium
 
+# Combined-report grouping (Task 16 / spec 7, 12.3): findings are grouped by
+# target then by category, not by tool - so `deps` (trivy + depcheck) and
+# `iac` (checkov + trivy) each render as one section per target even though
+# two tools feed them. A finding carries `tool` and `target` but not the
+# target's own `kind`, so category is derived from the reporting tool here.
+# trivy is the one adapter that serves two categories from one binary
+# (scanners/trivy.py); it is disambiguated by the `type` field its own
+# adapter already sets ("vulnerability" -> deps, "misconfiguration" -> iac)
+# rather than by a second lookup, since that field is the one piece of
+# category-bearing data trivy's finding shape already carries.
+#
+# nuclei/nmap/testssl also run against `host`-kind targets (KIND_DEFAULTS'
+# `host` list is a strict subset of `web`'s), but nothing in the finding shape
+# distinguishes a host-kind run from a web-kind one at report time, so those
+# land under `web` here. Widening this precisely would mean normalize.py
+# growing a `kind`/`category` field on every finding - out of scope for this
+# task and not this file's to add.
+_TOOL_CATEGORY = {
+    "nuclei": "web", "zap": "web", "nikto": "web", "nmap": "web", "testssl": "web",
+    "depcheck": "deps",
+    "checkov": "iac",
+}
+CATEGORY_ORDER = ["web", "deps", "iac"]
+CATEGORY_LABEL = {"web": "Web", "deps": "Dependencies", "iac": "Infrastructure as Code"}
+
+
+def category_of(f):
+    tool = f.get("tool")
+    if tool == "trivy":
+        return "iac" if f.get("type") == "misconfiguration" else "deps"
+    return _TOOL_CATEGORY.get(tool, "other")
+
 
 def find_nuclei():
     for name in ("nuclei", "nuclei.exe"):
@@ -217,7 +249,20 @@ def detail_floor(min_sev):
     return max(min_sev, REPORT_DETAIL_FLOOR)
 
 
-def cmd_report(findings, min_sev, title):
+def _is_combined(findings):
+    """True when the input is a `routine` combined run rather than plain
+    Nuclei output - decided by the presence of a `target` field, never by
+    whether a run_manifest was supplied (Task 16 step 3: "keyed on the
+    presence of target/tool fields"). Plain Nuclei JSONL carries neither, so
+    this stays False and cmd_report falls through to the untouched flat path -
+    the acceptance bar for every change in this region (Global Constraints,
+    "Additive only")."""
+    return any(f.get("target") for f in findings)
+
+
+def cmd_report(findings, min_sev, title, run_manifest=None):
+    if _is_combined(findings):
+        return _cmd_report_combined(findings, min_sev, title, run_manifest)
     floor = detail_floor(min_sev)
     uniq = sorted(dedupe(findings), key=lambda f: (-f["severity"], f["name"]))
     s = cmd_summary(findings)
@@ -278,6 +323,147 @@ def cmd_report(findings, min_sev, title):
     return "\n".join(out)
 
 
+def _cell_text(cell):
+    """Render one coverage-table cell. `ran`/`ran(mode)` always carries its
+    finding count, so `ran` with zero findings reads as "ran - 0 findings" and
+    not merely "ran" - indistinguishable-from-clean is the exact failure this
+    table exists to prevent (a WAF blocked a real scan and it read as 0
+    findings = clean). `skipped-missing`, `skipped-active` and `error:*`
+    render as their bare status, which is already visually distinct from any
+    `ran` variant."""
+    status = cell.get("status", "")
+    if status == "ran" or status.startswith("ran("):
+        n = cell.get("count") or 0
+        noun = "finding" if n == 1 else "findings"
+        return f"{status} - {n} {noun}"
+    return status
+
+
+def _coverage_table_md(run_manifest):
+    """Rows = targets, columns = tools, cells = status (spec 7). Column order
+    follows first appearance in `cells` rather than an alphabetical or fixed
+    list, so a manifest naming only the tools it actually used doesn't grow
+    columns for tools no target in this run ever touched."""
+    cells = run_manifest.get("cells") or []
+    if not cells:
+        return []
+    targets = sorted({c["target"] for c in cells})
+    tools = []
+    for c in cells:
+        if c["tool"] not in tools:
+            tools.append(c["tool"])
+    by_pair = {(c["target"], c["tool"]): c for c in cells}
+
+    header = "| Target | " + " | ".join(tools) + " |"
+    sep = "|---" * (len(tools) + 1) + "|"
+    rows = [header, sep]
+    for t in targets:
+        row = [t]
+        for tool in tools:
+            c = by_pair.get((t, tool))
+            row.append(_cell_text(c) if c is not None else "n/a")
+        rows.append("| " + " | ".join(row) + " |")
+    return rows
+
+
+def _render_finding_block_md(f, n):
+    """One itemised finding, grouped-report style. Deliberately not shared
+    with the flat path's identical-looking loop in cmd_report above: the flat
+    path's output is pinned byte-for-byte (Global Constraints, "Additive
+    only") and factoring it out risks a subtle diff neither test would catch
+    reliably. The one addition here is the reporting-tool label, since a
+    grouped report can show findings from several tools in one category."""
+    cvss = f["cvss"] or "n/a"
+    cves = ", ".join(f["cve"]) if f["cve"] else "-"
+    locations = f.get("instances", len(f.get("affected") or []))
+    raw = f.get("raw_count", locations)
+    hits = (f"{raw}" if raw == locations
+            else f"{raw} detections across {locations} location(s)")
+    tools_list = f.get("tools") or ([f["tool"]] if f.get("tool") else [])
+    tool_label = "+".join(t for t in tools_list if t) or "-"
+
+    out = [f"#### {n}. {f['name']} - {SEV_NAME[f['severity']]} ({tool_label})", ""]
+    out += ["| | |", "|---|---|",
+            f"| Template | `{f['template_id']}` |",
+            f"| Type | {f['type'] or '-'} |",
+            f"| CVSS | {cvss} |",
+            f"| CVE | {cves} |",
+            f"| Detections | {hits} |", ""]
+    if f["description"]:
+        out += ["**Detail**", "", f["description"].strip(), ""]
+    if f.get("affected"):
+        out += ["**Affected**", ""]
+        out += [f"- `{a}`" for a in f["affected"]]
+        out.append("")
+    if f["remediation"]:
+        out += ["**Remediation**", "", f["remediation"].strip(), ""]
+    refs = [r for r in (f.get("reference") or []) if r][:4]
+    if refs:
+        out += ["**References**", ""] + [f"- {r}" for r in refs] + [""]
+    return out
+
+
+def _cmd_report_combined(findings, min_sev, title, run_manifest):
+    """The `routine` combined-report path: one section per target, findings
+    within a target grouped by category (not by tool - spec 7/12.3), and a
+    coverage table up top so a `skipped`/`error` cell is never mistaken for a
+    clean result. Kept entirely separate from the flat path in cmd_report
+    above rather than branching partway through it, so the flat path's
+    byte-for-byte output guarantee has nothing new to break it."""
+    floor = detail_floor(min_sev)
+    s = cmd_summary(findings)
+    counts = s["by_severity"]
+    suppressed = sum(counts[SEV_NAME[x]] for x in ORDER if x < floor)
+
+    out = [f"# {title}", ""]
+    if run_manifest and run_manifest.get("authorized_by"):
+        out += [f"**Authorized by:** {run_manifest['authorized_by']}  "]
+    out += [f"**Hosts with findings:** {s['hosts']}  ",
+            f"**Total finding instances:** {s['total_instances']}", ""]
+
+    if run_manifest:
+        out += ["## Coverage", ""]
+        out += _coverage_table_md(run_manifest)
+        out += ["", "_A `ran` cell states its finding count, including zero. "
+                "That is not the same as `skipped-missing` (the tool was not "
+                "installed), `skipped-active` (an active-mode tool was not "
+                "opted in) or an `error` cell (the tool started and did not "
+                "finish) - each of those means no result was produced at all, "
+                "which a bare absence of findings must never be confused "
+                "with._", ""]
+
+    out += ["| Severity | Count | In this report |", "|---|---:|---|"]
+    for x in ORDER:
+        state = "itemised" if x >= floor else "count only"
+        out.append(f"| {SEV_NAME[x]} | {counts[SEV_NAME[x]]} | {state} |")
+    out.append("")
+
+    if suppressed:
+        noun = "finding" if suppressed == 1 else "findings"
+        out += [f"_{suppressed} {noun} below {SEV_NAME[floor]} were recorded and are "
+                f"not itemised. They are inventory - version banners, DNS records, the "
+                f"presence of a form - rather than remediation work. The full detail "
+                f"remains in the JSONL._", ""]
+
+    targets = sorted({f["target"] for f in findings if f.get("target")})
+    for t in targets:
+        t_findings = [f for f in findings if f.get("target") == t]
+        t_uniq = sorted(dedupe(t_findings), key=lambda f: (-f["severity"], f["name"]))
+        out += [f"## {t}", ""]
+        for cat in CATEGORY_ORDER:
+            cat_findings = [f for f in t_uniq if category_of(f) == cat]
+            if not cat_findings:
+                continue
+            shown = [f for f in cat_findings if f["severity"] >= floor]
+            out += [f"### {CATEGORY_LABEL.get(cat, cat)} ({len(cat_findings)})", ""]
+            if not shown:
+                out += [f"Nothing at or above {SEV_NAME[floor]}.", ""]
+                continue
+            for n, f in enumerate(shown, 1):
+                out += _render_finding_block_md(f, n)
+    return "\n".join(out)
+
+
 def _template_module():
     """Load report_template.py, which sits beside this script.
 
@@ -298,14 +484,42 @@ def _template_module():
         return mod
 
 
-def render_html(findings, min_sev, title):
+def _grouped_sections(findings, floor):
+    """Same grouping _cmd_report_combined uses for Markdown (Task 16), built
+    once here so the HTML path (Task 17) gets identical target/category
+    grouping instead of re-deriving it - report_template.py stays presentation
+    -only and never learns what a "category" is.
+
+    Returns [(target, [(category_label, all_findings, shown_findings), ...]), ...]
+    """
+    groups = []
+    targets = sorted({f["target"] for f in findings if f.get("target")})
+    for t in targets:
+        t_findings = [f for f in findings if f.get("target") == t]
+        t_uniq = sorted(dedupe(t_findings), key=lambda f: (-f["severity"], f["name"]))
+        cats = []
+        for cat in CATEGORY_ORDER:
+            cat_findings = [f for f in t_uniq if category_of(f) == cat]
+            if not cat_findings:
+                continue
+            shown = [f for f in cat_findings if f["severity"] >= floor]
+            cats.append((CATEGORY_LABEL.get(cat, cat), cat_findings, shown))
+        groups.append((t, cats))
+    return groups
+
+
+def render_html(findings, min_sev, title, run_manifest=None):
     """Presentation lives in report_template.py; this stays the data prep.
 
     dedupe() and cmd_summary() own what a finding *is*; the template module owns
     only how it looks, and is handed the severity vocabulary rather than
-    redefining it.
+    redefining it. Combined-run grouping (Task 17) follows the same rule:
+    report_template.py is handed already-grouped data, not the tool/category
+    mapping that produced it.
     """
     uniq = sorted(dedupe(findings), key=lambda f: (-f["severity"], f["name"]))
+    combined = _is_combined(findings)
+    groups = _grouped_sections(findings, detail_floor(min_sev)) if combined else None
     return _template_module().render_report(
         uniq=uniq,
         summary=cmd_summary(findings),
@@ -314,6 +528,8 @@ def render_html(findings, min_sev, title):
         sev_name=SEV_NAME,
         order=ORDER,
         findings=findings,
+        run_manifest=run_manifest if combined else None,
+        groups=groups,
     )
 
 
