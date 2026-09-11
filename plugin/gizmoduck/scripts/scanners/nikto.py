@@ -14,6 +14,22 @@ never mistake this heuristic for a real assessment.
 Nikto exits non-zero regardless of outcome (issue #837). This adapter never
 reads that exit code: run() ignores ToolResult.returncode, and success is
 decided by the caller from whether parse() finds any rows in the output file.
+
+CRITICAL defect fix: run() previously left a pre-existing CSV at raw_path
+untouched and always returned that path regardless of whether THIS
+invocation actually produced anything. A failed invocation (binary crash,
+target unreachable, whatever) that wrote no fresh CSV would then have its
+`run()` call reuse an earlier CSV sitting in the same outdir - a failed scan
+inheriting a previous run's clean bill of health, or worse, its findings.
+Fixed the same way trivy.py/testssl.py/zap.py/depcheck.py already do:
+establish freshness by deleting any pre-existing output BEFORE invoking
+nikto, and return `(None, result)` - the standard cross-adapter contract -
+whenever no fresh CSV lands afterward. parse() is symmetric with this: a
+missing file at parse time is no longer treated as "zero findings" (that
+claim belongs only to a real, empty-of-rows CSV); it raises base.ParseError,
+since routine only ever calls parse() with the path run() just returned, and
+a file missing at that point means something is wrong that a silent []
+would let nobody notice (base.ParseError's own docstring).
 """
 import csv
 import os
@@ -51,11 +67,28 @@ def is_available():
 
 
 def run(target, outdir, opts=None):
+    """Returns (raw_path | None, base.ToolResult) per the cross-adapter
+    contract: raw_path is None whenever this invocation did not itself
+    produce a fresh CSV, so a failed run can never be handed back as if it
+    were evidence.
+    """
     os.makedirs(outdir, exist_ok=True)
     raw_path = os.path.join(outdir, "nikto.csv")
+
+    # DEFECT 1 (critical): establish freshness BEFORE invoking nikto, same
+    # pattern as trivy.py/testssl.py/zap.py/depcheck.py. Without this, a
+    # stale CSV left over from a previous run in the same outdir would still
+    # be sitting at raw_path after a failed invocation that wrote nothing
+    # new, and the existence check below would hand it back as if it were
+    # this run's evidence.
+    if os.path.isfile(raw_path):
+        os.remove(raw_path)
+
     argv = ["nikto", "-h", target, "-Format", "csv", "-output", raw_path]
     timeout = (opts or {}).get("timeout", DEFAULT_TIMEOUT)
     result = base.run_tool(argv, timeout=timeout)
+    if result.timed_out or not os.path.isfile(raw_path):
+        return None, result
     return raw_path, result
 
 
@@ -66,9 +99,13 @@ def _is_banner(message):
 def parse(raw_path, target):
     """Read Nikto's CSV output. Pure - no subprocess, no network.
 
-    Missing output is treated as zero findings rather than an error here;
-    run()'s caller is responsible for distinguishing "no findings" from
-    "scan never produced a file" using the manifest, not this function.
+    A missing file raises `base.ParseError` rather than returning zero
+    findings (CRITICAL defect fix): routine only ever calls parse() with the
+    path run() just returned as a fresh output, so a file missing at that
+    point means the scan never actually produced evidence - not "nikto ran
+    and found nothing". Conflating the two is exactly the false-clean
+    outcome base.ParseError exists to prevent (its own docstring). A real,
+    present-but-empty CSV (zero rows) still yields `[]`, same as always.
 
     A row that IS present but does not carry every required column raises
     `base.ParseError` instead. Rows here used to be padded out to the full
@@ -81,7 +118,7 @@ def parse(raw_path, target):
     unvalidatable input").
     """
     if not os.path.isfile(raw_path):
-        return []
+        raise base.ParseError("nikto output file not found: %s" % raw_path)
 
     findings = []
     with open(raw_path, newline="", encoding="utf-8", errors="replace") as fh:
