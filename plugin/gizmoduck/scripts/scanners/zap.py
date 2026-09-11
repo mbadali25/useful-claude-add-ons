@@ -110,6 +110,16 @@ def run(target, outdir, opts):
     url = getattr(target, "url", None) or str(target)
     context_name = _context_name(target)
     report_path = outdir / ("%s.json" % NAME)
+
+    # DEFECT 1 (critical): establish freshness BEFORE invoking ZAP. A stale
+    # report left in outdir from a previous run would otherwise still be
+    # sitting at report_path after a failed invocation that wrote nothing
+    # new, and `report_path.is_file()` below would hand it back as if it
+    # were this run's evidence - a failed scan inheriting the previous run's
+    # clean bill of health.
+    if report_path.exists():
+        report_path.unlink()
+
     plan = _build_plan(url, context_name, active, outdir, NAME)
 
     plan_path = outdir / "zap-plan.yaml"
@@ -126,8 +136,23 @@ def run(target, outdir, opts):
     return raw_path, result
 
 
+def _as_list(value, label):
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise base.ParseError("zap: %r must be a list, got %r" % (label, type(value).__name__))
+    return value
+
+
+def _as_obj(value, label):
+    if not isinstance(value, dict):
+        raise base.ParseError("zap: %r entry is not an object: %r" % (label, value))
+    return value
+
+
 def parse(raw_path, target):
-    """Parse the AF `report` job's traditional-json output.
+    """Parse the AF `report` job's traditional-json output, or raise
+    base.ParseError.
 
     Schema: site[] -> alerts[] -> instances[]. One alert with N instances
     yields N findings sharing a template_id, so gizmoduck.dedupe()'s
@@ -135,20 +160,29 @@ def parse(raw_path, target):
     `instances == N` - the fan-out happens here, the aggregation happens
     there, matching how a multi-match Nuclei template already works.
 
-    Pure: no subprocess, no network. Missing/unreadable/malformed input
-    yields an empty list rather than raising - a broken report should show up
-    as a run-manifest error from the caller, not as this function crashing.
+    DEFECT 2: a missing, empty, truncated or malformed report - and a
+    well-formed-but-wrongly-shaped one, such as `{"site": [null]}` - must
+    never come back as `[]` (indistinguishable from "ZAP ran and found
+    nothing") and must never let AttributeError escape from a `None` where a
+    site/alert/instance object was expected. Pure otherwise: no subprocess,
+    no network.
     """
-    findings = []
     try:
         with open(raw_path, "r", encoding="utf-8") as fh:
             data = json.load(fh)
-    except (OSError, ValueError):
-        return findings
+    except (OSError, ValueError) as e:
+        raise base.ParseError("zap: could not read %s: %s" % (raw_path, e)) from e
 
-    for site in data.get("site") or []:
+    if not isinstance(data, dict):
+        raise base.ParseError(
+            "zap: expected a JSON object at the top level, got %r" % type(data).__name__)
+
+    findings = []
+    for site in _as_list(data.get("site"), "site"):
+        site = _as_obj(site, "site")
         host = site.get("@name") or site.get("@host") or ""
-        for alert in site.get("alerts") or []:
+        for alert in _as_list(site.get("alerts"), "alerts"):
+            alert = _as_obj(alert, "alerts")
             rule_id = alert.get("pluginid") or alert.get("alertRef") or "unknown"
             name = alert.get("alert") or alert.get("name") or rule_id
             severity, known = n.sev_from_riskcode(alert.get("riskcode"))
@@ -160,8 +194,9 @@ def parse(raw_path, target):
             if cweid not in (None, "", "-1"):
                 tags.append("cwe:%s" % cweid)
 
-            instances = alert.get("instances") or [{}]
+            instances = _as_list(alert.get("instances"), "instances") or [{}]
             for inst in instances:
+                inst = _as_obj(inst, "instances")
                 findings.append(n.make_finding(
                     tool=NAME,
                     target=target,

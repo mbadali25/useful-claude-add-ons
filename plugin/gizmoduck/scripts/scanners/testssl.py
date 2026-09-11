@@ -77,6 +77,16 @@ def run(target, outdir, opts):
         return None, base.ToolResult(-1, "", "testssl.sh not found on PATH", False)
 
     out_path = Path(outdir) / "testssl.json"
+
+    # DEFECT 1 (critical): establish freshness BEFORE invoking the tool. A
+    # stale jsonfile left in outdir from a previous run would otherwise still
+    # be sitting at out_path after a failed invocation that wrote nothing new,
+    # and `out_path.exists()` below would hand it back as if it were this
+    # run's evidence - a failed scan inheriting the previous run's clean
+    # bill of health.
+    if out_path.exists():
+        out_path.unlink()
+
     argv = [binary, "--jsonfile", str(out_path)]
     if opts.get("connect_timeout"):
         argv += ["--connect-timeout", str(opts["connect_timeout"])]
@@ -92,8 +102,28 @@ def run(target, outdir, opts):
 
 
 def _load(raw_path):
-    with open(raw_path, encoding="utf-8") as fh:
-        return json.load(fh)
+    """Read and validate the jsonfile shape, or raise base.ParseError.
+
+    DEFECT 2: an empty, truncated or malformed jsonfile - and a
+    well-formed-but-wrongly-shaped one, such as a top-level object instead of
+    the documented array, or `[null]` - must never come back as `[]`/crash
+    with an uncaught TypeError from `item.get(...)`. Both parse() and
+    parse_errors() read through this one gate so neither can diverge on how
+    a bad file is handled.
+    """
+    try:
+        with open(raw_path, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError) as e:
+        raise base.ParseError("testssl: could not read %s: %s" % (raw_path, e)) from e
+
+    if not isinstance(data, list):
+        raise base.ParseError(
+            "testssl: expected a JSON array at the top level, got %r" % type(data).__name__)
+    for item in data:
+        if not isinstance(item, dict):
+            raise base.ParseError("testssl: entry is not an object: %r" % (item,))
+    return data
 
 
 def _split_cve(value):

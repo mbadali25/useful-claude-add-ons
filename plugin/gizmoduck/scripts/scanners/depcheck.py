@@ -53,12 +53,23 @@ def run(target, outdir, opts):
     """
     os.makedirs(outdir, exist_ok=True)
     opts = opts or {}
+    raw_path = os.path.join(outdir, REPORT_FILENAME)
+
+    # DEFECT 1 (critical): establish freshness BEFORE invoking the tool.
+    # dependency-check always writes REPORT_FILENAME under a fixed name, so a
+    # stale report left in `outdir` from a previous run would still be sitting
+    # there after a failed invocation that wrote nothing new - and the
+    # os.path.isfile check below would hand it back as if it were this run's
+    # evidence. Removing it first means "no fresh artifact" is the only way
+    # isfile() can come back True afterward.
+    if os.path.isfile(raw_path):
+        os.remove(raw_path)
+
     argv = [
         "dependency-check", "--format", "JSON",
         "--out", outdir, "--scan", _scan_path(target),
     ]
     result = base.run_tool(argv, timeout=opts.get("timeout", DEFAULT_TIMEOUT))
-    raw_path = os.path.join(outdir, REPORT_FILENAME)
     if not os.path.isfile(raw_path):
         return None, result
     return raw_path, result
@@ -75,16 +86,30 @@ def _score(vuln, block, field):
 
 
 def _severity(vuln):
-    """(severity_int, was_a_real_assessment) via the documented fallback."""
+    """(severity_int, was_a_real_assessment) via the documented fallback:
+    text `severity` -> `cvssv2.score` -> `cvssv3.baseScore`.
+
+    DEFECT 3: a garbage numeric score (NaN, Infinity, negative, or above the
+    valid CVSS 0.0-10.0 range - e.g. dependency-check emitting "NaN" or -1 as
+    cvssv2.score) must never be accepted as a real assessment, even when it
+    parses as a float. normalize.sev_from_cvss now reports that back as
+    `known=False` instead of silently banding a nonsense score, so this
+    fallback chain must actually respect that and try the next source rather
+    than stopping at the first non-None float it sees.
+    """
     sev, known = normalize.sev_from_text(vuln.get("severity"))
     if known:
         return sev, True
     score2 = _score(vuln, "cvssv2", "score")
     if score2 is not None:
-        return normalize.sev_from_cvss(score2), True
+        sev2, known2 = normalize.sev_from_cvss(score2)
+        if known2:
+            return sev2, True
     score3 = _score(vuln, "cvssv3", "baseScore")
     if score3 is not None:
-        return normalize.sev_from_cvss(score3), True
+        sev3, known3 = normalize.sev_from_cvss(score3)
+        if known3:
+            return sev3, True
     return 0, False
 
 
@@ -92,12 +117,17 @@ def _best_score(vuln):
     """Numeric score for the finding's `cvss` field - CVSSv3 preferred as the
     more current standard, falling back to CVSSv2 - independent of which
     block actually decided the severity band in `_severity` above.
+
+    Only a score normalize.sev_from_cvss recognizes as valid is surfaced here
+    too: a NaN/Infinity/out-of-range value has no business being displayed as
+    if it were a real CVSS score in the report, so an invalid score falls
+    through to the next source exactly like it does in `_severity`.
     """
     score3 = _score(vuln, "cvssv3", "baseScore")
-    if score3 is not None:
+    if score3 is not None and normalize.sev_from_cvss(score3)[1]:
         return score3
     score2 = _score(vuln, "cvssv2", "score")
-    if score2 is not None:
+    if score2 is not None and normalize.sev_from_cvss(score2)[1]:
         return score2
     return ""
 
@@ -148,15 +178,47 @@ def _package_and_version(dep):
     return None, None
 
 
+def _as_list(value, label):
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise base.ParseError("depcheck: %r must be a list, got %r" % (label, type(value).__name__))
+    return value
+
+
+def _as_obj(value, label):
+    if not isinstance(value, dict):
+        raise base.ParseError("depcheck: %r entry is not an object: %r" % (label, value))
+    return value
+
+
 def parse(raw_path, target):
-    with open(raw_path, encoding="utf-8") as fh:
-        data = json.load(fh)
+    """Returns findings, or raises base.ParseError.
+
+    DEFECT 2: an empty, truncated or malformed dependency-check report - and
+    a well-formed-but-wrongly-shaped one, such as `{"dependencies": [null]}`
+    - must never come back as `[]`. That is indistinguishable from "the tool
+    ran and found nothing." JSONDecodeError is caught and re-raised as
+    base.ParseError instead of escaping uncaught, which would fail the whole
+    routine run rather than just this one cell.
+    """
+    try:
+        with open(raw_path, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError) as e:
+        raise base.ParseError("depcheck: could not read %s: %s" % (raw_path, e)) from e
+
+    if not isinstance(data, dict):
+        raise base.ParseError(
+            "depcheck: expected a JSON object at the top level, got %r" % type(data).__name__)
 
     findings = []
-    for dep in data.get("dependencies") or []:
+    for dep in _as_list(data.get("dependencies"), "dependencies"):
+        dep = _as_obj(dep, "dependencies")
         file_name = dep.get("fileName", "")
         package, version = _package_and_version(dep)
-        for vuln in dep.get("vulnerabilities") or []:
+        for vuln in _as_list(dep.get("vulnerabilities"), "vulnerabilities"):
+            vuln = _as_obj(vuln, "vulnerabilities")
             rule_id = vuln.get("name", "")
             sev, known = _severity(vuln)
             refs = [r.get("url") for r in (vuln.get("references") or []) if r.get("url")]

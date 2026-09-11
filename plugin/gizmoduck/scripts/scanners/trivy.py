@@ -112,6 +112,15 @@ def run(target, outdir, opts=None):
     outdir.mkdir(parents=True, exist_ok=True)
     raw_path = outdir / ("trivy-%s.json" % kind)
 
+    # DEFECT 1 (critical): establish freshness BEFORE invoking trivy. Without
+    # this, a stale file left over from a previous run in the same outdir
+    # would still be sitting at raw_path after a failed invocation that wrote
+    # nothing new, and the `raw_path.exists()` check below would return it as
+    # if it were this run's evidence - a failed scan inheriting the previous
+    # run's clean bill of health.
+    if raw_path.exists():
+        raw_path.unlink()
+
     trivy_timeout = opts.get("trivy_timeout", DEFAULT_TRIVY_TIMEOUT)
     argv = ["trivy", "fs", "--format", "json", "--scanners", scanner,
             "--timeout", trivy_timeout, "--output", str(raw_path), str(path)]
@@ -136,11 +145,33 @@ def _first_cvss(cvss_block):
     return ""
 
 
+def _as_list(value, label):
+    """Validate an optional array field: None/absent -> [], present-but-not-a-
+    list -> raise. Shape validation counts as a parse failure just as much as
+    malformed JSON does (plan Global Constraints) - a Results/Vulnerabilities
+    field that isn't the array shape trivy documents must never be silently
+    coerced into an empty list.
+    """
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise base.ParseError("trivy: %r must be a list, got %r" % (label, type(value).__name__))
+    return value
+
+
+def _as_obj(value, label):
+    if not isinstance(value, dict):
+        raise base.ParseError("trivy: %r entry is not an object: %r" % (label, value))
+    return value
+
+
 def _parse_vulnerabilities(results, target_name):
     findings = []
     for result in results:
+        result = _as_obj(result, "Results")
         file_target = result.get("Target", "")
-        for vuln in result.get("Vulnerabilities") or []:
+        for vuln in _as_list(result.get("Vulnerabilities"), "Vulnerabilities"):
+            vuln = _as_obj(vuln, "Vulnerabilities")
             sev, known = normalize.sev_from_text(vuln.get("Severity"))
             pkg = vuln.get("PkgName", "")
             installed = vuln.get("InstalledVersion", "")
@@ -178,8 +209,10 @@ def _parse_vulnerabilities(results, target_name):
 def _parse_misconfigurations(results, target_name):
     findings = []
     for result in results:
+        result = _as_obj(result, "Results")
         file_target = result.get("Target", "")
-        for mis in result.get("Misconfigurations") or []:
+        for mis in _as_list(result.get("Misconfigurations"), "Misconfigurations"):
+            mis = _as_obj(mis, "Misconfigurations")
             sev, known = normalize.sev_from_text(mis.get("Severity"))
             rule_id = mis.get("ID", "")
             cause = mis.get("CauseMetadata") or {}
@@ -215,12 +248,29 @@ def _parse_misconfigurations(results, target_name):
 
 
 def parse(raw_path, target, kind=None):
+    """Returns findings for the requested kind, or raises base.ParseError.
+
+    DEFECT 2: an empty, truncated or malformed trivy report - and a
+    well-formed-but-wrongly-shaped one, such as `{"Results": [null]}` - must
+    never come back as `[]`. That is indistinguishable from "trivy ran and
+    found nothing," which is the exact false-assurance the coverage table
+    exists to prevent. JSONDecodeError is caught and re-raised as
+    base.ParseError rather than allowed to escape uncaught (which would fail
+    the whole routine run instead of just this cell).
+    """
     kind = _resolve_kind(target, kind)
     target_name = _target_name(target)
 
-    with open(raw_path, "r", encoding="utf-8") as fh:
-        data = json.load(fh)
-    results = data.get("Results") or []
+    try:
+        with open(raw_path, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError) as e:
+        raise base.ParseError("trivy: could not read %s: %s" % (raw_path, e)) from e
+
+    if not isinstance(data, dict):
+        raise base.ParseError(
+            "trivy: expected a JSON object at the top level, got %r" % type(data).__name__)
+    results = _as_list(data.get("Results"), "Results")
 
     if kind == "deps":
         return _parse_vulnerabilities(results, target_name)
