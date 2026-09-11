@@ -70,6 +70,34 @@ def _require_authorized_by(authorized_by):
             "(spec section 8)")
 
 
+def _require_unique_target_name(name, seen):
+    """The one rule behind the duplicate-name refusal, shared by
+    load_manifest (parse time) and run_routine (execution time) for the
+    same reason `_require_authorized_by` is shared between them: a
+    `Manifest` can be built directly, bypassing load_manifest's check
+    entirely, and the consequence of a missed duplicate is the same class
+    of failure as a missed authorization check - target names key the run
+    manifest, each finding's own `target` field, and the per-target output
+    directory, so a duplicate silently overwrites a failed cell with a
+    successful one. That is a false-clean, the exact failure this whole
+    feature exists to prevent, so it earns the same two-call-sites
+    treatment as authorization.
+
+    `seen` is the caller's running set of names already accepted in this
+    manifest/run - mutated in place so repeated calls (once per target, in
+    order) accumulate correctly, mirroring how load_manifest's loop always
+    worked before this was factored out.
+    """
+    if name in seen:
+        raise ValueError(
+            "duplicate target name %r; target names must be unique - "
+            "they key the run manifest, each finding's own 'target' "
+            "field, and the per-target output directory, so two targets "
+            "sharing one name silently overwrite each other's coverage "
+            "and collide on disk" % name)
+    seen.add(name)
+
+
 @dataclass
 class Target:
     """One manifest entry. `options` is the per-target toggle dict spec
@@ -140,14 +168,7 @@ def load_manifest(path, registry=None):
     seen_names = set()
     for raw in data.get("targets") or []:
         name = raw.get("name")
-        if name in seen_names:
-            raise ValueError(
-                "duplicate target name %r; target names must be unique - "
-                "they key the run manifest, each finding's own 'target' "
-                "field, and the per-target output directory, so two "
-                "targets sharing one name silently overwrite each other's "
-                "coverage and collide on disk" % name)
-        seen_names.add(name)
+        _require_unique_target_name(name, seen_names)
 
         kind = raw.get("kind")
         if kind not in reg.KIND_DEFAULTS:
@@ -389,8 +410,14 @@ def run_routine(manifest, outdir, registry=None, confirm=None):
     this is the point traffic actually goes out, and a `Manifest` can be
     constructed directly (see `_require_authorized_by`'s docstring), which
     would otherwise slip a blank `authorized_by` straight past every gate.
+    Target-name uniqueness is re-checked here for the identical reason (see
+    `_require_unique_target_name`'s docstring) - both checks run before
+    `outdir` is even created, let alone any adapter touched.
     """
     _require_authorized_by(manifest.authorized_by)
+    seen_names = set()
+    for target in manifest.targets:
+        _require_unique_target_name(target.name, seen_names)
 
     reg = registry if registry is not None else default_registry
     outdir = Path(outdir)

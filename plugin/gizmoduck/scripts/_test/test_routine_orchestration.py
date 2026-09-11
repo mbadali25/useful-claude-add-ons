@@ -308,6 +308,46 @@ def test_run_routine_enforces_authorization_even_for_a_hand_built_manifest(
     assert nuclei.run_calls == []
 
 
+# ---------------------------------------------------------------------------
+# Defect: like blank authorization, duplicate target names were only
+# rejected by load_manifest - a Manifest built directly (again, exactly
+# like every fixture in this file) with two same-named targets reached
+# every adapter anyway, silently overwriting a failed cell with a
+# successful one in the run manifest (a false-clean). Mirrors the
+# authorization test above: same proof, same standard.
+# ---------------------------------------------------------------------------
+
+def test_run_routine_rejects_duplicate_target_names_for_a_hand_built_manifest(
+        fake_registry, tmp_path, monkeypatch):
+    subprocess_calls = []
+    monkeypatch.setattr(
+        base, "run_tool",
+        lambda *a, **k: subprocess_calls.append((a, k)) or base.ToolResult(0, "", "", False))
+
+    nuclei = fake_registry.ADAPTERS["nuclei"]
+
+    def _run(target, outdir, opts):
+        base.run_tool(["nuclei-fake"], timeout=1)
+        return "nuclei-raw", base.ToolResult(0, "", "", False)
+    nuclei._run_fn = _run
+
+    manifest = routine.Manifest(
+        authorized_by="Alice",
+        targets=[
+            routine.Target(name="prod", kind="web",
+                           url="https://prod.example/a?id=1"),
+            routine.Target(name="prod", kind="web",
+                           url="https://prod.example/b?id=1"),
+        ],
+    )
+
+    with pytest.raises(ValueError, match="prod"):
+        routine.run_routine(manifest, tmp_path, registry=fake_registry)
+
+    assert subprocess_calls == []
+    assert nuclei.run_calls == []
+
+
 def test_run_manifest_json_has_the_documented_schema(manifest, fake_registry, tmp_path):
     rm = routine.run_routine(manifest, tmp_path, registry=fake_registry)
     on_disk = json.loads((tmp_path / "run-manifest.json").read_text())
