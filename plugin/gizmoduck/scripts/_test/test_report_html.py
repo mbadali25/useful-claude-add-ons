@@ -96,6 +96,15 @@ def test_action_threshold_still_floors_detail_for_combined_input(gz, combined_fi
     assert "Open port 443/tcp" not in out
 
 
+def test_ran_cell_with_scan_errors_is_flagged_in_html(gz, combined_findings, run_manifest):
+    """Mirrors the Markdown test: site-a/testssl is `ran`, count 0, but
+    carries one FATAL parse_errors() entry - that must render differently
+    from a genuinely clean `ran - 0 findings` cell, or a real per-target
+    failure disappears into "no findings"."""
+    out = gz.render_html(combined_findings, 0, "Combined Report", run_manifest=run_manifest)
+    assert "scan error" in out.lower()
+
+
 def test_authorized_by_is_restated_in_html(gz, combined_findings, run_manifest):
     out = gz.render_html(combined_findings, 0, "Combined Report", run_manifest=run_manifest)
     assert "jane@example.com" in out

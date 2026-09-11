@@ -215,7 +215,25 @@ def dedupe(findings):
         # Nuclei findings carry no `target`, so they key on (None, id) and
         # group exactly as they always have.
         key = (f.get("target"), f["template_id"])
-        g = groups.setdefault(key, {**f, "affected": [], "raw_count": 0})
+        g = groups.get(key)
+        if g is None:
+            groups[key] = g = {**f, "affected": [], "raw_count": 0}
+        else:
+            # A group must reflect the HIGHEST severity any member carries,
+            # and must retain the severity-assigned marker if ANY member
+            # has it. `setdefault()` used to keep only the FIRST record's
+            # severity and tags - later records in the same group
+            # contributed only location/count - so a known-severity finding
+            # merged with a later null-severity one silently lost its
+            # severity-assigned marker, and reversing the arrival order of a
+            # low and a critical record for the same group changed the
+            # reported severity. Order must never matter here.
+            if f["severity"] > g["severity"]:
+                g["severity"] = f["severity"]
+                g["severity_name"] = f["severity_name"]
+            if "severity-assigned" in (f.get("tags") or []):
+                if "severity-assigned" not in (g.get("tags") or []):
+                    g["tags"] = list(g.get("tags") or []) + ["severity-assigned"]
         g["affected"].append(f["matched_at"] or f["host"])
         g["raw_count"] += 1
     for g in groups.values():
@@ -330,12 +348,26 @@ def _cell_text(cell):
     table exists to prevent (a WAF blocked a real scan and it read as 0
     findings = clean). `skipped-missing`, `skipped-active` and `error:*`
     render as their bare status, which is already visually distinct from any
-    `ran` variant."""
+    `ran` variant.
+
+    A `ran` cell can still carry a non-empty `errors` list - an adapter's own
+    parse_errors() output (routine.py; currently only testssl's WARN/FATAL
+    entries), which is not a finding and not a cell-level `error:*` status
+    either, because the tool process itself completed. Left unflagged, a
+    target testssl couldn't fully reach would read as "ran - 0 findings",
+    the exact same text as a target that is genuinely clean - so a non-empty
+    `errors` list always appends a scan-error note, however many findings
+    were also found."""
     status = cell.get("status", "")
     if status == "ran" or status.startswith("ran("):
         n = cell.get("count") or 0
         noun = "finding" if n == 1 else "findings"
-        return f"{status} - {n} {noun}"
+        text = f"{status} - {n} {noun}"
+        errs = cell.get("errors") or []
+        if errs:
+            enoun = "scan error" if len(errs) == 1 else "scan errors"
+            text += f" ({len(errs)} {enoun})"
+        return text
     return status
 
 

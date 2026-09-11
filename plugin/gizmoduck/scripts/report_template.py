@@ -349,12 +349,24 @@ def _coverage_cell_text(cell):
     reads the same as `skipped-missing`/`skipped-active`/`error:*`, each of
     which means no result was produced at all. Not imported from gizmoduck.py:
     this module stays presentation-only and importable on its own, matching
-    normalize.py's stance at the top of this file structure."""
+    normalize.py's stance at the top of this file structure.
+
+    A `ran` cell's `errors` list (an adapter's own parse_errors() output, e.g.
+    testssl's WARN/FATAL - routine.py) is a third way a scan can look clean
+    and not be: the tool process completed, so the status is plain `ran`, but
+    something about the target still went wrong. Left unflagged that reads
+    identically to a genuinely clean target, so a non-empty list always
+    appends a scan-error note."""
     status = cell.get("status", "")
     if status == "ran" or status.startswith("ran("):
         n = cell.get("count") or 0
         noun = "finding" if n == 1 else "findings"
-        return f"{status} - {n} {noun}"
+        text = f"{status} - {n} {noun}"
+        errs = cell.get("errors") or []
+        if errs:
+            enoun = "scan error" if len(errs) == 1 else "scan errors"
+            text += f" ({len(errs)} {enoun})"
+        return text
     return status
 
 

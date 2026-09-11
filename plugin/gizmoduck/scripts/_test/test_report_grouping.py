@@ -119,6 +119,25 @@ def test_authorized_by_is_restated(gz, combined_findings, run_manifest):
     assert "jane@example.com" in out
 
 
+def test_ran_cell_with_scan_errors_is_distinct_from_a_clean_ran(gz, combined_findings, run_manifest):
+    """A `ran` cell can still carry a non-empty `errors` list (a tool's own
+    parse_errors() - e.g. testssl's WARN/FATAL entries, per routine.py) even
+    when its `count` is 0. That is a third way a scan can look clean and not
+    be: a real per-target failure that isn't `error:*` at the cell-status
+    level because the tool process itself completed. site-a/testssl in the
+    fixture is `ran`, count 0, with one FATAL parse error - it must not read
+    identically to site-a's genuinely-clean-scan cells."""
+    out = gz.cmd_report(combined_findings, 0, "Combined Report", run_manifest=run_manifest)
+    coverage = out.split("## Coverage", 1)[1].split("##", 1)[0]
+    # Find the testssl column's site-a cell specifically, not just any "ran".
+    header = coverage.splitlines()[2]
+    testssl_col = header.split("|").index(" testssl ")
+    site_a_row = [ln for ln in coverage.splitlines() if ln.strip().startswith("| site-a")][0]
+    testssl_cell = site_a_row.split("|")[testssl_col].strip()
+    assert testssl_cell != "ran - 0 findings"
+    assert "error" in testssl_cell.lower()
+
+
 def test_detail_floor_still_applies_within_each_category(gz, combined_findings, run_manifest):
     """REPORT_DETAIL_FLOOR (Medium) must still hold inside the grouped path -
     this is one of the two places the floor is enforced (Global Constraints)."""
