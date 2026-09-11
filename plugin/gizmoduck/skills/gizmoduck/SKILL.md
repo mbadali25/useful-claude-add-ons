@@ -107,6 +107,35 @@ Runs on Linux/WSL and Windows. On Linux call the CLI with `python3`; on Windows 
   `tickets` are unaffected and still honour `--min-severity` in full.
 - Keep the template feed fresh: `nuclei -update-templates` before important scans.
 
+## Scanning every site in a repository
+
+`gizmoduck.py sweep <repo-root>` is the standard answer to "run a security scan
+on all the sites in this repo". **Do not hand-roll a loop over targets** — the
+sweep carries conventions that an ad-hoc script gets wrong, each of which has
+been got wrong once already:
+
+- Discovers modules by their `public-endpoint.md` declaration (`--declaration`
+  to override), reading `url` / `status` / `kind` from the front matter.
+- Runs the endpoint tools against the `url` and the source tools against **that
+  module's own directory**, not the repo root.
+- Writes `findings.jsonl` + `report.{md,html,pdf}` to
+  `<module>/docs/security-scans/<date>/`, Medium-and-above.
+- **A module whose DNS does not resolve is still scanned.** Dependencies,
+  Terraform and source code do not care whether the endpoint is reachable.
+- **A clean module still gets HTML and PDF.** Zero findings is a result somebody
+  needs to open and file.
+- **One module's failure does not end the sweep.** `cmd_scan` exits the process
+  when nuclei fails, which is right for one scan and fatal for eighteen; the
+  sweep catches it, records it, and continues.
+- **Exit 1 means a module did not scan cleanly**, not that findings exist. Those
+  reports are INCOMPLETE, not clean. Report them that way.
+
+After a sweep, group findings by cause before reporting. Edge-configuration
+findings repeat across every site because they come from one shared CloudFront
+or WAF configuration — twenty Mediums that are one fix should be reported as one
+fix, not twenty tickets. Dependency CVEs are the opposite: per-module, each
+needing its own upgrade.
+
 ## A scan is five tools, not one
 
 `scan` runs a suite and merges every tool's findings into ONE findings file and

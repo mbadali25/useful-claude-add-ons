@@ -521,7 +521,8 @@ def main():
     p = argparse.ArgumentParser(description="Gizmoduck: run Nuclei and process its output.",
                                  allow_abbrev=False)
     p.add_argument("command",
-                   choices=["scan", "summary", "parse", "report", "tickets", "diff", "doctor", "update"])
+                   choices=["scan", "sweep", "summary", "parse", "report", "tickets",
+                            "diff", "doctor", "update"])
     p.add_argument("target", nargs="?", help="target/host/URL/file, or findings.jsonl")
     p.add_argument("baseline2", nargs="?", help="for diff: the newer findings.jsonl")
     # No default here. It is resolved per command below, because one default
@@ -547,6 +548,13 @@ def main():
                         "at Low and will not appear in a Medium-and-above report.")
     p.add_argument("--semgrep-config", default="p/security-audit",
                    help="scan: semgrep ruleset (default: p/security-audit)")
+    p.add_argument("--declaration", default="public-endpoint.md", metavar="FILE",
+                   help="sweep: per-module file declaring the endpoint "
+                        "(default: public-endpoint.md)")
+    p.add_argument("--scan-dir", default=os.path.join("docs", "security-scans"),
+                   metavar="DIR",
+                   help="sweep: path under each module for results "
+                        "(default: docs/security-scans)")
     p.add_argument("--title", default="Nuclei Vulnerability Report")
     p.add_argument("--format", default="md", choices=["md", "html", "pdf"])
     p.add_argument("--out", default=None)
@@ -594,7 +602,12 @@ def main():
     # `report` defaults to medium so the report itemises Critical/High/Medium -
     # see REPORT_DETAIL_FLOOR. `tickets` stays at high on purpose: a Medium is
     # worth reading in a report without being worth a ticket of its own.
-    _FLOORS = {"report": "medium", "tickets": "high", "diff": "low"}
+    # `sweep` is listed explicitly even though detail_floor() would clamp an
+    # unlisted command's `info` default up to Medium anyway: a reader checking
+    # what a repo-wide sweep reports should find the answer here rather than
+    # having to trace it through the clamp.
+    _FLOORS = {"report": "medium", "sweep": "medium", "tickets": "high",
+               "diff": "low"}
     min_sev = SEV_NUM[a.min_severity or _FLOORS.get(a.command, "info")]
 
     if a.command == "doctor":
@@ -608,6 +621,20 @@ def main():
                  source=a.source, with_zap=a.with_zap, with_checkov=a.with_checkov,
                  semgrep_config=a.semgrep_config)
         return
+    if a.command == "sweep":
+        _here = os.path.dirname(os.path.abspath(__file__))
+        if _here not in sys.path:
+            sys.path.insert(0, _here)
+        import sweep as _sweep
+        results = _sweep.run(a.target, with_zap=a.with_zap,
+                             with_checkov=a.with_checkov,
+                             declaration=a.declaration, scan_dir=a.scan_dir,
+                             semgrep_config=a.semgrep_config, extra=a.extra,
+                             severity=a.severity, min_sev=min_sev)
+        # A sweep where some module failed to scan must not exit 0: a caller
+        # that treats exit 0 as "the estate is clean" would be wrong, and the
+        # per-module reports it is about to read are incomplete, not clean.
+        sys.exit(1 if any(r.get("note") for r in results) else 0)
     if a.command == "diff":
         title = a.title if a.title != "Nuclei Vulnerability Report" else "Scan Diff"
         safe_print(cmd_diff(a.target, a.baseline2, min_sev, title))

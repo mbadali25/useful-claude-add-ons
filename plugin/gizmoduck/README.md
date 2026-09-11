@@ -37,10 +37,33 @@ Pass `--source <dir>` whenever the tree is available. Without it the three sourc
 report as `skipped` — never silently omitted, because four quiet zero-finding tools beside
 one clean Nuclei run would read as a clean bill of health.
 
+## Scanning a whole repository
+
+```bash
+gizmoduck.py sweep .                # every site the repo declares
+gizmoduck.py sweep . --with-zap     # add crawler-driven DAST
+```
+
+Finds every module carrying a `public-endpoint.md`, runs the full suite per module — the
+endpoint tools against its `url`, the source tools against **its own directory** — and
+writes `findings.jsonl` plus `report.{md,html,pdf}` into
+`<module>/docs/security-scans/<date>/`.
+
+Conventions it enforces, each learned from an ad-hoc script that got it wrong:
+
+- A module whose DNS does not resolve is **still scanned** — dependencies, Terraform and
+  source code do not care whether the endpoint is reachable.
+- A module that came back clean **still gets HTML and PDF**. Zero findings is a result
+  somebody needs to open and file.
+- One module's failure **does not end the sweep**; it is recorded and the run continues.
+- **Exit 1 means a module did not scan cleanly**, not that findings exist. Those reports
+  are incomplete, not clean.
+
 ## Commands
 | Command | Does |
 |---|---|
-| `/gizmoduck:scan <target> [sev]` | Scan → report (md/html/pdf) → confirm batch → ticket Crit+High |
+| `/gizmoduck:sweep [repo-root]` | **Scan every site the repo declares** — discovery, full suite per module, reports per module |
+| `/gizmoduck:scan <target> [sev]` | Scan one target → report (md/html/pdf) → confirm batch → ticket Crit+High |
 | `/gizmoduck:report <findings.jsonl> [sev]` | Rebuild a report from findings (no rescan) |
 | `/gizmoduck:tickets <findings.jsonl> [sev]` | Confirm batch → open/sync SDP tickets from findings |
 | `/gizmoduck:diff <old.jsonl> <new.jsonl> [sev]` | What's new since a previous scan |
