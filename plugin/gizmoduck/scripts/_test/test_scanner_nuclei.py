@@ -265,6 +265,70 @@ def test_run_keeps_findings_from_a_nonzero_exit_code(monkeypatch, tmp_path):
     assert result.returncode == 2
 
 
+# --- HIGH defect: rejected output must not become a false-clean scan ------
+#
+# run()'s JSON-line filter used to write an empty nuclei.jsonl whenever no
+# line survived AND the exit code was 0 - but a bare `[]` or a
+# `[FATAL] could not load templates` message on stdout is nuclei failing to
+# produce results, not a clean scan. Both have non-empty stdout with zero
+# JSON finding lines; a genuinely clean scan's stdout (-silent, nothing
+# found) is truly empty, not merely non-JSON.
+
+def test_run_treats_a_bare_empty_array_as_rejected_not_clean(monkeypatch, tmp_path):
+    gzmod = nuclei._gizmoduck()
+    monkeypatch.setattr(gzmod, "find_nuclei", lambda: "nuclei")
+
+    def fake_run_tool(argv, timeout, cwd=None):
+        from scanners.base import ToolResult
+        return ToolResult(0, "[]", "", False)
+
+    monkeypatch.setattr(nuclei.base, "run_tool", fake_run_tool)
+
+    raw_path, result = nuclei.run("https://example.com", str(tmp_path), {})
+
+    assert raw_path is None
+    assert result.returncode == 0
+    assert not os.path.exists(os.path.join(str(tmp_path), "nuclei.jsonl"))
+
+
+def test_run_treats_a_template_load_failure_as_rejected_not_clean(monkeypatch, tmp_path):
+    # This is the exact failure mode bootstrap hard-fails on for a template
+    # download error - it must never reach parse() looking like a clean run.
+    gzmod = nuclei._gizmoduck()
+    monkeypatch.setattr(gzmod, "find_nuclei", lambda: "nuclei")
+
+    def fake_run_tool(argv, timeout, cwd=None):
+        from scanners.base import ToolResult
+        return ToolResult(0, "[FATAL] could not load templates", "", False)
+
+    monkeypatch.setattr(nuclei.base, "run_tool", fake_run_tool)
+
+    raw_path, result = nuclei.run("https://example.com", str(tmp_path), {})
+
+    assert raw_path is None
+    assert not os.path.exists(os.path.join(str(tmp_path), "nuclei.jsonl"))
+
+
+def test_run_a_genuinely_empty_stdout_on_clean_exit_is_still_a_clean_scan(
+        monkeypatch, tmp_path):
+    # The case the fix above must not break: -silent with truly nothing on
+    # stdout and a clean exit is nuclei's real "ran, found nothing".
+    gzmod = nuclei._gizmoduck()
+    monkeypatch.setattr(gzmod, "find_nuclei", lambda: "nuclei")
+
+    def fake_run_tool(argv, timeout, cwd=None):
+        from scanners.base import ToolResult
+        return ToolResult(0, "", "", False)
+
+    monkeypatch.setattr(nuclei.base, "run_tool", fake_run_tool)
+
+    raw_path, result = nuclei.run("https://example.com", str(tmp_path), {})
+
+    assert raw_path is not None
+    assert os.path.isfile(raw_path)
+    assert nuclei.parse(raw_path, target="example.com") == []
+
+
 def test_run_returns_none_path_on_a_timeout(monkeypatch, tmp_path):
     gzmod = nuclei._gizmoduck()
     monkeypatch.setattr(gzmod, "find_nuclei", lambda: "nuclei")

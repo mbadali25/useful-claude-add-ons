@@ -36,6 +36,21 @@ parse() must never turn a parse failure into an empty finding list - `[]`
 means only "nuclei ran and found nothing". Malformed or truncated JSONL
 raises `base.ParseError` instead, so routine.py records `error:parse:<detail>`
 for that cell rather than reporting a broken scan as a clean target.
+
+HIGH defect fix: run()'s own JSON-line filter used to fold two different
+situations into the same empty output file - a genuinely clean scan (no
+finding lines because there were none to have) and a REJECTED one, where
+stdout had real content (a bare `[]`, or `[FATAL] could not load templates`)
+but none of it survived the "starts with `{`" filter. Both used to write an
+empty `nuclei.jsonl` when the exit code happened to be 0, and parse() then
+read that empty file as "ran clean" either way - indistinguishable from a
+real clean scan. Since `[FATAL] could not load templates` is the exact
+failure mode bootstrap hard-fails on for a template download error, letting
+it through here as "clean" would silently defeat that safeguard downstream.
+Fixed by treating any NON-empty stdout that yields zero finding lines as a
+failure (returning `(None, result)`) regardless of the exit code, and
+reserving the "write an empty file" path for stdout that was truly empty to
+begin with - `-silent`'s real signature for "ran, found nothing".
 """
 import json
 import os
@@ -123,19 +138,34 @@ def run(target, outdir, opts=None):
     # Nmap is the only adapter in this package permitted to gate findings on
     # exit status (base.py). Nuclei's findings come from parsed output only:
     # only lines that look like JSON objects are kept, full stop - a nonzero
-    # exit code never discards output that's actually there. The exit code
-    # is consulted only when there is NO candidate output at all, to decide
-    # whether an empty result means "ran clean, found nothing" (exit 0) or
-    # "failed before producing anything" (nonzero) - it never overrides
-    # actual finding content either way.
+    # exit code never discards output that's actually there.
     lines = [ln for ln in result.stdout.splitlines() if ln.strip().startswith("{")]
-    if not lines and result.returncode != 0:
-        # No output file written - per the standardized run() contract, that
-        # means the path side of the tuple is None, not a path that doesn't
-        # exist on disk. The ToolResult still comes back so routine.py can
-        # record error:<returncode> instead of mistaking "didn't run" for
-        # "ran clean".
-        return None, result
+
+    if not lines:
+        # HIGH defect fix: no JSON finding lines survived the filter. That
+        # is NOT automatically nuclei's real "ran clean, found nothing" -
+        # this is also exactly what a rejected/filtered invocation looks
+        # like, e.g. stdout of a bare `[]` or `[FATAL] could not load
+        # templates` (the failure mode bootstrap hard-fails on for this
+        # reason). A genuinely clean run with `-silent` produces truly EMPTY
+        # stdout - nothing at all, not even non-JSON text. So: stdout that
+        # had SOME content, none of which survived the filter, is treated as
+        # a failure (never written, never handed to parse() as if it were a
+        # clean scan) regardless of the exit code - a nonzero exit is a
+        # second, independent signal for the same conclusion, not the only
+        # one, since a broken invocation can still exit 0.
+        if result.stdout.strip():
+            return None, result
+        if result.returncode != 0:
+            # No output file written - per the standardized run() contract,
+            # that means the path side of the tuple is None, not a path that
+            # doesn't exist on disk. The ToolResult still comes back so
+            # routine.py can record error:<returncode> instead of mistaking
+            # "didn't run" for "ran clean".
+            return None, result
+        # Genuinely empty stdout and a clean exit: nuclei's real "ran,
+        # found nothing" - falls through to write the (empty) file below.
+
     with open(raw_path, "w", encoding="utf-8") as fh:
         fh.write("\n".join(lines) + ("\n" if lines else ""))
     return raw_path, result
