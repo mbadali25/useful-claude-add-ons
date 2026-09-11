@@ -339,16 +339,24 @@ def run_trivy_config(source, timeout=900):
 # semgrep - static analysis
 # --------------------------------------------------------------------------
 
-def run_semgrep(source, config="p/security-audit", timeout=1800):
+def run_semgrep(source, config="p/security-audit", timeout=1800,
+                max_memory_mb=2048, jobs=2):
     """SAST. This is the only tool in the suite that can see an authorization
     gate that is missing, which no unauthenticated endpoint scan can reach."""
     exe = _which("semgrep", "semgrep.exe")
     if not exe:
         return ToolRun("semgrep", "missing",
                        detail="semgrep not on PATH; run the bootstrap script")
+    # --max-memory and -j are not tuning, they are a stability requirement.
+    # Semgrep defaults to one worker per core with no ceiling on memory, and on
+    # a repo-wide sweep that is what makes the machine run out of RAM partway
+    # through - the run is killed by the OS, which looks like a hang rather
+    # than a scanner problem. Per-rule memory is capped and the file is skipped
+    # rather than taking the process down with it.
     try:
         proc = _run([exe, "--config", config, "--json", "--quiet",
-                     "--timeout", "120", source], timeout)
+                     "--timeout", "120", "--max-memory", str(max_memory_mb),
+                     "-j", str(jobs), source], timeout)
     except subprocess.TimeoutExpired:
         return ToolRun("semgrep", "failed", detail=f"timed out after {timeout}s")
     if not proc.stdout.strip():

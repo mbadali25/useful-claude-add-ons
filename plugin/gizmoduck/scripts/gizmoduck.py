@@ -555,6 +555,11 @@ def main():
                    metavar="DIR",
                    help="sweep: path under each module for results "
                         "(default: docs/security-scans)")
+    p.add_argument("--resume", action="store_true",
+                   help="sweep: skip modules already completed for this date. A sweep "
+                        "of a real estate runs for hours and will be interrupted; "
+                        "without this the choice is rescan everything or hand-pick the "
+                        "remainder, and hand-picking is how modules get missed.")
     p.add_argument("--title", default="Nuclei Vulnerability Report")
     p.add_argument("--format", default="md", choices=["md", "html", "pdf"])
     p.add_argument("--out", default=None)
@@ -630,7 +635,8 @@ def main():
                              with_checkov=a.with_checkov,
                              declaration=a.declaration, scan_dir=a.scan_dir,
                              semgrep_config=a.semgrep_config, extra=a.extra,
-                             severity=a.severity, min_sev=min_sev)
+                             severity=a.severity, min_sev=min_sev,
+                             resume=a.resume)
         # A sweep where some module failed to scan must not exit 0: a caller
         # that treats exit 0 as "the estate is clean" would be wrong, and the
         # per-module reports it is about to read are incomplete, not clean.

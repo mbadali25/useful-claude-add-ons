@@ -30,6 +30,7 @@ Three behaviours worth knowing, each learned from a real run:
    eighteen. That exit is caught per module and recorded.
 """
 import io
+import json
 import os
 import re
 import socket
@@ -101,7 +102,7 @@ def _resolves(host):
 
 def run(root, with_zap=False, with_checkov=False, declaration=DEFAULT_DECLARATION,
         scan_dir=DEFAULT_SCAN_DIR, semgrep_config="p/security-audit",
-        extra="", severity="", run_date=None, min_sev=None):
+        extra="", severity="", run_date=None, min_sev=None, resume=False):
     """Scan every declared site. Returns a list of per-module result dicts.
 
     `min_sev` is the report's itemisation floor as an INT, not a name, and
@@ -134,6 +135,29 @@ def run(root, with_zap=False, with_checkov=False, declaration=DEFAULT_DECLARATIO
         out_dir = os.path.join(site["dir"], scan_dir, stamp)
         os.makedirs(out_dir, exist_ok=True)
         jsonl = os.path.join(out_dir, "findings.jsonl")
+        marker = os.path.join(out_dir, "scan-meta.json")
+
+        # A repo-wide sweep is a long job - eight minutes a module, so hours for
+        # a real estate - and it WILL be interrupted: a lost connection, a
+        # reboot, or the OS killing it under memory pressure. Without --resume
+        # the only options are rescan everything or hand-pick the remainder,
+        # and the second is how modules get silently missed.
+        #
+        # The marker is what proves completion, not the presence of
+        # findings.jsonl: a module that legitimately came back clean writes an
+        # empty findings file, and an interrupted one can leave a partial file
+        # that looks just like it.
+        if resume and os.path.exists(marker):
+            try:
+                prev = json.loads(io.open(marker, encoding="utf-8").read())
+                done_n = prev.get("findings", "?")
+            except (OSError, ValueError):
+                done_n = "?"
+            gz.safe_print(f"  already scanned this date ({done_n} findings) - skipped")
+            results.append({**site, "scanned": True, "skipped": True,
+                            "findings": prev.get("findings", 0) if isinstance(done_n, int) else 0,
+                            "note": "", "out_dir": out_dir})
+            continue
 
         reachable = _resolves(_host_of(url))
         if not reachable:
@@ -176,6 +200,17 @@ def run(root, with_zap=False, with_checkov=False, declaration=DEFAULT_DECLARATIO
                     gz.html_to_pdf(gz.render_html(findings, min_sev, title), dest)
             except Exception as exc:                  # noqa: BLE001
                 gz.safe_print(f"  !! report.{fmt} failed: {type(exc).__name__}: {exc}")
+
+        # Written LAST, and only on a module that got all the way through, so
+        # --resume can trust it. An interrupted module leaves no marker and is
+        # rescanned.
+        if not note:
+            gz.write_text(marker, json.dumps({
+                "module": mod, "url": url, "date": stamp,
+                "findings": count, "reachable": reachable,
+                "with_zap": with_zap, "with_checkov": with_checkov,
+                "completed_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            }, indent=2))
 
         results.append({**site, "scanned": True, "reachable": reachable,
                         "findings": count, "note": note, "out_dir": out_dir})

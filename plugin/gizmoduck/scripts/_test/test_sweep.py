@@ -203,5 +203,56 @@ def test_optional_tools_are_off_unless_asked(tmp_path, stub_scan, monkeypatch):
     assert stub_scan[0]["with_checkov"] is True
 
 
+def test_resume_skips_completed_modules(tmp_path, stub_scan, monkeypatch):
+    """A sweep of a real estate runs for hours and WILL be interrupted - a
+    reboot, a lost connection, the OS killing it under memory pressure. Without
+    resume the choice is rescan everything or hand-pick the remainder, and
+    hand-picking is how modules get silently missed."""
+    _module(tmp_path, "alpha")
+    _module(tmp_path, "beta")
+    monkeypatch.setattr(sweep, "_resolves", lambda h: True)
+
+    sweep.run(str(tmp_path), run_date="2026-01-01")
+    assert len(stub_scan) == 2
+    stub_scan.clear()
+
+    sweep.run(str(tmp_path), run_date="2026-01-01", resume=True)
+    assert stub_scan == [], "resume must skip modules that already completed"
+
+
+def test_resume_rescans_a_module_that_did_not_finish(tmp_path, monkeypatch):
+    """The marker is what proves completion, not findings.jsonl. A module that
+    came back clean writes an empty findings file, and an interrupted one can
+    leave a partial file that looks identical - so only the marker, written
+    last and only on success, may be trusted."""
+    import gizmoduck as gz
+    _module(tmp_path, "alpha")
+    _module(tmp_path, "beta")
+    monkeypatch.setattr(sweep, "_resolves", lambda h: True)
+    monkeypatch.setattr(gz, "html_to_pdf", lambda html, path: io.open(
+        path, "w", encoding="utf-8").write("pdf"))
+    seen = []
+
+    def _fake(target, out, severity, extra, **kw):
+        seen.append(target)
+        io.open(out, "w", encoding="utf-8").close()   # clean, but a real file
+        if "alpha" in out:
+            raise SystemExit("nuclei exited 2")       # ... and then it failed
+
+    monkeypatch.setattr(gz, "cmd_scan", _fake)
+    sweep.run(str(tmp_path), run_date="2026-01-01")
+
+    alpha = tmp_path / "alpha" / "docs" / "security-scans" / "2026-01-01"
+    beta = tmp_path / "beta" / "docs" / "security-scans" / "2026-01-01"
+    assert (alpha / "findings.jsonl").exists(), "the partial file is there..."
+    assert not (alpha / "scan-meta.json").exists(), "...but it must carry no marker"
+    assert (beta / "scan-meta.json").exists()
+
+    seen.clear()
+    sweep.run(str(tmp_path), run_date="2026-01-01", resume=True)
+    assert len(seen) == 1 and "thing.example.com" in seen[0], (
+        "the interrupted module must be rescanned, the completed one skipped")
+
+
 def test_empty_repo_is_reported_not_crashed(tmp_path):
     assert sweep.run(str(tmp_path), run_date="2026-01-01") == []
