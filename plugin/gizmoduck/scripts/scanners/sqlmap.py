@@ -33,6 +33,26 @@ native artifact is the small tree `--output-dir` produces (`log` +
 `session.sqlite` under a per-host folder), and `parse()` is written to
 accept either that folder directly or the `--output-dir` root above it.
 
+`run()`'s first argument is the target's *location* (routine.py passes it
+`_location(target)`, i.e. the manifest's `url` field - a real URL, always).
+`parse()`'s second argument is a different thing entirely: routine.py calls
+`mod.parse(raw_path, target.name)`, where `target.name` is the operator-
+chosen manifest label (spec section 5) - a string like "prod-web" with no
+guaranteed relationship to the host actually scanned, and frequently not a
+URL at all. Deriving `host`/`matched_at` by calling `urlparse()` on that
+argument - what this module's `parse()` originally did - silently produces
+`None`/garbage the moment a manifest name isn't itself a URL, which is the
+common case once routine.py (rather than a direct unit test passing a URL
+by hand) is the real caller. `host`/`matched_at` are therefore sourced only
+from session artifacts: a small sidecar file `run()` writes into the
+session directory recording the exact URL sqlmap was pointed at
+(`_write_target_sidecar`), or - lacking that, e.g. artifacts from before
+this fix - the session directory's own name, which sqlmap itself always
+sets to the scanned host. `target` is still used for the finding's own
+`target` field (spec section 6) and, in `run()`, for the query-string gate
+and argv construction - both legitimate there because `run()`'s `target`
+really is the location.
+
 There is no --report-json flag (spec 13.9, confirmed against
 lib/core/optiondict.py) - sqlmap leaves behind an --output-dir session tree
 (a per-host folder holding `log` and `session.sqlite`) plus stdout, and this
@@ -88,6 +108,12 @@ _PARAM_HEADER = re.compile(
 _TRIPLE = re.compile(
     r'Type:\s*(?P<type>[^\r\n]+)\r?\n\s*Title:\s*(?P<title>[^\r\n]+)\r?\n'
     r'\s*Payload:\s*(?P<payload>[^\r\n]+)')
+
+# Sidecar run() drops in the session directory it actually used, recording
+# the real URL sqlmap was pointed at - see the module docstring's "run()'s
+# first argument is the target's location..." paragraph for why parse()
+# cannot recover this from its own `target` argument.
+_TARGET_SIDECAR = ".gizmoduck-sqlmap-target"
 
 
 def is_available():
@@ -148,7 +174,27 @@ def run(target, outdir, opts):
         # incomplete session (session.sqlite but no log) turns into an error
         # instead of a silent empty result. See parse()'s docstring.
         return None, result
+    _write_target_sidecar(session_dir, target)
     return str(outdir), result
+
+
+def _write_target_sidecar(session_dir, url):
+    """Persist the exact URL sqlmap was pointed at, next to its own session
+    artifacts.
+
+    `target` here is `run()`'s argument, which - unlike parse()'s - really
+    is the location (see module docstring). Writing it down is what lets
+    parse() (called later, possibly by routine.py with only the manifest's
+    bare name) recover the real host/matched-at without guessing. This is
+    our own metadata, not scraped sqlmap output - the "never scrape stdout"
+    rule elsewhere in this file is about *tool* output, not about a caller
+    remembering its own inputs. Best-effort: a failure to write this must
+    never turn a completed scan into a failed one.
+    """
+    try:
+        (Path(session_dir) / _TARGET_SIDECAR).write_text(url, encoding="utf-8")
+    except OSError:
+        pass
 
 
 def _find_session_dir(raw_path, target):
@@ -184,6 +230,89 @@ def _find_session_dir(raw_path, target):
     return raw_path
 
 
+def _resolve_session_for_parse(raw_path, target):
+    """Locate the session folder parse() should read from raw_path.
+
+    This is deliberately a separate resolver from the one run() uses
+    (`_find_session_dir`): run()'s `target` is guaranteed to be the real
+    location, so matching a child folder by its urlparse()'d hostname is
+    sound there. parse()'s `target` is the manifest's opaque name (module
+    docstring) - it may not parse as a URL at all, so it cannot be used the
+    same way here.
+
+    raw_path pointing directly at a session folder (holding `log` or
+    `session.sqlite` itself) is unambiguous - return it unchanged, exactly
+    like run()'s resolver. A raw_path that is instead an --output-dir root
+    can hold more than one child that looks like a session (stale leftovers
+    from a previous host, a shared root). With exactly one such child there
+    is nothing to disambiguate - use it. With more than one, the only
+    trustworthy signal is the sidecar run() wrote into the session directory
+    it actually used (`_write_target_sidecar`): never an arbitrary
+    alphabetical pick, and never a guess derived from `target`.
+    """
+    raw_path = Path(raw_path)
+    if (raw_path / "log").is_file() or (raw_path / "session.sqlite").is_file():
+        return raw_path
+    if not raw_path.is_dir():
+        return raw_path
+
+    candidates = [
+        child for child in sorted(raw_path.iterdir())
+        if child.is_dir() and (
+            (child / "log").is_file() or (child / "session.sqlite").is_file()
+        )
+    ]
+    if len(candidates) == 1:
+        return candidates[0]
+    if not candidates:
+        return raw_path
+
+    target_host = urlparse(target).hostname if target else None
+    matches = []
+    for child in candidates:
+        sidecar = child / _TARGET_SIDECAR
+        if not sidecar.is_file():
+            continue
+        declared_host = urlparse(
+            sidecar.read_text(encoding="utf-8", errors="replace").strip()).hostname
+        if not declared_host:
+            continue
+        if target_host is not None:
+            if declared_host == target_host:
+                matches.append(child)
+        elif declared_host == child.name:
+            # `target` gave us no hostname to check against (a bare
+            # manifest name) - fall back to internal consistency: trust a
+            # sidecar only when it agrees with the folder sqlmap itself
+            # created it under.
+            matches.append(child)
+
+    if len(matches) == 1:
+        return matches[0]
+    # Zero or multiple equally-plausible candidates: refuse to guess. The
+    # caller ends up with no log/session.sqlite at raw_path itself, which
+    # parse() reads as zero findings - never someone else's (defect 2).
+    return raw_path
+
+
+def _session_location(session_dir, target):
+    """The (host, matched_at) pair to stamp on findings from session_dir.
+
+    Never derived from `target` (see module docstring) - it is the sidecar
+    run() wrote (the one authoritative source: the exact URL sqlmap was
+    pointed at), or, lacking that, the session directory's own name, which
+    sqlmap itself always sets to the host/IP it scanned. Both sources are
+    real session artifacts; neither is a guess.
+    """
+    sidecar = session_dir / _TARGET_SIDECAR
+    if sidecar.is_file():
+        url = sidecar.read_text(encoding="utf-8", errors="replace").strip()
+        host = urlparse(url).hostname
+        if host:
+            return host, url
+    return session_dir.name, session_dir.name
+
+
 def _iter_confirmed(text):
     headers = list(_PARAM_HEADER.finditer(text))
     for i, header in enumerate(headers):
@@ -197,7 +326,7 @@ def _iter_confirmed(text):
 
 
 def parse(raw_path, target):
-    session_dir = _find_session_dir(raw_path, target)
+    session_dir = _resolve_session_for_parse(raw_path, target)
     log_path = session_dir / "log"
     if not log_path.is_file():
         if (session_dir / "session.sqlite").is_file():
@@ -222,7 +351,7 @@ def parse(raw_path, target):
         return []
 
     text = log_path.read_text(errors="replace")
-    host = urlparse(target).hostname or target
+    host, matched_at = _session_location(session_dir, target)
     findings = []
     for param, place, type_, title, payload in _iter_confirmed(text):
         type_slug = re.sub(r'[^a-z0-9]+', '-', type_.lower()).strip('-')
@@ -238,7 +367,7 @@ def parse(raw_path, target):
             severity_known=True,
             type="sqli",
             host=host,
-            matched_at=target,
+            matched_at=matched_at,
             description=title,
             remediation=("Use parameterized queries / prepared statements for "
                          "the %r parameter; never concatenate user input into "

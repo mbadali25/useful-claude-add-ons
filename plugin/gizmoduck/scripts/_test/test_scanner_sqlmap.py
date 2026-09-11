@@ -176,13 +176,69 @@ def test_parse_picks_the_matching_host_not_the_alphabetically_first_one(fixture)
     # injection (on a *different* parameter) - if the session directory
     # were still picked alphabetically, we'd get alpha's "user" finding
     # instead of victim's "id" finding, or victim's real vulnerability would
-    # never surface at all.
+    # never surface at all. victim.example carries the sidecar run() writes
+    # (_write_target_sidecar); alpha.example does not, standing in for a
+    # stale/unrelated leftover directory that must never be picked.
     findings = sqlmap.parse(fixture("sqlmap-session/multi-host"),
                             "http://victim.example/page?id=1")
 
     assert len(findings) == 1
     assert findings[0]["host"] == "victim.example"
     assert findings[0]["template_id"].startswith("sqlmap:id-get-")
+
+
+# --- third defect: parse()'s `target` is the manifest NAME, not a URL ------
+#
+# Per the cross-adapter contract, routine.py calls run(location, ...) but
+# parse(raw_path, target.name) - target.name is an operator-chosen label
+# ("prod-web") with no guaranteed relationship to the scanned host. The old
+# code called urlparse(target).hostname in parse() itself, which silently
+# returns None for a bare name - every sqlmap finding would lose its real
+# host/matched_at the moment routine.py (rather than a direct unit test) is
+# the caller. host/matched_at must come from session artifacts - the sidecar
+# run() writes recording the exact scanned URL, or (lacking that) the
+# session directory's own name, which sqlmap itself always sets to the host.
+
+def test_parse_populates_host_and_matched_at_from_session_data_not_target_name(fixture):
+    # "prod-web" is a bare manifest name - no scheme, no hostname urlparse
+    # can extract. The real URL and host must still surface, sourced from
+    # the sidecar run() left in the session directory, not from this string.
+    findings = sqlmap.parse(fixture("sqlmap-session/bare-name-run"), "prod-web")
+
+    assert len(findings) == 1
+    assert findings[0]["host"] == "prod-web.example.test"
+    assert findings[0]["matched_at"] == "http://prod-web.example.test/checkout?sku=42"
+    # The manifest name is still the finding's `target` field (spec section
+    # 6) - that part of the contract is untouched by this fix.
+    assert findings[0]["target"] == "prod-web"
+
+
+def test_run_writes_a_target_sidecar_parse_can_later_read(monkeypatch, tmp_path):
+    # End-to-end: run() is the only place that ever sees the real URL for a
+    # bare-name manifest target (routine.py passes it `location`, never
+    # `target.name`). It must persist that URL next to sqlmap's own
+    # artifacts so a later parse(raw_path, "prod-web") call - a fresh
+    # process, or just routine.py's normal flow - can still resolve the
+    # real host instead of silently losing it.
+    def fake_run_tool(argv, timeout, cwd=None):
+        (tmp_path / "log").write_text(
+            "Parameter: id (GET)\n"
+            "    Type: boolean-based blind\n"
+            "    Title: AND boolean-based blind - WHERE or HAVING clause\n"
+            "    Payload: id=1 AND 7331=7331\n")
+        return base.ToolResult(0, "", "", False)
+
+    monkeypatch.setattr(base, "run_tool", fake_run_tool)
+
+    raw_path, _ = sqlmap.run("http://example.test/page?id=1", str(tmp_path),
+                             {"confirm": "APPROVED-BY-ME"})
+
+    # parse() is now called the way routine.py actually calls it: with the
+    # manifest's bare name, never the URL run() used.
+    findings = sqlmap.parse(raw_path, "prod-web")
+    assert len(findings) == 1
+    assert findings[0]["host"] == "example.test"
+    assert findings[0]["matched_at"] == "http://example.test/page?id=1"
 
 
 # --- parsing: confirmed session yields findings, empty session yields none -
