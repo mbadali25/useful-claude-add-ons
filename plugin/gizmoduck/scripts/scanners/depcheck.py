@@ -14,6 +14,19 @@ reading): plain-text `severity` first, then `cvssv2.score`, then
 dependency whose only NVD entry is CVSSv2-scored or which is unscored
 outright, while the plain-text `severity` is still populated - trusting a
 missing cvssv3 block first would silently drop those findings to info.
+
+NVD API key (optional): dependency-check's first run (and periodic
+refreshes after) must sync the NVD CVE feed, and NIST rate-limits that sync
+to about 5 requests/30s without an API key versus about 50 with one - the
+whole difference between a sync taking the better part of an hour and one
+taking a few minutes (dependency-check 12.1.0, confirmed via `--help`: the
+flag is `--nvdApiKey <apiKey>`). This adapter reads it from the
+`NVD_API_KEY` environment variable rather than an `opts` field so it is
+never threaded through the manifest/CLI and is optional throughout: its
+absence must never be an error, only a slower first sync. It is a
+credential - `run()` only ever places it inline in the subprocess argv, and
+must never log it, print it, write it to a file, or fold it into anything
+this adapter returns.
 """
 import json
 import os
@@ -69,6 +82,13 @@ def run(target, outdir, opts):
         "dependency-check", "--format", "JSON",
         "--out", outdir, "--scan", _scan_path(target),
     ]
+    # Optional NVD API key (see module docstring): appended only when set,
+    # never required. Read straight from the environment and placed nowhere
+    # but this argv - never logged, printed, or written to a file - since
+    # it's a credential.
+    nvd_api_key = os.environ.get("NVD_API_KEY")
+    if nvd_api_key:
+        argv += ["--nvdApiKey", nvd_api_key]
     result = base.run_tool(argv, timeout=opts.get("timeout", DEFAULT_TIMEOUT))
     if not os.path.isfile(raw_path):
         return None, result

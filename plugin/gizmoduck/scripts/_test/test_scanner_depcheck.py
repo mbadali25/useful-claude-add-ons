@@ -127,6 +127,7 @@ def test_is_available_delegates_to_which(monkeypatch):
 
 
 def test_run_builds_the_documented_argv_and_resolves_the_output_path(monkeypatch, tmp_path):
+    monkeypatch.delenv("NVD_API_KEY", raising=False)
     captured = {}
 
     def fake_run_tool(argv, timeout, cwd=None):
@@ -150,6 +151,81 @@ def test_run_builds_the_documented_argv_and_resolves_the_output_path(monkeypatch
     assert raw_path == str(outdir / "dependency-check-report.json")
     assert result.returncode == 0
     assert outdir.is_dir()
+
+
+# ---------------------------------------------------------------------------
+# NVD_API_KEY (optional): dependency-check's NVD sync is rate-limited to
+# ~5 requests/30s without an API key, ~50 with one - roughly 10x, which is
+# the whole difference between a first sync taking under an hour and one
+# taking a few minutes (dependency-check 12.1.0 --nvdApiKey, confirmed via
+# --help). Absence must never be an error; presence must never leak the key
+# anywhere but the subprocess argv.
+# ---------------------------------------------------------------------------
+
+def test_nvd_api_key_flag_is_present_when_the_env_var_is_set(monkeypatch, tmp_path):
+    monkeypatch.setenv("NVD_API_KEY", "super-secret-nvd-key")
+    captured = {}
+
+    def fake_run_tool(argv, timeout, cwd=None):
+        captured["argv"] = argv
+        report = os.path.join(argv[argv.index("--out") + 1], depcheck.REPORT_FILENAME)
+        with open(report, "w", encoding="utf-8") as fh:
+            fh.write("{}")
+        return base.ToolResult(0, "", "", False)
+
+    monkeypatch.setattr(depcheck.base, "run_tool", fake_run_tool)
+    outdir = tmp_path / "out"
+    depcheck.run("/scan/repo", str(outdir), {})
+
+    assert "--nvdApiKey" in captured["argv"]
+    assert captured["argv"][captured["argv"].index("--nvdApiKey") + 1] == "super-secret-nvd-key"
+
+
+def test_nvd_api_key_flag_is_absent_when_the_env_var_is_unset(monkeypatch, tmp_path):
+    monkeypatch.delenv("NVD_API_KEY", raising=False)
+    captured = {}
+
+    def fake_run_tool(argv, timeout, cwd=None):
+        captured["argv"] = argv
+        report = os.path.join(argv[argv.index("--out") + 1], depcheck.REPORT_FILENAME)
+        with open(report, "w", encoding="utf-8") as fh:
+            fh.write("{}")
+        return base.ToolResult(0, "", "", False)
+
+    monkeypatch.setattr(depcheck.base, "run_tool", fake_run_tool)
+    outdir = tmp_path / "out"
+    raw_path, result = depcheck.run("/scan/repo", str(outdir), {})
+
+    assert "--nvdApiKey" not in captured["argv"]
+    # Absence of the key must never be an error.
+    assert raw_path is not None
+    assert result.returncode == 0
+
+
+def test_nvd_api_key_never_leaks_into_anything_the_adapter_returns_or_writes(monkeypatch, tmp_path):
+    """The failure that would actually matter: the key's literal value must
+    not surface in the ToolResult, the resolved raw_path, or the report file
+    on disk - not just "the flag is built correctly".
+    """
+    secret = "super-secret-nvd-key-do-not-leak"
+    monkeypatch.setenv("NVD_API_KEY", secret)
+
+    def fake_run_tool(argv, timeout, cwd=None):
+        report = os.path.join(argv[argv.index("--out") + 1], depcheck.REPORT_FILENAME)
+        with open(report, "w", encoding="utf-8") as fh:
+            fh.write('{"dependencies": []}')
+        # Simulate a real subprocess result: stdout/stderr never echo argv.
+        return base.ToolResult(0, "scanning complete", "", False)
+
+    monkeypatch.setattr(depcheck.base, "run_tool", fake_run_tool)
+    outdir = tmp_path / "out"
+    raw_path, result = depcheck.run("/scan/repo", str(outdir), {})
+
+    assert secret not in raw_path
+    assert secret not in result.stdout
+    assert secret not in result.stderr
+    with open(raw_path, encoding="utf-8") as fh:
+        assert secret not in fh.read()
 
 
 def test_run_returns_none_path_when_no_output_file_was_produced(monkeypatch, tmp_path):
