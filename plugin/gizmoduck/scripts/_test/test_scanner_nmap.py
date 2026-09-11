@@ -326,3 +326,15 @@ def test_active_opts_marks_only_the_vuln_mode_active():
     assert nmap.ACTIVE is False
     assert nmap.ACTIVE_OPTS == ["nmap_vuln"]
     assert nmap.DEFAULT_ENABLED is True
+
+
+def test_real_safe_scan_output_parses_to_the_open_port(fixture):
+    # nmap-safe-real.xml is real `nmap -sV -oX` output (v7.80) against the lab
+    # target: one open port (8922, Apache) among three closed. Confirms the
+    # port/state/service parsing works against real output, not just the
+    # hand-built vuln fixture - the open port becomes one info finding and the
+    # closed ports are ignored.
+    findings = nmap.parse(str(fixture("nmap-safe-real.xml")), "127.0.0.1")
+    assert len(findings) == 1
+    assert findings[0]["severity_name"] == "info"
+    assert "8922" in findings[0]["matched_at"]

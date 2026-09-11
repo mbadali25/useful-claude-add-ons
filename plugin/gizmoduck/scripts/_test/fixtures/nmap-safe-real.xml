@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE nmaprun>
+<?xml-stylesheet href="file:///C:/Program Files (x86)/Nmap/nmap.xsl" type="text/xsl"?>
+<!-- Nmap 7.80 scan initiated Fri Sep 11 01:02:50 2026 as: &quot;C:\\Program Files (x86)\\Nmap\\nmap.exe&quot; -sV -oX C:/repos/personal/useful-claude-add-ons-gizmoduck/plugin/gizmoduck/scripts/_test/fixtures/nmap-real.xml -p 8922,80,443,22 127.0.0.1 -->
+<nmaprun scanner="nmap" args="&quot;C:\\Program Files (x86)\\Nmap\\nmap.exe&quot; -sV -oX C:/repos/personal/useful-claude-add-ons-gizmoduck/plugin/gizmoduck/scripts/_test/fixtures/nmap-real.xml -p 8922,80,443,22 127.0.0.1" start="1789106570" startstr="Fri Sep 11 01:02:50 2026" version="7.80" xmloutputversion="1.04">
+<scaninfo type="syn" protocol="tcp" numservices="4" services="22,80,443,8922"/>
+<verbose level="0"/>
+<debugging level="0"/>
+<host starttime="1789106572" endtime="1789106579"><status state="up" reason="localhost-response" reason_ttl="0"/>
+<address addr="127.0.0.1" addrtype="ipv4"/>
+<hostnames>
+<hostname name="localhost" type="PTR"/>
+</hostnames>
+<ports><port protocol="tcp" portid="22"><state state="closed" reason="reset" reason_ttl="128"/><service name="ssh" method="table" conf="3"/></port>
+<port protocol="tcp" portid="80"><state state="closed" reason="reset" reason_ttl="128"/><service name="http" method="table" conf="3"/></port>
+<port protocol="tcp" portid="443"><state state="closed" reason="reset" reason_ttl="128"/><service name="https" method="table" conf="3"/></port>
+<port protocol="tcp" portid="8922"><state state="open" reason="syn-ack" reason_ttl="128"/><service name="http" product="Apache httpd" version="2.2.3" extrainfo="(Unix) mod_ssl/2.2.3 OpenSSL/0.9.8e-fips-rc1" method="probed" conf="10"><cpe>cpe:/a:apache:http_server:2.2.3</cpe></service></port>
+</ports>
+<times srtt="875" rttvar="2359" to="100000"/>
+</host>
+<runstats><finished time="1789106579" timestr="Fri Sep 11 01:02:59 2026" elapsed="8.75" summary="Nmap done at Fri Sep 11 01:02:59 2026; 1 IP address (1 host up) scanned in 8.75 seconds" exit="success"/><hosts up="1" down="0" total="1"/>
+</runstats>
+</nmaprun>

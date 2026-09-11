@@ -522,3 +522,12 @@ def test_out_of_range_cvss_is_rejected_not_recognized_as_critical(tmp_path):
     assert f["severity_name"] == "info"
     assert "severity-assigned" in f["tags"]
     assert f["cvss"] == ""
+
+
+def test_real_empty_report_returns_no_findings(fixture):
+    # depcheck-genuine-empty.json is a real dependency-check 12.1.0 report with
+    # a present-but-empty `dependencies` array (no dependencies identified).
+    # A valid empty report is a clean scan and must return [], never a
+    # ParseError - the required-container check must accept a real empty one.
+    findings = depcheck.parse(str(fixture("depcheck-genuine-empty.json")), "repo-empty")
+    assert findings == []
