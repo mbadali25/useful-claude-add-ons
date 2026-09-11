@@ -1,0 +1,23 @@
+[
+  {"id": "scanTime", "ip": "198.51.100.10", "port": "443", "severity": "INFO",
+   "finding": "20s"},
+  {"id": "heartbleed", "ip": "198.51.100.10", "port": "443", "severity": "OK",
+   "finding": "not vulnerable, no heartbeat extension"},
+  {"id": "cert_expiration", "ip": "198.51.100.10", "port": "443", "severity": "LOW",
+   "finding": "expires in 45 days (2026-10-25 12:00 UTC)"},
+  {"id": "POODLE_SSL", "ip": "198.51.100.10", "port": "443", "severity": "MEDIUM",
+   "finding": "VULNERABLE, uses SSLv3+CBC (check TLS_FALLBACK_SCSV mitigation below)",
+   "cve": "CVE-2014-3566", "cwe": "CWE-310"},
+  {"id": "ROBOT", "ip": "198.51.100.10", "port": "443", "severity": "HIGH",
+   "finding": "VULNERABLE (NOT exploitable)",
+   "cve": "CVE-2017-13099", "cwe": "CWE-203"},
+  {"id": "BREACH", "ip": "198.51.100.10", "port": "443", "severity": "CRITICAL",
+   "finding": "VULNERABLE, uses gzip HTTP compression and reflects a request parameter",
+   "cve": "CVE-2013-3587", "cwe": "CWE-310"},
+  {"id": "cert_chain_of_trust", "ip": "198.51.100.10", "port": "443", "severity": "WARN",
+   "finding": "Local problem with the local certificate revocation lists: certificate revocation list has expired"},
+  {"id": "connection", "ip": "198.51.100.10", "port": "443", "severity": "FATAL",
+   "finding": "No connection to 198.51.100.10:443: connect: Connection refused"},
+  {"id": "cert_random_check", "ip": "198.51.100.10", "port": "443", "severity": null,
+   "finding": "Server did not provide a usable random value in the check"}
+]
