@@ -21,7 +21,8 @@ the existing Nuclei-only commands.
 ## 2. Goals / non-goals
 
 **Goals**
-- Integrate nine additional scanners alongside Nuclei (see §4).
+- Integrate eight additional scanners alongside Nuclei — nine tools in total
+  (see §4; tfsec was dropped as deprecated, §13.4).
 - A `routine` command that reads a targets manifest, runs the tools that fit each
   target's kind, and produces **one combined report per run** with per-target
   sections and a coverage table.
@@ -51,7 +52,8 @@ scripts/
     base.py               # adapter protocol + shared subprocess/timeout helpers
     nuclei.py             # refactor of existing cmd_scan into the adapter shape
     zap.py  nikto.py  nmap.py  testssl.py
-    trivy.py  depcheck.py  checkov.py  tfsec.py  sqlmap.py
+    trivy.py  depcheck.py  checkov.py  sqlmap.py
+                          # (no tfsec.py — deprecated, see §13.4)
 ```
 
 **Adapter protocol** (`scanners/base.py`) — every tool module implements:
@@ -72,14 +74,14 @@ existing command set changes.
 | Nuclei | web, host | JSONL (existing) | template `info.severity` | no |
 | OWASP ZAP | web | JSON (`-J`) | alert `riskcode` (0–3) | baseline=no, active=yes (opt-in) |
 | ↳ delivery | | local ZAP first, Docker image only as fallback (§12.2) | | |
-| Nikto | web | JSON (`-Format json`) | none → heuristic (`medium`/`info`) | no |
+| Nikto | web | CSV or XML — **not** JSON (§13.6) | none at all → heuristic (`medium`/`info`) | no |
 | Nmap + NSE | web, host | XML (`-oX`) | ports=`info`; `vuln` NSE→map | safe=no, `vuln`=opt-in |
 | testssl.sh | web, host | JSON (`--jsonfile`) | `severity` field | no |
 | Trivy | deps | JSON (`--format json`) | `Severity` | no |
 | Dependency-Check | deps | JSON (`--format JSON`) | CVSS→band | no |
-| Checkov | iac | JSON (`-o json`) | check `severity` (else `medium`) | no |
-| tfsec | iac | JSON (`--format json`) | `severity` | no |
-| sqlmap | web (gated) | session/log + `--results-file` CSV | confirmed injection=`high`/`critical` | **yes (opt-in + confirm)** |
+| Checkov | iac | JSON (`-o json`) — object OR array | check `severity` (usually `null` → `medium`) | no |
+| Trivy (misconfig) | iac | JSON (`--scanners misconfig`) | `Severity` | no |
+| sqlmap | web (gated) | `--output-dir` session artifacts; no JSON exists (§13.9) | persisted injection Type+Payload = `high`/`critical` | **yes (opt-in + confirm)** |
 
 **Severity map (`normalize.py`)** → gizmoduck's five levels
 `critical/high/medium/low/info`:
@@ -87,15 +89,17 @@ existing command set changes.
   High with confidence High stays high).
 - CVSS band (Dependency-Check): ≥9.0 critical, ≥7.0 high, ≥4.0 medium, >0 low,
   else info.
-- Text levels (testssl/Trivy/tfsec/Checkov/Nmap-vuln): case-insensitive map;
-  unknown → `info` and flagged `unknown` in the raw field.
+- Text levels (testssl/Trivy/Checkov/Nmap-vuln): case-insensitive map;
+  unknown → `info` and flagged `unknown` in the raw field. Trivy's `UNKNOWN`
+  and Checkov's `null` both land here (§13.5, §13.7).
 - Nikto: no severity model → default `medium` for its reported vulns, `info`
   for banner/version items, with a comment noting the assignment is heuristic.
 
 **Finding shape** — identical keys to today's Nuclei finding dict, plus:
 - `tool` — originating tool name.
-- `template-id` — synthetic `"<tool>:<rule-or-plugin-id>"` so `dedupe()` (which
-  keys on `template-id`) works across tools without collision.
+- `template_id` — synthetic `"<tool>:<rule-or-plugin-id>"` so `dedupe()` works
+  across tools without collision. **Not sufficient on its own:** `dedupe()` also
+  collapses across *targets*, which §13.1 corrects.
 - `target` — the manifest target it came from.
 - `tools` — list of every tool that reported this finding. Length 1 until the
   report's cross-tool merge (§7) collapses `deps`/`iac` duplicates.
@@ -130,8 +134,8 @@ targets:
 Kind → default tools:
 - `web` → nuclei, zap(baseline), nikto, nmap(safe), testssl  (sqlmap only if `options.sqlmap`)
 - `host` → nuclei, nmap(safe), testssl
-- `iac` → checkov, tfsec
-- `deps` → trivy, depcheck
+- `iac` → checkov, trivy(misconfig)
+- `deps` → trivy(vuln), depcheck
 
 `routine` refuses to run unless `authorized_by` is present and non-empty.
 
@@ -250,8 +254,169 @@ Extend `cmd_report` / `report_template.py`:
    "ZAP present via <local|docker>", and `bootstrap` installs local ZAP
    (including its JRE prerequisite) rather than pulling an image.
 3. **Category overlap — deduped into one section per category.** `deps`
-   (Trivy + Dependency-Check) renders as a single section, and `iac`
-   (Checkov + tfsec) as a single section. Findings the two tools agree on are
+   (Trivy vuln + Dependency-Check) renders as a single section, and `iac`
+   (Checkov + Trivy misconfig) as a single section. Findings the two tools agree on are
    merged into one entry carrying a `tools` list of every tool that reported
    it, rather than appearing twice. See §7 for the merge keys and the
    over-merge guard.
+
+---
+
+## 13. Research-verified corrections (2026-09-10)
+
+Findings from source-verification of the existing code and of each tool's
+documentation. **Where these conflict with sections 3-9 above, these win** — the
+earlier sections were written from design intent, these from the actual
+artifacts.
+
+### 13.1 `dedupe()` collapses across targets — the spec's compatibility claim is wrong
+
+`dedupe()` (`scripts/gizmoduck.py:176-190`) keys **strictly on `template_id`**,
+with no host or target component. Section 4's claim that a synthetic
+`"<tool>:<rule-id>"` id lets `dedupe()` work unchanged is true for *tools* but
+false for *targets*: run `routine` over five sites into one combined
+`findings.jsonl` and one template firing on all five collapses into a single
+group. Section 7 then asks to group by target, which cannot work on
+target-blind data.
+
+**Resolution:** key on `(target, template_id)` when a `target` field is present,
+falling back to `template_id` alone when it is absent. Plain Nuclei findings
+carry no `target`, so section 11's "existing commands byte-for-byte unchanged"
+guarantee holds.
+
+### 13.2 Finding-shape field names in section 4 are wrong
+
+The normalized dict key is **`template_id`** (underscore), not `template-id` —
+the hyphenated form is the raw Nuclei JSON key read at `gizmoduck.py:155`.
+`severity` in the dict is an **int** (`SEV_NUM`, `gizmoduck.py:38-41`);
+`severity_name` carries the display string. `normalize.py` must emit both.
+
+The full existing key set, which every adapter must produce:
+`template_id, name, severity, severity_name, type, timestamp, host,
+matched_at, cve, cvss, description, remediation, reference, tags`.
+
+### 13.3 ZAP: `zap-baseline.py` requires Docker even "standalone"
+
+`zap-baseline.py` and `zap-full-scan.py` shell out to
+`docker run ghcr.io/zaproxy/zaproxy:weekly` internally, so they are unusable on
+the Docker-less operator machine despite being plain Python. The local path is
+ZAP's **Automation Framework**: `zap.bat -cmd -autorun plan.yaml` with a
+`report` job of `template: traditional-json`.
+
+ZAP 2.16+ requires **Java 17 minimum** on Windows; `bootstrap` must check for
+and install a JRE, not just ZAP.
+
+The documented exit codes (0 pass / 1 FAIL / 2 WARN / 3 error) belong to the
+*Docker wrapper scripts*. The Automation Framework's exit-code contract is
+separate and must be verified against a real run before it is relied on.
+
+The `riskcode` 0-3 to Info/Low/Medium/High mapping is a high-confidence
+inference from example output, not a directly quoted source; the adapter should
+treat an unexpected riskcode as `info` and flag it rather than assume.
+
+### 13.4 tfsec is deprecated — dropped from the tool list
+
+tfsec's engine was consolidated into Trivy (announced Feb 2023, per tfsec's own
+README); last tag v1.28.14, May 2025, no new rules since. Its JSON schema could
+not be source-verified — only corroborated by secondary sources.
+
+**Dropped.** IaC coverage is Checkov + `trivy --scanners misconfig`. This is one
+fewer parser, reuses the Trivy adapter already being built, and avoids the exact
+failure the coverage table exists to prevent: IaC findings that stop reflecting
+new rules while still *looking* like live coverage. Tool count is **nine total
+(eight alongside Nuclei), not ten** — §2 and the §4 table are corrected to match.
+
+### 13.5 Checkov: `severity` is normally `null`, and output may be an array
+
+`BaseCheck.__init__` sets `self.severity = None`; severity is populated **only**
+when checks sync from Bridgecrew/Prisma Cloud via `--bc-api-key`. In a
+free/open-source run the large majority of built-in checks emit
+`"severity": null`. Section 4's `medium` fallback is therefore the **normal
+path**, not an edge case, and the report must not imply a real severity
+assessment was made.
+
+When more than one framework is scanned in one run, Checkov emits a **JSON array
+of report objects**, not a single object. The parser must accept both shapes.
+
+Populated values: `INFO`, `LOW`, `MEDIUM`, `HIGH`, `CRITICAL`, plus legacy
+aliases `MODERATE` to MEDIUM and `IMPORTANT` to HIGH.
+
+### 13.6 Nikto: JSON output is unreliable — parse CSV or XML
+
+`-Format json` is documented but emits invalid JSON on 2.1.6 when a target has
+no webserver (duplicate closing brace, issue #721), and the fix is unconfirmed
+on current releases. **CSV or XML is the primary parse path**, not a fallback.
+CSV columns: `id, scanid, testid, ip, hostname, port, tls, refs, httpmethod,
+uri, message, request, response`. Nikto has **no severity field at all**, which
+is what forces section 4's heuristic assignment — the report must label it as
+such.
+
+### 13.7 Trivy: exit code is 0 by default; one binary covers two kinds
+
+`trivy` exits **0 regardless of findings** unless `--exit-code <n>` is passed, so
+the adapter must never infer findings from the exit code. `Results[]` can carry
+`Vulnerabilities[]`, `Misconfigurations[]` and `Secrets[]` in the same file,
+gated by `--scanners`; this is what lets one Trivy adapter serve both the `deps`
+and `iac` kinds. Severity set: `UNKNOWN, LOW, MEDIUM, HIGH, CRITICAL` — no
+`INFO`; map `UNKNOWN` to `info` and flag it. Timeout: `--timeout` (default
+`5m0s`, extend for large repos).
+
+### 13.8 Dependency-Check: CVSS v3 can be absent
+
+`cvssv3.baseScore` may be null or absent for a dependency whose only NVD entry is
+CVSSv2 or which is unscored, while the plain-text `severity` field is still
+populated. Section 4's "CVSS to band" is therefore insufficient on its own.
+Fallback order: plain-text `severity`, then `cvssv2.score`, then
+`cvssv3.baseScore`.
+
+### 13.9 sqlmap: no JSON report; confirmation comes from session artifacts
+
+There is **no `--report-json` flag** — it is absent from `lib/core/optiondict.py`
+and earlier community claims of it are wrong. Confirmed options: `--results-file`
+(CSV, auto-used in `-m` multi-target mode), `--output-dir` (per-target session
+tree with `log` and `session.sqlite`), `--batch` (non-interactive), and
+`--time-limit=<seconds>` (total wall-clock cap — distinct from `--timeout`, which
+is per-HTTP-request).
+
+A **confirmed** injection is one persisted in `session.sqlite` / the target `log`
+with a recorded injection `Type` and `Payload`; probed-and-negative parameters
+are not persisted. The adapter must read session artifacts, never scrape stdout,
+and must not infer findings from the exit code (sqlmap exits 0 on normal
+completion whether or not anything was found).
+
+### 13.10 Existing-code realities that change task shape
+
+- **No package structure exists.** `scripts/` has no `__init__.py`;
+  `import report_template` works only because the script's own directory heads
+  `sys.path` when invoked as `python gizmoduck.py`, with a
+  `spec_from_file_location` fallback at `gizmoduck.py:274-291`. A `scanners/`
+  subpackage needs the same by-path pattern or an explicit `sys.path` insert.
+- **`bootstrap` is fail-fast, not independent.** Both `bootstrap.sh`
+  (`set -euo pipefail`, lines 10-38) and `bootstrap.ps1` (lines 9-39) are single
+  linear scripts that abort on first failure. Section 9's "each install is
+  independent" is a **restructure of existing code**, not an addition.
+- **The detail floor is duplicated.** `REPORT_DETAIL_FLOOR` / `detail_floor()`
+  (`gizmoduck.py:50`, `204-210`) for the Markdown path and `ACTION_THRESHOLD`
+  (`report_template.py:34`, re-applied in `render_report()` at `316-363`) for
+  HTML/PDF are two independent copies of "never below Medium" with no shared
+  constant. New report markup must satisfy both.
+- **The CLI has no auto-registration.** A single `argparse.ArgumentParser` with a
+  hardcoded `choices` list (`gizmoduck.py:449-450`) and an `if/elif` dispatch
+  chain (`511-594`). Adding `routine` means editing both by hand.
+- **Test coverage is 8 tests on the `tickets` gate only**
+  (`scripts/_test/test_tickets_gate.py`), run as real subprocesses. There is no
+  `conftest.py`, `pytest.ini`, `pyproject.toml`, or fixtures convention to build
+  on — the plan must create them. The harness hardcodes directory depth
+  (`parent.parent`, `.parents[2]`), so tests nested deeper need matching path
+  math.
+
+### 13.11 Still unverified at plan time
+
+- Nmap `-oX` structured `<script>` output for `vuln` NSE, and which scripts emit
+  a machine-readable `state: VULNERABLE`.
+- testssl.sh `--jsonfile` vs `--jsonfile-pretty` schema difference and the
+  complete `severity` value set.
+- The ZAP Automation Framework's exit-code contract, and whether its
+  `traditional-json` report job emits the same schema as `-J`.
+
+These block only their own adapter tasks; every other task can proceed.
