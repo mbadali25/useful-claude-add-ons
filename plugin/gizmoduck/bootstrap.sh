@@ -196,6 +196,33 @@ try_install "testssl.sh"         install_testssl
 try_install "trivy"              install_trivy
 try_install "checkov"            install_checkov
 try_install "dependency-check"   install_depcheck
+
+# dependency-check's first run downloads the entire NVD CVE corpus. Without an
+# API key, NIST rate-limits that sync to ~5 requests/30s - on a fresh machine
+# that first run can take the better part of an hour and gives no progress
+# output, which looks exactly like a hang. An API key raises the limit to
+# ~50/30s (~10x). Print this unconditionally (not just on install success):
+# it matters just as much if dependency-check gets installed by hand later.
+# Non-interactive on purpose - do not prompt for the key here.
+cat <<'NVDMSG'
+
+------------------------------------------------------------
+ Dependency-Check + NVD API key (optional, recommended):
+ The first scan syncs the full NVD CVE database. Without an API
+ key NIST rate-limits that to ~5 req/30s (~10x slower than with
+ one) - the run can take a long time and print nothing, which
+ looks hung but isn't.
+
+ Get a free key (no account, no cost - just an email + org):
+   https://nvd.nist.gov/developers/request-an-api-key
+ NIST emails an ACTIVATION LINK, not the key itself - open that
+ link, then copy the key shown on the page behind it.
+
+ Then set it before running dependency-check:
+   export NVD_API_KEY=<your key>
+------------------------------------------------------------
+NVDMSG
+
 try_install "sqlmap"             install_sqlmap
 try_install "OWASP ZAP"          install_zap
 

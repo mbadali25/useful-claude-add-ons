@@ -769,6 +769,20 @@ def cmd_doctor():
     wk = shutil.which("wkhtmltopdf")
     line("wkhtmltopdf (PDF)", wk or "not found — HTML reports still work", good=bool(wk))
 
+    # NVD_API_KEY is optional: dependency-check runs fine without it, just
+    # rate-limited by NIST (~5 req/30s vs ~50 with a key) on its first NVD
+    # sync. Reported directly with safe_print rather than via line(), so an
+    # absent key is a visible gap only — it never flips `ok` and never
+    # changes doctor's exit code, matching the convention that only nuclei
+    # and its templates can fail this check. Never print the key itself, not
+    # even partially — presence/absence only.
+    if os.environ.get("NVD_API_KEY"):
+        safe_print("OK NVD_API_KEY: set")
+    else:
+        safe_print("!! NVD_API_KEY: not set — dependency-check's first NVD sync will be "
+                    "rate-limited to ~5 req/30s; get a free key at "
+                    "https://nvd.nist.gov/developers/request-an-api-key")
+
     sys.exit(0 if ok else 1)
 
 
