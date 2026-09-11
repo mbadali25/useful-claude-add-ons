@@ -115,6 +115,21 @@ CONFIRM_KEY = "confirm"   # opts[CONFIRM_KEY] must be truthy or run() refuses
 # high; stacked-queries or UNION with database access -> critical").
 _CRITICAL_MARKERS = ("union", "stacked queries")
 
+# sqlmap reachability failures. These land in stdout/console, never in the
+# session `log` (spec 13.9), so a run that could not reach its target leaves
+# a session dir indistinguishable from a genuinely clean one - 0-byte log
+# plus session.sqlite - and parse() correctly returns [] for it. Left
+# unsurfaced, an unreachable target reads as "tested, no injection". Matched
+# ONLY against connection/reachability phrases: `[CRITICAL] all tested
+# parameters do not appear to be injectable` is a real clean result and must
+# NOT be treated as degradation.
+_CONNECTION_ERROR_SIGNALS = (
+    "connection timed out to the target url",
+    "unable to connect to the target url",
+    "connection refused",
+)
+CONNECTION_ERROR_MARKER = ".gizmoduck-sqlmap-unreachable"
+
 _PARAM_HEADER = re.compile(
     r'^Parameter:\s*(?P<param>\S+)\s*\((?P<place>[^)]*)\)\s*$', re.MULTILINE)
 _TRIPLE = re.compile(
@@ -208,6 +223,21 @@ def run(target, outdir, opts):
         # instead of a silent empty result. See parse()'s docstring.
         return None, result
     _write_target_sidecar(session_dir, target)
+
+    # Surface a reachability failure the session dir cannot show. sqlmap
+    # writes connection errors to stdout/console, not the session `log`, so a
+    # run that never reached its target leaves the same 0-byte-log +
+    # session.sqlite shape a clean run does. Detected from the ToolResult's
+    # own output (never scraped from the session artifacts) and written as a
+    # sibling marker, because parse_errors(raw_path, target) is the fixed
+    # cross-adapter signature routine calls and is never handed the
+    # ToolResult - only the path. Mirrors depcheck's stale-NVD marker.
+    marker = session_dir / CONNECTION_ERROR_MARKER
+    if marker.exists():
+        marker.unlink()  # never let a prior run's marker survive as this run's
+    combined = ((result.stdout or "") + "\n" + (result.stderr or "")).lower()
+    if any(sig in combined for sig in _CONNECTION_ERROR_SIGNALS):
+        marker.write_text("sqlmap could not reach the target", encoding="utf-8")
 
     # CRITICAL defect fix (round 2): return the exact session directory
     # run() just resolved, not the --output-dir root. run() is the only
@@ -472,6 +502,34 @@ def _iter_confirmed(text):
         for m in triples:
             yield (param, place.strip(), m.group("type").strip(),
                    m.group("title").strip(), m.group("payload").strip())
+
+
+def parse_errors(raw_path, target):
+    """Surface a reachability failure run() recorded as a sibling marker.
+
+    A sqlmap run that could not reach its target leaves a session dir that
+    looks exactly like a clean one (spec 13.9), so parse() cannot tell them
+    apart and correctly returns []. run() writes CONNECTION_ERROR_MARKER when
+    it sees a connection failure in the tool's own stdout; this reads it back
+    as a scan-error record so routine's coverage cell shows the target was
+    unreachable rather than clean. Shaped nothing like a finding. Lenient:
+    parse() owns raising, so an unresolvable path yields no error records.
+    """
+    try:
+        session_dir = _resolve_session_for_parse(raw_path, target)
+    except base.ParseError:
+        return []
+    marker = session_dir / CONNECTION_ERROR_MARKER
+    if not marker.exists():
+        return []
+    return [{
+        "tool": NAME,
+        "target": target,
+        "severity": "error",
+        "message": "sqlmap could not reach the target - unreachable, not "
+                   "scanned (connection error in tool output)",
+        "host": _session_location(session_dir, target),
+    }]
 
 
 def parse(raw_path, target):
