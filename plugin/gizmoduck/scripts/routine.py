@@ -50,6 +50,26 @@ class AuthorizationError(Exception):
     """
 
 
+def _require_authorized_by(authorized_by):
+    """The one rule behind AuthorizationError, shared by load_manifest
+    (parse time) and run_routine (execution time) so the two checks cannot
+    drift apart.
+
+    load_manifest's check stops a bad manifest file early, at zero cost.
+    But this tool sends traffic at real systems, and a `Manifest` can be
+    built directly rather than through load_manifest - every test in
+    test_routine_orchestration.py does exactly that, and so could any other
+    caller. Authorization must therefore be enforced where execution
+    actually happens, not only where parsing happens; run_routine calls
+    this too, right before it touches the first adapter.
+    """
+    if not (authorized_by or "").strip():
+        raise AuthorizationError(
+            "manifest is missing a non-empty 'authorized_by'; routine "
+            "refuses to run without an explicit authorization statement "
+            "(spec section 8)")
+
+
 @dataclass
 class Target:
     """One manifest entry. `options` is the per-target toggle dict spec
@@ -114,15 +134,21 @@ def load_manifest(path, registry=None):
         data = yaml.safe_load(fh) or {}
 
     authorized_by = (data.get("authorized_by") or "").strip()
-    if not authorized_by:
-        raise AuthorizationError(
-            "manifest is missing a non-empty 'authorized_by'; routine "
-            "refuses to run without an explicit authorization statement "
-            "(spec section 8)")
+    _require_authorized_by(authorized_by)
 
     targets = []
+    seen_names = set()
     for raw in data.get("targets") or []:
         name = raw.get("name")
+        if name in seen_names:
+            raise ValueError(
+                "duplicate target name %r; target names must be unique - "
+                "they key the run manifest, each finding's own 'target' "
+                "field, and the per-target output directory, so two "
+                "targets sharing one name silently overwrite each other's "
+                "coverage and collide on disk" % name)
+        seen_names.add(name)
+
         kind = raw.get("kind")
         if kind not in reg.KIND_DEFAULTS:
             raise ValueError(
@@ -175,11 +201,36 @@ def resolve_adapters(target, registry=None):
     declines on if unset. A target can be opted in here and still end up
     `skipped-active` at run time - that is by design, not a bug in either
     layer.
+
+    An explicit `target.tools` list is subject to this exact same gate. It
+    may choose *among* permitted tools, but it must never *grant* an
+    active, opt-in-only tool (today, only sqlmap) that this target never
+    opted into via `options[<tool name>]` - naming the tool in `tools:`
+    is not itself an opt-in. Because both paths check the identical
+    `target.options.get(name)` truthiness, an explicit `options.sqlmap:
+    false` is authoritative over any `tools:` listing, exactly as it is
+    over the kind-default path below.
     """
     reg = registry if registry is not None else default_registry
 
+    def _is_active_opt_in_only(name):
+        """True for an adapter that is DEFAULT_ENABLED=False and fully
+        ACTIVE (today, only sqlmap) - i.e. one that requires an explicit
+        `options[name]` opt-in before it may run at all, regardless of how
+        it was named (kind default extension or explicit `tools:` list).
+        An adapter this registry doesn't recognize is never treated as
+        gated here; an unknown name still surfaces its own clear error
+        later, when run_routine actually tries to look it up.
+        """
+        mod = reg.ADAPTERS.get(name)
+        if mod is None:
+            return False
+        return (not getattr(mod, "DEFAULT_ENABLED", True)
+                and getattr(mod, "ACTIVE", False))
+
     if target.tools:
-        return list(target.tools)
+        return [name for name in target.tools
+                if not _is_active_opt_in_only(name) or target.options.get(name)]
 
     adapters = list(reg.KIND_DEFAULTS[target.kind])
     for name, mod in reg.ADAPTERS.items():
@@ -187,9 +238,7 @@ def resolve_adapters(target, registry=None):
             continue
         if target.kind not in getattr(mod, "KINDS", []):
             continue
-        if getattr(mod, "DEFAULT_ENABLED", True):
-            continue
-        if not getattr(mod, "ACTIVE", False):
+        if not _is_active_opt_in_only(name):
             continue
         if target.options.get(name):
             adapters.append(name)
@@ -335,7 +384,14 @@ def run_routine(manifest, outdir, registry=None, confirm=None):
     One tool failing (a raised exception, a timeout, a missing binary) never
     aborts the target or the run: every adapter invocation is individually
     guarded, and a bad cell is recorded and skipped over.
+
+    Authorization is re-checked here, not just trusted from load_manifest:
+    this is the point traffic actually goes out, and a `Manifest` can be
+    constructed directly (see `_require_authorized_by`'s docstring), which
+    would otherwise slip a blank `authorized_by` straight past every gate.
     """
+    _require_authorized_by(manifest.authorized_by)
+
     reg = registry if registry is not None else default_registry
     outdir = Path(outdir)
     outdir.mkdir(parents=True, exist_ok=True)

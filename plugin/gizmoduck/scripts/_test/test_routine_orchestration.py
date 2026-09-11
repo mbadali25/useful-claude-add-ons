@@ -273,6 +273,41 @@ def test_nmap_records_safe_plus_vuln_mode_when_opted_in(fake_registry, tmp_path)
 # file directly, so its shape is a cross-agent contract in its own right.
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Defect: run_routine did not itself enforce the mandatory `authorized_by`
+# rule - only load_manifest did. A Manifest built directly (bypassing
+# load_manifest, exactly like every fixture in this file) with a blank
+# authorized_by reached every adapter anyway. run_routine must refuse before
+# touching a single adapter - proven here by monkeypatching base.run_tool and
+# asserting it is never called, and by asserting the fake adapter's own run()
+# is never called either.
+# ---------------------------------------------------------------------------
+
+def test_run_routine_enforces_authorization_even_for_a_hand_built_manifest(
+        fake_registry, tmp_path, monkeypatch):
+    subprocess_calls = []
+    monkeypatch.setattr(
+        base, "run_tool",
+        lambda *a, **k: subprocess_calls.append((a, k)) or base.ToolResult(0, "", "", False))
+
+    nuclei = fake_registry.ADAPTERS["nuclei"]
+
+    def _run(target, outdir, opts):
+        base.run_tool(["nuclei-fake"], timeout=1)
+        return "nuclei-raw", base.ToolResult(0, "", "", False)
+    nuclei._run_fn = _run
+
+    valid_target = routine.Target(name="site-a", kind="web",
+                                  url="https://a.example/x?id=1")
+    manifest = routine.Manifest("", [valid_target])
+
+    with pytest.raises(routine.AuthorizationError):
+        routine.run_routine(manifest, tmp_path, registry=fake_registry)
+
+    assert subprocess_calls == []
+    assert nuclei.run_calls == []
+
+
 def test_run_manifest_json_has_the_documented_schema(manifest, fake_registry, tmp_path):
     rm = routine.run_routine(manifest, tmp_path, registry=fake_registry)
     on_disk = json.loads((tmp_path / "run-manifest.json").read_text())
@@ -301,6 +336,43 @@ def test_run_manifest_json_has_the_documented_schema(manifest, fake_registry, tm
     testssl_cell = by_key[("site-a", "testssl")]
     assert testssl_cell["status"] == "error:timeout"
     assert testssl_cell["error"] == "timeout"
+
+
+# ---------------------------------------------------------------------------
+# Defect: an explicit `tools:` list bypassed sqlmap's candidacy gate
+# (routine.py:181). This test exercises the real `sqlmap` adapter (not
+# FakeAdapter) through the default registry, because the bug's real-world
+# impact is that sqlmap.run() - and its call into `base.run_tool`, the one
+# place any adapter reaches an actual subprocess - would fire. `base.run_tool`
+# is monkeypatched here so nothing is ever really shelled out; the point is
+# to prove the call is never even *attempted* once the gate is honoured, not
+# merely that some exception happens to surface.
+# ---------------------------------------------------------------------------
+
+def test_explicit_tools_list_cannot_grant_sqlmap_without_the_opt_in(
+        tmp_path, monkeypatch):
+    import scanners
+    from scanners import sqlmap
+
+    subprocess_calls = []
+    monkeypatch.setattr(
+        base, "run_tool",
+        lambda *a, **k: subprocess_calls.append((a, k)) or base.ToolResult(0, "", "", False))
+    monkeypatch.setattr(sqlmap, "is_available", lambda: True)
+
+    for i, opts in enumerate(({}, {"sqlmap": False})):
+        subprocess_calls.clear()
+        target = routine.Target(name="prod", kind="web",
+                                url="https://prod.example/?id=1",
+                                tools=["sqlmap"], options=dict(opts))
+        manifest = routine.Manifest(authorized_by="Alice", targets=[target])
+
+        rm = routine.run_routine(manifest, tmp_path / ("case-%d" % i),
+                                 confirm="approved")
+
+        assert subprocess_calls == [], (
+            "sqlmap reached base.run_tool for options=%r" % (opts,))
+        assert rm.status("prod", "sqlmap") is None
 
 
 def test_trivy_kind_is_threaded_through_run_opts_and_parse_kwarg(tmp_path):
