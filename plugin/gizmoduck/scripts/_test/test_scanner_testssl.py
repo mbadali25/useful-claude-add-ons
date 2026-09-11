@@ -15,6 +15,9 @@ scan errors into the same jsonfile array as real findings, and mapping WARN
 or FATAL as if they were severities would make a broken scan (e.g. a stale
 CRL fetch, a refused connection) read as a vulnerability in the target.
 """
+import os
+import shutil
+
 import pytest
 
 from scanners import base, testssl
@@ -228,3 +231,86 @@ def test_non_string_severity_raises_in_parse_errors_too(tmp_path):
     bad.write_text('[{"severity":1}]')
     with pytest.raises(base.ParseError):
         testssl.parse_errors(bad, target="site-a")
+
+
+# ---------------------------------------------------------------------------
+# MEDIUM defect (installed-toolchain): testssl.sh hard-requires `hexdump`
+# ("You need to install hexdump for this program to work.") and fails before
+# doing anything else without it. Git for Windows' bundled Git Bash - the
+# bash this adapter actually runs testssl.sh under on an operator's machine -
+# ships xxd/od but not hexdump; a sibling MSYS2 install commonly does. This
+# must be fixed in the adapter's invocation, never by patching the vendored
+# testssl.sh script itself.
+# ---------------------------------------------------------------------------
+
+def test_hexdump_dir_is_none_when_hexdump_already_resolvable(monkeypatch):
+    monkeypatch.setattr(base, "which", lambda name: "/usr/bin/hexdump" if name == "hexdump" else None)
+    assert testssl._hexdump_dir() is None
+
+
+def test_hexdump_dir_finds_an_msys2_style_candidate(monkeypatch, tmp_path):
+    msys_bin = tmp_path / "msys64" / "usr" / "bin"
+    msys_bin.mkdir(parents=True)
+    (msys_bin / "hexdump.exe").write_text("stand-in")
+
+    monkeypatch.setattr(base, "which", lambda name: None)
+    monkeypatch.setattr(testssl, "_MSYS2_HEXDUMP_CANDIDATES", (str(msys_bin),))
+
+    assert testssl._hexdump_dir() == str(msys_bin)
+
+
+def test_hexdump_dir_is_none_when_no_candidate_actually_has_it(monkeypatch, tmp_path):
+    empty_bin = tmp_path / "no-hexdump-here"
+    empty_bin.mkdir()
+
+    monkeypatch.setattr(base, "which", lambda name: None)
+    monkeypatch.setattr(testssl, "_MSYS2_HEXDUMP_CANDIDATES", (str(empty_bin),))
+
+    assert testssl._hexdump_dir() is None
+
+
+def test_run_prepends_the_hexdump_dir_to_path_for_the_subprocess(monkeypatch, tmp_path, fixture):
+    msys_bin = tmp_path / "msys64" / "usr" / "bin"
+    msys_bin.mkdir(parents=True)
+    (msys_bin / "hexdump.exe").write_text("stand-in")
+
+    monkeypatch.setattr(base, "which",
+                         lambda name: "/usr/bin/bash" if name in ("testssl.sh", "testssl") else None)
+    monkeypatch.setattr(testssl, "_MSYS2_HEXDUMP_CANDIDATES", (str(msys_bin),))
+
+    original_path = os.environ.get("PATH", "")
+    captured = {}
+
+    def fake_run_tool(argv, timeout, cwd=None):
+        captured["path_during_run"] = os.environ.get("PATH", "")
+        shutil.copy(fixture("testssl.json"), argv[2])
+        return base.ToolResult(0, "", "", False)
+
+    monkeypatch.setattr(base, "run_tool", fake_run_tool)
+
+    raw_path, result = testssl.run("example.com", str(tmp_path), {})
+
+    assert raw_path is not None
+    assert captured["path_during_run"].startswith(str(msys_bin) + os.pathsep)
+    # PATH must be restored afterward - this must never leak into later runs.
+    assert os.environ.get("PATH", "") == original_path
+
+
+def test_run_does_not_touch_path_when_hexdump_is_already_resolvable(monkeypatch, tmp_path, fixture):
+    monkeypatch.setattr(
+        base, "which",
+        lambda name: {"testssl.sh": "/usr/bin/testssl.sh", "hexdump": "/usr/bin/hexdump"}.get(name))
+
+    original_path = os.environ.get("PATH", "")
+    captured = {}
+
+    def fake_run_tool(argv, timeout, cwd=None):
+        captured["path_during_run"] = os.environ.get("PATH", "")
+        shutil.copy(fixture("testssl.json"), argv[2])
+        return base.ToolResult(0, "", "", False)
+
+    monkeypatch.setattr(base, "run_tool", fake_run_tool)
+
+    testssl.run("example.com", str(tmp_path), {})
+
+    assert captured["path_during_run"] == original_path

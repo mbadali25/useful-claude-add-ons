@@ -176,6 +176,16 @@ def run(target, outdir, opts):
         opts.get("sqlmap_bin", "sqlmap"),
         "-u", target,
         "--batch",
+        # `--batch` alone answers sqlmap's own interactive prompts during
+        # the scan, but on Windows sqlmap's cmdline parser
+        # (lib/parse/cmdline.py) separately blocks on stdin with "Press
+        # Enter to continue..." - a deliberate guard against someone
+        # double-clicking the script - unless `--non-interactive` is
+        # literally present in argv. This fires even on `--version` and is
+        # NOT suppressed by `--batch`; without it, a routine run hangs until
+        # base.run_tool's own timeout eventually kills it, which then
+        # presents as a mysterious timeout rather than the hang it is.
+        "--non-interactive",
         "--time-limit=%d" % time_limit,
         "--output-dir=%s" % outdir,
     ]

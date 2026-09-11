@@ -26,6 +26,7 @@ already encodes exactly that inference and refuses anything outside 0-3, so
 this module defers to it rather than re-deriving the mapping.
 """
 import json
+import os
 from pathlib import Path
 
 import yaml
@@ -44,15 +45,68 @@ DEFAULT_TIMEOUT = 1800  # seconds; base.run_tool is the real guard (spec 13.13)
 
 
 def is_available():
-    """True only for a local ZAP install. Never probes Docker - see module
-    docstring; a Docker-only delivery is doctor's (Task 21) concern to report
-    as a distinct state, not this adapter's to fall back onto.
+    """True for a local ZAP install, whether reached via the zap.bat/zap.sh
+    wrapper or directly via `java -jar` (see _resolve_zap_command). Never
+    probes Docker - see module docstring; a Docker-only delivery is
+    doctor's (Task 21) concern to report as a distinct state, not this
+    adapter's to fall back onto.
     """
-    return _zap_binary() is not None
+    return _resolve_zap_command() is not None
 
 
 def _zap_binary():
     return base.which("zap.bat") or base.which("zap.sh")
+
+
+def _zap_jar_dirs():
+    """Directories to search for a ZAP jar when no zap.bat/zap.sh wrapper is
+    on PATH. A plain zip extraction (bootstrap.ps1's Install-Zap - "no
+    installer wizard to script") guarantees only that the jar sits inside
+    the extracted folder; it does not put anything on PATH at all. An
+    operator override (GIZMODUCK_ZAP_HOME) takes precedence, then the
+    well-known %LOCALAPPDATA%\\Programs\\zap location bootstrap.ps1 itself
+    extracts to.
+    """
+    dirs = []
+    override = os.environ.get("GIZMODUCK_ZAP_HOME")
+    if override:
+        dirs.append(Path(override))
+    local_appdata = os.environ.get("LOCALAPPDATA")
+    if local_appdata:
+        dirs.append(Path(local_appdata) / "Programs" / "zap")
+    return dirs
+
+
+def _find_zap_jar():
+    """The first `zap-*.jar` found under any _zap_jar_dirs() candidate, or
+    None. zap.bat is documented (module docstring) to be nothing but a thin
+    wrapper around `java -jar` against exactly this jar - so when the
+    wrapper itself isn't resolvable, the jar it would have called is still
+    a legitimate way to run ZAP's Automation Framework.
+    """
+    for base_dir in _zap_jar_dirs():
+        if not base_dir.is_dir():
+            continue
+        for jar in sorted(base_dir.glob("**/zap-*.jar")):
+            return jar
+    return None
+
+
+def _resolve_zap_command():
+    """The argv prefix to invoke ZAP's Automation Framework with, or None if
+    no usable route exists. Prefers the zap.bat/zap.sh wrapper (module
+    docstring: the only runnable local path is the AF) but falls back to
+    `java -jar <jar>` - the same thing the wrapper itself runs internally -
+    since a zip-only install commonly leaves no wrapper on PATH at all.
+    """
+    wrapper = _zap_binary()
+    if wrapper:
+        return [wrapper]
+    jar = _find_zap_jar()
+    java = base.which("java")
+    if jar and java:
+        return [java, "-jar", str(jar)]
+    return None
 
 
 def _context_name(target):
@@ -92,7 +146,10 @@ def _build_plan(url, context_name, active, report_dir, report_file):
 
 
 def run(target, outdir, opts):
-    """Write the AF plan and invoke `zap.bat -cmd -autorun <plan>.yaml`.
+    """Write the AF plan and invoke it - `zap.bat -cmd -autorun <plan>.yaml`
+    when a wrapper is on PATH, or `java -jar <zap jar> -cmd -autorun
+    <plan>.yaml` when only a zip install's jar is available (see
+    _resolve_zap_command).
 
     Returns `(raw_path | None, ToolResult)` (routine.py contract, standardized
     across all nine adapters): the report job writes the native JSON itself
@@ -126,11 +183,12 @@ def run(target, outdir, opts):
     with open(plan_path, "w", encoding="utf-8") as fh:
         yaml.safe_dump(plan, fh, sort_keys=False)
 
-    binary = _zap_binary()
-    if binary is None:
-        return None, base.ToolResult(-1, "", "no local ZAP install found (zap.bat/zap.sh)", False)
+    command = _resolve_zap_command()
+    if command is None:
+        return None, base.ToolResult(
+            -1, "", "no local ZAP install found (zap.bat/zap.sh, or a zap-*.jar + java)", False)
 
-    argv = [binary, "-cmd", "-autorun", str(plan_path)]
+    argv = command + ["-cmd", "-autorun", str(plan_path)]
     result = base.run_tool(argv, timeout=opts.get("timeout", DEFAULT_TIMEOUT))
     raw_path = str(report_path) if report_path.is_file() else None
     return raw_path, result

@@ -34,6 +34,7 @@ would let nobody notice (base.ParseError's own docstring).
 import csv
 import os
 import re
+from pathlib import Path
 
 import normalize as n
 from . import base
@@ -62,8 +63,91 @@ _BANNER_RE = re.compile(
 )
 
 
+# Nikto is a Perl script with no native Windows package (bootstrap.ps1's
+# Install-Nikto comment): on Windows there is no `nikto` binary on PATH at
+# all, only a cloned nikto.pl that needs a Perl runtime with XML::Writer to
+# run it. Presence of *some* `perl` on PATH is not evidence it can run
+# nikto - a Cygwin/MSYS perl build commonly satisfies `which perl` while
+# lacking XML::Writer and having a broken CPAN (no CPAN::Author, no cpanm)
+# with no way to install it. bootstrap.ps1 previously only installed
+# Strawberry Perl when no `perl` was found on PATH at all, so a machine with
+# exactly that broken perl skipped the install and was left with a nikto
+# that could never actually run - both is_available() and run() must
+# independently verify whichever perl they are about to use really has
+# XML::Writer, not just that it exists.
+_STRAWBERRY_PERL_CANDIDATES = (
+    os.environ.get("GIZMODUCK_STRAWBERRY_PERL") or r"C:\Strawberry\perl\bin\perl.exe",
+)
+
+# Where bootstrap.ps1's Install-Nikto actually clones nikto to (Join-Path
+# $env:LOCALAPPDATA "Programs" "nikto") - `program\nikto.pl` is the entry
+# point inside that clone. A GIZMODUCK_NIKTO_PL override takes precedence for
+# an operator who put it somewhere else.
+_NIKTO_PL_CANDIDATES = tuple(
+    p for p in (
+        os.environ.get("GIZMODUCK_NIKTO_PL"),
+        (str(Path(os.environ["LOCALAPPDATA"]) / "Programs" / "nikto" / "program" / "nikto.pl")
+         if os.environ.get("LOCALAPPDATA") else None),
+    ) if p
+)
+
+
+def _perl_has_xml_writer(perl_exe):
+    """Whether `perl_exe` can actually load XML::Writer, which nikto hard-
+    requires. This is the check that actually matters - "some perl exists on
+    PATH" is not the same claim, and treating it as one is exactly what left
+    nikto broken on a machine with a Cygwin/MSYS perl already on PATH.
+    """
+    result = base.run_tool([perl_exe, "-MXML::Writer", "-e", "1"], timeout=15)
+    return result.returncode == 0
+
+
+def _find_working_perl():
+    """Locate a perl binary proven to have XML::Writer, preferring a known-
+    good Strawberry Perl install over whatever generic `perl` happens to be
+    first on PATH (module comment above) - since a working Strawberry Perl
+    is worth more than being first found. Falls back to PATH only if it
+    also passes the same real check. Returns None if nothing usable exists.
+    """
+    for candidate in _STRAWBERRY_PERL_CANDIDATES:
+        if candidate and Path(candidate).is_file() and _perl_has_xml_writer(candidate):
+            return candidate
+    on_path = base.which("perl")
+    if on_path and _perl_has_xml_writer(on_path):
+        return on_path
+    return None
+
+
+def _find_nikto_pl():
+    for candidate in _NIKTO_PL_CANDIDATES:
+        if candidate and Path(candidate).is_file():
+            return candidate
+    return None
+
+
+def _resolve_argv(target, raw_path):
+    """The nikto command line to run: a native `nikto` binary on PATH (the
+    Linux/apt-installed case), or - lacking one - perl launching nikto.pl
+    directly, using a perl proven to actually have XML::Writer. Returns None
+    if neither route is usable, so run() can decline cleanly instead of
+    handing an unusable argv to base.run_tool.
+    """
+    native = base.which("nikto")
+    if native:
+        return [native, "-h", target, "-Format", "csv", "-output", raw_path]
+    nikto_pl = _find_nikto_pl()
+    if not nikto_pl:
+        return None
+    perl = _find_working_perl()
+    if not perl:
+        return None
+    return [perl, nikto_pl, "-h", target, "-Format", "csv", "-output", raw_path]
+
+
 def is_available():
-    return base.which("nikto") is not None
+    if base.which("nikto") is not None:
+        return True
+    return _find_nikto_pl() is not None and _find_working_perl() is not None
 
 
 def run(target, outdir, opts=None):
@@ -84,7 +168,13 @@ def run(target, outdir, opts=None):
     if os.path.isfile(raw_path):
         os.remove(raw_path)
 
-    argv = ["nikto", "-h", target, "-Format", "csv", "-output", raw_path]
+    argv = _resolve_argv(target, raw_path)
+    if argv is None:
+        return None, base.ToolResult(
+            -1, "",
+            "nikto not found: no nikto binary on PATH, and no nikto.pl + "
+            "working perl (with XML::Writer) available", False)
+
     timeout = (opts or {}).get("timeout", DEFAULT_TIMEOUT)
     result = base.run_tool(argv, timeout=timeout)
     if result.timed_out or not os.path.isfile(raw_path):

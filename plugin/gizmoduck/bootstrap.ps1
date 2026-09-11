@@ -98,12 +98,26 @@ function Install-Nmap {
   if ($LASTEXITCODE -ne 0) { throw "winget exited $LASTEXITCODE" }
 }
 
+function Test-PerlHasXmlWriter {
+  # Presence of *something* called perl on PATH is not evidence it can run
+  # nikto. On a machine with Git for Windows installed, `Get-Command perl`
+  # resolves to Git's own bundled MSYS perl - which, depending on the Git
+  # for Windows build, can be missing XML::Writer (nikto's hard dependency)
+  # with a CPAN that has no CPAN::Author/cpanm to install it with. The old
+  # check here ("install Strawberry Perl only if no perl is found at all")
+  # skipped the install on exactly that kind of machine and left nikto
+  # permanently broken. Verify the capability, not just the binary's
+  # existence.
+  if (-not (Get-Command perl -ErrorAction SilentlyContinue)) { return $false }
+  & perl -MXML::Writer -e "1" *> $null
+  return ($LASTEXITCODE -eq 0)
+}
+
 function Install-Nikto {
   # Nikto is a Perl script with no native Windows package - it needs a Perl
-  # runtime plus the script itself. Lower-confidence path versus the others
-  # below: not exercised end-to-end against a live target here.
+  # runtime plus the script itself.
   Test-WingetAvailable
-  if (-not (Get-Command perl -ErrorAction SilentlyContinue)) {
+  if (-not (Test-PerlHasXmlWriter)) {
     winget install --id StrawberryPerl.StrawberryPerl -e --accept-package-agreements --accept-source-agreements
     if ($LASTEXITCODE -ne 0) { throw "winget exited $LASTEXITCODE installing Strawberry Perl" }
   }
@@ -133,6 +147,21 @@ function Install-Testssl {
   }
   if ($LASTEXITCODE -ne 0) { throw "git clone/pull failed for testssl.sh" }
   Write-Host ">> testssl.sh cloned to $dir - run via Git Bash: bash `"$dir\testssl.sh`" <host>"
+  # testssl.sh hard-requires `hexdump` and refuses to run at all without it
+  # ("You need to install hexdump for this program to work."). Git Bash's
+  # own usr/bin ships xxd and od but not hexdump. The adapter
+  # (scanners/testssl.py's _hexdump_dir()) already works around this by
+  # prepending an MSYS2 usr/bin to PATH for the scan subprocess if it finds
+  # one at C:\tools\msys64\usr\bin, C:\msys64\usr\bin, or
+  # $env:GIZMODUCK_MSYS2_BIN - install MSYS2 (or point that variable at an
+  # existing one) if testssl scans fail with the hexdump error.
+  if (-not (Get-Command hexdump -ErrorAction SilentlyContinue) -and
+      -not (Test-Path "C:\tools\msys64\usr\bin\hexdump.exe") -and
+      -not (Test-Path "C:\msys64\usr\bin\hexdump.exe")) {
+    Write-Host "!! hexdump not found (needed by testssl.sh) and no MSYS2 install detected" -ForegroundColor Yellow
+    Write-Host "!! at the usual locations. testssl scans will fail until either is present -" -ForegroundColor Yellow
+    Write-Host "!! install MSYS2, or set GIZMODUCK_MSYS2_BIN to a directory containing hexdump.exe." -ForegroundColor Yellow
+  }
 }
 
 function Install-Trivy {

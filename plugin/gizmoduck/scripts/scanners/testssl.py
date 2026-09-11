@@ -23,6 +23,7 @@ they cannot cap the whole scan; `base.run_tool`'s own timeout is the real
 guard (spec 13.13).
 """
 import json
+import os
 from pathlib import Path
 
 from . import base
@@ -38,6 +39,21 @@ DEFAULT_ENABLED = True
 # fallback base.run_tool timeout when the manifest/opts don't set one.
 _DEFAULT_TIMEOUT = 900
 
+# testssl.sh hard-requires `hexdump` and refuses to run at all without it
+# ("You need to install hexdump for this program to work."). Git for
+# Windows' bundled Git Bash - the bash this adapter actually runs
+# testssl.sh under on an operator's machine - ships xxd/od but not hexdump;
+# a sibling MSYS2 install commonly does. These are fallback locations to
+# search, never a patch to testssl.sh itself (out of bounds - vendored
+# upstream script).
+_MSYS2_HEXDUMP_CANDIDATES = tuple(
+    p for p in (
+        os.environ.get("GIZMODUCK_MSYS2_BIN"),
+        r"C:\tools\msys64\usr\bin",
+        r"C:\msys64\usr\bin",
+    ) if p
+)
+
 _ERROR_SEVERITIES = ("WARN", "FATAL")
 # OK is a confident, documented "this check found nothing" - not an unmapped
 # value - so it is translated to INFO before normalize.sev_from_text ever
@@ -47,6 +63,20 @@ _OK_ALIAS = "OK"
 
 def is_available():
     return base.which("testssl.sh") is not None or base.which("testssl") is not None
+
+
+def _hexdump_dir():
+    """A directory to prepend to PATH so testssl.sh's subprocess can find
+    `hexdump`, or None when one is already resolvable (Linux/macOS, or an
+    MSYS2 install already on the caller's PATH) - see the module comment on
+    _MSYS2_HEXDUMP_CANDIDATES for why this is needed at all under Git Bash.
+    """
+    if base.which("hexdump"):
+        return None
+    for candidate in _MSYS2_HEXDUMP_CANDIDATES:
+        if candidate and (Path(candidate) / "hexdump.exe").is_file():
+            return candidate
+    return None
 
 
 def run(target, outdir, opts):
@@ -95,7 +125,23 @@ def run(target, outdir, opts):
     argv.append(target)
 
     timeout = opts.get("timeout", _DEFAULT_TIMEOUT)
-    result = base.run_tool(argv, timeout=timeout, cwd=opts.get("cwd"))
+
+    # Git Bash's own bin has no `hexdump` (module comment); testssl.sh hard-
+    # fails before doing anything else without one. base.run_tool has no env
+    # parameter (shared plumbing, out of scope here), so this temporarily
+    # prepends a directory that does have it to this process's PATH for the
+    # one subprocess call, then always restores it - never a permanent
+    # change to this process's environment.
+    hexdump_dir = _hexdump_dir()
+    old_path = os.environ.get("PATH", "")
+    if hexdump_dir:
+        os.environ["PATH"] = hexdump_dir + os.pathsep + old_path
+    try:
+        result = base.run_tool(argv, timeout=timeout, cwd=opts.get("cwd"))
+    finally:
+        if hexdump_dir:
+            os.environ["PATH"] = old_path
+
     if result.timed_out or not out_path.exists():
         return None, result
     return out_path, result

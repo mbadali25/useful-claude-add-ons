@@ -377,9 +377,24 @@ Fallback order: plain-text `severity`, then `cvssv2.score`, then
 There is **no `--report-json` flag** — it is absent from `lib/core/optiondict.py`
 and earlier community claims of it are wrong. Confirmed options: `--results-file`
 (CSV, auto-used in `-m` multi-target mode), `--output-dir` (per-target session
-tree with `log` and `session.sqlite`), `--batch` (non-interactive), and
+tree with `log` and `session.sqlite`), `--batch` (answers sqlmap's own
+in-scan prompts, e.g. which injection technique to try), and
 `--time-limit=<seconds>` (total wall-clock cap — distinct from `--timeout`, which
 is per-HTTP-request).
+
+**Correction (2026-09-10, found by installing the real sqlmap on Windows):**
+`--batch` is NOT sufficient to make sqlmap non-interactive on its own, despite
+an earlier draft of this section claiming it was. sqlmap's cmdline parser
+(`lib/parse/cmdline.py:1236-1240`) wraps argument parsing in
+`try/except SystemExit` and, on Windows, prints "Press Enter to continue..."
+and blocks on stdin unless `--non-interactive` is literally present in
+`sys.argv` — a deliberate guard against a Windows user double-clicking the
+script. It fires even on `--version`, and `--batch` does not suppress it. The
+adapter must pass **both**: `--batch` for in-scan prompts, `--non-interactive`
+to prevent the Windows stdin block. Omitting `--non-interactive` does not
+fail loudly — it hangs until `base.run_tool`'s own timeout eventually fires,
+which then looks like a mysterious timeout rather than the hang it actually
+is.
 
 A **confirmed** injection is one sqlmap persisted with a recorded injection
 `Type` and `Payload`; probed-and-negative parameters are not persisted. The

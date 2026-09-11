@@ -89,6 +89,14 @@ def test_run_builds_the_expected_argv_when_confirmed(monkeypatch, tmp_path):
     assert argv[0] == "sqlmap"
     assert "-u" in argv and "http://example.test/page?id=1" in argv
     assert "--batch" in argv
+    # CRITICAL (installed-toolchain defect): sqlmap's own cmdline parser
+    # (lib/parse/cmdline.py) wraps argument parsing in try/except SystemExit
+    # and, on Windows, prints "Press Enter to continue..." and blocks on
+    # stdin unless `--non-interactive` is LITERALLY in sys.argv - this fires
+    # even on `--version` and is not suppressed by `--batch`. Without this
+    # flag a routine run hangs until base.run_tool's timeout eventually
+    # fires, which then looks like a mysterious timeout rather than a hang.
+    assert "--non-interactive" in argv
     assert "--time-limit=120" in argv
     assert "--output-dir=%s" % tmp_path in argv
 

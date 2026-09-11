@@ -187,3 +187,92 @@ def test_stale_report_is_not_returned_when_the_run_writes_nothing(monkeypatch, t
     raw_path, result = zap.run("http://example.test", str(tmp_path), {})
     assert raw_path is None
     assert result.returncode == 1
+
+
+# ---------------------------------------------------------------------------
+# HIGH defect (installed-toolchain): a real zip install of ZAP does not
+# necessarily put zap.bat/zap.sh anywhere on PATH - all a zip extraction
+# guarantees is the jar sitting inside the extracted folder. `zap.bat` is
+# documented (module docstring) to be nothing but a thin wrapper around
+# `java -jar zap-<ver>.jar`; the adapter must accept that same route
+# directly when no wrapper is found on PATH, since that is what a zip
+# install actually provides.
+# ---------------------------------------------------------------------------
+
+def test_resolve_zap_command_prefers_the_wrapper_when_present(monkeypatch):
+    monkeypatch.setattr(zap, "_zap_binary", lambda: "/usr/bin/zap.sh")
+    assert zap._resolve_zap_command() == ["/usr/bin/zap.sh"]
+
+
+def test_resolve_zap_command_falls_back_to_java_dash_jar(monkeypatch, tmp_path):
+    zap_home = tmp_path / "ZAP_2.17.0"
+    zap_home.mkdir()
+    jar = zap_home / "zap-2.17.0.jar"
+    jar.write_text("stand-in jar")
+
+    monkeypatch.setattr(zap, "_zap_binary", lambda: None)
+    monkeypatch.setattr(zap, "_zap_jar_dirs", lambda: [tmp_path])
+    monkeypatch.setattr(base, "which", lambda name: "/usr/bin/java" if name == "java" else None)
+
+    assert zap._resolve_zap_command() == ["/usr/bin/java", "-jar", str(jar)]
+
+
+def test_resolve_zap_command_is_none_when_jar_found_but_no_java(monkeypatch, tmp_path):
+    zap_home = tmp_path / "ZAP_2.17.0"
+    zap_home.mkdir()
+    (zap_home / "zap-2.17.0.jar").write_text("stand-in jar")
+
+    monkeypatch.setattr(zap, "_zap_binary", lambda: None)
+    monkeypatch.setattr(zap, "_zap_jar_dirs", lambda: [tmp_path])
+    monkeypatch.setattr(base, "which", lambda name: None)
+
+    assert zap._resolve_zap_command() is None
+
+
+def test_resolve_zap_command_is_none_when_nothing_is_found(monkeypatch, tmp_path):
+    monkeypatch.setattr(zap, "_zap_binary", lambda: None)
+    monkeypatch.setattr(zap, "_zap_jar_dirs", lambda: [tmp_path])
+    monkeypatch.setattr(base, "which", lambda name: None)
+
+    assert zap._resolve_zap_command() is None
+
+
+def test_is_available_true_via_jar_and_java_when_no_wrapper_found(monkeypatch, tmp_path):
+    zap_home = tmp_path / "ZAP_2.17.0"
+    zap_home.mkdir()
+    (zap_home / "zap-2.17.0.jar").write_text("stand-in jar")
+
+    monkeypatch.setattr(zap, "_zap_binary", lambda: None)
+    monkeypatch.setattr(zap, "_zap_jar_dirs", lambda: [tmp_path])
+    monkeypatch.setattr(base, "which", lambda name: "/usr/bin/java" if name == "java" else None)
+
+    assert zap.is_available() is True
+
+
+def test_run_uses_java_dash_jar_argv_when_no_wrapper_binary_found(monkeypatch, tmp_path):
+    zap_home = tmp_path / "ZAP_2.17.0"
+    zap_home.mkdir()
+    jar = zap_home / "zap-2.17.0.jar"
+    jar.write_text("stand-in jar")
+
+    monkeypatch.setattr(zap, "_zap_binary", lambda: None)
+    monkeypatch.setattr(zap, "_zap_jar_dirs", lambda: [tmp_path])
+    monkeypatch.setattr(base, "which", lambda name: "/usr/bin/java" if name == "java" else None)
+
+    captured = {}
+
+    def fake_run_tool(argv, timeout, cwd=None):
+        captured["argv"] = argv
+        (tmp_path / "zap.json").write_text('{"site": []}')
+        return base.ToolResult(0, "", "", False)
+
+    monkeypatch.setattr(zap.base, "run_tool", fake_run_tool)
+
+    raw_path, result = zap.run("http://example.test", str(tmp_path), {})
+
+    assert raw_path == str(tmp_path / "zap.json")
+    argv = captured["argv"]
+    assert argv[0] == "/usr/bin/java"
+    assert argv[1] == "-jar"
+    assert argv[2] == str(jar)
+    assert "-cmd" in argv and "-autorun" in argv
