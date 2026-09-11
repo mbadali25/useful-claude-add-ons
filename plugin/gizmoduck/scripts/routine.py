@@ -123,7 +123,8 @@ class Manifest:
 # Which Target field run() needs as a target's *location*, per kind. Shared
 # between load_manifest's up-front validation and _location() below so the
 # two can never drift out of step with each other.
-_LOCATION_FIELD = {"web": "url", "host": "host", "iac": "path", "deps": "path"}
+_LOCATION_FIELD = {"web": "url", "host": "host", "iac": "path",
+                   "deps": "path", "code": "path"}
 
 
 def _location_field_name(kind):
