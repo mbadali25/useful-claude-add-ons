@@ -276,3 +276,20 @@ def test_run_uses_java_dash_jar_argv_when_no_wrapper_binary_found(monkeypatch, t
     assert argv[1] == "-jar"
     assert argv[2] == str(jar)
     assert "-cmd" in argv and "-autorun" in argv
+
+
+def test_real_automation_framework_report_parses(fixture):
+    # zap-real.json is a REAL ZAP 2.17.0 Automation Framework report
+    # (traditional-json template) against the lab target. This settles the
+    # open question in spec 13.11: the AF `traditional-json` report is
+    # structurally identical to the standalone `-J` output the parser was
+    # built against - same site[]->alerts[]->instances[] shape, same alert
+    # keys (pluginid, riskcode, confidence, instances...). The parser handles
+    # it with no changes, fanning each alert's instances out to one finding
+    # each, and does NOT flag real (in-range) riskcodes as severity-assigned.
+    findings = zap.parse(str(fixture("zap-real.json")), "http://127.0.0.1:8933")
+    assert len(findings) >= 5
+    assert all(f["template_id"].startswith("zap:") for f in findings)
+    # Real riskcodes are recognized values, so no severity-assigned marker.
+    assert not any("severity-assigned" in f["tags"] for f in findings)
+    assert set(f["severity_name"] for f in findings) <= {"info", "low", "medium", "high", "critical"}
