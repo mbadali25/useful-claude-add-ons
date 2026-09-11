@@ -114,6 +114,78 @@ def test_titles_sharing_no_token_stay_separate_and_record_a_near_miss():
     }
 
 
+def test_deps_findings_sharing_cve_with_package_and_version_both_absent_stay_separate():
+    depcheck_finding = _finding(
+        "depcheck", "CVE-2026-1234", "openssl vulnerable to buffer overflow", 3,
+        cve=["CVE-2026-1234"],
+    )
+    trivy_finding = _finding(
+        "trivy", "CVE-2026-1234", "openssl buffer overflow vulnerability", 3,
+        cve=["CVE-2026-1234"],
+    )
+
+    merged, near_misses = n.merge_category([depcheck_finding, trivy_finding], "deps")
+
+    # Same CVE and matching titles, but neither carries a package or a
+    # version - an absent slot means "does not merge on it", not "matches
+    # every other finding that is also missing it" (spec sec 7), so both
+    # render on their own.
+    assert len(merged) == 2
+    assert near_misses == []
+
+
+def test_deps_findings_sharing_cve_with_only_package_absent_stay_separate():
+    depcheck_finding = _finding(
+        "depcheck", "CVE-2026-1234", "openssl vulnerable to buffer overflow", 3,
+        cve=["CVE-2026-1234"], version="3.0.1",
+    )
+    trivy_finding = _finding(
+        "trivy", "CVE-2026-1234", "openssl buffer overflow vulnerability", 3,
+        cve=["CVE-2026-1234"], version="3.0.1",
+    )
+
+    merged, near_misses = n.merge_category([depcheck_finding, trivy_finding], "deps")
+
+    assert len(merged) == 2
+    assert near_misses == []
+
+
+def test_deps_findings_sharing_cve_with_only_version_absent_stay_separate():
+    depcheck_finding = _finding(
+        "depcheck", "CVE-2026-1234", "openssl vulnerable to buffer overflow", 3,
+        cve=["CVE-2026-1234"], package="openssl",
+    )
+    trivy_finding = _finding(
+        "trivy", "CVE-2026-1234", "openssl buffer overflow vulnerability", 3,
+        cve=["CVE-2026-1234"], package="openssl",
+    )
+
+    merged, near_misses = n.merge_category([depcheck_finding, trivy_finding], "deps")
+
+    assert len(merged) == 2
+    assert near_misses == []
+
+
+def test_iac_findings_with_path_line_and_resource_all_absent_stay_separate():
+    checkov_finding = _finding(
+        "checkov", "CKV_AWS_99",
+        "resource has an insecure default configuration", 1,
+    )
+    trivy_finding = _finding(
+        "trivy", "AVD-AWS-0999",
+        "insecure default configuration on resource", 2,
+    )
+
+    merged, near_misses = n.merge_category([checkov_finding, trivy_finding], "iac")
+
+    # No path, line, or resource on either side (make_finding's own
+    # defaults leave host/matched_at as "") - the key is incomplete, so an
+    # absent slot must not stand in as a match against another finding's
+    # equally-absent slot (spec sec 7).
+    assert len(merged) == 2
+    assert near_misses == []
+
+
 def test_nothing_merges_across_categories():
     # An iac-shaped finding carries no `cve` at all, so a deps-category call
     # must never fold it into a deps group no matter what its other fields

@@ -140,20 +140,25 @@ def make_finding(tool, target, rule_id, name, severity,
 
 
 def _deps_key(finding):
-    """(cve, package, version), or None when there is no CVE id to key on.
+    """(cve, package, version), or None when any of the three is absent.
 
     None is a sentinel the caller (merge_category) reads as "never merges" -
-    a finding with no CVE always renders on its own (spec sec 7), even if it
-    happens to share a package and version with another finding.
+    a finding missing its CVE, package, or version always renders on its own
+    (spec sec 7). An absent slot means "does not merge on it" - it must
+    never stand in as a match against another finding that is equally
+    missing the same slot, even when the two share every other component
+    of the key.
     """
     cves = finding.get("cve") or []
-    if not cves:
+    package = finding.get("package")
+    version = finding.get("version")
+    if not cves or not package or not version:
         return None
-    return (cves[0], finding.get("package"), finding.get("version"))
+    return (cves[0], package, version)
 
 
 def _iac_key(finding):
-    """(path, line, resource).
+    """(path, line, resource), or None when any of the three is absent.
 
     Checkov and Trivy's misconfig scanner both encode "path:line" into the
     existing `matched_at` field (checkov.py, trivy.py) rather than carrying
@@ -161,6 +166,12 @@ def _iac_key(finding):
     in `host`. Explicit `path`/`line`/`resource` keys are read first so a
     future adapter can supply them directly; matched_at/host are the
     fallback that today's two iac adapters actually populate.
+
+    None is the same "never merges" sentinel _deps_key returns: a finding
+    missing its path, line, or resource always renders on its own (spec sec
+    7), the same as a deps finding missing its CVE, package, or version -
+    an absent slot must never stand in as a match against another finding
+    that is equally missing it.
     """
     path = finding.get("path")
     line = finding.get("line")
@@ -172,6 +183,8 @@ def _iac_key(finding):
         if line is None:
             line = found_line if sep else ""
     resource = finding.get("resource") or finding.get("host") or ""
+    if not path or not str(line) or not resource:
+        return None
     return (path, str(line), resource)
 
 
