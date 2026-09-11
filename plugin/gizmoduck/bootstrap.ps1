@@ -66,7 +66,19 @@ function Install-Nuclei {
   Add-ToUserPath $BinDir
 
   $nuclei = Join-Path $BinDir "nuclei.exe"
-  Write-Host ">> installed: $(& $nuclei -version 2>&1 | Select-Object -First 1)"
+  # nuclei -version writes its banner to stderr (by design - that's normal
+  # CLI behavior, not a failure). Piping stderr into the success stream via
+  # 2>&1 while $ErrorActionPreference = "Stop" is in effect turns that banner
+  # line into a terminating error the instant it's captured, which made a
+  # fully-successful install get reported as "install failed" by Try-Install.
+  # Scoping ErrorActionPreference to "Continue" inside a child block lets the
+  # banner text through without promoting it to an error, and without
+  # touching the "Stop" behavior anything else in this script relies on.
+  $verLine = & {
+    $ErrorActionPreference = "Continue"
+    & $nuclei -version 2>&1 | Select-Object -First 1
+  }
+  Write-Host ">> installed: $verLine"
 }
 
 function Update-NucleiTemplates {
@@ -318,7 +330,16 @@ function Install-Zap {
   # from `doctor`. Check for 17+ before doing anything else.
   $needsJava = $true
   if (Get-Command java -ErrorAction SilentlyContinue) {
-    $verLine = (& java -version 2>&1 | Select-Object -First 1)
+    # java -version writes to stderr unconditionally - that's Java's own
+    # convention, not an error. Same fix as Install-Nuclei above: without
+    # scoping ErrorActionPreference to "Continue" here, capturing that
+    # output via 2>&1 under the script's $ErrorActionPreference = "Stop"
+    # turned a present, new-enough JRE into a false "ZAP install failed"
+    # before the function got anywhere near actually installing ZAP.
+    $verLine = & {
+      $ErrorActionPreference = "Continue"
+      & java -version 2>&1 | Select-Object -First 1
+    }
     if ($verLine -match '"(1\.)?(1[7-9]|[2-9][0-9])') { $needsJava = $false }
   }
   if ($needsJava) {
