@@ -99,6 +99,15 @@ def run(target, outdir, opts=None):
     base.run_tool's own timeout is the real guard on total wall-clock -
     nmap's --host-timeout/--script-timeout cap per-host and per-script, not
     the whole run (spec 13.13), so no reliance is placed on those flags here.
+
+    Mode reporting: this function does not echo back whether --script vuln
+    ran, because routine.py already has that answer - it is the one that
+    built `opts` and decided whether to set opts["nmap_vuln"] before calling
+    run(). ToolResult tells routine whether the invocation it asked for
+    succeeded; routine combines that with its own opts["nmap_vuln"] value to
+    write ran(safe) vs ran(safe+vuln) into the coverage table. Widening
+    ToolResult itself to carry mode is deliberately avoided since it is
+    shared, already-committed foundation code every adapter returns.
     """
     host = _target_host(target)
     raw_path = os.path.join(outdir, "nmap.xml")
