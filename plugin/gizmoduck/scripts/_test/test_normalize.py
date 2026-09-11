@@ -27,10 +27,34 @@ def test_unknown_respects_explicit_default():
 
 @pytest.mark.parametrize("score,expected", [
     (10.0, 4), (9.0, 4), (8.9, 3), (7.0, 3), (6.9, 2),
-    (4.0, 2), (3.9, 1), (0.1, 1), (0.0, 0), (None, 0),
+    (4.0, 2), (3.9, 1), (0.1, 1), (0.0, 0),
 ])
 def test_cvss_bands_including_boundaries(score, expected):
-    assert n.sev_from_cvss(score) == expected
+    # A valid score is a real assessment: known must be True.
+    assert n.sev_from_cvss(score) == (expected, True)
+
+
+@pytest.mark.parametrize("score", [
+    None, "", "NaN", float("nan"), "Infinity", float("inf"), float("-inf"),
+    -1, -0.1, 11, 10.1, "banana",
+])
+def test_cvss_rejects_missing_non_finite_and_out_of_range(score):
+    # Not a valid CVSS score - must not be presented as a real assessment.
+    # The int half is not asserted: only `known` is part of the contract
+    # for an invalid score, per the docstring.
+    sev, known = n.sev_from_cvss(score)
+    assert known is False
+
+
+def test_cvss_falls_through_from_invalid_v2_to_valid_v3():
+    # The real Dependency-Check case the review found: a garbage cvssv2
+    # score must not shadow a good cvssv3 score. This is the adapter's
+    # responsibility (depcheck.py), but the contract it relies on - that
+    # an invalid score comes back with known=False - is asserted here.
+    bad_sev, bad_known = n.sev_from_cvss(-1)
+    good_sev, good_known = n.sev_from_cvss(9.8)
+    assert bad_known is False
+    assert (good_sev, good_known) == (4, True)
 
 
 @pytest.mark.parametrize("code,expected,known", [
@@ -39,6 +63,13 @@ def test_cvss_bands_including_boundaries(score, expected):
 ])
 def test_riskcode_map_and_unexpected(code, expected, known):
     assert n.sev_from_riskcode(code) == (expected, known)
+
+
+@pytest.mark.parametrize("code", [0.9, 3.9, 1.5, "2.5", float("nan"), float("inf")])
+def test_riskcode_rejects_non_integral_values(code):
+    # int(0.9) truncates to a "recognized" 0 - a non-integral riskcode is
+    # not riskcode 0, it is not a riskcode at all.
+    assert n.sev_from_riskcode(code) == (0, False)
 
 
 def test_synthetic_id_namespaces_by_tool():

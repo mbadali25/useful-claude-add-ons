@@ -6,6 +6,7 @@ required to match SEV_NUM at gizmoduck.py:38-41 - test_normalize asserts the
 values directly so a drift shows up as a test failure rather than as findings
 quietly landing in the wrong band.
 """
+import math
 import re
 
 # "unknown": 0 is here only because gizmoduck.py:38 carries it - kept for the
@@ -45,28 +46,50 @@ def sev_from_text(value, default="info"):
 
 
 def sev_from_cvss(score):
+    """Map a CVSS base score to (int, was_recognized).
+
+    was_recognized=False means the score was missing, non-numeric,
+    non-finite (NaN/Infinity), or outside the valid CVSS range 0.0-10.0.
+    A value like that is not a severity assessment - it must not be banded
+    as if it were one, the same as an unmapped text severity from
+    sev_from_text. This lets a caller holding two independent scores (e.g.
+    Dependency-Check's cvssv2 and cvssv3) tell a garbage score apart from a
+    real one and fall through to the good one instead of masking it.
+
+    NOTE: prior to this fix the function returned a bare int; callers must
+    now unpack the (int, bool) tuple.
+    """
     if score is None or score == "":
-        return 0
+        return 0, False
     try:
         s = float(score)
     except (TypeError, ValueError):
-        return 0
+        return 0, False
+    if math.isnan(s) or math.isinf(s) or s < 0.0 or s > 10.0:
+        return 0, False
     if s >= 9.0:
-        return 4
+        return 4, True
     if s >= 7.0:
-        return 3
+        return 3, True
     if s >= 4.0:
-        return 2
+        return 2, True
     if s > 0:
-        return 1
-    return 0
+        return 1, True
+    return 0, True
 
 
 def sev_from_riskcode(code):
     try:
-        c = int(code)
+        f = float(code)
     except (TypeError, ValueError):
         return 0, False
+    # int(0.9) truncates to 0 without complaint, and int(float("inf"))
+    # raises OverflowError - reject anything non-integral (NaN and
+    # Infinity included, since is_integer() is False for both) before
+    # ever converting to int.
+    if not f.is_integer():
+        return 0, False
+    c = int(f)
     if c in _RISKCODE:
         return _RISKCODE[c], True
     return 0, False
