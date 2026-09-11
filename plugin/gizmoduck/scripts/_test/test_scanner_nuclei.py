@@ -6,6 +6,12 @@ to assert against gz.load() directly rather than hand-written expectations -
 that comparison is the regression guard for the other eight adapters too,
 since a drift here would mean the routine path and the single-scanner path
 silently disagree about what Nuclei found.
+
+Byte-identity to load() is asserted for every key EXCEPT `tags`: this adapter
+also has to mark an assigned-default severity (Global Constraints'
+`severity-assigned` tag) with a fix load() itself doesn't make, so `tags` is
+checked separately - identical to load()'s for a real, recognized severity,
+and load()'s list plus the marker for a missing/unrecognized one.
 """
 import importlib.util
 import os
@@ -30,11 +36,19 @@ def test_parse_is_byte_identical_to_gizmoduck_load(fixture, gz):
 
     assert len(got) == len(expected) == 3
     for exp, act in zip(expected, got):
-        # tool/target are the only keys this adapter adds on top of load()'s
-        # existing 14-key shape (Global Constraints) - strip them before
-        # comparing so the rest is asserted byte-identical to today's output.
-        stripped = {k: v for k, v in act.items() if k not in ("tool", "target")}
-        assert stripped == exp
+        # tool/target are the only keys this adapter adds outright on top of
+        # load()'s existing 14-key shape (Global Constraints). `tags` is
+        # compared on its own below, since it may additionally carry the
+        # `severity-assigned` marker load() itself never adds.
+        stripped = {k: v for k, v in act.items()
+                    if k not in ("tool", "target", "tags")}
+        exp_sans_tags = {k: v for k, v in exp.items() if k != "tags"}
+        assert stripped == exp_sans_tags
+
+        if "severity-assigned" in act["tags"]:
+            assert act["tags"] == exp["tags"] + ["severity-assigned"]
+        else:
+            assert act["tags"] == exp["tags"]
 
 
 def test_every_finding_carries_tool_and_target(fixture):
@@ -63,9 +77,60 @@ def test_missing_severity_key_falls_back_to_info(fixture):
     assert got[2]["severity_name"] == "Info"
 
 
+def test_missing_severity_carries_the_severity_assigned_provenance_marker(fixture):
+    """Defect fix: load() folds "missing" and "unrecognized" into the same
+    Info fallback as a real Info assessment, with nothing in its output to
+    tell them apart. Without a marker, an assigned default renders in a
+    report identically to an actual assessment - this is what distinguishes
+    the two. Records 0/1 have an explicit, recognized severity in the
+    fixture and must NOT carry the marker; only record 2 (no info.severity
+    at all) should.
+    """
+    got = nuclei.parse(str(fixture("nuclei.jsonl")), target="example.com")
+
+    assert "severity-assigned" not in got[0]["tags"]
+    assert "severity-assigned" not in got[1]["tags"]
+    assert "severity-assigned" in got[2]["tags"]
+
+
 def test_missing_raw_file_yields_no_findings(tmp_path):
     got = nuclei.parse(str(tmp_path / "does-not-exist.jsonl"), target="x")
     assert got == []
+
+
+def test_empty_raw_file_yields_no_findings(tmp_path):
+    """An empty output file is "nuclei ran and found nothing", not a parse
+    failure - run() writes exactly this when -silent has nothing to say.
+    """
+    raw = tmp_path / "nuclei.jsonl"
+    raw.write_text("")
+    assert nuclei.parse(str(raw), target="x") == []
+
+
+def test_parse_raises_parse_error_on_malformed_jsonl(tmp_path):
+    """Defect fix: a line that isn't valid JSON must raise base.ParseError,
+    never come back as an empty (and therefore falsely "clean") list. An
+    empty finding list must mean only "nuclei ran and found nothing" -
+    conflating it with "couldn't read the output" hides a broken scan.
+    """
+    raw = tmp_path / "nuclei.jsonl"
+    raw.write_text('{"template-id": "x", "info": {"severity": "high"}}\n'
+                    '{not valid json at all\n')
+
+    with pytest.raises(nuclei.base.ParseError):
+        nuclei.parse(str(raw), target="example.com")
+
+
+def test_parse_raises_parse_error_on_truncated_jsonl(tmp_path):
+    """A truncated line (a scan killed mid-write) is exactly the case the
+    fixed-width exit-code gate used to mask - it must surface as
+    base.ParseError, not as zero findings.
+    """
+    raw = tmp_path / "nuclei.jsonl"
+    raw.write_text('{"template-id": "x", "info": {"severity": "high"')
+
+    with pytest.raises(nuclei.base.ParseError):
+        nuclei.parse(str(raw), target="example.com")
 
 
 def test_is_available_reflects_find_nuclei(monkeypatch):
@@ -128,11 +193,22 @@ def test_run_uses_l_flag_for_a_targets_file(monkeypatch, tmp_path):
     assert "-u" not in captured["argv"]
 
 
-def test_run_raises_when_nuclei_binary_is_missing(monkeypatch, tmp_path):
+def test_run_returns_none_path_when_nuclei_binary_is_missing(monkeypatch, tmp_path):
+    """Standardized run() contract (team-lead cross-adapter decision): a
+    missing binary must return (None, ToolResult), the same shape every
+    other adapter returns for "couldn't run" - not raise. This test used to
+    assert FileNotFoundError; that encoded the bug, because raising here
+    skips routine.py's normal per-tool `skipped-missing` recording instead
+    of going through it like every other adapter's missing-binary case.
+    """
     gzmod = nuclei._gizmoduck()
     monkeypatch.setattr(gzmod, "find_nuclei", lambda: None)
-    with pytest.raises(FileNotFoundError):
-        nuclei.run("https://example.com", str(tmp_path), {})
+
+    raw_path, result = nuclei.run("https://example.com", str(tmp_path), {})
+
+    assert raw_path is None
+    assert result.returncode != 0
+    assert not result.timed_out
 
 
 def test_run_returns_none_path_on_a_failed_invocation(monkeypatch, tmp_path):
@@ -156,6 +232,31 @@ def test_run_returns_none_path_on_a_failed_invocation(monkeypatch, tmp_path):
     assert raw_path is None
     assert result.returncode == 2
     assert not os.path.exists(os.path.join(str(tmp_path), "nuclei.jsonl"))
+
+
+def test_run_keeps_findings_from_a_nonzero_exit_code(monkeypatch, tmp_path):
+    """Defect fix: valid finding output on stdout must never be discarded
+    just because nuclei's exit code was nonzero and not the `-ec`
+    "findings exist" 1. Nmap is the only adapter in this package permitted
+    to gate findings on exit status - Nuclei's findings must come from
+    parsed output alone.
+    """
+    gzmod = nuclei._gizmoduck()
+    monkeypatch.setattr(gzmod, "find_nuclei", lambda: "nuclei")
+
+    def fake_run_tool(argv, timeout, cwd=None):
+        from scanners.base import ToolResult
+        return ToolResult(2, '{"template-id":"x"}', "", False)
+
+    monkeypatch.setattr(nuclei.base, "run_tool", fake_run_tool)
+
+    raw_path, result = nuclei.run("https://example.com", str(tmp_path), {})
+
+    assert raw_path is not None
+    assert os.path.isfile(raw_path)
+    with open(raw_path, encoding="utf-8") as fh:
+        assert fh.read().strip() == '{"template-id":"x"}'
+    assert result.returncode == 2
 
 
 def test_run_returns_none_path_on_a_timeout(monkeypatch, tmp_path):

@@ -22,7 +22,22 @@ byte-identical to today's load() output for the same input (see
 test_scanner_nuclei.py), because that equality is the regression guard for
 every other adapter: they all normalize into this same finding shape, and
 Nuclei's own path is the one input nobody can afford to reshape by accident.
+
+The one addition on top of load()'s output is the `severity-assigned`
+provenance marker (Global Constraints): load() folds a missing or
+unrecognized `info.severity` into the same Info fallback as a real Info
+assessment, with nothing left in its return value to tell the two apart.
+parse() re-reads each raw record's `info.severity` (cheaply - it doesn't
+re-derive load()'s normalization, just this one flag) purely to decide
+whether to append that tag; every other field stays exactly what load()
+produced.
+
+parse() must never turn a parse failure into an empty finding list - `[]`
+means only "nuclei ran and found nothing". Malformed or truncated JSONL
+raises `base.ParseError` instead, so routine.py records `error:parse:<detail>`
+for that cell rather than reporting a broken scan as a clean target.
 """
+import json
 import os
 
 from . import base
@@ -75,9 +90,15 @@ def run(target, outdir, opts=None):
     opts = opts or {}
     exe = gz.find_nuclei()
     if not exe:
-        raise FileNotFoundError(
-            "nuclei not found on PATH. Run bootstrap.sh (Linux/WSL) or "
-            "bootstrap.ps1 (Windows) first.")
+        # Standardized run() contract (team-lead cross-adapter decision):
+        # return the (None, ToolResult) tuple every other adapter returns
+        # for "couldn't run", rather than raising. Raising here bypassed
+        # routine.py's normal per-tool `skipped-missing` recording.
+        return None, base.ToolResult(
+            returncode=-1, stdout="",
+            stderr="nuclei not found on PATH. Run bootstrap.sh (Linux/WSL) "
+                   "or bootstrap.ps1 (Windows) first.",
+            timed_out=False)
 
     os.makedirs(outdir, exist_ok=True)
     raw_path = os.path.join(outdir, "nuclei.jsonl")
@@ -93,37 +114,77 @@ def run(target, outdir, opts=None):
 
     result = base.run_tool(cmd, timeout=opts.get("timeout", DEFAULT_TIMEOUT))
 
-    # Same rule as cmd_scan() (gizmoduck.py:63-84): only lines that look like
-    # JSON objects are kept, and a failed run - no findings and a non-zero,
-    # non-"findings-exist" exit - writes nothing, so a dead scan can't be
-    # mistaken downstream for a clean one. Exit 1 with findings on stdout is
-    # `-ec`'s "findings exist" signal, not a failure.
+    if result.timed_out:
+        # A timed-out invocation's stdout may be truncated mid-JSON, so
+        # nothing is written rather than handing parse() something that
+        # looks parseable but isn't trustworthy (mirrors checkov.py).
+        return None, result
+
+    # Nmap is the only adapter in this package permitted to gate findings on
+    # exit status (base.py). Nuclei's findings come from parsed output only:
+    # only lines that look like JSON objects are kept, full stop - a nonzero
+    # exit code never discards output that's actually there. The exit code
+    # is consulted only when there is NO candidate output at all, to decide
+    # whether an empty result means "ran clean, found nothing" (exit 0) or
+    # "failed before producing anything" (nonzero) - it never overrides
+    # actual finding content either way.
     lines = [ln for ln in result.stdout.splitlines() if ln.strip().startswith("{")]
-    if result.returncode != 0 and not (result.returncode == 1 and lines):
+    if not lines and result.returncode != 0:
         # No output file written - per the standardized run() contract, that
         # means the path side of the tuple is None, not a path that doesn't
-        # exist on disk. The ToolResult (including timed_out) still comes
-        # back so routine.py can record error:timeout / error:<returncode>
-        # instead of mistaking "didn't run" for "ran clean".
+        # exist on disk. The ToolResult still comes back so routine.py can
+        # record error:<returncode> instead of mistaking "didn't run" for
+        # "ran clean".
         return None, result
     with open(raw_path, "w", encoding="utf-8") as fh:
         fh.write("\n".join(lines) + ("\n" if lines else ""))
     return raw_path, result
 
 
+_KNOWN_SEVERITIES = {"critical", "high", "medium", "low", "info"}
+
+
+def _severity_known(raw_severity):
+    """Whether info.severity was a real, recognized value - as opposed to
+    missing or unrecognized text, which gizmoduck.load() folds into the same
+    Info fallback (SEV_NUM.get(..., 0)) as a genuine Info assessment.
+    """
+    return bool(raw_severity) and raw_severity.strip().lower() in _KNOWN_SEVERITIES
+
+
 def parse(raw_path, target):
     """Delegate entirely to gizmoduck.load(): this adapter's whole purpose is
     to reuse that normalization, not re-derive it (plan, Task 5). Only
-    `tool`/`target` are added on top of load()'s existing 14-key shape.
+    `tool`/`target` are added on top of load()'s existing 14-key shape, plus
+    a `severity-assigned` tag on findings whose info.severity was missing or
+    unrecognized (see _severity_known) - load() has no way to mark that
+    itself, and without the marker an assigned default is indistinguishable
+    from a real assessment in the report.
 
     Pure: no subprocess, no network. A missing output file yields an empty
     list rather than raising - a broken run is the caller's (routine.py's)
-    concern to record, not this function's to crash over.
+    concern to record, not this function's to crash over. An empty output
+    file is nuclei's own "ran clean, found nothing" and also yields [].
+    Anything else that can't be read as valid JSONL - malformed or
+    truncated output - raises base.ParseError rather than silently
+    returning [] and presenting a broken scan as a clean one.
     """
     if not os.path.isfile(raw_path):
         return []
-    findings = _gizmoduck().load(raw_path)
-    for f in findings:
+
+    gz = _gizmoduck()
+    try:
+        findings = gz.load(raw_path)
+        with open(raw_path, encoding="utf-8") as fh:
+            raw_records = [json.loads(ln) for ln in fh if ln.strip()]
+    except (ValueError, TypeError, AttributeError, OSError) as e:
+        raise base.ParseError(
+            "could not parse nuclei output %s: %s" % (raw_path, e)) from e
+
+    for record, f in zip(raw_records, findings):
+        severity = (record.get("info") or {}).get("severity")
+        if not _severity_known(severity):
+            f["tags"] = list(f["tags"]) + ["severity-assigned"]
         f["tool"] = NAME
         f["target"] = target
     return findings
