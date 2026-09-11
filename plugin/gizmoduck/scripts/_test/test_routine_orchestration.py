@@ -268,6 +268,41 @@ def test_nmap_records_safe_plus_vuln_mode_when_opted_in(fake_registry, tmp_path)
 # (spec 13.14 / trivy.py's own _resolve_kind).
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# run-manifest.json's on-disk schema - Tasks 16/17 (coverage table) read this
+# file directly, so its shape is a cross-agent contract in its own right.
+# ---------------------------------------------------------------------------
+
+def test_run_manifest_json_has_the_documented_schema(manifest, fake_registry, tmp_path):
+    rm = routine.run_routine(manifest, tmp_path, registry=fake_registry)
+    on_disk = json.loads((tmp_path / "run-manifest.json").read_text())
+
+    assert on_disk["authorized_by"] == manifest.authorized_by
+    assert "generated_at" in on_disk
+
+    by_key = {(c["target"], c["tool"]): c for c in on_disk["cells"]}
+    nuclei_cell = by_key[("site-a", "nuclei")]
+    assert nuclei_cell["status"] == "ran"
+    assert nuclei_cell["mode"] is None
+    assert nuclei_cell["error"] is None
+    assert isinstance(nuclei_cell["duration_s"], float)
+    assert nuclei_cell["count"] == 1
+    assert nuclei_cell["errors"] == []
+
+    nmap_cell = by_key[("site-b", "nmap")]
+    assert nmap_cell["status"] == "ran(safe)"
+    assert nmap_cell["mode"] == "safe"
+
+    zap_cell = by_key[("site-a", "zap")]
+    assert zap_cell["status"].startswith("error:")
+    assert zap_cell["mode"] is None
+    assert zap_cell["error"] == "zap AF plan failed to launch"
+
+    testssl_cell = by_key[("site-a", "testssl")]
+    assert testssl_cell["status"] == "error:timeout"
+    assert testssl_cell["error"] == "timeout"
+
+
 def test_trivy_kind_is_threaded_through_run_opts_and_parse_kwarg(tmp_path):
     trivy = FakeAdapter("trivy", ["deps", "iac"], run_fn=_ok("trivy-raw"))
     checkov = FakeAdapter("checkov", ["iac"], run_fn=_ok("checkov-raw"))

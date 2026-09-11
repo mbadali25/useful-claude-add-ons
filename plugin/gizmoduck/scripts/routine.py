@@ -33,6 +33,7 @@ like every adapter already does.
 import json
 import time
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 
 import yaml
@@ -211,6 +212,24 @@ def _ran_status(name, mod, target):
     return "ran(%s)" % base
 
 
+def _mode_of(status):
+    """The parenthesized mode label out of a `ran(...)` status, or None for
+    a plain `ran` / any non-ran status. Coverage-table consumers (Task 16/17)
+    can use this directly instead of parsing the status string themselves -
+    the status string remains the source of truth either way.
+    """
+    if status.startswith("ran(") and status.endswith(")"):
+        return status[len("ran("):-1]
+    return None
+
+
+def _error_message_of(status):
+    """The message half of an `error:<reason>` status, or None otherwise."""
+    if status.startswith("error:"):
+        return status.split(":", 1)[1]
+    return None
+
+
 class RunManifest:
     """Per-(target, tool) status/duration/count/errors, plus the
     authorization statement the report header restates (spec section 8).
@@ -218,12 +237,15 @@ class RunManifest:
 
     def __init__(self, authorized_by):
         self.authorized_by = authorized_by
+        self.generated_at = datetime.now(timezone.utc).isoformat()
         self._cells = {}
 
     def record(self, target, tool, status, duration=0.0, count=0, errors=None):
         self._cells[(target, tool)] = {
             "status": status,
-            "duration": round(duration, 3),
+            "mode": _mode_of(status),
+            "error": _error_message_of(status),
+            "duration_s": round(duration, 3),
             "count": count,
             "errors": errors or [],
         }
@@ -238,6 +260,7 @@ class RunManifest:
     def to_dict(self):
         return {
             "authorized_by": self.authorized_by,
+            "generated_at": self.generated_at,
             "cells": [
                 dict(target=t, tool=tool, **data)
                 for (t, tool), data in sorted(self._cells.items())
