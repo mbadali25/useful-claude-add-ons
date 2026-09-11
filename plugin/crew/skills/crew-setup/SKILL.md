@@ -147,7 +147,7 @@ still writes only the repo file.
   "obsidian": { "vaultPath": null, "boardDir": null, "board": "Board.md", "columns": { "backlog": "Backlog", "ready": "Ready", "inProgress": "In Progress", "review": "Review", "done": "Done" } },
   "memory": { "mode": "repo", "vaultPath": null },
   "verifyGate": true,
-  "context": { "enabled": true, "warnAt": 0.8, "budgetTokens": null, "reserveTokens": 100000, "handoffPath": ".work/HANDOFF.md", "keepTranscripts": 5 },
+  "context": { "enabled": true, "warnAt": 0.8, "budgetTokens": null, "reserveTokens": 100000, "handoffPath": ".work/HANDOFF.md", "keepTranscripts": 5, "staleHandoff": { "maxAgeHours": 72, "maxCommitsBehind": 3 } },
   "emergency": { "standDown": true, "ttlMinutes": 120, "maxTtlMinutes": 480 },
   "notify": { "provider": "none", "urlEnv": null, "tokenEnv": null, "chatId": null, "events": ["phase", "gate", "waiting"] },
   "platform": { "os": null, "wsl": null, "shell": null, "windowsHostIp": null },

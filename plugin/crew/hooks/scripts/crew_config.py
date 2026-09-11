@@ -281,6 +281,15 @@ def default_config():
             "reserveTokens": 100000,
             "handoffPath": ".work/HANDOFF.md",
             "keepTranscripts": 5,
+            # See crew_state.STALE_HANDOFF_DEFAULTS for why these two figures
+            # specifically -- generous on purpose, since archiving a note
+            # someone is still using is worse than leaving a stale one in
+            # place for one more day.
+            "staleHandoff": {
+                "maxAgeHours": crew_state.STALE_HANDOFF_DEFAULTS["maxAgeHours"],
+                "maxCommitsBehind":
+                    crew_state.STALE_HANDOFF_DEFAULTS["maxCommitsBehind"],
+            },
         },
         "emergency": {
             "standDown": True,

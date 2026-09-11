@@ -38,6 +38,35 @@ if ($cfg.context.autoResume -is [bool] -and $cfg.context.autoResume -eq $true) {
 $path = if ($cfg.context.handoffPath) { $cfg.context.handoffPath } else { ".work/HANDOFF.md" }
 if (-not (Test-Path $path)) { exit 0 }
 
+# Stale-handoff check, right before this note would be injected as though it
+# were current -- the concrete failure this exists to catch: a note still
+# saying "at the spec-review gate" hours after the gate closed and more
+# commits landed past it. Delegates to crew_state.archive_stale_handoff
+# rather than reimplementing its signals here; see that function and
+# crew_state.handoff_staleness for what each signal catches and why. Fails
+# open: any error below (bad JSON, python raising, git absent) leaves
+# $archivedPath empty and falls through to printing the note unchanged,
+# exactly like every session before this feature existed -- a hook that
+# breaks startup over a staleness check is worse than one honestly-stale
+# note.
+$verdictRaw = & $py (Join-Path $dir 'crew_state.py') '--archive-stale-handoff' 2>$null
+$archivedPath = ""
+if ($LASTEXITCODE -eq 0 -and $verdictRaw) {
+    try {
+        $verdict = ($verdictRaw -join "`n") | ConvertFrom-Json
+        if ($verdict.archived -eq $true) { $archivedPath = $verdict.archivedPath }
+    } catch { $archivedPath = "" }
+}
+if ($archivedPath) {
+    Write-Output "## Handoff from the previous session ($($d.source))"
+    Write-Output ""
+    Write-Output "A handoff note was here, but it described a state this repository has"
+    Write-Output "since moved past. It has been archived, not deleted, at"
+    Write-Output "$archivedPath for the record -- nothing from it is being treated"
+    Write-Output "as current this session."
+    exit 0
+}
+
 Write-Output "## Handoff from the previous session ($($d.source))"
 Write-Output ""
 Get-Content $path

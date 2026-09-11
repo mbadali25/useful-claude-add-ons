@@ -463,8 +463,19 @@ def _resume_context(root, cfg, brief_lines):
 
     Fires only when autoResume is exactly true AND a handoff file exists at
     the configured path -- both conditions, not either.
+
+    Checked for staleness here too, not only in handoff-read.sh's printed
+    path: autoResume skips the one human read step that path still leaves in
+    place (see crew-context/SKILL.md's Auto-resume section), so injecting a
+    note the age/reality-drift signals already flagged would be strictly
+    worse here than there. `archive_stale_handoff` both judges and, if
+    warranted, archives the note in one step; a stale note is archived and
+    this returns None -- nothing to resume from, which is the honest state
+    once the note describing it has moved.
     """
     if not _auto_resume_enabled(cfg):
+        return None
+    if crew_state.archive_stale_handoff(root, cfg).get("archived"):
         return None
     # contained_path, not a bare join: this text is injected wholesale into
     # the model's context, and `handoffPath` comes from the repo's own config.

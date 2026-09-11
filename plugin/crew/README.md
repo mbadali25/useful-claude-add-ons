@@ -811,7 +811,8 @@ This is the same shape that produces:
     "handoffPath": ".work/HANDOFF.md",
     "autoClear": { "enabled": false, "method": "auto", "windowTitle": null, "command": "/clear", "delaySeconds": 3, "minHandoffLines": 5 },
     "autoWrapUp": false,
-    "autoResume": false
+    "autoResume": false,
+    "staleHandoff": { "maxAgeHours": 72, "maxCommitsBehind": 3 }
   },
   "emergency": { "standDown": true, "ttlMinutes": 120, "maxTtlMinutes": 480 },
   "notify": {
@@ -842,6 +843,8 @@ omit the block and assume.
 | `context.budgetTokens` | integer or `null` | `null` (the default) works the window out from the model id and this session's own peak usage. Set a number to pin it. |
 | `context.reserveTokens` | integer (default `100000`), or `0`/`null` for off | Headroom floor. The warning fires at the **later** of `warnAt` and this many tokens remaining, so it can only ever delay it. Without this, 0.8 of a 1M window asks for a handoff with 200k still free. See §16. |
 | `context.handoffPath` | path | Where the handoff note lives. Default `.work/HANDOFF.md`. |
+| `context.staleHandoff.maxAgeHours` | number (default `72`) | How old (by the note's own `written:` line, or file mtime if that's absent) before `handoff-read`/`pm_brief` archive it instead of printing or injecting it. |
+| `context.staleHandoff.maxCommitsBehind` | integer (default `3`) | How many commits landed past the note's `head:` line before it is archived as describing a past state. |
 | `emergency.standDown` | `true` (default), `false` | Whether `/crew:emergency` may stand the `verify` and `promote` gates down. `false` keeps them gating; the incident is still declared, recorded and briefed. The command guard never stands down either way. See §24. |
 | `emergency.ttlMinutes` | integer (default `120`) | How long a declared incident lasts before it expires on its own and the gates come back. |
 | `emergency.maxTtlMinutes` | integer (default `480`) | Ceiling on one `extend`, measured from now, so repeated extensions cannot drift into a permanent state. |
@@ -1396,9 +1399,22 @@ top of it.
 
 ### Housekeeping
 
-`/crew:work` deletes `HANDOFF.md` on ticket completion. A stale handoff is worse
-than none: it gets injected into every later session as though current, and that
-session can't tell it's reading history.
+`/crew:work` deletes `HANDOFF.md` on ticket completion — do that yourself
+whenever the work it describes is finished, rather than relying on the check
+below to catch it. A stale handoff is worse than none: it gets injected into
+every later session as though current, and that session can't tell it's
+reading history.
+
+As a backstop for when that manual step gets missed, `handoff-read` (and,
+under `autoResume`, `pm_brief`) now judges the note before printing or
+injecting it, on age (`written:` vs. `context.staleHandoff.maxAgeHours`) and
+on whether its `head:`/`branch:` lines still describe the checkout (a `head:`
+this repo cannot verify, or `staleHandoff.maxCommitsBehind` or more commits
+landed on top of it). A note either signal flags is **archived, never
+deleted** — moved to `.crew/handoffs/HANDOFF-<timestamp>.md`, so a wrong
+judgment call is recoverable rather than silently gone. See
+`crew-context/SKILL.md`'s "Staleness and archiving" for the full reasoning
+and both thresholds' defaults.
 
 `PreCompact` keeps the last five raw transcripts in `.crew/transcripts/`, which
 setup gitignores — transcripts contain everything the session saw, including any
@@ -2060,7 +2076,7 @@ ten; the prose was the half that went stale.
 |---|---|---|
 | `guard.sh` / `guard.ps1` | `PreToolUse` on Bash / PowerShell | Blocks `terraform apply`/`destroy`, destructive DDL, force push, hard reset, prod-targeted commands, and any command that would print a secret value into the transcript |
 | `promote-gate.sh` / `.ps1` | `PreToolUse` on Bash / PowerShell | Refuses a declared `deploy` command unless the upstream environment has an all-pass row for **this sha**, the rollback runbook is verified inside 90 days, `requireHuman` is approved, and the tree is clean. During an emergency lane it records each unmet precondition and allows the deploy (§24) |
-| `handoff-read.sh` / `.ps1` | `SessionStart` | Injects the handoff after clear, compact, or resume |
+| `handoff-read.sh` / `.ps1` | `SessionStart` | Injects the handoff after clear, compact, or resume — first archiving it instead, under `.crew/handoffs/`, if age or reality drift (its `head`/`branch` no longer describing the checkout) says it is stale |
 | `pm-brief.sh` / `.ps1` | `SessionStart` | Runs `crew_state.py`, prints the prioritized PM brief (triggers, health, knowledge, graph freshness) — report-only, changes nothing |
 | `platform-sync.sh` / `.ps1` | `SessionStart` | Detects this machine and repairs the `platform` block in `.crew/config.json` — see §3b. The only hook that writes config: the seven derived facts, plus recreating the whole file from defaults when it is missing or malformed (backing up a malformed one first) — never when `.crew/` itself does not exist. See "The config heals itself" in §3 |
 | `verify-gate.sh` / `.ps1` | `Stop` | Runs the checks the changed paths map to; fails the turn on red, on a changed path with no rule, or on a deploy that recorded no promotion row. Stands down while an emergency lane is open (§24), recording what did not run |
@@ -2200,7 +2216,8 @@ Two things worth knowing:
 | Gates stopped blocking and nobody said why | An emergency lane is open - the session brief names it at every session start. `/crew:emergency status`, then `end`. It also expires on its own; see 24. |
 | An incident will not stand the gates down | `emergency.standDown` is `false` in `.crew/config.json`, or the incident has expired. Both are reported by `/crew:emergency status`. |
 | Warning fires far too early on a 1M model | `.crew/config.json` still carries `"budgetTokens": 200000` from an older `/crew:init`. Set it to `null`; the warning's `Budget source:` line says `configured` when this is the cause. |
-| Old handoff keeps reappearing | It was never deleted. Remove `.work/HANDOFF.md` when the work is done. |
+| Old handoff keeps reappearing | It was never deleted. Remove `.work/HANDOFF.md` when the work is done, rather than waiting on the staleness check — it only fires on clear/compact/resume/fork, and only once age or reality drift gives it a reason to distrust the note. |
+| Handoff vanished but the ticket isn't done | Check `.crew/handoffs/` — a note the staleness check judged stale is archived there, timestamped, never deleted. If the judgment was wrong (age or commit thresholds too tight for this repo's pace), move it back and loosen `context.staleHandoff` in `.crew/config.json`. |
 | `mmdc` fails in a container | Headless Chromium needs `--no-sandbox`. The render script passes it; a direct `mmdc` call will not. |
 | Rendered PNG unreadable in Teams | Transparent background on dark mode. Render with `-b white` for chat and print. |
 | Azure MCP tools fail oddly | You are not authenticated. `az login` before starting the server. |

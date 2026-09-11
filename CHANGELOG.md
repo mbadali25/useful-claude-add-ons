@@ -6,6 +6,52 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
+- **`crew` 0.16.33: a lingering handoff note is now archived, not just warned
+  about.** `pm_brief`'s `handoffPending` finding, and `handoff-read`'s printed
+  path, both only ever asked whether `.work/HANDOFF.md` existed -- true the
+  same way for a note written five minutes ago and one still describing a
+  gate that closed hours ago, after two more commits landed on top of it.
+  That happened for real: a handoff said "at the spec-review gate" long after
+  the gate closed, and the next session started acting on a next action that
+  was already done.
+
+  `crew_state.handoff_staleness` now judges the note on two signals before
+  `handoff-read` (and, under `context.autoResume`, `pm_brief` itself) prints
+  or injects it: **age**, from the note's own `written:` line (falling back
+  to file mtime when that line is missing, the weaker of the two since an
+  edited file's mtime moves without the header changing to match), and
+  **reality drift**, comparing the note's `head:`/`branch:` lines against the
+  checkout right now. A `head:` this repository cannot find, or cannot reach
+  from `HEAD`, cannot be verified at all -- the same "unknown resolves to
+  stale" rule the codemap and diagram anchors already use for missing
+  provenance. A verifiable `head:` that is `staleHandoff.maxCommitsBehind` or
+  more commits behind reports exactly how far the note has fallen behind
+  (default 3); a `branch:` that no longer matches the checkout is flagged on
+  its own, since a merge can leave the noted head a true ancestor of `HEAD`
+  while the session has moved off the branch entirely. `staleHandoff.
+  maxAgeHours` defaults to 72 -- generous on purpose, since archiving a note
+  someone is still using is worse than leaving a stale one for one more day.
+
+  A note either signal flags is **archived, never deleted** -- moved to
+  `.crew/handoffs/HANDOFF-<timestamp>.md`, timestamped and never overwritten
+  (`crew_state.archive_stale_handoff`). This is the one automatic action
+  crew's own "ask before removing a role or deleting anything" rule still
+  allows: moving a file sideways into a dated archive is not deleting it, and
+  a stale note left visibly in that archive is recoverable in a way a deleted
+  one never is. A note judged fresh -- or one crew cannot judge at all,
+  because it carries none of the template's header lines -- is left exactly
+  where it was; `read_work`'s plain existence check and the `handoffPending`
+  finding it feeds are untouched.
+
+  Both `handoff-read.sh` and its `.ps1` twin call the same check (through
+  `crew_state.py --archive-stale-handoff`), and `pm_brief._resume_context`
+  calls it directly for the `autoResume` path, which has no human read step
+  to catch a stale note the printed path still leaves in place. Every call
+  fails open: a check that cannot run (no python, no git, a locked file)
+  falls through to the exact behaviour crew had before this feature existed,
+  because a hook that breaks startup over a staleness check is worse than one
+  honestly-stale note.
+
 - **`exchange-mailbox-cleanup` 1.0.0 and `exchange-mailbox-restore` 1.0.0: two
   Exchange Online runbooks turned into operator walkthroughs.** Built from
   `Mailbox-Cleanup-Training-Runbook` (41 steps, Phases A-E) and
