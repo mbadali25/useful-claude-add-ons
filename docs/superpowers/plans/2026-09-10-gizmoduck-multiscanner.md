@@ -16,6 +16,16 @@ Every task's requirements implicitly include this section.
 
 - **Plugin root:** `plugin/gizmoduck/`. All paths below are relative to it.
 - **Additive only.** `scan`, `summary`, `report`, `tickets`, `diff`, `doctor`, `update` must produce byte-for-byte identical output for plain Nuclei input. This is the acceptance bar for every task that touches an existing file.
+
+  **Two deliberate exceptions, both safety fixes we chose not to revert:**
+
+  1. **A group whose members disagree on severity now reports the highest, not the first.** `dedupe()` used `setdefault()`, so for one template at one location a Low arriving before a Critical reported the group as Low — and at the Medium detail floor that meant no action and no ticket. It now reports Critical. Reachable only when a `template_id` group holds 2+ raw records with differing severities (or differing `severity-assigned` tag membership, which for raw Nuclei is essentially theoretical). Single-record groups and groups already agreeing are untouched, and the golden-file regression test still passes byte-for-byte.
+
+  2. **`load()` now raises on a line matching neither the raw-Nuclei nor the normalized shape**, where it previously synthesised a blank Info finding from anything. Such input was never valid `nuclei -jsonl` output, so it sits outside what "plain Nuclei input" means — but it is a behaviour change and is written down rather than glossed.
+
+  The combined/manifest report path has no equivalent in `main` at all, so it is outside this claim rather than a divergence within it.
+
+  Reverting either to recover identical bytes would reintroduce a false-clean. The guarantee is narrowed honestly instead.
 - **Finding dict keys** (exact, from `gizmoduck.py:144-173`): `template_id, name, severity, severity_name, type, timestamp, host, matched_at, cve, cvss, description, remediation, reference, tags`. New keys added by this work: `tool`, `target`, `tools`, `merged_from`.
 - **Merge-key fields — optional, but the merge is inert without them.** Task 18's keys are `(CVE, package, version)` for `deps` and `(path, line, resource)` for `iac`, and none of those existed in the finding shape as originally written. Adapters feeding those categories must emit them as distinct fields *alongside* `matched_at` and `host`, never instead of:
 
