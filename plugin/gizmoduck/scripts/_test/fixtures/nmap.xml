@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-stylesheet href="file:///usr/share/nmap/nmap.xsl" type="text/xsl"?>
+<!--
+Hand-built against the documented nmap XML / vulns.lua shape (spec
+2026-09-10-gizmoduck-multiscanner-design.md section 13.11), NOT captured from
+a real scan - nmap is not installed in this environment. The table/elem key
+nesting below is the parser's best-effort reconstruction of vulns.lua's
+Report:make_output(), not a verified sample. Lock scanners/nmap.py's element
+paths against a real "nmap script=vuln oX" run before trusting this in
+production.
+-->
+<nmaprun scanner="nmap" args="nmap -oX nmap.xml -sV --script vuln site-a.example" start="1757520000" startstr="Thu Sep 10 12:00:00 2026" version="7.94" xmloutputversion="1.05">
+<scaninfo type="syn" protocol="tcp" numservices="1000" services="1-1000"/>
+<host starttime="1757520000" endtime="1757520030">
+<status state="up" reason="syn-ack" reason_ttl="64"/>
+<address addr="203.0.113.10" addrtype="ipv4"/>
+<hostnames>
+<hostname name="site-a.example" type="user"/>
+</hostnames>
+<ports>
+<port protocol="tcp" portid="80">
+<state state="open" reason="syn-ack" reason_ttl="64"/>
+<service name="http" product="nginx" version="1.18.0" method="probed" conf="10"/>
+</port>
+<port protocol="tcp" portid="443">
+<state state="open" reason="syn-ack" reason_ttl="64"/>
+<service name="https" product="OpenSSL" version="1.0.1" method="probed" conf="10"/>
+<script id="ssl-poodle" output="VULNERABLE: SSL POODLE information leak">
+<table key="CVE-2014-3566">
+<elem key="title">SSL POODLE information leak</elem>
+<elem key="state">VULNERABLE</elem>
+<table key="ids">
+<elem>CVE:CVE-2014-3566</elem>
+</table>
+<table key="scores">
+<elem key="CVSS">3.4</elem>
+</table>
+<table key="description">
+<elem>The SSL protocol 3.0 uses nondeterministic CBC padding, which allows
+man-in-the-middle attackers to obtain cleartext data via a padding-oracle
+attack (CVE-2014-3566), aka the POODLE issue.</elem>
+</table>
+<table key="dates">
+<table key="disclosure">
+<elem key="year">2014</elem>
+<elem key="month">10</elem>
+<elem key="day">14</elem>
+</table>
+</table>
+<elem key="disclosure">2014-10-14</elem>
+</table>
+</script>
+</port>
+<port protocol="tcp" portid="8443">
+<state state="open" reason="syn-ack" reason_ttl="64"/>
+<service name="https-alt" product="Apache Struts" version="2.3.x" method="probed" conf="10"/>
+<script id="http-vuln-cve2017-5638" output="VULNERABLE (Exploitable): Apache Struts RCE">
+<table key="CVE-2017-5638">
+<elem key="title">Apache Struts Jakarta Multipart Parser Remote Code Execution</elem>
+<elem key="state">VULNERABLE (Exploitable)</elem>
+<table key="ids">
+<elem>CVE:CVE-2017-5638</elem>
+</table>
+<table key="description">
+<elem>The Jakarta Multipart parser in Apache Struts 2 2.3.5 - 2.3.31 and
+2.5 - 2.5.10 mishandles file upload, allowing remote code execution via a
+crafted Content-Type header.</elem>
+</table>
+<table key="scores">
+<elem key="CVSS">10.0</elem>
+</table>
+</table>
+</script>
+</port>
+<port protocol="tcp" portid="8080">
+<state state="open" reason="syn-ack" reason_ttl="64"/>
+<service name="http-proxy" product="" version="" method="probed" conf="5"/>
+<script id="some-vuln-script" output="Uncatalogued state value">
+<table key="XYZ-UNKNOWN">
+<elem key="title">Uncatalogued check</elem>
+<elem key="state">WEIRDSTATE</elem>
+</table>
+</script>
+</port>
+<port protocol="tcp" portid="9090">
+<state state="open" reason="syn-ack" reason_ttl="64"/>
+<service name="unknown" product="" version="" method="table" conf="3"/>
+<script id="another-check" output="NOT VULNERABLE">
+<table key="ABC-000">
+<elem key="title">Should not appear as a finding</elem>
+<elem key="state">NOT VULNERABLE</elem>
+</table>
+</script>
+</port>
+</ports>
+<times srtt="1000" rttvar="100" to="100000"/>
+</host>
+<runstats>
+<finished time="1757520030" timestr="Thu Sep 10 12:00:30 2026" elapsed="30.00" summary="Nmap done at Thu Sep 10 12:00:30 2026; 1 IP address (1 host up) scanned in 30.00 seconds" exit="success"/>
+<hosts up="1" down="0" total="1"/>
+</runstats>
+</nmaprun>

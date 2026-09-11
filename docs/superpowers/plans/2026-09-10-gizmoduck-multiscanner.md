@@ -650,6 +650,20 @@ Three adapters deviate in what the path *means*, and each says so in its module 
 
 A declined active scan must be distinguishable from a failure: it is `skipped-active`, never `error`. Conflating them makes a deliberately-declined sqlmap look like a broken one in the coverage table.
 
+**`parse_errors(raw_path, target) -> list[dict]` — optional, second output channel.**
+
+`parse()` returns findings about the *target*. Some tools also report failures of the *scan itself* in the same output file, and those must never reach the findings list. testssl.sh is the case that forced this: its `severity` enum includes `WARN` and `FATAL`, which mean the scan hit a client-side error — mapping them as severities would make a broken scan read as a vulnerability.
+
+So an adapter with that problem drops those entries from `parse()` and exposes them through `parse_errors()` instead, returning dicts shaped deliberately *unlike* a finding — no `template_id`, no `severity`/`severity_name` band — so nothing downstream can mistake one for the other. Task 15 must call it where present:
+
+```python
+errors = getattr(mod, "parse_errors", lambda *_: [])(raw_path, target)
+```
+
+and fold what comes back into that cell's run-manifest entry.
+
+**Read every adapter constant defensively.** Task 15 must use `getattr(mod, "ACTIVE_OPTS", [])` rather than `mod.ACTIVE_OPTS`. Single-mode adapters are specified to declare `ACTIVE_OPTS = []`, but an adapter added later by someone reading only the spec's §3 protocol list will not have it, and an `AttributeError` there fails the whole run rather than the one cell.
+
 **The five steps, for every adapter:**
 
 - [ ] **Step 1:** Capture a real native output sample into `scripts/_test/fixtures/<tool>.<ext>`. If the tool is not installed, hand-build the fixture from the schema cited in spec §13 — it must contain at minimum one finding at each of two different severities, and one malformed/absent-severity entry.
