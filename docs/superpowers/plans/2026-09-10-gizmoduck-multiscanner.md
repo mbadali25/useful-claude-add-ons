@@ -25,7 +25,17 @@ Every task's requirements implicitly include this section.
 - **PDF is Qt WebKit 4.8.** No flexbox, no CSS grid, no custom properties. Tables and floats only. Verify in the PDF, not a browser.
 - **No `__init__.py` exists in `scripts/` today.** Imports rely on the script's own directory heading `sys.path`, with a `spec_from_file_location` fallback at `gizmoduck.py:274-291`. Follow that pattern; do not assume a package import works.
 - **Nine tools:** nuclei, zap, nikto, nmap, testssl, trivy (serves both `deps` and `iac`), depcheck, checkov, sqlmap. **No tfsec** — dropped as deprecated (§13.4).
-- **Active tools** (`ACTIVE=True`, `DEFAULT_ENABLED=False`): sqlmap, ZAP active scan, Nmap `vuln` NSE. sqlmap additionally requires an explicit confirm token at routine level.
+- **Active tools** (`ACTIVE=True`, `DEFAULT_ENABLED=False`): sqlmap. sqlmap additionally requires an explicit confirm token at routine level.
+- **Two adapters are active only in one of their two modes** — Nmap (safe vs `vuln` NSE) and ZAP (baseline vs active scan). A single module-level `ACTIVE` flag cannot express that: setting it `True` would wrongly gate the safe mode off by default, and `False` loses the record that the dangerous mode was available and declined. So those two carry **`ACTIVE_OPTS`** — a list of option keys whose presence makes the run active:
+
+  ```python
+  ACTIVE = False              # the default mode sends no attack traffic
+  ACTIVE_OPTS = ["nmap_vuln"] # ...but this option does
+  ```
+
+  `routine` treats an adapter as active when `ACTIVE` is true **or** any key in `ACTIVE_OPTS` is set for that target, and the run manifest records the **mode actually used**, not just ran/skipped: `ran(safe)` vs `ran(safe+vuln)`, `ran(baseline)` vs `ran(baseline+active)`.
+
+  This matters for the coverage table specifically. A cell reading a bare `ran` for Nmap would imply vulnerability coverage that a safe-only scan never attempted — which is the same false-assurance failure the coverage table exists to prevent, just one level finer. Adapters with a single mode set `ACTIVE_OPTS = []`.
 
 ---
 
