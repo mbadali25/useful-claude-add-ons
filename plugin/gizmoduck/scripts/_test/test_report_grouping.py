@@ -304,3 +304,60 @@ def test_coverage_cell_missing_count_is_not_reported_as_zero(gz):
     assert text_missing != text_zero
     assert text_null != text_zero
     assert text_missing == text_null
+
+
+# --- MEDIUM/JUDGEMENT-CALL defect 5: max-severity dedupe fix diverges ------
+# from `main` for one specific input shape - documented, not reverted.
+#
+# On `main`, dedupe() used setdefault() and kept only the FIRST record's
+# severity per (template_id) group; a Low-then-Critical pair for the same
+# template/location at the report's Medium floor produced "No action
+# required". The fix here (dedupe() takes the group's HIGHEST severity,
+# regardless of arrival order) is correct and is NOT reverted - see
+# test_dedupe.py for the unit-level coverage. This pins the *report-level*
+# consequence of that fix for two RAW Nuclei records (the literal repro
+# from the defect: same template/location, first Low then Critical, neither
+# carrying `target`) and records that this is the only input shape where
+# report output now differs from `main`.
+
+def _raw_nuclei_line(template_id, severity, host="prod.example.com"):
+    return json.dumps({
+        "template-id": template_id,
+        "info": {"name": "Example finding", "severity": severity},
+        "type": "http",
+        "host": host,
+        "matched-at": host,
+    })
+
+
+def test_low_then_critical_same_group_now_reports_the_critical(gz, tmp_path):
+    p = tmp_path / "findings.jsonl"
+    p.write_text(
+        _raw_nuclei_line("dup-template", "low") + "\n"
+        + _raw_nuclei_line("dup-template", "critical") + "\n",
+        encoding="utf-8",
+    )
+    findings = gz.load(str(p))
+    out = gz.cmd_report(findings, 2, "Report")  # Medium floor
+
+    # NEW behaviour, pinned deliberately: the group's highest severity
+    # (Critical) is what gets reported, not the first record's (Low).
+    assert "No action required" not in out
+    assert "Example finding" in out
+    assert "Critical" in out
+
+
+def test_order_independent_dedupe_severity_matches_this_report(gz, tmp_path):
+    """Same shape, records reversed - the report-level output must not
+    depend on arrival order either (test_dedupe.py already pins this at the
+    dedupe() level; this confirms it holds through the report path too)."""
+    p = tmp_path / "findings.jsonl"
+    p.write_text(
+        _raw_nuclei_line("dup-template", "critical") + "\n"
+        + _raw_nuclei_line("dup-template", "low") + "\n",
+        encoding="utf-8",
+    )
+    findings = gz.load(str(p))
+    out = gz.cmd_report(findings, 2, "Report")
+    assert "No action required" not in out
+    assert "Critical" in out
