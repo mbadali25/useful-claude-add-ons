@@ -245,10 +245,26 @@ def _resolve_session_for_parse(raw_path, target):
     like run()'s resolver. A raw_path that is instead an --output-dir root
     can hold more than one child that looks like a session (stale leftovers
     from a previous host, a shared root). With exactly one such child there
-    is nothing to disambiguate - use it. With more than one, the only
-    trustworthy signal is the sidecar run() wrote into the session directory
-    it actually used (`_write_target_sidecar`): never an arbitrary
-    alphabetical pick, and never a guess derived from `target`.
+    is nothing to disambiguate - use it regardless of its name or of what
+    `target` is (a manifest name is not, and never was, required to equal
+    the hostname). With more than one, the only trustworthy signal is the
+    sidecar run() wrote into the session directory it actually used
+    (`_write_target_sidecar`): never an arbitrary alphabetical pick, and
+    never a guess derived from `target`.
+
+    When `target` itself carries a real hostname (it parses as a URL - the
+    case a direct/manual call, rather than routine.py, is likely to produce)
+    and none of the candidates' sidecars match it, that is a confident
+    negative: we know which host was asked about, and it isn't among these
+    sessions, so `parse()` reading zero findings from the (unmatched)
+    raw_path is correct - not a gap. But when `target` is a bare manifest
+    name (routine.py's real call shape) and the ambiguity can't be broken,
+    we have no such confidence: one of these sessions might be the right
+    one and we simply can't tell which. Silently returning raw_path there
+    would make `parse()` report a clean scan indistinguishable from "no
+    injection found" - the same false-clean failure mode the CRITICAL
+    run()/parse() evidence defect exists to prevent. So that specific case
+    raises `base.ParseError` instead.
     """
     raw_path = Path(raw_path)
     if (raw_path / "log").is_file() or (raw_path / "session.sqlite").is_file():
@@ -289,9 +305,22 @@ def _resolve_session_for_parse(raw_path, target):
 
     if len(matches) == 1:
         return matches[0]
-    # Zero or multiple equally-plausible candidates: refuse to guess. The
-    # caller ends up with no log/session.sqlite at raw_path itself, which
-    # parse() reads as zero findings - never someone else's (defect 2).
+
+    if target_host is None:
+        # A bare manifest name gave us nothing to confirm a negative with,
+        # and the sidecars didn't resolve it either: genuinely unresolvable
+        # ambiguity, not a confident "not this host". Fail loud rather than
+        # let it look like a clean scan.
+        raise base.ParseError(
+            "sqlmap output directory %r holds %d candidate sessions and "
+            "target %r is not a URL, so none of them can be confirmed or "
+            "ruled out; refusing to guess which one (if any) belongs to "
+            "this target" % (str(raw_path), len(candidates), target))
+
+    # target_host is known and confirmed absent from every candidate's
+    # sidecar: a determined negative, not a gap. Fall through to raw_path,
+    # which parse() reads as having no log/session.sqlite for this host -
+    # zero findings, never someone else's (defect 2).
     return raw_path
 
 

@@ -241,6 +241,33 @@ def test_run_writes_a_target_sidecar_parse_can_later_read(monkeypatch, tmp_path)
     assert findings[0]["matched_at"] == "http://example.test/page?id=1"
 
 
+def test_parse_finds_the_session_when_manifest_name_is_not_the_hostname(fixture):
+    # The realistic manifest shape: {name: prod-web, kind: web,
+    # url: http://www.example.com/?id=1} - the name and the hostname are
+    # ordinarily different strings. A single session directory under the
+    # root is unambiguous regardless of what it's named or what `target`
+    # is, so this must be found and populated purely from the log/directory
+    # data - with no sidecar present at all, proving the fallback (not just
+    # the sidecar path) handles a manifest name that differs from the host.
+    findings = sqlmap.parse(fixture("sqlmap-session/name-differs-from-host"), "prod-web")
+
+    assert len(findings) == 1
+    assert findings[0]["host"] == "www.example.com"
+    assert findings[0]["matched_at"] == "www.example.com"
+    assert findings[0]["target"] == "prod-web"
+
+
+def test_parse_raises_rather_than_silently_dropping_an_unresolvable_bare_name(fixture):
+    # Two candidate session directories, a bare manifest name, and no
+    # sidecar in either one to say which (if either) belongs to this
+    # manifest entry: genuine, unresolvable ambiguity. Silently returning []
+    # here would be indistinguishable from "this target has no injection" -
+    # exactly the false-clean outcome the CRITICAL defect above exists to
+    # prevent. This must raise, not disappear.
+    with pytest.raises(base.ParseError):
+        sqlmap.parse(fixture("sqlmap-session/ambiguous-bare-name"), "prod-web")
+
+
 # --- parsing: confirmed session yields findings, empty session yields none -
 
 def test_confirmed_session_yields_two_findings_high_and_critical(fixture):
