@@ -167,6 +167,44 @@ def test_hostscript_finding_also_gets_the_enriched_fields(fixture):
     assert host_vuln["cvss"] == 7.5
 
 
+def test_description_is_read_from_the_nested_description_table(fixture):
+    """description lives in a nested <table key="description"> holding an
+    anonymous <elem>, the same nesting shape as ids/scores/references - not
+    a direct <elem key="description"> child of the vuln table. A lookup
+    written for the wrong shape silently returned "" for every finding;
+    combined with the empty cve fixed earlier, an nmap vuln rendered in the
+    report as a bare title with no explanation of what it was."""
+    findings = _findings(fixture)
+    poodle = [f for f in findings if f["template_id"] == "nmap:CVE-2014-3566"][0]
+    assert poodle["description"] == (
+        "The SSL protocol 3.0 uses nondeterministic CBC padding, which allows\n"
+        "man-in-the-middle attackers to obtain cleartext data via a padding-oracle\n"
+        "attack (CVE-2014-3566), aka the POODLE issue."
+    )
+
+
+def test_missing_description_table_yields_empty_string_not_a_raise(fixture):
+    """XYZ-UNKNOWN has no <table key="description"> at all - must come back
+    "" rather than raising or fabricating text."""
+    findings = _findings(fixture)
+    unknown = [f for f in findings if f["template_id"] == "nmap:XYZ-UNKNOWN"][0]
+    assert unknown["description"] == ""
+
+
+def test_finding_name_comes_from_the_title_elem(fixture):
+    """title (the finding's `name`) is a direct <elem key="title"> child of
+    the vuln table - unlike ids/scores/references/description, which nest
+    inside their own <table>. Confirmed correct per the fixture's
+    documented shape, but nothing previously asserted its content directly;
+    a finding's name is the one field it cannot do without, so this closes
+    that gap explicitly rather than leaving it unverified."""
+    findings = _findings(fixture)
+    poodle = [f for f in findings if f["template_id"] == "nmap:CVE-2014-3566"][0]
+    assert poodle["name"] == "SSL POODLE information leak"
+    struts = [f for f in findings if f["template_id"] == "nmap:CVE-2017-5638"][0]
+    assert struts["name"] == "Apache Struts Jakarta Multipart Parser Remote Code Execution"
+
+
 def test_malformed_xml_raises_base_parse_error_not_a_bare_exception(tmp_path):
     """DEFECT 2 regression guard: nmap.py must never let
     xml.etree.ElementTree.ParseError escape uncaught. That fails the whole

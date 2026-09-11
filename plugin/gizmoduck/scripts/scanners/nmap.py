@@ -38,7 +38,17 @@ exploit_results and extra_info have no field in the finding shape and are
 deliberately left unread rather than inventing one. Any of the fields this
 parser does read are omitted (not guessed) when the source table is absent
 or malformed - see _cve_ids_from_table / _cvss_from_table /
-_references_from_table below.
+_references_from_table / _description_from_table below.
+
+Two lookup shapes exist and must not be confused: title and state are
+direct <elem key="..."> children of the vuln table (read via _elem_text),
+while ids, scores, references and description are each their own nested
+<table key="..."> (read via _direct_child_table plus a per-field helper).
+description was originally read as if it were the first shape, which left
+it silently "" on every finding - the same mistake QA later caught for
+ids/scores/references, just not caught for description until a second
+pass. Confirmed correct for title/state - see test_finding_name_comes_
+from_the_title_elem.
 """
 import os
 from urllib.parse import urlparse
@@ -231,6 +241,23 @@ def _references_from_table(vt):
             if text]
 
 
+def _description_from_table(vt):
+    """vulns.lua's description table holds one or more anonymous <elem>
+    entries - the same nesting shape as ids/scores/references, not a direct
+    <elem key="description"> child of the vuln table. (A lookup written for
+    that wrong shape previously left `description` silently "" on every
+    finding.) Multiple elem children join with a blank line; absent table
+    -> "", never fabricated.
+    """
+    desc_table = _direct_child_table(vt, "description")
+    if desc_table is None:
+        return ""
+    parts = [text for text in
+             ((el.text or "").strip() for el in desc_table.findall("elem"))
+             if text]
+    return "\n\n".join(parts)
+
+
 def _append_vuln_findings(findings, script_el, target, host_ip, matched_at):
     """Shared by port-level and host-level script handling: walk a <script>
     element's vulns.lua tables and append one finding per state that is not
@@ -246,7 +273,7 @@ def _append_vuln_findings(findings, script_el, target, host_ip, matched_at):
         sev_word = _VULN_STATE_SEVERITY.get(state_text)
         severity, known = normalize.sev_from_text(sev_word, default="medium")
         title = _elem_text(vt, "title") or script_el.get("id", "")
-        description = _elem_text(vt, "description")
+        description = _description_from_table(vt)
         tags = [script_el.get("id")] if script_el.get("id") else []
 
         findings.append(normalize.make_finding(
