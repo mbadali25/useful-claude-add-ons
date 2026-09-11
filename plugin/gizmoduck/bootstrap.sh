@@ -118,6 +118,13 @@ install_checkov() {
   pip3 install --user --upgrade checkov
 }
 
+install_semgrep() {
+  # Semgrep is the only source-reading tool here, and the only one that can
+  # see a check that is MISSING - an authorization gate nobody wrote has no
+  # signature, no CVE and no misconfigured resource to find.
+  pip3 install --user --upgrade semgrep
+}
+
 install_depcheck() {
   local ver
   ver=$(curl -fsSL https://api.github.com/repos/jeremylong/DependencyCheck/releases/latest \
@@ -203,6 +210,7 @@ try_install "nikto"              install_nikto
 try_install "testssl.sh"         install_testssl
 try_install "trivy"              install_trivy
 try_install "checkov"            install_checkov
+try_install "semgrep"            install_semgrep
 try_install "dependency-check"   install_depcheck
 
 # dependency-check's first run downloads the entire NVD CVE corpus. Without an
