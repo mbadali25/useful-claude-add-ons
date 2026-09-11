@@ -125,21 +125,73 @@ def test_single_shape_passed_checks_are_ignored(fixture):
 
 
 # --- parse(): resilience -------------------------------------------------
+#
+# CRITICAL false-clean defect: unreadable/malformed/wrong-shaped input used
+# to come back as an empty finding list - byte-identical to "this target is
+# clean". A file Checkov never actually scanned must never look the same as
+# a clean scan, so every case below now raises base.ParseError instead. The
+# three tests below previously asserted the buggy `== []` behaviour; they
+# are rewritten here to assert the fix.
 
-def test_missing_file_returns_empty_list_not_an_error(tmp_path):
-    assert checkov.parse(str(tmp_path / "nope.json"), "site-a") == []
+def test_missing_file_raises_parse_error(tmp_path):
+    with pytest.raises(base.ParseError):
+        checkov.parse(str(tmp_path / "nope.json"), "site-a")
 
 
-def test_malformed_json_returns_empty_list_not_an_error(tmp_path):
+def test_malformed_json_raises_parse_error(tmp_path):
     p = tmp_path / "bad.json"
     p.write_text("{not json", encoding="utf-8")
-    assert checkov.parse(str(p), "site-a") == []
+    with pytest.raises(base.ParseError):
+        checkov.parse(str(p), "site-a")
 
 
-def test_empty_file_returns_empty_list(tmp_path):
+def test_empty_file_raises_parse_error(tmp_path):
     p = tmp_path / "empty.json"
     p.write_text("", encoding="utf-8")
-    assert checkov.parse(str(p), "site-a") == []
+    with pytest.raises(base.ParseError):
+        checkov.parse(str(p), "site-a")
+
+
+def test_json_null_raises_parse_error(tmp_path):
+    """A file containing only `null` is valid JSON but not a report - this
+    reproduces defect 1's third example ("`null` does too")."""
+    p = tmp_path / "null.json"
+    p.write_text("null", encoding="utf-8")
+    with pytest.raises(base.ParseError):
+        checkov.parse(str(p), "site-a")
+
+
+def test_null_entry_in_failed_checks_raises_parse_error_not_attribute_error(fixture):
+    """Shape failures count as parse failures too (plan: 'Shape validation
+    counts as parse failure'). Before the fix this raised AttributeError
+    from `check.get(...)` on a None entry, which fails the whole run
+    instead of being caught as a per-cell parse error.
+    """
+    with pytest.raises(base.ParseError):
+        checkov.parse(str(fixture("checkov-bad-shape.json")), "site-a")
+
+
+def test_parsing_errors_are_not_silently_dropped(fixture):
+    """A file Checkov could not read at all (results.parsing_errors) must
+    not be presented as a clean scan. parse() still returns the [] its
+    failed_checks legitimately contained (parsing_errors is reported
+    through the separate parse_errors() channel, not by raising here) -
+    but the caller (routine) must be able to see the parsing_errors via
+    parse_errors() so the cell is never recorded as a clean `ran`.
+    """
+    findings = checkov.parse(str(fixture("checkov-parsing-errors.json")), "site-a")
+    assert findings == []
+    errors = checkov.parse_errors(str(fixture("checkov-parsing-errors.json")), "site-a")
+    assert len(errors) == 1
+    assert "broken.tf" in errors[0]["message"]
+    # Shaped unlike a finding so nothing downstream mistakes one for the
+    # other (same convention as testssl.parse_errors).
+    assert "severity" not in errors[0]
+    assert "template_id" not in errors[0]
+
+
+def test_parse_errors_returns_empty_when_no_parsing_errors_present(fixture):
+    assert checkov.parse_errors(str(fixture("checkov.json")), "site-a") == []
 
 
 # --- is_available() -----------------------------------------------------

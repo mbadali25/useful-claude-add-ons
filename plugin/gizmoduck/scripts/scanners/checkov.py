@@ -116,27 +116,46 @@ def parse(raw_path, target):
     """Read Checkov's JSON report(s). Pure - no subprocess, no network.
 
     Accepts both the single-framework object shape and the multi-framework
-    array shape. Missing/unreadable/malformed input yields an empty list
-    rather than raising - a broken scan should show up as a run-manifest
-    error from the caller, not as this function crashing (matching the
-    convention every other adapter in this package follows).
+    array shape. Unreadable, empty, malformed, or wrongly-shaped input
+    raises `base.ParseError` rather than returning an empty list - a file
+    Checkov never actually scanned must never look identical to "scanned
+    and found nothing" (Global Constraints: "parse() must never convert a
+    parse failure into an empty finding list"). `routine` catches
+    ParseError and records `error:parse:<detail>` for that cell.
+
+    Checkov's own `results.parsing_errors` (files it could not read, even
+    when other files in the same run parsed fine) is a distinct signal and
+    is surfaced through `parse_errors()` below instead of raising here -
+    those files simply contributed no failed_checks, which is not the same
+    claim as "the whole report is unreadable".
     """
     try:
         with open(raw_path, encoding="utf-8") as fh:
             content = fh.read()
-        data = json.loads(content) if content.strip() else []
-    except (OSError, ValueError):
-        return []
+    except OSError as e:
+        raise base.ParseError("%s: could not read file: %s" % (raw_path, e)) from e
+
+    if not content.strip():
+        raise base.ParseError("%s: empty output" % raw_path)
+
+    try:
+        data = json.loads(content)
+    except ValueError as e:
+        raise base.ParseError("%s: invalid JSON: %s" % (raw_path, e)) from e
 
     reports = data if isinstance(data, list) else [data]
 
     findings = []
     for report in reports:
         if not isinstance(report, dict):
-            continue
+            raise base.ParseError(
+                "%s: report entry is not an object: %r" % (raw_path, report))
         check_type = report.get("check_type") or ""
         results = report.get("results") or {}
         for check in results.get("failed_checks") or []:
+            if not isinstance(check, dict):
+                raise base.ParseError(
+                    "%s: failed_checks entry is not an object: %r" % (raw_path, check))
             rule_id = check.get("check_id") or check.get("bc_check_id") or "unknown"
             sev, known = n.sev_from_text(check.get("severity"), default="medium")
             guideline = check.get("guideline") or ""
@@ -166,3 +185,43 @@ def parse(raw_path, target):
             finding["resource"] = resource
             findings.append(finding)
     return findings
+
+
+def parse_errors(raw_path, target):
+    """Return Checkov's own `results.parsing_errors` as tool-error records.
+
+    These name files Checkov could not parse at all - distinct from an
+    empty `failed_checks` list, which means "parsed cleanly, nothing
+    failed". Conflating the two is the exact false-clean defect `parse()`
+    now guards against for the whole-report case; this is the analogous
+    per-file case, surfaced through the optional second channel `routine`
+    calls alongside `parse()` (the same convention testssl.parse_errors
+    uses), so a broken file is folded into that cell's run-manifest entry
+    instead of silently vanishing.
+
+    Shaped deliberately unlike a finding (no template_id, no severity) so
+    nothing downstream can mistake one for the other. Never raises: this
+    is a best-effort supplementary read of a file `parse()` has, by the
+    time this is called, already read successfully.
+    """
+    try:
+        with open(raw_path, encoding="utf-8") as fh:
+            content = fh.read()
+        data = json.loads(content) if content.strip() else []
+    except (OSError, ValueError):
+        return []
+
+    reports = data if isinstance(data, list) else [data]
+
+    errors = []
+    for report in reports:
+        if not isinstance(report, dict):
+            continue
+        results = report.get("results") or {}
+        for entry in results.get("parsing_errors") or []:
+            errors.append({
+                "tool": NAME,
+                "target": target,
+                "message": str(entry),
+            })
+    return errors

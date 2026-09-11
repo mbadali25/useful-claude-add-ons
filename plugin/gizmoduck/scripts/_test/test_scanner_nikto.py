@@ -1,4 +1,6 @@
-from scanners import nikto
+import pytest
+
+from scanners import base, nikto
 
 
 def test_parses_both_rows_with_derived_severities(fixture):
@@ -42,3 +44,26 @@ def test_module_constants_match_the_plan():
     assert nikto.KINDS == ["web"]
     assert nikto.ACTIVE is False
     assert nikto.ACTIVE_OPTS == []
+
+
+# --- parse(): must not manufacture a vulnerability from garbage input ----
+#
+# MEDIUM defect: any nonempty CSV row - including a truncated row or a
+# single diagnostic/garbage line - used to get padded out to the full
+# column set and turned into a `medium` finding. That invents a
+# vulnerability that was never actually observed. Required columns must
+# now be validated, raising base.ParseError instead.
+
+def test_truncated_row_raises_parse_error_instead_of_a_finding(fixture):
+    with pytest.raises(base.ParseError):
+        nikto.parse(str(fixture("nikto-truncated.csv")), "https://example.test")
+
+
+def test_garbage_line_raises_parse_error_instead_of_a_finding(fixture):
+    with pytest.raises(base.ParseError):
+        nikto.parse(str(fixture("nikto-bad-shape.csv")), "https://example.test")
+
+
+def test_bare_null_line_raises_parse_error_instead_of_a_finding(fixture):
+    with pytest.raises(base.ParseError):
+        nikto.parse(str(fixture("nikto-null.csv")), "https://example.test")

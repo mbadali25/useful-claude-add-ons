@@ -66,9 +66,19 @@ def _is_banner(message):
 def parse(raw_path, target):
     """Read Nikto's CSV output. Pure - no subprocess, no network.
 
-    Missing/unreadable output is treated as zero findings rather than an
-    error here; run()'s caller is responsible for distinguishing "no findings"
-    from "scan never produced a file" using the manifest, not this function.
+    Missing output is treated as zero findings rather than an error here;
+    run()'s caller is responsible for distinguishing "no findings" from
+    "scan never produced a file" using the manifest, not this function.
+
+    A row that IS present but does not carry every required column raises
+    `base.ParseError` instead. Rows here used to be padded out to the full
+    column set with empty strings and turned into a `medium` finding
+    regardless of what they actually contained - so a truncated row from an
+    interrupted scan, or a stray diagnostic line, manufactured a
+    vulnerability that was never observed. Inventing a finding is as
+    damaging as missing one: it sends a reader chasing something with no
+    underlying fact (Global Constraints: "never fabricate a finding from
+    unvalidatable input").
     """
     if not os.path.isfile(raw_path):
         return []
@@ -78,9 +88,13 @@ def parse(raw_path, target):
         for row in csv.reader(fh):
             if not row:
                 continue
-            # Pad short rows defensively rather than raising on a truncated
-            # or interrupted scan.
-            row = list(row) + [""] * (len(CSV_FIELDS) - len(row))
+            if len(row) != len(CSV_FIELDS) or not row[0] or not row[10]:
+                # row[0] is `id`, row[10] is `message` - a genuine Nikto CSV
+                # row always has all 13 fields with both populated; anything
+                # short of that is truncated output or a non-finding line,
+                # never a vulnerability to report.
+                raise base.ParseError(
+                    "%s: row missing required id/message columns: %r" % (raw_path, row))
             rec = dict(zip(CSV_FIELDS, row))
 
             message = rec.get("message", "")
