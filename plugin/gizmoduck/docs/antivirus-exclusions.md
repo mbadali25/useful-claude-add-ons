@@ -143,9 +143,10 @@ formality:
   through it, but `%TEMP%` is exactly where real malware lands and executes -
   excluding it blinds the AV to the most common drop location on the machine.
   If a bootstrap script downloads into `%TEMP%` before moving the tool to its
-  final directory (several of gizmoduck's do - check `bootstrap.ps1`), that's
-  a bug in the script's landing spot, not a reason to exclude `%TEMP%`. Fix
-  the script to download straight into the tool's own directory instead.
+  final directory, that's a bug in the script's landing spot, not a reason to
+  exclude `%TEMP%` - fix the script to download straight into the tool's own
+  directory instead. `bootstrap.ps1`/`bootstrap.sh` no longer do this: every
+  tool download now lands directly in (or next to) its install directory.
 - **Process exclusions are broader than path exclusions** - excluding
   `perl.exe` or `java.exe` stops Defender from inspecting *anything* those
   interpreters run, not just nikto or ZAP. Prefer the path exclusion alone

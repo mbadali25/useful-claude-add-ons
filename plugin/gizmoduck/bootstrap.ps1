@@ -54,7 +54,11 @@ function Install-Nuclei {
   $zip = "nuclei_${num}_windows_${arch}.zip"
   $url = "https://github.com/projectdiscovery/nuclei/releases/download/$ver/$zip"
 
-  $tmp = Join-Path $env:TEMP $zip
+  # Download straight into the (AV-excluded) install dir instead of %TEMP% -
+  # %TEMP% is the most common malware drop location on Windows, so staging a
+  # security tool's download through it defeats the point of excluding the
+  # tool's own directory. See docs/antivirus-exclusions.md section 5.
+  $tmp = Join-Path $BinDir $zip
   Invoke-WebRequest -Uri $url -OutFile $tmp -Headers @{ "User-Agent" = "nuclei-bootstrap" }
   Expand-Archive -Path $tmp -DestinationPath $BinDir -Force
   Remove-Item $tmp
@@ -133,11 +137,19 @@ function Install-XmlWriterModule {
   $meta = Invoke-RestMethod "https://fastapi.metacpan.org/v1/download_url/XML::Writer"
   if (-not $meta.download_url) { throw "could not resolve an XML::Writer release from MetaCPAN" }
 
-  $tmp = Join-Path $env:TEMP "gizmoduck-xml-writer.tar.gz"
+  # Stage under ToolsDir instead of %TEMP% - not because this particular
+  # destination (Perl's own vendorlib) is AV-excluded, but because %TEMP% is
+  # the most common malware drop location on Windows and there's no reason
+  # for any tool download to sit there even briefly. See
+  # docs/antivirus-exclusions.md section 5.
+  $stageDir = Join-Path $ToolsDir ".download\xml-writer"
+  if (Test-Path $stageDir) { Remove-Item -Recurse -Force $stageDir }
+  New-Item -ItemType Directory -Force -Path $stageDir | Out-Null
+
+  $tmp = Join-Path $stageDir "gizmoduck-xml-writer.tar.gz"
   Invoke-WebRequest -Uri $meta.download_url -OutFile $tmp
 
-  $extractDir = Join-Path $env:TEMP "gizmoduck-xml-writer-extract"
-  if (Test-Path $extractDir) { Remove-Item -Recurse -Force $extractDir }
+  $extractDir = Join-Path $stageDir "extract"
   New-Item -ItemType Directory -Force -Path $extractDir | Out-Null
   tar -xzf $tmp -C $extractDir
   if ($LASTEXITCODE -ne 0) { throw "failed to extract the XML::Writer release tarball" }
@@ -154,8 +166,7 @@ function Install-XmlWriterModule {
   New-Item -ItemType Directory -Force -Path $destDir | Out-Null
   Copy-Item $writerPm.FullName (Join-Path $destDir "Writer.pm") -Force
 
-  Remove-Item $tmp -ErrorAction SilentlyContinue
-  Remove-Item -Recurse -Force $extractDir -ErrorAction SilentlyContinue
+  Remove-Item -Recurse -Force $stageDir -ErrorAction SilentlyContinue
 }
 
 function Install-Nikto {
@@ -262,7 +273,10 @@ function Install-DependencyCheck {
   $url = "https://github.com/jeremylong/DependencyCheck/releases/download/$ver/$zip"
 
   $dir = Join-Path $ToolsDir "dependency-check"
-  $tmp = Join-Path $env:TEMP $zip
+  # Stage next to the extraction target (ToolsDir) instead of %TEMP% - see
+  # Install-Nuclei above for why. $dir itself gets wiped below, so the zip
+  # has to live in the parent that survives that, not inside $dir.
+  $tmp = Join-Path $ToolsDir $zip
   Invoke-WebRequest -Uri $url -OutFile $tmp -Headers @{ "User-Agent" = "gizmoduck-bootstrap" }
   if (Test-Path $dir) { Remove-Item -Recurse -Force $dir }
   Expand-Archive -Path $tmp -DestinationPath $ToolsDir -Force
@@ -327,7 +341,11 @@ function Install-Zap {
   $url = "https://github.com/zaproxy/zaproxy/releases/download/$ver/$zip"
 
   $dir = Join-Path $ToolsDir "zap"
-  $tmp = Join-Path $env:TEMP $zip
+  # Stage next to the extraction target (ToolsDir) instead of %TEMP% - a
+  # 286MB ZAP zip sitting in %TEMP% mid-download is exactly what got flagged
+  # and quarantined by Defender. $dir itself gets wiped below, so the zip
+  # has to live in the parent that survives that, not inside $dir.
+  $tmp = Join-Path $ToolsDir $zip
   Invoke-WebRequest -Uri $url -OutFile $tmp -Headers @{ "User-Agent" = "gizmoduck-bootstrap" }
   if (Test-Path $dir) { Remove-Item -Recurse -Force $dir }
   Expand-Archive -Path $tmp -DestinationPath $dir -Force

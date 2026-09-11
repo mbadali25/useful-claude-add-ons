@@ -54,14 +54,21 @@ install_nuclei() {
   local num="${ver#v}"
   local zip="nuclei_${num}_linux_${arch}.zip"
 
-  local tmp
-  tmp="$(mktemp -d)"
-  curl -fsSL -o "$tmp/$zip" \
+  # Stage under /opt (where the rest of gizmoduck's manually-installed tools
+  # already live) instead of /tmp - /tmp is world-writable and the most
+  # common malware drop location on Linux too, so a security tool's own
+  # download shouldn't sit there even briefly. Nuclei's only permanent home
+  # is the single /usr/local/bin/nuclei binary, so this staging dir is
+  # scratch space, not a destination - remove it once the binary is moved.
+  local stage=/opt/gizmoduck-nuclei-download
+  sudo rm -rf "$stage"
+  sudo mkdir -p "$stage"
+  sudo curl -fsSL -o "$stage/$zip" \
     "https://github.com/projectdiscovery/nuclei/releases/download/${ver}/${zip}"
-  unzip -oq "$tmp/$zip" -d "$tmp"
-  sudo mv "$tmp/nuclei" /usr/local/bin/nuclei
+  sudo unzip -oq "$stage/$zip" -d "$stage"
+  sudo mv "$stage/nuclei" /usr/local/bin/nuclei
   sudo chmod +x /usr/local/bin/nuclei
-  rm -rf "$tmp"
+  sudo rm -rf "$stage"
 
   echo ">> installed: $(nuclei -version 2>&1 | head -1)"
 }
@@ -122,12 +129,12 @@ install_depcheck() {
   local num="${ver#v}"
   local zip="dependency-check-${num}-release.zip"
 
-  local tmp
-  tmp="$(mktemp -d)"
-  curl -fsSL -o "$tmp/$zip" \
+  # Stage next to the extraction target (/opt) instead of /tmp - see
+  # install_nuclei above for why.
+  sudo curl -fsSL -o "/opt/$zip" \
     "https://github.com/jeremylong/DependencyCheck/releases/download/${ver}/${zip}"
-  sudo unzip -oq "$tmp/$zip" -d /opt
-  rm -rf "$tmp"
+  sudo unzip -oq "/opt/$zip" -d /opt
+  sudo rm -f "/opt/$zip"
   sudo chmod +x /opt/dependency-check/bin/dependency-check.sh
   sudo ln -sf /opt/dependency-check/bin/dependency-check.sh /usr/local/bin/dependency-check
 
@@ -177,12 +184,13 @@ install_zap() {
   local num="${ver#v}"
   local zip="ZAP_${num}_Crossplatform.zip"
 
-  local tmp
-  tmp="$(mktemp -d)"
-  curl -fsSL -o "$tmp/$zip" \
+  # Stage next to the extraction target (/opt) instead of /tmp - a 286MB ZAP
+  # zip sitting in /tmp mid-download is exactly what got flagged and
+  # quarantined by Defender on Windows; /tmp is the equivalent risk here.
+  sudo curl -fsSL -o "/opt/$zip" \
     "https://github.com/zaproxy/zaproxy/releases/download/${ver}/${zip}"
-  sudo unzip -oq "$tmp/$zip" -d /opt
-  rm -rf "$tmp"
+  sudo unzip -oq "/opt/$zip" -d /opt
+  sudo rm -f "/opt/$zip"
   sudo chmod +x "/opt/ZAP_${num}/zap.sh"
   sudo ln -sf "/opt/ZAP_${num}/zap.sh" /usr/local/bin/zap.sh
 }
