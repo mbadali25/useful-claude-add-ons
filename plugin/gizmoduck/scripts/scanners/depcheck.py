@@ -42,6 +42,14 @@ def _scan_path(target):
 
 
 def run(target, outdir, opts):
+    """Returns (raw_path, result) - raw_path is None when the tool was not
+    run or produced no output file, per the cross-adapter run() contract:
+    routine.py needs the ToolResult even on failure to record error/timeout
+    per-cell in the run manifest, and dependency-check writes into an --out
+    DIRECTORY under a fixed filename rather than a path we name directly, so
+    routine has no way to find the file except by us resolving and returning
+    it.
+    """
     os.makedirs(outdir, exist_ok=True)
     opts = opts or {}
     argv = [
@@ -49,7 +57,10 @@ def run(target, outdir, opts):
         "--out", outdir, "--scan", _scan_path(target),
     ]
     result = base.run_tool(argv, timeout=opts.get("timeout", DEFAULT_TIMEOUT))
-    return result, os.path.join(outdir, REPORT_FILENAME)
+    raw_path = os.path.join(outdir, REPORT_FILENAME)
+    if not os.path.isfile(raw_path):
+        return None, result
+    return raw_path, result
 
 
 def _score(vuln, block, field):

@@ -7,6 +7,7 @@ order is text `severity` -> `cvssv2.score` -> `cvssv3.baseScore`, not
 CVSS-first as section 4 originally implied.
 """
 import json
+import os
 
 import pytest
 
@@ -85,17 +86,22 @@ def test_is_available_delegates_to_which(monkeypatch):
     assert depcheck.is_available() is False
 
 
-def test_run_builds_the_documented_argv(monkeypatch, tmp_path):
+def test_run_builds_the_documented_argv_and_resolves_the_output_path(monkeypatch, tmp_path):
     captured = {}
 
     def fake_run_tool(argv, timeout, cwd=None):
         captured["argv"] = argv
         captured["timeout"] = timeout
+        # Simulate dependency-check writing its fixed-name report into the
+        # --out directory, the way the real tool does.
+        report = os.path.join(argv[argv.index("--out") + 1], depcheck.REPORT_FILENAME)
+        with open(report, "w", encoding="utf-8") as fh:
+            fh.write("{}")
         return base.ToolResult(0, "", "", False)
 
     monkeypatch.setattr(depcheck.base, "run_tool", fake_run_tool)
     outdir = tmp_path / "out"
-    result, raw_path = depcheck.run("/scan/repo", str(outdir), {})
+    raw_path, result = depcheck.run("/scan/repo", str(outdir), {})
 
     assert captured["argv"] == [
         "dependency-check", "--format", "JSON",
@@ -104,6 +110,18 @@ def test_run_builds_the_documented_argv(monkeypatch, tmp_path):
     assert raw_path == str(outdir / "dependency-check-report.json")
     assert result.returncode == 0
     assert outdir.is_dir()
+
+
+def test_run_returns_none_path_when_no_output_file_was_produced(monkeypatch, tmp_path):
+    def fake_run_tool(argv, timeout, cwd=None):
+        return base.ToolResult(1, "", "boom", False)
+
+    monkeypatch.setattr(depcheck.base, "run_tool", fake_run_tool)
+    outdir = tmp_path / "out"
+    raw_path, result = depcheck.run("/scan/repo", str(outdir), {})
+
+    assert raw_path is None
+    assert result.returncode == 1
 
 
 def test_active_flags_are_off():
