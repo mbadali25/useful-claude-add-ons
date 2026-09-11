@@ -1,0 +1,42 @@
+{
+  "check_type": "terraform",
+  "results": {
+    "passed_checks": [
+      {
+        "check_id": "CKV_AWS_1",
+        "bc_check_id": "BC_AWS_GENERAL_1",
+        "check_name": "Ensure IAM policies are attached only to groups or roles",
+        "check_result": {"result": "PASSED"},
+        "file_path": "/iam.tf",
+        "file_line_range": [30, 35],
+        "resource": "aws_iam_policy.ok",
+        "guideline": "https://docs.bridgecrew.io/docs/iam_5",
+        "severity": null
+      }
+    ],
+    "failed_checks": [
+      {
+        "check_id": "CKV_AWS_100",
+        "bc_check_id": "BC_AWS_GENERAL_100",
+        "check_name": "Ensure IAM policy does not allow full administrative privileges",
+        "check_result": {"result": "FAILED"},
+        "file_path": "/iam.tf",
+        "file_line_range": [1, 12],
+        "resource": "aws_iam_policy.admin",
+        "guideline": "https://docs.bridgecrew.io/docs/iam_1",
+        "severity": "CRITICAL"
+      },
+      {
+        "check_id": "CKV_AWS_101",
+        "bc_check_id": "BC_AWS_GENERAL_101",
+        "check_name": "Ensure IAM policy is attached to a group",
+        "check_result": {"result": "FAILED"},
+        "file_path": "/iam.tf",
+        "file_line_range": [20, 25],
+        "resource": "aws_iam_policy.attach",
+        "guideline": "https://docs.bridgecrew.io/docs/iam_2",
+        "severity": "MODERATE"
+      }
+    ]
+  }
+}

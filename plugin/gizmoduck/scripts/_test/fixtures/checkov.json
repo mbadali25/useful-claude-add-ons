@@ -1,0 +1,63 @@
+[
+  {
+    "check_type": "terraform",
+    "results": {
+      "passed_checks": [
+        {
+          "check_id": "CKV_AWS_18",
+          "bc_check_id": "BC_AWS_S3_10",
+          "check_name": "Ensure the S3 bucket has access logging enabled",
+          "check_result": {"result": "PASSED"},
+          "file_path": "/main.tf",
+          "file_line_range": [1, 8],
+          "resource": "aws_s3_bucket.logs",
+          "guideline": "https://docs.bridgecrew.io/docs/s3_13",
+          "severity": null
+        }
+      ],
+      "failed_checks": [
+        {
+          "check_id": "CKV_AWS_20",
+          "bc_check_id": "BC_AWS_S3_13",
+          "check_name": "S3 Bucket has an ACL defined which allows public READ access.",
+          "check_result": {"result": "FAILED"},
+          "file_path": "/main.tf",
+          "file_line_range": [10, 25],
+          "resource": "aws_s3_bucket.data",
+          "guideline": "https://docs.bridgecrew.io/docs/s3_1",
+          "severity": null
+        },
+        {
+          "check_id": "CKV_AWS_21",
+          "bc_check_id": "BC_AWS_S3_14",
+          "check_name": "Ensure S3 bucket has versioning enabled",
+          "check_result": {"result": "FAILED"},
+          "file_path": "/main.tf",
+          "file_line_range": [30, 40],
+          "resource": "aws_s3_bucket.data2",
+          "guideline": "https://docs.bridgecrew.io/docs/s3_16",
+          "severity": null
+        }
+      ]
+    }
+  },
+  {
+    "check_type": "secrets",
+    "results": {
+      "passed_checks": [],
+      "failed_checks": [
+        {
+          "check_id": "CKV_SECRET_6",
+          "bc_check_id": "BC_GEN_6",
+          "check_name": "Base64 High Entropy String",
+          "check_result": {"result": "FAILED"},
+          "file_path": "/vars.tf",
+          "file_line_range": [5, 5],
+          "resource": "vars.tf.5",
+          "guideline": null,
+          "severity": null
+        }
+      ]
+    }
+  }
+]
