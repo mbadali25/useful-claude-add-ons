@@ -1,0 +1,2 @@
+"000001","1","000001","93.184.216.34","example.test","443","1","","GET","/","Retrieved x-powered-by header: PHP/7.4.3.","",""
+"999100","1","999100","93.184.216.34","example.test","443","1","OSVDB-3092,CWE-16","GET","/admin/","/admin/: This might be interesting - admin console found.","",""
