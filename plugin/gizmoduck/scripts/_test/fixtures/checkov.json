@@ -4,60 +4,383 @@
     "results": {
       "passed_checks": [
         {
-          "check_id": "CKV_AWS_18",
-          "bc_check_id": "BC_AWS_S3_10",
-          "check_name": "Ensure the S3 bucket has access logging enabled",
-          "check_result": {"result": "PASSED"},
-          "file_path": "/main.tf",
-          "file_line_range": [1, 8],
-          "resource": "aws_s3_bucket.logs",
-          "guideline": "https://docs.bridgecrew.io/docs/s3_13",
-          "severity": null
+          "check_id": "CKV_AWS_93",
+          "bc_check_id": "BC_AWS_S3_24",
+          "check_name": "Ensure S3 bucket policy does not lockout all but root user. (Prevent lockouts needing root account fixes)",
+          "check_result": {
+            "result": "PASSED",
+            "evaluated_keys": [
+              "policy"
+            ]
+          },
+          "code_block": [
+            [
+              1,
+              "resource \"aws_s3_bucket\" \"public_bucket\" {\n"
+            ],
+            [
+              2,
+              "  bucket = \"example-bucket\"\n"
+            ],
+            [
+              3,
+              "  acl    = \"public-read\"\n"
+            ],
+            [
+              4,
+              "}\n"
+            ]
+          ],
+          "file_path": "\\main.tf",
+          "file_abs_path": "C:\\repo\\main.tf",
+          "repo_file_path": "/repo/main.tf",
+          "file_line_range": [
+            1,
+            4
+          ],
+          "resource": "aws_s3_bucket.public_bucket",
+          "evaluations": null,
+          "check_class": "checkov.terraform.checks.resource.aws.S3ProtectAgainstPolicyLockout",
+          "fixed_definition": null,
+          "entity_tags": null,
+          "caller_file_path": null,
+          "caller_file_line_range": null,
+          "resource_address": null,
+          "severity": null,
+          "bc_category": null,
+          "benchmarks": null,
+          "description": null,
+          "short_description": null,
+          "vulnerability_details": null,
+          "connected_node": null,
+          "guideline": "https://docs.prismacloud.io/en/enterprise-edition/policy-reference/aws-policies/s3-policies/bc-aws-s3-24",
+          "details": [],
+          "check_len": null,
+          "definition_context_file_path": "C:\\repo\\main.tf"
         }
       ],
       "failed_checks": [
         {
-          "check_id": "CKV_AWS_20",
-          "bc_check_id": "BC_AWS_S3_13",
-          "check_name": "S3 Bucket has an ACL defined which allows public READ access.",
-          "check_result": {"result": "FAILED"},
-          "file_path": "/main.tf",
-          "file_line_range": [10, 25],
-          "resource": "aws_s3_bucket.data",
-          "guideline": "https://docs.bridgecrew.io/docs/s3_1",
-          "severity": null
+          "check_id": "CKV2_AWS_6",
+          "bc_check_id": "BC_AWS_NETWORKING_52",
+          "check_name": "Ensure that S3 bucket has a Public Access block",
+          "check_result": {
+            "result": "FAILED",
+            "entity": {
+              "aws_s3_bucket": {
+                "public_bucket": {
+                  "__end_line__": 4,
+                  "__start_line__": 1,
+                  "acl": [
+                    "public-read"
+                  ],
+                  "bucket": [
+                    "example-bucket"
+                  ],
+                  "__address__": "aws_s3_bucket.public_bucket"
+                }
+              }
+            },
+            "evaluated_keys": [
+              "resource_type",
+              "block_public_acls",
+              "block_public_policy"
+            ]
+          },
+          "code_block": [
+            [
+              1,
+              "resource \"aws_s3_bucket\" \"public_bucket\" {\n"
+            ],
+            [
+              2,
+              "  bucket = \"example-bucket\"\n"
+            ],
+            [
+              3,
+              "  acl    = \"public-read\"\n"
+            ],
+            [
+              4,
+              "}\n"
+            ]
+          ],
+          "file_path": "\\main.tf",
+          "file_abs_path": "C:\\repo\\main.tf",
+          "repo_file_path": "/repo/main.tf",
+          "file_line_range": [
+            1,
+            4
+          ],
+          "resource": "aws_s3_bucket.public_bucket",
+          "evaluations": null,
+          "check_class": "checkov.common.graph.checks_infra.base_check",
+          "fixed_definition": null,
+          "entity_tags": null,
+          "caller_file_path": null,
+          "caller_file_line_range": null,
+          "resource_address": null,
+          "severity": null,
+          "bc_category": null,
+          "benchmarks": null,
+          "description": null,
+          "short_description": null,
+          "vulnerability_details": null,
+          "connected_node": null,
+          "guideline": "https://docs.prismacloud.io/en/enterprise-edition/policy-reference/aws-policies/aws-networking-policies/s3-bucket-should-have-public-access-blocks-defaults-to-false-if-the-public-access-block-is-not-attached",
+          "details": [],
+          "check_len": null,
+          "definition_context_file_path": "C:\\repo\\main.tf"
         },
         {
-          "check_id": "CKV_AWS_21",
-          "bc_check_id": "BC_AWS_S3_14",
-          "check_name": "Ensure S3 bucket has versioning enabled",
-          "check_result": {"result": "FAILED"},
-          "file_path": "/main.tf",
-          "file_line_range": [30, 40],
-          "resource": "aws_s3_bucket.data2",
-          "guideline": "https://docs.bridgecrew.io/docs/s3_16",
-          "severity": null
+          "check_id": "CKV2_AWS_62",
+          "bc_check_id": "BC_AWS_LOGGING_36",
+          "check_name": "Ensure S3 buckets should have event notifications enabled",
+          "check_result": {
+            "result": "FAILED",
+            "entity": {
+              "aws_s3_bucket": {
+                "public_bucket": {
+                  "__end_line__": 4,
+                  "__start_line__": 1,
+                  "acl": [
+                    "public-read"
+                  ],
+                  "bucket": [
+                    "example-bucket"
+                  ],
+                  "__address__": "aws_s3_bucket.public_bucket"
+                }
+              }
+            },
+            "evaluated_keys": [
+              "resource_type"
+            ]
+          },
+          "code_block": [
+            [
+              1,
+              "resource \"aws_s3_bucket\" \"public_bucket\" {\n"
+            ],
+            [
+              2,
+              "  bucket = \"example-bucket\"\n"
+            ],
+            [
+              3,
+              "  acl    = \"public-read\"\n"
+            ],
+            [
+              4,
+              "}\n"
+            ]
+          ],
+          "file_path": "\\main.tf",
+          "file_abs_path": "C:\\repo\\main.tf",
+          "repo_file_path": "/repo/main.tf",
+          "file_line_range": [
+            1,
+            4
+          ],
+          "resource": "aws_s3_bucket.public_bucket",
+          "evaluations": null,
+          "check_class": "checkov.common.graph.checks_infra.base_check",
+          "fixed_definition": null,
+          "entity_tags": null,
+          "caller_file_path": null,
+          "caller_file_line_range": null,
+          "resource_address": null,
+          "severity": null,
+          "bc_category": null,
+          "benchmarks": null,
+          "description": null,
+          "short_description": null,
+          "vulnerability_details": null,
+          "connected_node": null,
+          "guideline": "https://docs.prismacloud.io/en/enterprise-edition/policy-reference/aws-policies/aws-logging-policies/bc-aws-2-62",
+          "details": [],
+          "check_len": null,
+          "definition_context_file_path": "C:\\repo\\main.tf"
         }
-      ]
-    }
+      ],
+      "skipped_checks": [],
+      "parsing_errors": []
+    },
+    "summary": {
+      "passed": 3,
+      "failed": 8,
+      "skipped": 0,
+      "parsing_errors": 0,
+      "resource_count": 1,
+      "checkov_version": "3.3.17"
+    },
+    "url": "Add an api key '--bc-api-key <api-key>' to see more detailed insights via https://bridgecrew.cloud"
   },
   {
-    "check_type": "secrets",
+    "check_type": "dockerfile",
     "results": {
-      "passed_checks": [],
+      "passed_checks": [
+        {
+          "check_id": "CKV_DOCKER_11",
+          "bc_check_id": "BC_DKR_GENERAL_9",
+          "check_name": "Ensure From Alias are unique for multistage builds.",
+          "check_result": {
+            "result": "PASSED",
+            "results_configuration": null
+          },
+          "code_block": [
+            [
+              1,
+              "FROM ubuntu:latest\n"
+            ],
+            [
+              2,
+              "RUN apt-get update\n"
+            ],
+            [
+              3,
+              "USER root"
+            ]
+          ],
+          "file_path": "/Dockerfile",
+          "file_abs_path": "C:\\repo\\Dockerfile",
+          "repo_file_path": "/repo/Dockerfile",
+          "file_line_range": [
+            1,
+            3
+          ],
+          "resource": "/Dockerfile.",
+          "evaluations": null,
+          "check_class": "checkov.dockerfile.checks.AliasIsUnique",
+          "fixed_definition": null,
+          "entity_tags": null,
+          "caller_file_path": null,
+          "caller_file_line_range": null,
+          "resource_address": null,
+          "severity": null,
+          "bc_category": null,
+          "benchmarks": null,
+          "description": null,
+          "short_description": null,
+          "vulnerability_details": null,
+          "connected_node": null,
+          "guideline": "https://docs.prismacloud.io/en/enterprise-edition/policy-reference/docker-policies/docker-policy-index/ensure-docker-from-alias-is-unique-for-multistage-builds",
+          "details": [],
+          "check_len": null,
+          "definition_context_file_path": null
+        }
+      ],
       "failed_checks": [
         {
-          "check_id": "CKV_SECRET_6",
-          "bc_check_id": "BC_GEN_6",
-          "check_name": "Base64 High Entropy String",
-          "check_result": {"result": "FAILED"},
-          "file_path": "/vars.tf",
-          "file_line_range": [5, 5],
-          "resource": "vars.tf.5",
-          "guideline": null,
-          "severity": null
+          "check_id": "CKV_DOCKER_7",
+          "bc_check_id": "BC_DKR_7",
+          "check_name": "Ensure the base image uses a non latest version tag",
+          "check_result": {
+            "result": "FAILED",
+            "results_configuration": [
+              {
+                "instruction": "FROM",
+                "startline": 0,
+                "endline": 0,
+                "content": "FROM ubuntu:latest\n",
+                "value": "ubuntu:latest"
+              }
+            ]
+          },
+          "code_block": [
+            [
+              1,
+              "FROM ubuntu:latest\n"
+            ]
+          ],
+          "file_path": "/Dockerfile",
+          "file_abs_path": "C:\\repo\\Dockerfile",
+          "repo_file_path": "/repo/Dockerfile",
+          "file_line_range": [
+            1,
+            1
+          ],
+          "resource": "/Dockerfile.FROM",
+          "evaluations": null,
+          "check_class": "checkov.dockerfile.checks.ReferenceLatestTag",
+          "fixed_definition": null,
+          "entity_tags": null,
+          "caller_file_path": null,
+          "caller_file_line_range": null,
+          "resource_address": null,
+          "severity": null,
+          "bc_category": null,
+          "benchmarks": null,
+          "description": null,
+          "short_description": null,
+          "vulnerability_details": null,
+          "connected_node": null,
+          "guideline": "https://docs.prismacloud.io/en/enterprise-edition/policy-reference/docker-policies/docker-policy-index/ensure-the-base-image-uses-a-non-latest-version-tag",
+          "details": [],
+          "check_len": null,
+          "definition_context_file_path": null
+        },
+        {
+          "check_id": "CKV_DOCKER_8",
+          "bc_check_id": "BC_DKR_8",
+          "check_name": "Ensure the last USER is not root",
+          "check_result": {
+            "result": "FAILED",
+            "results_configuration": [
+              {
+                "instruction": "USER",
+                "startline": 2,
+                "endline": 2,
+                "content": "USER root",
+                "value": "root"
+              }
+            ]
+          },
+          "code_block": [
+            [
+              3,
+              "USER root"
+            ]
+          ],
+          "file_path": "/Dockerfile",
+          "file_abs_path": "C:\\repo\\Dockerfile",
+          "repo_file_path": "/repo/Dockerfile",
+          "file_line_range": [
+            3,
+            3
+          ],
+          "resource": "/Dockerfile.USER",
+          "evaluations": null,
+          "check_class": "checkov.dockerfile.checks.RootUser",
+          "fixed_definition": null,
+          "entity_tags": null,
+          "caller_file_path": null,
+          "caller_file_line_range": null,
+          "resource_address": null,
+          "severity": null,
+          "bc_category": null,
+          "benchmarks": null,
+          "description": null,
+          "short_description": null,
+          "vulnerability_details": null,
+          "connected_node": null,
+          "guideline": "https://docs.prismacloud.io/en/enterprise-edition/policy-reference/docker-policies/docker-policy-index/ensure-the-last-user-is-not-root",
+          "details": [],
+          "check_len": null,
+          "definition_context_file_path": null
         }
-      ]
-    }
+      ],
+      "skipped_checks": [],
+      "parsing_errors": []
+    },
+    "summary": {
+      "passed": 20,
+      "failed": 4,
+      "skipped": 0,
+      "parsing_errors": 0,
+      "resource_count": 1,
+      "checkov_version": "3.3.17"
+    },
+    "url": "Add an api key '--bc-api-key <api-key>' to see more detailed insights via https://bridgecrew.cloud"
   }
 ]

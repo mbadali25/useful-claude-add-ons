@@ -32,12 +32,21 @@ def test_module_constants():
 
 
 # --- parse(): array shape, severity null is the normal path -----------
+#
+# checkov.json is a byte-real capture (checkov 3.3.17, `-d <target>
+# --framework terraform,dockerfile -o json`, trimmed to 2 failed_checks + 1
+# passed_check per framework) of a target with one Terraform file and one
+# Dockerfile, each with a real violation - captured 2026-09-10. Checkov only
+# emits the JSON *array* shape when 2+ frameworks each produce a non-empty
+# report (verified against checkov's own
+# common/runners/runner_registry.py:print_results); a single matching
+# framework collapses to the bare-object shape checkov-single.json covers.
 
 def test_array_shape_yields_only_failed_checks_across_frameworks(fixture):
     findings = _parse(fixture)
-    # 2 failed checks in the terraform report + 1 in the secrets report;
-    # the one passed_checks entry must not appear.
-    assert len(findings) == 3
+    # 2 failed checks in the terraform report + 2 in the dockerfile report;
+    # the passed_checks entries must not appear.
+    assert len(findings) == 4
 
 
 def test_null_severity_is_the_normal_path_not_an_edge_case(fixture):
@@ -50,7 +59,10 @@ def test_null_severity_is_the_normal_path_not_an_edge_case(fixture):
 
 def test_template_id_is_namespaced_by_tool(fixture):
     ids = {f["template_id"] for f in _parse(fixture)}
-    assert ids == {"checkov:CKV_AWS_20", "checkov:CKV_AWS_21", "checkov:CKV_SECRET_6"}
+    assert ids == {
+        "checkov:CKV2_AWS_6", "checkov:CKV2_AWS_62",
+        "checkov:CKV_DOCKER_7", "checkov:CKV_DOCKER_8",
+    }
 
 
 def test_target_is_set_from_the_argument(fixture):
@@ -60,9 +72,12 @@ def test_target_is_set_from_the_argument(fixture):
 
 def test_matched_at_combines_file_path_and_line_range(fixture):
     by_id = {f["template_id"]: f for f in _parse(fixture)}
-    assert by_id["checkov:CKV_AWS_20"]["matched_at"] == "/main.tf:10-25"
-    # guideline is null on the secrets entry - reference must not carry it
-    assert by_id["checkov:CKV_SECRET_6"]["reference"] == []
+    # Real checkov file_path shapes disagree by framework - Terraform's is
+    # "\main.tf" (a leading backslash, Windows-style), Dockerfile's is
+    # "/Dockerfile" (a leading forward slash) - matched_at must carry
+    # whichever the tool actually emitted, unchanged.
+    assert by_id["checkov:CKV2_AWS_6"]["matched_at"] == "\\main.tf:1-4"
+    assert by_id["checkov:CKV_DOCKER_7"]["matched_at"] == "/Dockerfile:1-1"
 
 
 def test_merge_key_fields_are_populated_alongside_matched_at_and_host(fixture):
@@ -72,39 +87,67 @@ def test_merge_key_fields_are_populated_alongside_matched_at_and_host(fixture):
     """
     by_id = {f["template_id"]: f for f in _parse(fixture)}
 
-    f = by_id["checkov:CKV_AWS_20"]
-    assert f["path"] == "/main.tf"
-    assert f["line"] == 10
-    assert f["resource"] == "aws_s3_bucket.data"
+    f = by_id["checkov:CKV2_AWS_6"]
+    assert f["path"] == "\\main.tf"
+    assert f["line"] == 1
+    assert f["resource"] == "aws_s3_bucket.public_bucket"
     # additive, not instead of:
-    assert f["matched_at"] == "/main.tf:10-25"
-    assert f["host"] == "aws_s3_bucket.data"
+    assert f["matched_at"] == "\\main.tf:1-4"
+    assert f["host"] == "aws_s3_bucket.public_bucket"
 
-    f2 = by_id["checkov:CKV_AWS_21"]
-    assert f2["path"] == "/main.tf"
-    assert f2["line"] == 30
-    assert f2["resource"] == "aws_s3_bucket.data2"
+    f2 = by_id["checkov:CKV2_AWS_62"]
+    assert f2["path"] == "\\main.tf"
+    assert f2["line"] == 1
+    assert f2["resource"] == "aws_s3_bucket.public_bucket"
 
-    f3 = by_id["checkov:CKV_SECRET_6"]
-    assert f3["path"] == "/vars.tf"
-    assert f3["line"] == 5
-    assert f3["resource"] == "vars.tf.5"
+    f3 = by_id["checkov:CKV_DOCKER_8"]
+    assert f3["path"] == "/Dockerfile"
+    assert f3["line"] == 3
+    assert f3["resource"] == "/Dockerfile.USER"
 
 
 def test_passed_checks_never_become_findings(fixture):
     ids = {f["template_id"] for f in _parse(fixture)}
-    assert "checkov:CKV_AWS_18" not in ids  # a passed_checks entry
+    assert "checkov:CKV_AWS_93" not in ids   # a terraform passed_checks entry
+    assert "checkov:CKV_DOCKER_11" not in ids  # a dockerfile passed_checks entry
 
 
-# --- parse(): single-object shape, populated severities ----------------
+# --- parse(): single-object shape, real free-tier (severity null) -------
+#
+# checkov-single.json is a byte-real capture (checkov 3.3.17,
+# `-d terraform/thd-processors`, only the terraform framework matched, so
+# checkov collapsed to the single-object shape rather than an array;
+# trimmed to 2 failed_checks + 1 passed_check) - captured 2026-09-10.
 
 def test_single_object_shape_is_accepted(fixture):
-    findings = checkov.parse(str(fixture("checkov-single.json")), "thd-iam")
+    findings = checkov.parse(str(fixture("checkov-single.json")), "thd-processors")
     assert len(findings) == 2
 
 
+def test_single_shape_null_severity_gets_the_default_and_is_flagged(fixture):
+    findings = checkov.parse(str(fixture("checkov-single.json")), "thd-processors")
+    for f in findings:
+        assert f["severity"] == 2
+        assert f["severity_name"] == "medium"
+        assert "severity-assigned" in f["tags"]
+
+
+def test_single_shape_passed_checks_are_ignored(fixture):
+    findings = checkov.parse(str(fixture("checkov-single.json")), "thd-processors")
+    ids = {f["template_id"] for f in findings}
+    assert "checkov:CKV_AWS_66" not in ids  # a passed_checks entry
+
+
+# --- parse(): populated severity + legacy alias (hand-constructed) -----
+#
+# checkov's own severity field is populated only when checks sync from
+# Bridgecrew/Prisma Cloud via --bc-api-key (verified by reading checkov
+# 3.3.17's source, common/checks/base_check.py) - unreachable without a
+# paid account, so checkov-populated-severity.json is hand-constructed
+# rather than captured (see its own "_synthetic_note").
+
 def test_populated_severity_and_legacy_alias_are_recognized(fixture):
-    findings = checkov.parse(str(fixture("checkov-single.json")), "thd-iam")
+    findings = checkov.parse(str(fixture("checkov-populated-severity.json")), "thd-iam")
     by_id = {f["template_id"]: f for f in findings}
 
     critical = by_id["checkov:CKV_AWS_100"]
@@ -118,8 +161,8 @@ def test_populated_severity_and_legacy_alias_are_recognized(fixture):
     assert "severity-assigned" not in moderate["tags"]
 
 
-def test_single_shape_passed_checks_are_ignored(fixture):
-    findings = checkov.parse(str(fixture("checkov-single.json")), "thd-iam")
+def test_populated_severity_passed_checks_are_ignored(fixture):
+    findings = checkov.parse(str(fixture("checkov-populated-severity.json")), "thd-iam")
     ids = {f["template_id"] for f in findings}
     assert "checkov:CKV_AWS_1" not in ids
 
@@ -205,6 +248,28 @@ def test_genuine_empty_failed_checks_in_array_shape_still_returns_empty_list(tmp
     p = tmp_path / "genuine-empty-array.json"
     p.write_text('[{"results":{"failed_checks":[]}}]', encoding="utf-8")
     assert checkov.parse(str(p), "site-a") == []
+
+
+def test_genuine_empty_scan_summary_only_shape_returns_empty_list(fixture):
+    """Corrects the original DEFECT 1 fix, which over-corrected: when NO
+    framework's report has any passed/failed/skipped checks at all, checkov
+    does not emit `{"results": {"failed_checks": []}}` - it drops the
+    `results`/`check_type` envelope entirely and emits a different,
+    summary-only object instead: `{"passed": 0, "failed": 0, "skipped": 0,
+    "parsing_errors": 0, "resource_count": 0, "checkov_version": "..."}`
+    (verified against both a live capture of `checkov -d <empty-dir> -o
+    json`, and checkov's own RunnerRegistry.print_results /
+    Report.get_summary() source). Rejecting this as a parse error would
+    fail every genuinely clean checkov run over a directory it found
+    nothing to check in.
+    """
+    p = fixture("checkov-genuine-empty-summary-only.json")
+    assert checkov.parse(str(p), "site-a") == []
+
+
+def test_genuine_empty_scan_summary_only_shape_has_no_parsing_errors(fixture):
+    p = fixture("checkov-genuine-empty-summary-only.json")
+    assert checkov.parse_errors(str(p), "site-a") == []
 
 
 def test_results_wrong_type_raises_parse_error_with_detail_not_attribute_error(tmp_path):

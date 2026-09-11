@@ -274,13 +274,27 @@ def parse(raw_path, target, kind=None):
         raise base.ParseError(
             "trivy: expected a JSON object at the top level, got %r" % type(data).__name__)
 
-    # DEFECT 1: `Results` must be PRESENT, not merely absent-or-empty. Real
-    # trivy JSON output always carries this key (an empty list on a clean
-    # scan) - reading a missing key the same as a present-but-empty one used
-    # to silently return a clean-looking [].
+    # DEFECT 1, corrected against real trivy 0.74.0 output: `Results` is
+    # `omitempty` on trivy's own Report struct, so a genuine clean scan - one
+    # where trivy ran fine but found no artifacts to report on at all, e.g.
+    # `trivy fs` over a directory with no recognized lockfiles/IaC files -
+    # omits the key ENTIRELY rather than emitting `"Results": []`. Both an
+    # `fs` scan of a real repo with no Python/npm lockfile and a scan of a
+    # truly empty directory were captured live and neither carries a
+    # `Results` key at all (spec 13.7 addendum). Treating that as a parse
+    # failure would reject every genuinely clean trivy run, which is the
+    # opposite of the false-clean this check exists to prevent.
+    #
+    # The distinguishing signal is the rest of the trivy envelope: a real
+    # report - Results-bearing or not - always carries `ArtifactType`
+    # (verified against live captures). A file missing `Results` AND that
+    # sentinel is not trivy's own output and must still raise.
     if "Results" not in data:
-        raise base.ParseError("trivy: report is missing 'Results'")
-    results = _as_list(data.get("Results"), "Results")
+        if "ArtifactType" not in data:
+            raise base.ParseError("trivy: report is missing 'Results'")
+        results = []
+    else:
+        results = _as_list(data.get("Results"), "Results")
 
     if kind == "deps":
         return _parse_vulnerabilities(results, target_name)

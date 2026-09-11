@@ -143,6 +143,25 @@ def parse(raw_path, target):
     except ValueError as e:
         raise base.ParseError("%s: invalid JSON: %s" % (raw_path, e)) from e
 
+    # DEFECT 1, corrected against real checkov 3.3.17 output: when NO
+    # framework produced a non-empty report at all (RunnerRegistry only adds
+    # a framework's report to the JSON output when `not report.is_empty()`),
+    # checkov does not emit a results-bearing report shape - not even an
+    # empty `{"results": {"failed_checks": []}}`. It emits an entirely
+    # different summary-only object with no `results`/`check_type` key at
+    # all: `{"passed": 0, "failed": 0, "skipped": 0, "parsing_errors": 0,
+    # "resource_count": 0, "checkov_version": "..."}` (verified against a
+    # live capture, and against checkov's own
+    # Report.get_summary()/RunnerRegistry.print_results source). Rejecting
+    # that as a parse failure would reject every genuinely clean checkov
+    # run. `checkov_version` is this shape's own distinguishing sentinel
+    # (always present per get_summary(), and never present on a normal
+    # results-bearing report) - anything else missing `results` still raises
+    # below, unchanged.
+    if (isinstance(data, dict) and "results" not in data
+            and "check_type" not in data and "checkov_version" in data):
+        return []
+
     reports = data if isinstance(data, list) else [data]
 
     # DEFECT 1: a bare `[]` at the top level is zero framework reports, not

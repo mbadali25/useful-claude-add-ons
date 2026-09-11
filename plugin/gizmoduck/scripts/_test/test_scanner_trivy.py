@@ -9,9 +9,16 @@ from scanners import base, trivy
 # parse() - deps kind
 # ---------------------------------------------------------------------------
 
+# trivy.json's deps Result carries 3 entries: two are byte-real (trivy
+# 0.74.0 fs scan of a real npm/qs lockfile, captured 2026-09-10, both
+# CVE-2026-8xxxx on package "qs" at MEDIUM), the third (CVE-2024-9999,
+# urllib3, UNKNOWN severity) is hand-constructed - no UNKNOWN-severity
+# finding surfaced during real capture, so that shape is kept synthetically
+# for regression coverage (see the fixture's own "_synthetic_note").
+
 def test_deps_kind_parses_only_vulnerabilities(fixture):
     findings = trivy.parse(fixture("trivy.json"), "myrepo", kind="deps")
-    assert len(findings) == 2
+    assert len(findings) == 3
     assert all(f["type"] == "vulnerability" for f in findings)
     # The iac-only Misconfigurations entries must never leak into deps.
     assert all("Terraform" not in f["description"] for f in findings)
@@ -20,9 +27,9 @@ def test_deps_kind_parses_only_vulnerabilities(fixture):
 def test_deps_findings_have_expected_severities_and_ids(fixture):
     findings = trivy.parse(fixture("trivy.json"), "myrepo", kind="deps")
     by_id = {f["template_id"]: f for f in findings}
-    assert by_id["trivy:CVE-2023-1234"]["severity"] == 3          # high
-    assert by_id["trivy:CVE-2023-1234"]["severity_name"] == "high"
-    assert "severity-assigned" not in by_id["trivy:CVE-2023-1234"]["tags"]
+    assert by_id["trivy:CVE-2026-82417"]["severity"] == 2          # medium
+    assert by_id["trivy:CVE-2026-82417"]["severity_name"] == "medium"
+    assert "severity-assigned" not in by_id["trivy:CVE-2026-82417"]["tags"]
 
 
 def test_unknown_severity_maps_to_info_and_is_flagged(fixture):
@@ -45,14 +52,29 @@ def test_deps_findings_carry_the_merge_key_fields(fixture):
     """
     findings = trivy.parse(fixture("trivy.json"), "myrepo", kind="deps")
     by_id = {f["template_id"]: f for f in findings}
-    known = by_id["trivy:CVE-2023-1234"]
-    assert known["package"] == "requests"
-    assert known["version"] == "2.25.0"
-    assert known["matched_at"] == "requirements.txt"  # unchanged shape
+    known = by_id["trivy:CVE-2026-82417"]
+    assert known["package"] == "qs"
+    assert known["version"] == "6.15.3"
+    assert known["matched_at"] == "package-lock.json"  # unchanged shape
 
     unknown = by_id["trivy:CVE-2024-9999"]
     assert unknown["package"] == "urllib3"
     assert unknown["version"] == "1.26.0"
+
+
+def test_real_cvss_block_has_no_nvd_key_and_falls_back_to_redhat(fixture):
+    """Real trivy 0.74.0 CVSS blocks are keyed by whichever sources actually
+    scored the CVE - a real capture here carries only "ghsa" and "redhat",
+    never "nvd". _first_cvss's documented priority is nvd -> redhat -> ghsa
+    -> any; with no "nvd" key present this must fall through to "redhat"
+    without raising, proving the fallback actually works against a real
+    CVSS shape and not just the hand-built one that used to be the only
+    fixture that ever exercised it.
+    """
+    findings = trivy.parse(fixture("trivy.json"), "myrepo", kind="deps")
+    by_id = {f["template_id"]: f for f in findings}
+    assert by_id["trivy:CVE-2026-82417"]["cvss"] == 7.5  # redhat's V3Score
+    assert by_id["trivy:CVE-2026-82562"]["cvss"] == 3.7  # redhat's V3Score
 
 
 # ---------------------------------------------------------------------------
@@ -61,19 +83,20 @@ def test_deps_findings_carry_the_merge_key_fields(fixture):
 
 def test_iac_kind_parses_only_misconfigurations(fixture):
     findings = trivy.parse(fixture("trivy.json"), "myrepo", kind="iac")
-    assert len(findings) == 2
+    assert len(findings) == 3
     assert all(f["type"] == "misconfiguration" for f in findings)
     # The deps-only Vulnerabilities entries must never leak into iac.
-    assert all("requests" not in f["description"] for f in findings)
+    assert all("qs.stringify" not in f["description"] for f in findings)
     assert all(not f["cve"] for f in findings)
 
 
 def test_iac_findings_have_expected_severities_and_ids(fixture):
     findings = trivy.parse(fixture("trivy.json"), "myrepo", kind="iac")
     by_id = {f["template_id"]: f for f in findings}
-    assert by_id["trivy:AVD-AWS-0001"]["severity"] == 4   # critical
-    assert by_id["trivy:AVD-AWS-0002"]["severity"] == 2   # medium
-    assert by_id["trivy:AVD-AWS-0001"]["matched_at"] == "main.tf:12"
+    assert by_id["trivy:AWS-0017"]["severity"] == 1   # low
+    assert by_id["trivy:AWS-0095"]["severity"] == 3   # high
+    assert by_id["trivy:AWS-0098"]["severity"] == 1   # low
+    assert by_id["trivy:AWS-0017"]["matched_at"] == "modules/lambda_processor/main.tf:14"
 
 
 def test_iac_target_is_set_from_the_argument(fixture):
@@ -85,21 +108,28 @@ def test_iac_findings_carry_the_merge_key_fields(fixture):
     """Task 18's iac merge keys on (path, line, resource) - path is the bare
     file (not "file:line"), line is the *start* line as an int, and
     matched_at must stay exactly as it was (the report reads it).
+
+    These three entries are byte-real (trivy 0.74.0 fs --scanners misconfig
+    over a real Terraform module, captured 2026-09-10). Note the real
+    `CauseMetadata.Resource` here is a module path ("module.filewatch",
+    "module.shared") rather than a bare resource address - the parser must
+    not assume any particular naming convention for this field, only that
+    it's a string.
     """
     findings = trivy.parse(fixture("trivy.json"), "myrepo", kind="iac")
     by_id = {f["template_id"]: f for f in findings}
 
-    bucket = by_id["trivy:AVD-AWS-0001"]
-    assert bucket["path"] == "main.tf"
-    assert bucket["line"] == 12
-    assert isinstance(bucket["line"], int)
-    assert bucket["resource"] == "aws_s3_bucket.public_bucket"
-    assert bucket["matched_at"] == "main.tf:12"  # unchanged, report-facing
+    log_group = by_id["trivy:AWS-0017"]
+    assert log_group["path"] == "modules/lambda_processor/main.tf"
+    assert log_group["line"] == 14
+    assert isinstance(log_group["line"], int)
+    assert log_group["resource"] == "module.filewatch"
+    assert log_group["matched_at"] == "modules/lambda_processor/main.tf:14"
 
-    policy = by_id["trivy:AVD-AWS-0002"]
-    assert policy["path"] == "main.tf"
-    assert policy["line"] == 30
-    assert policy["resource"] == "aws_iam_policy.admin"
+    sns = by_id["trivy:AWS-0095"]
+    assert sns["path"] == "modules/shared/main.tf"
+    assert sns["line"] == 290
+    assert sns["resource"] == "module.shared"
 
 
 def test_kind_is_required_and_must_be_valid(fixture):
@@ -112,7 +142,7 @@ def test_kind_is_required_and_must_be_valid(fixture):
 def test_kind_can_come_from_a_target_object_instead_of_the_kwarg(fixture):
     target = {"name": "myrepo", "kind": "deps"}
     findings = trivy.parse(fixture("trivy.json"), target)
-    assert len(findings) == 2
+    assert len(findings) == 3
     assert all(f["target"] == "myrepo" for f in findings)
 
 
@@ -164,7 +194,7 @@ def test_run_yields_findings_from_a_zero_exit_scan(tmp_path, monkeypatch, fixtur
     assert result.returncode == 0
     findings = trivy.parse(raw_path, "myrepo", kind="iac")
 
-    assert len(findings) == 2
+    assert len(findings) == 3
     assert all(f["severity"] > 0 for f in findings)
 
 
@@ -294,6 +324,21 @@ def test_genuine_empty_results_still_returns_empty_findings(tmp_path):
     ok.write_text('{"Results": []}')
     assert trivy.parse(ok, "myrepo", kind="deps") == []
     assert trivy.parse(ok, "myrepo", kind="iac") == []
+
+
+def test_genuine_empty_scan_with_no_results_key_at_all_returns_empty(fixture):
+    """Corrects the original DEFECT 1 fix, which over-corrected: real trivy
+    0.74.0 marks `Results` `omitempty` on its own Report struct, so a
+    genuinely clean `trivy fs` run - one that found no recognized
+    lockfiles/IaC files at all - omits the `Results` key ENTIRELY rather
+    than writing `"Results": []`. This fixture is a byte-real capture of
+    `trivy fs --scanners vuln` over an empty directory (captured
+    2026-09-10); rejecting it as a parse error would fail every genuinely
+    clean scan of a directory trivy has nothing to say about.
+    """
+    findings = trivy.parse(
+        fixture("trivy-genuine-empty-no-results-key.json"), "myrepo", kind="deps")
+    assert findings == []
 
 
 def test_non_object_cvss_raises_parse_error_not_attributeerror(tmp_path):
