@@ -15,7 +15,7 @@ scan errors into the same jsonfile array as real findings, and mapping WARN
 or FATAL as if they were severities would make a broken scan (e.g. a stale
 CRL fetch, a refused connection) read as a vulnerability in the target.
 """
-from scanners import testssl
+from scanners import base, testssl
 
 
 def _load(fixture):
@@ -110,3 +110,39 @@ def test_warn_and_fatal_are_surfaced_as_tool_errors(fixture):
     # report renderer that expects the finding shape.
     assert "severity_name" not in warn
     assert "template_id" not in warn
+
+
+def test_run_returns_none_path_and_a_toolresult_when_binary_missing(monkeypatch, tmp_path):
+    """run() must satisfy the team-standardized (raw_path, ToolResult)
+    contract even when testssl.sh isn't installed - there is no subprocess
+    in that case, but routine still needs a ToolResult to record the cell
+    as an error rather than treating it as a run that produced nothing."""
+    monkeypatch.setattr(base, "which", lambda name: None)
+    raw_path, result = testssl.run("example.com", str(tmp_path), {})
+    assert raw_path is None
+    assert isinstance(result, base.ToolResult)
+    assert result.returncode != 0
+    assert result.timed_out is False
+
+
+def test_run_returns_the_jsonfile_path_and_toolresult_on_success(monkeypatch, tmp_path, fixture):
+    """A stand-in binary that copies the fixture into place, exercising the
+    real argv-building and success path without needing testssl.sh itself."""
+    import shutil as _shutil
+
+    fake_bin = tmp_path / "fake-testssl.sh"
+    fake_bin.write_text("stand-in, never executed directly in this test")
+    monkeypatch.setattr(base, "which", lambda name: str(fake_bin))
+
+    def fake_run_tool(argv, timeout, cwd=None):
+        # argv[2] is the --jsonfile path per the command this adapter builds
+        assert argv[1] == "--jsonfile"
+        _shutil.copy(fixture("testssl.json"), argv[2])
+        return base.ToolResult(0, "", "", False)
+
+    monkeypatch.setattr(base, "run_tool", fake_run_tool)
+
+    raw_path, result = testssl.run("example.com", str(tmp_path), {})
+    assert raw_path == tmp_path / "testssl.json"
+    assert result.returncode == 0 and result.timed_out is False
+    assert testssl.parse(raw_path, target="site-a")  # the file is really usable

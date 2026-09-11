@@ -50,9 +50,31 @@ def is_available():
 
 
 def run(target, outdir, opts):
+    """Invoke testssl.sh and return (raw_path, ToolResult).
+
+    raw_path is None when nothing was written - either the binary was never
+    found, the process timed out, or it exited without producing a file.
+    Otherwise it is the path to the jsonfile output. The ToolResult is
+    always returned, even when raw_path is None, so routine can record
+    `error:timeout` or `error:<message>` per spec section 6 step 5 - a
+    fake ToolResult stands in for the "never started" case since there is
+    no subprocess to report on.
+
+    testssl.sh's own exit code is not read here to decide success or
+    failure: 50-200 is a severity-scored exit, not an error range
+    (spec 13.12), so ToolResult.returncode alone would mislead routine into
+    treating a normal scored exit as a failure. `timed_out` and whether
+    raw_path exists are what this function actually gates on.
+
+    A different, content-level error also exists: individual WARN/FATAL
+    checks *inside* an otherwise-successful jsonfile. Those never reach this
+    ToolResult - they are exposed via the documented parse_errors() function
+    below, which routine should call alongside parse() whenever raw_path is
+    not None.
+    """
     binary = base.which("testssl.sh") or base.which("testssl")
     if not binary:
-        return None
+        return None, base.ToolResult(-1, "", "testssl.sh not found on PATH", False)
 
     out_path = Path(outdir) / "testssl.json"
     argv = [binary, "--jsonfile", str(out_path)]
@@ -63,8 +85,10 @@ def run(target, outdir, opts):
     argv.append(target)
 
     timeout = opts.get("timeout", _DEFAULT_TIMEOUT)
-    base.run_tool(argv, timeout=timeout, cwd=opts.get("cwd"))
-    return out_path
+    result = base.run_tool(argv, timeout=timeout, cwd=opts.get("cwd"))
+    if result.timed_out or not out_path.exists():
+        return None, result
+    return out_path, result
 
 
 def _load(raw_path):
