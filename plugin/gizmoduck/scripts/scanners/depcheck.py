@@ -164,9 +164,11 @@ def _package_and_version(dep):
     end - flagged for reviewer follow-up per spec §13.11's pattern for
     secondhand schema details.
     """
-    packages = dep.get("packages") or []
+    packages = _as_list(dep.get("packages"), "packages")
     if not packages:
         return None, None
+    for pkg in packages:
+        _as_obj(pkg, "packages")
     ordered = sorted(
         packages,
         key=lambda p: _CONFIDENCE_ORDER.get((p.get("confidence") or "").upper(), 99),
@@ -211,6 +213,13 @@ def parse(raw_path, target):
     if not isinstance(data, dict):
         raise base.ParseError(
             "depcheck: expected a JSON object at the top level, got %r" % type(data).__name__)
+
+    # DEFECT 1: `dependencies` must be PRESENT, not merely absent-or-empty.
+    # A real dependency-check report always carries this key (an empty list
+    # on a clean scan) - reading a missing key the same as a
+    # present-but-empty one used to silently return a clean-looking [].
+    if "dependencies" not in data:
+        raise base.ParseError("depcheck: report is missing 'dependencies'")
 
     findings = []
     for dep in _as_list(data.get("dependencies"), "dependencies"):

@@ -161,6 +161,63 @@ def test_json_null_raises_parse_error(tmp_path):
         checkov.parse(str(p), "site-a")
 
 
+def test_empty_object_raises_parse_error_not_empty_findings(tmp_path):
+    """DEFECT 1 (CRITICAL): `{}` is syntactically valid JSON but is missing
+    the report's mandatory top-level 'results' container entirely - a file
+    Checkov never actually produced must never look identical to "scanned,
+    found nothing". Previously this silently returned []."""
+    p = tmp_path / "empty-object.json"
+    p.write_text("{}", encoding="utf-8")
+    with pytest.raises(base.ParseError):
+        checkov.parse(str(p), "site-a")
+
+
+def test_empty_array_raises_parse_error_not_empty_findings(tmp_path):
+    """DEFECT 1: `[]` (zero framework reports) must not be treated as a
+    clean multi-framework run - a real checkov invocation always yields at
+    least one report object."""
+    p = tmp_path / "empty-array.json"
+    p.write_text("[]", encoding="utf-8")
+    with pytest.raises(base.ParseError):
+        checkov.parse(str(p), "site-a")
+
+
+def test_failed_checks_wrong_type_raises_parse_error_not_empty_findings(tmp_path):
+    """DEFECT 1: `results.failed_checks` present but not a list (here an
+    object) must raise, not silently coerce via `or []` into a clean
+    result - that is indistinguishable from a genuine empty list."""
+    p = tmp_path / "wrong-shape.json"
+    p.write_text('{"results":{"failed_checks":{}}}', encoding="utf-8")
+    with pytest.raises(base.ParseError):
+        checkov.parse(str(p), "site-a")
+
+
+def test_genuine_empty_failed_checks_still_returns_empty_list(tmp_path):
+    """Guard against trading a false-clean for a false-error: a real report
+    whose failed_checks is legitimately an empty list is a clean scan and
+    must still return []."""
+    p = tmp_path / "genuine-empty.json"
+    p.write_text('{"results":{"failed_checks":[]}}', encoding="utf-8")
+    assert checkov.parse(str(p), "site-a") == []
+
+
+def test_genuine_empty_failed_checks_in_array_shape_still_returns_empty_list(tmp_path):
+    p = tmp_path / "genuine-empty-array.json"
+    p.write_text('[{"results":{"failed_checks":[]}}]', encoding="utf-8")
+    assert checkov.parse(str(p), "site-a") == []
+
+
+def test_results_wrong_type_raises_parse_error_with_detail_not_attribute_error(tmp_path):
+    """DEFECT 2 (MEDIUM): `results` present but not an object (here an int)
+    used to reach `results.get("failed_checks")` and raise a raw
+    AttributeError, which reaches routine's handler as
+    error:AttributeError instead of naming the real problem."""
+    p = tmp_path / "results-not-object.json"
+    p.write_text('{"results":1}', encoding="utf-8")
+    with pytest.raises(base.ParseError):
+        checkov.parse(str(p), "site-a")
+
+
 def test_null_entry_in_failed_checks_raises_parse_error_not_attribute_error(fixture):
     """Shape failures count as parse failures too (plan: 'Shape validation
     counts as parse failure'). Before the fix this raised AttributeError
@@ -249,8 +306,10 @@ def test_run_never_gates_on_checkovs_own_exit_code(monkeypatch, tmp_path):
     write the file and return its path rather than treating that as failure.
     """
     monkeypatch.setattr(checkov.base, "which", lambda name: "/usr/bin/checkov" if name == "checkov" else None)
+    clean_report = json.dumps({"check_type": "terraform",
+                               "results": {"passed_checks": [], "failed_checks": []}})
     monkeypatch.setattr(checkov.base, "run_tool",
-                        lambda argv, timeout, cwd=None: base.ToolResult(1, "[]", "", False))
+                        lambda argv, timeout, cwd=None: base.ToolResult(1, clean_report, "", False))
 
     raw_path, result = checkov.run("/repo/terraform/thd-processors", str(tmp_path), {})
     assert raw_path is not None

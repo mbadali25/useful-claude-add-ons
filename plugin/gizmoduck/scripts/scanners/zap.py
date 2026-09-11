@@ -177,6 +177,13 @@ def parse(raw_path, target):
         raise base.ParseError(
             "zap: expected a JSON object at the top level, got %r" % type(data).__name__)
 
+    # DEFECT 1: `site` must be PRESENT, not merely absent-or-empty. `{}` is
+    # not the report ZAP's report job produces (which always carries `site`,
+    # `[]` when nothing was scanned) - reading a missing key the same as a
+    # present-but-empty one used to silently return a clean-looking [].
+    if "site" not in data:
+        raise base.ParseError("zap: report is missing 'site'")
+
     findings = []
     for site in _as_list(data.get("site"), "site"):
         site = _as_obj(site, "site")
@@ -187,7 +194,11 @@ def parse(raw_path, target):
             name = alert.get("alert") or alert.get("name") or rule_id
             severity, known = n.sev_from_riskcode(alert.get("riskcode"))
 
-            reference = [line for line in (alert.get("reference") or "").splitlines()
+            ref_raw = alert.get("reference")
+            if ref_raw is not None and not isinstance(ref_raw, str):
+                raise base.ParseError(
+                    "zap: 'reference' must be a string, got %r" % type(ref_raw).__name__)
+            reference = [line for line in (ref_raw or "").splitlines()
                         if line.strip()]
             tags = []
             cweid = alert.get("cweid")

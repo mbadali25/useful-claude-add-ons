@@ -138,6 +138,20 @@ def _matched_at(item):
     return "%s:%s" % (ip, port) if port else ip
 
 
+def _raw_severity(item):
+    """Uppercased `severity` text, or "" when absent. DEFECT 2 (MEDIUM):
+    `severity` present but not a string (e.g. a stray int) used to reach
+    `.strip()` on it directly and raise a raw AttributeError from both
+    parse() and parse_errors() - routine's handler would then record
+    error:AttributeError instead of naming the real problem.
+    """
+    value = item.get("severity")
+    if value is not None and not isinstance(value, str):
+        raise base.ParseError(
+            "testssl: 'severity' must be a string, got %r" % type(value).__name__)
+    return (value or "").strip().upper()
+
+
 def parse(raw_path, target):
     """Return the real findings from a testssl run. Never raises on a
     WARN/FATAL entry - those are dropped here and picked up by
@@ -145,7 +159,7 @@ def parse(raw_path, target):
     """
     findings = []
     for item in _load(raw_path):
-        raw_sev = (item.get("severity") or "").strip().upper()
+        raw_sev = _raw_severity(item)
         if raw_sev in _ERROR_SEVERITIES:
             continue
 
@@ -178,7 +192,7 @@ def parse_errors(raw_path, target):
     """
     errors = []
     for item in _load(raw_path):
-        raw_sev = (item.get("severity") or "").strip().upper()
+        raw_sev = _raw_severity(item)
         if raw_sev not in _ERROR_SEVERITIES:
             continue
         errors.append({

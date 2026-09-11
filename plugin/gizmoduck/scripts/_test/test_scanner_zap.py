@@ -115,6 +115,36 @@ def test_non_object_top_level_raises_parse_error(tmp_path):
         zap.parse(bad, "site-a")
 
 
+def test_empty_object_raises_parse_error_not_empty_findings(tmp_path):
+    """DEFECT 1 (CRITICAL): `{}` is syntactically valid JSON but is missing
+    the mandatory top-level 'site' container - the traditional-json report
+    ZAP actually writes always carries that key (empty list when nothing was
+    scanned). A file missing it entirely must never look like a clean scan."""
+    bad = tmp_path / "no-site-key.json"
+    bad.write_text("{}")
+    with pytest.raises(base.ParseError):
+        zap.parse(bad, "site-a")
+
+
+def test_genuine_empty_site_list_still_returns_empty_findings(tmp_path):
+    """Guard against trading a false-clean for a false-error: a real ZAP
+    report with an explicit, empty `site: []` is a genuine clean scan."""
+    ok = tmp_path / "genuine-empty.json"
+    ok.write_text('{"site": []}')
+    assert zap.parse(ok, "site-a") == []
+
+
+def test_non_string_reference_raises_parse_error_not_attribute_error(tmp_path):
+    """DEFECT 2 (MEDIUM): `alert.reference` present but not a string (here an
+    int) used to reach `.splitlines()` and raise a raw AttributeError -
+    routine's handler would then record error:AttributeError instead of
+    naming the real problem."""
+    bad = tmp_path / "bad-reference.json"
+    bad.write_text('{"site":[{"alerts":[{"reference":1}]}]}')
+    with pytest.raises(base.ParseError):
+        zap.parse(bad, "site-a")
+
+
 def test_fractional_riskcode_is_not_truncated_into_a_real_band(fixture, tmp_path):
     """DEFECT 3: normalize.sev_from_riskcode does int(code), so a riskcode of
     0.9 or 3.9 would truncate to a recognized 0 or 3 instead of being

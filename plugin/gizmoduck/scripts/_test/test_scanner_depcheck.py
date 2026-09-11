@@ -223,6 +223,43 @@ def test_dependency_entry_wrong_shape_raises_parse_error_not_attributeerror(tmp_
         depcheck.parse(str(bad), "repo-a")
 
 
+def test_empty_object_raises_parse_error_not_empty_findings(tmp_path):
+    """DEFECT 1 (CRITICAL): `{}` is syntactically valid JSON but is missing
+    the mandatory top-level 'dependencies' container - a real
+    dependency-check report always carries that key (an empty list on a
+    clean scan). A file missing it entirely must never look identical to a
+    clean scan."""
+    bad = tmp_path / "no-dependencies-key.json"
+    bad.write_text("{}")
+    with pytest.raises(base.ParseError):
+        depcheck.parse(str(bad), "repo-a")
+
+
+def test_genuine_empty_dependencies_still_returns_empty_findings(tmp_path):
+    """Guard against trading a false-clean for a false-error: a real report
+    with an explicit, empty `dependencies: []` is a genuine clean scan."""
+    ok = tmp_path / "genuine-empty.json"
+    ok.write_text('{"dependencies": []}')
+    assert depcheck.parse(str(ok), "repo-a") == []
+
+
+def test_null_package_entry_raises_parse_error_not_attributeerror(tmp_path):
+    """DEFECT 2 (MEDIUM): a `packages[]` entry that is `null` used to reach
+    `p.get("confidence")` in _package_and_version's sort key and raise a raw
+    AttributeError - routine's handler would then record
+    error:AttributeError instead of naming the real problem."""
+    bad = tmp_path / "bad-package.json"
+    bad.write_text(json.dumps({
+        "dependencies": [{
+            "fileName": "x.jar",
+            "packages": [None],
+            "vulnerabilities": [{"name": "CVE-1", "cwes": [], "references": []}],
+        }]
+    }))
+    with pytest.raises(base.ParseError):
+        depcheck.parse(str(bad), "repo-a")
+
+
 # ---------------------------------------------------------------------------
 # DEFECT 3: invalid numeric severities (NaN, Infinity, out-of-range) must
 # never be accepted as a real assessment.

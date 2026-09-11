@@ -210,3 +210,21 @@ def test_parse_errors_also_raises_on_malformed_input(tmp_path):
     bad.write_text("not json at all")
     with pytest.raises(base.ParseError):
         testssl.parse_errors(bad, target="site-a")
+
+
+def test_non_string_severity_raises_parse_error_not_attributeerror(tmp_path):
+    """DEFECT 2 (MEDIUM): `severity` present but not a string (here an int)
+    used to reach `.strip()` on it and raise a raw AttributeError -
+    routine's handler would then record error:AttributeError instead of
+    naming the real problem."""
+    bad = tmp_path / "bad-severity.json"
+    bad.write_text('[{"severity":1}]')
+    with pytest.raises(base.ParseError):
+        testssl.parse(bad, target="site-a")
+
+
+def test_non_string_severity_raises_in_parse_errors_too(tmp_path):
+    bad = tmp_path / "bad-severity.json"
+    bad.write_text('[{"severity":1}]')
+    with pytest.raises(base.ParseError):
+        testssl.parse_errors(bad, target="site-a")

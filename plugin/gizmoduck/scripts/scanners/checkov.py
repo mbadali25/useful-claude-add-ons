@@ -145,14 +145,43 @@ def parse(raw_path, target):
 
     reports = data if isinstance(data, list) else [data]
 
+    # DEFECT 1: a bare `[]` at the top level is zero framework reports, not
+    # a clean multi-framework run - a real checkov invocation always emits
+    # at least one report object. Treating it as "nothing to report" was the
+    # false-clean this whole check exists to close.
+    if not reports:
+        raise base.ParseError("%s: empty report list" % raw_path)
+
     findings = []
     for report in reports:
         if not isinstance(report, dict):
             raise base.ParseError(
                 "%s: report entry is not an object: %r" % (raw_path, report))
         check_type = report.get("check_type") or ""
-        results = report.get("results") or {}
-        for check in results.get("failed_checks") or []:
+
+        # DEFECT 1/2: the report's mandatory top-level container must be
+        # PRESENT, not merely absent-or-empty. `{}` and `{"results": 1}`
+        # both used to reach `results.get(...)` below - the first silently
+        # via `or {}`/`or []` (a false-clean), the second as a raw
+        # AttributeError once `results` turned out not to be a dict (a
+        # contract leak). A genuine empty scan still has
+        # `results.failed_checks: []`, which is the one shape this
+        # validation must let through unchanged.
+        if "results" not in report:
+            raise base.ParseError("%s: report is missing 'results'" % raw_path)
+        results = report.get("results")
+        if not isinstance(results, dict):
+            raise base.ParseError(
+                "%s: 'results' must be an object, got %r" % (raw_path, type(results).__name__))
+        if "failed_checks" not in results:
+            raise base.ParseError("%s: 'results' is missing 'failed_checks'" % raw_path)
+        failed_checks = results.get("failed_checks")
+        if not isinstance(failed_checks, list):
+            raise base.ParseError(
+                "%s: 'failed_checks' must be a list, got %r" %
+                (raw_path, type(failed_checks).__name__))
+
+        for check in failed_checks:
             if not isinstance(check, dict):
                 raise base.ParseError(
                     "%s: failed_checks entry is not an object: %r" % (raw_path, check))

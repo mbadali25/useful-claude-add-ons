@@ -273,3 +273,36 @@ def test_results_entry_wrong_shape_raises_parse_error_not_attributeerror(tmp_pat
     bad.write_text('{"Results": [null]}')
     with pytest.raises(base.ParseError):
         trivy.parse(bad, "myrepo", kind="deps")
+
+
+def test_empty_object_raises_parse_error_not_empty_findings(tmp_path):
+    """DEFECT 1 (CRITICAL): `{}` is syntactically valid JSON but is missing
+    the mandatory top-level 'Results' container - real trivy JSON output
+    always carries that key (an empty list on a clean scan). A file missing
+    it entirely must never look identical to a clean scan."""
+    bad = tmp_path / "no-results-key.json"
+    bad.write_text("{}")
+    with pytest.raises(base.ParseError):
+        trivy.parse(bad, "myrepo", kind="deps")
+
+
+def test_genuine_empty_results_still_returns_empty_findings(tmp_path):
+    """Guard against trading a false-clean for a false-error: a real trivy
+    report with an explicit, empty `Results: []` is a genuine clean scan,
+    for both kinds this adapter serves."""
+    ok = tmp_path / "genuine-empty.json"
+    ok.write_text('{"Results": []}')
+    assert trivy.parse(ok, "myrepo", kind="deps") == []
+    assert trivy.parse(ok, "myrepo", kind="iac") == []
+
+
+def test_non_object_cvss_raises_parse_error_not_attributeerror(tmp_path):
+    """DEFECT 2 (MEDIUM): `Vulnerabilities[].CVSS` present but not an object
+    (here an int) used to reach `cvss_block.get(source)` in _first_cvss and
+    raise a raw AttributeError - routine's handler would then record
+    error:AttributeError instead of naming the real problem."""
+    bad = tmp_path / "bad-cvss.json"
+    bad.write_text(
+        '{"Results":[{"Vulnerabilities":[{"VulnerabilityID":"CVE-1","CVSS":1}]}]}')
+    with pytest.raises(base.ParseError):
+        trivy.parse(bad, "myrepo", kind="deps")

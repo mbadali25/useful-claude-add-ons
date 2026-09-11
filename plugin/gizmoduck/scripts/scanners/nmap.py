@@ -321,6 +321,16 @@ def parse(raw_path, target):
     except ET.ParseError as e:
         raise base.ParseError("nmap: could not parse %s: %s" % (raw_path, e)) from e
     root = tree.getroot()
+
+    # DEFECT 1 (CRITICAL): `<wrong/>` and similar are syntactically valid
+    # XML but not the report -oX actually writes (root element <nmaprun>).
+    # Walking <host> children of the wrong root silently returned [] -
+    # indistinguishable from "nmap ran and found nothing" - for a file that
+    # was never a real nmap report at all.
+    if root.tag != "nmaprun":
+        raise base.ParseError(
+            "nmap: expected <nmaprun> root element in %s, got <%s>" % (raw_path, root.tag))
+
     findings = []
 
     for host_el in root.findall("host"):

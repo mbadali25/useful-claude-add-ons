@@ -205,6 +205,27 @@ def test_finding_name_comes_from_the_title_elem(fixture):
     assert struts["name"] == "Apache Struts Jakarta Multipart Parser Remote Code Execution"
 
 
+def test_wrong_root_element_raises_parse_error_not_empty_findings(tmp_path):
+    """DEFECT 1 (CRITICAL): `<wrong/>` is syntactically valid XML but is not
+    the report nmap -oX actually produces (root element <nmaprun>). Walking
+    <host> children of the wrong root silently returned [] - indistinguishable
+    from "nmap ran and found nothing" - even though this file was never a
+    real nmap report at all."""
+    bad = tmp_path / "wrong-root.xml"
+    bad.write_text("<wrong/>")
+    with pytest.raises(base.ParseError):
+        nmap.parse(str(bad), target="site-a")
+
+
+def test_genuine_empty_nmaprun_still_returns_empty_findings(tmp_path):
+    """Guard against trading a false-clean for a false-error: a real nmap
+    report with the correct root element and zero <host> entries (e.g. a
+    scan that found nothing up) is a genuine empty result."""
+    ok = tmp_path / "genuine-empty.xml"
+    ok.write_text('<?xml version="1.0"?><nmaprun></nmaprun>')
+    assert nmap.parse(str(ok), target="site-a") == []
+
+
 def test_malformed_xml_raises_base_parse_error_not_a_bare_exception(tmp_path):
     """DEFECT 2 regression guard: nmap.py must never let
     xml.etree.ElementTree.ParseError escape uncaught. That fails the whole

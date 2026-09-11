@@ -135,6 +135,9 @@ def run(target, outdir, opts=None):
 def _first_cvss(cvss_block):
     if not cvss_block:
         return ""
+    if not isinstance(cvss_block, dict):
+        raise base.ParseError(
+            "trivy: 'CVSS' must be an object, got %r" % type(cvss_block).__name__)
     for source in ("nvd", "redhat", "ghsa"):
         entry = cvss_block.get(source)
         if entry and entry.get("V3Score") is not None:
@@ -270,6 +273,13 @@ def parse(raw_path, target, kind=None):
     if not isinstance(data, dict):
         raise base.ParseError(
             "trivy: expected a JSON object at the top level, got %r" % type(data).__name__)
+
+    # DEFECT 1: `Results` must be PRESENT, not merely absent-or-empty. Real
+    # trivy JSON output always carries this key (an empty list on a clean
+    # scan) - reading a missing key the same as a present-but-empty one used
+    # to silently return a clean-looking [].
+    if "Results" not in data:
+        raise base.ParseError("trivy: report is missing 'Results'")
     results = _as_list(data.get("Results"), "Results")
 
     if kind == "deps":
