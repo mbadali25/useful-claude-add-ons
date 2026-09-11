@@ -329,6 +329,185 @@ def test_exit_code_is_not_a_parameter_parse_can_even_consult():
     assert "returncode" not in params and "exit_code" not in params
 
 
+# --- round 2 CRITICAL defect: run() returns the exact session directory ---
+#
+# run() used to hand back the bare --output-dir root, forcing parse() to
+# re-derive which child folder belonged to this target from a manifest name
+# that may not even be a URL. run() is the only place that ever holds the
+# real URL, so it should return the exact session directory it resolved
+# instead - collapsing the whole ambiguity for the ordinary run()-then-
+# parse() cycle.
+
+def test_run_returns_the_resolved_session_dir_not_the_output_root(monkeypatch, tmp_path):
+    def fake_run_tool(argv, timeout, cwd=None):
+        hostdir = tmp_path / "b.example"
+        hostdir.mkdir()
+        (hostdir / "log").write_text(
+            "Parameter: id (GET)\n"
+            "    Type: boolean-based blind\n"
+            "    Title: AND boolean-based blind - WHERE or HAVING clause\n"
+            "    Payload: id=1 AND 7331=7331\n")
+        # A stale, unrelated sibling session must never be picked instead.
+        other = tmp_path / "a.example"
+        other.mkdir()
+        (other / "log").write_text(
+            "[10:00:01] [INFO] testing connection to the target URL\n"
+            "[10:00:06] [CRITICAL] all tested parameters do not appear to "
+            "be injectable.\n")
+        return base.ToolResult(0, "", "", False)
+
+    monkeypatch.setattr(base, "run_tool", fake_run_tool)
+
+    raw_path, result = sqlmap.run("https://b.example/?id=1", str(tmp_path),
+                                  {"confirm": "APPROVED-BY-ME"})
+
+    assert raw_path == str(tmp_path / "b.example")
+    findings = sqlmap.parse(raw_path, "b-web")  # opaque manifest name
+    assert len(findings) == 1
+    assert findings[0]["host"] == "b.example"
+
+
+# --- round 2 reproductions: parse() called directly on a pre-existing ------
+# artifact root, with no run() in this process to have already resolved the
+# session directory. An output root holds a.example/log (empty, no
+# injection) and b.example/log (a confirmed injection).
+
+def test_repro1_no_sidecars_finds_the_correctly_named_folder(fixture):
+    # No sidecars anywhere, target is a real URL for b.example: the
+    # correctly-named vulnerable folder must still be found via its own
+    # name (sqlmap always names a session folder after the host it
+    # scanned), even with no sidecar to corroborate it.
+    findings = sqlmap.parse(fixture("sqlmap-session/round2-no-sidecars"),
+                            "https://b.example/?id=1")
+    assert len(findings) == 1
+    assert findings[0]["host"] == "b.example"
+
+
+def test_repro2_opaque_target_with_multiple_candidates_refuses(fixture):
+    # Only a.example (the empty session) has an internally-consistent
+    # sidecar; target is an opaque manifest name. The old "trust a sidecar
+    # that merely agrees with its own folder name" fallback silently picked
+    # the stale, empty a.example session here and returned [] - a false-
+    # clean result. That heuristic correlates with nothing about the real
+    # target, so this must now refuse rather than guess.
+    with pytest.raises(base.ParseError):
+        sqlmap.parse(fixture("sqlmap-session/round2-opaque-one-consistent"),
+                     "prod")
+
+
+def test_repro3_single_candidate_with_conflicting_sidecar_is_not_reported(fixture):
+    # The lone candidate is named b.example (sqlmap's own naming), but its
+    # sidecar declares a.example - a corrupted/reused directory. Blindly
+    # trusting "only one candidate, nothing to disambiguate" used to report
+    # the injection under the sidecar's a.example, i.e. against a host that
+    # was never actually asked about. Since we know we're asking about
+    # b.example and this candidate's own sidecar denies it, that is a
+    # confident negative, not a report at the wrong host.
+    findings = sqlmap.parse(
+        fixture("sqlmap-session/round2-single-conflicting-sidecar"),
+        "https://b.example/?id=1")
+    assert findings == []
+
+
+def test_repro4_run_then_parse_with_resolved_session_dir_needs_no_matching(
+        monkeypatch, tmp_path):
+    # The remaining pre-existing-artifact ambiguity (opaque target, 2+
+    # candidates) is unresolvable and correctly raises ParseError when
+    # parse() is called on a root with no run() in this process (see
+    # test_repro2 above) - refusing to guess is the intended, deliberate
+    # behaviour there, not a bug. What must NOT happen is a *successful*
+    # run() ever hitting that ambiguity: run() returning the exact session
+    # directory it resolved means the ordinary run()-then-parse() cycle
+    # never needs to guess at all, even with an opaque manifest name and
+    # other stale sessions sitting in the same output root.
+    def fake_run_tool(argv, timeout, cwd=None):
+        hostdir = tmp_path / "b.example"
+        hostdir.mkdir()
+        (hostdir / "log").write_text(
+            "Parameter: id (GET)\n"
+            "    Type: boolean-based blind\n"
+            "    Title: AND boolean-based blind - WHERE or HAVING clause\n"
+            "    Payload: id=1 AND 7331=7331\n")
+        stale = tmp_path / "a.example"
+        stale.mkdir()
+        (stale / "log").write_text(
+            "[10:00:01] [INFO] testing connection to the target URL\n"
+            "[10:00:06] [CRITICAL] all tested parameters do not appear to "
+            "be injectable.\n")
+        return base.ToolResult(0, "", "", False)
+
+    monkeypatch.setattr(base, "run_tool", fake_run_tool)
+
+    raw_path, _ = sqlmap.run("https://b.example/?id=1", str(tmp_path),
+                             {"confirm": "APPROVED-BY-ME"})
+
+    # routine.py calls parse() with target.name (opaque), never the URL -
+    # this must not raise, because raw_path is already the resolved session
+    # directory, not the ambiguous root.
+    findings = sqlmap.parse(raw_path, "prod")
+    assert len(findings) == 1
+
+
+# --- round 2 HIGH defect: a corrupt or truncated log must not mean clean ---
+
+def test_truncated_record_is_a_parse_error_not_a_clean_scan(fixture):
+    # Parameter: id (GET) / Type: ... / Title: ... with NO Payload: line -
+    # a record cut off mid-write. Must not silently read as "no injection".
+    with pytest.raises(base.ParseError):
+        sqlmap.parse(fixture("sqlmap-session/round2-truncated-log"),
+                     "https://example.test/?id=1")
+
+
+def test_garbage_log_is_a_parse_error_not_a_clean_scan(fixture):
+    # Not sqlmap output at all - no timestamped log lines, no Parameter:
+    # header, nothing recognizable.
+    with pytest.raises(base.ParseError):
+        sqlmap.parse(fixture("sqlmap-session/round2-garbage-log"),
+                     "https://example.test/?id=1")
+
+
+def test_nonexistent_session_still_yields_zero_findings(tmp_path):
+    # A missing session must stay indistinguishable from "never ran" -
+    # zero findings, not an error - unlike a log that exists but is
+    # unreadable as sqlmap output.
+    empty_dir = tmp_path / "never-ran"
+    empty_dir.mkdir()
+    assert sqlmap.parse(empty_dir, "https://example.test/?id=1") == []
+
+
+def test_a_genuinely_clean_log_still_yields_zero_findings(fixture):
+    # Regression guard: the `empty` fixture is a well-formed sqlmap log
+    # (real timestamped INFO/WARNING/CRITICAL lines) with zero Parameter:
+    # blocks - the defect-4 fix must not turn this into a false error.
+    findings = sqlmap.parse(fixture("sqlmap-session/empty"),
+                            "https://example.test/page?id=1")
+    assert findings == []
+
+
+def test_sidecar_with_unparseable_url_is_a_parse_error_not_a_crash(tmp_path):
+    # A sidecar containing `http://[` makes urlparse() raise ValueError
+    # (an unterminated IPv6 bracket) - that must never escape as a raw
+    # ValueError; it must surface as base.ParseError like any other
+    # unreadable/unusable session evidence.
+    session_dir = tmp_path / "broken.example"
+    session_dir.mkdir()
+    (session_dir / "log").write_text(
+        "Parameter: id (GET)\n"
+        "    Type: boolean-based blind\n"
+        "    Title: AND boolean-based blind - WHERE or HAVING clause\n"
+        "    Payload: id=1 AND 7331=7331\n")
+    (session_dir / sqlmap._TARGET_SIDECAR).write_text("http://[")
+
+    # Single, unambiguous session directory - _session_location is where
+    # the sidecar is actually read for host/matched_at, and must not raise
+    # a bare ValueError out of parse().
+    findings = sqlmap.parse(session_dir, "broken-web")
+    assert len(findings) == 1
+    # The unparseable sidecar is treated as unusable, falling back to the
+    # session directory's own name (sqlmap's own naming) for host/matched_at.
+    assert findings[0]["host"] == "broken.example"
+
+
 # --- registry protocol conformance -----------------------------------------
 
 def test_module_constants():

@@ -33,6 +33,18 @@ native artifact is the small tree `--output-dir` produces (`log` +
 `session.sqlite` under a per-host folder), and `parse()` is written to
 accept either that folder directly or the `--output-dir` root above it.
 
+Round 2 fix: `run()` now returns the exact session directory it resolved
+(via `_find_session_dir`), never the bare `--output-dir` root. run() is the
+only place that ever holds the real URL sqlmap was pointed at, so it is the
+only place that can reliably pick the one child folder belonging to this
+target; handing back the root instead threw that identity away and forced
+`parse()` to re-derive it later from a manifest name that may not even be a
+URL. `_resolve_session_for_parse`'s candidate-matching logic (below) now
+exists solely for `parse()` being called on a root with no prior run() in
+this process - pre-existing/leftover artifacts - and refuses to guess
+whenever that specific situation is unresolvable, rather than picking a
+plausible-looking candidate.
+
 `run()`'s first argument is the target's *location* (routine.py passes it
 `_location(target)`, i.e. the manifest's `url` field - a real URL, always).
 `parse()`'s second argument is a different thing entirely: routine.py calls
@@ -108,6 +120,14 @@ _PARAM_HEADER = re.compile(
 _TRIPLE = re.compile(
     r'Type:\s*(?P<type>[^\r\n]+)\r?\n\s*Title:\s*(?P<title>[^\r\n]+)\r?\n'
     r'\s*Payload:\s*(?P<payload>[^\r\n]+)')
+_TYPE_LINE = re.compile(r'^\s*Type:\s*[^\r\n]+$', re.MULTILINE)
+
+# sqlmap's own timestamped log line, e.g. `[10:14:02] [INFO] testing...` -
+# present even on a genuinely clean run (see the `empty` fixture, which has
+# no Parameter: block at all but plenty of these). Used, alongside
+# _PARAM_HEADER, to tell real-but-empty sqlmap output apart from a file
+# that isn't sqlmap output in the first place (defect 4).
+_LOG_LINE = re.compile(r'^\[\d{2}:\d{2}:\d{2}\]\s*\[[A-Za-z]+\]', re.MULTILINE)
 
 # Sidecar run() drops in the session directory it actually used, recording
 # the real URL sqlmap was pointed at - see the module docstring's "run()'s
@@ -175,7 +195,21 @@ def run(target, outdir, opts):
         # instead of a silent empty result. See parse()'s docstring.
         return None, result
     _write_target_sidecar(session_dir, target)
-    return str(outdir), result
+
+    # CRITICAL defect fix (round 2): return the exact session directory
+    # run() just resolved, not the --output-dir root. run() is the only
+    # place that ever holds the real URL sqlmap was pointed at, and
+    # _find_session_dir already used it to pick the one child folder that
+    # actually belongs to this target - throwing that identity away and
+    # handing back the bare root forced parse() to re-derive it later from
+    # a manifest name that may not even be a URL (module docstring), which
+    # is exactly the ambiguity that let sessions get misattributed or
+    # silently dropped. Returning session_dir means the ordinary run()-then-
+    # parse() cycle (routine.py's real call shape) never touches
+    # _resolve_session_for_parse's candidate-matching logic at all - that
+    # logic now exists solely for the "parse() called on a root with no
+    # prior run() in this process" case (pre-existing/leftover artifacts).
+    return str(session_dir), result
 
 
 def _write_target_sidecar(session_dir, url):
@@ -230,41 +264,80 @@ def _find_session_dir(raw_path, target):
     return raw_path
 
 
+def _matches_target_host(child, target_host):
+    """Whether candidate session directory `child` is plausibly the one
+    scanned for `target_host` (already lowercased). Only meaningful when
+    `target_host` is a real, known hostname - see _resolve_session_for_parse.
+
+    A sidecar, when it exists and parses to a real hostname, is
+    authoritative and decides this alone - even against the child's own
+    folder name. That matters for a corrupted or reused directory whose
+    sidecar disagrees with the name sqlmap itself gave the folder (round 2
+    defect: "reports the injection against the wrong host"): trusting the
+    folder name in that case would let a session actually recorded against
+    some OTHER host get reported under this one purely because of where it
+    happens to sit on disk. Only when there is no usable sidecar at all do
+    we fall back to the folder's own name - which sqlmap itself always sets
+    to the host it scanned (module docstring) - as the next best evidence.
+
+    A sidecar that cannot be parsed as a URL at all (e.g. literally
+    `http://[`) is treated the same as no sidecar, falling back to the
+    folder name, rather than raising out of this boolean helper - the
+    ValueError urlparse can raise on malformed authority text still must
+    surface as base.ParseError somewhere in the parse() call chain (never
+    crash the whole run), but one corrupt sidecar during candidate matching
+    is exactly the kind of per-candidate noise this check should absorb.
+    """
+    sidecar = child / _TARGET_SIDECAR
+    if sidecar.is_file():
+        text = sidecar.read_text(encoding="utf-8", errors="replace").strip()
+        try:
+            declared = urlparse(text).hostname
+        except ValueError:
+            declared = None
+        if declared:
+            return declared.lower() == target_host
+    return child.name.lower() == target_host
+
+
 def _resolve_session_for_parse(raw_path, target):
     """Locate the session folder parse() should read from raw_path.
 
-    This is deliberately a separate resolver from the one run() uses
-    (`_find_session_dir`): run()'s `target` is guaranteed to be the real
-    location, so matching a child folder by its urlparse()'d hostname is
-    sound there. parse()'s `target` is the manifest's opaque name (module
-    docstring) - it may not parse as a URL at all, so it cannot be used the
-    same way here.
+    Now that run() returns the exact session directory it resolved (round 2
+    fix), the ordinary run()-then-parse() cycle never reaches the
+    candidate-matching logic below at all: raw_path already IS a session
+    folder, and the first check below returns it immediately. Everything
+    past that point exists only for parse() being called directly against a
+    root that holds pre-existing artifacts from outside this process - a
+    root with no run() call in this call chain to have already resolved the
+    ambiguity. Guessing in that situation is what caused every round 2
+    defect (misattribution, false-clean, a stale leftover getting picked),
+    so this resolver refuses whenever it cannot be certain, rather than
+    picking a plausible-looking candidate.
 
     raw_path pointing directly at a session folder (holding `log` or
     `session.sqlite` itself) is unambiguous - return it unchanged, exactly
-    like run()'s resolver. A raw_path that is instead an --output-dir root
-    can hold more than one child that looks like a session (stale leftovers
-    from a previous host, a shared root). With exactly one such child there
-    is nothing to disambiguate - use it regardless of its name or of what
-    `target` is (a manifest name is not, and never was, required to equal
-    the hostname). With more than one, the only trustworthy signal is the
-    sidecar run() wrote into the session directory it actually used
-    (`_write_target_sidecar`): never an arbitrary alphabetical pick, and
-    never a guess derived from `target`.
+    like run()'s own resolver (`_find_session_dir`).
 
-    When `target` itself carries a real hostname (it parses as a URL - the
-    case a direct/manual call, rather than routine.py, is likely to produce)
-    and none of the candidates' sidecars match it, that is a confident
-    negative: we know which host was asked about, and it isn't among these
-    sessions, so `parse()` reading zero findings from the (unmatched)
-    raw_path is correct - not a gap. But when `target` is a bare manifest
-    name (routine.py's real call shape) and the ambiguity can't be broken,
-    we have no such confidence: one of these sessions might be the right
-    one and we simply can't tell which. Silently returning raw_path there
-    would make `parse()` report a clean scan indistinguishable from "no
-    injection found" - the same false-clean failure mode the CRITICAL
-    run()/parse() evidence defect exists to prevent. So that specific case
-    raises `base.ParseError` instead.
+    With exactly one candidate under raw_path: if `target` carries a real,
+    known hostname and that one candidate's identity (_matches_target_host)
+    contradicts it, that is active evidence the session isn't the one being
+    asked about - not "nothing to disambiguate" - so this is a confident
+    negative, not a blind pick. Otherwise (target is opaque, or the
+    candidate matches) it is used, since there truly is nothing else it
+    could be.
+
+    With two or more candidates: a known `target` hostname narrows by
+    identity - a unique match is used, zero matches is a confident negative
+    (parse() then correctly reads no session for this host), and more than
+    one match is still ambiguous enough to refuse. An opaque `target` (a
+    bare manifest name, routine.py's real call shape when reached without a
+    resolved session dir) gives no signal to narrow with at all: this
+    resolver no longer falls back to "trust whichever sidecar merely agrees
+    with its own folder name" - that heuristic correlates with nothing
+    about the actual target being asked about, and is exactly what let a
+    stale, internally-consistent leftover session get silently selected and
+    reported as a clean scan. Refuses instead.
     """
     raw_path = Path(raw_path)
     if (raw_path / "log").is_file() or (raw_path / "session.sqlite").is_file():
@@ -278,50 +351,43 @@ def _resolve_session_for_parse(raw_path, target):
             (child / "log").is_file() or (child / "session.sqlite").is_file()
         )
     ]
-    if len(candidates) == 1:
-        return candidates[0]
     if not candidates:
         return raw_path
 
-    target_host = urlparse(target).hostname if target else None
-    matches = []
-    for child in candidates:
-        sidecar = child / _TARGET_SIDECAR
-        if not sidecar.is_file():
-            continue
-        declared_host = urlparse(
-            sidecar.read_text(encoding="utf-8", errors="replace").strip()).hostname
-        if not declared_host:
-            continue
-        if target_host is not None:
-            if declared_host == target_host:
-                matches.append(child)
-        elif declared_host == child.name:
-            # `target` gave us no hostname to check against (a bare
-            # manifest name) - fall back to internal consistency: trust a
-            # sidecar only when it agrees with the folder sqlmap itself
-            # created it under.
-            matches.append(child)
+    try:
+        target_host = urlparse(target).hostname if target else None
+    except ValueError:
+        target_host = None
+    if target_host:
+        target_host = target_host.lower()
 
-    if len(matches) == 1:
-        return matches[0]
+    if len(candidates) == 1:
+        only = candidates[0]
+        if target_host is not None and not _matches_target_host(only, target_host):
+            return raw_path
+        return only
 
-    if target_host is None:
-        # A bare manifest name gave us nothing to confirm a negative with,
-        # and the sidecars didn't resolve it either: genuinely unresolvable
-        # ambiguity, not a confident "not this host". Fail loud rather than
-        # let it look like a clean scan.
+    if target_host is not None:
+        matches = [c for c in candidates if _matches_target_host(c, target_host)]
+        if len(matches) == 1:
+            return matches[0]
+        if not matches:
+            # Known host, confirmed absent from every candidate: a
+            # determined negative, not a gap (defect 2's original intent,
+            # preserved).
+            return raw_path
         raise base.ParseError(
-            "sqlmap output directory %r holds %d candidate sessions and "
-            "target %r is not a URL, so none of them can be confirmed or "
-            "ruled out; refusing to guess which one (if any) belongs to "
-            "this target" % (str(raw_path), len(candidates), target))
+            "sqlmap output directory %r holds %d sessions that all appear "
+            "to belong to target %r; refusing to guess which is "
+            "authoritative" % (str(raw_path), len(matches), target))
 
-    # target_host is known and confirmed absent from every candidate's
-    # sidecar: a determined negative, not a gap. Fall through to raw_path,
-    # which parse() reads as having no log/session.sqlite for this host -
-    # zero findings, never someone else's (defect 2).
-    return raw_path
+    # Opaque manifest name (not a URL) with 2+ untargeted candidates: no
+    # signal correlates any of them with what's actually being asked about.
+    raise base.ParseError(
+        "sqlmap output directory %r holds %d candidate sessions and "
+        "target %r is not a URL, so none of them can be confirmed or "
+        "ruled out; refusing to guess which one (if any) belongs to "
+        "this target" % (str(raw_path), len(candidates), target))
 
 
 def _session_location(session_dir, target):
@@ -336,20 +402,59 @@ def _session_location(session_dir, target):
     sidecar = session_dir / _TARGET_SIDECAR
     if sidecar.is_file():
         url = sidecar.read_text(encoding="utf-8", errors="replace").strip()
-        host = urlparse(url).hostname
+        try:
+            host = urlparse(url).hostname
+        except ValueError:
+            host = None
         if host:
             return host, url
     return session_dir.name, session_dir.name
 
 
+def _looks_like_sqlmap_log(text):
+    """Whether `text` carries at least one marker sqlmap itself writes -
+    either a timestamped `[HH:MM:SS] [LEVEL]` log line (present even on a
+    genuinely clean run - see the `empty` fixture, which has no Parameter:
+    block at all but plenty of these) or a `Parameter:` block header.
+
+    Neither marker present means this file isn't sqlmap output at all - a
+    garbage file, an unrelated log, wholly truncated content - which must
+    raise base.ParseError rather than silently being read as zero findings.
+    A real clean run and unreadable output are not the same claim
+    (defect 4; base.ParseError's own docstring).
+    """
+    return bool(_LOG_LINE.search(text) or _PARAM_HEADER.search(text))
+
+
 def _iter_confirmed(text):
+    """Yield each confirmed (param, place, type, title, payload) record.
+
+    DEFECT 4 fix: for each Parameter: block, every `Type:` line found must
+    resolve into one complete Type/Title/Payload triple. A block with more
+    `Type:` lines than complete triples means a record started but never
+    finished - e.g. a scan killed mid-write, cutting the block off after
+    `Title:` and before `Payload:`. That is not "this parameter turned out
+    clean" (which would simply have no Type: line at all, as in the `empty`
+    fixture) - it is unusable, truncated evidence, and must raise
+    base.ParseError instead of silently yielding nothing for it.
+    """
     headers = list(_PARAM_HEADER.finditer(text))
     for i, header in enumerate(headers):
         start = header.end()
         end = headers[i + 1].start() if i + 1 < len(headers) else len(text)
         block = text[start:end]
         param, place = header.group("param"), header.group("place")
-        for m in _TRIPLE.finditer(block):
+
+        triples = list(_TRIPLE.finditer(block))
+        type_lines = _TYPE_LINE.findall(block)
+        if len(triples) != len(type_lines):
+            raise base.ParseError(
+                "sqlmap log has a Parameter block for %r (%s) with %d "
+                "Type: line(s) but only %d complete Type/Title/Payload "
+                "record(s) - the log looks truncated or corrupted, not a "
+                "clean run" % (param, place, len(type_lines), len(triples)))
+
+        for m in triples:
             yield (param, place.strip(), m.group("type").strip(),
                    m.group("title").strip(), m.group("payload").strip())
 
@@ -379,7 +484,23 @@ def parse(raw_path, target):
         # (spec 13.9).
         return []
 
-    text = log_path.read_text(errors="replace")
+    try:
+        text = log_path.read_text(errors="replace")
+    except OSError as e:
+        raise base.ParseError("could not read sqlmap log %s: %s" % (log_path, e)) from e
+
+    # DEFECT 4 fix: a log that exists but isn't readable as sqlmap output at
+    # all - a garbage file, an unrelated log, wholly corrupted content -
+    # must raise base.ParseError rather than read as a clean scan just
+    # because _iter_confirmed's regex happens to find no Parameter: blocks
+    # in it. A genuinely clean sqlmap run still carries its own timestamped
+    # log lines (see the `empty` fixture) even with zero injection points,
+    # so this check does not affect a real clean scan.
+    if not _looks_like_sqlmap_log(text):
+        raise base.ParseError(
+            "%s does not look like sqlmap log output; refusing to read it "
+            "as a clean scan" % log_path)
+
     host, matched_at = _session_location(session_dir, target)
     findings = []
     for param, place, type_, title, payload in _iter_confirmed(text):
