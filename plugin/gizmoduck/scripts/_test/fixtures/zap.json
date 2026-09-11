@@ -1,0 +1,103 @@
+{
+  "@version": "2.16.0",
+  "@generated": "Thu, 10 Sep 2026 12:00:00",
+  "site": [
+    {
+      "@name": "https://example.test",
+      "@host": "example.test",
+      "@port": "443",
+      "@ssl": "true",
+      "alerts": [
+        {
+          "pluginid": "40012",
+          "alertRef": "40012",
+          "alert": "Cross Site Scripting (Reflected)",
+          "name": "Cross Site Scripting (Reflected)",
+          "riskcode": "3",
+          "confidence": "2",
+          "riskdesc": "High (Medium)",
+          "desc": "Reflected XSS may be possible.",
+          "solution": "Validate all input and encode output.",
+          "reference": "https://owasp.org/www-community/attacks/xss/\nhttps://cheatsheetseries.owasp.org/",
+          "cweid": "79",
+          "wascid": "8",
+          "sourceid": "3",
+          "instances": [
+            {
+              "uri": "https://example.test/search?q=1",
+              "method": "GET",
+              "param": "q",
+              "attack": "<script>alert(1)</script>",
+              "evidence": "<script>alert(1)</script>"
+            },
+            {
+              "uri": "https://example.test/search?q=2",
+              "method": "GET",
+              "param": "q",
+              "attack": "<script>alert(2)</script>",
+              "evidence": "<script>alert(2)</script>"
+            },
+            {
+              "uri": "https://example.test/comments?q=3",
+              "method": "POST",
+              "param": "q",
+              "attack": "<script>alert(3)</script>",
+              "evidence": "<script>alert(3)</script>"
+            }
+          ],
+          "count": "3"
+        },
+        {
+          "pluginid": "10038",
+          "alertRef": "10038",
+          "alert": "Content Security Policy (CSP) Header Not Set",
+          "name": "Content Security Policy (CSP) Header Not Set",
+          "riskcode": "1",
+          "confidence": "3",
+          "riskdesc": "Low (High)",
+          "desc": "CSP header is not set on this response.",
+          "solution": "Configure a Content-Security-Policy header.",
+          "reference": "https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP",
+          "cweid": "693",
+          "wascid": "15",
+          "sourceid": "3",
+          "instances": [
+            {
+              "uri": "https://example.test/",
+              "method": "GET",
+              "param": "",
+              "attack": "",
+              "evidence": ""
+            }
+          ],
+          "count": "1"
+        },
+        {
+          "pluginid": "99999",
+          "alertRef": "99999",
+          "alert": "Nonstandard Risk Alert",
+          "name": "Nonstandard Risk Alert",
+          "riskcode": "9",
+          "confidence": "1",
+          "riskdesc": "Unknown (Low)",
+          "desc": "Simulated malformed/unexpected riskcode for test coverage - not a real ZAP value.",
+          "solution": "N/A",
+          "reference": "",
+          "cweid": "-1",
+          "wascid": "-1",
+          "sourceid": "3",
+          "instances": [
+            {
+              "uri": "https://example.test/odd",
+              "method": "GET",
+              "param": "",
+              "attack": "",
+              "evidence": ""
+            }
+          ],
+          "count": "1"
+        }
+      ]
+    }
+  ]
+}

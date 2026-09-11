@@ -1,23 +1,173 @@
-"""OWASP ZAP adapter stub. Task 6 fills this in - the local path is the
-Automation Framework (`zap.bat -cmd -autorun plan.yaml`, a `report` job of
-`template: traditional-json`), not zap-baseline.py/zap-full-scan.py, which
-shell out to Docker internally (spec 13.3). ACTIVE=True: this design has no
-passive-only mode, so the whole module is gated - never runs unless a target
-opts in, same as sqlmap.
+"""OWASP ZAP adapter.
+
+The only runnable local path on a Docker-less operator machine is ZAP's
+**Automation Framework**: `zap.bat -cmd -autorun <plan>.yaml` with a `report`
+job of `template: traditional-json`. `zap-baseline.py` / `zap-full-scan.py`
+shell out to `docker run ghcr.io/zaproxy/zaproxy:...` internally even when
+invoked as plain Python (spec 13.3) - this adapter never touches Docker, in
+either `is_available()` or `run()`.
+
+Baseline (spider + passive scan) is the default, no-attack-traffic mode and
+runs like any other DEFAULT_ENABLED tool. The active scan is attack traffic,
+so it is gated the same way Nmap's `vuln` NSE is: ACTIVE stays False (a bare
+True would wrongly gate baseline off by default too), and `zap_active` in
+ACTIVE_OPTS is the per-target opt-in that turns it on. `routine` records which
+mode actually ran - `ran(baseline)` vs `ran(baseline+active)` - never a bare
+`ran` (Global Constraints, plan).
+
+The AF's exit-code contract (0/1/2 on job errors/warnings) is unrelated to
+alert risk, unlike zap-baseline.py's docker-wrapper codes that look the same
+numerically (spec 13.11/13.12) - `run()` never inspects `ToolResult.returncode`
+to decide anything about findings; only `parse()` of the report JSON does.
+
+`riskcode` 0-3 -> info/low/medium/high is a high-confidence inference from
+example output, not a documented mapping (spec 13.3). `normalize.sev_from_riskcode`
+already encodes exactly that inference and refuses anything outside 0-3, so
+this module defers to it rather than re-deriving the mapping.
 """
+import json
+from pathlib import Path
+
+import yaml
+
+import normalize as n
+from . import base
+
 NAME = "zap"
 KINDS = ["web"]
-ACTIVE = True
-DEFAULT_ENABLED = False
+ACTIVE = False              # baseline (spider + passive scan) sends no attack traffic
+ACTIVE_OPTS = ["zap_active"]  # ...but this option turns on ZAP's active scan job
+DEFAULT_ENABLED = True
+
+REPORT_TEMPLATE = "traditional-json"
+DEFAULT_TIMEOUT = 1800  # seconds; base.run_tool is the real guard (spec 13.13)
 
 
 def is_available():
-    raise NotImplementedError
+    """True only for a local ZAP install. Never probes Docker - see module
+    docstring; a Docker-only delivery is doctor's (Task 21) concern to report
+    as a distinct state, not this adapter's to fall back onto.
+    """
+    return _zap_binary() is not None
+
+
+def _zap_binary():
+    return base.which("zap.bat") or base.which("zap.sh")
+
+
+def _context_name(target):
+    name = getattr(target, "name", None) or str(target)
+    # AF context names are free text but keep this readable in the plan file.
+    return "".join(c if c.isalnum() else "-" for c in name) or "target"
+
+
+def _build_plan(url, context_name, active, report_dir, report_file):
+    jobs = [
+        {"type": "passiveScan-config", "parameters": {"maxAlertsPerRule": 0}},
+        {"type": "spider", "parameters": {"context": context_name, "url": url}},
+        {"type": "passiveScan-wait", "parameters": {"maxDuration": 10}},
+    ]
+    if active:
+        jobs.append({"type": "activeScan", "parameters": {"context": context_name}})
+    jobs.append({
+        "type": "report",
+        "parameters": {
+            "template": REPORT_TEMPLATE,
+            "reportDir": str(report_dir),
+            "reportFile": report_file,
+            "reportTitle": "Gizmoduck ZAP scan - %s" % context_name,
+        },
+    })
+    return {
+        "env": {
+            "contexts": [{
+                "name": context_name,
+                "urls": [url],
+                "includePaths": [url.rstrip("/") + ".*"],
+            }],
+            "parameters": {"progressToStdout": True},
+        },
+        "jobs": jobs,
+    }
 
 
 def run(target, outdir, opts):
-    raise NotImplementedError
+    """Write the AF plan and invoke `zap.bat -cmd -autorun <plan>.yaml`.
+
+    The report job writes the native JSON itself (reportDir/reportFile below);
+    this function's job is only to build argv and hand it to base.run_tool -
+    it never inspects the returncode to decide anything (module docstring).
+    """
+    opts = opts or {}
+    active = bool(opts.get("zap_active"))
+    outdir = Path(outdir)
+    outdir.mkdir(parents=True, exist_ok=True)
+
+    url = getattr(target, "url", None) or str(target)
+    context_name = _context_name(target)
+    plan = _build_plan(url, context_name, active, outdir, NAME)
+
+    plan_path = outdir / "zap-plan.yaml"
+    with open(plan_path, "w", encoding="utf-8") as fh:
+        yaml.safe_dump(plan, fh, sort_keys=False)
+
+    binary = _zap_binary()
+    if binary is None:
+        raise FileNotFoundError("no local ZAP install found (zap.bat/zap.sh)")
+
+    argv = [binary, "-cmd", "-autorun", str(plan_path)]
+    return base.run_tool(argv, timeout=opts.get("timeout", DEFAULT_TIMEOUT))
 
 
 def parse(raw_path, target):
-    raise NotImplementedError
+    """Parse the AF `report` job's traditional-json output.
+
+    Schema: site[] -> alerts[] -> instances[]. One alert with N instances
+    yields N findings sharing a template_id, so gizmoduck.dedupe()'s
+    (target, template_id) key later collapses them back into one row with
+    `instances == N` - the fan-out happens here, the aggregation happens
+    there, matching how a multi-match Nuclei template already works.
+
+    Pure: no subprocess, no network. Missing/unreadable/malformed input
+    yields an empty list rather than raising - a broken report should show up
+    as a run-manifest error from the caller, not as this function crashing.
+    """
+    findings = []
+    try:
+        with open(raw_path, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return findings
+
+    for site in data.get("site") or []:
+        host = site.get("@name") or site.get("@host") or ""
+        for alert in site.get("alerts") or []:
+            rule_id = alert.get("pluginid") or alert.get("alertRef") or "unknown"
+            name = alert.get("alert") or alert.get("name") or rule_id
+            severity, known = n.sev_from_riskcode(alert.get("riskcode"))
+
+            reference = [line for line in (alert.get("reference") or "").splitlines()
+                        if line.strip()]
+            tags = []
+            cweid = alert.get("cweid")
+            if cweid not in (None, "", "-1"):
+                tags.append("cwe:%s" % cweid)
+
+            instances = alert.get("instances") or [{}]
+            for inst in instances:
+                findings.append(n.make_finding(
+                    tool=NAME,
+                    target=target,
+                    rule_id=rule_id,
+                    name=name,
+                    severity=severity,
+                    severity_known=known,
+                    host=host,
+                    matched_at=inst.get("uri", ""),
+                    description=alert.get("desc", ""),
+                    remediation=alert.get("solution", ""),
+                    reference=reference,
+                    tags=tags,
+                    type="http",
+                ))
+    return findings
