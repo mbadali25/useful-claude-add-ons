@@ -144,18 +144,81 @@ def _vuln_tables(script_el):
             yield table
 
 
+def _append_vuln_findings(findings, script_el, target, host_ip, matched_at):
+    """Shared by port-level and host-level script handling: walk a <script>
+    element's vulns.lua tables and append one finding per state that is not
+    "not vulnerable". Factored out so host/hostscript/script gets the exact
+    same severity mapping and tagging as port/script - the QA-caught defect
+    was this code path silently never existing for host-level scripts, not a
+    mismatch between two divergent copies of it.
+    """
+    for vt in _vuln_tables(script_el):
+        state_text = _elem_text(vt, "state").strip().lower()
+        if state_text == "not vulnerable":
+            continue
+        sev_word = _VULN_STATE_SEVERITY.get(state_text)
+        severity, known = normalize.sev_from_text(sev_word, default="medium")
+        title = _elem_text(vt, "title") or script_el.get("id", "")
+        description = _elem_text(vt, "description")
+        tags = [script_el.get("id")] if script_el.get("id") else []
+
+        findings.append(normalize.make_finding(
+            tool=NAME,
+            target=target,
+            rule_id=vt.get("key") or script_el.get("id", ""),
+            name=title,
+            severity=severity,
+            severity_known=known,
+            type="vuln",
+            host=host_ip,
+            matched_at=matched_at,
+            description=description,
+            tags=tags,
+        ))
+
+
 def parse(raw_path, target):
     """Pure parse: no subprocess, no network. Reads nmap's -oX output and
-    returns findings for every open port (info) plus one additional, separate
-    finding per vulns.lua table found in that port's <script> children.
+    returns findings for every open port (info), one additional, separate
+    finding per vulns.lua table found in that port's <script> children, and
+    the same for any <script> found under the host's own <hostscript>
+    element (host/hostscript/script, a sibling of <ports> rather than a
+    child of any one <port>).
+
+    Many `--script vuln` NSE scripts report at host level rather than port
+    level (e.g. whole-host SMB or clock-skew checks) - a parser that only
+    ever visits port-level <script> elements silently drops those findings,
+    which is exactly as unsafe as returning [] on a parse failure: the
+    target reads as clean when it is not. A host-level finding has no port,
+    so `matched_at` falls back to the bare host address rather than
+    "host:port".
+
+    Malformed, empty or truncated XML must never surface as an empty finding
+    list either - that is indistinguishable from "nmap ran and found
+    nothing". Any parse failure is raised as base.ParseError so routine can
+    record error:parse:<detail> for just this one cell instead of the whole
+    run failing.
     """
-    tree = ET.parse(raw_path)
+    try:
+        tree = ET.parse(raw_path)
+    except ET.ParseError as e:
+        raise base.ParseError("nmap: could not parse %s: %s" % (raw_path, e)) from e
     root = tree.getroot()
     findings = []
 
     for host_el in root.findall("host"):
         addr_el = host_el.find("address")
         host_ip = addr_el.get("addr") if addr_el is not None else ""
+
+        # host/hostscript/script - a sibling of <ports>, not nested under
+        # any one <port>. matched_at has no port to append, so it is just
+        # the bare host: still a sensible locator, and distinguishable from
+        # a port-level finding's "host:port" shape.
+        hostscript_el = host_el.find("hostscript")
+        if hostscript_el is not None:
+            for script_el in hostscript_el.findall("script"):
+                _append_vuln_findings(findings, script_el, target, host_ip, host_ip)
+
         ports_el = host_el.find("ports")
         if ports_el is None:
             continue
@@ -189,32 +252,10 @@ def parse(raw_path, target):
                 description=("%s %s" % (service_name, svc_desc)).strip(),
             ))
 
+            # A <script> carrying a structured <table> yields its own
+            # separate finding at the mapped severity, in addition to the
+            # port's info finding above.
             for script_el in port_el.findall("script"):
-                for vt in _vuln_tables(script_el):
-                    state_text = _elem_text(vt, "state").strip().lower()
-                    if state_text == "not vulnerable":
-                        continue
-                    sev_word = _VULN_STATE_SEVERITY.get(state_text)
-                    severity, known = normalize.sev_from_text(sev_word, default="medium")
-                    title = _elem_text(vt, "title") or script_el.get("id", "")
-                    description = _elem_text(vt, "description")
-                    tags = [script_el.get("id")] if script_el.get("id") else []
-
-                    # A <script> carrying a structured <table> yields its
-                    # own separate finding at the mapped severity, in
-                    # addition to the port's info finding above.
-                    findings.append(normalize.make_finding(
-                        tool=NAME,
-                        target=target,
-                        rule_id=vt.get("key") or script_el.get("id", ""),
-                        name=title,
-                        severity=severity,
-                        severity_known=known,
-                        type="vuln",
-                        host=host_ip,
-                        matched_at=matched_at,
-                        description=description,
-                        tags=tags,
-                    ))
+                _append_vuln_findings(findings, script_el, target, host_ip, matched_at)
 
     return findings

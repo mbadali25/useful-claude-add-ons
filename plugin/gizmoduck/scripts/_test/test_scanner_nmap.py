@@ -7,7 +7,10 @@ scan - these tests validate the parser against that documented shape, not
 against verified real-world nmap output. See the fixture's own header
 comment and nmap.py's module docstring for the same caveat.
 """
+import pytest
+
 from scanners import nmap
+from scanners import base
 from scanners.base import ToolResult
 
 
@@ -78,11 +81,44 @@ def test_every_template_id_is_namespaced_by_tool(fixture):
 
 
 def test_total_finding_count(fixture):
-    # 5 open ports -> 5 info findings, plus 3 script tables that are not
-    # "not vulnerable" (CVE-2014-3566 high, CVE-2017-5638 critical,
-    # XYZ-UNKNOWN medium/assigned) -> 8 total.
+    # 5 open ports -> 5 info findings, plus 3 port-level script tables that
+    # are not "not vulnerable" (CVE-2014-3566 high, CVE-2017-5638 critical,
+    # XYZ-UNKNOWN medium/assigned), plus 1 host-level script table
+    # (CVE-2021-99999 high, under <hostscript>) -> 9 total.
     findings = _findings(fixture)
-    assert len(findings) == 8
+    assert len(findings) == 9
+
+
+def test_hostscript_vulnerability_is_not_dropped(fixture):
+    """DEFECT 1 regression guard: many --script vuln NSE scripts (e.g.
+    clock-skew or whole-host SMB checks) report under host/hostscript/script
+    rather than under any <port>. A parser that only walks port-level
+    <script> elements silently drops these - the target reads as clean even
+    though vulns.lua reported a confirmed VULNERABLE state."""
+    findings = _findings(fixture)
+    host_vuln = [f for f in findings if f["template_id"] == "nmap:CVE-2021-99999"]
+    assert len(host_vuln) == 1
+    finding = host_vuln[0]
+    assert finding["severity_name"] == "high"
+    assert finding["type"] == "vuln"
+    # No port applies to a host-level script - matched_at/host must still be
+    # a sensible locator (the bare host), not a stale/empty/port-shaped value.
+    assert finding["host"] == "203.0.113.10"
+    assert finding["matched_at"] == "203.0.113.10"
+
+
+def test_malformed_xml_raises_base_parse_error_not_a_bare_exception(tmp_path):
+    """DEFECT 2 regression guard: nmap.py must never let
+    xml.etree.ElementTree.ParseError escape uncaught. That fails the whole
+    routine run instead of just this one cell - base.ParseError is what
+    routine catches to record error:parse:<detail> for that cell alone. An
+    empty finding list must mean only "nmap ran and found nothing", never
+    "the output was unreadable"."""
+    bad = tmp_path / "truncated.xml"
+    bad.write_text("<?xml version=\"1.0\"?><nmaprun><host><ports>")
+
+    with pytest.raises(base.ParseError):
+        nmap.parse(str(bad), target="site-a")
 
 
 def test_is_available_reflects_which(monkeypatch):

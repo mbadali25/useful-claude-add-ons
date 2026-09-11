@@ -93,6 +93,19 @@ crafted Content-Type header.</elem>
 </script>
 </port>
 </ports>
+<hostscript>
+<script id="host-vuln-example" output="VULNERABLE: Example host-level vulnerability">
+<table key="CVE-2021-99999">
+<elem key="title">Example host-level vulnerability</elem>
+<elem key="state">VULNERABLE</elem>
+<table key="description">
+<elem>Many --script vuln NSE scripts (e.g. clock-skew or SMB checks that
+address the whole host) report under hostscript rather than under any one
+port - this table exercises that path.</elem>
+</table>
+</table>
+</script>
+</hostscript>
 <times srtt="1000" rttvar="100" to="100000"/>
 </host>
 <runstats>
