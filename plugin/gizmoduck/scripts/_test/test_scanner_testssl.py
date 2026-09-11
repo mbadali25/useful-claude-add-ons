@@ -414,3 +414,18 @@ def test_run_declines_with_a_clear_message_when_hexdump_is_missing_everywhere(mo
     assert called == []
     assert raw_path is None
     assert "hexdump" in result.stderr.lower()
+
+
+def test_real_badssl_output_diverts_a_real_warn_from_findings(fixture):
+    # testssl-real-badssl.json is real `testssl.sh --jsonfile` output (v3.3dev)
+    # against badssl.com. It contains an actual WARN record ("No engine or GOST
+    # support...") - a client-side scan limitation, NOT a weakness of the
+    # target. This is the exact case the WARN/FATAL handling exists for, now
+    # proven against real output: parse() must keep it OUT of findings, and
+    # parse_errors() must surface it as a scan error.
+    findings = testssl.parse(str(fixture("testssl-real-badssl.json")), "badssl.com")
+    assert findings  # the LOW/MEDIUM records are real findings
+    assert all(f["severity_name"] in ("info", "low", "medium", "high", "critical")
+               for f in findings)
+    errors = testssl.parse_errors(str(fixture("testssl-real-badssl.json")), "badssl.com")
+    assert any(e.get("severity") == "WARN" for e in errors)
