@@ -13,8 +13,8 @@ never attempted.
 Nmap is also the one tool in this whole set whose exit code is a trustworthy
 success signal (0 on a completed scan regardless of findings, non-zero only
 on an nmap-level error - spec 13.12). That is unusual enough among the nine
-adapters that it is called out here explicitly: routine.py MAY gate on
-`result.returncode` for this adapter, but must not do so for any other.
+adapters that it is called out here explicitly: run() below gates on
+`result.returncode` for exactly this reason, but no other adapter should.
 
 Parser note: the exact <table>/<elem key=...> nesting vulns.lua emits is
 "secondhand" per spec 13.11 - nmap is not installed in this environment, so
@@ -86,7 +86,16 @@ def _opt(opts, key, default=None):
 def run(target, outdir, opts=None):
     """Run the safe -sV scan, adding --script vuln only when opted in.
 
-    Writes native XML to <outdir>/nmap.xml and returns (raw_path, result).
+    Returns (raw_path, result) per the pinned adapter contract (spec 13.14):
+    (path, ToolResult) on success, (None, ToolResult) when nmap did not
+    complete - and the ToolResult is always returned either way, since it is
+    routine's only source for error:timeout / error:<message> in the run
+    manifest. Nmap is the one adapter in this set allowed to gate on
+    returncode (spec 13.12: 0 is a trustworthy "scan completed" signal here,
+    unlike every other tool) - a non-zero or timed-out run means -oX's file
+    is absent or incomplete, so raw_path is withheld rather than handed to
+    parse() against a file that may not parse.
+
     base.run_tool's own timeout is the real guard on total wall-clock -
     nmap's --host-timeout/--script-timeout cap per-host and per-script, not
     the whole run (spec 13.13), so no reliance is placed on those flags here.
@@ -98,6 +107,8 @@ def run(target, outdir, opts=None):
         argv += ["--script", "vuln"]
     argv.append(host)
     result = base.run_tool(argv, timeout=_opt(opts, "timeout", 600))
+    if result.timed_out or result.returncode != 0:
+        return None, result
     return raw_path, result
 
 

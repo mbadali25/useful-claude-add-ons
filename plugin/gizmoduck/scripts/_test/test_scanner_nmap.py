@@ -141,6 +141,32 @@ def test_run_resolves_host_from_url_when_no_host_attribute(monkeypatch, tmp_path
     assert calls["argv"][-1] == "site-a.example"
 
 
+def test_run_returns_none_path_on_nonzero_exit(monkeypatch, tmp_path):
+    """Per the pinned adapter contract (spec 13.14), a failed run withholds
+    raw_path but still returns the ToolResult, so routine can record
+    error:<message> without ever handing parse() a file that may not exist
+    or may not parse."""
+    def fake_run_tool(argv, timeout, cwd=None):
+        return ToolResult(1, "", "nmap: command line error", False)
+
+    monkeypatch.setattr(nmap.base, "run_tool", fake_run_tool)
+    raw_path, result = nmap.run("example.com", str(tmp_path), {})
+
+    assert raw_path is None
+    assert result.returncode == 1
+
+
+def test_run_returns_none_path_on_timeout(monkeypatch, tmp_path):
+    def fake_run_tool(argv, timeout, cwd=None):
+        return ToolResult(-1, "", "", True)
+
+    monkeypatch.setattr(nmap.base, "run_tool", fake_run_tool)
+    raw_path, result = nmap.run("example.com", str(tmp_path), {})
+
+    assert raw_path is None
+    assert result.timed_out is True
+
+
 def test_active_opts_marks_only_the_vuln_mode_active():
     assert nmap.ACTIVE is False
     assert nmap.ACTIVE_OPTS == ["nmap_vuln"]
