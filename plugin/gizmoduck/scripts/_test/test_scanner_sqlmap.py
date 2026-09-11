@@ -4,61 +4,117 @@ from scanners import base, sqlmap
 
 
 # --- gating: the confirm token and the injection-point check --------------
+#
+# Cross-adapter contract: run() -> (raw_path | None, ToolResult) always, even
+# on a declined gate. A decline is signalled via result.returncode is None -
+# never an int - so routine.py can tell "we chose not to fire" (skipped-
+# active) apart from a real failure (a real int returncode, or the -1
+# sentinel base.run_tool uses for a timeout/missing binary).
 
 def test_run_refuses_without_confirm_token(monkeypatch, fixture):
     called = []
     monkeypatch.setattr(base, "run_tool", lambda *a, **k: called.append(1))
 
-    with pytest.raises(sqlmap.ConfirmationRequired):
-        sqlmap.run("http://example.test/page?id=1", str(fixture("sqlmap-session/confirmed")), {})
+    raw_path, result = sqlmap.run(
+        "http://example.test/page?id=1", str(fixture("sqlmap-session/confirmed")), {})
 
     # The refusal must happen before any subprocess is built - sqlmap sends
     # real attack traffic, so an absent token must send zero bytes, not just
     # get flagged after the fact.
     assert called == []
+    assert raw_path is None
+    assert result.returncode is None
+    assert isinstance(result, base.ToolResult)
 
 
 def test_run_refuses_falsy_confirm_token(monkeypatch, fixture):
     called = []
     monkeypatch.setattr(base, "run_tool", lambda *a, **k: called.append(1))
 
-    with pytest.raises(sqlmap.ConfirmationRequired):
-        sqlmap.run("http://example.test/page?id=1",
-                    str(fixture("sqlmap-session/confirmed")), {"confirm": False})
+    raw_path, result = sqlmap.run(
+        "http://example.test/page?id=1",
+        str(fixture("sqlmap-session/confirmed")), {"confirm": False})
 
     assert called == []
+    assert raw_path is None
+    assert result.returncode is None
 
 
 def test_run_refuses_a_target_with_no_injection_point(monkeypatch):
     called = []
     monkeypatch.setattr(base, "run_tool", lambda *a, **k: called.append(1))
 
-    with pytest.raises(sqlmap.ConfirmationRequired):
-        sqlmap.run("http://example.test/page", "/tmp/out", {"confirm": "APPROVED-BY-ME"})
+    raw_path, result = sqlmap.run(
+        "http://example.test/page", "/tmp/out", {"confirm": "APPROVED-BY-ME"})
 
     assert called == []
+    assert raw_path is None
+    assert result.returncode is None
 
 
-def test_run_builds_the_expected_argv_when_confirmed(monkeypatch):
+def test_declined_result_is_distinguishable_from_a_real_error(monkeypatch):
+    # A real failure (e.g. the binary missing) still gets an int returncode
+    # from base.run_tool (its own -1 sentinel) - only a declined gate ever
+    # produces returncode is None. The two must never be confused.
+    monkeypatch.setattr(
+        base, "run_tool",
+        lambda *a, **k: base.ToolResult(-1, "", "sqlmap: command not found", False))
+
+    _, declined = sqlmap.run("http://example.test/page?id=1", "/tmp/out", {})
+    _, real_error = sqlmap.run(
+        "http://example.test/page?id=1", "/tmp/out", {"confirm": "APPROVED-BY-ME"})
+
+    assert declined.returncode is None
+    assert real_error.returncode == -1
+    assert declined.returncode is not real_error.returncode
+
+
+def test_run_builds_the_expected_argv_when_confirmed(monkeypatch, tmp_path):
     captured = {}
 
     def fake_run_tool(argv, timeout, cwd=None):
         captured["argv"] = argv
         captured["timeout"] = timeout
+        (tmp_path / "log").write_text("no injection point found\n")
         return base.ToolResult(0, "", "", False)
 
     monkeypatch.setattr(base, "run_tool", fake_run_tool)
 
-    result = sqlmap.run("http://example.test/page?id=1", "/tmp/out",
-                        {"confirm": "APPROVED-BY-ME", "time_limit": 120})
+    raw_path, result = sqlmap.run("http://example.test/page?id=1", str(tmp_path),
+                                  {"confirm": "APPROVED-BY-ME", "time_limit": 120})
 
     assert result.returncode == 0
+    assert raw_path == str(tmp_path)
     argv = captured["argv"]
     assert argv[0] == "sqlmap"
     assert "-u" in argv and "http://example.test/page?id=1" in argv
     assert "--batch" in argv
     assert "--time-limit=120" in argv
-    assert "--output-dir=/tmp/out" in argv
+    assert "--output-dir=%s" % tmp_path in argv
+
+
+def test_run_returns_none_path_when_timed_out(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        base, "run_tool",
+        lambda *a, **k: base.ToolResult(-1, "", "", True))
+
+    raw_path, result = sqlmap.run("http://example.test/page?id=1", str(tmp_path),
+                                  {"confirm": "APPROVED-BY-ME"})
+
+    assert raw_path is None
+    assert result.timed_out is True
+
+
+def test_run_returns_none_path_when_no_session_artifacts_were_written(monkeypatch, tmp_path):
+    # sqlmap can exit 0 having written nothing (spec 13.9) - success is
+    # decided by whether a session actually landed on disk, not the exit code.
+    monkeypatch.setattr(base, "run_tool", lambda *a, **k: base.ToolResult(0, "", "", False))
+
+    raw_path, result = sqlmap.run("http://example.test/page?id=1", str(tmp_path),
+                                  {"confirm": "APPROVED-BY-ME"})
+
+    assert raw_path is None
+    assert result.returncode == 0
 
 
 # --- parsing: confirmed session yields findings, empty session yields none -

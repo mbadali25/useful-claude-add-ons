@@ -15,6 +15,24 @@ applies from these module constants:
    target with no query string, since that is not "an injection point" in
    any meaningful sense.
 
+Cross-adapter contract (standardized after this file's first commit):
+`run(target, outdir, opts) -> (raw_path: str | None, result: base.ToolResult)`.
+`raw_path` is None whenever sqlmap was not actually run, or ran but left no
+session artifacts; `result` is always returned, including for the two gates
+above, so routine.py can always fall back to it for `error:<reason>` /
+`error:timeout` in the per-cell run manifest (spec section 6 step 5). A
+declined gate is deliberately NOT an error, though: it returns a ToolResult
+whose `returncode` is the Python value `None` - never an int, unlike every
+real invocation (a normal exit, or the -1 sentinel base.run_tool itself uses
+for a timeout or a missing binary) - so `result.returncode is None` is an
+unambiguous "we chose not to fire" signal a caller can use to record
+skipped-active rather than mistaking a deliberately declined sqlmap run for
+a broken one in the coverage table. Unlike every other adapter in this
+package, sqlmap's "raw path" is a session DIRECTORY, not a single file - the
+native artifact is the small tree `--output-dir` produces (`log` +
+`session.sqlite` under a per-host folder), and `parse()` is written to
+accept either that folder directly or the `--output-dir` root above it.
+
 There is no --report-json flag (spec 13.9, confirmed against
 lib/core/optiondict.py) - sqlmap leaves behind an --output-dir session tree
 (a per-host folder holding `log` and `session.sqlite`) plus stdout, and this
@@ -72,10 +90,6 @@ _TRIPLE = re.compile(
     r'\s*Payload:\s*(?P<payload>[^\r\n]+)')
 
 
-class ConfirmationRequired(PermissionError):
-    """run() refuses to fire: no confirm token, or no concrete injection point."""
-
-
 def is_available():
     return base.which("sqlmap") is not None
 
@@ -85,17 +99,30 @@ def _has_injection_point(target):
     return bool(urlparse(target).query)
 
 
+def _declined(reason):
+    """A ToolResult for a run() gate that refused before any subprocess.
+
+    `returncode=None` is the point: base.run_tool never produces that value
+    for a real invocation (success and every failure path it has - a normal
+    exit, or its own -1 sentinel for a timeout/missing binary - are always
+    ints), so `result.returncode is None` is an unambiguous, type-level
+    signal that this run never actually fired. routine.py should read that
+    as skipped-active, never error.
+    """
+    return base.ToolResult(returncode=None, stdout="", stderr=reason, timed_out=False)
+
+
 def run(target, outdir, opts):
     opts = opts or {}
     if not opts.get(CONFIRM_KEY):
-        raise ConfirmationRequired(
-            "sqlmap refuses to run without an explicit approval token in "
-            "opts[%r]; it sends real SQL injection traffic and will not fire "
-            "on an implicit default" % CONFIRM_KEY)
+        return None, _declined(
+            "sqlmap declined: opts[%r] is required and was not set; sqlmap "
+            "sends real SQL injection traffic and will not fire on an "
+            "implicit default" % CONFIRM_KEY)
     if not _has_injection_point(target):
-        raise ConfirmationRequired(
-            "sqlmap targets a specific injection point, never a blind sweep; "
-            "%r has no query string to test" % target)
+        return None, _declined(
+            "sqlmap declined: %r has no query string; sqlmap targets a "
+            "specific injection point, never a blind sweep" % target)
 
     timeout = int(opts.get("timeout", 300))
     time_limit = int(opts.get("time_limit", timeout))
@@ -106,7 +133,18 @@ def run(target, outdir, opts):
         "--time-limit=%d" % time_limit,
         "--output-dir=%s" % outdir,
     ]
-    return base.run_tool(argv, timeout=timeout, cwd=None)
+    result = base.run_tool(argv, timeout=timeout, cwd=None)
+    if result.timed_out:
+        return None, result
+
+    session_dir = _find_session_dir(outdir)
+    if not (session_dir / "log").is_file() and not (session_dir / "session.sqlite").is_file():
+        # sqlmap exits 0 whether or not it found anything (spec 13.9), and
+        # can also exit 0 having written nothing at all - so success here is
+        # decided by whether a session actually landed on disk, never by
+        # result.returncode.
+        return None, result
+    return str(outdir), result
 
 
 def _find_session_dir(raw_path):
