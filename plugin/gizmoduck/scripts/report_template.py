@@ -356,12 +356,21 @@ def _coverage_cell_text(cell):
     and not be: the tool process completed, so the status is plain `ran`, but
     something about the target still went wrong. Left unflagged that reads
     identically to a genuinely clean target, so a non-empty list always
-    appends a scan-error note."""
+    appends a scan-error note.
+
+    `count` missing entirely or explicitly `null` is not a confirmed zero -
+    `cell.get("count") or 0` used to render both the same as an actual zero
+    count, manufacturing a definite clean result out of incomplete evidence
+    (MEDIUM defect). Only a real int renders a count; anything else renders
+    an explicit "findings unknown"."""
     status = cell.get("status", "")
     if status == "ran" or status.startswith("ran("):
-        n = cell.get("count") or 0
-        noun = "finding" if n == 1 else "findings"
-        text = f"{status} - {n} {noun}"
+        n = cell.get("count")
+        if n is None:
+            text = f"{status} - findings unknown"
+        else:
+            noun = "finding" if n == 1 else "findings"
+            text = f"{status} - {n} {noun}"
         errs = cell.get("errors") or []
         if errs:
             enoun = "scan error" if len(errs) == 1 else "scan errors"

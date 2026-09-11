@@ -289,3 +289,18 @@ def test_an_unknown_category_is_rendered_not_dropped(gz):
     out = gz.cmd_report([finding], 2, "Report")
     assert "Something new" in out
     assert "## prod" in out
+
+
+# --- MEDIUM defect: a missing count is rendered as zero. -------------------
+
+def test_coverage_cell_missing_count_is_not_reported_as_zero(gz):
+    text_missing = gz._cell_text({"status": "ran"})
+    text_null = gz._cell_text({"status": "ran", "count": None})
+    text_zero = gz._cell_text({"status": "ran", "count": 0})
+    assert text_zero == "ran - 0 findings"
+    # Absent/null must read differently from a confirmed zero - a caller
+    # must not be able to tell "clean" apart from "we don't know" by reading
+    # the same string.
+    assert text_missing != text_zero
+    assert text_null != text_zero
+    assert text_missing == text_null

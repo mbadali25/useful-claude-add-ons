@@ -442,12 +442,21 @@ def _cell_text(cell):
     target testssl couldn't fully reach would read as "ran - 0 findings",
     the exact same text as a target that is genuinely clean - so a non-empty
     `errors` list always appends a scan-error note, however many findings
-    were also found."""
+    were also found.
+
+    `count` missing entirely or explicitly `null` is not the same thing as
+    a confirmed zero - `cell.get("count") or 0` used to collapse both into
+    "0 findings", manufacturing a definite clean count out of incomplete
+    evidence (MEDIUM defect). Only a real int (0 included) renders a count;
+    anything else renders an explicit "findings unknown" instead."""
     status = cell.get("status", "")
     if status == "ran" or status.startswith("ran("):
-        n = cell.get("count") or 0
-        noun = "finding" if n == 1 else "findings"
-        text = f"{status} - {n} {noun}"
+        n = cell.get("count")
+        if n is None:
+            text = f"{status} - findings unknown"
+        else:
+            noun = "finding" if n == 1 else "findings"
+            text = f"{status} - {n} {noun}"
         errs = cell.get("errors") or []
         if errs:
             enoun = "scan error" if len(errs) == 1 else "scan errors"
