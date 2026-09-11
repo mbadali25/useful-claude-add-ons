@@ -22,6 +22,23 @@ Parser note: the exact <table>/<elem key=...> nesting vulns.lua emits is
 NOT been verified against a real `nmap --script vuln -oX` run. Lock it
 against real output before relying on it in production; see
 scripts/_test/fixtures/nmap.xml for the caveat repeated at the fixture.
+
+vulns.lua field coverage: the library's documented fields are title, state,
+IDS, risk_factor, scores, description, dates, check_results, exploit_results,
+extra_info, references. This parser reads title, state, description, IDS,
+scores and references - the ones that have a home in the finding shape (cve,
+cvss, reference respectively). `cve` comes only from the IDS table's "CVE:"
+entries, never inferred from the outer <table key=...> attribute - that
+attribute happens to look like a CVE in real vulns.lua output but is not
+guaranteed to be one, and a wrong CVE is worse than none. risk_factor is
+read nowhere: state is already a reliable enum for severity and mixing in a
+second severity source without a real scan to confirm how the two agree
+would trade a working signal for an unverified one. dates, check_results,
+exploit_results and extra_info have no field in the finding shape and are
+deliberately left unread rather than inventing one. Any of the fields this
+parser does read are omitted (not guessed) when the source table is absent
+or malformed - see _cve_ids_from_table / _cvss_from_table /
+_references_from_table below.
 """
 import os
 from urllib.parse import urlparse
@@ -144,13 +161,83 @@ def _vuln_tables(script_el):
             yield table
 
 
+def _direct_child_table(parent, key):
+    """Direct-child <table key="..."> lookup - the table-shaped counterpart
+    to _elem_text's direct-child-only <elem> lookup, and deliberately not
+    recursive for the same reason: nothing here should reach past one level
+    and pick up some other table's same-named child by accident.
+    """
+    for t in parent.findall("table"):
+        if t.get("key") == key:
+            return t
+    return None
+
+
+def _cve_ids_from_table(vt):
+    """vulns.lua's IDS table holds anonymous <elem> entries shaped
+    "TYPE:VALUE" (spec 13.11 names IDS among the library's fields; the
+    "CVE:CVE-xxxx-xxxx" element text is the documented form). Only entries
+    prefixed "CVE:" are kept, and only the value after that prefix.
+
+    This is the one thing this function must never do: infer a CVE from the
+    outer <table key=...> attribute (e.g. "CVE-2014-3566" on the enclosing
+    vulnerability table). That attribute merely happens to look like a CVE
+    in real vulns.lua output - it is not guaranteed to be one, and a wrong
+    CVE on a real finding is worse than none, since it sends a reader to the
+    wrong advisory. An absent or malformed ids table yields [], never a
+    guess.
+    """
+    ids_table = _direct_child_table(vt, "ids")
+    if ids_table is None:
+        return []
+    cves = []
+    for el in ids_table.findall("elem"):
+        text = (el.text or "").strip()
+        if text[:4].upper() == "CVE:":
+            cve_id = text[4:].strip()
+            if cve_id:
+                cves.append(cve_id)
+    return cves
+
+
+def _cvss_from_table(vt):
+    """vulns.lua's scores table carries a CVSS numeric score as
+    <elem key="CVSS">. Returned as a float, matching every other adapter's
+    `cvss` convention (see trivy.py's _first_cvss) - "" when the table is
+    absent or its value does not parse as a number, never a guess.
+    """
+    scores_table = _direct_child_table(vt, "scores")
+    if scores_table is None:
+        return ""
+    raw = _elem_text(scores_table, "CVSS")
+    if not raw:
+        return ""
+    try:
+        return float(raw)
+    except ValueError:
+        return ""
+
+
+def _references_from_table(vt):
+    """vulns.lua's references table holds anonymous <elem> entries, each one
+    whole reference string (typically a URL). Absent table -> [], never
+    fabricated from anything else on the finding.
+    """
+    refs_table = _direct_child_table(vt, "references")
+    if refs_table is None:
+        return []
+    return [text for text in
+            ((el.text or "").strip() for el in refs_table.findall("elem"))
+            if text]
+
+
 def _append_vuln_findings(findings, script_el, target, host_ip, matched_at):
     """Shared by port-level and host-level script handling: walk a <script>
     element's vulns.lua tables and append one finding per state that is not
     "not vulnerable". Factored out so host/hostscript/script gets the exact
-    same severity mapping and tagging as port/script - the QA-caught defect
-    was this code path silently never existing for host-level scripts, not a
-    mismatch between two divergent copies of it.
+    same severity mapping, tagging and field enrichment as port/script - the
+    QA-caught defect was this code path silently never existing for
+    host-level scripts, not a mismatch between two divergent copies of it.
     """
     for vt in _vuln_tables(script_el):
         state_text = _elem_text(vt, "state").strip().lower()
@@ -174,6 +261,9 @@ def _append_vuln_findings(findings, script_el, target, host_ip, matched_at):
             matched_at=matched_at,
             description=description,
             tags=tags,
+            cve=_cve_ids_from_table(vt),
+            cvss=_cvss_from_table(vt),
+            reference=_references_from_table(vt),
         ))
 
 

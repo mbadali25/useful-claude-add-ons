@@ -40,6 +40,10 @@ production.
 man-in-the-middle attackers to obtain cleartext data via a padding-oracle
 attack (CVE-2014-3566), aka the POODLE issue.</elem>
 </table>
+<table key="references">
+<elem>https://www.openssl.org/~bodo/ssl-poodle.pdf</elem>
+<elem>https://nvd.nist.gov/vuln/detail/CVE-2014-3566</elem>
+</table>
 <table key="dates">
 <table key="disclosure">
 <elem key="year">2014</elem>
@@ -92,6 +96,21 @@ crafted Content-Type header.</elem>
 </table>
 </script>
 </port>
+<port protocol="tcp" portid="8081">
+<state state="open" reason="syn-ack" reason_ttl="64"/>
+<service name="http-alt" product="" version="" method="probed" conf="5"/>
+<!-- Outer table key is deliberately NOT CVE-shaped, to prove cve is read
+from the ids table and never inferred from this attribute. -->
+<script id="generic-vuln-check" output="LIKELY VULNERABLE: generic finding">
+<table key="GENERIC-ID-1">
+<elem key="title">Generic finding with a real CVE in its ids table</elem>
+<elem key="state">LIKELY VULNERABLE</elem>
+<table key="ids">
+<elem>CVE:CVE-2099-0001</elem>
+</table>
+</table>
+</script>
+</port>
 </ports>
 <hostscript>
 <script id="host-vuln-example" output="VULNERABLE: Example host-level vulnerability">
@@ -102,6 +121,9 @@ crafted Content-Type header.</elem>
 <elem>Many --script vuln NSE scripts (e.g. clock-skew or SMB checks that
 address the whole host) report under hostscript rather than under any one
 port - this table exercises that path.</elem>
+</table>
+<table key="scores">
+<elem key="CVSS">7.5</elem>
 </table>
 </table>
 </script>

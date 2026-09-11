@@ -81,12 +81,13 @@ def test_every_template_id_is_namespaced_by_tool(fixture):
 
 
 def test_total_finding_count(fixture):
-    # 5 open ports -> 5 info findings, plus 3 port-level script tables that
+    # 6 open ports -> 6 info findings, plus 4 port-level script tables that
     # are not "not vulnerable" (CVE-2014-3566 high, CVE-2017-5638 critical,
-    # XYZ-UNKNOWN medium/assigned), plus 1 host-level script table
-    # (CVE-2021-99999 high, under <hostscript>) -> 9 total.
+    # XYZ-UNKNOWN medium/assigned, GENERIC-ID-1 medium/likely-vulnerable),
+    # plus 1 host-level script table (CVE-2021-99999 high, under
+    # <hostscript>) -> 11 total.
     findings = _findings(fixture)
-    assert len(findings) == 9
+    assert len(findings) == 11
 
 
 def test_hostscript_vulnerability_is_not_dropped(fixture):
@@ -105,6 +106,65 @@ def test_hostscript_vulnerability_is_not_dropped(fixture):
     # a sensible locator (the bare host), not a stale/empty/port-shaped value.
     assert finding["host"] == "203.0.113.10"
     assert finding["matched_at"] == "203.0.113.10"
+
+
+def test_cve_is_populated_from_the_ids_table(fixture):
+    findings = _findings(fixture)
+    poodle = [f for f in findings if f["template_id"] == "nmap:CVE-2014-3566"][0]
+    assert poodle["cve"] == ["CVE-2014-3566"]
+
+
+def test_cvss_is_populated_from_the_scores_table(fixture):
+    findings = _findings(fixture)
+    poodle = [f for f in findings if f["template_id"] == "nmap:CVE-2014-3566"][0]
+    assert poodle["cvss"] == 3.4
+    struts = [f for f in findings if f["template_id"] == "nmap:CVE-2017-5638"][0]
+    assert struts["cvss"] == 10.0
+
+
+def test_references_are_populated_from_the_references_table(fixture):
+    findings = _findings(fixture)
+    poodle = [f for f in findings if f["template_id"] == "nmap:CVE-2014-3566"][0]
+    assert poodle["reference"] == [
+        "https://www.openssl.org/~bodo/ssl-poodle.pdf",
+        "https://nvd.nist.gov/vuln/detail/CVE-2014-3566",
+    ]
+    # struts has no <table key="references"> at all - must come back empty,
+    # not raise and not inherit poodle's list.
+    struts = [f for f in findings if f["template_id"] == "nmap:CVE-2017-5638"][0]
+    assert struts["reference"] == []
+
+
+def test_missing_ids_table_leaves_cve_empty_rather_than_falling_back_to_the_key(fixture):
+    """The regression this whole enrichment guards against: before, nothing
+    populated `cve` at all, and template_id/rule_id happening to look like a
+    CVE (e.g. "nmap:CVE-2014-3566") could be mistaken for cve being derived
+    from the outer <table key=...> attribute. XYZ-UNKNOWN's outer key is not
+    even CVE-shaped and it carries no <table key="ids"> - cve must be []."""
+    findings = _findings(fixture)
+    unknown = [f for f in findings if f["template_id"] == "nmap:XYZ-UNKNOWN"][0]
+    assert unknown["cve"] == []
+    assert unknown["cvss"] == ""
+    assert unknown["reference"] == []
+
+
+def test_cve_never_falls_back_to_a_non_cve_shaped_outer_key(fixture):
+    """Proves cve is read from the ids table independent of the outer
+    <table key=...> attribute, in both directions: GENERIC-ID-1 is not
+    CVE-shaped, yet its ids table supplies a real CVE that must surface."""
+    findings = _findings(fixture)
+    generic = [f for f in findings if f["template_id"] == "nmap:GENERIC-ID-1"][0]
+    assert generic["cve"] == ["CVE-2099-0001"]
+    assert generic["cvss"] == ""
+
+
+def test_hostscript_finding_also_gets_the_enriched_fields(fixture):
+    """Host-level findings go through the same _append_vuln_findings helper
+    as port-level ones (defect 1's fix), so scores/ids/references must be
+    read there too, not just for scripts nested under a <port>."""
+    findings = _findings(fixture)
+    host_vuln = [f for f in findings if f["template_id"] == "nmap:CVE-2021-99999"][0]
+    assert host_vuln["cvss"] == 7.5
 
 
 def test_malformed_xml_raises_base_parse_error_not_a_bare_exception(tmp_path):
