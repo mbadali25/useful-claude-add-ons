@@ -20,7 +20,7 @@ def _parse(fixture):
 
 def test_finding_count(fixture):
     findings = _parse(fixture)
-    assert len(findings) == 4
+    assert len(findings) == 5
 
 
 def test_template_id_is_namespaced_by_tool(fixture):
@@ -31,6 +31,7 @@ def test_template_id_is_namespaced_by_tool(fixture):
         "depcheck:CVE-2021-23337",
         "depcheck:GHSA-xxxx-yyyy-zzzz",
         "depcheck:CVE-2019-99999",
+        "depcheck:CVE-2022-77777",
     }
 
 
@@ -77,6 +78,21 @@ def test_fully_unscored_vulnerability_falls_back_to_info_and_is_flagged(fixture)
     assert f["severity_name"] == "info"
     assert f["cvss"] == ""
     assert "severity-assigned" in f["tags"]
+
+
+def test_garbage_cvssv2_falls_through_to_the_valid_cvssv3_in_the_fixture(fixture):
+    """DEFECT 3, from the shared fixture (CVE-2022-77777): no text severity,
+    a garbage cvssv2.score ("NaN"), and a valid cvssv3.baseScore of 9.8 on
+    the same record. normalize.sev_from_cvss reports the NaN back as
+    known=False, so depcheck's fallback chain must not stop there - it must
+    keep going to cvssv3 and let the valid 9.8 decide the severity, marked
+    recognized rather than a flagged default.
+    """
+    f = _by_cve(_parse(fixture), "CVE-2022-77777")
+    assert f["severity"] == 4
+    assert f["severity_name"] == "critical"
+    assert f["cvss"] == 9.8
+    assert "severity-assigned" not in f["tags"]
 
 
 def test_package_and_version_resolve_from_the_highest_confidence_purl(fixture):
