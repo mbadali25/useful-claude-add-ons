@@ -176,7 +176,14 @@ def load(path):
 def dedupe(findings):
     groups = {}
     for f in findings:
-        g = groups.setdefault(f["template_id"], {**f, "affected": [], "raw_count": 0})
+        # Key on (target, template_id), not template_id alone. A combined
+        # routine run holds many targets in one findings list, and keying on
+        # the template alone collapsed the same template across every site -
+        # which also made the per-target report grouping impossible. Plain
+        # Nuclei findings carry no `target`, so they key on (None, id) and
+        # group exactly as they always have.
+        key = (f.get("target"), f["template_id"])
+        g = groups.setdefault(key, {**f, "affected": [], "raw_count": 0})
         g["affected"].append(f["matched_at"] or f["host"])
         g["raw_count"] += 1
     for g in groups.values():
