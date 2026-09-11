@@ -11,6 +11,21 @@ import subprocess
 from dataclasses import dataclass
 
 
+class ParseError(Exception):
+    """A tool's output could not be read as the format it should be in.
+
+    Raise this from parse() for empty, truncated, malformed or wrongly-shaped
+    output. Do NOT return [] instead: an empty finding list means "this tool
+    ran and found nothing", and a scan whose output we could not read is not
+    the same claim. Conflating them reports a broken scan as a clean target,
+    which is the failure this whole tool exists to prevent.
+
+    Do not let JSONDecodeError or xml ParseError escape uncaught either - that
+    fails the entire run rather than the single cell that actually failed.
+    routine catches this and records `error:parse:<detail>` for that cell.
+    """
+
+
 @dataclass
 class ToolResult:
     returncode: int
