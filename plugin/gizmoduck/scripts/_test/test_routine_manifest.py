@@ -65,6 +65,51 @@ def test_missing_authorized_by_key_entirely_is_refused(tmp_path):
         routine.load_manifest(p)
 
 
+def test_web_target_without_url_is_refused_at_load_time(tmp_path):
+    # A missing location field is a manifest config error, not a per-tool
+    # run failure - it must be caught here, before any scanner is invoked,
+    # rather than surfacing mid-run as a half-finished output directory and
+    # an ambiguous run manifest (team-lead decision).
+    p = tmp_path / "m.yaml"
+    p.write_text('authorized_by: "me"\ntargets: [{name: site-a, kind: web}]\n')
+    with pytest.raises(ValueError, match="url"):
+        routine.load_manifest(p)
+
+
+def test_host_target_without_host_is_refused_at_load_time(tmp_path):
+    p = tmp_path / "m.yaml"
+    p.write_text('authorized_by: "me"\ntargets: [{name: box-a, kind: host}]\n')
+    with pytest.raises(ValueError, match="host"):
+        routine.load_manifest(p)
+
+
+def test_iac_target_without_path_is_refused_at_load_time(tmp_path):
+    p = tmp_path / "m.yaml"
+    p.write_text('authorized_by: "me"\ntargets: [{name: infra-a, kind: iac}]\n')
+    with pytest.raises(ValueError, match="path"):
+        routine.load_manifest(p)
+
+
+def test_a_refused_manifest_never_reaches_the_adapter_registry(tmp_path):
+    # If load_manifest's location check were missing or came too late, this
+    # fake adapter's run() would be the thing that discovers the bad
+    # target - which is exactly the "scanned first, failed later" ordering
+    # the check exists to avoid. Prove the exception fires before any
+    # adapter-facing code (resolve_adapters/run_routine) is ever reached.
+    p = tmp_path / "m.yaml"
+    p.write_text('authorized_by: "me"\ntargets: [{name: site-a, kind: web}]\n')
+
+    class _ExplodingRegistry:
+        KIND_DEFAULTS = {"web": ["nuclei"], "host": [], "iac": [], "deps": []}
+
+        @property
+        def ADAPTERS(self):
+            raise AssertionError("adapter registry must not be touched")
+
+    with pytest.raises(ValueError, match="url"):
+        routine.load_manifest(p, registry=_ExplodingRegistry())
+
+
 def test_report_header_can_restate_the_authorization_statement(fixture):
     # spec section 8: "The report header restates it" - so the full string,
     # not just a truthy flag, must survive parsing unchanged.

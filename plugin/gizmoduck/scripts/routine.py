@@ -72,14 +72,41 @@ class Manifest:
     targets: list
 
 
+# Which Target field run() needs as a target's *location*, per kind. Shared
+# between load_manifest's up-front validation and _location() below so the
+# two can never drift out of step with each other.
+_LOCATION_FIELD = {"web": "url", "host": "host", "iac": "path", "deps": "path"}
+
+
+def _location_field_name(kind):
+    try:
+        return _LOCATION_FIELD[kind]
+    except KeyError:
+        raise ValueError("no location resolver for kind %r" % kind)
+
+
 def load_manifest(path, registry=None):
     """Parse and validate a targets manifest (spec section 5).
 
-    Validates two things that must never silently degrade into "ran zero
+    Validates three things that must never silently degrade into "ran zero
     tools and reported a clean target": a missing/blank `authorized_by`
-    (routine must never run undirected), and an unrecognized `kind` (an
-    empty adapter list is indistinguishable from a clean scan - so an
-    unknown kind raises instead of resolving to nothing).
+    (routine must never run undirected), an unrecognized `kind` (an empty
+    adapter list is indistinguishable from a clean scan - so an unknown kind
+    raises instead of resolving to nothing), and a target missing the field
+    its own kind needs as a location to scan (a `kind: web` entry with no
+    `url`, etc).
+
+    That last check is deliberately done here, at parse time, rather than
+    later inside run_routine when the missing field would otherwise first be
+    noticed: a manifest with a bad target is a configuration error the
+    operator could be told about immediately, at zero cost, rather than
+    after some other targets have already been scanned - which would leave a
+    half-finished output directory and a run manifest describing a run that
+    never completed, exactly the ambiguous-result problem this whole feature
+    exists to prevent. It stays fatal for the same reason `authorized_by`
+    and `kind` are fatal: downgrading it to a per-target skip would turn an
+    unmissable, immediate refusal into a coverage-table gap a busy operator
+    can simply miss.
     """
     reg = registry if registry is not None else default_registry
 
@@ -95,17 +122,27 @@ def load_manifest(path, registry=None):
 
     targets = []
     for raw in data.get("targets") or []:
+        name = raw.get("name")
         kind = raw.get("kind")
         if kind not in reg.KIND_DEFAULTS:
             raise ValueError(
                 "unknown target kind %r for target %r; known kinds: %s"
-                % (kind, raw.get("name"), ", ".join(sorted(reg.KIND_DEFAULTS))))
+                % (kind, name, ", ".join(sorted(reg.KIND_DEFAULTS))))
+
+        url, path_, host = raw.get("url"), raw.get("path"), raw.get("host")
+        field_name = _location_field_name(kind)
+        if not {"url": url, "path": path_, "host": host}[field_name]:
+            raise ValueError(
+                "target %r (kind=%s) is missing its required %r field; "
+                "routine refuses to run any scanner until every target's "
+                "location is resolvable" % (name, kind, field_name))
+
         targets.append(Target(
-            name=raw.get("name"),
+            name=name,
             kind=kind,
-            url=raw.get("url"),
-            path=raw.get("path"),
-            host=raw.get("host"),
+            url=url,
+            path=path_,
+            host=host,
             tools=list(raw["tools"]) if raw.get("tools") else None,
             options=dict(raw.get("options") or {}),
         ))
@@ -127,6 +164,17 @@ def resolve_adapters(target, registry=None):
     are already in the kind default and always run in some mode, ACTIVE_OPTS
     only chooses which mode; sqlmap isn't in any kind default at all and
     needs a toggle to appear in the list in the first place.
+
+    This is only the first of sqlmap's two independent gates, and the two
+    are easy to collapse into one flag by mistake because they look
+    redundant. `options["sqlmap"]` (checked here) only says "this target is
+    a candidate for sqlmap" - it decides whether the tool appears in the
+    resolved list at all. Whether it actually *fires* is a second, separate
+    gate entirely outside this function: `run_routine`'s own `confirm`
+    argument (see its docstring), which sqlmap.run() itself checks and
+    declines on if unset. A target can be opted in here and still end up
+    `skipped-active` at run time - that is by design, not a bug in either
+    layer.
     """
     reg = registry if registry is not None else default_registry
 
@@ -171,23 +219,20 @@ def _adapter(registry, name):
 def _location(target):
     """The string `run()` receives - the target's *location*, never its
     manifest name and never the Target object itself (see module docstring).
+
+    `load_manifest` already refuses a manifest missing this field at parse
+    time (its own docstring explains why that check lives there and not
+    here). This is a defensive backstop, not the primary enforcement, for
+    any `Target` built by hand rather than through `load_manifest` - e.g. a
+    test, or a future caller assembling targets programmatically.
     """
-    if target.kind in ("iac", "deps"):
-        if not target.path:
-            raise ValueError(
-                "target %r (kind=%s) has no 'path'" % (target.name, target.kind))
-        return target.path
-    if target.kind == "host":
-        if not target.host:
-            raise ValueError(
-                "target %r (kind=host) has no 'host'" % target.name)
-        return target.host
-    if target.kind == "web":
-        if not target.url:
-            raise ValueError(
-                "target %r (kind=web) has no 'url'" % target.name)
-        return target.url
-    raise ValueError("no location resolver for kind %r" % target.kind)
+    field_name = _location_field_name(target.kind)
+    value = getattr(target, field_name)
+    if not value:
+        raise ValueError(
+            "target %r (kind=%s) has no %r set"
+            % (target.name, target.kind, field_name))
+    return value
 
 
 def _ran_status(name, mod, target):
@@ -314,6 +359,15 @@ def run_routine(manifest, outdir, registry=None, confirm=None):
                     continue
 
                 opts = dict(target.options)
+                # This is the second of sqlmap's two independent gates
+                # (resolve_adapters' docstring covers the first): being in
+                # `adapter_names` at all only means options["sqlmap"] opted
+                # this target in as a *candidate*. Whether sqlmap actually
+                # fires is decided here, by run_routine's own `confirm`
+                # argument - sqlmap.run() declines (returncode=None) if this
+                # is falsy, regardless of the manifest opt-in above. Setting
+                # it unconditionally is harmless for the other eight
+                # adapters, which never look at this key.
                 opts["confirm"] = bool(confirm)
                 if name == "trivy":
                     opts["kind"] = target.kind
