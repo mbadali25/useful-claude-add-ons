@@ -246,6 +246,101 @@ def test_active_flags_are_off():
 
 
 # ---------------------------------------------------------------------------
+# False-clean guard: dependency-check can fail to refresh its NVD/CVE data
+# (found live, 2026-09-10, no NVD_API_KEY: an HTTP 524 partway through a
+# ~390k-record sync) and fall back to local data rather than aborting,
+# announcing this on its own stderr while still emitting a well-formed
+# report. parse() alone cannot see this - it only reads the report - so
+# run() detects it from the ToolResult and parse_errors() surfaces it.
+# ---------------------------------------------------------------------------
+
+_STALE_DATA_STDERR = (
+    "[WARN] Unable to update 1 or more Cached Web DataSource, "
+    "using local data instead. Results may not include recent vulnerabilities."
+)
+
+
+def test_run_writes_a_marker_when_the_tool_reports_stale_data(monkeypatch, tmp_path):
+    def fake_run_tool(argv, timeout, cwd=None):
+        report = os.path.join(argv[argv.index("--out") + 1], depcheck.REPORT_FILENAME)
+        with open(report, "w", encoding="utf-8") as fh:
+            fh.write('{"dependencies": []}')
+        return base.ToolResult(1, "", _STALE_DATA_STDERR, False)
+
+    monkeypatch.setattr(depcheck.base, "run_tool", fake_run_tool)
+    outdir = tmp_path / "out"
+    raw_path, result = depcheck.run("/scan/repo", str(outdir), {})
+
+    assert raw_path is not None
+    assert (outdir / depcheck.STALE_DATA_MARKER).is_file()
+    assert depcheck.parse_errors(raw_path, "repo-a") == [{
+        "tool": "depcheck",
+        "target": "repo-a",
+        "message": (
+            "dependency-check could not refresh one or more NVD/CVE data "
+            "sources during this run (native signal: "
+            "'Unable to update 1 or more Cached Web DataSource') and fell "
+            "back to local data instead - findings above are genuine, but "
+            "this scan's vulnerability database may be missing records "
+            "added since the last successful sync."
+        ),
+    }]
+
+
+def test_parse_errors_returns_empty_when_no_stale_data_warning_present(monkeypatch, tmp_path):
+    def fake_run_tool(argv, timeout, cwd=None):
+        report = os.path.join(argv[argv.index("--out") + 1], depcheck.REPORT_FILENAME)
+        with open(report, "w", encoding="utf-8") as fh:
+            fh.write('{"dependencies": []}')
+        return base.ToolResult(0, "", "", False)
+
+    monkeypatch.setattr(depcheck.base, "run_tool", fake_run_tool)
+    outdir = tmp_path / "out"
+    raw_path, result = depcheck.run("/scan/repo", str(outdir), {})
+
+    assert not (outdir / depcheck.STALE_DATA_MARKER).exists()
+    assert depcheck.parse_errors(raw_path, "repo-a") == []
+
+
+def test_stale_data_marker_from_a_prior_run_is_not_returned_for_a_clean_run(monkeypatch, tmp_path):
+    """Same DEFECT-1 freshness discipline as the report file itself: a
+    degraded run's marker must never survive to be misread as a later,
+    genuinely clean run's signal.
+    """
+    outdir = tmp_path / "out"
+    outdir.mkdir()
+    (outdir / depcheck.STALE_DATA_MARKER).write_text(_STALE_DATA_STDERR)
+
+    def fake_run_tool(argv, timeout, cwd=None):
+        report = os.path.join(argv[argv.index("--out") + 1], depcheck.REPORT_FILENAME)
+        with open(report, "w", encoding="utf-8") as fh:
+            fh.write('{"dependencies": []}')
+        return base.ToolResult(0, "", "", False)
+
+    monkeypatch.setattr(depcheck.base, "run_tool", fake_run_tool)
+    raw_path, result = depcheck.run("/scan/repo", str(outdir), {})
+
+    assert depcheck.parse_errors(raw_path, "repo-a") == []
+
+
+def test_parse_errors_message_is_not_a_finding_shape(monkeypatch, tmp_path):
+    def fake_run_tool(argv, timeout, cwd=None):
+        report = os.path.join(argv[argv.index("--out") + 1], depcheck.REPORT_FILENAME)
+        with open(report, "w", encoding="utf-8") as fh:
+            fh.write('{"dependencies": []}')
+        return base.ToolResult(1, "", _STALE_DATA_STDERR, False)
+
+    monkeypatch.setattr(depcheck.base, "run_tool", fake_run_tool)
+    outdir = tmp_path / "out"
+    raw_path, result = depcheck.run("/scan/repo", str(outdir), {})
+    errors = depcheck.parse_errors(raw_path, "repo-a")
+
+    assert len(errors) == 1
+    assert "severity" not in errors[0]
+    assert "template_id" not in errors[0]
+
+
+# ---------------------------------------------------------------------------
 # DEFECT 1 (CRITICAL): stale artifact must never be returned as this run's
 # evidence.
 # ---------------------------------------------------------------------------

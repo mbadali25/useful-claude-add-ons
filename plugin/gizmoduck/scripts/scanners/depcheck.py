@@ -44,6 +44,21 @@ DEFAULT_ENABLED = True
 REPORT_FILENAME = "dependency-check-report.json"
 DEFAULT_TIMEOUT = 900
 
+# False-clean guard, found via a real failed sync (2026-09-10, no
+# NVD_API_KEY): dependency-check can fail to refresh its NVD/CVE data
+# (rate-limited without a key, or a plain server-side timeout - confirmed
+# live as an NVD HTTP 524 partway through a ~390k-record unauthenticated
+# sync) and, rather than aborting the whole run, fall back to whatever local
+# data it already has and finish the scan anyway. It says so on its own
+# stderr - this exact line - and still emits a perfectly well-formed JSON
+# report. A parser that only reads the report has no way to know the CVE
+# database behind it might be missing the large majority of records: the
+# findings it does contain are real, but "ran, N findings" is
+# indistinguishable from a genuinely clean scan against a complete
+# database. This is caught here, not by inspecting the database itself.
+_STALE_DATA_SIGNAL = "Unable to update 1 or more Cached Web DataSource"
+STALE_DATA_MARKER = "dependency-check.stale-data-warning"
+
 
 def is_available():
     return base.which("dependency-check") is not None
@@ -67,6 +82,7 @@ def run(target, outdir, opts):
     os.makedirs(outdir, exist_ok=True)
     opts = opts or {}
     raw_path = os.path.join(outdir, REPORT_FILENAME)
+    marker_path = os.path.join(outdir, STALE_DATA_MARKER)
 
     # DEFECT 1 (critical): establish freshness BEFORE invoking the tool.
     # dependency-check always writes REPORT_FILENAME under a fixed name, so a
@@ -74,9 +90,13 @@ def run(target, outdir, opts):
     # there after a failed invocation that wrote nothing new - and the
     # os.path.isfile check below would hand it back as if it were this run's
     # evidence. Removing it first means "no fresh artifact" is the only way
-    # isfile() can come back True afterward.
+    # isfile() can come back True afterward. The stale-data marker (below)
+    # gets the same treatment for the same reason: a degraded run's marker
+    # must never survive to be misread as this run's signal.
     if os.path.isfile(raw_path):
         os.remove(raw_path)
+    if os.path.isfile(marker_path):
+        os.remove(marker_path)
 
     argv = [
         "dependency-check", "--format", "JSON",
@@ -92,6 +112,18 @@ def run(target, outdir, opts):
     result = base.run_tool(argv, timeout=opts.get("timeout", DEFAULT_TIMEOUT))
     if not os.path.isfile(raw_path):
         return None, result
+
+    # Detected from the ToolResult's own stdout/stderr, not from the report
+    # or the database - dependency-check announces the fallback itself.
+    # Written as a sibling marker file (rather than threaded through the
+    # return value) because parse_errors(raw_path, target) is the fixed,
+    # cross-adapter signature routine.py calls - it is never handed the
+    # ToolResult, only raw_path.
+    combined_output = (result.stdout or "") + "\n" + (result.stderr or "")
+    if _STALE_DATA_SIGNAL in combined_output:
+        with open(marker_path, "w", encoding="utf-8") as fh:
+            fh.write(_STALE_DATA_SIGNAL)
+
     return raw_path, result
 
 
@@ -274,3 +306,33 @@ def parse(raw_path, target):
                 finding["version"] = version
             findings.append(finding)
     return findings
+
+
+def parse_errors(raw_path, target):
+    """Return a degraded-NVD-data warning as a tool-error record, not a
+    finding - the same convention checkov.parse_errors/testssl.parse_errors
+    use: shaped with no template_id/severity so nothing downstream mistakes
+    it for a finding, and surfaced through this separate channel instead of
+    raising, because the findings parse() did return are genuine and still
+    worth keeping (Task 18/global constraints: this is "the scan ran but was
+    degraded," not "the scan produced no trustworthy output at all").
+
+    Reads the sibling marker file run() writes next to raw_path when
+    dependency-check's own output announced the fallback - never inspects
+    the database, and never raises: this is a best-effort supplementary
+    read of state run() has already established by the time this is called.
+    """
+    marker_path = os.path.join(os.path.dirname(raw_path), STALE_DATA_MARKER)
+    if not os.path.isfile(marker_path):
+        return []
+    return [{
+        "tool": NAME,
+        "target": target,
+        "message": (
+            "dependency-check could not refresh one or more NVD/CVE data "
+            "sources during this run (native signal: %r) and fell back to "
+            "local data instead - findings above are genuine, but this scan's "
+            "vulnerability database may be missing records added since the "
+            "last successful sync." % _STALE_DATA_SIGNAL
+        ),
+    }]
