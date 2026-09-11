@@ -93,9 +93,15 @@ def test_missing_severity_carries_the_severity_assigned_provenance_marker(fixtur
     assert "severity-assigned" in got[2]["tags"]
 
 
-def test_missing_raw_file_yields_no_findings(tmp_path):
-    got = nuclei.parse(str(tmp_path / "does-not-exist.jsonl"), target="x")
-    assert got == []
+def test_missing_raw_file_raises_parse_error(tmp_path):
+    """A nonexistent path is not "ran and found nothing" - that claim is
+    reserved for an empty file. It's "we cannot tell", which is exactly
+    what base.ParseError is for: routine only calls parse() when run()
+    just returned this same path, so a file that has since vanished means
+    something is wrong that a silent [] would let nobody ever notice.
+    """
+    with pytest.raises(nuclei.base.ParseError):
+        nuclei.parse(str(tmp_path / "does-not-exist.jsonl"), target="x")
 
 
 def test_empty_raw_file_yields_no_findings(tmp_path):

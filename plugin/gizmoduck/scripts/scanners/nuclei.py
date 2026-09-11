@@ -161,16 +161,17 @@ def parse(raw_path, target):
     itself, and without the marker an assigned default is indistinguishable
     from a real assessment in the report.
 
-    Pure: no subprocess, no network. A missing output file yields an empty
-    list rather than raising - a broken run is the caller's (routine.py's)
-    concern to record, not this function's to crash over. An empty output
-    file is nuclei's own "ran clean, found nothing" and also yields [].
-    Anything else that can't be read as valid JSONL - malformed or
-    truncated output - raises base.ParseError rather than silently
-    returning [] and presenting a broken scan as a clean one.
+    Pure: no subprocess, no network. An empty output file is nuclei's own
+    "ran clean, found nothing" and yields []. A MISSING file does not: `[]`
+    must mean only "the tool ran and found nothing", and a path that isn't
+    there is "we cannot tell" rather than that claim - routine only calls
+    parse() when run() actually returned this path, so a missing file here
+    means something vanished between the two that nobody would ever notice
+    if it silently rendered as a clean target. Raises base.ParseError, same
+    as any other unreadable output.
     """
     if not os.path.isfile(raw_path):
-        return []
+        raise base.ParseError("nuclei output file not found: %s" % raw_path)
 
     gz = _gizmoduck()
     try:
