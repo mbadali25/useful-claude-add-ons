@@ -121,7 +121,7 @@ still writes only the repo file.
 
 ```json
 {
-  "schema": 3,
+  "schema": 4,
   "tier": 0,
   "roles": ["explorer", "qa-reviewer"],
   "qa": {
@@ -158,8 +158,9 @@ still writes only the repo file.
 }
 ```
 
-`schema: 3` — this repo is born current. It never trips `upgradeNeeded`, which fires on
-any config predating the `pm` and `graph` blocks or the per-role provider table.
+`schema: 4` — this repo is born current. It never trips `upgradeNeeded`, which fires on
+any config predating the `pm` and `graph` blocks, the per-role provider table, or the
+`docs.theme` default moving to null.
 `qa.provider`: `auto` walks `qa.order` and uses the first provider that passes its
 probe, announcing which ran. Name a provider (`codex`, `copilot`, `claude`) to pin it
 and hard-fail instead of falling back.

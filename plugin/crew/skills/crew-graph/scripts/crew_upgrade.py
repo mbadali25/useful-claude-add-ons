@@ -130,6 +130,13 @@ DOCS_BLOCK = {
 # pack is installed, so the window where it matters is narrow.
 _DOCS_THEME_REWRITTEN_FROM = "neutral"
 
+# The schema at which that rewrite stops. A config arriving at or above this
+# has already been migrated once, so a `"neutral"` in it was typed on purpose
+# after the fact and is the user's answer, not the old default. Keeping the
+# rewrite one-shot is what lets the upgrade report honestly promise that
+# setting neutral again will stick.
+_DOCS_THEME_REWRITTEN_UNTIL_SCHEMA = 4
+
 # Whether a Bitbucket pull request has to pass crew's merge gate.
 #
 # `enabled` is false because a gate that arrives switched on would start
@@ -349,7 +356,21 @@ def upgrade_config(cfg):
     # it is a second thing to keep in step -- so there is one guard, and the
     # sabotage entry below mutates `dict_or_empty` itself, which is the line
     # that actually holds.
-    if (crew_state.dict_or_empty(cfg.get("docs")).get("theme")
+    # Schema-gated, and that gate is what makes the report's promise true.
+    #
+    # The report tells a user who did mean neutral to set it again and says it
+    # will be honoured. Without this gate that is a LIE: the rewrite is not
+    # idempotent-by-intent, it matches on the value, so the next
+    # `/crew:upgrade --force` would erase the preference they just restored,
+    # and every force after that. A migration that keeps re-applying itself is
+    # not a migration, it is a setting the user is not allowed to have.
+    #
+    # `schemaFrom < 4` is the marker, and it costs no new state: a config that
+    # has already been through this migration is stamped 4, so a `"neutral"`
+    # seen at schema 4 can only have been typed deliberately AFTERWARDS. That
+    # is exactly the value the promise protects. Caught in review by Codex.
+    if (notes["schemaFrom"] < _DOCS_THEME_REWRITTEN_UNTIL_SCHEMA
+            and crew_state.dict_or_empty(cfg.get("docs")).get("theme")
             == _DOCS_THEME_REWRITTEN_FROM):
         notes["rewrittenKeys"].append("docs.theme")
         out["docs"]["theme"] = None

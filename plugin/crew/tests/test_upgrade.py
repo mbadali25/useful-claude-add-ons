@@ -690,7 +690,11 @@ def test_a_v2_config_migrates_to_v3_with_identical_dispatch():
 def test_the_migration_adds_the_schema_3_keys_empty():
     got, notes = crew_upgrade.upgrade_config(V2_CONFIG)
 
-    assert got["schema"] == 3
+    # SCHEMA_CURRENT, not a literal 3. This assertion is about the stamp being
+    # brought fully up to date, not about the number 3, and hardcoding it made
+    # the test fail on the next schema bump for a reason that had nothing to
+    # do with what it covers -- the schema-3 provider keys, asserted below.
+    assert got["schema"] == crew_state.SCHEMA_CURRENT
     assert got["qa"]["roles"] == {}  # pylint: disable=use-implicit-booleaness-not-comparison
     assert got["dev"]["roles"] == {}  # pylint: disable=use-implicit-booleaness-not-comparison
     assert got["qa"]["fallback"] == crew_state.FALLBACK_DEFAULT
@@ -904,3 +908,71 @@ def test_the_report_explains_a_rewritten_theme_and_stays_quiet_otherwise():
     _, quiet = crew_upgrade.upgrade_config({"docs": {"theme": "solomon"}})
     assert "docs.theme" not in "\n".join(
         crew_upgrade._config_lines(quiet))
+
+
+def test_the_theme_migration_actually_reaches_an_existing_repo(tmp_path):
+    """The defect that made the migration dead on arrival, as an end-to-end
+    run rather than a call to `upgrade_config`.
+
+    `run()` returns "already current" for any config at or above
+    SCHEMA_CURRENT without ever calling `upgrade_config`. Ship the rewrite
+    without bumping the schema and it reaches only repos that were ALREADY
+    behind -- which is nobody it was written for, since every existing config
+    sits at the then-current number. A fresh clone looks correct while every
+    installed machine keeps the old default forever.
+
+    This is the test that fails if someone adds a future migration to
+    `upgrade_config` and forgets the bump, so it asserts the delivery
+    mechanism and not just the transformation."""
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"schema": 3, "tier": 0,
+                          "docs": {"theme": "neutral"}})
+
+    result = crew_upgrade.run(str(root), {})
+
+    assert result["status"] != "already current"
+    assert result["notes"]["rewrittenKeys"] == ["docs.theme"]
+    written = json.loads((root / ".crew" / "config.json").read_text("utf-8"))
+    assert written["docs"]["theme"] is None
+    assert written["schema"] == crew_state.SCHEMA_CURRENT
+
+
+def test_a_deliberately_restored_neutral_survives_a_forced_rerun(tmp_path):
+    """The upgrade report tells a user who did mean neutral to set it again
+    and promises it will be honoured. Without the schema gate that promise is
+    false: the rewrite matches on the VALUE, so the next `--force` erases the
+    preference they just restored, and so does every force after that.
+
+    A migration that keeps re-applying itself is not a migration, it is a
+    setting the user is not allowed to have."""
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"schema": 3, "tier": 0,
+                          "docs": {"theme": "neutral"}})
+    crew_upgrade.run(str(root), {})
+
+    path = root / ".crew" / "config.json"
+    written = json.loads(path.read_text("utf-8"))
+    assert written["docs"]["theme"] is None          # migrated once
+    written["docs"]["theme"] = "neutral"             # the user means it
+    path.write_text(json.dumps(written), "utf-8")
+
+    result = crew_upgrade.run(str(root), {}, force=True)
+
+    after = json.loads(path.read_text("utf-8"))
+    assert after["docs"]["theme"] == "neutral"
+    assert result["notes"]["rewrittenKeys"] == []
+
+
+def test_the_theme_rewrite_is_one_shot_at_the_schema_it_landed_in():
+    """The gate stated directly, without the filesystem. Below the migration
+    schema the old default moves; at or above it, the same string is the
+    user's own answer and is left alone."""
+    for schema in (1, 2, 3):
+        _, notes = crew_upgrade.upgrade_config(
+            {"schema": schema, "docs": {"theme": "neutral"}})
+        assert notes["rewrittenKeys"] == ["docs.theme"], schema
+    for schema in (4, 5):
+        got, notes = crew_upgrade.upgrade_config(
+            {"schema": schema, "docs": {"theme": "neutral"}})
+        assert notes["rewrittenKeys"] == [], schema
+        assert got["docs"]["theme"] == "neutral", schema

@@ -67,6 +67,40 @@ BLOCK_ONLY = (
 
 MUTATIONS = (
     (
+        # The schema stays at 3, which is what shipped to Codex for review and
+        # what Codex caught by RUNNING it: status "already current", value
+        # unchanged. The rewrite below is untouched and still perfect -- it
+        # simply never executes, because run() returns before calling
+        # upgrade_config for any config at or above SCHEMA_CURRENT, and every
+        # existing config is at 3.
+        #
+        # The mutation is pinned here because it is invisible to every unit
+        # test of the transformation itself: `upgrade_config` is pure and goes
+        # on passing. Only an end-to-end run through `run()` sees it, which is
+        # exactly the gap that let it reach review.
+        "the schema is not bumped, so the migration never runs",
+        STATE,
+        "SCHEMA_CURRENT = 4",
+        "SCHEMA_CURRENT = 3",
+        ("tests/test_upgrade.py::"
+         "test_the_theme_migration_actually_reaches_an_existing_repo"),
+    ),
+    (
+        # The one-shot gate goes, so the rewrite matches on the VALUE forever.
+        # A user who takes the upgrade report at its word -- "if you did mean
+        # neutral, set it again and it will now be honoured" -- has it erased
+        # by the next `--force`, and by every force after that. The report
+        # then states something the code contradicts, which is worse than
+        # having made no promise.
+        "the theme rewrite is no longer one-shot",
+        UPGRADE,
+        '    if (notes["schemaFrom"] < _DOCS_THEME_REWRITTEN_UNTIL_SCHEMA\n'
+        '            and crew_state.dict_or_empty(cfg.get("docs")).get("theme")',
+        '    if (crew_state.dict_or_empty(cfg.get("docs")).get("theme")',
+        ("tests/test_upgrade.py::"
+         "test_a_deliberately_restored_neutral_survives_a_forced_rerun"),
+    ),
+    (
         # The pre-0.18.0 default, restored. This is the mutation that matters
         # on this change, because restoring it breaks NOTHING visible: the key
         # still has no consumer, so no document comes out differently and no
@@ -91,7 +125,8 @@ MUTATIONS = (
         # only on other people's machines" shape this repo keeps paying for.
         "the neutral -> null migration is dropped",
         UPGRADE,
-        '    if (crew_state.dict_or_empty(cfg.get("docs")).get("theme")\n'
+        '    if (notes["schemaFrom"] < _DOCS_THEME_REWRITTEN_UNTIL_SCHEMA\n'
+        '            and crew_state.dict_or_empty(cfg.get("docs")).get("theme")\n'
         '            == _DOCS_THEME_REWRITTEN_FROM):\n'
         '        notes["rewrittenKeys"].append("docs.theme")\n'
         '        out["docs"]["theme"] = None',
@@ -120,9 +155,9 @@ MUTATIONS = (
         # comparison loosened to a truthiness check.
         "the migration rewrites any theme, not only the old default",
         UPGRADE,
-        '    if (crew_state.dict_or_empty(cfg.get("docs")).get("theme")\n'
+        '            and crew_state.dict_or_empty(cfg.get("docs")).get("theme")\n'
         '            == _DOCS_THEME_REWRITTEN_FROM):',
-        '    if crew_state.dict_or_empty(cfg.get("docs")).get("theme"):',
+        '            and crew_state.dict_or_empty(cfg.get("docs")).get("theme")):',
         ("tests/test_upgrade.py::"
          "test_upgrade_rewrites_only_the_exact_old_default"),
     ),
@@ -140,8 +175,8 @@ MUTATIONS = (
         # is the line the suite mutates.
         "the wrong-typed docs block guard is removed",
         UPGRADE,
-        '    if (crew_state.dict_or_empty(cfg.get("docs")).get("theme")',
-        '    if (cfg.get("docs", {}).get("theme")',
+        '            and crew_state.dict_or_empty(cfg.get("docs")).get("theme")',
+        '            and cfg.get("docs", {}).get("theme")',
         ("tests/test_upgrade.py::"
          "test_a_wrong_typed_docs_block_is_not_rewritten_and_is_reported"),
     ),
