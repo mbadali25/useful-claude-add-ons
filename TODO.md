@@ -1085,7 +1085,7 @@ installed, while the config UI reports the default as being in effect.
 
 **The wrong brand is also a partly broken one, which misdirects the diagnosis.**
 Confirmed on this machine and reproduced independently by team-lead: solomon's
-pack resolves `masters_dir` to `C:epos\OnboardingSOPs\sops_new`, and the
+pack resolves `masters_dir` to `C:/repos/OnboardingSOPs/sops_new`, and the
 script prints it as `(NOT FOUND on this machine)`. So a user who never chose
 solomon gets a brand whose template directory does not exist, and the first
 failure they hit is a MISSING TEMPLATE rather than a wrong footer. That points
