@@ -124,6 +124,21 @@ MUTATIONS = (
         "test_the_two_config_keys_are_bound_to_different_genres",
     ),
     (
+        # The sharper half of the same defect, and the one the first mutation
+        # could not reach. The key STAYS in the sentence -- only the genre
+        # widens -- so the test's "is reportTheme bound to anything" assertion
+        # still passes and the binding assertion is the only thing that can
+        # catch it. The original assertion here was `"report" in line`, which
+        # `docs.reportTheme` satisfies by its own name; it went red on this
+        # entry's sibling above for the WRONG assert and so read as covered.
+        "reportTheme widens to every document, not just the findings report",
+        HOUSE_STYLE,
+        "`--brand <docs.theme>`; for a findings report prefer `docs.reportTheme` when",
+        "`--brand <docs.theme>`; for every document prefer `docs.reportTheme` when",
+        "tests/test_docs_routing.py::"
+        "test_the_two_config_keys_are_bound_to_different_genres",
+    ),
+    (
         # doc-builder takes DOCX and PDF over generally -- the "simplification"
         # that looks tidier and breaks crew's document path on Linux and macOS,
         # because doc-builder's converter runs through Microsoft Word via COM

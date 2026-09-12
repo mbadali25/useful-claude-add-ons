@@ -147,7 +147,19 @@ def test_the_two_config_keys_are_bound_to_different_genres():
     report_rule = [line for line in generating.split("\n")
                    if "docs.reportTheme" in line]
     assert report_rule, "no line binds docs.reportTheme to anything"
-    assert any("report" in line.lower() for line in report_rule), report_rule
+
+    # `"findings report"`, NOT `"report"`. Testing for "report" here was
+    # tautological and shipped that way: `"docs.reportTheme".lower()` contains
+    # "report", so the second assertion could not fail once the first passed,
+    # and the genre binding -- the whole point of the test -- was unchecked.
+    # The sabotage entry did not reveal it either, because that mutation
+    # deletes the key from the sentence and so trips the FIRST assertion.
+    #
+    # A passing mutation proves the TEST failed, never which assertion did.
+    # This phrasing fails on "for every document prefer `docs.reportTheme`",
+    # which is exactly the rewrite that turns the second key into a synonym
+    # for the first.
+    assert all("findings report" in line for line in report_rule), report_rule
 
     # And null is defined, because that is what the default now is.
     assert "null theme passes no `--brand`" in generating
