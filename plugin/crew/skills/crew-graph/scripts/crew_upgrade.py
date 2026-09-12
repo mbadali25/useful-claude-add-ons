@@ -79,14 +79,25 @@ GRAPH_BLOCK = {
 # TODO.md, "Ticket B". Stated plainly here because a comment describing
 # unbuilt wiring is why nobody looks for the bug.
 #
-# The old comment also justified the `neutral` default with "the default
-# resolves to exactly what doc-builder already falls back to". That is FALSE,
-# and measurably so. doc-builder falls back to neutral only when NO pack is
-# discovered; with a pack installed it resolves THAT pack. On a checkout
-# carrying solomon-doc-builder, default resolution returns `solomon`, not
-# `neutral` -- so `neutral` is not what it already falls back to, and passing
-# `neutral` through would OVERRIDE an installed pack rather than agree with
-# it. Which way the default should go is the open decision in the ticket.
+# `theme` defaults to None, meaning "pass no `--brand` and let doc-builder
+# resolve". It shipped as `"neutral"` until 0.17.1, justified by a comment
+# claiming "the default resolves to exactly what doc-builder already falls
+# back to". That was FALSE, and measurably so: doc-builder falls back to
+# neutral only when NO pack is discovered, and with a pack installed it
+# resolves THAT pack. On a checkout carrying solomon-doc-builder, default
+# resolution returns `solomon`.
+#
+# So `"neutral"` was never the no-op its author intended. Once the wiring
+# lands, passing it would be an explicit instruction that OVERRIDES an
+# installed client pack -- an upgrade would silently de-brand a Solomon
+# user's documents, with nothing in their config file changed to explain it.
+# `None` is what actually implements "the default changes nothing": it only
+# ever NARROWS from doc-builder's own behaviour, so pinning a brand becomes
+# something the user opts into deliberately.
+#
+# Both keys' `None` now mean ONE thing -- "I have no answer, ask the next
+# authority". For `reportTheme` that authority is `theme`; for `theme` it is
+# doc-builder's own five-step resolution. One rule, not two.
 #
 # `reportTheme` is null meaning "follow `theme`" -- NOT "no theme". A report
 # is the one artefact people routinely want in a different brand from the
@@ -94,9 +105,30 @@ GRAPH_BLOCK = {
 # that as a second full default would make the common case -- one brand for
 # everything -- take two settings to state and two to keep in step.
 DOCS_BLOCK = {
-    "theme": "neutral",
+    "theme": None,
     "reportTheme": None,
 }
+
+# The one value `upgrade_config` rewrites in place rather than preserving.
+#
+# Read the exception before copying it. The standing rule everywhere else in
+# this module is that a user's value is carried forward untouched or reported
+# as unmigrated -- `dropped`, `unmigrated` and the verbatim wrong-typed block
+# all exist to enforce it. This is the single documented exception, and it is
+# safe for a reason that does NOT generalise: `docs.theme` has never had a
+# consumer. No crew code has ever read it, so no user has ever been able to
+# set it and observe an effect, so no existing value can encode a considered
+# preference. It is either inherited from a template nobody edited or typed
+# with no observable result. There is no third case to preserve.
+#
+# That is why this is not a violation of the rule. Apply the same reasoning
+# before ever adding a second entry here, and if the key in question ever had
+# a working consumer, the answer is no.
+#
+# Residual cost, accepted deliberately: someone who typed `"neutral"` meaning
+# it has to retype it once the key works. They get neutral anyway unless a
+# pack is installed, so the window where it matters is narrow.
+_DOCS_THEME_REWRITTEN_FROM = "neutral"
 
 # Whether a Bitbucket pull request has to pass crew's merge gate.
 #
@@ -227,7 +259,13 @@ def upgrade_config(cfg):
              # Keys this upgrade removed outright. Distinct from
              # "unmigrated", which blocks the schema stamp: a dropped key is
              # a completed migration, not a failed one.
-             "droppedKeys": []}
+             "droppedKeys": [],
+             # Keys whose VALUE this upgrade changed in place. Same contract
+             # as droppedKeys -- a completed migration, announced -- but a
+             # strictly heavier claim, because the key survives wearing a
+             # value the user did not write. Everything in here must be
+             # justified at its definition; see _DOCS_THEME_REWRITTEN_FROM.
+             "rewrittenKeys": []}
 
     for key, block in CONFIG_BLOCKS:
         supplied = cfg.get(key, _ABSENT)
@@ -285,6 +323,36 @@ def upgrade_config(cfg):
                       dict):
             notes["droppedKeys"].append("graph.obsidian")
         out["graph"].pop("obsidian", None)
+
+    # `docs.theme` shipped as `"neutral"` through 0.17.0 on a false premise
+    # (see DOCS_BLOCK). Move it to None, which is what "the default changes
+    # nothing" actually means now that the key is about to acquire a consumer.
+    # Leaving it would hand every upgraded repo an explicit `--brand neutral`
+    # that overrides an installed pack -- a behaviour change nobody chose,
+    # arriving in a config file that did not visibly change.
+    #
+    # Only the exact old default is touched. A theme the user actually named
+    # (`"solomon"`, `"acme"`) is a value this migration has no business
+    # second-guessing, and `None` is already correct.
+    #
+    # `dict_or_empty` is the type guard, and it is the only one needed. A
+    # wrong-typed `docs` block (`docs: "oops"`) is kept VERBATIM and reported
+    # in `unmigrated`; `dict_or_empty` turns it into `{}` here, so the
+    # comparison is False and `out["docs"]` -- still the user's string -- is
+    # never indexed into. Indexing it would raise partway through, after
+    # run() had already written the file.
+    #
+    # An `isinstance(out.get("docs"), dict)` wrapper stood here briefly and
+    # was removed for cause: it could not be driven red. Sabotaging it left
+    # the suite green, because `dict_or_empty` had already made it
+    # unreachable. A guard that cannot be shown to fail is not protection,
+    # it is a second thing to keep in step -- so there is one guard, and the
+    # sabotage entry below mutates `dict_or_empty` itself, which is the line
+    # that actually holds.
+    if (crew_state.dict_or_empty(cfg.get("docs")).get("theme")
+            == _DOCS_THEME_REWRITTEN_FROM):
+        notes["rewrittenKeys"].append("docs.theme")
+        out["docs"]["theme"] = None
 
     supplied_roles = cfg.get("roles", _ABSENT)
     if supplied_roles is not _ABSENT and not (
@@ -435,6 +503,18 @@ def _config_lines(notes):
             "Obsidian export was withdrawn in 0.16.13 because exporting one "
             "note per node made vaults unusably slow. Nothing to re-enable, "
             "and no setting was silently switched off."
+        )
+    if "docs.theme" in notes["rewrittenKeys"]:
+        lines.append(
+            "- `docs.theme` was `\"neutral\"` and is now null, which means "
+            "\"pass no brand and let doc-builder resolve\". This is the one "
+            "value this upgrade rewrites rather than preserving, and it is "
+            "safe only because the key has never had a consumer -- no value "
+            "in it can be a preference you formed by seeing it work. Had it "
+            "been left, the wiring would send an explicit `--brand neutral` "
+            "that OVERRIDES an installed brand pack, de-branding documents "
+            "that are correctly branded today. If you did mean neutral, set "
+            "it again and it will now be honoured."
         )
     if notes["providerKeysAdded"]:
         lines.append(

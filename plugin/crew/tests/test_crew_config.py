@@ -170,9 +170,9 @@ def test_default_config_returns_a_fresh_docs_and_bitbucket_block():
     first = crew_config.default_config()
     first["docs"]["theme"] = "mutated"
     first["bitbucket"]["mergeGate"]["enabled"] = "mutated"
-    assert crew_upgrade.DOCS_BLOCK["theme"] == "neutral"
+    assert crew_upgrade.DOCS_BLOCK["theme"] is None
     assert crew_upgrade.BITBUCKET_BLOCK["mergeGate"]["enabled"] is False
-    assert crew_config.default_config()["docs"]["theme"] == "neutral"
+    assert crew_config.default_config()["docs"]["theme"] is None
 
 
 def test_docs_and_bitbucket_are_settable_globally():

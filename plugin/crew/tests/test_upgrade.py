@@ -217,7 +217,7 @@ def test_upgrade_config_adds_the_docs_and_bitbucket_blocks():
     """
     got = _cfg({"tier": 0, "roles": ["explorer", "qa-reviewer"],
                 "qa": {"provider": "codex"}})
-    assert got["docs"] == {"theme": "neutral", "reportTheme": None}
+    assert got["docs"] == {"theme": None, "reportTheme": None}
     assert got["bitbucket"] == {
         "mergeGate": {"enabled": False, "branch": None, "preset": "standard"}}
 
@@ -239,7 +239,7 @@ def test_upgrade_config_does_not_alias_the_shared_docs_block():
     got = _cfg({})
     got["docs"]["theme"] = "mutated"
     got["bitbucket"]["mergeGate"]["preset"] = "mutated"
-    assert crew_upgrade.DOCS_BLOCK["theme"] == "neutral"
+    assert crew_upgrade.DOCS_BLOCK["theme"] is None
     assert crew_upgrade.BITBUCKET_BLOCK["mergeGate"]["preset"] == "standard"
 
 
@@ -836,3 +836,71 @@ def test_a_repo_name_made_of_hex_does_not_confuse_the_rewrite(tmp_path):
     text = (root / ".crew" / "codemap" / "auth.md").read_text(encoding="utf-8")
     head = crew_fixtures.head_sha(root)
     assert "anchor: deadbeef@" + head in text, text.splitlines()[1]
+
+
+def test_upgrade_rewrites_the_old_neutral_theme_default_to_null():
+    """The one value this migration rewrites rather than preserving, and the
+    reason it has to. `docs.theme` shipped as `"neutral"` through 0.17.0. Left
+    alone, every upgraded repo would pass an explicit `--brand neutral` once
+    the wiring lands -- which OVERRIDES an installed brand pack rather than
+    agreeing with it, so a Solomon user's correctly-branded documents would
+    silently come out neutral with nothing in their config file changed to
+    explain it. Rewriting is safe here and nowhere else, because the key has
+    never had a consumer: no value in it can be a preference someone formed by
+    watching it work."""
+    cfg = {"docs": {"theme": "neutral"}}
+    got, notes = crew_upgrade.upgrade_config(cfg)
+
+    assert got["docs"]["theme"] is None
+    assert notes["rewrittenKeys"] == ["docs.theme"]
+    # Rewriting is a COMPLETED migration, like droppedKeys -- it must not
+    # block the schema stamp the way `unmigrated` does.
+    assert notes["unmigrated"] == []
+    assert notes["schemaStamped"] is True
+    # Pure: the caller's dict is not edited under them.
+    assert cfg["docs"]["theme"] == "neutral"
+
+
+def test_upgrade_rewrites_only_the_exact_old_default():
+    """A theme the user actually named is not this migration's business, and
+    `None` is already the answer. Only the literal old default moves -- a
+    rewrite that also caught `"solomon"` would be the silent de-branding this
+    change exists to prevent, performed by the fix itself."""
+    for supplied in ("solomon", "acme", "Neutral", "neutral-ish", ""):
+        got, notes = crew_upgrade.upgrade_config({"docs": {"theme": supplied}})
+        assert got["docs"]["theme"] == supplied, supplied
+        assert notes["rewrittenKeys"] == [], supplied
+
+    got, notes = crew_upgrade.upgrade_config({"docs": {"theme": None}})
+    assert got["docs"]["theme"] is None
+    assert notes["rewrittenKeys"] == []
+
+
+def test_a_wrong_typed_docs_block_is_not_rewritten_and_is_reported():
+    """The crash this guard exists for. A `docs` block that is a string is
+    kept VERBATIM and reported in `unmigrated`; indexing into it to rewrite a
+    theme would raise partway through, after `run()` has already written the
+    file. Same shape as the `graph.obsidian` drop above."""
+    got, notes = crew_upgrade.upgrade_config({"docs": "oops"})
+
+    assert got["docs"] == "oops"
+    assert "docs" in notes["unmigrated"]
+    assert notes["rewrittenKeys"] == []
+    assert notes["schemaStamped"] is False
+
+
+def test_the_report_explains_a_rewritten_theme_and_stays_quiet_otherwise():
+    """A value changed under the user has to be announced, or the config
+    differs from what they wrote with nothing saying so. The converse matters
+    as much: a repo that never carried the old default must not be told its
+    theme was rewritten."""
+    _, notes = crew_upgrade.upgrade_config({"docs": {"theme": "neutral"}})
+    said = "\n".join(crew_upgrade._config_lines(notes))
+    assert "docs.theme" in said
+    assert "neutral" in said
+    # It must say WHY it was safe, not merely that it happened.
+    assert "never had a consumer" in said
+
+    _, quiet = crew_upgrade.upgrade_config({"docs": {"theme": "solomon"}})
+    assert "docs.theme" not in "\n".join(
+        crew_upgrade._config_lines(quiet))

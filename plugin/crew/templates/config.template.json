@@ -121,7 +121,7 @@
     "commitHook": false
   },
   "docs": {
-    "theme": "neutral",
+    "theme": null,
     "reportTheme": null
   },
   "bitbucket": {

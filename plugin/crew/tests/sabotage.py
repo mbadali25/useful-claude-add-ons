@@ -54,6 +54,8 @@ COMMON = os.path.join(CREW, "hooks", "scripts", "crew_common.py")
 LADDER_DOC = os.path.join(CREW, "skills", "crew-scaling", "SKILL.md")
 PLATFORM = os.path.join(CREW, "hooks", "scripts", "crew_platform.py")
 CONFIG = os.path.join(CREW, "hooks", "scripts", "crew_config.py")
+UPGRADE = os.path.join(
+    CREW, "skills", "crew-graph", "scripts", "crew_upgrade.py")
 PM_BRIEF = os.path.join(CREW, "hooks", "scripts", "pm_brief.py")
 
 GUARD = '    if out["family"] is not None and out["family"] in authors:'
@@ -64,6 +66,85 @@ BLOCK_ONLY = (
 )
 
 MUTATIONS = (
+    (
+        # The 0.17.0 default, restored. This is the mutation that matters most
+        # on this change, because restoring it breaks NOTHING visible: the key
+        # still has no consumer, so no document comes out differently and no
+        # other test notices. It only becomes a de-branding bug later, when the
+        # wiring lands and every upgraded repo starts passing an explicit
+        # `--brand neutral` over an installed pack. A defect whose damage is
+        # deferred to a future commit is exactly the kind a suite forgets to
+        # hold, so it is pinned here rather than left to the templates.
+        "docs.theme default goes back to the string neutral",
+        UPGRADE,
+        '    "theme": None,\n    "reportTheme": None,',
+        '    "theme": "neutral",\n    "reportTheme": None,',
+        ("tests/test_upgrade.py::"
+         "test_upgrade_config_adds_the_docs_and_bitbucket_blocks"),
+    ),
+    (
+        # The migration silently does nothing. The template change alone is
+        # NOT the fix: `_merged` lets a supplied value win, so an existing
+        # config carrying "neutral" keeps it forever and only NEW repos get
+        # null. Deleting the rewrite leaves every already-installed machine in
+        # the broken state while a fresh clone looks correct -- the "exists
+        # only on other people's machines" shape this repo keeps paying for.
+        "the neutral -> null migration is dropped",
+        UPGRADE,
+        '    if (crew_state.dict_or_empty(cfg.get("docs")).get("theme")\n'
+        '            == _DOCS_THEME_REWRITTEN_FROM):\n'
+        '        notes["rewrittenKeys"].append("docs.theme")\n'
+        '        out["docs"]["theme"] = None',
+        '    pass',
+        ("tests/test_upgrade.py::"
+         "test_upgrade_rewrites_the_old_neutral_theme_default_to_null"),
+    ),
+    (
+        # The rewrite stops being announced. The value still changes under the
+        # user; only the sentence explaining it disappears. That is the worse
+        # half of the two: a config that differs from what someone wrote, with
+        # the upgrade report silent about which value moved and why it was
+        # allowed to.
+        "a rewritten theme is no longer reported",
+        UPGRADE,
+        '    if "docs.theme" in notes["rewrittenKeys"]:',
+        '    if False:',
+        ("tests/test_upgrade.py::"
+         "test_the_report_explains_a_rewritten_theme_and_stays_quiet_otherwise"),
+    ),
+    (
+        # The rewrite over-reaches and catches every theme, not just the old
+        # default. This is the fix performing the exact bug it exists to
+        # prevent: a user who deliberately set `solomon` gets silently
+        # de-branded BY THE MIGRATION. Cheap to write by accident -- it is one
+        # comparison loosened to a truthiness check.
+        "the migration rewrites any theme, not only the old default",
+        UPGRADE,
+        '    if (crew_state.dict_or_empty(cfg.get("docs")).get("theme")\n'
+        '            == _DOCS_THEME_REWRITTEN_FROM):',
+        '    if crew_state.dict_or_empty(cfg.get("docs")).get("theme"):',
+        ("tests/test_upgrade.py::"
+         "test_upgrade_rewrites_only_the_exact_old_default"),
+    ),
+    (
+        # The type guard goes. `docs: "oops"` is kept verbatim and reported,
+        # so `cfg["docs"]` is a STRING here -- `.get` on it raises
+        # AttributeError partway through `upgrade_config`, after run() has
+        # already written the backup and begun the migration.
+        #
+        # This mutation replaced an earlier one that wrapped the same block
+        # in `isinstance(out.get("docs"), dict)`. That wrapper could not be
+        # driven red: `dict_or_empty` had already made it unreachable, so
+        # sabotaging it left the suite GREEN and the vacuous result is what
+        # exposed it as dead code. The guard that holds is this one, so this
+        # is the line the suite mutates.
+        "the wrong-typed docs block guard is removed",
+        UPGRADE,
+        '    if (crew_state.dict_or_empty(cfg.get("docs")).get("theme")',
+        '    if (cfg.get("docs", {}).get("theme")',
+        ("tests/test_upgrade.py::"
+         "test_a_wrong_typed_docs_block_is_not_rewritten_and_is_reported"),
+    ),
     (
         # The pre-0.17.0 form, restored. It is wrong in BOTH directions once a
         # third tier exists: act -> autonomous reads as no widening (the widest
