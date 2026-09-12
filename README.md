@@ -232,6 +232,50 @@ Generated from [`plugin/UPDATE.md`](plugin/UPDATE.md) by `scripts/sync-updates.p
 
 <!-- BEGIN plugin/UPDATE.md -->
 
+### crew 0.17.0
+
+A third PM authority tier, and a setting for how many tickets a session's work
+becomes.
+
+| Added | What it does |
+|---|---|
+| `pm.authority: "autonomous"` | Everything `act` does, plus one thing: where the PM would stop and put a choice to you, it takes the option it would have recommended and says which it took. It still composes the options first - a decision made without them worked out is a guess, not autonomy |
+| `pm.ticketGranularity` | `session`, `system` (default) or `change`. `system` files one ticket per session and opens a second only when the work reaches another system - in a marketplace repo, a registered `skills/<name>/` or `plugin/<name>/` entry |
+| `/crew:pm authority autonomous` | Reads and sets the new tier, and names the direction of the change rather than only the new value |
+
+The three tiers are **ordered**, and every gate now reads the setting as a floor
+rather than as a label - anything `act` may do, `autonomous` may do. That
+ordering is what the release is really about, because the two-tier code tested
+`== "act"` in two places and both were wrong once a third tier existed:
+
+- The global-config writer marked a widening as `after == "act" and before !=
+  "act"`. With three tiers that is wrong in **both** directions at once.
+  `act -> autonomous` came out as no widening, so the widest grant crew offers
+  would have shipped unannounced; and `autonomous -> act` came out as a
+  widening when it is a *narrowing*. The second is the more corrosive, because
+  a warning that fires on the safe direction is one people learn to click past,
+  which costs the first case its only defence.
+- The capability gate named a rung instead of a floor, which would have made
+  `autonomous` unable to act at all - the wider tier, less capable than the one
+  below it.
+
+Four things need an explicit yes at **every** tier, `autonomous` included:
+offboarding a role, deleting a codemap or diagram, rewriting `.crew/metrics.md`,
+and destroying git history or tracked work. They are enumerated in
+`crew_state.AUTONOMOUS_STOPS` rather than written out in prose, because a stop
+in a skill file is advice the model weighs against the task in front of it while
+a stop in code is a list a reader can diff and a test can assert on.
+
+An unrecognised authority still resolves to `report-only` - the least permissive
+tier, never the most. That direction matters more with three tiers than it did
+with two, since `autonomous` is now one typo away from `act`.
+
+A repo with no marketplace declares no system boundary, so `system` granularity
+behaves as `session` there - one ticket - and says so rather than guessing a
+boundary from the directory tree. A tree-shaped guess would file an ordinary
+change touching `src/` and `tests/` as two tickets, which is one piece of work
+torn in half.
+
 ### localgpu 0.1.7
 
 A new plugin: the GPU in this machine, as a sidecar for one repository. Two

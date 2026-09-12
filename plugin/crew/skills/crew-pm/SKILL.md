@@ -111,8 +111,9 @@ The shape that matters:
 | `incident.present` / `.active` / `.expired` | An emergency lane. Three separate questions: a state file exists, it is unexpired and permitted to stand gates down, it is past its expiry. Never collapse them — `present and not active` is the case that still owes a debt list. |
 | `incident.skips` / `.minutesLeft` | How many distinct gates went unrun, and how long is left before the gates come back on their own. |
 | `triggers` | The hook's own list of reasons to speak up, already prioritized. Report these first. |
-| `pm.authority` | `report-only` or `act` — already normalised, so an unknown value never reaches you. Decides whether this run ends in work or in a recommendation. Read it before anything else. |
+| `pm.authority` | `report-only`, `act` or `autonomous` — already normalised, so an unknown value never reaches you. Decides whether this run ends in work, in a recommendation, or in work with its own open questions already settled. Read it before anything else. |
 | `pm.maxDispatches` | Roles the PM may dispatch in one pass under `act`. Default 3. |
+| `pm.ticketGranularity` | How many tickets this session's work becomes: `session`, `system` (default) or `change`. Already normalised. |
 
 **An active incident is reported before anything else, always.** `incidentActive`
 and `incidentUnclosed` sort above `upgradeNeeded` for a reason: every other
@@ -123,12 +124,19 @@ softer than "the verify and promote gates are standing down right now".
 ## Authority: a switch, not a stance
 
 `pm.authority` in `.crew/config.json` decides what the PM does about what it
-finds. Two values, normalised before any consumer sees them:
+finds. Three values, normalised before any consumer sees them, and **ordered** —
+each tier is the one before it plus one thing:
 
 | Value | Behaviour |
 |---|---|
 | `report-only` | **The shipped default.** Report and recommend, name the role each finding needs, and stop. |
-| `act` | Dispatch the roles and do the work, then report. |
+| `act` | Dispatch the roles and do the work, then report. Still asks the user to choose when a decision is open. |
+| `autonomous` | Everything `act` does, and it settles its own open decisions: where it would emit a `**Decision needed:**` block it takes the option it would have recommended and says which it took. |
+
+The order is load-bearing in code, not just on the page: `crew_state.AUTHORITIES`
+is a tuple whose index is the rank, and every gate asks "at least this rung",
+never "exactly this rung". A gate that names a rung is how `autonomous` would
+end up less capable than `act`.
 
 `report-only` ships as the default deliberately. A plugin update must not turn
 someone's PM autonomous underneath them — consent to install is not consent to
@@ -138,8 +146,10 @@ delegate. Turning it on is one line:
 { "pm": { "authority": "act" } }
 ```
 
-An unrecognised value resolves to `report-only`. That direction is not
-arbitrary: for a field that grants permissions, a typo has to fail closed, and
+An unrecognised value resolves to `report-only` — the LEAST permissive tier,
+never the most. That direction is not arbitrary: for a field that grants
+permissions, a typo has to fail closed, and it matters more with three tiers
+than it did with two, because `autonomous` is now one slip away from `act`.
 `"Act"` / `"ACT"` / `" act "` are accepted as `act` because those are the same
 intent typed carelessly rather than a different one.
 
@@ -195,6 +205,94 @@ The shape, wherever a question reaches the user:
 Options must be genuinely different courses of action. Three phrasings of the
 same plan is a decision presented as a choice, and it wastes the one thing
 asking was supposed to buy.
+
+### Under `autonomous`, you pick instead of asking
+
+`autonomous` changes exactly one thing about the section above: you still do
+the research, you still compose the 2-to-4 options, you still decide which is
+the recommendation — and then you **take it** rather than putting it to the
+user. Report it as a decision made, in one line: the option you took, the one
+real alternative, and the reason you preferred yours.
+
+The composing is not optional busywork you may now skip. A decision taken
+without the options being worked out is not autonomy, it is a guess, and it is
+worse than the question it replaced because nobody can see what was not
+considered.
+
+**The stops are not relaxed.** They are enumerated in
+`crew_state.AUTONOMOUS_STOPS`, in code, precisely so they cannot be paraphrased
+away at the one tier where you have been told to stop asking:
+
+| Stop | Needs an explicit yes |
+|---|---|
+| `offboard-role` | Offboarding a role, or removing one from the roster |
+| `delete-map` | Deleting a codemap file or a diagram |
+| `rewrite-metrics` | Rewriting `.crew/metrics.md` |
+| `git-destruction` | Force-push, branch delete, history rewrite, or `rm` of a tracked file |
+
+The first three are bound 2 restated. They are restated rather than referenced
+because a wider authority is exactly where a reader assumes the old bounds
+lapsed. The fourth is new at this tier: a PM that dispatches without asking is
+a PM that can reach git, and everything in that row destroys work that exists
+nowhere else the moment it runs.
+
+Read the tuple rather than this table when you need the authoritative list. If
+they ever disagree, the tuple is right and this table is stale.
+
+Explicit user direction still outranks all of it, in both directions: told to
+stop and ask, you ask; told to go ahead on something in the table, that is the
+explicit yes the table is asking for.
+
+## Ticket granularity: one session, one ticket
+
+`pm.ticketGranularity` decides how many tickets a session's work becomes.
+Default `system`.
+
+| Value | One ticket per |
+|---|---|
+| `session` | The session. Never split, whatever the work touches. |
+| `system` | **The default.** The session — until the work reaches into another system, which opens a second ticket. |
+| `change` | Each logical change. The pre-0.17.0 behaviour, kept for anyone who wants it. |
+
+The default exists because a ticket per change produces a queue nobody reads
+and a metrics file whose rate is divided by a number that grew for filing
+reasons rather than for work reasons. One session's work is normally one
+coherent thing; the exception worth filing separately is when it stops being
+one thing.
+
+**What counts as "another system" is a fact about the repo, not a judgement.**
+In a repo with a `.claude-plugin/marketplace.json`, a system is one **registered
+marketplace entry** — a `skills/<name>/` or `plugin/<name>/` directory that the
+marketplace file actually lists. Two files under `plugin/crew/` are one system
+however far apart they sit; one file under `plugin/crew/` and one under
+`skills/bitbucket/` are two, and that second ticket is the one worth opening,
+because the two ship, version and install separately.
+
+An unregistered directory under `skills/` or `plugin/` is **not** a system. It
+is not installable, so it cannot be the boundary that matters here, and
+treating it as one would invent a ticket from a directory nobody declared.
+
+### Repos with no marketplace: do not split, and say so
+
+A repo without a marketplace file has **no declared system boundary**, so crew
+cannot tell one system from another in it. The rule there is: **behave as
+`session` — one ticket — and say once, in the report, that you did so because
+the repo declares no system boundary.**
+
+The tempting alternative is to guess a boundary from the directory tree — split
+on the top-level directory, or on the nearest package manifest. Do not. In a
+conventional layout a single change routinely touches `src/` and `tests/`, and
+a tree-shaped rule files that as two tickets, which is the normal shape of one
+piece of work torn in half. A guessed boundary produces confident-looking
+tickets from a structure nobody chose as a boundary, and that is this repo's
+named recurring bug: an unknown collapsing into a value that looks like an
+answer.
+
+Falling back to "one ticket" is not free either — it under-splits a genuine
+multi-system change in a repo that happens not to be a marketplace. That is why
+it is **announced** rather than silent. A user who wants splits in such a repo
+sets `pm.ticketGranularity` to `change` and gets them per change, which is at
+least a boundary they chose.
 
 ### Who renders the question
 

@@ -808,7 +808,7 @@ TRIGGERS = (
 # tiers before it had, and inserting one in the middle re-ranks the ones after
 # it. Append only, and never reorder.
 #
-# Before 0.16.32 there were two tiers and every consumer tested `== "act"`.
+# Before 0.17.0 there were two tiers and every consumer tested `== "act"`.
 # That equality is exactly wrong once a third tier exists, and it fails in BOTH
 # directions: `plan_global_write` computed a widening as
 # `after == "act" and before != "act"`, which reports act -> autonomous as no
@@ -842,7 +842,7 @@ AUTONOMOUS_STOPS = (
 
 # How many tickets one session's work becomes. The default is `system`: one
 # session is one ticket, and a second ticket is opened only when the work
-# reaches into another system. Splitting per change was the pre-0.16.32
+# reaches into another system. Splitting per change was the pre-0.17.0
 # behaviour and is kept as `change` for anyone who wants it back.
 TICKET_GRANULARITIES = ("session", "system", "change")
 GRANULARITY_DEFAULT = "system"

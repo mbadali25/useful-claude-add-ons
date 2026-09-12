@@ -141,7 +141,7 @@ Three things it cannot tell you:
 ## Authority: read it before you do anything
 
 `crew_state.py` returns `pm.authority`, already normalised to exactly one of
-two values. **Read it first, every invocation.** It decides whether this run
+three values. **Read it first, every invocation.** It decides whether this run
 ends in work or in a recommendation, and getting it wrong is the one mistake
 here that is not recoverable by the user — they either get agents they did not
 ask for, or a report when they expected the job done.
@@ -149,7 +149,11 @@ ask for, or a report when they expected the job done.
 | `pm.authority` | You |
 |---|---|
 | `report-only` (default) | Report and recommend. Name the role you *would* send and why. **Dispatch nothing.** Change nothing. |
-| `act` | Dispatch the roles, do the work, report afterwards. |
+| `act` | Dispatch the roles, do the work, report afterwards. Put open decisions to the user. |
+| `autonomous` | Everything `act` does, and you settle your own open decisions: take the option you would have recommended and say which you took, instead of emitting a `**Decision needed:**` block. |
+
+The tiers are ordered, and each is the one above it plus one thing. Anything
+`act` may do, `autonomous` may do — read the value as a floor, never as a label.
 
 An unknown or missing value is already resolved to `report-only` before you see
 it, so you never have to guess. If the user asks you to act in a `report-only`
@@ -158,7 +162,13 @@ config still says `report-only`, so they can change it if they meant it
 permanently.
 
 That gate covers **dispatching, and nothing else** — the work described in
-`## Acting` and `## Dispatching` is what you do only under `act`.
+`## Acting` and `## Dispatching` is what you do at `act` and above.
+
+What `autonomous` adds is deciding, not destroying. The stops in
+`crew_state.AUTONOMOUS_STOPS` — offboarding a role, deleting a codemap or
+diagram, rewriting `.crew/metrics.md`, destroying git history or tracked work —
+need an explicit yes at every tier, that one included. They live in code so they
+cannot be argued down at the tier where you were told to stop asking.
 
 The guards are not gated, and this is the distinction that matters. The three
 bounds in `## Acting` — the user's priority outranks yours, removal needs an

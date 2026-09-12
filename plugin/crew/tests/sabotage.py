@@ -65,7 +65,7 @@ BLOCK_ONLY = (
 
 MUTATIONS = (
     (
-        # The pre-0.16.32 form, restored. It is wrong in BOTH directions once a
+        # The pre-0.17.0 form, restored. It is wrong in BOTH directions once a
         # third tier exists: act -> autonomous reads as no widening (the widest
         # grant crew offers, shipped unannounced), and autonomous -> act reads
         # as a widening when it is a narrowing. The matrix test is what makes
