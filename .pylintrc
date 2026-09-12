@@ -116,6 +116,29 @@ disable=
     # Optional deps are imported at the call site so a missing package
     # degrades one subcommand instead of failing the whole script at import.
     import-outside-toplevel,
+    # The direct consequence of the line above, and the reason it is here
+    # rather than as a per-file pragma: R0401 is reported at MODULE level and
+    # attributed to an arbitrary module, which for most of this repo's
+    # history was `vault-automation/vault-capture.py` -- a file that appears
+    # in neither cycle. There is no file to put a pragma in.
+    #
+    # The cycles pylint names are `crew_config -> crew_state` and
+    # `crew_config -> crew_upgrade -> crew_state`. Three of the four edges
+    # are module-level imports; the fourth, `crew_state.py:2898`
+    # `import crew_config`, is deliberately INSIDE a function, already
+    # carries its own `disable=import-outside-toplevel`, and sits in a
+    # try/except whose comment says it must never raise out of a SessionStart
+    # hook. Both cycles close only through that one deferred edge, so there
+    # is no module-level cycle at all: with the two script directories on
+    # sys.path, each of `crew_config`, `crew_state` and `crew_upgrade`
+    # imports cleanly as the FIRST of the three, in a cold interpreter each
+    # time. Measured that way rather than reasoned about, 2026-09-12.
+    #
+    # What this costs, stated plainly: a genuine module-level cycle
+    # introduced later will not be reported. If you are adding a top-level
+    # `import crew_config` to `crew_state.py`, this line is why nothing
+    # complains, and you should not add it.
+    cyclic-import,
     # localgpu's mcp/ and cli/ are flat sibling modules, not a package: both
     # the MCP server and the CLI put their own directory on sys.path and then
     # import `config`, `store`, `indexer` by bare name. The sys.path line has
