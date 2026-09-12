@@ -143,7 +143,7 @@
       "name": "power-automate-api",
       "source": "./skills/power-automate-api",
       "description": "Power Automate cloud flows through the API instead of the maker portal - definitions, expressions, triggers, connection references, run history, and the Flow/BAP auth errors.",
-      "version": "1.0.1"
+      "version": "1.0.2"
     },
     {
       "name": "repo-docs",
