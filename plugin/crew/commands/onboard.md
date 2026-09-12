@@ -128,8 +128,11 @@ restate the number here; this line said `2` long after the code had left it.
 consequences before running it, not after:
 
 - `.crew/codemap/UPGRADE.md` is overwritten unconditionally, including its
-  header claiming `from schema: 1 -> 2` — false on a repo that was already
-  current. If a previous `/crew:upgrade` left contradictions there that
+  `schema <from> -> <current>` header — which reads as a migration on a repo
+  that was already current, since `--force` runs the whole thing anyway.
+  (This line used to quote the header as the literal `from schema: 1 -> 2`.
+  It is interpolated from `notes["schemaFrom"]` and `crew_state.SCHEMA_CURRENT`,
+  so the numbers move; do not restate them.) If a previous `/crew:upgrade` left contradictions there that
   nobody has verified yet, this run erases that list. Read the existing
   `UPGRADE.md` before running `--refresh` if one is present, and fold its
   unresolved contradictions into what you report afterward.

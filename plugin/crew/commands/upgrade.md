@@ -161,6 +161,24 @@ surface it, do not re-derive it by hand:
   that quietly re-routed someone's development work to a different model would
   be indefensible, and the only way a user can be sure it did not is to be
   told.
+- **Schema 3 → 4** — when the report says `docs.theme` was rewritten, read the
+  whole line out, including WHY it was allowed. This is the one value an
+  upgrade changes rather than preserving, so a user who notices their config
+  differs from what they wrote is owed the reason unprompted: the key has
+  never had a consumer, so no value in it can be a preference anyone formed by
+  watching it work. Leaving `"neutral"` would mean that, once the pass-through
+  lands, every upgraded repo passes an explicit `--brand neutral` that
+  OVERRIDES an installed brand pack. **If they did mean neutral, say they can
+  set it again and it will stick** — the rewrite is one-shot, gated on the
+  schema it landed in, so no later `--force` will take it away again.
+- **A machine-global theme that defeats it** — when the report warns that
+  `~/.claude/crew/config.json` still sets `docs.theme` to `"neutral"`, read it
+  out and do NOT offer to edit that file as part of this command. It is
+  machine-global: every other repo on the box changes with it, and none of
+  them is the one being upgraded. The repo config is now correct and the
+  EFFECTIVE value is still neutral, which is why the warning exists — a repo
+  that looks migrated and resolves the old value is worse than one that
+  obviously did not migrate.
 - **Blocks left unmigrated** — a `pm`, `graph`, `qa`, `dev` or `roles` value
   that arrived as the wrong type is left exactly as the user wrote it, and
   `schema` is deliberately NOT stamped current. The status is then `upgraded

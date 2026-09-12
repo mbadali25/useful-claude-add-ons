@@ -277,9 +277,12 @@ def upgrade_config(cfg):
              # tell whether the global layer actually gets to answer. None
              # means "no repo answer, ask global"; anything else means the
              # repo decides and no global value can reach it. Set at the end,
-             # beside the rewrite. Kept in `notes` rather than read back off
-             # `out` so that `upgrade_config` stays the one place that decides
-             # what the value is.
+             # beside the rewrite, from `out`.
+             #
+             # It is carried in `notes` so that `_config_lines` -- which is
+             # handed only `notes` -- never has to read the config itself.
+             # That keeps one module deciding what the value is, and keeps the
+             # report builder's only file access the GLOBAL one.
              "docsThemeAfter": None}
 
     for key, block in CONFIG_BLOCKS:
