@@ -151,7 +151,7 @@ still writes only the repo file.
   "emergency": { "standDown": true, "ttlMinutes": 120, "maxTtlMinutes": 480 },
   "notify": { "provider": "none", "urlEnv": null, "tokenEnv": null, "chatId": null, "events": ["phase", "gate", "waiting"] },
   "platform": { "os": null, "wsl": null, "shell": null, "windowsHostIp": null },
-  "pm": { "enabled": true, "mode": "adaptive", "quietLines": 8, "maxLines": 40, "authority": "report-only", "maxDispatches": 3 },
+  "pm": { "enabled": true, "mode": "adaptive", "quietLines": 8, "maxLines": 40, "authority": "report-only", "ticketGranularity": "system", "maxDispatches": 3 },
   "graph": { "enabled": true, "tool": "graphify", "out": "graphify-out", "mode": "code-only", "commitHook": false },
   "docs": { "theme": "neutral", "reportTheme": null },
   "bitbucket": { "mergeGate": { "enabled": false, "branch": null, "preset": "standard" } }

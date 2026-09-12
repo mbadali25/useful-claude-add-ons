@@ -822,7 +822,7 @@ This is the same shape that produces:
     "tokenEnv": "CREW_TELEGRAM_TOKEN",
     "chatId": null
   },
-  "pm": { "enabled": true, "mode": "adaptive", "quietLines": 8, "maxLines": 40, "authority": "report-only", "maxDispatches": 3 },
+  "pm": { "enabled": true, "mode": "adaptive", "quietLines": 8, "maxLines": 40, "authority": "report-only", "ticketGranularity": "system", "maxDispatches": 3 },
   "graph": { "out": "graphify-out", "obsidian": { "dir": null, "layout": "flat", "confirmed": false } }
 }
 ```
@@ -874,7 +874,8 @@ omit the block and assume.
 | `context.autoClear.delaySeconds` | integer (default `3`) | How long to wait for the prompt to come back before typing. |
 | `context.autoClear.minHandoffLines` | integer (default `5`) | Refuse to clear if the handoff has fewer non-blank lines than this. A stub note is worse than no clear. |
 | `pm.enabled` / `mode` / `quietLines` / `maxLines` | see `crew-pm` skill | Whether and how verbosely the `SessionStart` PM brief speaks, and whether the `Stop` pulse re-engages it at all. |
-| `pm.authority` | `report-only` (default), `act` | What the PM does about what it finds. `report-only` recommends and stops. `act` lets it dispatch crew roles and refresh diagrams on its own — see the `crew-pm` skill for the guardrails that bound it. An unrecognised value resolves to `report-only`: a typo in a permissions field must fail closed. |
+| `pm.authority` | `report-only` (default), `act`, `autonomous` | What the PM does about what it finds. `report-only` recommends and stops. `act` lets it dispatch crew roles and refresh diagrams on its own. `autonomous` adds one thing to `act`: where it would ask you to choose, it takes the option it would have recommended and says which — see the `crew-pm` skill for the guardrails that bound all three, and `crew_state.AUTONOMOUS_STOPS` for the four things that need an explicit yes at every tier. The tiers are ordered and every gate reads them as a floor, so anything `act` may do, `autonomous` may do. An unrecognised value resolves to `report-only`, the least permissive tier: a typo in a permissions field must fail closed. |
+| `pm.ticketGranularity` | `session`, `system` (default), `change` | How many tickets one session's work becomes. `system` files one ticket per session and opens a second only when the work reaches another system — a registered marketplace entry. A repo with no marketplace declares no system boundary, so it behaves as `session` and says so rather than guessing one from the directory tree. |
 | `pm.maxDispatches` | integer (default `3`) | Roles the PM may dispatch in one pass under `act`. Blockers it hits mid-task do not count against it. |
 | `graph.out` | path (default `graphify-out`) | Where `graphify` wrote `graph.json`. Freshness is read from graphify's own `built_at_commit` field in that file, never a timestamp. |
 | `graph.obsidian.dir` | path or `null` | Export target directory. What it means depends on `graph.obsidian.layout` — see `crew-graph`'s Obsidian section. |

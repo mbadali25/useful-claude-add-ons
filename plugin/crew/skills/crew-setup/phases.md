@@ -116,11 +116,17 @@ than one that has to be asked twice.
 > - `act` - it dispatches roles and refreshes diagrams on its own, reports
 >   after. It stays on the findings it was working: a problem it stumbles on
 >   gets fixed only if it BLOCKS one of them, and anything else becomes a ticket
->   or a `TODO.md` line rather than a detour.
+>   or a `TODO.md` line rather than a detour. It still asks you to choose when a
+>   decision is genuinely open.
+> - `autonomous` - everything `act` does, and it settles its own open
+>   decisions: it takes the option it would have recommended and tells you
+>   which, rather than stopping to ask.
 
 Write the answer to `pm.authority`. Say that `/crew:pm authority <value>`
-changes it later, so this is not a decision they are stuck with - and that
-either way removal and deletion always stop for a yes.
+changes it later, so this is not a decision they are stuck with - and that at
+every tier, `autonomous` included, four things still stop for a yes:
+offboarding a role, deleting a codemap or diagram, rewriting
+`.crew/metrics.md`, and destroying git history or tracked work.
 
 **Then offer the machine-global config, once.** Run:
 

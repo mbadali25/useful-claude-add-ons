@@ -1032,6 +1032,166 @@ kept in its words so a reader can check it rather than trust it.
 8. **`jira-api.sh:131` — account-search values are not URL-encoded**, so any
    name with a space fails lookup. Repro: `jira_find_account_id "Jane Doe"`.
 
+## Ticket B: `docs.theme` has no consumer, and its default is silently overridden
+
+Raised 2026-09-12 by team-lead, who measured it correctly: `docs.theme` and
+`docs.reportTheme` are settable in BOTH config layers and six files in
+`plugin/crew` mention them -- two templates, two tests, `crew_upgrade.py` and
+`crew-setup/SKILL.md`. Every one is a template, a test or a migration. **No code
+in crew consumes either key.** Confirmed independently here with the same grep.
+
+Two premises in the original report need correcting before anyone works this,
+because both would send the work in the wrong direction.
+
+**1. A resolver already exists, and it is good.**
+`skills/doc-builder/scripts/resolve_brand.py` (with
+`scripts/_test/test_resolve_brand.py`) resolves a brand-pack name through a
+five-step order -- `--brand`, `DOC_BUILDER_BRAND`, sibling skill directories,
+the plugin cache, then neutral -- and announces which step matched. The
+fall-through to neutral is announced LOUDLY and names every location searched,
+which is most of the "skill not installed" degraded path the ticket asks for.
+So the work is NOT "write a resolver". It is narrower: **crew stores a theme
+name and never passes it to the resolver that already exists.** The wiring is
+the ticket.
+
+**2. The two brand-pack layouts are deliberate, not an inconsistency.**
+The report warned that a resolver assuming one uniform layout "will find
+`neutral` and miss `solomon`". It is the other way round, and by design. Every
+discovery glob is `<skill>/assets/brand.json` -- the FLAT shape, which is what
+`solomon-doc-builder/assets/brand.json` has. The nested
+`doc-builder/assets/brands/neutral/brand.json` is excluded from discovery on
+purpose (`_is_own`) because neutral is the built-in fallback rather than a
+discovered pack. Verified by running it: `--list` reports `neutral (built in)`
+and finds `solomon` under sibling skills.
+
+**The actual defect, found by running the resolver rather than reading it.**
+With both skills installed and no `--brand`, resolution prints:
+
+```
+brand: solomon -- the only brand pack found in sibling skill directories
+```
+
+Neutral is not a candidate, so "the only pack found" is solomon and there is no
+ambiguity to stop on. A user whose crew config says `docs.theme: "neutral"` --
+the shipped default, which `/crew:config --show` will print back to them -- gets
+**solomon-branded documents**. That is one client's footer on another client's
+report, which is the exact failure `resolve_brand.py`'s own docstring says its
+ambiguity check exists to prevent. It happens only because the key has no
+consumer, so the check never sees the user's stated answer.
+
+So this is worse than a key that quietly does nothing. It is a key whose
+documented default is actively contradicted by whatever pack happens to be
+installed, while the config UI reports the default as being in effect.
+
+**The wrong brand is also a partly broken one, which misdirects the diagnosis.**
+Confirmed on this machine and reproduced independently by team-lead: solomon's
+pack resolves `masters_dir` to `C:/repos/OnboardingSOPs/sops_new`, and the
+script prints it as `(NOT FOUND on this machine)`. So a user who never chose
+solomon gets a brand whose template directory does not exist, and the first
+failure they hit is a MISSING TEMPLATE rather than a wrong footer. That points
+the diagnosis at doc-builder's assets, or at their own checkout, and away from
+branding entirely -- which is where the actual defect is. A wrong answer that
+fails in an unrelated-looking way costs more than one that fails plainly.
+
+`--list` makes the same point: `neutral` is shown, labelled `(built in)`. It is
+VISIBLE and still not a candidate, so nothing reads as missing and no ambiguity
+stop fires. Everything looks correct from the outside.
+
+**Acceptance criterion for this ticket:** an unresolvable or unset theme must
+not fall through to "whatever happens to be installed". Fail loud, or fall back
+to neutral and say so, the way the resolver already does for a genuinely missing
+pack.
+
+Repro, both halves:
+
+```
+python skills/doc-builder/scripts/resolve_brand.py            # -> solomon
+python skills/doc-builder/scripts/resolve_brand.py --brand neutral  # -> neutral
+```
+
+Scope when this is picked up: pass `docs.theme` through to `--brand` /
+`DOC_BUILDER_BRAND`, and decide what an unresolvable theme name does. It must
+NOT fall through to "whatever is installed" -- that is the bug above. Fail loud
+or fall back to neutral and say so, the way the resolver already does for a
+missing pack.
+
+### Design settled 2026-09-12: crew passes the name through, it resolves nothing
+
+Crew reads the merged `docs.theme` and passes `--brand <name>`; `docs.reportTheme`
+goes to the findings-report script. Two keys are implementable because the two
+pipelines are separate scripts. Crew adds the one thing doc-builder lacks -- a
+per-repo setting with a machine-global default, which neither a per-invocation
+flag nor a machine-wide env var can express. Keep the layering and add nothing
+else. Do NOT write a second resolver.
+
+**The refusal is real, and it is narrower than it sounds. Measured, not read.**
+With two discovered packs the resolver exits 1 and names them:
+
+```
+$ DOC_BUILDER_SKILLS_DIR=<two packs> resolve_brand.py
+More than one brand pack is installed (...): alpha, beta.
+Pass --brand <name> (or set DOC_BUILDER_BRAND) to say which one this document is for.
+exit=1
+```
+
+With exactly ONE discovered pack it returns that pack silently, exit 0. `neutral`
+is never a discovery candidate, so this repo -- doc-builder plus
+solomon-doc-builder -- is the one-pack case. **The refusal therefore does not
+protect the common configuration**, which is a single client brand installed.
+That is not an argument against pass-through; it is the argument FOR it, because
+pass-through is what creates protection in exactly the case the refusal leaves
+open.
+
+**`docs.theme` does NOT ship as `null`. It ships as `"neutral"`.** Verified in
+all three places that define it -- `crew_upgrade.DOCS_BLOCK` (`theme: "neutral"`,
+`reportTheme: None`) and both templates. Only `reportTheme` is null. The design
+note that "both are null in the templates today" is wrong on the half that
+matters, and building on it would ship a behaviour change nobody chose:
+
+- Under pass-through with the default untouched, every repo passes
+  `--brand neutral`. That is an explicit instruction, so it **overrides an
+  installed client pack**. Today that pack wins; afterwards neutral would.
+  Upgrading crew would silently DE-BRAND an existing Solomon user's documents,
+  and the config file would not have changed to explain it.
+- `null` meaning "pass no `--brand`, let doc-builder resolve" is the right
+  semantic, and it preserves the refusal exactly -- but today it only describes
+  `reportTheme`.
+
+So the ticket carries a decision, and the recommendation is the second option:
+
+1. Keep `theme: "neutral"`. Predictable, and the config then means what it says
+   -- but the first upgrade silently stops applying an installed brand pack.
+2. **(Recommended)** Ship `theme: null` and treat null as "pass no `--brand`".
+   Pass-through then only ever NARROWS from doc-builder's own behaviour, the
+   upgrade is a no-op for every existing user, and pinning a brand becomes an
+   opt-in the user performs deliberately. Cost: the migration has to move an
+   existing `"neutral"` forward, and `"neutral"` typed deliberately must stay
+   distinguishable from `"neutral"` inherited from a template nobody edited --
+   which is why this is a decision and not a default.
+
+Degraded path: use what exists. `resolve_brand.py` already reports what would be
+used and why, and `--list` enumerates visible packs. Do not invent separate
+detection. It must degrade rather than throw when doc-builder is not installed
+at all -- a second code path, and it needs its own test.
+
+**Does `solomon-doc-builder` need a crew reference once this lands? No, and 0 is
+the correct final number.** Pass-through means crew hands over a NAME and
+doc-builder discovers the pack; crew never has to know that `solomon` exists.
+Adding a reference would hardcode one client's name into a general-purpose
+plugin, which is the coupling pass-through exists to avoid. So its 0 is correct
+for a different reason than `report-builder`'s 0 -- that one is a deprecated
+stub, this one is a plugin that is correctly ignorant of its clients. Neither
+should be "fixed" to make a count look better.
+
+**`report-builder`'s 0 references are correct, not a gap.** Its SKILL.md
+declares it a deprecated stub as of 2026-09-10, superseded by `doc-builder`, and
+its 2.0.0 catalog entry already says so. An earlier concern of mine that the
+entry misdescribed the skill was unfounded -- team-lead checked and I am
+recording the correction here so nobody re-opens it. `solomon-doc-builder` also
+has 0 references in `plugin/crew`; that one IS the gap above, since it is the
+pack the theme key is supposed to select. For contrast, `doc-builder` has 3 and
+`bitbucket` has 8.
+
 ## A raw `Agent` dispatch writes no record, so crew misreports its own authorship
 
 Found 2026-09-11, during the bitbucket merge-gate work. Belongs with the ticket C
@@ -1069,6 +1229,92 @@ standing rule that a probe which can fail needs "could not tell" as a real value
 
 Re-measure before acting: `ls .work/dispatch.d/` and
 `python3 <crew>/hooks/scripts/crew_config.py --root . --models`.
+
+**Narrowed 2026-09-12, on the ticket C/D branch, where this was folded in as
+instructed.** The choice between the two candidate fixes is no longer open, and
+it was settled by what is reachable rather than by preference: **the first is
+not implementable from inside crew.** The `Agent` tool is supplied by the
+harness, not by the plugin; crew registers `PreToolUse`, `Stop`, `PreCompact`
+and `SessionStart` hooks and none of them can interpose on a bare `Agent` call
+to write a record for it. So "have the `Agent` path write a record" is a change
+to Claude Code, not to this repo, and listing it as an option here reads as a
+choice somebody could take.
+
+That leaves the reader-side fix, which is also the one this repo's standing rule
+already points at: **"no record covers any commit in this range" must be its own
+value, distinct from "a record exists and is older than the range".** Today both
+collapse into `STALE RECORD`, which is why the current behaviour is
+stale-and-confident rather than empty-and-honest. Not done on this branch -- it
+is a change to the author-family guard, and C/D were an authority and config
+change; mixing them would have put a guard edit inside a release whose test
+matrix is about something else.
+
+**A second defect, found while running the suite for C/D.** Two tests in
+`plugin/crew/tests/test_provider_table.py` call `crew_state.author_families(".")`
+-- a literal `"."`, so they read whatever dispatch store is in the CURRENT
+WORKING DIRECTORY rather than a fixture:
+
+- `test_an_unset_copilot_model_is_not_barred_against_another_unset_one`
+- `test_author_family_honours_a_per_role_dev_pin_over_the_block_default`
+
+Both pass in a CLEAN checkout and both fail on any developer machine that has
+ever used crew here, because `.work/` is gitignored and therefore absent from a
+fresh clone but present locally. Measured rather than inferred: a worktree at
+`7a234ba0` passes 124/124, and the same worktree with this repo's real
+`.work/dispatch.json` and `.work/dispatch.d/` copied in fails exactly these two.
+
+Say "clean checkout", not "CI". **CI does not currently run these tests at
+all** -- the `Pytest (crew + gizmoduck plugins)` job collects 954 items and dies
+on 12 gizmoduck `ImportError`s before executing one of them, so its log reports
+neither test by name. An earlier draft of this entry said "both pass in CI",
+which is an overclaim of exactly the kind this file exists to stop: it cites a
+green signal that was never produced. The clean-worktree run is the real
+evidence, and it is enough.
+
+So this is environmental and pre-existing, not from the C/D branch -- but it
+means the local suite is not the suite a clean checkout runs, and a developer
+who sees these two red learns to ignore red. Fix belongs with the reader-side work above, since it is
+the same store: pass a `tmp_path` root like the neighbouring tests do.
+
+## No claim of the form "CI proves X" is available for any crew or gizmoduck test
+
+Recorded 2026-09-12 so the four ticketed failures above and below are read
+correctly. The `Pytest (crew + gizmoduck plugins)` job collects 954 items and
+dies on 12 gizmoduck `ImportError`s before executing one of them. It therefore
+reports NO test by name, passing or failing.
+
+The consequence is easy to state and easy to forget: **until those imports are
+fixed, "CI is green on this test" is not a sentence anyone can say about
+anything in that job.** The only evidence available is a local run, and the only
+honest phrasing is "clean checkout" or "local, at <ref>". An earlier entry here
+said two tests "pass in CI"; they do not, because nothing in that job passes or
+fails -- it never runs. Corrected, and recorded here rather than only at the
+entry, because the trap is general.
+
+The jobs that DO produce usable signal are `Marketplace` (`check`) and the
+`test (ubuntu-latest)` / `test (windows-latest)` pair. Cite those freely.
+
+## The specialist role tables disagree with the code, on `main`
+
+Found 2026-09-12, running the full crew suite for the C/D branch. Pre-existing:
+`plugin/crew/tests/test_role_ladder.py` fails these two at `7a234ba0` itself,
+before any of this branch's commits.
+
+```
+FAILED test_onboarding_specialist_table_matches_the_code_set
+FAILED test_the_readme_roster_table_matches_the_code
+```
+
+`crew_state.SPECIALIST_ROLES` names four roles that neither the onboarding table
+nor the README roster lists: `powershell-7-expert`, `powershell-5.1-expert`,
+`skill-author`, `exchange-online-specialist`. The code is the side with more, so
+these are roles that exist and are undiscoverable rather than documented roles
+that vanished -- a reader of either table cannot learn they can onboard them.
+
+Belongs with ticket B (the crew referencing work), which is already about crew's
+tables disagreeing with what is installed. Not fixed here on scope discipline:
+C/D was an authority and config change, and these two suites were red before it
+started and are equally red after.
 
 ## Five marketplace entries are shipping stale — inherited, not from this branch
 

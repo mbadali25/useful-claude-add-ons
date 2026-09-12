@@ -59,6 +59,7 @@
     "quietLines": 8,
     "maxLines": 40,
     "authority": "report-only",
+    "ticketGranularity": "system",
     "maxDispatches": 3
   },
   "docs": {

@@ -880,6 +880,90 @@ def test_a_widening_of_authority_is_always_marked(tmp_path, monkeypatch):
     assert not nothing
 
 
+def test_every_authority_transition_is_classified(tmp_path, monkeypatch):
+    """The full matrix, not the two transitions that existed at two tiers.
+
+    Both new rows caught a real defect in the `== "act"` form this replaced:
+    `act -> autonomous` computed False (the widest grant crew offers, shipping
+    unannounced) and `autonomous -> act` computed True (a NARROWING reported as
+    a widening, which is how a warning becomes noise). Enumerated as data so a
+    fourth tier cannot be added without this failing until the row is written.
+    """
+    path = _global(tmp_path, monkeypatch, contents={})
+    cases = [
+        ("report-only", "act", True),
+        ("report-only", "autonomous", True),
+        ("act", "autonomous", True),
+        ("autonomous", "act", False),
+        ("autonomous", "report-only", False),
+        ("act", "report-only", False),
+    ]
+    for before, after, expected in cases:
+        path.write_text(json.dumps({"pm": {"authority": before}}),
+                        encoding="utf-8")
+        _, changes = crew_config.plan_global_write(
+            {"pm.authority": after}, str(path))
+        assert changes[0]["widens_authority"] is expected, (
+            f"{before} -> {after} should be "
+            f"{'a widening' if expected else 'no widening'}")
+
+
+def test_an_unreadable_authority_widens_into_anything(tmp_path, monkeypatch):
+    """Fail-safe direction. A `before` crew cannot parse ranks lowest, so every
+    real tier above it reports as a widening rather than as a quiet no-op."""
+    path = _global(tmp_path, monkeypatch, contents={
+        "pm": {"authority": "ACT-ish typo"}})
+    for after in ("act", "autonomous"):
+        _, changes = crew_config.plan_global_write(
+            {"pm.authority": after}, str(path))
+        assert changes[0]["widens_authority"] is True
+
+
+def test_the_widening_warning_names_the_tier_it_grants(tmp_path, monkeypatch,
+                                                       capsys):
+    """Codex round 1 on this branch, and the same bug class as the one the
+    branch fixes: the `!` line said "widens to `act`" whatever the target was.
+    Setting `autonomous` therefore warned about the wrong tier AND omitted the
+    only thing that tier adds - that the PM stops asking you to choose. A
+    warning that under-describes the grant is what this marker exists to
+    prevent."""
+    path = _global(tmp_path, monkeypatch, contents={
+        "pm": {"authority": "report-only"}})
+    assert crew_config.main(
+        ["--global-path", str(path), "--set", 'pm.authority="autonomous"']) == 0
+    out = capsys.readouterr().out
+    assert "widens to `autonomous`" in out
+    assert "widens to `act`" not in out
+    assert "stop asking you to choose" in out
+
+    assert crew_config.main(
+        ["--global-path", str(path), "--set", 'pm.authority="act"']) == 0
+    act_out = capsys.readouterr().out
+    assert "widens to `act`" in act_out
+    assert "stop asking you to choose" not in act_out
+
+
+def test_every_authority_has_a_widening_note():
+    """Total by construction. A tier added without a note must be a KeyError at
+    the point of use, never a warning that describes a different tier."""
+    assert set(crew_config._WIDENING_NOTES) == set(crew_state.AUTHORITIES)
+
+
+def test_ticket_granularity_is_settable_in_both_layers(tmp_path, monkeypatch):
+    """It rides in on `pm`, the block already admitted whole -- so this is the
+    check that the invariant actually held, rather than that it was intended."""
+    assert crew_config.is_global_path("pm.ticketGranularity") is True
+    path = _global(tmp_path, monkeypatch, contents={})
+    merged, changes = crew_config.plan_global_write(
+        {"pm.ticketGranularity": "session"}, str(path))
+    assert merged["pm"]["ticketGranularity"] == "session"
+    assert changes[0]["widens_authority"] is False
+    kept, ignored = crew_config.filter_global(
+        {"pm": {"ticketGranularity": "change"}})
+    assert kept == {"pm": {"ticketGranularity": "change"}}
+    assert ignored == []
+
+
 def test_a_plan_writes_nothing(tmp_path, monkeypatch):
     """Dry run is the default, and it is what the user says yes to."""
     path = _global(tmp_path, monkeypatch, contents=None)

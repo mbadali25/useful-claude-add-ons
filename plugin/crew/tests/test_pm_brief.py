@@ -10,6 +10,7 @@ import context  # noqa: F401  pylint: disable=unused-import
 import crew_fixtures
 import crew_state
 import pm_brief
+import pm_pulse
 
 HEALTHY = {
     "isCrew": True, "schema": 2, "tier": 1,
@@ -294,6 +295,85 @@ def test_default_authority_is_report_only():
     autonomous underneath them -- consent to install is not consent to
     delegate."""
     assert crew_state.PM_DEFAULTS["authority"] == "report-only"
+
+
+def test_autonomous_brief_says_it_settles_its_own_questions():
+    out = _authority("autonomous")
+    assert "settles its own open questions" in out
+    # The stops are the half a reader needs most at this tier, and the brief
+    # is the ONE restatement every SessionStart prints -- so a phrase narrower
+    # than AUTONOMOUS_STOPS here is the version most readers actually get. It
+    # said "destroying git history" while the tuple says "git history or
+    # tracked work", which reads as putting `rm` of a tracked file outside the
+    # stop.
+    assert "still asks before" in out
+    assert "tracked work" in out
+
+
+def test_authority_rank_is_ordered_and_fails_closed():
+    """Rank is the only thing permitted to know the tiers are ordered."""
+    ranks = [crew_state.authority_rank(name) for name in crew_state.AUTHORITIES]
+    assert ranks == sorted(ranks) == list(range(len(crew_state.AUTHORITIES)))
+    # An unknown ranks LOWEST, never highest -- the whole fail-safe property.
+    assert crew_state.authority_rank("nonsense") == 0
+    assert crew_state.authority_rank(None) == 0
+
+
+def test_autonomous_can_act_too():
+    """The bug an `== "act"` gate creates: the WIDER tier unable to act at all.
+    A capability gate names a floor, never a rung."""
+    assert crew_state.can_act({"pm": {"authority": "autonomous"}})
+    assert crew_state.can_act({"pm": {"authority": "act"}})
+    assert not crew_state.can_act({"pm": {"authority": "report-only"}})
+
+
+def test_only_autonomous_decides_for_itself():
+    """A second predicate on purpose. Folding auto-decide into `can_act` would
+    have stopped `act` repos emitting the Decision-needed blocks they rely on,
+    as a side effect of adding a tier above them."""
+    assert crew_state.can_autodecide({"pm": {"authority": "autonomous"}})
+    assert not crew_state.can_autodecide({"pm": {"authority": "act"}})
+    assert not crew_state.can_autodecide({"pm": {"authority": "report-only"}})
+    assert not crew_state.can_autodecide({})
+    assert not crew_state.can_autodecide({"pm": "nonsense"})
+
+
+def test_the_stop_list_lives_in_code():
+    """Enumerated, not paraphrased. A stop that exists only in prose is advice
+    the model weighs against the task; this is a list a test can assert on."""
+    slugs = [slug for slug, _ in crew_state.AUTONOMOUS_STOPS]
+    assert slugs == ["offboard-role", "delete-map", "rewrite-metrics",
+                     "git-destruction"]
+    # Every stop reaches the directive the autonomous PM actually receives.
+    directive = pm_pulse.directive({"pm": {"authority": "autonomous"}})
+    for _, what in crew_state.AUTONOMOUS_STOPS:
+        assert what in directive
+
+
+@pytest.mark.parametrize("value", ["Session", "  CHANGE ", "system"])
+def test_granularity_accepts_carelessly_typed_values(value):
+    assert crew_state.normalise_granularity(value) in ("session", "change",
+                                                       "system")
+
+
+@pytest.mark.parametrize("value", ["ticket", "", None, True, 1, [], {}])
+def test_unknown_granularity_falls_back_to_the_default(value):
+    assert crew_state.normalise_granularity(value) == "system"
+
+
+def test_default_granularity_is_one_ticket_per_session():
+    assert crew_state.PM_DEFAULTS["ticketGranularity"] == "system"
+
+
+def test_collect_normalises_granularity_once():
+    root = tempfile.mkdtemp()
+    os.makedirs(os.path.join(root, ".crew"))
+    with open(os.path.join(root, ".crew", "config.json"), "w",
+              encoding="utf-8") as handle:
+        json.dump({"schema": 2, "pm": {"ticketGranularity": "SESSION"}}, handle)
+    assert crew_state.collect(root)["pm"]["ticketGranularity"] == "session"
+    assert crew_state.ticket_granularity(
+        {"pm": {"ticketGranularity": "nonsense"}}) == "system"
 
 
 def test_healthy_state_stays_quiet():

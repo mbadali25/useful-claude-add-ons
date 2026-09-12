@@ -65,6 +65,65 @@ BLOCK_ONLY = (
 
 MUTATIONS = (
     (
+        # The pre-0.17.0 form, restored. It is wrong in BOTH directions once a
+        # third tier exists: act -> autonomous reads as no widening (the widest
+        # grant crew offers, shipped unannounced), and autonomous -> act reads
+        # as a widening when it is a narrowing. The matrix test is what makes
+        # the second half visible -- a suite carrying only the two transitions
+        # that existed at two tiers stays green with this bug restored, which
+        # is precisely why the matrix is enumerated as data.
+        "widening test compares authority by equality instead of rank",
+        CONFIG,
+        "                and crew_state.authority_rank(value)\n"
+        "                > crew_state.authority_rank(\n"
+        "                    None if before is _MISSING else before)",
+        "                and crew_state.normalise_authority(value) == \"act\"\n"
+        "                and crew_state.normalise_authority(\n"
+        "                    None if before is _MISSING else before) != \"act\"",
+        ("tests/test_crew_config.py::"
+         "test_every_authority_transition_is_classified"),
+    ),
+    (
+        # Codex's round-1 FIX on this branch, restored. The `!` line named a
+        # hardcoded tier, so setting `autonomous` warned about `act` and
+        # described only what `act` grants -- omitting the one thing the tier
+        # adds. Same bug class as the rank fix two entries up: the warning
+        # under-describes the grant it is there to announce.
+        "the widening warning names a hardcoded tier",
+        CONFIG,
+        '                granted = crew_state.normalise_authority('
+        'change["after"])\n'
+        '                print(f"  ! pm.authority widens to `{granted}`: "\n'
+        '                      + _WIDENING_NOTES[granted])',
+        '                print("  ! pm.authority widens to `act`: the PM will '
+        'dispatch "\n'
+        '                      "roles itself and report after.")',
+        ("tests/test_crew_config.py::"
+         "test_the_widening_warning_names_the_tier_it_grants"),
+    ),
+    (
+        # A capability gate that names a rung instead of a floor. Restoring it
+        # makes `autonomous` -- the WIDER tier -- unable to act at all, which
+        # presents as "the new tier does nothing" rather than as a guard bug.
+        "can_act names a rung instead of a floor",
+        STATE,
+        '    return authority_rank(pm.get("authority")) >= authority_rank("act")',
+        '    return normalise_authority(pm.get("authority")) == "act"',
+        "tests/test_pm_brief.py::test_autonomous_can_act_too",
+    ),
+    (
+        # An unknown authority collapsing UPWARD is the repo's named recurring
+        # bug class, in the one field where it grants capability. `index` on a
+        # raw value would raise, so the mutation returns the top rank instead:
+        # the shape a "be permissive on bad input" fix would actually take.
+        "an unreadable authority ranks highest instead of lowest",
+        STATE,
+        "    return AUTHORITIES.index(normalise_authority(value))",
+        "    return (AUTHORITIES.index(value) if value in AUTHORITIES\n"
+        "            else len(AUTHORITIES) - 1)",
+        "tests/test_pm_brief.py::test_authority_rank_is_ordered_and_fails_closed",
+    ),
+    (
         "family guard deleted",
         STATE,
         GUARD,
