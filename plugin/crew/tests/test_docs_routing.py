@@ -36,16 +36,53 @@ _HOUSE_STYLE = os.path.join(_PLUGIN, "skills", "crew-house-style", "SKILL.md")
 _REPO = os.path.join(_PLUGIN, os.pardir, os.pardir)
 _DOC_BUILDER_SCRIPTS = os.path.join(_REPO, "skills", "doc-builder", "scripts")
 
-# Genre -> the script the routing table names for it.
+# Genre -> (script the routing table names, module it needs at import time).
+#
+# The second field is the difference between a test that can run anywhere and
+# one that breaks CI. `build_report.py` is stdlib -- its `win32com` import is
+# lazy, inside the converter function, and it touches no `docx` -- so its
+# `--help` runs on any machine. `build_sop.py` imports `docx` (python-docx) at
+# module level, and crew's CI installs only pytest and pyyaml, so running it
+# there would fail on a MISSING DEPENDENCY and look like a routing defect.
+#
+# Adding python-docx to crew's CI to satisfy one assertion is the wrong trade:
+# doc-builder is a separate marketplace entry and crew's job should not own its
+# dependency tree. Stubbing `docx` is worse -- it needs seven submodules by
+# exact name and would rot silently the moment build_sop imports an eighth.
 _ROUTED_SCRIPTS = {
-    "findings report": "build_report.py",
-    "SOP": "build_sop.py",
+    "findings report": ("build_report.py", None),
+    "SOP": ("build_sop.py", "docx"),
 }
 
 
 def _read(path):
     with open(path, encoding="utf-8") as handle:
         return handle.read()
+
+
+def _usage_line(help_text):
+    """argparse's own `usage:` block, flattened to one line.
+
+    Wrapped across several lines for a parser with many options, so the block
+    runs from `usage:` to the first blank line.
+    """
+    after = help_text.split("usage:", 1)
+    assert len(after) == 2, help_text[:300]
+    block = after[1].split("\n" + "\n", 1)[0]
+    return " ".join(block.split())
+
+
+def _importable(module):
+    """Whether `module` imports in a FRESH interpreter.
+
+    Deliberately not `importlib.util.find_spec` in this process: the subprocess
+    under test gets its own interpreter and its own sys.path, and answering
+    from this one could say "available" about a module the child cannot see.
+    """
+    return subprocess.run(
+        [sys.executable, "-c", f"import {module}"],
+        capture_output=True, check=False, timeout=120,
+        stdin=subprocess.DEVNULL).returncode == 0
 
 
 def _requires_doc_builder():
@@ -133,15 +170,23 @@ def test_the_two_keys_can_actually_hold_different_values():
     assert merged["docs"]["theme"] != merged["docs"]["reportTheme"]
 
 
-@pytest.mark.parametrize("genre,script", sorted(_ROUTED_SCRIPTS.items()))
-def test_every_routed_script_exists_and_accepts_brand(genre, script):
+@pytest.mark.parametrize("genre,script,needs",
+                         [(g, s, n) for g, (s, n) in sorted(
+                             _ROUTED_SCRIPTS.items())])
+def test_every_routed_script_exists_and_accepts_brand(genre, script, needs):
     """The direction that would have caught this ticket's original defect.
 
     Asserted by RUNNING each script's argparse, never by grepping the file.
     Both scripts' docstrings contain the literal string `--brand` in an
     example, so a grep passes whether or not the flag is wired to anything --
     which is exactly how a doc comes to describe an interface that does not
-    exist. `--help` is the tool's own answer."""
+    exist. `--help` is the tool's own answer.
+
+    When the script's import-time dependency is absent the check does NOT
+    become a skip. It asserts that the failure is exactly that missing module
+    and nothing else, so the script breaking for any other reason still fails
+    here. A bare skip would be a check nobody has ever seen fail, which is the
+    defect class this suite exists for."""
     _requires_doc_builder()
     path = os.path.join(_DOC_BUILDER_SCRIPTS, script)
     assert os.path.isfile(path), f"{genre}: {path}"
@@ -151,8 +196,25 @@ def test_every_routed_script_exists_and_accepts_brand(genre, script):
         capture_output=True, text=True, check=False, timeout=120,
         stdin=subprocess.DEVNULL)
 
+    if needs is not None and not _importable(needs):
+        # The documented, expected failure -- and it must be THAT one.
+        assert proc.returncode != 0, (
+            f"{script} ran without {needs}; the dependency note in "
+            "_ROUTED_SCRIPTS is now wrong and this test is weaker than it "
+            "reads")
+        assert f"No module named '{needs}'" in proc.stderr, proc.stderr[-600:]
+        return
+
     assert proc.returncode == 0, proc.stderr
-    assert "--brand" in proc.stdout, (genre, proc.stdout[:400])
+
+    # Asserted on argparse's GENERATED usage line, not on the help text as a
+    # whole. `--help` prints the module docstring too, and both docstrings
+    # carry a `--brand neutral` example -- so `"--brand" in proc.stdout`
+    # passes with the flag deleted, which the sabotage suite caught by coming
+    # back green. The usage line is written by argparse from the parser it
+    # actually built, so it cannot say `[--brand` unless the option is there.
+    usage = _usage_line(proc.stdout)
+    assert "[--brand" in usage, (genre, usage)
 
 
 def test_the_routed_scripts_are_the_ones_the_table_names():
@@ -162,7 +224,7 @@ def test_the_routed_scripts_are_the_ones_the_table_names():
     scripts nobody is routed to."""
     generating = _read(_HOUSE_STYLE).split("## Generating it", 1)[1]
 
-    for genre, script in _ROUTED_SCRIPTS.items():
+    for genre, (script, _needs) in _ROUTED_SCRIPTS.items():
         assert script in generating, genre
 
 

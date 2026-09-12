@@ -59,6 +59,12 @@ UPGRADE = os.path.join(
 CONFTEST = os.path.join(CREW, "tests", "conftest.py")
 HOUSE_STYLE = os.path.join(
     CREW, "skills", "crew-house-style", "SKILL.md")
+
+# Outside the crew plugin on purpose. The routing table makes a claim about
+# ANOTHER marketplace entry's interface, and the only way to sabotage that
+# claim is to break the interface it names.
+BUILD_REPORT = os.path.join(
+    ROOT, "skills", "doc-builder", "scripts", "build_report.py")
 PM_BRIEF = os.path.join(CREW, "hooks", "scripts", "pm_brief.py")
 
 GUARD = '    if out["family"] is not None and out["family"] in authors:'
@@ -69,6 +75,29 @@ BLOCK_ONLY = (
 )
 
 MUTATIONS = (
+    (
+        # `--brand` stops existing on the findings-report script, so crew's
+        # routing table names a flag the tool does not accept -- the ticket's
+        # original defect (prose describing an interface nobody ran) one layer
+        # out.
+        #
+        # Mutated at the CALL SITE rather than in the table, because that is
+        # the half a grep cannot check: neither script spells "--brand"
+        # literally, both get it from `resolve_brand.add_brand_argument`, and
+        # both docstrings show `--brand neutral` in an example. So grepping
+        # either file "confirms" the flag whether or not it is wired to
+        # anything. The test asks argparse instead.
+        #
+        # build_report.py and not build_sop.py: build_report is stdlib (its
+        # win32com import is lazy), so this mutation runs on any machine,
+        # including a CI runner with neither python-docx nor pywin32.
+        "the findings-report script stops accepting --brand",
+        BUILD_REPORT,
+        "    resolve_brand.add_brand_argument(ap)",
+        "    pass  # resolve_brand.add_brand_argument(ap)",
+        ("tests/test_docs_routing.py::"
+         "test_every_routed_script_exists_and_accepts_brand"),
+    ),
     (
         # The routing entry goes, which is the state this whole ticket was
         # opened for: `docs.theme` configuring a tool crew's own documented
