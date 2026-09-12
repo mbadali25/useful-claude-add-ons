@@ -1070,6 +1070,65 @@ standing rule that a probe which can fail needs "could not tell" as a real value
 Re-measure before acting: `ls .work/dispatch.d/` and
 `python3 <crew>/hooks/scripts/crew_config.py --root . --models`.
 
+**Narrowed 2026-09-12, on the ticket C/D branch, where this was folded in as
+instructed.** The choice between the two candidate fixes is no longer open, and
+it was settled by what is reachable rather than by preference: **the first is
+not implementable from inside crew.** The `Agent` tool is supplied by the
+harness, not by the plugin; crew registers `PreToolUse`, `Stop`, `PreCompact`
+and `SessionStart` hooks and none of them can interpose on a bare `Agent` call
+to write a record for it. So "have the `Agent` path write a record" is a change
+to Claude Code, not to this repo, and listing it as an option here reads as a
+choice somebody could take.
+
+That leaves the reader-side fix, which is also the one this repo's standing rule
+already points at: **"no record covers any commit in this range" must be its own
+value, distinct from "a record exists and is older than the range".** Today both
+collapse into `STALE RECORD`, which is why the current behaviour is
+stale-and-confident rather than empty-and-honest. Not done on this branch -- it
+is a change to the author-family guard, and C/D were an authority and config
+change; mixing them would have put a guard edit inside a release whose test
+matrix is about something else.
+
+**A second defect, found while running the suite for C/D.** Two tests in
+`plugin/crew/tests/test_provider_table.py` call `crew_state.author_families(".")`
+-- a literal `"."`, so they read whatever dispatch store is in the CURRENT
+WORKING DIRECTORY rather than a fixture:
+
+- `test_an_unset_copilot_model_is_not_barred_against_another_unset_one`
+- `test_author_family_honours_a_per_role_dev_pin_over_the_block_default`
+
+Both pass in CI and both fail on any developer machine that has ever used crew
+in this checkout, because `.work/` is gitignored and therefore absent from a
+clean clone but present locally. Measured rather than inferred: a worktree at
+`7a234ba0` passes 124/124, and the same worktree with this repo's real
+`.work/dispatch.json` and `.work/dispatch.d/` copied in fails exactly these two.
+So it is environmental and pre-existing, not from the C/D branch -- but it means
+the local suite is not the suite CI runs, and a developer who sees these two red
+learns to ignore red. Fix belongs with the reader-side work above, since it is
+the same store: pass a `tmp_path` root like the neighbouring tests do.
+
+## The specialist role tables disagree with the code, on `main`
+
+Found 2026-09-12, running the full crew suite for the C/D branch. Pre-existing:
+`plugin/crew/tests/test_role_ladder.py` fails these two at `7a234ba0` itself,
+before any of this branch's commits.
+
+```
+FAILED test_onboarding_specialist_table_matches_the_code_set
+FAILED test_the_readme_roster_table_matches_the_code
+```
+
+`crew_state.SPECIALIST_ROLES` names four roles that neither the onboarding table
+nor the README roster lists: `powershell-7-expert`, `powershell-5.1-expert`,
+`skill-author`, `exchange-online-specialist`. The code is the side with more, so
+these are roles that exist and are undiscoverable rather than documented roles
+that vanished -- a reader of either table cannot learn they can onboard them.
+
+Belongs with ticket B (the crew referencing work), which is already about crew's
+tables disagreeing with what is installed. Not fixed here on scope discipline:
+C/D was an authority and config change, and these two suites were red before it
+started and are equally red after.
+
 ## Five marketplace entries are shipping stale — inherited, not from this branch
 
 Found 2026-09-11 while running `python3 scripts/check-marketplace.py` as the gate
