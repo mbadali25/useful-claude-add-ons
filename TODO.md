@@ -237,10 +237,37 @@ tell" has to be its own visible value rather than collapsing into the passing
 one. Use `git worktree add --detach <tmp> origin/main` to measure a named ref;
 an archive is not a git checkout.
 
-These two and the struck "already red on `main`" claim are the same failure in
-three costumes: a check that did not run, a check that ran against the wrong
-ref, and a check that answered a question other than the one asked. Each
-produces a confident sentence about `main` that is not true.
+## The third: an empty result from a misused API is indistinguishable from a real absence
+
+Found 2026-09-12, one step short of being published. Checking whether
+`filter_global` silently swallows a scalar landing where a block is expected
+(`{"qa": 5}` -- it keeps it and reports `ignored: []`), the next question was
+whether the `_prune` comment's claim that `_layer_supplies` "already reports
+that correctly" was true. `inspect_global` was called as
+`inspect_global(path)`.
+
+The signature is `inspect_global(root, path=None)`, and it RETURNS a dict
+rather than printing. So the call did not fail. It bound the path to `root`,
+found no config there, and returned a result that read as "nothing to report"
+-- one step from the conclusion "the comment claims coverage that does not
+exist."
+
+Called properly, `inspect_global(root, path)["findings"]` emits
+`[missing-keys] not set globally, so the built-in default applies: qa.provider,
+qa.order, qa.fallback, ...`, listing every `qa.*` leaf. The comment is true and
+there is no gap.
+
+**A function that answers a different question does not look like an error.**
+It looks like an answer. Before reporting an absence -- a missing finding, an
+empty list, a check that found nothing -- confirm the call was the one you
+meant: check the signature, and prove the probe can produce a non-empty result
+at all by feeding it a case that must trip it.
+
+These three and the struck "already red on `main`" claim are one failure in
+four costumes: a check that did not run, a check that ran against the wrong
+ref, a check that answered a different question, and an API that answered a
+different question. Each produces a confident sentence that is not true, and
+none of them looks like a failure at the moment it happens.
 
 ## Deferred by design, not oversight
 
