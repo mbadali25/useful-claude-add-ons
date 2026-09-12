@@ -207,6 +207,42 @@ def test_upgrade_config_adds_pm_and_graph_blocks():
     assert "obsidian" not in got["graph"]
 
 
+def test_upgrade_config_adds_the_docs_and_bitbucket_blocks():
+    """An already-initialised repo -- one carrying a full pre-`docs` config --
+    must come out of an upgrade holding both new blocks. A block left out of
+    `CONFIG_BLOCKS` is invisible: the config is stamped current, the feature
+    reads its default forever, and nothing anywhere says why. That is the
+    0.16.0 qa/dev bug exactly, so it gets its own regression rather than
+    relying on the fresh-config path, which never touches `CONFIG_BLOCKS`.
+    """
+    got = _cfg({"tier": 0, "roles": ["explorer", "qa-reviewer"],
+                "qa": {"provider": "codex"}})
+    assert got["docs"] == {"theme": "neutral", "reportTheme": None}
+    assert got["bitbucket"] == {
+        "mergeGate": {"enabled": False, "branch": None, "preset": "standard"}}
+
+
+def test_upgrade_config_does_not_clobber_a_configured_theme_or_merge_gate():
+    """Partial blocks fill in, they do not replace. Someone who set a theme
+    before the rest of the block existed keeps it."""
+    got = _cfg({"docs": {"theme": "acme"},
+                "bitbucket": {"mergeGate": {"enabled": True}}})
+    assert got["docs"] == {"theme": "acme", "reportTheme": None}
+    assert got["bitbucket"]["mergeGate"] == {
+        "enabled": True, "branch": None, "preset": "standard"}
+
+
+def test_upgrade_config_does_not_alias_the_shared_docs_block():
+    """Same aliasing trap as `graph` and the provider blocks: `upgrade_config`
+    deepcopies the block before merging, and a run that stopped doing so would
+    let one upgraded repo's theme leak into the next one in the process."""
+    got = _cfg({})
+    got["docs"]["theme"] = "mutated"
+    got["bitbucket"]["mergeGate"]["preset"] = "mutated"
+    assert crew_upgrade.DOCS_BLOCK["theme"] == "neutral"
+    assert crew_upgrade.BITBUCKET_BLOCK["mergeGate"]["preset"] == "standard"
+
+
 def test_a_specialist_role_is_kept_and_not_reported_as_unknown():
     """`rolesUnknown` drives a report line reading "kept, not on this
     release's ladder", which is true of a typo and false of a specialist.

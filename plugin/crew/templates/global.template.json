@@ -60,5 +60,16 @@
     "maxLines": 40,
     "authority": "report-only",
     "maxDispatches": 3
+  },
+  "docs": {
+    "theme": "neutral",
+    "reportTheme": null
+  },
+  "bitbucket": {
+    "mergeGate": {
+      "enabled": false,
+      "branch": null,
+      "preset": "standard"
+    }
   }
 }

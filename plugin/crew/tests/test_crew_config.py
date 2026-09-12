@@ -140,6 +140,57 @@ def test_default_config_graph_block_matches_crew_upgrade():
     assert crew_config.default_config()["graph"] == crew_upgrade.GRAPH_BLOCK
 
 
+def test_default_config_docs_and_bitbucket_blocks_match_crew_upgrade():
+    """Same rule as the `graph` block above, and for the same reason: these
+    two live in `crew_upgrade` because `CONFIG_BLOCKS` has to reference them,
+    so a fresh repo and an upgraded one must be handed the identical shape."""
+    got = crew_config.default_config()
+    assert got["docs"] == crew_upgrade.DOCS_BLOCK
+    assert got["bitbucket"] == crew_upgrade.BITBUCKET_BLOCK
+
+
+def test_docs_and_bitbucket_are_carried_by_an_upgrade():
+    """A top-level block absent from `CONFIG_BLOCKS` is never written into an
+    already-initialised repo -- the whole of the 0.16.0 qa/dev bug. Asserted
+    from `default_config()` rather than a literal list so a THIRD block added
+    to the fresh-repo shape and forgotten in `crew_upgrade` fails here too.
+    """
+    carried = {key for key, _block in crew_upgrade.CONFIG_BLOCKS}
+    for key in ("docs", "bitbucket"):
+        assert key in carried, (
+            f"{key} is in default_config() but not crew_upgrade.CONFIG_BLOCKS, "
+            "so /crew:upgrade will never add it to an existing repo's config"
+        )
+
+
+def test_default_config_returns_a_fresh_docs_and_bitbucket_block():
+    """`default_config`'s promise, on the two blocks it deepcopies out of
+    another module -- a caller stamping a theme in must not edit the shared
+    `crew_upgrade.DOCS_BLOCK` for every later caller in the process."""
+    first = crew_config.default_config()
+    first["docs"]["theme"] = "mutated"
+    first["bitbucket"]["mergeGate"]["enabled"] = "mutated"
+    assert crew_upgrade.DOCS_BLOCK["theme"] == "neutral"
+    assert crew_upgrade.BITBUCKET_BLOCK["mergeGate"]["enabled"] is False
+    assert crew_config.default_config()["docs"]["theme"] == "neutral"
+
+
+def test_docs_and_bitbucket_are_settable_globally():
+    """The criterion this feature dies silently on. A block absent from
+    `default_global_config()` is pruned out of the global layer by
+    `filter_global`, takes effect nowhere, and `inspect_global` reports it as
+    a stray key -- so a theme set once per machine would do nothing at all."""
+    global_cfg = {"docs": {"theme": "acme"},
+                  "bitbucket": {"mergeGate": {"enabled": True}}}
+    kept, ignored = crew_config.filter_global(global_cfg)
+    assert ignored == []
+    assert kept == global_cfg
+    for path in ("docs.theme", "docs.reportTheme",
+                 "bitbucket.mergeGate.enabled", "bitbucket.mergeGate.branch",
+                 "bitbucket.mergeGate.preset"):
+        assert crew_config.is_global_path(path), path
+
+
 def test_default_config_schema_matches_crew_state():
     assert crew_config.default_config()["schema"] == crew_state.SCHEMA_CURRENT
 

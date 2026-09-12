@@ -61,6 +61,47 @@ GRAPH_BLOCK = {
     # there is no longer anything for it to mean.
 }
 
+# Which doc-builder brand crew's generated documents are written in.
+#
+# Lives here rather than in `crew_config` for the same reason `GRAPH_BLOCK`
+# does: `CONFIG_BLOCKS` below has to reference it, and `crew_config` imports
+# THIS module -- the other direction is the cyclic import `crew_config.
+# layered_state` documents.
+#
+# `theme` is a doc-builder theme-pack skill name, and it feeds doc-builder's
+# EXISTING selection point rather than a new one: crew passes the resolved
+# value as `--brand` (or `DOC_BUILDER_BRAND`), which is the second and third
+# rung of `resolve_brand.py`'s precedence. `neutral` is the built-in pack, so
+# the default resolves to exactly what doc-builder already falls back to.
+#
+# `reportTheme` is null meaning "follow `theme`" -- NOT "no theme". A report
+# is the one artefact people routinely want in a different brand from the
+# docs (a client-facing deliverable out of an internal repo), and spelling
+# that as a second full default would make the common case -- one brand for
+# everything -- take two settings to state and two to keep in step.
+DOCS_BLOCK = {
+    "theme": "neutral",
+    "reportTheme": None,
+}
+
+# Whether a Bitbucket pull request has to pass crew's merge gate.
+#
+# `enabled` is false because a gate that arrives switched on would start
+# failing merges on a repo whose owner never asked for one; `/crew:promote`
+# and the Bitbucket skill are what turn it on.
+#
+# `branch` is null meaning "ask the API which branch this repo calls main".
+# Hardcoding `main` here would be wrong on every repo still on `master` or on
+# a Gitflow `develop`, and wrong silently -- the gate would look configured
+# and watch a branch nobody merges into.
+BITBUCKET_BLOCK = {
+    "mergeGate": {
+        "enabled": False,
+        "branch": None,
+        "preset": "standard",
+    },
+}
+
 # The sha group must run to END OF LINE, and the prefix must be LAZY. Both,
 # not either.
 #
@@ -111,6 +152,8 @@ CONFIG_BLOCKS = (
     ("qa", crew_state.QA_DEFAULTS),
     ("dev", crew_state.DEV_DEFAULTS),
     ("worktree", crew_state.WORKTREE_DEFAULTS),
+    ("docs", DOCS_BLOCK),
+    ("bitbucket", BITBUCKET_BLOCK),
 )
 
 # The keys schema 3 introduced. Named here rather than diffed generically so
