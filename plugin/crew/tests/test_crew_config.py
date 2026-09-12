@@ -191,6 +191,34 @@ def test_docs_and_bitbucket_are_settable_globally():
         assert crew_config.is_global_path(path), path
 
 
+def test_a_globally_set_theme_and_merge_gate_reach_a_repo(
+        tmp_path, monkeypatch):
+    """The other half of `/crew:config --show`: the resolved table, not the
+    findings. `filter_global` accepting the keys is necessary and not
+    sufficient -- `explain_config` is a separate walk, and a key it credited
+    to no layer would be a global setting that resolves nowhere while the
+    findings list looks clean."""
+    path = _global(tmp_path, monkeypatch, contents={
+        "docs": {"theme": "acme", "reportTheme": "acme-client"},
+        "bitbucket": {"mergeGate": {"enabled": True, "preset": "strict"}},
+    })
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"schema": crew_state.SCHEMA_CURRENT}, git=False)
+
+    rows = {r["path"]: r for r in crew_config.explain_config(str(root),
+                                                             str(path))}
+
+    for dotted, value in (("docs.theme", "acme"),
+                          ("docs.reportTheme", "acme-client"),
+                          ("bitbucket.mergeGate.enabled", True),
+                          ("bitbucket.mergeGate.preset", "strict")):
+        assert rows[dotted]["value"] == value, dotted
+        assert rows[dotted]["source"] == "global", dotted
+    # Unset globally, so the built-in default still decides it -- the null
+    # that means "resolve the repo's main branch from the API".
+    assert rows["bitbucket.mergeGate.branch"]["value"] is None
+
+
 def test_default_config_schema_matches_crew_state():
     assert crew_config.default_config()["schema"] == crew_state.SCHEMA_CURRENT
 
