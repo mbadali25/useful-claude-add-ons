@@ -1157,6 +1157,25 @@ matters, and building on it would ship a behaviour change nobody chose:
   semantic, and it preserves the refusal exactly -- but today it only describes
   `reportTheme`.
 
+**RATIFIED AND SHIPPED 2026-09-12, crew 0.18.0: option 2, `theme: null`, with
+the migration.** Team-lead took the recommendation and resolved the cost rather
+than accepting it. The migration ambiguity I raised -- telling a deliberately
+typed `neutral` from a template-inherited one -- dissolves, and the reason is
+worth keeping: **`docs.theme` has never had a consumer**, so no user has ever
+been able to set it and observe an effect, so no existing value can encode a
+considered preference. It is inherited or it is inert. There is no third case to
+preserve, which is why rewriting is safe here and would not be for any key that
+ever worked. That sentence is now in the migration's own comment, because the
+next reader will meet it expecting the usual rule and needs to see why this is
+the documented exception rather than a violation of it.
+
+Residual cost, accepted and stated in the release note: someone who typed
+`"neutral"` meaning it retypes it once the key works. They get neutral anyway
+unless a pack is installed, so the window is narrow.
+
+The original framing of the two options is kept below, because the reasoning is
+what justifies the migration comment.
+
 So the ticket carries a decision, and the recommendation is the second option:
 
 1. Keep `theme: "neutral"`. Predictable, and the config then means what it says
@@ -1173,6 +1192,15 @@ Degraded path: use what exists. `resolve_brand.py` already reports what would be
 used and why, and `--list` enumerates visible packs. Do not invent separate
 detection. It must degrade rather than throw when doc-builder is not installed
 at all -- a second code path, and it needs its own test.
+
+**The refusal is not a guard pass-through must avoid defeating -- it is a guard
+pass-through EXTENDS.** Team-lead adopted this framing over their own after the
+measurement above: the refuse-to-guess behaviour fires only at two or more
+discovered packs, `neutral` is never a discovery candidate, so the ordinary
+configuration -- one client pack installed -- is the one-pack case where the
+refusal never fires at all. Pass-through is therefore not a risk to an existing
+safety property; it is the safety property for exactly the case the existing one
+leaves open. Use this framing, not "must not defeat the refusal".
 
 **Does `solomon-doc-builder` need a crew reference once this lands? No, and 0 is
 the correct final number.** Pass-through means crew hands over a NAME and
