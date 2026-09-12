@@ -1097,14 +1097,23 @@ WORKING DIRECTORY rather than a fixture:
 - `test_an_unset_copilot_model_is_not_barred_against_another_unset_one`
 - `test_author_family_honours_a_per_role_dev_pin_over_the_block_default`
 
-Both pass in CI and both fail on any developer machine that has ever used crew
-in this checkout, because `.work/` is gitignored and therefore absent from a
-clean clone but present locally. Measured rather than inferred: a worktree at
+Both pass in a CLEAN checkout and both fail on any developer machine that has
+ever used crew here, because `.work/` is gitignored and therefore absent from a
+fresh clone but present locally. Measured rather than inferred: a worktree at
 `7a234ba0` passes 124/124, and the same worktree with this repo's real
 `.work/dispatch.json` and `.work/dispatch.d/` copied in fails exactly these two.
-So it is environmental and pre-existing, not from the C/D branch -- but it means
-the local suite is not the suite CI runs, and a developer who sees these two red
-learns to ignore red. Fix belongs with the reader-side work above, since it is
+
+Say "clean checkout", not "CI". **CI does not currently run these tests at
+all** -- the `Pytest (crew + gizmoduck plugins)` job collects 954 items and dies
+on 12 gizmoduck `ImportError`s before executing one of them, so its log reports
+neither test by name. An earlier draft of this entry said "both pass in CI",
+which is an overclaim of exactly the kind this file exists to stop: it cites a
+green signal that was never produced. The clean-worktree run is the real
+evidence, and it is enough.
+
+So this is environmental and pre-existing, not from the C/D branch -- but it
+means the local suite is not the suite a clean checkout runs, and a developer
+who sees these two red learns to ignore red. Fix belongs with the reader-side work above, since it is
 the same store: pass a `tmp_path` root like the neighbouring tests do.
 
 ## The specialist role tables disagree with the code, on `main`
