@@ -327,15 +327,42 @@ adds the corollary: **check that the tree you measured is the tree you meant.**
 A background hook that rebuilds on branch switch, which this repo has, widens
 the window in which that is false.
 
-These six and the struck "already red on `main`" claim are one failure in
-seven costumes: a check that did not run, a check that ran against the wrong
+## The seventh: a correction that outlives the thing it corrected
+
+Found 2026-09-12, and the only one on this list that is CREATED by fixing
+something.
+
+`plugin/crew/README.md` §11 carried a sample `.crew/config.json` that had
+drifted badly. Before it was dealt with, a pointer paragraph was added saying,
+in effect: "the sample JSON and table above are older than `CONFIG.md` and
+disagree with it; where they differ, `CONFIG.md` is the one that was checked."
+True and useful at the time.
+
+The next change deleted the sample. The pointer paragraph survived it, and now
+told readers to distrust a sample that was no longer there -- a confident
+sentence about a thing that did not exist, left behind by the act of removing
+the thing.
+
+**Deletion is exactly when this happens**, because the person removing content
+is thinking about the content and not about what referred to it. A correction,
+a caveat, a "see the table above", a test name that describes the old
+behaviour: each is a reference, and a reference outliving its referent is worse
+than no reference, because it reads as current.
+
+When you delete something, grep for what pointed at it. Here that was one
+paragraph in the same file, found only because the deleted region was re-read
+afterwards rather than assumed correct.
+
+These seven and the struck "already red on `main`" claim are one failure in
+eight costumes: a check that did not run, a check that ran against the wrong
 ref, a check that answered a different question, an API that answered a
 different question, a state believed known without being read, a check that
-froze its author's own miscount, and a measurement of a tree that was moving
-underneath it. Each produces a confident sentence that is not true, and none of
-them looks like a failure at the moment it happens.
+froze its author's own miscount, a measurement of a tree that was moving
+underneath it, and a correction still standing after its subject was deleted.
+Each produces a confident sentence that is not true, and none of them looks
+like a failure at the moment it happens.
 
-Two sentences cover all seven. Prove the thing you believe is empty actually
+Two sentences cover all eight. Prove the thing you believe is empty actually
 is. And make the check's source independent of the thing it is checking --
 where they share one, the check can only confirm, never contradict.
 
