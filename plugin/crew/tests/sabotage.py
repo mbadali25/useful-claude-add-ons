@@ -11,6 +11,30 @@ claim "this is tested" is checked here rather than asserted.
 A mutation whose anchor no longer matches is a FAILURE, not a skip: the anchor
 drifting is how this suite would quietly stop testing anything.
 
+WHAT A RED RESULT DOES NOT PROVE, and the blind spot of this whole technique:
+a mutation going red proves the TEST failed. It never proves WHICH assertion
+failed. So a test with several assertions, covered by one mutation, can hold a
+vacuous assertion forever -- the mutation trips an earlier line, this file
+prints RED, and the mutation's own label claims coverage the suite does not
+have.
+
+Measured here, not hypothetical. `test_the_two_config_keys_are_bound_to_
+different_genres` was written to prove `docs.reportTheme` binds to the
+findings-report genre. It found the line naming that key, asserted the line
+existed, then asserted `"report"` was in it -- and `"docs.reportTheme"`
+contains `"report"`, so the second assertion could not fail once the first
+had. Its mutation deleted the key from the sentence, tripping the FIRST
+assertion. Red every run, binding unchecked. Four other vacuous assertions on
+that same branch were each caught by a mutation coming back green, which is the
+normal way this file earns its keep; this one could not be, and it was the
+assertion that had been specifically asked for.
+
+So when you add a mutation for a multi-assertion test, write the one that
+leaves every EARLIER assertion satisfied -- here, keep the key in the sentence
+and only widen the genre -- and treat a label naming one assertion as a claim
+about that assertion alone. Both entries are in MUTATIONS below, next to each
+other, on purpose.
+
 It edits real source in place, so putting the file back is as load-bearing as
 the mutation. `d362a2bd` shipped `crew_state.py` with a live mutation still in
 it -- a killed run had skipped the `finally`, the next run copied the mutated
