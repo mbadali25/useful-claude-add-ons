@@ -77,6 +77,31 @@ run_check() {
   STATUS=$?
 }
 
+# Same, with the module search path scrubbed. ExchangeOnlineManagement and the
+# Microsoft.Graph SDK are INSTALLED on a typical admin's Windows box and absent on the
+# CI runner, so their exported cmdlets resolve here and fail there - which is how nine
+# of them sat unnoticed until a long-masked CI step started running again. An allow
+# case for such a name is vacuous on a machine that resolves it: it passes with the
+# exemption deleted.
+#
+# The scrub MUST be set inside the session. `PSModulePath="" pwsh ...` from bash does
+# reach pwsh, but it does not stay empty: pwsh repopulates three defaults at startup,
+# among them the per-user Documents\PowerShell\Modules. That is a partial scrub, not an
+# inert one, which is the dangerous kind - it hid ExchangeOnlineManagement and
+# Microsoft.Graph.Users (both under WindowsPowerShell\Modules) while leaving
+# Microsoft.Graph.Authentication resolving, so a repo-wide scan came back clean against
+# a tree that still failed CI. Assigning $env:PSModulePath after startup is what
+# empties it. Case 0b probes the same way and would fail loudly if a future machine
+# resolved these through some other path, rather than letting the cases go quiet.
+scrubbed_pwsh() {
+  # $@ is appended to the pwsh command line after the assignment.
+  "$PWSH" -NoProfile -Command "\$env:PSModulePath=''; $*"
+}
+run_check_nomodule() {
+  OUT="$(scrubbed_pwsh "& '$(win "$CHECKER")' -Path '$(win "$1")'; exit \$LASTEXITCODE" 2>&1)"
+  STATUS=$?
+}
+
 blocked() { [ "$STATUS" -ne 0 ] && echo nonzero || echo zero; }
 says()    { case "$OUT" in *"$1"*) echo yes ;; *) echo no ;; esac; }
 
@@ -100,6 +125,28 @@ for n in Get-ADUser Get-Mailbox Get-Mailboxx Update-SessionEnvironment; do
   check "$n is unresolvable (else its case is vacuous)" unresolvable "$got"
 done
 
+echo "0b. and the module-backed names are unresolvable UNDER THE SCRUB"
+# These nine/five DO resolve unscrubbed wherever the module is installed. Asserting it
+# both ways is the point: the first probe proves the scrub is doing something (so a
+# scrub that silently stopped working cannot leave the cases below passing for the
+# wrong reason), the second proves the cases that rely on it are not vacuous.
+# Connect-MgGraph is in the list on purpose: it lives in Microsoft.Graph.Authentication
+# under the per-user module path, and it is the name that survived the earlier
+# outside-the-session scrub. If this probe ever reports 'resolves' again, the scrub has
+# regressed to that partial form and every case below it is worthless.
+for n in Connect-ExchangeOnline Get-EXOMailbox Get-MgUser Connect-MgGraph Get-MgContext; do
+  got="$(scrubbed_pwsh "if (Get-Command '$n' -ErrorAction SilentlyContinue) { 'resolves' } else { 'unresolvable' }" 2>&1)"
+  check "$n is unresolvable under the scrub" unresolvable "$got"
+done
+# The scrub must not be a blunt instrument that hides everything - if it did, case 5's
+# Get-ChildItem would "pass" for no reason and so would any future case.
+got="$(scrubbed_pwsh "if (Get-Command 'Get-ChildItem' -ErrorAction SilentlyContinue) { 'resolves' } else { 'unresolvable' }" 2>&1)"
+check "the scrub still leaves core cmdlets resolvable" resolves "$got"
+# And it must actually empty the variable, not merely change it - the old form left
+# three default paths behind, which is why this asserts the value rather than an effect.
+got="$(scrubbed_pwsh "'[' + \$env:PSModulePath + ']'" 2>&1)"
+check "PSModulePath is empty inside the session" "[]" "$got"
+
 # --- must block ---------------------------------------------------------------
 echo "1. MUST BLOCK: an out-of-scope file gets no Exchange/AD exemption"
 f="$(fixture 'plugin/somewhere/audit.ps1' \
@@ -117,6 +164,34 @@ f="$(fixture 'skills/exchange-mailbox-cleanup/scripts/typo.ps1' \
 run_check "$f"
 check "in-scope typo exits non-zero"           nonzero "$(blocked)"
 check "and the message names Get-Mailboxx"     yes     "$(says "calls 'Get-Mailboxx'")"
+
+echo "2b. MUST BLOCK: out of scope, a module-backed name is still rejected"
+# Run under the scrub, so this is the runner's view rather than this box's.
+f="$(fixture 'plugin/somewhere/connect.ps1' \
+  'Connect-ExchangeOnline -ShowBanner:$false' \
+  'Write-Host "connected"')"
+run_check_nomodule "$f"
+check "out-of-scope Connect-ExchangeOnline exits non-zero" nonzero "$(blocked)"
+check "and the message names Connect-ExchangeOnline"       yes     "$(says "calls 'Connect-ExchangeOnline'")"
+
+echo "2c. MUST BLOCK: the same for a Microsoft.Graph name"
+f="$(fixture 'plugin/somewhere/licences.ps1' \
+  '$u = Get-MgUser -UserId "a@b.test"' \
+  'Write-Host $u')"
+run_check_nomodule "$f"
+check "out-of-scope Get-MgUser exits non-zero"             nonzero "$(blocked)"
+check "and the message names Get-MgUser"                   yes     "$(says "calls 'Get-MgUser'")"
+
+echo "2d. MUST BLOCK: and for Microsoft.Graph.Authentication"
+# Separate from 2c because it is a separate module, installed under a different path -
+# the distinction the earlier scrub could not see.
+f="$(fixture 'plugin/somewhere/graph-auth.ps1' \
+  'Connect-MgGraph -Scopes "User.Read.All"' \
+  '$c = Get-MgContext' \
+  'Write-Host $c')"
+run_check_nomodule "$f"
+check "out-of-scope Connect-MgGraph exits non-zero"        nonzero "$(blocked)"
+check "and the message names Connect-MgGraph"              yes     "$(says "calls 'Connect-MgGraph'")"
 
 # --- must allow ---------------------------------------------------------------
 # Assert on the clean line too, not just exit 0: a checker that silently stopped
@@ -137,6 +212,23 @@ f="$(fixture 'skills/exchange-mailbox-restore/scripts/exo_preflight.ps1' \
   'Write-Host $g')"
 run_check "$f"
 check "restore-side Get-RoleGroup exits 0"     zero "$(blocked)"
+check "and the checker reports it clean"       yes  "$(says "$CLEAN")"
+
+echo "3c. MUST ALLOW: in scope, the real module-backed names under the scrub"
+# One fixture carrying a connect Function, an EXO Cmdlet and a Graph cmdlet - the three
+# kinds added for the CI failure. Under the scrub none of them resolves, so this passes
+# only because the exemption reaches this path.
+f="$(fixture 'skills/exchange-mailbox-cleanup/scripts/vendored/preflight.ps1' \
+  'Connect-ExchangeOnline -ShowBanner:$false' \
+  '$m = Get-EXOMailbox -Identity "a@b.test"' \
+  '$u = Get-MgUser -UserId "a@b.test"' \
+  'Connect-MgGraph -Scopes "User.Read.All"' \
+  '$c = Get-MgContext' \
+  'Disconnect-MgGraph' \
+  'Disconnect-ExchangeOnline -Confirm:$false' \
+  'Write-Host $m $u $c')"
+run_check_nomodule "$f"
+check "in-scope EXO + Graph names exit 0"      zero "$(blocked)"
 check "and the checker reports it clean"       yes  "$(says "$CLEAN")"
 
 echo "4. MUST ALLOW: a genuinely universal exemption stays universal"

@@ -74,8 +74,10 @@ $exchangeSkillScripts = @(
     '*/skills/exchange-mailbox-cleanup/scripts/*'
     '*/skills/exchange-mailbox-restore/scripts/*'
 )
-$exoSession = @{ Module = 'ExchangeOnlineManagement (session-materialised)'; Paths = $exchangeSkillScripts }
-$adRsat     = @{ Module = 'ActiveDirectory (RSAT, Windows-only)';            Paths = $exchangeSkillScripts }
+$exoSession  = @{ Module = 'ExchangeOnlineManagement (session-materialised)'; Paths = $exchangeSkillScripts }
+$exoManifest = @{ Module = 'ExchangeOnlineManagement (manifest-exported)';    Paths = $exchangeSkillScripts }
+$graphSdk    = @{ Module = 'Microsoft.Graph (PowerShell SDK, not preinstalled)'; Paths = $exchangeSkillScripts }
+$adRsat      = @{ Module = 'ActiveDirectory (RSAT, Windows-only)';            Paths = $exchangeSkillScripts }
 
 # Names that legitimately come from a module the script imports at runtime, so they
 # cannot resolve on a CI runner. Keep this list short and say where each one comes from -
@@ -149,6 +151,57 @@ $externallyProvided = @{
     'Set-Mailbox'                       = $exoSession
     'Set-MailboxAutoReplyConfiguration' = $exoSession
     'Start-ComplianceSearch'            = $exoSession
+    # ExchangeOnlineManagement again, and deliberately NOT folded into the block above,
+    # because the reason is the opposite one and merging them would make that comment
+    # false. These nine ARE exported by the manifest - the three Connect-/Disconnect-
+    # names as Functions, the other six as Cmdlets - so they resolve after a bare
+    # Import-Module, before any connection. Measured on 3.10.1 from
+    # C:\Program Files\WindowsPowerShell\Modules\ExchangeOnlineManagement\3.10.1.
+    #
+    # That difference is the whole reason they went unnoticed: on a box with the module
+    # installed they resolve and this check is silent, and on the CI runner the module
+    # is absent entirely so all nine fail at once. So a green local run proves nothing
+    # about them. Reproduce CI's view here with
+    #   PSModulePath="" pwsh -NoProfile -File scripts/check-powershell.ps1
+    # which drops the WindowsPowerShell compat path where the module lives; that is the
+    # environment scripts/_test/check-powershell.sh runs their cases under, precisely
+    # so an allow-case for them is not vacuous on the machine that resolves them.
+    'Connect-ExchangeOnline'            = $exoManifest
+    'Connect-IPPSSession'               = $exoManifest
+    'Disconnect-ExchangeOnline'         = $exoManifest
+    'Get-ConnectionInformation'         = $exoManifest
+    'Get-EXOMailbox'                    = $exoManifest
+    'Get-EXOMailboxPermission'          = $exoManifest
+    'Get-EXOMailboxStatistics'          = $exoManifest
+    'Get-EXORecipient'                  = $exoManifest
+    'Get-EXORecipientPermission'        = $exoManifest
+    # The Microsoft.Graph SDK, same shape as the manifest-exported names above -
+    # ordinary exported cmdlets that resolve wherever the SDK is installed and nowhere
+    # it is not, which on ubuntu-latest is nowhere. Found by running the CI-equivalent
+    # command above rather than from the CI log, which named only the EXO nine; these
+    # five fail identically and in the same four files, so fixing only the nine would
+    # have left the step red and looked like the fix had not worked.
+    # Callers: exo_preflight.ps1 and vendored/{Get-M365OffboardingStatus,
+    # Invoke-M365OffboardingHold}.ps1 under both Exchange skills.
+    'Get-MgSubscribedSku'               = $graphSdk
+    'Get-MgUser'                        = $graphSdk
+    'Get-MgUserMemberOf'                = $graphSdk
+    'Revoke-MgUserSignInSession'        = $graphSdk
+    'Set-MgUserLicense'                 = $graphSdk
+    # The same SDK's authentication module, and listed after the five above because
+    # they were found only on the SECOND pass, by a scrub that was wrong the first
+    # time. Emptying PSModulePath from OUTSIDE pwsh does not stay empty: pwsh
+    # repopulates three defaults at startup, one of them the per-user
+    # Documents\PowerShell\Modules, which is where Microsoft.Graph.Authentication is
+    # installed on this box while the other Graph modules are under
+    # WindowsPowerShell\Modules. So the outside scrub hid those and left these
+    # resolving, and the scan reported clean against a tree that still failed CI.
+    # Setting $env:PSModulePath='' INSIDE the session is what actually empties it.
+    # Verified 2.39.0: all three are Cmdlets in the module's ExportedCommands, so
+    # they resolve after a bare Import-Module, exactly like the nine EXO names.
+    'Connect-MgGraph'                   = $graphSdk
+    'Disconnect-MgGraph'                = $graphSdk
+    'Get-MgContext'                     = $graphSdk
     # The ActiveDirectory module ships in RSAT, so it is absent on a CI runner and
     # on any Windows box without the feature installed - the same shape as the
     # ScheduledTasks entries above, listed separately only because it is a
