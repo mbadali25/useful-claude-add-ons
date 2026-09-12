@@ -591,7 +591,7 @@ Generated from [`skills/UPDATE.md`](skills/UPDATE.md) by `scripts/sync-updates.p
 
 ### Unreleased
 
-Four new skills, taking the marketplace from 25 to 29.
+Nine new skills, taking the marketplace from 25 to 34.
 
 - **`jira-manager`** — Jira Cloud over the REST API v3 with an email + API
   token, no MCP connector and no OAuth flow. JQL search, create, update fields,
@@ -611,6 +611,39 @@ Four new skills, taking the marketplace from 25 to 29.
   and it drops correct CSS silently. Carries the five measured traps, a
   greyscale-safe palette, and a test that runs the checklist against an
   artifact the builder actually emitted.
+- **`doc-builder`** — finished, human-facing documents as DOCX and PDF through
+  Microsoft Word, in the installed brand pack's house style or a neutral one.
+  Two pipelines behind one skill: findings-style reports (HTML through Word
+  COM) and step-by-step procedures with screenshots (python-docx OOXML,
+  because `add_picture()` writes neither the border nor the `effectExtent`
+  Word needs to avoid clipping a screenshot border). Brand resolves
+  automatically from any installed brand pack (for example
+  `solomon-doc-builder`); `report-builder` and `solomon-sop-maker` are now
+  deprecated stubs that redirect here.
+- **`exchange-mailbox-cleanup`** — walks a non-technical operator, one step at
+  a time, through the Exchange Online Mailbox Cleanup runbook for terminated
+  users: applies a seven-year Litigation Hold, verifies the mail stays
+  searchable, deletes the account, confirms the mailbox went inactive with the
+  hold intact, and exports from Purview eDiscovery. The skill only prints
+  commands for the operator's own Windows PowerShell 5.1 window; it never runs
+  `Connect-ExchangeOnline` or any mutating cmdlet itself.
+- **`exchange-mailbox-restore`** — the reverse walkthrough: triages what state
+  a mailbox is really in, then takes exactly one of five paths — remove a
+  Litigation Hold, restore an inactive mailbox's mail into a shared mailbox,
+  recover an inactive mailbox for a returning employee, undelete an account
+  inside the 30-day window, or remove the last hold for authorised permanent
+  destruction. Same print-only contract as the cleanup skill; the destructive
+  paths are gated by typed confirmations (`RECOVER 1`, `DESTROY 1`).
+- **`solomon-doc-builder`** — a brand pack, not a builder: Solomon Associates'
+  palette, fonts, footer, and SOP masters location for `doc-builder`. Contains
+  no scripts; installing it alongside `doc-builder` applies Solomon styling to
+  every document automatically from then on, with `--brand neutral` (or
+  `DOC_BUILDER_BRAND=neutral`) as the always-wins off switch.
+- **`solomon-sop-maker`** — deprecated 2026-09-10, split into `doc-builder`
+  (the python-docx SOP pipeline, both conformance gates, the template spec,
+  screenshot rules) and `solomon-doc-builder` (the Solomon brand values). A
+  stub kept only so old references to the name still resolve; it contains no
+  scripts and does nothing itself.
 
 <!-- END skills/UPDATE.md -->
 
