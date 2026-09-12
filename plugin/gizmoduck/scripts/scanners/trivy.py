@@ -78,7 +78,7 @@ def _resolve_kind(target, kind, opts=None):
         kind = _attr(target, "kind")
     if kind not in KINDS:
         raise ValueError(
-            "trivy: kind must be one of %s, got %r" % (KINDS, kind))
+            f"trivy: kind must be one of {KINDS}, got {kind!r}")
     return kind
 
 
@@ -110,7 +110,7 @@ def run(target, outdir, opts=None):
 
     outdir = Path(outdir)
     outdir.mkdir(parents=True, exist_ok=True)
-    raw_path = outdir / ("trivy-%s.json" % kind)
+    raw_path = outdir / (f"trivy-{kind}.json")
 
     # DEFECT 1 (critical): establish freshness BEFORE invoking trivy. Without
     # this, a stale file left over from a previous run in the same outdir
@@ -137,7 +137,7 @@ def _first_cvss(cvss_block):
         return ""
     if not isinstance(cvss_block, dict):
         raise base.ParseError(
-            "trivy: 'CVSS' must be an object, got %r" % type(cvss_block).__name__)
+            f"trivy: 'CVSS' must be an object, got {type(cvss_block).__name__!r}")
     for source in ("nvd", "redhat", "ghsa"):
         entry = cvss_block.get(source)
         if entry and entry.get("V3Score") is not None:
@@ -158,13 +158,13 @@ def _as_list(value, label):
     if value is None:
         return []
     if not isinstance(value, list):
-        raise base.ParseError("trivy: %r must be a list, got %r" % (label, type(value).__name__))
+        raise base.ParseError(f"trivy: {label!r} must be a list, got {type(value).__name__!r}")
     return value
 
 
 def _as_obj(value, label):
     if not isinstance(value, dict):
-        raise base.ParseError("trivy: %r entry is not an object: %r" % (label, value))
+        raise base.ParseError(f"trivy: {label!r} entry is not an object: {value!r}")
     return value
 
 
@@ -183,7 +183,7 @@ def _parse_vulnerabilities(results, target_name):
             primary_url = vuln.get("PrimaryURL")
             references = ([primary_url] if primary_url else []) + \
                 list(vuln.get("References") or [])
-            remediation = ("upgrade %s to %s" % (pkg, fixed)) if fixed else ""
+            remediation = (f"upgrade {pkg} to {fixed}") if fixed else ""
             finding = normalize.make_finding(
                 NAME, target_name, rule_id, vuln.get("Title") or rule_id, sev,
                 severity_known=known,
@@ -220,7 +220,7 @@ def _parse_misconfigurations(results, target_name):
             rule_id = mis.get("ID", "")
             cause = mis.get("CauseMetadata") or {}
             start_line = cause.get("StartLine")
-            matched_at = ("%s:%s" % (file_target, start_line)
+            matched_at = (f"{file_target}:{start_line}"
                           if start_line else file_target)
             primary_url = mis.get("PrimaryURL")
             finding = normalize.make_finding(
@@ -268,11 +268,11 @@ def parse(raw_path, target, kind=None):
         with open(raw_path, "r", encoding="utf-8") as fh:
             data = json.load(fh)
     except (OSError, ValueError) as e:
-        raise base.ParseError("trivy: could not read %s: %s" % (raw_path, e)) from e
+        raise base.ParseError(f"trivy: could not read {raw_path}: {e}") from e
 
     if not isinstance(data, dict):
         raise base.ParseError(
-            "trivy: expected a JSON object at the top level, got %r" % type(data).__name__)
+            f"trivy: expected a JSON object at the top level, got {type(data).__name__!r}")
 
     # DEFECT 1, corrected against real trivy 0.74.0 output: `Results` is
     # `omitempty` on trivy's own Report struct, so a genuine clean scan - one

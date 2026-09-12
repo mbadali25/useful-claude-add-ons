@@ -65,7 +65,7 @@ class FakeRegistry:
 
 def _finding(tool, rule_id, severity=2):
     return {
-        "template_id": "%s:%s" % (tool, rule_id), "name": rule_id,
+        "template_id": f"{tool}:{rule_id}", "name": rule_id,
         "severity": severity, "severity_name": "medium", "type": "",
         "timestamp": "", "host": "", "matched_at": "", "cve": [], "cvss": "",
         "description": "", "remediation": "", "reference": [], "tags": [],
@@ -349,7 +349,7 @@ def test_run_routine_rejects_duplicate_target_names_for_a_hand_built_manifest(
 
 
 def test_run_manifest_json_has_the_documented_schema(manifest, fake_registry, tmp_path):
-    rm = routine.run_routine(manifest, tmp_path, registry=fake_registry)
+    routine.run_routine(manifest, tmp_path, registry=fake_registry)
     on_disk = json.loads((tmp_path / "run-manifest.json").read_text())
 
     assert on_disk["authorized_by"] == manifest.authorized_by
@@ -391,7 +391,6 @@ def test_run_manifest_json_has_the_documented_schema(manifest, fake_registry, tm
 
 def test_explicit_tools_list_cannot_grant_sqlmap_without_the_opt_in(
         tmp_path, monkeypatch):
-    import scanners
     from scanners import sqlmap
 
     subprocess_calls = []
@@ -407,11 +406,11 @@ def test_explicit_tools_list_cannot_grant_sqlmap_without_the_opt_in(
                                 tools=["sqlmap"], options=dict(opts))
         manifest = routine.Manifest(authorized_by="Alice", targets=[target])
 
-        rm = routine.run_routine(manifest, tmp_path / ("case-%d" % i),
+        rm = routine.run_routine(manifest, tmp_path / (f"case-{i:d}"),
                                  confirm="approved")
 
         assert subprocess_calls == [], (
-            "sqlmap reached base.run_tool for options=%r" % (opts,))
+            f"sqlmap reached base.run_tool for options={opts!r}")
         assert rm.status("prod", "sqlmap") is None
 
 

@@ -88,7 +88,7 @@ def _line_range(rng):
         return ""
     if isinstance(rng, (list, tuple)):
         if len(rng) >= 2:
-            return "%s-%s" % (rng[0], rng[1])
+            return f"{rng[0]}-{rng[1]}"
         if len(rng) == 1:
             return str(rng[0])
         return ""
@@ -133,15 +133,15 @@ def parse(raw_path, target):
         with open(raw_path, encoding="utf-8") as fh:
             content = fh.read()
     except OSError as e:
-        raise base.ParseError("%s: could not read file: %s" % (raw_path, e)) from e
+        raise base.ParseError(f"{raw_path}: could not read file: {e}") from e
 
     if not content.strip():
-        raise base.ParseError("%s: empty output" % raw_path)
+        raise base.ParseError(f"{raw_path}: empty output")
 
     try:
         data = json.loads(content)
     except ValueError as e:
-        raise base.ParseError("%s: invalid JSON: %s" % (raw_path, e)) from e
+        raise base.ParseError(f"{raw_path}: invalid JSON: {e}") from e
 
     # DEFECT 1, corrected against real checkov 3.3.17 output: when NO
     # framework produced a non-empty report at all (RunnerRegistry only adds
@@ -169,13 +169,13 @@ def parse(raw_path, target):
     # at least one report object. Treating it as "nothing to report" was the
     # false-clean this whole check exists to close.
     if not reports:
-        raise base.ParseError("%s: empty report list" % raw_path)
+        raise base.ParseError(f"{raw_path}: empty report list")
 
     findings = []
     for report in reports:
         if not isinstance(report, dict):
             raise base.ParseError(
-                "%s: report entry is not an object: %r" % (raw_path, report))
+                f"{raw_path}: report entry is not an object: {report!r}")
         check_type = report.get("check_type") or ""
 
         # DEFECT 1/2: the report's mandatory top-level container must be
@@ -187,29 +187,27 @@ def parse(raw_path, target):
         # `results.failed_checks: []`, which is the one shape this
         # validation must let through unchanged.
         if "results" not in report:
-            raise base.ParseError("%s: report is missing 'results'" % raw_path)
+            raise base.ParseError(f"{raw_path}: report is missing 'results'")
         results = report.get("results")
         if not isinstance(results, dict):
             raise base.ParseError(
-                "%s: 'results' must be an object, got %r" % (raw_path, type(results).__name__))
+                f"{raw_path}: 'results' must be an object, got {type(results).__name__!r}")
         if "failed_checks" not in results:
-            raise base.ParseError("%s: 'results' is missing 'failed_checks'" % raw_path)
+            raise base.ParseError(f"{raw_path}: 'results' is missing 'failed_checks'")
         failed_checks = results.get("failed_checks")
         if not isinstance(failed_checks, list):
             raise base.ParseError(
-                "%s: 'failed_checks' must be a list, got %r" %
-                (raw_path, type(failed_checks).__name__))
+                f"{raw_path}: 'failed_checks' must be a list, got {type(failed_checks).__name__!r}")
 
         for check in failed_checks:
             if not isinstance(check, dict):
                 raise base.ParseError(
-                    "%s: failed_checks entry is not an object: %r" % (raw_path, check))
+                    f"{raw_path}: failed_checks entry is not an object: {check!r}")
             rule_id = check.get("check_id") or check.get("bc_check_id") or "unknown"
             sev, known = n.sev_from_text(check.get("severity"), default="medium")
             guideline = check.get("guideline") or ""
             resource = check.get("resource") or ""
-            location = "%s:%s" % (check.get("file_path") or "",
-                                   _line_range(check.get("file_line_range")))
+            location = f"{check.get('file_path') or ''}:{_line_range(check.get('file_line_range'))}"
 
             finding = n.make_finding(
                 tool=NAME,

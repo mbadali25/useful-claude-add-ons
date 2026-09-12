@@ -54,8 +54,9 @@ import os
 from urllib.parse import urlparse
 import xml.etree.ElementTree as ET
 
-from . import base
 import normalize
+
+from . import base
 
 NAME = "nmap"
 KINDS = ["web", "host"]
@@ -98,7 +99,7 @@ def _target_host(target):
     if url:
         parsed = urlparse(url)
         return parsed.hostname or parsed.netloc or url
-    raise ValueError("nmap target has neither .host nor .url: %r" % (target,))
+    raise ValueError(f"nmap target has neither .host nor .url: {target!r}")
 
 
 def _opt(opts, key, default=None):
@@ -320,12 +321,13 @@ def parse_errors(raw_path, target):
         status = host_el.find("status")
         if status is not None and status.get("state") == "down":
             addr_el = host_el.find("address")
+            reason = status.get("reason") or "no-response"
             errors.append({
                 "tool": NAME,
                 "target": target,
                 "severity": "error",
-                "message": "host reported down (%s) - target unreachable, not scanned"
-                           % (status.get("reason") or "no-response"),
+                "message": f"host reported down ({reason}) - "
+                           f"target unreachable, not scanned",
                 "host": addr_el.get("addr") if addr_el is not None else "",
             })
     return errors
@@ -356,7 +358,7 @@ def parse(raw_path, target):
     try:
         tree = ET.parse(raw_path)
     except ET.ParseError as e:
-        raise base.ParseError("nmap: could not parse %s: %s" % (raw_path, e)) from e
+        raise base.ParseError(f"nmap: could not parse {raw_path}: {e}") from e
     root = tree.getroot()
 
     # DEFECT 1 (CRITICAL): `<wrong/>` and similar are syntactically valid
@@ -366,7 +368,7 @@ def parse(raw_path, target):
     # was never a real nmap report at all.
     if root.tag != "nmaprun":
         raise base.ParseError(
-            "nmap: expected <nmaprun> root element in %s, got <%s>" % (raw_path, root.tag))
+            f"nmap: expected <nmaprun> root element in {raw_path}, got <{root.tag}>")
 
     findings = []
 
@@ -399,7 +401,7 @@ def parse(raw_path, target):
             product = service_el.get("product", "") if service_el is not None else ""
             version = service_el.get("version", "") if service_el is not None else ""
             svc_desc = " ".join(p for p in (product, version) if p)
-            matched_at = "%s:%s" % (host_ip, portid)
+            matched_at = f"{host_ip}:{portid}"
 
             # An open port with no <script> child yields exactly this one
             # info finding - the port/service discovery itself, not a
@@ -407,13 +409,13 @@ def parse(raw_path, target):
             findings.append(normalize.make_finding(
                 tool=NAME,
                 target=target,
-                rule_id="open-port/%s/%s" % (proto, portid),
-                name="Open port %s/%s (%s)" % (portid, proto, service_name or "unknown"),
+                rule_id=f"open-port/{proto}/{portid}",
+                name=f"Open port {portid}/{proto} ({service_name or 'unknown'})",
                 severity=0,
                 type="port",
                 host=host_ip,
                 matched_at=matched_at,
-                description=("%s %s" % (service_name, svc_desc)).strip(),
+                description=(f"{service_name} {svc_desc}").strip(),
             ))
 
             # A <script> carrying a structured <table> yields its own

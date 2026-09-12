@@ -129,9 +129,9 @@ def test_hundred_records_same_group_severity_and_tags_order_independent(gz):
     records = []
     for i in range(100):
         sev = i % 5
-        records.append(_sev("checkov:CKV_3", "a.example/%d" % i, sev,
+        records.append(_sev("checkov:CKV_3", f"a.example/{i:d}", sev,
                             gz.SEV_NAME.get(sev, "info").lower(),
-                            assigned=(i % 7 == 0)))
+                            assigned=i % 7 == 0))
 
     forward = gz.dedupe(records)[0]
     shuffled = records[:]

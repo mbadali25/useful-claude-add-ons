@@ -42,7 +42,7 @@ def test_cvss_rejects_missing_non_finite_and_out_of_range(score):
     # Not a valid CVSS score - must not be presented as a real assessment.
     # The int half is not asserted: only `known` is part of the contract
     # for an invalid score, per the docstring.
-    sev, known = n.sev_from_cvss(score)
+    _sev, known = n.sev_from_cvss(score)
     assert known is False
 
 
@@ -51,7 +51,7 @@ def test_cvss_falls_through_from_invalid_v2_to_valid_v3():
     # score must not shadow a good cvssv3 score. This is the adapter's
     # responsibility (depcheck.py), but the contract it relies on - that
     # an invalid score comes back with known=False - is asserted here.
-    bad_sev, bad_known = n.sev_from_cvss(-1)
+    _bad_sev, bad_known = n.sev_from_cvss(-1)
     good_sev, good_known = n.sev_from_cvss(9.8)
     assert bad_known is False
     assert (good_sev, good_known) == (4, True)
