@@ -418,8 +418,7 @@ def to_word(html_path, want_docx, want_pdf):
     for target in ([base + ".docx"] if want_docx else []) + ([base + ".pdf"] if want_pdf else []):
         why = locked(target)
         if why:
-            print("cannot convert: %s. Close %s and run again."
-                  % (why, os.path.basename(target)), file=sys.stderr)
+            print(f"cannot convert: {why}. Close {os.path.basename(target)} and run again.", file=sys.stderr)
             return 1
 
     # The try must open IMMEDIATELY after Dispatch, and doc must be tracked from

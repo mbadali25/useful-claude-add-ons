@@ -125,21 +125,20 @@ def _diff_blocks(spec_name, expected, actual):
     for i in range(max(len(expected), len(actual))):
         if i >= len(expected):
             at, atext = actual[i]
-            return ("spec %s has only %d block(s), but master has an extra "
-                     "block %d: %s %r" % (spec_name, len(expected), i, at, atext))
+            return (f"spec {spec_name} has only {len(expected):d} block(s), but master has an extra "
+                     f"block {i:d}: {at} {atext!r}")
         if i >= len(actual):
             et, etext = expected[i]
-            return ("spec %s says block %d is a %s %r, but master has no "
-                     "block there (master has only %d block(s))"
-                     % (spec_name, i, et, etext, len(actual)))
+            return (f"spec {spec_name} says block {i:d} is a {et} {etext!r}, but master has no "
+                     f"block there (master has only {len(actual):d} block(s))")
         et, etext = expected[i]
         at, atext = actual[i]
         if et != at:
-            return ("spec %s says block %d is a %s %r, master has a %s %r"
-                    % (spec_name, i, et, etext, at, atext))
+            return (f"spec {spec_name} says block {i:d} is a {et} "
+                    f"{etext!r}, master has a {at} {atext!r}")
         if etext is not None and atext is not None and etext.strip() != atext.strip():
-            return ("spec %s says block %d (%s) text is %r, master has %r"
-                    % (spec_name, i, et, etext, atext))
+            return (f"spec {spec_name} says block {i:d} ({et}) text is "
+                    f"{etext!r}, master has {atext!r}")
     return None
 
 
@@ -187,20 +186,24 @@ def check(path, spec_map=None, check_spec=True):
     house = style.MARGINS_IN
     margins = (round(s.top_margin.inches, 2), round(s.bottom_margin.inches, 2),
                round(s.left_margin.inches, 2), round(s.right_margin.inches, 2))
-    info["margins"] = "T%.2f B%.2f L%.2f R%.2f" % margins
+    m_top, m_bot, m_left, m_right = margins
+    info["margins"] = (f"T{m_top:.2f} B{m_bot:.2f} "
+                       f"L{m_left:.2f} R{m_right:.2f}")
     if margins[0] < house["top"]:
         # House consistency only. This was once recorded as the fix for clipped
         # screenshot borders -- it is not. See the effectExtent check below.
-        warnings.append("top margin is %.2f\", house is %.2f\"" % (margins[0], house["top"]))
+        warnings.append(f"top margin is {margins[0]:.2f}\", house is {house['top']:.2f}\"")
     if margins[1:] != (round(house["bottom"], 2), round(house["left"], 2), round(house["right"], 2)):
-        warnings.append("bottom/left/right margins are %.2f/%.2f/%.2f, house is %.2f/%.2f/%.2f"
-                        % (margins[1:] + (house["bottom"], house["left"], house["right"])))
+        warnings.append(
+            f"bottom/left/right margins are "
+            f"{m_bot:.2f}/{m_left:.2f}/{m_right:.2f}, house is "
+            f'{house["bottom"]:.2f}/{house["left"]:.2f}/{house["right"]:.2f}')
 
     # -- base font ----------------------------------------------------------
     normal = d.styles["Normal"].font.name
     info["normal_font"] = normal
     if normal != S.BODY_FONT:
-        errors.append("Normal style font is %r, house is %r" % (normal, S.BODY_FONT))
+        errors.append(f"Normal style font is {normal!r}, house is {S.BODY_FONT!r}")
 
     # -- title banner -------------------------------------------------------
     if not d.tables:
@@ -210,7 +213,7 @@ def check(path, spec_map=None, check_spec=True):
         xml = tbl._tbl.xml
         fills = re.findall(r'<w:shd[^>]*w:fill="([0-9A-Fa-f]{6})"', xml)
         if S.ACCENT_RED not in [f.upper() for f in fills]:
-            errors.append("accent bar cell is not shaded %s (found %s)" % (S.ACCENT_RED, fills))
+            errors.append(f"accent bar cell is not shaded {S.ACCENT_RED} (found {fills})")
         cells = tbl.rows[0].cells
         title_run = None
         for para in cells[-1].paragraphs:
@@ -222,14 +225,12 @@ def check(path, spec_map=None, check_spec=True):
         else:
             info["title"] = title_run.text
             if title_run.font.name != S.HEADING_FONT:
-                errors.append("title font is %r, house is %r"
-                              % (title_run.font.name, S.HEADING_FONT))
+                errors.append(f"title font is {title_run.font.name!r}, house is {S.HEADING_FONT!r}")
             pt = title_run.font.size.pt if title_run.font.size else None
             if pt != S.TITLE_PT:
-                errors.append("title size is %s pt, house is %s pt" % (pt, S.TITLE_PT))
+                errors.append(f"title size is {pt} pt, house is {S.TITLE_PT} pt")
             if _rgb(title_run) != S.TITLE_GREY:
-                errors.append("title colour is %s, house is %s"
-                              % (_rgb(title_run), S.TITLE_GREY))
+                errors.append(f"title colour is {_rgb(title_run)}, house is {S.TITLE_GREY}")
 
     # -- footer -------------------------------------------------------------
     # Inverted from the original gate, which asserted one hard-coded
@@ -238,16 +239,15 @@ def check(path, spec_map=None, check_spec=True):
     required = list(style.FOOTER.get("required_text") or [])
     optional = list(style.FOOTER.get("optional_text") or [])
     if not s.footer.tables:
-        errors.append("no footer table (expected: %s)" % " / ".join(required + optional))
+        errors.append(f"no footer table (expected: {' / '.join(required + optional)})")
     else:
         ftext = " ".join(c.text for c in s.footer.tables[0].rows[0].cells)
         for want in required:
             if want not in ftext:
-                errors.append("footer is missing %r required by the %s brand"
-                              % (want, style.brand.name))
+                errors.append(f"footer is missing {want!r} required by the {style.brand.name} brand")
         for want in optional:
             if want not in ftext:
-                warnings.append("footer is missing %r" % want)
+                warnings.append(f"footer is missing {want!r}")
 
     # -- body blocks --------------------------------------------------------
     headings = steps = bullets = captions = 0
@@ -261,23 +261,19 @@ def check(path, spec_map=None, check_spec=True):
         if first.font.name == S.HEADING_FONT and size_pt == S.HEADING_PT:
             headings += 1
             if colour != S.HEADING_NAVY:
-                errors.append("heading %r colour is %s, house is %s"
-                              % (para.text[:40], colour, S.HEADING_NAVY))
+                errors.append(f"heading {para.text[:40]!r} colour is {colour}, house is {S.HEADING_NAVY}")
         elif re.match(r"^\d+\.$", first.text.strip()) and first.text.strip():
             steps += 1
             if colour != S.ACCENT_RED:
-                errors.append("step marker %r colour is %s, house is %s"
-                              % (first.text.strip(), colour, S.ACCENT_RED))
+                errors.append(f"step marker {first.text.strip()!r} colour is {colour}, house is {S.ACCENT_RED}")
         elif first.text.strip() == S.BULLET_CHAR:
             bullets += 1
             if colour != S.ACCENT_RED:
-                errors.append("bullet marker colour is %s, house is %s"
-                              % (colour, S.ACCENT_RED))
+                errors.append(f"bullet marker colour is {colour}, house is {S.ACCENT_RED}")
         elif size_pt == S.CAPTION_PT:
             captions += 1
             if colour != S.CAPTION_GREY:
-                errors.append("caption %r colour is %s, house is %s"
-                              % (para.text[:40], colour, S.CAPTION_GREY))
+                errors.append(f"caption {para.text[:40]!r} colour is {colour}, house is {S.CAPTION_GREY}")
             # Captions are italic in the house style -- measured 2026-09-08 as
             # 47 italic caption paragraphs across 17 masters and zero plain
             # ones. The spec previously recorded caption size and colour but
@@ -288,11 +284,9 @@ def check(path, spec_map=None, check_spec=True):
             # and those have no runs to be italic.
             texted = [r for r in para.runs if r.text.strip()]
             if texted and not any(r.italic for r in texted):
-                errors.append("caption %r is not italic; house captions are"
-                              % para.text[:40])
+                errors.append(f"caption {para.text[:40]!r} is not italic; house captions are")
 
-    info["blocks"] = "%d headings, %d steps, %d bullets, %d captions" % (
-        headings, steps, bullets, captions)
+    info["blocks"] = f"{headings:d} headings, {steps:d} steps, {bullets:d} bullets, {captions:d} captions"
 
     # -- screenshots --------------------------------------------------------
     body_xml = d.element.body.xml
@@ -302,8 +296,7 @@ def check(path, spec_map=None, check_spec=True):
     info["images"] = len(extents)
     unbordered = sum(1 for p in pics if S.IMAGE_BORDER_RED not in p.upper())
     if unbordered:
-        errors.append("%d of %d screenshots have no %s border"
-                      % (unbordered, len(pics), S.IMAGE_BORDER_RED))
+        errors.append(f"{unbordered:d} of {len(pics):d} screenshots have no {S.IMAGE_BORDER_RED} border")
 
     # Word strokes the picture outline OUTSIDE wp:extent. Without wp:effectExtent
     # reserving that band, the stroke falls outside the line box and Word clips
@@ -317,13 +310,12 @@ def check(path, spec_map=None, check_spec=True):
         if ee is None or any(int(ee.get(s) or 0) < S.EFFECT_EXTENT_MIN for s in "ltrb"):
             starved += 1
     if starved:
-        errors.append("%d bordered screenshot(s) have no adequate wp:effectExtent "
+        errors.append(f"{starved:d} bordered screenshot(s) have no adequate wp:effectExtent "
                       "-- their borders will be clipped at page top (run "
-                      "fix_effect_extent.py)" % starved)
-    for cx, cy in extents:
+                      "fix_effect_extent.py)")
+    for cx, _cy in extents:
         if cx > S.Inches(TEXT_WIDTH_IN):
-            errors.append("a screenshot is %.2f\" wide, wider than the %.1f\" text column"
-                          % (cx / 914400, TEXT_WIDTH_IN))
+            errors.append(f"a screenshot is {cx / 914400:.2f}\" wide, wider than the {TEXT_WIDTH_IN:.1f}\" text column")
 
     # -- hyperlinks -----------------------------------------------------------
     # A survey found 24 hyperlinks across 16 of the 19 masters, and nothing
@@ -336,17 +328,16 @@ def check(path, spec_map=None, check_spec=True):
         label = "".join(t.text or "" for t in h.findall(".//" + qn("w:t")))[:40]
         rid = h.get(qn("r:id"))
         if rid is None:
-            errors.append("hyperlink %r has no r:id -- renders as dead text" % label)
+            errors.append(f"hyperlink {label!r} has no r:id -- renders as dead text")
         else:
             rel = rels.get(rid)
             if rel is None:
-                errors.append("hyperlink %r r:id %s has no matching relationship "
-                              "-- dead link" % (label, rid))
+                errors.append(f"hyperlink {label!r} r:id {rid} has no matching relationship "
+                              "-- dead link")
             elif not rel.is_external or not rel.target_ref.lower().startswith(
                     ("http://", "https://", "mailto:")):
-                errors.append("hyperlink %r (r:id %s) does not resolve to an external "
-                              "URL (target=%r, external=%s) -- dead link"
-                              % (label, rid, rel.target_ref, rel.is_external))
+                errors.append(f"hyperlink {label!r} (r:id {rid}) does not resolve to an external "
+                              f"URL (target={rel.target_ref!r}, external={rel.is_external}) -- dead link")
         for run in h.findall(qn("w:r")):
             rPr = run.find(qn("w:rPr"))
             color = underline = None
@@ -356,11 +347,9 @@ def check(path, spec_map=None, check_spec=True):
                 u = rPr.find(qn("w:u"))
                 underline = u.get(qn("w:val")) if u is not None else None
             if color is None or color.upper() != S.LINK_BLUE:
-                errors.append("hyperlink %r run colour is %s, house is %s"
-                              % (label, color, S.LINK_BLUE))
+                errors.append(f"hyperlink {label!r} run colour is {color}, house is {S.LINK_BLUE}")
             if underline != "single":
-                errors.append("hyperlink %r underline is %r, house is 'single'"
-                              % (label, underline))
+                errors.append(f"hyperlink {label!r} underline is {underline!r}, house is 'single'")
 
     # -- spec / master drift ---------------------------------------------------
     # Specs are meant to make a master reproducible, but nothing stops someone
@@ -381,7 +370,7 @@ def check(path, spec_map=None, check_spec=True):
                 with open(spec_path, encoding="utf-8") as fh:
                     spec = json.load(fh)
             except (OSError, ValueError) as exc:
-                errors.append("spec %s could not be read: %s" % (spec_name, exc))
+                errors.append(f"spec {spec_name} could not be read: {exc}")
             else:
                 expected = _spec_blocks(spec)
                 actual = [_classify_para(p) for p in d.paragraphs]
@@ -392,8 +381,7 @@ def check(path, spec_map=None, check_spec=True):
                     expected_links = _spec_link_count(spec)
                     if expected_links != info["links"]:
                         errors.append(
-                            "spec %s expects %d hyperlink(s), master has %d"
-                            % (spec_name, expected_links, info["links"]))
+                            f"spec {spec_name} expects {expected_links:d} hyperlink(s), master has {info['links']:d}")
 
     return errors, warnings, info
 
@@ -430,23 +418,23 @@ def main():
         try:
             errors, warnings, info = check(path, spec_map=spec_map, check_spec=check_spec)
         except Exception as exc:  # a corrupt master should not stop the batch
-            print("ERROR %-52s could not be read: %s" % (name[:52], exc))
+            print(f"ERROR {name[:52]!s:<52} could not be read: {exc}")
             failed += 1
             continue
 
         status = "FAIL " if errors else ("WARN " if warnings else "PASS ")
-        print("%s%s" % (status, name))
+        print(f"{status}{name}")
         if errors or warnings or args.verbose:
             for k, v in info.items():
-                print("        %-12s %s" % (k, v))
+                print(f"        {k!s:<12} {v}")
         for e in errors:
-            print("      - %s" % e)
+            print(f"      - {e}")
         for w in warnings:
-            print("      ~ %s" % w)
+            print(f"      ~ {w}")
         if errors:
             failed += 1
 
-    print("\n%d checked, %d failed." % (len(paths), failed))
+    print(f"\n{len(paths):d} checked, {failed:d} failed.")
     return 1 if failed else 0
 
 
