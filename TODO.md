@@ -183,6 +183,65 @@ Nothing to build. The entry was opened because the check had not been located,
 which is a different finding from it being absent, and the two are worth
 keeping distinguishable.
 
+## A green check on a stacked PR is a claim about its BASE, not about `main`
+
+Found 2026-09-12 merging #101 and #102. Not a code bug — a review-process one,
+and the first of today's five that is about how work is checked rather than what
+the code does.
+
+#102 was opened with `--base pylint-to-zero` because it depended on #101. While
+#101 was open, `gh pr checks 102` read **12 passed, 0 failed** and
+`mergeStateStatus=CLEAN`. Both were true, and both were about `pylint-to-zero`.
+
+When #101 merged, **GitHub did not retarget #102.** Its base stayed pointed at a
+branch that no longer existed. #102's head was `7e690647`, which is not a
+descendant of `e46d5ba8` — the `ignored-modules` fix #101 shipped — so it still
+carried an rcfile without `docx`, `pymupdf` or `PIL`. Retargeted to `main` by
+hand, and the same PR read **3 build failures**, on 3.11, 3.12 and 3.13, for
+exactly the bug #101 had just fixed. The other 9 checks stayed green throughout.
+
+So the sequence that ships a regression is: read CLEAN, watch the parent merge,
+merge on the reading you already have. Nothing announces that the reading went
+stale, because nothing changed about the PR — what changed is the question the
+answer was to.
+
+**What to do instead**, in order:
+
+1. After the parent lands, **retarget the stacked PR to `main` yourself** —
+   `gh pr edit <n> --base main`. Do not assume GitHub did it.
+2. Merge `main` into the branch. A rebase would be cleaner history, but this
+   repo's guard hook refuses a force push, so a merge commit is the available
+   move, not a preference.
+3. **Re-read the checks after the retarget**, never before, and merge on that
+   reading with `--match-head-commit`.
+
+Verify against the ref you are merging INTO. This is the same rule the
+`check-marketplace` correction records — a measurement without its ref can only
+be believed, not checked — arriving by a different route: there the ref was a
+dirty working tree, here it was a base branch that had been deleted.
+
+## The paired one: a gate that skips its own check and still passes
+
+`scripts/check-marketplace.py` prints
+
+    note: not a git checkout - skipping the version-drift check
+
+and then exits 0. So a run against a `git archive` export passes **without
+running the check that matters**, and version drift — the thing the gate exists
+for — goes unmeasured while the output says "all checks passed".
+
+Hit 2026-09-12 while closing the "Five marketplace entries are shipping stale"
+entry. It was caught only because the checker names the skip out loud, which is
+the design property worth copying: where a check can decline to run, "could not
+tell" has to be its own visible value rather than collapsing into the passing
+one. Use `git worktree add --detach <tmp> origin/main` to measure a named ref;
+an archive is not a git checkout.
+
+These two and the struck "already red on `main`" claim are the same failure in
+three costumes: a check that did not run, a check that ran against the wrong
+ref, and a check that answered a question other than the one asked. Each
+produces a confident sentence about `main` that is not true.
+
 ## Deferred by design, not oversight
 
 - **`plugin/crew` is unmapped** in `.crew/codemap/`. It is the file set the
