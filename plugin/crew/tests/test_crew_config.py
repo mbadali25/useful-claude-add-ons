@@ -919,6 +919,36 @@ def test_an_unreadable_authority_widens_into_anything(tmp_path, monkeypatch):
         assert changes[0]["widens_authority"] is True
 
 
+def test_the_widening_warning_names_the_tier_it_grants(tmp_path, monkeypatch,
+                                                       capsys):
+    """Codex round 1 on this branch, and the same bug class as the one the
+    branch fixes: the `!` line said "widens to `act`" whatever the target was.
+    Setting `autonomous` therefore warned about the wrong tier AND omitted the
+    only thing that tier adds - that the PM stops asking you to choose. A
+    warning that under-describes the grant is what this marker exists to
+    prevent."""
+    path = _global(tmp_path, monkeypatch, contents={
+        "pm": {"authority": "report-only"}})
+    assert crew_config.main(
+        ["--global-path", str(path), "--set", 'pm.authority="autonomous"']) == 0
+    out = capsys.readouterr().out
+    assert "widens to `autonomous`" in out
+    assert "widens to `act`" not in out
+    assert "stop asking you to choose" in out
+
+    assert crew_config.main(
+        ["--global-path", str(path), "--set", 'pm.authority="act"']) == 0
+    act_out = capsys.readouterr().out
+    assert "widens to `act`" in act_out
+    assert "stop asking you to choose" not in act_out
+
+
+def test_every_authority_has_a_widening_note():
+    """Total by construction. A tier added without a note must be a KeyError at
+    the point of use, never a warning that describes a different tier."""
+    assert set(crew_config._WIDENING_NOTES) == set(crew_state.AUTHORITIES)
+
+
 def test_ticket_granularity_is_settable_in_both_layers(tmp_path, monkeypatch):
     """It rides in on `pm`, the block already admitted whole -- so this is the
     check that the invariant actually held, rather than that it was intended."""

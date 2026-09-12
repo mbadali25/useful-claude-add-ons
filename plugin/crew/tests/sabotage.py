@@ -84,6 +84,24 @@ MUTATIONS = (
          "test_every_authority_transition_is_classified"),
     ),
     (
+        # Codex's round-1 FIX on this branch, restored. The `!` line named a
+        # hardcoded tier, so setting `autonomous` warned about `act` and
+        # described only what `act` grants -- omitting the one thing the tier
+        # adds. Same bug class as the rank fix two entries up: the warning
+        # under-describes the grant it is there to announce.
+        "the widening warning names a hardcoded tier",
+        CONFIG,
+        '                granted = crew_state.normalise_authority('
+        'change["after"])\n'
+        '                print(f"  ! pm.authority widens to `{granted}`: "\n'
+        '                      + _WIDENING_NOTES[granted])',
+        '                print("  ! pm.authority widens to `act`: the PM will '
+        'dispatch "\n'
+        '                      "roles itself and report after.")',
+        ("tests/test_crew_config.py::"
+         "test_the_widening_warning_names_the_tier_it_grants"),
+    ),
+    (
         # A capability gate that names a rung instead of a floor. Restoring it
         # makes `autonomous` -- the WIDER tier -- unable to act at all, which
         # presents as "the new tier does nothing" rather than as a guard bug.

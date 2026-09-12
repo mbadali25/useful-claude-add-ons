@@ -1269,6 +1269,32 @@ def _set_path(target, parts, value):
     node[parts[-1]] = value
 
 
+# What each tier actually grants, for the `!` line on a widening. Keyed on
+# every member of `AUTHORITIES` so a tier added without a note is a KeyError at
+# the point of use rather than a warning that silently describes the wrong
+# thing -- the failure mode that produced this table. `report-only` is present
+# because the key set has to be total, not because it can ever be reached here:
+# it is rank 0, so nothing widens INTO it.
+_WIDENING_NOTES = {
+    "report-only": (
+        "the PM reports and recommends only. This is the narrowest tier and "
+        "nothing widens into it."
+    ),
+    "act": (
+        "the PM will dispatch roles itself and report after. It still asks you "
+        "to choose when a decision is open. Removal, deletion and offboarding "
+        "still stop for an explicit yes."
+    ),
+    "autonomous": (
+        "the PM will dispatch roles itself AND stop asking you to choose - "
+        "where it would put a decision to you it takes the option it would "
+        "have recommended and says which. Offboarding a role, deleting a "
+        "codemap or diagram, rewriting .crew/metrics.md, and destroying git "
+        "history or tracked work still stop for an explicit yes."
+    ),
+}
+
+
 def plan_global_write(updates, path=None):
     """What writing `updates` to the global file would change. Pure.
 
@@ -1473,9 +1499,17 @@ def main(argv=None):
             print(f"  {change['path']}: {json.dumps(change['before'])} -> "
                   f"{json.dumps(change['after'])}")
             if change["widens_authority"]:
-                print("  ! pm.authority widens to `act`: the PM will dispatch "
-                      "roles itself and report after. Removal, deletion and "
-                      "offboarding still stop for an explicit yes.")
+                # Name the tier being GRANTED, not a hardcoded one. This said
+                # "widens to `act`" whatever the target was, so setting
+                # `autonomous` warned about the wrong tier and described only
+                # what `act` does -- omitting the single thing `autonomous`
+                # actually adds, which is that the PM stops asking you to
+                # choose. A warning that under-describes the grant is the exact
+                # failure this marker exists to prevent, so it is driven off
+                # the value rather than written out once.
+                granted = crew_state.normalise_authority(change["after"])
+                print(f"  ! pm.authority widens to `{granted}`: "
+                      + _WIDENING_NOTES[granted])
         if not changes:
             print("  nothing to change")
         return 0
