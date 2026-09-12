@@ -1088,3 +1088,33 @@ def test_the_suite_cannot_reach_the_real_machine_global_config():
         seen = pathlib.Path(mod.GLOBAL_CONFIG_PATH)
         assert seen != real, mod.__name__
         assert not seen.exists(), mod.__name__
+
+
+def test_the_global_warning_stays_quiet_when_the_repo_names_its_own_theme(
+        tmp_path, monkeypatch):
+    """The global layer only gets to answer when the repo has none. A repo
+    that names `solomon` resolves to solomon whatever the machine file says.
+
+    Ungated, the warning told such a repo that a global neutral "is the value
+    this repo now resolves to" -- false -- and recommended a machine-wide edit
+    that would have changed nothing there and something in every other repo.
+    A warning wrong about the case it fires on is worse than no warning."""
+    path = tmp_path / "global.json"
+    path.write_text(json.dumps({"docs": {"theme": "neutral"}}), "utf-8")
+    monkeypatch.setattr(crew_state, "GLOBAL_CONFIG_PATH", str(path))
+
+    # The global really does still carry the old default ...
+    assert crew_upgrade.global_theme_defeats_migration() is True
+
+    # ... but this repo answers for itself, so nothing is said.
+    _, explicit = crew_upgrade.upgrade_config(
+        {"schema": 3, "docs": {"theme": "solomon"}})
+    assert explicit["docsThemeAfter"] == "solomon"
+    assert "machine-global" not in "\n".join(
+        crew_upgrade._config_lines(explicit))
+
+    # And a repo with no answer of its own still gets warned.
+    _, deferring = crew_upgrade.upgrade_config(
+        {"schema": 3, "docs": {"theme": "neutral"}})
+    assert deferring["docsThemeAfter"] is None
+    assert "machine-global" in "\n".join(crew_upgrade._config_lines(deferring))

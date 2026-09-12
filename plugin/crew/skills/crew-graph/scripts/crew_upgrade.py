@@ -272,7 +272,15 @@ def upgrade_config(cfg):
              # strictly heavier claim, because the key survives wearing a
              # value the user did not write. Everything in here must be
              # justified at its definition; see _DOCS_THEME_REWRITTEN_FROM.
-             "rewrittenKeys": []}
+             "rewrittenKeys": [],
+             # The repo's `docs.theme` AFTER this migration, so the report can
+             # tell whether the global layer actually gets to answer. None
+             # means "no repo answer, ask global"; anything else means the
+             # repo decides and no global value can reach it. Set at the end,
+             # beside the rewrite. Kept in `notes` rather than read back off
+             # `out` so that `upgrade_config` stays the one place that decides
+             # what the value is.
+             "docsThemeAfter": None}
 
     for key, block in CONFIG_BLOCKS:
         supplied = cfg.get(key, _ABSENT)
@@ -431,6 +439,9 @@ def upgrade_config(cfg):
         notes["rewrittenKeys"].append("docs.theme")
         out["docs"]["theme"] = None
 
+    notes["docsThemeAfter"] = (
+        crew_state.dict_or_empty(out.get("docs")).get("theme"))
+
     return out, notes
 
 
@@ -570,7 +581,17 @@ def _config_lines(notes):
             "note per node made vaults unusably slow. Nothing to re-enable, "
             "and no setting was silently switched off."
         )
-    if global_theme_defeats_migration():
+    # Gated on the repo having NO answer of its own. The global layer only
+    # gets to decide when the repo's value is null -- a repo that names
+    # `solomon` resolves to solomon no matter what the machine file says.
+    #
+    # Ungated, this warned that a global neutral "is the value this repo now
+    # resolves to" on a repo whose own theme was explicit, which is false, and
+    # it recommended a machine-wide edit that would have changed nothing here
+    # and something everywhere else. A warning that is wrong about the case it
+    # fires on is worse than no warning: it spends the reader's trust and then
+    # sends them to edit a file for the wrong reason. Caught by Codex.
+    if notes["docsThemeAfter"] is None and global_theme_defeats_migration():
         lines.append(
             "- WARNING: your machine-global config "
             f"(`{crew_state.GLOBAL_CONFIG_PATH}`) still sets "

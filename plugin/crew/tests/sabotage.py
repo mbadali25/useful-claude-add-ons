@@ -68,6 +68,20 @@ BLOCK_ONLY = (
 
 MUTATIONS = (
     (
+        # The global warning stops checking whether the repo has an answer of
+        # its own, and starts firing on repos the global can never reach. It
+        # then states something false -- that a global neutral "is the value
+        # this repo now resolves to" on a repo whose theme is `solomon` -- and
+        # sends the reader to edit a machine-global file that would change
+        # nothing there and something in every other repo on the machine.
+        "the global warning fires even when the repo names its own theme",
+        UPGRADE,
+        '    if notes["docsThemeAfter"] is None and global_theme_defeats_migration():',
+        '    if global_theme_defeats_migration():',
+        ("tests/test_upgrade.py::"
+         "test_the_global_warning_stays_quiet_when_the_repo_names_its_own_theme"),
+    ),
+    (
         # The rewrite stops being atomic with the schema stamp. A single
         # wrong-typed block anywhere then produces a config with a null theme
         # and schema still at 3 -- so repairing the block and setting neutral
@@ -88,7 +102,7 @@ MUTATIONS = (
         # it looks fixed -- and silence is what makes it so.
         "a global neutral that defeats the migration is not reported",
         UPGRADE,
-        "    if global_theme_defeats_migration():",
+        '    if notes["docsThemeAfter"] is None and global_theme_defeats_migration():',
         "    if False:",
         ("tests/test_upgrade.py::"
          "test_a_global_neutral_is_reported_because_it_defeats_the_migration"),
