@@ -77,9 +77,18 @@ def test_the_global_template_is_not_a_copy_of_the_repo_one():
     a vault path set once that every repo on the machine then inherits."""
     keys = set(crew_config.default_global_config())
     for repo_only in ("tracker", "jira", "sdp", "obsidian", "graph",
-                      "platform", "tier", "roles", "verifyGate", "context",
+                      "platform", "tier", "roles", "verifyGate",
                       "emergency"):
         assert repo_only not in keys, repo_only
+    # `context` is the one shared block, and it is shared NARROWLY: 0.19.10
+    # made `context.autoClear` globally settable because how a terminal is
+    # driven to accept a keystroke is a fact about the machine, which
+    # `crew_platform.py:384-393` already validates per platform. Nothing else
+    # under `context` came with it. Asserting the shape here as well as in
+    # `test_autoclear_is_global_and_its_siblings_are_not`, because THIS test
+    # is the one that would otherwise have been "fixed" by deleting `context`
+    # from the tuple above and calling the block shared.
+    assert set(crew_config.default_global_config()["context"]) == {"autoClear"}
 
 
 def test_the_global_template_carries_no_schema():
@@ -217,6 +226,121 @@ def test_a_globally_set_theme_and_merge_gate_reach_a_repo(
     # Unset globally, so the built-in default still decides it -- the null
     # that means "resolve the repo's main branch from the API".
     assert rows["bitbucket.mergeGate.branch"]["value"] is None
+
+
+def test_the_nine_keys_crew_read_but_never_declared_are_declared():
+    """Until 0.19.10 these nine were in use and in no default.
+
+    Eight were read by a hook script and `jira.cloudId` was written by
+    `/crew:jira-sync` and read back by nothing. An undeclared key still works,
+    because `merge_defaults` carries a repo-layer key it has never heard of
+    straight through -- which is exactly why this went unnoticed. What it cost
+    was visibility: `leaf_paths` could not see them, so they appeared in no key
+    listing, and `is_global_path` refuses any path absent from the global
+    template, so they were silently un-settable in the global layer.
+
+    Asserting the COUNT as well as the membership on purpose. A tenth key
+    arriving undeclared is the same bug again, and a membership-only test would
+    pass while it happened."""
+    declared = set(crew_config.leaf_paths(crew_config.default_config()))
+    for dotted in ("context.autoClear.enabled", "context.autoClear.method",
+                   "context.autoClear.windowTitle", "context.autoClear.command",
+                   "context.autoClear.delaySeconds",
+                   "context.autoClear.minHandoffLines",
+                   "context.autoWrapUp", "context.autoResume",
+                   "jira.cloudId"):
+        assert dotted in declared, dotted
+    assert len(declared) == 84
+
+
+def test_autoclear_is_global_and_its_siblings_are_not():
+    """The permissions half. `context.autoClear` is settable machine-wide;
+    every other key under `context` is not.
+
+    Naming `context` in `default_global_config()` could have widened the whole
+    block -- `warnAt`, `reserveTokens`, `handoffPath` and the rest are facts
+    about one repository, and a machine-wide value for them would be wrong
+    everywhere at once. It does not, because `_prune` and `is_global_path` both
+    descend structurally. This test is that claim measured rather than reasoned
+    about, which is the distinction the block's own comment rests on."""
+    supplied = {"context": {"autoClear": {"method": "tmux",
+                                          "windowTitle": "Claude"}}}
+    kept, ignored = crew_config.filter_global(supplied)
+    assert ignored == []
+    assert kept == supplied
+    for dotted in ("context.autoClear.enabled", "context.autoClear.method",
+                   "context.autoClear.windowTitle", "context.autoClear.command",
+                   "context.autoClear.delaySeconds",
+                   "context.autoClear.minHandoffLines"):
+        assert crew_config.is_global_path(dotted), dotted
+
+    # The siblings, refused -- and refused BY NAME, not by the block name.
+    # `_prune` reports the first absent segment with its full path prefix, so
+    # a reader is told which key did nothing rather than that `context` is
+    # unsupported, which would point at a bigger problem than exists.
+    for dotted in ("context.enabled", "context.warnAt", "context.budgetTokens",
+                   "context.reserveTokens", "context.handoffPath",
+                   "context.keepTranscripts", "context.autoWrapUp",
+                   "context.autoResume",
+                   "context.staleHandoff.maxAgeHours",
+                   "context.staleHandoff.maxCommitsBehind"):
+        assert not crew_config.is_global_path(dotted), dotted
+    _, stray = crew_config.filter_global(
+        {"context": {"warnAt": 0.5, "autoWrapUp": True}})
+    assert stray == ["context.warnAt", "context.autoWrapUp"]
+
+
+def test_a_globally_set_autoclear_reaches_a_repo(tmp_path, monkeypatch):
+    """`filter_global` accepting the keys is necessary and NOT sufficient.
+
+    This is the `docs.theme` lesson applied before the fact rather than after:
+    that key was settable for four releases with nothing reading it, so
+    "declared" and "works" came apart and nobody noticed. `explain_config` is a
+    separate walk from `filter_global`, and a key credited to no layer would be
+    a machine-wide setting that resolves nowhere while the findings list looks
+    clean."""
+    path = _global(tmp_path, monkeypatch, contents={
+        "context": {"autoClear": {"enabled": True, "method": "tmux",
+                                  "delaySeconds": 9}},
+    })
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"schema": crew_state.SCHEMA_CURRENT}, git=False)
+
+    rows = {r["path"]: r for r in crew_config.explain_config(str(root),
+                                                             str(path))}
+    for dotted, value in (("context.autoClear.enabled", True),
+                          ("context.autoClear.method", "tmux"),
+                          ("context.autoClear.delaySeconds", 9)):
+        assert rows[dotted]["value"] == value, dotted
+        assert rows[dotted]["source"] == "global", dotted
+    # Unset globally, so the built-in default still decides it.
+    assert rows["context.autoClear.command"]["value"] == "/clear"
+    # And the resolved config the run actually uses agrees with the report.
+    resolved = crew_config.resolve_config(str(root))
+    assert resolved["context"]["autoClear"]["method"] == "tmux"
+    assert resolved["context"]["autoClear"]["command"] == "/clear"
+
+
+def test_declaring_those_keys_costs_no_migration(tmp_path):
+    """Declaring keys must not make every crew repo report `upgradeNeeded`.
+
+    `upgradeNeeded` is `schema < SCHEMA_CURRENT` (`crew_state.py:2665`) and
+    nothing else -- it does not compare key sets -- so an additive change to
+    the defaults reaches existing repos through the merge at read time and
+    needs no schema bump and no prompt. That is a property of the trigger
+    rather than of this change, so it is asserted here where the change is: a
+    later edit that bumped the schema to "make the new keys land" would be
+    doing nothing except costing every repo on every machine a mandatory
+    upgrade."""
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"schema": crew_state.SCHEMA_CURRENT}, git=False)
+    state = crew_state.collect(str(root))
+    assert "upgradeNeeded" not in state["triggers"]
+    # A repo that has never heard of the new keys still resolves them.
+    resolved = crew_config.resolve_config(str(root))
+    assert resolved["context"]["autoClear"]["command"] == "/clear"
+    assert resolved["context"]["autoWrapUp"] is False
+    assert resolved["jira"]["cloudId"] is None
 
 
 def test_default_config_schema_matches_crew_state():
@@ -1303,13 +1427,45 @@ def test_without_null_shadows_does_not_mutate_its_input():
     assert repo_cfg == before
 
 
-def test_context_keys_are_out_of_scope_because_they_are_not_global():
+def test_only_autoclear_is_in_scope_for_null_shadowing_under_context():
     """`null_shadows` walks `default_global_config()` leaves only, so a
-    repo-only block can never be pruned however null it is. Asserted rather
-    than assumed, because the narrowing above depends on it."""
+    repo-only path can never be pruned however null it is. Asserted rather
+    than assumed, because the narrowing above depends on it.
+
+    This test used to assert that NO `context.` leaf was global. 0.19.10 made
+    `context.autoClear` global deliberately, so the blanket claim is now false
+    -- and the honest replacement is the narrower one, not a deleted test. The
+    case the narrowing exists to protect is `context.reserveTokens: null`,
+    which means "off" and must survive; it is repo-only, so it is untouched,
+    and that is now asserted directly rather than implied by the blanket.
+
+    `context.autoClear.windowTitle: null` in a repo IS now shadowable, and
+    that is the intent: `/crew:init` writes every key including the null ones,
+    so without this a machine-wide window title would be silently overridden
+    by a template value in every initialised repo -- which is the exact bug
+    `null_shadows` was written for, arriving at a new key."""
     leaves = crew_config.leaf_paths(crew_config.default_global_config())
-    assert not [p for p in leaves if p.startswith("context.")]
+    context_leaves = [p for p in leaves if p.startswith("context.")]
+    assert context_leaves == ["context.autoClear.enabled",
+                              "context.autoClear.method",
+                              "context.autoClear.windowTitle",
+                              "context.autoClear.command",
+                              "context.autoClear.delaySeconds",
+                              "context.autoClear.minHandoffLines"]
     assert not [p for p in leaves if p.startswith("emergency.")]
+
+    # The protected case, directly: a repo null over a repo-only path is left
+    # alone even with a global file present, so `reserveTokens: null` still
+    # means "off" rather than silently becoming the 100000 default.
+    repo_cfg = {"context": {"reserveTokens": None, "autoClear":
+                            {"windowTitle": None}}}
+    global_cfg = {"context": {"autoClear": {"windowTitle": "Claude"}}}
+    shadows = crew_config.null_shadows(repo_cfg, global_cfg)
+    assert shadows == ["context.autoClear.windowTitle"]
+    pruned = crew_config.without_null_shadows(repo_cfg, global_cfg)
+    assert "reserveTokens" in pruned["context"]
+    assert pruned["context"]["reserveTokens"] is None
+    assert "windowTitle" not in pruned["context"]["autoClear"]
 
 
 def test_resolve_config_inherits_a_global_through_the_init_template(
