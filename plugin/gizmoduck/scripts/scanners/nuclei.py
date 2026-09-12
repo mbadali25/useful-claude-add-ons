@@ -201,7 +201,7 @@ def parse(raw_path, target):
     as any other unreadable output.
     """
     if not os.path.isfile(raw_path):
-        raise base.ParseError("nuclei output file not found: %s" % raw_path)
+        raise base.ParseError(f"nuclei output file not found: {raw_path}")
 
     gz = _gizmoduck()
     try:
@@ -210,7 +210,7 @@ def parse(raw_path, target):
             raw_records = [json.loads(ln) for ln in fh if ln.strip()]
     except (ValueError, TypeError, AttributeError, OSError) as e:
         raise base.ParseError(
-            "could not parse nuclei output %s: %s" % (raw_path, e)) from e
+            f"could not parse nuclei output {raw_path}: {e}") from e
 
     for record, f in zip(raw_records, findings):
         severity = (record.get("info") or {}).get("severity")

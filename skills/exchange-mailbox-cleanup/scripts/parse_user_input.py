@@ -34,7 +34,6 @@ from __future__ import annotations
 import argparse
 import csv
 import json
-import os
 import re
 import sys
 from pathlib import Path
@@ -119,7 +118,7 @@ def read_file(path: Path, explicit_column: str | None):
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    ap = argparse.ArgumentParser(description=__doc__.split("\n\n", maxsplit=1)[0])
     ap.add_argument("value", help="a single address/UPN, or the path to a CSV or text file")
     ap.add_argument("--email-column", help="CSV column holding the address (auto-detected if omitted)")
     ap.add_argument("--out", help="write the normalised one-column CSV here (UTF-8 with BOM)")

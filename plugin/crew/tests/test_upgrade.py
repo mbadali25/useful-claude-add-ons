@@ -792,7 +792,7 @@ def test_the_rewritten_anchor_reads_back_as_head_at_every_length(tmp_path):
     for length in _SHA_LENGTHS:
         start = ("abcdef0123456789" * 3)[:length]
         root = crew_fixtures.make_repo(
-            tmp_path / ("len%d" % length), config={"tier": 0},
+            tmp_path / (f"len{length:d}"), config={"tier": 0},
             codemap={"auth": _map_with_anchor(start)},
         )
         crew_upgrade.run(str(root), {
@@ -801,10 +801,9 @@ def test_the_rewritten_anchor_reads_back_as_head_at_every_length(tmp_path):
         text = (root / ".crew" / "codemap" / "auth.md").read_text(
             encoding="utf-8")
         found = crew_state._ANCHOR_RE.search(text)
-        assert found, "anchor line no longer parses at length %d" % length
+        assert found, f"anchor line no longer parses at length {length:d}"
         assert found.group(1) == head, (
-            "length %d: anchor reads %r, head is %r"
-            % (length, found.group(1), head))
+            f"length {length:d}: anchor reads {found.group(1)!r}, head is {head!r}")
 
 
 def test_the_rewritten_anchor_is_a_commit_that_exists(tmp_path):
@@ -824,7 +823,7 @@ def test_the_rewritten_anchor_is_a_commit_that_exists(tmp_path):
          found.group(1) + "^{commit}"],
         capture_output=True, text=True, check=False)
     assert resolved.returncode == 0, (
-        "anchor %r does not resolve to a commit" % found.group(1))
+        f"anchor {found.group(1)!r} does not resolve to a commit")
 
 
 def test_a_repo_name_made_of_hex_does_not_confuse_the_rewrite(tmp_path):

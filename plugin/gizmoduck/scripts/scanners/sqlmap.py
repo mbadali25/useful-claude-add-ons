@@ -96,8 +96,9 @@ import re
 from pathlib import Path
 from urllib.parse import urlparse
 
-from . import base
 import normalize as n
+
+from . import base
 
 NAME = "sqlmap"
 KINDS = ["web"]
@@ -180,13 +181,13 @@ def run(target, outdir, opts):
     opts = opts or {}
     if not opts.get(CONFIRM_KEY):
         return None, _declined(
-            "sqlmap declined: opts[%r] is required and was not set; sqlmap "
+            f"sqlmap declined: opts[{CONFIRM_KEY!r}] is required and was not set; sqlmap "
             "sends real SQL injection traffic and will not fire on an "
-            "implicit default" % CONFIRM_KEY)
+            "implicit default")
     if not _has_injection_point(target):
         return None, _declined(
-            "sqlmap declined: %r has no query string; sqlmap targets a "
-            "specific injection point, never a blind sweep" % target)
+            f"sqlmap declined: {target!r} has no query string; sqlmap targets a "
+            "specific injection point, never a blind sweep")
 
     timeout = int(opts.get("timeout", 300))
     time_limit = int(opts.get("time_limit", timeout))
@@ -204,8 +205,8 @@ def run(target, outdir, opts):
         # base.run_tool's own timeout eventually kills it, which then
         # presents as a mysterious timeout rather than the hang it is.
         "--non-interactive",
-        "--time-limit=%d" % time_limit,
-        "--output-dir=%s" % outdir,
+        f"--time-limit={time_limit:d}",
+        f"--output-dir={outdir}",
     ]
     result = base.run_tool(argv, timeout=timeout, cwd=None)
     if result.timed_out:
@@ -420,17 +421,17 @@ def _resolve_session_for_parse(raw_path, target):
             # preserved).
             return raw_path
         raise base.ParseError(
-            "sqlmap output directory %r holds %d sessions that all appear "
-            "to belong to target %r; refusing to guess which is "
-            "authoritative" % (str(raw_path), len(matches), target))
+            f"sqlmap output directory {str(raw_path)!r} holds {len(matches):d} sessions that all appear "
+            f"to belong to target {target!r}; refusing to guess which is "
+            "authoritative")
 
     # Opaque manifest name (not a URL) with 2+ untargeted candidates: no
     # signal correlates any of them with what's actually being asked about.
     raise base.ParseError(
-        "sqlmap output directory %r holds %d candidate sessions and "
-        "target %r is not a URL, so none of them can be confirmed or "
+        f"sqlmap output directory {str(raw_path)!r} holds {len(candidates):d} candidate sessions and "
+        f"target {target!r} is not a URL, so none of them can be confirmed or "
         "ruled out; refusing to guess which one (if any) belongs to "
-        "this target" % (str(raw_path), len(candidates), target))
+        "this target")
 
 
 def _session_location(session_dir, target):
@@ -494,10 +495,10 @@ def _iter_confirmed(text):
         type_lines = _TYPE_LINE.findall(block)
         if len(triples) != len(type_lines):
             raise base.ParseError(
-                "sqlmap log has a Parameter block for %r (%s) with %d "
-                "Type: line(s) but only %d complete Type/Title/Payload "
+                f"sqlmap log has a Parameter block for {param!r} ({place}) with {len(type_lines):d} "
+                f"Type: line(s) but only {len(triples):d} complete Type/Title/Payload "
                 "record(s) - the log looks truncated or corrupted, not a "
-                "clean run" % (param, place, len(type_lines), len(triples)))
+                "clean run")
 
         for m in triples:
             yield (param, place.strip(), m.group("type").strip(),
@@ -549,9 +550,9 @@ def parse(raw_path, target):
             # single worst outcome for the one adapter here that fires real
             # attack traffic (base.ParseError's docstring; spec 13.9).
             raise base.ParseError(
-                "sqlmap session at %r has session.sqlite but no log - the "
+                f"sqlmap session at {str(session_dir)!r} has session.sqlite but no log - the "
                 "scan was interrupted before results were persisted; this "
-                "is not a clean run" % str(session_dir))
+                "is not a clean run")
         # No artifacts at all means no session ever ran for this host -
         # zero findings, never a low-severity "nothing found" placeholder
         # (spec 13.9).
@@ -560,7 +561,7 @@ def parse(raw_path, target):
     try:
         text = log_path.read_text(errors="replace")
     except OSError as e:
-        raise base.ParseError("could not read sqlmap log %s: %s" % (log_path, e)) from e
+        raise base.ParseError(f"could not read sqlmap log {log_path}: {e}") from e
 
     if text.strip() == "":
         # CORRECTION (verified against real sqlmap 1.10.9.8#dev, captured
@@ -583,9 +584,9 @@ def parse(raw_path, target):
         if (session_dir / "session.sqlite").is_file():
             return []
         raise base.ParseError(
-            "sqlmap session at %r has an empty log and no session.sqlite - "
+            f"sqlmap session at {str(session_dir)!r} has an empty log and no session.sqlite - "
             "the scan appears to have been cut off (e.g. by --time-limit) "
-            "before it completed; this is not a clean run" % str(session_dir))
+            "before it completed; this is not a clean run")
 
     # DEFECT 4 fix: a log that exists but isn't readable as sqlmap output at
     # all - a garbage file, an unrelated log, wholly corrupted content -
@@ -596,21 +597,21 @@ def parse(raw_path, target):
     # does not affect a real clean scan.
     if not _looks_like_sqlmap_log(text):
         raise base.ParseError(
-            "%s does not look like sqlmap log output; refusing to read it "
-            "as a clean scan" % log_path)
+            f"{log_path} does not look like sqlmap log output; refusing to read it "
+            "as a clean scan")
 
     host, matched_at = _session_location(session_dir, target)
     findings = []
-    for param, place, type_, title, payload in _iter_confirmed(text):
+    for param, place, type_, title, _payload in _iter_confirmed(text):
         type_slug = re.sub(r'[^a-z0-9]+', '-', type_.lower()).strip('-')
         place_slug = re.sub(r'[^a-z0-9]+', '-', place.lower()).strip('-') or "req"
-        rule_id = "%s-%s-%s" % (param, place_slug, type_slug)
+        rule_id = f"{param}-{place_slug}-{type_slug}"
         severity = 4 if any(marker in type_.lower() for marker in _CRITICAL_MARKERS) else 3
         findings.append(n.make_finding(
             tool=NAME,
             target=target,
             rule_id=rule_id,
-            name="SQL injection: %s (%s) - %s" % (param, place or "?", type_),
+            name=f"SQL injection: {param} ({place or '?'}) - {type_}",
             severity=severity,
             severity_known=True,
             type="sqli",
@@ -618,8 +619,8 @@ def parse(raw_path, target):
             matched_at=matched_at,
             description=title,
             remediation=("Use parameterized queries / prepared statements for "
-                         "the %r parameter; never concatenate user input into "
-                         "SQL." % param),
+                         f"the {param!r} parameter; never concatenate user input into "
+                         "SQL."),
             reference=["https://cwe.mitre.org/data/definitions/89.html"],
             tags=["sqlmap", "confirmed"] + ([place_slug] if place_slug != "req" else []),
         ))

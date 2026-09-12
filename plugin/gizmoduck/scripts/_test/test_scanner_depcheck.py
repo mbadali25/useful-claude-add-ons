@@ -269,7 +269,7 @@ def test_run_writes_a_marker_when_the_tool_reports_stale_data(monkeypatch, tmp_p
 
     monkeypatch.setattr(depcheck.base, "run_tool", fake_run_tool)
     outdir = tmp_path / "out"
-    raw_path, result = depcheck.run("/scan/repo", str(outdir), {})
+    raw_path, _ = depcheck.run("/scan/repo", str(outdir), {})
 
     assert raw_path is not None
     assert (outdir / depcheck.STALE_DATA_MARKER).is_file()
@@ -296,7 +296,7 @@ def test_parse_errors_returns_empty_when_no_stale_data_warning_present(monkeypat
 
     monkeypatch.setattr(depcheck.base, "run_tool", fake_run_tool)
     outdir = tmp_path / "out"
-    raw_path, result = depcheck.run("/scan/repo", str(outdir), {})
+    raw_path, _ = depcheck.run("/scan/repo", str(outdir), {})
 
     assert not (outdir / depcheck.STALE_DATA_MARKER).exists()
     assert depcheck.parse_errors(raw_path, "repo-a") == []
@@ -318,7 +318,7 @@ def test_stale_data_marker_from_a_prior_run_is_not_returned_for_a_clean_run(monk
         return base.ToolResult(0, "", "", False)
 
     monkeypatch.setattr(depcheck.base, "run_tool", fake_run_tool)
-    raw_path, result = depcheck.run("/scan/repo", str(outdir), {})
+    raw_path, _ = depcheck.run("/scan/repo", str(outdir), {})
 
     assert depcheck.parse_errors(raw_path, "repo-a") == []
 
@@ -332,7 +332,7 @@ def test_parse_errors_message_is_not_a_finding_shape(monkeypatch, tmp_path):
 
     monkeypatch.setattr(depcheck.base, "run_tool", fake_run_tool)
     outdir = tmp_path / "out"
-    raw_path, result = depcheck.run("/scan/repo", str(outdir), {})
+    raw_path, _ = depcheck.run("/scan/repo", str(outdir), {})
     errors = depcheck.parse_errors(raw_path, "repo-a")
 
     assert len(errors) == 1

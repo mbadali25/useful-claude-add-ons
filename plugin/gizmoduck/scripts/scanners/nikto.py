@@ -210,7 +210,7 @@ def parse(raw_path, target):
     unvalidatable input").
     """
     if not os.path.isfile(raw_path):
-        raise base.ParseError("nikto output file not found: %s" % raw_path)
+        raise base.ParseError(f"nikto output file not found: {raw_path}")
 
     findings = []
     with open(raw_path, newline="", encoding="utf-8", errors="replace") as fh:
@@ -224,8 +224,7 @@ def parse(raw_path, target):
                 # Not the seven columns Nikto emits and not the known banner:
                 # truncated output or a stray line, never a finding.
                 raise base.ParseError(
-                    "%s: expected %d Nikto CSV columns, got %d: %r"
-                    % (raw_path, len(CSV_FIELDS), len(row), row))
+                    f"{raw_path}: expected {len(CSV_FIELDS):d} Nikto CSV columns, got {len(row):d}: {row!r}")
             rec = dict(zip(CSV_FIELDS, row))
 
             message = rec.get("message", "")

@@ -86,7 +86,7 @@ def _run(script: Path, fake_home: Path, *args: str) -> subprocess.CompletedProce
            "HOME": str(fake_home), "USERPROFILE": str(fake_home)}
     return subprocess.run(
         [sys.executable, str(script), *args],
-        env=env, capture_output=True, text=True, timeout=30,
+        env=env, capture_output=True, text=True, timeout=30, check=False,
     )
 
 
@@ -123,7 +123,8 @@ def test_env_var_opts_out_the_same_way(tmp_path):
            "HOME": str(fake_home), "USERPROFILE": str(fake_home),
            "DOC_BUILDER_BRAND": "neutral"}
     result = subprocess.run([sys.executable, str(script), "--json"],
-                             env=env, capture_output=True, text=True, timeout=30)
+                            env=env, capture_output=True, text=True,
+                            timeout=30, check=False)
     assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout)["name"] == "neutral"
 

@@ -69,7 +69,7 @@ def main() -> int:
         brand = resolve_brand.resolve(args.brand)
         output = brand.template
         if not output:
-            ap.error("the %s brand pack has no template path; pass --output" % brand.name)
+            ap.error(f"the {brand.name} brand pack has no template path; pass --output")
 
     ref = os.path.normpath(args.reference)
     out = make_template(ref, os.path.normpath(output))
@@ -77,16 +77,15 @@ def main() -> int:
 
     d = docx.Document(out)
     s = d.sections[0]
-    print("Reference : %s" % ref)
-    print("Template  : %s (%.0f KB)" % (out, size_kb))
-    print("  Normal font : %s" % d.styles["Normal"].font.name)
-    print("  Margins     : T%.2f B%.2f L%.2f R%.2f in"
-          % (s.top_margin.inches, s.bottom_margin.inches,
-             s.left_margin.inches, s.right_margin.inches))
-    print("  Body blocks : %d (expect 0)" % len(d.paragraphs))
-    print("  Footer table: %s (expect True)" % bool(s.footer.tables))
-    print("  Image parts : %d (expect 0)"
-          % sum(1 for r in d.part.rels.values() if "image" in r.reltype))
+    print(f"Reference : {ref}")
+    print(f"Template  : {out} ({size_kb:.0f} KB)")
+    print(f"  Normal font : {d.styles['Normal'].font.name}")
+    print(f"  Margins     : T{s.top_margin.inches:.2f} "
+          f"B{s.bottom_margin.inches:.2f} L{s.left_margin.inches:.2f} "
+          f"R{s.right_margin.inches:.2f} in")
+    print(f"  Body blocks : {len(d.paragraphs):d} (expect 0)")
+    print(f"  Footer table: {bool(s.footer.tables)} (expect True)")
+    print(f"  Image parts : {sum(1 for r in d.part.rels.values() if 'image' in r.reltype):d} (expect 0)")
     return 0
 
 

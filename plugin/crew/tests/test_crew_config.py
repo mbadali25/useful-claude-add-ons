@@ -1255,8 +1255,8 @@ def test_a_repo_null_does_not_shadow_a_global_value():
     template = _committed_template()
     for parts in _NULLABLE_GLOBAL_KEYS:
         assert _dig_plain(template, parts) is None, (
-            "%s stopped being null in the template; this test's premise is "
-            "gone and it needs rewriting, not deleting" % ".".join(parts))
+            f"{'.'.join(parts)} stopped being null in the template; this test's premise is "
+            "gone and it needs rewriting, not deleting")
         wanted = "SET-BY-GLOBAL"
         global_cfg = _nest(parts, wanted)
         pruned = crew_config.without_null_shadows(template, global_cfg, defaults)

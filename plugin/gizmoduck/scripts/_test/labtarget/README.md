@@ -9,21 +9,35 @@ of hand-built fixtures.
 not shipped functionality - it is not referenced from any plugin manifest or
 packaging step, and it must stay that way.
 
+**Do not rename this back to `server.py`.** It was called that until
+2026-09-12, and `plugin/localgpu/mcp/server.py` is also called `server.py`.
+Neither directory is a package, so in a whole-repo `pylint $(git ls-files
+'*.py')` run the bare name `server` is ambiguous: pylint bound
+`import server` in `plugin/localgpu/mcp/_test/test_server.py` to **this**
+file and then reported 24 x E1101 saying localgpu's module "has no 'mcp'
+member" - against a module that has it. pytest was never affected, because
+it resolves by directory, so the tests passed while the linter called them
+broken. Measured: pylint over the CI file list gives 24 E1101 with both
+files present and 0 with this one excluded. The same ambiguity is documented
+for `conftest` in `.pylintrc`; it was fixed here by renaming rather than by
+adding `server` to `ignored-modules`, because that would have switched off
+real member checking on the one file in the repo that imports `server`.
+
 ## Start / stop
 
 ```
-python server.py [--port 8899]
+python labtarget_server.py [--port 8899]
 ```
 
 - Binds to `127.0.0.1:8899` by default (the host is hard-coded in
-  `server.py` and is not configurable from the CLI - only the port is).
+  `labtarget_server.py` and is not configurable from the CLI - only the port is).
 - Prints a startup banner confirming it is intentionally vulnerable and
   loopback-only.
 - Creates a throwaway SQLite database in a temp file (`labtarget_*.sqlite3`
   under the OS temp dir) on startup.
 - Stop with **Ctrl+C in the same foreground terminal** - this is the
   reliable path: Python catches it as `KeyboardInterrupt` and deletes the
-  temp SQLite file before exiting. `server.py` also installs a `SIGTERM`
+  temp SQLite file before exiting. `labtarget_server.py` also installs a `SIGTERM`
   handler for the same cleanup on Unix.
   On Windows, a *forced* stop of a backgrounded/non-console process (Task
   Manager "End task", `taskkill /F`, or a background job killed from a
@@ -54,7 +68,7 @@ Apache/mod_ssl/OpenSSL string.
 
 ## Safety
 
-- Hard-coded to `127.0.0.1` in `server.py` - do not add a `--host` flag or
+- Hard-coded to `127.0.0.1` in `labtarget_server.py` - do not add a `--host` flag or
   change the bind address.
 - Backing store is a SQLite file in the OS temp directory, created fresh on
   each start and deleted on exit (normal exit, Ctrl+C, or SIGTERM). No

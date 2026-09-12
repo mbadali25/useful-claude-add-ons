@@ -98,7 +98,7 @@ def test_run_builds_the_expected_argv_when_confirmed(monkeypatch, tmp_path):
     # fires, which then looks like a mysterious timeout rather than a hang.
     assert "--non-interactive" in argv
     assert "--time-limit=120" in argv
-    assert "--output-dir=%s" % tmp_path in argv
+    assert f"--output-dir={tmp_path}" in argv
 
 
 def test_run_returns_none_path_when_timed_out(monkeypatch, tmp_path):
@@ -387,7 +387,7 @@ def test_run_returns_the_resolved_session_dir_not_the_output_root(monkeypatch, t
 
     monkeypatch.setattr(base, "run_tool", fake_run_tool)
 
-    raw_path, result = sqlmap.run("https://b.example/?id=1", str(tmp_path),
+    raw_path, _ = sqlmap.run("https://b.example/?id=1", str(tmp_path),
                                   {"confirm": "APPROVED-BY-ME"})
 
     assert raw_path == str(tmp_path / "b.example")
@@ -585,7 +585,7 @@ def test_run_marks_a_connection_error_and_parse_errors_surfaces_it(monkeypatch, 
     monkeypatch.setattr(base, "run_tool", fake_run_tool)
     monkeypatch.setattr(sqlmap, "is_available", lambda: True)
 
-    raw, result = sqlmap.run("http://127.0.0.1/item?id=1", str(outdir),
+    raw, _ = sqlmap.run("http://127.0.0.1/item?id=1", str(outdir),
                              {sqlmap.CONFIRM_KEY: "yes"})
     errs = sqlmap.parse_errors(raw, "http://127.0.0.1/item?id=1")
     assert len(errs) == 1 and errs[0]["severity"] == "error"
@@ -605,6 +605,6 @@ def test_not_injectable_is_clean_not_a_connection_error(monkeypatch, tmp_path):
     monkeypatch.setattr(base, "run_tool", fake_run_tool)
     monkeypatch.setattr(sqlmap, "is_available", lambda: True)
 
-    raw, result = sqlmap.run("http://127.0.0.1/item?id=1", str(outdir),
+    raw, _ = sqlmap.run("http://127.0.0.1/item?id=1", str(outdir),
                              {sqlmap.CONFIRM_KEY: "yes"})
     assert sqlmap.parse_errors(raw, "http://127.0.0.1/item?id=1") == []

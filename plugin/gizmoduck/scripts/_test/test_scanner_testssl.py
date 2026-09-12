@@ -133,7 +133,6 @@ def test_run_returns_none_path_and_a_toolresult_when_binary_missing(monkeypatch,
 def test_run_returns_the_jsonfile_path_and_toolresult_on_success(monkeypatch, tmp_path, fixture):
     """A stand-in binary that copies the fixture into place, exercising the
     real argv-building and success path without needing testssl.sh itself."""
-    import shutil as _shutil
 
     fake_bin = tmp_path / "fake-testssl.sh"
     fake_bin.write_text("stand-in, never executed directly in this test")
@@ -142,7 +141,7 @@ def test_run_returns_the_jsonfile_path_and_toolresult_on_success(monkeypatch, tm
     def fake_run_tool(argv, timeout, cwd=None):
         # argv[2] is the --jsonfile path per the command this adapter builds
         assert argv[1] == "--jsonfile"
-        _shutil.copy(fixture("testssl.json"), argv[2])
+        shutil.copy(fixture("testssl.json"), argv[2])
         return base.ToolResult(0, "", "", False)
 
     monkeypatch.setattr(base, "run_tool", fake_run_tool)
@@ -288,7 +287,7 @@ def test_run_prepends_the_hexdump_dir_to_path_for_the_subprocess(monkeypatch, tm
 
     monkeypatch.setattr(base, "run_tool", fake_run_tool)
 
-    raw_path, result = testssl.run("example.com", str(tmp_path), {})
+    raw_path, _ = testssl.run("example.com", str(tmp_path), {})
 
     assert raw_path is not None
     assert captured["path_during_run"].startswith(str(msys_bin) + os.pathsep)
@@ -299,7 +298,8 @@ def test_run_prepends_the_hexdump_dir_to_path_for_the_subprocess(monkeypatch, tm
 def test_run_does_not_touch_path_when_hexdump_is_already_resolvable(monkeypatch, tmp_path, fixture):
     monkeypatch.setattr(
         base, "which",
-        lambda name: {"testssl.sh": "/usr/bin/testssl.sh", "hexdump": "/usr/bin/hexdump"}.get(name))
+        {"testssl.sh": "/usr/bin/testssl.sh",
+             "hexdump": "/usr/bin/hexdump"}.get)
 
     original_path = os.environ.get("PATH", "")
     captured = {}
@@ -380,7 +380,7 @@ def test_run_uses_bash_and_script_argv_when_no_native_binary_is_found(monkeypatc
     monkeypatch.setattr(testssl, "_TESTSSL_SCRIPT_CANDIDATES", (str(script),))
     monkeypatch.setattr(
         base, "which",
-        lambda name: {"bash": "/usr/bin/bash", "hexdump": "/usr/bin/hexdump"}.get(name))
+        {"bash": "/usr/bin/bash", "hexdump": "/usr/bin/hexdump"}.get)
 
     captured = {}
 
@@ -392,7 +392,7 @@ def test_run_uses_bash_and_script_argv_when_no_native_binary_is_found(monkeypatc
 
     monkeypatch.setattr(base, "run_tool", fake_run_tool)
 
-    raw_path, result = testssl.run("example.com", str(tmp_path), {})
+    raw_path, _ = testssl.run("example.com", str(tmp_path), {})
 
     assert raw_path == tmp_path / "testssl.json"
     assert captured["argv"][0] == "/usr/bin/bash"

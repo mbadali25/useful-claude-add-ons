@@ -71,16 +71,15 @@ class BrandAmbiguous(BrandError):
     def __init__(self, names, where):
         self.names = list(names)
         super().__init__(
-            "More than one brand pack is installed (%s): %s.\n"
-            "Pass --brand <name> (or set %s) to say which one this document is for."
-            % (where, ", ".join(self.names), BRAND_ENV))
+            f"More than one brand pack is installed ({where}): {', '.join(self.names)}.\n"
+            f"Pass --brand <name> (or set {BRAND_ENV}) to say which one this document is for.")
 
 
 class BrandNotFound(BrandError):
     def __init__(self, wanted, names):
-        super().__init__(
-            "No brand pack named %r. Installed: %s."
-            % (wanted, ", ".join(names) if names else "(none - only 'neutral')"))
+        installed = ", ".join(names) if names else "(none - only 'neutral')"
+        super().__init__(f"No brand pack named {wanted!r}. "
+                         f"Installed: {installed}.")
 
 
 def skills_dir() -> str:
@@ -117,7 +116,7 @@ def _glob_many(patterns) -> list:
 def search_locations() -> list:
     """Ordered [(label, [glob patterns])]. Step 3 first, then step 4's shapes."""
     j = os.path.join
-    locs = [("sibling skill directories under %s" % skills_dir(),
+    locs = [(f"sibling skill directories under {skills_dir()}",
              [j(skills_dir(), "*", "assets", "brand.json")])]
     if os.environ.get(SKILLS_DIR_ENV):
         return locs  # a test tree: do not also wander the real machine
@@ -127,17 +126,17 @@ def search_locations() -> list:
         if not parent or parent == ancestor or os.path.dirname(parent) == parent:
             break  # reached a drive root; never search that
         ancestor = parent
-        locs.append(("plugin cache beneath %s" % ancestor, [
+        locs.append((f"plugin cache beneath {ancestor}", [
             j(ancestor, "*", "*", "assets", "brand.json"),
             j(ancestor, "*", "*", "*", "assets", "brand.json"),
             j(ancestor, "*", "*", "skills", "*", "assets", "brand.json"),
             j(ancestor, "*", "*", "*", "skills", "*", "assets", "brand.json"),
         ]))
     home = os.path.join(os.path.expanduser("~"), ".claude")
-    locs.append(("user skills under %s" % j(home, "skills"),
+    locs.append((f"user skills under {j(home, 'skills')}",
                  [j(home, "skills", "*", "assets", "brand.json")]))
     cache = j(home, "plugins", "cache")
-    locs.append(("user plugin cache under %s" % cache, [
+    locs.append((f"user plugin cache under {cache}", [
         j(cache, "*", "*", "*", "assets", "brand.json"),
         j(cache, "*", "*", "*", "skills", "*", "assets", "brand.json"),
     ]))
@@ -182,10 +181,11 @@ def _dedupe_versions(packs):
     for p in packs:
         name = _pack_name(p)
         if name in by_name:
-            keep, drop = sorted([by_name[name], p], key=os.path.getmtime, reverse=True)
+            keep, _drop = sorted([by_name[name], p],
+                                 key=os.path.getmtime, reverse=True)
             by_name[name] = keep
-            notes.append("%s found in more than one version; using the most recently "
-                         "modified copy (%s)" % (name, keep))
+            notes.append(f"{name} found in more than one version; using the most recently "
+                         f"modified copy ({keep})")
         else:
             by_name[name] = p
     return by_name, notes
@@ -261,12 +261,12 @@ class Brand:
         d = self.masters_dir
         if not d:
             raise BrandError(
-                "The %s brand pack has no masters directory. Pass an explicit path, "
-                "or set %s." % (self.name, MASTERS_DIR_ENV))
+                f"The {self.name} brand pack has no masters directory. Pass an explicit path, "
+                f"or set {MASTERS_DIR_ENV}.")
         if not os.path.isdir(d):
             raise BrandError(
-                "Masters directory not found: %s\nSet %s to point at it, or pass "
-                "an explicit path." % (d, MASTERS_DIR_ENV))
+                f"Masters directory not found: {d}\nSet {MASTERS_DIR_ENV} to point at it, or pass "
+                "an explicit path.")
         return d
 
     @property
@@ -289,7 +289,7 @@ class Brand:
         return self.report.get("output_dir") or "reports"
 
     def describe(self) -> str:
-        return "brand: %s -- %s (%s)" % (self.name, self.reason, self.path)
+        return f"brand: {self.name} -- {self.reason} ({self.path})"
 
     def announce(self, stream=sys.stderr):
         print(self.describe(), file=stream)
@@ -313,7 +313,7 @@ def _match_explicit(wanted, packs):
         name = _pack_name(path)
         names.append(name)
         if wanted.lower() in (name.lower(), skill_dir.lower()):
-            return path, "--brand %s given" % wanted
+            return path, f"--brand {wanted} given"
     raise BrandNotFound(wanted, names)
 
 
@@ -337,15 +337,23 @@ def resolve(explicit=None, root=None, announce=True) -> Brand:
     if wanted:
         path, reason = _match_explicit(wanted, _all_packs())
         if not explicit:
-            reason = "%s=%s set in the environment" % (BRAND_ENV, wanted)
+            reason = f"{BRAND_ENV}={wanted} set in the environment"
     else:
         packs, label, searched = discover()
         if packs:
             by_name, notes = _dedupe_versions(packs)
             if len(by_name) > 1:
                 raise BrandAmbiguous(sorted(by_name), label)
-            (name, path), = by_name.items()
-            reason = "the only brand pack found in %s" % label
+            # Single-element unpack, not `next(iter(...))`: the guard
+            # above rules out more than one, and this keeps a loud
+            # ValueError if the count is ever neither 1 nor >1.
+            # pylint infers `by_name` as possibly empty because it is
+            # built in a loop, and cannot see that `if packs:` makes
+            # it non-empty -- so the warning is about its inference,
+            # not about this line. Dropping the unpack to satisfy it
+            # would drop the check it cannot see.
+            path, = by_name.values()  # pylint: disable=unbalanced-dict-unpacking
+            reason = f"the only brand pack found in {label}"
         else:
             path = NEUTRAL_JSON
             reason = ("no brand pack found - using neutral. Searched: "
@@ -375,12 +383,12 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
 
     if args.list:
-        print("neutral  %s  (built in)" % NEUTRAL_JSON)
+        print(f"neutral  {NEUTRAL_JSON}  (built in)")
         for label, patterns in search_locations():
             packs = _glob_many(patterns)
-            print("\n%s:" % label)
+            print(f"\n{label}:")
             for p in packs:
-                print("  %-8s %s" % (_pack_name(p), p))
+                print(f"  {_pack_name(p)!s:<8} {p}")
             if not packs:
                 print("  (none)")
         return 0
@@ -389,13 +397,13 @@ def main(argv=None) -> int:
     if args.json:
         print(json.dumps(brand.data, indent=2))
     else:
-        print("template    : %s" % (brand.template or "(synthesised from brand.json)"))
+        print(f"template    : {(brand.template or '(synthesised from brand.json)')}")
         masters = brand.masters_dir
         state = "" if not masters else ("" if os.path.isdir(masters) else "  (NOT FOUND on this machine)")
-        print("masters_dir : %s%s" % (masters or "(none - pass an output path)", state))
-        print("assets_dir  : %s" % (brand.assets_dir or "(none)"))
-        print("specs_dir   : %s" % (brand.specs_dir or "(none)"))
-        print("reports     : %s/" % brand.report_output_dir)
+        print(f"masters_dir : {masters or '(none - pass an output path)'}{state}")
+        print(f"assets_dir  : {(brand.assets_dir or '(none)')}")
+        print(f"specs_dir   : {(brand.specs_dir or '(none)')}")
+        print(f"reports     : {brand.report_output_dir}/")
     return 0
 
 

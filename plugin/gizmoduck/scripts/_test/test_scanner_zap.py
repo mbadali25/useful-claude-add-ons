@@ -268,7 +268,7 @@ def test_run_uses_java_dash_jar_argv_when_no_wrapper_binary_found(monkeypatch, t
 
     monkeypatch.setattr(zap.base, "run_tool", fake_run_tool)
 
-    raw_path, result = zap.run("http://example.test", str(tmp_path), {})
+    raw_path, _ = zap.run("http://example.test", str(tmp_path), {})
 
     assert raw_path == str(tmp_path / "zap.json")
     argv = captured["argv"]

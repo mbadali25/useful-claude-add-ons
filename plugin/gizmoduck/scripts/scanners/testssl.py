@@ -26,8 +26,9 @@ import json
 import os
 from pathlib import Path
 
-from . import base
 import normalize
+
+from . import base
 
 NAME = "testssl"
 KINDS = ["web", "host"]
@@ -221,14 +222,14 @@ def _load(raw_path):
         with open(raw_path, encoding="utf-8") as fh:
             data = json.load(fh)
     except (OSError, ValueError) as e:
-        raise base.ParseError("testssl: could not read %s: %s" % (raw_path, e)) from e
+        raise base.ParseError(f"testssl: could not read {raw_path}: {e}") from e
 
     if not isinstance(data, list):
         raise base.ParseError(
-            "testssl: expected a JSON array at the top level, got %r" % type(data).__name__)
+            f"testssl: expected a JSON array at the top level, got {type(data).__name__!r}")
     for item in data:
         if not isinstance(item, dict):
-            raise base.ParseError("testssl: entry is not an object: %r" % (item,))
+            raise base.ParseError(f"testssl: entry is not an object: {item!r}")
     return data
 
 
@@ -241,7 +242,7 @@ def _split_cve(value):
 def _matched_at(item):
     ip = item.get("ip") or ""
     port = item.get("port") or ""
-    return "%s:%s" % (ip, port) if port else ip
+    return f"{ip}:{port}" if port else ip
 
 
 def _raw_severity(item):
@@ -254,7 +255,7 @@ def _raw_severity(item):
     value = item.get("severity")
     if value is not None and not isinstance(value, str):
         raise base.ParseError(
-            "testssl: 'severity' must be a string, got %r" % type(value).__name__)
+            f"testssl: 'severity' must be a string, got {type(value).__name__!r}")
     return (value or "").strip().upper()
 
 

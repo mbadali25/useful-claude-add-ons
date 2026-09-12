@@ -29,7 +29,7 @@ def test_is_available_true_via_nikto_pl_and_path_perl(monkeypatch, tmp_path):
     nikto_pl.write_text("# stand-in")
     monkeypatch.setattr(
         base, "which",
-        lambda name: {"perl": "/usr/bin/perl"}.get(name))  # no native nikto, perl on PATH
+        {"perl": "/usr/bin/perl"}.get)  # no native nikto, perl on PATH
     monkeypatch.setattr(nikto, "_NIKTO_PL_CANDIDATES", (str(nikto_pl),))
 
     assert nikto.is_available() is True
@@ -49,7 +49,7 @@ def test_run_uses_perl_and_nikto_pl_when_no_native_binary_is_found(monkeypatch, 
     nikto_pl.write_text("# stand-in")
     monkeypatch.setattr(
         base, "which",
-        lambda name: {"perl": "/usr/bin/perl"}.get(name))
+        {"perl": "/usr/bin/perl"}.get)
     monkeypatch.setattr(nikto, "_NIKTO_PL_CANDIDATES", (str(nikto_pl),))
 
     captured = {}
@@ -62,7 +62,7 @@ def test_run_uses_perl_and_nikto_pl_when_no_native_binary_is_found(monkeypatch, 
 
     monkeypatch.setattr(base, "run_tool", fake_run_tool)
 
-    result_path, result = nikto.run("https://example.test", str(tmp_path))
+    result_path, _ = nikto.run("https://example.test", str(tmp_path))
 
     assert result_path == str(tmp_path / "nikto.csv")
     assert captured["argv"][0] == "/usr/bin/perl"
@@ -237,7 +237,7 @@ def test_run_returns_the_path_when_a_fresh_csv_is_written(monkeypatch, tmp_path)
 
     monkeypatch.setattr(base, "run_tool", fake_run_tool)
 
-    result_path, result = nikto.run("https://example.test", str(tmp_path))
+    result_path, _ = nikto.run("https://example.test", str(tmp_path))
 
     assert result_path == str(tmp_path / "nikto.csv")
     findings = nikto.parse(result_path, "https://example.test")

@@ -31,6 +31,7 @@ import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import NoReturn
 
 # Azure CLI public client. The only one verified for Dataverse device-code.
 # See references/auth.md before substituting another.
@@ -99,19 +100,19 @@ def request(method, url, token=None, body=None, headers=None, form=False):
             return exc.code, parsed
     except urllib.error.URLError as exc:
         if isinstance(exc.reason, socket.gaierror):
-            die("DNS lookup failed for %s: %s" % (url, exc.reason))
+            die(f"DNS lookup failed for {url}: {exc.reason}")
         if isinstance(exc.reason, (TimeoutError, socket.timeout)):
-            die("request timed out for %s: %s" % (url, exc.reason))
-        die("connection failed for %s: %s" % (url, exc.reason))
+            die(f"request timed out for {url}: {exc.reason}")
+        die(f"connection failed for {url}: {exc.reason}")
     except (TimeoutError, socket.timeout) as exc:
-        die("request timed out for %s: %s" % (url, exc))
+        die(f"request timed out for {url}: {exc}")
     except (OSError, http.client.HTTPException) as exc:
-        die("connection failed for %s: %s" % (url, exc))
+        die(f"connection failed for {url}: {exc}")
     except (json.JSONDecodeError, UnicodeDecodeError) as exc:
-        die("non-JSON response from %s: %s" % (url, exc))
+        die(f"non-JSON response from {url}: {exc}")
 
 
-def die(msg, detail=None):
+def die(msg, detail=None) -> NoReturn:
     print("ERROR: " + msg, file=sys.stderr)
     if detail:
         print(json.dumps(detail, indent=2)[:2000], file=sys.stderr)
@@ -177,7 +178,7 @@ def save_cached(resource, payload, tenant, client_id=DEFAULT_CLIENT_ID):
 def refresh(resource, refresh_token, tenant, client_id=DEFAULT_CLIENT_ID):
     status, payload = request(
         "POST",
-        "https://login.microsoftonline.com/%s/oauth2/v2.0/token" % tenant,
+        f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token",
         body={
             "grant_type": "refresh_token",
             "client_id": client_id,
@@ -194,7 +195,7 @@ def refresh(resource, refresh_token, tenant, client_id=DEFAULT_CLIENT_ID):
 def device_code_login(resource, tenant, client_id=DEFAULT_CLIENT_ID):
     status, payload = request(
         "POST",
-        "https://login.microsoftonline.com/%s/oauth2/v2.0/devicecode" % tenant,
+        f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/devicecode",
         body={"client_id": client_id, "scope": scope_for(resource) + " offline_access"},
         form=True,
     )
@@ -212,7 +213,7 @@ def device_code_login(resource, tenant, client_id=DEFAULT_CLIENT_ID):
         time.sleep(interval)
         status, tok = request(
             "POST",
-            "https://login.microsoftonline.com/%s/oauth2/v2.0/token" % tenant,
+            f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token",
             body={
                 "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
                 "client_id": client_id,
@@ -263,7 +264,7 @@ def token_for(resource, tenant, interactive=True, client_id=DEFAULT_CLIENT_ID):
     if cached:
         return cached
     if not interactive:
-        die("no cached token for %s -- run 'pa.py login' first" % resource)
+        die(f"no cached token for {resource} -- run 'pa.py login' first")
     # Threaded through rather than defaulted here. Today every caller passes
     # interactive=False and dies above, so this line is unreachable and the
     # parameter changes no behaviour -- said plainly because a reviewer checked
@@ -318,7 +319,7 @@ def _schema_nodes(node, path):
     if isinstance(node.get("properties"), dict):
         yield path, node
         for key, child in node["properties"].items():
-            yield from _schema_nodes(child, "%s.%s" % (path, key))
+            yield from _schema_nodes(child, f"{path}.{key}")
     if isinstance(node.get("items"), dict):
         yield from _schema_nodes(node["items"], path + "[]")
 
@@ -351,10 +352,10 @@ def validate(clientdata):
             for req in node.get("required") or []:
                 if req not in declared:
                     problems.append(
-                        "trigger '%s': '%s' is in %s.required but not in "
-                        "%s.properties -- every launch will fail validation "
+                        f"trigger '{tname}': '{req}' is in {where}.required but not in "
+                        f"{where}.properties -- every launch will fail validation "
                         "before a run is created, so run history shows "
-                        "nothing" % (tname, req, where, where)
+                        "nothing"
                     )
 
     actions = []
@@ -367,9 +368,9 @@ def validate(clientdata):
         #    InvalidWorkflowRunAction at save time.
         if action.get("type") == "Terminate" and inside_foreach:
             problems.append(
-                "action '%s': Terminate is nested inside an Apply to each. The "
+                f"action '{where}': Terminate is nested inside an Apply to each. The "
                 "service rejects this with InvalidWorkflowRunAction. Set a "
-                "variable in the loop and terminate after it." % where
+                "variable in the loop and terminate after it."
             )
 
         # 3. host.connectionName must resolve to a connection reference.
@@ -380,11 +381,10 @@ def validate(clientdata):
         cname = host.get("connectionName") if isinstance(host, dict) else None
         if cname and cname not in refs:
             problems.append(
-                "action '%s': host.connectionName '%s' is not in "
+                f"action '{where}': host.connectionName '{cname}' is not in "
                 "properties.connectionReferences. The flow will not save. A "
                 "connector the flow has never used needs one designer save "
                 "first -- the API cannot mint a connection reference."
-                % (where, cname)
             )
 
     # 4. runAfter must name an action in the same container.
@@ -397,8 +397,8 @@ def validate(clientdata):
         for dep in (action.get("runAfter") or {}):
             if dep not in siblings:
                 problems.append(
-                    "action '%s': runAfter names '%s', which is not an action "
-                    "in the same container" % (where, dep)
+                    f"action '{where}': runAfter names '{dep}', which is not an action "
+                    "in the same container"
                 )
 
     return problems
@@ -409,7 +409,7 @@ def load_clientdata_file(path):
     try:
         blob = json.loads(text)
     except ValueError as exc:
-        die("%s is not valid JSON: %s" % (path, exc))
+        die(f"{path} is not valid JSON: {exc}")
     # Accept either the parsed definition or a raw JSON-string-in-JSON.
     if isinstance(blob, str):
         blob = json.loads(blob)
@@ -432,9 +432,9 @@ def snapshot(name, content):
     try:
         SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
-        die("cannot create the snapshot directory %s: %s\n"
+        die(f"cannot create the snapshot directory {SNAPSHOT_DIR}: {exc}\n"
             "Nothing was written and no PATCH was attempted -- a patch without "
-            "a rollback is not worth the risk." % (SNAPSHOT_DIR, exc))
+            "a rollback is not worth the risk.")
     try:
         # Owner-only. The FILES are already 0600 (tempfile opens with that mode),
         # but the directory took the umask default, and these names embed flow
@@ -448,7 +448,7 @@ def snapshot(name, content):
     path = None
     try:
         with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=SNAPSHOT_DIR,
-                                         prefix="%s.%s." % (name, stamp), suffix=".json",
+                                         prefix=f"{name}.{stamp}.", suffix=".json",
                                          delete=False) as out:
             path = Path(out.name)
             out.write(content)
@@ -465,8 +465,8 @@ def snapshot(name, content):
                 path.unlink()
             except OSError:
                 pass
-        die("cannot write a snapshot into %s: %s\n"
-            "Nothing was left behind and no PATCH was attempted." % (SNAPSHOT_DIR, exc))
+        die(f"cannot write a snapshot into {SNAPSHOT_DIR}: {exc}\n"
+            "Nothing was left behind and no PATCH was attempted.")
     return path
 
 
@@ -486,11 +486,11 @@ DV_HEADERS = {
 
 def dataverse_get(org, flow_id, tenant):
     token = token_for(org.rstrip("/"), tenant, interactive=False)
-    url = "%s/api/data/v9.2/workflows(%s)?$select=%s" % (org.rstrip("/"), flow_id, SELECT)
+    url = f"{org.rstrip('/')}/api/data/v9.2/workflows({flow_id})?$select={SELECT}"
     status, payload = request("GET", url, token=token, headers=DV_HEADERS)
     if status != 200:
         explain_auth_failure(payload)
-        die("GET returned %d" % status, payload)
+        die(f"GET returned {status:d}", payload)
     return payload
 
 
@@ -503,14 +503,14 @@ def cmd_login(args):
 def cmd_get(args):
     row = dataverse_get(args.org, args.flow, args.tenant)
     raw = row.get("clientdata") or ""
-    path = snapshot("flow-%s" % args.flow, raw)
+    path = snapshot(f"flow-{args.flow}", raw)
 
-    print("name        : %s" % row.get("name"))
-    print("statecode   : %s (1 = On)" % row.get("statecode"))
-    print("ismanaged   : %s" % row.get("ismanaged"))
-    print("modifiedon  : %s" % row.get("modifiedon"))
-    print("clientdata  : %d bytes" % len(raw))
-    print("snapshot    : %s" % path)
+    print(f"name        : {row.get('name')}")
+    print(f"statecode   : {row.get('statecode')} (1 = On)")
+    print(f"ismanaged   : {row.get('ismanaged')}")
+    print(f"modifiedon  : {row.get('modifiedon')}")
+    print(f"clientdata  : {len(raw):d} bytes")
+    print(f"snapshot    : {path}")
 
     if row.get("ismanaged"):
         print("\nWARNING: this flow is managed. Patching clientdata directly "
@@ -521,11 +521,11 @@ def cmd_get(args):
     if args.out:
         parsed = json.loads(raw) if raw else {}
         Path(args.out).write_text(json.dumps(parsed, indent=2), encoding="utf-8")
-        print("editable    : %s" % args.out)
+        print(f"editable    : {args.out}")
 
     problems = validate(json.loads(raw)) if raw else []
     if problems:
-        print("\nThe CURRENT definition already has %d problem(s):" % len(problems))
+        print(f"\nThe CURRENT definition already has {len(problems):d} problem(s):")
         for p in problems:
             print("  - " + p)
 
@@ -533,9 +533,9 @@ def cmd_get(args):
 def cmd_validate(args):
     problems = validate(load_clientdata_file(args.clientdata))
     if not problems:
-        print("OK -- %d checks passed." % 4)
+        print(f"OK -- {4:d} checks passed.")
         return
-    print("%d problem(s):" % len(problems))
+    print(f"{len(problems):d} problem(s):")
     for p in problems:
         print("  - " + p)
     sys.exit(2)
@@ -546,35 +546,35 @@ def cmd_patch(args):
 
     problems = validate(blob)
     if problems and not args.force:
-        print("Refusing to PATCH -- %d problem(s):" % len(problems))
+        print(f"Refusing to PATCH -- {len(problems):d} problem(s):")
         for p in problems:
             print("  - " + p)
         print("\nFix them, or pass --force if you are certain they are wrong.")
         sys.exit(2)
     if problems and args.force:
-        print("WARNING: patching despite %d problem(s) because --force was "
-              "given." % len(problems))
+        print(f"WARNING: patching despite {len(problems):d} problem(s) because --force was "
+              "given.")
 
     # Snapshot the LIVE definition immediately before overwriting it. This is
     # the rollback; clientdata has no version history.
     row = dataverse_get(args.org, args.flow, args.tenant)
-    before = snapshot("flow-%s.before" % args.flow, row.get("clientdata") or "")
-    print("rollback snapshot: %s" % before)
+    before = snapshot(f"flow-{args.flow}.before", row.get("clientdata") or "")
+    print(f"rollback snapshot: {before}")
 
     token = token_for(args.org.rstrip("/"), args.tenant, interactive=False)
     headers = dict(DV_HEADERS)
     headers["If-Match"] = row.get("@odata.etag") if args.etag else "*"
 
-    url = "%s/api/data/v9.2/workflows(%s)" % (args.org.rstrip("/"), args.flow)
+    url = f"{args.org.rstrip('/')}/api/data/v9.2/workflows({args.flow})"
     status, payload = request(
         "PATCH", url, token=token, headers=headers,
         body={"clientdata": json.dumps(blob, separators=(",", ":"))},
     )
     if status not in (200, 204):
         explain_auth_failure(payload)
-        die("PATCH returned %d -- flow unchanged" % status, payload)
+        die(f"PATCH returned {status:d} -- flow unchanged", payload)
 
-    print("PATCH %d -- written." % status)
+    print(f"PATCH {status:d} -- written.")
     print("\n204 means stored, not runnable. Reload the designer to confirm the "
           "flow checker is clean, then launch it once.")
     # --force is not optional here. The rollback target is the definition that
@@ -582,9 +582,9 @@ def cmd_patch(args):
     # normal case - so the saved definition usually still carries the problems
     # reported above. Without --force the printed command hits "Refusing to
     # PATCH" and exits 2 at the one moment anyone needs it.
-    rollback = ("pa.py patch --org %s --flow %s --tenant %s --clientdata %s "
-                "--force" % (_arg(args.org), _arg(args.flow), _arg(args.tenant),
-                             _arg(str(before))))
+    rollback = (f"pa.py patch --org {_arg(args.org)} "
+                f"--flow {_arg(args.flow)} --tenant {_arg(args.tenant)} "
+                f"--clientdata {_arg(str(before))} --force")
     print("Rollback (bash / Git Bash): " + rollback)
     if os.name == "nt":
         # cmd.exe and PowerShell do not read POSIX single-quoting, and no single
@@ -602,19 +602,22 @@ def cmd_patch(args):
         windows_unsafe = '"' + "%$" + chr(96)
         vals = [args.org, args.flow, args.tenant, str(before)]
         if not any(c in v for v in vals for c in windows_unsafe):
-            print('Rollback (cmd.exe / PowerShell): pa.py patch --org "%s" '
-                  '--flow "%s" --tenant "%s" --clientdata "%s" --force' % tuple(vals))
+            # Prefixed names: `snapshot` is a module-level function used
+            # thirty lines above, and an unprefixed local would shadow it.
+            r_org, r_flow, r_tenant, r_before = vals
+            print(f'Rollback (cmd.exe / PowerShell): pa.py patch --org "{r_org}" '
+                  f'--flow "{r_flow}" --tenant "{r_tenant}" '
+                  f'--clientdata "{r_before}" --force')
 
 
 def cmd_runs(args):
     token = token_for(RESOURCES["flow"], args.tenant, interactive=False)
     url = ("https://api.flow.microsoft.com/providers/Microsoft.ProcessSimple"
-           "/environments/%s/flows/%s/runs?api-version=2016-11-01&$top=%d"
-           % (args.env, args.flow, args.top))
+           f"/environments/{args.env}/flows/{args.flow}/runs?api-version=2016-11-01&$top={args.top:d}")
     status, payload = request("GET", url, token=token)
     if status != 200:
         explain_auth_failure(payload)
-        die("GET runs returned %d" % status, payload)
+        die(f"GET runs returned {status:d}", payload)
     runs = payload.get("value", [])
     if not runs:
         print("No runs. Retention is 28 days -- and a launch blocked by trigger "
@@ -622,23 +625,22 @@ def cmd_runs(args):
         return
     for run in runs:
         p = run.get("properties", {})
-        print("%-34s %-10s %s  %s" % (
-            run.get("name"), p.get("status"), p.get("startTime", "")[:19],
-            (p.get("error") or {}).get("message", "")[:60]))
+        error = (p.get("error") or {}).get("message", "")[:60]
+        print(f'{run.get("name")!s:<34} {p.get("status")!s:<10} '
+              f'{p.get("startTime", "")[:19]}  {error}')
 
 
 def cmd_list(args):
     token = token_for(RESOURCES["flow"], args.tenant, interactive=False)
     url = ("https://api.flow.microsoft.com/providers/Microsoft.ProcessSimple"
-           "/environments/%s/flows?api-version=2016-11-01" % args.env)
+           f"/environments/{args.env}/flows?api-version=2016-11-01")
     status, payload = request("GET", url, token=token)
     if status != 200:
         explain_auth_failure(payload)
-        die("GET flows returned %d" % status, payload)
+        die(f"GET flows returned {status:d}", payload)
     for flow in payload.get("value", []):
         p = flow.get("properties", {})
-        print("%s  %-8s %s" % (flow.get("name"), p.get("state"),
-                               p.get("displayName")))
+        print(f"{flow.get('name')}  {p.get('state')!s:<8} {p.get('displayName')}")
 
 
 def main():

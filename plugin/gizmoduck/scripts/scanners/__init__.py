@@ -20,6 +20,5 @@ KIND_DEFAULTS = {
 
 def get(name):
     if name not in ADAPTERS:
-        raise KeyError("unknown scanner %r; known: %s"
-                       % (name, ", ".join(sorted(ADAPTERS))))
+        raise KeyError(f"unknown scanner {name!r}; known: {', '.join(sorted(ADAPTERS))}")
     return ADAPTERS[name]

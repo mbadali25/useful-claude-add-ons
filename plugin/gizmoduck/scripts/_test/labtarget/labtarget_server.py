@@ -12,7 +12,7 @@ It is a test harness only - not shipped functionality, not packaged,
 not referenced from any plugin manifest.
 
 Usage:
-    python server.py [--port 8899]
+    python labtarget_server.py [--port 8899]
 
 The app creates a throwaway SQLite database in a temp file on startup and
 deletes it on shutdown (Ctrl+C / SIGTERM / normal exit). No persistent data,
@@ -53,7 +53,9 @@ _db_conn = None
 
 
 def _init_db():
-    global _db_path, _db_conn
+    # The DB is a process-wide singleton by design: one throwaway file
+    # per run, created here and deleted by _cleanup_db.
+    global _db_path, _db_conn  # pylint: disable=global-statement
     fd, _db_path = tempfile.mkstemp(prefix="labtarget_", suffix=".sqlite3")
     os.close(fd)
     _db_conn = sqlite3.connect(_db_path, check_same_thread=False)
@@ -97,7 +99,6 @@ def _init_db():
 
 
 def _cleanup_db():
-    global _db_conn, _db_path
     try:
         if _db_conn is not None:
             _db_conn.close()
@@ -128,8 +129,11 @@ class LabTargetHandler(BaseHTTPRequestHandler):
     server_version = "Apache/2.2.3"
     sys_version = "(Unix) mod_ssl/2.2.3 OpenSSL/0.9.8e-fips-rc1"
 
-    def log_message(self, fmt, *args):
-        sys.stderr.write("[labtarget] %s - %s\n" % (self.address_string(), fmt % args))
+    def log_message(self, format, *args):  # pylint: disable=redefined-builtin
+        # `format` shadows the builtin, and matches
+        # BaseHTTPRequestHandler.log_message so a keyword call still works.
+        sys.stderr.write(
+            f"[labtarget] {self.address_string()} - {format % args}\n")
 
     # No security headers are ever added here (no CSP, no
     # X-Frame-Options, no X-Content-Type-Options) - that omission is
