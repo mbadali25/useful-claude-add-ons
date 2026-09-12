@@ -97,7 +97,7 @@ def decode(raw: bytes) -> tuple[str, str]:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    ap = argparse.ArgumentParser(description=__doc__.split("\n\n", maxsplit=1)[0])
     ap.add_argument("path", help="log or CSV file under C:\\scripts\\logs or C:\\scripts\\reports")
     ap.add_argument("--tail", type=int, metavar="N", help="only the last N lines")
     ap.add_argument("--grep", metavar="TEXT", help="only lines containing TEXT (case-insensitive)")

@@ -77,7 +77,7 @@
       "name": "exchange-mailbox-cleanup",
       "source": "./skills/exchange-mailbox-cleanup",
       "description": "Walks a non-technical operator through Exchange Online mailbox cleanup and offboarding - preflight, litigation hold, preservation check, account deletion - with typed confirmation on every irreversible step.",
-      "version": "1.0.1"
+      "version": "1.0.2"
     },
     {
       "name": "exchange-mailbox-restore",
