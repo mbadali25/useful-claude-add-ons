@@ -92,6 +92,44 @@ $externallyProvided = @{
     # unapproved. That trades one false positive for a class of false
     # negatives, so the name goes here instead.
     'nvidia-smi'                    = 'NVIDIA driver (external binary, not a cmdlet)'
+    # ExchangeOnlineManagement, and here for a THIRD reason - not "the module is
+    # absent" and not "this is a bare binary", but "the module is present and
+    # still does not export these". EXO 3.x materialises its REST-backed cmdlets
+    # into the session only after Connect-ExchangeOnline. Measured on 3.10.1: the
+    # manifest exports 36 commands, Connect-ExchangeOnline among them, and NOT
+    # ONE of the names below. So no static check can resolve them on any machine,
+    # connected or not, and "install the module" is a fix that changes nothing -
+    # which is the trap, because it is the obvious reading of the failure.
+    # Re-measure with (Get-Module -ListAvailable ExchangeOnlineManagement).ExportedCommands
+    # rather than trusting that count; it is a fact about one version.
+    # skills/exchange-mailbox-{cleanup,restore}/scripts/**.
+    'Add-DistributionGroupMember'      = 'ExchangeOnlineManagement (session-materialised)'
+    'Add-eDiscoveryCaseAdmin'          = 'ExchangeOnlineManagement (session-materialised)'
+    'Add-MailboxPermission'            = 'ExchangeOnlineManagement (session-materialised)'
+    'Add-RoleGroupMember'              = 'ExchangeOnlineManagement (session-materialised)'
+    'Get-ComplianceSearch'             = 'ExchangeOnlineManagement (session-materialised)'
+    'Get-DistributionGroup'            = 'ExchangeOnlineManagement (session-materialised)'
+    'Get-DistributionGroupMember'      = 'ExchangeOnlineManagement (session-materialised)'
+    'Get-Mailbox'                      = 'ExchangeOnlineManagement (session-materialised)'
+    'Get-MailboxStatistics'            = 'ExchangeOnlineManagement (session-materialised)'
+    'Get-RoleGroup'                    = 'ExchangeOnlineManagement (session-materialised)'
+    'Get-RoleGroupMember'              = 'ExchangeOnlineManagement (session-materialised)'
+    'Get-User'                         = 'ExchangeOnlineManagement (session-materialised)'
+    'New-ComplianceSearch'             = 'ExchangeOnlineManagement (session-materialised)'
+    'New-DistributionGroup'            = 'ExchangeOnlineManagement (session-materialised)'
+    'Remove-ComplianceSearch'          = 'ExchangeOnlineManagement (session-materialised)'
+    'Set-DistributionGroup'            = 'ExchangeOnlineManagement (session-materialised)'
+    'Set-Mailbox'                      = 'ExchangeOnlineManagement (session-materialised)'
+    'Set-MailboxAutoReplyConfiguration' = 'ExchangeOnlineManagement (session-materialised)'
+    'Start-ComplianceSearch'           = 'ExchangeOnlineManagement (session-materialised)'
+    # The ActiveDirectory module ships in RSAT, so it is absent on a CI runner and
+    # on any Windows box without the feature installed - the same shape as the
+    # ScheduledTasks entries above, listed separately only because it is a
+    # different module. skills/exchange-mailbox-restore/scripts/**.
+    'Disable-ADAccount'             = 'ActiveDirectory (RSAT, Windows-only)'
+    'Get-ADDomain'                  = 'ActiveDirectory (RSAT, Windows-only)'
+    'Get-ADUser'                    = 'ActiveDirectory (RSAT, Windows-only)'
+    'Set-ADUser'                    = 'ActiveDirectory (RSAT, Windows-only)'
 }
 
 $problems = @()
