@@ -1,5 +1,6 @@
 """Tests for codemap/graph reconciliation and the v1 -> v2 upgrade."""
 import json
+import pathlib
 import subprocess
 
 import context  # noqa: F401  pylint: disable=unused-import
@@ -976,3 +977,114 @@ def test_the_theme_rewrite_is_one_shot_at_the_schema_it_landed_in():
             {"schema": schema, "docs": {"theme": "neutral"}})
         assert notes["rewrittenKeys"] == [], schema
         assert got["docs"]["theme"] == "neutral", schema
+
+
+def test_a_partly_failed_migration_does_not_rewrite_the_theme():
+    """The rewrite is atomic with the schema stamp, and this is why.
+
+    A single wrong-typed block anywhere blocks the stamp. With the rewrite
+    applied anyway, the config came out with a null theme and `schema` still
+    at 3 -- so the user repairs the block, sets neutral back because they
+    meant it, re-runs, and the rewrite fires a SECOND time on the still
+    unbumped schema and erases it again. Half a migration that keeps
+    re-applying its own half is worse than one that did nothing."""
+    got, notes = crew_upgrade.upgrade_config(
+        {"schema": 3, "qa": "oops", "docs": {"theme": "neutral"}})
+
+    assert notes["schemaStamped"] is False
+    assert notes["rewrittenKeys"] == []
+    assert got["docs"]["theme"] == "neutral"     # untouched, so repairable
+
+    # And once the block is repaired, the migration runs properly.
+    got, notes = crew_upgrade.upgrade_config(
+        {"schema": 3, "qa": {}, "docs": {"theme": "neutral"}})
+    assert notes["schemaStamped"] is True
+    assert notes["rewrittenKeys"] == ["docs.theme"]
+    assert got["docs"]["theme"] is None
+
+
+def test_a_global_neutral_is_reported_because_it_defeats_the_migration(
+        tmp_path, monkeypatch):
+    """Repo null means "ask the next authority", and the next authority is the
+    machine-global file. A global still saying "neutral" therefore leaves the
+    EFFECTIVE theme unchanged while the repo config now reads as migrated --
+    the worse of the two states, because it looks fixed.
+
+    Reported and never rewritten: a per-repo upgrade editing a machine-global
+    file would change every other repo on the machine."""
+    path = tmp_path / "global.json"
+    path.write_text(json.dumps({"docs": {"theme": "neutral"}}), "utf-8")
+    monkeypatch.setattr(crew_state, "GLOBAL_CONFIG_PATH", str(path))
+
+    assert crew_upgrade.global_theme_defeats_migration() is True
+    _, notes = crew_upgrade.upgrade_config({"schema": 3,
+                                            "docs": {"theme": "neutral"}})
+    said = "\n".join(crew_upgrade._config_lines(notes))
+    assert "machine-global" in said
+    assert "will not edit it for you" in said
+
+    # A global that does not carry the old default says nothing at all.
+    path.write_text(json.dumps({"docs": {"theme": "solomon"}}), "utf-8")
+    assert crew_upgrade.global_theme_defeats_migration() is False
+    assert "machine-global" not in "\n".join(crew_upgrade._config_lines(notes))
+
+
+def test_an_unreadable_global_config_is_not_a_crash_or_a_warning(
+        tmp_path, monkeypatch):
+    """Best effort by design. A missing, unreadable or non-JSON global file
+    means "no global answer", which is the same state as no file at all -- and
+    must never take an upgrade down, since the upgrade has already written the
+    repo config by the time the report is built."""
+    missing = tmp_path / "nope" / "global.json"
+    monkeypatch.setattr(crew_state, "GLOBAL_CONFIG_PATH", str(missing))
+    assert crew_upgrade.global_theme_defeats_migration() is False
+
+    broken = tmp_path / "broken.json"
+    broken.write_text("{not json", "utf-8")
+    monkeypatch.setattr(crew_state, "GLOBAL_CONFIG_PATH", str(broken))
+    assert crew_upgrade.global_theme_defeats_migration() is False
+
+    wrong_type = tmp_path / "list.json"
+    wrong_type.write_text('["not an object"]', "utf-8")
+    monkeypatch.setattr(crew_state, "GLOBAL_CONFIG_PATH", str(wrong_type))
+    assert crew_upgrade.global_theme_defeats_migration() is False
+
+
+def test_the_global_config_path_has_exactly_one_definition():
+    """`crew_config` re-exports the path rather than redefining it. Two
+    definitions of one path is how a migration ends up warning about a
+    different file from the one the resolver actually merges.
+
+    Asserted on the SOURCE, not by comparing the two attributes at runtime:
+    conftest's isolation fixture rebinds both names, so an identity check
+    passes or fails on the fixture rather than on the code. The thing that
+    must stay true is that only one module computes the path."""
+    import crew_config  # pylint: disable=import-outside-toplevel
+
+    computed = [mod for mod in (crew_state, crew_config)
+                if 'GLOBAL_CONFIG_PATH = os.path.join(' in
+                pathlib.Path(mod.__file__).read_text(encoding="utf-8")]
+    assert computed == [crew_state], [m.__name__ for m in computed]
+    assert ("GLOBAL_CONFIG_PATH = crew_state.GLOBAL_CONFIG_PATH"
+            in pathlib.Path(crew_config.__file__).read_text(encoding="utf-8"))
+
+
+def test_the_suite_cannot_reach_the_real_machine_global_config():
+    """conftest's isolation, asserted directly rather than trusted.
+
+    The path is canonical in `crew_state` and re-exported by `crew_config`, so
+    a module reading it through `crew_state` -- `crew_upgrade` does, because it
+    must not import `crew_config` -- is NOT isolated by patching `crew_config`
+    alone. Patching one name left `global_theme_defeats_migration` reading the
+    developer's real `~/.claude/crew/config.json` during the suite.
+
+    That failure is invisible on most machines: if your own global config
+    happens not to set a theme, every test still passes. So it is asserted on
+    the PATH rather than on any behaviour derived from it."""
+    import crew_config  # pylint: disable=import-outside-toplevel
+
+    real = pathlib.Path.home() / ".claude" / "crew" / "config.json"
+    for mod in (crew_state, crew_config):
+        seen = pathlib.Path(mod.GLOBAL_CONFIG_PATH)
+        assert seen != real, mod.__name__
+        assert not seen.exists(), mod.__name__

@@ -53,6 +53,16 @@ from crew_endpoints import (
 # one to `upgrade_config` without touching this line ships nothing.
 SCHEMA_CURRENT = 4
 
+# The machine-global config file. `crew_config` owns the LAYERING and re-exports
+# this name; the path itself lives here for the same reason `PM_DEFAULTS` and
+# the provider tuples do -- modules that must not import `crew_config` still
+# need it. `crew_upgrade` is the case that forced the move: it has to warn when
+# a global value would defeat a repo migration it just performed, and importing
+# `crew_config` to find that out is the cyclic import both modules' docstrings
+# exist to prevent.
+GLOBAL_CONFIG_PATH = os.path.join(
+    os.path.expanduser("~"), ".claude", "crew", "config.json")
+
 # Verbatim from crew-scaling/SKILL.md. Below the floor the review is broken
 # rather than thorough; above the ceiling the tickets are too large.
 HEALTHY_LOW = 0.3

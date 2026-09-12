@@ -119,8 +119,10 @@ python3 ${CLAUDE_PLUGIN_ROOT}/skills/crew-graph/scripts/crew_upgrade.py \
 ```
 
 `--force` is required here even on an up-to-date schema: without it,
-`crew_upgrade.py` sees `schema >= 2` and returns `already current` without
-reconciling anything.
+`crew_upgrade.py` sees a `schema` at or above the current one and returns
+`already current` without reconciling anything. The comparison is against
+`crew_state.SCHEMA_CURRENT`, which moves — it has been 2, 3 and 4. Do not
+restate the number here; this line said `2` long after the code had left it.
 
 `--force` is not free on a repo that was never behind schema. Say these
 consequences before running it, not after:

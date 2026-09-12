@@ -93,8 +93,11 @@ import crew_upgrade  # pylint: disable=wrong-import-position
 
 # A module attribute, not a baked-in constant used directly everywhere, so a
 # test can point it at a scratch file instead of the real machine-wide one.
-GLOBAL_CONFIG_PATH = os.path.join(
-    os.path.expanduser("~"), ".claude", "crew", "config.json")
+# Re-exported, not redefined. Canonical in `crew_state` for the same reason the
+# provider tuples below are: `crew_upgrade` needs the path and must not import
+# this module. Two definitions of one path is how a migration ends up reading a
+# different file from the one the resolver merges.
+GLOBAL_CONFIG_PATH = crew_state.GLOBAL_CONFIG_PATH
 
 
 # The provider names crew RECOGNISES, split by what the role decides.

@@ -20,11 +20,24 @@ its `schema` field.
   backup, no write. Say the config could not be parsed and stop; a migration
   tool must never write `upgrade_config({})` over a file it could not
   understand.
-- `schema >= 3` (the current schema) and `$ARGUMENTS` does not contain
-  `--force` — print **"already current"** and stop. Do not touch the config, the codemap, or
-  the graph. `crew_upgrade.py` makes this same check and returns
-  `already current` without writing anything; do not re-derive graph facts
+- The config's `schema` is **already at or above the current one** and
+  `$ARGUMENTS` does not contain `--force` — print **"already current"** and stop. Do not
+  touch the config, the codemap, or the graph. `crew_upgrade.py` makes this same check and
+  returns `already current` without writing anything; do not re-derive graph facts
   or spend a `crew:explorer` budget ahead of a call that is about to no-op.
+
+  **Do not hardcode the number here, and do not carry one over from a previous
+  version of this file.** This step said `schema >= 3` while the code had moved
+  to 4, which is worse than an out-of-date comment: this prose is an
+  INSTRUCTION, so the command stopped at step 1 and reported "already current"
+  for repos that genuinely needed migrating, and `crew_upgrade.py`'s own correct
+  check was never reached. A schema bump would have shipped a migration that
+  the documented flow refused to run. Read the current number from
+  `crew_state.SCHEMA_CURRENT` if you need to state it:
+
+  ```
+  python3 -c "import sys; sys.path.insert(0, '${CLAUDE_PLUGIN_ROOT}/hooks/scripts'); import crew_state; print(crew_state.SCHEMA_CURRENT)"
+  ```
 - Otherwise, continue.
 
 ## 2. Say what is about to happen, before it happens

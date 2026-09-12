@@ -349,32 +349,20 @@ def upgrade_config(cfg):
     # never indexed into. Indexing it would raise partway through, after
     # run() had already written the file.
     #
-    # An `isinstance(out.get("docs"), dict)` wrapper stood here briefly and
-    # was removed for cause: it could not be driven red. Sabotaging it left
-    # the suite green, because `dict_or_empty` had already made it
-    # unreachable. A guard that cannot be shown to fail is not protection,
-    # it is a second thing to keep in step -- so there is one guard, and the
-    # sabotage entry below mutates `dict_or_empty` itself, which is the line
-    # that actually holds.
-    # Schema-gated, and that gate is what makes the report's promise true.
+    # Two guards were tried here and both turned out to be unreachable, which
+    # is worth recording because the lesson repeated within one change.
     #
-    # The report tells a user who did mean neutral to set it again and says it
-    # will be honoured. Without this gate that is a LIE: the rewrite is not
-    # idempotent-by-intent, it matches on the value, so the next
-    # `/crew:upgrade --force` would erase the preference they just restored,
-    # and every force after that. A migration that keeps re-applying itself is
-    # not a migration, it is a setting the user is not allowed to have.
+    # First an `isinstance(out.get("docs"), dict)` wrapper: sabotaging it left
+    # the suite GREEN, because `dict_or_empty` already made it dead. Then
+    # `dict_or_empty` itself became unreachable in turn, once `schemaStamped`
+    # was added above -- a wrong-typed `docs` block cannot be stamped, so the
+    # condition short-circuits before this line is ever evaluated, and
+    # sabotaging it went green too.
     #
-    # `schemaFrom < 4` is the marker, and it costs no new state: a config that
-    # has already been through this migration is stamped 4, so a `"neutral"`
-    # seen at schema 4 can only have been typed deliberately AFTERWARDS. That
-    # is exactly the value the promise protects. Caught in review by Codex.
-    if (notes["schemaFrom"] < _DOCS_THEME_REWRITTEN_UNTIL_SCHEMA
-            and crew_state.dict_or_empty(cfg.get("docs")).get("theme")
-            == _DOCS_THEME_REWRITTEN_FROM):
-        notes["rewrittenKeys"].append("docs.theme")
-        out["docs"]["theme"] = None
-
+    # `schemaStamped` is the guard that actually holds, and it is the one the
+    # suite mutates. `dict_or_empty` stays as the house idiom for reading a
+    # config block, not as protection -- no test claims it, because none can.
+    # A vacuous sabotage result is the only thing that told us either time.
     supplied_roles = cfg.get("roles", _ABSENT)
     if supplied_roles is not _ABSENT and not (
             isinstance(supplied_roles, list)
@@ -413,6 +401,36 @@ def upgrade_config(cfg):
     if not notes["unmigrated"]:
         out["schema"] = crew_state.SCHEMA_CURRENT
         notes["schemaStamped"] = True
+
+    # The `docs.theme` rewrite, deliberately placed AFTER the stamp and gated
+    # on it. Two conditions, and each closes a defect found in review.
+    #
+    # `schemaStamped` makes the rewrite ATOMIC with the migration it belongs
+    # to. It sat above this block first, and then a partly-failed run -- one
+    # wrong-typed block anywhere, say `qa: "oops"` -- rewrote the theme while
+    # leaving `schema` at 3. The user repairs the block, sets neutral back
+    # because they meant it, re-runs, and the rewrite fires a SECOND time on
+    # the still-unbumped schema and erases it again. Half a migration that
+    # keeps re-applying its own half is worse than one that did nothing.
+    #
+    # `schemaFrom` is what makes the rewrite one-shot, and what makes the
+    # report's promise true. The report tells a user who did mean neutral to
+    # set it again and says it will be honoured; without this the rewrite
+    # matches on the VALUE, so the next `--force` erases the preference they
+    # just restored, and so does every force after that. It costs no new
+    # state: a config that has been through this migration is stamped 4, so
+    # `"neutral"` seen at 4 can only have been typed deliberately afterwards,
+    # which is exactly the value the promise protects.
+    #
+    # Both caught by Codex in QA review. `dict_or_empty` stays as the type
+    # guard -- see the note at `_DOCS_THEME_REWRITTEN_FROM`.
+    if (notes["schemaStamped"]
+            and notes["schemaFrom"] < _DOCS_THEME_REWRITTEN_UNTIL_SCHEMA
+            and crew_state.dict_or_empty(cfg.get("docs")).get("theme")
+            == _DOCS_THEME_REWRITTEN_FROM):
+        notes["rewrittenKeys"].append("docs.theme")
+        out["docs"]["theme"] = None
+
     return out, notes
 
 
@@ -498,6 +516,33 @@ def _bump_anchor(text, head):
     return _ANCHOR_LINE_RE.sub(lambda m: m.group(1) + head, text, count=1)
 
 
+def global_theme_defeats_migration():
+    """True when the machine-global config still carries the old theme default.
+
+    The repo migration is not enough on its own, and Codex caught why: repo
+    null means "no answer, ask the next authority", and the next authority is
+    the GLOBAL file. So a machine whose `~/.claude/crew/config.json` still says
+    `docs.theme: "neutral"` resolves to neutral in every repo this migration
+    has just "fixed" -- the effective value is unchanged and the repo config
+    now looks correct, which is the worse of the two states.
+
+    Reported, never rewritten. A per-repo `/crew:upgrade` silently editing a
+    machine-global file would change every OTHER repo on the machine, none of
+    which the user was upgrading. That is a cross-scope write nobody asked for,
+    so this returns a fact and `_config_lines` tells them what to do with it.
+
+    Best effort by design: a missing, unreadable or non-JSON global file simply
+    means "no global answer", which is the same state as no file at all.
+    """
+    try:
+        with open(crew_state.GLOBAL_CONFIG_PATH, encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, ValueError):
+        return False
+    return (crew_state.dict_or_empty(crew_state.dict_or_empty(data).get("docs"))
+            .get("theme") == _DOCS_THEME_REWRITTEN_FROM)
+
+
 def _config_lines(notes):
     """The config half of the report: what the migration changed, and what it
     could not. A crew that silently grows is the thing `/crew:scale` exists to
@@ -524,6 +569,18 @@ def _config_lines(notes):
             "Obsidian export was withdrawn in 0.16.13 because exporting one "
             "note per node made vaults unusably slow. Nothing to re-enable, "
             "and no setting was silently switched off."
+        )
+    if global_theme_defeats_migration():
+        lines.append(
+            "- WARNING: your machine-global config "
+            f"(`{crew_state.GLOBAL_CONFIG_PATH}`) still sets "
+            "`docs.theme` to \"neutral\", and that is the value this repo now "
+            "resolves to. Repo null means \"ask the next authority\", and the "
+            "next authority is that file -- so the effective theme did NOT "
+            "change here, while this repo's own config now reads as migrated. "
+            "Clear it there too if you did not mean it. This upgrade will not "
+            "edit it for you: it is machine-global, and every other repo on "
+            "this machine would change with it."
         )
     if "docs.theme" in notes["rewrittenKeys"]:
         lines.append(

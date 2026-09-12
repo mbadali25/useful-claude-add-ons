@@ -56,6 +56,7 @@ PLATFORM = os.path.join(CREW, "hooks", "scripts", "crew_platform.py")
 CONFIG = os.path.join(CREW, "hooks", "scripts", "crew_config.py")
 UPGRADE = os.path.join(
     CREW, "skills", "crew-graph", "scripts", "crew_upgrade.py")
+CONFTEST = os.path.join(CREW, "tests", "conftest.py")
 PM_BRIEF = os.path.join(CREW, "hooks", "scripts", "pm_brief.py")
 
 GUARD = '    if out["family"] is not None and out["family"] in authors:'
@@ -66,6 +67,60 @@ BLOCK_ONLY = (
 )
 
 MUTATIONS = (
+    (
+        # The rewrite stops being atomic with the schema stamp. A single
+        # wrong-typed block anywhere then produces a config with a null theme
+        # and schema still at 3 -- so repairing the block and setting neutral
+        # back re-runs the rewrite and erases it a second time. Half a
+        # migration that keeps re-applying its own half.
+        "the theme rewrite is no longer atomic with the schema stamp",
+        UPGRADE,
+        '    if (notes["schemaStamped"]\n'
+        '            and notes["schemaFrom"] < _DOCS_THEME_REWRITTEN_UNTIL_SCHEMA',
+        '    if (notes["schemaFrom"] < _DOCS_THEME_REWRITTEN_UNTIL_SCHEMA',
+        ("tests/test_upgrade.py::"
+         "test_a_partly_failed_migration_does_not_rewrite_the_theme"),
+    ),
+    (
+        # The global warning goes. The repo config comes out migrated and the
+        # EFFECTIVE theme is unchanged, because repo null defers to the global
+        # file that still says neutral. That is the worse of the two states --
+        # it looks fixed -- and silence is what makes it so.
+        "a global neutral that defeats the migration is not reported",
+        UPGRADE,
+        "    if global_theme_defeats_migration():",
+        "    if False:",
+        ("tests/test_upgrade.py::"
+         "test_a_global_neutral_is_reported_because_it_defeats_the_migration"),
+    ),
+    (
+        # The global read stops being best-effort. `global_theme_defeats_
+        # migration` runs while BUILDING THE REPORT, which is after the repo
+        # config has already been written -- so an unreadable global file
+        # would take down a run whose real work had succeeded, and the caller
+        # could not tell a failed upgrade from a failed report.
+        "the global config read is no longer best-effort",
+        UPGRADE,
+        "    except (OSError, ValueError):\n        return False",
+        "    except KeyError:\n        return False",
+        ("tests/test_upgrade.py::"
+         "test_an_unreadable_global_config_is_not_a_crash_or_a_warning"),
+    ),
+    (
+        # conftest isolates only `crew_config`'s binding again. `crew_upgrade`
+        # reads the path through `crew_state`, so the suite goes back to
+        # reading the DEVELOPER'S REAL ~/.claude/crew/config.json -- the exact
+        # thing that fixture exists to prevent. It fails loudly here and is
+        # otherwise invisible: on a machine whose global config happens not to
+        # set a theme, every test still passes.
+        "the global-config isolation fixture patches only one of the two names",
+        CONFTEST,
+        '    monkeypatch.setattr(crew_config, "GLOBAL_CONFIG_PATH", unused)\n'
+        '    monkeypatch.setattr(crew_state, "GLOBAL_CONFIG_PATH", unused)',
+        '    monkeypatch.setattr(crew_config, "GLOBAL_CONFIG_PATH", unused)',
+        ("tests/test_upgrade.py::"
+         "test_the_suite_cannot_reach_the_real_machine_global_config"),
+    ),
     (
         # The schema stays at 3, which is what shipped to Codex for review and
         # what Codex caught by RUNNING it: status "already current", value
@@ -94,9 +149,9 @@ MUTATIONS = (
         # having made no promise.
         "the theme rewrite is no longer one-shot",
         UPGRADE,
-        '    if (notes["schemaFrom"] < _DOCS_THEME_REWRITTEN_UNTIL_SCHEMA\n'
+        '            and notes["schemaFrom"] < _DOCS_THEME_REWRITTEN_UNTIL_SCHEMA\n'
         '            and crew_state.dict_or_empty(cfg.get("docs")).get("theme")',
-        '    if (crew_state.dict_or_empty(cfg.get("docs")).get("theme")',
+        '            and crew_state.dict_or_empty(cfg.get("docs")).get("theme")',
         ("tests/test_upgrade.py::"
          "test_a_deliberately_restored_neutral_survives_a_forced_rerun"),
     ),
@@ -125,7 +180,8 @@ MUTATIONS = (
         # only on other people's machines" shape this repo keeps paying for.
         "the neutral -> null migration is dropped",
         UPGRADE,
-        '    if (notes["schemaFrom"] < _DOCS_THEME_REWRITTEN_UNTIL_SCHEMA\n'
+        '    if (notes["schemaStamped"]\n'
+        '            and notes["schemaFrom"] < _DOCS_THEME_REWRITTEN_UNTIL_SCHEMA\n'
         '            and crew_state.dict_or_empty(cfg.get("docs")).get("theme")\n'
         '            == _DOCS_THEME_REWRITTEN_FROM):\n'
         '        notes["rewrittenKeys"].append("docs.theme")\n'
@@ -160,25 +216,6 @@ MUTATIONS = (
         '            and crew_state.dict_or_empty(cfg.get("docs")).get("theme")):',
         ("tests/test_upgrade.py::"
          "test_upgrade_rewrites_only_the_exact_old_default"),
-    ),
-    (
-        # The type guard goes. `docs: "oops"` is kept verbatim and reported,
-        # so `cfg["docs"]` is a STRING here -- `.get` on it raises
-        # AttributeError partway through `upgrade_config`, after run() has
-        # already written the backup and begun the migration.
-        #
-        # This mutation replaced an earlier one that wrapped the same block
-        # in `isinstance(out.get("docs"), dict)`. That wrapper could not be
-        # driven red: `dict_or_empty` had already made it unreachable, so
-        # sabotaging it left the suite GREEN and the vacuous result is what
-        # exposed it as dead code. The guard that holds is this one, so this
-        # is the line the suite mutates.
-        "the wrong-typed docs block guard is removed",
-        UPGRADE,
-        '            and crew_state.dict_or_empty(cfg.get("docs")).get("theme")',
-        '            and cfg.get("docs", {}).get("theme")',
-        ("tests/test_upgrade.py::"
-         "test_a_wrong_typed_docs_block_is_not_rewritten_and_is_reported"),
     ),
     (
         # The pre-0.17.0 form, restored. It is wrong in BOTH directions once a
