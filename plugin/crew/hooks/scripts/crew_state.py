@@ -2755,9 +2755,17 @@ def collect(root, cfg_override=None):
         # population. An unknown collapsing into a safe-looking value is this
         # repo's named recurring bug, and the fix is the standard one: keep
         # the unknown as its own value instead of letting a default wear the
-        # label of a fact. None means "no repo config, or no `schema` key in
-        # it"; anything else is exactly what the file said, unvalidated.
+        # label of a fact. This is exactly what the file said, unvalidated.
+        #
+        # `schemaKeyPresent` is the other half and is NOT redundant: a config
+        # saying `"schema": null` reads back from `.get()` as None, which is
+        # the same value an ABSENT key gives. Without the flag the brief calls
+        # an explicit null a pre-PM config and sends the user hunting a
+        # migration instead of the word they typed -- the same collapse this
+        # pair exists to remove, one level further down. Found by Codex, not
+        # by me, on the commit that introduced these keys.
         "schemaDeclared": raw_cfg.get("schema") if raw_cfg else None,
+        "schemaKeyPresent": bool(raw_cfg) and "schema" in raw_cfg,
         "tier": tier if isinstance(tier, int) and not isinstance(tier, bool) else None,
         "roles": roles if isinstance(roles, list) else [],
         "tracker": cfg.get("tracker"),

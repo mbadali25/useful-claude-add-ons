@@ -150,7 +150,7 @@ MUTATIONS = (
         # after a mandatory migration described a situation they are not in.
         "every repo is told its config has no schema, whatever it declares",
         PM_BRIEF,
-        "    if declared is None:",
+        "    if not key_present:",
         "    if True:",
         "tests/test_pm_brief.py::"
         "test_a_repo_with_a_schema_is_not_told_it_has_none",
@@ -173,9 +173,8 @@ MUTATIONS = (
         # -- would be told its config declares no schema.
         "an absent schemaDeclared is read as an explicit null",
         PM_BRIEF,
-        '    declared = state["schemaDeclared"] if "schemaDeclared" in state '
-        "else schema",
-        '    declared = state.get("schemaDeclared")',
+        "        declared, key_present = schema, True",
+        "        declared, key_present = None, False",
         "tests/test_pm_brief.py::"
         "test_a_hand_built_state_without_the_key_is_not_told_it_has_no_schema",
     ),
@@ -201,6 +200,31 @@ MUTATIONS = (
         "- **The docs theme migration**",
         "tests/test_pm_brief.py::"
         "test_the_brief_and_upgrade_md_agree_on_the_current_migration",
+    ),
+    (
+        # Codex's finding, and the reason `schemaKeyPresent` exists at all.
+        # `{"schema": null}` reads back from `.get()` as None, the same value
+        # an ABSENT key gives -- so keying the "no schema" sentence on the
+        # VALUE calls an explicit null a pre-PM config and sends the user
+        # hunting a migration instead of the word they typed. The same
+        # collapse the whole finding was rewritten to remove, one level down.
+        "an explicit null schema is read as an absent one",
+        PM_BRIEF,
+        '        key_present = bool(state.get("schemaKeyPresent"))',
+        "        key_present = declared is not None",
+        "tests/test_pm_brief.py::"
+        "test_an_explicit_null_schema_is_not_read_as_an_absent_one",
+    ),
+    (
+        # The collector half. Every hand-built test keeps passing without
+        # this flag because it supplies the flag itself; only a test driven
+        # through collect() on a real repo can see it go missing.
+        "collect() no longer records whether the schema key is present",
+        STATE,
+        '        "schemaKeyPresent": bool(raw_cfg) and "schema" in raw_cfg,',
+        '        "schemaKeyPresentGone": False,',
+        "tests/test_pm_brief.py::"
+        "test_an_explicit_null_schema_is_not_read_as_an_absent_one",
     ),
     (
         # doc-builder takes DOCX and PDF over generally -- the "simplification"

@@ -353,9 +353,20 @@ def _schema_fields(state):
       described, and now the rarest of the three;
     - a `schema` the file states and this code can read -- the common case
       after any SCHEMA_CURRENT bump, and the one the old text lied to;
-    - a `schema` that will not parse (`true`, `"three"`), which `int_or`
-      turns into 1 and which would otherwise be reported as a pre-PM config
-      rather than as the typo it is.
+    - a `schema` that will not parse (`true`, `"three"`, an explicit `null`),
+      which `int_or` turns into 1 and which would otherwise be reported as a
+      pre-PM config rather than as the typo it is.
+
+    The third case includes `"schema": null` specifically, and that is the
+    reason `collect()` carries `schemaKeyPresent` beside the value: `null` and
+    an absent key both read back as None, so the value alone cannot separate
+    "never had a schema" from "wrote a word that is not a version". Keying on
+    the value alone was this function's own first draft, and Codex caught it.
+
+    The raw value is rendered with `json.dumps`, so it reads back as the user
+    typed it in the file -- `null`, `true`, `"three"` -- rather than as its
+    Python spelling. `json.dumps` also guarantees ASCII output, which
+    test_the_brief_is_pure_ascii requires of every line this module emits.
 
     Deliberately NOT a per-migration description. `commands/upgrade.md`
     section 5 enumerates what each hop does and tells the agent to read the
@@ -366,22 +377,26 @@ def _schema_fields(state):
     current = crew_state.SCHEMA_CURRENT
     schema = crew_state.int_or(state.get("schema", 1), 1)
 
-    # `schemaDeclared` ABSENT and `schemaDeclared: None` are not the same
-    # thing, and collapsing them would reintroduce the bug one level up.
-    # collect() always sets the key, so absent means a hand-built state -- a
-    # test, the crew:pm agent, a stale cache -- which knows only the
-    # normalised number. Fall back to that rather than to None, or every such
-    # caller gets told its config declares no schema, which is the exact false
-    # sentence this function exists to remove.
-    declared = state["schemaDeclared"] if "schemaDeclared" in state else schema
+    # `schemaDeclared` ABSENT from the state dict and a config that declares
+    # no schema are not the same thing, and collapsing them would reintroduce
+    # the bug one level up. collect() always sets the key, so absent means a
+    # hand-built state -- a test, the crew:pm agent, a stale cache -- which
+    # knows only the normalised number. Fall back to that rather than to "no
+    # schema", or every such caller gets told its config declares one, which
+    # is the exact false sentence this function exists to remove.
+    if "schemaDeclared" in state:
+        declared = state["schemaDeclared"]
+        key_present = bool(state.get("schemaKeyPresent"))
+    else:
+        declared, key_present = schema, True
 
-    if declared is None:
+    if not key_present:
         summary = ("this setup predates the PM and the code graph "
                    f"(config declares no schema; current is {current})")
     elif crew_state.int_or(declared, None) is None:
-        summary = (f"config's schema is {declared!r}, which is not a version "
-                   f"number - crew is reading it as {schema}, and current "
-                   f"is {current}")
+        summary = (f"config's schema is {json.dumps(declared)}, which is not "
+                   f"a version number - crew is reading it as {schema}, and "
+                   f"current is {current}")
     else:
         hops = current - schema
         owed = (f"the {schema} -> {current} migration" if hops == 1

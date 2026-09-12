@@ -228,6 +228,7 @@ def test_a_repo_with_a_schema_is_not_told_it_has_none():
     one, because both mention a schema. Assert the old claim is absent.
     """
     line = _upgrade_finding({"isCrew": True, "schema": 3, "schemaDeclared": 3,
+                             "schemaKeyPresent": True,
                              "pm": {"enabled": True, "mode": "adaptive"}})
     assert "3" in line and "4" in line, line
     assert "no schema" not in line, line
@@ -256,9 +257,14 @@ def test_an_unparseable_schema_is_reported_as_a_typo_not_as_a_pre_pm_config():
     the user goes looking for a migration instead of for the character they
     mistyped. The raw value has to survive into the sentence.
     """
-    for bad in (True, "three"):
+    # `None` is in this list because of Codex: a config saying
+    # `"schema": null` reads back from `.get()` as None, exactly as an ABSENT
+    # key does, so the first version of this code called an explicit null a
+    # pre-PM config. `schemaKeyPresent` is what separates them.
+    for bad in (True, "three", None):
         line = _upgrade_finding(
             {"isCrew": True, "schema": 1, "schemaDeclared": bad,
+             "schemaKeyPresent": True,
              "pm": {"enabled": True, "mode": "adaptive"}})
         assert "not a version number" in line, (bad, line)
         assert "predates" not in line, (bad, line)
@@ -292,10 +298,33 @@ def test_collect_carries_the_raw_schema_so_the_brief_can_tell_them_apart(
                           "tracker": "files"})
     state = crew_state.collect(root)
     assert state["schemaDeclared"] == 3
+    assert state["schemaKeyPresent"] is True
     assert "upgradeNeeded" in crew_state.evaluate_triggers(state)
 
     line = _upgrade_finding(dict(state, pm=dict(state["pm"], mode="adaptive")))
     assert "schema 3" in line and "predates" not in line, line
+
+
+def test_an_explicit_null_schema_is_not_read_as_an_absent_one(tmp_path):
+    """Codex's finding, driven through the collector rather than hand-built.
+
+    `{"schema": null}` and a config with no `schema` key are the same value
+    once `.get()` has run, and only `schemaKeyPresent` separates them. Written
+    as a fixture-repo test because the hand-built ones cannot see a collector
+    that stops setting the flag -- they would supply it themselves.
+    """
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"schema": None, "tier": 0, "roles": [],
+                          "tracker": "files"})
+    state = crew_state.collect(root)
+    assert state["schemaDeclared"] is None
+    assert state["schemaKeyPresent"] is True
+
+    line = _upgrade_finding(dict(state, pm=dict(state["pm"], mode="adaptive")))
+    assert "not a version number" in line, line
+    assert "predates" not in line, line
+    # Rendered as the user typed it in the file, not as Python spells it.
+    assert "null" in line and "None" not in line, line
 
 
 def test_the_brief_and_upgrade_md_agree_on_the_current_migration():
@@ -317,6 +346,7 @@ def test_the_brief_and_upgrade_md_agree_on_the_current_migration():
 
     line = _upgrade_finding(
         {"isCrew": True, "schema": current - 1, "schemaDeclared": current - 1,
+         "schemaKeyPresent": True,
          "pm": {"enabled": True, "mode": "adaptive"}})
     assert "{0} -> {1}".format(current - 1, current) in line, line
 
