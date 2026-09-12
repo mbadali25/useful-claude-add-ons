@@ -300,8 +300,14 @@ def test_default_authority_is_report_only():
 def test_autonomous_brief_says_it_settles_its_own_questions():
     out = _authority("autonomous")
     assert "settles its own open questions" in out
-    # The stops are the half a reader needs most at this tier.
+    # The stops are the half a reader needs most at this tier, and the brief
+    # is the ONE restatement every SessionStart prints -- so a phrase narrower
+    # than AUTONOMOUS_STOPS here is the version most readers actually get. It
+    # said "destroying git history" while the tuple says "git history or
+    # tracked work", which reads as putting `rm` of a tracked file outside the
+    # stop.
     assert "still asks before" in out
+    assert "tracked work" in out
 
 
 def test_authority_rank_is_ordered_and_fails_closed():

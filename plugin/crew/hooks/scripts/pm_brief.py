@@ -191,7 +191,7 @@ _AUTHORITY_NOTES = {
         "would have recommended and tells you which. Say what you want "
         "prioritised and that wins over its own ordering. It still asks before "
         "offboarding a role, deleting a codemap or diagram, rewriting "
-        ".crew/metrics.md, or destroying git history."
+        ".crew/metrics.md, or destroying git history or tracked work."
     ),
 }
 
