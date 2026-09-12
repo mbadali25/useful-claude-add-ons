@@ -309,5 +309,40 @@ want_contains "warns about the mismatched origin" "$ERR" "WARNING"
 want_contains "names where the export came from" "$ERR" "other-ws/other-repo"
 want_contains "names the intended target" "$ERR" "not the target ws/repo"
 
+echo "== pagination: a self-referencing 'next' does not loop forever =="
+new_case
+printf '%s' '{"pagelen":100,"page":1,"size":1,"values":[
+  {"id":901,"kind":"push","branch_match_kind":"glob","pattern":"main"}],
+  "next":"https://api.bitbucket.org/2.0/repositories/ws/repo/branch-restrictions?pagelen=100"}' \
+  > "$CASE_DIR/stub/1.body"
+# Every unstubbed call falls back to this same cyclic body, so a run without
+# loop detection keeps re-fetching the identical URL rather than stopping
+# after one repeat.
+cp "$CASE_DIR/stub/1.body" "$CASE_DIR/stub/GET.body"
+run_gate export ws repo "$CASE_DIR/out.json"
+want_nonzero_rc "exits non-zero on a cyclic 'next'"
+want_count "only the first page was fetched before the cycle was caught" "$(calls_of GET)" "1"
+want_contains "names the loop as the cause" "$ERR" "looped"
+want_contains "names the repeated URL" "$ERR" "branch-restrictions?pagelen=100"
+
+echo "== pagination: a long non-cyclic 'next' chain is capped, not followed forever =="
+new_case
+i=1
+while [ "$i" -le 6 ]; do
+  next=$((i + 1))
+  printf '{"pagelen":1,"page":%d,"values":[{"id":%d,"kind":"push","branch_match_kind":"glob","pattern":"main"}],"next":"https://api.bitbucket.org/2.0/repositories/ws/repo/branch-restrictions?pagelen=1&page=%d"}' \
+    "$i" "$i" "$next" > "$CASE_DIR/stub/$i.body"
+  i=$((i + 1))
+done
+# The cap is overridden low so the test does not need thousands of pages.
+RC=0
+STUB_DIR="$CASE_DIR/stub" STUB_LOG="$LOG" BB_CMD="$STUB" MERGE_GATE_MAX_PAGES=5 \
+  bash "$GATE" export ws repo "$CASE_DIR/out.json" >"$CASE_DIR/out" 2>"$CASE_DIR/err" || RC=$?
+OUT="$(cat "$CASE_DIR/out")"
+ERR="$(cat "$CASE_DIR/err")"
+want_nonzero_rc "exits non-zero once the page cap is exceeded"
+want_count "stopped after MAX_PAGES fetches, not before and not after" "$(calls_of GET)" "5"
+want_contains "names the page cap as the cause" "$ERR" "exceeded 5 page"
+
 printf '\n%s passed, %s failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1

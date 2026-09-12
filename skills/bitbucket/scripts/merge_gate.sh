@@ -138,14 +138,30 @@ plan_limited() { # $1 status, $2 body -> 0 when the API said "not on your plan"
 
 DECLARED_SIZE=""   # `size` from the first page: the total across all pages
 HAD_NEXT=0
+# A cap on how many 'next' links fetch_restrictions will follow. The API is
+# trusted for shape but not for termination: a cyclic or merely endless
+# 'next' chain must not turn one export into an unbounded loop against a
+# rate-limited API. Overridable only so the test suite can hit the cap
+# without generating thousands of fixture pages - no supported reason to
+# change it otherwise.
+MAX_PAGES="${MERGE_GATE_MAX_PAGES:-1000}"
 
 fetch_restrictions() { # <ws> <repo> -> $WORK/values.json (a JSON array)
   local ws="$1" repo="$2"
   local path="repositories/$ws/$repo/branch-restrictions?pagelen=100"
-  local first=1 next
+  local first=1 next pages=0
   : > "$WORK/pages.jsonl"
+  : > "$WORK/pages-seen.txt"
   HAD_NEXT=0
   while : ; do
+    pages=$((pages + 1))
+    if [ "$pages" -gt "$MAX_PAGES" ]; then
+      die "pagination exceeded $MAX_PAGES page(s) fetching $path - refusing to follow 'next' further."
+    fi
+    if grep -qxF "$path" "$WORK/pages-seen.txt" 2>/dev/null; then
+      die "pagination looped: $path was already fetched - the API's 'next' link is cyclic."
+    fi
+    printf '%s\n' "$path" >> "$WORK/pages-seen.txt"
     bb_call GET "$path" || die "GET $path failed - $(api_error_text)"
     printf '%s' "$BB_BODY" | jq -c '.' >> "$WORK/pages.jsonl" \
       || die "the response to GET $path is not JSON."
