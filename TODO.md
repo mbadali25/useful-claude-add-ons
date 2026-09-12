@@ -1032,6 +1032,79 @@ kept in its words so a reader can check it rather than trust it.
 8. **`jira-api.sh:131` — account-search values are not URL-encoded**, so any
    name with a space fails lookup. Repro: `jira_find_account_id "Jane Doe"`.
 
+## Ticket B: `docs.theme` has no consumer, and its default is silently overridden
+
+Raised 2026-09-12 by team-lead, who measured it correctly: `docs.theme` and
+`docs.reportTheme` are settable in BOTH config layers and six files in
+`plugin/crew` mention them -- two templates, two tests, `crew_upgrade.py` and
+`crew-setup/SKILL.md`. Every one is a template, a test or a migration. **No code
+in crew consumes either key.** Confirmed independently here with the same grep.
+
+Two premises in the original report need correcting before anyone works this,
+because both would send the work in the wrong direction.
+
+**1. A resolver already exists, and it is good.**
+`skills/doc-builder/scripts/resolve_brand.py` (with
+`scripts/_test/test_resolve_brand.py`) resolves a brand-pack name through a
+five-step order -- `--brand`, `DOC_BUILDER_BRAND`, sibling skill directories,
+the plugin cache, then neutral -- and announces which step matched. The
+fall-through to neutral is announced LOUDLY and names every location searched,
+which is most of the "skill not installed" degraded path the ticket asks for.
+So the work is NOT "write a resolver". It is narrower: **crew stores a theme
+name and never passes it to the resolver that already exists.** The wiring is
+the ticket.
+
+**2. The two brand-pack layouts are deliberate, not an inconsistency.**
+The report warned that a resolver assuming one uniform layout "will find
+`neutral` and miss `solomon`". It is the other way round, and by design. Every
+discovery glob is `<skill>/assets/brand.json` -- the FLAT shape, which is what
+`solomon-doc-builder/assets/brand.json` has. The nested
+`doc-builder/assets/brands/neutral/brand.json` is excluded from discovery on
+purpose (`_is_own`) because neutral is the built-in fallback rather than a
+discovered pack. Verified by running it: `--list` reports `neutral (built in)`
+and finds `solomon` under sibling skills.
+
+**The actual defect, found by running the resolver rather than reading it.**
+With both skills installed and no `--brand`, resolution prints:
+
+```
+brand: solomon -- the only brand pack found in sibling skill directories
+```
+
+Neutral is not a candidate, so "the only pack found" is solomon and there is no
+ambiguity to stop on. A user whose crew config says `docs.theme: "neutral"` --
+the shipped default, which `/crew:config --show` will print back to them -- gets
+**solomon-branded documents**. That is one client's footer on another client's
+report, which is the exact failure `resolve_brand.py`'s own docstring says its
+ambiguity check exists to prevent. It happens only because the key has no
+consumer, so the check never sees the user's stated answer.
+
+So this is worse than a key that quietly does nothing. It is a key whose
+documented default is actively contradicted by whatever pack happens to be
+installed, while the config UI reports the default as being in effect.
+
+Repro, both halves:
+
+```
+python skills/doc-builder/scripts/resolve_brand.py            # -> solomon
+python skills/doc-builder/scripts/resolve_brand.py --brand neutral  # -> neutral
+```
+
+Scope when this is picked up: pass `docs.theme` through to `--brand` /
+`DOC_BUILDER_BRAND`, and decide what an unresolvable theme name does. It must
+NOT fall through to "whatever is installed" -- that is the bug above. Fail loud
+or fall back to neutral and say so, the way the resolver already does for a
+missing pack.
+
+**`report-builder`'s 0 references are correct, not a gap.** Its SKILL.md
+declares it a deprecated stub as of 2026-09-10, superseded by `doc-builder`, and
+its 2.0.0 catalog entry already says so. An earlier concern of mine that the
+entry misdescribed the skill was unfounded -- team-lead checked and I am
+recording the correction here so nobody re-opens it. `solomon-doc-builder` also
+has 0 references in `plugin/crew`; that one IS the gap above, since it is the
+pack the theme key is supposed to select. For contrast, `doc-builder` has 3 and
+`bitbucket` has 8.
+
 ## A raw `Agent` dispatch writes no record, so crew misreports its own authorship
 
 Found 2026-09-11, during the bitbucket merge-gate work. Belongs with the ticket C
