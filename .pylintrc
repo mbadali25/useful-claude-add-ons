@@ -38,14 +38,45 @@
 #
 # Both the bare name and the `.*` glob are listed so submodule imports
 # (reportlab.platypus, urllib3.exceptions) are covered too.
-ignored-modules=botocore,botocore.*,conftest,fcntl,mcp,mcp.*,msvcrt,
-                numpy,numpy.*,playwright,playwright.*,pytest,pytest.*,
-                reportlab,reportlab.*,requests,requests.*,urllib3,urllib3.*,
-                vsdx,vsdx.*,weasyprint,weasyprint.*,yaml,yaml.*
+ignored-modules=botocore,botocore.*,conftest,docx,docx.*,fcntl,mcp,mcp.*,
+                msvcrt,numpy,numpy.*,PIL,PIL.*,playwright,playwright.*,
+                pymupdf,pymupdf.*,pytest,pytest.*,reportlab,reportlab.*,
+                requests,requests.*,urllib3,urllib3.*,vsdx,vsdx.*,
+                weasyprint,weasyprint.*,yaml,yaml.*
 # `mcp` and `numpy` arrived with the localgpu plugin and are exactly the
 # CI-only failure the regeneration script above warns about: both are installed
 # in localgpu's own venv, so a local run is clean while CI - which deliberately
 # installs no third-party deps - reports E0401 on correct code.
+#
+# `docx`, `PIL` and `pymupdf` arrived with doc-builder and are the SAME failure,
+# a second time. They were installed on the authoring machine because of the
+# doc-builder work, so `pylint $(git ls-files '*.py')` exited 0 there while CI
+# reported 69 E0401 across all three Pythons - 63 x docx, 3 x pymupdf, 3 x PIL.
+# `docx` is python-docx, `PIL` is Pillow and `pymupdf` is PyMuPDF; the import
+# name is what goes here, never the distribution name. The measurement that
+# matters is CI, not a local run: a local run was green with the bug present.
+#
+# TWO BLIND SPOTS IN THE REGENERATION SCRIPT ABOVE, both measured. Run on the
+# doc-builder tree it produced five candidates and only three were real. Do not
+# add the other two:
+#
+#   * PACKAGE DIRECTORIES. `local` is built from .py file STEMS, so a local
+#     package is invisible to it. `scanners` is reported missing and is
+#     `plugin/gizmoduck/scripts/scanners/` - it has an `__init__.py`, CI reports
+#     zero E0401 for it, and listing it would switch off real member-checking on
+#     gizmoduck's scanners permanently. This is the same blind spot that put
+#     `conftest` on the list below, for a different reason.
+#   * IMPORTS GUARDED BY try/except ImportError. The script walks the AST and
+#     does not see the guard; pylint does, and already suppresses import-error
+#     for them. `win32com` is reported missing and is imported that way at
+#     `skills/doc-builder/scripts/build_report.py:407`, which is why CI reports
+#     zero occurrences of it. (`preflight.py:56` is a string literal, not an
+#     import.) Listing it would suppress a check that is already correctly
+#     silent.
+#
+# So read the script's output as CANDIDATES. For each one, confirm it is really
+# third-party and really unguarded before adding it - the cost of a wrong
+# addition is a permanently disabled check on code that is being linted today.
 #
 # `conftest` is not third-party at all - it is listed because pylint cannot
 # resolve it correctly here and never will. The repo has two conftest.py
