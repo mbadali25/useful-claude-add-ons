@@ -314,6 +314,8 @@ def default_config():
         },
         "pm": copy.deepcopy(crew_state.PM_DEFAULTS),
         "graph": copy.deepcopy(crew_upgrade.GRAPH_BLOCK),
+        "docs": copy.deepcopy(crew_upgrade.DOCS_BLOCK),
+        "bitbucket": copy.deepcopy(crew_upgrade.BITBUCKET_BLOCK),
     }
 
 
@@ -378,6 +380,17 @@ def default_global_config():
         once per repo is the friction that produced the split. An earlier
         draft of this docstring argued the opposite and is gone rather than
         left contradicting the code.
+      * `docs` -- which doc-builder brand this person's documents come out
+        in. A theme is a standing answer about who is writing, the same shape
+        of fact as `notify`'s chat: someone with a house brand wants it on
+        every repo without saying so once per checkout. A repo with its own
+        client brand still overrides it, which is why it is in both layers
+        rather than only this one.
+      * `bitbucket` -- whether a pull request has to pass the merge gate, and
+        which preset. A person who works this way works this way everywhere;
+        `mergeGate.branch` stays null in both layers because the branch is
+        resolved from the API per repo, so a global value for it would be the
+        one key here that genuinely IS a fact about a checkout.
 
     `qa.roles` and `dev.roles` are empty dicts, which `leaf_paths` treats as
     LEAVES -- so the whole per-role table is one settable path and a pin for
@@ -408,6 +421,8 @@ def default_global_config():
             "events": ["phase", "gate", "waiting"],
         },
         "pm": copy.deepcopy(crew_state.PM_DEFAULTS),
+        "docs": copy.deepcopy(crew_upgrade.DOCS_BLOCK),
+        "bitbucket": copy.deepcopy(crew_upgrade.BITBUCKET_BLOCK),
     }
 
 

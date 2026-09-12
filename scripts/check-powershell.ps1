@@ -43,9 +43,16 @@ if (-not $Path) {
     exit 0
 }
 
+$resolvedPath = (Resolve-Path $Path).Path
+# The path a scoped exemption is matched against. Normalised to forward slashes
+# because this is invoked with both flavours - the no-Path branch above builds
+# backslash paths with Join-Path, a hook or a shell invokes it with '/' - and a
+# glob written one way must not silently stop matching the other.
+$scopePath = $resolvedPath -replace '\\', '/'
+
 $errors = $null
 $ast = [System.Management.Automation.Language.Parser]::ParseFile(
-    (Resolve-Path $Path), [ref]$null, [ref]$errors)
+    $resolvedPath, [ref]$null, [ref]$errors)
 if ($errors) {
     foreach ($e in $errors) {
         Write-Host "::error file=$Path,line=$($e.Extent.StartLineNumber)::$($e.Message)"
@@ -59,9 +66,27 @@ $defined = [System.Collections.Generic.HashSet[string]]::new(
         ForEach-Object { $_.Name }),
     [StringComparer]::OrdinalIgnoreCase)
 
+# Everything the Exchange skills' scripts pull out of a session-materialised or
+# RSAT-only module. Named once and shared by every entry scoped below, so the scope
+# is stated in one place rather than repeated twenty-three times and drifting.
+# Matched against a forward-slash path with -like, case-insensitively.
+$exchangeSkillScripts = @(
+    '*/skills/exchange-mailbox-cleanup/scripts/*'
+    '*/skills/exchange-mailbox-restore/scripts/*'
+)
+$exoSession = @{ Module = 'ExchangeOnlineManagement (session-materialised)'; Paths = $exchangeSkillScripts }
+$adRsat     = @{ Module = 'ActiveDirectory (RSAT, Windows-only)';            Paths = $exchangeSkillScripts }
+
 # Names that legitimately come from a module the script imports at runtime, so they
 # cannot resolve on a CI runner. Keep this list short and say where each one comes from -
 # an entry added to silence a genuine typo defeats the whole check.
+#
+# A value is either a plain string - the module, and the exemption applies to every
+# file this checker scans - or a hashtable @{ Module = '...'; Paths = @(globs) },
+# which exempts the name ONLY in files matching one of those globs. Prefer the scoped
+# form for anything that is unresolvable because of where it is called from rather
+# than on every machine: a flat global list meant a typo'd Get-ADUser in an unrelated
+# script was exempt by a decision made about the Exchange skills.
 $externallyProvided = @{
     # Chocolatey's helpers\chocolateyProfile.psm1, Import-Module'd a few lines above the
     # call and wrapped in try/catch for exactly the case where it is absent.
@@ -92,6 +117,53 @@ $externallyProvided = @{
     # unapproved. That trades one false positive for a class of false
     # negatives, so the name goes here instead.
     'nvidia-smi'                    = 'NVIDIA driver (external binary, not a cmdlet)'
+    # ExchangeOnlineManagement, and here for a THIRD reason - not "the module is
+    # absent" and not "this is a bare binary", but "the module is present and
+    # still does not export these". EXO 3.x materialises its REST-backed cmdlets
+    # into the session only after Connect-ExchangeOnline. Measured on 3.10.1: the
+    # manifest exports 36 commands, Connect-ExchangeOnline among them, and NOT
+    # ONE of the names below. So no static check can resolve them on any machine,
+    # connected or not, and "install the module" is a fix that changes nothing -
+    # which is the trap, because it is the obvious reading of the failure.
+    # Re-measure with (Get-Module -ListAvailable ExchangeOnlineManagement).ExportedCommands
+    # rather than trusting that count; it is a fact about one version.
+    # Scoped, not global: unresolvable everywhere is a property of the module, but
+    # being ACCEPTABLE is a property of the caller. These are only called from the
+    # two Exchange skills, so that is where the exemption reaches.
+    'Add-DistributionGroupMember'       = $exoSession
+    'Add-eDiscoveryCaseAdmin'           = $exoSession
+    'Add-MailboxPermission'             = $exoSession
+    'Add-RoleGroupMember'               = $exoSession
+    'Get-ComplianceSearch'              = $exoSession
+    'Get-DistributionGroup'             = $exoSession
+    'Get-DistributionGroupMember'       = $exoSession
+    'Get-Mailbox'                       = $exoSession
+    'Get-MailboxStatistics'             = $exoSession
+    'Get-RoleGroup'                     = $exoSession
+    'Get-RoleGroupMember'               = $exoSession
+    'Get-User'                          = $exoSession
+    'New-ComplianceSearch'              = $exoSession
+    'New-DistributionGroup'             = $exoSession
+    'Remove-ComplianceSearch'           = $exoSession
+    'Set-DistributionGroup'             = $exoSession
+    'Set-Mailbox'                       = $exoSession
+    'Set-MailboxAutoReplyConfiguration' = $exoSession
+    'Start-ComplianceSearch'            = $exoSession
+    # The ActiveDirectory module ships in RSAT, so it is absent on a CI runner and
+    # on any Windows box without the feature installed - the same shape as the
+    # ScheduledTasks entries above, listed separately only because it is a
+    # different module. Scoped to the same two skills as the EXO names.
+    #
+    # This comment used to read "skills/exchange-mailbox-restore/scripts/**", which
+    # is wrong: every one of these four is called from
+    # skills/exchange-mailbox-cleanup/scripts/vendored/Invoke-M365OffboardingHold.ps1
+    # and from nothing under restore. Re-measure by parsing the call sites rather
+    # than trusting either reading - a scope derived from a wrong comment would have
+    # turned the genuine callers red.
+    'Disable-ADAccount'                 = $adRsat
+    'Get-ADDomain'                      = $adRsat
+    'Get-ADUser'                        = $adRsat
+    'Set-ADUser'                        = $adRsat
 }
 
 $problems = @()
@@ -99,7 +171,18 @@ foreach ($call in $ast.FindAll({ param($n) $n -is [System.Management.Automation.
     $name = $call.GetCommandName()
     if (-not $name) { continue }                 # invoked via & or a variable
     if ($defined.Contains($name)) { continue }
-    if ($externallyProvided.ContainsKey($name)) { continue }
+    if ($externallyProvided.ContainsKey($name)) {
+        $entry = $externallyProvided[$name]
+        # A plain string is a global exemption; a hashtable carries the globs it is
+        # limited to. Out of scope falls through to the checks below and is reported
+        # like any other unresolvable name.
+        if ($entry -is [string]) { continue }
+        $inScope = $false
+        foreach ($glob in $entry.Paths) {
+            if ($scopePath -like $glob) { $inScope = $true; break }
+        }
+        if ($inScope) { continue }
+    }
     # Only judge Verb-Noun names: a bare 'git' or 'claude' is an external program, and
     # whether it exists is a runtime question, not a spelling one.
     if ($name -notmatch '^[A-Za-z]+-[A-Za-z0-9]+$') { continue }

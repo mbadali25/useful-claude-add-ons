@@ -152,7 +152,9 @@ still writes only the repo file.
   "notify": { "provider": "none", "urlEnv": null, "tokenEnv": null, "chatId": null, "events": ["phase", "gate", "waiting"] },
   "platform": { "os": null, "wsl": null, "shell": null, "windowsHostIp": null },
   "pm": { "enabled": true, "mode": "adaptive", "quietLines": 8, "maxLines": 40, "authority": "report-only", "maxDispatches": 3 },
-  "graph": { "enabled": true, "tool": "graphify", "out": "graphify-out", "mode": "code-only", "commitHook": false }
+  "graph": { "enabled": true, "tool": "graphify", "out": "graphify-out", "mode": "code-only", "commitHook": false },
+  "docs": { "theme": "neutral", "reportTheme": null },
+  "bitbucket": { "mergeGate": { "enabled": false, "branch": null, "preset": "standard" } }
 }
 ```
 
@@ -195,6 +197,17 @@ hardcoded for that same reason. **A fallback that fires is announced, never sile
 review that quietly ran on the fallback looks identical to one that ran on the pin, and
 the difference matters most exactly when the pin was chosen to get a different family
 onto the diff.
+
+`docs.theme` / `docs.reportTheme`: `theme` is a doc-builder theme-pack skill name, passed
+straight through as that tool's `--brand`. `neutral` is doc-builder's own built-in pack, so
+the default changes nothing about how documents come out today. `reportTheme` is `null`
+meaning "follow `docs.theme`" — set it only when reports need a different brand from the
+rest of the docs, which is the client-deliverable case.
+
+`bitbucket.mergeGate`: off by default, because a gate that arrived switched on would start
+failing merges nobody asked it to watch. `branch: null` means the repo's main branch is
+resolved from the Bitbucket API rather than assumed to be `main` — a repo on `master` or a
+Gitflow `develop` would otherwise get a gate that looks configured and guards nothing.
 
 ### Offer the per-role table — do not leave the user to find the keys
 

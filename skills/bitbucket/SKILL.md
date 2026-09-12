@@ -105,6 +105,58 @@ For the endpoint catalogue (PRs, approve/merge, comments, pipelines, branches,
 commit statuses), read `references/api.md` before constructing any non-trivial
 API call — don't guess payload shapes.
 
+## Merge checks / branch restrictions
+
+Use `scripts/merge_gate.sh` rather than hand-rolling calls — the failure modes
+below are the reason it exists.
+
+```bash
+scripts/merge_gate.sh export  "$BITBUCKET_WORKSPACE" my-repo gate-backup.json
+scripts/merge_gate.sh disable "$BITBUCKET_WORKSPACE" my-repo --branch main
+scripts/merge_gate.sh enable  "$BITBUCKET_WORKSPACE" my-repo --from-export gate-backup.json
+```
+
+`enable` with no `--from-export` applies a preset: one approval, tasks
+completed, one passing build, enforce merge checks. Everything else is left
+absent, which is how a check is off.
+
+**The preset is a fresh baseline, not an undo.** `disable` removes more kinds
+than the preset creates — `restrict_merges` and `require_no_changes_requested`
+among them — so `disable` followed by a bare `enable` silently drops whatever
+those were. Only `enable --from-export` puts back what was there.
+
+What to tell the user before touching any of it:
+
+- **These settings are per restriction pattern, not per repo.** The default
+  target is the repo's main branch. A gate that lives on `release/*` needs
+  `--branch release/*` — a run without it changes nothing and still reports
+  success for what it did do.
+- **Reading requires `repository:admin`**, same as writing. There is no
+  read-only scope, so a token that lists PRs fine will 403 here.
+- **Restrictions are scoped two different ways** — a glob `pattern`, or a
+  `branch_type` from the repo's branching model. An object scoped
+  `branching_model: production` can govern `main` with no glob matching it, so
+  `disable` stops and asks rather than guessing which branch types cover your
+  branch. Answer with `--branch-type production,development` or
+  `--branch-type none`.
+- **Three kinds are Premium-only**: `reset_pullrequest_approvals_on_change`,
+  `smart_reset_pullrequest_approvals`, `enforce_merge_checks`. Below Premium
+  they come back as `not-available-on-this-plan` in the summary. That is not
+  "applied" and not "failed" — report it to the user as its own outcome.
+- **"No unresolved pull request comments" has no API representation at all.**
+  It is absent from the `kind` enum (BCLOUD-22614, open), so it cannot be read
+  or changed here. Never claim a run turned *every* merge check off; say which
+  kinds it removed.
+
+`disable` always exports first and re-validates the file against the API's
+reported count before deleting anything — if that check fails, nothing is
+deleted. Keep the export: it is the only way back, and `enable --from-export`
+POSTs fresh objects from it (restriction ids are not stable across
+delete/recreate).
+
+Details, the full `kind` enum and payload shapes: `references/api.md`.
+Offline checks for the script: `scripts/_test/merge_gate.sh`.
+
 ## Common tasks, end to end
 
 **"Push my changes and open a PR"**
@@ -125,3 +177,6 @@ API call — don't guess payload shapes.
 - Never echo `$BITBUCKET_API_TOKEN` in output, logs, or committed files.
 - Never force-push (`--force`) or delete branches without explicit user confirmation.
 - Merging or declining PRs via the API is destructive — confirm with the user first.
+- `merge_gate.sh disable` deletes branch restrictions. Confirm with the user
+  first, show them `--dry-run` output if they are unsure, and tell them where
+  the export landed before reporting the run as done.

@@ -30,6 +30,16 @@ jobs:
       # Claude Code CLI.
       - name: Sub-picker group regression suite
         run: ./scripts/_test/menu-groups.sh
+      # Guards the guard below: the PowerShell step only catches a typo'd cmdlet for
+      # names that are not exempt, and $externallyProvided is where a name stops being
+      # checked. Left flat, the 23 Exchange/AD entries exempted those names repo-wide.
+      # Runs here because pwsh is on this runner (the step below uses it) and the suite
+      # only parses fixtures under mktemp - it installs nothing and executes no .ps1.
+      # Invoked through `bash` rather than as ./script, like the crew suite below:
+      # core.filemode is false on the Windows clone this was added from, so git records
+      # a new .sh as 100644 and `./script` would be a permission denied on the runner.
+      - name: PowerShell exemption scoping suite
+        run: bash scripts/_test/check-powershell.sh
       # The crew hooks can BLOCK a turn, so their regression suite is the one check
       # here whose absence is invisible: a gate that stops gating still exits 0. It
       # builds throwaway git repos under mktemp and installs nothing.

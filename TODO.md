@@ -1032,6 +1032,83 @@ kept in its words so a reader can check it rather than trust it.
 8. **`jira-api.sh:131` — account-search values are not URL-encoded**, so any
    name with a space fails lookup. Repro: `jira_find_account_id "Jane Doe"`.
 
+## A raw `Agent` dispatch writes no record, so crew misreports its own authorship
+
+Found 2026-09-11, during the bitbucket merge-gate work. Belongs with the ticket C
+/ D config work, not chased on its own.
+
+`.work/dispatch.d/` holds exactly one record on this branch — a `developer` from
+2026-09-06, made on `main`. Six roles were dispatched on `bitbucket-merge-gate`
+in this session and not one of them was recorded, because the recorder fires on
+crew's own command paths and a bare `Agent` tool call is not one of them.
+
+The consequence is not a missing log line. `crew_state.py` and
+`crew_config.py --models` read that store to answer "who wrote this diff", and
+with a record that predates the merge-base they correctly report:
+
+```
+author family: claude  (STALE RECORD - the dispatch was made on a different
+branch, so BOTH the recorded family and the config family are struck)
+last dev dispatch: role=developer provider=claude model=None branch=main |
+current branch=bitbucket-merge-gate
+```
+
+That is the guard failing *safe* — striking both families costs a reviewer rung
+rather than clearing one wrongly — so nothing shipped unreviewed. But it fails
+safe by accident: the store is not empty-and-honest, it is stale-and-confident,
+and the guard only survives because the staleness check happens to catch it. A
+record from a dispatch made on THIS branch would read as fresh and authoritative
+while describing none of the work under review. That is the same class as
+`crew_config.py --models` deriving author family from config describing the next
+run — an unknown wearing the label of a check that happened.
+
+Two candidate fixes, neither chosen: have the `Agent` path write a record, or
+have the readers treat "no record for any commit in this range" as its own value
+distinct from a stale one. The second is the one that matches this repo's
+standing rule that a probe which can fail needs "could not tell" as a real value.
+
+Re-measure before acting: `ls .work/dispatch.d/` and
+`python3 <crew>/hooks/scripts/crew_config.py --root . --models`.
+
+## Five marketplace entries are shipping stale — inherited, not from this branch
+
+Found 2026-09-11 while running `python3 scripts/check-marketplace.py` as the gate
+for the bitbucket merge-gate work. The gate reported **6 problems, 0 of them
+introduced by branch `bitbucket-merge-gate`**; `plugin/crew` was the one that
+branch owed and it has since been bumped, leaving **5**. Each is a directory that changed
+after its `version` was last set, so `claude plugin update` compares the declared
+version, finds no change, and every already-installed copy reports "already at
+the latest version" forever. Nothing in the repo looks wrong; the bug exists only
+on other people's machines.
+
+Measured per entry as `git log --oneline <sha-version-was-set>..origin/main --
+<dir>` — all six are already red on `origin/main`, so none of this is caused by
+uncommitted work:
+
+| Entry | Version | Set at | Commits on `origin/main` since |
+|---|---|---|---|
+| `skills/exchange-mailbox-cleanup` | 1.0.0 | `b678e3cf` | 4 |
+| `skills/exchange-mailbox-restore` | 1.0.1 | `b678e3cf` | 1 |
+| `skills/jira-manager` | 1.0.0 | `ee9fcc2e` | 3 |
+| `skills/power-automate-api` | 1.0.0 | `ee9fcc2e` | 3 |
+| `plugin/gizmoduck` | 0.2.5 | `9338e89d` | 76 |
+| ~~`plugin/crew`~~ | ~~0.16.33~~ | ~~`a1363e48`~~ | ~~5~~ — **fixed, now 0.16.34** |
+
+Deferred rather than fixed, for two different reasons:
+
+- The five above touch nothing this branch changed, so bumping them here is scope
+  creep — and each bump pushes a plugin update to every machine that installed
+  it, which is a shipping decision, not a lint fix. They need the user's call on
+  whether to bump all five in one housekeeping commit or leave them.
+- `plugin/crew` was the exception: commits `089af55e` and `f8bdb25e` on this
+  branch touch five files under `plugin/crew/`, so that bump **was** owed by this
+  branch, and it landed in the branch's final commit at 0.16.34 — both
+  `.claude-plugin/marketplace.json` and `plugin/crew/.claude-plugin/plugin.json`,
+  which must always match.
+
+Re-measure before acting. These counts are facts about `origin/main` at
+`bd4d125a`, and the gate is the only thing that tracks them.
+
 ### Not ticketed, decided instead
 
 The review's one BLOCK — a real tenant snapshot committed under

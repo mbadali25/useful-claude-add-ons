@@ -118,5 +118,16 @@
     "out": "graphify-out",
     "mode": "code-only",
     "commitHook": false
+  },
+  "docs": {
+    "theme": "neutral",
+    "reportTheme": null
+  },
+  "bitbucket": {
+    "mergeGate": {
+      "enabled": false,
+      "branch": null,
+      "preset": "standard"
+    }
   }
 }
