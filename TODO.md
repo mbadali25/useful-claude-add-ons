@@ -183,6 +183,189 @@ Nothing to build. The entry was opened because the check had not been located,
 which is a different finding from it being absent, and the two are worth
 keeping distinguishable.
 
+## A green check on a stacked PR is a claim about its BASE, not about `main`
+
+Found 2026-09-12 merging #101 and #102. Not a code bug — a review-process one,
+and the first of today's five that is about how work is checked rather than what
+the code does.
+
+#102 was opened with `--base pylint-to-zero` because it depended on #101. While
+#101 was open, `gh pr checks 102` read **12 passed, 0 failed** and
+`mergeStateStatus=CLEAN`. Both were true, and both were about `pylint-to-zero`.
+
+When #101 merged, **GitHub did not retarget #102.** Its base stayed pointed at a
+branch that no longer existed. #102's head was `7e690647`, which is not a
+descendant of `e46d5ba8` — the `ignored-modules` fix #101 shipped — so it still
+carried an rcfile without `docx`, `pymupdf` or `PIL`. Retargeted to `main` by
+hand, and the same PR read **3 build failures**, on 3.11, 3.12 and 3.13, for
+exactly the bug #101 had just fixed. The other 9 checks stayed green throughout.
+
+So the sequence that ships a regression is: read CLEAN, watch the parent merge,
+merge on the reading you already have. Nothing announces that the reading went
+stale, because nothing changed about the PR — what changed is the question the
+answer was to.
+
+**What to do instead**, in order:
+
+1. After the parent lands, **retarget the stacked PR to `main` yourself** —
+   `gh pr edit <n> --base main`. Do not assume GitHub did it.
+2. Merge `main` into the branch. A rebase would be cleaner history, but this
+   repo's guard hook refuses a force push, so a merge commit is the available
+   move, not a preference.
+3. **Re-read the checks after the retarget**, never before, and merge on that
+   reading with `--match-head-commit`.
+
+Verify against the ref you are merging INTO. This is the same rule the
+`check-marketplace` correction records — a measurement without its ref can only
+be believed, not checked — arriving by a different route: there the ref was a
+dirty working tree, here it was a base branch that had been deleted.
+
+## The paired one: a gate that skips its own check and still passes
+
+`scripts/check-marketplace.py` prints
+
+    note: not a git checkout - skipping the version-drift check
+
+and then exits 0. So a run against a `git archive` export passes **without
+running the check that matters**, and version drift — the thing the gate exists
+for — goes unmeasured while the output says "all checks passed".
+
+Hit 2026-09-12 while closing the "Five marketplace entries are shipping stale"
+entry. It was caught only because the checker names the skip out loud, which is
+the design property worth copying: where a check can decline to run, "could not
+tell" has to be its own visible value rather than collapsing into the passing
+one. Use `git worktree add --detach <tmp> origin/main` to measure a named ref;
+an archive is not a git checkout.
+
+## The third: an empty result from a misused API is indistinguishable from a real absence
+
+Found 2026-09-12, one step short of being published. Checking whether
+`filter_global` silently swallows a scalar landing where a block is expected
+(`{"qa": 5}` -- it keeps it and reports `ignored: []`), the next question was
+whether the `_prune` comment's claim that `_layer_supplies` "already reports
+that correctly" was true. `inspect_global` was called as
+`inspect_global(path)`.
+
+The signature is `inspect_global(root, path=None)`, and it RETURNS a dict
+rather than printing. So the call did not fail. It bound the path to `root`,
+found no config there, and returned a result that read as "nothing to report"
+-- one step from the conclusion "the comment claims coverage that does not
+exist."
+
+Called properly, `inspect_global(root, path)["findings"]` emits
+`[missing-keys] not set globally, so the built-in default applies: qa.provider,
+qa.order, qa.fallback, ...`, listing every `qa.*` leaf. The comment is true and
+there is no gap.
+
+**A function that answers a different question does not look like an error.**
+It looks like an answer. Before reporting an absence -- a missing finding, an
+empty list, a check that found nothing -- confirm the call was the one you
+meant: check the signature, and prove the probe can produce a non-empty result
+at all by feeding it a case that must trip it.
+
+## The fourth: `git stash` captured a tree believed to be clean
+
+Found 2026-09-12, and the only one of these whose cost would have landed in a
+merged commit rather than in a report.
+
+Switching branches mid-task, `git stash -q -u` was run on a working tree
+believed clean. It was not: the post-commit graphify hook had regenerated
+`graphify-out/GRAPH_REPORT.md` and `graphify-out/graph.json`, which are
+generated artifacts CLAUDE.md says must never be hand-edited or committed. The
+stash captured both silently -- a stash of nothing and a stash of two generated
+files look identical at the prompt.
+
+`git stash show --name-only stash@{0}` named them, the finding-1 commit was
+confirmed intact, and the stash was dropped rather than popped. Had it been
+popped later and swept into `git add -A`, the generated graph would have gone
+into a crew PR.
+
+**Check what a stash captured before trusting that it captured nothing**, the
+same way you check what a gate measured. `git stash list` shows that a stash
+exists; only `git stash show --name-only` says what is in it. The hook that
+makes this likely is the repo's own: it rebuilds the graph after every commit
+and every branch switch, so the tree is rarely clean for long after a commit.
+
+## The fifth: a test that pins a number proves the number is stable, not right
+
+Found 2026-09-12, and it is the one that indicts a check rather than a claim.
+
+The 0.19.10 change declared nine previously-undeclared config keys and added
+`assert len(declared) == 84`, with a docstring saying in as many words: "a
+tenth key arriving undeclared is the same bug again, and a membership-only test
+would pass while it happened."
+
+There already was a tenth. `context.autoClear.unsafeFocus` is read at
+`auto-clear.sh:93` and gates the `wtype` method at `:187`. The test shipped
+green at 84 because 84 was what the tree held, not what was correct. **A pinned
+number is a regression detector, not a correctness check** -- it freezes
+whatever the author counted, including a miscount, and then defends it.
+
+It is still worth pinning: the count is the only thing that will catch the
+ELEVENTH key. But the number itself has to be derived by a method that could
+have disagreed with the author, and here it could not: the author enumerated
+the keys by reading the `.ps1` consumers, and the assertion counted exactly
+what that enumeration produced. The check and the thing it checked shared a
+source.
+
+So when pinning a count, say in the test where the number came from, and make
+the derivation independent of the enumeration it is meant to guard. The tenth
+key was found by reading the `.sh` consumers -- a source the first pass had
+not used -- not by any test.
+
+## The sixth: measuring a tree mid-branch-switch
+
+Recorded 2026-09-12, hit by a second person reviewing the above. A verification
+script run against `HEAD` returned the pre-change counts (75 leaves / 38
+global) on a checkout that was already at the post-change commit: the working
+tree was mid-switch to another branch when the script read it. Re-run on a
+settled tree it returned 85 / 44.
+
+One step from reporting that a change was not present when it was. The repo's
+own lesson covers it -- run the states, do not reason about them -- and this
+adds the corollary: **check that the tree you measured is the tree you meant.**
+A background hook that rebuilds on branch switch, which this repo has, widens
+the window in which that is false.
+
+## The seventh: a correction that outlives the thing it corrected
+
+Found 2026-09-12, and the only one on this list that is CREATED by fixing
+something.
+
+`plugin/crew/README.md` §11 carried a sample `.crew/config.json` that had
+drifted badly. Before it was dealt with, a pointer paragraph was added saying,
+in effect: "the sample JSON and table above are older than `CONFIG.md` and
+disagree with it; where they differ, `CONFIG.md` is the one that was checked."
+True and useful at the time.
+
+The next change deleted the sample. The pointer paragraph survived it, and now
+told readers to distrust a sample that was no longer there -- a confident
+sentence about a thing that did not exist, left behind by the act of removing
+the thing.
+
+**Deletion is exactly when this happens**, because the person removing content
+is thinking about the content and not about what referred to it. A correction,
+a caveat, a "see the table above", a test name that describes the old
+behaviour: each is a reference, and a reference outliving its referent is worse
+than no reference, because it reads as current.
+
+When you delete something, grep for what pointed at it. Here that was one
+paragraph in the same file, found only because the deleted region was re-read
+afterwards rather than assumed correct.
+
+These seven and the struck "already red on `main`" claim are one failure in
+eight costumes: a check that did not run, a check that ran against the wrong
+ref, a check that answered a different question, an API that answered a
+different question, a state believed known without being read, a check that
+froze its author's own miscount, a measurement of a tree that was moving
+underneath it, and a correction still standing after its subject was deleted.
+Each produces a confident sentence that is not true, and none of them looks
+like a failure at the moment it happens.
+
+Two sentences cover all eight. Prove the thing you believe is empty actually
+is. And make the check's source independent of the thing it is checking --
+where they share one, the check can only confirm, never contradict.
+
 ## Deferred by design, not oversight
 
 - **`plugin/crew` is unmapped** in `.crew/codemap/`. It is the file set the
