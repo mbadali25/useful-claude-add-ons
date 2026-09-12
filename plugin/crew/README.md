@@ -2040,6 +2040,7 @@ a worktree each, so a half-applied one cannot land on top of the other.
 | `compliance-auditor` | read-only | `sonnet` | — | GDPR, HIPAA, PCI DSS, SOC 2 and ISO control gaps, and audit preparation |
 | `database-administrator` | read/write | `sonnet` | — | Performance, high availability, disaster recovery and the rest of running a production database |
 | `design-bridge` | read/write + web | `sonnet` | — | Turns a DESIGN.md brand spec into UI instructions that actually match it |
+| `exchange-online-specialist` | read/write | `sonnet` | — | Exchange Online and Purview: mailbox lifecycle, litigation hold, retention, eDiscovery |
 | `fintech-engineer` | read/write | `sonnet` | — | Payment and financial systems where accuracy and regulatory fit are the requirement |
 | `git-workflow-manager` | read/write | `sonnet` | — | Branching strategy, merge management and the workflow a team actually follows |
 | `graphql-architect` | read/write | `sonnet` | — | Federated schema design across services, and query performance in a distributed graph |
@@ -2050,7 +2051,10 @@ a worktree each, so a half-applied one cannot land on top of the other.
 | `payment-integration` | read/write | `sonnet` | — | Gateway integration, PCI scope, and fraud handling on the money path |
 | `penetration-tester` | read-only + Bash | `sonnet` | — | Authorized offensive testing that proves a vulnerability rather than reporting a possibility |
 | `platform-engineer` | read/write | `sonnet` | — | Internal developer platforms, golden paths and self-service infrastructure |
+| `powershell-5.1-expert` | read/write | `sonnet` | — | Windows PowerShell 5.1, the in-box edition every Windows Server carries |
+| `powershell-7-expert` | read/write | `sonnet` | — | PowerShell 7: parallelism, UTF-8 defaults, REST-first modules, and whether a host can run pwsh |
 | `powershell-security-hardening` | read/write | `sonnet` | — | PowerShell automation and remoting hardened to an enterprise baseline |
+| `skill-author` | read/write | `sonnet` | — | Claude Code skills, slash commands and plugins - frontmatter, discovery, operator walkthrough |
 | `workflow-orchestrator` | read/write, no Bash | `sonnet` | — | Multi-state business processes, with error handling and transaction management |
 | `pm` | read/write, scoped to `.crew/` and generated diagrams | `opus` | — | The standing manager: scope, onboarding, communication, ticket hygiene, and dispatch |
 

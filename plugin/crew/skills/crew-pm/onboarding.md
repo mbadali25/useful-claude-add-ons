@@ -111,6 +111,7 @@ tier grants them — see below:
 | `compliance-auditor` | controls assumed present because the framework was named — the gap that only appears when an auditor asks for the evidence | — |
 | `database-administrator` | a database run as a place to put rows: no HA story, no tested restore, and performance work done only after the incident | — |
 | `design-bridge` | a brand replicated from screenshots and adjectives, so the result is close enough to look wrong and nobody can say which part | — |
+| `exchange-online-specialist` | a tenant treated like a server - a mailbox cmdlet run against Exchange Online with no litigation-hold or retention check first, so a compliance answer is given by a script that never knew it was one | — |
 | `fintech-engineer` | financial code written to normal application standards, where a rounding rule or a missing regulatory control is a defect nobody catches in review | — |
 | `git-workflow-manager` | a branching model chosen once and never revisited, so merges get resolved by whoever is least afraid of the history | — |
 | `graphql-architect` | a schema grown per service, so federation, N+1 resolvers and query cost are discovered in production | — |
@@ -121,7 +122,10 @@ tier grants them — see below:
 | `payment-integration` | a payment path treated as an API call — PCI scope widened by accident, retries that double-charge, and no fraud story | — |
 | `penetration-tester` | a scanner finding filed as a risk with nothing behind it, so real exploitability and noise get the same priority | — |
 | `platform-engineer` | infrastructure exposed as tickets rather than as a platform, so every team re-solves the same problem and none of them the same way | — |
+| `powershell-5.1-expert` | a script written for pwsh and then run on a domain-joined server that only has the in-box 5.1 - against RSAT, ADSync or ConfigMgr, where the module has no PowerShell 7 story at all | — |
+| `powershell-7-expert` | PowerShell 7 features - parallelism, UTF-8 defaults, REST-first modules - written for a host nobody checked can run pwsh, so it fails on the one server it was meant for | — |
 | `powershell-security-hardening` | PowerShell automation written for the happy path with remoting wide open, credentials in scope, and no logging an incident could read | — |
+| `skill-author` | a skill whose description never fires, or one that reads as documentation rather than the operator walkthrough a non-technical user actually follows | — |
 | `workflow-orchestrator` | a business process implemented as a sequence of calls, so there is no state to resume from and no transaction boundary to roll back to | — |
 
 `pm` is not on the ladder. It is not sized in or out by `/crew:scale` — it is
