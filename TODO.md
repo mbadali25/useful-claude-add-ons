@@ -1227,8 +1227,8 @@ story rather than something to settle inside a wiring ticket:
 **The degraded path the ticket asks for is already written, three lines below the
 routing table.** `crew-house-style/SKILL.md:74-80` tells the crew that these are
 user- and plugin-level skills crew does not bundle, that the one you want may be
-missing, and to hand over the markdown saying `"PDF export unavailable,
-\`anthropic-office-skills:pdf\` is not installed"` rather than improvising a
+missing, and to hand over the markdown saying "PDF export unavailable,
+`anthropic-office-skills:pdf` is not installed" rather than improvising a
 generator. Whatever lands for doc-builder should match that sentence shape rather
 than invent a second convention.
 
