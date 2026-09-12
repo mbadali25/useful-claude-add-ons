@@ -185,6 +185,14 @@ _AUTHORITY_NOTES = {
         "raising it, so a question from it should arrive with what it already "
         "checked. It still asks before removing a role or deleting anything."
     ),
+    "autonomous": (
+        "The manager acts on these itself and settles its own open questions - "
+        "where it would otherwise ask you to choose, it takes the option it "
+        "would have recommended and tells you which. Say what you want "
+        "prioritised and that wins over its own ordering. It still asks before "
+        "offboarding a role, deleting a codemap or diagram, rewriting "
+        ".crew/metrics.md, or destroying git history."
+    ),
 }
 
 

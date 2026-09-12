@@ -1333,11 +1333,23 @@ def plan_global_write(updates, path=None):
             # agents they did not ask for or a report where they expected
             # work -- so a widening is marked, printed on the dry run, and
             # printed again on the write.
+            #
+            # RANK, never equality. This read
+            # `after == "act" and before != "act"`, which was correct only
+            # while "act" was the top tier. With a third tier it is wrong in
+            # both directions at once: act -> autonomous computes False, so the
+            # widest grant crew offers would ship unannounced; and
+            # autonomous -> act computes True, so DIALLING DOWN warns about a
+            # widening. The second is the more corrosive of the two -- a
+            # warning that fires on the safe direction is a warning users learn
+            # to click past, which costs the first case its only defence.
+            # `authority_rank` normalises first, so an unrecognised `before`
+            # ranks 0 and anything above it correctly reads as a widening.
             "widens_authority": (
                 dotted == "pm.authority"
-                and crew_state.normalise_authority(value) == "act"
-                and crew_state.normalise_authority(
-                    None if before is _MISSING else before) != "act"
+                and crew_state.authority_rank(value)
+                > crew_state.authority_rank(
+                    None if before is _MISSING else before)
             ),
         })
         _set_path(merged, parts, value)

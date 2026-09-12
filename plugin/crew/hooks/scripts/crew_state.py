@@ -802,8 +802,50 @@ TRIGGERS = (
 # for a permissions field has to be the restrictive one. `"Act"`, `"ACT"` and
 # `" act "` are accepted as `act` -- those are the same intent typed carelessly,
 # not a different one.
-AUTHORITIES = ("report-only", "act")
+# ORDER IS LOAD-BEARING, not presentation. The index of a name in this tuple is
+# its rank, and `authority_rank` is what every widening test and every
+# capability gate compares -- so appending a tier here grants it everything the
+# tiers before it had, and inserting one in the middle re-ranks the ones after
+# it. Append only, and never reorder.
+#
+# Before 0.16.32 there were two tiers and every consumer tested `== "act"`.
+# That equality is exactly wrong once a third tier exists, and it fails in BOTH
+# directions: `plan_global_write` computed a widening as
+# `after == "act" and before != "act"`, which reports act -> autonomous as no
+# widening at all (the case that ships an unannounced grant) and reports
+# autonomous -> act as a widening when it is a NARROWING (the case that teaches
+# the user the warning is noise). `can_act` had the mirror bug -- an
+# `== "act"` test makes the MORE permissive tier less capable than the one
+# below it. Rank, never equality.
+AUTHORITIES = ("report-only", "act", "autonomous")
 AUTHORITY_DEFAULT = "report-only"
+
+# The stops that hold even at the top tier, enumerated HERE rather than in
+# prose. A stop described only in a skill file is advice the model may weigh
+# against the task in front of it; a stop in code is a list a reader can diff,
+# a test can assert on, and nobody can paraphrase away. Each entry is
+# (slug, what the PM must not do without an explicit yes).
+#
+# The first three are the bound-2 stops `act` already carried, restated at this
+# tier because a wider authority is precisely where someone would assume they
+# lapsed. The fourth is new with `autonomous`: a PM that dispatches without
+# asking is a PM that can reach git, and every item under it destroys work that
+# exists nowhere else once it runs.
+AUTONOMOUS_STOPS = (
+    ("offboard-role", "offboarding a role, or removing one from the roster"),
+    ("delete-map", "deleting a codemap file or a diagram"),
+    ("rewrite-metrics", "rewriting .crew/metrics.md"),
+    ("git-destruction",
+     "destroying git history or tracked work - force-push, branch delete, "
+     "history rewrite, or rm of a tracked file"),
+)
+
+# How many tickets one session's work becomes. The default is `system`: one
+# session is one ticket, and a second ticket is opened only when the work
+# reaches into another system. Splitting per change was the pre-0.16.32
+# behaviour and is kept as `change` for anyone who wants it back.
+TICKET_GRANULARITIES = ("session", "system", "change")
+GRANULARITY_DEFAULT = "system"
 
 PM_DEFAULTS = {
     "enabled": True,
@@ -811,6 +853,7 @@ PM_DEFAULTS = {
     "quietLines": 8,
     "maxLines": 40,
     "authority": AUTHORITY_DEFAULT,
+    "ticketGranularity": GRANULARITY_DEFAULT,
     # Guardrail. The PM stops dispatching after this many roles in one pass and
     # says what it did not get to, rather than working a queue until the context
     # runs out. Blockers found mid-task do not count against it -- see the
@@ -1076,7 +1119,12 @@ def tier_for_roles(roles):
 
 
 def normalise_authority(value):
-    """`value` as a known authority, else the restrictive default."""
+    """`value` as a known authority, else the restrictive default.
+
+    An unknown collapses to `report-only` -- the LEAST permissive tier, never
+    the most. A typo in a hand-edited config must cost capability, not grant
+    it, and `autonomous` is now a spelling mistake away from `act`.
+    """
     if isinstance(value, str):
         cleaned = value.strip().lower()
         if cleaned in AUTHORITIES:
@@ -1084,14 +1132,68 @@ def normalise_authority(value):
     return AUTHORITY_DEFAULT
 
 
+def authority_rank(value):
+    """`value`'s position in `AUTHORITIES`. Higher is more permissive.
+
+    Routed through `normalise_authority` first, so an unknown ranks 0 and every
+    comparison built on this is fail-safe by construction: unknown is never
+    >= anything but itself, and a widening FROM unknown always reports as a
+    widening. This is the one function permitted to know that the tiers are
+    ordered; nothing else may compare authority strings.
+    """
+    return AUTHORITIES.index(normalise_authority(value))
+
+
+def normalise_granularity(value):
+    """`value` as a known ticket granularity, else the default.
+
+    Unlike authority, no value here is more permissive than another -- this
+    setting buys nobody a capability, it only decides how the same work is
+    filed. So the fallback is the documented default rather than an extreme.
+    """
+    if isinstance(value, str):
+        cleaned = value.strip().lower()
+        if cleaned in TICKET_GRANULARITIES:
+            return cleaned
+    return GRANULARITY_DEFAULT
+
+
 def can_act(state):
     """True when the PM may act on its findings rather than just report them.
 
     Reads from a full state dict so callers cannot disagree about where the
     field lives or what an absent one means.
+
+    Rank, not equality. This tested `== "act"` while there were two tiers,
+    which silently made `autonomous` -- the WIDER tier -- unable to act at all.
+    A gate that says "at least this rung" keeps working when a rung is added
+    above it; one that names a rung does not.
     """
     pm = dict_or_empty(state.get("pm"))
-    return normalise_authority(pm.get("authority")) == "act"
+    return authority_rank(pm.get("authority")) >= authority_rank("act")
+
+
+def can_autodecide(state):
+    """True when the PM picks its own recommended option instead of asking.
+
+    Deliberately a SECOND predicate rather than a wider `can_act`. "May
+    dispatch without asking" and "may settle an open decision without asking"
+    are different questions, and folding them into one gate would have changed
+    `act`'s behaviour as a side effect of adding a tier above it -- an `act`
+    repo would have stopped emitting `**Decision needed:**` blocks that its
+    user is relying on. `act` still asks; only `autonomous` decides.
+
+    `AUTONOMOUS_STOPS` is not overridden by this. Those need an explicit yes at
+    every tier.
+    """
+    pm = dict_or_empty(state.get("pm"))
+    return authority_rank(pm.get("authority")) >= authority_rank("autonomous")
+
+
+def ticket_granularity(state):
+    """The configured ticket granularity, normalised."""
+    pm = dict_or_empty(state.get("pm"))
+    return normalise_granularity(pm.get("ticketGranularity"))
 
 
 def merge_defaults(defaults, supplied, discarded=None, _path=""):
@@ -2605,6 +2707,7 @@ def collect(root, cfg_override=None):
     # downstream then reads a value that is guaranteed to be one of AUTHORITIES,
     # and none of them has to re-decide what a typo means.
     pm["authority"] = normalise_authority(pm.get("authority"))
+    pm["ticketGranularity"] = normalise_granularity(pm.get("ticketGranularity"))
 
     tier = cfg.get("tier")
     roles = cfg.get("roles")
