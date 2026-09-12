@@ -272,5 +272,42 @@ want_count "exits 0" "$RC" "0"
 want_contains "resolved the main branch from the repo" "$OUT" "target branch: trunk"
 want_count "deleted the object covering it" "$(calls_of DELETE)" "1"
 
+echo "== restore: users and groups survive the export-to-restore round trip =="
+new_case
+cat > "$CASE_DIR/export.json" <<'JSON'
+{"tool":"merge_gate.sh","format":1,"workspace":"ws","repository":"repo","count":1,
+ "values":[
+  {"id":901,"kind":"restrict_merges","branch_match_kind":"glob","pattern":"main",
+   "users":[{"uuid":"{user-1}","display_name":"Ann"}],
+   "groups":[{"slug":"leads","name":"Leads"}]}]}
+JSON
+printf '%s' '{"pagelen":100,"page":1,"size":0,"values":[]}' > "$CASE_DIR/stub/1.body"
+run_gate enable ws repo --from-export "$CASE_DIR/export.json"
+want_count "exits 0" "$RC" "0"
+want_count "one POST for the restriction" "$(calls_of POST)" "1"
+want_contains "carried the users array" "$(cat "$LOG")" '"uuid":"{user-1}"'
+want_contains "carried the groups array" "$(cat "$LOG")" '"slug":"leads"'
+
+echo "== restore: an export with no .values key fails instead of restoring nothing =="
+new_case
+printf '%s' '{}' > "$CASE_DIR/export.json"
+run_gate enable ws repo --from-export "$CASE_DIR/export.json"
+want_nonzero_rc "exits non-zero on a values-less export"
+want_count "no POST was issued" "$(calls_of POST)" "0"
+want_contains "names the missing .values array" "$ERR" "no top-level .values array"
+
+echo "== restore: a foreign export warns but still restores =="
+new_case
+cat > "$CASE_DIR/export.json" <<'JSON'
+{"tool":"merge_gate.sh","format":1,"workspace":"other-ws","repository":"other-repo","count":0,
+ "values":[]}
+JSON
+printf '%s' '{"pagelen":100,"page":1,"size":0,"values":[]}' > "$CASE_DIR/stub/1.body"
+run_gate enable ws repo --from-export "$CASE_DIR/export.json"
+want_count "exits 0 - a cross-repo export is a warning, not a failure" "$RC" "0"
+want_contains "warns about the mismatched origin" "$ERR" "WARNING"
+want_contains "names where the export came from" "$ERR" "other-ws/other-repo"
+want_contains "names the intended target" "$ERR" "not the target ws/repo"
+
 printf '\n%s passed, %s failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1

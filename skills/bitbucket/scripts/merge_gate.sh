@@ -406,7 +406,9 @@ post_body() { # <desired obj> -> the POST payload, built from scratch, never an 
     + (if .value == null then {} else {value: .value} end)
     + (if (.branch_match_kind // "glob") == "branching_model"
        then {branch_match_kind: "branching_model", branch_type: .branch_type}
-       else {branch_match_kind: "glob", pattern: .pattern} end)'
+       else {branch_match_kind: "glob", pattern: .pattern} end)
+    + (if .users == null then {} else {users: .users} end)
+    + (if .groups == null then {} else {groups: .groups} end)'
 }
 
 cmd_enable() {
@@ -426,9 +428,21 @@ cmd_enable() {
   if [ -n "$from_export" ]; then
     [ -f "$from_export" ] || die "no such export file: $from_export"
     jq -e . "$from_export" >/dev/null 2>&1 || die "$from_export is not valid JSON."
+    # A missing .values key is a malformed/foreign export, not an empty one. An
+    # unknown must never collapse into the safe-looking "0 restored, rc 0".
+    jq -e 'has("values")' "$from_export" >/dev/null 2>&1 \
+      || die "$from_export has no top-level .values array - refusing to silently restore nothing."
+    local exp_ws exp_repo
+    exp_ws="$(jq -r '.workspace // empty' "$from_export")"
+    exp_repo="$(jq -r '.repository // empty' "$from_export")"
+    if [ -n "$exp_ws" ] && [ -n "$exp_repo" ] && { [ "$exp_ws" != "$WS" ] || [ "$exp_repo" != "$REPO" ]; }; then
+      printf 'WARNING: %s was exported from %s/%s, not the target %s/%s - proceeding anyway.\n' \
+        "$from_export" "$exp_ws" "$exp_repo" "$WS" "$REPO" >&2
+    fi
     # Ids are not stable across delete/recreate, so they are dropped here rather
-    # than trusted: a restore POSTs fresh objects.
-    jq -c '[.values[]? | {kind, value, branch_match_kind, pattern, branch_type}]' \
+    # than trusted: a restore POSTs fresh objects. users/groups are carried
+    # through as-is - they cannot be reconstructed from kind/scope alone.
+    jq -c '[.values[] | {kind, value, branch_match_kind, pattern, branch_type, users, groups}]' \
       "$from_export" > "$desired" || die "could not read .values[] from $from_export"
     if [ -n "$branch" ]; then
       printf 'note: --branch is ignored with --from-export - each exported object carries its own scope.\n'
