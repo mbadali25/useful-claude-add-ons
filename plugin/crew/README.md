@@ -886,6 +886,15 @@ The promotion sequence lives in `.crew/verify.json`, not here — see §23. Conf
 holds preferences; `verify.json` holds the checks, so that one file answers "what
 runs when" for both a working tree and a deployed environment.
 
+**The complete key reference is [`CONFIG.md`](CONFIG.md)** — every key in both
+layers with its default, its type, which layer may set it, and a `path:line` for
+the code that reads it. It is derived by executing `default_config()` and
+`default_global_config()` rather than by reading comments, and it marks the keys
+for which no consumer could be found instead of assuming one exists. The sample
+JSON and table above are older than that file and disagree with it in places
+`CONFIG.md` §12 names specifically; where they differ, `CONFIG.md` is the one
+that was checked against the code.
+
 ---
 
 ## 12. Optional: Codex as reviewer, Gemini as design partner
