@@ -106,9 +106,9 @@ both directions:
 `is_global_path` agrees with `filter_global` by construction — both stop
 descending at a template **leaf**.
 
-**Measured, not argued.** `leaf_paths(default_global_config())` yields **38**
-leaves. `leaf_paths(default_config())` yields **75**, so **37** are repo-only.
-For all 75, `filter_global` and `plan_global_write` agree on whether the path is
+**Measured, not argued.** `leaf_paths(default_global_config())` yields **44**
+leaves. `leaf_paths(default_config())` yields **85**, so **41** are repo-only.
+For all 85, `filter_global` and `plan_global_write` agree on whether the path is
 settable.
 
 ### The one asymmetry, and it matters
@@ -177,17 +177,16 @@ enforces in code rather than prose:
 ## 3. Reading the tables
 
 - **Default** is the value `default_config()` actually returns, printed by
-  running it. For every one of the 38 global-settable keys,
+  running it. For every one of the 44 global-settable keys,
   `default_global_config()` returns the same value — verified by comparison, so
   there is no second default to keep in your head.
 - A **list is a leaf.** `qa.order` and `notify.events` are replaced wholesale,
   never merged element-wise (`leaf_paths`, `crew_config.py:432`).
-- **The tables list the keys `default_config()` DECLARES, which is not every
-  key crew uses.** Nine more are in use and declared by no default — eight read
-  by hook scripts, one written and never read; see §12.3. `merge_defaults`
-  carries an undeclared repo-layer key through unchanged, so they work; what
-  they lack is visibility. Every count in
-  this file (75, 38, 37) is a count of *declared* keys.
+- **The tables list the keys `default_config()` DECLARES.** As of 0.19.11 that
+  is every key any crew code is known to read — ten were in use and declared by
+  nothing until then, and §12.3 records what that cost and how it was found.
+  "Known to read" is the honest limit: the search that found those ten is the
+  same grep the consumer column rests on, and §13 says what that cannot see.
 - **Consumer** is a `path:line` that reads the key to decide something. A
   Markdown citation is a real consumer here — crew is a prose-driven
   architecture and an agent executing a command file is the code path. Where the
@@ -380,7 +379,31 @@ expensive bug: `docs.theme` had no consumer for four releases, shipped
 migration in `crew_upgrade.py` to undo (§7).
 
 **Eight keys are in that shape today.** Each was checked by an exhaustive grep
-over every tracked file for the key name, then by reading each hit:
+over every tracked file for the key name, then by reading each hit.
+
+**They are being left exactly as they are, defaults included, and that is a
+decision rather than an oversight.** Nothing reads them, so no behaviour is
+wrong today. Flipping the six non-null defaults to `null` would be a second
+mandatory `upgradeNeeded` prompt for every crew repo on every machine, inside
+one week, in exchange for no change in behaviour at all.
+
+**The requirement this places on the future change, which is the part that
+matters:**
+
+> Whoever writes the first consumer for one of these keys decides what its
+> default *means*, at that moment, and must say so in the same change.
+
+That is precisely the step `docs.theme` skipped. Its `"neutral"` was chosen
+before anything read it, so when a consumer finally arrived the default was
+already wrong for every installed repo, and undoing it cost a one-shot
+migration in `crew_upgrade.py` (§7). The trap is not the unread key; it is
+inheriting a default that was never a decision. A consumer landing on
+`bitbucket.mergeGate.preset: "standard"` or `graph.tool: "graphify"` inherits
+exactly that, unless the change that adds the consumer states what the value
+means and why it is right.
+
+So: do not "tidy" these defaults now, and do not add a consumer without
+settling the default in the same diff.
 
 | Key | Every reference it has |
 |---|---|
@@ -434,7 +457,7 @@ them:
 
 ---
 
-## 10. Global-settable keys — all 38
+## 10. Global-settable keys — all 44
 
 Settable in **either** layer; repo wins. Defaults are identical in
 `default_config()` and `default_global_config()` — verified by comparison.
@@ -474,6 +497,12 @@ Settable in **either** layer; repo wins. Defaults are identical in
 | `pm.authority` | see §5 | `"report-only"` |
 | `pm.ticketGranularity` | see §6 | `"system"` |
 | `pm.maxDispatches` | integer | `3` |
+| `context.autoClear.enabled` | boolean, see §14 | `false` |
+| `context.autoClear.method` | string, see §14 | `"auto"` |
+| `context.autoClear.windowTitle` | string or `null`, see §14 | `null` |
+| `context.autoClear.command` | string | `"/clear"` |
+| `context.autoClear.delaySeconds` | integer | `3` |
+| `context.autoClear.minHandoffLines` | integer | `5` |
 | `docs.theme` | string or `null`, see §7 | `null` |
 | `docs.reportTheme` | string or `null`, see §7 | `null` |
 | `bitbucket.mergeGate.enabled` | boolean, see §8 | `false` |
@@ -501,7 +530,7 @@ that role — `/crew:review` resolves `review`'s model that way
 
 ---
 
-## 11. Repo-only keys — all 37
+## 11. Repo-only keys — all 41
 
 Refused in the global file by `plan_global_write`, and pruned out of it by
 `filter_global` if some other tool wrote one. Each is a fact about one
@@ -514,6 +543,7 @@ repository or one checkout.
 | `roles` | list (a leaf) | `["explorer", "qa-reviewer"]` | `crew_state.collect` |
 | `tracker` | string | `"files"` | `crew_state.py:2771`, `pm_brief.py:33`, `commands/ticket.md:13` |
 | `jira.project` | string or `null` | `null` | **no consumer found**, §9 |
+| `jira.cloudId` | string or `null` | `null` | written by `commands/jira-sync.md:25`; **read by nothing**, §9 |
 | `sdp.portal` | string or `null` | `null` | prose, §9 |
 | `sdp.noteVisibility` | string | `"private"` | prose, §9 |
 | `sdp.closeOnDone` | boolean | `false` | prose, §9 |
@@ -532,6 +562,9 @@ repository or one checkout.
 | `context.reserveTokens` | integer or `null` | `100000` | `context-watch.ps1:39` |
 | `context.handoffPath` | path | `".work/HANDOFF.md"` | `auto-clear.ps1:82` |
 | `context.keepTranscripts` | integer | `5` | `handoff-write.ps1:22` |
+| `context.autoClear.unsafeFocus` | boolean | `false` | `auto-clear.sh:93`, gating `wtype` at `:187` — **consent, not capability**, see §14 |
+| `context.autoWrapUp` | boolean | `false` | `context-watch.ps1:33`, `context-watch.sh:41` |
+| `context.autoResume` | boolean | `false` | `handoff-read.ps1:36`, `handoff-read.sh:35` |
 | `context.staleHandoff.maxAgeHours` | integer | `72` | `crew_state.STALE_HANDOFF_DEFAULTS` |
 | `context.staleHandoff.maxCommitsBehind` | integer | `3` | `crew_state.STALE_HANDOFF_DEFAULTS` |
 | `emergency.standDown` | boolean | `true` | `hooks/scripts/_common.sh:54` |
@@ -563,79 +596,63 @@ Three gaps between what the repo says about config and what the code does.
 None is fixed here — this file is a reference, and each of these is a separate
 change with its own review. Item 3 is the one that affects behaviour.
 
-1. **`plugin/crew/README.md:783-827`, the sample `.crew/config.json`, and the
-   key table at `:881-883`.** Parsed and compared leaf-by-leaf against
-   `default_config()`: the sample has 59 leaves to the real 75. Twelve keys it
-   shows are not in `default_config()` (the nine live ones in item 3, plus
-   `graph.obsidian.dir`, `.layout` and `.confirmed`, which are genuinely gone);
-   twenty-eight keys `default_config()` has are missing from it, including the
-   whole `dev` block, `docs.*`, `bitbucket.*`, `platform.*`, `qa.order`,
-   `qa.roles` and `worktree.root`.
+1. **RESOLVED 0.19.11 — `plugin/crew/README.md` §11's sample `.crew/config.json`
+   had drifted to 59 leaves against the real 85.** Parsed and compared
+   leaf-by-leaf at the time: twelve keys it showed were absent from
+   `default_config()` and twenty-eight it omitted, including the whole `dev`
+   block, `docs.*`, `bitbucket.*`, `platform.*`, `qa.order`, `qa.roles` and
+   `worktree.root`.
 
-   Of the twelve, the `graph.obsidian` three are the stale ones:
-   `README.md:826` and `:881-883` present `graph.obsidian.dir`,
-   `graph.obsidian.layout` and `graph.obsidian.confirmed` as current keys, in
-   both the sample JSON and the key table.
-   `default_config()["graph"]` is
-   `{"enabled": True, "tool": "graphify", "out": "graphify-out", "mode": "code-only", "commitHook": False}`
-   — printed by running it. The sub-block was removed in 0.16.13;
-   `crew_upgrade.py:339-343` drops it from an existing config and says so.
-   `crew-graph/SKILL.md:172-174` states the removal correctly.
+   Fixed by **deleting the sample**, not by correcting it. It drifted because it
+   was a second copy of something derived elsewhere — the same failure as the
+   `UPDATE.md` mirrors and the six stale schema numbers, all of which passed a
+   green `validate-prompts.py`. A duplicate that agrees today is a duplicate
+   that disagrees later, and correcting it would only have reset the clock.
+   §11 now points here. This file is generated from the functions, and
+   `tests/test_crew_config.py` holds the drift gates that keep the two
+   committed templates and `crew-setup/SKILL.md` honest.
+
+   Three of the twelve — `graph.obsidian.dir`, `.layout` and `.confirmed` — were
+   genuinely removed in 0.16.13; `crew_upgrade.py:339-343` drops them from an
+   existing config and says so, and `crew-graph/SKILL.md:172-174` states the
+   removal correctly.
 
 2. **`crew_config.py:394`**, on `bitbucket.mergeGate.branch` — see §8. The
    docstring's "stays null in both layers" describes the default value, and
-   reads as a statement about settability, which it is not.
+   reads as a statement about settability, which it is not. Still open: it is a
+   comment, and correcting it is a change to `crew_config.py` rather than to
+   this reference.
 
-3. **Nine keys are in use and declared by no default.** None appears in
-   `default_config()`, so none appears in any table above, in
-   `/crew:config --explain`, or anywhere `leaf_paths` is used.
+3. **RESOLVED 0.19.11 — ten keys were in use and declared by no default.** Kept
+   because how it was found is worth more than the fact that it is fixed.
 
-   Eight are read by a hook script:
+   Nine were read by a hook script — the six `context.autoClear.*` at
+   `auto-clear.ps1:67`, `context.autoWrapUp` at `context-watch.ps1:33`,
+   `context.autoResume` at `handoff-read.ps1:36`, and
+   `context.autoClear.unsafeFocus` at `auto-clear.sh:93`. The tenth,
+   `jira.cloudId`, is written by `commands/jira-sync.md:25` and read back by
+   nothing, so it is also in §9.
 
-   | Key | Read at |
-   |---|---|
-   | `context.autoClear.enabled` | `hooks/scripts/auto-clear.ps1:67` (`$a = $cfg.autoClear`) |
-   | `context.autoClear.method` | as above, and validated per platform at `crew_platform.py:384-393` |
-   | `context.autoClear.windowTitle` | as above; `auto-clear.ps1:128` refuses to send without it |
-   | `context.autoClear.command` | as above |
-   | `context.autoClear.delaySeconds` | as above |
-   | `context.autoClear.minHandoffLines` | as above |
-   | `context.autoWrapUp` | `hooks/scripts/context-watch.ps1:33` |
-   | `context.autoResume` | `hooks/scripts/handoff-read.ps1:36` |
+   They worked. `merge_defaults` carries an undeclared repo-layer key straight
+   through, which is exactly why nobody noticed. What they lacked was
+   visibility: `leaf_paths` could not see them, so they appeared in no key
+   listing and in no `/crew:config --explain` output — measured, not assumed —
+   and `is_global_path` refuses any path absent from the global template, so
+   all ten were **silently un-settable in the global layer**.
 
-   The ninth, `jira.cloudId`, is different and worse: `commands/jira-sync.md:25`
-   instructs the agent to cache it "so you never look it up twice", and nothing
-   in the repo reads it back. It is undeclared **and** unconsumed — this item
-   and §9 both.
+   **The first pass found nine of the ten, and missed `unsafeFocus` for a
+   reason worth keeping.** Every default was derived by reading the `.ps1`
+   consumers, on a Windows machine. `unsafeFocus` is Wayland-only and appears
+   only in `auto-clear.sh`. The PR body for that pass carried an honest-looking
+   limit — "Linux not exercised" — which was disclaiming the exact gap that hid
+   the defect instead of spending two minutes reading the `.sh` counterparts.
+   Reading them is what found it. **A disclaimer is not a substitute for the
+   check it describes.**
 
-   **This is not a deliberate removal**, the way `graph.obsidian.*` was.
-   `crew_upgrade.py` drops that block from an existing config at `:339-343` and
-   says so; it contains no mention of `autoClear`, `autoWrapUp` or
-   `autoResume`. Neither template declares them. And `crew_platform.py:384`
-   actively reads `context.autoClear.method`, reporting it when the platform
-   cannot deliver that keystroke — live code managing a key the defaults do not
-   know exists.
-
-   They still work. Verified:
-   `merge_defaults(default_config(), {"jira": {"cloudId": "abc"}})["jira"]`
-   returns `{"project": None, "cloudId": "abc"}`, so an undeclared repo-layer
-   key survives the merge.
-
-   **But every one of them is repo-only, whether or not that was intended.**
-   `is_global_path` returns `False` for a path absent from
-   `default_global_config()`, and `filter_global` prunes it — and prunes it by
-   the *top-level block*, so a global file setting `context.autoClear.method`
-   is reported as `ignored: ["context"]`, naming the block rather than the key
-   the user actually wrote. Confirmed by running both.
-
-   The invisibility is measured, not assumed: `crew_config.py --root <tmp>
-   --explain` against a repo config carrying `context.autoClear` and
-   `jira.cloudId` prints neither, exit 0.
-
-   This is the one finding here that is not cosmetic. `default_config()` is the
-   definition both halves of the invariant in §2 are enforced against, so a key
-   missing from it is not merely undocumented: it is structurally un-settable
-   in the global layer, and silently so.
+   Fixed in 0.19.11: all ten declared, and `context.autoClear` made globally
+   settable because how a terminal is driven to accept a keystroke is a fact
+   about the machine — `crew_platform.py:384-393` already validates `method`
+   per platform. `unsafeFocus` is the exception and gets §14.
 
 ---
 
@@ -653,3 +670,52 @@ change with its own review. Item 3 is the one that affects behaviour.
   `TICKET_GRANULARITIES`, `QA_PROVIDERS`, `DEV_PROVIDERS` and
   `AUTONOMOUS_STOPS`. Re-run the snippet at the top of this file to confirm
   against any later revision.
+
+---
+
+## 14. `context.autoClear`, and the one key inside it that is not machine-wide
+
+`context.autoClear` is the only block shared between the two layers: six of its
+seven leaves are settable in `~/.claude/crew/config.json`, and every other key
+under `context` is repo-only. The argument is that how a terminal is driven to
+accept a keystroke is a fact about the machine, in the same sense provider
+availability is — `crew_platform.py:384-393` validates `method` against what
+*this* platform can actually deliver and reports one it cannot honour.
+
+### What the widening costs
+
+`windowTitle` is the guard that stops SendKeys typing into whatever happens to
+have focus: `auto-clear.ps1:21` calls it REQUIRED and `:128` refuses to send
+without it. Machine-global is the right home for it — a terminal's title is a
+property of the machine — but **a wrong global value now aims keystrokes at the
+wrong window in every repo on that machine rather than in one.** That is the
+trade, taken deliberately.
+
+Its default is `null` where the scripts fall back to `""`. The two are
+behaviourally identical (`if ($a.windowTitle)` is false for either, and
+`auto-clear.sh:90` does the same), and `null` wins the tiebreak: `""` can read
+to a human as a *deliberate* blank, and on this particular key that misreading
+is dangerous.
+
+### `unsafeFocus` is declared, and deliberately not granted
+
+`context.autoClear.unsafeFocus` is the seventh leaf and the only one refused in
+the global layer. `is_global_path("context.autoClear.unsafeFocus")` returns
+`False`, and `filter_global` reports it by name.
+
+It is **consent, not capability**. Setting it `true` accepts that `wtype` types
+into whatever currently has focus, which Wayland offers no way to check
+(`auto-clear.sh:187`). The rest of the block describes the machine; this one
+accepts a risk. One `true` in a machine-global file would accept blind
+keystroke injection for every repo on the box.
+
+That distinction is not invented here. `graph.obsidian.confirmed` is refused by
+`plan_global_write` and pruned by `filter_global` for exactly the same reason,
+stated in `plan_global_write`'s own docstring: consent to act outside the repo
+is not a capability a guided flow may hand over. Same reasoning, same
+treatment.
+
+Implemented as an `AUTOCLEAR_CONSENT_KEYS` exclusion over the one
+`AUTOCLEAR_DEFAULTS` literal, rather than as a second hand-maintained copy of
+the block, and covered by a test that goes red if the exclusion is dropped —
+because dropping it is the tidy-up a future reader will reach for.
