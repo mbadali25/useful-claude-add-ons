@@ -54,6 +54,9 @@ COMMON = os.path.join(CREW, "hooks", "scripts", "crew_common.py")
 LADDER_DOC = os.path.join(CREW, "skills", "crew-scaling", "SKILL.md")
 PLATFORM = os.path.join(CREW, "hooks", "scripts", "crew_platform.py")
 CONFIG = os.path.join(CREW, "hooks", "scripts", "crew_config.py")
+UPGRADE = os.path.join(
+    CREW, "skills", "crew-graph", "scripts", "crew_upgrade.py")
+CONFTEST = os.path.join(CREW, "tests", "conftest.py")
 PM_BRIEF = os.path.join(CREW, "hooks", "scripts", "pm_brief.py")
 
 GUARD = '    if out["family"] is not None and out["family"] in authors:'
@@ -64,6 +67,170 @@ BLOCK_ONLY = (
 )
 
 MUTATIONS = (
+    (
+        # The global warning stops checking whether the repo has an answer of
+        # its own, and starts firing on repos the global can never reach. It
+        # then states something false -- that a global neutral "is the value
+        # this repo now resolves to" on a repo whose theme is `solomon` -- and
+        # sends the reader to edit a machine-global file that would change
+        # nothing there and something in every other repo on the machine.
+        "the global warning fires even when the repo names its own theme",
+        UPGRADE,
+        '    if notes["docsThemeAfter"] is None and global_theme_defeats_migration():',
+        '    if global_theme_defeats_migration():',
+        ("tests/test_upgrade.py::"
+         "test_the_global_warning_stays_quiet_when_the_repo_names_its_own_theme"),
+    ),
+    (
+        # The rewrite stops being atomic with the schema stamp. A single
+        # wrong-typed block anywhere then produces a config with a null theme
+        # and schema still at 3 -- so repairing the block and setting neutral
+        # back re-runs the rewrite and erases it a second time. Half a
+        # migration that keeps re-applying its own half.
+        "the theme rewrite is no longer atomic with the schema stamp",
+        UPGRADE,
+        '    if (notes["schemaStamped"]\n'
+        '            and notes["schemaFrom"] < _DOCS_THEME_REWRITTEN_UNTIL_SCHEMA',
+        '    if (notes["schemaFrom"] < _DOCS_THEME_REWRITTEN_UNTIL_SCHEMA',
+        ("tests/test_upgrade.py::"
+         "test_a_partly_failed_migration_does_not_rewrite_the_theme"),
+    ),
+    (
+        # The global warning goes. The repo config comes out migrated and the
+        # EFFECTIVE theme is unchanged, because repo null defers to the global
+        # file that still says neutral. That is the worse of the two states --
+        # it looks fixed -- and silence is what makes it so.
+        "a global neutral that defeats the migration is not reported",
+        UPGRADE,
+        '    if notes["docsThemeAfter"] is None and global_theme_defeats_migration():',
+        "    if False:",
+        ("tests/test_upgrade.py::"
+         "test_a_global_neutral_is_reported_because_it_defeats_the_migration"),
+    ),
+    (
+        # The global read stops being best-effort. `global_theme_defeats_
+        # migration` runs while BUILDING THE REPORT, which is after the repo
+        # config has already been written -- so an unreadable global file
+        # would take down a run whose real work had succeeded, and the caller
+        # could not tell a failed upgrade from a failed report.
+        "the global config read is no longer best-effort",
+        UPGRADE,
+        "    except (OSError, ValueError):\n        return False",
+        "    except KeyError:\n        return False",
+        ("tests/test_upgrade.py::"
+         "test_an_unreadable_global_config_is_not_a_crash_or_a_warning"),
+    ),
+    (
+        # conftest isolates only `crew_config`'s binding again. `crew_upgrade`
+        # reads the path through `crew_state`, so the suite goes back to
+        # reading the DEVELOPER'S REAL ~/.claude/crew/config.json -- the exact
+        # thing that fixture exists to prevent. It fails loudly here and is
+        # otherwise invisible: on a machine whose global config happens not to
+        # set a theme, every test still passes.
+        "the global-config isolation fixture patches only one of the two names",
+        CONFTEST,
+        '    monkeypatch.setattr(crew_config, "GLOBAL_CONFIG_PATH", unused)\n'
+        '    monkeypatch.setattr(crew_state, "GLOBAL_CONFIG_PATH", unused)',
+        '    monkeypatch.setattr(crew_config, "GLOBAL_CONFIG_PATH", unused)',
+        ("tests/test_upgrade.py::"
+         "test_the_suite_cannot_reach_the_real_machine_global_config"),
+    ),
+    (
+        # The schema stays at 3, which is what shipped to Codex for review and
+        # what Codex caught by RUNNING it: status "already current", value
+        # unchanged. The rewrite below is untouched and still perfect -- it
+        # simply never executes, because run() returns before calling
+        # upgrade_config for any config at or above SCHEMA_CURRENT, and every
+        # existing config is at 3.
+        #
+        # The mutation is pinned here because it is invisible to every unit
+        # test of the transformation itself: `upgrade_config` is pure and goes
+        # on passing. Only an end-to-end run through `run()` sees it, which is
+        # exactly the gap that let it reach review.
+        "the schema is not bumped, so the migration never runs",
+        STATE,
+        "SCHEMA_CURRENT = 4",
+        "SCHEMA_CURRENT = 3",
+        ("tests/test_upgrade.py::"
+         "test_the_theme_migration_actually_reaches_an_existing_repo"),
+    ),
+    (
+        # The one-shot gate goes, so the rewrite matches on the VALUE forever.
+        # A user who takes the upgrade report at its word -- "if you did mean
+        # neutral, set it again and it will now be honoured" -- has it erased
+        # by the next `--force`, and by every force after that. The report
+        # then states something the code contradicts, which is worse than
+        # having made no promise.
+        "the theme rewrite is no longer one-shot",
+        UPGRADE,
+        '            and notes["schemaFrom"] < _DOCS_THEME_REWRITTEN_UNTIL_SCHEMA\n'
+        '            and crew_state.dict_or_empty(cfg.get("docs")).get("theme")',
+        '            and crew_state.dict_or_empty(cfg.get("docs")).get("theme")',
+        ("tests/test_upgrade.py::"
+         "test_a_deliberately_restored_neutral_survives_a_forced_rerun"),
+    ),
+    (
+        # The pre-0.18.0 default, restored. This is the mutation that matters
+        # on this change, because restoring it breaks NOTHING visible: the key
+        # still has no consumer, so no document comes out differently and no
+        # other test notices. It only becomes a de-branding bug later, when the
+        # wiring lands and every upgraded repo starts passing an explicit
+        # `--brand neutral` over an installed pack. A defect whose damage is
+        # deferred to a future commit is exactly the kind a suite forgets to
+        # hold, so it is pinned here rather than left to the templates.
+        "docs.theme default goes back to the string neutral",
+        UPGRADE,
+        '    "theme": None,\n    "reportTheme": None,',
+        '    "theme": "neutral",\n    "reportTheme": None,',
+        ("tests/test_upgrade.py::"
+         "test_upgrade_config_adds_the_docs_and_bitbucket_blocks"),
+    ),
+    (
+        # The migration silently does nothing. The template change alone is
+        # NOT the fix: `_merged` lets a supplied value win, so an existing
+        # config carrying "neutral" keeps it forever and only NEW repos get
+        # null. Deleting the rewrite leaves every already-installed machine in
+        # the broken state while a fresh clone looks correct -- the "exists
+        # only on other people's machines" shape this repo keeps paying for.
+        "the neutral -> null migration is dropped",
+        UPGRADE,
+        '    if (notes["schemaStamped"]\n'
+        '            and notes["schemaFrom"] < _DOCS_THEME_REWRITTEN_UNTIL_SCHEMA\n'
+        '            and crew_state.dict_or_empty(cfg.get("docs")).get("theme")\n'
+        '            == _DOCS_THEME_REWRITTEN_FROM):\n'
+        '        notes["rewrittenKeys"].append("docs.theme")\n'
+        '        out["docs"]["theme"] = None',
+        '    pass',
+        ("tests/test_upgrade.py::"
+         "test_upgrade_rewrites_the_old_neutral_theme_default_to_null"),
+    ),
+    (
+        # The rewrite stops being announced. The value still changes under the
+        # user; only the sentence explaining it disappears. That is the worse
+        # half of the two: a config that differs from what someone wrote, with
+        # the upgrade report silent about which value moved and why it was
+        # allowed to.
+        "a rewritten theme is no longer reported",
+        UPGRADE,
+        '    if "docs.theme" in notes["rewrittenKeys"]:',
+        '    if False:',
+        ("tests/test_upgrade.py::"
+         "test_the_report_explains_a_rewritten_theme_and_stays_quiet_otherwise"),
+    ),
+    (
+        # The rewrite over-reaches and catches every theme, not just the old
+        # default. This is the fix performing the exact bug it exists to
+        # prevent: a user who deliberately set `solomon` gets silently
+        # de-branded BY THE MIGRATION. Cheap to write by accident -- it is one
+        # comparison loosened to a truthiness check.
+        "the migration rewrites any theme, not only the old default",
+        UPGRADE,
+        '            and crew_state.dict_or_empty(cfg.get("docs")).get("theme")\n'
+        '            == _DOCS_THEME_REWRITTEN_FROM):',
+        '            and crew_state.dict_or_empty(cfg.get("docs")).get("theme")):',
+        ("tests/test_upgrade.py::"
+         "test_upgrade_rewrites_only_the_exact_old_default"),
+    ),
     (
         # The pre-0.17.0 form, restored. It is wrong in BOTH directions once a
         # third tier exists: act -> autonomous reads as no widening (the widest

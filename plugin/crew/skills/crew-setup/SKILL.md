@@ -121,7 +121,7 @@ still writes only the repo file.
 
 ```json
 {
-  "schema": 3,
+  "schema": 4,
   "tier": 0,
   "roles": ["explorer", "qa-reviewer"],
   "qa": {
@@ -153,13 +153,14 @@ still writes only the repo file.
   "platform": { "os": null, "wsl": null, "shell": null, "windowsHostIp": null },
   "pm": { "enabled": true, "mode": "adaptive", "quietLines": 8, "maxLines": 40, "authority": "report-only", "ticketGranularity": "system", "maxDispatches": 3 },
   "graph": { "enabled": true, "tool": "graphify", "out": "graphify-out", "mode": "code-only", "commitHook": false },
-  "docs": { "theme": "neutral", "reportTheme": null },
+  "docs": { "theme": null, "reportTheme": null },
   "bitbucket": { "mergeGate": { "enabled": false, "branch": null, "preset": "standard" } }
 }
 ```
 
-`schema: 3` — this repo is born current. It never trips `upgradeNeeded`, which fires on
-any config predating the `pm` and `graph` blocks or the per-role provider table.
+`schema: 4` — this repo is born current. It never trips `upgradeNeeded`, which fires on
+any config predating the `pm` and `graph` blocks, the per-role provider table, or the
+`docs.theme` default moving to null.
 `qa.provider`: `auto` walks `qa.order` and uses the first provider that passes its
 probe, announcing which ran. Name a provider (`codex`, `copilot`, `claude`) to pin it
 and hard-fail instead of falling back.
@@ -198,11 +199,29 @@ review that quietly ran on the fallback looks identical to one that ran on the p
 the difference matters most exactly when the pin was chosen to get a different family
 onto the diff.
 
-`docs.theme` / `docs.reportTheme`: `theme` is a doc-builder theme-pack skill name, passed
-straight through as that tool's `--brand`. `neutral` is doc-builder's own built-in pack, so
-the default changes nothing about how documents come out today. `reportTheme` is `null`
-meaning "follow `docs.theme`" — set it only when reports need a different brand from the
-rest of the docs, which is the client-deliverable case.
+`docs.theme` / `docs.reportTheme`: `theme` is a doc-builder theme-pack skill name, INTENDED
+to be passed straight through as that tool's `--brand`. **That wiring does not exist as of
+crew 0.18.0** — nothing in crew reads either key, and no crew agent or command invokes
+doc-builder at all, so there is no call site to pass it from. This paragraph asserted the
+pass-through in the present tense until 2026-09-12; it is written as intent now, because a
+doc that describes unbuilt wiring is why nobody goes looking for the missing half. See
+TODO.md, "Ticket B".
+
+Do not tell the user the theme is in effect. It is not, for either key, on any machine.
+
+Both default to `null`, and null means the same thing in both: **"I have no answer, ask the
+next authority."** For `reportTheme` that authority is `docs.theme`; for `docs.theme` it is
+doc-builder's own five-step resolution. Set `reportTheme` only when reports need a different
+brand from the rest of the docs, which is the client-deliverable case.
+
+`docs.theme` shipped as `"neutral"` through 0.17.1 and `/crew:upgrade` rewrites that one
+value to null — the only value the upgrade rewrites rather than preserving. Say so if the
+user asks why their config changed, and say why it was safe: the key has never had a
+consumer, so no value in it can be a preference anyone formed by watching it work. Leaving
+`"neutral"` would mean that, once the wiring lands, every upgraded repo passes an explicit
+`--brand neutral` that OVERRIDES an installed brand pack — de-branding documents that come
+out correctly branded today, with nothing in the config file changed to explain it. A user
+who did mean neutral sets it again and it is honoured.
 
 `bitbucket.mergeGate`: off by default, because a gate that arrived switched on would start
 failing merges nobody asked it to watch. `branch: null` means the repo's main branch is

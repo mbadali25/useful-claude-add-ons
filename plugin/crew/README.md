@@ -781,7 +781,7 @@ This is the same shape that produces:
 
 ```json
 {
-  "schema": 2,
+  "schema": 4,
   "tier": 0,
   "roles": ["explorer", "qa-reviewer"],
   "qa": { "provider": "auto" },
@@ -836,7 +836,7 @@ omit the block and assume.
 
 | Key | Values | Effect |
 |---|---|---|
-| `schema` | integer | Config layout version. Absent means a pre-PM (`v1`) setup — `/crew:upgrade` brings it to the current schema (2). Never hand-edit this; `/crew:upgrade` sets it. |
+| `schema` | integer | Config layout version. Absent means a pre-PM (`v1`) setup — `/crew:upgrade` brings it to the current schema, whatever `crew_state.SCHEMA_CURRENT` says (4 at the time of writing; it has been 2 and 3). Never hand-edit this; `/crew:upgrade` sets it. |
 | `verifyGate` | `true`, `false` | Whether the `Stop` hook blocks on failed checks. Set `false` only while first building the harness. |
 | `context.enabled` | `true`, `false` | The `Stop` context watch. **Absent block = off.** |
 | `context.warnAt` | `0.0`–`1.0` | Fraction of budget at which the handoff is requested. Default `0.8`. |
@@ -1991,7 +1991,7 @@ a worktree each, so a half-applied one cannot land on top of the other.
 | `/crew:sdp-sync <REQUEST-ID> [--push]` | Sync one ServiceDesk Plus request with the local cache — see §13b |
 | `/crew:obsidian-sync <T-####> [--push]` | Sync one Obsidian Kanban card with the local cache — see §13c |
 | `/crew:pm [onboard\|offboard <role>]` | Crew-manager status, or add/remove a role — see §22 |
-| `/crew:upgrade [--force]` | Bring a pre-schema-2 (`v1`) setup forward — see §11 |
+| `/crew:upgrade [--force]` | Bring a setup behind the current schema forward — see §11 |
 | `/crew:emergency <what is broken>` | Declare a time-boxed incident: gates stand down and record what they skipped, lanes investigate in parallel — see §24. `status`, `extend [min]`, `end` |
 | `/crew:model` | Report the resolved provider and model for every role, and which family would be reviewing which — see §12 |
 | `/crew:roster` | Print the crew as configured: roles, tier, and what each one is for |

@@ -68,11 +68,36 @@ GRAPH_BLOCK = {
 # THIS module -- the other direction is the cyclic import `crew_config.
 # layered_state` documents.
 #
-# `theme` is a doc-builder theme-pack skill name, and it feeds doc-builder's
-# EXISTING selection point rather than a new one: crew passes the resolved
-# value as `--brand` (or `DOC_BUILDER_BRAND`), which is the second and third
-# rung of `resolve_brand.py`'s precedence. `neutral` is the built-in pack, so
-# the default resolves to exactly what doc-builder already falls back to.
+# `theme` is a doc-builder theme-pack skill name. The INTENDED design is that
+# it feeds doc-builder's existing selection point rather than a new one -- the
+# resolved value passed as `--brand` (or `DOC_BUILDER_BRAND`), the second and
+# third rung of `resolve_brand.py`'s precedence.
+#
+# NOT BUILT AS OF 0.17.0, and this comment claimed otherwise in the present
+# tense until 2026-09-12. Nothing in crew reads either key: there is no call
+# site, because no crew agent or command invokes doc-builder at all. See
+# TODO.md, "Ticket B". Stated plainly here because a comment describing
+# unbuilt wiring is why nobody looks for the bug.
+#
+# `theme` defaults to None, meaning "pass no `--brand` and let doc-builder
+# resolve". It shipped as `"neutral"` through 0.17.1, justified by a comment
+# claiming "the default resolves to exactly what doc-builder already falls
+# back to". That was FALSE, and measurably so: doc-builder falls back to
+# neutral only when NO pack is discovered, and with a pack installed it
+# resolves THAT pack. On a checkout carrying solomon-doc-builder, default
+# resolution returns `solomon`.
+#
+# So `"neutral"` was never the no-op its author intended. Once the wiring
+# lands, passing it would be an explicit instruction that OVERRIDES an
+# installed client pack -- an upgrade would silently de-brand a Solomon
+# user's documents, with nothing in their config file changed to explain it.
+# `None` is what actually implements "the default changes nothing": it only
+# ever NARROWS from doc-builder's own behaviour, so pinning a brand becomes
+# something the user opts into deliberately.
+#
+# Both keys' `None` now mean ONE thing -- "I have no answer, ask the next
+# authority". For `reportTheme` that authority is `theme`; for `theme` it is
+# doc-builder's own five-step resolution. One rule, not two.
 #
 # `reportTheme` is null meaning "follow `theme`" -- NOT "no theme". A report
 # is the one artefact people routinely want in a different brand from the
@@ -80,9 +105,37 @@ GRAPH_BLOCK = {
 # that as a second full default would make the common case -- one brand for
 # everything -- take two settings to state and two to keep in step.
 DOCS_BLOCK = {
-    "theme": "neutral",
+    "theme": None,
     "reportTheme": None,
 }
+
+# The one value `upgrade_config` rewrites in place rather than preserving.
+#
+# Read the exception before copying it. The standing rule everywhere else in
+# this module is that a user's value is carried forward untouched or reported
+# as unmigrated -- `dropped`, `unmigrated` and the verbatim wrong-typed block
+# all exist to enforce it. This is the single documented exception, and it is
+# safe for a reason that does NOT generalise: `docs.theme` has never had a
+# consumer. No crew code has ever read it, so no user has ever been able to
+# set it and observe an effect, so no existing value can encode a considered
+# preference. It is either inherited from a template nobody edited or typed
+# with no observable result. There is no third case to preserve.
+#
+# That is why this is not a violation of the rule. Apply the same reasoning
+# before ever adding a second entry here, and if the key in question ever had
+# a working consumer, the answer is no.
+#
+# Residual cost, accepted deliberately: someone who typed `"neutral"` meaning
+# it has to retype it once the key works. They get neutral anyway unless a
+# pack is installed, so the window where it matters is narrow.
+_DOCS_THEME_REWRITTEN_FROM = "neutral"
+
+# The schema at which that rewrite stops. A config arriving at or above this
+# has already been migrated once, so a `"neutral"` in it was typed on purpose
+# after the fact and is the user's answer, not the old default. Keeping the
+# rewrite one-shot is what lets the upgrade report honestly promise that
+# setting neutral again will stick.
+_DOCS_THEME_REWRITTEN_UNTIL_SCHEMA = 4
 
 # Whether a Bitbucket pull request has to pass crew's merge gate.
 #
@@ -213,7 +266,24 @@ def upgrade_config(cfg):
              # Keys this upgrade removed outright. Distinct from
              # "unmigrated", which blocks the schema stamp: a dropped key is
              # a completed migration, not a failed one.
-             "droppedKeys": []}
+             "droppedKeys": [],
+             # Keys whose VALUE this upgrade changed in place. Same contract
+             # as droppedKeys -- a completed migration, announced -- but a
+             # strictly heavier claim, because the key survives wearing a
+             # value the user did not write. Everything in here must be
+             # justified at its definition; see _DOCS_THEME_REWRITTEN_FROM.
+             "rewrittenKeys": [],
+             # The repo's `docs.theme` AFTER this migration, so the report can
+             # tell whether the global layer actually gets to answer. None
+             # means "no repo answer, ask global"; anything else means the
+             # repo decides and no global value can reach it. Set at the end,
+             # beside the rewrite, from `out`.
+             #
+             # It is carried in `notes` so that `_config_lines` -- which is
+             # handed only `notes` -- never has to read the config itself.
+             # That keeps one module deciding what the value is, and keeps the
+             # report builder's only file access the GLOBAL one.
+             "docsThemeAfter": None}
 
     for key, block in CONFIG_BLOCKS:
         supplied = cfg.get(key, _ABSENT)
@@ -272,6 +342,38 @@ def upgrade_config(cfg):
             notes["droppedKeys"].append("graph.obsidian")
         out["graph"].pop("obsidian", None)
 
+    # `docs.theme` shipped as `"neutral"` through 0.17.1 on a false premise
+    # (see DOCS_BLOCK). Move it to None, which is what "the default changes
+    # nothing" actually means now that the key is about to acquire a consumer.
+    # Leaving it would hand every upgraded repo an explicit `--brand neutral`
+    # that overrides an installed pack -- a behaviour change nobody chose,
+    # arriving in a config file that did not visibly change.
+    #
+    # Only the exact old default is touched. A theme the user actually named
+    # (`"solomon"`, `"acme"`) is a value this migration has no business
+    # second-guessing, and `None` is already correct.
+    #
+    # `dict_or_empty` is the type guard, and it is the only one needed. A
+    # wrong-typed `docs` block (`docs: "oops"`) is kept VERBATIM and reported
+    # in `unmigrated`; `dict_or_empty` turns it into `{}` here, so the
+    # comparison is False and `out["docs"]` -- still the user's string -- is
+    # never indexed into. Indexing it would raise partway through, after
+    # run() had already written the file.
+    #
+    # Two guards were tried here and both turned out to be unreachable, which
+    # is worth recording because the lesson repeated within one change.
+    #
+    # First an `isinstance(out.get("docs"), dict)` wrapper: sabotaging it left
+    # the suite GREEN, because `dict_or_empty` already made it dead. Then
+    # `dict_or_empty` itself became unreachable in turn, once `schemaStamped`
+    # was added above -- a wrong-typed `docs` block cannot be stamped, so the
+    # condition short-circuits before this line is ever evaluated, and
+    # sabotaging it went green too.
+    #
+    # `schemaStamped` is the guard that actually holds, and it is the one the
+    # suite mutates. `dict_or_empty` stays as the house idiom for reading a
+    # config block, not as protection -- no test claims it, because none can.
+    # A vacuous sabotage result is the only thing that told us either time.
     supplied_roles = cfg.get("roles", _ABSENT)
     if supplied_roles is not _ABSENT and not (
             isinstance(supplied_roles, list)
@@ -310,6 +412,39 @@ def upgrade_config(cfg):
     if not notes["unmigrated"]:
         out["schema"] = crew_state.SCHEMA_CURRENT
         notes["schemaStamped"] = True
+
+    # The `docs.theme` rewrite, deliberately placed AFTER the stamp and gated
+    # on it. Two conditions, and each closes a defect found in review.
+    #
+    # `schemaStamped` makes the rewrite ATOMIC with the migration it belongs
+    # to. It sat above this block first, and then a partly-failed run -- one
+    # wrong-typed block anywhere, say `qa: "oops"` -- rewrote the theme while
+    # leaving `schema` at 3. The user repairs the block, sets neutral back
+    # because they meant it, re-runs, and the rewrite fires a SECOND time on
+    # the still-unbumped schema and erases it again. Half a migration that
+    # keeps re-applying its own half is worse than one that did nothing.
+    #
+    # `schemaFrom` is what makes the rewrite one-shot, and what makes the
+    # report's promise true. The report tells a user who did mean neutral to
+    # set it again and says it will be honoured; without this the rewrite
+    # matches on the VALUE, so the next `--force` erases the preference they
+    # just restored, and so does every force after that. It costs no new
+    # state: a config that has been through this migration is stamped 4, so
+    # `"neutral"` seen at 4 can only have been typed deliberately afterwards,
+    # which is exactly the value the promise protects.
+    #
+    # Both caught by Codex in QA review. `dict_or_empty` stays as the type
+    # guard -- see the note at `_DOCS_THEME_REWRITTEN_FROM`.
+    if (notes["schemaStamped"]
+            and notes["schemaFrom"] < _DOCS_THEME_REWRITTEN_UNTIL_SCHEMA
+            and crew_state.dict_or_empty(cfg.get("docs")).get("theme")
+            == _DOCS_THEME_REWRITTEN_FROM):
+        notes["rewrittenKeys"].append("docs.theme")
+        out["docs"]["theme"] = None
+
+    notes["docsThemeAfter"] = (
+        crew_state.dict_or_empty(out.get("docs")).get("theme"))
+
     return out, notes
 
 
@@ -395,6 +530,33 @@ def _bump_anchor(text, head):
     return _ANCHOR_LINE_RE.sub(lambda m: m.group(1) + head, text, count=1)
 
 
+def global_theme_defeats_migration():
+    """True when the machine-global config still carries the old theme default.
+
+    The repo migration is not enough on its own, and Codex caught why: repo
+    null means "no answer, ask the next authority", and the next authority is
+    the GLOBAL file. So a machine whose `~/.claude/crew/config.json` still says
+    `docs.theme: "neutral"` resolves to neutral in every repo this migration
+    has just "fixed" -- the effective value is unchanged and the repo config
+    now looks correct, which is the worse of the two states.
+
+    Reported, never rewritten. A per-repo `/crew:upgrade` silently editing a
+    machine-global file would change every OTHER repo on the machine, none of
+    which the user was upgrading. That is a cross-scope write nobody asked for,
+    so this returns a fact and `_config_lines` tells them what to do with it.
+
+    Best effort by design: a missing, unreadable or non-JSON global file simply
+    means "no global answer", which is the same state as no file at all.
+    """
+    try:
+        with open(crew_state.GLOBAL_CONFIG_PATH, encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, ValueError):
+        return False
+    return (crew_state.dict_or_empty(crew_state.dict_or_empty(data).get("docs"))
+            .get("theme") == _DOCS_THEME_REWRITTEN_FROM)
+
+
 def _config_lines(notes):
     """The config half of the report: what the migration changed, and what it
     could not. A crew that silently grows is the thing `/crew:scale` exists to
@@ -421,6 +583,40 @@ def _config_lines(notes):
             "Obsidian export was withdrawn in 0.16.13 because exporting one "
             "note per node made vaults unusably slow. Nothing to re-enable, "
             "and no setting was silently switched off."
+        )
+    # Gated on the repo having NO answer of its own. The global layer only
+    # gets to decide when the repo's value is null -- a repo that names
+    # `solomon` resolves to solomon no matter what the machine file says.
+    #
+    # Ungated, this warned that a global neutral "is the value this repo now
+    # resolves to" on a repo whose own theme was explicit, which is false, and
+    # it recommended a machine-wide edit that would have changed nothing here
+    # and something everywhere else. A warning that is wrong about the case it
+    # fires on is worse than no warning: it spends the reader's trust and then
+    # sends them to edit a file for the wrong reason. Caught by Codex.
+    if notes["docsThemeAfter"] is None and global_theme_defeats_migration():
+        lines.append(
+            "- WARNING: your machine-global config "
+            f"(`{crew_state.GLOBAL_CONFIG_PATH}`) still sets "
+            "`docs.theme` to \"neutral\", and that is the value this repo now "
+            "resolves to. Repo null means \"ask the next authority\", and the "
+            "next authority is that file -- so the effective theme did NOT "
+            "change here, while this repo's own config now reads as migrated. "
+            "Clear it there too if you did not mean it. This upgrade will not "
+            "edit it for you: it is machine-global, and every other repo on "
+            "this machine would change with it."
+        )
+    if "docs.theme" in notes["rewrittenKeys"]:
+        lines.append(
+            "- `docs.theme` was `\"neutral\"` and is now null, which means "
+            "\"pass no brand and let doc-builder resolve\". This is the one "
+            "value this upgrade rewrites rather than preserving, and it is "
+            "safe only because the key has never had a consumer -- no value "
+            "in it can be a preference you formed by seeing it work. Had it "
+            "been left, the wiring would send an explicit `--brand neutral` "
+            "that OVERRIDES an installed brand pack, de-branding documents "
+            "that are correctly branded today. If you did mean neutral, set "
+            "it again and it will now be honoured."
         )
     if notes["providerKeysAdded"]:
         lines.append(

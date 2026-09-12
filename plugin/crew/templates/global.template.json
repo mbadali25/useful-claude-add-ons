@@ -63,7 +63,7 @@
     "maxDispatches": 3
   },
   "docs": {
-    "theme": "neutral",
+    "theme": null,
     "reportTheme": null
   },
   "bitbucket": {

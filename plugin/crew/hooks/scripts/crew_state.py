@@ -32,12 +32,36 @@ from crew_endpoints import (
     scan_artifact_path,
 )
 
-# 3 as of 0.16.0: `qa` and `dev` gained a per-ROLE provider table and a
-# declared `fallback`. Bumping this makes every existing crew repo report
-# `upgradeNeeded` at session start, so the migration in
-# `crew_upgrade.upgrade_config` is mandatory rather than optional -- see
-# `evaluate_triggers`, which is the line that fires.
-SCHEMA_CURRENT = 3
+# 4 as of 0.18.0: `docs.theme`'s default moved from `"neutral"` to null, and
+# the old default is rewritten forward. 3 was 0.16.0: `qa` and `dev` gained a
+# per-ROLE provider table and a declared `fallback`.
+#
+# Bumping this makes every existing crew repo report `upgradeNeeded` at session
+# start, so the migration in `crew_upgrade.upgrade_config` is mandatory rather
+# than optional -- see `evaluate_triggers`, which is the line that fires.
+#
+# The bump is not decoration on the 4 migration, it is the whole delivery
+# mechanism, and leaving it at 3 made that migration DEAD ON ARRIVAL. `run()`
+# returns "already current" for any config at or above this number without
+# ever calling `upgrade_config`, and every existing config is at 3 -- so the
+# rewrite would have reached only repos that were already behind, which is
+# nobody it was written for. A fresh clone would have looked correct while
+# every installed machine kept the old default forever. Caught in review by
+# Codex, which ran it: status `already current`, value unchanged.
+#
+# So: a migration that must reach existing repos REQUIRES a bump here. Adding
+# one to `upgrade_config` without touching this line ships nothing.
+SCHEMA_CURRENT = 4
+
+# The machine-global config file. `crew_config` owns the LAYERING and re-exports
+# this name; the path itself lives here for the same reason `PM_DEFAULTS` and
+# the provider tuples do -- modules that must not import `crew_config` still
+# need it. `crew_upgrade` is the case that forced the move: it has to warn when
+# a global value would defeat a repo migration it just performed, and importing
+# `crew_config` to find that out is the cyclic import both modules' docstrings
+# exist to prevent.
+GLOBAL_CONFIG_PATH = os.path.join(
+    os.path.expanduser("~"), ".claude", "crew", "config.json")
 
 # Verbatim from crew-scaling/SKILL.md. Below the floor the review is broken
 # rather than thorough; above the ceiling the tickets are too large.

@@ -1157,6 +1157,38 @@ matters, and building on it would ship a behaviour change nobody chose:
   semantic, and it preserves the refusal exactly -- but today it only describes
   `reportTheme`.
 
+**The `null` default cost a MANDATORY migration, and that is coupled to the
+(a)/(b)/(c) decision below.** `run()` returns "already current" for any config
+at or above `SCHEMA_CURRENT` and never calls `upgrade_config`, so the rewrite
+reaches an existing repo only if the schema is bumped. It went 3 -> 4. That
+makes every crew repo on every machine report `upgradeNeeded` at session start
+until someone runs `/crew:upgrade`, which also backs up the codemap and
+reconciles it -- a whole-population migration spent on a key that has never done
+anything. Correct groundwork under (a) or (c); under (b) it is two mandatory
+migrations back to back, 4 to add a default nobody can observe and 5 to remove
+it. Take the merge and the scoping decision together. Commit `69c4a9fe` -- the
+two false doc claims -- is separable, needs only a patch bump, and is true under
+all three.
+
+**RATIFIED AND SHIPPED 2026-09-12, crew 0.18.0: option 2, `theme: null`, with
+the migration.** Team-lead took the recommendation and resolved the cost rather
+than accepting it. The migration ambiguity I raised -- telling a deliberately
+typed `neutral` from a template-inherited one -- dissolves, and the reason is
+worth keeping: **`docs.theme` has never had a consumer**, so no user has ever
+been able to set it and observe an effect, so no existing value can encode a
+considered preference. It is inherited or it is inert. There is no third case to
+preserve, which is why rewriting is safe here and would not be for any key that
+ever worked. That sentence is now in the migration's own comment, because the
+next reader will meet it expecting the usual rule and needs to see why this is
+the documented exception rather than a violation of it.
+
+Residual cost, accepted and stated in the release note: someone who typed
+`"neutral"` meaning it retypes it once the key works. They get neutral anyway
+unless a pack is installed, so the window is narrow.
+
+The original framing of the two options is kept below, because the reasoning is
+what justifies the migration comment.
+
 So the ticket carries a decision, and the recommendation is the second option:
 
 1. Keep `theme: "neutral"`. Predictable, and the config then means what it says
@@ -1174,6 +1206,15 @@ used and why, and `--list` enumerates visible packs. Do not invent separate
 detection. It must degrade rather than throw when doc-builder is not installed
 at all -- a second code path, and it needs its own test.
 
+**The refusal is not a guard pass-through must avoid defeating -- it is a guard
+pass-through EXTENDS.** Team-lead adopted this framing over their own after the
+measurement above: the refuse-to-guess behaviour fires only at two or more
+discovered packs, `neutral` is never a discovery candidate, so the ordinary
+configuration -- one client pack installed -- is the one-pack case where the
+refusal never fires at all. Pass-through is therefore not a risk to an existing
+safety property; it is the safety property for exactly the case the existing one
+leaves open. Use this framing, not "must not defeat the refusal".
+
 **Does `solomon-doc-builder` need a crew reference once this lands? No, and 0 is
 the correct final number.** Pass-through means crew hands over a NAME and
 doc-builder discovers the pack; crew never has to know that `solomon` exists.
@@ -1182,6 +1223,69 @@ plugin, which is the coupling pass-through exists to avoid. So its 0 is correct
 for a different reason than `report-builder`'s 0 -- that one is a deprecated
 stub, this one is a plugin that is correctly ignorant of its clients. Neither
 should be "fixed" to make a count look better.
+
+### Blocker found 2026-09-12: there is no call site, and the routing table names a different tool
+
+Measured before writing any wiring, and it changes the ticket's size. Both
+findings below are about crew as it ships at 0.17.0.
+
+**1. No crew agent or command invokes doc-builder.** Grepping `plugin/crew` for
+`doc-builder`, `DOC_BUILDER`, `resolve_brand` and `--brand`, outside tests, returns
+FOUR files and not one of them is an invocation: `crew_config.py:383` (a help
+string naming the key), `crew_upgrade.py` (the migration block and its comment),
+and `crew-setup/SKILL.md` (the setup doc). `agents/docs-writer.md:49` says a
+document "ships as HTML, DOCX or PDF" and names no tool at all. So "pass the
+configured name through as `--brand`" has nothing to pass it FROM. Pass-through
+is still the right design; it just has no attachment point yet, and building one
+is a larger change than wiring an existing one.
+
+**2. Crew's document routing table exists, and doc-builder is not in it.**
+`plugin/crew/skills/crew-house-style/SKILL.md:63-70` is the "Generating it"
+section, and it is explicit -- "Route to the skill that owns the format. Do not
+reimplement any of them" -- then routes DOCX to `anthropic-office-skills:docx`,
+PDF to `anthropic-office-skills:pdf`, decks to `anthropic-office-skills:pptx` or
+`ppt-master`, and `.vsdx` to `visio-diagrams`. **doc-builder appears nowhere.**
+
+That is the real mismatch, and it is bigger than a missing call site.
+`docs.theme` names a doc-builder brand pack, while crew's own documented
+generation path goes to a tool that has no brand packs and would not know what to
+do with the name. Wiring `--brand` into the route that exists is not possible,
+because that route does not lead to doc-builder. So the ticket implies one of
+three decisions, and this is a scoping question for whoever owns crew's document
+story rather than something to settle inside a wiring ticket:
+
+- **(a)** Add doc-builder to the house-style routing table as the owner of
+  branded DOCX/PDF, and pass `--brand` there. Largest change: it edits crew's
+  documented generation policy, not just a config key.
+- **(b)** Leave the routing table alone and drop `docs.theme` / `docs.reportTheme`
+  entirely, since crew does not use the tool they configure. Smallest change, and
+  honest -- but it discards a setting someone wanted.
+- **(c)** Keep the keys, keep them inert, and say so everywhere they appear.
+  Already done as of this branch's first commit, which is why the two false
+  present-tense claims are now corrected. This is the current state, and it is a
+  stopping point rather than a fix.
+
+**The degraded path the ticket asks for is already written, three lines below the
+routing table.** `crew-house-style/SKILL.md:74-80` tells the crew that these are
+user- and plugin-level skills crew does not bundle, that the one you want may be
+missing, and to hand over the markdown saying "PDF export unavailable,
+`anthropic-office-skills:pdf` is not installed" rather than improvising a
+generator. Whatever lands for doc-builder should match that sentence shape rather
+than invent a second convention.
+
+**Corrected on this branch already (commit 1 of B):** `crew_upgrade.py:71` and
+`crew-setup/SKILL.md:201` both described the pass-through in the PRESENT TENSE,
+and both justified the `"neutral"` default with "the default resolves to exactly
+what doc-builder already falls back to" -- which is false, as measured above:
+doc-builder falls back to neutral only when no pack is discovered, and returns
+the installed pack otherwise. That false premise is the entire stated reason the
+default is `"neutral"` rather than `null`, so correcting it strengthens the
+`theme: null` recommendation from a preference to a correction: the author's own
+stated intent was "the default changes nothing about how documents come out
+today", and `null` is what implements that intent while `"neutral"` overrides an
+installed pack. Each key's `null` then means one thing -- "I have no answer, ask
+the next authority" -- which for `reportTheme` is `theme` and for `theme` is
+doc-builder's own resolution. One rule, not two.
 
 **`report-builder`'s 0 references are correct, not a gap.** Its SKILL.md
 declares it a deprecated stub as of 2026-09-10, superseded by `doc-builder`, and

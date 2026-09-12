@@ -1,5 +1,5 @@
 {
-  "schema": 3,
+  "schema": 4,
   "tier": 0,
   "roles": [
     "explorer",
@@ -121,7 +121,7 @@
     "commitHook": false
   },
   "docs": {
-    "theme": "neutral",
+    "theme": null,
     "reportTheme": null
   },
   "bitbucket": {
