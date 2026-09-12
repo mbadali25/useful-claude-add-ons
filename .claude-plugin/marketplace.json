@@ -113,7 +113,7 @@
       "name": "knowbe4-admin",
       "source": "./skills/knowbe4-admin",
       "description": "KnowBe4 KSAT admin: diagnose SCIM sync against Entra ID or Okta, pull reporting data, and make changes on the correct surface.",
-      "version": "1.0.0"
+      "version": "1.0.1"
     },
     {
       "name": "mermaid-svg-bitbucket",
