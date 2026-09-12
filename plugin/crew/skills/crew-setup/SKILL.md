@@ -198,11 +198,20 @@ review that quietly ran on the fallback looks identical to one that ran on the p
 the difference matters most exactly when the pin was chosen to get a different family
 onto the diff.
 
-`docs.theme` / `docs.reportTheme`: `theme` is a doc-builder theme-pack skill name, passed
-straight through as that tool's `--brand`. `neutral` is doc-builder's own built-in pack, so
-the default changes nothing about how documents come out today. `reportTheme` is `null`
-meaning "follow `docs.theme`" — set it only when reports need a different brand from the
-rest of the docs, which is the client-deliverable case.
+`docs.theme` / `docs.reportTheme`: `theme` is a doc-builder theme-pack skill name, INTENDED
+to be passed straight through as that tool's `--brand`. **That wiring does not exist as of
+crew 0.17.0** — nothing in crew reads either key, and no crew agent or command invokes
+doc-builder at all, so there is no call site to pass it from. This paragraph asserted the
+pass-through in the present tense until 2026-09-12; it is written as intent now, because a
+doc that describes unbuilt wiring is why nobody goes looking for the missing half. See
+TODO.md, "Ticket B".
+
+Do not tell the user the theme is in effect. On a machine with a brand pack installed it is
+not: doc-builder resolves the INSTALLED pack, so a config reading `neutral` still produces
+that pack's branding. `neutral` is doc-builder's own built-in pack, but it is deliberately
+not a discovery candidate, which is why no ambiguity warning fires to reveal the mismatch.
+`reportTheme` is `null` meaning "follow `docs.theme`" — set it only when reports need a
+different brand from the rest of the docs, which is the client-deliverable case.
 
 `bitbucket.mergeGate`: off by default, because a gate that arrived switched on would start
 failing merges nobody asked it to watch. `branch: null` means the repo's main branch is

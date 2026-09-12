@@ -68,11 +68,25 @@ GRAPH_BLOCK = {
 # THIS module -- the other direction is the cyclic import `crew_config.
 # layered_state` documents.
 #
-# `theme` is a doc-builder theme-pack skill name, and it feeds doc-builder's
-# EXISTING selection point rather than a new one: crew passes the resolved
-# value as `--brand` (or `DOC_BUILDER_BRAND`), which is the second and third
-# rung of `resolve_brand.py`'s precedence. `neutral` is the built-in pack, so
-# the default resolves to exactly what doc-builder already falls back to.
+# `theme` is a doc-builder theme-pack skill name. The INTENDED design is that
+# it feeds doc-builder's existing selection point rather than a new one -- the
+# resolved value passed as `--brand` (or `DOC_BUILDER_BRAND`), the second and
+# third rung of `resolve_brand.py`'s precedence.
+#
+# NOT BUILT AS OF 0.17.0, and this comment claimed otherwise in the present
+# tense until 2026-09-12. Nothing in crew reads either key: there is no call
+# site, because no crew agent or command invokes doc-builder at all. See
+# TODO.md, "Ticket B". Stated plainly here because a comment describing
+# unbuilt wiring is why nobody looks for the bug.
+#
+# The old comment also justified the `neutral` default with "the default
+# resolves to exactly what doc-builder already falls back to". That is FALSE,
+# and measurably so. doc-builder falls back to neutral only when NO pack is
+# discovered; with a pack installed it resolves THAT pack. On a checkout
+# carrying solomon-doc-builder, default resolution returns `solomon`, not
+# `neutral` -- so `neutral` is not what it already falls back to, and passing
+# `neutral` through would OVERRIDE an installed pack rather than agree with
+# it. Which way the default should go is the open decision in the ticket.
 #
 # `reportTheme` is null meaning "follow `theme`" -- NOT "no theme". A report
 # is the one artefact people routinely want in a different brand from the
