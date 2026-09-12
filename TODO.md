@@ -1422,8 +1422,8 @@ rather than merely supplemented.
 
 Found while verifying the above, NOT fixed, because fixing it changes what the
 job collects and that deserves its own look. In the combined run all four crew
-failures are printed as `plugin\gizmoduck	est_provider_table.py` and
-`plugin\gizmoduck	est_role_ladder.py` -- files that do not exist. Neither
+failures are printed as `plugin/gizmoduck/test_provider_table.py` and
+`plugin/gizmoduck/test_role_ladder.py` -- files that do not exist. Neither
 test is gizmoduck's.
 
 The cause is `plugin/gizmoduck/pytest.ini`. With two args whose common ancestor
