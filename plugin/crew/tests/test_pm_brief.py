@@ -341,14 +341,14 @@ def test_the_brief_and_upgrade_md_agree_on_the_current_migration():
     current = crew_state.SCHEMA_CURRENT
     with io.open(UPGRADE_MD, encoding="utf-8") as handle:
         doc = handle.read()
-    heading = "**Schema {0} @ARROW@ {1}**".format(current - 1, current)
+    heading = f"**Schema {current - 1} @ARROW@ {current}**"
     assert heading.replace("@ARROW@", "→") in doc, heading
 
     line = _upgrade_finding(
         {"isCrew": True, "schema": current - 1, "schemaDeclared": current - 1,
          "schemaKeyPresent": True,
          "pm": {"enabled": True, "mode": "adaptive"}})
-    assert "{0} -> {1}".format(current - 1, current) in line, line
+    assert f"{current - 1} -> {current}" in line, line
 
 
 def test_the_brief_is_pure_ascii(tmp_path):
