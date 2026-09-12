@@ -1096,6 +1096,74 @@ NOT fall through to "whatever is installed" -- that is the bug above. Fail loud
 or fall back to neutral and say so, the way the resolver already does for a
 missing pack.
 
+### Design settled 2026-09-12: crew passes the name through, it resolves nothing
+
+Crew reads the merged `docs.theme` and passes `--brand <name>`; `docs.reportTheme`
+goes to the findings-report script. Two keys are implementable because the two
+pipelines are separate scripts. Crew adds the one thing doc-builder lacks -- a
+per-repo setting with a machine-global default, which neither a per-invocation
+flag nor a machine-wide env var can express. Keep the layering and add nothing
+else. Do NOT write a second resolver.
+
+**The refusal is real, and it is narrower than it sounds. Measured, not read.**
+With two discovered packs the resolver exits 1 and names them:
+
+```
+$ DOC_BUILDER_SKILLS_DIR=<two packs> resolve_brand.py
+More than one brand pack is installed (...): alpha, beta.
+Pass --brand <name> (or set DOC_BUILDER_BRAND) to say which one this document is for.
+exit=1
+```
+
+With exactly ONE discovered pack it returns that pack silently, exit 0. `neutral`
+is never a discovery candidate, so this repo -- doc-builder plus
+solomon-doc-builder -- is the one-pack case. **The refusal therefore does not
+protect the common configuration**, which is a single client brand installed.
+That is not an argument against pass-through; it is the argument FOR it, because
+pass-through is what creates protection in exactly the case the refusal leaves
+open.
+
+**`docs.theme` does NOT ship as `null`. It ships as `"neutral"`.** Verified in
+all three places that define it -- `crew_upgrade.DOCS_BLOCK` (`theme: "neutral"`,
+`reportTheme: None`) and both templates. Only `reportTheme` is null. The design
+note that "both are null in the templates today" is wrong on the half that
+matters, and building on it would ship a behaviour change nobody chose:
+
+- Under pass-through with the default untouched, every repo passes
+  `--brand neutral`. That is an explicit instruction, so it **overrides an
+  installed client pack**. Today that pack wins; afterwards neutral would.
+  Upgrading crew would silently DE-BRAND an existing Solomon user's documents,
+  and the config file would not have changed to explain it.
+- `null` meaning "pass no `--brand`, let doc-builder resolve" is the right
+  semantic, and it preserves the refusal exactly -- but today it only describes
+  `reportTheme`.
+
+So the ticket carries a decision, and the recommendation is the second option:
+
+1. Keep `theme: "neutral"`. Predictable, and the config then means what it says
+   -- but the first upgrade silently stops applying an installed brand pack.
+2. **(Recommended)** Ship `theme: null` and treat null as "pass no `--brand`".
+   Pass-through then only ever NARROWS from doc-builder's own behaviour, the
+   upgrade is a no-op for every existing user, and pinning a brand becomes an
+   opt-in the user performs deliberately. Cost: the migration has to move an
+   existing `"neutral"` forward, and `"neutral"` typed deliberately must stay
+   distinguishable from `"neutral"` inherited from a template nobody edited --
+   which is why this is a decision and not a default.
+
+Degraded path: use what exists. `resolve_brand.py` already reports what would be
+used and why, and `--list` enumerates visible packs. Do not invent separate
+detection. It must degrade rather than throw when doc-builder is not installed
+at all -- a second code path, and it needs its own test.
+
+**Does `solomon-doc-builder` need a crew reference once this lands? No, and 0 is
+the correct final number.** Pass-through means crew hands over a NAME and
+doc-builder discovers the pack; crew never has to know that `solomon` exists.
+Adding a reference would hardcode one client's name into a general-purpose
+plugin, which is the coupling pass-through exists to avoid. So its 0 is correct
+for a different reason than `report-builder`'s 0 -- that one is a deprecated
+stub, this one is a plugin that is correctly ignorant of its clients. Neither
+should be "fixed" to make a count look better.
+
 **`report-builder`'s 0 references are correct, not a gap.** Its SKILL.md
 declares it a deprecated stub as of 2026-09-10, superseded by `doc-builder`, and
 its 2.0.0 catalog entry already says so. An earlier concern of mine that the
