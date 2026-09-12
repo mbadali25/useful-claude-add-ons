@@ -1398,6 +1398,50 @@ entry, because the trap is general.
 The jobs that DO produce usable signal are `Marketplace` (`check`) and the
 `test (ubuntu-latest)` / `test (windows-latest)` pair. Cite those freely.
 
+### Root-caused and fixed 2026-09-12: PyYAML was never installed
+
+Diagnosed by team-lead from run 34701704505 and confirmed here by reproducing
+it: `ModuleNotFoundError: No module named 'yaml'`.
+`.github/workflows/pytest-crew.yml` installed only `pytest~=8.0`, while
+`plugin/gizmoduck/scripts/routine.py` and `scripts/scanners/zap.py` both import
+yaml and the tests pull them in transitively. Collection dies, and ONE
+interrupted collection takes the whole job down -- so crew's tests never ran
+either, on any of 3.11, 3.12 and 3.13.
+
+Reproduced locally by blocking the yaml import rather than by reading the log:
+same 12 collection errors, exactly. With `pyyaml` installed the same command
+runs **1282 passed, 4 failed, 1 skipped**, and the 4 are the already-ticketed
+stale ones below. So the job goes from useless to red-that-runs.
+
+The comment at `:25-29` asserted gizmoduck's suite was "stdlib-only subprocess
+tests, no extra install step needed". That was false and it is exactly what
+would have stopped the next person adding the dependency, so it is rewritten
+rather than merely supplemented.
+
+### Still open: the job reports crew's failures under gizmoduck's path
+
+Found while verifying the above, NOT fixed, because fixing it changes what the
+job collects and that deserves its own look. In the combined run all four crew
+failures are printed as `plugin\gizmoduck	est_provider_table.py` and
+`plugin\gizmoduck	est_role_ladder.py` -- files that do not exist. Neither
+test is gizmoduck's.
+
+The cause is `plugin/gizmoduck/pytest.ini`. With two args whose common ancestor
+is `plugin/`, pytest finds no config there and falls back to searching each
+arg's ancestors, hitting gizmoduck's ini and adopting `plugin/gizmoduck` as
+rootdir -- so every path is rendered relative to it. Its `addopts = -q` is also
+silently applied to the whole run, which is why the job's output has no header
+line naming the rootdir that would have explained this.
+
+**The trap in fixing it:** that same ini supplies `pythonpath = scripts`, and
+gizmoduck's tests may depend on it. Adding a repo-root pytest config would take
+the ini out of play and could break them for a reason unrelated to the change.
+Splitting the workflow into two steps (with `if: always()`) keeps each suite
+under its own rootdir and is the likelier right answer, but it must be verified
+by running, not reasoned about. Until then a CI reader looking up a gizmoduck
+path will find nothing there, which is the same misdiagnosis shape as the
+`PSModulePath` and Exchange-module traps.
+
 ## The specialist role tables disagree with the code, on `main`
 
 Found 2026-09-12, running the full crew suite for the C/D branch. Pre-existing:
