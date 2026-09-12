@@ -228,10 +228,10 @@ def test_a_globally_set_theme_and_merge_gate_reach_a_repo(
     assert rows["bitbucket.mergeGate.branch"]["value"] is None
 
 
-def test_the_nine_keys_crew_read_but_never_declared_are_declared():
-    """Until 0.19.10 these nine were in use and in no default.
+def test_the_ten_keys_crew_read_but_never_declared_are_declared():
+    """Until 0.19.10 these ten were in use and in no default.
 
-    Eight were read by a hook script and `jira.cloudId` was written by
+    Nine were read by a hook script and `jira.cloudId` was written by
     `/crew:jira-sync` and read back by nothing. An undeclared key still works,
     because `merge_defaults` carries a repo-layer key it has never heard of
     straight through -- which is exactly why this went unnoticed. What it cost
@@ -247,10 +247,11 @@ def test_the_nine_keys_crew_read_but_never_declared_are_declared():
                    "context.autoClear.windowTitle", "context.autoClear.command",
                    "context.autoClear.delaySeconds",
                    "context.autoClear.minHandoffLines",
+                   "context.autoClear.unsafeFocus",
                    "context.autoWrapUp", "context.autoResume",
                    "jira.cloudId"):
         assert dotted in declared, dotted
-    assert len(declared) == 84
+    assert len(declared) == 85
 
 
 def test_autoclear_is_global_and_its_siblings_are_not():
@@ -288,6 +289,16 @@ def test_autoclear_is_global_and_its_siblings_are_not():
     _, stray = crew_config.filter_global(
         {"context": {"warnAt": 0.5, "autoWrapUp": True}})
     assert stray == ["context.warnAt", "context.autoWrapUp"]
+
+    # `unsafeFocus` is declared but NOT granted -- consent, not capability.
+    # It sits inside an otherwise-global block, so this is the one key whose
+    # refusal is a deliberate hole in that block rather than a consequence of
+    # the block's shape, and it is the one most likely to be "fixed" by
+    # someone tidying the comprehension in `default_global_config()`.
+    assert not crew_config.is_global_path("context.autoClear.unsafeFocus")
+    _, refused = crew_config.filter_global(
+        {"context": {"autoClear": {"unsafeFocus": True}}})
+    assert refused == ["context.autoClear.unsafeFocus"]
 
 
 def test_a_globally_set_autoclear_reaches_a_repo(tmp_path, monkeypatch):
@@ -1452,6 +1463,7 @@ def test_only_autoclear_is_in_scope_for_null_shadowing_under_context():
                               "context.autoClear.command",
                               "context.autoClear.delaySeconds",
                               "context.autoClear.minHandoffLines"]
+    assert "context.autoClear.unsafeFocus" not in leaves
     assert not [p for p in leaves if p.startswith("emergency.")]
 
     # The protected case, directly: a repo null over a repo-only path is left

@@ -246,7 +246,25 @@ AUTOCLEAR_DEFAULTS = {
     "command": "/clear",
     "delaySeconds": 3,
     "minHandoffLines": 5,
+    # Wayland only, read at `auto-clear.sh:93` and gating the `wtype` method
+    # at `:187`. Missed on the first pass because the .ps1 consumers never
+    # read it, and the first pass read the Windows scripts -- a default set
+    # from one platform's consumer is a default half-derived.
+    "unsafeFocus": False,
 }
+
+# Keys inside `autoClear` that are CONSENT rather than capability, and so are
+# declared but never granted machine-wide. `unsafeFocus: true` accepts that
+# `wtype` types into whatever currently has focus, which Wayland offers no way
+# to check. The rest of the block is a description of the machine and belongs
+# in the global layer; this is a decision about accepting a risk, and one
+# `true` set once would accept it for every repo on the box.
+#
+# The repo already draws this line and enforces it the same way:
+# `graph.obsidian.confirmed` is refused by `plan_global_write` and pruned by
+# `filter_global` because consent to act outside the repo is not a capability
+# a guided flow may hand over. Same reasoning, same treatment.
+AUTOCLEAR_CONSENT_KEYS = ("unsafeFocus",)
 
 
 def default_config():
@@ -471,7 +489,11 @@ def default_global_config():
         # its_siblings_are_not`. `_prune` and `is_global_path` both descend
         # structurally, so naming `context` here grants exactly the six
         # `autoClear` leaves and nothing beside them.
-        "context": {"autoClear": copy.deepcopy(AUTOCLEAR_DEFAULTS)},
+        "context": {"autoClear": {
+            key: copy.deepcopy(value)
+            for key, value in AUTOCLEAR_DEFAULTS.items()
+            if key not in AUTOCLEAR_CONSENT_KEYS
+        }},
         "docs": copy.deepcopy(crew_upgrade.DOCS_BLOCK),
         "bitbucket": copy.deepcopy(crew_upgrade.BITBUCKET_BLOCK),
     }
