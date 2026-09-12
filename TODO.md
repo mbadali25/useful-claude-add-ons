@@ -263,11 +263,36 @@ empty list, a check that found nothing -- confirm the call was the one you
 meant: check the signature, and prove the probe can produce a non-empty result
 at all by feeding it a case that must trip it.
 
-These three and the struck "already red on `main`" claim are one failure in
-four costumes: a check that did not run, a check that ran against the wrong
-ref, a check that answered a different question, and an API that answered a
-different question. Each produces a confident sentence that is not true, and
-none of them looks like a failure at the moment it happens.
+## The fourth: `git stash` captured a tree believed to be clean
+
+Found 2026-09-12, and the only one of these whose cost would have landed in a
+merged commit rather than in a report.
+
+Switching branches mid-task, `git stash -q -u` was run on a working tree
+believed clean. It was not: the post-commit graphify hook had regenerated
+`graphify-out/GRAPH_REPORT.md` and `graphify-out/graph.json`, which are
+generated artifacts CLAUDE.md says must never be hand-edited or committed. The
+stash captured both silently -- a stash of nothing and a stash of two generated
+files look identical at the prompt.
+
+`git stash show --name-only stash@{0}` named them, the finding-1 commit was
+confirmed intact, and the stash was dropped rather than popped. Had it been
+popped later and swept into `git add -A`, the generated graph would have gone
+into a crew PR.
+
+**Check what a stash captured before trusting that it captured nothing**, the
+same way you check what a gate measured. `git stash list` shows that a stash
+exists; only `git stash show --name-only` says what is in it. The hook that
+makes this likely is the repo's own: it rebuilds the graph after every commit
+and every branch switch, so the tree is rarely clean for long after a commit.
+
+These four and the struck "already red on `main`" claim are one failure in
+five costumes: a check that did not run, a check that ran against the wrong
+ref, a check that answered a different question, an API that answered a
+different question, and a state believed known without being read. Each
+produces a confident sentence that is not true, and none of them looks like a
+failure at the moment it happens. The shared defence is one sentence: prove the
+thing you believe is empty actually is.
 
 ## Deferred by design, not oversight
 
