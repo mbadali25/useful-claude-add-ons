@@ -2745,6 +2745,27 @@ def collect(root, cfg_override=None):
         # all) read as current the moment any global config file exists.
         # Read from raw_cfg, exactly what /crew:upgrade itself reads.
         "schema": int_or(raw_cfg.get("schema", 1), 1) if raw_cfg else SCHEMA_CURRENT,
+        # The RAW value beside the normalised one, because `int_or(..., 1)`
+        # collapses three different states into the number 1: the key is
+        # absent (a genuinely pre-schema config), the key says something that
+        # will not parse (`true`, `"three"`), and the key honestly says 1.
+        # `upgradeNeeded`'s finding text used to assert the first of those for
+        # all three -- "config has no schema" -- which is false for every
+        # schema-2 and schema-3 repo, and those are now the entire installed
+        # population. An unknown collapsing into a safe-looking value is this
+        # repo's named recurring bug, and the fix is the standard one: keep
+        # the unknown as its own value instead of letting a default wear the
+        # label of a fact. This is exactly what the file said, unvalidated.
+        #
+        # `schemaKeyPresent` is the other half and is NOT redundant: a config
+        # saying `"schema": null` reads back from `.get()` as None, which is
+        # the same value an ABSENT key gives. Without the flag the brief calls
+        # an explicit null a pre-PM config and sends the user hunting a
+        # migration instead of the word they typed -- the same collapse this
+        # pair exists to remove, one level further down. Found by Codex, not
+        # by me, on the commit that introduced these keys.
+        "schemaDeclared": raw_cfg.get("schema") if raw_cfg else None,
+        "schemaKeyPresent": bool(raw_cfg) and "schema" in raw_cfg,
         "tier": tier if isinstance(tier, int) and not isinstance(tier, bool) else None,
         "roles": roles if isinstance(roles, list) else [],
         "tracker": cfg.get("tracker"),

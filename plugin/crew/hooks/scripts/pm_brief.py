@@ -111,8 +111,15 @@ FINDINGS = {
         "unaccounted for. The gates are back on already",
         "run /crew:emergency end to write the debt list before it is lost",
     ),
+    # See _schema_fields. The text used to be a single fixed sentence --
+    # "this setup predates the PM and the code graph (config has no schema)"
+    # -- which is true only of a config with no `schema` key at all, and false
+    # for every schema-2 and schema-3 repo. Bumping SCHEMA_CURRENT to 4 made
+    # that the whole installed population: everyone was about to be told their
+    # config has no schema, at the one moment they are most likely to read it,
+    # by the trigger that sorts third and therefore leads the brief.
     "upgradeNeeded": (
-        "this setup predates the PM and the code graph (config has no schema)",
+        "{schemaSummary}",
         "run /crew:upgrade - it backs up the codemap first and reports "
         "conflicts rather than overwriting them",
     ),
@@ -334,6 +341,73 @@ def _endpoint_fields(state):
     }
 
 
+def _schema_fields(state):
+    """The value `upgradeNeeded` interpolates. Always the key.
+
+    Same contract as _incident_fields: a missing key raises KeyError inside
+    .format() and takes out the whole brief, which runs from SessionStart.
+
+    Three states, and they must not be described the same way:
+
+    - no `schema` key at all -- the pre-PM config this finding's old text
+      described, and now the rarest of the three;
+    - a `schema` the file states and this code can read -- the common case
+      after any SCHEMA_CURRENT bump, and the one the old text lied to;
+    - a `schema` that will not parse (`true`, `"three"`, an explicit `null`),
+      which `int_or` turns into 1 and which would otherwise be reported as a
+      pre-PM config rather than as the typo it is.
+
+    The third case includes `"schema": null` specifically, and that is the
+    reason `collect()` carries `schemaKeyPresent` beside the value: `null` and
+    an absent key both read back as None, so the value alone cannot separate
+    "never had a schema" from "wrote a word that is not a version". Keying on
+    the value alone was this function's own first draft, and Codex caught it.
+
+    The raw value is rendered with `json.dumps`, so it reads back as the user
+    typed it in the file -- `null`, `true`, `"three"` -- rather than as its
+    Python spelling. `json.dumps` also guarantees ASCII output, which
+    test_the_brief_is_pure_ascii requires of every line this module emits.
+
+    Deliberately NOT a per-migration description. `commands/upgrade.md`
+    section 5 enumerates what each hop does and tells the agent to read the
+    relevant entry out; naming the hop here and the content there keeps one
+    copy of that prose. A second copy in a one-line brief is a copy that
+    drifts, and the drift would land in the sentence a user reads first.
+    """
+    current = crew_state.SCHEMA_CURRENT
+    schema = crew_state.int_or(state.get("schema", 1), 1)
+
+    # `schemaDeclared` ABSENT from the state dict and a config that declares
+    # no schema are not the same thing, and collapsing them would reintroduce
+    # the bug one level up. collect() always sets the key, so absent means a
+    # hand-built state -- a test, the crew:pm agent, a stale cache -- which
+    # knows only the normalised number. Fall back to that rather than to "no
+    # schema", or every such caller gets told its config declares one, which
+    # is the exact false sentence this function exists to remove.
+    if "schemaDeclared" in state:
+        declared = state["schemaDeclared"]
+        key_present = bool(state.get("schemaKeyPresent"))
+    else:
+        declared, key_present = schema, True
+
+    if not key_present:
+        summary = ("this setup predates the PM and the code graph "
+                   f"(config declares no schema; current is {current})")
+    elif crew_state.int_or(declared, None) is None:
+        summary = (f"config's schema is {json.dumps(declared)}, which is not "
+                   f"a version number - crew is reading it as {schema}, and "
+                   f"current is {current}")
+    else:
+        hops = current - schema
+        owed = (f"the {schema} -> {current} migration" if hops == 1
+                else f"the {schema} -> {current} migrations")
+        summary = (f"config is at schema {schema}, current is {current} - "
+                   f"{owed} has not run here" if hops == 1
+                   else f"config is at schema {schema}, current is {current} - "
+                        f"{owed} have not run here")
+    return {"schemaSummary": summary}
+
+
 def _fill(text, fields):
     """`text` with {placeholders} substituted. Returns it unchanged if it has
     none, or if it has one this does not know -- a finding that renders as a
@@ -380,6 +454,7 @@ def render(state):
     fields = dict(_incident_fields(state))
     fields.update(_diagram_fields(state))
     fields.update(_endpoint_fields(state))
+    fields.update(_schema_fields(state))
     pairs = []
     for name in triggers:
         entry = FINDINGS.get(name)

@@ -1380,6 +1380,14 @@ means the local suite is not the suite a clean checkout runs, and a developer
 who sees these two red learns to ignore red. Fix belongs with the reader-side work above, since it is
 the same store: pass a `tmp_path` root like the neighbouring tests do.
 
+**FIXED 2026-09-12 on `crew-docbuilder-route` (crew 0.19.2).** Both now take
+`tmp_path`. Swept the suite for the same shape: the only other literal `"."` is
+an unrelated branch-name fixture. Note which half was wrong -- the tests were
+right about the code and wrong about the world, so the green they produced on a
+clean machine was exactly as untrustworthy as the red they produced here. The
+reader-side fix above ("no record covers this range" as its own value) is
+untouched and still open; this entry closes only the fixture bug.
+
 ## No claim of the form "CI proves X" is available for any crew or gizmoduck test
 
 Recorded 2026-09-12 so the four ticketed failures above and below are read
@@ -1397,6 +1405,125 @@ entry, because the trap is general.
 
 The jobs that DO produce usable signal are `Marketplace` (`check`) and the
 `test (ubuntu-latest)` / `test (windows-latest)` pair. Cite those freely.
+
+### Root-caused and fixed 2026-09-12: PyYAML was never installed
+
+Diagnosed by team-lead from run 34701704505 and confirmed here by reproducing
+it: `ModuleNotFoundError: No module named 'yaml'`.
+`.github/workflows/pytest-crew.yml` installed only `pytest~=8.0`, while
+`plugin/gizmoduck/scripts/routine.py` and `scripts/scanners/zap.py` both import
+yaml and the tests pull them in transitively. Collection dies, and ONE
+interrupted collection takes the whole job down -- so crew's tests never ran
+either, on any of 3.11, 3.12 and 3.13.
+
+Reproduced locally by blocking the yaml import rather than by reading the log:
+same 12 collection errors, exactly. With `pyyaml` installed the same command
+runs **1282 passed, 4 failed, 1 skipped**, and the 4 are the already-ticketed
+stale ones below. So the job goes from useless to red-that-runs.
+
+The comment at `:25-29` asserted gizmoduck's suite was "stdlib-only subprocess
+tests, no extra install step needed". That was false and it is exactly what
+would have stopped the next person adding the dependency, so it is rewritten
+rather than merely supplemented.
+
+### Still open: the job reports crew's failures under gizmoduck's path
+
+Found while verifying the above, NOT fixed, because fixing it changes what the
+job collects and that deserves its own look. In the combined run all four crew
+failures are printed as `plugin/gizmoduck/test_provider_table.py` and
+`plugin/gizmoduck/test_role_ladder.py` -- files that do not exist. Neither
+test is gizmoduck's.
+
+The cause is `plugin/gizmoduck/pytest.ini`. With two args whose common ancestor
+is `plugin/`, pytest finds no config there and falls back to searching each
+arg's ancestors, hitting gizmoduck's ini and adopting `plugin/gizmoduck` as
+rootdir -- so every path is rendered relative to it. Its `addopts = -q` is also
+silently applied to the whole run.
+
+**Correction, same day, by running the workflow's command verbatim rather than
+an approximation of it.** This entry claimed `-q` is "why the job's output has
+no header line naming the rootdir". That is false about the job: the workflow
+runs `pytest ... -v`, the command line is applied after `addopts`, so `-v` wins
+and the header IS printed -- `rootdir: .../plugin/gizmoduck`, naming the cause
+outright. The header was missing from MY simulations, which omitted `-v`; I
+then attributed my own missing header to the job. The rootdir misattribution is
+real and unchanged; only the explanation of why nobody noticed was wrong, and
+it was wrong in the direction that makes the CI log look less informative than
+it is.
+
+**The trap in fixing it:** that same ini supplies `pythonpath = scripts`, and
+gizmoduck's tests may depend on it. Adding a repo-root pytest config would take
+the ini out of play and could break them for a reason unrelated to the change.
+Splitting the workflow into two steps (with `if: always()`) keeps each suite
+under its own rootdir and is the likelier right answer, but it must be verified
+by running, not reasoned about. Until then a CI reader looking up a gizmoduck
+path will find nothing there, which is the same misdiagnosis shape as the
+`PSModulePath` and Exchange-module traps.
+
+With the four failures below now fixed, the combined run is **1286 passed, 1
+skipped, 0 failed**, so there are no misattributed paths to look at at the
+moment. That makes this cheaper to leave open and easier to forget: the next
+failure in either suite is the one that gets misfiled.
+
+## Nothing checks that shipped prose states the right version
+
+Recorded 2026-09-12, on `crew-docbuilder-route`. Team-lead's finding, and it is
+sharper than the bug that produced it.
+
+`validate-prompts.py` returned **293 passed, 0 failed** and the hook suite
+**134 passed, 0 failed** while two stale schema numbers sat in command prose; a
+sweep then found four more, including `README.md` calling the current schema 2
+in three places, one of them the settings table. Both gates were green
+throughout. They check structure -- frontmatter, required sections, referenced
+files -- and nothing at all about whether a sentence stating a version states
+the current one.
+
+So: **a green prompt-validation run is not evidence that shipped documentation
+matches the code.** Right now nothing produces that evidence.
+
+The `pm_brief` `upgradeNeeded` message is the same class and shows the cost.
+It asserted "config has no schema" for every repo; bumping `SCHEMA_CURRENT` to
+4 aimed that at the entire installed population, in the trigger that sorts
+third and therefore leads the brief. Not one gate moved. It was caught by a
+person reading the file.
+
+A checkable rule exists for at least the schema case, because `SCHEMA_CURRENT`
+is a single constant: any prose naming a schema number could be checked against
+it. `plugin/crew/tests/test_pm_brief.py::test_the_brief_and_upgrade_md_agree_on_the_current_migration`
+is the first instance of that idea -- it fails if a future bump ships without
+its `commands/upgrade.md` section 5 entry -- but it covers exactly one pair of
+files. The general sweep is not written.
+
+## The sabotage harness could not restore twice on 2026-09-12, and left a live mutation each time
+
+Found while adding the five `upgradeNeeded` mutations. Both runs died with:
+
+```
+OSError: [WinError 1224] The requested operation cannot be performed on a file
+with a user-mapped section open
+WARNING: could not restore .../crew_state.py: [WinError 1224] ...
+```
+
+once at mutation 46 on `crew_state.py` and once at mutation 15 on
+`crew_upgrade.py`. The third run of the same suite passed 103/103. So it is
+intermittent, and the cause was not identified -- something on this machine
+transiently holds a mapped section on a just-written `.py`, which on Windows is
+what a scanner does immediately after a write.
+
+**The harness's own design is what made this safe, and it is worth saying which
+part.** The `.bak` was the good copy both times, the startup guard refuses to
+run while one exists, and the file left in the tree was verifiably the mutated
+one -- `git diff` showed a mutation nobody wrote. Recovery was `cp` the `.bak`
+over the target and delete it, then confirm against `git diff`. Do NOT delete a
+`.bak` without diffing it against the target first: the target is the corrupt
+side, not the backup.
+
+What is NOT covered: `shutil.copy2` has no retry. A transient sharing violation
+is exactly the failure a short backoff absorbs, and absorbing it would turn a
+crashed run that leaves a live mutation into a slightly slower clean one. Not
+done here -- it is a change to the safety mechanism itself, and this branch is
+a docs-routing release. Anyone who does it must prove the retry by making the
+copy fail on purpose, not by observing that the suite passes.
 
 ## The specialist role tables disagree with the code, on `main`
 
@@ -1419,6 +1546,12 @@ Belongs with ticket B (the crew referencing work), which is already about crew's
 tables disagreeing with what is installed. Not fixed here on scope discipline:
 C/D was an authority and config change, and these two suites were red before it
 started and are equally red after.
+
+**FIXED 2026-09-12 on `crew-docbuilder-route` (crew 0.19.2)**, which is where
+ticket B landed. All four rows added to both `plugin/crew/README.md` and
+`plugin/crew/skills/crew-pm/onboarding.md`, written from each agent's own
+frontmatter description rather than invented. The tables were telling the truth
+and the code was the side with more, exactly as this entry read it.
 
 ## Five marketplace entries are shipping stale — inherited, not from this branch
 
