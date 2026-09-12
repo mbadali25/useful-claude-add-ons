@@ -1157,6 +1157,19 @@ matters, and building on it would ship a behaviour change nobody chose:
   semantic, and it preserves the refusal exactly -- but today it only describes
   `reportTheme`.
 
+**The `null` default cost a MANDATORY migration, and that is coupled to the
+(a)/(b)/(c) decision below.** `run()` returns "already current" for any config
+at or above `SCHEMA_CURRENT` and never calls `upgrade_config`, so the rewrite
+reaches an existing repo only if the schema is bumped. It went 3 -> 4. That
+makes every crew repo on every machine report `upgradeNeeded` at session start
+until someone runs `/crew:upgrade`, which also backs up the codemap and
+reconciles it -- a whole-population migration spent on a key that has never done
+anything. Correct groundwork under (a) or (c); under (b) it is two mandatory
+migrations back to back, 4 to add a default nobody can observe and 5 to remove
+it. Take the merge and the scoping decision together. Commit `69c4a9fe` -- the
+two false doc claims -- is separable, needs only a patch bump, and is true under
+all three.
+
 **RATIFIED AND SHIPPED 2026-09-12, crew 0.18.0: option 2, `theme: null`, with
 the migration.** Team-lead took the recommendation and resolved the cost rather
 than accepting it. The migration ambiguity I raised -- telling a deliberately
