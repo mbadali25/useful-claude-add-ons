@@ -201,6 +201,126 @@ def test_expanded_brief_names_the_finding_and_one_action():
     assert "/crew:upgrade" in out
 
 
+UPGRADE_MD = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(pm_brief.__file__))),
+    "..", "commands", "upgrade.md")
+
+
+def _upgrade_finding(state):
+    """The one `upgradeNeeded` finding line, or None."""
+    for line in pm_brief.render(dict(state, triggers=["upgradeNeeded"])):
+        if line.startswith("- "):
+            return line
+    return None
+
+
+def test_a_repo_with_a_schema_is_not_told_it_has_none():
+    """The regression this whole finding was rewritten for.
+
+    `pm_brief` shipped ONE sentence for this trigger -- "this setup predates
+    the PM and the code graph (config has no schema)" -- and bumping
+    SCHEMA_CURRENT to 4 pointed it at every schema-2 and schema-3 repo in
+    existence. `upgradeNeeded` sorts third in TRIGGERS, so it leads the brief:
+    the first thing a user read after a mandatory migration described a
+    situation they were not in.
+
+    Asserting the NEW wording alone would not catch a regression to the old
+    one, because both mention a schema. Assert the old claim is absent.
+    """
+    line = _upgrade_finding({"isCrew": True, "schema": 3, "schemaDeclared": 3,
+                             "pm": {"enabled": True, "mode": "adaptive"}})
+    assert "3" in line and "4" in line, line
+    assert "no schema" not in line, line
+    assert "declares no schema" not in line, line
+    assert "predates" not in line, line
+
+
+def test_a_repo_with_no_schema_key_still_gets_the_pre_pm_wording():
+    """The other half, and the reason this is not just a rewording.
+
+    A config with no `schema` key at all genuinely does predate the PM, and
+    that sentence is the right one for it. A fix that made every repo read
+    "config is at schema 1" would trade one false sentence for another.
+    """
+    line = _upgrade_finding({"isCrew": True, "schema": 1, "schemaDeclared": None,
+                             "pm": {"enabled": True, "mode": "adaptive"}})
+    assert "predates" in line, line
+    assert "declares no schema" in line, line
+
+
+def test_an_unparseable_schema_is_reported_as_a_typo_not_as_a_pre_pm_config():
+    """`int_or` turns `true` and `"three"` into 1, which is this repo's named
+    recurring bug: an unknown collapsing into a safe-looking value.
+
+    Reported as 1 with no caveat, a typo'd schema reads as a pre-PM config and
+    the user goes looking for a migration instead of for the character they
+    mistyped. The raw value has to survive into the sentence.
+    """
+    for bad in (True, "three"):
+        line = _upgrade_finding(
+            {"isCrew": True, "schema": 1, "schemaDeclared": bad,
+             "pm": {"enabled": True, "mode": "adaptive"}})
+        assert "not a version number" in line, (bad, line)
+        assert "predates" not in line, (bad, line)
+
+
+def test_a_hand_built_state_without_the_key_is_not_told_it_has_no_schema():
+    """`collect()` always sets `schemaDeclared`; the crew:pm agent, the tests
+    and any stale cache do not.
+
+    Treating an ABSENT key as None would re-tell a schema-3 hand-built state
+    that it declares no schema -- the same collapse this finding was fixed
+    for, one level up.
+    """
+    line = _upgrade_finding({"isCrew": True, "schema": 3,
+                             "pm": {"enabled": True, "mode": "adaptive"}})
+    assert "predates" not in line, line
+    assert "schema 3" in line, line
+
+
+def test_collect_carries_the_raw_schema_so_the_brief_can_tell_them_apart(
+        tmp_path):
+    """The four tests above hand-build `schemaDeclared`. This one earns them.
+
+    Every one of them would keep passing if `collect()` stopped setting the
+    key, while the real SessionStart path silently fell back to the hand-built
+    branch and told a schema-3 repo it is at schema 3 by luck rather than by
+    reading its file. Drive the actual collector, on an actual repo.
+    """
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"schema": 3, "tier": 0, "roles": [],
+                          "tracker": "files"})
+    state = crew_state.collect(root)
+    assert state["schemaDeclared"] == 3
+    assert "upgradeNeeded" in crew_state.evaluate_triggers(state)
+
+    line = _upgrade_finding(dict(state, pm=dict(state["pm"], mode="adaptive")))
+    assert "schema 3" in line and "predates" not in line, line
+
+
+def test_the_brief_and_upgrade_md_agree_on_the_current_migration():
+    """The brief NAMES the hop; `commands/upgrade.md` section 5 says what it
+    does. Neither is much use without the other, and each can be right alone.
+
+    One copy of the prose on purpose: duplicating the per-migration text into
+    a one-line brief is a copy that drifts, and it would drift in the sentence
+    a user reads first. What this checks instead is that the two halves are
+    both present for the CURRENT schema -- so a future SCHEMA_CURRENT bump
+    that forgets its section-5 entry fails here rather than shipping a brief
+    that names a migration nothing explains.
+    """
+    current = crew_state.SCHEMA_CURRENT
+    with io.open(UPGRADE_MD, encoding="utf-8") as handle:
+        doc = handle.read()
+    heading = "**Schema {0} @ARROW@ {1}**".format(current - 1, current)
+    assert heading.replace("@ARROW@", "→") in doc, heading
+
+    line = _upgrade_finding(
+        {"isCrew": True, "schema": current - 1, "schemaDeclared": current - 1,
+         "pm": {"enabled": True, "mode": "adaptive"}})
+    assert "{0} -> {1}".format(current - 1, current) in line, line
+
+
 def test_the_brief_is_pure_ascii(tmp_path):
     """A Windows console on an OEM codepage cannot encode what this module has
     no reason to emit.

@@ -2745,6 +2745,19 @@ def collect(root, cfg_override=None):
         # all) read as current the moment any global config file exists.
         # Read from raw_cfg, exactly what /crew:upgrade itself reads.
         "schema": int_or(raw_cfg.get("schema", 1), 1) if raw_cfg else SCHEMA_CURRENT,
+        # The RAW value beside the normalised one, because `int_or(..., 1)`
+        # collapses three different states into the number 1: the key is
+        # absent (a genuinely pre-schema config), the key says something that
+        # will not parse (`true`, `"three"`), and the key honestly says 1.
+        # `upgradeNeeded`'s finding text used to assert the first of those for
+        # all three -- "config has no schema" -- which is false for every
+        # schema-2 and schema-3 repo, and those are now the entire installed
+        # population. An unknown collapsing into a safe-looking value is this
+        # repo's named recurring bug, and the fix is the standard one: keep
+        # the unknown as its own value instead of letting a default wear the
+        # label of a fact. None means "no repo config, or no `schema` key in
+        # it"; anything else is exactly what the file said, unvalidated.
+        "schemaDeclared": raw_cfg.get("schema") if raw_cfg else None,
         "tier": tier if isinstance(tier, int) and not isinstance(tier, bool) else None,
         "roles": roles if isinstance(roles, list) else [],
         "tracker": cfg.get("tracker"),

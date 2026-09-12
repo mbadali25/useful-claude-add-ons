@@ -66,6 +66,10 @@ HOUSE_STYLE = os.path.join(
 BUILD_REPORT = os.path.join(
     ROOT, "skills", "doc-builder", "scripts", "build_report.py")
 PM_BRIEF = os.path.join(CREW, "hooks", "scripts", "pm_brief.py")
+# The other half of the upgrade message. The brief NAMES the migration and
+# this file SAYS WHAT IT DOES, deliberately one copy each -- so the only
+# way to sabotage "the two agree" is to break one of them.
+UPGRADE_DOC = os.path.join(CREW, "commands", "upgrade.md")
 
 GUARD = '    if out["family"] is not None and out["family"] in authors:'
 ROLE_PIN = '    decided = resolve_role(cfg, "dev", "developer")'
@@ -137,6 +141,66 @@ MUTATIONS = (
         "`--brand <docs.theme>`; for every document prefer `docs.reportTheme` when",
         "tests/test_docs_routing.py::"
         "test_the_two_config_keys_are_bound_to_different_genres",
+    ),
+    (
+        # The false sentence itself. `upgradeNeeded` shipped ONE fixed string
+        # -- "config has no schema" -- and bumping SCHEMA_CURRENT to 4 aimed
+        # it at every schema-2 and schema-3 repo in existence. It sorts third
+        # in TRIGGERS, so it leads the brief: the first thing a user reads
+        # after a mandatory migration described a situation they are not in.
+        "every repo is told its config has no schema, whatever it declares",
+        PM_BRIEF,
+        "    if declared is None:",
+        "    if True:",
+        "tests/test_pm_brief.py::"
+        "test_a_repo_with_a_schema_is_not_told_it_has_none",
+    ),
+    (
+        # A schema `int_or` cannot read collapses to 1, and 1 reads as a
+        # pre-PM config. The user then hunts a migration instead of the
+        # character they mistyped. This repo's named recurring bug, in the
+        # sentence that reports it.
+        "an unparseable schema is reported as a pre-PM config",
+        PM_BRIEF,
+        "    elif crew_state.int_or(declared, None) is None:",
+        "    elif False:",
+        "tests/test_pm_brief.py::"
+        "test_an_unparseable_schema_is_reported_as_a_typo_not_as_a_pre_pm_config",
+    ),
+    (
+        # ABSENT and None collapsed into one, which is the same bug one level
+        # up: every hand-built state -- the crew:pm agent's, a stale cache's
+        # -- would be told its config declares no schema.
+        "an absent schemaDeclared is read as an explicit null",
+        PM_BRIEF,
+        '    declared = state["schemaDeclared"] if "schemaDeclared" in state '
+        "else schema",
+        '    declared = state.get("schemaDeclared")',
+        "tests/test_pm_brief.py::"
+        "test_a_hand_built_state_without_the_key_is_not_told_it_has_no_schema",
+    ),
+    (
+        # collect() stops carrying the raw value, so the real SessionStart
+        # path silently falls back to the hand-built branch. Every hand-built
+        # test above keeps passing; only a test that drives the collector on a
+        # real repo can see it.
+        "collect() no longer carries the raw declared schema",
+        STATE,
+        '        "schemaDeclared": raw_cfg.get("schema") if raw_cfg else None,',
+        '        "schemaDeclaredGone": None,',
+        "tests/test_pm_brief.py::"
+        "test_collect_carries_the_raw_schema_so_the_brief_can_tell_them_apart",
+    ),
+    (
+        # The command's half. The brief names "3 -> 4" and nothing explains
+        # what that migration does -- a user reads a version number and is
+        # told to run a command whose report walks past the entry for it.
+        "the current migration loses its entry in upgrade.md section 5",
+        UPGRADE_DOC,
+        "- **Schema 3 \u2192 4**",
+        "- **The docs theme migration**",
+        "tests/test_pm_brief.py::"
+        "test_the_brief_and_upgrade_md_agree_on_the_current_migration",
     ),
     (
         # doc-builder takes DOCX and PDF over generally -- the "simplification"
