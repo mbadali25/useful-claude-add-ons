@@ -57,6 +57,8 @@ CONFIG = os.path.join(CREW, "hooks", "scripts", "crew_config.py")
 UPGRADE = os.path.join(
     CREW, "skills", "crew-graph", "scripts", "crew_upgrade.py")
 CONFTEST = os.path.join(CREW, "tests", "conftest.py")
+HOUSE_STYLE = os.path.join(
+    CREW, "skills", "crew-house-style", "SKILL.md")
 PM_BRIEF = os.path.join(CREW, "hooks", "scripts", "pm_brief.py")
 
 GUARD = '    if out["family"] is not None and out["family"] in authors:'
@@ -67,6 +69,82 @@ BLOCK_ONLY = (
 )
 
 MUTATIONS = (
+    (
+        # The routing entry goes, which is the state this whole ticket was
+        # opened for: `docs.theme` configuring a tool crew's own documented
+        # generation path never mentions, so there is no call site for a
+        # `--brand` to attach to and the setting quietly does nothing.
+        "doc-builder is dropped from the routing table",
+        HOUSE_STYLE,
+        "- `doc-builder` — branded findings reports and screenshot SOPs. Pass",
+        "- `doc-builder-removed` — branded findings reports and SOPs. Pass",
+        "tests/test_docs_routing.py::"
+        "test_the_routing_table_routes_doc_builder_and_names_both_keys",
+    ),
+    (
+        # `docs.reportTheme` stops being bound to the report genre, so it
+        # degrades into a synonym for `docs.theme`: two keys, one meaning, and
+        # the client-deliverable case the second key exists for silently
+        # stops being expressible. Nothing else in the suite notices, because
+        # the key still merges and still resolves.
+        "reportTheme is no longer bound to the report genre",
+        HOUSE_STYLE,
+        "`--brand <docs.theme>`; for a findings report prefer `docs.reportTheme` when",
+        "`--brand <docs.theme>`; the brand applies to every generated document, when",
+        "tests/test_docs_routing.py::"
+        "test_the_two_config_keys_are_bound_to_different_genres",
+    ),
+    (
+        # doc-builder takes DOCX and PDF over generally -- the "simplification"
+        # that looks tidier and breaks crew's document path on Linux and macOS,
+        # because doc-builder's converter runs through Microsoft Word via COM
+        # and anthropic-office-skills needs neither.
+        "doc-builder is given DOCX and PDF outright",
+        HOUSE_STYLE,
+        "- `anthropic-office-skills:docx` — DOCX\n"
+        "- `anthropic-office-skills:pdf` — PDF",
+        "- `doc-builder` — DOCX and PDF",
+        "tests/test_docs_routing.py::"
+        "test_anthropic_office_skills_keeps_docx_and_pdf",
+    ),
+    (
+        # The two degraded paths collapse into one sentence. A missing Word is
+        # then reported as a missing doc-builder, which sends the reader to
+        # install something they already have while the actual cause -- an
+        # absent Word COM pipeline -- goes unmentioned. Same misdiagnosis shape
+        # as the PSModulePath trap.
+        "the two degraded paths are conflated into one",
+        HOUSE_STYLE,
+        "  branded HTML report and, through `python-docx`, the branded SOP `.docx`. So",
+        "  document unbranded via anthropic-office-skills, exactly as above. So",
+        "tests/test_docs_routing.py::"
+        "test_the_two_degraded_paths_are_stated_separately",
+    ),
+    (
+        # Crew is told to probe for Word after all -- a second copy of
+        # doc-builder's capability check living in a different repo entry,
+        # which is what the table's own "Do not reimplement any of them" rule
+        # exists to prevent, and which goes stale the moment doc-builder's
+        # requirements change.
+        "crew is told to detect Word itself",
+        HOUSE_STYLE,
+        "**Do not detect Word yourself.**",
+        "**Check whether Word is available before routing.**",
+        "tests/test_docs_routing.py::test_crew_is_told_not_to_detect_word_itself",
+    ),
+    (
+        # The table names a script that does not exist. This is the ticket's
+        # original defect one layer out: prose describing an interface nobody
+        # ran. The check that catches it invokes the script's own argparse, so
+        # a renamed or removed script fails here rather than at handoff time
+        # in front of whoever the document was for.
+        "the routing table names a script that does not exist",
+        HOUSE_STYLE,
+        "`scripts/build_report.py` is the findings report,",
+        "`scripts/build_findings.py` is the findings report,",
+        "tests/test_docs_routing.py::"
+        "test_the_routed_scripts_are_the_ones_the_table_names",
+    ),
     (
         # The global warning stops checking whether the repo has an answer of
         # its own, and starts firing on repos the global can never reach. It
