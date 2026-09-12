@@ -65,7 +65,7 @@
       "name": "doc-builder",
       "source": "./skills/doc-builder",
       "description": "Finished documents as DOCX and PDF through Word - findings reports via HTML, screenshot SOPs via OOXML - with the house style supplied by whichever brand pack is installed. Also install solomon-doc-builder for automatic Solomon house style; --brand neutral (or DOC_BUILDER_BRAND=neutral) always turns branding off.",
-      "version": "1.2.0"
+      "version": "1.2.1"
     },
     {
       "name": "drata",

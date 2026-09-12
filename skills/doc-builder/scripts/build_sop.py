@@ -467,7 +467,16 @@ class SopBuilder:
         p = self.doc.add_paragraph()
         _spacing(p, after=80)
         _hanging_indent(p, STEP_INDENT)
-        marker = p.add_run(f"{number:d}.")
+        # The one site in this repo that keeps `%`-formatting, and it is
+        # deliberate: `number` is `blk.get("number")` straight out of a
+        # user-authored JSON spec, so its TYPE is not known here, and
+        # `%d` is the only form that both truncates a real number the
+        # way this has always rendered (1.5 -> "1.") AND rejects a
+        # non-number loudly. `{number:d}` raises on the float that used
+        # to work; `{int(number)}` accepts the string "1" that used to
+        # raise. Both were caught on review, in that order. Neither
+        # substitution is this line, so the line stays.
+        marker = p.add_run("%d." % number)  # pylint: disable=consider-using-f-string
         marker.bold = True
         marker.font.color.rgb = RGBColor.from_string(self.style.ACCENT_RED)
         tab = p.add_run()
@@ -662,7 +671,9 @@ def build_from_spec(spec, base_dir=".", out=None, brand=None, dry_run=False):
         print("DRY RUN - nothing written.")
         print(f"  brand   : {brand.name}")
         print(f"  blocks  : {len(spec['body']):d} ({images:d} image(s))")
-        print(f"  output  : {out}{' (EXISTS - would be backed up first)' if exists else ' (new)'}")
+        status = ("  (EXISTS - would be backed up first)" if exists
+                  else "  (new)")
+        print(f"  output  : {out}{status}")
         if backup:
             print(f"  backup  : {backup}")
         return out
