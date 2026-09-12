@@ -286,13 +286,58 @@ exists; only `git stash show --name-only` says what is in it. The hook that
 makes this likely is the repo's own: it rebuilds the graph after every commit
 and every branch switch, so the tree is rarely clean for long after a commit.
 
-These four and the struck "already red on `main`" claim are one failure in
-five costumes: a check that did not run, a check that ran against the wrong
+## The fifth: a test that pins a number proves the number is stable, not right
+
+Found 2026-09-12, and it is the one that indicts a check rather than a claim.
+
+The 0.19.10 change declared nine previously-undeclared config keys and added
+`assert len(declared) == 84`, with a docstring saying in as many words: "a
+tenth key arriving undeclared is the same bug again, and a membership-only test
+would pass while it happened."
+
+There already was a tenth. `context.autoClear.unsafeFocus` is read at
+`auto-clear.sh:93` and gates the `wtype` method at `:187`. The test shipped
+green at 84 because 84 was what the tree held, not what was correct. **A pinned
+number is a regression detector, not a correctness check** -- it freezes
+whatever the author counted, including a miscount, and then defends it.
+
+It is still worth pinning: the count is the only thing that will catch the
+ELEVENTH key. But the number itself has to be derived by a method that could
+have disagreed with the author, and here it could not: the author enumerated
+the keys by reading the `.ps1` consumers, and the assertion counted exactly
+what that enumeration produced. The check and the thing it checked shared a
+source.
+
+So when pinning a count, say in the test where the number came from, and make
+the derivation independent of the enumeration it is meant to guard. The tenth
+key was found by reading the `.sh` consumers -- a source the first pass had
+not used -- not by any test.
+
+## The sixth: measuring a tree mid-branch-switch
+
+Recorded 2026-09-12, hit by a second person reviewing the above. A verification
+script run against `HEAD` returned the pre-change counts (75 leaves / 38
+global) on a checkout that was already at the post-change commit: the working
+tree was mid-switch to another branch when the script read it. Re-run on a
+settled tree it returned 85 / 44.
+
+One step from reporting that a change was not present when it was. The repo's
+own lesson covers it -- run the states, do not reason about them -- and this
+adds the corollary: **check that the tree you measured is the tree you meant.**
+A background hook that rebuilds on branch switch, which this repo has, widens
+the window in which that is false.
+
+These six and the struck "already red on `main`" claim are one failure in
+seven costumes: a check that did not run, a check that ran against the wrong
 ref, a check that answered a different question, an API that answered a
-different question, and a state believed known without being read. Each
-produces a confident sentence that is not true, and none of them looks like a
-failure at the moment it happens. The shared defence is one sentence: prove the
-thing you believe is empty actually is.
+different question, a state believed known without being read, a check that
+froze its author's own miscount, and a measurement of a tree that was moving
+underneath it. Each produces a confident sentence that is not true, and none of
+them looks like a failure at the moment it happens.
+
+Two sentences cover all seven. Prove the thing you believe is empty actually
+is. And make the check's source independent of the thing it is checking --
+where they share one, the check can only confirm, never contradict.
 
 ## Deferred by design, not oversight
 
