@@ -840,7 +840,7 @@ def test_a_repo_name_made_of_hex_does_not_confuse_the_rewrite(tmp_path):
 
 def test_upgrade_rewrites_the_old_neutral_theme_default_to_null():
     """The one value this migration rewrites rather than preserving, and the
-    reason it has to. `docs.theme` shipped as `"neutral"` through 0.17.0. Left
+    reason it has to. `docs.theme` shipped as `"neutral"` through 0.17.1. Left
     alone, every upgraded repo would pass an explicit `--brand neutral` once
     the wiring lands -- which OVERRIDES an installed brand pack rather than
     agreeing with it, so a Solomon user's correctly-branded documents would

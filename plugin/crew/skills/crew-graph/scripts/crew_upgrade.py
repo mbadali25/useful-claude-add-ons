@@ -80,7 +80,7 @@ GRAPH_BLOCK = {
 # unbuilt wiring is why nobody looks for the bug.
 #
 # `theme` defaults to None, meaning "pass no `--brand` and let doc-builder
-# resolve". It shipped as `"neutral"` until 0.17.1, justified by a comment
+# resolve". It shipped as `"neutral"` through 0.17.1, justified by a comment
 # claiming "the default resolves to exactly what doc-builder already falls
 # back to". That was FALSE, and measurably so: doc-builder falls back to
 # neutral only when NO pack is discovered, and with a pack installed it
@@ -324,7 +324,7 @@ def upgrade_config(cfg):
             notes["droppedKeys"].append("graph.obsidian")
         out["graph"].pop("obsidian", None)
 
-    # `docs.theme` shipped as `"neutral"` through 0.17.0 on a false premise
+    # `docs.theme` shipped as `"neutral"` through 0.17.1 on a false premise
     # (see DOCS_BLOCK). Move it to None, which is what "the default changes
     # nothing" actually means now that the key is about to acquire a consumer.
     # Leaving it would hand every upgraded repo an explicit `--brand neutral`

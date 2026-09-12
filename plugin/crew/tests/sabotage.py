@@ -67,7 +67,7 @@ BLOCK_ONLY = (
 
 MUTATIONS = (
     (
-        # The 0.17.0 default, restored. This is the mutation that matters most
+        # The pre-0.18.0 default, restored. This is the mutation that matters
         # on this change, because restoring it breaks NOTHING visible: the key
         # still has no consumer, so no document comes out differently and no
         # other test notices. It only becomes a de-branding bug later, when the

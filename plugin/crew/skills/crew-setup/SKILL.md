@@ -200,7 +200,7 @@ onto the diff.
 
 `docs.theme` / `docs.reportTheme`: `theme` is a doc-builder theme-pack skill name, INTENDED
 to be passed straight through as that tool's `--brand`. **That wiring does not exist as of
-crew 0.17.0** — nothing in crew reads either key, and no crew agent or command invokes
+crew 0.18.0** — nothing in crew reads either key, and no crew agent or command invokes
 doc-builder at all, so there is no call site to pass it from. This paragraph asserted the
 pass-through in the present tense until 2026-09-12; it is written as intent now, because a
 doc that describes unbuilt wiring is why nobody goes looking for the missing half. See
@@ -213,7 +213,7 @@ next authority."** For `reportTheme` that authority is `docs.theme`; for `docs.t
 doc-builder's own five-step resolution. Set `reportTheme` only when reports need a different
 brand from the rest of the docs, which is the client-deliverable case.
 
-`docs.theme` shipped as `"neutral"` through 0.17.0 and `/crew:upgrade` rewrites that one
+`docs.theme` shipped as `"neutral"` through 0.17.1 and `/crew:upgrade` rewrites that one
 value to null — the only value the upgrade rewrites rather than preserving. Say so if the
 user asks why their config changed, and say why it was safe: the key has never had a
 consumer, so no value in it can be a preference anyone formed by watching it work. Leaving
