@@ -1518,12 +1518,35 @@ over the target and delete it, then confirm against `git diff`. Do NOT delete a
 `.bak` without diffing it against the target first: the target is the corrupt
 side, not the backup.
 
-What is NOT covered: `shutil.copy2` has no retry. A transient sharing violation
-is exactly the failure a short backoff absorbs, and absorbing it would turn a
-crashed run that leaves a live mutation into a slightly slower clean one. Not
-done here -- it is a change to the safety mechanism itself, and this branch is
-a docs-routing release. Anyone who does it must prove the retry by making the
-copy fail on purpose, not by observing that the suite passes.
+### The fix, and the ACCEPTANCE CONDITION it does not ship without
+
+`shutil.copy2` has no retry. A transient sharing violation is exactly the
+failure a short backoff absorbs, and absorbing it would turn a crashed run that
+leaves a live mutation into a slightly slower clean one. Not done here: it is a
+change to the safety mechanism itself, and that branch was a docs-routing
+release.
+
+**REQUIREMENT on whoever takes this, not advice.** The retry is not finished
+until the copy has been made to fail on purpose and the retry has been watched
+absorb it. A passing sabotage suite is NOT evidence the retry works -- the
+suite passes when no copy fails, which is the ordinary case and was the case
+on two of three runs the day this was found. Ship it on a green suite alone
+and the retry is untested code in the one path that exists to prevent a
+corrupted tree.
+
+That is not a general caution; it is this exact defect class, and it has now
+cost time here five times in one week -- the schema-3 migration that was dead
+on arrival, the `PSModulePath` scrub, the `grep`-killed harness, the
+`find_module` import blocker that blocked nothing, and a claim in this very
+file that `addopts = -q` hid a CI header the job in fact prints. Each looked
+live and was not, and each was caught by running the mechanism rather than
+reading it. A retry loop is an unusually good hiding place for the same shape,
+because the happy path exercises none of it.
+
+Concretely: make `shutil.copy2` raise `OSError` on its first call or two (patch
+it, or hold a real mapped section on the target), confirm the run completes and
+the tree is clean afterwards, and confirm an error that does NOT clear still
+surfaces as a failure rather than being swallowed by the loop.
 
 ## The specialist role tables disagree with the code, on `main`
 
