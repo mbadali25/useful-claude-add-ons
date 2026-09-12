@@ -1183,6 +1183,69 @@ for a different reason than `report-builder`'s 0 -- that one is a deprecated
 stub, this one is a plugin that is correctly ignorant of its clients. Neither
 should be "fixed" to make a count look better.
 
+### Blocker found 2026-09-12: there is no call site, and the routing table names a different tool
+
+Measured before writing any wiring, and it changes the ticket's size. Both
+findings below are about crew as it ships at 0.17.0.
+
+**1. No crew agent or command invokes doc-builder.** Grepping `plugin/crew` for
+`doc-builder`, `DOC_BUILDER`, `resolve_brand` and `--brand`, outside tests, returns
+FOUR files and not one of them is an invocation: `crew_config.py:383` (a help
+string naming the key), `crew_upgrade.py` (the migration block and its comment),
+and `crew-setup/SKILL.md` (the setup doc). `agents/docs-writer.md:49` says a
+document "ships as HTML, DOCX or PDF" and names no tool at all. So "pass the
+configured name through as `--brand`" has nothing to pass it FROM. Pass-through
+is still the right design; it just has no attachment point yet, and building one
+is a larger change than wiring an existing one.
+
+**2. Crew's document routing table exists, and doc-builder is not in it.**
+`plugin/crew/skills/crew-house-style/SKILL.md:63-70` is the "Generating it"
+section, and it is explicit -- "Route to the skill that owns the format. Do not
+reimplement any of them" -- then routes DOCX to `anthropic-office-skills:docx`,
+PDF to `anthropic-office-skills:pdf`, decks to `anthropic-office-skills:pptx` or
+`ppt-master`, and `.vsdx` to `visio-diagrams`. **doc-builder appears nowhere.**
+
+That is the real mismatch, and it is bigger than a missing call site.
+`docs.theme` names a doc-builder brand pack, while crew's own documented
+generation path goes to a tool that has no brand packs and would not know what to
+do with the name. Wiring `--brand` into the route that exists is not possible,
+because that route does not lead to doc-builder. So the ticket implies one of
+three decisions, and this is a scoping question for whoever owns crew's document
+story rather than something to settle inside a wiring ticket:
+
+- **(a)** Add doc-builder to the house-style routing table as the owner of
+  branded DOCX/PDF, and pass `--brand` there. Largest change: it edits crew's
+  documented generation policy, not just a config key.
+- **(b)** Leave the routing table alone and drop `docs.theme` / `docs.reportTheme`
+  entirely, since crew does not use the tool they configure. Smallest change, and
+  honest -- but it discards a setting someone wanted.
+- **(c)** Keep the keys, keep them inert, and say so everywhere they appear.
+  Already done as of this branch's first commit, which is why the two false
+  present-tense claims are now corrected. This is the current state, and it is a
+  stopping point rather than a fix.
+
+**The degraded path the ticket asks for is already written, three lines below the
+routing table.** `crew-house-style/SKILL.md:74-80` tells the crew that these are
+user- and plugin-level skills crew does not bundle, that the one you want may be
+missing, and to hand over the markdown saying `"PDF export unavailable,
+\`anthropic-office-skills:pdf\` is not installed"` rather than improvising a
+generator. Whatever lands for doc-builder should match that sentence shape rather
+than invent a second convention.
+
+**Corrected on this branch already (commit 1 of B):** `crew_upgrade.py:71` and
+`crew-setup/SKILL.md:201` both described the pass-through in the PRESENT TENSE,
+and both justified the `"neutral"` default with "the default resolves to exactly
+what doc-builder already falls back to" -- which is false, as measured above:
+doc-builder falls back to neutral only when no pack is discovered, and returns
+the installed pack otherwise. That false premise is the entire stated reason the
+default is `"neutral"` rather than `null`, so correcting it strengthens the
+`theme: null` recommendation from a preference to a correction: the author's own
+stated intent was "the default changes nothing about how documents come out
+today", and `null` is what implements that intent while `"neutral"` overrides an
+installed pack. Each key's `null` then means one thing -- "I have no answer, ask
+the next authority" -- which for `reportTheme` is `theme` and for `theme` is
+doc-builder's own resolution. One rule, not two.
+
 **`report-builder`'s 0 references are correct, not a gap.** Its SKILL.md
 declares it a deprecated stub as of 2026-09-10, superseded by `doc-builder`, and
 its 2.0.0 catalog entry already says so. An earlier concern of mine that the
