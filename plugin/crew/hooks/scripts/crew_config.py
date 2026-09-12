@@ -230,6 +230,43 @@ def validate_providers(cfg):
     return cfg
 
 
+# The `context.autoClear` block, defined ONCE because both templates carry it
+# and a second literal is a second thing to drift. Values are the fallbacks the
+# hook scripts already apply, read out of them rather than out of any doc:
+# `auto-clear.ps1:78-82` for method/delaySeconds/command/windowTitle/
+# minHandoffLines, and `:69` for enabled, which exits unless it is exactly true.
+#
+# `windowTitle` is None here and `""` in the script. The script treats both as
+# "not set" (`if ($a.windowTitle)` is false for either), and null is what
+# "not set" means everywhere else in this file, so null is the honest default.
+AUTOCLEAR_DEFAULTS = {
+    "enabled": False,
+    "method": "auto",
+    "windowTitle": None,
+    "command": "/clear",
+    "delaySeconds": 3,
+    "minHandoffLines": 5,
+    # Wayland only, read at `auto-clear.sh:93` and gating the `wtype` method
+    # at `:187`. Missed on the first pass because the .ps1 consumers never
+    # read it, and the first pass read the Windows scripts -- a default set
+    # from one platform's consumer is a default half-derived.
+    "unsafeFocus": False,
+}
+
+# Keys inside `autoClear` that are CONSENT rather than capability, and so are
+# declared but never granted machine-wide. `unsafeFocus: true` accepts that
+# `wtype` types into whatever currently has focus, which Wayland offers no way
+# to check. The rest of the block is a description of the machine and belongs
+# in the global layer; this is a decision about accepting a risk, and one
+# `true` set once would accept it for every repo on the box.
+#
+# The repo already draws this line and enforces it the same way:
+# `graph.obsidian.confirmed` is refused by `plan_global_write` and pruned by
+# `filter_global` because consent to act outside the repo is not a capability
+# a guided flow may hand over. Same reasoning, same treatment.
+AUTOCLEAR_CONSENT_KEYS = ("unsafeFocus",)
+
+
 def default_config():
     """A fresh, current `.crew/config.json`, as a plain dict.
 
@@ -257,7 +294,15 @@ def default_config():
             "sendsCode": False,
         },
         "tracker": "files",
-        "jira": {"project": None},
+        # `cloudId` is cached by `/crew:jira-sync` (commands/jira-sync.md:25)
+        # and was read by nothing and declared by nothing until 0.19.10. An
+        # undeclared key still WORKS -- `merge_defaults` carries a repo-layer
+        # key it has never heard of straight through -- but it is invisible to
+        # `leaf_paths`, so it appeared in no key listing, and `is_global_path`
+        # returns False for any path absent from the global template, which
+        # made it silently un-settable in the global layer. Declaring it is
+        # what makes the key set the file's own answer rather than a guess.
+        "jira": {"project": None, "cloudId": None},
         "sdp": {
             "portal": None,
             "noteVisibility": "private",
@@ -284,6 +329,14 @@ def default_config():
             "reserveTokens": 100000,
             "handoffPath": ".work/HANDOFF.md",
             "keepTranscripts": 5,
+            # These three were read by hook scripts and declared here by
+            # nothing until 0.19.10 -- `auto-clear.ps1:67`,
+            # `context-watch.ps1:33` and `handoff-read.ps1:36` respectively.
+            # See the `jira.cloudId` note above for why undeclared is not the
+            # same as unused, and why it still cost something.
+            "autoClear": copy.deepcopy(AUTOCLEAR_DEFAULTS),
+            "autoWrapUp": False,
+            "autoResume": False,
             # See crew_state.STALE_HANDOFF_DEFAULTS for why these two figures
             # specifically -- generous on purpose, since archiving a note
             # someone is still using is worse than leaving a stale one in
@@ -424,6 +477,23 @@ def default_global_config():
             "events": ["phase", "gate", "waiting"],
         },
         "pm": copy.deepcopy(crew_state.PM_DEFAULTS),
+        # `context.autoClear` and NOTHING ELSE under `context`. How a terminal
+        # is driven to accept a keystroke is a fact about the machine, in the
+        # same sense provider availability is: `crew_platform.py:384-393`
+        # validates `method` against what THIS platform can actually deliver
+        # and reports a method it cannot honour. Someone with two machines
+        # would otherwise set it per repo forever, for every repo.
+        #
+        # The siblings stay repo-only and are refused by name, which is
+        # measured rather than assumed -- see `test_autoclear_is_global_and_
+        # its_siblings_are_not`. `_prune` and `is_global_path` both descend
+        # structurally, so naming `context` here grants exactly the six
+        # `autoClear` leaves and nothing beside them.
+        "context": {"autoClear": {
+            key: copy.deepcopy(value)
+            for key, value in AUTOCLEAR_DEFAULTS.items()
+            if key not in AUTOCLEAR_CONSENT_KEYS
+        }},
         "docs": copy.deepcopy(crew_upgrade.DOCS_BLOCK),
         "bitbucket": copy.deepcopy(crew_upgrade.BITBUCKET_BLOCK),
     }

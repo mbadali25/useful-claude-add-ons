@@ -62,6 +62,16 @@
     "ticketGranularity": "system",
     "maxDispatches": 3
   },
+  "context": {
+    "autoClear": {
+      "enabled": false,
+      "method": "auto",
+      "windowTitle": null,
+      "command": "/clear",
+      "delaySeconds": 3,
+      "minHandoffLines": 5
+    }
+  },
   "docs": {
     "theme": null,
     "reportTheme": null
