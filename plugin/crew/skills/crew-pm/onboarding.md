@@ -123,6 +123,10 @@ tier grants them — see below:
 | `platform-engineer` | infrastructure exposed as tickets rather than as a platform, so every team re-solves the same problem and none of them the same way | — |
 | `powershell-security-hardening` | PowerShell automation written for the happy path with remoting wide open, credentials in scope, and no logging an incident could read | — |
 | `workflow-orchestrator` | a business process implemented as a sequence of calls, so there is no state to resume from and no transaction boundary to roll back to | — |
+| `exchange-online-specialist` | mailbox lifecycle, hold, retention and eDiscovery done as ordinary admin work, so a wrong answer is a compliance answer nobody notices until an audit | — |
+| `powershell-5.1-expert` | scripts written for PowerShell 7 and run on the in-box 5.1 that every Windows Server actually has, against modules with no 7 story | — |
+| `powershell-7-expert` | PowerShell 7 features used on hosts that cannot run `pwsh`, and 5.1 habits carried into a runtime with different parallelism and encoding defaults | — |
+| `skill-author` | skills and commands written like application code, so the description never fires, the disclosure is flat, and the operator has no walkthrough to follow | — |
 
 `pm` is not on the ladder. It is not sized in or out by `/crew:scale` — it is
 the thing doing the sizing.

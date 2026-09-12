@@ -2052,6 +2052,10 @@ a worktree each, so a half-applied one cannot land on top of the other.
 | `platform-engineer` | read/write | `sonnet` | — | Internal developer platforms, golden paths and self-service infrastructure |
 | `powershell-security-hardening` | read/write | `sonnet` | — | PowerShell automation and remoting hardened to an enterprise baseline |
 | `workflow-orchestrator` | read/write, no Bash | `sonnet` | — | Multi-state business processes, with error handling and transaction management |
+| `exchange-online-specialist` | read/write | `sonnet` | — | Exchange Online and Purview automation through ExchangeOnlineManagement and Security & Compliance PowerShell, where a wrong answer is a compliance answer |
+| `powershell-5.1-expert` | read/write | `sonnet` | — | Windows PowerShell 5.1 — the in-box edition on every Windows Server, for modules with no PowerShell 7 story |
+| `powershell-7-expert` | read/write | `sonnet` | — | PowerShell 7, for modern language features, real parallelism and UTF-8 defaults — and for whether a host can run `pwsh` at all |
+| `skill-author` | read/write | `sonnet` | — | Claude Code skills, commands and plugins: frontmatter, the description that decides whether a skill fires, and the operator walkthrough |
 | `pm` | read/write, scoped to `.crew/` and generated diagrams | `opus` | — | The standing manager: scope, onboarding, communication, ticket hygiene, and dispatch |
 
 50 agents — 13 on the tier ladder, 36 domain specialists off it, and `pm`. `pm` sits outside the tier ladder — it is not sized in or out by `/crew:scale`, it is the thing doing the sizing. The specialist rows above are a readable copy of `crew_state.SPECIALIST_ROLES`; `tests/test_role_ladder.py` checks that copy against the code in both directions, so a row here with no registration behind it, or an `agents/<name>.md` nobody registered, fails the suite rather than shipping as a role `/crew:pm onboard` calls unrecognised.

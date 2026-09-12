@@ -248,7 +248,8 @@ def test_an_unknown_author_family_bars_nothing():
         assert known["barredBy"] == unknown["family"], role
 
 
-def test_author_family_honours_a_per_role_dev_pin_over_the_block_default():
+def test_author_family_honours_a_per_role_dev_pin_over_the_block_default(
+        tmp_path):
     """The under-bar the role table would otherwise have introduced.
 
     `dev.provider` is only the default; `dev.roles.developer` overrides it.
@@ -256,16 +257,24 @@ def test_author_family_honours_a_per_role_dev_pin_over_the_block_default():
     pinned to codex, which struck claude and cleared CODEX to review a diff
     codex wrote -- the same-family review the guard exists to prevent,
     introduced by the very feature that added the pins.
+
+    `tmp_path`, never `"."`. `author_families` reads `.work/dispatch.d/` under
+    the root it is given, so `"."` made this test read the DEVELOPER'S OWN
+    dispatch records -- it failed in this checkout with
+    `(frozenset({'gpt', 'claude'}), 'stale')` because a real `claude` dispatch
+    happened to be sitting there, and it passed on a clean clone. A test whose
+    result depends on whose machine runs it is not measuring the code.
     """
+    root = str(tmp_path)
     cfg = {"dev": {"provider": "claude",
                    "roles": {"developer": {"provider": "codex",
                                            "model": "gpt-6-astra"}}}}
-    assert crew_state.author_families(".", cfg) == (frozenset({"gpt"}),
-                                                    "config")
+    assert crew_state.author_families(root, cfg) == (frozenset({"gpt"}),
+                                                     "config")
     # And the pin must not invent an author where the block default rules.
     assert crew_state.author_families(
-        ".", {"dev": {"provider": "claude"}}) == (frozenset({"claude"}),
-                                                  "config")
+        root, {"dev": {"provider": "claude"}}) == (frozenset({"claude"}),
+                                                   "config")
 
 
 def test_family_normalises_case_separator_and_namespace():
@@ -293,10 +302,14 @@ def test_a_differently_spelled_same_family_model_is_still_barred():
         assert got["barred"] is True, model
 
 
-def test_an_unset_copilot_model_is_not_barred_against_another_unset_one():
+def test_an_unset_copilot_model_is_not_barred_against_another_unset_one(
+        tmp_path):
+    """`tmp_path` for the same reason as above: `"."` read this checkout's own
+    `.work/dispatch.d/` and returned `frozenset({'claude'})` where the config
+    supplies no knowable family at all."""
     cfg = {"dev": {"provider": "copilot", "copilot": {"model": None}},
            "qa": {"provider": "copilot", "copilot": {"model": None}}}
-    authors, _ = crew_state.author_families(".", cfg)
+    authors, _ = crew_state.author_families(str(tmp_path), cfg)
     # Unknown, not "some family called None": an unset Copilot model has no
     # knowable family, so there is nothing to strike.
     assert authors == frozenset()
