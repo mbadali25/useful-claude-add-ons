@@ -183,9 +183,10 @@ enforces in code rather than prose:
 - A **list is a leaf.** `qa.order` and `notify.events` are replaced wholesale,
   never merged element-wise (`leaf_paths`, `crew_config.py:432`).
 - **The tables list the keys `default_config()` DECLARES, which is not every
-  key crew reads.** Nine live keys are read by hook scripts and declared by no
-  default — see §12.3. `merge_defaults` carries an undeclared repo-layer key
-  through unchanged, so they work; what they lack is visibility. Every count in
+  key crew uses.** Nine more are in use and declared by no default — eight read
+  by hook scripts, one written and never read; see §12.3. `merge_defaults`
+  carries an undeclared repo-layer key through unchanged, so they work; what
+  they lack is visibility. Every count in
   this file (75, 38, 37) is a count of *declared* keys.
 - **Consumer** is a `path:line` that reads the key to decide something. A
   Markdown citation is a real consumer here — crew is a prose-driven
@@ -406,7 +407,9 @@ file.
 `jira.project` is the one on this list that most looks like it should work.
 `/crew:jira-sync` gates on `tracker == "jira"` (`commands/jira-sync.md:11`) and
 then caches `jira.cloudId` (`:25`) — a key `default_config()` does not declare
-at all. See §12.3.
+at all, and that nothing reads back either. So the Jira block ships two keys and
+crew consumes neither. `jira.cloudId` is counted in §12.3 rather than here,
+because being undeclared is the larger of its two problems.
 
 **What this does and does not say.** It says: nothing in this repository today
 reads these eight values to decide anything, so changing one changes nothing.
@@ -583,22 +586,35 @@ change with its own review. Item 3 is the one that affects behaviour.
    docstring's "stays null in both layers" describes the default value, and
    reads as a statement about settability, which it is not.
 
-3. **Nine live keys are read by crew and declared by no default.** Each is
-   read by a hook script; none appears in `default_config()`, so none appears in
-   any table above, in `/crew:config`'s key listing, or anywhere `leaf_paths`
-   is used.
+3. **Nine keys are in use and declared by no default.** None appears in
+   `default_config()`, so none appears in any table above, in
+   `/crew:config --explain`, or anywhere `leaf_paths` is used.
+
+   Eight are read by a hook script:
 
    | Key | Read at |
    |---|---|
    | `context.autoClear.enabled` | `hooks/scripts/auto-clear.ps1:67` (`$a = $cfg.autoClear`) |
-   | `context.autoClear.method` | as above |
-   | `context.autoClear.windowTitle` | as above; `auto-clear.ps1:128` refuses without it |
+   | `context.autoClear.method` | as above, and validated per platform at `crew_platform.py:384-393` |
+   | `context.autoClear.windowTitle` | as above; `auto-clear.ps1:128` refuses to send without it |
    | `context.autoClear.command` | as above |
    | `context.autoClear.delaySeconds` | as above |
    | `context.autoClear.minHandoffLines` | as above |
    | `context.autoWrapUp` | `hooks/scripts/context-watch.ps1:33` |
    | `context.autoResume` | `hooks/scripts/handoff-read.ps1:36` |
-   | `jira.cloudId` | `commands/jira-sync.md:25` writes it; `jira-sync.md:11` gates the command |
+
+   The ninth, `jira.cloudId`, is different and worse: `commands/jira-sync.md:25`
+   instructs the agent to cache it "so you never look it up twice", and nothing
+   in the repo reads it back. It is undeclared **and** unconsumed — this item
+   and §9 both.
+
+   **This is not a deliberate removal**, the way `graph.obsidian.*` was.
+   `crew_upgrade.py` drops that block from an existing config at `:339-343` and
+   says so; it contains no mention of `autoClear`, `autoWrapUp` or
+   `autoResume`. Neither template declares them. And `crew_platform.py:384`
+   actively reads `context.autoClear.method`, reporting it when the platform
+   cannot deliver that keystroke — live code managing a key the defaults do not
+   know exists.
 
    They still work. Verified:
    `merge_defaults(default_config(), {"jira": {"cloudId": "abc"}})["jira"]`
@@ -611,6 +627,10 @@ change with its own review. Item 3 is the one that affects behaviour.
    the *top-level block*, so a global file setting `context.autoClear.method`
    is reported as `ignored: ["context"]`, naming the block rather than the key
    the user actually wrote. Confirmed by running both.
+
+   The invisibility is measured, not assumed: `crew_config.py --root <tmp>
+   --explain` against a repo config carrying `context.autoClear` and
+   `jira.cloudId` prints neither, exit 0.
 
    This is the one finding here that is not cosmetic. `default_config()` is the
    definition both halves of the invariant in §2 are enforced against, so a key
