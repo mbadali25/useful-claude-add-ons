@@ -1576,7 +1576,37 @@ ticket B landed. All four rows added to both `plugin/crew/README.md` and
 frontmatter description rather than invented. The tables were telling the truth
 and the code was the side with more, exactly as this entry read it.
 
-## Five marketplace entries are shipping stale — inherited, not from this branch
+## RESOLVED 2026-09-12 — Five marketplace entries are shipping stale (inherited, not from this branch)
+
+**All five are bumped and the gate is green.** Closed rather than deleted: the
+table below is what "shipping stale" looked like, and rediscovering that costs
+more than the space it takes. The evidence that closed it:
+
+| Entry | Was | Now |
+|---|---|---|
+| `skills/exchange-mailbox-cleanup` | 1.0.0 | **1.0.2** |
+| `skills/exchange-mailbox-restore` | 1.0.1 | **1.0.2** |
+| `skills/jira-manager` | 1.0.0 | **1.0.1** |
+| `skills/power-automate-api` | 1.0.0 | **1.0.2** |
+| `plugin/gizmoduck` | 0.2.5 | **0.4.0** |
+
+Measured the way the entry itself asks for — on a named ref, not a working tree.
+`git worktree add --detach <tmp> origin/main`, then `python3
+scripts/check-marketplace.py` in that worktree: **"all checks passed", exit 0**,
+with zero drift reported. The worktree matters: run against a `git archive`
+export the checker prints "note: not a git checkout - skipping the version-drift
+check" and passes without testing the thing at issue, so a green result there
+would have meant nothing.
+
+A caution earned the same day, recorded because it nearly landed in a PR body:
+this checker was reported as "already red on `main`" during the pylint work, and
+it was not. The red came from uncommitted edits in the working tree of the
+machine running it. A checker result without its ref is not a measurement.
+
+The original entry follows, unchanged.
+
+---
+
 
 Found 2026-09-11 while running `python3 scripts/check-marketplace.py` as the gate
 for the bitbucket merge-gate work. The gate reported **6 problems, 0 of them
