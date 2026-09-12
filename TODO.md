@@ -1073,8 +1073,9 @@ Re-measure before acting: `ls .work/dispatch.d/` and
 ## Five marketplace entries are shipping stale — inherited, not from this branch
 
 Found 2026-09-11 while running `python3 scripts/check-marketplace.py` as the gate
-for the bitbucket merge-gate work. The gate reports **6 problems, 0 of them
-introduced by branch `bitbucket-merge-gate`**. Each is a directory that changed
+for the bitbucket merge-gate work. The gate reported **6 problems, 0 of them
+introduced by branch `bitbucket-merge-gate`**; `plugin/crew` was the one that
+branch owed and it has since been bumped, leaving **5**. Each is a directory that changed
 after its `version` was last set, so `claude plugin update` compares the declared
 version, finds no change, and every already-installed copy reports "already at
 the latest version" forever. Nothing in the repo looks wrong; the bug exists only
@@ -1091,21 +1092,19 @@ uncommitted work:
 | `skills/jira-manager` | 1.0.0 | `ee9fcc2e` | 3 |
 | `skills/power-automate-api` | 1.0.0 | `ee9fcc2e` | 3 |
 | `plugin/gizmoduck` | 0.2.5 | `9338e89d` | 76 |
-| `plugin/crew` | 0.16.33 | `a1363e48` | 5 |
+| ~~`plugin/crew`~~ | ~~0.16.33~~ | ~~`a1363e48`~~ | ~~5~~ — **fixed, now 0.16.34** |
 
 Deferred rather than fixed, for two different reasons:
 
-- The first five touch nothing this branch changed, so bumping them here is scope
+- The five above touch nothing this branch changed, so bumping them here is scope
   creep — and each bump pushes a plugin update to every machine that installed
   it, which is a shipping decision, not a lint fix. They need the user's call on
   whether to bump all five in one housekeeping commit or leave them.
-- `plugin/crew` is the exception: commits `089af55e` and `f8bdb25e` on this
-  branch touch five files under `plugin/crew/`, so that bump **is** owed by this
-  branch. It is deliberately held for the branch's last commit, per this repo's
-  rule that a version bump goes in the final commit — tickets C and D are queued
-  and will touch `plugin/crew` again, and bumping now would just be superseded.
-  Bump both `.claude-plugin/marketplace.json` and
-  `plugin/crew/.claude-plugin/plugin.json`; they must match.
+- `plugin/crew` was the exception: commits `089af55e` and `f8bdb25e` on this
+  branch touch five files under `plugin/crew/`, so that bump **was** owed by this
+  branch, and it landed in the branch's final commit at 0.16.34 — both
+  `.claude-plugin/marketplace.json` and `plugin/crew/.claude-plugin/plugin.json`,
+  which must always match.
 
 Re-measure before acting. These counts are facts about `origin/main` at
 `bd4d125a`, and the gate is the only thing that tracks them.
