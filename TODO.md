@@ -1032,6 +1032,44 @@ kept in its words so a reader can check it rather than trust it.
 8. **`jira-api.sh:131` — account-search values are not URL-encoded**, so any
    name with a space fails lookup. Repro: `jira_find_account_id "Jane Doe"`.
 
+## A raw `Agent` dispatch writes no record, so crew misreports its own authorship
+
+Found 2026-09-11, during the bitbucket merge-gate work. Belongs with the ticket C
+/ D config work, not chased on its own.
+
+`.work/dispatch.d/` holds exactly one record on this branch — a `developer` from
+2026-09-06, made on `main`. Six roles were dispatched on `bitbucket-merge-gate`
+in this session and not one of them was recorded, because the recorder fires on
+crew's own command paths and a bare `Agent` tool call is not one of them.
+
+The consequence is not a missing log line. `crew_state.py` and
+`crew_config.py --models` read that store to answer "who wrote this diff", and
+with a record that predates the merge-base they correctly report:
+
+```
+author family: claude  (STALE RECORD - the dispatch was made on a different
+branch, so BOTH the recorded family and the config family are struck)
+last dev dispatch: role=developer provider=claude model=None branch=main |
+current branch=bitbucket-merge-gate
+```
+
+That is the guard failing *safe* — striking both families costs a reviewer rung
+rather than clearing one wrongly — so nothing shipped unreviewed. But it fails
+safe by accident: the store is not empty-and-honest, it is stale-and-confident,
+and the guard only survives because the staleness check happens to catch it. A
+record from a dispatch made on THIS branch would read as fresh and authoritative
+while describing none of the work under review. That is the same class as
+`crew_config.py --models` deriving author family from config describing the next
+run — an unknown wearing the label of a check that happened.
+
+Two candidate fixes, neither chosen: have the `Agent` path write a record, or
+have the readers treat "no record for any commit in this range" as its own value
+distinct from a stale one. The second is the one that matches this repo's
+standing rule that a probe which can fail needs "could not tell" as a real value.
+
+Re-measure before acting: `ls .work/dispatch.d/` and
+`python3 <crew>/hooks/scripts/crew_config.py --root . --models`.
+
 ## Five marketplace entries are shipping stale — inherited, not from this branch
 
 Found 2026-09-11 while running `python3 scripts/check-marketplace.py` as the gate
