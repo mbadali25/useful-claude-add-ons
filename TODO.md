@@ -1083,6 +1083,25 @@ So this is worse than a key that quietly does nothing. It is a key whose
 documented default is actively contradicted by whatever pack happens to be
 installed, while the config UI reports the default as being in effect.
 
+**The wrong brand is also a partly broken one, which misdirects the diagnosis.**
+Confirmed on this machine and reproduced independently by team-lead: solomon's
+pack resolves `masters_dir` to `C:epos\OnboardingSOPs\sops_new`, and the
+script prints it as `(NOT FOUND on this machine)`. So a user who never chose
+solomon gets a brand whose template directory does not exist, and the first
+failure they hit is a MISSING TEMPLATE rather than a wrong footer. That points
+the diagnosis at doc-builder's assets, or at their own checkout, and away from
+branding entirely -- which is where the actual defect is. A wrong answer that
+fails in an unrelated-looking way costs more than one that fails plainly.
+
+`--list` makes the same point: `neutral` is shown, labelled `(built in)`. It is
+VISIBLE and still not a candidate, so nothing reads as missing and no ambiguity
+stop fires. Everything looks correct from the outside.
+
+**Acceptance criterion for this ticket:** an unresolvable or unset theme must
+not fall through to "whatever happens to be installed". Fail loud, or fall back
+to neutral and say so, the way the resolver already does for a genuinely missing
+pack.
+
 Repro, both halves:
 
 ```
@@ -1256,6 +1275,24 @@ So this is environmental and pre-existing, not from the C/D branch -- but it
 means the local suite is not the suite a clean checkout runs, and a developer
 who sees these two red learns to ignore red. Fix belongs with the reader-side work above, since it is
 the same store: pass a `tmp_path` root like the neighbouring tests do.
+
+## No claim of the form "CI proves X" is available for any crew or gizmoduck test
+
+Recorded 2026-09-12 so the four ticketed failures above and below are read
+correctly. The `Pytest (crew + gizmoduck plugins)` job collects 954 items and
+dies on 12 gizmoduck `ImportError`s before executing one of them. It therefore
+reports NO test by name, passing or failing.
+
+The consequence is easy to state and easy to forget: **until those imports are
+fixed, "CI is green on this test" is not a sentence anyone can say about
+anything in that job.** The only evidence available is a local run, and the only
+honest phrasing is "clean checkout" or "local, at <ref>". An earlier entry here
+said two tests "pass in CI"; they do not, because nothing in that job passes or
+fails -- it never runs. Corrected, and recorded here rather than only at the
+entry, because the trap is general.
+
+The jobs that DO produce usable signal are `Marketplace` (`check`) and the
+`test (ubuntu-latest)` / `test (windows-latest)` pair. Cite those freely.
 
 ## The specialist role tables disagree with the code, on `main`
 
