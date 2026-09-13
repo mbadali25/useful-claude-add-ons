@@ -1,15 +1,35 @@
 # Code map — index
 
-Not counted as a subsystem by `crew_state.py` (`read_knowledge`,
-`plugin/crew/hooks/scripts/crew_state.py:222-223` lists `INDEX.md` in
-`_NOT_SUBSYSTEMS`). It exists purely as a table of contents.
+Not counted as a subsystem by `crew_state.py` (`read_knowledge` at
+`plugin/crew/hooks/scripts/crew_state.py:692`; `_NOT_SUBSYSTEMS` at
+`plugin/crew/hooks/scripts/crew_state.py:539` lists `INDEX.md`). It exists purely
+as a table of contents.
 
 Every subsystem file below carries an `anchor:` line
-(`plugin/crew/hooks/scripts/crew_state.py:218-220` is the regex that reads it)
-naming the short commit hash the file's claims were checked against. If HEAD
-has since moved past that hash, `crew_state.py` will list the file under
-`knowledge.behind` at the next SessionStart — that is a prompt to re-check the
-claims, not proof they are wrong.
+(`_ANCHOR_RE`, `plugin/crew/hooks/scripts/crew_state.py:534`, is the regex that
+reads it) naming the short commit hash the file's claims were checked against.
+
+**Since crew 0.19.13 that read has three outcomes, not two**, and the difference
+decides what you do next:
+
+| State | Means | Do |
+|---|---|---|
+| current | the anchor is HEAD | nothing |
+| `knowledge.behind` | the anchor resolves to a commit, but is not HEAD | **re-check** — run the path diff below; empty output means current despite the lag |
+| `knowledge.unresolvable` | no anchor, or a sha this repository does not contain | **re-derive** — the path diff cannot run at all, so nothing about the note can be confirmed or refuted from git |
+
+The third state exists because five notes here spent weeks in it while being
+reported as merely "behind". `519754fa` wrote them and was a squash merge, which
+discards the branch commit the writer recorded — so the sha they carried named
+nothing. "Behind" is a cheap, definite finding, and a reader who cannot tell the
+two apart does the cheap thing. The writer now records
+`git merge-base HEAD origin/main`, a commit already on the trunk, which survives
+a squash.
+
+**The anchor line's shape is load-bearing.** `_ANCHOR_RE` ends `\s*$`, so
+anything after the sha on that line — a parenthetical note included — stops it
+matching and puts the note straight into `unresolvable`. Commentary goes on the
+next line.
 
 **That prompt is much coarser than the real test, and treating the two as the
 same thing is how the trigger stops meaning anything.** `crew_state.py` compares
@@ -48,22 +68,33 @@ looks measured.
 Diagrams under `docs/diagrams/` carry the same contract via a
 `%% Anchors: <comma-separated paths>` header. All three were missing one, which
 left them permanently unfalsifiable — "stale by default" is the honest answer
-to an unanswerable question, but it is not a useful one.
+to an unanswerable question, but it is not a useful one. **All four now carry
+one** (`data-flow-crew-config.mmd` was added 2026-09-12), so each is
+hand-re-verifiable via the path diff.
+
+Diagrams are read by a *different* regex — `_DIAGRAM_ANCHOR_RE`,
+`plugin/crew/hooks/scripts/crew_state.py:598`. It cannot be the same one: a bare
+`anchor:` line is a syntax error in a Mermaid source, so the provenance has to
+live inside a `%%` comment. Both `%% anchor: <sha>` and
+`%% Generated from <repo>@<sha> on <date>.` are accepted.
 
 ## Files
 
-| File | Anchor | Covers |
-|---|---|---|
-| [`marketplace-registration.md`](marketplace-registration.md) | `3167721f` | The marketplace itself: what registers a skill vs. a plugin, the two install scripts, and the two separate version-check paths (`check-marketplace.py` vs. `_verify/smoke.sh`). |
-| [`localgpu.md`](localgpu.md) | `3167721f` | The `localgpu` plugin: its two independent process trees, the shared-Ollama constraint that drives `OLLAMA_MAX_LOADED_MODELS=1`, the embed-model mismatch guard, `.mcp.json` provisioning, and the bootstrap.sh/bootstrap.ps1 parity verdict. |
-| [`crew.md`](crew.md) | `3167721f` | The `crew` plugin: hooks, agents, commands, skills inventory, and how `crew_state.py` reads this very directory. |
-| [`verification-harness.md`](verification-harness.md) | `3167721f` | `_verify/smoke.sh`, `_verify/run-all.sh`, `scripts/check-marketplace.py`, and `.crew/verify.json` — what each actually runs, and where they overlap or don't. **`.crew/verify.json` does not exist**; see below. |
-| [`obsidian-vault.md`](obsidian-vault.md) | `a02331ee` | The `obsidian-vault` plugin: four hook events registered as bash+PowerShell pairs, the three guard checks and their **unequal defaults**, the two differently-sized exemption sets, and per-vault MCP registration. |
-| [`mcp-servers.md`](mcp-servers.md) | `a02331ee` | The TypeScript monorepo — four stdio MCP servers over one shared `core`. Holds the two recorded `adminAuth.ts` defects (TODO #2 and #3), re-verified unchanged. Not a marketplace plugin; nothing registers it. |
-| [`install-scripts.md`](install-scripts.md) | `a02331ee` | The `install-prerequisites.{sh,ps1}` matched pair: catalog parity (confirmed in sync), the `pick_fit`/`Format-PickerLine` no-bypass rule, idempotency branches, and hook-plugins-default-off on both sides. |
-| [`skills-itsm.md`](skills-itsm.md) | `a02331ee` | `infra-work-ticketing` + `notify`. Records that **`SKILL.md:209-211` instructs an unconfirmed ticket creation** against a live service desk, and that its `:213` list is missing-fact questions, not write confirmation. |
-| [`skills-security-ops.md`](skills-security-ops.md) | `a02331ee` | `cisco-meraki` + `wazuh-onprem`. Records that **Wazuh's generic `post`/`put`/`delete` have no gate in code** — only prose — and that the skill with the ungated verbs is the one with no tests. |
-| [`repo-docs.md`](repo-docs.md) | `a02331ee` | `docs/` and `CHANGELOG.md`. Records that **`docs/adr/` does not exist** despite two documents citing it, and that TODO.md's `render.sh` entry is stale — the `cygpath -w` fix is in source. |
+Anchors are re-measured below rather than carried forward — the previous table
+named `3167721f` and `a02331ee` for every row, and no file carried either sha.
+
+| File | Anchor | Last pass | Covers |
+|---|---|---|---|
+| [`marketplace-registration.md`](marketplace-registration.md) | `7b0d8f3a` | re-verified 2026-09-12 | The marketplace itself: what registers a skill vs. a plugin, the two install scripts, and the two separate version-check paths (`check-marketplace.py` vs. `_verify/smoke.sh`). |
+| [`localgpu.md`](localgpu.md) | `1f97e51c` | unchanged | The `localgpu` plugin: its two independent process trees, the shared-Ollama constraint that drives `OLLAMA_MAX_LOADED_MODELS=1`, the embed-model mismatch guard, `.mcp.json` provisioning, and the bootstrap.sh/bootstrap.ps1 parity verdict. |
+| [`crew.md`](crew.md) | `7b0d8f3a` | **re-derived** 2026-09-12 | The `crew` plugin: hooks, agents, commands, skills inventory, and how `crew_state.py` reads this very directory. |
+| [`verification-harness.md`](verification-harness.md) | `7b0d8f3a` | re-verified 2026-09-12 | `_verify/smoke.sh`, `_verify/run-all.sh`, `scripts/check-marketplace.py`, and `.crew/verify.json` — what each actually runs, and where they overlap or don't. **`.crew/verify.json` does not exist**; see below. |
+| [`obsidian-vault.md`](obsidian-vault.md) | `1f97e51c` | unchanged | The `obsidian-vault` plugin: four hook events registered as bash+PowerShell pairs, the three guard checks and their **unequal defaults**, the two differently-sized exemption sets, and per-vault MCP registration. |
+| [`mcp-servers.md`](mcp-servers.md) | `1f97e51c` | unchanged | The TypeScript monorepo — four stdio MCP servers over one shared `core`. Holds the two recorded `adminAuth.ts` defects (TODO #2 and #3), re-verified unchanged. Not a marketplace plugin; nothing registers it. |
+| [`install-scripts.md`](install-scripts.md) | `7b0d8f3a` | re-verified 2026-09-12 | The `install-prerequisites.{sh,ps1}` matched pair: catalog parity (confirmed in sync), the `pick_fit`/`Format-PickerLine` no-bypass rule, idempotency branches, and hook-plugins-default-off on both sides. |
+| [`skills-itsm.md`](skills-itsm.md) | `1f97e51c` | unchanged | `infra-work-ticketing` + `notify`. Records that **`SKILL.md:209-211` instructs an unconfirmed ticket creation** against a live service desk, and that its `:213` list is missing-fact questions, not write confirmation. |
+| [`skills-security-ops.md`](skills-security-ops.md) | `1f97e51c` | unchanged | `cisco-meraki` + `wazuh-onprem`. Records that **Wazuh's generic `post`/`put`/`delete` have no gate in code** — only prose — and that the skill with the ungated verbs is the one with no tests. |
+| [`repo-docs.md`](repo-docs.md) | `7b0d8f3a` | re-verified 2026-09-12 | `docs/` and `CHANGELOG.md`. Records that **`docs/adr/` does not exist** despite two documents citing it, and that TODO.md's `render.sh` entry is stale — the `cygpath -w` fix is in source. |
 
 ## Coverage — and what is still unmapped
 
@@ -76,11 +107,23 @@ That percentage is a measurement, not a target, and it moves whenever the graph 
 Re-measure instead of trusting it: group node `source_file` values by top-level directory and
 subtract the prefixes each file above claims.
 
-The four `3167721f` anchors were checked per-path on 2026-09-06 and are **current despite the lag**
-— the only commits touching their cited paths since that sha are an `obsidian-vault` version bump
-and a `PLUGINS.md` assertion count inside the obsidian-vault section, neither of which any of the
-four describes. They were deliberately not re-anchored: an anchor bump is a freshness claim, and a
-path diff cannot see prose that has gone stale in ways the paths do not reveal.
+**Re-anchor pass, 2026-09-12.** Five notes carried `d61342c3`, which resolves to nothing here, so
+the path diff could not run on any of them. Four were **re-verified** — every claim is the previous
+pass's, re-read against the file it cites and its citation re-pointed where the code had moved, by
+matching on content rather than applying an offset. `crew.md` was **re-derived**: six merged PRs had
+rewritten what it describes (the config layering, the authority tiers, the ten newly-declared keys,
+`AUTOCLEAR_CONSENT_KEYS`), so re-pointing it would have produced correct line numbers pointing at
+claims about a crew that no longer existed. Each of the four says on its own line which it got.
+
+The five `1f97e51c` anchors were **not** touched in that pass and are not claimed to be fresh.
+
+What the re-verification found that a working anchor would not have: `install-scripts.md`'s
+citations never matched its own anchor (they match `0131d0f0`, three days earlier);
+`repo-docs.md` is mixed-base, with its `TODO.md` citations from one commit and its `CHANGELOG.md`
+citations from another; `marketplace-registration.md`'s count finding had **inverted**, with all
+four places it named as correct now wrong; and `verification-harness.md` has 31 citations into
+`.crew/verify.json`, which is gitignored and absent from this checkout and therefore unverifiable
+by anyone cloning the repo.
 
 ## How to read these files
 
