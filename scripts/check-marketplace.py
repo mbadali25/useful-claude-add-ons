@@ -277,22 +277,83 @@ def check_docs(entries, fail):
                 fail(f"{doc}: no table row linking to '{name}'")
 
 
+def is_ancestor(older: str, newer: str) -> bool:
+    """True when `older` is an ancestor of `newer`, or the same commit."""
+    done = subprocess.run(
+        ["git", "-C", ROOT, "merge-base", "--is-ancestor", older, newer],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return done.returncode == 0
+
+
+_DECLARED: dict[tuple[str, str], dict[str, str] | None] = {}
+
+
+def declared_at(commit: str) -> dict[str, str] | None:
+    """{name: version} as the manifest declared it at `commit`, or None if unreadable.
+
+    Cached: the two history walks cover mostly the same commits, and every
+    marketplace entry walks them again, so the uncached form fetched and parsed
+    the same few dozen blobs some eighty times over and cost three minutes.
+    Keyed by ROOT as well as commit because the test suite repoints ROOT at
+    throwaway fixtures whose commits can hash identically.
+    """
+    key = (ROOT, commit)
+    if key not in _DECLARED:
+        blob = git("show", f"{commit}:.claude-plugin/marketplace.json")
+        try:
+            _DECLARED[key] = {e["name"]: e["version"] for e in json.loads(blob)["plugins"]}
+        except (ValueError, KeyError, TypeError):
+            _DECLARED[key] = None
+    return _DECLARED[key]
+
+
 def version_set_at(name: str, version: str, history: list[str]) -> str | None:
     """The oldest commit at which this entry already declared its current version."""
     found = None
     for commit in history:  # newest first
-        blob = git("show", f"{commit}:.claude-plugin/marketplace.json")
-        if not blob:
-            break
-        try:
-            entries = json.loads(blob)["plugins"]
-        except (ValueError, KeyError):
-            break
-        current = next((e["version"] for e in entries if e["name"] == name), None)
-        if current != version:
+        declared = declared_at(commit)
+        if declared is None or declared.get(name) != version:
             break
         found = commit
     return found
+
+
+def bump_candidates(name: str, version: str, histories: list[list[str]]) -> list[str]:
+    """Where this version could have been set, taking the widest window available.
+
+    ``version_set_at`` stops at the first commit whose manifest declares a
+    different version, which is only the right answer when the versions along
+    the walk are monotonic. They are not across a merge: ``git log -- <path>``
+    is ordered by date, so a side branch that forked *before* the bump
+    interleaves its still-old manifest in among the newer commits, the walk
+    stops there, and the window shrinks to the merge itself - which then diffs
+    against its own tree and reports nothing changed. That is how 0.19.29
+    shipped a changed ``plugin/crew/`` under an unbumped version.
+
+    So the walk runs over two orderings - by date and by ``--first-parent`` -
+    and each answers a shape the other gets wrong. First-parent alone is *not*
+    the fix: GitHub Actions checks out ``refs/pull/N/merge`` on a
+    ``pull_request`` event, whose first parent is the base branch, so a
+    first-parent walk follows ``main`` straight past the PR's own bump and goes
+    blind on exactly the diff CI exists to judge.
+
+    Both candidates are kept, then narrowed by ancestry: if one is an ancestor
+    of the other it is the older, so it alone is kept and the window is the
+    wider of the two. When neither is an ancestor of the other the ordering is
+    genuinely unknown, and both are returned so the caller checks both windows.
+    "Could not tell which is older" must not collapse into either branch -
+    picking one would be a guess wearing the label of a check.
+    """
+    found = {version_set_at(name, version, h) for h in histories}
+    found.discard(None)
+    if len(found) < 2:
+        return sorted(found)
+    return sorted(
+        c for c in found if not any(o != c and is_ancestor(o, c) for o in found)
+    )
 
 
 def check_versions(entries, fail):
@@ -304,28 +365,31 @@ def check_versions(entries, fail):
     if not git("rev-parse", "--git-dir"):
         print("  note: not a git checkout - skipping the version-drift check")
         return
-    history = git("log", "--format=%H", "--", ".claude-plugin/marketplace.json").split()
+    manifest = ".claude-plugin/marketplace.json"
+    history = git("log", "--format=%H", "--", manifest).split()
     if not history:
         print("  note: no history for marketplace.json - skipping the version-drift check")
         return
+    # See bump_candidates: the date ordering and the first-parent ordering each
+    # miss a commit shape the other catches, so both are walked.
+    first_parent = git("log", "--first-parent", "--format=%H", "--", manifest).split()
 
     for entry in entries:
         name, version = entry["name"], entry["version"]
         source = entry["source"].lstrip("./")
-        bump = version_set_at(name, version, history)
-        if bump is None:
-            continue  # never committed yet: nothing to compare against
-        changed = subprocess.run(
-            ["git", "-C", ROOT, "diff", "--quiet", bump, "HEAD", "--", source],
-            check=False,
-        )
-        if changed.returncode == 1:
-            fail(
-                f"{name}: {source}/ has changed since version {version} was set "
-                f"({git('log', '-1', '--format=%h %cs', bump)}), but the version was "
-                "not bumped - 'claude plugin update' compares versions, so every "
-                "already-installed copy stays stale. Bump it in marketplace.json."
+        for bump in bump_candidates(name, version, [history, first_parent]):
+            changed = subprocess.run(
+                ["git", "-C", ROOT, "diff", "--quiet", bump, "HEAD", "--", source],
+                check=False,
             )
+            if changed.returncode == 1:
+                fail(
+                    f"{name}: {source}/ has changed since version {version} was set "
+                    f"({git('log', '-1', '--format=%h %cs', bump)}), but the version was "
+                    "not bumped - 'claude plugin update' compares versions, so every "
+                    "already-installed copy stays stale. Bump it in marketplace.json."
+                )
+                break  # one report per entry; the other window says the same thing
 
 
 CLAIM_RE = re.compile(r"<!--\s*claim:\s*([a-z0-9-]+(?::[a-z0-9._-]+)?)\s*-->")
