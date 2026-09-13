@@ -32,6 +32,16 @@ jobs:
       # a correct line six months from now.
       - name: Self-claim marker suite
         run: python3 scripts/_test/self-claims.py
+      # The version-drift check resolves "when was this version set" by walking
+      # marketplace.json's history, and that walk is only monotonic on a linear
+      # one. Across a merge it can stop at the merge commit, which then diffs
+      # against its own tree and reports nothing - a missing answer wearing the
+      # label of a check that ran. crew 0.19.29 shipped that way. The six cases
+      # here are commit SHAPES, including the refs/pull/N/merge shape this
+      # workflow itself is judged on, and two of them exist to break a
+      # different half of the fix.
+      - name: Version-drift commit-shape suite
+        run: python3 scripts/_test/version-drift.py
       # The UPDATE.md mirrors are generated, so the only thing keeping them
       # honest is a gate that fails. Without this step the generator's --check
       # mode is a check nobody runs, which is worse than no check: the blocks
