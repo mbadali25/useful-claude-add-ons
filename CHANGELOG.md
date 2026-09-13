@@ -4,6 +4,37 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added
+
+- **`crew` 0.19.33: tests for two properties CLAUDE.md calls load-bearing and
+  nothing checked.** Both were found by mutation rather than by reading: each
+  change left the **entire** crew suite green at exit 0, so the suite could not
+  tell the working code from the broken code.
+
+  `reportTracked` decides which graph-refresh command the pulse recommends, and
+  the two are not interchangeable — `graphify . --no-viz --code-only` skips
+  `GRAPH_REPORT.md`, so in a repo that tracks the pair it leaves the two tracked
+  files describing different builds. Renaming the key in
+  `crew_state._read_graph` degraded the pulse to the forbidden form silently,
+  because the only tests touching it hand-build a `graph` dict and call
+  `pm_brief.render` — they exercise the consumer and never the producer. The
+  case that earns its place asserts an **untracked** `GRAPH_REPORT.md` on disk
+  does *not* count: the code asks git, not the filesystem, and one stray local
+  artefact must not flip the recommendation for everyone who cloned.
+
+  Anchor truncation — both sides cut to 7, so 8- and 40-character anchors match
+  as exactly as 7-character ones — is what stops a reader rewriting correct
+  anchors. Changing every `[:7]` to `[:40]` left the suite green. Now covered at
+  both sites carrying a copy of the comparison, each with a control asserting a
+  genuinely older anchor is still behind.
+
+  The third site is **not** pinned, and the test says so rather than implying
+  coverage: `_read_graph`'s fast path falls through to the deny-list diff, so
+  the same mutation changes no output and no behavioural test can catch it.
+
+  Sabotage-verified both ways: the rename reddens 4 of 10, the truncation
+  reddens exactly the 2 that can be reddened.
+
 ### Fixed
 
 - **`crew` 0.19.32: ruff flagged 36 deliberate re-exports, and one test failed
