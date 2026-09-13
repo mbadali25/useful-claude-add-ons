@@ -2009,3 +2009,35 @@ even at its floor. One `if` and a line of text.
 
 **Not verified:** no fix is attempted for any of the three, and
 `scripts/_test/drift-detection.sh` was not run for this entry.
+
+## Crew's graph-refresh string contradicts this repo's CLAUDE.md since #121
+
+Filed 2026-09-13 against `main` at `af9995ed`. Recorded, not to be chased.
+
+Four places in crew tell the user to refresh the graph with
+`graphify . --no-viz --code-only`:
+
+- `plugin/crew/hooks/scripts/pm_brief.py:148` (the pulse text, which is where
+  this surfaced)
+- `plugin/crew/commands/onboard.md:14` and `commands/upgrade.md:56`, both
+  saying "both flags required"
+- `plugin/crew/skills/crew-graph/SKILL.md:44`
+
+Since #121 this repo's `CLAUDE.md` documents `graphify update .` instead,
+because **this** repo tracks the pair `graphify-out/graph.json` +
+`GRAPH_REPORT.md` and `update` is what keeps the two consistent. So crew's own
+hook now instructs a command its host repo's CLAUDE.md tells you not to use.
+
+**The obvious fix is the wrong one.** Swapping the string to `graphify update .`
+would be correct here and wrong generally: crew ships to many repos, and
+`--code-only` is right wherever `GRAPH_REPORT.md` is not tracked. The string is
+not the bug -- crew recommending a fixed command regardless of how the host
+repo stores its graph is. A real fix reads `graph.mode`, or detects a tracked
+report beside `graph.json`, and says the command that matches what it found.
+
+Cost if taken: four call sites plus whatever decides the command, and it lands
+in crew, so it owes a bump and a CHANGELOG entry. Not costed further.
+
+**Not verified:** no fix attempted, and no check of how many other repos on
+this machine track the pair -- which is the number that decides whether the
+detecting version is worth writing at all.
