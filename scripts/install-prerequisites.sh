@@ -745,7 +745,7 @@ MENU_NAME=(
   "SkillUI (npm) + Playwright/Chromium - extract a design system from a URL"
   "Strix AI pentesting CLI (needs Docker + an LLM API key)"
   "Obsidian desktop + claude-obsidian + obsidian-skills plugins"
-  "This repo's plugins: crew, gizmoduck, localgpu, obsidian-vault (agents, hooks)"
+  "This repo's plugins: crew, gizmoduck, localgpu, obsidian-vault, rule-of-two (agents, hooks)"
   "graphify code graph (uv tool install graphifyy; per-repo, not global)"
   "Microsoft MCP servers (mcp-servers/): Graph, Intune, Office 365 user/admin - needs az login or tenant credentials"
   "MCP server: AWS Knowledge (docs + API refs, hosted by AWS, no credentials)"
@@ -894,18 +894,21 @@ PLUGIN_KEYS=(
   "gizmoduck"
   "localgpu"
   "obsidian-vault"
+  "rule-of-two"
 )
 PLUGIN_NAME=(
   "crew                    - Virtual dev team: 54 agents, 24 commands, safety hooks"
   "gizmoduck               - Nuclei scans: diff, triaged reports, SDP tickets. No hooks"
   "localgpu                - Local models via Ollama: index, search, ask. MCP, no hooks"
   "obsidian-vault          - Multi-vault memory: gardener/reflector agents, bridge+guard hooks"
+  "rule-of-two              - Two-family adversarial review of agents, skills, plugins. No hooks"
 )
 PLUGIN_SPEC=(
   "crew@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons"
   "gizmoduck@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons"
   "localgpu@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons"
   "obsidian-vault@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons"
+  "rule-of-two@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons"
 )
 PLUGIN_STATE=()
 for _i in "${!PLUGIN_KEYS[@]}"; do PLUGIN_STATE+=(1); done
@@ -974,7 +977,7 @@ GROUP_LABEL=(
   "This repo's marketplace + %s of %s skills  >"
   "Team plugins: %s of %s (superpowers, frontend-design, excalidraw)  >"
   "Community marketplaces + %s of %s plugins  >"
-  "This repo's plugins: %s of %s (crew, gizmoduck, localgpu, obsidian-vault)  >"
+  "This repo's plugins: %s of %s (crew, gizmoduck, localgpu, obsidian-vault, rule-of-two)  >"
 )
 GROUP_TITLE=(
   "Pick individual skills from this repo"
