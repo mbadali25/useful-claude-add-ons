@@ -763,8 +763,18 @@ Four rules the script enforces rather than documents:
   `graph.obsidian.confirmed` un-grantable from a guided flow: it is consent to
   write into your own notes outside the repo, not a capability.
 - It is a **dry run by default**. `--apply` is a second, deliberate call.
-- It marks a widening of `pm.authority` with a `!` line, on both the dry run
-  and the write. That value is the one a user cannot recover from by noticing.
+- It marks a **widening** with a `!` line, on both the dry run and the write,
+  naming the tier being granted and what that tier buys. `pm.authority`,
+  `install.policy` and all six `guards.*` are the values a user cannot recover
+  from by noticing.
+
+`--explain` also names the **narrowing source** for the seven keys that ratchet.
+Those do not resolve by precedence, so the merged value is the wrong thing to
+print for them: before this was fixed, a repo `install.policy: auto` over a
+machine-global `manual` printed `install.policy  repo  "auto"` while crew
+behaved as `manual` — a report contradicting the run, in the direction that
+reads as "you have it". It now prints the effective value and, underneath, the
+line that says which layer is holding it down and what each layer asked for.
 
 `templates/global.template.json` is the shape, and a committed test asserts it
 equals `default_global_config()` byte-for-byte — the same drift gate the repo
@@ -776,6 +786,72 @@ A global file that is missing, empty, or fails to parse is treated exactly
 like an absent one — the same reasoning `_read_config_strict` documents for
 the repo side — so a typo in your global config degrades one repo's settings
 to defaults rather than breaking every session on the machine.
+
+### §11b. `guards` — the guardrails you can turn down, per machine
+
+Six keys, added by schema 6, in **two vocabularies**. Four are
+`block` | `ask` | `allow`, shipping as `block`; the two production-access keys
+are `none` | `read` | `full`, shipping as `none`.
+
+| Key | Governs | Read by |
+|---|---|---|
+| `guards.terraformApply` | `terraform`/`tofu` `apply` and `destroy`, `-chdir` forms included | `guard.sh`, `guard.ps1` |
+| `guards.forcePush` | `git push --force` / `-f` / `--force-with-lease`, and a leading-plus refspec | `guard.sh`, `guard.ps1` |
+| `guards.adminMerge` | `gh pr merge --admin` | `guard.sh`, `guard.ps1` |
+| `guards.mergeGate` | whether `/crew:gate` may take a live repo's merge gate down | `commands/gate.md`, `commands/promote.md` |
+| `guards.prodDatabase` | commands aimed at a `production.databases` glob | `guard.sh`, `guard.ps1` |
+| `guards.prodServer` | commands aimed at a `production.hosts` glob | `guard.sh`, `guard.ps1` |
+
+- **`block`** refuses, exactly as the guard did before these keys existed.
+- **`ask`** refuses, prints the **exact** command, and names the one file that
+  approves **that** command:
+  `.crew/.approved-guard-<name>-<sha256(command)[:16]>`. Create it, re-run, and
+  it goes through; the next command asks again. It is a marker rather than a
+  prompt because a `PreToolUse` hook has no interactive stdin — an `ask`
+  implemented as a question would have been `block` under another name.
+- **`allow`** runs it, says so, and appends a row to `.crew/guard.log`. **Under
+  `allow` nothing is silent.** The stderr line goes with the session; the row
+  is the durable half, and it is written for every decision rather than only
+  the permissive ones.
+
+**The two production guards are `none` | `read` | `full`.** `none` refuses
+every command aimed at a declared target; `read` permits only what crew can
+**positively classify** as read-only, so an interactive `psql`, an unrecognised
+binary over `ssh` and anything it cannot parse are refused as writes; `full`
+permits everything and logs each one. `ask` is not a value here — these answer
+"how much of production may crew reach", a standing posture rather than a
+per-command question.
+
+**The level is a machine fact; what is production is not.** The two levels
+ratchet across both layers. `production.databases` and `production.hosts` — the
+glob lists they match against — are **repo-only**: `prod-db-*` names one
+cluster in one repo and something else in the next, so a machine-global list
+would describe the wrong estate everywhere else. **With no patterns declared
+the guard matches nothing**, which is how the strictest level can be the
+default and still change nobody's behaviour on upgrade.
+
+**A repo may only narrow.** These six and `install.policy` resolve to the
+**narrower** of the repo and machine-global layers, not by precedence. crew
+reads config out of cloned repositories: under precedence, a repo shipping
+`guards.forcePush: allow` would grant itself force-push rights on the machine
+of anyone who cloned it. So `allow` needs **both** layers to say `allow`, and
+`--explain` names the layer holding a key down when they disagree.
+
+**Two of these are new refusals, not preserved ones.** `guards.adminMerge`
+refuses `gh pr merge --admin`, which no crew guard refused before — measured
+against the previous release, both flavours exited 0 — and
+`guards.terraformApply` now covers `tofu` as well as `terraform`. Both were
+bypasses rather than features. The `/crew:upgrade` report says so out loud,
+because a user told only "the default is `block`, so nothing changed" will meet
+a command that ran yesterday being refused today and go looking for a bug in
+their tooling.
+
+Both shell flavours resolve the value through `crew_config.py --guard`; neither
+implements the layering itself. `guard.sh` and `guard.ps1` drift independently
+— three of the bypasses fixed in #132 were open in both — and the rule whose
+entire point is that a repo cannot widen it must not have two implementations.
+Any failure of that resolver is `block`, with the reason on stderr: "could not
+check" never becomes "checked, and fine".
 
 The full key reference is **[`CONFIG.md`](CONFIG.md)** — every key in both
 layers with its type, its default, which layer may set it, and a `path:line`
@@ -1913,8 +1989,9 @@ a worktree each, so a half-applied one cannot land on top of the other.
 | `/crew:model` | Report the resolved provider and model for every role, and which family would be reviewing which — see §12 |
 | `/crew:roster` | Print the crew as configured: roles, tier, and what each one is for |
 | `/crew:config [--show]` | Show where every setting comes from, and walk the machine-global config — see §11 |
+| `/crew:gate <disable\|enable\|status> <github\|bitbucket>` | Take a repository's merge gate down and put it back **from the export**. Gated by `guards.mergeGate`, which ships as `block` |
 
-24 commands.
+25 commands.
 
 ### Agents
 
@@ -2000,7 +2077,7 @@ ten; the prose was the half that went stale.
 
 | Script | Event | Behavior |
 |---|---|---|
-| `guard.sh` / `guard.ps1` | `PreToolUse` on Bash / PowerShell | Blocks `terraform apply`/`destroy`, destructive DDL, force push, hard reset, prod-targeted commands, and any command that would print a secret value into the transcript |
+| `guard.sh` / `guard.ps1` | `PreToolUse` on Bash / PowerShell | Blocks `terraform`/`tofu` `apply`/`destroy`, destructive DDL, force push, `gh pr merge --admin`, hard reset, prod-targeted commands, and any command that would print a secret value into the transcript. Three of those — `guards.terraformApply`, `guards.forcePush`, `guards.adminMerge` — are configurable per machine as `block` \| `ask` \| `allow`, defaulting to `block`, and access to a declared production database or host is `guards.prodDatabase` / `guards.prodServer` as `none` \| `read` \| `full`, defaulting to `none`; see §11b |
 | `promote-gate.sh` / `.ps1` | `PreToolUse` on Bash / PowerShell | Refuses a declared `deploy` command unless the upstream environment has an all-pass row for **this sha**, the rollback runbook is verified inside 90 days, `requireHuman` is approved, and the tree is clean. During an emergency lane it records each unmet precondition and allows the deploy (§24) |
 | `handoff-read.sh` / `.ps1` | `SessionStart` | Injects the handoff after clear, compact, or resume — first archiving it instead, under `.crew/handoffs/`, if age or reality drift (its `head`/`branch` no longer describing the checkout) says it is stale |
 | `pm-brief.sh` / `.ps1` | `SessionStart` | Runs `crew_state.py`, prints the prioritized PM brief (triggers, health, knowledge, graph freshness) — report-only, changes nothing |

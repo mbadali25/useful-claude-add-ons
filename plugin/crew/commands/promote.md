@@ -38,10 +38,11 @@ with the error text verbatim.
 - If `requireHuman` is set, show me the sha, the diff summary, and what the last
   production promotion was, then wait for me to say go. Do not proceed on
   silence.
-- **The Bitbucket merge gate**, if this repo has one. See
-  `## The Bitbucket merge gate` below - it runs here, before gate 2. When
-  `bitbucket.mergeGate.enabled` is `false`, which is the shipped default, that
-  section does not exist and there is nothing to do or to report.
+- **The merge gate**, if this repo has one, on Bitbucket or on GitHub. See
+  `## The merge gate` below - it runs here, before gate 2. When both
+  `bitbucket.mergeGate.enabled` and `github.mergeGate.enabled` are `false`,
+  which is the shipped default for both, that section does not exist and there
+  is nothing to do or to report.
 - **The source tree is reconciled against what the target is actually
   running.** A branch that was never reconciled will roll the environment
   backwards: an on-box hotfix, a config value changed during an incident, a
@@ -84,34 +85,51 @@ the actual numbers - error count, alarm state, queue depth - not "looks clean".
 A deploy that moved bytes successfully and broke the application looks identical
 to a good one until this gate runs.
 
-## The Bitbucket merge gate
+## The merge gate
 
-This step runs inside gate 1, before anything deploys. It reads three keys -
-`bitbucket.mergeGate.enabled`, `.branch` and `.preset`, documented in
-`plugin/crew/CONFIG.md` §8. Read them through `/crew:config` rather than out of
-`.crew/config.json`, because a machine-global file can set all three and the
-repo file would not show it.
+This step runs inside gate 1, before anything deploys. Two providers, one
+shape: Bitbucket reads `bitbucket.mergeGate.enabled`, `.branch` and `.preset`,
+GitHub reads `github.mergeGate.enabled` and `.branch` (there is no `preset` -
+see below). Both are documented in `plugin/crew/CONFIG.md` §8. Read them
+through `/crew:config` rather than out of `.crew/config.json`, because a
+machine-global file can set any of them and the repo file would not show it.
+
+**Route every invocation through `/crew:gate <disable|enable|status>
+<github|bitbucket>`.** Promote does not compose `merge_gate.sh` commands of its
+own. That command owns the workflow - it reads `guards.mergeGate` before
+anything else, it stops when the provider's skill is missing, and it knows the
+two scripts' argument surfaces are not interchangeable. Promote deciding for
+itself would be a second implementation of a sequence whose whole risk is the
+order of its steps.
+
+**`guards.mergeGate` decides whether any of this may happen at all, and it
+ships as `block`.** An `enabled: true` in `bitbucket.mergeGate` or
+`github.mergeGate` says this repo HAS a gate; `guards.mergeGate` says whether
+crew may touch it. When it is `block`, report the gate's state as
+**not checked** and say which key refused - never as checked and fine. That
+collapse is the bug this repo keeps rediscovering.
 
 **`enabled: false` - the shipped default - means do nothing at all.** No
-`merge_gate.sh` subcommand, no Bitbucket API call, not even `export`. It does
-**not** mean "apply the disabled preset": `disable` deletes branch
-restrictions, and that is the opposite action against a live repo from the one
-a `false` in a config file expresses. A repo that never asked crew for a gate
-keeps whatever restrictions its owner made by hand. There is nothing to report
-in this case - say nothing and move to gate 2.
+`merge_gate.sh` subcommand, no `/crew:gate` invocation, no Bitbucket or GitHub
+API call, not even `export`. It does **not** mean "apply the disabled preset":
+`disable` deletes branch restrictions, and that is the opposite action against
+a live repo from the one a `false` in a config file expresses. A repo that
+never asked crew for a gate keeps whatever restrictions its owner made by hand.
+There is nothing to report in this case - say nothing and move to gate 2.
 
 Everything below is what `enabled: true` means.
 
 **The script belongs to another marketplace entry. Reference it, never
-reimplement it.** The gate is `skills/bitbucket/scripts/merge_gate.sh`, from
-the `bitbucket` skill, which crew does not bundle. If that script is not on
-this machine, this is a **stop** - the same shape as an absent `rollback` key,
-not a warning to walk past. Say "`bitbucket.mergeGate.enabled` is true and the
-`bitbucket` skill is not installed, so the merge gate could not be checked",
-name the two fixes (install `bitbucket`, or set `enabled: false`), and stop.
-Do not hand-roll a `branch-restrictions` API call, and do not let "could not
-check" become "checked, and fine" - that collapse is the bug this repo keeps
-rediscovering.
+reimplement it.** The gate is `skills/bitbucket/scripts/merge_gate.sh` from the
+`bitbucket` skill, or `skills/github/scripts/merge_gate.sh` from the `github`
+skill, and crew bundles neither. If the script for the provider this repo uses
+is not on this machine, this is a **stop** - the same shape as an absent
+`rollback` key, not a warning to walk past. Say "`<provider>.mergeGate.enabled`
+is true and the `<provider>` skill is not installed, so the merge gate could
+not be checked", name the two fixes (install the skill, or set
+`enabled: false`), and stop. Do not hand-roll a `branch-restrictions` or a
+`branches/*/protection` API call, and do not let "could not check" become
+"checked, and fine".
 
 **`branch` binds to one flag, and `null` means ask:**
 
@@ -130,6 +148,12 @@ One exception, which the script prints itself: `--branch` **is ignored** with
 `--from-export` (`skills/bitbucket/scripts/merge_gate.sh:464`), because each
 exported object carries its own scope. Do not report a restore as having been
 scoped to the configured branch.
+
+GitHub differs in two places `/crew:gate` documents in full and promote must
+not paper over: its `export` is **branch-scoped** (classic protection is
+per-branch in the URL), and its `enable` **requires** `--from-export` and
+rejects `--branch` as a usage error. So a GitHub restore has no bare form at
+all, and there is no GitHub `preset` for a config key to select.
 
 **`preset` is wired to nothing, and promote must not pretend otherwise.**
 `merge_gate.sh` has no `--preset` flag. The preset a bare `enable` applies is
@@ -225,8 +249,13 @@ and that the soak was really waited out. The same goes for the two gate-1/gate-2
 checks added above: the hook cannot reconcile the source tree against the live
 artifact, and it cannot tell a green run from a green run that skipped its
 deploy job. **The Bitbucket merge gate section is prose too** - no hook fires on
-`merge_gate.sh`, nothing checks that an `enabled: true` was honoured, and
-`promote-gate.sh` does not read `bitbucket.mergeGate` at all. Those are prose,
+`merge_gate.sh` or on `/crew:gate`, nothing checks that an `enabled: true` was
+honoured, and
+`promote-gate.sh` does not read `bitbucket.mergeGate` or `github.mergeGate` at
+all. `guards.mergeGate` is not prose - it is read by `/crew:gate` from
+`crew_config.py --guard mergeGate`, and at `block` that command refuses. But
+nothing forces promote to ROUTE through `/crew:gate`; that part is prose too.
+Those are prose,
 and prose only holds if you run it. A hook fires before a command and after
 a turn; it cannot watch the middle. The row you append is a claim, and the only
 thing that makes it worth anything is that it is written honestly - **including

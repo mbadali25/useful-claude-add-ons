@@ -46,7 +46,13 @@ _REPO = os.path.join(_PLUGIN, os.pardir, os.pardir)
 _MERGE_GATE = os.path.join(
     _REPO, "skills", "bitbucket", "scripts", "merge_gate.sh")
 
-_SECTION = "## The Bitbucket merge gate"
+# Renamed from `## The Bitbucket merge gate` when GitHub got a twin. The
+# heading is the section's only handle, so the rename has to be made here
+# deliberately rather than by widening the split until something matches -- and
+# `test_the_gate_section_is_named_for_both_providers` below asserts the new
+# name covers both, so a silent revert to the Bitbucket-only heading fails
+# rather than quietly shrinking the section's scope back.
+_SECTION = "## The merge gate"
 
 # Exit code 2 in merge_gate.sh -- `E_USAGE`, at :33.
 _E_USAGE = 2

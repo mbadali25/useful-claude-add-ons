@@ -121,7 +121,7 @@ still writes only the repo file.
 
 ```json
 {
-  "schema": 5,
+  "schema": 6,
   "tier": 0,
   "roles": ["explorer", "qa-reviewer"],
   "qa": {
@@ -155,13 +155,21 @@ still writes only the repo file.
   "graph": { "enabled": true, "tool": "graphify", "out": "graphify-out", "mode": "code-only", "commitHook": false },
   "docs": { "theme": null, "reportTheme": null },
   "bitbucket": { "mergeGate": { "enabled": false, "branch": null, "preset": "standard" } },
-  "install": {"policy": "manual"}
+  "github": { "mergeGate": { "enabled": false, "branch": null } },
+  "install": {"policy": "manual"},
+  "guards": { "terraformApply": "block", "forcePush": "block", "adminMerge": "block", "mergeGate": "block",
+              "prodDatabase": "none", "prodServer": "none" },
+  "production": { "databases": [], "hosts": [] }
 }
 ```
 
-`schema: 4` — this repo is born current. It never trips `upgradeNeeded`, which fires on
-any config predating the `pm` and `graph` blocks, the per-role provider table, or the
-`docs.theme` default moving to null.
+`schema: 6` — this repo is born current. It never trips `upgradeNeeded`, which fires on
+any config predating the `pm` and `graph` blocks, the per-role provider table, the
+`docs.theme` default moving to null, `install.policy`, or the `guards` block. `production.databases` and
+`production.hosts` are the globs `guards.prodDatabase` and `guards.prodServer`
+match commands against, and they are repo-only: the LEVEL is a machine fact, what
+IS production is a fact about this checkout. Empty lists mean those two guards
+match nothing, which is why they can default to `none` and change no behaviour.
 `qa.provider`: `auto` walks `qa.order` and uses the first provider that passes its
 probe, announcing which ran. Name a provider (`codex`, `copilot`, `claude`) to pin it
 and hard-fail instead of falling back.
@@ -228,6 +236,23 @@ who did mean neutral sets it again and it is honoured.
 failing merges nobody asked it to watch. `branch: null` means the repo's main branch is
 resolved from the Bitbucket API rather than assumed to be `main` — a repo on `master` or a
 Gitflow `develop` would otherwise get a gate that looks configured and guards nothing.
+
+`github.mergeGate`: the same two keys for GitHub, for the same two reasons. There is no
+`preset`, and the missing key is the decision: `bitbucket.mergeGate.preset` binds to
+nothing and CONFIG.md §8 records why it stays unwired, so copying it would be shipping
+that defect a second time on purpose.
+
+`guards`: four keys, each `block` | `ask` | `allow`, all four arriving as `block`.
+`terraformApply`, `forcePush` and `adminMerge` are read by crew's command guard;
+`mergeGate` is read by `/crew:gate` and decides whether crew may take a live repo's merge
+gate down at all. `ask` means crew prints the exact command and refuses until the user
+creates the one marker file it names — approving that command and no other. `allow` means
+crew runs it and writes a row to `.crew/guard.log`; under `allow` nothing is silent.
+**These four and `install.policy` resolve to the NARROWER of the repo and global layers,
+not the repo's** — a repo travels inside a clone somebody else wrote, and under ordinary
+precedence it could grant itself force-push rights on the machine of anyone who cloned it.
+So a repo may ask for less than the machine allows and be obeyed, and may ask for more and
+be refused; `/crew:config --explain` names which layer is holding a key down.
 
 ### Offer the per-role table — do not leave the user to find the keys
 

@@ -200,6 +200,30 @@ else
   echo "== guard.sh: jq fast path SKIPPED - no jq on PATH, already testing the fallback =="
 fi
 
+# Three of guard.sh's rules now resolve `guards.<name>` through crew_config.py,
+# so their answer depends on two CONFIG FILES as well as on the code: this
+# repo's `.crew/config.json` (machine-local and gitignored) and the developer's
+# own `~/.claude/crew/config.json`. Without pinning both, a developer who set
+# `guards.forcePush: allow` on their machine would watch a dozen cases below go
+# red and conclude the guard had regressed.
+#
+# "Run the states; do not reason about them", and check what you changed about
+# the MEASUREMENT before reporting a regression -- a guard suite here once
+# reported 24/33 for exactly this class of reason. So: an empty scratch repo and
+# an empty HOME for the whole guard section, restored afterwards, which pins
+# every guard to its shipped default of `block`. The configured values get their
+# own coverage in `tests/test_guards.py`, where the layers are fixtures.
+GUARD_PIN=$(mktemp -d) || exit 1
+mkdir -p "$GUARD_PIN/repo/.crew" "$GUARD_PIN/home/.claude/crew"
+printf '{"schema":6}' > "$GUARD_PIN/repo/.crew/config.json"
+printf '{}' > "$GUARD_PIN/home/.claude/crew/config.json"
+GUARD_PIN_OLD_PROJECT="${CLAUDE_PROJECT_DIR:-}"
+GUARD_PIN_OLD_HOME="${HOME:-}"
+GUARD_PIN_OLD_USERPROFILE="${USERPROFILE:-}"
+export CLAUDE_PROJECT_DIR="$GUARD_PIN/repo"
+export HOME="$GUARD_PIN/home"
+export USERPROFILE="$GUARD_PIN/home"
+
 echo "== guard.sh: must BLOCK (exit 2) =="
 expect 2 'terraform apply -auto-approve'
 expect 2 'terraform destroy'
@@ -238,6 +262,16 @@ expect 2 'aws ssm get-parameter --name /db/pass --with-decryption'
 expect 2 'kubectl get secret db -o yaml'
 expect 2 'cat .env'
 expect 2 'cat .env.production'
+# Schema 6's NEW refusals. Both of these exited 0 in BOTH flavours against
+# origin/main, so these two blocks are the must-block cases that ran red before
+# the fix. `guards.adminMerge` and the `tofu` spelling of
+# `guards.terraformApply` are new refusals, not preserved ones -- the upgrade
+# report says so rather than letting "the default is block" cover it.
+expect 2 'gh pr merge 12 --admin --squash'
+expect 2 'gh pr merge --admin 12'
+expect 2 'tofu apply -auto-approve'
+expect 2 'tofu destroy'
+expect 2 'tofu -chdir=infra apply'
 
 echo "== guard.sh: must ALLOW (exit 0) =="
 expect 0 'terraform plan'
@@ -278,6 +312,92 @@ expect 0 'export DB_PASS=$(vault kv get -field=pass secret/db)'
 expect 0 'npm test'
 expect 0 'grep -r TODO src/'
 expect 0 'cat README.md'
+# The new rules must not widen into ordinary work. `gh pr merge` without
+# --admin is the normal way to merge a PR, and `tofu plan` is the safe half of
+# the pair -- a guard that fires on these is the guard people switch off.
+expect 0 'gh pr merge 12 --squash --delete-branch'
+expect 0 'gh pr view 12'
+expect 0 'tofu plan'
+expect 0 'tofu fmt -recursive -check'
+# The two production guards, at the shipped default with NOTHING declared.
+# This is the behaviour-preservation case: with `production.databases` and
+# `production.hosts` empty, `none` -- the strictest level there is -- matches
+# nothing, so ordinary remote work is exactly as quiet as it was before schema
+# 6. If this section ever goes red, the new default stopped being free.
+expect 0 'ssh deploy@app-1 "systemctl restart app"'
+expect 0 'ssh deploy@app-1'
+expect 0 'psql -h db-1 -c "delete from orders"'
+
+# Now the same guards with production DECLARED, which is the only state in
+# which they do anything. A second scratch pair rather than editing the first:
+# every case above asserts the undeclared state, and a suite that mutated the
+# fixture underneath them would leave those cases asserting something else.
+GUARD_PROD=$(mktemp -d) || exit 1
+mkdir -p "$GUARD_PROD/repo/.crew" "$GUARD_PROD/home/.claude/crew"
+# The machine-global layer sits at the CEILING so the repo value is what
+# varies. With it left unset the ratchet correctly holds every repo value down
+# to `none`, and every case below would pass for the wrong reason.
+printf '{"guards":{"prodDatabase":"full","prodServer":"full"}}' \
+  > "$GUARD_PROD/home/.claude/crew/config.json"
+export CLAUDE_PROJECT_DIR="$GUARD_PROD/repo"
+export HOME="$GUARD_PROD/home"
+export USERPROFILE="$GUARD_PROD/home"
+
+prod_level() {  # $1 = none|read|full
+  printf '{"schema":6,"guards":{"prodDatabase":"%s","prodServer":"%s"},"production":{"databases":["prod-db-*"],"hosts":["prod-web-*"]}}' \
+    "$1" "$1" > "$GUARD_PROD/repo/.crew/config.json"
+}
+
+echo "== guard.sh: production access, guards.prod* = none (exit 2) =="
+prod_level none
+expect 2 'psql -h prod-db-1 -c "select 1"'
+expect 2 'ssh deploy@prod-web-1 "tail -n 5 /var/log/app.log"'
+
+echo "== guard.sh: production access, guards.prod* = read =="
+prod_level read
+# Positively classified as read-only: permitted.
+expect 0 'psql -h prod-db-1 -c "select count(*) from orders"'
+expect 0 'ssh deploy@prod-web-1 "tail -n 50 /var/log/app.log"'
+expect 0 'ssh deploy@prod-web-1 "systemctl status app"'
+# A write: refused.
+expect 2 'psql -h prod-db-1 -c "delete from orders"'
+expect 2 'ssh deploy@prod-web-1 "systemctl restart app"'
+# UNCLASSIFIABLE is a write, and these are the cases `read` rests on. An
+# interactive session says nothing about what will be typed into it, and a
+# tool crew does not recognise says nothing at all.
+expect 2 'psql -h prod-db-1'
+expect 2 'ssh deploy@prod-web-1'
+expect 2 'ssh deploy@prod-web-1 "somebinary --go"'
+expect 2 'aws ssm start-session --target prod-web-1'
+# A host or database that matches NO declared pattern is not production, at
+# any level. A guard that fired on these is the guard people switch off.
+expect 0 'ssh deploy@staging-web-1 "systemctl restart app"'
+expect 0 'psql -h dev-db-9 -c "delete from orders"'
+
+echo "== guard.sh: production access, guards.prod* = full =="
+prod_level full
+expect 0 'psql -h prod-db-1 -c "delete from orders"'
+expect 0 'ssh deploy@prod-web-1 "systemctl restart app"'
+
+# Back to the empty scratch repo for anything that follows.
+export CLAUDE_PROJECT_DIR="$GUARD_PIN/repo"
+export HOME="$GUARD_PIN/home"
+export USERPROFILE="$GUARD_PIN/home"
+
+# Restore the environment the section pinned. Unset rather than export an empty
+# string where there was nothing: `HOME=""` is not the same state as no HOME,
+# and every later section in this file reads the real one.
+if [ -n "$GUARD_PIN_OLD_PROJECT" ]; then
+  export CLAUDE_PROJECT_DIR="$GUARD_PIN_OLD_PROJECT"
+else
+  unset CLAUDE_PROJECT_DIR
+fi
+if [ -n "$GUARD_PIN_OLD_HOME" ]; then export HOME="$GUARD_PIN_OLD_HOME"; else unset HOME; fi
+if [ -n "$GUARD_PIN_OLD_USERPROFILE" ]; then
+  export USERPROFILE="$GUARD_PIN_OLD_USERPROFILE"
+else
+  unset USERPROFILE
+fi
 
 echo "== verify-gate.sh =="
 D=$(mktemp -d) || exit 1

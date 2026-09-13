@@ -103,6 +103,12 @@ PROMOTE_SH = os.path.join(CREW, "hooks", "scripts", "promote-gate.sh")
 # sabotage a claim about another entry's interface is to break that interface.
 MERGE_GATE = os.path.join(
     ROOT, "skills", "bitbucket", "scripts", "merge_gate.sh")
+GUARD_PS1 = os.path.join(CREW, "hooks", "scripts", "guard.ps1")
+# Split out of `crew_state.py` on 2026-09-13 -- see its docstring. Five
+# mutations below moved here with the code they target; none was
+# re-anchored onto a nearby line, which this file's own header forbids.
+GUARDS = os.path.join(CREW, "hooks", "scripts", "crew_guards.py")
+GATE_DOC = os.path.join(CREW, "commands", "gate.md")
 
 GUARD = '    if out["family"] is not None and out["family"] in authors:'
 ROLE_PIN = '    decided = resolve_role(cfg, "dev", "developer")'
@@ -112,6 +118,235 @@ BLOCK_ONLY = (
 )
 
 MUTATIONS = (
+    (
+        # The ratchet stops ratcheting: `min` becomes `max`, so the effective
+        # value is the MORE permissive of the two layers. A cloned repo then
+        # grants itself force-push rights, or `install.policy: auto`, on the
+        # machine of anyone who cloned it -- the single defect the whole
+        # narrowing rule exists to prevent.
+        #
+        # One character, in the one function permitted to combine the layers.
+        # That is the point of generalising it into a table: before schema 6
+        # this mutation had to be applied twice to cover two keys, and a third
+        # copy could have been wrong without either mutation noticing.
+        "the layer ratchet takes the WIDER of the two layers",
+        GUARDS,
+        "    return tiers[min(rank(repo_value), rank(global_value))]",
+        "    return tiers[max(rank(repo_value), rank(global_value))]",
+        ("tests/test_guards.py::"
+         "test_the_effective_value_is_the_lower_rank_of_the_two_layers"),
+    ),
+    (
+        # Normalisation is dropped from the rank, so an unknown value no
+        # longer collapses to `block` -- it raises instead, and a raise inside
+        # `resolve_ratcheted` reaches `crew_config.py --guard` as a non-zero
+        # exit, which both shells read as `block`. So the FAIL-CLOSED outcome
+        # survives by luck, through a different path, while the property under
+        # test is gone.
+        #
+        # Anchored on the rank rather than on `normalise_guard_policy` itself:
+        # mutating the normaliser's fallback would trip the normalisation test
+        # AND this one, and a mutation that trips two tests tells you nothing
+        # about either. This one leaves the normaliser correct and removes its
+        # only use in the comparison, which is where the ordering is decided.
+        "an unknown guard value is ranked without being normalised first",
+        GUARDS,
+        "    return GUARD_POLICIES.index(normalise_guard_policy(value))",
+        "    return GUARD_POLICIES.index(value)",
+        ("tests/test_guards.py::"
+         "test_guard_policy_rank_orders_block_below_ask_below_allow"),
+    ),
+    (
+        # The guard reads the REPO's RAW value instead of the resolved one --
+        # the single line where the ratchet is actually consumed. A cloned
+        # repo's `guards.forcePush: allow` then wins outright on a machine
+        # whose owner said `block`.
+        #
+        # An earlier draft of this entry mutated guard.sh instead, dropping the
+        # global layer out of the resolution with a `--global-path` pointing at
+        # nothing. It came back STILL GREEN, correctly: an absent global file
+        # resolves to the FLOOR, so that mutation made the guard more
+        # restrictive rather than less, and proved nothing at all. Recorded
+        # rather than quietly replaced, because "my mutation went the safe
+        # direction" is indistinguishable from "the test is vacuous" unless
+        # somebody writes down which it was.
+        #
+        # Every unit test of `effective_ratcheted` still passes under this
+        # mutation -- the function is untouched. Only a test that runs the HOOK
+        # against two layers catches it.
+        "the guard reads the repo's raw guard value, not the resolved one",
+        CONFIG,
+        '    policy = resolved["effective"]',
+        '    policy = resolved["repo"]',
+        ("tests/test_guards.py::"
+         "test_sh_a_repo_cannot_widen_past_the_machine"),
+    ),
+    (
+        # The identical mutation, run against the OTHER flavour's test. The
+        # duplication is deliberate: `guard.sh` and `guard.ps1` drift
+        # independently -- three of the bypasses fixed in #132 were open in
+        # both -- so a suite that proved one flavour's ratchet test non-vacuous
+        # would be reporting coverage for a pair while testing half of it.
+        "the guard reads the repo's raw guard value, not the resolved one "
+        "(PowerShell flavour)",
+        CONFIG,
+        '    policy = resolved["effective"]',
+        '    policy = resolved["repo"]',
+        ("tests/test_guards.py::"
+         "test_ps1_a_repo_cannot_widen_past_the_machine"),
+    ),
+    (
+        # `ask` stops stopping: the refusal becomes a pass-through, so a guard
+        # the user set to "print it and wait" runs without waiting. The exact
+        # command is still printed, so the session TRANSCRIPT still looks like
+        # an approval flow -- which is what makes this worth a mutation of its
+        # own rather than folding it into the policy test.
+        "guard.sh's `ask` prints the command and then runs it anyway",
+        GUARD_SH,
+        "      [ -n \"$reason\" ] && printf '%s\\n' \"$reason\" >&2\n"
+        "      exit 2",
+        "      [ -n \"$reason\" ] && printf '%s\\n' \"$reason\" >&2\n"
+        "      return 0",
+        "tests/test_guards.py::test_sh_honours_each_policy",
+    ),
+    (
+        # The same claim in the other flavour, and here it is NOT a duplicate:
+        # the two scripts implement the refusal separately, so this is a second
+        # piece of code that can be wrong on its own.
+        "guard.ps1's `ask` prints the command and then runs it anyway",
+        GUARD_PS1,
+        "      if ($reason) { [Console]::Error.WriteLine($reason) }\n"
+        "      exit 2",
+        "      if ($reason) { [Console]::Error.WriteLine($reason) }\n"
+        "      return",
+        "tests/test_guards.py::test_ps1_honours_each_policy",
+    ),
+    (
+        # THE one the production levels rest on: unknown becomes a read. Every
+        # command the classifier positively recognises is still classified the
+        # same way, so every `read` test that uses a real SELECT or a real
+        # `tail` keeps passing -- only the commands crew CANNOT read change
+        # answer, from refused to permitted. That is `read` silently becoming
+        # `full` for exactly the inputs nobody can predict: an interactive
+        # `psql prod-db-1`, an unrecognised binary over ssh, a command with an
+        # unbalanced quote. The replacement is also the natural one to write,
+        # which is why it needs a test rather than a reviewer.
+        "an unclassifiable command counts as a read, so `read` permits what "
+        "crew cannot read",
+        GUARDS,
+        # Anchored on `_classify_segment`'s fall-through, which is where an
+        # unrecognised program over `ssh` actually lands. The fall-through at
+        # the bottom of `classify_access` looks like the same claim and is
+        # not: every unclassifiable case in the suite reaches a tool-specific
+        # branch first, so mutating that one came back STILL GREEN -- a
+        # mutation of a line no input reaches proves nothing about the line
+        # that decides.
+        '    if head in PROD_READ_COMMANDS:\n        return "read"\n'
+        '    return "write"',
+        '    if head in PROD_READ_COMMANDS:\n        return "read"\n'
+        '    return "read"',
+        ("tests/test_guards.py::"
+         "test_everything_else_is_a_write_including_what_it_cannot_read"),
+    ),
+    (
+        # The patterns start falling back to the machine-global file, so a
+        # global `production` block reaches every repo that declared none.
+        # Nothing looks wrong: the guard still refuses and still names a
+        # pattern, it just names one from a file this repo never wrote, about
+        # an estate that is not this one.
+        #
+        # Two earlier attempts came back STILL GREEN and both are worth
+        # recording, because each was vacuous for its own reason. Routing
+        # through `resolve_config` changes nothing: `filter_global` prunes
+        # `production` out of the global layer before the merge, so the claim
+        # is protected twice and that mutation defeats neither guard. Then
+        # `... or read_global_config()` never fires, because a repo config
+        # carrying `schema` is truthy whether or not it declares `production`
+        # -- a fallback on the wrong object. This one merges, which is the
+        # shape a well-meaning "make it work globally too" edit takes.
+        "the production patterns fall back to the machine-global file, so a "
+        "global block reaches every repo",
+        CONFIG,
+        "    cfg = crew_state.load_config(root) or {}",
+        "    cfg = {**read_global_config(),\n"
+        "           **(crew_state.load_config(root) or {})}",
+        ("tests/test_guards.py::"
+         "test_production_patterns_never_read_the_global_layer"),
+    ),
+    (
+        # The ratchet reads the production levels through the POLICY
+        # vocabulary. `none`/`read`/`full` are not in `GUARD_POLICIES`, so
+        # every one of them normalises to `block` -- and `block` is not a
+        # value these two keys have. The guard then reports a tier nobody set,
+        # which is the two-vocabularies-in-one-block failure this table exists
+        # to prevent.
+        "the production guards are ranked by the block/ask/allow table",
+        GUARDS,
+        "    if name in PROD_GUARD_NAMES:\n"
+        "        return (PROD_LEVELS, normalise_prod_level, prod_level_rank)",
+        "    if False:\n"
+        "        return (PROD_LEVELS, normalise_prod_level, prod_level_rank)",
+        ("tests/test_guards.py::"
+         "test_the_ratchet_is_one_table_covering_install_policy_and_all_four_"
+         "guards"),
+    ),
+    (
+        # The approval stops expiring, and `ask` quietly becomes a permanent
+        # per-command `allow`. This is the mutation with the least visible
+        # symptom in the file: every decision is still correct the first time,
+        # the marker is still keyed on the command, both flavours still print
+        # the same lines, and nothing goes wrong until a marker from another
+        # day is still sitting in a gitignored directory nothing prunes. The
+        # replacement is the obvious, natural spelling -- `os.path.exists` is
+        # what this line said before the bound was added -- which is why it
+        # needs a test rather than a reviewer.
+        "an `ask` approval never expires, so one yes covers that command "
+        "forever",
+        CONFIG,
+        "        if _approval_is_live(marker):",
+        "        if os.path.exists(marker):",
+        ("tests/test_guards.py::"
+         "test_an_ask_approval_outside_the_window_asks_again"),
+    ),
+    (
+        # `allow` goes silent: the row stops being written, so there is no
+        # record that crew force-pushed. The command still runs and the guard
+        # still exits 0, so nothing else in the suite changes -- which is the
+        # whole danger. A machine owner chooses `allow` precisely so they are
+        # not asked at the time, and the log is then the only place the event
+        # exists once the session is gone.
+        #
+        # The mutation excludes `allow` from the call and nothing else, so the
+        # block and ask rows keep being written and the only claim it breaks
+        # is the one it is labelled with. An earlier version read `if False
+        # and ...`, which stopped EVERY row -- the same effect as emptying
+        # `_log_guard`'s body, while this comment claimed it was narrower. A
+        # comment that misdescribes its own mutation is exactly the failure
+        # this file's header is about, so it is corrected here rather than
+        # quietly rewritten.
+        "under `allow` the guard stops recording what it let through",
+        CONFIG,
+        "    if not record:\n        return\n"
+        "    if decision == \"block\"",
+        "    if not record:\n        return\n"
+        "    if decision == \"allow\":\n        return\n"
+        "    if decision == \"block\"",
+        "tests/test_guards.py::test_under_allow_nothing_is_silent",
+    ),
+    (
+        # `/crew:gate` stops reading `guards.mergeGate` before it acts. The
+        # command still names the key elsewhere in the file, so a grep for
+        # "guards.mergeGate" still finds it and the routing assertions still
+        # pass -- only the ORDER is gone, and the order is the whole property:
+        # a policy read after the provider is resolved is a policy read after
+        # a real `export` API call has already happened against a live repo.
+        "/crew:gate reads guards.mergeGate after resolving the provider",
+        GATE_DOC,
+        "## 0. Read `guards.mergeGate` first, before anything else",
+        "## 0. Preflight",
+        ("tests/test_gate_command.py::"
+         "test_guards_merge_gate_is_read_first_and_by_name"),
+    ),
     (
         # `--brand` stops existing on the findings-report script, so crew's
         # routing table names a flag the tool does not accept -- the ticket's
@@ -281,8 +516,8 @@ MUTATIONS = (
         # when it is forgotten.
         "the current migration loses its entry in upgrade.md section 5",
         UPGRADE_DOC,
-        "- **Schema 4 \u2192 5**",
-        "- **The install policy migration**",
+        "- **Schema 5 \u2192 6**",
+        "- **The guardrails migration**",
         "tests/test_pm_brief.py::"
         "test_the_brief_and_upgrade_md_agree_on_the_current_migration",
     ),
@@ -447,14 +682,16 @@ MUTATIONS = (
         # exactly the gap that let it reach review.
         "the schema is not bumped, so the migration never runs",
         STATE,
+        "SCHEMA_CURRENT = 6",
         "SCHEMA_CURRENT = 5",
-        "SCHEMA_CURRENT = 4",
-        # Re-pinned to the install.policy test when this entry went VACUOUS.
-        # The theme test migrates a repo at schema 3, which keeps passing with
-        # the bump reverted -- a schema-3 repo is behind either way. Only a repo
-        # at the PREVIOUS schema can tell whether the current bump happened.
-        ("tests/test_install_policy.py::"
-         "test_the_schema_bump_actually_reaches_a_repo_at_the_previous_schema"),
+        # Re-pinned AGAIN at schema 6, and the reason is the same one that
+        # forced the first re-pin: the test it named migrates a repo at schema
+        # 4, which keeps passing with the 6 reverted to 5 -- a schema-4 repo is
+        # behind either way. Only a repo at the IMMEDIATELY PREVIOUS schema can
+        # tell whether the current bump happened, so this entry has to move to
+        # that repo's test on every bump. It went STILL GREEN here first and
+        # was caught by this suite, not by reading it, for the second time.
+        "tests/test_guards.py::test_the_schema_6_bump_reaches_a_repo_at_schema_5",
     ),
     (
         # The one-shot gate goes, so the rewrite matches on the VALUE forever.
@@ -1545,10 +1782,22 @@ MUTATIONS = (
         # config out of cloned repositories, so under precedence a repo
         # shipping `auto` overrides a machine owner who chose `manual` and crew
         # starts running commands because of a file the user never wrote.
+        # RE-ANCHORED at schema 6, not deleted. `effective_install_policy` is
+        # now a thin wrapper on `effective_ratcheted`, so the line this entry
+        # named no longer exists -- but the CODE was not deleted, it moved, and
+        # sabotage.py's header forbids re-anchoring onto whatever line is
+        # nearest, not re-anchoring onto the line the code became.
+        #
+        # Kept as its own entry even though the guards entry above mutates the
+        # identical line, and the duplication is the point: it proves the
+        # generalisation did not ORPHAN install.policy's own coverage. The two
+        # entries run the same mutation against two different tests, and if the
+        # install-policy test had quietly stopped exercising the ratchet, this
+        # one would come back STILL GREEN while the other stayed red.
         "install.policy resolves by precedence instead of narrowing",
-        STATE,
-        "    return INSTALL_POLICIES[min(install_policy_rank(repo_value),",
-        "    return INSTALL_POLICIES[max(install_policy_rank(repo_value),",
+        GUARDS,
+        "    return tiers[min(rank(repo_value), rank(global_value))]",
+        "    return tiers[max(rank(repo_value), rank(global_value))]",
         ("tests/test_install_policy.py::"
          "test_two_layers_can_only_narrow_never_widen"),
     ),
@@ -1561,7 +1810,7 @@ MUTATIONS = (
         # stops being inert. That is the difference between "auto runs one of
         # three commands in crew's source" and "auto runs what it was handed".
         "install_plan consults the policy before the shipped-command table",
-        STATE,
+        GUARDS,
         "    command = INSTALLABLE.get(name)\n    if command is None:",
         "    command = INSTALLABLE.get(name)\n    if command is None and "
         "resolved != \"auto\":",
@@ -1577,7 +1826,7 @@ MUTATIONS = (
         # rule, which IS "fall back to the documented default" and is correct
         # there because no granularity is more permissive than another.
         "an unknown install policy falls back to the default, not the floor",
-        STATE,
+        GUARDS,
         "        if cleaned in INSTALL_POLICIES:\n            return cleaned\n"
         "    return INSTALL_POLICY_DEFAULT",
         "        if cleaned in INSTALL_POLICIES:\n            return cleaned\n"
@@ -1607,7 +1856,7 @@ MUTATIONS = (
         # whose owners did not ask for it. Landing anything but the floor means
         # upgrading crew is what granted the capability.
         "the schema 5 migration lands install.policy above the floor",
-        STATE,
+        GUARDS,
         'INSTALL_DEFAULTS = {"policy": INSTALL_POLICY_DEFAULT}',
         'INSTALL_DEFAULTS = {"policy": "auto"}',
         ("tests/test_install_policy.py::"
