@@ -1,4 +1,4 @@
-name: Pytest (crew + gizmoduck plugins)
+name: Pytest (crew + gizmoduck plugins, mermaid-svg-bitbucket)
 
 on: [push]
 
@@ -40,4 +40,4 @@ jobs:
       # no test by name and looked like a plain failure. Verified by blocking
       # the yaml import locally, which reproduces the same 12 collection
       # errors the runner logs.
-      run: pytest plugin/crew/tests/ plugin/gizmoduck/scripts/_test/ -v
+      run: pytest plugin/crew/tests/ plugin/gizmoduck/scripts/_test/ skills/mermaid-svg-bitbucket/tests/ -v
