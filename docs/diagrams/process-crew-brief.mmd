@@ -1,0 +1,104 @@
+%% Generated from useful-claude-add-ons@e9661f7b on 2026-09-12. Verify before trusting.
+%% Anchors: plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/pm_brief.py, plugin/crew/hooks/scripts/crew_endpoints.py, plugin/crew/hooks/scripts/crew_incident.py
+%% How a fact about the repo becomes the finding a session opens with - and what can drop it.
+%% --
+%% Drawn because nothing diagrammed crew's own control flow. data-flow-crew-config.mmd
+%% draws how a config VALUE reaches a run; this draws how a repo FACT reaches the
+%% human. They meet at pm.mode / pm.quietLines / pm.maxLines, which that diagram
+%% resolves and this one consumes.
+%% --
+%% Derived by reading the source at this anchor, not from .crew/codemap/crew.md:
+%% every line number below came from an AST walk of the named file, and the
+%% TRIGGERS/FINDINGS parity was derived by importing both modules and comparing the
+%% key sets in both directions. That matters here specifically - the codemap note
+%% this would otherwise have been drawn from was found, at this same anchor, to have
+%% carried 33 citations forward unchecked, twelve of them wrong by hundreds of lines.
+%% A diagram drawn from a map is only as good as the map; this one skipped it.
+%% --
+%% The one sentence this diagram exists to make visible:
+%%   TRIGGERS is a PRIORITY ORDER, not a list of what fired, and truncation cuts
+%%   from the bottom of it - so the order is the only thing guaranteeing that the
+%%   expensive finding is the one that survives a full brief.
+%% Membership and order are computed in two different places. evaluate_triggers
+%% builds an unordered dict of what fired, then returns
+%%   [name for name in TRIGGERS if fired[name]]   (crew_state.py:2738)
+%% Adding a trigger to the dict and forgetting the tuple raises KeyError on every
+%% session; adding it to the tuple and forgetting the dict does the same. The two
+%% cannot drift apart silently, which is why it is written this way.
+%% --
+%% Deliberately NOT drawn, to keep one idea on one screen: the dispatch store
+%% (.work/dispatch.d/, DISPATCH_DIR crew_state.py:1645) and the author-family
+%% independence guard that reads it. That is a second diagram - it answers "who is
+%% allowed to review this", not "what should happen next".
+
+flowchart TB
+
+    subgraph Entry["SessionStart - registered once per shell flavour"]
+        direction TB
+        HOOK["plugin/crew/hooks/hooks.json<br/>3 SessionStart entries, each registered<br/><b>twice</b>: bash and <i>shell: powershell</i>.<br/>A bare command goes to Git Bash on Windows,<br/>so a single registration stands down silently<br/>on half the machines it ships to."]
+        SH["hooks/scripts/pm-brief.sh :14<br/><i>exec</i>s pm_brief.py - a thin wrapper on<br/>purpose, so both flavours share one<br/>implementation rather than two that drift"]
+    end
+
+    subgraph Collect["crew_state.collect() :2741-2845 - one reader per state key"]
+        direction TB
+        RI["crew_incident.read_state :134<br/>yields incident.active / .present / .expired"]
+        RW["read_work :222<br/>yields work.handoffPending"]
+        RE["crew_endpoints.read_endpoints :914<br/>yields endpoints.unscanned<br/><i>[] whenever gizmoduck is absent</i>"]
+        RK["read_knowledge :692<br/>yields knowledge.behind, knowledge.unresolvable<br/><b>two keys, not one</b> - since 0.19.13 an<br/>anchor that resolves to nothing is its own<br/>value, not a kind of behind"]
+        RD["read_diagrams :777<br/>yields diagrams.behind, diagrams.missing<br/><i>no anchor counts as behind</i>: unknown<br/>resolving to stale is the honest direction"]
+        RM["read_metrics :168<br/>yields health.rate (findings per ticket)"]
+    end
+
+    EVAL["evaluate_triggers(state) :2690-2738<br/>builds an <b>unordered dict</b> of 12 booleans"]
+    ORDER["TRIGGERS :833-863<br/>the priority tuple - 12 names, in order"]
+    FIRED(["fired triggers, <b>in TRIGGERS order</b>"])
+
+    HOOK --> SH
+    SH -->|"repo root, resolved config"| Collect
+    RI --> EVAL
+    RW --> EVAL
+    RE --> EVAL
+    RK --> EVAL
+    RD --> EVAL
+    RM --> EVAL
+    ORDER -.->|"imposes order;<br/>does not decide membership"| EVAL
+    EVAL --> FIRED
+
+    subgraph WhyOrder["Why that order - each boundary is argued in the source"]
+        direction TB
+        O1["<b>1-4 incidentActive, incidentUnclosed,<br/>upgradeNeeded, handoffPending</b><br/>the gates are down, the schema is behind, or<br/>work is in flight. Nothing else matters yet."]
+        O2["<b>5 endpointUnscanned</b> :848<br/>above the freshness findings because a live<br/>unscanned endpoint is an exposure, not drift"]
+        O3["<b>6 graphStale · 7 knowledgeUnverifiable<br/>8 knowledgeBehind</b> :854-855<br/>unverifiable sorts ABOVE behind on purpose:<br/>it is the more expensive finding and has a<br/>different fix (re-derive, not re-check).<br/>Sorting it below would bury the expensive<br/>case under the cheap one."]
+        O4["<b>9 diagramsStale · 10 diagramsMissing</b><br/>below the codemap findings because a diagram<br/>is drawn FROM the map - redrawing while the<br/>map is behind just re-issues a stale picture<br/>with a fresh anchor"]
+        O5["<b>11 reviewNotWorking · 12 ticketsTooLarge</b><br/>standing process conditions, not actions.<br/>Both stay silent while health.rate is None:<br/>a repo that has reviewed nothing has not got<br/>a broken review."]
+        O1 --- O2 --- O3 --- O4 --- O5
+    end
+
+    ORDER -.-> WhyOrder
+
+    MODE{"pm.mode == adaptive<br/><b>and</b> any trigger fired?"}
+    QUIET["quiet lines only<br/>render :456-474, capped at<br/>max(1, pm.quietLines) - default <b>8</b>"]
+    PAIRS["FINDINGS :103-184<br/>one <b>(finding, action)</b> pair per trigger.<br/>12 keys, matching TRIGGERS exactly in<br/><i>both</i> directions - derived by importing<br/>both modules, not by reading either list"]
+    CAP{"quiet + pairs + tail<br/>fits in max(2, pm.maxLines)?<br/>default <b>40</b>"}
+    KEEP["keep pairs[: room // 2] :510<br/><b>whole pairs only</b> - a finding whose action<br/>was cut names a problem and says nothing<br/>about it, which is worse than omitting it"]
+    TRUNC>"'More findings than fit here -<br/>run /crew:pm for the full report.'<br/>_TRUNCATED :221 - the last line is<br/>always spent saying something was dropped"]
+    BRIEF(["the brief the session opens with"])
+    PM["crew:pm dispatches the role<br/>that closes the top finding"]
+
+    FIRED --> MODE
+    MODE -->|"no - quiet mode, or nothing fired"| QUIET
+    MODE -->|yes| PAIRS
+    QUIET --> BRIEF
+    PAIRS --> CAP
+    CAP -->|"yes - everything prints"| BRIEF
+    CAP -->|no| KEEP
+    KEEP --> TRUNC
+    TRUNC --> BRIEF
+    BRIEF --> PM
+
+    INC>"<b>An incident is not a finding.</b><br/>render :468-470 inserts it at quiet[0],<br/>so it survives pm.mode: quiet AND every cap.<br/>The findings below can be truncated away;<br/>'the gates are currently off' cannot be<br/>the thing that got truncated."]
+    RI -.-> INC
+    INC -.-> QUIET
+
+    SILENT>"<b>Two ways the brief prints nothing at all.</b><br/>render :450-454 returns [] when isCrew is<br/>false or pm.enabled is false. Both are<br/>silence by configuration, and neither is<br/>distinguishable at the terminal from a<br/>session with no findings."]
+    BRIEF -.-> SILENT
