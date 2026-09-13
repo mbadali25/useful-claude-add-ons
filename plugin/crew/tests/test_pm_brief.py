@@ -196,6 +196,32 @@ def _with(trigger, **over):
     return state
 
 
+def test_the_brief_renders_the_unverifiable_names_and_count():
+    """The distinction has to reach the LINE, not just the state dict.
+
+    Splitting `behind` from `unresolvable` inside crew_state and then not
+    interpolating the new fields would leave the brief saying nothing specific
+    -- or raising KeyError inside .format() and taking out the whole brief,
+    which is the contract _incident_fields documents.
+
+    Added because a sabotage run found this exact hole: deleting
+    `fields.update(_knowledge_fields(state))` from pm_brief broke nothing.
+    Every other mutation of the reporting path went red; this one did not,
+    because no test rendered the finding.
+    """
+    state = _with("knowledgeUnverifiable",
+                  knowledge={"subsystems": 3, "behind": [],
+                             "unresolvable": ["crew", "repo-docs"],
+                             "graph": {"present": False, "current": False,
+                                       "builtAt": None, "path": "x"}})
+    out = chr(10).join(pm_brief.render(state))
+    assert "2 codemap anchor(s)" in out
+    assert "crew" in out and "repo-docs" in out
+    # And the ACTION half, which is what makes the finding actionable rather
+    # than an observation.
+    assert "/crew:onboard --refresh" in out
+
+
 def test_expanded_brief_names_the_finding_and_one_action():
     out = "\n".join(pm_brief.render(_with("upgradeNeeded", schema=1)))
     assert "/crew:upgrade" in out

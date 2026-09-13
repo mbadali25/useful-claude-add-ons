@@ -416,15 +416,112 @@ def test_anchor_matching_head_is_not_behind(tmp_path):
 
 
 def test_anchor_behind_head_is_reported(tmp_path):
-    root = crew_fixtures.make_repo(
-        tmp_path, codemap={"auth": CODEMAP_BODY.format(sha="0000000")}
+    """A RESOLVABLE anchor that is not HEAD is `behind`.
+
+    The sha has to be a real commit in this repository, which is why this
+    makes a second commit rather than using a literal. It used to pass
+    `sha="0000000"` -- a sha that resolves to nothing -- so it was asserting
+    the `behind` path while exercising the one that is now `unresolvable`.
+    The test and the thing it tested had drifted apart without failing.
+    """
+    root = crew_fixtures.make_repo(tmp_path, codemap={"auth": "placeholder"})
+    first = crew_fixtures.head_sha(root)
+    (root / "later.txt").write_text("moves HEAD on\n", encoding="utf-8")
+    crew_fixtures.commit_with_date(root, "later.txt", "2026-01-01T00:00:00")
+    (root / ".crew" / "codemap" / "auth.md").write_text(
+        CODEMAP_BODY.format(sha=first), encoding="utf-8"
     )
-    assert crew_state.read_knowledge(str(root), {})["behind"] == ["auth"]
+    got = crew_state.read_knowledge(str(root), {})
+    assert got["behind"] == ["auth"]
+    assert got["unresolvable"] == []  # pylint: disable=use-implicit-booleaness-not-comparison
 
 
-def test_missing_anchor_counts_as_behind(tmp_path):
+def test_missing_anchor_is_unresolvable_not_behind(tmp_path):
+    """No anchor means nothing can be checked, which is not "the code moved".
+
+    This asserted `behind` until 0.19.13. That was the honest direction while
+    there was only one bucket -- unknown resolving to stale costs one redraw --
+    but it is the wrong bucket now that "cannot be verified" has its own, and
+    keeping it would leave the expensive case wearing the cheap case's label.
+    """
     root = crew_fixtures.make_repo(tmp_path, codemap={"auth": "# auth\nno anchor\n"})
-    assert crew_state.read_knowledge(str(root), {})["behind"] == ["auth"]
+    got = crew_state.read_knowledge(str(root), {})
+    assert got["unresolvable"] == ["auth"]
+    assert got["behind"] == []  # pylint: disable=use-implicit-booleaness-not-comparison
+
+
+def test_anchor_naming_a_commit_this_repo_lacks_is_unresolvable(tmp_path):
+    """The measured case, as a test.
+
+    Five maps in this repository carry `useful-claude-add-ons@d61342c3`, a sha
+    `git cat-file -t` reports as "Not a valid object name" -- the commit that
+    wrote them was squash merged, so the branch sha it recorded was discarded.
+    Reported as `behind`, that reads as "re-check the claims" when the claims
+    cannot be checked at all.
+
+    An unresolvable anchor must come back as neither `behind` nor absent, and
+    both halves are asserted: a mutation that folds it back into `behind` has
+    to go red, and so does one that drops it silently.
+    """
+    root = crew_fixtures.make_repo(
+        tmp_path, codemap={"auth": CODEMAP_BODY.format(sha="d61342c3")}
+    )
+    got = crew_state.read_knowledge(str(root), {})
+    assert got["unresolvable"] == ["auth"]
+    assert got["behind"] == []  # pylint: disable=use-implicit-booleaness-not-comparison
+    assert got["subsystems"] == 1
+
+
+def test_unresolvable_and_behind_are_reported_separately(tmp_path):
+    """Two maps, one of each, in one repository.
+
+    A single-map test cannot catch a bug that puts every anchor in the same
+    bucket, because one bucket is always right for one map.
+    """
+    root = crew_fixtures.make_repo(tmp_path, codemap={"auth": "placeholder"})
+    first = crew_fixtures.head_sha(root)
+    (root / "later.txt").write_text("moves HEAD on\n", encoding="utf-8")
+    crew_fixtures.commit_with_date(root, "later.txt", "2026-01-01T00:00:00")
+    (root / ".crew" / "codemap" / "auth.md").write_text(
+        CODEMAP_BODY.format(sha=first), encoding="utf-8")
+    (root / ".crew" / "codemap" / "billing.md").write_text(
+        CODEMAP_BODY.format(sha="d61342c3"), encoding="utf-8")
+    got = crew_state.read_knowledge(str(root), {})
+    assert got["behind"] == ["auth"]
+    assert got["unresolvable"] == ["billing"]
+
+
+def test_unverifiable_trigger_fires_and_outranks_behind(tmp_path):
+    """The distinction has to survive into every line derived from it.
+
+    Splitting the buckets inside `read_knowledge` and then not surfacing the
+    new one would make the expensive case LESS visible than before, because it
+    would no longer fire `knowledgeBehind` either. So the trigger is asserted
+    here, and its ORDER is asserted: a map that cannot be verified outranks one
+    that merely needs re-checking, since sorting it below buries the expensive
+    finding under the cheap one.
+    """
+    # A config is required, not decoration: `collect` returns no triggers at
+    # all for a directory it does not recognise as a crew repo, so without it
+    # this test passes vacuously on an empty list.
+    root = crew_fixtures.make_repo(
+        tmp_path,
+        config={"schema": crew_state.SCHEMA_CURRENT},
+        codemap={"auth": CODEMAP_BODY.format(sha="d61342c3")},
+    )
+    triggers = crew_state.collect(str(root))["triggers"]
+    assert triggers, "no triggers at all - the fixture is not a crew repo"
+    assert "knowledgeUnverifiable" in triggers
+    # Against `knowledgeBehind` specifically, which is the pair whose order
+    # carries meaning. It deliberately sorts BELOW `graphStale`, for the
+    # reason already in TRIGGERS: a map is drawn against the graph, so a stale
+    # graph is the earlier input. An earlier draft of this test asserted the
+    # opposite and went red -- the assertion was wrong, not the ordering.
+    order = crew_state.TRIGGERS
+    assert order.index("knowledgeUnverifiable") < order.index("knowledgeBehind")
+    if "knowledgeBehind" in triggers:
+        assert (triggers.index("knowledgeUnverifiable")
+                < triggers.index("knowledgeBehind"))
 
 
 def test_index_and_upgrade_reports_are_not_subsystems(tmp_path):

@@ -75,6 +75,32 @@ verified: <date>
 **Anchors are the whole point.** Every claim names a file path. A map without
 anchors cannot be re-verified, so it silently rots and you keep trusting it.
 
+**Which sha to record, and why it is not `HEAD`.** Use a commit that is already
+on the default branch:
+
+```bash
+# On a feature branch this is the newest commit the trunk already has, which
+# survives a squash, a rebase and a merge alike. On the default branch it IS
+# HEAD, so the common case is unchanged.
+git rev-parse --short=7 "$(git merge-base HEAD origin/main 2>/dev/null || echo HEAD)"
+```
+
+`git rev-parse --short HEAD` on a feature branch records a commit that **a
+squash merge destroys**. The anchor then names an object the repository does
+not contain, `git diff --name-only <anchor>..HEAD -- <paths>` cannot run, and
+the map can be neither confirmed nor refuted -- while `crew_state` reports it
+as `knowledgeUnverifiable` and the reader has to re-derive from scratch.
+
+That is not hypothetical. Five maps in this repository carry
+`useful-claude-add-ons@d61342c3`, written by `519754fa` -- whose subject is
+"fix the codemap anchor writer" and which has one parent, because it was
+squash merged. The four anchors that still resolve trace to commits made
+directly on the default branch.
+
+A merge-base anchor is slightly older than the work, and that is the right
+direction to be wrong in: the per-path check then reports a superset of what
+changed, so it over-reports staleness rather than under-reporting it.
+
 **Write `.crew/codemap/INDEX.md`** — one line per subsystem: name, one-sentence
 purpose, anchor sha. This is the only codemap file loaded by default.
 
