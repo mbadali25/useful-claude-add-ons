@@ -60,7 +60,7 @@ echo "$CMD" | grep -qE '\brm[[:space:]]+-[a-z]*rf?[[:space:]]+/' && block "recur
 # of a handful of infra CLI names ANYWHERE in that same text - so it blocked
 # `gh pr comment ... --body "...the prod outage..."` (both words were just
 # prose, "gh" is not an infra CLI) and `aws events describe-rule --name
-# thd-prod-inventory-created` (an unrelated resource name that happens to
+# acme-prod-inventory-created` (an unrelated resource name that happens to
 # have "prod" as a middle segment). It was also trivially dodged: quote the
 # argument differently and the substring match still fires, or wrap the same
 # command in a script and it silently stops firing - noisy and ineffective.

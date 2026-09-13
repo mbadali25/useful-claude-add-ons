@@ -30,32 +30,32 @@ procedure, the runbook is one line and should not exist as a file.
 ```markdown
 # Roll back the inventory loader
 
-symptoms: SES error mail from thd-prod-inventory-loader; CloudWatch alarm
-          thd-prod-inventory-loader-errors
+symptoms: SES error mail from acme-prod-inventory-loader; CloudWatch alarm
+          acme-prod-inventory-loader-errors
 severity: sev2 - files stop loading, no data loss
 last verified: 2026-08-14 by MB
 owner: data platform
 
 ## Before you start
-- [ ] You have AWS creds for account 718678532558
+- [ ] You have AWS creds for account 123456789012
 - [ ] You know which version was deployed (check the TFC run history)
 
 ## Steps
 1. Stop the trigger so nothing new arrives mid-rollback:
-   `aws events disable-rule --name thd-prod-inventory-created`
-   Verify: `aws events describe-rule --name thd-prod-inventory-created` shows DISABLED
+   `aws events disable-rule --name acme-prod-inventory-created`
+   Verify: `aws events describe-rule --name acme-prod-inventory-created` shows DISABLED
 
 2. Roll the Lambda to the previous version:
-   `aws lambda update-alias --function-name thd-prod-inventory-loader --name live --function-version <N-1>`
+   `aws lambda update-alias --function-name acme-prod-inventory-loader --name live --function-version <N-1>`
    Verify: `aws lambda get-alias ...` shows the expected version
 
 3. Re-enable the trigger:
-   `aws events enable-rule --name thd-prod-inventory-created`
+   `aws events enable-rule --name acme-prod-inventory-created`
 
 4. Replay anything missed: re-copy the objects from the archive prefix.
 
 ## Verify it worked
-- One test file lands and a row appears in `stg.Inventory`
+- One test file lands and a row appears in `stg.InventoryFeed`
 - No new error mail within 10 minutes
 
 ## If this did not work

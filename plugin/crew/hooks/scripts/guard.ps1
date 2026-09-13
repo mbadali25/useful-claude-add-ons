@@ -41,7 +41,7 @@ if ($cmd -match '(?i)Remove-Item\s+.*-Recurse.*-Force.*[A-Z]:\\?\s*$') { Block "
 # text, plus an infra CLI name ANYWHERE in that same text - so it blocked
 # prose (e.g. `gh pr comment ... --body "...the prod outage..."`, where "gh"
 # is not an infra CLI) and unrelated resource names (e.g. `aws events
-# describe-rule --name thd-prod-inventory-created`, where "prod" is a middle
+# describe-rule --name acme-prod-inventory-created`, where "prod" is a middle
 # segment). Now: the infra CLI must be the actual program invoked, and the
 # environment name must be the whole argument or the first/last hyphen-joined
 # segment of one - never a message-flag value, a web URL, or a token with

@@ -6,6 +6,33 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`crew` 0.19.24: a customer's identifiers removed from the shipped examples.**
+  Five files under `plugin/crew/` carried real values from a client engagement
+  rather than invented ones: a live 12-digit AWS account number and two
+  production resource names in the `crew-runbooks` worked runbook, a project
+  name, an S3 bucket and a database name in the `crew-setup` Terraform
+  `CLAUDE.md` example, a ticket key in the `crew-docs` CHANGELOG sample, and the
+  same resource name again inside the explanatory comments in `guard.sh` and
+  `guard.ps1`. All replaced with generic-but-plausible equivalents, so every
+  example still teaches what it taught -- the runbook still shows an account
+  precondition and a rule/alias/rule rollback, and the guard comments still
+  explain why a hyphen-joined middle segment of `prod` must not fire the
+  environment check.
+
+  **Git history is deliberately not rewritten.** This scrubs the working tree
+  and everything installed from it going forward; the values remain reachable in
+  older commits by design, because force-pushing a public marketplace would
+  break every clone and every commit-pinned install URL in the README. Treat the
+  underlying account as one whose id is public and rely on its IAM posture, not
+  on the id being secret.
+
+  Verified by sweeping every tracked file for bare 12-digit numbers and for the
+  customer's name fragments; the only remaining 12-digit runs are documented
+  all-zero/all-one placeholders, log timestamps, an example task id, and a
+  substring of a SHA-256 hash. Hits outside `plugin/crew/` are reported on the
+  pull request rather than changed here, since each sits in a different
+  marketplace entry and would need its own version bump.
+
 - **`crew` 0.19.23: four gates that failed open, found by the Rule of Two.**
   The first real run of `rule-of-two` was against `plugin/crew/` itself. Both
   families returned VIABLE WITH CHANGES; these are the findings that let unsafe
