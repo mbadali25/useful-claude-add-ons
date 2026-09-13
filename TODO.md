@@ -1948,3 +1948,64 @@ already published and stop it recurring: the file is untracked and
 `skills/power-automate-api/.gitignore` now ignores the whole snapshot
 directory. Nothing was rewritten or force-pushed. Recorded here because "we
 decided not to" is the half that otherwise gets rediscovered as a new finding.
+
+## The crew suite and the marketplace checker need contradictory shells on Windows
+
+Filed 2026-09-13 against `main` at `819bf382`. Three findings, all reproduced
+here rather than relayed; the first two are one problem seen from two ends.
+
+### 1. Under PowerShell the crew suite runs against WSL bash and 52 tests fail
+
+`plugin/crew/tests/test_context_watch.py:40` resolves the shell with
+`shutil.which("bash")`. Under PowerShell that returns
+`C:\WINDOWS\system32\bash.EXE` -- WSL, measured here, not inferred. WSL bash
+cannot open a Windows path, so every script it is handed exits 127 and the
+assertions read `assert 127 == 2`.
+
+52 tests fail that way: `test_context_watch.py` (27), `test_auto_clear.py` (16),
+`test_verify_gate_lock_sh.py` (7), `test_verify_gate_lock_concurrent.py` (2).
+The same suite under Git Bash: 931 passed.
+
+`_resolve_bash` (`:27-51`) already knows Git for Windows ships two bashes and
+upgrades `usr/bin/bash.exe` to the `bin/` shim -- but only when the resolved
+path contains both `usr` and `bin` (`:45`). `C:\WINDOWS\system32\bash.EXE`
+contains neither, so it is used as found.
+
+**The defect is not the wrong path, it is that `_HAS_BASH` is then `True`.**
+`:53-57` treats "a bash was found" as "a working bash was found", so the `sh`
+flavour is *parametrized in* and fails, where an honest "no usable bash" would
+have skipped. That is this repo's recurring shape: an unknown collapsing into
+the safe-looking value. Two agents independently hit it and both first reported
+it as "pre-existing failures on `main`" -- a harness assumption wearing the
+label of a regression, which is the expensive half.
+
+### 2. The fix for #1 makes `scripts/check-marketplace.py` hang
+
+Prepending `C:\Program Files\Git\bin` to `PATH` is what gives #1 a working
+bash. It also moves `git` from `/mingw64/bin/git` to
+`/c/Program Files/Git/bin/git`, and the checker -- which shells out to git at
+`scripts/check-marketplace.py:36` and `:318` -- then never returns.
+
+Reproduced here once at a 100s timeout (exit 124) after the agents reproduced
+it twice at 120s; the same command exits 0 in seconds without the prepend. So
+the two gates currently want opposite environments, and anyone who fixes one by
+editing `PATH` breaks the other. Neither is fixed. What is needed is for
+`_resolve_bash` to reject a non-MSYS bash outright rather than for callers to
+launder `PATH`.
+
+### 3. `crew_upgrade.py` prints schema 3's added keys at the CLI and not schema 5's
+
+`plugin/crew/skills/crew-graph/scripts/crew_upgrade.py:845-850` prints
+`providerKeysAdded`. There is no matching branch for `installKeysAdded`, which
+schema 5 populates; the key reaches `.crew/codemap/UPGRADE.md` and never the
+terminal.
+
+Defensible on its own -- `install.policy` lands as `manual`, which is what crew
+already did, so nothing changes behaviour. Recorded anyway because the block's
+own comment at `:840-842` gives the rule it breaks: printed at the CLI "not only
+buried in UPGRADE.md", for the things "a user must not learn about later". A new
+key governing whether crew may run install commands is squarely in that class,
+even at its floor. One `if` and a line of text.
+
+**Not verified:** no fix is attempted for any of the three, and
+`scripts/_test/drift-detection.sh` was not run for this entry.
