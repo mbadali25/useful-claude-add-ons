@@ -2041,3 +2041,43 @@ in crew, so it owes a bump and a CHANGELOG entry. Not costed further.
 **Not verified:** no fix attempted, and no check of how many other repos on
 this machine track the pair -- which is the number that decides whether the
 detecting version is worth writing at all.
+
+## The Stop gate cannot see a committed change, and closing that is a design call
+
+Filed 2026-09-13 against `main` at `a2e57ad9`. Found by the Rule of Two review
+of `plugin/crew/` (Codex, D5) and reproduced here before filing.
+
+`plugin/crew/hooks/scripts/verify-gate.sh:63` and `verify-gate.ps1:161` compute
+the changed set as the working tree against `HEAD` plus untracked files. A
+change that has been **committed** is therefore invisible to the gate, and
+committing is sufficient to end a turn the gate would otherwise have blocked.
+
+Reproduced with a rule mapping `**/*.py` to a command that exits 1:
+
+| state of the same one-line `mod.py` | exit | verdict |
+|---|---|---|
+| uncommitted | 2 | BLOCKED, `VERIFY FAILED: python3 -c ...` |
+| committed, nothing else changed | 0 | turn allowed to end |
+
+**Not fixed here on purpose.** The gate has no notion of "this turn", and
+giving it one means choosing a baseline, which changes behaviour in every repo
+that has a gate:
+
+- **merge-base with the default branch** -- correct for a feature branch,
+  wrong on a long-lived branch where it would re-verify weeks of history every
+  turn, and wrong on a repo that commits straight to `main`.
+- **a marker written at turn start** -- precise, but SessionStart and Stop are
+  different hooks and nothing currently pairs them; a missing marker would have
+  to fail closed or the gate gains a new silent-skip of its own.
+- **`@{u}..HEAD`** -- cheap, but meaningless before a first push and on any
+  repo with no upstream.
+
+None is obviously right, and the wrong one either annoys every user every turn
+or quietly verifies less than today. Pick deliberately.
+
+What was fixed is the documentation: `verify-gate.sh:63` now states the scope
+in the file, because until today a reader could not tell this boundary from an
+oversight, and a gate whose limits are unstated gets trusted past them.
+
+**Not verified:** the `.ps1` twin was read, not executed, for this specific
+behaviour; the bash reproduction above is the measured one.

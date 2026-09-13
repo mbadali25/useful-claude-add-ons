@@ -717,7 +717,11 @@ def _report(status, head, results, notes):
         "",
     ]
     lines.extend(_config_lines(notes))
-    conflicts = [c for r in results.values() for c in r["conflicts"]]
+    # `.get`, not `[...]`: `_report` must survive an entry that is not a
+    # full result. The shape is fixed at the source above, and this is the
+    # belt beside that brace -- a report that raises loses the whole record
+    # of a migration that has ALREADY written the new schema.
+    conflicts = [c for r in results.values() for c in r.get("conflicts", [])]
     lines.append("## Contradictions — kept in the map, verify by hand")
     # Not `f"- {c}" for c in conflicts or [...]`: that prefixes the fallback
     # too, rendering "- - none". Build the fallback as the finished line.
@@ -725,12 +729,12 @@ def _report(status, head, results, notes):
     lines.append("")
     lines.append("## Added by the graph")
     added = [f"- {name}: {len(r['added'])} new line(s)"
-             for name, r in sorted(results.items()) if r["added"]]
+             for name, r in sorted(results.items()) if r.get("added")]
     lines.extend(added or ["- none"])
     lines.append("")
     lines.append("## Anchors left stale on purpose")
     stale = [f"- {name} — not re-verified this run"
-             for name, r in sorted(results.items()) if not r["touched"]]
+             for name, r in sorted(results.items()) if not r.get("touched")]
     lines.extend(stale or ["- none"])
     lines.append("")
     return "\n".join(lines) + "\n"
@@ -785,7 +789,20 @@ def run(root, derived, force=False):
         # is skipped rather than sanitised, because a name that needed
         # sanitising was not a subsystem name in the first place.
         if name != os.path.basename(name) or name in ("", ".", ".."):
-            results[name] = {"skipped": "not a plain subsystem name"}
+            # Same SHAPE as a real result, not just the skip reason. This entry
+            # used to be `{"skipped": ...}` alone, and `_report` reads
+            # `r["conflicts"]`, `r["added"]` and `r["touched"]` from every
+            # entry -- so one hostile key raised `KeyError` *after* the schema
+            # had already been stamped. The migration half-ran, wrote no
+            # report, and a retry then said "already current": a partial
+            # upgrade that reports as a finished one, which is strictly worse
+            # than failing before it started.
+            results[name] = {
+                "skipped": "not a plain subsystem name",
+                "conflicts": [],
+                "added": [],
+                "touched": False,
+            }
             continue
         path = os.path.join(mapdir, f"{name}.md")
         text = crew_state.read_text(path)
@@ -812,7 +829,8 @@ def run(root, derived, force=False):
         "status": status,
         "report": report,
         "notes": notes,
-        "conflicts": [c for r in results.values() for c in r["conflicts"]],
+        "conflicts": [c for r in results.values()
+                      for c in r.get("conflicts", [])],
     }
 
 

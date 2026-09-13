@@ -6,6 +6,90 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`crew` 0.19.23: four gates that failed open, found by the Rule of Two.**
+  The first real run of `rule-of-two` was against `plugin/crew/` itself. Both
+  families returned VIABLE WITH CHANGES; these are the findings that let unsafe
+  work through, each reproduced with a control before it was touched.
+
+  **Three guard bypasses, and none was a sloppy regex.** All three fail open in
+  **both** flavours, each in that shell's own syntax, so fixing one side would
+  have left the other open -- the drift class CLAUDE.md already records.
+
+  - `terraform -chdir=infra apply` ran unguarded. `GIT_PRE` exists two lines
+    below precisely to swallow options between a command and its subcommand;
+    the terraform rule beside it never got the same treatment. Now `TF_PRE`.
+  - `git push 2>&1 --force origin main` ran unguarded, and this is the sharpest
+    example this repo has produced of **re-reviewing the fix to a guard as hard
+    as the guard**: `[^;&|]*` was a deliberate, correct narrowing, added
+    because a greedy `.*` reached an unrelated `-f` three commands later and
+    blocked ordinary pushes. `2>&1` contains an `&`, so the scan stopped before
+    `--force` was ever reached. The fix opened the hole. `ARG` now crosses `&`
+    only when it is part of a redirection, so `&&`, a trailing `&` and `|` stop
+    the scan exactly as before -- asserted by a test that keeps the original
+    false-block case passing.
+  - `git reset HEAD --hard` ran unguarded: `--hard` had to follow `reset`
+    immediately. `--soft HEAD~1` still does not match.
+  - A compound command that captured something unrelated printed the secret.
+    The "safe shape" test asked whether an assignment appeared **anywhere** in
+    the command, not whether the secret read was the thing being assigned. An
+    unrelated capture was accepted as evidence that the dangerous half had been
+    captured.
+
+  **The promote gate treated its own failure as permission to deploy.**
+  `VERDICT` comes from a command substitution, so a raising python wrote a
+  traceback to stderr and nothing to stdout, and `[ -n "$VERDICT" ]` read that
+  as "no unmet preconditions". Measured: `last verified: 2026-99-99` exited
+  **0**, created `.deploy-in-flight`, and printed **nothing** -- behaviour
+  byte-identical to a valid, current rollback. The date is now reported as its
+  own unmet precondition, and the check's exit status fails closed regardless.
+  The `.ps1` twin had the same shape twice: `ParseExact` throwing on the same
+  input, and `catch { exit 0 }` on a `verify.json` that will not parse -- which
+  made corruption indistinguishable from a repo that opted out of gating.
+
+  **`/crew:pm` did not load at all.** `commands/pm.md:3` carried an unquoted
+  `argument-hint:` whose value is a bracketed, nested flow sequence; PyYAML
+  refuses it at the `|`. The validator that should have caught it reported 293
+  passes and 0 failures, because `frontmatter()` split each line on the first
+  `:` instead of parsing YAML -- **a validator whose parse is weaker than the
+  loader's cannot fail where the loader fails; it can only agree with itself.**
+  It now uses `yaml.safe_load`, records a failure naming the YAML error, and
+  exits 1 rather than degrading if PyYAML is absent; the Marketplace workflow
+  installs it as its own step. Control run: restoring the old line turns the
+  validator red and names the character.
+
+  **`crew_upgrade.py` half-ran and then reported success.** A `derived` key
+  that is not a plain subsystem name stored `{"skipped": ...}` alone, and
+  `_report` reads `conflicts`, `added` and `touched` from every entry -- so
+  `KeyError` fired *after* the schema had been stamped, no report was written,
+  and a retry said "already current". The skip entry now has a result's shape,
+  the four reads are defensive, and the skip is named in the report.
+
+  **Documentation corrected where it was actively wrong.**
+  `crew-verification/SKILL.md:147` said `.crew/verify.json` "is committed and
+  shared". It is not -- `.gitignore` ignores `.crew/*`. `commands/review.md`
+  carried the same sentence and was fixed in 0.19.21; this is its neighbour,
+  found by a review rather than by the first fix, which is the argument for
+  checking the neighbour every time. `commands/review.md:14` also gained the
+  `mkdir -p .work/review` that `mktemp -d` needs, since `mktemp` creates the
+  leaf and never the parents.
+
+  **One test was green where nobody looks and red on the maintainer's machine.**
+  `pm_brief.main` resolves `payload["cwd"] or $CLAUDE_PROJECT_DIR or getcwd()`,
+  so a test pinning the fallback with `monkeypatch.chdir` pinned only the third
+  rung. Cleared suite-wide in `conftest.py` beside the global-config fixture,
+  which exists for exactly this reason; a test that wants the variable still
+  sets it and still wins.
+
+  Four sabotage entries, 121 mutations. `test_guard_bypasses.py` (10 cases,
+  both flavours) and `test_promote_gate_fails_closed.py` (4) are new, and every
+  bypass was run RED against the unfixed guard before the fix landed.
+
+  **Not fixed, recorded instead:** the Stop gate cannot see a **committed**
+  change, so committing ends a turn it would otherwise block. Reproduced and
+  written into `verify-gate.sh:63` and TODO.md -- closing it means choosing a
+  baseline for "this turn", which changes behaviour in every gated repo and is
+  a design decision, not a bug fix.
+
 - **`rule-of-two` 0.1.2: a recorded model id is now checked against the alias
   beside it.** `render_report` printed each side's model id verbatim -
   "requested as `X`" - with nothing checking that `X` belongs to the same

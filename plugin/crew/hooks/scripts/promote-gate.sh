@@ -135,9 +135,20 @@ else:
         if not m:
             out.append(f"'{rb}' has no 'last verified: YYYY-MM-DD' line. An unverified rollback is not a rollback.")
         else:
-            age = (datetime.date.today() - datetime.date.fromisoformat(m.group(1))).days
-            if age > 90:
-                out.append(f"'{rb}' was last verified {age} days ago (ceiling is 90). Re-run it against a real environment first.")
+            # A date-SHAPED string is not a date. The regex accepts \d{4}-\d{2}
+            # -\d{2}, so `2026-99-99` reaches fromisoformat and raises - which
+            # used to take the whole check down and, because the caller read an
+            # empty VERDICT as "nothing wrong", ALLOWED the deploy. Name it as
+            # its own unmet precondition instead: the reader needs to know the
+            # date is junk, not that a python traceback happened.
+            try:
+                verified = datetime.date.fromisoformat(m.group(1))
+            except ValueError:
+                out.append(f"'{rb}' has 'last verified: {m.group(1)}', which is date-shaped but not a real date. An unparseable verification date is not a verification.")
+            else:
+                age = (datetime.date.today() - verified).days
+                if age > 90:
+                    out.append(f"'{rb}' was last verified {age} days ago (ceiling is 90). Re-run it against a real environment first.")
 
 if cfg.get("requireHuman"):
     marker = f".crew/.approved-{env}-{sha}"
@@ -148,6 +159,25 @@ if cfg.get("requireHuman"):
 print("\x1e".join(out))
 PY
 )
+VERDICT_STATUS=$?
+
+# Fail CLOSED when the CHECK ITSELF fails. `VERDICT` comes from a command
+# substitution, so a python that raises writes its traceback to stderr and
+# nothing to stdout - leaving VERDICT empty, which every test below reads as
+# "no unmet preconditions". A malformed `last verified: 2026-99-99` raised in
+# `datetime.date.fromisoformat` and the deploy was ALLOWED, silently, with the
+# in-flight marker written and not one word on stderr: byte-identical to a
+# valid, current rollback. An error is not permission. This is the repo's named
+# bug class - an unknown collapsing into the safe-looking value - sitting in the
+# gate whose entire job is to refuse.
+if [ "$VERDICT_STATUS" -ne 0 ]; then
+  echo "PROMOTION BLOCKED ($ENVNAME, sha $SHA):" >&2
+  echo "  - the pre-deploy check could not be evaluated (exit $VERDICT_STATUS)." >&2
+  echo "    This is not a pass. Something in .crew/verify.json or a rollback" >&2
+  echo "    runbook could not be read - a malformed 'last verified' date does" >&2
+  echo "    exactly this. Fix the input and re-run; the traceback is above." >&2
+  exit 2
+fi
 
 if [ -n "$VERDICT" ] && crew_incident_active; then
   # Every unmet precondition, one row each, so the closing report names them.

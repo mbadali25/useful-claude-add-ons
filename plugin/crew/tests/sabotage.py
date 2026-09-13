@@ -96,6 +96,8 @@ PM_BRIEF = os.path.join(CREW, "hooks", "scripts", "pm_brief.py")
 UPGRADE_DOC = os.path.join(CREW, "commands", "upgrade.md")
 PROMOTE_DOC = os.path.join(CREW, "commands", "promote.md")
 REVIEW_DOC = os.path.join(CREW, "commands", "review.md")
+GUARD_SH = os.path.join(CREW, "hooks", "scripts", "guard.sh")
+PROMOTE_SH = os.path.join(CREW, "hooks", "scripts", "promote-gate.sh")
 # Outside the crew plugin, for the same reason BUILD_REPORT is: promote.md
 # claims things about the `bitbucket` entry's script, and the only way to
 # sabotage a claim about another entry's interface is to break that interface.
@@ -1639,6 +1641,63 @@ MUTATIONS = (
         "| `.crew/verify.json` is missing or matches nothing | `no specialist",
         ("tests/test_verify_absent_and_diagram_kind.py::"
          "test_review_distinguishes_absent_from_matched_nothing"),
+    ),
+    (
+        # Put the terraform rule back to requiring `apply` immediately after
+        # `terraform`. The wrong version LOOKS right -- it is the plain,
+        # obvious spelling of the rule -- and the bypass needs a flag nobody
+        # types while reviewing a diff. `terraform -chdir=infra apply` then
+        # runs unguarded.
+        "the terraform rule stops swallowing options before the subcommand",
+        GUARD_SH,
+        "grep -qE \"${TF_PRE}(apply|destroy)\"",
+        "grep -qE '\\bterraform[[:space:]]+(apply|destroy)'",
+        ("tests/test_guard_bypasses.py::"
+         "test_sh_blocks_the_bypass_and_its_control"),
+    ),
+    (
+        # Restore the `&`-excluding scan. The subtlest entry in this file: the
+        # narrowing it restores was itself a CORRECT fix (a greedy `.*` blocked
+        # ordinary pushes), so the mutation reads as reverting to a known-good
+        # line. `2>&1` contains an `&`, so the scan stops before `--force`.
+        "the force-push scan stops at the & inside a redirection",
+        GUARD_SH,
+        "push\\b${ARG}(--force|-f)\\b",
+        "push\\b[^;&|]*(--force|-f)\\b",
+        ("tests/test_guard_bypasses.py::"
+         "test_sh_blocks_the_bypass_and_its_control"),
+    ),
+    (
+        # Accept any assignment anywhere as proof the secret was captured.
+        # Dropping the `[^;&|]*${SECRET_READ}` tail is a plausible "simplify
+        # the regex" edit, and every pre-existing must-block case still passes:
+        # the only shape it breaks is the compound command, which is the one an
+        # attacker would type.
+        "a secret read is cleared by an unrelated assignment",
+        GUARD_SH,
+        "[^;&|]*${SECRET_READ}\"; then",
+        "\"; then",
+        ("tests/test_guard_bypasses.py::"
+         "test_sh_secret_read_needs_the_assignment_to_capture_IT"),
+    ),
+    (
+        # Drop the exit-status check on the pre-deploy verdict. The remaining
+        # `[ -n "$VERDICT" ]` tests still read correctly, so the file looks
+        # complete -- and any error inside the check leaves VERDICT empty,
+        # which every later test reads as "no unmet preconditions". An error
+        # becomes permission to deploy, silently.
+        "the promote gate stops failing closed when its own check errors",
+        PROMOTE_SH,
+        'if [ \"$VERDICT_STATUS\" -ne 0 ]; then',
+        'if [ \"$VERDICT_STATUS\" -eq 999 ]; then',
+        # Pointed at the test that exercises the fail-closed path ITSELF, not
+        # at the malformed-date test. The suite reported STILL GREEN -- TEST IS
+        # VACUOUS against that one, and it was right: the date is now handled
+        # gracefully and never reaches the exit-status check, so the mutation
+        # broke nothing the test could see. The belt was being tested while the
+        # braces held.
+        ("tests/test_promote_gate_fails_closed.py::"
+         "test_the_gate_blocks_when_its_own_check_cannot_RUN"),
     ),
 )
 
