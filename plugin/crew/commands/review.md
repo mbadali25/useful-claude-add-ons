@@ -33,9 +33,27 @@ git diff --name-only HEAD; git ls-files --others --exclude-standard
 A rule with `"agents": ["dba"]` on `sql/**` means a migration is never reviewed
 by the generalist alone. This is the only thing that reads `agents`: the `Stop`
 hook cannot spawn a subagent, so the key is deliberately a review-time concern
-rather than a gate-time one. If no matched rule names an agent, skip to step 1.
+rather than a gate-time one.
 
-**A rule may name any installed subagent, not only crew's eleven.** Resolve a
+**Three outcomes here, and you must say which one happened. They are not
+interchangeable.**
+
+| What you found | Say | Then |
+|---|---|---|
+| `.crew/verify.json` does not exist | `no verification map - run /crew:init; no specialist review was selected` | step 1 |
+| it exists, no rule matched a changed file | `verification map read; no rule matched, so no specialist is required` | step 1 |
+| it exists, a rule matched | name each agent and why | dispatch them |
+
+**The first row is the one that used to disappear.** `.crew/*` is ignored
+(`.gitignore:282`), so the file is machine-local and **absent on every fresh
+clone until `/crew:init` writes it** — `.gitignore:340-341` says so in as many
+words. An absent map selects nobody, which on a fresh checkout is indis-
+tinguishable from "this diff needs no specialist" unless you distinguish it.
+Never let "I could not look" be reported as "I looked and found nothing": that
+is this repo's recurring bug, an unknown collapsing into the safe-looking value,
+sitting in the review path itself.
+
+**A rule may name any installed subagent, not only crew's own roles.** Resolve a
 bare name as crew's own role first (`security` → `crew:security`), then as any
 other installed agent of that name; a namespaced name (`voltagent:security-auditor`)
 is taken literally. This is how a path match pulls in a domain specialist —
@@ -44,11 +62,18 @@ from evidence rather than from someone remembering.
 
 **An agent a matched rule named but that is not installed here is a GAP, and you
 report it in step 3 alongside the ones you skipped.** Never drop it silently.
-`.crew/verify.json` is committed and travels between machines, so a rule naming
-an agent that exists on the author's box and not on this one would otherwise
-review strictly less while producing output indistinguishable from a full pass.
-That is the same class of failure as a QA provider that authenticates and then
-returns nothing, and it gets the same treatment: say it out loud.
+The map is machine-local, so it was written against whatever was installed on
+the box that ran `/crew:init` — a rule can name an agent that exists there and
+not here, and the review then covers strictly less while producing output
+indistinguishable from a full pass. That is the same class of failure as a QA
+provider that authenticates and then returns nothing, and it gets the same
+treatment: say it out loud.
+
+(This paragraph used to justify itself with "`.crew/verify.json` is committed
+and travels between machines". It is not committed — `.gitignore:282` ignores
+`.crew/*` and the file is in no tree here. The conclusion was right and the
+reason was backwards, which is worse than a wrong conclusion: it sends the next
+reader looking for a tracked file that has never existed.)
 
 **Step 1 — who wrote this diff, and how do we know?** Ask the thing that
 recorded the dispatch, rather than re-deriving the answer from config:

@@ -6,6 +6,59 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
+- **`crew` 0.19.22: two unknowns that reported themselves as clean.** One bug
+  in two places, both the shape this repo keeps hitting -- something that could
+  not be checked reported as something that was checked and found nothing.
+
+  `read_diagrams` matched a kind with `stem == kind or stem.startswith(kind +
+  "-")`, so `process-bitbucket-svg.mmd` satisfied the obligation for `process`.
+  A repo holding only the narrow diagram reported `missing: []` and looked
+  fully documented while having no process overview at all -- and the repo with
+  only the specific one is exactly the repo that needed telling. Now exact
+  stem only. `data-flow` is the case a prefix rule handled worst, being
+  hyphenated itself, so `data-flow-crew-config` satisfied it; there is a test
+  for precisely that. **No change to this repo**, which has all three exact
+  stems, and a test records that rather than leaving it as a claim in a PR.
+
+  `/crew:review` step 0b read `.crew/verify.json` and, finding nothing,
+  selected no specialists and moved on. `.gitignore:282` ignores `.crew/*`, so
+  that file is machine-local and **absent on every fresh clone until
+  `/crew:init` writes it** -- meaning "I could not look" and "I looked and
+  found nothing" produced identical output on every new checkout. Step 0b now
+  has three named outcomes and must say which one happened; the fall-through
+  that collapsed them ("If no matched rule names an agent, skip to step 1") is
+  gone, because a paragraph added above a live fall-through fixes nothing.
+
+  Two corrections in the same file, both found while fixing the above. The GAP
+  paragraph justified itself with "`.crew/verify.json` is committed and travels
+  between machines" -- it is not committed and never has been here. The
+  conclusion was right and the reason was backwards, which is worse than a
+  wrong conclusion: it sends the reader hunting a tracked file that does not
+  exist. And "not only crew's eleven" was written at `579a7cd9`, when
+  `plugin/crew/agents/` held exactly 11 files; it holds 54. The number is
+  removed rather than corrected, the shape `plugin/PLUGINS.md` already uses,
+  because a roster count nothing checks re-stales on the next agent added.
+
+  Both fixes are sabotage-tested, and both controls were run by hand: reverting
+  `read_diagrams` turns two tests red naming the kind that vanished, and
+  restoring the three `review.md` defects turns three red. 11 new tests in
+  `plugin/crew/tests/test_verify_absent_and_diagram_kind.py`.
+
+  One committed assertion **encoded the bug** and had to be inverted:
+  `plugin/crew/hooks/scripts/_test/run-tests.sh:976` read "Prefix matching:
+  data-flow-orders.mmd satisfies the data-flow KIND" and asserted
+  `missing == []`. It now asserts `["data-flow", "process"]`. That suite is run
+  by CI's Marketplace job and is not part of the pytest set, which is how it
+  reached CI red after a green local pytest run -- the `check` job runs seven
+  steps and `check-marketplace.py` is only the first.
+
+  Shipped as 0.19.22, not 0.19.21: the assertion fix was a second commit
+  touching `plugin/crew/`, and `check-marketplace.py`'s version rule is
+  **history-based** -- it compares the last commit that set the version against
+  the last commit that touched the plugin. Running the checker on a dirty
+  working tree cannot see that, which is exactly why the bump belongs in the
+  final commit.
+
 - **`crew` 0.19.14: the pm can now route the trigger 0.19.13 added, and
   `UPGRADE.md` stops carrying a line nothing can read.** Two gaps left by that
   release, both of the same shape -- a value that exists in the code and does

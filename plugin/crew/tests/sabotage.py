@@ -95,6 +95,7 @@ PM_BRIEF = os.path.join(CREW, "hooks", "scripts", "pm_brief.py")
 # way to sabotage "the two agree" is to break one of them.
 UPGRADE_DOC = os.path.join(CREW, "commands", "upgrade.md")
 PROMOTE_DOC = os.path.join(CREW, "commands", "promote.md")
+REVIEW_DOC = os.path.join(CREW, "commands", "review.md")
 # Outside the crew plugin, for the same reason BUILD_REPORT is: promote.md
 # claims things about the `bitbucket` entry's script, and the only way to
 # sabotage a claim about another entry's interface is to break that interface.
@@ -1609,6 +1610,35 @@ MUTATIONS = (
         'INSTALL_DEFAULTS = {"policy": "auto"}',
         ("tests/test_install_policy.py::"
          "test_the_migration_is_behaviour_neutral"),
+    ),
+    (
+        # Restore the prefix match in read_diagrams. This is the most likely
+        # wrong version because it READS as the more generous, friendlier rule:
+        # "count process-bitbucket-svg as a process diagram". What it actually
+        # does is let one narrow diagram discharge the obligation for the
+        # overview, so the repo with only the narrow one reports nothing
+        # missing -- the unknown collapsing into the safe-looking value, in the
+        # signal whose whole job is to say what is undocumented.
+        "a specific diagram again satisfies its general kind",
+        STATE,
+        "        if not any(stem == kind for stem in stems)",
+        "        if not any(stem == kind or stem.startswith(kind + \"-\")\n"
+        "               for stem in stems)",
+        ("tests/test_verify_absent_and_diagram_kind.py::"
+         "test_a_specific_process_diagram_does_not_satisfy_process"),
+    ),
+    (
+        # Collapse the absent map back into the no-match case. The replaced row
+        # is the ONLY thing separating "I could not look" from "I looked and
+        # found nothing", and `.crew/*` is ignored so the absent case is what
+        # every fresh clone hits. Merging the two leaves a step 0b that still
+        # runs, still reports, and silently reviews less.
+        "an absent verification map is no longer its own outcome",
+        REVIEW_DOC,
+        "| `.crew/verify.json` does not exist | `no verification map",
+        "| `.crew/verify.json` is missing or matches nothing | `no specialist",
+        ("tests/test_verify_absent_and_diagram_kind.py::"
+         "test_review_distinguishes_absent_from_matched_nothing"),
     ),
 )
 
