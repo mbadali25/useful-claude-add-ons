@@ -66,15 +66,16 @@ one, which meant the map lived on one machine and reached nobody who cloned.
   (This line previously warned that an 8-char anchor "parses fine and then never matches". It was
   wrong, and wrong in the expensive direction — it sends you rewriting correct anchors and
   distrusting working ones. Corrected 2026-09-05 by reading the comparison.)
-- **`graphify-out/graph.json`** — the mechanical graph. Refresh with `graphify . --no-viz
-  --code-only`; a post-commit hook does it automatically. **The hook and that command are not
-  interchangeable, and the difference lands in a tracked file.**
+- **`graphify-out/graph.json`** — the mechanical graph. Refresh with `graphify update .`; a
+  post-commit hook does it automatically. **`graphify . --no-viz --code-only` is not
+  interchangeable with either, and the difference lands in a tracked file.**
 
   `git ls-files graphify-out/` returns **two** tracked files, `graph.json` and `GRAPH_REPORT.md`.
   The hook rebuilds both — `.git/hooks/post-commit:178` calls `graphify.watch._rebuild_code`, and
-  the log it writes says `graph.json, graph.html and GRAPH_REPORT.md updated`. The documented
-  command does not: `--no-viz` writes the graph and skips the report, so running the refresh by
-  hand leaves the two tracked files describing different builds of the same repository, with
+  the log it writes says `graph.json, graph.html and GRAPH_REPORT.md updated`. The
+  `--no-viz --code-only` form does not: `--no-viz` writes the graph and skips the report, so
+  running that by hand leaves the two tracked files describing different builds of the same
+  repository, with
   nothing in either one saying so. It happened twice on 2026-09-12, in this repo, to this agent.
   Follow it with `graphify cluster-only .`, which regenerates the report from the graph that was
   actually built, and read the counts out of both before committing — the report states them on
@@ -106,10 +107,22 @@ one, which meant the map lived on one machine and reached nobody who cloned.
   That gap is most likely `--code-only` doing exactly what its name says rather than a defect, so
   do not read it as one. **What the 115 extra nodes are has not been measured** (the diff that would
   have said was the one the clobber invalidated, above). What *is* settled is the practical part: a
-  hand refresh with the documented flags does not reproduce what is in git, so expect the next hook
-  run to revert it. Which command should own the tracked pair is a judgement nobody has recorded —
-  `GRAPH_REPORT.md` recommends `graphify update .` to its own reader, and the flags above are what
-  this file has always said. Settle it deliberately rather than by whichever ran last.
+  hand refresh with `--no-viz --code-only` does not reproduce what is in git, so expect the
+  next hook run to revert it.
+
+  **Decided 2026-09-12: `graphify update .` owns the tracked pair in this repo.** It is the
+  command that writes both files consistently, and `graphify-out/GRAPH_REPORT.md:15` — a line
+  graphify generates itself — already instructs its own reader to run it ("Run `graphify update .`
+  after code changes (no API cost)"). So the committed artifact and this file now agree.
+
+  **The user's global `~/.claude/CLAUDE.md` names `graphify . --no-viz --code-only` instead, and
+  that difference is deliberate.** It is not a standing instruction being overridden by accident:
+  that same global file carries a `## Per-project` clause reading "Project `CLAUDE.md` overrides",
+  so naming a different command here is the mechanism that clause provides, used on purpose. **Do
+  not "reconcile" the two files by editing either to match the other.** A reader who finds them
+  disagreeing and has not seen that clause will helpfully make them agree, the hand-refresh path
+  goes back to writing only one of the two tracked files, and the pair goes inconsistent again —
+  which is exactly how this started, twice, in one day.
 
 An `anchor:` behind HEAD means *re-check the claims*, not that they are wrong. Do the per-path check
 first — `git diff --name-only <anchor>..HEAD -- <paths the map documents>` — because a repo-wide
