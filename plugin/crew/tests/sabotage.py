@@ -104,6 +104,10 @@ PROMOTE_SH = os.path.join(CREW, "hooks", "scripts", "promote-gate.sh")
 MERGE_GATE = os.path.join(
     ROOT, "skills", "bitbucket", "scripts", "merge_gate.sh")
 GUARD_PS1 = os.path.join(CREW, "hooks", "scripts", "guard.ps1")
+# Split out of `crew_state.py` on 2026-09-13 -- see its docstring. Five
+# mutations below moved here with the code they target; none was
+# re-anchored onto a nearby line, which this file's own header forbids.
+GUARDS = os.path.join(CREW, "hooks", "scripts", "crew_guards.py")
 GATE_DOC = os.path.join(CREW, "commands", "gate.md")
 
 GUARD = '    if out["family"] is not None and out["family"] in authors:'
@@ -126,7 +130,7 @@ MUTATIONS = (
         # this mutation had to be applied twice to cover two keys, and a third
         # copy could have been wrong without either mutation noticing.
         "the layer ratchet takes the WIDER of the two layers",
-        STATE,
+        GUARDS,
         "    return tiers[min(rank(repo_value), rank(global_value))]",
         "    return tiers[max(rank(repo_value), rank(global_value))]",
         ("tests/test_guards.py::"
@@ -146,7 +150,7 @@ MUTATIONS = (
         # about either. This one leaves the normaliser correct and removes its
         # only use in the comparison, which is where the ordering is decided.
         "an unknown guard value is ranked without being normalised first",
-        STATE,
+        GUARDS,
         "    return GUARD_POLICIES.index(normalise_guard_policy(value))",
         "    return GUARD_POLICIES.index(value)",
         ("tests/test_guards.py::"
@@ -1695,7 +1699,7 @@ MUTATIONS = (
         # install-policy test had quietly stopped exercising the ratchet, this
         # one would come back STILL GREEN while the other stayed red.
         "install.policy resolves by precedence instead of narrowing",
-        STATE,
+        GUARDS,
         "    return tiers[min(rank(repo_value), rank(global_value))]",
         "    return tiers[max(rank(repo_value), rank(global_value))]",
         ("tests/test_install_policy.py::"
@@ -1710,7 +1714,7 @@ MUTATIONS = (
         # stops being inert. That is the difference between "auto runs one of
         # three commands in crew's source" and "auto runs what it was handed".
         "install_plan consults the policy before the shipped-command table",
-        STATE,
+        GUARDS,
         "    command = INSTALLABLE.get(name)\n    if command is None:",
         "    command = INSTALLABLE.get(name)\n    if command is None and "
         "resolved != \"auto\":",
@@ -1726,7 +1730,7 @@ MUTATIONS = (
         # rule, which IS "fall back to the documented default" and is correct
         # there because no granularity is more permissive than another.
         "an unknown install policy falls back to the default, not the floor",
-        STATE,
+        GUARDS,
         "        if cleaned in INSTALL_POLICIES:\n            return cleaned\n"
         "    return INSTALL_POLICY_DEFAULT",
         "        if cleaned in INSTALL_POLICIES:\n            return cleaned\n"
@@ -1756,7 +1760,7 @@ MUTATIONS = (
         # whose owners did not ask for it. Landing anything but the floor means
         # upgrading crew is what granted the capability.
         "the schema 5 migration lands install.policy above the floor",
-        STATE,
+        GUARDS,
         'INSTALL_DEFAULTS = {"policy": INSTALL_POLICY_DEFAULT}',
         'INSTALL_DEFAULTS = {"policy": "auto"}',
         ("tests/test_install_policy.py::"

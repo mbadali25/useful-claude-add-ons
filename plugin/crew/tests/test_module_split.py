@@ -1,6 +1,6 @@
-"""Invariants of the crew_state / crew_endpoints / crew_common split.
+"""Invariants of the crew_state / crew_endpoints / crew_common / crew_guards split.
 
-`crew_state` re-exports eight names so its callers did not have to change.
+`crew_state` re-exports every name below so its callers did not have to change.
 A re-export is a SECOND BINDING, not an alias: `crew_endpoints.read_endpoints`
 looks `load_endpoints` up in `crew_endpoints`'s globals, so rebinding
 `crew_state.load_endpoints` changes a name nothing reads. A test doing that
@@ -22,6 +22,7 @@ import os
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_common
 import crew_endpoints
+import crew_guards
 import crew_state
 
 _TESTS = os.path.dirname(os.path.abspath(__file__))
@@ -36,7 +37,8 @@ def _reexported():
     names = {}
     for node in ast.parse(source).body:
         if (isinstance(node, ast.ImportFrom)
-                and node.module in ("crew_common", "crew_endpoints")):
+                and node.module in ("crew_common", "crew_endpoints",
+                                    "crew_guards")):
             for alias in node.names:
                 names[alias.asname or alias.name] = node.module
     return names
@@ -56,7 +58,8 @@ def test_crew_state_re_exports_exactly_what_its_callers_reach_for():
     function with a different object would satisfy hasattr and still dispatch
     somewhere else.
     """
-    owners = {"crew_common": crew_common, "crew_endpoints": crew_endpoints}
+    owners = {"crew_common": crew_common, "crew_endpoints": crew_endpoints,
+              "crew_guards": crew_guards}
     reexported = _reexported()
     assert reexported, "crew_state imports from neither split module"
     for name, module in reexported.items():

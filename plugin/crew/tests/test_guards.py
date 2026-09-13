@@ -89,6 +89,14 @@ _INNOCENT = (
 )
 
 
+def _touch(path):
+    """Create the approval marker. `promote-gate.sh` tells the user to
+    `touch` its equivalent and never reads the contents, so an empty file
+    is the whole payload."""
+    with open(path, "w", encoding="utf-8"):
+        pass
+
+
 def _repo(tmp_path, guards=None, schema=None):
     root = tmp_path / "repo"
     (root / ".crew").mkdir(parents=True, exist_ok=True)
@@ -482,7 +490,7 @@ def test_an_ask_marker_approves_one_command_and_not_the_next(tmp_path):
 
     out = crew_config.guard_decision(root, "forcePush", first, path)
     assert out["decision"] == "ask"
-    open(out["marker"], "w", encoding="utf-8").close()
+    _touch(out["marker"])
 
     assert crew_config.guard_decision(
         root, "forcePush", first, path)["decision"] == "allow"
@@ -529,7 +537,8 @@ def test_under_allow_nothing_is_silent(tmp_path):
                               record=True)
 
     assert os.path.isfile(log)
-    row = open(log, encoding="utf-8").read().strip().split("\t")
+    with open(log, encoding="utf-8") as handle:
+        row = handle.read().strip().split("\t")
     assert row[1:5] == ["forcePush", "allow", "allow", "main"]
     assert row[5] == _TRIPS["forcePush"]
 
@@ -545,8 +554,9 @@ def test_a_logged_command_cannot_forge_a_row(tmp_path):
 
     crew_config.guard_decision(root, "forcePush", nasty, path, record=True)
 
-    body = open(os.path.join(root, crew_state.GUARD_LOG_PATH),
-                encoding="utf-8").read()
+    with open(os.path.join(root, crew_state.GUARD_LOG_PATH),
+              encoding="utf-8") as handle:
+        body = handle.read()
     assert body.count("\n") == 1
     assert len(body.strip().split("\t")) == 6
 
@@ -664,7 +674,7 @@ def test_sh_honours_each_policy(tmp_path, guard):
     assert command in proc.stderr          # the EXACT command, printed
     marker = [ln for ln in proc.stderr.splitlines()
               if ".approved-guard-" in ln][-1].split(None, 1)[1].strip()
-    open(marker, "w", encoding="utf-8").close()
+    _touch(marker)
     assert _run_sh(root, home, command).returncode == 0
     os.remove(marker)
 
@@ -701,7 +711,7 @@ def test_ps1_honours_each_policy(tmp_path, guard):
     assert command in proc.stderr
     marker = [ln for ln in proc.stderr.splitlines()
               if ".approved-guard-" in ln][-1].split("File ", 1)[1].strip()
-    open(marker, "w", encoding="utf-8").close()
+    _touch(marker)
     assert _run_ps1(root, home, command).returncode == 0
     os.remove(marker)
 
