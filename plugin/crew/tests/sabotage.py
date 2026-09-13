@@ -265,13 +265,21 @@ MUTATIONS = (
         "test_collect_carries_the_raw_schema_so_the_brief_can_tell_them_apart",
     ),
     (
-        # The command's half. The brief names "3 -> 4" and nothing explains
+        # The command's half. The brief names the hop and nothing explains
         # what that migration does -- a user reads a version number and is
         # told to run a command whose report walks past the entry for it.
+        #
+        # RE-PINNED to the CURRENT hop when schema 5 landed. It targeted
+        # "Schema 3 -> 4", and the paired test asserts the entry for
+        # SCHEMA_CURRENT, so once the current hop became 4 -> 5 this
+        # mutation deleted an entry nothing checks and reported STILL
+        # GREEN. Every schema bump has to move this string; that edit is
+        # the point, not an inconvenience, and the suite says so out loud
+        # when it is forgotten.
         "the current migration loses its entry in upgrade.md section 5",
         UPGRADE_DOC,
-        "- **Schema 3 \u2192 4**",
-        "- **The docs theme migration**",
+        "- **Schema 4 \u2192 5**",
+        "- **The install policy migration**",
         "tests/test_pm_brief.py::"
         "test_the_brief_and_upgrade_md_agree_on_the_current_migration",
     ),
