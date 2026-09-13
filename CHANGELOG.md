@@ -4,7 +4,88 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added
+
+- **`crew` 0.19.26: guardrails you can turn down per machine, a `/crew:gate`
+  command, and schema 6.** Crew's command guard refused a fixed set of
+  dangerous actions with no way to opt out. Schema 6 adds `guards` —
+  `terraformApply`, `forcePush`, `adminMerge`, `mergeGate`, each `block` |
+  `ask` | `allow` and all four defaulting to `block` — plus `github.mergeGate`
+  as the twin of `bitbucket.mergeGate` minus `preset`, which is not copied
+  because it binds to nothing (`CONFIG.md` §8).
+
+  **`ask` is a marker, not a prompt, and it had to be.** A `PreToolUse` hook
+  has no interactive stdin: exit 2 blocks, and the retry blocks again. An `ask`
+  implemented as a question would have been `block` under a second name — a key
+  with no reachable behaviour. So `ask` refuses, prints the *exact* command,
+  and names `.crew/.approved-guard-<name>-<sha256(command)[:16]>`, the same
+  shape and directory as `promote-gate.sh`'s `.approved-<env>-<sha>`. Keyed on
+  the command, so approving one force push does not approve the next.
+  **Under `allow` nothing is silent**: every decision appends a row to
+  `.crew/guard.log`, not only the permissive ones.
+
+  **Two of these are NEW refusals, and no default turns a new refusal into an
+  old one.** `guards.adminMerge` refuses `gh pr merge --admin`, which no crew
+  guard refused before, and `guards.terraformApply` now covers `tofu` as well
+  as `terraform` — OpenTofu is a drop-in fork, so naming one of the two refused
+  nothing the moment a repo switched. Measured against 0.19.25 before the
+  change: **both** flavours exited 0 for `gh pr merge --admin`, `tofu apply`
+  and `tofu -chdir=infra destroy`, while the `terraform` and force-push
+  controls exited 2. The migration report, the `/crew:upgrade` CLI,
+  `upgrade.md`, `CONFIG.md` §16 and both READMEs say so rather than letting
+  "the default is `block`, so nothing changed" cover it.
+
+  **A repo may only narrow.** These four and `install.policy` resolve to the
+  *lower* of the repo and machine-global layers rather than by precedence: crew
+  reads config out of cloned repositories, and under precedence a repo shipping
+  `guards.forcePush: allow` would grant itself force-push rights on the machine
+  of whoever cloned it. That ratchet is now **one table** —
+  `crew_guards.RATCHETED_KEYS`, with `effective_ratcheted` the only place that
+  takes the minimum and `crew_config.resolve_ratcheted` the only place that
+  reads both layers raw. `effective_install_policy` and
+  `resolve_install_policy` survive as thin wrappers, so no call site had to be
+  rewritten to prove the generalisation happened. `pm.authority` is
+  deliberately *not* in that table: it ratchets for the widening warning only.
+
+  **`/crew:gate <disable|enable|status> <github|bitbucket>`** owns the
+  take-it-down-and-put-it-back workflow. It reads `guards.mergeGate` **first**,
+  before resolving a provider or finding a script — a policy read after the
+  provider is resolved is a policy read after a real `export` API call has
+  already hit a live repository. A missing provider skill is a **stop**, never
+  a warning, and the only restore is `enable --from-export <the file disable
+  wrote>`. `/crew:promote`'s section now routes through it and covers both
+  providers instead of Bitbucket alone.
+
+  `crew_guards.py` is a real module split, not tidying: the `guards` block took
+  `crew_state.py` to 3341 lines against `.pylintrc`'s 3300 ceiling, and that
+  file's own comment says the third raise must be a split instead. The slice
+  moved is the one that already had a seam — "may crew do this, and how much
+  narrowing did the two layers agree on" — and `crew_state` re-exports every
+  name, with `tests/test_module_split.py` extended to assert each resolves to
+  the object `crew_guards` defines.
+
 ### Fixed
+
+- **`crew` 0.19.26: `/crew:config --explain` contradicted the run for every
+  ratcheted key.** It printed the *merged* value, and ratcheted keys do not
+  resolve by precedence — so a repo `install.policy: auto` over a
+  machine-global `manual` printed `install.policy  repo  "auto"` while crew
+  behaved as `manual`. Measured, not reasoned about, and wrong in the direction
+  that reads as "you have it" for a key deciding what crew may run. It now
+  prints the effective value and, beneath the table, names which layer is
+  holding each key down and what each layer asked for.
+
+- **`crew` 0.19.26: the schema-5 migration told the CLI nothing.** It added
+  `install.policy`, wrote its paragraph into `.crew/codemap/UPGRADE.md` and
+  printed nothing at the CLI — so a repo with no codemap directory (which is
+  where that file is written) gained a key governing whether crew may run
+  commands on the machine and learned about it nowhere. A filed defect, fixed
+  rather than repeated for schema 6's list.
+
+- **`crew` 0.19.26: three `consider-using-f-string` warnings from 0.19.25's
+  `graphStale` fix.** Not this change's, and named rather than absorbed: they
+  were pushed to `main` and make the pylint job red on `main` today,
+  independently of anything here. Three lines, fixed in their own commit.
 
 - **`crew` 0.19.25: `CONFIG.md` cites symbols instead of line numbers.** When
   the citations were last measured, **11 of 13 checkable line numbers were
