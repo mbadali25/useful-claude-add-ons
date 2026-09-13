@@ -6,6 +6,56 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`rule-of-two` 0.1.2: a recorded model id is now checked against the alias
+  beside it.** `render_report` printed each side's model id verbatim -
+  "requested as `X`" - with nothing checking that `X` belongs to the same
+  family as the alias next to it, while `resolve_family` read only the alias.
+  A mis-pasted `--model-id` in `commands/review.md` step 3 therefore named the
+  wrong family's model on the page while coverage still computed
+  `TWO_CROSS_FAMILY` and the banner still said "The Rule of Two held" - a
+  wrong value wearing the label of a check that happened, which is this repo's
+  recurring shape. It was disclosed in 0.1.1's pull request as a known gap and
+  left unfixed there because it costs its own version bump; this is that bump.
+
+  `verify_model_id` resolves **both** recorded names and returns the
+  contradiction. A disagreement - or an id that resolves to no known family,
+  because unknown must never read as corroboration - downgrades coverage to
+  the new `TWO_FAMILY_UNVERIFIED`.
+
+  **Downgraded, not refused.** Every other degraded input in this script is
+  reported rather than aborted on (`cmd_assemble` says exactly that of an
+  unreadable result file, `run_codex` of every failure) because the report is
+  how anyone finds out. A refusal would throw away two real reviews over a
+  typo and leave the operator who made it nothing on the page to correct it
+  from. So the banner quotes which two names disagree and what each resolved
+  to, the title withdraws the Rule of Two name, the "what is missing" section
+  fires, and the offending id stays in its bullet **marked rather than
+  dropped** - the person who has to fix it needs to see the value they pasted.
+
+  The new outcome is asked **before** the `UNKNOWN` check. Both are
+  unsatisfied, so `coverage_is_satisfied` does not care, but only the
+  unverified banner prints the contradiction: an unresolvable alias sitting
+  next to a mis-pasted id would otherwise be reported as a plain "could not
+  tell" with nobody told that two recorded names actively disagree.
+  `compute_coverage` takes the new flag with **no default**, because a check
+  that never ran silently becoming "nothing wrong" is the exact failure this
+  file exists to police.
+
+  An **absent** id is an absence, not a disagreement. Nothing is claimed about
+  a name that was never recorded, the "requested as" clause was already
+  suppressed when it is empty, and `run_codex` records no id at all - so
+  treating an absence as unverified would downgrade every real report and make
+  the outcome meaningless. The check still runs symmetrically on both sides,
+  since `hydrate_state` reads a state file someone else wrote and a guard
+  installed on one side only is this repo's documented shape.
+
+  The suite covers the mismatch, the unresolvable id, the corroborating pair
+  (which must still say the rule held) and the absent id, and `--sabotage`
+  gained an entry restoring the 0.1.1 behaviour exactly - the id's family
+  still resolved, nothing comparing it. State the invariant and re-measure the
+  numbers rather than trusting these: 296 checks and 8 sabotages at the time
+  of writing, up from 267 and 7.
+
 - **`rule-of-two` 0.1.1: five defects its first real run against another
   artifact exposed.** Four of them were invisible to the plugin's own
   self-reviews, because a self-review runs installed, in this repo, on a tree

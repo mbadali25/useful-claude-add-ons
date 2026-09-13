@@ -755,7 +755,7 @@ delete it by hand for no trace.
 | | |
 |---|---|
 | **Source** | [`rule-of-two/`](rule-of-two) |
-| **Version** | 0.1.1 |
+| **Version** | 0.1.2 |
 | **Install** | `claude plugin install rule-of-two@useful-claude-add-ons` |
 | **Registers** | 1 agent, 2 commands, 0 skills, 0 hook entries |
 | **Upstream guide** | [`rule-of-two/README.md`](rule-of-two/README.md) |
