@@ -1,5 +1,5 @@
 {
-  "schema": 5,
+  "schema": 6,
   "tier": 0,
   "roles": [
     "explorer",
@@ -143,7 +143,19 @@
       "preset": "standard"
     }
   },
+  "github": {
+    "mergeGate": {
+      "enabled": false,
+      "branch": null
+    }
+  },
   "install": {
     "policy": "manual"
+  },
+  "guards": {
+    "terraformApply": "block",
+    "forcePush": "block",
+    "adminMerge": "block",
+    "mergeGate": "block"
   }
 }

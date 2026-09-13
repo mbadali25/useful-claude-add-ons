@@ -155,6 +155,28 @@ BITBUCKET_BLOCK = {
     },
 }
 
+# The GitHub twin, symmetrical to `BITBUCKET_BLOCK` minus `preset`.
+#
+# `enabled` and `branch` carry BITBUCKET_BLOCK's reasons unchanged: a gate that
+# arrived switched on would start failing merges on a repo whose owner never
+# asked for one, and a hardcoded `main` would be silently wrong on a repo still
+# on `master` or on a Gitflow `develop`.
+#
+# `preset` is NOT copied, and the asymmetry is the decision rather than an
+# oversight. `bitbucket.mergeGate.preset` binds to nothing -- `merge_gate.sh`
+# has no `--preset` flag, and CONFIG.md §8 records why the key stays unwired
+# rather than bound to a hardcoded literal. Copying a key whose only
+# documentation is an explanation of why it does nothing would be shipping the
+# same defect a second time, deliberately. `skills/github/scripts/merge_gate.sh`
+# additionally refuses to invent a gate at all: its `enable` REQUIRES
+# `--from-export`, so there is no preset for a key to select even in principle.
+GITHUB_BLOCK = {
+    "mergeGate": {
+        "enabled": False,
+        "branch": None,
+    },
+}
+
 # The sha group must run to END OF LINE, and the prefix must be LAZY. Both,
 # not either.
 #
@@ -208,6 +230,8 @@ CONFIG_BLOCKS = (
     ("docs", DOCS_BLOCK),
     ("bitbucket", BITBUCKET_BLOCK),
     ("install", crew_state.INSTALL_DEFAULTS),
+    ("guards", crew_state.GUARD_DEFAULTS),
+    ("github", GITHUB_BLOCK),
 )
 
 # The keys schema 3 introduced. Named here rather than diffed generically so
@@ -231,6 +255,29 @@ SCHEMA_3_KEYS = ("qa.fallback", "qa.roles", "dev.fallback", "dev.roles")
 # they upgraded.
 SCHEMA_5_KEYS = ("install.policy",)
 
+# The keys schema 6 introduces. Named here for the same reason the two lists
+# above are: so the report can SAY what the 5 -> 6 migration added, in the
+# words the user will search for.
+#
+# Six keys rather than schema 5's one, and the rule the user set on 2026-09-12
+# ("a key added ahead of a need costs more to undo than a second bump costs to
+# pay") is satisfied rather than broken: every one of these six has a consumer
+# landing in the same change. The four `guards.*` are read by `guard.sh` and
+# `guard.ps1` through `crew_config.py --guard`, and the two `github.mergeGate`
+# keys are read by `commands/gate.md` and `commands/promote.md`. A seventh key
+# with no consumer would still be wrong; these are not that.
+#
+# Behaviour-neutral on arrival for the two rules that already existed --
+# `terraformApply` and `forcePush` land as `block`, which is what the guard
+# already did. It is NOT behaviour-neutral overall, and the report says so:
+# `adminMerge` refuses `gh pr merge --admin`, which no guard refused before,
+# and `terraformApply` now also covers `tofu`. A migration that claimed
+# neutrality it does not have would be the "unknown wearing the label of a
+# check that happened" failure, one layer out.
+SCHEMA_6_KEYS = ("guards.terraformApply", "guards.forcePush",
+                 "guards.adminMerge", "guards.mergeGate",
+                 "github.mergeGate.enabled", "github.mergeGate.branch")
+
 
 def upgrade_config(cfg):
     """Bring a config up to the current schema. Pure.
@@ -241,7 +288,7 @@ def upgrade_config(cfg):
         {"unmigrated": [...], "rolesAdded": [...], "rolesUnknown": [...],
          "tierFrom": int, "tierTo": int, "schemaFrom": int,
          "providerKeysAdded": [...], "installKeysAdded": [...],
-         "schemaStamped": bool}
+         "guardKeysAdded": [...], "schemaStamped": bool}
 
     Four rules, each of which used to be wrong here:
 
@@ -278,6 +325,7 @@ def upgrade_config(cfg):
              "tierFrom": 0, "tierTo": 0,
              "schemaFrom": crew_state.int_or(cfg.get("schema", 1), 1),
              "providerKeysAdded": [], "installKeysAdded": [],
+             "guardKeysAdded": [],
              "schemaStamped": False,
              # Keys this upgrade removed outright. Distinct from
              # "unmigrated", which blocks the schema stamp: a dropped key is
@@ -333,27 +381,13 @@ def upgrade_config(cfg):
             continue
         out[key] = merged
 
-    # What schema 3 actually added to THIS config, computed from the incoming
-    # file rather than from the version number: a config hand-edited to carry
-    # `dev.roles` already must not be reported as having just gained it.
-    for dotted in SCHEMA_3_KEYS:
-        block_key, leaf = dotted.split(".")
-        if _block_untouched(notes, block_key):
-            continue
-        supplied = crew_state.dict_or_empty(cfg.get(block_key))
-        if leaf not in supplied:
-            notes["providerKeysAdded"].append(dotted)
-
-    # Same rule for schema 5's key, and computed the same way: from the
-    # incoming file, so a config hand-edited to carry `install.policy` already
-    # is not reported as having just gained it.
-    for dotted in SCHEMA_5_KEYS:
-        block_key, leaf = dotted.split(".")
-        if _block_untouched(notes, block_key):
-            continue
-        supplied = crew_state.dict_or_empty(cfg.get(block_key))
-        if leaf not in supplied:
-            notes["installKeysAdded"].append(dotted)
+    # What each schema bump actually added to THIS config, computed from the
+    # incoming file rather than from the version number: a config hand-edited
+    # to carry `dev.roles` or `install.policy` already must not be reported as
+    # having just gained it.
+    notes["providerKeysAdded"] = _keys_added(cfg, notes, SCHEMA_3_KEYS)
+    notes["installKeysAdded"] = _keys_added(cfg, notes, SCHEMA_5_KEYS)
+    notes["guardKeysAdded"] = _keys_added(cfg, notes, SCHEMA_6_KEYS)
 
     # `graph.obsidian` was removed in 0.16.13. Drop it loudly rather than
     # carrying it forward: a key that survives an upgrade but no longer has a
@@ -473,6 +507,40 @@ def upgrade_config(cfg):
         crew_state.dict_or_empty(out.get("docs")).get("theme"))
 
     return out, notes
+
+
+def _keys_added(cfg, notes, dotted_keys):
+    """Which of `dotted_keys` this migration is adding to `cfg`.
+
+    One walk for every schema list, and it descends ARBITRARILY DEEP rather
+    than unpacking two parts. The two-part form (`block_key, leaf =
+    dotted.split(".")`) was correct for `qa.fallback` and `install.policy` and
+    raises `ValueError` on `github.mergeGate.enabled` -- inside `upgrade_config`
+    which `run()` calls BEFORE it writes anything, so the whole migration would
+    have died at the first three-part key rather than shipping a wrong answer.
+    Loud, but still a bug the second nested block was always going to hit.
+
+    A key under a block that could not be migrated is skipped: `_block_untouched`
+    says the block was left exactly as the user wrote it, so reporting a key as
+    added to it would claim work that did not happen.
+
+    Absent ANYWHERE along the path counts as added, including the case where an
+    intermediate node is present but not a dict -- a `github: "oops"` is already
+    in `unmigrated`, and anything else that is not a dict cannot be carrying the
+    leaf.
+    """
+    out = []
+    for dotted in dotted_keys:
+        parts = dotted.split(".")
+        if _block_untouched(notes, parts[0]):
+            continue
+        node = cfg
+        for part in parts:
+            if not isinstance(node, dict) or part not in node:
+                out.append(dotted)
+                break
+            node = node[part]
+    return out
 
 
 def _block_untouched(notes, block_key):
@@ -658,6 +726,29 @@ def _config_lines(notes):
             "command from its own source, never one from a repo config or a "
             "skill file. Set it with `/crew:config` — nothing here chose "
             "anything but the floor for you."
+        )
+    if notes["guardKeysAdded"]:
+        lines.append(
+            "- schema "
+            f"{notes['schemaFrom']} -> {crew_state.SCHEMA_CURRENT}, which "
+            "added the `guards` block and `github.mergeGate`: "
+            + ", ".join(notes["guardKeysAdded"])
+            + ". Each guard is `block` | `ask` | `allow` and arrives as "
+            "`block`. **This migration is NOT entirely behaviour-neutral, and "
+            "the two places it is not are these.** `guards.adminMerge` refuses "
+            "`gh pr merge --admin`, which no crew guard refused before, and "
+            "`guards.terraformApply` now also covers `tofu` — so a command "
+            "that ran yesterday can be refused today. Both were bypasses, not "
+            "features; if you need one back, set that guard to `ask` (crew "
+            "prints the exact command and stops until you approve THAT "
+            "command) or `allow` (crew runs it and writes a row to "
+            f"`{crew_state.GUARD_LOG_PATH}` — under `allow` nothing is "
+            "silent). `guards.terraformApply` and `guards.forcePush` at "
+            "`block` are exactly what the guard already did. A repo may only "
+            "NARROW what the global crew config allows, never widen it — the "
+            "same ratchet as `install.policy` (CONFIG.md §16). Set them with "
+            "`/crew:config` — nothing here chose anything but the floor for "
+            "you."
         )
     if notes["providerKeysAdded"]:
         lines.append(
@@ -866,6 +957,26 @@ def main(argv=None):
                   + ", ".join(notes["providerKeysAdded"])
                   + " (empty/neutral - dispatch is unchanged; "
                     "run /crew:model to pin a model per role)")
+        # `installKeysAdded` had no line here at all: schema 5 added
+        # `install.policy`, wrote its paragraph into UPGRADE.md, and printed
+        # nothing at the CLI -- so a repo with no `.crew/codemap/` (where
+        # UPGRADE.md is written) gained a key governing whether crew may run
+        # commands on the machine, and said so nowhere the user would see. A
+        # filed defect, fixed here rather than repeated for a second list.
+        if notes["installKeysAdded"]:
+            print(f"schema {notes['schemaFrom']} -> "
+                  f"{crew_state.SCHEMA_CURRENT}: added "
+                  + ", ".join(notes["installKeysAdded"])
+                  + " (arrives as `manual` - crew installs nothing without "
+                    "being told; run /crew:config to change it)")
+        if notes["guardKeysAdded"]:
+            print(f"schema {notes['schemaFrom']} -> "
+                  f"{crew_state.SCHEMA_CURRENT}: added "
+                  + ", ".join(notes["guardKeysAdded"])
+                  + " (each guard arrives as `block`; NOT fully "
+                    "behaviour-neutral - `guards.adminMerge` and `tofu` under "
+                    "`guards.terraformApply` are new refusals. Run "
+                    "/crew:config to set them)")
         if notes["unmigrated"]:
             print("NOT migrated (wrong type, left as written): "
                   + ", ".join(notes["unmigrated"]))

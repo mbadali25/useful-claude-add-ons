@@ -78,10 +78,13 @@ whether the self-review guard is barring it, and which fallback is armed.
 
 import argparse
 import copy
+import hashlib
 import json
 import os
+import re
 import shutil
 import sys
+import time
 
 import crew_state
 
@@ -372,11 +375,15 @@ def default_config():
         "graph": copy.deepcopy(crew_upgrade.GRAPH_BLOCK),
         "docs": copy.deepcopy(crew_upgrade.DOCS_BLOCK),
         "bitbucket": copy.deepcopy(crew_upgrade.BITBUCKET_BLOCK),
+        "github": copy.deepcopy(crew_upgrade.GITHUB_BLOCK),
         # Present on BOTH sides. A repo may narrow what the machine allows --
-        # see `crew_state.effective_install_policy` -- and a key that exists
-        # only globally would fail `is_global_path`'s rule that every
+        # see `crew_state.effective_ratcheted` -- and a key that exists only
+        # globally would fail `is_global_path`'s rule that every
         # globally-settable key is a real repo key.
         "install": copy.deepcopy(crew_state.INSTALL_DEFAULTS),
+        # Same rule, same ratchet, four more keys. Both layers, because a repo
+        # that may only NARROW still has to be able to say so.
+        "guards": copy.deepcopy(crew_state.GUARD_DEFAULTS),
     }
 
 
@@ -452,6 +459,13 @@ def default_global_config():
         `mergeGate.branch` stays null in both layers because the branch is
         resolved from the API per repo, so a global value for it would be the
         one key here that genuinely IS a fact about a checkout.
+      * `github` -- the same two keys for the GitHub twin, minus `preset`,
+        which is not copied because it binds to nothing (CONFIG.md §8).
+      * `guards` -- all four. The strongest machine fact on this list after
+        `install`: it is the machine owner saying which dangerous commands
+        crew may run HERE. Like `install.policy` and unlike everything else
+        above, a repo cannot override these UPWARD -- see
+        `crew_state.effective_ratcheted`, and `resolve_ratcheted` below.
 
     `qa.roles` and `dev.roles` are empty dicts, which `leaf_paths` treats as
     LEAVES -- so the whole per-role table is one settable path and a pin for
@@ -501,12 +515,18 @@ def default_global_config():
         }},
         "docs": copy.deepcopy(crew_upgrade.DOCS_BLOCK),
         "bitbucket": copy.deepcopy(crew_upgrade.BITBUCKET_BLOCK),
+        "github": copy.deepcopy(crew_upgrade.GITHUB_BLOCK),
         # How much crew may do about a skill it needs and cannot find. This is
         # a machine fact in the strongest sense on this list: it is the machine
-        # owner saying how much they trust crew to run commands HERE. It is
-        # also the only key whose global value a repo cannot override upward --
-        # see `crew_state.effective_install_policy`.
+        # owner saying how much they trust crew to run commands HERE. It was
+        # the only key whose global value a repo cannot override upward --
+        # see `crew_state.effective_ratcheted`.
         "install": copy.deepcopy(crew_state.INSTALL_DEFAULTS),
+        # The four guards, and the strongest case on this list for the ratchet
+        # rather than precedence. `guards.forcePush` decides whether a command
+        # that destroys history on a remote runs without a word; the repo file
+        # asking for that arrived inside a clone written by someone else.
+        "guards": copy.deepcopy(crew_state.GUARD_DEFAULTS),
     }
 
 
@@ -758,23 +778,29 @@ def resolve_config(root):
     return merged
 
 
-def resolve_install_policy(root, path=None):
-    """The install policy in force at `root`, and where it came from.
+def resolve_ratcheted(root, dotted, path=None):
+    """The value in force at `dotted` for the repo at `root`, and its source.
 
-    Returns `{"effective", "repo", "global", "heldDownBy"}`.
+    Returns `{"path", "effective", "repo", "global", "heldDownBy"}`.
+
+    The one resolver for every ratcheted key -- `install.policy` and all four
+    `guards.*`. There was one of these per key, and a second copy is how the
+    two come to disagree: CLAUDE.md's lesson is that one mechanism can be wrong
+    while two can disagree, and then only one of them gets fixed.
 
     **Deliberately NOT routed through `resolve_config`.** Every other key in
     crew resolves by precedence -- the repo answers and the global layer answers
     only where the repo is silent -- and that rule is wrong here, in the one
     direction that costs something. A repo config travels inside a clone written
     by someone else; the global file is this machine's owner. Under precedence a
-    cloned repo carrying `install.policy: auto` would override a machine owner
-    who chose `manual`, which is a repo author granting themselves the right to
-    run commands on a stranger's machine.
+    cloned repo carrying `install.policy: auto`, or `guards.forcePush: allow`,
+    would override a machine owner who chose `manual` or `block` -- a repo
+    author granting themselves the right to run commands, or to destroy history
+    on a remote, on a stranger's machine.
 
     So the two layers are read raw and combined by
-    `crew_state.effective_install_policy`, which takes the LOWER rank. Neither
-    layer can widen what the other allows.
+    `crew_state.effective_ratcheted`, which takes the LOWER rank. Neither layer
+    can widen what the other allows.
 
     `heldDownBy` names the layer that is doing the narrowing, or None when both
     agree. It exists because of the rule `default_global_config` states for the
@@ -782,28 +808,46 @@ def resolve_install_policy(root, path=None):
     out loud. A user who sets `auto` in a repo and sees crew keep asking needs to
     be told that their machine-global `manual` is why -- otherwise the key looks
     broken and the next step is to go looking for the bug.
+
+    Raises `KeyError` for a key that does not ratchet, from
+    `crew_state.effective_ratcheted`. Falling back to precedence would be the
+    ratchet silently not happening, which is the failure it exists to prevent.
     """
-    repo_cfg = crew_state.dict_or_empty(
-        crew_state.load_config(root).get("install"))
+    _tiers, normalise, rank = crew_state.ratchet_spec(dotted) or (
+        None, None, None)
+    parts = dotted.split(".")
+    repo_value = _dig(crew_state.load_config(root), parts)
     global_cfg, _ = filter_global(read_global_config(path))
-    global_install = crew_state.dict_or_empty(global_cfg.get("install"))
+    global_value = _dig(global_cfg, parts)
+    repo_value = None if repo_value is _MISSING else repo_value
+    global_value = None if global_value is _MISSING else global_value
 
-    repo_value = repo_cfg.get("policy")
-    global_value = global_install.get("policy")
-    effective = crew_state.effective_install_policy(repo_value, global_value)
+    effective = crew_state.effective_ratcheted(dotted, repo_value, global_value)
 
-    rank = crew_state.install_policy_rank
     held = None
     if rank(repo_value) > rank(effective):
         held = "global"
     elif rank(global_value) > rank(effective):
         held = "repo"
     return {
+        "path": dotted,
         "effective": effective,
-        "repo": crew_state.normalise_install_policy(repo_value),
-        "global": crew_state.normalise_install_policy(global_value),
+        "repo": normalise(repo_value),
+        "global": normalise(global_value),
         "heldDownBy": held,
     }
+
+
+def resolve_install_policy(root, path=None):
+    """`resolve_ratcheted` for `install.policy`. Kept as its own name.
+
+    A thin wrapper on purpose -- see `crew_state.effective_install_policy` for
+    the same decision one layer down. The `"path"` key is dropped so the shape
+    this function has always returned is byte-identical to what its callers and
+    its tests already read.
+    """
+    row = resolve_ratcheted(root, "install.policy", path)
+    return {key: value for key, value in row.items() if key != "path"}
 
 
 def install_plan_for(root, name, path=None):
@@ -821,6 +865,155 @@ def install_plan_for(root, name, path=None):
     plan["repoPolicy"] = resolved["repo"]
     plan["globalPolicy"] = resolved["global"]
     return plan
+
+
+def resolve_guard(root, name, path=None):
+    """`resolve_ratcheted` for one guard. `name` is a bare key, e.g. `forcePush`.
+
+    Raises `KeyError` for a name that is not a guard, from
+    `crew_state.effective_ratcheted`. Fail-closed is the CALLER's job and the
+    CLI does it -- a raise here is a programming error, and swallowing it into
+    `block` would hide a typo'd guard name forever behind a policy that looks
+    deliberate.
+    """
+    return resolve_ratcheted(root, f"guards.{name}", path)
+
+
+# Which branch a force push is aimed at, for the line `ask` and `allow` print
+# before acting. The design note left this open and recommended honouring the
+# configured value everywhere -- so `allow` really does allow `main` -- with
+# the compensating requirement that the target is NAMED. That is this.
+#
+# `unknown` is its own answer and never collapses into a branch name. A refspec
+# crew cannot parse is exactly the case where a reader most needs to be told
+# that crew could not tell, and substituting a plausible-looking `main` is the
+# "unknown wearing the label of a check that happened" failure this repo keeps
+# rediscovering.
+_PUSH_ARGS_RE = re.compile(r"\bgit\s+(?:-\S+\s+(?:[^-]\S*\s+)?)*push\b"
+                           r"((?:[^;&|]|&[0-9])*)")
+
+
+def push_target(command):
+    """The branch a `git push` in `command` is aimed at, or `"unknown"`.
+
+    Deliberately crude and deliberately honest. It reads the LAST non-flag
+    token of the push, drops a leading `+` (a force refspec) and everything
+    before a `:` (`local:remote` -- the remote side is the one being written),
+    and answers `unknown` when there is no such token, which is the extremely
+    common `git push --force` with the branch taken from the upstream config.
+    """
+    match = _PUSH_ARGS_RE.search(command)
+    if match is None:
+        return "unknown"
+    tokens = [t for t in match.group(1).split() if not t.startswith("-")]
+    # tokens[0] is the remote (`origin`); anything after it is a refspec.
+    if len(tokens) < 2:
+        return "unknown"
+    ref = tokens[-1].lstrip("+")
+    if ":" in ref:
+        ref = ref.split(":", 1)[1]
+    return ref or "unknown"
+
+
+def guard_marker(root, name, command):
+    """The one-shot approval marker path for THIS guard and THIS command.
+
+    Keyed on a digest of the command, not on the guard alone, and that is the
+    whole design. A PreToolUse hook has no interactive stdin, so "stop for a
+    yes at that moment" can only be expressed as a file; a marker naming only
+    the guard would be a standing grant -- approve one force push and every
+    later one runs unasked, which is `allow` wearing `ask`'s label.
+
+    Same shape and same directory as `promote-gate.sh:154`'s
+    `.crew/.approved-<env>-<sha>`, because it is the same problem and the repo
+    should not grow a second scheme for it.
+    """
+    digest = hashlib.sha256(command.encode("utf-8", "replace")).hexdigest()[:16]
+    return os.path.join(
+        root, ".crew", f"{crew_state.GUARD_APPROVAL_PREFIX}{name}-{digest}")
+
+
+def _log_guard(root, row):
+    """Append one tab-separated row to `.crew/guard.log`. Best effort.
+
+    Never raises: a hook that dies because it could not write its own audit
+    line would turn a logging failure into a blocked command, which is a worse
+    outcome than a missing row. The caller has already printed to stderr.
+
+    `.crew/` is created only when it is missing AND the decision was not a
+    refusal, because a refusal is already visible and creating a crew directory
+    inside a repo that never asked for one is a side effect nobody requested.
+    """
+    try:
+        path = os.path.join(root, crew_state.GUARD_LOG_PATH)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "a", encoding="utf-8") as handle:
+            handle.write("\t".join(row) + "\n")
+    except OSError:
+        pass
+
+
+def guard_decision(root, name, command, path=None, record=False):
+    """What crew's command guard must do about `command` under `guards.<name>`.
+
+    Returns `{"guard", "policy", "decision", "reason", "marker", "target",
+    "heldDownBy", "repo", "global"}` where `decision` is one of:
+
+        "block"   refuse, exactly as the guard did before these keys existed
+        "ask"     refuse, print the exact command, and name the marker that
+                  approves THAT command and only that command
+        "allow"   let it through
+
+    `policy` is the configured value and `decision` is what to DO, and they are
+    separate keys because they differ in the case the whole `ask` design turns
+    on: policy `ask` with the marker already present is decision `allow`. A
+    caller that read one field would either re-ask forever or never ask at all.
+
+    **Under `allow` nothing is silent.** `record=True` appends a row to
+    `.crew/guard.log` for every decision, not only the permissive ones -- the
+    log is then the record of what the guard did, rather than a record of the
+    half somebody thought worth keeping. Consuming the marker is deliberately
+    NOT done here: a `PreToolUse` hook can fire more than once for one command
+    (both shell flavours are registered on Windows), and deleting the marker on
+    the first read would refuse the second. The marker is one-shot in the sense
+    that it names one command, and it is the user's to remove.
+    """
+    resolved = resolve_guard(root, name, path)
+    policy = resolved["effective"]
+    marker = guard_marker(root, name, command)
+    target = push_target(command) if name == "forcePush" else ""
+
+    if policy == "allow":
+        decision, reason = "allow", f"guards.{name} is `allow`"
+    elif policy == "ask":
+        if os.path.exists(marker):
+            decision, reason = "allow", f"approved for this command: {marker}"
+        else:
+            decision, reason = "ask", f"guards.{name} is `ask`"
+    else:
+        decision, reason = "block", f"guards.{name} is `block`"
+
+    out = {
+        "guard": name,
+        "policy": policy,
+        "decision": decision,
+        "reason": reason,
+        "marker": marker,
+        "target": target,
+        "heldDownBy": resolved["heldDownBy"],
+        "repo": resolved["repo"],
+        "global": resolved["global"],
+    }
+    if record and not (decision == "block" and not os.path.isdir(
+            os.path.join(root, ".crew"))):
+        _log_guard(root, (
+            str(int(time.time())), name, policy, decision, target or "-",
+            # Tabs and newlines in a command would forge a row. Same
+            # normalisation `crew_incident_log` (`_common.sh:104`) applies, and
+            # for the same reason.
+            command.replace("\t", " ").replace("\r", " ").replace("\n", " "),
+        ))
+    return out
 
 
 def layered_state(root):
@@ -908,7 +1101,13 @@ def explain_config(root, path=None):
     `source` is `"repo"`, `"global"`, `"repo+global"` or `"default"`.
     `repo+global` appears only for a dict-valued key both layers put keys
     into: their contents merge rather than one replacing the other, so
-    naming a single layer would understate the other's contribution. Scoped to the keys
+    naming a single layer would understate the other's contribution.
+
+    A RATCHETED key (`install.policy`, every `guards.*`) carries three extra
+    fields -- `"ratchet": True`, `"heldDownBy"` and the two raw layer values --
+    and its `"value"` is the ratcheted effective one, NOT the merged one. It
+    has to be: those keys do not resolve by precedence, so printing the merged
+    result for them produced a table that contradicted the run. Scoped to the keys
     `default_global_config()` covers on purpose: those are exactly the keys a
     walkthrough can offer to write, and a full dump of forty leaves would bury
     the four that anyone is actually asking about.
@@ -934,6 +1133,33 @@ def explain_config(root, path=None):
         from_repo = _layer_supplies(repo_cfg, parts, defaults)
         from_global = _layer_supplies(global_cfg, parts, defaults)
         value = _dig(resolved, parts)
+        if crew_state.ratchet_spec(dotted) is not None:
+            # A ratcheted key does not resolve by precedence, so the merged
+            # result is the WRONG value to print for it. This table said
+            # `install.policy  repo  "auto"` on a machine whose global file
+            # said `manual` and whose crew therefore behaved as `manual` --
+            # a report that contradicted the run, in the direction that reads
+            # as "you have it", which is the worst direction for a key that
+            # decides what crew may run. Measured before it was fixed, not
+            # reasoned about.
+            #
+            # `heldDownBy` rides along rather than being folded into `source`,
+            # because "which layer decided" and "which layer is holding it
+            # down" are different questions and a single column can only
+            # answer one. `_print_explain` renders both.
+            ratchet = resolve_ratcheted(root, dotted, path)
+            rows.append({
+                "path": dotted,
+                "value": ratchet["effective"],
+                "source": ratchet["heldDownBy"] or (
+                    "repo" if from_repo else "global" if from_global
+                    else "default"),
+                "ratchet": True,
+                "heldDownBy": ratchet["heldDownBy"],
+                "repo": ratchet["repo"],
+                "global": ratchet["global"],
+            })
+            continue
         if from_repo and from_global and isinstance(value, dict):
             # Merging two dicts is not a contest one of them wins -- the keys
             # combine, so both layers really are deciding part of the value.
@@ -1493,6 +1719,49 @@ def _widens(dotted, before, after):
     return rank(after) > rank(None if before is _MISSING else before)
 
 
+# What each guard actually governs, in the words the `! widens to` line reads
+# out. Keyed on every member of `crew_state.GUARD_NAMES`, so a fifth guard
+# added there is a KeyError below rather than a guard that widens with no note
+# -- the same totality rule `_INSTALL_WIDENING_NOTES` carries, one level up.
+_GUARD_ACTIONS = {
+    "terraformApply": "terraform/tofu apply and destroy, -chdir forms included",
+    "forcePush": "git push --force / -f / --force-with-lease, and a "
+                 "leading-plus refspec",
+    "adminMerge": "gh pr merge --admin, which merges past a branch protection "
+                  "rule somebody put there",
+    "mergeGate": "taking a live repository's merge gate down and putting it "
+                 "back, through /crew:gate",
+}
+
+
+def _guard_widening_notes(name, what):
+    """The `! widens to` note for one guard, total over `GUARD_POLICIES`.
+
+    Total on purpose, `block` included: the CLI does `notes[granted]`, and a
+    missing key there is a `KeyError` at the point of use rather than a warning
+    that silently describes the wrong tier. That is the failure mode that
+    produced `_INSTALL_WIDENING_NOTES`' own totality, and softening it here
+    would reintroduce it for four keys at once.
+    """
+    return {
+        "block": (
+            f"crew refuses {what}. This is the narrowest policy and nothing "
+            "widens into it."
+        ),
+        "ask": (
+            f"crew will print the exact {what} command it was about to run "
+            "and refuse until you approve THAT command by creating the marker "
+            "file it names. The approval covers one command, not the guard: "
+            "the next one asks again."
+        ),
+        "allow": (
+            f"crew will run {what} WITHOUT asking. It still writes a row to "
+            f"`{crew_state.GUARD_LOG_PATH}` saying what it let through, so "
+            "the record exists - but nothing stops it at the time."
+        ),
+    }
+
+
 _RATCHETED = {
     "pm.authority": (
         crew_state.authority_rank,
@@ -1505,6 +1774,17 @@ _RATCHETED = {
         _INSTALL_WIDENING_NOTES,
     ),
 }
+# The four guards, from `crew_state.GUARDS` rather than written out again, so a
+# fifth guard added there cannot arrive here with no widening note -- which
+# would be a `KeyError` on the one line that exists to warn about a grant.
+_RATCHETED.update({
+    f"guards.{_name}": (
+        crew_state.guard_policy_rank,
+        crew_state.normalise_guard_policy,
+        _guard_widening_notes(_name, _GUARD_ACTIONS[_name]),
+    )
+    for _name in crew_state.GUARD_NAMES
+})
 
 
 def plan_global_write(updates, path=None):
@@ -1644,9 +1924,28 @@ def write_global_config(updates, path=None):
 def _print_explain(rows):
     width = max((len(r["path"]) for r in rows), default=4)
     print(f"{'key'.ljust(width)}  source    value")
+    narrowed = []
     for row in rows:
         print(f"{row['path'].ljust(width)}  {row['source'].ljust(8)}  "
               f"{json.dumps(row['value'])}")
+        if row.get("heldDownBy"):
+            narrowed.append(row)
+    # THE NARROWING SOURCE, named, on its own lines. A ratcheted key is the one
+    # place in this table where the value shown is not the value either layer
+    # asked for, and a `source` column alone cannot say so -- it has one slot
+    # and there are two facts. Without this a user who set `allow` in a repo
+    # and sees `block` has been told nothing about why, which is the state the
+    # `heldDownBy` field was added to `resolve_install_policy` to prevent and
+    # which this report then reproduced anyway by not printing it.
+    for row in narrowed:
+        print()
+        print(f"! {row['path']}: repo asks `{row['repo']}`, machine-global "
+              f"asks `{row['global']}` -> `{row['value']}`")
+        print(f"  The {row['heldDownBy']} layer is holding this down. These "
+              "keys take the NARROWER of the two")
+        print("  layers, never the repo's: a cloned repo may ask for less "
+              "than your machine allows")
+        print("  and be obeyed, and may ask for more and be refused.")
     # Say what this table is NOT, or it reads as the whole resolved config and
     # a reader concludes their `tracker` or `jira.project` is unset.
     print()
@@ -1685,8 +1984,53 @@ def main(argv=None):
     parser.add_argument("--install-plan", metavar="NAME", default=None,
                         help="what crew may do about NAME not being "
                              "installed, under install.policy")
+    parser.add_argument("--guard", metavar="NAME", default=None,
+                        help="what the command guard must do about NAME "
+                             "(" + ", ".join(crew_state.GUARD_NAMES) + ")")
+    parser.add_argument("--command", default="",
+                        help="the command being judged, for --guard")
+    parser.add_argument("--record", action="store_true",
+                        help="with --guard, append the decision to "
+                             + crew_state.GUARD_LOG_PATH)
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
+
+    if args.guard is not None:
+        # ONE resolver for both shell flavours. `guard.sh` and `guard.ps1`
+        # drift independently -- three bypasses fixed in #132 were open in
+        # both -- and config layering is the last thing that should exist
+        # twice: a PowerShell reimplementation of the ratchet would be a
+        # second mechanism for the rule whose entire point is that a repo
+        # cannot widen it. Both flavours shell out to this.
+        if args.guard not in crew_state.GUARD_NAMES:
+            # Exit 2, and the callers treat any non-zero as `block`. A typo'd
+            # guard name must not resolve to a policy at all: `block` returned
+            # quietly here would look like a deliberate setting forever.
+            print(f"unknown guard: {args.guard} (known: "
+                  + ", ".join(crew_state.GUARD_NAMES) + ")", file=sys.stderr)
+            return 2
+        out = guard_decision(args.root, args.guard, args.command,
+                             args.global_path, record=args.record)
+        if args.json:
+            print(json.dumps(out, indent=2, sort_keys=True))
+            return 0
+        # One tab-separated line, because the two consumers are a bash script
+        # and a PowerShell script and both split it in one expression. Field
+        # order is fixed and appended to, never reordered.
+        #
+        # `-` for an empty field, never the empty string, and this is not
+        # cosmetic. TAB is IFS WHITESPACE in bash, so `IFS=$'\t' read -r a b c`
+        # collapses a run of tabs into one delimiter and every field after an
+        # empty one shifts left by a slot. Measured: `guards.terraformApply`
+        # has no target branch, and guard.sh printed
+        # `Target branch: guards.terraformApply is `ask`` -- the REASON, in the
+        # target's slot. PowerShell's `-split` does not collapse, so the two
+        # flavours disagreed about a line they read from the same producer,
+        # which is the drift this shared CLI exists to prevent.
+        print("\t".join(field or "-" for field in
+                        (out["decision"], out["policy"], out["marker"],
+                         out["target"], out["reason"])))
+        return 0
 
     if args.install_plan is not None:
         plan = install_plan_for(args.root, args.install_plan, args.global_path)

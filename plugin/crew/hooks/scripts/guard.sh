@@ -17,14 +17,92 @@ CMD=$(crew_strip_cr "$CMD")
 [ -z "$CMD" ] && exit 0
 block() { echo "BLOCKED: $1" >&2; exit 2; }
 
+# --- configurable guardrails ----------------------------------------------
+#
+# Three of the rules below are no longer a fixed refusal: `guards.terraformApply`
+# `guards.forcePush` and `guards.adminMerge` each resolve to `block`, `ask` or
+# `allow`. The DEFAULT is `block`, so a machine with no config behaves exactly
+# as this script did before.
+#
+# The policy is resolved by `crew_config.py --guard`, never here, and the
+# PowerShell twin calls the same CLI. Config layering is the last thing that
+# should exist twice: these two files drift independently -- three bypasses
+# fixed in #132 were open in both -- and the layering rule whose entire point
+# is that a cloned repo cannot widen it would then have two implementations,
+# either of which could be the one that forgets to ratchet. `Test-EnvArgHit` is
+# a reimplementation on purpose (it is a tokenizer, and a subprocess per
+# command would be a per-command cost); this is not that.
+#
+# FAIL CLOSED, loudly. No python, a crew_config that raises, a line this script
+# cannot parse -- every one of them is `block` with the reason said out loud.
+# "Could not check" is its own outcome and never collapses into "checked, and
+# fine": the config is the only source for these values and there is no cruder
+# form of reading it, unlike the `prod` rule below which has a real regex
+# fallback.
+GUARD_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+guarded() {  # $1 = guard name, $2 = the refusal message
+  local py out decision policy marker target reason
+  py=$(crew_py) \
+    || block "$2 [guards.$1 stays \`block\`: no python to read the config]"
+  out=$("$py" "$GUARD_DIR/crew_config.py" \
+        --root "${CLAUDE_PROJECT_DIR:-.}" \
+        --guard "$1" --command "$CMD" --record 2>/dev/null) \
+    || block "$2 [guards.$1 stays \`block\`: crew could not read it]"
+  out=$(crew_strip_cr "$out")
+  IFS=$'\t' read -r decision policy marker target reason <<<"$out"
+  # `-` is the producer's spelling of an empty field. It has to be: TAB is IFS
+  # WHITESPACE, so `IFS=$'\t' read` collapses a run of tabs and every field
+  # after an empty one shifts left. See the note beside the print in
+  # crew_config.py's --guard branch.
+  [ "$target" = "-" ] && target=""
+  [ "$reason" = "-" ] && reason=""
+  case "$decision" in
+    allow)
+      # Under `allow` nothing is silent. The row in .crew/guard.log is the
+      # durable half (crew_config.py --record wrote it); this is the half the
+      # user sees in the moment.
+      printf 'crew guard: guards.%s is `%s` - ALLOWED: %s\n' \
+             "$1" "$policy" "$reason" >&2
+      printf '  command: %s\n' "$CMD" >&2
+      [ -n "$target" ] && printf '  target branch: %s\n' "$target" >&2
+      return 0
+      ;;
+    ask)
+      # A PreToolUse hook has no interactive stdin, so "stop for a yes at that
+      # moment" is a refusal that names the file which approves THIS command.
+      # The marker is keyed on a digest of the command, so approving one force
+      # push does not approve the next one.
+      printf 'BLOCKED (guards.%s = ask): %s\n' "$1" "$2" >&2
+      printf 'The exact command:\n  %s\n' "$CMD" >&2
+      [ -n "$target" ] && printf 'Target branch: %s\n' "$target" >&2
+      printf 'To approve THIS command and nothing else, then re-run it:\n' >&2
+      printf '  touch %s\n' "$marker" >&2
+      exit 2
+      ;;
+    block)
+      block "$2"
+      ;;
+    *)
+      block "$2 [guards.$1 stays \`block\`: unreadable decision from crew_config]"
+      ;;
+  esac
+}
+
 # --- destructive operations ----------------------------------------------
 # TF_PRE is GIT_PRE's reason applied to the neighbour that never got it:
 # `terraform -chdir=infra apply` sailed through a rule that required `apply` to
 # sit immediately after `terraform`, while the git rules eleven lines below had
 # already been fixed for exactly that shape. Re-review the fix to a guard as
 # hard as the guard: the sibling rule was the one still broken.
-TF_PRE='\bterraform([[:space:]]+-[^[:space:]]+)*[[:space:]]+'
-echo "$CMD" | grep -qE "${TF_PRE}(apply|destroy)" && block "terraform apply/destroy is manual. Run plan and show it."
+# `tofu` is here because OpenTofu is terraform's drop-in fork: same
+# subcommands, same blast radius, a different binary name. The rule named one
+# of the two and refused nothing when the other was installed, which is a
+# bypass the moment a repo switches. This is a NEW refusal, not a preserved
+# one -- see the schema 6 note in crew_upgrade.py, which says so out loud
+# rather than letting "the default is block, so nothing changed" cover it.
+TF_PRE='\b(terraform|tofu)([[:space:]]+-[^[:space:]]+)*[[:space:]]+'
+echo "$CMD" | grep -qE "${TF_PRE}(apply|destroy)" && guarded terraformApply "terraform/tofu apply/destroy is manual. Run plan and show it."
 echo "$CMD" | grep -qiE '\b(DROP|TRUNCATE)[[:space:]]+(TABLE|DATABASE|SCHEMA)' && block "destructive DDL. Write a migration with a rollback."
 # The git rules used to require the subcommand to sit immediately after `git`,
 # so every one of them was bypassed by the option forms people actually use in
@@ -47,9 +125,22 @@ GIT_PRE='\bgit[[:space:]]+(-[^[:space:]]+[[:space:]]+([^-][^[:space:]]*[[:space:
 # by a digit), so `2>&1` is crossed while `&&`, a trailing `&` and `|` still
 # stop the scan exactly as before.
 ARG='([^;&|]|&[0-9])*'
-echo "$CMD" | grep -qE "${GIT_PRE}push\b${ARG}(--force|-f)\b" && block "force push."
+echo "$CMD" | grep -qE "${GIT_PRE}push\b${ARG}(--force|-f)\b" && guarded forcePush "force push."
 # `git push origin +main` is a force push with no --force token in it.
-echo "$CMD" | grep -qE "${GIT_PRE}push\b${ARG}[[:space:]]\+[^[:space:];&|]" && block "force push (leading-plus refspec)."
+echo "$CMD" | grep -qE "${GIT_PRE}push\b${ARG}[[:space:]]\+[^[:space:];&|]" && guarded forcePush "force push (leading-plus refspec)."
+# `gh pr merge --admin` merges PAST a branch protection rule that the
+# repository's owner put there. No crew guard refused it before schema 6, so
+# `guards.adminMerge` arriving at `block` is a NEW refusal and the upgrade
+# report says so.
+#
+# Scope, stated rather than implied: this matches `gh pr merge` carrying
+# `--admin`, in any argument position. It does NOT match a hand-rolled
+# `gh api -X PUT .../pulls/N/merge`, which reaches the same endpoint without
+# the flag. That is a real gap and it is left open deliberately -- a rule wide
+# enough to catch every `gh api` call to a merge URL is wide enough to block
+# reading one, and a guard that fires on reads is a guard people switch off.
+GH_MERGE='\bgh[[:space:]]+pr[[:space:]]+merge\b'
+echo "$CMD" | grep -qE "${GH_MERGE}${ARG}--admin\b" && guarded adminMerge "gh pr merge --admin merges past the repo's branch protection."
 # `git reset HEAD --hard` required `--hard` to follow `reset` immediately, so
 # naming the ref bypassed it. Allow non-separator argument tokens in between;
 # `--soft HEAD~1` still does not match, because it has no `--hard` to find.

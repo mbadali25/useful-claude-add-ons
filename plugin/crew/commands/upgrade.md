@@ -184,6 +184,26 @@ surface it, do not re-derive it by hand:
   repo and machine-global layers rather than the repo winning, so `auto` needs
   both layers to say `auto`; a user who sets it in one place and sees nothing
   change is not looking at a bug.
+- **Schema 5 → 6** — when the report names the `guards` block or
+  `github.mergeGate`, read the whole line out, and this time do **not** lead
+  with what did not happen, because two things did. Every guard arrives as
+  `block`, and for `guards.terraformApply` and `guards.forcePush` that is
+  exactly what the guard already did — but `guards.adminMerge` refuses
+  `gh pr merge --admin`, which no crew guard refused before, and
+  `guards.terraformApply` now covers `tofu` as well as `terraform`. **A
+  command that ran yesterday can be refused today**, and a user who is told
+  only "the default is block, so nothing changed" will go looking for a bug in
+  their tooling. Both were bypasses rather than features; say that, and say
+  what the other values buy: `ask` makes crew print the exact command and
+  refuse until the user creates the one marker file it names, which approves
+  THAT command and no other, and `allow` lets it run while writing a row to
+  `.crew/guard.log` — under `allow` nothing is silent, and the log is where the
+  record lives. Say unprompted that these keys take the NARROWER of the repo
+  and global layers, exactly as `install.policy` does, so `allow` needs both
+  layers to say `allow`; and that `guards.mergeGate` governs `/crew:gate`
+  rather than the command guard. `github.mergeGate` is the GitHub twin of
+  `bitbucket.mergeGate`, off by default and with no `preset` key — the
+  Bitbucket one has a `preset` that binds to nothing, and it was not copied.
 - **A machine-global theme that defeats it** — when the report warns that
   `~/.claude/crew/config.json` still sets `docs.theme` to `"neutral"`, read it
   out and do NOT offer to edit that file as part of this command. It is

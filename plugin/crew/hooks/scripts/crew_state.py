@@ -51,7 +51,7 @@ from crew_endpoints import (
 #
 # So: a migration that must reach existing repos REQUIRES a bump here. Adding
 # one to `upgrade_config` without touching this line ships nothing.
-SCHEMA_CURRENT = 5
+SCHEMA_CURRENT = 6
 
 # The machine-global config file. `crew_config` owns the LAYERING and re-exports
 # this name; the path itself lives here for the same reason `PM_DEFAULTS` and
@@ -1023,6 +1023,42 @@ INSTALLABLE = {
         "mermaid-svg-bitbucket@useful-claude-add-ons"),
 }
 
+
+# --- Configurable guardrails ----------------------------------------------
+#
+# What crew's command guard does about each dangerous action it recognises:
+# `block` refuses as before, `ask` prints the exact command and stops until a
+# marker for THAT command exists, `allow` runs it and writes a row saying so.
+# Ordered least to most permissive and read only through `guard_policy_rank`,
+# the same contract `AUTHORITIES` and `INSTALL_POLICIES` carry.  Append only,
+# never reorder.  Full reasoning in CONFIG.md §16, including the part a default
+# cannot paper over: `adminMerge` and the `tofu` spelling of `terraformApply`
+# are NEW refusals, so `block` does not mean "nothing changed".
+GUARD_POLICIES = ("block", "ask", "allow")
+GUARD_POLICY_DEFAULT = "block"
+
+# The guards.  This tuple is the ORDER the keys are declared in, so
+# `default_config()` and `default_global_config()` cannot drift into different
+# orderings of the same block.  What each governs is prose and lives with the
+# prose that uses it -- `crew_config._GUARD_ACTIONS` and CONFIG.md §16.
+#
+# `mergeGate` is the odd one: it is read by `/crew:gate` rather than by the
+# command guard, because "may crew take a live repo's merge gate down" is not a
+# shape a regex over a command line can recognise.  It lives here anyway so
+# there is one guard block with one ratchet, rather than a fifth key somewhere
+# else with its own layering rule.
+GUARD_NAMES = ("terraformApply", "forcePush", "adminMerge", "mergeGate")
+
+GUARD_DEFAULTS = {name: GUARD_POLICY_DEFAULT for name in GUARD_NAMES}
+
+# The one-shot approval marker `ask` stops for, and where the guard writes what
+# it let through.  Both live under `.crew/` beside `.approved-<env>-<sha>`,
+# which `promote-gate.sh:154` already uses for the same job: a PreToolUse hook
+# has no interactive stdin, so "stop for a yes" can only mean "refuse, name the
+# exact command, and name the file that approves THAT command".
+GUARD_APPROVAL_PREFIX = ".approved-guard-"
+GUARD_LOG_PATH = os.path.join(".crew", "guard.log")
+
 PM_DEFAULTS = {
     "enabled": True,
     "mode": "adaptive",
@@ -1349,8 +1385,74 @@ def install_policy_rank(value):
     return INSTALL_POLICIES.index(normalise_install_policy(value))
 
 
-def effective_install_policy(repo_value, global_value):
-    """The policy in force given both layers: the LOWER-ranked of the two.
+def normalise_guard_policy(value):
+    """`value` as a known guard policy, else the restrictive default.
+
+    Authority's rule and install policy's rule, for the third time and for the
+    third identical reason: a guard policy BUYS a capability -- `allow` runs a
+    force push without asking -- so an unknown collapses to `block`, the least
+    permissive tier. A typo costs capability rather than granting it.
+    """
+    if isinstance(value, str):
+        cleaned = value.strip().lower()
+        if cleaned in GUARD_POLICIES:
+            return cleaned
+    return GUARD_POLICY_DEFAULT
+
+
+def guard_policy_rank(value):
+    """`value`'s position in `GUARD_POLICIES`. Higher is more permissive.
+
+    Routed through `normalise_guard_policy` first, so an unknown ranks 0 and
+    every comparison built on this is fail-safe by construction. This is the
+    one function permitted to know that the policies are ordered; nothing else
+    may compare guard-policy strings, exactly as with `authority_rank` and
+    `install_policy_rank`.
+    """
+    return GUARD_POLICIES.index(normalise_guard_policy(value))
+
+
+# Every key whose two layers combine by RATCHET rather than by precedence, and
+# the three things a ratchet needs: the ordered tier tuple, how to normalise a
+# value, and how to rank one.
+#
+# A table, not five copies. `install.policy` shipped its ratchet as a bespoke
+# `effective_install_policy` plus a bespoke `crew_config.resolve_install_policy`
+# and four guards arriving beside it would have been four more pairs -- five
+# mechanisms for one rule, which is what CLAUDE.md's "one mechanism can be
+# wrong; two can disagree, and then only one of them gets fixed" is about.
+# Adding a key here is the whole cost of ratcheting it.
+#
+# `pm.authority` is deliberately NOT here -- it ratchets for the WIDENING
+# WARNING only (`crew_config._RATCHETED`), while its two layers still combine
+# by ordinary precedence. See CONFIG.md §16 for why, and for why neither table
+# is derived from the other.
+RATCHETED_KEYS = {
+    "install.policy": (INSTALL_POLICIES,
+                       normalise_install_policy,
+                       install_policy_rank),
+}
+RATCHETED_KEYS.update({
+    f"guards.{_name}": (GUARD_POLICIES, normalise_guard_policy,
+                        guard_policy_rank)
+    for _name in GUARD_NAMES
+})
+
+
+def ratchet_spec(dotted):
+    """The `(tiers, normalise, rank)` triple for `dotted`, or None.
+
+    None means the key does not ratchet, which is not an error -- most keys do
+    not. Callers that must have one raise on None rather than falling back to
+    precedence: silently resolving a ratcheted key by precedence is the exact
+    failure the ratchet exists to prevent, and it would look like a working
+    feature while a cloned repo widened what the machine allows.
+    """
+    return RATCHETED_KEYS.get(dotted)
+
+
+def effective_ratcheted(dotted, repo_value, global_value):
+    """The value in force at `dotted` given both layers: the LOWER-ranked one.
 
     Narrowing-only, in the one direction that matters. Every other key in crew
     resolves by precedence -- the repo answers, and the global layer answers
@@ -1359,17 +1461,35 @@ def effective_install_policy(repo_value, global_value):
     file is the machine owner saying how much they trust crew on THIS machine,
     and the repo file travels in a clone from someone else.
 
-    Straight precedence would let a cloned repo's `install.policy: auto`
-    override a machine owner who chose `manual`, which is a repo author granting
-    themselves a capability on a stranger's machine. Taking the lower rank means
-    neither layer can widen what the other allows: a repo may ask for LESS than
-    the machine permits and be obeyed, and may ask for more and be refused.
+    Straight precedence would let a cloned repo's `install.policy: auto`, or its
+    `guards.forcePush: allow`, override a machine owner who chose `manual` or
+    `block` -- a repo author granting themselves a capability on a stranger's
+    machine. Taking the lower rank means neither layer can widen what the other
+    allows: a repo may ask for LESS than the machine permits and be obeyed, and
+    may ask for more and be refused.
 
-    Absent on either side is the default, and the default is the floor, so a
-    missing value can never widen anything either.
+    Both sides are normalised BEFORE they are ranked, so an unknown value ranks
+    0 on whichever layer carries it and can only ever narrow. Absent on either
+    side is the default, and the default is the floor, so a missing value can
+    never widen anything either.
     """
-    return INSTALL_POLICIES[min(install_policy_rank(repo_value),
-                                install_policy_rank(global_value))]
+    spec = ratchet_spec(dotted)
+    if spec is None:
+        raise KeyError(f"{dotted} does not ratchet")
+    tiers, _normalise, rank = spec
+    return tiers[min(rank(repo_value), rank(global_value))]
+
+
+def effective_install_policy(repo_value, global_value):
+    """`effective_ratcheted` for `install.policy`. Kept as its own name.
+
+    A thin wrapper on purpose: this was the ratchet's only implementation, its
+    callers and its tests already spell it this way, and renaming them all to
+    prove the generalisation happened would be churn with a chance of a missed
+    call site. The rule itself now lives in exactly one place -- see
+    `effective_ratcheted` and `RATCHETED_KEYS`.
+    """
+    return effective_ratcheted("install.policy", repo_value, global_value)
 
 
 def install_plan(name, policy):

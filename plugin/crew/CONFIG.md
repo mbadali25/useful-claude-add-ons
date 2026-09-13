@@ -72,12 +72,14 @@ structural exceptions, both visible above: the global layer is pruned before it
 is consulted at all (§2), and `schema` is lifted out of the merge entirely
 (§4).
 
-**And one exception that is not visible above, because it does not go through
-this function at all: `install.policy` (§15).** It resolves to the *lower* of
-the two layers rather than to the repo's, so a cloned repo cannot widen what
-the machine owner allowed. Anything reading it through `resolve_config` gets
-the precedence answer and is wrong; `crew_config.resolve_install_policy` is the
-only correct reader.
+**And six exceptions that are not visible above, because they do not go through
+this function at all: `install.policy` (§15) and the four `guards.*` (§16).**
+Each resolves to the *lower* of the two layers rather than to the repo's, so a
+cloned repo cannot widen what the machine owner allowed. Anything reading one
+through `resolve_config` gets the precedence answer and is wrong;
+`crew_config.py::resolve_ratcheted` is the only correct reader, and
+`resolve_install_policy` and `resolve_guard` are its two thin wrappers.
+`crew_state.py::RATCHETED_KEYS` is the list, and it is the only list.
 
 **Resolve through this function, never by re-reading `.crew/config.json`.**
 That file is one layer of three and does not know about the `roles` tables at
@@ -124,11 +126,13 @@ both directions:
 `is_global_path` agrees with `filter_global` by construction — both stop
 descending at a template **leaf**.
 
-**Measured, not argued.** `leaf_paths(default_global_config())` yields **45**
-leaves. `leaf_paths(default_config())` yields **86**, so **41** are repo-only.
-For all 86, `filter_global` and `plan_global_write` agree on whether the path is
-settable. (44 / 85 before schema 5 added `install.policy`, which is settable in
-both layers and so moved the first two numbers and not the third. Re-measure
+**Measured, not argued.** `leaf_paths(default_global_config())` yields **51**
+leaves. `leaf_paths(default_config())` yields **92**, so **41** are repo-only.
+For all 92, `filter_global` and `plan_global_write` agree on whether the path is
+settable. (45 / 86 before schema 6 added the four `guards.*` and the two
+`github.mergeGate` keys, and 44 / 85 before schema 5 added `install.policy`.
+All six of schema 6's keys are settable in both layers, so they moved the first
+two numbers and not the third — the same shape `install.policy` had. Re-measure
 rather than trusting these: they are a fact about one commit.)
 
 ### The one asymmetry, and it matters
@@ -220,7 +224,7 @@ enforces in code rather than prose:
 | | |
 |---|---|
 | Type | integer |
-| Current value | `4` (`crew_state.SCHEMA_CURRENT`, dumped by execution) |
+| Current value | `6` (`crew_state.SCHEMA_CURRENT`, dumped by execution) |
 | Layer | **repo only**, and exempt from inheritance *structurally* |
 
 `schema` is absent from `default_global_config()`, so `filter_global` prunes it
@@ -405,15 +409,52 @@ standing.
 
 ---
 
-## 8. `bitbucket.mergeGate`
+## 8. `bitbucket.mergeGate` and `github.mergeGate`
 
 | Key | Type | Default | Layer |
 |---|---|---|---|
 | `bitbucket.mergeGate.enabled` | boolean | `false` | global-settable |
 | `bitbucket.mergeGate.branch` | string or `null` | `null` | global-settable |
 | `bitbucket.mergeGate.preset` | string | `"standard"` | global-settable |
+| `github.mergeGate.enabled` | boolean | `false` | global-settable |
+| `github.mergeGate.branch` | string or `null` | `null` | global-settable |
 
-Written by `crew_upgrade.py::BITBUCKET_BLOCK`.
+Written by `crew_upgrade.py::BITBUCKET_BLOCK` and `crew_upgrade.py::GITHUB_BLOCK`.
+`github.mergeGate` arrived with schema 6 (§16).
+
+**These two blocks say a repo HAS a gate. `guards.mergeGate` (§16) says whether
+crew may TOUCH it, and that one ships as `block`.** Both have to agree before
+anything happens: `enabled: true` with `guards.mergeGate: block` means the gate
+is reported as *not checked*, never as checked and fine.
+
+### The GitHub block is the Bitbucket one minus `preset`, deliberately
+
+The asymmetry is the decision, not an oversight. `bitbucket.mergeGate.preset`
+binds to nothing — the subsection below records why it stays unwired rather
+than bound to a hardcoded literal — so copying it into a second block would be
+shipping that defect again, on purpose, in a place where the reason for it does
+not even apply: `skills/github/scripts/merge_gate.sh` refuses to invent a gate
+at all. Its `enable` **requires** `--from-export`, and a bare `enable` is
+answered with "This script has no preset and will not invent a merge gate".
+
+Three more differences the two scripts do not share, stated here because a
+Bitbucket-shaped command fails against GitHub silently in each case, and
+`commands/gate.md` is where they are documented in full:
+
+- GitHub has a read-only `status <owner> <repo> [--branch NAME]`; Bitbucket has
+  none, so a Bitbucket "status" is an `export` — a real API call.
+- GitHub's `export` is **branch-scoped** (`--branch`), because classic branch
+  protection is per-branch in the URL. Bitbucket's is repo-wide.
+- GitHub's `enable` rejects `--branch` as a **usage error** (exit 2). Bitbucket
+  accepts it and **ignores** it under `--from-export`.
+
+GitHub's export captures **both** gate surfaces in one document — classic
+branch protection and rulesets — each with its own state, and `unreadable` is a
+state of its own. That matters more than it looks: a classic read without admin
+answers 404 `Not Found`, the same status as an unprotected branch, and only the
+exact message `Branch not protected` means absent. `enable --from-export`
+hard-refuses an export holding an unreadable surface, because restoring half a
+gate while reporting success is worse than restoring none.
 
 Rationale, from `crew-setup/SKILL.md` — this is prose, and it is the
 only statement of intent in the repo:
@@ -572,11 +613,12 @@ them:
 
 ---
 
-## 10. Global-settable keys — all 45
+## 10. Global-settable keys — all 51
 
-Settable in **either** layer; repo wins — **except `install.policy`, where the
-narrower of the two layers wins instead** (§15). Defaults are identical in
-`default_config()` and `default_global_config()` — verified by comparison.
+Settable in **either** layer; repo wins — **except `install.policy` and the
+four `guards.*`, where the narrower of the two layers wins instead** (§15,
+§16). Defaults are identical in `default_config()` and
+`default_global_config()` — verified by comparison.
 
 | Key | Type | Default |
 |---|---|---|
@@ -625,6 +667,12 @@ narrower of the two layers wins instead** (§15). Defaults are identical in
 | `bitbucket.mergeGate.enabled` | boolean, see §8 | `false` |
 | `bitbucket.mergeGate.branch` | string or `null`, see §8 | `null` |
 | `bitbucket.mergeGate.preset` | string, see §8 | `"standard"` |
+| `github.mergeGate.enabled` | boolean, see §8 | `false` |
+| `github.mergeGate.branch` | string or `null`, see §8 | `null` |
+| `guards.terraformApply` | `block` \| `ask` \| `allow` (narrower layer wins, §16) | `"block"` |
+| `guards.forcePush` | `block` \| `ask` \| `allow` (narrower layer wins, §16) | `"block"` |
+| `guards.adminMerge` | `block` \| `ask` \| `allow` (narrower layer wins, §16) | `"block"` |
+| `guards.mergeGate` | `block` \| `ask` \| `allow` (narrower layer wins, §16) | `"block"` |
 
 `crew_state.QA_PROVIDERS` and `DEV_PROVIDERS` are both
 `["claude", "codex", "copilot"]` (dumped by execution). `qa.provider`
@@ -655,7 +703,7 @@ repository or one checkout.
 
 | Key | Type | Default | Consumer |
 |---|---|---|---|
-| `schema` | integer | `4` | see §4 |
+| `schema` | integer | `6` | see §4 |
 | `tier` | integer | `0` | `crew_state.collect` |
 | `roles` | list (a leaf) | `["explorer", "qa-reviewer"]` | `crew_state.collect` |
 | `tracker` | string | `"files"` | `crew_state.py`, `pm_brief.py`, `commands/ticket.md` |
@@ -854,8 +902,10 @@ the command, and both layers' values.
 
 ### It resolves to the narrower layer, not the repo's
 
-This is the one key that does not follow §1's precedence rule, and the reason is
-the threat model rather than taste. **crew reads config out of cloned
+This was the one key that does not follow §1's precedence rule; since schema 6
+it is one of **five** (§16), and the rule now lives in one table,
+`crew_state.RATCHETED_KEYS`, rather than in a bespoke pair of functions per key.
+The reason is the threat model rather than taste. **crew reads config out of cloned
 repositories.** A repo file travels inside somebody else's clone; the global
 file is this machine's owner saying how much they trust crew here. Under
 precedence, a repo shipping `install.policy: auto` would override an owner who
@@ -863,9 +913,10 @@ chose `manual`, and crew would start running commands because of a file the user
 never wrote.
 
 So the effective value is the **lower-ranked of the two layers**
-(`crew_state.effective_install_policy`). Neither layer can widen what the other
-allows: a repo may ask for *less* than the machine permits and is obeyed, and
-may ask for more and is refused.
+(`crew_state.effective_ratcheted`, which `effective_install_policy` is now a
+thin wrapper on). Neither layer can widen what the other allows: a repo may ask
+for *less* than the machine permits and is obeyed, and may ask for more and is
+refused.
 
 Absent counts as `manual` on either side, which has a consequence worth stating
 plainly because it surprises people: **`auto` requires both layers to say
@@ -908,3 +959,153 @@ of a consumer and cost a **mandatory migration with a one-shot value rewrite**
 to undo, and §9 lists the keys still waiting for one. A key added ahead of a
 need has cost more here than a second bump would cost to pay. If a real key
 turns up later it gets its own bump.
+
+Schema 6 carries six, and that is the rule being honoured rather than broken:
+every one of them has a consumer landing in the same change (§16). The rule was
+never "one key per bump"; it was "no key without a consumer".
+
+---
+
+## 16. `guards` — the configurable guardrails
+
+Four keys, one block, one ratchet. What crew's command guard does about each
+dangerous action it recognises.
+
+| Key | Type | Default | Layer | Read by |
+|---|---|---|---|---|
+| `guards.terraformApply` | `block` \| `ask` \| `allow` | `"block"` | both, **narrower wins** | `hooks/scripts/guard.sh`, `guard.ps1` |
+| `guards.forcePush` | `block` \| `ask` \| `allow` | `"block"` | both, **narrower wins** | `hooks/scripts/guard.sh`, `guard.ps1` |
+| `guards.adminMerge` | `block` \| `ask` \| `allow` | `"block"` | both, **narrower wins** | `hooks/scripts/guard.sh`, `guard.ps1` |
+| `guards.mergeGate` | `block` \| `ask` \| `allow` | `"block"` | both, **narrower wins** | `commands/gate.md`, `commands/promote.md` |
+
+Read one with `crew_config.py --guard <name> [--json]`, which prints the
+decision, both layers' values and which one is holding it down. The two shell
+flavours call exactly that CLI — see "one resolver, two flavours" below.
+
+### What each value does
+
+| Value | What crew does |
+|---|---|
+| `block` *(default)* | Refuses, exactly as the guard did before these keys existed. |
+| `ask` | Refuses, prints the **exact** command, and names the one marker file that approves **that** command. Creating it and re-running lets it through; the next command asks again. |
+| `allow` | Runs it, prints what it let through, and appends a row to `.crew/guard.log`. |
+
+**`ask` is a marker, not a prompt, and it had to be.** A `PreToolUse` hook has
+no interactive stdin — exit 2 blocks and the retry blocks again — so an `ask`
+implemented as a question would have been `block` wearing a different name: a
+key with no reachable behaviour. The marker is
+`.crew/.approved-guard-<name>-<sha256(command)[:16]>`, the same shape and the
+same directory as `promote-gate.sh`'s `.crew/.approved-<env>-<sha>`, which
+is the repo's existing answer to this exact problem. Keying it on a digest of
+the command is what keeps it one-shot in the sense that matters: a marker
+naming only the guard would be a standing grant, and approving one force push
+would silently approve every later one.
+
+The marker is **not consumed on read**. Both hook flavours are registered on
+Windows, so one command can be judged twice; deleting the marker on the first
+read would refuse the second. It is the user's to remove.
+
+**Under `allow` nothing is silent.** The stderr line goes with the session; the
+row in `.crew/guard.log` is the durable half, and it is written for every
+decision rather than only the permissive ones — a log recording half of what a
+guard did is a log you cannot reason from. Tabs and newlines in the command are
+normalised out before the row is written, the same way
+`_common.sh::crew_incident_log` does it, so a crafted command cannot
+forge a row.
+
+### `block` did not preserve everything, and that is stated rather than implied
+
+`guards.terraformApply` and `guards.forcePush` at `block` are exactly what the
+guard already did. **Two things are new refusals**, and no default can turn a
+new refusal into an old one:
+
+- **`guards.adminMerge`.** No crew guard refused `gh pr merge --admin` before
+  schema 6, in either flavour — measured against `origin/main`, both exited 0.
+- **`tofu`.** `guards.terraformApply` now covers OpenTofu as well as Terraform.
+  The rule named one of two drop-in-compatible binaries and refused nothing
+  when the other was installed.
+
+Both were bypasses rather than features, and the upgrade report says so out
+loud. A user told only "the default is block, so nothing changed" will meet a
+command that ran yesterday being refused today and go looking for a bug in
+their tooling.
+
+**Scope, stated rather than implied:** `adminMerge` matches `gh pr merge`
+carrying `--admin` in any argument position. It does **not** match a
+hand-rolled `gh api -X PUT .../pulls/N/merge`, which reaches the same endpoint
+without the flag. That gap is left open deliberately — a rule wide enough to
+catch every `gh api` call to a merge URL is wide enough to block *reading* one,
+and a guard that fires on reads is a guard people switch off.
+
+### `forcePush: allow` honours the value everywhere, and names the branch
+
+The design note (`docs/guard-overrides.md`) left open whether `allow` should
+still refuse `main`/`master` outright. **Settled: it honours the value
+everywhere** — the machine owner chose it, and a guard that keeps one secret
+refusal is a guard whose configuration cannot be trusted. The compensation is
+that `ask` and `allow` both print the target branch before acting, from
+`crew_config.push_target`.
+
+`unknown` is its own answer there and never collapses into a plausible-looking
+`main`. A bare `git push --force` takes its branch from the upstream config,
+which is not on the command line, so crew genuinely cannot tell — and
+substituting a guess is the "unknown wearing the label of a check that
+happened" failure this file keeps returning to.
+
+### The ratchet is one table, not five copies
+
+`install.policy` shipped its ratchet as a bespoke `effective_install_policy`
+plus a bespoke `resolve_install_policy`. Four guards arriving beside it would
+have been four more pairs — five mechanisms for one rule. One mechanism can be
+wrong; five can disagree, and then only one of them gets fixed.
+
+So: `crew_state.RATCHETED_KEYS` maps each ratcheted key to its `(tiers,
+normalise, rank)` triple, `crew_state.effective_ratcheted` is the only place
+that takes the minimum, and `crew_config.resolve_ratcheted` is the only place
+that reads both layers raw and reports `heldDownBy`. The two old names survive
+as thin wrappers so their callers and tests did not have to be rewritten to
+prove the generalisation happened.
+
+**`pm.authority` is deliberately not in that table.** It ratchets for the
+*widening warning* on `/crew:config --set` (`crew_config._RATCHETED`, which is
+a different table with different membership); its two layers still resolve by
+ordinary precedence, because a repo raising its own PM's authority grants
+capability inside that repo rather than on the machine. Neither table is
+derived from the other, on purpose.
+
+An unknown value fails closed to `block` on whichever layer carries it
+(`normalise_guard_policy`), and both sides are normalised **before** they are
+ranked — so a typo costs capability rather than granting it, and a widening
+*from* an unknown still reads as a widening.
+
+### One resolver, two flavours
+
+`guard.sh` and `guard.ps1` both shell out to `crew_config.py --guard`. Neither
+implements config layering itself. The two files drift independently — three
+bypasses fixed in #132 were open in both — and the layering rule whose entire
+point is that a cloned repo cannot widen it must not have two implementations,
+either of which could be the one that forgets to ratchet.
+
+`Test-EnvArgHit` in `guard.ps1` *is* a deliberate reimplementation of its bash
+counterpart, and the difference is the cost: it is a tokenizer that runs on
+every command, where a subprocess would be a per-command tax. The guard
+resolver runs only after a rule has already matched, so it costs nothing on the
+common path.
+
+**Fail closed, loudly.** No python, a `crew_config` that raises, a line the
+shell cannot parse — every one of them is `block` with the reason said out
+loud. Unlike the `prod`-argument rule, which degrades to a cruder regex, config
+layering has no cruder form: "could not check" is its own outcome here and
+never collapses into "checked, and fine".
+
+### `guards.mergeGate` is read by a command, not by the guard
+
+"May crew take a live repository's merge gate down" is not a shape a regex over
+a command line can recognise, so this one key is read by `/crew:gate` and
+`/crew:promote` rather than by `guard.sh`. It lives in the same block and the
+same ratchet anyway — a fifth key somewhere else with its own layering rule is
+how the two rules come to disagree.
+
+It is a separate, lighter guard from `adminMerge`: `adminMerge` bypasses a
+protection without touching it, and `mergeGate` removes and restores the
+protection itself.

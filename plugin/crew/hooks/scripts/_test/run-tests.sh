@@ -200,6 +200,30 @@ else
   echo "== guard.sh: jq fast path SKIPPED - no jq on PATH, already testing the fallback =="
 fi
 
+# Three of guard.sh's rules now resolve `guards.<name>` through crew_config.py,
+# so their answer depends on two CONFIG FILES as well as on the code: this
+# repo's `.crew/config.json` (machine-local and gitignored) and the developer's
+# own `~/.claude/crew/config.json`. Without pinning both, a developer who set
+# `guards.forcePush: allow` on their machine would watch a dozen cases below go
+# red and conclude the guard had regressed.
+#
+# "Run the states; do not reason about them", and check what you changed about
+# the MEASUREMENT before reporting a regression -- a guard suite here once
+# reported 24/33 for exactly this class of reason. So: an empty scratch repo and
+# an empty HOME for the whole guard section, restored afterwards, which pins
+# every guard to its shipped default of `block`. The configured values get their
+# own coverage in `tests/test_guards.py`, where the layers are fixtures.
+GUARD_PIN=$(mktemp -d) || exit 1
+mkdir -p "$GUARD_PIN/repo/.crew" "$GUARD_PIN/home/.claude/crew"
+printf '{"schema":6}' > "$GUARD_PIN/repo/.crew/config.json"
+printf '{}' > "$GUARD_PIN/home/.claude/crew/config.json"
+GUARD_PIN_OLD_PROJECT="${CLAUDE_PROJECT_DIR:-}"
+GUARD_PIN_OLD_HOME="${HOME:-}"
+GUARD_PIN_OLD_USERPROFILE="${USERPROFILE:-}"
+export CLAUDE_PROJECT_DIR="$GUARD_PIN/repo"
+export HOME="$GUARD_PIN/home"
+export USERPROFILE="$GUARD_PIN/home"
+
 echo "== guard.sh: must BLOCK (exit 2) =="
 expect 2 'terraform apply -auto-approve'
 expect 2 'terraform destroy'
@@ -238,6 +262,16 @@ expect 2 'aws ssm get-parameter --name /db/pass --with-decryption'
 expect 2 'kubectl get secret db -o yaml'
 expect 2 'cat .env'
 expect 2 'cat .env.production'
+# Schema 6's NEW refusals. Both of these exited 0 in BOTH flavours against
+# origin/main, so these two blocks are the must-block cases that ran red before
+# the fix. `guards.adminMerge` and the `tofu` spelling of
+# `guards.terraformApply` are new refusals, not preserved ones -- the upgrade
+# report says so rather than letting "the default is block" cover it.
+expect 2 'gh pr merge 12 --admin --squash'
+expect 2 'gh pr merge --admin 12'
+expect 2 'tofu apply -auto-approve'
+expect 2 'tofu destroy'
+expect 2 'tofu -chdir=infra apply'
 
 echo "== guard.sh: must ALLOW (exit 0) =="
 expect 0 'terraform plan'
@@ -278,6 +312,28 @@ expect 0 'export DB_PASS=$(vault kv get -field=pass secret/db)'
 expect 0 'npm test'
 expect 0 'grep -r TODO src/'
 expect 0 'cat README.md'
+# The new rules must not widen into ordinary work. `gh pr merge` without
+# --admin is the normal way to merge a PR, and `tofu plan` is the safe half of
+# the pair -- a guard that fires on these is the guard people switch off.
+expect 0 'gh pr merge 12 --squash --delete-branch'
+expect 0 'gh pr view 12'
+expect 0 'tofu plan'
+expect 0 'tofu fmt -recursive -check'
+
+# Restore the environment the section pinned. Unset rather than export an empty
+# string where there was nothing: `HOME=""` is not the same state as no HOME,
+# and every later section in this file reads the real one.
+if [ -n "$GUARD_PIN_OLD_PROJECT" ]; then
+  export CLAUDE_PROJECT_DIR="$GUARD_PIN_OLD_PROJECT"
+else
+  unset CLAUDE_PROJECT_DIR
+fi
+if [ -n "$GUARD_PIN_OLD_HOME" ]; then export HOME="$GUARD_PIN_OLD_HOME"; else unset HOME; fi
+if [ -n "$GUARD_PIN_OLD_USERPROFILE" ]; then
+  export USERPROFILE="$GUARD_PIN_OLD_USERPROFILE"
+else
+  unset USERPROFILE
+fi
 
 echo "== verify-gate.sh =="
 D=$(mktemp -d) || exit 1
