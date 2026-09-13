@@ -2145,3 +2145,69 @@ worth weighing when it is picked up:
 **Re-measure rather than trusting this table.** The nine figures are a fact about
 `a573ca24`; every line number in the right-hand column moves whenever
 `crew_config.py` does.
+
+## `plugin/PLUGINS.md`'s catalog Version rows are checked by nothing
+
+Found while fixing crew's row after #135 synced gizmoduck's and obsidian-vault's.
+The row itself is fixed in this commit; the gap that let it rot is not.
+
+`scripts/check-marketplace.py` cross-checks two of the three places a version
+appears - `check_plugin_manifests` fails when a plugin's own `plugin.json`
+disagrees with `.claude-plugin/marketplace.json` (`:155-163`). The third place,
+the `| **Version** | x.y.z |` row in each `plugin/PLUGINS.md` catalog block, is
+compared against neither. The string `PLUGINS.md` does not appear anywhere in
+`check-marketplace.py`; the only thing that reads the file's neighbours is the
+table-row link check at `:270`, and it asserts a link *exists*, never that a
+number is right.
+
+**Measured at `e1f14516`:** crew's row said `0.16.22`, set at `ac93221d` on
+2026-09-06. The real version was `0.19.24`. **37 distinct crew versions shipped
+in the seven days between**, with the gate green on every one. gizmoduck's was
+three minors behind until #135. Only two of five rows were ever wrong at once,
+which is why this reads as tidy rather than broken.
+
+### Why this one is worse than an ordinary stale number
+
+`PLUGINS.md` is the catalog a person reads to decide what to install and whether
+they already have it. A row saying `0.16.22` beside an install command that
+fetches `0.19.24` does not look stale - it looks like the version you are about
+to get. Nothing on the page is marked as possibly-behind, so there is no cue to
+re-check, and the number is *precise*, which reads as measured.
+
+This is the shape the repo keeps paying for: not a missing value, but a wrong
+one wearing the confidence of a checked one. The version-drift check at `:298`
+exists precisely because "nothing in the repo looks wrong; the bug exists only
+on other people's machines" - and it guards `marketplace.json` while the
+human-facing catalog beside it is unguarded.
+
+### The fix
+
+One comparison, in `check_catalogs` or beside it: for each entry, parse the
+`| **Version** | ... |` row inside that plugin's `PLUGINS.md` block and fail
+when it differs from the entry's version. The data is already in hand - the
+function receives `entries`, each carrying `name` and `version` - so this is a
+parse of one file, not new plumbing.
+
+Two things to get right, both learned from the checks already here:
+
+- **Key on the block, not on the file.** `PLUGINS.md` holds five catalog blocks
+  and the regex must bind a Version row to the heading above it, or a single
+  correct row anywhere satisfies every plugin. The same failure shape as the
+  `N skills` checker sketched in the entry above: a pattern that cannot tell
+  which thing a number describes passes while wrong.
+- **Editing `plugin/PLUGINS.md` does not bump anything, and must not.** The
+  version-drift check at `:318-319` diffs `bump..HEAD -- <source>`, where
+  `source` is `plugin/crew` for crew. `plugin/PLUGINS.md` sits one level above
+  that path, so a catalog fix is correctly invisible to it - which is also why
+  this commit carries no version bump, and why the row can rot for 37 releases
+  without a single gate noticing.
+
+**This is the third finding this week pointing at the same remedy** - the
+`plugin/crew/CONFIG.md` citation entry and the `28 skills` entry reach it
+independently. All three are "a claim about this repo, stated in prose, checked
+by nothing". Worth deciding once whether `check-marketplace.py` grows a section
+for that class rather than three tickets that each add one bespoke comparison.
+
+**Re-measure rather than trusting this entry.** The 37 is a fact about
+`e1f14516`; the five rows are right as of this commit and nothing keeps them
+that way.
