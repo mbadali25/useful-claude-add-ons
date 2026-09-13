@@ -59,9 +59,12 @@ def _knowledge_line(state):
     graph = knowledge.get("graph") or {}
     total = knowledge.get("subsystems", 0)
     behind = knowledge.get("behind") or []
+    unverifiable = knowledge.get("unresolvable") or []
     if total:
         maps = f"{total} subsystem{'' if total == 1 else 's'} mapped"
-        maps += ", anchors current" if not behind else (
+        if unverifiable:
+            maps += f", {len(unverifiable)} anchor(s) UNVERIFIABLE"
+        maps += ", anchors current" if not (behind or unverifiable) else (
             f", {len(behind)} anchored behind HEAD"
         )
     else:
@@ -143,6 +146,13 @@ FINDINGS = {
     "graphStale": (
         "the code graph is missing or older than HEAD",
         "run /crew:onboard, or graphify . --no-viz --code-only to refresh it",
+    ),
+    "knowledgeUnverifiable": (
+        "{unverifiableCount} codemap anchor(s) name a commit this repo does "
+        "not contain ({unverifiableNames}), so those maps cannot be checked "
+        "against git at all",
+        "re-derive them with /crew:onboard --refresh <subsystem>; a squash "
+        "merge usually discarded the branch commit the anchor recorded",
     ),
     "knowledgeBehind": (
         "some codemap anchors are behind HEAD, so those notes may describe "
@@ -258,6 +268,21 @@ def _diagram_fields(state):
         "staleNames": _names(behind),
         "missingNames": _names(missing),
         "diagramsDir": diagrams.get("dir") or "docs/diagrams",
+    }
+
+
+def _knowledge_fields(state):
+    """Values the knowledgeUnverifiable finding interpolates.
+
+    Same contract as _incident_fields and _diagram_fields: always every key,
+    because a missing one raises KeyError inside .format() and takes out the
+    whole brief rather than just this line.
+    """
+    knowledge = crew_state.dict_or_empty(state.get("knowledge"))
+    unresolvable = knowledge.get("unresolvable") or []
+    return {
+        "unverifiableCount": len(unresolvable),
+        "unverifiableNames": _names(unresolvable),
     }
 
 
@@ -453,6 +478,7 @@ def render(state):
     # says nothing about it, which is worse than omitting it entirely.
     fields = dict(_incident_fields(state))
     fields.update(_diagram_fields(state))
+    fields.update(_knowledge_fields(state))
     fields.update(_endpoint_fields(state))
     fields.update(_schema_fields(state))
     pairs = []

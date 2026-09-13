@@ -692,9 +692,32 @@ def _read_graph(root, cfg):
 def read_knowledge(root, cfg):
     """Codemap inventory plus graph freshness.
 
-    `behind` names maps whose anchor is not HEAD. That is not the same as
-    wrong -- see the design note in the plan. Without git there is no HEAD to
-    compare against, so nothing is claimed either way.
+    `behind` names maps whose anchor RESOLVES to a commit and is not HEAD.
+    That is not the same as wrong -- see the design note in the plan. Without
+    git there is no HEAD to compare against, so nothing is claimed either way.
+
+    `unresolvable` names maps whose anchor is absent, or names an object this
+    repository does not contain. It is a THIRD value, exclusive of `behind`,
+    and the distinction decides what the reader does next:
+
+      behind        the anchor resolves, so `git diff --name-only
+                    <anchor>..HEAD -- <the paths the map cites>` runs. Empty
+                    output means the map is current despite the lag. RE-CHECK.
+      unresolvable  that command cannot run at all. Nothing about the map can
+                    be confirmed or refuted from git. RE-DERIVE.
+
+    Folding the second into the first is this repo's named bug: an unknown
+    collapsing into the safe-looking value. "Behind" is a definite, cheap
+    finding; a reader who cannot tell the two apart does the cheap thing, and
+    a map that cannot be verified goes on being trusted.
+
+    Measured case that produced this: five maps written by `519754fa`
+    ("crew 0.16.28: fix the codemap anchor writer ... (#82)") carry
+    `useful-claude-add-ons@d61342c3`. `git cat-file -t d61342c3` reports
+    "Not a valid object name". That commit has ONE parent -- it was squash
+    merged -- so the branch sha the writer recorded was discarded by the
+    merge. The anchors that survived trace to commits made directly on the
+    default branch.
     """
     head = git_out(root, "rev-parse", "--short=7", "HEAD")
     mapdir = os.path.join(root, ".crew", "codemap")
@@ -703,20 +726,39 @@ def read_knowledge(root, cfg):
     except OSError:
         names = []
 
-    subsystems, behind = 0, []
+    subsystems, behind, unresolvable = 0, [], []
     for name in names:
         if not name.endswith(".md") or name in _NOT_SUBSYSTEMS:
             continue
         subsystems += 1
         if not head:
             continue
+        stem = name[: -len(".md")]
         found = _ANCHOR_RE.search(read_text(os.path.join(mapdir, name)) or "")
-        if not found or found.group(1)[:7] != head[:7]:
-            behind.append(name[: -len(".md")])
+        if not found:
+            # No anchor at all. Previously this counted as `behind`, which
+            # read as "the code moved" when the truth is "nothing here can be
+            # checked". Same class as a sha that does not resolve, so it gets
+            # the same answer.
+            unresolvable.append(stem)
+            continue
+        sha = found.group(1)
+        if sha[:7] == head[:7]:
+            continue
+        # `cat-file -e` is the cheapest existence probe git has, and `git_out`
+        # returns None on any failure, so a missing git or a broken repo lands
+        # here as "cannot tell" rather than raising out of a SessionStart hook.
+        # `^{commit}` so a sha that happens to name a blob or a tree is not
+        # accepted as an anchor.
+        if git_out(root, "cat-file", "-e", sha + "^{commit}") is None:
+            unresolvable.append(stem)
+        else:
+            behind.append(stem)
 
     return {
         "subsystems": subsystems,
         "behind": behind,
+        "unresolvable": unresolvable,
         "graph": _read_graph(root, cfg),
     }
 
@@ -805,6 +847,11 @@ TRIGGERS = (
     # reviewNotWorking/ticketsTooLarge do.
     "endpointUnscanned",
     "graphStale",
+    # Above `knowledgeBehind` on purpose, and it is the whole point of keeping
+    # them separate. A map that cannot be re-verified is a worse finding than
+    # one that merely needs re-checking, and it has a different fix. Sorting
+    # it below would bury the expensive case under the cheap one.
+    "knowledgeUnverifiable",
     "knowledgeBehind",
     # Below the codemap findings on purpose. A diagram is drawn FROM the map,
     # so refreshing diagrams while the map they derive from is behind HEAD just
@@ -2672,6 +2719,7 @@ def evaluate_triggers(state):
         # An absent graph is stale by definition -- there is nothing to trust.
         "graphStale": not graph.get("present") or not graph.get("current"),
         "knowledgeBehind": bool(knowledge.get("behind")),
+        "knowledgeUnverifiable": bool(knowledge.get("unresolvable")),
         "diagramsStale": bool(diagrams.get("behind")),
         # Only meaningful once there is something to draw from. A repo with no
         # codemap has not decided what its subsystems ARE yet, and demanding
