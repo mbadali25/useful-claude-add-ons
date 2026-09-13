@@ -1,78 +1,49 @@
-anchor: useful-claude-add-ons@d61342c3
+anchor: useful-claude-add-ons@7b0d8f3a
+verified: 2026-09-12
+re-derived, not re-verified: the live claims below were taken from the source at
+this anchor, not carried forward and re-pointed. The historical sections are
+accounts of past work and are marked as such.
 
 # crew
 
 The `crew` plugin: a virtual dev team of context-isolated agents, slash
 commands, bundled skills, and deterministic hooks. Registered in
-`.claude-plugin/marketplace.json` (name `crew`, source `./plugin/crew`) at
-version `0.16.25`, matching `plugin/crew/.claude-plugin/plugin.json:2-3`.
-(Was `0.16.12` at the previous anchor. The thirteen bumps in between are not
-all crew-substantive; the three that changed what this note documents are
-`0.16.22` — `crew_state.py` split at the endpoint ledger, commit `ac93221d` —
-`0.16.23` — twelve more domain specialists and three folded roles, commit
-`24ea0119` — and `0.16.24` — the sabotage harness restore guards, commit
-`4e2bfb78`. Both version sites move together — `check_versions`
-(`scripts/check-marketplace.py:298`) compares "has the directory changed since
-the version was set", which `_verify/smoke.sh` does not run.)
+`.claude-plugin/marketplace.json` like every other entry here.
 
-## Re-anchor provenance - 3167721f -> 1f97e51c, 2026-09-06
+## Re-derivation provenance - d61342c3 -> 7b0d8f3a, 2026-09-12
 
-The per-path check named eight cited paths as changed in the window:
-`.claude-plugin/marketplace.json`, `CLAUDE.md`, `TODO.md`,
-`plugin/PLUGINS.md`, `plugin/crew/.claude-plugin/plugin.json`,
-`plugin/crew/agents/pm.md`, `plugin/crew/commands/work.md`, and
-`plugin/crew/hooks/scripts/crew_state.py`. The last one is the expensive one:
-`crew_state.py` was **split**, so every `path:line` citation into it was
-suspect on arrival rather than merely aged.
+**Why this note was re-derived rather than re-verified, unlike its four
+neighbours.** Six merged PRs between the previous anchor and this one rewrote
+exactly what this note describes: the config layering and what a machine-global
+file may supply (#102, #105, #106), ten previously-undeclared keys and the
+consent key held back from the global layer (#106), and the codemap anchor
+mechanism this note explains to its own future writer (#108). Re-pointing its
+citations would have produced a note whose line numbers were right and whose
+claims were about a crew that no longer exists.
 
-What that split did, and why it invalidates coordinates rather than claims:
-`crew_state.py` was at pylint's `max-module-lines=3300` with five lines to
-spare (`plugin/crew/hooks/scripts/crew_common.py:3-5`), so the endpoint ledger
-moved wholesale to `plugin/crew/hooks/scripts/crew_endpoints.py` (978 lines)
-and the three shared readers to `plugin/crew/hooks/scripts/crew_common.py` (80
-lines). `crew_state.py` re-exports eight names — `GIT_TIMEOUT`,
-`dict_or_empty`, `git_out`, `read_text` from `crew_common`, and
-`declare_endpoint`, `load_endpoints`, `read_endpoints`,
-`record_scan_artifact`, `scan_artifact_path` from `crew_endpoints`
-(`plugin/crew/hooks/scripts/crew_state.py:25-31`) — so `crew_state.<name>`
-keeps resolving for callers, which is exactly why a stale citation into
-`crew_state.py` can still *look* right to a grep. It is not: those functions'
-bodies are in the other file now. `plugin/crew/tests/test_module_split.py`
-exists for the matching hazard on the test side (a re-export is a second
-binding, so patching `crew_state.read_endpoints` changes a name nothing
-reads — a patch that passes while proving nothing).
+**The previous anchor did not resolve.** `useful-claude-add-ons@d61342c3` names
+no object in this repository; `519754fa`, which wrote it, was a squash merge, so
+the branch commit its writer recorded died with the branch. The per-path check
+(`git diff --name-only <anchor>..HEAD -- <cited paths>`) could not run at all.
+crew 0.19.13 fixes the writer -- it now records `git merge-base HEAD origin/main`,
+a commit already on the trunk -- and makes an unresolvable anchor its own
+reported value rather than a kind of "behind".
 
-Re-checked against source at this anchor, not inferred:
-
-- Version is `0.16.25` in **both** `.claude-plugin/marketplace.json` and
-  `plugin/crew/.claude-plugin/plugin.json:2-3`.
-- Every `path:line` in this file was re-resolved by reading the current file.
-  The ones that moved are listed in each section below; the ones that did not
-  are `plugin/crew/hooks/scripts/_common.sh:38-43`,
-  `scripts/install-prerequisites.sh:859` and
-  `scripts/install-prerequisites.ps1:843`.
-- Counts were re-counted, not carried forward. So was the codemap's own
-  subsystem count, which had grown from 4 to 10.
+**How the figures below were obtained.** A script imported `crew_config` and
+`crew_state` directly and walked `plugin/crew/`; line numbers come from an AST
+walk over the two modules, not from grep, so a name appearing in a comment or a
+string cannot be mistaken for its definition. Nothing in that script reads the
+previous version of this file.
 
 **Not verified at this anchor, stated as an unknown rather than guessed:**
 
-- Nothing in this note was verified by *running* crew's test suite. Every
-  claim below is read off source. `plugin/crew/tests/` names
-  `test_module_split.py`, `test_role_ladder.py`, `test_endpoints.py` and
-  `test_sabotage_harness.py` as the committed guards for the split, the role
-  roster, the ledger and the sabotage harness respectively — that those files
-  exist is DERIVED; that they currently pass is **not checked here**.
-- `plugin/crew/hooks/scripts/crew_common.py:3` says the split landed "in
-  0.16.21"; the commit that shipped it (`ac93221d`) is titled 0.16.22. One of
-  the two is off by a patch version and this note does not resolve which —
-  recorded so the discrepancy is not re-discovered as new.
-- Two comments **outside** this note still point at the pre-split location:
-  `.gitignore:289` cites line 407 of `crew_state.py` for the codemap path (the
-  read is at `plugin/crew/hooks/scripts/crew_state.py:395`), in the bare
-  filename-plus-line form `CLAUDE.md` warns against; and `.gitignore:294` calls
-  `read_endpoints` "crew_state.py's" when it is now
-  `plugin/crew/hooks/scripts/crew_endpoints.py:914`. Not fixed here — this
-  note's scope is this file.
+- No hook was executed. Every claim about hook *behaviour* is read from source
+  and from the committed suites, not observed.
+- The agent and command bodies were counted, not read. What each role does is
+  outside this note, as it has always been.
+- `.crew/verify.json` is absent from this checkout (gitignored), so nothing
+  about per-path verify routing could be checked here. See
+  `.crew/codemap/verification-harness.md`, where that gap is the dominant fact.
 
 ### Older provenance - b56d41f -> 3167721f, 2026-09-05
 
@@ -88,101 +59,80 @@ repo-relative, which is the form that cannot be pasted into
 
 ## Inventory
 
-**DERIVED**, counted directly rather than trusted from any one description:
+**DERIVED at this anchor**, counted by walking the directories and importing the
+modules, not trusted from any description:
 
 | | Count | How counted |
 |---|---|---|
-| Agents | 29 | `ls plugin/crew/agents/*.md` |
-| Commands | 24 | `ls plugin/crew/commands/*.md` |
-| Skills | 17 | subdirectories of `plugin/crew/skills/` (`find-skills` plus 16 `crew-*` skills) |
+| Agents | 54 | `.md` files in `plugin/crew/agents/` |
+| Commands | 24 | `.md` files in `plugin/crew/commands/` |
+| Skills | 17 | subdirectories of `plugin/crew/skills/` |
 
-`.claude-plugin/marketplace.json`'s own `crew` entry describes it as "29
+The 54 agents decompose exactly, with no remainder: `ROLE_TIERS` has **13**
+entries (`plugin/crew/hooks/scripts/crew_state.py:1071`), `SPECIALIST_ROLES` has
+**40** (`plugin/crew/hooks/scripts/crew_state.py:1119`), and `agents/pm.md` is
+the standing manager on neither list. 13 + 40 + 1 = 54. DERIVED: the set of
+`.md` stems in `plugin/crew/agents/` minus `ROLE_TIERS | SPECIALIST_ROLES` is
+exactly `{pm}`, and the reverse difference is empty -- so no role is named in
+code without an agent file, and no agent file is unreachable from the roster.
+That two-way check is the point; counting one direction only would miss a
+specialist that exists on disk and is named nowhere.
+
+**The marketplace entry is now wrong about this, and it was right at the previous
+anchor.** `.claude-plugin/marketplace.json:217` still describes crew as "29
 context-isolated agents (13 tiered, 15 domain specialists opted into per repo,
-and the standing manager), 24 slash commands, 17 bundled skills" — this agrees
-exactly with the counts above, and the 13/15/1 split agrees with the code:
-`ROLE_TIERS` has 13 entries (`plugin/crew/hooks/scripts/crew_state.py:611-628`),
-`SPECIALIST_ROLES` has 15 (`plugin/crew/hooks/scripts/crew_state.py:659-675`),
-and `agents/pm.md` is the standing manager, on neither list.
+and the standing manager)". The tiered figure (13) and the manager still hold;
+the specialist figure is 40, not 15, and the total is 54, not 29. DERIVED by
+comparing the string to the imported constants.
 
-**The roster changed shape at `24ea0119` (0.16.23), which is what made the
-previous version of this section wrong.** It recorded 17 agents and 3
-specialists. The specialist set went 3 → 15: the three that were there
-(`sharepoint-developer`, `power-automate-specialist`, `node-developer`) plus
-eleven language/platform roles (`php-pro`, `python-pro`, `dotnet-core-expert`,
-`dotnet-framework-4.8-expert`, `angular-architect`, `react-specialist`,
-`rust-engineer`, `sql-pro`, `terraform-engineer`, `network-engineer`,
-`windows-infra-admin`) and one web-grounded QA role (`qa-researcher`). The
-tiered ladder did **not** grow: it is still 13, unchanged from the previous
-anchor.
+This is the same class of drift `marketplace-registration.md` records, and at
+this anchor **no place in the repo states crew's agent count correctly** -- the
+install scripts say 11, `plugin/PLUGINS.md:17` and the marketplace entry say 29,
+`plugin/PLUGINS.md:153` says 14, `README.md:165` says 50. Nothing checks any of
+them: `check_catalogs`, `check_menu_parity` and `check_group_parity` compare
+keys and booleans, never descriptive prose.
 
-Three roles the same request named were **folded into existing ladder roles
-rather than shipped as agents** — so looking for them in `agents/` and finding
-nothing is the designed outcome, not a gap (DERIVED from `24ea0119`'s commit
-body, cross-checked against the absence of the three filenames in
-`plugin/crew/agents/`):
+**JUDGEMENT, and it is why this section no longer lists specialists by name.**
+The previous version enumerated all fifteen. That list is what rotted first: the
+set went 15 -> 40 while the prose stayed, and a reader checking three names off
+would have had no signal the other twenty-five existed. `SPECIALIST_ROLES` is
+the authority and is cheap to print. A codemap that reproduces a list which
+lives in code has taken on a maintenance burden it cannot discharge.
 
-- `cloud-architect` → `infrastructure-architect` (multi-cloud, migration
-  sequencing, RTO/RPO-first DR)
-- `security-engineer` → `security` (pipeline, supply chain, least-privilege
-  grants, per-change threat modelling)
-- `database-administrator` → `dba` (backup, replication, failover, pooling as
-  review questions a change can invalidate)
+Structural facts about the roster that are *not* just counts, and that survived
+re-derivation unchanged:
 
-Every specialist still sits off the tier ladder — no tier grants one, and
-onboarding one leaves `tier` alone. `roles_for_tier`
-(`plugin/crew/hooks/scripts/crew_state.py:690-692`) reads only `ROLE_TIERS`;
-`known_role` (`plugin/crew/hooks/scripts/crew_state.py:678-687`) is what keeps
-a deliberately-onboarded specialist from being reported as a typo on every
-upgrade. The reason is stated in the code rather than only in prose
-(`plugin/crew/hooks/scripts/crew_state.py:635-658`): "this repo does
-SharePoint" is a fact about one checkout, not a defect class every repo can
-have.
-
-**JUDGEMENT:** the enumerate-by-name form this section previously used is the
-thing that rotted. `24ea0119` deliberately replaced the by-name lists in
-crew's own prose with pointers at the table a test checks, because a list in
-two places drifts. The names above are kept here anyway — a codemap that says
-only "see the table" tells a reader nothing — but they are the part of this
-section most likely to be stale first, and `SPECIALIST_ROLES` is the
-authority.
-
-**A real, currently-shipping discrepancy, found by cross-checking rather than
-assumed — now much wider than it was:** both install scripts describe the same
-plugin differently. `scripts/install-prerequisites.sh:859` and
-`scripts/install-prerequisites.ps1:843` both still read *"crew - Virtual dev
-team: 11 agents, 21 commands, safety hooks"* — unchanged since the last
-refresh, so now **eighteen** fewer agents and three fewer commands than both
-the marketplace entry and the actual directory contents (it was six and three
-at the previous anchor, three and three before the first three specialists
-shipped). This is stale menu-label text, not a registration failure (nothing
-in `check-marketplace.py` or `_verify/smoke.sh` checks that a catalog *label's
-prose* matches a directory count — only that catalog *rows exist*, per
-`check_docs` at `scripts/check-marketplace.py:263`, documented in
-`marketplace-registration.md`). **Not fixed here** — this note may edit only
-itself; recorded so the widened gap does not get re-discovered as new.
+- Every specialist sits off the tier ladder. No tier grants one, and onboarding
+  one leaves `tier` alone -- `roles_for_tier` reads only `ROLE_TIERS`.
+- `known_role` is what keeps a deliberately-onboarded specialist from being
+  reported as a typo on every upgrade.
+- The reason is in the code rather than only in prose: "this repo does
+  SharePoint" is a fact about one checkout, not a defect class every repo has.
 
 ## Hooks
 
-`plugin/crew/hooks/hooks.json` registers **five** events: `SessionStart`,
-`PreToolUse`, `PreCompact`, `Notification`, `Stop` (read via
-`json.load(...)['hooks'].keys()`). The previous version of this section said
-"four events" and then listed five — corrected here; the list was right and
-the number was not.
+`plugin/crew/hooks/hooks.json` (38 lines) registers **five** events and **20**
+hook entries. DERIVED by `json.load` and counting, at this anchor:
 
-Every bash `command` entry has a `shell: "powershell"` sibling for the same
-event, counted per event rather than spot-checked: SessionStart 3+3,
-PreToolUse 2+2, PreCompact 1+1, Notification 1+1, Stop 3+3.
-`plugin/crew/hooks/hooks.json:3-11` shows the `SessionStart` pairing
-(`handoff-read.sh`/`.ps1`, `pm-brief.sh`/`.ps1`, `platform-sync.sh`/`.ps1`) —
-the previous anchor cited lines 1-19 of the same file and it is now only
-38 lines long, so the range was re-taken. This matches the "branch on the tool, not
-the OS" and "register each event once per flavour" rules already stated in
-`CLAUDE.md` — not restated here beyond confirming the current file does it.
+| Event | Entries | Line |
+|---|---|---|
+| `SessionStart` | 6 | `plugin/crew/hooks/hooks.json:3` |
+| `PreToolUse` | 4 | `plugin/crew/hooks/hooks.json:11` |
+| `PreCompact` | 2 | `plugin/crew/hooks/hooks.json:21` |
+| `Notification` | 2 | `plugin/crew/hooks/hooks.json:25` |
+| `Stop` | 6 | `plugin/crew/hooks/hooks.json:29` |
 
-`PreToolUse` is the one event that matches on tool rather than firing
-unconditionally: `guard.sh`/`guard.ps1` and `promote-gate.sh`/`promote-gate.ps1`
-are registered with `matcher: "Bash"` and `matcher: "PowerShell"` respectively
-(`plugin/crew/hooks/hooks.json:12-19`).
+Every count is even, and that is the invariant rather than a coincidence: each
+bash `command` has a `shell: "powershell"` sibling on the same event, so 20
+entries are 10 scripts times two flavours. A bare `command` goes to Git Bash on
+Windows, which is how crew once shipped a release where the guard stood down
+there and blocked nothing -- the rule is in `CLAUDE.md` and is confirmed, not
+restated, here.
+
+`PreToolUse` is the one event matching on tool rather than firing
+unconditionally: `guard` and `promote-gate` are each registered twice, with
+`matcher: "Bash"` (`plugin/crew/hooks/hooks.json:12`, `:16`) and
+`matcher: "PowerShell"` (`:14`, `:18`).
 
 ## The 0.16.7 guard defects, and the dispatch.d rewrite that fixed the largest one
 
@@ -282,50 +232,68 @@ fix shape (execute each candidate, don't just resolve it).
 
 ## `crew_state.py` and this very directory
 
-`plugin/crew/hooks/scripts/crew_state.py` is what reads `.crew/codemap/` and
-turns it into `knowledge.subsystems` for the PM's SessionStart brief. This
-matters directly to the writer of any codemap file, so it is recorded here
-rather than assumed. **Every line number in this section was re-resolved at
-this anchor; all of them had moved.**
+`plugin/crew/hooks/scripts/crew_state.py` (**3023** lines at this anchor) is what
+reads `.crew/codemap/` and turns it into the PM's SessionStart brief. That makes
+it the one section of this note a codemap writer has to get right, so it is
+re-derived rather than carried forward. **Every line number below came from an
+AST walk at this anchor, not from the previous version.**
 
-- `read_knowledge()` (`plugin/crew/hooks/scripts/crew_state.py:387-415`, was
-  cited `:399-428`) lists every file directly under `.crew/codemap/`
-  (`plugin/crew/hooks/scripts/crew_state.py:395`). A file counts as a
-  subsystem if its name ends in `.md` **and** is not in `_NOT_SUBSYSTEMS`
-  (`plugin/crew/hooks/scripts/crew_state.py:234`, was `:225`:
-  `frozenset({"INDEX.md", "UPGRADE.md", "MIGRATION.md"})`).
-  **Corrected at this anchor:** this codemap now contributes **10**
-  subsystems, not the 4 previously recorded — `crew.md` (this file),
-  `install-scripts.md`, `localgpu.md`, `marketplace-registration.md`,
-  `mcp-servers.md`, `obsidian-vault.md`, `repo-docs.md`, `skills-itsm.md`,
-  `skills-security-ops.md`, `verification-harness.md`. `INDEX.md` and
-  `UPGRADE.md` are the two excluded names actually present; `MIGRATION.md` is
-  in the frozenset but does not exist here.
+- `read_knowledge()` (`plugin/crew/hooks/scripts/crew_state.py:692`) lists every
+  file directly under `.crew/codemap/`. A file counts as a subsystem if its name
+  ends in `.md` **and** is not in `_NOT_SUBSYSTEMS`
+  (`plugin/crew/hooks/scripts/crew_state.py:539` --
+  `frozenset({"INDEX.md", "UPGRADE.md", "MIGRATION.md"})`). This codemap
+  contributes **10** subsystems. `INDEX.md` and `UPGRADE.md` are the two excluded
+  names actually present; `MIGRATION.md` is in the frozenset and does not exist
+  here.
+
 - Each counted file is checked for an anchor line matching `_ANCHOR_RE`
-  (`plugin/crew/hooks/scripts/crew_state.py:229-231`, was `:220-222`):
-  `^anchor:\s*(?:\S*@)?([0-9a-f]{7,40})\s*$`, case-insensitive, matched
-  anywhere in the file (`re.MULTILINE`). The comparison is at
-  `plugin/crew/hooks/scripts/crew_state.py:409` and truncates **both** sides
-  to 7 chars, so an 8- or 40-character anchor matches exactly as well as a
-  7-character one. If it does not match HEAD, the file's stem is added to
-  `knowledge.behind` — surfaced as the `knowledgeBehind` trigger
-  (`plugin/crew/hooks/scripts/crew_state.py:2095`, was cited `:2015`).
-  Diagrams use a separate `_DIAGRAM_ANCHOR_RE`
-  (`plugin/crew/hooks/scripts/crew_state.py:293`) with the same truncating
-  comparison at `plugin/crew/hooks/scripts/crew_state.py:467`.
-- `diagramsMissing` only fires once `knowledge.subsystems` is truthy
-  (`plugin/crew/hooks/scripts/crew_state.py:2101-2102`, was cited
-  `:2017-2022`, comment: *"A repo with no codemap has not decided what its
-  subsystems ARE yet"*) — so writing this codemap is also what turns on the
-  nag for missing per-subsystem diagrams.
+  (`plugin/crew/hooks/scripts/crew_state.py:534`):
+  `^anchor:\s*(?:\S*@)?([0-9a-f]{7,40})\s*$` -- anchored to the start of a
+  line, case-insensitive, `re.MULTILINE`. **The `\s*$` is load-bearing for
+  anyone editing one of these files:** anything after the sha on that line, a
+  parenthetical note included, stops the regex matching and the map reads as
+  having no anchor at all. Put commentary on the next line.
 
-**Superseding the previous version's note that "the line numbers in this
-section moved by roughly +900":** they moved again, and not by a single
-offset. `crew_state.py` is now 2313 lines, down from its pre-split peak, and
-the shift is negative in the low ranges (`_ANCHOR_RE` moved +9, `read_knowledge`
-moved −12) and positive in the high ones (`knowledgeBehind` moved +80). A
-single-offset correction would have been wrong for most of them; each was
-re-read.
+- **An anchor now resolves to one of three states, not two** (crew 0.19.13,
+  `plugin/crew/hooks/scripts/crew_state.py:692-763`):
+
+  | State | Test | What the reader does |
+  |---|---|---|
+  | current | `sha[:7] == head[:7]` (`:746`, truncating **both** sides, so 8- and 40-char anchors compare exactly as 7-char ones do) | nothing |
+  | behind | resolves, but is not HEAD -- probed with `git cat-file -e <sha>^{commit}` | **re-check**: run the per-path diff; empty output means current despite the lag |
+  | unresolvable | no anchor, or a sha this repository does not contain | **re-derive**: the per-path diff cannot run at all |
+
+  The third is the one this note's own anchor was in. Folding it into "behind"
+  is the repo's named bug -- an unknown collapsing into the safe-looking value --
+  because "behind" is a cheap, definite finding and a reader who cannot tell the
+  two apart does the cheap thing.
+
+- The distinction is carried into the triggers rather than stopping at the state
+  dict. `TRIGGERS` (`plugin/crew/hooks/scripts/crew_state.py:833`) holds **12**
+  entries, with `knowledgeUnverifiable` (`:854`) sorted deliberately **above**
+  `knowledgeBehind` (`:855`) and **below** `graphStale` -- a map that cannot be
+  verified outranks one that merely needs re-checking, but a map is drawn
+  against the graph, so a stale graph is the earlier input. Both are set in
+  `evaluate_triggers` (`:2721`, `:2722`).
+
+- Diagrams use a separate `_DIAGRAM_ANCHOR_RE`
+  (`plugin/crew/hooks/scripts/crew_state.py:598`), with its own comparison at
+  `:814`. It cannot reuse `_ANCHOR_RE`: a bare `anchor:` line is a syntax error
+  in a Mermaid source, so the provenance has to live inside a `%%` comment. The
+  reason is written out at `:586-597`, which is worth reading before touching
+  either regex.
+
+- `diagramsMissing` (`plugin/crew/hooks/scripts/crew_state.py:860`, set at
+  `:2728`) fires only once `knowledge.subsystems` is truthy -- a repo with no
+  codemap has not decided what its subsystems are yet. So writing this codemap
+  is also what turns on the nag for missing per-subsystem diagrams.
+
+**On the previous version's note that the line numbers "moved again, and not by
+a single offset":** still true, and more so. `crew_state.py` is 3023 lines here
+against the 2313 that note recorded -- it grew by 710 while that note described
+it as having shrunk from a pre-split peak. Every number in this section was
+re-taken; none was adjusted.
 
 ## The endpoint ledger and `endpointUnscanned`
 
@@ -450,38 +418,120 @@ scan targets a declared endpoint, the report lands at that record's computed
 path (`--scan-artifact-path`) and freezes it there (`--record-scan-artifact`)
 afterward, rather than at gizmoduck's own default location.
 
+## Config, and what a machine-global file may supply
+
+**DERIVED at this anchor by importing `crew_config`.** The full reference is
+`plugin/crew/CONFIG.md` (721 lines), written between the previous anchor and
+this one; this section records only the shape a codemap reader needs and the one
+invariant that is easy to break.
+
+Two layers. `~/.claude/crew/config.json` is machine-global -- facts about this
+computer. `.crew/config.json` is per-repo and wins where both speak. `schema` is
+exempt from global inheritance.
+
+| | Leaves | Source |
+|---|---|---|
+| `default_config()` | **85** | `plugin/crew/hooks/scripts/crew_config.py:270` |
+| `default_global_config()` | **44** | `plugin/crew/hooks/scripts/crew_config.py:378` |
+| repo-only | **41** | the difference |
+
+`SCHEMA_CURRENT` is **4** (`plugin/crew/hooks/scripts/crew_state.py:54`).
+`upgradeNeeded` is `schema < SCHEMA_CURRENT` and compares no key sets, so adding
+a default needs no schema bump and triggers no migration prompt.
+
+**The invariant, and it is enforced in two places that must agree:** what the
+global file may *write* is exactly what the global layer may *supply*. Reading
+is pruned by `filter_global` (`plugin/crew/hooks/scripts/crew_config.py:613`)
+against `default_global_config()`; writing is refused by `plan_global_write`
+(`:1371`) against the same object. One object, two gates. A key added to one
+path and not the other produces a file that accepts a value and then ignores it,
+or rejects a value it would have honoured.
+
+**Consent is not capability**, and `context.autoClear.unsafeFocus` is the live
+case. Six of the seven `autoClear` keys are globally settable -- the method is
+validated per platform, which makes it a fact about the machine. The seventh is
+held out by `AUTOCLEAR_CONSENT_KEYS`
+(`plugin/crew/hooks/scripts/crew_config.py:267`,
+`("unsafeFocus",)`) and is repo-only. DERIVED: `leaf_paths` over both defaults
+puts `command`, `delaySeconds`, `enabled`, `method`, `minHandoffLines` and
+`windowTitle` in the global set and `unsafeFocus` outside it. The precedent is
+`graph.obsidian.confirmed`: consent to act outside the repo is not something a
+machine-global file, or a guided flow, may grant on the user's behalf.
+
+### `pm.authority`
+
+Three values, normalised by `normalise_authority`
+(`plugin/crew/hooks/scripts/crew_state.py:1192`) and ordered by `authority_rank`
+(`:1206`). The default is `report-only`
+(`AUTHORITY_DEFAULT`, `plugin/crew/hooks/scripts/crew_state.py:892`).
+
+| Value | The PM may |
+|---|---|
+| `report-only` | read and report; dispatch nothing |
+| `act` | dispatch roles and do the work, putting open decisions to the user |
+| `autonomous` | everything `act` does, and settle its own open decisions |
+
+Read the value as a floor, never as a label: whatever `act` may do,
+`autonomous` may do.
+
+**What `autonomous` adds is deciding, not destroying.** `AUTONOMOUS_STOPS`
+(`plugin/crew/hooks/scripts/crew_state.py:905`) enumerates four things it may
+never do unasked, and the list is in code rather than prose so it can be tested:
+
+- `offboard-role` -- offboarding a role, or removing one from the roster
+- `delete-map` -- deleting a codemap file or a diagram
+- `rewrite-metrics` -- rewriting `.crew/metrics.md`
+- `git-destruction` -- destroying git history or tracked work: force-push,
+  branch delete, history rewrite, or `rm` of a tracked file
+
+A widening of `pm.authority` is the one config change `plan_global_write` marks
+specially (`widens_authority`, `plugin/crew/hooks/scripts/crew_config.py:1447`),
+so granting it can never happen silently.
+
 ## Citation freshness
 
-The previous version of this file carried a section warning that every
-`path:line` below a certain point predated a merge and was "a candidate for
-drift". That warning is discharged: at `1f97e51c` every citation in this file
-was re-resolved by reading the current file, and the ones that moved are named
-inline in the section that carries them. What is **not** claimed is that the
-underlying behaviour was re-tested — see the explicit unknowns in the
-re-anchor provenance section above.
+Every `path:line` in this file was resolved at this anchor by an AST walk over
+`crew_config.py` and `crew_state.py`, or by reading the cited file. None was
+carried forward from the previous version and none was adjusted by an offset.
+
+What is **not** claimed: that the behaviour behind those lines was re-tested. No
+hook was run. The crew test suite passes at this anchor (886 passed, 1 skipped),
+which is evidence about the code, not about this note's reading of it.
 
 ## What this file does not cover
 
-Agent role definitions, command bodies, and the config precedence for which
-model backs each role (`dev.roles`, `dev.provider`, `dev.fallback`) are not
-traced here; this note covers `crew` at the level of "what exists and how it
-is wired". `crew:reference` or `crew:roster` are the existing tools for the
-finer grain and were not re-derived here. The other nine subsystem notes in
-`.crew/codemap/` cover their own areas; `INDEX.md` is the table of contents.
+Agent role definitions and command bodies are not traced here; this note covers
+`crew` at the level of "what exists and how it is wired". `crew:reference` and
+`crew:roster` are the tools for the finer grain.
+
+Config is covered here only in outline. `plugin/crew/CONFIG.md` is the full
+reference -- every key, its default, its type, which layer may supply it, and
+what it does -- and it is the authority where the two disagree.
+
+The other nine subsystem notes in `.crew/codemap/` cover their own areas;
+`INDEX.md` is the table of contents.
+
 ## Entry points
 
-- `plugin/crew/hooks/scripts/crew_state.py:2152` — `worktree_root(cfg, repo_root)`, the one resolver for `worktree.root`. Unset/blank/non-string means the checkout's parent, which is what crew did before the key existed.
-- `plugin/crew/hooks/scripts/crew_state.py:2182` — `worktree_path(cfg, repo_root, branch)`, `<worktree_root>/<repo>-<digest>-<branch>`. Flattens every separator and `:` so a branch name cannot add a directory level.
-- `plugin/crew/hooks/scripts/crew_state.py:2410` — the `--worktree-path BRANCH` CLI flag (`-` for the root alone). This is the only way a command can obtain the path; without it the setting resolved and nothing runnable returned it.
-- `plugin/crew/hooks/scripts/crew_config.py:421` — `null_shadows`, and `:467` `without_null_shadows`: the rule that a repo `null` does not shadow a machine-global value. Called from `resolve_config` (`:611`) and `explain_config` (`:731`), the same helper in both so the run and the report cannot disagree.
+- `plugin/crew/hooks/scripts/crew_state.py:2609` - `worktree_root(cfg, repo_root)`, the one resolver for `worktree.root`. Unset, blank or non-string means the checkout's parent, which is what crew did before the key existed.
+- `plugin/crew/hooks/scripts/crew_state.py:2639` - `worktree_path(cfg, repo_root, branch)`, `<worktree_root>/<repo>-<digest>-<branch>`. Flattens every separator and `:` so a branch name cannot add a directory level.
+- `plugin/crew/hooks/scripts/crew_state.py:2848` - `main`, which carries the `--worktree-path BRANCH` flag (`-` for the root alone). This is the only way a command can obtain the path.
+- `plugin/crew/hooks/scripts/crew_state.py:2741` - `collect`, the one function that assembles the whole state a SessionStart brief renders.
+- `plugin/crew/hooks/scripts/crew_config.py:708` - `resolve_config`, and `:828` `explain_config`. The run and the report share `null_shadows` (`:518`) and `without_null_shadows` (`:564`) so they cannot disagree about whether a repo `null` shadows a machine-global value.
+- `plugin/crew/hooks/scripts/crew_config.py:613` - `filter_global`, the read-side gate; `:1371` `plan_global_write`, the write-side gate. Both judge against `default_global_config()`.
 
 ## Owns data
 
-- `worktree.root` in `.crew/config.json` and `~/.claude/crew/config.json`, defaulting from `crew_state.WORKTREE_DEFAULTS` (`plugin/crew/hooks/scripts/crew_state.py:610`). Inheritable globally — it is a fact about which disk has room, not about a checkout.
-- `crew_state.SPECIALIST_ROLES` (`plugin/crew/hooks/scripts/crew_state.py:725`) — 36 domain specialists off the tier ladder, up from 15. `ROLE_TIERS` is unchanged at 13; with `pm` that is the 50 files in `plugin/crew/agents/`.
+- `.crew/codemap/` - this directory. Read by `read_knowledge` (`plugin/crew/hooks/scripts/crew_state.py:692`); ten subsystem files at this anchor.
+- `worktree.root` in `.crew/config.json` and `~/.claude/crew/config.json`, defaulting from `crew_state.WORKTREE_DEFAULTS` (`plugin/crew/hooks/scripts/crew_state.py:1004`). Globally inheritable - it is a fact about which disk has room, not about a checkout.
+- `crew_state.ROLE_TIERS` (`plugin/crew/hooks/scripts/crew_state.py:1071`) - 13 tiered roles, unchanged across this re-derivation.
+- `crew_state.SPECIALIST_ROLES` (`plugin/crew/hooks/scripts/crew_state.py:1119`) - **40** domain specialists off the tier ladder, up from 15 at the previous anchor. With the 13 tiers and `pm`, that is the 54 files in `plugin/crew/agents/`.
+- `crew_state.AUTONOMOUS_STOPS` (`plugin/crew/hooks/scripts/crew_state.py:905`) - the four things `autonomous` may not do unasked.
+- `crew_config.AUTOCLEAR_CONSENT_KEYS` (`plugin/crew/hooks/scripts/crew_config.py:267`) - the keys held out of the global layer because consent is not capability.
 
 ## Calls out to
 
-- `crew_config.resolve_config` from `crew_state.main`'s `--worktree-path` branch, imported INSIDE the function — the two modules must not import each other at top level.
-- `crew_state._repo_digest` (`plugin/crew/hooks/scripts/crew_state.py:628`) hashes `normcase(realpath(repo_root))` with `blake2b`, degrading to `abspath` when `realpath` raises, so a hook never dies for an unstattable path.
-- `_SEPARATORS` (`plugin/crew/hooks/scripts/crew_state.py:623`) is derived from `os.sep`/`os.altsep` rather than written as a regex character class.
+- `crew_config.resolve_config` from `crew_state.main`'s `--worktree-path` branch, imported INSIDE the function - the two modules must not import each other at top level.
+- `git cat-file -e <sha>^{commit}` from `read_knowledge`, to tell a resolvable anchor from one this repository does not contain. `git_out` returns `None` on any failure, so a missing git lands as "cannot tell" rather than raising out of a SessionStart hook.
+- `crew_state._repo_digest` (`plugin/crew/hooks/scripts/crew_state.py:1022`) hashes `normcase(realpath(repo_root))` with `blake2b`, degrading to `abspath` when `realpath` raises, so a hook never dies for an unstattable path.
+- `_SEPARATORS` (`plugin/crew/hooks/scripts/crew_state.py:1017`) is derived from `os.sep`/`os.altsep` rather than written as a regex character class.
