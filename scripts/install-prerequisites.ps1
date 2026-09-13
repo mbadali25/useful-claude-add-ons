@@ -819,6 +819,7 @@ $script:SkillCatalog = @(
     [pscustomobject]@{ Key = 'drata';                   Selected = $true; Name = 'drata                   - Drata: controls, monitors, evidence, audit prep' }
     [pscustomobject]@{ Key = 'exchange-mailbox-cleanup';Selected = $true; Name = 'exchange-mailbox-cleanup - M365 offboarding walkthrough: hold, preserve, delete, export' }
     [pscustomobject]@{ Key = 'exchange-mailbox-restore';Selected = $true; Name = 'exchange-mailbox-restore - M365 restore walkthrough: triage, then one of five paths' }
+    [pscustomobject]@{ Key = 'github';                  Selected = $true; Name = 'github                  - GitHub branch protection and rulesets: export, restore' }
     [pscustomobject]@{ Key = 'i-have-adhd';             Selected = $true; Name = 'i-have-adhd             - ADHD-friendly output: next action first, numbered steps' }
     [pscustomobject]@{ Key = 'infra-work-ticketing';    Selected = $true; Name = 'infra-work-ticketing    - ServiceDesk Plus / Jira: open tickets, log work notes' }
     [pscustomobject]@{ Key = 'intune-graph';            Selected = $true; Name = 'intune-graph            - Intune via Graph: devices, compliance, app deployment' }

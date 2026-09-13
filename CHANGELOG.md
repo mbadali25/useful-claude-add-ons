@@ -4,6 +4,60 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added
+
+- **`github` 1.0.0: a merge-gate script that reads both of GitHub's gate
+  surfaces, not whichever one the repo happens to use.** `skills/github/
+  scripts/merge_gate.sh` is the twin of `skills/bitbucket/scripts/
+  merge_gate.sh`, and it settles the open question in `docs/guard-overrides.md`:
+  the export captures **classic branch protection and rulesets together**, each
+  carrying its own `state`, and `unreadable` is a third value that never folds
+  into `absent`. Two live probes decided that. Reading a protected branch
+  without admin answers `404 {"message":"Not Found"}` while reading an
+  unprotected one answers `404 {"message":"Branch not protected"}` -- same
+  status, and `repos/cli/cli/branches/trunk/protection` gives the first from a
+  token without admin on a branch that *is* protected, so anything but that
+  exact message is "could not read". And `GET repos/{o}/{r}/rulesets` returns
+  rows with no `rules` and no `conditions` (checked against
+  `repos/facebook/react/rulesets`), so an export built from the list restores a
+  ruleset with the right name and no protection in it, with nothing in the file
+  saying so. Every ruleset is fetched by id.
+
+  Exit semantics mirror Bitbucket's -- 3 means nothing was deleted, 4 means
+  partial writes and names what landed -- with exit 3 widened to three causes:
+  a ruleset condition the script cannot evaluate, a gate surface it could not
+  read, and an **organization or enterprise ruleset that gates the branch and
+  that `DELETE` on the repo endpoint cannot remove**, where removing everything
+  else would leave the gate partly on while reporting success
+  (`--allow-inherited` accepts that trade deliberately).
+
+  Two deliberate divergences from the Bitbucket twin, both documented in
+  `SKILL.md` so nobody "fixes" them back: `enable` has **no preset** and exits 2
+  without `--from-export`, because a preset invents a gate rather than putting
+  back the one that was removed; and `--dry-run` sends **no request and writes
+  no file, the export included**, so it prints the call sequence rather than a
+  per-object plan.
+
+  The export is validated **against the API's own declaration, re-read from
+  disk, before any `DELETE`**: the ruleset count must account for every listed
+  row, and `classic.state: "present"` must carry a real protection object. A 200
+  whose body is valid JSON but not a protection document otherwise validates
+  clean, survives the delete, and only fails at restore time -- with the gate
+  already gone. Both mismatches abort with nothing written and nothing deleted.
+
+  `--allow-inherited` turns the exit-3 refusal into exit 0 on a branch that is
+  still gated, so the run now also prints a `WARNING:` on **stderr** naming how
+  many inherited rulesets stand. A caller that reads only the status -- which is
+  the normal case -- would otherwise read "gate off" forever after.
+
+  `scripts/_test/merge_gate.sh` is 153 offline checks against a stubbed `gh`
+  (`GH_CMD`), no network and no credentials. Six sabotages were run red first:
+  collapsing any 404 into "not protected", turning the `enable` refusal into a
+  silent success, treating an inherited ruleset as an ordinary skip, POSTing an
+  exported ruleset verbatim, dropping the classic-present/object export check
+  (which let the delete land), and dropping the `--allow-inherited` stderr
+  warning. Each went red on the cases that name it.
+
 ### Fixed
 
 - **`crew` 0.19.25: `CONFIG.md` cites symbols instead of line numbers.** When
