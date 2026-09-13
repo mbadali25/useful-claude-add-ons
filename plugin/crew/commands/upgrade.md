@@ -218,6 +218,30 @@ surface it, do not re-derive it by hand:
   refused. `github.mergeGate` is the GitHub twin of
   `bitbucket.mergeGate`, off by default and with no `preset` key — the
   Bitbucket one has a `preset` that binds to nothing, and it was not copied.
+- **Schema 6 → 7** — when the report names the `change` block, read the whole
+  line out, and here you **do** lead with what did not happen, because nothing
+  did. `change.requireForProduction` arrives `false`, so `/crew:promote
+  production` asks for no change request, exactly as before; the other five
+  keys are null or a default template name and are read only by `/crew:change`,
+  which has to be invoked. **No promotion starts failing because someone
+  upgraded.** Then say what the block buys: `/crew:change new` files a change
+  request into whichever tracker this repo uses — ServiceDesk Plus against the
+  `change.sdpTemplate` template, Jira as a `change.jiraIssueType` issue, or
+  `.work/changes/<id>.md` in files mode — and refuses to file while any of the
+  template's questions 1–9 is unanswered or a placeholder, naming which.
+  `change.requester` and `change.implementor` are person facts and belong in
+  the machine-global file; set them once with `/crew:config` and every repo on
+  the box files under them.
+
+  Say the one thing about `change.requireForProduction` that is **not**
+  guessable, because it is the opposite of every other ratcheted key: a repo
+  may turn it **ON** and never off. `install.policy` and the six `guards` keys
+  resolve to the narrower layer, and for them narrower means a smaller
+  capability; here the narrower value is `true`, so a machine-global `true`
+  cannot be defeated by a `false` in a repo somebody cloned — and a repo's own
+  `true` holds on a machine that said nothing. A value that is neither `true`
+  nor `false` reads as `true`, so a typo stops a production promotion and names
+  the key rather than quietly waving it through. CONFIG.md §17.
 - **A machine-global theme that defeats it** — when the report warns that
   `~/.claude/crew/config.json` still sets `docs.theme` to `"neutral"`, read it
   out and do NOT offer to edit that file as part of this command. It is

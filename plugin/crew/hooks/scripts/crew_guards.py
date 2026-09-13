@@ -153,6 +153,73 @@ GUARD_DEFAULTS = dict(
 # empty set". Declaring a pattern is the act that turns them on.
 PRODUCTION_DEFAULTS = {"databases": [], "hosts": []}
 
+# Whether promoting to production needs an APPROVED change request for the sha
+# being promoted. `change.requireForProduction`, and it ratchets by the same
+# table as every key above -- with one thing worth stating plainly, because it
+# reads backwards at first glance.
+#
+# The tuple is ordered LEAST TO MOST PERMISSIVE, exactly like `INSTALL_POLICIES`
+# and `GUARD_POLICIES`. Here the least permissive value is `True`: requiring a
+# change request takes a capability AWAY from a promotion. So `True` ranks 0 and
+# `False` ranks 1, `effective_ratcheted`'s existing `min` does the rest, and the
+# rule the design note asked for falls out of the table rather than out of a
+# second mechanism: **a repo may turn the requirement ON and never off.** A
+# machine-global `true` cannot be defeated by a cloned repo's `false`; a repo's
+# own `true` holds on a machine that said nothing.
+#
+# `ratchet` reads more naturally here than precedence for the same reason it
+# does for `guards.*`: the global file is the machine owner's standing answer
+# about change control, and the repo file arrives inside a clone somebody else
+# wrote.
+CHANGE_REQUIREMENTS = (True, False)
+
+# The DEFAULT is `False`, and it is deliberately NOT the floor. Every other
+# ratcheted key in crew has default == floor, so an absent key and an unknown
+# value resolve identically; this one splits them on purpose, and both halves
+# are load-bearing:
+#
+#   * **Absent (or an explicit `null`) means `False`** -- schema 7 arrives on
+#     every existing repo and must change nobody's promotion behaviour. A key
+#     nobody set is a requirement nobody asked for.
+#   * **A value that is not a bool means `True`** -- fail closed. `"yes"`,
+#     `"false"` as a string, `1`, a dict: crew cannot tell what was meant, and
+#     "could not tell" must not wear the label of "not required". The promotion
+#     stops and names the key, which is a refusal somebody notices in the next
+#     minute rather than a gate that quietly was not there.
+CHANGE_REQUIREMENT_DEFAULT = False
+
+
+def normalise_require_for_production(value):
+    """`value` as a bool: absent means the default, malformed means required.
+
+    See `CHANGE_REQUIREMENTS` for why those two cases differ here when they
+    are the same case for every other ratcheted key. The short version: the
+    floor is `True` and the default is `False`, so collapsing an absent key to
+    the floor would turn the requirement on for every repo that upgraded.
+
+    `isinstance(value, bool)` and not a truthiness test, and not
+    `isinstance(value, int)` either -- `True`/`False` are `int` subclasses in
+    Python, so an `int` check would silently accept `0` as "not required",
+    which is the one direction this function must never fail in.
+    """
+    if value is None:
+        return CHANGE_REQUIREMENT_DEFAULT
+    if isinstance(value, bool):
+        return value
+    return True
+
+
+def require_change_rank(value):
+    """`value`'s position in `CHANGE_REQUIREMENTS`. Higher is more permissive.
+
+    Routed through `normalise_require_for_production` first, so a malformed
+    value ranks 0 -- the same fail-safe-by-construction contract
+    `install_policy_rank` and `guard_policy_rank` carry. The one function
+    permitted to know that `True` is narrower than `False`.
+    """
+    return CHANGE_REQUIREMENTS.index(normalise_require_for_production(value))
+
+
 # The one-shot approval marker `ask` stops for, and where the guard writes what
 # it let through. Both live under `.crew/` beside `.approved-<env>-<sha>`,
 # which `promote-gate.sh` already uses for the same job: a PreToolUse hook has
@@ -300,6 +367,17 @@ RATCHETED_KEYS = {
 RATCHETED_KEYS.update({
     f"guards.{_name}": guard_tiers(_name) for _name in ALL_GUARD_NAMES
 })
+# The eighth key, and the first whose tiers are not strings. Registering it here
+# is the WHOLE cost of ratcheting it: `effective_ratcheted`'s `min` already
+# means "a repo may turn the requirement on and never off", and `sabotage.py`'s
+# `min` -> `max` mutation already covers this key along with the other seven.
+# A bespoke `effective_change_requirement` would have been the fifth mechanism
+# for one rule -- see this table's own comment.
+RATCHETED_KEYS["change.requireForProduction"] = (
+    CHANGE_REQUIREMENTS,
+    normalise_require_for_production,
+    require_change_rank,
+)
 
 
 def ratchet_spec(dotted):

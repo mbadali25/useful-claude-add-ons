@@ -46,6 +46,8 @@ from crew_endpoints import (
 # by a test rather than by this comment.
 from crew_guards import (
     ALL_GUARD_NAMES,
+    CHANGE_REQUIREMENTS,
+    CHANGE_REQUIREMENT_DEFAULT,
     GUARD_APPROVAL_PREFIX,
     GUARD_APPROVAL_TTL,
     GUARD_DEFAULTS,
@@ -69,6 +71,8 @@ from crew_guards import (
     install_policy_rank,
     normalise_guard_policy,
     normalise_install_policy,
+    normalise_require_for_production,
+    require_change_rank,
     classify_access,
     guard_tiers,
     matches_production,
@@ -99,7 +103,14 @@ from crew_guards import (
 #
 # So: a migration that must reach existing repos REQUIRES a bump here. Adding
 # one to `upgrade_config` without touching this line ships nothing.
-SCHEMA_CURRENT = 6
+#
+# 7 adds the `change` block -- `/crew:change`'s requester, implementor, backend
+# template names and `change.requireForProduction`. Behaviour-neutral on
+# arrival in the sense that matters and NOT in one that does not: nothing about
+# an existing repo's promotions changes, because `requireForProduction` lands
+# `false`, but the repo does gain a command it did not have. See
+# `crew_upgrade.SCHEMA_7_KEYS`.
+SCHEMA_CURRENT = 7
 
 # The machine-global config file. `crew_config` owns the LAYERING and re-exports
 # this name; the path itself lives here for the same reason `PM_DEFAULTS` and

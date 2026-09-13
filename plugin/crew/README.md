@@ -837,6 +837,23 @@ reads config out of cloned repositories: under precedence, a repo shipping
 of anyone who cloned it. So `allow` needs **both** layers to say `allow`, and
 `--explain` names the layer holding a key down when they disagree.
 
+### §11c. `change` — change requests, added by schema 7
+
+Six keys, all settable in **either** layer. `change.requester` and
+`change.implementor` are facts about a person and belong in the machine-global
+file; `change.sdpTemplate` (`"Change Management Request"`),
+`change.jiraIssueType` (`"Change"`) and `change.category` name what the desk
+expects; `change.requireForProduction` ships `false`. §24b is what they do.
+
+`change.requireForProduction` uses the same ratchet as the six `guards.*` keys
+and **runs the other way round**: the narrower value is `true`, because
+requiring a change request takes a capability away from a promotion. So a repo
+may turn the requirement **on** and never off — a machine-global `true` is not
+defeated by a `false` in a repo somebody cloned. Absent or `null` means
+`false`, so upgrading changed nobody's promotions; a value that is neither
+`true` nor `false` means `true`, so a typo stops a promotion and names the key
+instead of quietly waving it through. CONFIG.md §17.
+
 **Two of these are new refusals, not preserved ones.** `guards.adminMerge`
 refuses `gh pr merge --admin`, which no crew guard refused before — measured
 against the previous release, both flavours exited 0 — and
@@ -1959,6 +1976,53 @@ a worktree each, so a half-applied one cannot land on top of the other.
 
 ---
 
+## 24b. Change requests
+
+`/crew:change` files a change request. One process, three backends, selected by
+the `tracker` you already use: ServiceDesk Plus against the
+`change.sdpTemplate` template, Jira as a `change.jiraIssueType` issue, or
+`.work/changes/<id>.md` in files mode. **The content is identical in all
+three** — the wording lives once, in `skills/crew-change/SKILL.md`.
+
+```
+/crew:change new
+/crew:change status CHG-40219
+/crew:change close CHG-40219
+/crew:change list
+```
+
+**The gate is the feature.** The ServiceDesk Plus Change Management Request
+template prints its own rule above its ten questions — *ALL THE BELOW
+QUESTIONS MUST BE ANSWERED. ANY PERTINENT MISSING INFORMATION WILL RESULT IN
+THE REQUEST BEING DENIED* — and `new` refuses to file while any of questions
+1–9 is unanswered or answered with a placeholder, naming which one and whether
+the box was empty or held a non-answer. That check is
+`hooks/scripts/crew_change.py`, a program with no I/O, not a paragraph asking
+an agent to be careful: "I read them and they looked complete" is exactly the
+unknown-wearing-the-label-of-a-check this repo keeps rediscovering. Question 10
+is the post-change validation results, collected by `close`, which refuses
+without them.
+
+**Missing tooling is a stop, never a fallback.** If `tracker` is `sdp` and the
+`sdp_*` tools are not connected, the command names the connection and stops. A
+silent fall-through to a local file produces a change nobody on the change
+board can see, sitting in a file, looking filed.
+
+**Production promotion can require one.** `change.requireForProduction` ships
+`false`, and at `false` nothing about `/crew:promote production` changes. At
+`true`, gate 1 needs a change in an **approved** state for the sha being
+promoted — read from the backend at that moment, never from the local cache or
+from the session — and refuses outside the change's scheduled window. "Could
+not read the state" is a stop, not a pass.
+
+It is the one key in crew a repo may only turn **on**: it ratchets across the
+two config layers like `install.policy` and the `guards.*` keys, but the
+narrower value is `true`, so a machine-global `true` survives a `false` in a
+repo you cloned. A value that is neither `true` nor `false` reads as `true`.
+CONFIG.md §17 has the table and the reasoning.
+
+---
+
 ## 25. Command and agent reference
 
 ### Commands
@@ -1990,8 +2054,9 @@ a worktree each, so a half-applied one cannot land on top of the other.
 | `/crew:roster` | Print the crew as configured: roles, tier, and what each one is for |
 | `/crew:config [--show]` | Show where every setting comes from, and walk the machine-global config — see §11 |
 | `/crew:gate <disable\|enable\|status> <github\|bitbucket>` | Take a repository's merge gate down and put it back **from the export**. Gated by `guards.mergeGate`, which ships as `block` |
+| `/crew:change <new\|status <id>\|close <id>\|list>` | File a change request into SDP, Jira or `.work/changes/`, one process either way. `new` refuses to file while any of the template's questions 1–9 is unanswered or a placeholder and names which; `close` refuses without the post-change validation results — see §24b |
 
-25 commands.
+26 commands.
 
 ### Agents
 

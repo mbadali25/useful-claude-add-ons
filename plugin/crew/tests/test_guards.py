@@ -329,11 +329,17 @@ def test_the_ratchet_is_one_table_covering_install_policy_and_all_four_guards():
     `pm.authority` is asserted ABSENT on purpose. It ratchets for the widening
     WARNING only; its two layers still resolve by ordinary precedence, and
     sweeping it in here would silently change how every repo's PM authority
-    resolves."""
+    resolves.
+
+    The function name says "all four guards" and predates two of them plus
+    schema 7's `change.requireForProduction`; the SET below is the contract and
+    it is exhaustive. The name is left alone because `sabotage.py` anchors a
+    mutation on it, and an anchor that silently stops matching is the failure
+    that file's own header calls out."""
     assert set(crew_state.RATCHETED_KEYS) == {
         "install.policy", "guards.terraformApply", "guards.forcePush",
         "guards.adminMerge", "guards.mergeGate", "guards.prodDatabase",
-        "guards.prodServer"}
+        "guards.prodServer", "change.requireForProduction"}
     # Two vocabularies, one table. The production guards ratchet by
     # `none` < `read` < `full` and must never be normalised through the policy
     # tiers -- that would resolve every `read` to `block` and report a level
@@ -362,20 +368,35 @@ def test_every_ratcheted_key_has_a_widening_note_for_every_one_of_its_tiers():
 @pytest.mark.parametrize("dotted", sorted(crew_state.RATCHETED_KEYS))
 def test_the_effective_value_is_the_lower_rank_of_the_two_layers(dotted):
     """Narrowing-only, in both directions. The repo may ask for LESS than the
-    machine allows and be obeyed; it may ask for more and be refused."""
-    tiers, _normalise, _rank = crew_state.RATCHETED_KEYS[dotted]
-    lowest, middle, highest = tiers
+    machine allows and be obeyed; it may ask for more and be refused.
+
+    Written over `tiers` rather than over a fixed `lowest, middle, highest`
+    because `change.requireForProduction` has TWO tiers, not three. Unpacking
+    three names was a second, undeclared claim about every ratcheted key --
+    that it has exactly three values -- and it failed the first time a key did
+    not."""
+    tiers, normalise, _rank = crew_state.RATCHETED_KEYS[dotted]
+    lowest, highest = tiers[0], tiers[-1]
     eff = crew_state.effective_ratcheted
 
     assert eff(dotted, highest, lowest) == lowest     # repo widening refused
     assert eff(dotted, lowest, highest) == lowest     # repo narrowing obeyed
-    assert eff(dotted, middle, highest) == middle
-    assert eff(dotted, highest, middle) == middle
+    for middle in tiers[1:-1]:
+        assert eff(dotted, middle, highest) == middle
+        assert eff(dotted, highest, middle) == middle
     assert eff(dotted, highest, highest) == highest
-    # Absent on either side is the default, and the default is the floor.
-    assert eff(dotted, None, highest) == lowest
-    assert eff(dotted, highest, None) == lowest
+    # Absent on either side is the key's DEFAULT, which is what `normalise`
+    # answers for `None`. For seven of the eight keys that is also the floor;
+    # `change.requireForProduction` is the one where it is not, deliberately,
+    # so that schema 7 does not switch a production requirement on for every
+    # repo that upgraded. Asserting against `normalise(None)` rather than
+    # against `lowest` is what makes this one assertion true of both shapes
+    # instead of true of seven keys and quietly skipped for the eighth.
+    absent = normalise(None)
+    assert eff(dotted, None, highest) == absent
+    assert eff(dotted, highest, None) == absent
     # An unknown ranks 0 on whichever layer carries it, so it can only narrow.
+    # This one IS universal: a value crew cannot read is the floor everywhere.
     assert eff(dotted, "nonsense", highest) == lowest
 
 

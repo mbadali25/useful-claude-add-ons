@@ -392,6 +392,14 @@ def default_config():
         # `filter_global` prunes it out of a global file and reports it --
         # one repo's hostnames must never become every repo's.
         "production": copy.deepcopy(crew_state.PRODUCTION_DEFAULTS),
+        # `/crew:change`. Both layers, like `install` and `guards` and for the
+        # same two reasons: `requireForProduction` ratchets across them, and a
+        # key that existed only globally would fail `is_global_path`'s rule
+        # that every globally-settable key is a real repo key. The ratchet runs
+        # the other way round here -- a repo may turn the requirement ON and
+        # never off -- which is a property of the tier ORDER in
+        # `crew_state.CHANGE_REQUIREMENTS`, not of a second mechanism.
+        "change": copy.deepcopy(crew_upgrade.CHANGE_BLOCK),
     }
 
 
@@ -538,6 +546,18 @@ def default_global_config():
         # written by someone else. Note what is NOT here: `production.*`, the
         # patterns those two match against, which is a repo fact.
         "guards": copy.deepcopy(crew_state.GUARD_DEFAULTS),
+        # The whole `change` block, and every key in it earns the global layer
+        # on its own terms. `requester` and `implementor` are the person:
+        # somebody who files changes under one name files them under that name
+        # in every repo. `sdpTemplate`, `jiraIssueType` and `category` are
+        # facts about the DESK this person files into, which is per-machine and
+        # per-organisation rather than per-checkout -- a repo with its own
+        # category still overrides them, which is why they are in both layers
+        # rather than only this one. `requireForProduction` is the machine
+        # owner's standing answer about change control, and it is the one key
+        # here whose two layers do not combine by precedence: see
+        # `crew_state.CHANGE_REQUIREMENTS` and `resolve_ratcheted`.
+        "change": copy.deepcopy(crew_upgrade.CHANGE_BLOCK),
     }
 
 
@@ -1948,6 +1968,39 @@ _RATCHETED.update({
     )
     for _name in crew_state.PROD_GUARD_NAMES
 })
+
+
+# The `! widens to` notes for `change.requireForProduction`, total over
+# `crew_state.CHANGE_REQUIREMENTS` for the same reason every other note table
+# here is total: the CLI does `notes[granted]`, and a missing key is a
+# `KeyError` at the point of use rather than a note describing the wrong value.
+#
+# Keyed on BOOLS, which is the first time that happens in this table and is why
+# it is written out rather than generated. `False` is the widening direction --
+# it removes a requirement -- so the `True` entry is the one that says nothing
+# widens into it.
+_CHANGE_WIDENING_NOTES = {
+    True: (
+        "`/crew:promote production` will require a change request in an "
+        "APPROVED state for the sha being promoted, read from the tracker "
+        "backend rather than from this session, and will refuse outside the "
+        "change's scheduled window. This is the narrowest value and nothing "
+        "widens into it: a repo may turn this ON, and may never turn it off."
+    ),
+    False: (
+        "`/crew:promote production` will stop asking for a change request. "
+        "This is a WIDENING even though it looks like a default, and it is "
+        "the one direction the ratchet refuses from a repo file: setting it "
+        "here, in the machine-global config, is the only place it can be set "
+        "to false at all."
+    ),
+}
+
+_RATCHETED["change.requireForProduction"] = (
+    crew_state.require_change_rank,
+    crew_state.normalise_require_for_production,
+    _CHANGE_WIDENING_NOTES,
+)
 
 
 def plan_global_write(updates, path=None):

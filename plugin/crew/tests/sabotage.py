@@ -109,6 +109,10 @@ GUARD_PS1 = os.path.join(CREW, "hooks", "scripts", "guard.ps1")
 # re-anchored onto a nearby line, which this file's own header forbids.
 GUARDS = os.path.join(CREW, "hooks", "scripts", "crew_guards.py")
 GATE_DOC = os.path.join(CREW, "commands", "gate.md")
+# The ten-question gate, and the command that routes through it. The gate is
+# the only MECHANICAL part of `/crew:change`; everything else about the feature
+# is prose, which is why two of its three mutations below patch a `.md`.
+CHANGE_PY = os.path.join(CREW, "hooks", "scripts", "crew_change.py")
 
 GUARD = '    if out["family"] is not None and out["family"] in authors:'
 ROLE_PIN = '    decided = resolve_role(cfg, "dev", "developer")'
@@ -507,17 +511,19 @@ MUTATIONS = (
         # what that migration does -- a user reads a version number and is
         # told to run a command whose report walks past the entry for it.
         #
-        # RE-PINNED to the CURRENT hop when schema 5 landed. It targeted
-        # "Schema 3 -> 4", and the paired test asserts the entry for
-        # SCHEMA_CURRENT, so once the current hop became 4 -> 5 this
+        # RE-PINNED to the CURRENT hop when schema 5 landed, and again at 7.
+        # It targeted "Schema 3 -> 4", and the paired test asserts the entry
+        # for SCHEMA_CURRENT, so once the current hop moved on this
         # mutation deleted an entry nothing checks and reported STILL
-        # GREEN. Every schema bump has to move this string; that edit is
+        # GREEN. That happened again at schema 7, and this suite said so
+        # rather than the bump shipping with the mutation pointing at 5 -> 6.
+        # Every schema bump has to move this string; that edit is
         # the point, not an inconvenience, and the suite says so out loud
         # when it is forgotten.
         "the current migration loses its entry in upgrade.md section 5",
         UPGRADE_DOC,
-        "- **Schema 5 \u2192 6**",
-        "- **The guardrails migration**",
+        "- **Schema 6 \u2192 7**",
+        "- **The change-request migration**",
         "tests/test_pm_brief.py::"
         "test_the_brief_and_upgrade_md_agree_on_the_current_migration",
     ),
@@ -682,16 +688,17 @@ MUTATIONS = (
         # exactly the gap that let it reach review.
         "the schema is not bumped, so the migration never runs",
         STATE,
+        "SCHEMA_CURRENT = 7",
         "SCHEMA_CURRENT = 6",
-        "SCHEMA_CURRENT = 5",
-        # Re-pinned AGAIN at schema 6, and the reason is the same one that
-        # forced the first re-pin: the test it named migrates a repo at schema
-        # 4, which keeps passing with the 6 reverted to 5 -- a schema-4 repo is
-        # behind either way. Only a repo at the IMMEDIATELY PREVIOUS schema can
-        # tell whether the current bump happened, so this entry has to move to
-        # that repo's test on every bump. It went STILL GREEN here first and
-        # was caught by this suite, not by reading it, for the second time.
-        "tests/test_guards.py::test_the_schema_6_bump_reaches_a_repo_at_schema_5",
+        # Re-pinned AGAIN at schema 7, and the reason has not changed since the
+        # first two re-pins: the test this entry names has to migrate a repo at
+        # the IMMEDIATELY PREVIOUS schema, or reverting the bump leaves that
+        # repo behind either way and the mutation comes back STILL GREEN. It
+        # did exactly that, twice, and was caught by this suite rather than by
+        # reading it. So the pair of numbers AND the test both move on every
+        # bump; neither move is optional and neither is sufficient alone.
+        "tests/test_change_command.py::"
+        "test_the_schema_7_bump_reaches_a_repo_at_schema_6",
     ),
     (
         # The one-shot gate goes, so the rewrite matches on the VALUE forever.
@@ -1947,6 +1954,72 @@ MUTATIONS = (
         # braces held.
         ("tests/test_promote_gate_fails_closed.py::"
          "test_the_gate_blocks_when_its_own_check_cannot_RUN"),
+    ),
+    (
+        # An unanswered question is let through. `normalise_answer` never
+        # returns None -- it returns `""` for anything it cannot read -- so
+        # `cleaned is None` is never true and an empty box falls past the
+        # UNANSWERED arm into the placeholder check, where `""` is not a
+        # member. The request then files with a blank rollback plan.
+        #
+        # Chosen over `if False:` because it is the bug somebody would
+        # actually write: `normalise_answer` is documented as total, and "it
+        # returns nothing for an unreadable value" is one careless step from
+        # "it returns None". The placeholder arm is left INTACT, so the
+        # mutation isolates one of the two refusal kinds rather than deleting
+        # the whole gate -- a mutation that broke both would go red on the
+        # placeholder tests too and tell you nothing about this one.
+        "an unanswered change-request question is let through",
+        CHANGE_PY,
+        "    cleaned = normalise_answer(value)\n    if not cleaned:",
+        "    cleaned = normalise_answer(value)\n    if cleaned is None:",
+        ("tests/test_change_validator.py::"
+         "test_an_empty_or_unreadable_box_is_unanswered"),
+    ),
+    (
+        # `close` stops requiring the post-change validation results: it gates
+        # questions 1-9 instead of 10. A change then closes with nothing
+        # proving it worked, and the record says it was fine.
+        #
+        # Anchored so that every EARLIER assertion in the target test still
+        # holds -- `CLOSING_QUESTIONS == (10,)` is untouched, and the three
+        # refusal assertions still refuse, because a close payload carries only
+        # question 10 and so fails 1-9 as well. The only assertion this can
+        # trip is the one that says a COMPLETE close passes. That is the
+        # discipline this file's header asks for after the
+        # `docs.reportTheme` case: a mutation for a multi-assertion test has to
+        # be the one that leaves the earlier lines satisfied, or "it went red"
+        # is not evidence about the assertion the label names.
+        "`/crew:change close` no longer requires the validation results",
+        CHANGE_PY,
+        "    return validate(answers, CLOSING_QUESTIONS)",
+        "    return validate(answers, FILING_QUESTIONS)",
+        ("tests/test_change_validator.py::"
+         "test_close_requires_ten_and_gates_nothing_else"),
+    ),
+    (
+        # `change.requireForProduction` is satisfied from this session's memory
+        # instead of from the backend. The config key still ratchets, the gate
+        # still "runs", and a change a board rejected an hour ago still clears
+        # a production promotion -- because what was read is a recollection of
+        # an earlier look rather than the desk's current answer.
+        #
+        # A prose mutation, and it has to be: no hook reads this key, which
+        # `promote.md`'s own "What is enforced, and what is not" section says
+        # by name. The prose IS the mechanism here, so the prose is what there
+        # is to sabotage.
+        #
+        # Earlier assertions in the target test are untouched -- the key, the
+        # word APPROVED and "for THIS sha" all stay -- so only the
+        # read-from-the-backend claim can trip.
+        "promote reads the change state from memory instead of the backend",
+        PROMOTE_DOC,
+        "**Read the state from the backend, every time** - never from the "
+        "local cache,",
+        "**The state you read earlier in this session is fine** - the local "
+        "cache is authoritative,",
+        ("tests/test_change_command.py::"
+         "test_promote_gate_one_requires_an_approved_change_for_this_sha"),
     ),
 )
 

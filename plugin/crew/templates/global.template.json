@@ -99,5 +99,13 @@
     "mergeGate": "block",
     "prodDatabase": "none",
     "prodServer": "none"
+  },
+  "change": {
+    "requester": null,
+    "implementor": null,
+    "requireForProduction": false,
+    "sdpTemplate": "Change Management Request",
+    "jiraIssueType": "Change",
+    "category": null
   }
 }

@@ -226,7 +226,7 @@ enforces in code rather than prose:
 | | |
 |---|---|
 | Type | integer |
-| Current value | `6` (`crew_state.SCHEMA_CURRENT`, dumped by execution) |
+| Current value | `7` (`crew_state.SCHEMA_CURRENT`, dumped by execution) |
 | Layer | **repo only**, and exempt from inheritance *structurally* |
 
 `schema` is absent from `default_global_config()`, so `filter_global` prunes it
@@ -615,10 +615,13 @@ them:
 
 ---
 
-## 10. Global-settable keys — all 53
+## 10. Global-settable keys — all 59
 
-Settable in **either** layer; repo wins — **except `install.policy` and the six
-`guards.*`, where the narrower of the two layers wins instead** (§15, §16).
+Settable in **either** layer; repo wins — **except `install.policy`, the six
+`guards.*` and `change.requireForProduction`, where the narrower of the two
+layers wins instead** (§15, §16, §17). For the first seven "narrower" means a
+smaller capability; for `change.requireForProduction` the narrower value is
+`true`, so a repo may turn that one **on** and never off — §17.
 `production.databases` and `production.hosts` are deliberately **not** here:
 they are repo-only, and §16 says why. Defaults are identical in `default_config()` and
 `default_global_config()` — verified by comparison.
@@ -678,6 +681,12 @@ they are repo-only, and §16 says why. Defaults are identical in `default_config
 | `guards.mergeGate` | `block` \| `ask` \| `allow` (narrower layer wins, §16) | `"block"` |
 | `guards.prodDatabase` | `none` \| `read` \| `full` (narrower layer wins, §16) | `"none"` |
 | `guards.prodServer` | `none` \| `read` \| `full` (narrower layer wins, §16) | `"none"` |
+| `change.requester` | string or `null`, see §17 | `null` |
+| `change.implementor` | string or `null`, see §17 | `null` |
+| `change.requireForProduction` | boolean (narrower layer wins, and `true` is the narrower one, §17) | `false` |
+| `change.sdpTemplate` | string, see §17 | `"Change Management Request"` |
+| `change.jiraIssueType` | string, see §17 | `"Change"` |
+| `change.category` | string or `null`, see §17 | `null` |
 
 `crew_state.QA_PROVIDERS` and `DEV_PROVIDERS` are both
 `["claude", "codex", "copilot"]` (dumped by execution). `qa.provider`
@@ -708,7 +717,7 @@ repository or one checkout.
 
 | Key | Type | Default | Consumer |
 |---|---|---|---|
-| `schema` | integer | `6` | see §4 |
+| `schema` | integer | `7` | see §4 |
 | `tier` | integer | `0` | `crew_state.collect` |
 | `roles` | list (a leaf) | `["explorer", "qa-reviewer"]` | `crew_state.collect` |
 | `tracker` | string | `"files"` | `crew_state.py`, `pm_brief.py`, `commands/ticket.md` |
@@ -1225,3 +1234,92 @@ how the two rules come to disagree.
 It is a separate, lighter guard from `adminMerge`: `adminMerge` bypasses a
 protection without touching it, and `mergeGate` removes and restores the
 protection itself.
+
+---
+
+## 17. `change` — change requests, and the ratchet that runs backwards
+
+| | |
+|---|---|
+| Keys | `requester`, `implementor`, `requireForProduction`, `sdpTemplate`, `jiraIssueType`, `category` |
+| Layer | **both**, all six |
+| Schema | 7 (`crew_upgrade.SCHEMA_7_KEYS`) |
+| Consumers | `commands/change.md`, `commands/promote.md`, `skills/crew-change/SKILL.md`, `hooks/scripts/crew_change.py` |
+
+| Key | Type | Default | What it decides |
+|---|---|---|---|
+| `change.requester` | string or `null` | `null` | the template's `Requester name`; asked per request when null |
+| `change.implementor` | string or `null` | `null` | the template's `Implementor of Change`, and answer 2 |
+| `change.requireForProduction` | boolean | `false` | whether `/crew:promote production` gate 1 needs an approved change |
+| `change.sdpTemplate` | string | `"Change Management Request"` | the ServiceDesk Plus template a change is filed against |
+| `change.jiraIssueType` | string | `"Change"` | the Jira issue type a change is filed as |
+| `change.category` | string or `null` | `null` | the template's `Category`; asked per request when null |
+
+`requester` and `implementor` are facts about a person, and `sdpTemplate`,
+`jiraIssueType` and `category` are facts about the desk that person files into
+— which is why the whole block is in the machine-global template as well as the
+repo one. A repo with its own category still overrides it; that is the ordinary
+precedence rule, and it applies to five of the six keys.
+
+### `requireForProduction` is the sixth, and it ratchets the other way round
+
+It is in `crew_state.RATCHETED_KEYS` alongside `install.policy` and the six
+`guards.*`, and it uses the same `effective_ratcheted` — the narrower of the
+two layers wins. What is different is which value is narrower:
+
+| Key | Tiers, least to most permissive |
+|---|---|
+| `install.policy` | `manual` < `ask` < `auto` |
+| `guards.*` (four) | `block` < `ask` < `allow` |
+| `guards.prod*` (two) | `none` < `read` < `full` |
+| `change.requireForProduction` | `true` < `false` |
+
+Requiring a change request takes a capability **away** from a promotion, so
+`true` is the floor. `min(rank(repo), rank(global))` then means exactly what
+the design asked for and nothing had to be added to say it: **a repo may turn
+the requirement ON, and may never turn it off.** A machine-global `true` is not
+defeated by a `false` in a repo somebody cloned; a repo's own `true` holds on a
+machine that said nothing.
+
+`sabotage.py`'s one-character `min` → `max` mutation covers this key along with
+the other seven, which is the point of the table — a bespoke resolver for an
+eighth key would have been an eighth thing that could be wrong on its own.
+
+### The default is `false` and the floor is `true`, and they are not the same
+
+This is the **only** ratcheted key in crew where "absent" and "unreadable" do
+not resolve to the same value, and both halves are load-bearing:
+
+- **Absent, or an explicit `null`, resolves to `false`.** Schema 7 lands on
+  every existing repo, and a mandatory migration that switched a production
+  requirement on for everyone would be indefensible. A key nobody set is a
+  requirement nobody asked for.
+- **A value that is not a boolean resolves to `true`.** `"yes"`, the string
+  `"false"`, `1`, a dict: crew cannot tell what was meant, and "could not tell"
+  must not wear the label of "not required". The promotion stops and names the
+  key — a refusal somebody notices within the minute, rather than a gate that
+  quietly was not there.
+
+`crew_guards.normalise_require_for_production` tests `isinstance(value, bool)`
+rather than truthiness and rather than `isinstance(value, int)`. `True` and
+`False` are `int` subclasses in Python, so an `int` check would have accepted
+`0` as "not required" — the one direction this function must never fail in.
+
+### What `true` actually does is prose
+
+The key and the ratchet are code. What promote DOES about them is
+`commands/promote.md`, and nothing enforces it: no hook fires on
+`/crew:change`, and `promote-gate.sh` does not read `change.requireForProduction`
+at all. That file's "What is enforced, and what is not" section says so by
+name, in the same paragraph as the merge gate, deliberately — an unenforced
+requirement that is described as enforced is worse than one honestly labelled.
+
+### The ten-question gate is not prose
+
+`hooks/scripts/crew_change.py` is, and it is the one part of this feature that
+is mechanical. `/crew:change new` exits non-zero unless every one of questions
+1–9 has an answer that is neither empty nor on `crew_change.PLACEHOLDERS`;
+`close` does the same for question 10. There is no config key that relaxes it,
+on purpose: the template's own rule is that missing information results in
+denial, and a switch to turn that off would be a switch to file requests that
+get denied.

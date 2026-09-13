@@ -38,6 +38,11 @@ with the error text verbatim.
 - If `requireHuman` is set, show me the sha, the diff summary, and what the last
   production promotion was, then wait for me to say go. Do not proceed on
   silence.
+- **An approved change request**, if `change.requireForProduction` is true.
+  See `## The change request` below - it runs here, in gate 1. **The shipped
+  default is `false`, and at `false` this step does not exist**: promote asks
+  for no change request and behaves exactly as it did before schema 7. There
+  is nothing to do and nothing to report.
 - **The merge gate**, if this repo has one, on Bitbucket or on GitHub. See
   `## The merge gate` below - it runs here, before gate 2. When both
   `bitbucket.mergeGate.enabled` and `github.mergeGate.enabled` are `false`,
@@ -84,6 +89,51 @@ green - that is the whole reason it is a separate gate.
 the actual numbers - error count, alarm state, queue depth - not "looks clean".
 A deploy that moved bytes successfully and broke the application looks identical
 to a good one until this gate runs.
+
+## The change request
+
+This step runs inside gate 1, and only for `production`. It reads
+`change.requireForProduction` through `/crew:config`, not out of
+`.crew/config.json`, because a machine-global file can set it and the repo file
+would not show that.
+
+**`false` is the shipped default and means this section does not exist.** No
+`sdp_*` call, no Jira call, no read of `.work/changes/`, nothing to report. Say
+nothing and move on. A repo that never asked for change control keeps promoting
+exactly as it did before schema 7.
+
+Everything below is what `true` means.
+
+**A change in an APPROVED state, for THIS sha.** Not "a change exists" - not "a
+change was filed for this work" - a change whose record names the sha you are
+about to deploy and whose state the backend currently reports as approved. The
+sha goes into the change when `/crew:change new` files it; if the change you
+find does not carry it, that is a different change and this is a stop.
+
+**Read the state from the backend, every time** - never from the local cache,
+and never from this session's memory of having looked. `.work/changes/<id>.md`
+records what was FILED and cannot know what a change board did afterwards. A
+cached `approved` is a claim about the past. Route through `/crew:change status
+<id>`, which reads the backend and says so.
+
+**"Could not read the state" is a STOP, not a pass.** The desk is down, the MCP
+tools are not connected, the id resolves to nothing: each of those is an
+unknown, and an unknown here must not collapse into "no requirement found, carry
+on". Report it as **not checked**, name what could not be read, and stop - the
+same shape as an absent `rollback` key and as `guards.mergeGate` at `block`.
+This is the collapse this repo keeps rediscovering and it would be at its most
+expensive here, because the thing it waves through is a production deploy.
+
+**Outside the window is a stop.** `Scheduled Start Time` and `Scheduled End
+Time` on the change are the approved change window, not documentation of an
+intention. Before gate 2, compare the current time against them and refuse
+outside. Say the window, say the current time, and say which side of it you are
+on - "the window closed 40 minutes ago" is actionable and "outside the window"
+is not. A change board approved a change at a time; deploying at another time
+is deploying something they did not approve.
+
+Under promote's own `--dry-run`, print which change would be checked and run
+**nothing**.
 
 ## The merge gate
 
@@ -255,6 +305,14 @@ honoured, and
 all. `guards.mergeGate` is not prose - it is read by `/crew:gate` from
 `crew_config.py --guard mergeGate`, and at `block` that command refuses. But
 nothing forces promote to ROUTE through `/crew:gate`; that part is prose too.
+**The change-request section is prose in exactly the same way, and by the same
+measurement**: no hook fires on `/crew:change`, `promote-gate.sh` does not read
+`change.requireForProduction`, and nothing checks that an approved change was
+found or that the clock was inside the window. The config key is real and the
+ratchet across the two layers is real - `change.requireForProduction` resolves
+through `crew_config.resolve_ratcheted`, so a repo cannot turn the requirement
+off - but what the requirement makes promote DO is this file, and this file
+only holds if you run it.
 Those are prose,
 and prose only holds if you run it. A hook fires before a command and after
 a turn; it cannot watch the middle. The row you append is a claim, and the only
