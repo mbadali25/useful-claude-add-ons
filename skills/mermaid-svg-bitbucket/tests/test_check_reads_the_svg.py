@@ -98,7 +98,7 @@ def test_damaged_svg_is_reported_and_fails(tmp_path, kind, version):
     # future failure for an unrelated cause satisfies this test. The summary has
     # to agree, too: a damaged diagram must never be counted as verified.
     # This line used to read `"up to date" not in out.split("DAMAGED")[0]`, which
-    # 1.2.1 made vacuous - the failure summary no longer contains that phrase for
+    # 1.2.2 made vacuous - the failure summary no longer contains that phrase for
     # any input, so the assertion passed whether or not the bug was present.
     # Assert against the wording the summary actually prints.
     assert "0 diagram(s) verified; 0 stale, 1 damaged, 0 unverified." in out, out
@@ -113,7 +113,7 @@ def test_intact_svg_with_recorded_hash_passes(tmp_path):
 def test_legacy_manifest_is_unverified_and_fails(tmp_path):
     """An intact SVG under a v1 manifest must be reported UNVERIFIED and exit 1.
 
-    This case exited 0 until 1.2.1, on the argument that a structural check is
+    This case exited 0 until 1.2.2, on the argument that a structural check is
     the strongest claim available without a recorded hash. It is - and that is
     the reason to go red, not a reason to stay green. A CI line that means less
     than its reader assumes is the exact defect --check was fixed for one

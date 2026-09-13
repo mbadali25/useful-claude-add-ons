@@ -70,7 +70,7 @@ manifest, and it is green from then on. `--force` is not optional here: the sour
 hash already matches, so a plain run counts those diagrams as unchanged and never
 reaches the code that records a hash.
 
-That red replaced an exit 0 in 1.2.1, and the reason is the one this whole check
+That red replaced an exit 0 in 1.2.2, and the reason is the one this whole check
 exists for. A structurally-intact SVG with no recorded hash is the strongest claim the
 tool can honestly make — which is an argument for saying so loudly, not for passing.
 A green CI line that means less than its reader assumes is exactly the defect 1.2.0

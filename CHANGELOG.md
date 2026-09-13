@@ -183,7 +183,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
-- **`mermaid-svg-bitbucket` 1.2.1: `--check` now exits 1 on `UNVERIFIED`, not
+- **`mermaid-svg-bitbucket` 1.2.2: `--check` now exits 1 on `UNVERIFIED`, not
   0.** 1.2.0 taught `--check` to open the SVG instead of trusting
   `svg.exists()`. A manifest predating `version: 2` has no `svgHash` to compare,
   so it got a structural check instead -- non-empty, an `<svg` element, a
@@ -227,6 +227,14 @@ All notable changes to this repository are documented here. Format follows [Keep
   count reddens five (5 failed, 9 passed). Each test asserts the exit code and
   the message text separately, so a right-code/useless-text regression still
   fails. Suite: 14 passed, 0 failed.
+
+  There is no `mermaid-svg-bitbucket` 1.2.1, and the gap is the rule working.
+  This shipped as 1.2.1 first; the re-keyed assertion landed as a follow-up
+  commit, and `check-marketplace.py` failed it -- `skills/mermaid-svg-bitbucket/`
+  had changed *after* the commit that set the version, which is exactly the
+  "already-installed copies stay stale" case the checker exists for. Rewriting
+  history to fold the two together is blocked here by the force-push guard, so a
+  late fix costs a version. That is the intended price, not a workaround.
 
 - **`report-builder` 2.0.0 and `solomon-sop-maker` 2.0.0 are now redirect
   stubs.** Both descriptions open with "Do NOT use this skill - use
