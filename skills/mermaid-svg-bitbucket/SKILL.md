@@ -40,13 +40,20 @@ htmlLabels with an inline `%%{init}%%` directive.
 
 ## What `--check` actually verifies
 
-Three separate claims, and it is worth knowing which one a green run made.
+Three separate claims, and only the first of them is green. A run exits 0 when every
+diagram's SVG was compared against a hash and matched — nothing weaker earns it.
 
 | State | Meaning | Exit |
 |---|---|---|
 | up to date | source hash matches **and** the SVG's bytes match the `svgHash` recorded when it was rendered | 0 |
-| `UNVERIFIED` | source hash matches, but the manifest predates `version: 2` so there is no `svgHash` to compare. The SVG passed a structural check only: non-empty, contains an `<svg` element, ends with a closing tag | 0 |
+| `UNVERIFIED` | source hash matches, but the manifest predates `version: 2` so there is no `svgHash` to compare. The SVG passed a structural check only: non-empty, contains an `<svg` element, ends with a closing tag | 1 |
 | `STALE` / `DAMAGED` | the source moved, or the SVG is missing, corrupt, truncated or empty | 1 |
+
+`UNVERIFIED` and `DAMAGED` share an exit code and are not the same finding. `DAMAGED`
+says the SVG is provably not the one that was rendered. `UNVERIFIED` says nothing about
+the SVG at all — there is no recorded hash to judge it by. The output keeps them in
+separate sections and says so in as many words, so nobody goes hunting a corruption
+that is not there.
 
 **Until manifest version 2 this check did not open the SVG at all.** `current` was
 `manifest hash == digest(source) and svg.exists()` — both halves about the source and
@@ -56,13 +63,20 @@ mid-attribute, and a zero-byte file, each printed `All 1 diagram(s) up to date.`
 exited 0. `skills/mermaid-svg-bitbucket/tests/` damages a genuine render and asserts
 both now fail.
 
-**Upgrading is not automatic and does not fail your build.** An existing manifest keeps
-working and reports `UNVERIFIED` for every diagram, because a structurally-intact SVG
-with no recorded hash is the strongest claim the tool can honestly make. Run
-`render_mermaid.py --force` once to re-render and record the hashes. Exit 0 is
-deliberate there — but the summary never says "All N up to date" while anything is
-unverified, because a count that could not be checked has to survive into the output
-rather than collapse into the reassuring line.
+**Upgrading is not automatic, and it turns your build red once.** A manifest predating
+`version: 2` reports `UNVERIFIED` for every diagram and exits 1. Run
+`render_mermaid.py --force` once, commit the re-rendered SVGs and the rewritten
+manifest, and it is green from then on. `--force` is not optional here: the source
+hash already matches, so a plain run counts those diagrams as unchanged and never
+reaches the code that records a hash.
+
+That red replaced an exit 0 in 1.2.2, and the reason is the one this whole check
+exists for. A structurally-intact SVG with no recorded hash is the strongest claim the
+tool can honestly make — which is an argument for saying so loudly, not for passing.
+A green CI line that means less than its reader assumes is exactly the defect 1.2.0
+fixed; shipping a weaker green under the same name reintroduces it in the fix. The
+summary still never says "All N up to date" while anything is unverified, and now the
+exit code agrees with it.
 
 ## Workflow
 

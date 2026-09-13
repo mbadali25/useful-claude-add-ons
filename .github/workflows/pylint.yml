@@ -1,6 +1,8 @@
 name: Pylint
 
-on: [push]
+# push alone tests the branch tip, never the merge result a PR would produce.
+# Matches marketplace.yml and mcp-servers.yml, which already declare both.
+on: [push, pull_request]
 
 jobs:
   build:
