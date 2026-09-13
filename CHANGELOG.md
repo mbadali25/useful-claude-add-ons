@@ -6,7 +6,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
-- **`crew` 0.19.21: two unknowns that reported themselves as clean.** One bug
+- **`crew` 0.19.22: two unknowns that reported themselves as clean.** One bug
   in two places, both the shape this repo keeps hitting -- something that could
   not be checked reported as something that was checked and found nothing.
 
@@ -51,6 +51,13 @@ All notable changes to this repository are documented here. Format follows [Keep
   by CI's Marketplace job and is not part of the pytest set, which is how it
   reached CI red after a green local pytest run -- the `check` job runs seven
   steps and `check-marketplace.py` is only the first.
+
+  Shipped as 0.19.22, not 0.19.21: the assertion fix was a second commit
+  touching `plugin/crew/`, and `check-marketplace.py`'s version rule is
+  **history-based** -- it compares the last commit that set the version against
+  the last commit that touched the plugin. Running the checker on a dirty
+  working tree cannot see that, which is exactly why the bump belongs in the
+  final commit.
 
 - **`crew` 0.19.14: the pm can now route the trigger 0.19.13 added, and
   `UPGRADE.md` stops carrying a line nothing can read.** Two gaps left by that
