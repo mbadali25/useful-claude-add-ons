@@ -67,7 +67,33 @@ one, which meant the map lived on one machine and reached nobody who cloned.
   wrong, and wrong in the expensive direction — it sends you rewriting correct anchors and
   distrusting working ones. Corrected 2026-09-05 by reading the comparison.)
 - **`graphify-out/graph.json`** — the mechanical graph. Refresh with `graphify . --no-viz
-  --code-only`; a post-commit hook does it automatically.
+  --code-only`; a post-commit hook does it automatically. **The hook and that command are not
+  interchangeable, and the difference lands in a tracked file.**
+
+  `git ls-files graphify-out/` returns **two** tracked files, `graph.json` and `GRAPH_REPORT.md`.
+  The hook rebuilds both — `.git/hooks/post-commit:178` calls `graphify.watch._rebuild_code`, and
+  the log it writes says `graph.json, graph.html and GRAPH_REPORT.md updated`. The documented
+  command does not: `--no-viz` writes the graph and skips the report, so running the refresh by
+  hand leaves the two tracked files describing different builds of the same repository, with
+  nothing in either one saying so. It happened twice on 2026-09-12, in this repo, to this agent.
+  Follow it with `graphify cluster-only .`, which regenerates the report from the graph that was
+  actually built, and read the counts out of both before committing — the report states them on
+  its `## Summary` line and `graph.json` carries them as `nodes` and `links` (**`links`, not
+  `edges`**; the report prints the word "edges" for the same number).
+  Those two hook citations are **machine-local**: `.git/` is not tracked, so unlike every other
+  anchor in this file they cannot be re-checked with `git diff` and are absent entirely on a
+  clone that never ran `graphify hook install`.
+
+  The hook also rebuilds in the **background** — `.git/hooks/post-commit:163` prints "launching
+  background rebuild" and names its log, `~/.cache/graphify-rebuild.log`. So the rebuild triggered
+  by your last commit may still be running while you stage the next one. Check the tail of that log
+  for a finished run before trusting either file, or you commit a half-written `graph.json` that is
+  indistinguishable from a successful rebuild.
+
+  What is *not* established: whether the hook's rebuild and the documented command produce the same
+  counts on an identical corpus. They were never measured at one commit here, and the numbers this
+  section used to carry compared two different ones. Measure both at the same HEAD before claiming
+  either way.
 
 An `anchor:` behind HEAD means *re-check the claims*, not that they are wrong. Do the per-path check
 first — `git diff --name-only <anchor>..HEAD -- <paths the map documents>` — because a repo-wide
