@@ -6,6 +6,56 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`crew` 0.19.26: five backlog items, and the one that mattered is the Stop
+  gate.** The gate diffed the WORKING TREE against HEAD, so a committed change
+  was invisible to it and **`git commit` was a complete bypass** -- the same
+  file exited 2 while dirty and 0 once committed. A gate you can pass by running
+  `git commit` is not a gate. The baseline is now the last commit the gate
+  itself verified (`.crew/.verify-verified-at`, machine-local, written only on a
+  pass), falling back to the merge-base with the default branch, falling back to
+  HEAD. The alternative -- a turn-start marker written by another hook -- was
+  rejected because an absent marker would degrade to the old behaviour, and a
+  gate that silently verifies less when its input is missing is the failure this
+  repo keeps paying for. One narrowing survives and is asserted rather than
+  hidden: on the default branch with no marker there is no branch point, so a
+  commit still ends that one turn, and the marker is written on every clean exit
+  so the window is one turn wide. Both flavours changed; nine cases in
+  `test_verify_gate_baseline.py`, sabotage-verified three ways.
+
+- **`crew` 0.19.26: the test suite mistook a bash it found for a bash that
+  works.** Under PowerShell `shutil.which("bash")` returns `C:\WINDOWS\system32\bash.EXE`
+  -- WSL's -- which cannot open a Windows path and exits 127 for every script
+  handed to it. `_HAS_BASH` was then True, so the `sh` flavour was parametrized
+  IN and **52 tests failed** with `assert 127 == 2`; two agents independently
+  reported that as pre-existing breakage on `main`. `crew_fixtures.resolve_bash()`
+  now proves a candidate by running a probe script and checking a sentinel exit
+  code, and returns None when none works so the flavour is skipped with a
+  printed reason. The logic was copied in six modules and a seventh had no
+  resolver at all -- that seventh is why the first pass still left 16 failures.
+  Measured: 52 -> 0 under PowerShell, resolving to `C:\Program Files\Git\bin\bash.exe`,
+  with `PATH` untouched so the `check-marketplace.py` hang is not reintroduced.
+
+- **`crew` 0.19.26: the upgrade CLI announced schema 3's new keys and not
+  schema 5's.** `installKeysAdded` reached `.crew/codemap/UPGRADE.md` and never
+  the terminal, because there was a branch for `providerKeysAdded` and no
+  matching one for it. A key governing whether crew may run install commands is
+  exactly what the block's own comment means by "must not learn about later" --
+  and it arrives as `manual`, which is the reassurance, and only reassures if it
+  is said.
+
+- **`crew` 0.19.26: the pulse recommended a graph refresh that its host repo's
+  CLAUDE.md forbids.** Not fixed by swapping the string, which would be right
+  here and wrong in every repo that does not track `GRAPH_REPORT.md`. The state
+  now reports whether that report is TRACKED beside `graph.json` -- asked of
+  git, since an untracked report is a local artefact -- and the pulse names
+  `graphify update .` only then. Unknown keeps the older `--no-viz` form. The
+  three prose call sites still say the fixed command and are recorded as the
+  remaining half.
+
+- **`crew` 0.19.26: a comment claiming "the 21 commands and 10 agents".** Both
+  wrong (24 and 54). Replaced with the scope and an `ls`, rather than a fresh
+  pair of numbers with the same decay rate and no reader.
+
 - **`crew` 0.19.25: `CONFIG.md` cites symbols instead of line numbers.** When
   the citations were last measured, **11 of 13 checkable line numbers were
   wrong** -- `read_global_config` cited at 585 and living at 666,

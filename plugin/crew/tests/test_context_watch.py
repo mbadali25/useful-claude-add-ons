@@ -7,7 +7,6 @@ Code. These tests run both flavours the same way Claude Code does: JSON on
 stdin, exit code and stderr as the contract.
 """
 import json
-import pathlib
 import re
 import shutil
 import subprocess
@@ -23,34 +22,7 @@ _ROOT = context._ROOT  # pylint: disable=protected-access
 _SH = (_ROOT + "/hooks/scripts/context-watch.sh").replace("\\", "/")
 _PS1 = _ROOT + "/hooks/scripts/context-watch.ps1"
 
-
-def _resolve_bash():
-    """Find a bash that works when spawned directly by python's subprocess.
-
-    Git for Windows ships bash.exe in two places. usr/bin/bash.exe is the
-    raw MSYS binary: launched from a non-MSYS parent (python.exe here,
-    rather than another MSYS shell) it fails to resolve its own mount
-    table and cannot open ANY path, including its own script argument --
-    confirmed by running a trivial one-line script and getting "No such
-    file or directory" back for a file that demonstrably exists. bin/
-    bash.exe is a launcher shim that bootstraps the MSYS environment
-    correctly first. Prefer the shim when this looks like a Git for
-    Windows install and it is present.
-    """
-    found = shutil.which("bash")
-    if not found:
-        return None
-    parts = pathlib.Path(found).parts
-    lower = [p.lower() for p in parts]
-    if "usr" in lower and "bin" in lower:
-        root = pathlib.Path(*parts[:lower.index("usr")])
-        shim = root / "bin" / "bash.exe"
-        if shim.exists():
-            return str(shim)
-    return found
-
-
-_BASH = _resolve_bash()
+_BASH = crew_fixtures.resolve_bash()
 _HAS_BASH = _BASH is not None
 _HAS_PWSH = shutil.which("pwsh") is not None
 

@@ -860,6 +860,18 @@ def main(argv=None):
         # not learn about later by noticing new agents in a dispatch.
         print("roles added: " + (", ".join(notes["rolesAdded"]) or "none"))
         print(f"tier: {notes['tierFrom']} -> {notes['tierTo']}")
+        if notes["installKeysAdded"]:
+            # A key governing whether crew may RUN INSTALL COMMANDS is squarely
+            # in the class the comment above describes, even arriving at its
+            # floor. It reached UPGRADE.md and never the terminal, so the one
+            # upgrade note a user would most want unprompted was the one they
+            # had to go looking for.
+            print(f"schema {notes['schemaFrom']} -> "
+                  f"{crew_state.SCHEMA_CURRENT}: added "
+                  + ", ".join(notes["installKeysAdded"])
+                  + " (arrives as 'manual' - crew names a missing skill and its "
+                    "command and runs nothing, exactly as before; "
+                    "run /crew:config to allow more)")
         if notes["providerKeysAdded"]:
             print(f"schema {notes['schemaFrom']} -> "
                   f"{crew_state.SCHEMA_CURRENT}: added "

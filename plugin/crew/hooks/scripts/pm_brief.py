@@ -145,7 +145,7 @@ FINDINGS = {
     ),
     "graphStale": (
         "the code graph is missing or older than HEAD",
-        "run /crew:onboard, or graphify . --no-viz --code-only to refresh it",
+        "run /crew:onboard, or {graphCommand} to refresh it",
     ),
     "knowledgeUnverifiable": (
         "{unverifiableCount} codemap anchor(s) name a commit this repo does "
@@ -274,6 +274,32 @@ def _diagram_fields(state):
         "staleNames": _names(behind),
         "missingNames": _names(missing),
         "diagramsDir": diagrams.get("dir") or "docs/diagrams",
+    }
+
+
+def _graph_fields(state):
+    """The refresh command `graphStale` interpolates. Always the key.
+
+    Same contract as _incident_fields: a missing key raises KeyError inside
+    .format() and takes out the whole brief, which runs from SessionStart.
+
+    Crew ships to many repos and the right command differs between them, so
+    this is read from the repo rather than fixed in the text. A repo that
+    TRACKS `GRAPH_REPORT.md` beside `graph.json` maintains the pair, and
+    `graphify update .` is what keeps the two consistent; one that does not
+    wants `--no-viz`, which skips the report exactly because nothing stores it.
+
+    Naming one command unconditionally is how crew's own pulse came to
+    recommend, inside this repository, the command this repository's CLAUDE.md
+    tells you not to use. Absent or unknown falls back to the `--no-viz` form:
+    it is the older default and it is safe on a repo with no tracked report,
+    which is the majority case and the one a wrong guess costs least in.
+    """
+    graph = crew_state.dict_or_empty(state.get("graph"))
+    tracked = graph.get("reportTracked")
+    return {
+        "graphCommand": ("graphify update ."
+                         if tracked else "graphify . --no-viz --code-only"),
     }
 
 
@@ -484,6 +510,7 @@ def render(state):
     # says nothing about it, which is worse than omitting it entirely.
     fields = dict(_incident_fields(state))
     fields.update(_diagram_fields(state))
+    fields.update(_graph_fields(state))
     fields.update(_knowledge_fields(state))
     fields.update(_endpoint_fields(state))
     fields.update(_schema_fields(state))

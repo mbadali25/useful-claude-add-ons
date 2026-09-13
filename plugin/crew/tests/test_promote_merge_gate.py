@@ -24,7 +24,6 @@ any transport is reached at all. Nothing in this file may be pointed at a real
 workspace.
 """
 import os
-import pathlib
 import shutil
 import subprocess
 
@@ -32,6 +31,8 @@ import context  # noqa: F401  pylint: disable=unused-import
 import crew_config
 import crew_state
 import pytest
+
+import crew_fixtures
 
 _PLUGIN = os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir)
 _PROMOTE = os.path.join(_PLUGIN, "commands", "promote.md")
@@ -50,25 +51,7 @@ _SECTION = "## The Bitbucket merge gate"
 # Exit code 2 in merge_gate.sh -- `E_USAGE`, at :33.
 _E_USAGE = 2
 
-
-def _resolve_bash():
-    """Prefer Git for Windows' bin/bash.exe shim over the raw usr/bin MSYS
-    binary, which cannot resolve its own mount table when launched from a
-    non-MSYS parent. Same resolver as `test_verify_gate_lock_sh.py:42-56`."""
-    found = shutil.which("bash")
-    if not found:
-        return None
-    parts = pathlib.Path(found).parts
-    lower = [p.lower() for p in parts]
-    if "usr" in lower and "bin" in lower:
-        root = pathlib.Path(*parts[:lower.index("usr")])
-        shim = root / "bin" / "bash.exe"
-        if shim.exists():
-            return str(shim)
-    return found
-
-
-_BASH = _resolve_bash()
+_BASH = crew_fixtures.resolve_bash()
 
 
 def _read(path):

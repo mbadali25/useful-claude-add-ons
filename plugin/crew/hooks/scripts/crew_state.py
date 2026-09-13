@@ -711,22 +711,36 @@ def _read_graph(root, cfg):
     # passes dict_or_empty but `os.path.join` raises TypeError on a non-str.
     if not isinstance(out, str) or not out:
         out = GRAPH_OUT_DEFAULT
-    path = os.path.join(contained_path(root, out, GRAPH_OUT_DEFAULT),
-                        "graph.json")
+    out_dir = contained_path(root, out, GRAPH_OUT_DEFAULT)
+    path = os.path.join(out_dir, "graph.json")
+
+    # Which refresh command to recommend is a fact about THIS repo, not a
+    # constant. A repo that tracks GRAPH_REPORT.md beside graph.json needs
+    # `graphify update .`, which keeps the pair consistent; one that does not
+    # wants `graphify . --no-viz --code-only`, where --no-viz skips the report
+    # precisely because nothing stores it. Crew ships to many repos and used to
+    # name the second unconditionally, so in a repo of the first kind its own
+    # pulse recommended the command that repo's CLAUDE.md says not to use.
+    # Asked of git, not of the filesystem: an untracked report is a local
+    # artefact and does not make the pair a thing this repo maintains.
+    report = os.path.join(out_dir, "GRAPH_REPORT.md")
+    rel = os.path.relpath(report, root).replace("\\", "/")
+    report_tracked = bool(git_out(root, "ls-files", "--", rel))
+
     if not os.path.exists(path):
         return {"present": False, "current": False, "builtAt": None,
-                "path": path}
+                "path": path, "reportTracked": report_tracked}
 
     built = _built_at_commit(path)
     head = git_out(root, "rev-parse", "--short=7", "HEAD")
     if not built or not head:
-        return {"present": True, "current": False,
-                "builtAt": built, "path": path}
+        return {"present": True, "current": False, "builtAt": built,
+                "path": path, "reportTracked": report_tracked}
 
     # Fast path, and the only one that needs no second git call.
     if built[:7] == head[:7]:
-        return {"present": True, "current": True,
-                "builtAt": built, "path": path}
+        return {"present": True, "current": True, "builtAt": built,
+                "path": path, "reportTracked": report_tracked}
 
     # Not HEAD -- but "not HEAD" is not the same as "stale", and treating it
     # that way gave this trigger NO FIXPOINT. graphify-out/ is a TRACKED
@@ -757,8 +771,8 @@ def _read_graph(root, cfg):
     # (squash-merged, rebased away, or garbage-collected) lands here. Unknown
     # resolves to stale, the honest direction.
     current = changed is not None and changed == ""
-    return {"present": True, "current": current,
-            "builtAt": built, "path": path}
+    return {"present": True, "current": current, "builtAt": built,
+            "path": path, "reportTracked": report_tracked}
 
 
 def read_knowledge(root, cfg):
