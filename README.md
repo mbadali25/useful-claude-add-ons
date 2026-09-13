@@ -48,7 +48,7 @@ The menu is a cursor picker — **↑/↓ to move, Space to tick, Enter to start
   ----------------------
     [x] Prerequisites: git, nodejs, npm, python3, pip3 (needs root or sudo)
     [x] Claude Code CLI (@anthropic-ai/claude-code) + PATH export
-  > [x] This repo's marketplace + 28 of 28 skills  >
+  > [x] This repo's marketplace + 34 of 34 skills  >
     [x] Team plugins: superpowers, frontend-design, excalidraw-generator
     ...
   ↑↓ move   Space toggle   Enter start   A all   N none   D defaults   Q cancel
@@ -148,7 +148,7 @@ For this repo's own skills, [`scripts/check-marketplace.py`](scripts/check-marke
 |---|---|---|
 | 1 Prerequisites | Chocolatey + git, awscli, nodejs, python (Windows) / git, nodejs, npm, python3, pip3 via apt/dnf/yum/pacman/zypper/apk (Linux) | package manager |
 | 2 Claude Code CLI | `@anthropic-ai/claude-code`, a persistent `PATH` entry for the npm global bin, and an update to the latest published version if one already exists | npm |
-| 3 This repo | The `useful-claude-add-ons` marketplace and, by default, all 28 skills in [`skills/`](skills/) — narrow it with → in the menu or `--skills` | this repo |
+| 3 This repo | The `useful-claude-add-ons` marketplace and, by default, all 34 skills in [`skills/`](skills/) — narrow it with → in the menu or `--skills` | this repo |
 | 4 Team plugins | `superpowers`, `frontend-design`, `excalidraw-generator` | 3 marketplaces (only the ones behind a ticked plugin) |
 | 5 find-skills | The `find-skills` skill, into the user skills dir | `vercel-labs/skills` |
 | 6 Community | `adhd-output-style`, `azure-tools`, `anthropic-office-skills`, `agent-browser`, `ppt-master`, `voltagent-infra`, `voltagent-qa-sec` | 4 marketplaces (only the ones behind a ticked plugin) |
