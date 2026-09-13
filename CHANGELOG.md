@@ -198,6 +198,59 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`crew` 0.19.20: the agent count was wrong in eleven places and right in
+  none, and the cause was a table nobody had counted.** Every current-state
+  claim about how many agents `crew` registers disagreed with the plugin and
+  with the others -- `11`, `14`, `29` and `50` all shipped simultaneously. The
+  measured figure is **54**, established two ways that agree:
+  `ls plugin/crew/agents/*.md` returns 54 files, each carrying a `name:`
+  frontmatter key with no README or template among them, and
+  `crew_state.ROLE_TIERS` (13) + `crew_state.SPECIALIST_ROLES` (40) + `pm` is
+  the same 54, with both set differences against the filenames empty.
+
+  The `29` traces to `plugin/PLUGINS.md`'s agent table, which has exactly 29
+  data rows -- 13 tiered, 15 specialists, and `pm` -- because it was written
+  when there were 15 specialists and never grew with `SPECIALIST_ROLES`.
+  `marketplace.json`'s description is that table transcribed, parenthetical and
+  all. **So correcting only the `29` there would have shipped a sentence
+  asserting `13 + 15 + 1 = 54`**: the `15` had to move to `40` in the same
+  edit, and a fix that changed the headline number alone would have looked
+  right while reading as arithmetic nonsense. That is the reason this entry
+  names the cause rather than the number.
+
+  Eleven sites, not the seven `TODO.md` recorded -- a sweep for the same claim
+  found four the recorded list had missed, which is that entry's own lesson
+  ("a finding that records which places are RIGHT acquires an expiry date")
+  arriving on schedule. Where the prose allowed it the figure is **gone**
+  rather than corrected: `plugin/PLUGINS.md` and `plugin/crew/README.md` now
+  say every command and every agent is an instruction to a model, and
+  `PLUGINS.md`'s agent heading names `agents/*.md` instead of a count, with a
+  new line marking the table beneath it abridged so the next reader who counts
+  its rows is not misled the same way. `plugin/crew/README.md:1982` gained the
+  `ls` re-measure and an explicit warning not to count the rows above it --
+  that table lists `skill-author` twice, so a row count gives 41 specialists
+  where the code has 40. `tests/test_role_ladder.py` compares sets in both
+  directions, so the duplicate passes it.
+
+  `scripts/install-prerequisites.{sh,ps1}` changed identically and
+  width-neutrally (`11`->`54`, `21`->`24`, two digits for two), so no picker
+  line changed length and `pick_fit` / `Format-PickerLine` are untouched. No
+  check catches this class: `check_docs` never opens `plugin/PLUGINS.md`, and
+  `check_menu_parity` compares the two scripts' menu *keys*, not their
+  descriptive text -- which is precisely how they stayed a matched pair while
+  both were wrong.
+
+  Also in this release: `plugin/crew/CONFIG.md`'s "Why there is no
+  `docs.reportBuilder`" section argued the abstract case -- routing is derived,
+  a third authority, a key with no consumer -- but never stated the concrete
+  fact that settles it. There is exactly **one** builder to choose between.
+  `skills/report-builder/` is a deprecated stub whose frontmatter reads "Do NOT
+  use this skill" and which ships no scripts; `skills/solomon-doc-builder/` is
+  a brand pack, a `SKILL.md` over `assets/` and likewise no scripts; every
+  builder script lives in `skills/doc-builder/scripts/`. So "a different report
+  builder" is, in every case anyone has wanted, a different *brand pack* --
+  and `docs.reportTheme` already selects one by name.
+
 - **`jira-manager` 1.0.1 and `power-automate-api` 1.0.1: fifteen defects, across
   three review rounds.** Implemented by Codex (gpt-6-astra), reviewed three
   times by Claude Sonnet 5. The dispatch was RECORDED before the run, so the
