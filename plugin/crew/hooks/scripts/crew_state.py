@@ -763,9 +763,10 @@ def _read_graph(root, cfg):
     # This mirrors `verify-anchors.py`, which measures each subsystem against
     # its OWN pathspec rather than against all of HEAD, and which reports
     # FRESH for trees this function used to call stale.
-    excludes = [":(exclude)%s/**" % out.rstrip("/")]
-    excludes += [":(exclude)%s" % g for g in GRAPH_NONCODE_PATHS]
-    changed = git_out(root, "diff", "--name-only", "%s..%s" % (built, head),
+    trimmed = out.rstrip("/")
+    excludes = [f":(exclude){trimmed}/**"]
+    excludes += [f":(exclude){g}" for g in GRAPH_NONCODE_PATHS]
+    changed = git_out(root, "diff", "--name-only", f"{built}..{head}",
                       "--", ".", *excludes)
     # None means the diff could not run at all -- an unresolvable `built` sha
     # (squash-merged, rebased away, or garbage-collected) lands here. Unknown
