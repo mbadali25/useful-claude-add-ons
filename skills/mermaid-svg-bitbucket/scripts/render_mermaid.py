@@ -35,6 +35,9 @@ from pathlib import Path
 RENDER_VERSION = "2"
 
 MANIFEST_NAME = ".mermaid-svg.json"
+# 2 = entries carry svgHash, so --check can verify the SVG and not just its
+#     existence. A version-1 manifest predates that and cannot be content-checked.
+MANIFEST_VERSION = 2
 DEFAULT_OUT_DIR = "docs/diagrams"
 DEFAULT_EXCLUDES = {".git", "node_modules", ".venv", "venv", "vendor", "dist", "build", ".tox"}
 
@@ -71,6 +74,31 @@ def digest(src: str, config_fingerprint: str) -> str:
     return "sha256:" + h.hexdigest()
 
 
+def svg_digest(path: Path) -> str:
+    """Hash the SVG's own bytes, so --check can tell whether the file on disk is
+    still the file that was rendered. Taken AFTER postprocess(), which rewrites
+    the SVG - hashing before it would record a digest the file never has."""
+    return hashlib.sha256(path.read_bytes()).hexdigest()[:16]
+
+
+def svg_structure_ok(path: Path) -> tuple[bool, str]:
+    """A cheap integrity check that needs no recorded hash, for SVGs written by a
+    version of this script that did not record one. It is what stands between a
+    pre-v2 manifest and a silent pass, so it must stay honest about what it
+    cannot see: a well-formed SVG with wrong contents passes here."""
+    try:
+        raw = path.read_bytes()
+    except OSError as exc:
+        return False, f"unreadable ({exc})"
+    if not raw.strip():
+        return False, "file is empty"
+    if b"<svg" not in raw:
+        return False, "no <svg element - not an SVG at all"
+    if not raw.rstrip().endswith(b"</svg>"):
+        return False, "truncated - no closing </svg> tag"
+    return True, ""
+
+
 def slugify(text: str, limit: int = 40) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
     return slug[:limit].rstrip("-")
@@ -97,7 +125,7 @@ def walk(root: Path, suffixes: set[str]) -> list[Path]:
 class Manifest:
     def __init__(self, path: Path):
         self.path = path
-        self.data = {"version": 1, "diagrams": {}}
+        self.data = {"version": MANIFEST_VERSION, "diagrams": {}}
         if path.exists():
             try:
                 self.data = json.loads(path.read_text(encoding="utf-8"))
@@ -349,6 +377,8 @@ def main() -> int:
 
     # ---- render -----------------------------------------------------------
     stale, rendered, skipped, failed = [], [], [], []
+    damaged: list[tuple[str, str]] = []
+    unverified: list[str] = []
     for mmd in mmd_files:
         key = mmd.relative_to(root).as_posix()
         svg = mmd.with_suffix(".svg")
@@ -359,6 +389,23 @@ def main() -> int:
         if args.check:
             if not current:
                 stale.append(key)
+                continue
+            # The source hash matching only says the .mmd has not changed since
+            # the SVG was rendered. It says nothing about the SVG, and until
+            # manifest v2 nothing here looked: a truncated or zero-byte SVG
+            # passed --check as current, because the only test applied to it was
+            # svg.exists(). Look at the file.
+            recorded = have.get("svgHash")
+            if recorded:
+                if svg_digest(svg) != recorded:
+                    damaged.append((key, "SVG does not match what was rendered "
+                                         "from this source"))
+                continue
+            ok, why = svg_structure_ok(svg)
+            if not ok:
+                damaged.append((key, why))
+            else:
+                unverified.append(key)
             continue
         if current and not args.force:
             skipped.append(key)
@@ -370,18 +417,38 @@ def main() -> int:
             print(f"FAIL: {exc}", file=sys.stderr)
             failed.append(key)
             continue
-        manifest.put(key, hash=want, svg=svg.relative_to(root).as_posix())
+        manifest.put(key, hash=want, svg=svg.relative_to(root).as_posix(),
+                     svgHash=svg_digest(svg))
         rendered.append(key)
         print(f"  rendered {key} -> {svg.relative_to(root)}")
 
     # ---- report -----------------------------------------------------------
     if args.check:
-        if stale:
-            print("Diagrams are out of date:")
-            for k in stale:
-                print(f"  STALE: {k}")
+        if stale or damaged:
+            if stale:
+                print("Diagrams are out of date:")
+                for k in stale:
+                    print(f"  STALE: {k}")
+            if damaged:
+                print("Diagrams whose SVG on disk is damaged:")
+                for k, why in damaged:
+                    print(f"  DAMAGED: {k} - {why}")
             print("\nRun scripts/render_mermaid.py and commit the result.")
             return 1
+        # Never print "all up to date" while something was not actually checked.
+        # The count of what could not be verified has to survive into the output,
+        # or this line claims a check that did not happen for those files.
+        if unverified:
+            print(f"{len(mmd_files) - len(unverified)} diagram(s) up to date; "
+                  f"{len(unverified)} could not be content-verified:")
+            for k in unverified:
+                print(f"  UNVERIFIED: {k} - no svgHash recorded "
+                      f"(manifest predates version {MANIFEST_VERSION})")
+            print("\nThese passed a structural check only: non-empty, an <svg "
+                  "element, a closing tag.")
+            print("Re-run scripts/render_mermaid.py --force once to record "
+                  "their hashes.")
+            return 0
         print(f"All {len(mmd_files)} diagram(s) up to date.")
         return 0
 

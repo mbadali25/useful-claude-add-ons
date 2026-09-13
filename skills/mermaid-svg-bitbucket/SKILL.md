@@ -38,6 +38,32 @@ The fix is `htmlLabels: false`, which makes Mermaid emit real `<text>` elements.
 output and hard-fails if a `<foreignObject>` survives — a diagram can re-enable
 htmlLabels with an inline `%%{init}%%` directive.
 
+## What `--check` actually verifies
+
+Three separate claims, and it is worth knowing which one a green run made.
+
+| State | Meaning | Exit |
+|---|---|---|
+| up to date | source hash matches **and** the SVG's bytes match the `svgHash` recorded when it was rendered | 0 |
+| `UNVERIFIED` | source hash matches, but the manifest predates `version: 2` so there is no `svgHash` to compare. The SVG passed a structural check only: non-empty, contains an `<svg` element, ends with a closing tag | 0 |
+| `STALE` / `DAMAGED` | the source moved, or the SVG is missing, corrupt, truncated or empty | 1 |
+
+**Until manifest version 2 this check did not open the SVG at all.** `current` was
+`manifest hash == digest(source) and svg.exists()` — both halves about the source and
+the file's presence. A committed SVG truncated or emptied after rendering passed as
+up to date. That was measured, not theorised: a real 15,902-byte render cut in half
+mid-attribute, and a zero-byte file, each printed `All 1 diagram(s) up to date.` and
+exited 0. `skills/mermaid-svg-bitbucket/tests/` damages a genuine render and asserts
+both now fail.
+
+**Upgrading is not automatic and does not fail your build.** An existing manifest keeps
+working and reports `UNVERIFIED` for every diagram, because a structurally-intact SVG
+with no recorded hash is the strongest claim the tool can honestly make. Run
+`render_mermaid.py --force` once to re-render and record the hashes. Exit 0 is
+deliberate there — but the summary never says "All N up to date" while anything is
+unverified, because a count that could not be checked has to survive into the output
+rather than collapse into the reassuring line.
+
 ## Workflow
 
 ### 1. Check the tooling
@@ -49,7 +75,8 @@ npm install -g @mermaid-js/mermaid-cli
 ```
 
 The script falls back to `npx --yes @mermaid-js/mermaid-cli` if `mmdc` isn't on PATH.
-Only rendering needs it — `--check` is a hash comparison and runs on bare Python.
+Only rendering needs it — `--check` runs on bare Python: it compares hashes and
+reads the committed SVGs, but never invokes mermaid.
 
 ### 2. Vendor the script into the repo
 
@@ -79,7 +106,9 @@ This walks the tree and:
 - renders standalone `.mmd` / `.mermaid` files in place (`docs/topology.mmd` → `docs/topology.svg`)
 - finds ```mermaid blocks in `.md` files, writes each block out to a sidecar `.mmd`
   under `docs/diagrams/`, and replaces the block with `![Alt text](docs/diagrams/....svg)`
-- records a hash of every source in `.mermaid-svg.json` so re-runs skip unchanged
+- records a hash of every source **and of the rendered SVG** in `.mermaid-svg.json`,
+  so re-runs skip unchanged sources and `--check` can tell whether the committed
+  SVG is still the one that was rendered
   diagrams
 
 Useful flags: `--out-dir` (where extracted sources land), `--no-rewrite` (render only,

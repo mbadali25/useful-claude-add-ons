@@ -1,10 +1,12 @@
-%% Generated from useful-claude-add-ons@e9661f7b on 2026-09-12. Verify before trusting.
+%% Generated from useful-claude-add-ons@69678908 on 2026-09-12. Verify before trusting.
 %% Anchors: skills/mermaid-svg-bitbucket/scripts/render_mermaid.py, skills/mermaid-svg-bitbucket/assets/mermaid-config.json, skills/mermaid-svg-bitbucket/assets/bitbucket-pipelines.snippet.yml, skills/mermaid-svg-bitbucket/SKILL.md
 %% mermaid-svg-bitbucket: how a fenced block becomes a committed SVG, and what each gate can and cannot see.
 %% --
-%% Drawn because nothing diagrammed this skill and the two halves of it fail in
-%% opposite directions: the RENDER path checks the artifact and refuses to write a
-%% bad one, while the --check path never opens the artifact at all.
+%% Drawn because nothing diagrammed this skill and the two halves of it failed in
+%% opposite directions: the RENDER path checked the artifact and refused to write a
+%% bad one, while the --check path never opened the artifact at all.
+%% THAT SECOND HALF IS NOW FIXED, and this diagram is kept rather than rewritten
+%% clean because the defect it was drawn to expose is what got it fixed.
 %% --
 %% Derived by reading render_mermaid.py at this anchor (395 lines; AST walk for the
 %% definitions, direct reads for the branch conditions) and by MEASURING the
@@ -16,19 +18,27 @@
 %% correctly in a browser tab and a local viewer. Only the <img> embedding path
 %% differs, which is exactly the path Markdown uses and the one nobody tests in.
 %% --
-%% The one sentence this diagram exists to make visible:
-%%   --check verifies the INPUTS, not the output. `current` is
-%%     have["hash"] == want and svg.exists()          (render_mermaid.py:357)
-%%   The hash covers RENDER_VERSION, the config fingerprint, the background colour
-%%   and the normalised source. It covers nothing about the SVG's CONTENT - so a
-%%   committed SVG that was truncated, hand-edited, or corrupted after rendering
-%%   passes --check as long as the file is still there and the source has not moved.
-%%   postprocess()'s foreignObject refusal is a RENDER-time gate only; it never runs
-%%   in CI strategy A, which is the recommended one and needs neither Node nor
+%% The sentence this diagram was drawn to make visible, and what it bought:
+%%   Until manifest version 2, --check verified the INPUTS, not the output. `current`
+%%   was  have["hash"] == want and svg.exists()  - the hash covering RENDER_VERSION,
+%%   the config fingerprint, the background colour and the normalised source, and
+%%   nothing at all about the SVG's CONTENT. A committed SVG that had been truncated,
+%%   hand-edited or corrupted after rendering passed --check as long as the file was
+%%   still there and the source had not moved. That was this repository's recurring
+%%   failure in its CI costume: a green check reporting on the thing it could measure
+%%   cheaply, wearing the name of the thing you wanted verified.
+%%   MEASURED before the fix rather than argued: a real 15902-byte mmdc render cut in
+%%   half mid-attribute, and a zero-byte file, BOTH printed "All 1 diagram(s) up to
+%%   date." and exited 0.
+%% Now: render records svgHash and --check compares it. A manifest predating version
+%%   2 has no hash to compare, so it gets a structural check - non-empty, an <svg
+%%   element, a closing tag - and is reported UNVERIFIED rather than counted as up to
+%%   date. Exit 0 there is deliberate: structurally-intact is the strongest claim
+%%   available without a recorded hash, and the output carries that caveat instead of
+%%   the summary swallowing it.
+%%   postprocess()'s foreignObject refusal is still a RENDER-time gate only; it never
+%%   runs in CI strategy A, which is the recommended one and needs neither Node nor
 %%   Chromium precisely because it does not render.
-%% That is this repository's recurring failure in its CI costume: a green check that
-%% reports on the thing it could measure cheaply, wearing the name of the thing you
-%% wanted verified.
 
 flowchart TB
 
@@ -52,11 +62,11 @@ flowchart TB
         H1["RENDER_VERSION :35 - currently <b>2</b><br/>bump it to invalidate every SVG at once"]
         H2["config fingerprint :316<br/>sha256(mermaid-config.json)[:16] + background<br/>so changing htmlLabels re-renders everything"]
         H3["normalize(source) :54<br/>CRLF folded, trailing space and leading and<br/>trailing blank lines stripped - a whitespace<br/>edit must not cost a re-render"]
-        H4>"<b>Not in the hash: the SVG itself.</b><br/>Nothing here reads the output file's bytes.<br/>svg.exists() :357 is the only claim made<br/>about the artifact, and existence is not<br/>correctness."]
+        H4>"<b>Not in this hash: the SVG itself.</b><br/>digest() covers the source only. The artifact is<br/>covered separately by <b>svgHash</b>, recorded at<br/>render time and compared on --check.<br/>Before that existed, svg.exists() was the only<br/>claim made about the artifact - and existence<br/>is not correctness."]
         H1 --- H2 --- H3 --- H4
     end
 
-    CURRENT{"have['hash'] == want<br/><b>and</b> svg.exists()<br/>:357"}
+    CURRENT{"have['hash'] == want<br/><b>and</b> svg.exists()<br/>source unchanged, artifact present"}
     POOL --> CURRENT
     Hash -.->|"want"| CURRENT
     MANIFEST[(".mermaid-svg.json :37<br/>Manifest :97-123. An unreadable manifest is a<br/><i>warning</i>, not an error :105 - it degrades to<br/>'nothing is current', which re-renders rather<br/>than silently skipping")]
@@ -67,15 +77,22 @@ flowchart TB
 
     subgraph Verify["--check - CI strategy A. Bare Python, no Node, no Chromium"]
         direction TB
-        C1["collects <b>every</b> stale .mmd into a list<br/>and prints them all :379-384"]
+        C1["collects <b>every</b> stale .mmd into a list<br/>and prints them all"]
+        C5["<b>then opens the SVG.</b> svgHash recorded ?<br/>compare it - a mismatch is DAMAGED.<br/>no svgHash (pre-v2 manifest) ? structural<br/>check: non-empty, has &lt;svg, ends &lt;/svg&gt;"]
+        C6["a real truncated render and a zero-byte file<br/>both exit 1 now, under <b>either</b> manifest<br/>version - the committed regression proves it<br/>by damaging a genuine mmdc render"]
         C2["but returns 1 on the <b>FIRST</b> Markdown file<br/>still holding an unrendered fence :336-339,<br/>before any other file is examined.<br/>Asymmetric on purpose or not, the effect is<br/>that one fence hides the rest."]
         C3(["exit 1 - 'Run scripts/render_mermaid.py<br/>and commit the result.'"])
-        C4(["exit 0 - 'All N diagram(s) up to date.'"])
+        C4(["exit 0 - 'All N diagram(s) up to date.'<br/>printed <b>only</b> when nothing was unverified"])
+        C7(["exit 0 - 'N could not be content-verified'<br/>the unknown survives into the output<br/>instead of collapsing into C4"])
         C1 --- C2
+        C1 --- C5
+        C5 --- C6
     end
 
     MODE -->|yes| Verify
     C2 --> C3
+    C5 --> C3
+    C5 --> C7
     C1 --> C4
 
     subgraph Render["render() :182-201 - needs mmdc and headless Chromium"]
