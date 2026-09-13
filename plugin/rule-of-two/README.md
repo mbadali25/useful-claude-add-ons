@@ -61,15 +61,41 @@ for nothing.
 
 `scripts/rule_of_two.py` owns this, because it is exactly the kind of
 judgement that should not be left to a model mid-report. Coverage is an
-explicit enum with five values:
+explicit enum; read the values off the table rather than counting them here,
+because it grows each time an outcome turns out to have been hiding inside
+another one:
 
 | Coverage | Meaning | Headline |
 |---|---|---|
 | `TWO_CROSS_FAMILY` | Both ran, families resolved, families differ | two independent reviews; the Rule of Two held |
 | `TWO_SAME_FAMILY` | Both ran, same family | one perspective wearing two names; did NOT hold |
+| `TWO_FAMILY_UNVERIFIED` | Both ran, but a reviewer's recorded model id does not corroborate the alias beside it | the contradiction, quoted; the family is **not established** |
 | `TWO_FAMILY_UNKNOWN` | Both ran, a family would not resolve | **could not tell** - an unanswered question, not a passed check |
 | `ONE_REVIEW` | One ran | **THIS IS ONE REVIEW, NOT TWO**, and why the other did not run |
 | `NO_REVIEW` | Neither ran | nothing here has been checked |
+
+**Two names are recorded for one reviewer, and they are checked against each
+other.** The alias is what the command dispatched on; the model id is what the
+caller says was asked for, typed by hand into `/rule-of-two:review` step 3.
+Until 0.1.2 the report printed that id verbatim - "requested as `X`" - while
+the family came from the alias alone, so a mis-pasted `--model-id` named the
+wrong family's model on the page under a banner still saying the Rule of Two
+held. `verify_model_id` now resolves both. They must agree, and an id that
+resolves to no known family is a contradiction rather than a pass: unknown
+must never read as corroboration.
+
+**Downgraded, not refused.** A contradiction still produces a full report -
+both reviews, the banner naming exactly which two names disagree and what each
+resolved to, and the offending id left in its bullet rather than dropped,
+because the person who has to correct it needs to see the value they pasted.
+Refusing would throw away two real reviews over a typo and leave nothing on
+the page to fix it from, and this script reports every other degraded input
+rather than aborting on it - the report is how anyone finds out.
+
+An **absent** id is not a contradiction. Nothing is claimed about a name that
+was never recorded, the "requested as" clause is suppressed entirely when it
+is empty, and the Codex side records no id at all - so treating an absence as
+unverified would downgrade every report and make the outcome meaningless.
 
 `UNKNOWN` is a real family value, not a missing one, and it survives into
 every line derived from it. This repo's recurring bug is an unknown
@@ -80,8 +106,8 @@ family.
 
 The word "independent" appears in a rendered report **only** under
 `TWO_CROSS_FAMILY`. Not even in the negative: a reader skimming for the word
-finds it either way, so the other four outcomes phrase it as "cross-family"
-and never use the word at all. The suite asserts this.
+finds it either way, so every other outcome phrases it as "cross-family" and
+never uses the word at all. The suite asserts this, on each outcome.
 
 **The title is governed too, not just the banner.** The first draft rendered
 `# Rule of Two review` unconditionally and put the corrective banner
@@ -129,7 +155,10 @@ discover:
   orchestrator asked for, so the report says "alias `fable`, requested as
   `claude-fable-5-1`" rather than implying the provider was observed. The
   cross-family check is over *configured* identities. No amount of
-  prefix-table care fixes this; only a provider-attested model id would.
+  prefix-table care fixes this; only a provider-attested model id would. What
+  0.1.2 added is narrower and should not be read as more: the two names the
+  caller recorded are now checked against **each other**, which catches a
+  mis-paste, not a provider serving something else.
 - **Whether Codex will actually work.** `/rule-of-two:config` reports
   `codex_found`, which is `shutil.which` and nothing else. Authentication,
   whether the configured model still exists, and account entitlement all fail

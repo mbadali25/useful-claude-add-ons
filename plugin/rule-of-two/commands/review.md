@@ -125,6 +125,16 @@ produces.
      --out "$SCRATCH/claude-result.json"
    ```
 
+   **`--model-id` must be the id that belongs to the alias you just used**,
+   copied from the same section of the `config` payload - `pin` with
+   `pin_model_id`, `fallback` with `fallback_model_id`. Pasting the other
+   family's id is checked for now: the two are resolved to families and
+   compared, and a disagreement downgrades coverage to
+   `TWO_FAMILY_UNVERIFIED`, prints the contradiction in the banner, and
+   withdraws the Rule of Two name from the title. An id that resolves to no
+   known family does the same thing - unknown is not corroboration. Omitting
+   the flag is not an error; nothing is then claimed about the id.
+
    **`--ran` and `--failed` are mutually exclusive and one is required.** You
    must state the outcome; the helper will not infer it from the file being
    non-empty, because a file containing "dispatch failed: model unavailable"
