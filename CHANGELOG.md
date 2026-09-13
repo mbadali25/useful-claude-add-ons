@@ -4,6 +4,36 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Fixed
+
+- **`crew` 0.19.32: ruff flagged 36 deliberate re-exports, and one test failed
+  for running `/crew:verify`.** Two defects that only surface once something
+  actually runs the checks, which is how both survived: ruff is not in this
+  repo's CI, and the test needed a crew command to have been used.
+
+  `crew_state.py`'s `crew_guards` re-export block carries a
+  `pylint: disable=unused-import` and a comment saying why. Ruff does not read
+  pylint pragmas, so all 36 names were errors the moment anything ran
+  `ruff check .` — which a verification map's python rule is the first thing
+  here to do. Suppressed **per name**, and deliberately **not** with `__all__`:
+  ruff accepts `__all__` as proof of re-export, but it doubles as the module's
+  advertised public surface, and one listing only the `crew_guards` names would
+  declare `read_metrics`, `evaluate_triggers` and the rest private while every
+  caller spells them `crew_state.<name>`. Trading a lint error for a false
+  statement about the module is not a fix. Sabotage-verified: an unused
+  `import uuid` added to the same file still exits 1, so the suppression is
+  narrow — which is the whole argument for it.
+
+  `test_verify_json_really_is_ignored_here` asserted the wrong thing. Its
+  docstring says it fails if `.crew/verify.json` becomes **tracked**; what it
+  asserted was that the file is **absent from disk**. Those are different
+  claims, and `/crew:verify` is a command crew ships whose entire job is
+  writing that file — so the first time anyone ran it, crew's own suite went
+  red over a file crew had just been asked to create, pointing at a wording
+  question in `review.md` that had not changed. It now asserts not-tracked via
+  `git ls-files --error-unmatch`, verified to discriminate rather than merely
+  pass.
+
 ### Added
 
 - **`crew` 0.19.31: `/crew:change`, change requests into SDP, Jira or a file,
