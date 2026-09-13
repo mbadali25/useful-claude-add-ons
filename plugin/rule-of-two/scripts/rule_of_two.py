@@ -66,11 +66,22 @@ DEFAULT_CONFIG = {
     "codex": {
         "pin": "gpt-6-astra",
         "fallback": "",
-        "timeout_seconds": 900,
+        # Must stay comfortably under Claude Code's 600s Bash ceiling. The
+        # first release shipped 900, which is longer than the caller is
+        # allowed to wait: the harness killed the Bash call at 600s and the
+        # run was recorded as a TOOL failure, so the script never reached its
+        # own TimeoutExpired branch and never got to say "codex did not run".
+        # A timeout that outlives its caller cannot report anything. 480
+        # leaves ~2 minutes of headroom for the surrounding shell.
+        "timeout_seconds": 480,
     },
 }
 
 CONFIG_FILENAME = ".rule-of-two.json"
+
+# The ceiling this default is chosen against. Stated as a constant so the
+# suite asserts the relationship rather than a number someone has to remember.
+CALLER_TIMEOUT_CEILING_SECONDS = 600
 
 # Verdict detection. Their absence does not make a review "not run" - that
 # would be brittle - but it is surfaced, because a review with no verdict has
@@ -411,6 +422,26 @@ def coverage_is_satisfied(coverage: str) -> bool:
 # looks intermittent. Redirect from devnull and set an explicit timeout, and
 # map a timeout to "did not run" rather than "ran and found nothing".
 
+# Codex runs sandboxed, and the sandbox decides what kind of review it can
+# produce. `read-only` cannot write - which includes the temporary directories
+# a test suite creates - so Codex CANNOT do the rubric's step 3 ("run what is
+# runnable") and reviews the artifact statically. The Claude reviewer has a
+# Bash tool and no such restriction.
+#
+# That asymmetry is exactly the procedure-vs-judgement confound the rubric
+# warns about, so the choice is: equalise it, or report it. This plugin
+# REPORTS it. Handing Codex `workspace-write` would need a throwaway copy of
+# the tree (the live checkout must never be writable to a reviewer), and even
+# then it would not make the two methods equal, because the Claude side is not
+# sandboxed the same way. Paying for a copy to buy an asymmetry that survives
+# it is a bad trade; saying plainly what each reviewer could do is not.
+#
+# `render_method_note` puts this in the report, directly under the coverage
+# banner, whenever Codex ran. Changing this constant without changing that
+# note would be the "report says one thing, code does another" defect this
+# whole plugin exists to catch.
+CODEX_SANDBOX = "read-only"
+
 
 def codex_available() -> tuple[bool, str]:
     """Whether a `codex` executable is FOUND. Not whether it will work.
@@ -461,7 +492,7 @@ def run_codex(model: str, prompt: str, timeout_seconds: int,
     argv = [
         "codex", "exec",
         "-m", model,
-        "-s", "read-only",
+        "-s", CODEX_SANDBOX,
         "--skip-git-repo-check",
         "--output-last-message", last_message_path,
         prompt,
@@ -617,6 +648,83 @@ def render_banner(state: dict) -> str:
     )
 
 
+def render_method_note(state: dict) -> str:
+    """Say that the two reviewers were not allowed to work the same way.
+
+    Returns "" unless Codex actually ran - there is no asymmetry to report
+    when only one method was used, and gating on it keeps the ONE_REVIEW and
+    NO_REVIEW paths exactly as they were.
+
+    The rubric orders both reviewers to run what is runnable, and only one of
+    them can: Codex is dispatched under `-s read-only` (see CODEX_SANDBOX),
+    which cannot even create the temporary directory the test suite needs.
+    Leaving that unsaid would present two reports as methodologically equal
+    when they were not, and a difference between them would be ambiguous
+    between procedure and judgement with nothing on the page to say which.
+
+    Phrased as CAPABILITY, not observation. What is established is what each
+    reviewer was permitted to do. Whether the Claude reviewer actually ran
+    anything is not recorded anywhere, and this note must not imply it was.
+    """
+    if not state["codex"]["ran"]:
+        return ""
+    return (
+        f"**The two reviewers were not allowed to work the same way.** "
+        f"Reviewer B (Codex) ran under `-s {CODEX_SANDBOX}`, so it could not "
+        f"execute the artifact's tests or scripts and reviewed it statically; "
+        f"the rubric's step 3 was not available to it. Reviewer A was "
+        f"permitted to run them - whether it did is not recorded here. Read a "
+        f"difference between the two reports as possibly method rather than "
+        f"judgement."
+    )
+
+
+def _demote_headings(text: str, by: int = 2) -> str:
+    """Push a reviewer's own Markdown headings below the section holding them.
+
+    The report's own headings are H1 (title) and H2 (`## Reviewer A`), and a
+    review body is pasted in underneath. Reviews follow the rubric's section
+    order, so they arrive carrying `## Defects` - which lands at the SAME
+    level as the reviewer section that is supposed to contain it, breaking
+    the document outline and making the second reviewer's findings look like
+    a sibling of the first reviewer's.
+
+    This is deterministic, so it is a function rather than a line in the
+    rubric telling a model to type `###`. Rubric item 16 calls prose that
+    tells a model to compute something a function could compute a defect, and
+    it applies to this plugin too.
+
+    Fenced blocks are skipped: a `# comment` inside ``` is code, not a
+    heading, and moving it changes the reviewer's evidence.
+    """
+    if not isinstance(text, str) or by <= 0:
+        return text if isinstance(text, str) else ""
+    out: list[str] = []
+    fence = ""
+    for line in text.splitlines():
+        stripped = line.lstrip()
+        marker = stripped[:3]
+        if marker in ("```", "~~~"):
+            if not fence:
+                fence = marker
+            elif stripped.startswith(fence):
+                fence = ""
+            out.append(line)
+            continue
+        if fence:
+            out.append(line)
+            continue
+        match = re.match(r"^(#{1,6})(\s+\S.*)$", stripped)
+        if match:
+            # Markdown has no H7. Everything past H6 clamps there, which keeps
+            # the body inside its section even when the review nested deeply.
+            level = min(len(match.group(1)) + by, 6)
+            out.append("#" * level + match.group(2))
+            continue
+        out.append(line)
+    return "\n".join(out)
+
+
 def _log_tail(log: str, lines: int = 12) -> str:
     kept = [ln for ln in log.splitlines() if ln.strip()][-lines:]
     return "\n".join(kept)
@@ -633,6 +741,11 @@ def render_report(state: dict) -> str:
         render_banner(state),
         "",
     ]
+
+    method_note = render_method_note(state)
+    if method_note:
+        lines.append(method_note)
+        lines.append("")
 
     for label, side in (("Reviewer A (Claude)", claude),
                         ("Reviewer B (Codex)", codex)):
@@ -673,7 +786,9 @@ def render_report(state: dict) -> str:
                     "was asked - weigh it accordingly."
                 )
                 lines.append("")
-            lines.append(side["text"].strip())
+            # The body arrives with the rubric's own `## Defects` headings,
+            # which would sit at the same level as the `## {label}` above it.
+            lines.append(_demote_headings(side["text"].strip()))
         else:
             lines.append(f"_Did not run: {side['reason']}._")
             partial = side.get("text", "").strip()
@@ -871,7 +986,13 @@ def cmd_codex(args) -> int:
     result = run_codex(
         model=args.model or config["codex"]["pin"],
         prompt=prompt,
-        timeout_seconds=int(config["codex"].get("timeout_seconds", 900)),
+        # Read the default from DEFAULT_CONFIG, never from a literal. A second
+        # copy of the number here kept 900 reachable whenever the key was
+        # absent, so lowering only the table above would have fixed the
+        # configured path and left the defaulted one - the fix that is right
+        # about its own case and one rung short of its neighbour.
+        timeout_seconds=int(config["codex"].get(
+            "timeout_seconds", DEFAULT_CONFIG["codex"]["timeout_seconds"])),
         cwd=Path(args.repo_root),
     )
     payload = json.dumps(result, indent=2)
