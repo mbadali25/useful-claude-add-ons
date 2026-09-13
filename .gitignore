@@ -25,6 +25,11 @@ pnpm-debug.log*
 # --- Claude Code local state ---------------------------------------------
 .claude/settings.local.json
 .mcp.local.json
+# Agent worktrees: full nested checkouts of this repo, created per agent run.
+# Ignored by path rather than ignoring .claude/ wholesale -- that directory is
+# also where SHARED project config would live, and a blanket rule would drop a
+# future .claude/settings.json or .claude/agents/ out of git without a word.
+.claude/worktrees/
 
 # --- OS ------------------------------------------------------------------
 .DS_Store

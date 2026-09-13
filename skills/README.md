@@ -68,20 +68,6 @@ Nine new skills, taking the marketplace from 25 to 34.
 
 <!-- END skills/UPDATE.md -->
 
-## What's new
-
-Generated from `UPDATE.md` in this directory by `scripts/sync-updates.py`. Edit that file, not this block.
-
-<!-- BEGIN skills/UPDATE.md -->
-
-### Unreleased
-
-No standalone skills added this round. The 25 skills registered in
-[`.claude-plugin/marketplace.json`](../.claude-plugin/marketplace.json) are
-unchanged.
-
-<!-- END skills/UPDATE.md -->
-
 ## Overview
 
 | Skill | Category | What it does | Use cases | Invocation |

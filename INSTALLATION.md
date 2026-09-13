@@ -15,7 +15,7 @@ One script per OS. Both are idempotent (safe to re-run) and, by default, also bo
   ----------------------
     [x] Prerequisites: git, nodejs, npm, python3, pip3 (needs root or sudo)
     [x] Claude Code CLI (@anthropic-ai/claude-code) + PATH export + update check
-  > [x] This repo's marketplace + 28 of 28 skills  >
+  > [x] This repo's marketplace + 34 of 34 skills  >
     [x] Team plugins: superpowers, frontend-design, excalidraw-generator
     ...
     [ ] Strix AI pentesting CLI (needs Docker + an LLM API key)
@@ -41,7 +41,7 @@ One script per OS. Both are idempotent (safe to re-run) and, by default, also bo
 
 | Row | What → picks | Non-interactive equivalent |
 |---|---|---|
-| 3 | the 28 skills in this repo | `--skills` / `-Skills` |
+| 3 | the 34 skills in this repo | `--skills` / `-Skills` |
 | 4 | superpowers, frontend-design, excalidraw-generator | `--team` / `-Team` |
 | 6 | the 5 community plugins | `--community` / `-Community` |
 | 19 | this repo's own plugins (`crew`, `gizmoduck`, `localgpu`, `obsidian-vault`) | `--plugins` / `-Plugins` |

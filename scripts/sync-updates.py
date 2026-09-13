@@ -111,9 +111,25 @@ def demote(text: str) -> str:
 
 
 def splice(text: str, marker: str, body: str, where: str) -> str:
-    """Replace the content between a BEGIN/END marker pair."""
+    """Replace the content between a BEGIN/END marker pair.
+
+    A second pair for the same marker is a structural error, not a second
+    mirror. ``find`` returns the FIRST of each, so a duplicate pair below the
+    first is never rewritten, never compared, and never reported -- and because
+    the first block does update correctly, the run prints "already current" and
+    ``--check`` exits 0. That is how ``skills/README.md`` came to carry a second
+    block still announcing 25 skills while its source said 34, through CI, for
+    four days. Refuse instead: one source, one block per README.
+    """
     begin = f"<!-- BEGIN {marker} -->"
     end = f"<!-- END {marker} -->"
+    if text.count(begin) > 1 or text.count(end) > 1:
+        fail(
+            f"{where} has {text.count(begin)} {begin} and {text.count(end)} {end} "
+            "markers -- only the first pair would be rewritten and the rest would "
+            "silently keep stale content. Delete the duplicate block; the "
+            "surviving one is regenerated from the source."
+        )
     start = text.find(begin)
     stop = text.find(end)
     if start == -1 or stop == -1:
