@@ -10,6 +10,7 @@ One script per OS. Both are idempotent (safe to re-run) and, by default, also bo
 
 ### The menu
 
+<!-- claim: skills-count -->
 ```
   Select what to install
   ----------------------
@@ -41,7 +42,7 @@ One script per OS. Both are idempotent (safe to re-run) and, by default, also bo
 
 | Row | What → picks | Non-interactive equivalent |
 |---|---|---|
-| 3 | the 34 skills in this repo | `--skills` / `-Skills` |
+| 3 | the 34 skills<!-- claim: skills-count --> in this repo | `--skills` / `-Skills` |
 | 4 | superpowers, frontend-design, excalidraw-generator | `--team` / `-Team` |
 | 6 | the 5 community plugins | `--community` / `-Community` |
 | 19 | this repo's own plugins (`crew`, `gizmoduck`, `localgpu`, `obsidian-vault`) | `--plugins` / `-Plugins` |

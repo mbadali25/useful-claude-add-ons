@@ -328,6 +328,111 @@ def check_versions(entries, fail):
             )
 
 
+CLAIM_RE = re.compile(r"<!--\s*claim:\s*([a-z0-9-]+(?::[a-z0-9._-]+)?)\s*-->")
+SKILLS_RE = re.compile(r"(\d+)(?:\s+of\s+(\d+))?\s+skills\b")
+VERSION_ROW_RE = re.compile(r"^\|\s*\*\*Version\*\*\s*\|\s*([0-9][0-9.]*)")
+BIND_WINDOW = 12
+
+
+def check_self_claims(entries, fail):
+    """Verify the numbers this repo states about itself, where they are marked.
+
+    Prose drifts. `28 skills` in README and INSTALLATION stayed four days behind
+    a marketplace that had reached 34, and `plugin/PLUGINS.md`'s crew row sat at
+    0.16.22 through 37 releases, because no check compared either to the source
+    of truth beside it.
+
+    The check is keyed on an explicit marker and NOT on the shape of the text.
+    A bare `N skills` regex cannot tell the marketplace total from a plugin's
+    own bundle -- run across this repo it matched 32 places and was right about
+    none of them, because `17 skills` (crew's), `3 skills` (obsidian-vault's)
+    and `0 skills` are all true sentences about something else. A checker that
+    cannot say WHICH thing a number describes has to either accept every number
+    or reject correct ones, and both are worse than silence.
+
+    So: an unmarked number is deliberately not checked, and that silence is the
+    design rather than a gap. Marking a claim is how an author opts it in.
+
+    A marker binds to the first line at or after it that matches its claim
+    type, within BIND_WINDOW lines. Binding forward rather than requiring the
+    same line is what lets a claim inside a fenced code block be marked -- an
+    HTML comment inside the fence would render as literal text to every reader,
+    so the marker goes above the fence and reaches in. A marker that binds to
+    nothing is an error, not a skip: a claim whose target was edited away
+    should say so rather than quietly passing forever.
+
+    An unrecognised claim type is also an error. A marker naming a type this
+    function does not implement would otherwise collapse into "checked" while
+    nothing looked at it, which is the exact defect this check exists to catch.
+    """
+    skills = str(sum(1 for e in entries if e["source"].startswith("./skills/")))
+    versions = {}
+    for entry in entries:
+        source = entry["source"].lstrip("./")
+        manifest = os.path.join(ROOT, source, ".claude-plugin", "plugin.json")
+        if os.path.isfile(manifest):
+            try:
+                versions[entry["name"]] = json.loads(read(manifest))["version"]
+            except (ValueError, KeyError):
+                pass
+
+    for path in sorted(git("ls-files", "*.md").split()):
+        lines = read(os.path.join(ROOT, path)).splitlines()
+        for index, line in enumerate(lines):
+            for claim in CLAIM_RE.finditer(line):
+                kind = claim.group(1)
+                window = lines[index : index + BIND_WINDOW]
+
+                if kind == "skills-count":
+                    found = next(
+                        (m for m in (SKILLS_RE.search(w) for w in window) if m), None
+                    )
+                    if not found:
+                        fail(
+                            f"{path}:{index + 1}: claim 'skills-count' binds to nothing "
+                            f"within {BIND_WINDOW} lines - the number it marked is gone, "
+                            "so either restore it or delete the marker"
+                        )
+                        continue
+                    stated = [g for g in found.groups() if g is not None]
+                    if any(g != skills for g in stated):
+                        fail(
+                            f"{path}:{index + 1}: claims {'/'.join(stated)} skills, "
+                            f"but marketplace.json registers {skills}"
+                        )
+
+                elif kind.startswith("plugin-version:"):
+                    name = kind.split(":", 1)[1]
+                    if name not in versions:
+                        fail(
+                            f"{path}:{index + 1}: claim names plugin '{name}', which has "
+                            "no entry with a readable plugin.json in marketplace.json"
+                        )
+                        continue
+                    found = next(
+                        (m for m in (VERSION_ROW_RE.match(w) for w in window) if m), None
+                    )
+                    if not found:
+                        fail(
+                            f"{path}:{index + 1}: claim 'plugin-version:{name}' binds to "
+                            f"no '| **Version** |' row within {BIND_WINDOW} lines"
+                        )
+                        continue
+                    if found.group(1) != versions[name]:
+                        fail(
+                            f"{path}:{index + 1}: catalog says {name} is "
+                            f"{found.group(1)}, but {name}/.claude-plugin/plugin.json "
+                            f"says {versions[name]}"
+                        )
+
+                else:
+                    fail(
+                        f"{path}:{index + 1}: unknown claim type '{kind}'. A marker this "
+                        "checker does not implement would otherwise read as verified "
+                        "while nothing checked it. Implement it or remove the marker."
+                    )
+
+
 def check_hook_commands(entries, fail):
     r"""Every shell-form hook command survives the shell that will actually run it.
 
@@ -392,6 +497,7 @@ def main() -> int:
     check_docs(entries, fail)
     check_hook_commands(entries, fail)
     check_versions(entries, fail)
+    check_self_claims(entries, fail)
 
     skills = sum(1 for e in entries if e["source"].startswith("./skills/"))
     plugins = len(entries) - skills

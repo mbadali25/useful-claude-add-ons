@@ -25,6 +25,15 @@ row, `plugin/PLUGINS.md` for plugins, and both install scripts in the same order
 A partial registration is worse than none: the checker fails and nobody can tell which half was
 intended. Renaming or removing means the same places, in reverse.
 
+**A number this repo states about itself gets a marker, or it is not checked.** Write
+`<!-- claim: skills-count -->` or `<!-- claim: plugin-version:<name> -->` beside it and
+`check_self_claims` in `scripts/check-marketplace.py` verifies it against `marketplace.json` or that
+plugin's `plugin.json`. The marker binds to the first matching line within 12, so a claim inside a
+fenced code block is marked from the line above the fence. Unmarked numbers are deliberately not
+checked: `17 skills` is true of crew's bundle and false of the marketplace, and a checker that
+guesses which is which fails correct lines. That silence is asserted by
+`scripts/_test/self-claims.py`, so do not "improve" the check into inferring claims.
+
 ## Stop and ask - the conditions that should halt work
 
 - **Content change with no `version` bump.** `claude plugin update` compares the *declared version*,
