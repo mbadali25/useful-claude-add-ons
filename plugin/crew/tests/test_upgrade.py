@@ -404,6 +404,40 @@ def test_report_does_not_double_prefix_the_no_conflicts_line(tmp_path):
     assert "- none" in report
 
 
+def test_report_header_is_not_anchor_shaped(tmp_path):
+    """UPGRADE.md must not carry a line either anchor reader can match.
+
+    `_NOT_SUBSYSTEMS` excludes UPGRADE.md from `read_knowledge`, so an
+    anchor-shaped line here is read by NOTHING while looking machine-checked --
+    it can be reported as neither behind nor unresolvable. That is strictly
+    worse than a line that is plainly not an anchor, and it is the gap 0.19.13
+    left: that release made `unresolvable` its own reported value, but a line
+    no regex matches never reaches the reporting path at all.
+
+    Asserting on the regexes rather than on the literal text is the point. A
+    future edit that reintroduces `anchor: <sha>` in any accepted spelling --
+    `anchor: abc1234`, `%% anchor: repo@abc1234`, `Generated from repo@abc1234`
+    -- goes red here, while a harmless rewording of the prose does not.
+    """
+    root = crew_fixtures.make_repo(tmp_path, config={"tier": 0},
+                                   codemap={"auth": V1_MAP})
+    crew_upgrade.run(str(root), {})
+    report = (root / ".crew" / "codemap" / "UPGRADE.md").read_text(
+        encoding="utf-8")
+
+    for lineno, line in enumerate(report.splitlines(), start=1):
+        assert not crew_state._ANCHOR_RE.match(line), (
+            f"UPGRADE.md:{lineno} is read as a codemap anchor: {line!r}")
+        assert not crew_state._DIAGRAM_ANCHOR_RE.search(line), (
+            f"UPGRADE.md:{lineno} is read as a diagram anchor: {line!r}")
+
+    # And it still records WHICH build it compared against -- the fix must not
+    # be "delete the provenance", which would trade a misleading line for no
+    # line at all.
+    assert "graph build compared against:" in report
+    assert "not an anchor" in report
+
+
 def test_anchor_is_bumped_only_on_a_touched_file(tmp_path):
     root = crew_fixtures.make_repo(
         tmp_path, config={"tier": 0},

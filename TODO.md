@@ -555,29 +555,43 @@ claims to check, and say explicitly that refuting the brief is a valid and value
 outcome. A lane that believes its brief is a lane that can only find the bugs you
 already suspected.
 
-## Crew's agent count is wrong in three places, right in four
+## Crew's agent count is wrong in seven places and right in none
 
-`scripts/install-prerequisites.sh:859` and `scripts/install-prerequisites.ps1:843`
-both read:
+**Re-measured 2026-09-12 at `e7cc93a2`. Every figure below replaces one from the
+2026-09-06 pass, and the heading changed with them** — this entry used to read
+"wrong in three places, right in four".
 
-```
-crew                    - Virtual dev team: 11 agents, 21 commands, safety hooks
-```
-
-Actual on disk: **29 agents, 24 commands** (`ls plugin/crew/agents/*.md`,
-`ls plugin/crew/commands/*.md` — re-measure rather than trusting this line).
-
-The installer is not the only wrong site. Verified 2026-09-06 at `1f97e51c`:
+Actual on disk: **54 agents, 24 commands**. The 54 is `13` (`ROLE_TIERS`) `+ 40`
+(`SPECIALIST_ROLES`) `+ pm`, checked in both directions — no role named in code
+lacks an agent file, and no agent file is unreachable from the roster. Re-measure
+with `ls plugin/crew/agents/*.md` and `ls plugin/crew/commands/*.md` rather than
+trusting this line; that instruction is the only part of the old entry that
+survived contact with a second measurement.
 
 | Location | Says | Actual |
 |---|---|---|
-| `scripts/install-prerequisites.sh:859`, `.ps1:843` | `11 agents, 21 commands` | 29 / 24 |
-| `plugin/PLUGINS.md:153` | `Agents — 14, tiered plus the manager` | 29 |
-| `README.md:162` | `17 subagents` (its `24 slash commands` is correct) | 29 |
+| `scripts/install-prerequisites.sh:899`, `.ps1:855` | `11 agents, 21 commands` | 54 / 24 |
+| `plugin/PLUGINS.md:17` | `29 agents, 24 commands` | 54 / 24 |
+| `plugin/PLUGINS.md:153` | `Agents — 14, tiered plus the manager` | 54 |
+| `plugin/PLUGINS.md:454` | `24 commands and 29 agents` | 54 |
+| `README.md:165` | `50 subagents, 24 slash commands` | 54 |
+| `plugin/crew/README.md:1978` | `50 agents — 13 tiered, 36 specialists, and pm` | 54 = 13 + 40 + pm |
+| `.claude-plugin/marketplace.json` crew description | `29 ... (13 tiered, 15 domain specialists ...)` | 54 = 13 + 40 + pm |
 
-Correct in four places, so this is drift and not a convention:
-`.claude-plugin/marketplace.json`'s crew description, `plugin/PLUGINS.md:17`,
-`plugin/README.md:370`, `README.md:773` — all four read 29 agents, 24 commands.
+**The "right in four" claim has inverted, and that is the durable lesson here.**
+The 2026-09-06 entry named four places as correct: `marketplace.json`'s crew
+description, `plugin/PLUGINS.md:17`, `plugin/README.md:370` and `README.md:773`.
+None of them is a correct current-state claim today. Two were never current-state
+claims at all — `plugin/README.md:370` is a line inside the `### crew 0.15.1`
+changelog section, where "14 agents" is a true statement about 0.15.1 and not
+about now — and `README.md:773` is now an unrelated PowerShell fence.
+
+A finding that records which places are RIGHT acquires an expiry date the moment
+it is written, because nothing re-checks a claim that something is correct. The
+wrong sites at least get re-read when someone fixes them. This is the same shape
+as ["a correction that outlives the thing it corrected"](#the-seventh-a-correction-that-outlives-the-thing-it-corrected)
+above. If you record a correct-list again, record the command that regenerates
+it, not the list.
 
 **Why no check catches it.** `check_catalogs`, `check_menu_parity` and
 `check_group_parity` compare keys and booleans, never descriptive strings, so
@@ -607,6 +621,46 @@ whether the check that would have caught it is worth writing: the counts are
 derivable from `ls plugin/crew/agents/*.md` and `commands/*.md`, so a smoke check
 comparing the installer's advertised numbers against the directory contents is
 about ten lines and would cover every plugin's menu line, not just crew's.
+
+## The eighth: a re-derivation cannot be verified by the thing doing the re-deriving
+
+Found 2026-09-12, during the pass that re-anchored the five codemap notes.
+
+`.crew/codemap/crew.md` was re-derived from source and its header said so: "the
+live claims below were taken from the source at this anchor, not carried forward
+and re-pointed." A sweep afterwards — diff the new file against its previous
+version, flag every citation sitting on a **byte-identical** line — found **33
+citations that had simply been carried forward**. The header was true of the
+paragraphs that were rewritten and false of the ones that were not, and nothing
+in the file distinguished them to a reader.
+
+Twelve of the 33 were wrong, and wrong by hundreds of lines rather than by one:
+`TRIGGERS` was cited at `crew_state.py:486`, a blank line inside
+`archive_stale_handoff`'s docstring, and is at `:833`. `DISPATCH_PATH` was cited
+at `:1048`, a `hashlib.blake2b` call, and is at `:1592`.
+
+**The 21 that were correct are what makes this dangerous.** Those files had not
+moved between the two anchors, so a spot check would have landed on a correct
+citation about two times in three and concluded the file was fine.
+
+This is trap five's shape — the check and the thing checked sharing a source —
+but sharper, because here the *claim* and the *evidence for it* were the same
+act. Re-reading your own re-derivation cannot find the paragraphs you did not
+re-derive: every paragraph you actually rewrote reads correctly when you check
+it, and the ones you skipped are invisible from inside the work precisely
+because you never looked at them.
+
+**The reusable form.** After any refresh of a document that cites code, diff it
+against the version it replaced and treat every surviving line carrying a
+`path:line` as unverified until something independent resolves it. Those are
+exactly the lines the refresh did not touch. The cheap version of the check —
+does every citation name a file that exists, with the cited line in range and
+not blank — costs about twenty lines and catches the whole class, including the
+two of the twelve that pointed at blank lines.
+
+It nearly was not run at all. Every citation had been verified *before* being
+written and nothing verified them after, and the pass was one step from being
+declared done.
 
 ## The staleness triggers are unsatisfiable for tracked artifacts
 

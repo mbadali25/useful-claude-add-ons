@@ -655,7 +655,20 @@ def _report(status, head, results, notes):
         "# Upgrade report",
         f"status: {status}",
         schema_line,
-        f"graph anchor: {head or 'unknown'}",
+        # NOT an `anchor:` line, and deliberately not shaped like one.
+        # `_NOT_SUBSYSTEMS` excludes UPGRADE.md from `read_knowledge`, so a
+        # line `_ANCHOR_RE` matched would be read by nothing while looking
+        # machine-checked. That third state -- anchor-shaped, unreadable, and
+        # eventually dead -- is worse than either honest one, and it is the
+        # category 0.19.13 did not cover: it made `unresolvable` a reported
+        # value of its own, but a line no regex matches cannot be reported at
+        # all. This file is a report of one run, not a map that gets
+        # re-verified, so it says which graph build it compared against and
+        # says plainly that the sha is not an anchor.
+        f"graph build compared against: {head or 'unknown'}",
+        "  (not an anchor: this file is a one-time report, not a subsystem map,",
+        "   and nothing re-verifies it. The sha records what this run read; it",
+        "   may not resolve later, and a squash merge is enough to kill it.)",
         "",
         "Nothing below was applied automatically. Conflicts are the map and",
         "the graph disagreeing, and either can be wrong: the graph misses",

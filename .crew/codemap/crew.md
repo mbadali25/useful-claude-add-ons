@@ -322,26 +322,34 @@ that exists only in one clone's untracked state reaches nobody) holds only
 **declared** records — `source: "declared"`, written only by
 `declare_endpoint` (`plugin/crew/hooks/scripts/crew_endpoints.py:254`), the
 one function allowed to write that source, the only writer of the file at all,
-and the one entry point for turning a researched candidate into a fact.
+and the one entry point named in `plugin/crew/agents/pm.md:286` and
+`plugin/crew/commands/work.md:63-64` for turning a researched candidate into a
+fact. Both still invoke it through the `crew_state.py` CLI
+(`crew_state.py --root . --declare-endpoint …`) — the *implementation* moved
+modules, the *command line* did not, which is why neither file needed a change
+in the split.
 
-**Corrected here.** The previous pass said that entry point was named in two
-files: a line in `plugin/crew/agents/pm.md` (cited at a line number that is now
-blank - deliberately not repeated here, because a checker walking these
-citations cannot tell a quoted wrong one from a broken one) and
-`plugin/crew/commands/work.md:64`. Only the second survives: `plugin/crew/commands/work.md:63-64` still spells out
-`crew_state.py --root . --declare-endpoint …`, but `pm.md` names the declare
-path **nowhere**. Its single remaining mention of endpoints is the trigger row
-at `plugin/crew/agents/pm.md:286`, which tells the pm to send `gizmoduck:scan`
-for a declared endpoint and nobody for a candidate - it describes what to do
-with a declaration, never how one is made. So the pm agent is told to act on
-declared endpoints without being told what declares them; the instruction lives
-only in `work.md`, which the pm does not read. That gap is stated, not fixed
-here - it is a change to a shipped agent file and belongs in its own commit with
-its own version bump.
+**A false correction stood here from 2026-09-12 until later the same day, and
+the retraction is kept rather than deleted because the way it was made is worth
+more than the claim was.** This note asserted that `pm.md` named the declare
+path **nowhere** — that the pm agent was told to act on declared endpoints
+without being told what creates one. It is not true. `plugin/crew/agents/pm.md:286`
+spells out the full command, flag included, and has since `b7b7101d`.
 
-It still runs through the `crew_state.py` CLI: the *implementation* moved
-modules, the *command line* did not, which is why `work.md` needed no change in
-the split.
+The error came from reading that line through a print truncated to about 115
+characters. `pm.md:286` is a single table row roughly 700 characters long, and
+`--declare-endpoint` sits past the cutoff. Absence from the *output* was read as
+absence from the *file*, and the finding was then reported twice and written
+into this note as a correction.
+
+That is the same failure as the 33 carried-forward citations recorded below, and
+it happened in the pass that found them: a conclusion drawn from a partial view
+of the evidence, stated with the confidence of a complete one. The check that
+settles it takes one line — count the exact string in the whole file
+(`open(p).read().count("--declare-endpoint")` returns 1) — and it was available
+the whole time. **When a claim is that something is absent, search the file, not
+a rendering of it.** A truncating pretty-printer is a lossy view, and every
+`[:110]` in a verification script is a place where absence can be manufactured.
 
 Ids are minted from a sequence counter persisted alongside the records
 (`nextSeq`, not `len(records) + 1`, which collides the moment a record is
