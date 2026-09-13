@@ -137,7 +137,10 @@ out="$(run_summary --plugins crew --non-interactive)"
 # like --team below narrows selection within its own catalog. N is read from
 # PLUGIN_KEYS rather than written out, because a hardcoded count turns every
 # newly registered plugin into a failure in this file - which is the one place
-# a reader would not think to look for it.
+# a reader would not think to look for it. Reading it from PLUGIN_KEYS means
+# this case no longer independently checks the printed number; that property
+# belongs to check-marketplace.py's check_catalogs, which compares PLUGIN_KEYS
+# against marketplace.json. This case checks that the row was selected at all.
 case "$out" in *"This repo's plugins: 1 of $(group_count PLUGIN)"*) got=yes ;; *) got=no ;; esac
 check "--plugins crew puts repo-plugins in the install list" yes "$got"
 out="$(run_summary --plugins none --non-interactive)"
