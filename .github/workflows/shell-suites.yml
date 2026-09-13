@@ -1,0 +1,36 @@
+name: Shell suites (skills)
+
+# push alone tests the branch tip, never the merge result a PR would produce.
+# Matches marketplace.yml and mcp-servers.yml, which already declare both.
+on: [push, pull_request]
+
+# New file, not a pattern match: before this there was NO workflow in this repo
+# that ran a bash-driven suite. pytest-crew.yml runs pytest and cannot collect a
+# `.sh`, so these two suites -- both committed, both green -- had never once been
+# executed by CI. A regression suite CI never runs is a check that has never been
+# shown to fail.
+jobs:
+  shell:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          # doc-builder's checklist.sh resolves python3/python/py itself and
+          # fails loudly if none is on PATH. It runs build_report.py, whose
+          # HTML path is stdlib-only -- nothing in requirements.txt (python-docx,
+          # pywin32, PyMuPDF, Pillow, numpy) is imported on the way to the .html
+          # this suite inspects, so there is no pip step here on purpose.
+          python-version: "3.13"
+      # Each suite is its own step so a failure names which one failed in the
+      # job summary rather than collapsing into one red "run the suites" line.
+      # Both exit non-zero on failure and create nothing outside their own
+      # `mktemp -d`; neither reads credentials or opens a socket. bitbucket's
+      # points merge_gate.sh at _test/stub_bb.sh through BB_CMD, so bb.sh and
+      # BITBUCKET_* are never touched.
+      - name: bitbucket -- merge_gate dry-run checks
+        # jq is preinstalled on ubuntu-latest; merge_gate.sh exits 1 with
+        # "jq is not on PATH" rather than silently skipping if that changes.
+        run: bash skills/bitbucket/scripts/_test/merge_gate.sh
+      - name: doc-builder -- emitted-report checklist
+        run: bash skills/doc-builder/scripts/_test/checklist.sh
