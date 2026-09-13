@@ -38,6 +38,10 @@ with the error text verbatim.
 - If `requireHuman` is set, show me the sha, the diff summary, and what the last
   production promotion was, then wait for me to say go. Do not proceed on
   silence.
+- **The Bitbucket merge gate**, if this repo has one. See
+  `## The Bitbucket merge gate` below - it runs here, before gate 2. When
+  `bitbucket.mergeGate.enabled` is `false`, which is the shipped default, that
+  section does not exist and there is nothing to do or to report.
 - **The source tree is reconciled against what the target is actually
   running.** A branch that was never reconciled will roll the environment
   backwards: an on-box hotfix, a config value changed during an incident, a
@@ -80,6 +84,109 @@ the actual numbers - error count, alarm state, queue depth - not "looks clean".
 A deploy that moved bytes successfully and broke the application looks identical
 to a good one until this gate runs.
 
+## The Bitbucket merge gate
+
+This step runs inside gate 1, before anything deploys. It reads three keys -
+`bitbucket.mergeGate.enabled`, `.branch` and `.preset`, documented in
+`plugin/crew/CONFIG.md` §8. Read them through `/crew:config` rather than out of
+`.crew/config.json`, because a machine-global file can set all three and the
+repo file would not show it.
+
+**`enabled: false` - the shipped default - means do nothing at all.** No
+`merge_gate.sh` subcommand, no Bitbucket API call, not even `export`. It does
+**not** mean "apply the disabled preset": `disable` deletes branch
+restrictions, and that is the opposite action against a live repo from the one
+a `false` in a config file expresses. A repo that never asked crew for a gate
+keeps whatever restrictions its owner made by hand. There is nothing to report
+in this case - say nothing and move to gate 2.
+
+Everything below is what `enabled: true` means.
+
+**The script belongs to another marketplace entry. Reference it, never
+reimplement it.** The gate is `skills/bitbucket/scripts/merge_gate.sh`, from
+the `bitbucket` skill, which crew does not bundle. If that script is not on
+this machine, this is a **stop** - the same shape as an absent `rollback` key,
+not a warning to walk past. Say "`bitbucket.mergeGate.enabled` is true and the
+`bitbucket` skill is not installed, so the merge gate could not be checked",
+name the two fixes (install `bitbucket`, or set `enabled: false`), and stop.
+Do not hand-roll a `branch-restrictions` API call, and do not let "could not
+check" become "checked, and fine" - that collapse is the bug this repo keeps
+rediscovering.
+
+**`branch` binds to one flag, and `null` means ask:**
+
+| `bitbucket.mergeGate.branch` | What promote passes |
+|---|---|
+| `null` (the default) | no `--branch` at all - the script resolves `.mainbranch.name` from the Bitbucket API (`skills/bitbucket/scripts/merge_gate.sh:198-202`) |
+| a string, e.g. `"release/*"` | `--branch release/*`, verbatim |
+
+If the API has no `.mainbranch.name` the script dies asking for `--branch`
+(`skills/bitbucket/scripts/merge_gate.sh:202`). Relay that sentence and stop.
+Never substitute `main` yourself: on a repo still on `master`, or a Gitflow
+`develop`, a gate on `main` looks configured and watches a branch nobody merges
+into.
+
+One exception, which the script prints itself: `--branch` **is ignored** with
+`--from-export` (`skills/bitbucket/scripts/merge_gate.sh:464`), because each
+exported object carries its own scope. Do not report a restore as having been
+scoped to the configured branch.
+
+**`preset` is wired to nothing, and promote must not pretend otherwise.**
+`merge_gate.sh` has no `--preset` flag. The preset a bare `enable` applies is
+one hardcoded JSON literal, `PRESET` at
+`skills/bitbucket/scripts/merge_gate.sh:65`, and no flag selects it. So
+`bitbucket.mergeGate.preset` changes nothing today whatever it holds. Whenever
+you show an `enable` command, say that in the same breath - otherwise the
+`"standard"` sitting in the config reads as a choice that was honoured.
+`CONFIG.md` §8 records why the key is left unwired rather than bound to that
+literal.
+
+### Nothing changes without a yes at that moment
+
+**Config is intent. It is not consent.** `enabled: true` authorises promote to
+look; it authorises no write. Before any invocation that changes the live repo,
+print the exact command - script path, subcommand, workspace, repository and
+every flag resolved from config - and wait. Do not proceed on silence. This is
+the standing rule and it does not move for a promotion that is otherwise green.
+
+The two write subcommands do not preview the same way, and the difference is
+the point:
+
+- **`disable`** takes `--dry-run`
+  (`skills/bitbucket/scripts/merge_gate.sh:317`). Run it, show the plan it
+  prints, then wait for the yes. `disable` removes protections; it is the
+  destructive direction.
+- **`enable`** has **no `--dry-run`**. `cmd_enable` parses `--branch` and
+  `--from-export` and rejects everything else
+  (`skills/bitbucket/scripts/merge_gate.sh:430-439`). The echoed command is the
+  entire preview, so say so when you ask - nobody should read that yes as
+  confirming a dry run that never happened.
+
+Under promote's own `--dry-run`, this step prints the command it would run and
+runs **nothing** - `export` included, which is a real API call and needs
+`repository:admin` exactly as a write does.
+
+**Never `disable` and then a bare `enable`.** `disable` removes more kinds than
+`PRESET` creates - `restrict_merges` and `require_no_changes_requested` among
+them (`skills/bitbucket/SKILL.md:123-126`) - so the pair silently drops whatever
+those were. The only restore is `enable --from-export <the file disable wrote>`.
+Keep that export and name its path in the promotion row.
+
+### Relay the script's outcomes; do not re-summarise them
+
+Three of its exits are not "failed", and flattening them loses the part the
+reader needs (`skills/bitbucket/scripts/merge_gate.sh:30-35`):
+
+- **exit 3 - scope undetermined, nothing was deleted.** Restrictions can be
+  scoped by a `branch_type` from the branching model instead of a glob, and the
+  script refuses to guess which types cover your branch. Quote it and stop. Do
+  not pick a `--branch-type` on my behalf.
+- **exit 4 - one or more writes failed.** The live repo is now **partially**
+  changed. Say which kinds landed and which did not; "failed" on its own reads
+  as "nothing happened", which is false.
+- **`not-available-on-this-plan`** on the three Premium-only kinds is its own
+  outcome - neither applied nor failed. Report it as itself.
+
 ## After
 
 Append one row to `.work/PROMOTIONS.md` with the real result of every gate,
@@ -117,7 +224,10 @@ deploy nobody can audit.
 and that the soak was really waited out. The same goes for the two gate-1/gate-2
 checks added above: the hook cannot reconcile the source tree against the live
 artifact, and it cannot tell a green run from a green run that skipped its
-deploy job. Those are prose, and prose only holds if you run it. A hook fires before a command and after
+deploy job. **The Bitbucket merge gate section is prose too** - no hook fires on
+`merge_gate.sh`, nothing checks that an `enabled: true` was honoured, and
+`promote-gate.sh` does not read `bitbucket.mergeGate` at all. Those are prose,
+and prose only holds if you run it. A hook fires before a command and after
 a turn; it cannot watch the middle. The row you append is a claim, and the only
 thing that makes it worth anything is that it is written honestly - **including
 the failures**. A promotions log with no failures in it is a log nobody is

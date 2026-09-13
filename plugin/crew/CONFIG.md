@@ -408,7 +408,7 @@ only statement of intent in the repo:
 
 ### A correction to the docstring
 
-`default_global_config()`'s docstring (`crew_config.py:394`) says
+`default_global_config()`'s docstring (`crew_config.py:445-447`) says
 `mergeGate.branch` "stays null in both layers because the branch is [a
 per-checkout fact]". Measured: `is_global_path("bitbucket.mergeGate.branch")`
 returns **True**, and `plan_global_write` accepts it. The docstring is
@@ -416,10 +416,50 @@ describing the **default value**, not settability. A global file may set that
 branch for every repo on the machine, which is very likely not what the
 docstring's reasoning wants.
 
-### All three keys have no consumer
+### The consumer, and what each default means
 
-See §9. `skills/bitbucket/scripts/merge_gate.sh` — the script that would apply a
-merge gate — does not read crew config at all.
+`/crew:promote` is the first consumer. `commands/promote.md`'s
+`## The Bitbucket merge gate` section reads `enabled` and `branch` and turns
+them into flags for `skills/bitbucket/scripts/merge_gate.sh`.
+
+**That script still does not read crew config at all**, and the sentence this
+subsection used to carry stays true: the *command* does the reading and passes
+flags. Same shape as `crew-house-style` passing `--brand` to doc-builder — the
+other entry's interface is referenced, never reimplemented, and crew owns no
+part of it.
+
+§9's rule is that whoever writes the first consumer decides what the default
+**means**, in the same change. That decision, per key:
+
+**`enabled: false` means promote does nothing at all** — no `merge_gate.sh`
+subcommand, no Bitbucket API call, not even the read-only `export`. Because
+`false` and "apply the disabled state" are opposite actions against a live
+repo: `disable` deletes branch restrictions, so reading the shipped default as
+an instruction would strip protections from every repo that never asked crew
+for a gate. A default may not be the thing that removes a protection. The only
+safe reading of "off" is silence.
+
+**`branch: null` means promote passes no `--branch` and lets the script ask the
+API.** `merge_gate.sh:198-202` resolves `.mainbranch.name`, and `:202` dies
+asking for `--branch` when it cannot. Because the alternative — promote
+substituting `main` — is wrong, and silently wrong, on a repo still on `master`
+or on a Gitflow `develop`: the gate would look configured and watch a branch
+nobody merges into. The script dying is the better outcome, because it keeps
+"could not tell" a visible failure rather than an unknown wearing the label of
+an answer.
+
+**`preset: "standard"` means nothing today, and promote says so rather than
+binding it.** `merge_gate.sh` has **no `--preset` flag**. The preset a bare
+`enable` applies is one hardcoded JSON literal, `PRESET` at
+`merge_gate.sh:65`, and nothing selects it. Two moves were available and both
+are wrong. Letting `"standard"` quietly mean "whatever `PRESET` holds" invents
+a binding: the word would read as a value that was honoured, and would go on
+reading that way after `PRESET` changed underneath it — §9's own trap, one
+layer out. Adding the flag is a change to `skills/bitbucket`, a separate
+marketplace entry with its own version and its own regression suite, so it is a
+different diff and not this one. So the key stays unwired, promote states at
+the point it shows an `enable` command that the key selects nothing, and
+`preset` stays on §9's list until a `--preset` flag exists to bind it to.
 
 ---
 
@@ -430,12 +470,15 @@ expensive bug: `docs.theme` had no consumer for four releases, shipped
 `"neutral"` on a premise nobody had tested, and cost a mandatory one-shot
 migration in `crew_upgrade.py` to undo (§7).
 
-**Eight keys are in that shape today.** Each was checked by an exhaustive grep
-over every tracked file for the key name, then by reading each hit.
+**Six keys are in that shape today.** Each was checked by an exhaustive grep
+over every tracked file for the key name, then by reading each hit. Re-measure
+it that way rather than trusting the number: this list was eight until
+`/crew:promote` became the first consumer of `bitbucket.mergeGate.enabled` and
+`.branch`, and it will move again the same way.
 
 **They are being left exactly as they are, defaults included, and that is a
 decision rather than an oversight.** Nothing reads them, so no behaviour is
-wrong today. Flipping the six non-null defaults to `null` would be a second
+wrong today. Flipping the five non-null defaults to `null` would be a second
 mandatory `upgradeNeeded` prompt for every crew repo on every machine, inside
 one week, in exchange for no change in behaviour at all.
 
@@ -459,9 +502,7 @@ settling the default in the same diff.
 
 | Key | Every reference it has |
 |---|---|
-| `bitbucket.mergeGate.enabled` | `crew_upgrade.py:151` (writes it), `crew-setup/SKILL.md:157` (sample JSON) and `:226` (rationale), both templates, `tests/test_crew_config.py` + `tests/test_upgrade.py` (assert the default and the layering) |
-| `bitbucket.mergeGate.branch` | as above, plus `crew_config.py:394` (a docstring, and see §8) |
-| `bitbucket.mergeGate.preset` | as above |
+| `bitbucket.mergeGate.preset` | `crew_upgrade.py:151` (writes it), `crew-setup/SKILL.md:157` (sample JSON) and `:226` (rationale), both templates, `tests/test_crew_config.py` + `tests/test_upgrade.py` (assert the default and the layering). `commands/promote.md` **names it in order to say it selects nothing** — there is no `--preset` flag to bind it to (§8) |
 | `graph.enabled` | `crew_upgrade.py:48` (writes it), `crew-graph/SKILL.md:165` (a table describing it) |
 | `graph.tool` | as above, `crew-graph/SKILL.md:166` — which reads "Always `\"graphify\"` today" |
 | `graph.mode` | as above, `crew-graph/SKILL.md:168` — "Always `\"code-only\"` today" |
@@ -475,9 +516,12 @@ for `get("graph")` and `["graph"]`: the other hits are `crew_state.py:2646` and
 `read_knowledge` builds, not the config block — and `crew_upgrade.py:335-343`,
 which drops the removed `obsidian` sub-block.
 
-The `bitbucket` block is read by nothing outside `tests/`. Verified the same
-way, grepping for `get("bitbucket")` and `["bitbucket"]` across every tracked
-file.
+The `bitbucket` block is read by no crew **code** — verified the same way,
+grepping for `get("bitbucket")` and `["bitbucket"]` across every tracked file,
+whose only hits are `crew_config.py:374` and `:498` writing the defaults in.
+Its consumer is prose: `commands/promote.md` (§8), with a committed regression
+test in `tests/test_promote_merge_gate.py`. `preset` is on this list because
+promote names it only to say it binds to nothing.
 
 `jira.project` is the one on this list that most looks like it should work.
 `/crew:jira-sync` gates on `tracker == "jira"` (`commands/jira-sync.md:11`) and
@@ -487,11 +531,11 @@ crew consumes neither. `jira.cloudId` is counted in §12.3 rather than here,
 because being undeclared is the larger of its two problems.
 
 **What this does and does not say.** It says: nothing in this repository today
-reads these eight values to decide anything, so changing one changes nothing.
+reads these six values to decide anything, so changing one changes nothing.
 It does **not** say they are unused — a consumer may live in a tool outside this
 repo, or be planned. It also does not say they should be removed; `docs.theme`'s
 history says the expensive move is shipping a *non-null* default for a key with
-no consumer, and six of these seven default to `false`, `"graphify"`,
+no consumer, and five of these six default to `true`, `false`, `"graphify"`,
 `"code-only"` or `"standard"` — non-null values nobody has ever exercised.
 
 ### Keys whose only consumer is prose
@@ -505,6 +549,7 @@ them:
 | `sdp.portal`, `sdp.noteVisibility`, `sdp.closeOnDone` | `commands/sdp-sync.md:103`, `:63`, `:85` |
 | `secondOpinion.provider`, `.sendsCode`, `.keyEnv` | `agents/planner.md:50` and `:54`, `commands/plan.md:21`, `skills/crew-providers/SKILL.md:96` |
 | `docs.reportTheme` | `skills/crew-house-style/SKILL.md:66`, with a committed regression test in `tests/test_docs_routing.py:132-165` that binds it to the findings-report genre |
+| `bitbucket.mergeGate.enabled`, `.branch` | `commands/promote.md`, `## The Bitbucket merge gate` — the flags it passes to `skills/bitbucket/scripts/merge_gate.sh`, with a committed regression test in `tests/test_promote_merge_gate.py`. `.preset` is **not** here: see §8 and §9 |
 | `pm.maxDispatches` | `agents/pm.md:396` ("Stop after `pm.maxDispatches` roles in one pass"). Also coerced to `int` at `crew_state.py:2727` |
 
 ---
@@ -671,7 +716,7 @@ change with its own review. Item 3 is the one that affects behaviour.
    existing config and says so, and `crew-graph/SKILL.md:172-174` states the
    removal correctly.
 
-2. **`crew_config.py:394`**, on `bitbucket.mergeGate.branch` — see §8. The
+2. **`crew_config.py:445-447`**, on `bitbucket.mergeGate.branch` — see §8. The
    docstring's "stays null in both layers" describes the default value, and
    reads as a statement about settability, which it is not. Still open: it is a
    comment, and correcting it is a change to `crew_config.py` rather than to
@@ -714,7 +759,7 @@ change with its own review. Item 3 is the one that affects behaviour.
 
 - **Consumer citations are the fallible part.** They were found by grep, then
   each one read. A key read through a variable rather than a literal would be
-  missed. The seven "no consumer found" entries in §9 were each re-checked by an
+  missed. The six "no consumer found" entries in §9 were each re-checked by an
   exhaustive grep over every tracked file for the key name, reading every hit —
   that is the strongest check made here, and it is still a grep.
 - **Line numbers move.** Grep the expression, not the number.
