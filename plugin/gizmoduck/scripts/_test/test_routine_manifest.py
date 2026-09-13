@@ -114,7 +114,7 @@ def test_report_header_can_restate_the_authorization_statement(fixture):
     # spec section 8: "The report header restates it" - so the full string,
     # not just a truthy flag, must survive parsing unchanged.
     m = routine.load_manifest(fixture("manifest-valid.yaml"))
-    assert m.authorized_by.startswith("THDDEV-0000")
+    assert m.authorized_by.startswith("ACME-0000")
 
 
 # ---------------------------------------------------------------------------

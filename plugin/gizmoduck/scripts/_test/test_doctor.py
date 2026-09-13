@@ -1,5 +1,5 @@
 """Tests for gizmoduck.py's `doctor` command, specifically the NVD_API_KEY
-report added for the THDDEV multi-scanner bootstrap work (2026-09-10 plan
+report added for the ACME multi-scanner bootstrap work (2026-09-10 plan
 Task 20).
 
 dependency-check's first run downloads the entire NVD CVE corpus; without an

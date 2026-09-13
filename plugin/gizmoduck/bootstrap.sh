@@ -4,7 +4,7 @@
 # Linux / WSL Ubuntu 24.04.
 #
 # Each tool installs independently: a failure in one does not stop the rest
-# (THDDEV multi-scanner routine work, 2026-09-10 plan Task 20). The ONE
+# (ACME multi-scanner routine work, 2026-09-10 plan Task 20). The ONE
 # exception is the Nuclei template download, which still aborts the script -
 # see update_nuclei_templates() below for why.
 #

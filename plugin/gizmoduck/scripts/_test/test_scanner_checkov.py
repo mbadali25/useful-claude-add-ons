@@ -18,7 +18,7 @@ import pytest
 from scanners import base, checkov
 
 
-def _parse(fixture, name="thd-processors-terraform"):
+def _parse(fixture, name="acme-processors-terraform"):
     return checkov.parse(str(fixture("checkov.json")), name)
 
 
@@ -115,17 +115,17 @@ def test_passed_checks_never_become_findings(fixture):
 # --- parse(): single-object shape, real free-tier (severity null) -------
 #
 # checkov-single.json is a byte-real capture (checkov 3.3.17,
-# `-d terraform/thd-processors`, only the terraform framework matched, so
+# `-d terraform/acme-processors`, only the terraform framework matched, so
 # checkov collapsed to the single-object shape rather than an array;
 # trimmed to 2 failed_checks + 1 passed_check) - captured 2026-09-10.
 
 def test_single_object_shape_is_accepted(fixture):
-    findings = checkov.parse(str(fixture("checkov-single.json")), "thd-processors")
+    findings = checkov.parse(str(fixture("checkov-single.json")), "acme-processors")
     assert len(findings) == 2
 
 
 def test_single_shape_null_severity_gets_the_default_and_is_flagged(fixture):
-    findings = checkov.parse(str(fixture("checkov-single.json")), "thd-processors")
+    findings = checkov.parse(str(fixture("checkov-single.json")), "acme-processors")
     for f in findings:
         assert f["severity"] == 2
         assert f["severity_name"] == "medium"
@@ -133,7 +133,7 @@ def test_single_shape_null_severity_gets_the_default_and_is_flagged(fixture):
 
 
 def test_single_shape_passed_checks_are_ignored(fixture):
-    findings = checkov.parse(str(fixture("checkov-single.json")), "thd-processors")
+    findings = checkov.parse(str(fixture("checkov-single.json")), "acme-processors")
     ids = {f["template_id"] for f in findings}
     assert "checkov:CKV_AWS_66" not in ids  # a passed_checks entry
 
@@ -147,7 +147,7 @@ def test_single_shape_passed_checks_are_ignored(fixture):
 # rather than captured (see its own "_synthetic_note").
 
 def test_populated_severity_and_legacy_alias_are_recognized(fixture):
-    findings = checkov.parse(str(fixture("checkov-populated-severity.json")), "thd-iam")
+    findings = checkov.parse(str(fixture("checkov-populated-severity.json")), "acme-iam")
     by_id = {f["template_id"]: f for f in findings}
 
     critical = by_id["checkov:CKV_AWS_100"]
@@ -162,7 +162,7 @@ def test_populated_severity_and_legacy_alias_are_recognized(fixture):
 
 
 def test_populated_severity_passed_checks_are_ignored(fixture):
-    findings = checkov.parse(str(fixture("checkov-populated-severity.json")), "thd-iam")
+    findings = checkov.parse(str(fixture("checkov-populated-severity.json")), "acme-iam")
     ids = {f["template_id"] for f in findings}
     assert "checkov:CKV_AWS_1" not in ids
 
@@ -332,7 +332,7 @@ def test_is_available_false_when_binary_missing(monkeypatch):
 
 def test_run_returns_none_path_and_a_toolresult_when_binary_missing(monkeypatch, tmp_path):
     monkeypatch.setattr(checkov.base, "which", lambda name: None)
-    raw_path, result = checkov.run("/repo/terraform/thd-processors", str(tmp_path), {})
+    raw_path, result = checkov.run("/repo/terraform/acme-processors", str(tmp_path), {})
     assert raw_path is None
     assert isinstance(result, base.ToolResult)
 
@@ -352,7 +352,7 @@ def test_run_builds_argv_and_writes_stdout_verbatim(monkeypatch, tmp_path):
     monkeypatch.setattr(checkov.base, "run_tool", fake_run_tool)
 
     outdir = tmp_path / "out"
-    raw_path, result = checkov.run("/repo/terraform/thd-processors", str(outdir), {})
+    raw_path, result = checkov.run("/repo/terraform/acme-processors", str(outdir), {})
 
     assert raw_path == str(outdir / "checkov.json")
     assert result.returncode == 1
@@ -362,7 +362,7 @@ def test_run_builds_argv_and_writes_stdout_verbatim(monkeypatch, tmp_path):
 
     argv = captured["argv"]
     assert argv[0] == "/usr/bin/checkov"
-    assert "-d" in argv and argv[argv.index("-d") + 1] == "/repo/terraform/thd-processors"
+    assert "-d" in argv and argv[argv.index("-d") + 1] == "/repo/terraform/acme-processors"
     assert "-o" in argv and argv[argv.index("-o") + 1] == "json"
 
 
@@ -376,7 +376,7 @@ def test_run_never_gates_on_checkovs_own_exit_code(monkeypatch, tmp_path):
     monkeypatch.setattr(checkov.base, "run_tool",
                         lambda argv, timeout, cwd=None: base.ToolResult(1, clean_report, "", False))
 
-    raw_path, result = checkov.run("/repo/terraform/thd-processors", str(tmp_path), {})
+    raw_path, result = checkov.run("/repo/terraform/acme-processors", str(tmp_path), {})
     assert raw_path is not None
     assert result.returncode == 1
     assert checkov.parse(raw_path, "site-a") == []
@@ -390,7 +390,7 @@ def test_run_returns_none_path_on_timeout(monkeypatch, tmp_path):
     monkeypatch.setattr(checkov.base, "run_tool",
                         lambda argv, timeout, cwd=None: base.ToolResult(-1, '{"resu', "", True))
 
-    raw_path, result = checkov.run("/repo/terraform/thd-processors", str(tmp_path), {})
+    raw_path, result = checkov.run("/repo/terraform/acme-processors", str(tmp_path), {})
     assert raw_path is None
     assert result.timed_out is True
     assert not (tmp_path / "checkov.json").exists()

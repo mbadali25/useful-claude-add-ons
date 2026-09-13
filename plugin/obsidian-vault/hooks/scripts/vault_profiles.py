@@ -74,7 +74,7 @@ PROFILE_KINDS = ("bridge", "graph", "authored")
 #
 # BRIDGE is the floor and is contained in both of the others. A vault without
 # it is not a slow vault or a misconfigured one - it is invisible. Two vaults
-# on the reference machine (claude-anew-thd-codegraph, 26,146 notes, and
+# on the reference machine (claude-anew-acme-codegraph, 26,146 notes, and
 # claude-anew-theselectsource, 18,402 notes) are in exactly that state: no
 # community plugins at all, so nothing Claude can reach.
 #

@@ -176,7 +176,7 @@ def _t_ports():
         memories = make_vault(tmp, "claude-memories", rest(27124, 27123, "k-mem"))
         codegraphs = make_vault(tmp, "claude-memories-codegraphs", rest(27128, 27125, "k-cg"))
         anew = make_vault(tmp, "claude-anew-codegraph", rest(27126, 27127, "k-anew"))
-        noplugin = make_vault(tmp, "claude-anew-thd-codegraph", None)
+        noplugin = make_vault(tmp, "claude-anew-acme-codegraph", None)
 
         check("memories ports (http, https)", obsidian_common.resolve_ports(memories),
               (27123, 27124))
@@ -1005,20 +1005,20 @@ def _t_add_vault_makes_the_name_resolve():
     old_mcp = vault_ops.mcp_servers
     vault_ops.mcp_servers = lambda: None
     try:
-        # Directory basename "claude-anew-thd-codegraph", chosen name "thd".
-        path = make_vault(tmp, "claude-anew-thd-codegraph", rest(27140, 27141, "k-thd"))
+        # Directory basename "claude-anew-acme-codegraph", chosen name "acme".
+        path = make_vault(tmp, "claude-anew-acme-codegraph", rest(27140, 27141, "k-acme"))
         with Sandbox({}):
             prober = FakeProber({})
             check("the chosen name is unknown before add-vault",
-                  run_cli(["diagnose", "--vault", "thd"], prober)[0], vault_ops.EXIT_USAGE)
+                  run_cli(["diagnose", "--vault", "acme"], prober)[0], vault_ops.EXIT_USAGE)
 
-            code, out = run_cli(["add-vault", "--name", "thd", "--path", path], prober)
+            code, out = run_cli(["add-vault", "--name", "acme", "--path", path], prober)
             check("add-vault is a dry run without --apply", code, vault_ops.EXIT_PROBLEMS)
-            check_in("the dry run shows the entry", "vaults.thd", out)
+            check_in("the dry run shows the entry", "vaults.acme", out)
             check("a dry run writes nothing",
-                  run_cli(["diagnose", "--vault", "thd"], prober)[0], vault_ops.EXIT_USAGE)
+                  run_cli(["diagnose", "--vault", "acme"], prober)[0], vault_ops.EXIT_USAGE)
 
-            code, _ = run_cli(["add-vault", "--name", "thd", "--path", path, "--apply"],
+            code, _ = run_cli(["add-vault", "--name", "acme", "--path", path, "--apply"],
                               prober)
             check("add-vault --apply succeeds", code, vault_ops.EXIT_OK)
             # Exact codes, not "anything but a usage error" - that accepts
@@ -1026,10 +1026,10 @@ def _t_add_vault_makes_the_name_resolve():
             # now resolves AND is unhealthy (nothing is listening on its
             # ports), which is EXIT_PROBLEMS in both cases.
             check("the chosen name now resolves",
-                  run_cli(["diagnose", "--vault", "thd"], prober)[0],
+                  run_cli(["diagnose", "--vault", "acme"], prober)[0],
                   vault_ops.EXIT_PROBLEMS)
             check("and every by-name step reaches it too",
-                  run_cli(["enable-plugin", "--vault", "thd"], prober)[0],
+                  run_cli(["enable-plugin", "--vault", "acme"], prober)[0],
                   vault_ops.EXIT_OK)
 
         # A legacy single-vault config must not be unconfigured by writing a
@@ -1040,7 +1040,7 @@ def _t_add_vault_makes_the_name_resolve():
             os.makedirs(os.path.join(legacy, ".obsidian"), exist_ok=True)
             with open(cfgfile, "w", encoding="utf-8") as fh:
                 json.dump({"vaultPath": legacy}, fh)
-            run_cli(["add-vault", "--name", "thd", "--path", path, "--apply"], FakeProber({}))
+            run_cli(["add-vault", "--name", "acme", "--path", path, "--apply"], FakeProber({}))
             with open(cfgfile, "r", encoding="utf-8") as fh:
                 written = json.load(fh)
             check("the legacy vault is carried across, not dropped",

@@ -43,7 +43,7 @@ In outline, so you know the shape before you load the skill:
 3. **Name the vault in config, before anything addresses it by name.** Every
    step below takes `--vault <name>`, and a vault config has never heard of is
    discovered under its *directory basename*. If the chosen name differs from
-   the folder - `thd` for `claude-anew-thd-codegraph` - every one of those steps
+   the folder - `acme` for `claude-anew-acme-codegraph` - every one of those steps
    fails with "unknown vault" until the entry exists. So write it first:
    ```
    python "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/vault_ops.py" add-vault --name <name> --path <path>

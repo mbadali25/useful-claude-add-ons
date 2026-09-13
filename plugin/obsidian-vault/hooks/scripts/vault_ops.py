@@ -1656,8 +1656,8 @@ def cmd_add_vault(args, prober):  # pylint: disable=unused-argument
     """Name a vault in config, so every other subcommand can address it.
 
     A vault config has never heard of is discovered under its directory
-    basename. When the name someone chose differs from the folder - `thd`
-    for `claude-anew-thd-codegraph` - then `--vault thd` is an unknown vault on
+    basename. When the name someone chose differs from the folder - `acme`
+    for `claude-anew-acme-codegraph` - then `--vault acme` is an unknown vault on
     every step, and setup cannot proceed at all: enable-plugin, fix-ports and
     register all take the name. Writing the entry is therefore the FIRST step of
     setting a vault up, not a record of it afterwards.
