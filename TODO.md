@@ -2081,3 +2081,67 @@ oversight, and a gate whose limits are unstated gets trusted past them.
 
 **Not verified:** the `.ps1` twin was read, not executed, for this specific
 behaviour; the bash reproduction above is the measured one.
+
+## `plugin/crew/CONFIG.md` cites `crew_config.py` at lines that moved - 9 of the 11 checkable ones are wrong
+
+Found 2026-09-13 at `a573ca24` while re-deriving the config data-flow diagram,
+which had to resolve the same symbols and got different answers.
+
+**Measured, not eyeballed.** A script AST-walked the four crew modules for every
+`def`/`class`/module-level assignment, then matched every
+`` `name` ... `<module>.py:<N>` `` pair in `plugin/crew/CONFIG.md`,
+`plugin/crew/README.md`, `plugin/PLUGINS.md` and the root `README.md`. Eleven
+citations name a symbol the walk can resolve. **Nine of them point at the wrong
+line**, all in `CONFIG.md`, all into `crew_config.py` or `crew_state.py`:
+
+| CONFIG.md | Symbol | Cited | Actually |
+|---|---|---|---|
+| `:29` | `read_global_config` | `crew_config.py:585` | `:666` |
+| `:38` | `write_global_config` | `crew_config.py:1388` | `:1597` |
+| `:43` | `resolve_config` | `crew_config.py:638` | `:719` |
+| `:85` | `null_shadows` | `crew_config.py:448` | `:529` |
+| `:90` | `_layer_supplies` | `crew_config.py:717` | `:863` |
+| `:133` | `provider_problems` | `crew_config.py:611` | `:692` |
+| `:193` | `leaf_paths` | `crew_config.py:432` | `:513` |
+| `:283` | `normalise_granularity` | `crew_state.py:1220` | `:1365` |
+| `:626` | `collect` | `crew_state.py:2727` | `:2888` |
+
+**Why this is the expensive shape rather than a typo.** Every one of those lines
+exists and holds real code. `crew_config.py:611` is `ignored.extend(dropped)`
+inside `_prune`; `crew_config.py:717` is inside `resolve_config`. A reader who
+follows the citation lands in the same file, in a plausible neighbourhood, and
+has no signal that they are reading the wrong function. That is the repo's named
+failure again - a wrong answer wearing the shape of a checked one - and it is
+exactly what the codemap's own "12 were wrong, all in the files that grew" note
+describes, one directory over.
+
+**Scope beyond the eleven.** `CONFIG.md` carries **40** `<module>.py:<N>`
+citations in total (21 `crew_config.py`, 9 `crew_state.py`, 6
+`crew_platform.py`, 2 `pm_brief.py`, 2 `crew_incident.py`). The eleven above are
+only those where a symbol name sits close enough to the citation for a script to
+pair them. The other 29 name no resolvable symbol on the same line, so **nothing
+here says they are right - only that this check could not look at them.** Assume
+the same rate until someone measures it.
+
+**Not fixed here, and the reason is mechanical.** `plugin/crew/CONFIG.md` is
+inside a plugin directory, so touching it is a content change that needs a
+`version` bump in both `.claude-plugin/marketplace.json` and
+`plugin/crew/.claude-plugin/plugin.json`. This was found during a
+documentation-only pass that deliberately touches no plugin directory. Fix it in
+the next crew release.
+
+**The durable fix is not re-pointing them.** Re-pointing lasts until the next
+commit that grows `crew_config.py`, which is how these nine got here. Two options
+worth weighing when it is picked up:
+
+- Drop the line numbers from `CONFIG.md` and cite the symbol alone. The name is
+  greppable and does not rot; the line number buys precision that survives about
+  a week.
+- Or add a checker: the AST walk above is roughly forty lines and could join
+  `check-marketplace.py` as a tenth check. That turns "nine citations are wrong"
+  into a CI failure the first time it happens rather than a discovery six
+  releases later.
+
+**Re-measure rather than trusting this table.** The nine figures are a fact about
+`a573ca24`; every line number in the right-hand column moves whenever
+`crew_config.py` does.

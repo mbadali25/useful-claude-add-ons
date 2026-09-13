@@ -1,5 +1,4 @@
-%% Generated from useful-claude-add-ons@8631fd0e on 2026-09-12, updated against
-%% 694e9bd4 on 2026-09-13 for the 1.2.2 exit-code change. Verify before trusting.
+%% Generated from useful-claude-add-ons@a573ca24 on 2026-09-13. Verify before trusting.
 %% Anchors: skills/mermaid-svg-bitbucket/scripts/render_mermaid.py, skills/mermaid-svg-bitbucket/assets/mermaid-config.json, skills/mermaid-svg-bitbucket/assets/bitbucket-pipelines.snippet.yml, skills/mermaid-svg-bitbucket/SKILL.md
 %% mermaid-svg-bitbucket: how a fenced block becomes a committed SVG, and what each gate can and cannot see.
 %% --
@@ -9,94 +8,117 @@
 %% THAT SECOND HALF IS NOW FIXED, and this diagram is kept rather than rewritten
 %% clean because the defect it was drawn to expose is what got it fixed.
 %% --
-%% Derived by reading render_mermaid.py at this anchor (395 lines; AST walk for the
-%% definitions, direct reads for the branch conditions) and by MEASURING the
+%% Re-derived at a573ca24 against 694e9bd4 (which resolves and IS on the trunk -
+%% both this diagram's previous anchors are, unlike the codemap's). Three of the
+%% four anchored paths had changed and render_mermaid.py grew 395 -> 481 lines,
+%% so every line number below was re-taken by AST rather than offset. Four
+%% functions in it did not exist when this was drawn - svg_digest,
+%% svg_structure_ok, find_config, find_puppeteer_config and resolve_mmdc - and
+%% three of them are the mechanism the middle of this diagram describes, which
+%% had until now been described without being cited.
+%% --
+%% Derived by reading render_mermaid.py at this anchor and by MEASURING the
 %% foreignObject claim rather than repeating it. Same source file, two configs:
 %%   default mermaid config  ->  57 <foreignObject>,  0 <text>   (labels invisible in Bitbucket)
 %%   assets/mermaid-config.json ->  0 <foreignObject>, 57 <text>  (labels real)
-%% Measured on docs/diagrams/process-crew-brief.mmd with mmdc at this anchor. The
-%% failure is silent by construction: mmdc exits 0 both times and both SVGs open
-%% correctly in a browser tab and a local viewer. Only the <img> embedding path
-%% differs, which is exactly the path Markdown uses and the one nobody tests in.
+%% Measured on docs/diagrams/process-crew-brief.mmd with mmdc. The failure is
+%% silent by construction: mmdc exits 0 both times and both SVGs open correctly
+%% in a browser tab and a local viewer. Only the <img> embedding path differs,
+%% which is exactly the path Markdown uses and the one nobody tests in.
+%% --
+%% TWO VERSION NUMBERS, and conflating them is the easy mistake:
+%%   RENDER_VERSION :35 is the string "2" and is INSIDE the source hash - bump it
+%%     to invalidate every SVG at once.
+%%   MANIFEST_VERSION :40 is the integer 2 and describes the manifest FORMAT -
+%%     version 2 entries carry svgHash; a version-1 entry cannot be content-checked.
+%% They are both 2 today, which is precisely when a reader stops distinguishing them.
 %% --
 %% The sentence this diagram was drawn to make visible, and what it bought:
 %%   Until manifest version 2, --check verified the INPUTS, not the output. `current`
-%%   was  have["hash"] == want and svg.exists()  - the hash covering RENDER_VERSION,
-%%   the config fingerprint, the background colour and the normalised source, and
-%%   nothing at all about the SVG's CONTENT. A committed SVG that had been truncated,
-%%   hand-edited or corrupted after rendering passed --check as long as the file was
-%%   still there and the source had not moved. That was this repository's recurring
-%%   failure in its CI costume: a green check reporting on the thing it could measure
-%%   cheaply, wearing the name of the thing you wanted verified.
+%%   was  have["hash"] == want and svg.exists()  :390 - the hash covering
+%%   RENDER_VERSION, the config fingerprint, the background colour and the normalised
+%%   source, and nothing at all about the SVG's CONTENT. A committed SVG that had been
+%%   truncated, hand-edited or corrupted after rendering passed --check as long as the
+%%   file was still there and the source had not moved. That was this repository's
+%%   recurring failure in its CI costume: a green check reporting on the thing it could
+%%   measure cheaply, wearing the name of the thing you wanted verified.
 %%   MEASURED before the fix rather than argued: a real 15902-byte mmdc render cut in
 %%   half mid-attribute, and a zero-byte file, BOTH printed "All 1 diagram(s) up to
 %%   date." and exited 0.
-%% Now: render records svgHash and --check compares it. A manifest predating version
-%%   2 has no hash to compare, so it gets a structural check - non-empty, an <svg
-%%   element, a closing tag - and is reported UNVERIFIED rather than counted as up to
-%%   date.
+%% Now: render records svgHash :424 and --check compares it :403. A manifest predating
+%%   version 2 has no hash to compare, so it gets a structural check :407 and is
+%%   reported UNVERIFIED rather than counted as up to date.
 %% UNVERIFIED exited 0 until 1.2.2, on the argument that structurally-intact is the
 %%   strongest claim available without a recorded hash. It is - and that is the reason
 %%   to go red, not a reason to stay green: the caveat was in the output while the exit
 %%   code, which is the only part CI reads, still said pass. A green line meaning less
 %%   than its reader assumes is the defect this diagram was drawn to expose, so the
-%%   fix kept reproducing it one layer down. It now exits 1, naming render --force as
-%%   the one-time fix, and stays distinct in the text from DAMAGED: UNVERIFIED does not
-%%   claim the SVG is wrong, only that nothing can say it is right.
-%%   Both failures are reported in one pass - stale, damaged and unverified sections
-%%   print together before the single exit - because returning on the first category
-%%   found is how the unverified count used to vanish whenever anything else was wrong.
+%%   fix kept reproducing it one layer down. It now exits 1 :470, naming render --force
+%%   as the one-time fix :466-469, and stays distinct in the text from DAMAGED :461-465.
+%%   Both failures are reported in one pass :435-451 - stale, damaged and unverified
+%%   sections print together before the single exit - because returning on the first
+%%   category found is how the unverified count used to vanish whenever anything else
+%%   was wrong. The reasoning is in the code at :430-434.
 %%   postprocess()'s foreignObject refusal is still a RENDER-time gate only; it never
 %%   runs in CI strategy A, which is the recommended one and needs neither Node nor
 %%   Chromium precisely because it does not render.
 
 flowchart TB
 
-    subgraph Inputs["Two entry shapes, collected separately - main :318-345"]
+    subgraph Inputs["Two entry shapes, collected separately - main :319-477, collection at :349-379"]
         direction TB
-        MD["a Markdown file with a<br/>```mermaid fence<br/>FENCE_RE :41 - indent-aware, and the<br/>closing fence must match the opener"]
-        MMD["a standalone .mmd / .mermaid file<br/>walk() :83 skips DEFAULT_EXCLUDES :39<br/>(.git, node_modules, .venv, vendor, dist,<br/>build, .tox)"]
+        MD["a Markdown file with a<br/>```mermaid fence<br/>FENCE_RE :44 - indent-aware, and the<br/>closing fence must match the opener"]
+        MMD["a standalone .mmd / .mermaid file<br/>walk() :113-120 skips DEFAULT_EXCLUDES :42<br/>(.git, node_modules, .venv, venv, vendor,<br/>dist, build, .tox)"]
     end
 
-    EXTRACT["process_markdown() :245-282<br/>writes a sidecar .mmd per block and rewrites<br/>the fence into an image link.<br/><b>Idempotent by construction</b>: once the fence<br/>is gone there is nothing left for FENCE_RE to<br/>match, so re-runs are no-ops - the file is not<br/>marked, the evidence is the absence itself"]
-    NAME["stem = slug(md stem)-NN[-slug(heading)]<br/>heading_before() :238 walks every heading<br/>before the block and keeps the LAST, so the<br/>filename says which section it came from"]
+    subgraph Resolve["Three things located before anything runs - :343-345"]
+        direction TB
+        FC["find_config() :160-188<br/>tries assets/, .mermaid/, repo root, then the<br/>script's own neighbours. Exits with the list it<br/>tried, and says WHY defaults are not acceptable:<br/>mmdc's defaults emit foreignObject labels"]
+        FP["find_puppeteer_config() :191-197<br/>optional - returns None and the render simply<br/>omits the flag"]
+        RM["resolve_mmdc() :200-209<br/>mmdc on PATH, else npx --yes @mermaid-js/mermaid-cli,<br/>else exit with the install command"]
+    end
+
+    EXTRACT["process_markdown() :275-312<br/>writes a sidecar .mmd per block and rewrites<br/>the fence into an image link.<br/><b>Idempotent by construction</b>: once the fence<br/>is gone there is nothing left for FENCE_RE to<br/>match, so re-runs are no-ops - the file is not<br/>marked, the evidence is the absence itself"]
+    NAME["stem = slug(md stem)-NN[-slug(heading)]<br/>heading_before() :268-272 walks every heading<br/>before the block and keeps the LAST, so the<br/>filename says which section it came from"]
 
     MD --> EXTRACT
     EXTRACT --> NAME
     NAME --> POOL
     MMD --> POOL
-    POOL(["mmd_files - sorted, de-duplicated :345"])
+    POOL(["mmd_files - sorted, de-duplicated :376"])
 
-    subgraph Hash["What 'up to date' means - digest() :64-71"]
+    subgraph Hash["What 'up to date' means - digest() :67-74"]
         direction TB
-        H1["RENDER_VERSION :35 - currently <b>2</b><br/>bump it to invalidate every SVG at once"]
-        H2["config fingerprint :316<br/>sha256(mermaid-config.json)[:16] + background<br/>so changing htmlLabels re-renders everything"]
-        H3["normalize(source) :54<br/>CRLF folded, trailing space and leading and<br/>trailing blank lines stripped - a whitespace<br/>edit must not cost a re-render"]
-        H4>"<b>Not in this hash: the SVG itself.</b><br/>digest() covers the source only. The artifact is<br/>covered separately by <b>svgHash</b>, recorded at<br/>render time and compared on --check.<br/>Before that existed, svg.exists() was the only<br/>claim made about the artifact - and existence<br/>is not correctness."]
+        H1["RENDER_VERSION :35 - the string <b>2</b><br/>bump it to invalidate every SVG at once"]
+        H2["config fingerprint :347<br/>sha256(mermaid-config.json)[:16] + background<br/>so changing htmlLabels re-renders everything"]
+        H3["normalize(source) :57-64<br/>CRLF folded, trailing space and leading and<br/>trailing blank lines stripped - a whitespace<br/>edit must not cost a re-render"]
+        H4>"<b>Not in this hash: the SVG itself.</b><br/>digest() covers the source only. The artifact is<br/>covered separately by <b>svgHash</b> - svg_digest()<br/>:77-81, recorded at render time :424 and compared<br/>on --check :403.<br/>Its own subtlety: the hash is taken AFTER<br/>postprocess(), which REWRITES the SVG. Hashing<br/>before would record a digest the file never has."]
         H1 --- H2 --- H3 --- H4
     end
 
-    CURRENT{"have['hash'] == want<br/><b>and</b> svg.exists()<br/>source unchanged, artifact present"}
+    CURRENT{"have['hash'] == want<br/><b>and</b> svg.exists() :390<br/>source unchanged, artifact present"}
     POOL --> CURRENT
     Hash -.->|"want"| CURRENT
-    MANIFEST[(".mermaid-svg.json :37<br/>Manifest :97-123. An unreadable manifest is a<br/><i>warning</i>, not an error :105 - it degrades to<br/>'nothing is current', which re-renders rather<br/>than silently skipping")]
+    MANIFEST[(".mermaid-svg.json :37<br/>Manifest :127-153. An unreadable manifest is a<br/><i>warning</i>, not an error - it degrades to<br/>'nothing is current', which re-renders rather<br/>than silently skipping")]
     MANIFEST -.->|"have"| CURRENT
 
-    MODE{"--check ?<br/>:303"}
+    MODE{"--check ?<br/>:392"}
     CURRENT --> MODE
 
     subgraph Verify["--check - CI strategy A. Bare Python, no Node, no Chromium"]
         direction TB
-        C1["collects <b>every</b> stale .mmd into a list<br/>and prints them all"]
-        C5["<b>then opens the SVG.</b> svgHash recorded ?<br/>compare it - a mismatch is DAMAGED.<br/>no svgHash (pre-v2 manifest) ? structural<br/>check: non-empty, has &lt;svg, ends &lt;/svg&gt;"]
+        C1["collects <b>every</b> stale .mmd into a list :394<br/>and prints them all :436-439"]
+        C5["<b>then opens the SVG.</b> svgHash recorded ? :401<br/>compare it :403 - a mismatch is DAMAGED.<br/>no svgHash (pre-v2 manifest) ? structural<br/>check svg_structure_ok() :84-101: non-empty,<br/>has &lt;svg, ends &lt;/svg&gt;"]
         C6["a real truncated render and a zero-byte file<br/>both exit 1 now, under <b>either</b> manifest<br/>version - the committed regression proves it<br/>by damaging a genuine mmdc render"]
-        C2["but returns 1 on the <b>FIRST</b> Markdown file<br/>still holding an unrendered fence :336-339,<br/>before any other file is examined.<br/>Asymmetric on purpose or not, the effect is<br/>that one fence hides the rest."]
-        C3(["exit 1 - 'Run scripts/render_mermaid.py<br/>and commit the result.'"])
-        C4(["exit 0 - 'All N diagram(s) up to date.'<br/>the <b>only</b> green state: every SVG compared<br/>against a recorded hash and matched"])
-        C7(["exit 1 - 'N could not be content-verified'<br/><b>was exit 0 until 1.2.2.</b> The caveat was in the<br/>output while the exit code - the only part CI<br/>reads - still said pass. Names render --force<br/>as the one-time fix, and stays distinct from<br/>DAMAGED: no claim the SVG is wrong, only that<br/>nothing can say it is right"])
+        C8>"<b>svg_structure_ok is honest about its ceiling,<br/>in its own docstring :88-90:</b> a well-formed SVG<br/>with WRONG CONTENTS passes it. Passing is<br/>therefore the absence of evidence, not evidence -<br/>which is the entire argument for UNVERIFIED<br/>exiting 1 rather than 0."]
+        C2["but returns 1 on the <b>FIRST</b> Markdown file<br/>still holding an unrendered fence :367-371,<br/>before any other file is examined.<br/>Asymmetric on purpose or not, the effect is<br/>that one fence hides the rest - and this is the<br/>one early return the 1.2.2 fix did NOT remove."]
+        C3(["exit 1 :453 - 'Run scripts/render_mermaid.py<br/>and commit the result.'"])
+        C4(["exit 0 :471-472 - 'All N diagram(s) up to date.'<br/>the <b>only</b> green state: every SVG compared<br/>against a recorded hash and matched"])
+        C7(["exit 1 :470 - 'N could not be content-verified'<br/><b>was exit 0 until 1.2.2.</b> The caveat was in the<br/>output while the exit code - the only part CI<br/>reads - still said pass. Names render --force<br/>as the one-time fix :466-469, and stays distinct<br/>from DAMAGED :461-465: no claim the SVG is<br/>wrong, only that nothing can say it is right"])
         C1 --- C2
         C1 --- C5
         C5 --- C6
+        C5 --- C8
     end
 
     MODE -->|yes| Verify
@@ -105,32 +127,42 @@ flowchart TB
     C5 --> C7
     C1 --> C4
 
-    subgraph Render["render() :182-201 - needs mmdc and headless Chromium"]
+    subgraph Render["render() :212-231 - needs mmdc and headless Chromium"]
         direction TB
-        R1["mmdc --configFile assets/mermaid-config.json<br/>--backgroundColor (default #ffffff, opaque so<br/>diagrams stay legible against dark mode)<br/>--puppeteerConfigFile, when one exists"]
-        R2{"returncode != 0<br/><b>or</b> not svg.exists() :197<br/><i>both</i> checked - a tool that exits 0<br/>and writes nothing is caught here"}
-        R3["postprocess() :204-231<br/>the only gate that opens the output"]
-        R4{"'&lt;foreignObject' in svg :218"}
-        R5["set intrinsic width/height from the viewBox<br/>:225-228, strip mermaid's max-width style :230"]
+        R1["mmdc --configFile assets/mermaid-config.json :219<br/>--backgroundColor :220 (default #ffffff, opaque so<br/>diagrams stay legible against dark mode)<br/>--quiet :221, --puppeteerConfigFile :224 when one exists"]
+        R2{"returncode != 0<br/><b>or</b> not svg.exists() :227<br/><i>both</i> checked - a tool that exits 0<br/>and writes nothing is caught here"}
+        R3["postprocess() :234-261<br/>the only gate that opens the output"]
+        R4{"'&lt;foreignObject' in svg :248"}
+        R5["set intrinsic width/height from the viewBox<br/>:255-258, strip mermaid's max-width style :260,<br/>then write the file back :261"]
         R1 --> R2
         R2 -->|ok| R3
         R3 --> R4
         R4 -->|no| R5
     end
 
-    MODE -->|no| SKIP{"current and not --force ?<br/>:363"}
+    MODE -->|no| SKIP{"current and not --force ?<br/>:413"}
     SKIP -->|yes| SKIPPED(["counted as unchanged"])
     SKIP -->|no| Render
 
-    FAIL>"RuntimeError, caught at :369 into <i>failed</i>.<br/>Both causes land here and both exit 1 :391 -<br/>mmdc failing, and an SVG that would be<br/>blank-labelled in Bitbucket. The config sets<br/>htmlLabels:false, but a source can re-enable it<br/>with an inline %%{init}%% directive, so the<br/>output is checked rather than the config trusted."]
+    FAIL>"RuntimeError, caught at :419 into <i>failed</i>.<br/>Both causes land here and both exit 1 :477 -<br/>mmdc failing :229, and an SVG that would be<br/>blank-labelled in Bitbucket :249. The config sets<br/>htmlLabels:false, but a source can re-enable it<br/>with an inline %%{init}%% directive, so the<br/>output is checked rather than the config trusted."]
     R2 -->|"mmdc failed, or wrote nothing"| FAIL
     R4 -->|yes| FAIL
 
-    WRITE["manifest.put(key, hash, svg) :373<br/><b>after</b> a successful postprocess, never before"]
+    WRITE["manifest.put(key, hash, svg, svgHash) :423-424<br/><b>after</b> a successful postprocess, never before -<br/>which is also why svg_digest reads the file at<br/>that moment and not the one render() produced"]
     R5 --> WRITE
-    WRITE --> SAVE["manifest.prune() :388 drops keys whose .mmd<br/>no longer exists, then save() writes it sorted<br/>:120-123 - a stable diff, not a churning one"]
+    WRITE --> SAVE["manifest.prune() :474 drops keys whose .mmd<br/>no longer exists, then save() :475 writes it<br/>sorted :150-153 - a stable diff, not a churning one"]
     SAVE --> COMMIT[("committed together:<br/>the .mmd, the .svg, the rewritten .md,<br/>and .mermaid-svg.json")]
     COMMIT --> BB(["Bitbucket renders the .svg through an &lt;img&gt; tag.<br/>Nothing in the browser runs mermaid."])
+
+    subgraph CI["What the shipped pipeline snippet actually says"]
+        direction TB
+        P1["<b>A) verify-diagrams, RECOMMENDED.</b><br/>python:3.11-slim, one line:<br/>python scripts/render_mermaid.py . --check<br/>No push credentials, no commit loop, and the<br/>diff lands in review where a human can see it."]
+        P2["<b>The snippet warns about the one-time red</b><br/>in its own header: a repo whose manifest predates<br/>version 2 fails the first run, and --force is<br/>REQUIRED to fix it because the source hash already<br/>matches and a plain run would skip them.<br/>The script's own message says the same thing.<br/>Two places, one sentence - deliberately, because<br/>whichever one a reader hits first has to be enough."]
+        P3["<b>B) render-diagrams</b> renders and commits back.<br/>Needs write access and [skip ci], or the commit<br/>retriggers the pipeline.<br/>fonts-liberation is not optional: Chromium in a<br/>slim image has no fonts, mermaid MEASURES text to<br/>lay out nodes, and no fonts means every label is<br/>mis-sized and the boxes overlap."]
+        P1 --- P2 --- P3
+    end
+
+    BB -.-> CI
 
     ORDER>"<b>Why the SVG is committed at all.</b><br/>Bitbucket Cloud has never rendered Mermaid in<br/>Markdown (BCLOUD-21675, open for years); a<br/>fenced block shows as raw source. The .mmd stays<br/>the reviewable artifact and the .svg is a build<br/>product that happens to be committed - which is<br/>why the manifest exists to say whether the two<br/>still agree."]
     BB -.-> ORDER
