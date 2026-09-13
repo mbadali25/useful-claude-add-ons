@@ -6,6 +6,22 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`crew` 0.19.25: `CONFIG.md` cites symbols instead of line numbers.** When
+  the citations were last measured, **11 of 13 checkable line numbers were
+  wrong** -- `read_global_config` cited at 585 and living at 666,
+  `resolve_config` at 638 and living at 719, `collect` at 2727 and living at
+  2888. Every wrong one still landed on real code in the wrong function, which
+  is the shape that survives a citation check and does not survive reading: a
+  reader who opens the line finds plausible code and has no signal that they are
+  in the wrong place. 69 line-numbered citations are gone. 15 became
+  `file::symbol`, verified to resolve against the module-level definitions of
+  the file they name. 28 key-reference rows dropped the line number entirely --
+  the row already names the config key, and that key was verified to appear in
+  the cited script for all 23 scripts. 22 `.md` citations and 13 orphaned bare
+  `:NNN` back-references were resolved the same way. The line number was never
+  used to choose a symbol, because a stale line number is not evidence: where
+  the prose named a symbol and the line disagreed, the prose won.
+
 - **`obsidian-vault` 0.3.8: a second client's identity removed from the shipped
   examples and from `TODO.md`.** A different sub-company from the one the three
   entries above covered, scrubbed the same way and with the same replacement
