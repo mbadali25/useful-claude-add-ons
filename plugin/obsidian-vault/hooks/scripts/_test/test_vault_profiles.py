@@ -27,7 +27,7 @@ The remaining vaults on that machine are the detection fixtures:
 
     claude-memories-codegraphs   layout "org/repo" in config, 1 plugin
     claude-anew-acme-codegraph  26,146 notes, 0 plugins, <org>/<repo> on disk
-    claude-anew-theselectsource 18,402 notes, 0 plugins, <org>/<repo> on disk
+    claude-anew-acme-select     18,402 notes, 0 plugins, <org>/<repo> on disk
 
 The last two are the interesting ones: no plugins at all means no REST API,
 which means invisible to Claude, and it also means detection has to reach the
@@ -75,7 +75,7 @@ MEASURED_AUTHORED = [
 ]
 MEASURED_GRAPH = ["obsidian-local-rest-api", "code-graph"]
 MEASURED_NOTES = {"memories": 1361, "anew-codegraph": 22027,
-                  "anew-acme": 26146, "theselectsource": 18402}
+                  "anew-acme": 26146, "acme-select": 18402}
 
 
 # --- 1. The three sets, and the two zero-diff invariants ---------------------
@@ -281,14 +281,14 @@ def _t_detection():
         check("a configured org/repo layout is a declaration", verdict["kind"], "graph")
         check_in("...and says so", "layout", " ".join(verdict["reasons"]))
 
-        # anew-acme and theselectsource: ZERO plugins. No declaration to read,
+        # anew-acme and acme-select: ZERO plugins. No declaration to read,
         # so the verdict has to come from structure plus the absence of a
         # contract.
         for name, org, repo, count in (
                 ("claude-anew-acme-codegraph", "anew", "ACME",
                  MEASURED_NOTES["anew-acme"]),
-                ("claude-anew-theselectsource", "codegraphs", "ANEW-Warehouse",
-                 MEASURED_NOTES["theselectsource"])):
+                ("claude-anew-acme-select", "codegraphs", "ANEW-Warehouse",
+                 MEASURED_NOTES["acme-select"])):
             vault = make_vault(tmp, name, plugins=None,
                                notes=[(f"{org}/{repo}/n{i}.md", GRAPH_NOTE)
                                       for i in range(4)] + [("Welcome.md", "# hi\n")])

@@ -143,7 +143,7 @@ Both are in Obsidian's own registry and have no
 
 | Vault | Path |
 |---|---|
-| `claude-anew-theselectsource` | `C:\repos\claude-anew-theselectsource` |
+| `claude-anew-acme-select` | `C:\repos\claude-anew-acme-select` |
 | `claude-anew-acme-codegraph` | `C:\repos\claude-anew-acme-codegraph` |
 
 Neither has an entry in `~/.claude/obsidian/config.json`, so both need step 1's

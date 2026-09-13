@@ -442,7 +442,7 @@ _t_identity()
 def _t_not_installed():
     tmp = tempfile.mkdtemp(prefix="obsidian-noplugin-test-")
     try:
-        bare = make_vault(tmp, "claude-anew-theselectsource", None)
+        bare = make_vault(tmp, "claude-anew-acme-select", None)
         vaults = {"bare": {"path": bare, "port": 27190, "layout": None, "default": True}}
         settings = obsidian_common.collect_rest_settings(vaults)
         prober = FakeProber({})

@@ -1089,7 +1089,7 @@ crew can route to.
 
 ## Session transcripts and subagent tool-result files write raw file content to disk with no secret redaction
 
-Filed from a consumer repo (TheSelectSource), where the pattern was found
+Filed from a consumer repo (AcmeSelect), where the pattern was found
 concretely and is tracked there as `TO-DO.md` F155/F157, and cross-referenced
 against SRL's own counterpart ticket `SRL-997`. Recorded here per that repo's
 own `.crew/secrets.md` §10: "a value printed into a tool result... is written
@@ -1179,16 +1179,16 @@ its own):**
    already written to a `.jsonl` transcript.
 
 **Not fixed here — this is the finding, not the patch.** No code in this pass
-was changed; `TheSelectSource/TO-DO.md` F157 is the record of the concrete
+was changed; `AcmeSelect/TO-DO.md` F157 is the record of the concrete
 2026-09-06 instance and the workaround applied there (comparing secret values
 by `strpos()`/hash entirely inside a single script process rather than via any
 shell command, going forward, in that one repo, for that one task).
 
 **Related.** `SRL-997` (the same check-shape gap, filed independently in a
-different consumer repo); `TheSelectSource/TO-DO.md` F155 (the original,
+different consumer repo); `AcmeSelect/TO-DO.md` F155 (the original,
 broader finding — committed secrets appearing in transcripts generally) and
 F157 (this specific incident plus the `_verify` control that incident's task
-was building); `TheSelectSource/.crew/secrets.md` §9-§10 (the procedure this
+was building); `AcmeSelect/.crew/secrets.md` §9-§10 (the procedure this
 gap makes hard to follow reliably by hand).
 
 
