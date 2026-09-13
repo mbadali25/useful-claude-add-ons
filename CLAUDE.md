@@ -84,16 +84,32 @@ one, which meant the map lived on one machine and reached nobody who cloned.
   anchor in this file they cannot be re-checked with `git diff` and are absent entirely on a
   clone that never ran `graphify hook install`.
 
-  The hook also rebuilds in the **background** — `.git/hooks/post-commit:163` prints "launching
-  background rebuild" and names its log, `~/.cache/graphify-rebuild.log`. So the rebuild triggered
-  by your last commit may still be running while you stage the next one. Check the tail of that log
-  for a finished run before trusting either file, or you commit a half-written `graph.json` that is
-  indistinguishable from a successful rebuild.
+  The rebuild runs in the **background, and a commit is not the only thing that starts one.** Two
+  hooks launch it: `.git/hooks/post-commit:163` and `.git/hooks/post-checkout:165`, which prints
+  "Branch switched - launching background rebuild". Both name the same log,
+  `~/.cache/graphify-rebuild.log`. So `git checkout -b`, `git pull` and `git commit` each start a
+  rebuild that keeps running while you do the next thing.
 
-  What is *not* established: whether the hook's rebuild and the documented command produce the same
-  counts on an identical corpus. They were never measured at one commit here, and the numbers this
-  section used to carry compared two different ones. Measure both at the same HEAD before claiming
-  either way.
+  **This will overwrite a build you are in the middle of measuring.** It did, here, on 2026-09-12:
+  a `git checkout -b` launched a rebuild, a hand-run `graphify . --no-viz --code-only` wrote 9455
+  nodes, and the background job then replaced both files with its own 9570-node build — after which
+  a node-set diff of "the build I just made" against `HEAD` compared the hook's output with itself
+  and reported zero difference. That zero was an artifact of the clobber, not a result. Wait for
+  the log to stop growing before you build, and read the files before anything can switch a branch
+  under you.
+
+  **The committed artifacts are not built by the command above, and the counts prove it.** Measured
+  at `57604a62` on a quiescent tree: `graphify . --no-viz --code-only` gives 9455 nodes / 14414
+  links and leaves `GRAPH_REPORT.md` untouched, while `graphify update .` gives 9570 / 14476 and
+  writes both files consistently — the same figures the hooks produce, and the ones committed here.
+
+  That gap is most likely `--code-only` doing exactly what its name says rather than a defect, so
+  do not read it as one. **What the 115 extra nodes are has not been measured** (the diff that would
+  have said was the one the clobber invalidated, above). What *is* settled is the practical part: a
+  hand refresh with the documented flags does not reproduce what is in git, so expect the next hook
+  run to revert it. Which command should own the tracked pair is a judgement nobody has recorded —
+  `GRAPH_REPORT.md` recommends `graphify update .` to its own reader, and the flags above are what
+  this file has always said. Settle it deliberately rather than by whichever ran last.
 
 An `anchor:` behind HEAD means *re-check the claims*, not that they are wrong. Do the per-path check
 first — `git diff --name-only <anchor>..HEAD -- <paths the map documents>` — because a repo-wide
