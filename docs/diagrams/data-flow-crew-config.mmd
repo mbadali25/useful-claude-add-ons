@@ -1,0 +1,93 @@
+%% Generated from useful-claude-add-ons@e245aa0d on 2026-09-12. Verify before trusting.
+%% Anchors: plugin/crew/hooks/scripts/crew_config.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/skills/crew-graph/scripts/crew_upgrade.py
+%% How one config value reaches a run, and what may set it where.
+%% --
+%% Drawn because nothing diagrammed it and it took four separate reads of
+%% crew_config.py to pin down. Every claim below was derived by EXECUTING the
+%% functions, not by reading their comments -- the counts (85/44/41) come from
+%% leaf_paths(), and the refusals from is_global_path(). The prose companion is
+%% plugin/crew/CONFIG.md, which carries the per-key tables this cannot.
+%% --
+%% The one sentence this diagram exists to make visible:
+%%   what the global file may WRITE is exactly what the global layer may SUPPLY,
+%%   because both rules are enforced against default_global_config().
+%% The READ side prunes against it (filter_global); the WRITE side refuses
+%% paths against it (plan_global_write). One definition, two directions.
+
+flowchart TB
+
+    subgraph Sources["Three sources, lowest precedence first"]
+        direction TB
+        DEF["default_config()<br/>crew_config.py:270<br/><b>85 leaves</b><br/>composed from crew_state's<br/>PM_DEFAULTS :874, QA_DEFAULTS :921,<br/>DEV_DEFAULTS :930, WORKTREE_DEFAULTS :957<br/>and crew_upgrade's DOCS_BLOCK / BITBUCKET_BLOCK"]
+        GLB[("~/.claude/crew/config.json<br/>read_global_config() :655<br/><i>never raises</i> - absent, malformed or<br/>non-object all return {}, because this is<br/>reached from a SessionStart hook")]
+        REPO[(".crew/config.json<br/>crew_state.load_config() :142")]
+    end
+
+    subgraph Gate["The global layer is filtered BEFORE it is merged"]
+        direction TB
+        TMPL["default_global_config()<br/>crew_config.py:378<br/><b>44 leaves</b> - the single definition<br/>both rules below are enforced against"]
+        PRUNE["_prune() :587<br/>keeps only keys present in the template.<br/>Descends structurally, so naming a block<br/>grants only the leaves under it.<br/>Reports the FIRST ABSENT SEGMENT with its<br/>full path prefix - a bare block name appears<br/>only when the prefix is empty."]
+        FILT["filter_global() :613<br/>returns (kept, ignored)"]
+    end
+
+    subgraph Merge["resolve_config() :708 - the single resolver"]
+        direction TB
+        NULLS["without_null_shadows() :564<br/>drops a repo <i>null</i> ONLY where the global<br/>layer supplies a real value (_layer_supplies :787).<br/>Narrow on purpose: context.reserveTokens: null<br/>still means <b>off</b>."]
+        M1["merge_defaults(default_config(), global)<br/>crew_state.py:1223"]
+        M2["merge_defaults(that, repo)"]
+        SCHEMA{"schema<br/>lifted OUT of the merge"}
+        OUT(["resolved config<br/><i>repo beats global beats default</i>"])
+    end
+
+    DEF --> M1
+    GLB --> FILT
+    TMPL -.->|"the shape to prune to"| PRUNE
+    PRUNE --> FILT
+    FILT -->|kept| M1
+    FILT -.->|"ignored - named, never silent;<br/>inspect_global :828 reports them"| IGN>"keys a global file may not set"]
+    REPO --> NULLS
+    NULLS --> M2
+    M1 --> M2
+    M2 --> SCHEMA
+    SCHEMA -->|"in repo file: use it"| OUT
+    SCHEMA -->|"absent: pop it entirely"| OUT
+
+    subgraph Write["The WRITE side - /crew:config --set"]
+        direction TB
+        PLAN["plan_global_write() :1371<br/><i>pure</i>; returns (merged, changes)"]
+        ISG{"is_global_path() :636"}
+        REFUSE>"GlobalWriteRefused<br/>names the path AND lists every allowed one"]
+        VAL{"validate_providers() :171"}
+        PERR>"ProviderError<br/>a VALUE check, not a path check"]
+        MERGEW["merge, never replace<br/>keys the file already holds that<br/>the update does not name survive<br/>byte-for-byte, including keys this<br/>module has never heard of"]
+        WIDEN["widens_authority<br/>computed by authority_rank :1159,<br/>NOT by equality - act to autonomous<br/>must not ship unannounced, and<br/>autonomous to act must not warn"]
+        WRITE["write_global_config() :1458<br/>the only function in crew that<br/>writes outside the repo"]
+    end
+
+    PLAN --> ISG
+    ISG -->|"not in the template"| REFUSE
+    ISG -->|allowed| VAL
+    VAL -->|"bad provider name"| PERR
+    VAL -->|ok| MERGEW
+    MERGEW --> WIDEN
+    WIDEN --> WRITE
+    WRITE --> GLB
+    TMPL -.->|"the SAME object the read side prunes to"| ISG
+
+    subgraph Asym["The asymmetry, stated because 'exactly what' hides it"]
+        direction TB
+        A1["Both rules agree on which PATHS."]
+        A2["The WRITE path additionally rejects VALUES<br/>the READ path only reports."]
+        A3["resolve_config NEVER raises - a malformed file<br/>must not wedge every session on the machine.<br/>provider_problems() :681 reports instead."]
+        A1 --- A2 --- A3
+    end
+
+    subgraph Split["What may be set where - measured, not asserted"]
+        direction TB
+        S1["<b>44 global-settable</b> leaves: qa, dev, worktree,<br/>secondOpinion, memory, notify, pm, docs,<br/>bitbucket.mergeGate, and context.autoClear"]
+        S2["<b>41 repo-only</b>: schema, tier, roles, tracker, jira,<br/>sdp, obsidian, verifyGate, platform, graph,<br/>emergency, and every other context.* key"]
+        S3["<b>Open tables.</b> leaf_paths() :502 treats an EMPTY<br/>DICT as a leaf, so qa.roles and dev.roles admit a<br/>role name this release has never heard of."]
+        S4["<b>Consent is not capability.</b><br/>context.autoClear.unsafeFocus, declared at<br/>AUTOCLEAR_CONSENT_KEYS :267, is excluded from<br/>the global template on purpose: one true set<br/>once would accept blind keystroke injection<br/>for every repo on the machine.<br/>The precedent is graph.obsidian.confirmed,<br/>argued in plan_global_write's docstring - that<br/>key was REMOVED from default_config() in<br/>0.16.13 and survives only as the reasoning."]
+    end
+
+    OUT -.-> Split
