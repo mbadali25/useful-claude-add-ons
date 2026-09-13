@@ -49,6 +49,9 @@ function Invoke-Guard([string]$name, [string]$msg) {
   # different rules is how they come to disagree about what it said.
   $target = if ($parts[3] -eq '-') { '' } else { $parts[3] }
   $reason = if ($parts[4] -eq '-') { '' } else { $parts[4] }
+  # Field 6, `access`, is read by Invoke-ProdGuard and ignored here. Reading it
+  # by index in both places keeps the two flavours agreeing about a line they
+  # take from the same producer.
   switch ($decision) {
     'allow' {
       # Under `allow` nothing is silent. crew_config.py --record wrote the
@@ -78,6 +81,53 @@ function Invoke-Guard([string]$name, [string]$msg) {
     }
     'block'  { Block $msg }
     default  { Block "$msg [guards.$name stays ``block``: unreadable decision from crew_config]" }
+  }
+}
+
+# `guards.prodDatabase` / `guards.prodServer`, mirroring guard.sh's
+# `prod_guarded` line for line. A separate function from Invoke-Guard for the
+# reason stated there: these two fire on ORDINARY commands, so an `allow` line
+# printed unconditionally would put a crew banner above every remote shell in
+# the session. Silent when no declared pattern matched; loud on every decision
+# a declared pattern actually produced.
+$script:ProdTarget = ''
+function Invoke-ProdGuard([string]$name, [string]$msg) {
+  $script:ProdTarget = ''
+  # NO PYTHON is a stand-down; a FAILED RESOLVER is a refusal. Without python
+  # crew can read no config at all, so blocking here would refuse every `ssh`
+  # in every repo on the machine, and Test-EnvArgHit below still blocks on its
+  # own regex with no python. A python that IS here and then fails is crew
+  # broken on the question of whether this targets production, which blocks.
+  if (-not $guardPy) { return }
+  $root = if ($env:CLAUDE_PROJECT_DIR) { $env:CLAUDE_PROJECT_DIR } else { "." }
+  $line = & $guardPy (Join-Path $guardDir 'crew_config.py') `
+            --root $root --guard $name --command $cmd --record 2>$null
+  if ($LASTEXITCODE -ne 0 -or -not $line) {
+    Block "$msg [guards.$name`: crew could not read it, and could not tell whether this targets production]"
+  }
+  if ($line -is [array]) { $line = $line[0] }
+  $parts = ([string]$line).TrimEnd("`r", "`n") -split "`t"
+  if ($parts.Count -lt 6) {
+    Block "$msg [guards.$name`: unreadable decision from crew_config]"
+  }
+  $decision = $parts[0]; $policy = $parts[1]
+  $target = if ($parts[3] -eq '-') { '' } else { $parts[3] }
+  $reason = if ($parts[4] -eq '-') { '' } else { $parts[4] }
+  $access = if ($parts[5] -eq '-') { '' } else { $parts[5] }
+  # An empty target means NO DECLARED PATTERN MATCHED -- not that the guard
+  # passed. Returning silently keeps `ssh` to an undeclared host as quiet as it
+  # was before schema 6.
+  if (-not $target) { return }
+  $script:ProdTarget = $target
+  switch ($decision) {
+    'allow' {
+      [Console]::Error.WriteLine("crew guard: guards.$name is ``$policy`` - ALLOWED: $reason")
+      [Console]::Error.WriteLine("  command: $cmd")
+      if ($access) { [Console]::Error.WriteLine("  classified as: $access") }
+      return
+    }
+    'block'  { Block "$msg [$reason]" }
+    default  { Block "$msg [guards.$name stays ``none``: unreadable decision from crew_config]" }
   }
 }
 
@@ -122,6 +172,22 @@ if ($cmd -match "${gitPre}push\b${arg}\s\+[^\s;&|]")             { Invoke-Guard 
 # URL is wide enough to block reading one.
 $ghMerge = '(?i)\bgh\s+pr\s+merge\b'
 if ($cmd -match "${ghMerge}${arg}--admin\b")                     { Invoke-Guard adminMerge "gh pr merge --admin merges past the repo's branch protection." }
+# --- production access ----------------------------------------------------
+# Which TOOLS could be aimed at production; whether they ARE is decided by
+# `production.databases` / `production.hosts` in the repo config, through
+# crew_config.py. Same two regexes as guard.sh, same deliberately wide list: a
+# tool absent here never reaches the resolver.
+$dbTools = '(?i)(^|[\s;&|])(psql|mysql|mariadb|sqlcmd|mongosh|mongo|redis-cli|cqlsh)\b|\baws\s+(rds|redshift|dynamodb|docdb)\b'
+$srvTools = '(?i)(^|[\s;&|])(ssh|scp|plink|rsync)\b|\baws\s+(ssm|ec2)\b'
+$prodHit = $false
+if ($cmd -match $dbTools) {
+  Invoke-ProdGuard prodDatabase "this targets a database declared in production.databases."
+  if ($script:ProdTarget) { $prodHit = $true }
+}
+if ($cmd -match $srvTools) {
+  Invoke-ProdGuard prodServer "this targets a host declared in production.hosts."
+  if ($script:ProdTarget) { $prodHit = $true }
+}
 # `git reset HEAD --hard` required `--hard` to follow `reset` immediately, so
 # naming the ref bypassed it. `--soft HEAD~1` still does not match: no `--hard`.
 if ($cmd -match "${gitPre}(reset(\s+[^\s;&|]+)*\s+--hard|clean\s+-[a-z]*f)") { Block "destroys uncommitted work." }
@@ -171,7 +237,13 @@ function Test-EnvArgHit([string]$c) {
   }
   return $false
 }
-if (Test-EnvArgHit $cmd) {
+# Skipped ONLY when a declared `production.*` pattern already matched this
+# command, because then the configured level has answered the same question
+# with better information. Leaving both in would mean `prodDatabase: full`
+# still refused `prod-db-1` -- a key that reads as configurable and is not.
+# With nothing declared, $prodHit is false and this behaves exactly as it did
+# before schema 6.
+if ((Test-EnvArgHit $cmd) -and (-not $prodHit)) {
   Block "command targets production. If this is not production, rename the argument or run it yourself."
 }
 

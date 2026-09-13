@@ -232,6 +232,11 @@ CONFIG_BLOCKS = (
     ("install", crew_state.INSTALL_DEFAULTS),
     ("guards", crew_state.GUARD_DEFAULTS),
     ("github", GITHUB_BLOCK),
+    # Repo-only, and the ONLY block here that is. `default_global_config()`
+    # does not carry it, so `filter_global` prunes a `production` block out
+    # of a machine-global file and reports it: the level ratchets across
+    # both layers, the patterns are a fact about this checkout.
+    ("production", crew_state.PRODUCTION_DEFAULTS),
 )
 
 # The keys schema 3 introduced. Named here rather than diffed generically so
@@ -274,9 +279,18 @@ SCHEMA_5_KEYS = ("install.policy",)
 # and `terraformApply` now also covers `tofu`. A migration that claimed
 # neutrality it does not have would be the "unknown wearing the label of a
 # check that happened" failure, one layer out.
+# The two production guards arrive in the SAME schema 6 rather than a seventh
+# bump, and they are behaviour-neutral on arrival in a way the other four are
+# not: they land at `none`, but `production.databases` and `production.hosts`
+# land EMPTY, and with no pattern declared the guard matches nothing. So the
+# strictest possible level refuses the empty set until somebody says what
+# production is. That is the property that let them ship at `none` by default,
+# and it is stated in CONFIG.md rather than left to be rediscovered.
 SCHEMA_6_KEYS = ("guards.terraformApply", "guards.forcePush",
                  "guards.adminMerge", "guards.mergeGate",
-                 "github.mergeGate.enabled", "github.mergeGate.branch")
+                 "guards.prodDatabase", "guards.prodServer",
+                 "github.mergeGate.enabled", "github.mergeGate.branch",
+                 "production.databases", "production.hosts")
 
 
 def upgrade_config(cfg):

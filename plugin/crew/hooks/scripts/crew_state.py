@@ -45,6 +45,7 @@ from crew_endpoints import (
 # resolves to the object `crew_guards` defines, so deleting one here is caught
 # by a test rather than by this comment.
 from crew_guards import (
+    ALL_GUARD_NAMES,
     GUARD_APPROVAL_PREFIX,
     GUARD_APPROVAL_TTL,
     GUARD_DEFAULTS,
@@ -56,6 +57,10 @@ from crew_guards import (
     INSTALL_POLICIES,
     INSTALL_POLICY_DEFAULT,
     INSTALLABLE,
+    PRODUCTION_DEFAULTS,
+    PROD_GUARD_NAMES,
+    PROD_LEVELS,
+    PROD_LEVEL_DEFAULT,
     RATCHETED_KEYS,
     effective_install_policy,
     effective_ratcheted,
@@ -64,6 +69,13 @@ from crew_guards import (
     install_policy_rank,
     normalise_guard_policy,
     normalise_install_policy,
+    classify_access,
+    guard_tiers,
+    matches_production,
+    normalise_prod_level,
+    prod_decision,
+    prod_level_rank,
+    production_targets,
     ratchet_spec,
 )
 # pylint: enable=unused-import

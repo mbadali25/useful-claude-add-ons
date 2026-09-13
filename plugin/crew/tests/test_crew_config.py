@@ -251,9 +251,11 @@ def test_the_ten_keys_crew_read_but_never_declared_are_declared():
                    "context.autoWrapUp", "context.autoResume",
                    "jira.cloudId"):
         assert dotted in declared, dotted
-    # 92 since schema 6 added the four `guards` keys and the two
-    # `github.mergeGate` ones on top of schema 5's `install.policy`.
-    assert len(declared) == 92
+    # 96 since schema 6 added six `guards` keys, the two `github.mergeGate`
+    # ones and the repo-only `production.databases`/`production.hosts`, on top
+    # of schema 5's `install.policy`. An empty list is a LEAF here -- see
+    # `leaf_paths` -- so the two `production` keys count as two, not zero.
+    assert len(declared) == 96
 
 
 def test_autoclear_is_global_and_its_siblings_are_not():

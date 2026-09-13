@@ -765,10 +765,10 @@ Four rules the script enforces rather than documents:
 - It is a **dry run by default**. `--apply` is a second, deliberate call.
 - It marks a **widening** with a `!` line, on both the dry run and the write,
   naming the tier being granted and what that tier buys. `pm.authority`,
-  `install.policy` and all four `guards.*` are the values a user cannot recover
+  `install.policy` and all six `guards.*` are the values a user cannot recover
   from by noticing.
 
-`--explain` also names the **narrowing source** for the six keys that ratchet.
+`--explain` also names the **narrowing source** for the seven keys that ratchet.
 Those do not resolve by precedence, so the merged value is the wrong thing to
 print for them: before this was fixed, a repo `install.policy: auto` over a
 machine-global `manual` printed `install.policy  repo  "auto"` while crew
@@ -789,8 +789,9 @@ to defaults rather than breaking every session on the machine.
 
 ### §11b. `guards` — the guardrails you can turn down, per machine
 
-Four keys, added by schema 6. Each is `block` | `ask` | `allow` and each ships
-as `block`.
+Six keys, added by schema 6, in **two vocabularies**. Four are
+`block` | `ask` | `allow`, shipping as `block`; the two production-access keys
+are `none` | `read` | `full`, shipping as `none`.
 
 | Key | Governs | Read by |
 |---|---|---|
@@ -798,6 +799,8 @@ as `block`.
 | `guards.forcePush` | `git push --force` / `-f` / `--force-with-lease`, and a leading-plus refspec | `guard.sh`, `guard.ps1` |
 | `guards.adminMerge` | `gh pr merge --admin` | `guard.sh`, `guard.ps1` |
 | `guards.mergeGate` | whether `/crew:gate` may take a live repo's merge gate down | `commands/gate.md`, `commands/promote.md` |
+| `guards.prodDatabase` | commands aimed at a `production.databases` glob | `guard.sh`, `guard.ps1` |
+| `guards.prodServer` | commands aimed at a `production.hosts` glob | `guard.sh`, `guard.ps1` |
 
 - **`block`** refuses, exactly as the guard did before these keys existed.
 - **`ask`** refuses, prints the **exact** command, and names the one file that
@@ -811,7 +814,23 @@ as `block`.
   is the durable half, and it is written for every decision rather than only
   the permissive ones.
 
-**A repo may only narrow.** These four and `install.policy` resolve to the
+**The two production guards are `none` | `read` | `full`.** `none` refuses
+every command aimed at a declared target; `read` permits only what crew can
+**positively classify** as read-only, so an interactive `psql`, an unrecognised
+binary over `ssh` and anything it cannot parse are refused as writes; `full`
+permits everything and logs each one. `ask` is not a value here — these answer
+"how much of production may crew reach", a standing posture rather than a
+per-command question.
+
+**The level is a machine fact; what is production is not.** The two levels
+ratchet across both layers. `production.databases` and `production.hosts` — the
+glob lists they match against — are **repo-only**: `prod-db-*` names one
+cluster in one repo and something else in the next, so a machine-global list
+would describe the wrong estate everywhere else. **With no patterns declared
+the guard matches nothing**, which is how the strictest level can be the
+default and still change nobody's behaviour on upgrade.
+
+**A repo may only narrow.** These six and `install.policy` resolve to the
 **narrower** of the repo and machine-global layers, not by precedence. crew
 reads config out of cloned repositories: under precedence, a repo shipping
 `guards.forcePush: allow` would grant itself force-push rights on the machine
@@ -2058,7 +2077,7 @@ ten; the prose was the half that went stale.
 
 | Script | Event | Behavior |
 |---|---|---|
-| `guard.sh` / `guard.ps1` | `PreToolUse` on Bash / PowerShell | Blocks `terraform`/`tofu` `apply`/`destroy`, destructive DDL, force push, `gh pr merge --admin`, hard reset, prod-targeted commands, and any command that would print a secret value into the transcript. Three of those — `guards.terraformApply`, `guards.forcePush`, `guards.adminMerge` — are configurable per machine as `block` \| `ask` \| `allow`, defaulting to `block`; see §11b |
+| `guard.sh` / `guard.ps1` | `PreToolUse` on Bash / PowerShell | Blocks `terraform`/`tofu` `apply`/`destroy`, destructive DDL, force push, `gh pr merge --admin`, hard reset, prod-targeted commands, and any command that would print a secret value into the transcript. Three of those — `guards.terraformApply`, `guards.forcePush`, `guards.adminMerge` — are configurable per machine as `block` \| `ask` \| `allow`, defaulting to `block`, and access to a declared production database or host is `guards.prodDatabase` / `guards.prodServer` as `none` \| `read` \| `full`, defaulting to `none`; see §11b |
 | `promote-gate.sh` / `.ps1` | `PreToolUse` on Bash / PowerShell | Refuses a declared `deploy` command unless the upstream environment has an all-pass row for **this sha**, the rollback runbook is verified inside 90 days, `requireHuman` is approved, and the tree is clean. During an emergency lane it records each unmet precondition and allows the deploy (§24) |
 | `handoff-read.sh` / `.ps1` | `SessionStart` | Injects the handoff after clear, compact, or resume — first archiving it instead, under `.crew/handoffs/`, if age or reality drift (its `head`/`branch` no longer describing the checkout) says it is stale |
 | `pm-brief.sh` / `.ps1` | `SessionStart` | Runs `crew_state.py`, prints the prioritized PM brief (triggers, health, knowledge, graph freshness) — report-only, changes nothing |

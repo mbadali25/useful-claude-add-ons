@@ -319,6 +319,70 @@ expect 0 'gh pr merge 12 --squash --delete-branch'
 expect 0 'gh pr view 12'
 expect 0 'tofu plan'
 expect 0 'tofu fmt -recursive -check'
+# The two production guards, at the shipped default with NOTHING declared.
+# This is the behaviour-preservation case: with `production.databases` and
+# `production.hosts` empty, `none` -- the strictest level there is -- matches
+# nothing, so ordinary remote work is exactly as quiet as it was before schema
+# 6. If this section ever goes red, the new default stopped being free.
+expect 0 'ssh deploy@app-1 "systemctl restart app"'
+expect 0 'ssh deploy@app-1'
+expect 0 'psql -h db-1 -c "delete from orders"'
+
+# Now the same guards with production DECLARED, which is the only state in
+# which they do anything. A second scratch pair rather than editing the first:
+# every case above asserts the undeclared state, and a suite that mutated the
+# fixture underneath them would leave those cases asserting something else.
+GUARD_PROD=$(mktemp -d) || exit 1
+mkdir -p "$GUARD_PROD/repo/.crew" "$GUARD_PROD/home/.claude/crew"
+# The machine-global layer sits at the CEILING so the repo value is what
+# varies. With it left unset the ratchet correctly holds every repo value down
+# to `none`, and every case below would pass for the wrong reason.
+printf '{"guards":{"prodDatabase":"full","prodServer":"full"}}' \
+  > "$GUARD_PROD/home/.claude/crew/config.json"
+export CLAUDE_PROJECT_DIR="$GUARD_PROD/repo"
+export HOME="$GUARD_PROD/home"
+export USERPROFILE="$GUARD_PROD/home"
+
+prod_level() {  # $1 = none|read|full
+  printf '{"schema":6,"guards":{"prodDatabase":"%s","prodServer":"%s"},"production":{"databases":["prod-db-*"],"hosts":["prod-web-*"]}}' \
+    "$1" "$1" > "$GUARD_PROD/repo/.crew/config.json"
+}
+
+echo "== guard.sh: production access, guards.prod* = none (exit 2) =="
+prod_level none
+expect 2 'psql -h prod-db-1 -c "select 1"'
+expect 2 'ssh deploy@prod-web-1 "tail -n 5 /var/log/app.log"'
+
+echo "== guard.sh: production access, guards.prod* = read =="
+prod_level read
+# Positively classified as read-only: permitted.
+expect 0 'psql -h prod-db-1 -c "select count(*) from orders"'
+expect 0 'ssh deploy@prod-web-1 "tail -n 50 /var/log/app.log"'
+expect 0 'ssh deploy@prod-web-1 "systemctl status app"'
+# A write: refused.
+expect 2 'psql -h prod-db-1 -c "delete from orders"'
+expect 2 'ssh deploy@prod-web-1 "systemctl restart app"'
+# UNCLASSIFIABLE is a write, and these are the cases `read` rests on. An
+# interactive session says nothing about what will be typed into it, and a
+# tool crew does not recognise says nothing at all.
+expect 2 'psql -h prod-db-1'
+expect 2 'ssh deploy@prod-web-1'
+expect 2 'ssh deploy@prod-web-1 "somebinary --go"'
+expect 2 'aws ssm start-session --target prod-web-1'
+# A host or database that matches NO declared pattern is not production, at
+# any level. A guard that fired on these is the guard people switch off.
+expect 0 'ssh deploy@staging-web-1 "systemctl restart app"'
+expect 0 'psql -h dev-db-9 -c "delete from orders"'
+
+echo "== guard.sh: production access, guards.prod* = full =="
+prod_level full
+expect 0 'psql -h prod-db-1 -c "delete from orders"'
+expect 0 'ssh deploy@prod-web-1 "systemctl restart app"'
+
+# Back to the empty scratch repo for anything that follows.
+export CLAUDE_PROJECT_DIR="$GUARD_PIN/repo"
+export HOME="$GUARD_PIN/home"
+export USERPROFILE="$GUARD_PIN/home"
 
 # Restore the environment the section pinned. Unset rather than export an empty
 # string where there was nothing: `HOME=""` is not the same state as no HOME,

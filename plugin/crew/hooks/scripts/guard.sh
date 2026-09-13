@@ -42,7 +42,7 @@ block() { echo "BLOCKED: $1" >&2; exit 2; }
 GUARD_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 guarded() {  # $1 = guard name, $2 = the refusal message
-  local py out decision policy marker target reason
+  local py out decision policy marker target reason access
   py=$(crew_py) \
     || block "$2 [guards.$1 stays \`block\`: no python to read the config]"
   out=$("$py" "$GUARD_DIR/crew_config.py" \
@@ -50,7 +50,7 @@ guarded() {  # $1 = guard name, $2 = the refusal message
         --guard "$1" --command "$CMD" --record 2>/dev/null) \
     || block "$2 [guards.$1 stays \`block\`: crew could not read it]"
   out=$(crew_strip_cr "$out")
-  IFS=$'\t' read -r decision policy marker target reason <<<"$out"
+  IFS=$'\t' read -r decision policy marker target reason access <<<"$out"
   # `-` is the producer's spelling of an empty field. It has to be: TAB is IFS
   # WHITESPACE, so `IFS=$'\t' read` collapses a run of tabs and every field
   # after an empty one shifts left. See the note beside the print in
@@ -90,6 +90,61 @@ guarded() {  # $1 = guard name, $2 = the refusal message
       ;;
     *)
       block "$2 [guards.$1 stays \`block\`: unreadable decision from crew_config]"
+      ;;
+  esac
+}
+
+# `guards.prodDatabase` / `guards.prodServer`. A separate wrapper from
+# `guarded`, for one reason worth stating: these two fire on ORDINARY commands.
+# Every `ssh` and every `psql` reaches them, and most of those aim at nothing
+# anybody declared as production. `guarded` prints a line on every `allow`,
+# which is right when the guard only sees dangerous commands and wrong here --
+# it would put a crew banner above every remote shell in the session, which is
+# how a guard becomes noise people switch off.
+#
+# So: SILENT when no declared pattern matched (PROD_TARGET stays empty), and
+# loud on every decision that a declared pattern actually produced. The log
+# row is written either way by crew_config.py --record, so "nothing is silent"
+# still holds where it means anything.
+PROD_TARGET=""
+prod_guarded() {  # $1 = guard name, $2 = the refusal message
+  local py out decision policy marker target reason access
+  PROD_TARGET=""
+  # NO PYTHON is a stand-down; a FAILED RESOLVER is a refusal, and the two are
+  # not the same event. Without python crew cannot read any config, so every
+  # repo on the machine would have every `ssh` refused -- the guard people
+  # switch off -- and the unconfigurable `prod` rule further down still blocks
+  # on its own regex with no python at all, so the floor does not move. A
+  # python that IS here and then fails is crew broken, on a question whose
+  # answer decides whether a production write runs. That one blocks, loudly.
+  py=$(crew_py) || return 0
+  out=$("$py" "$GUARD_DIR/crew_config.py" \
+        --root "${CLAUDE_PROJECT_DIR:-.}" \
+        --guard "$1" --command "$CMD" --record 2>/dev/null) \
+    || block "$2 [guards.$1: crew could not read it, and could not tell whether this targets production]"
+  out=$(crew_strip_cr "$out")
+  IFS=$'\t' read -r decision policy marker target reason access <<<"$out"
+  [ "$target" = "-" ] && target=""
+  [ "$reason" = "-" ] && reason=""
+  [ "$access" = "-" ] && access=""
+  # An empty target means NO DECLARED PATTERN MATCHED -- not that the guard
+  # passed. Returning silently here is what keeps `ssh` to an undeclared host
+  # exactly as quiet as it was before schema 6.
+  [ -z "$target" ] && return 0
+  PROD_TARGET="$target"
+  case "$decision" in
+    allow)
+      printf 'crew guard: guards.%s is `%s` - ALLOWED: %s\n' \
+             "$1" "$policy" "$reason" >&2
+      printf '  command: %s\n' "$CMD" >&2
+      [ -n "$access" ] && printf '  classified as: %s\n' "$access" >&2
+      return 0
+      ;;
+    block)
+      block "$2 [$reason]"
+      ;;
+    *)
+      block "$2 [guards.$1 stays \`none\`: unreadable decision from crew_config]"
       ;;
   esac
 }
@@ -146,6 +201,23 @@ echo "$CMD" | grep -qE "${GIT_PRE}push\b${ARG}[[:space:]]\+[^[:space:];&|]" && g
 # reading one, and a guard that fires on reads is a guard people switch off.
 GH_MERGE='\bgh[[:space:]]+pr[[:space:]]+merge\b'
 echo "$CMD" | grep -qE "${GH_MERGE}${ARG}--admin\b" && guarded adminMerge "gh pr merge --admin merges past the repo's branch protection."
+# --- production access ----------------------------------------------------
+# Which TOOLS could be aimed at production; whether they ARE is decided by
+# `production.databases` / `production.hosts`, in the repo config, by
+# crew_config.py. This regex is deliberately the crude half: a tool that is not
+# listed here never reaches the resolver, so the list errs wide, and a match
+# here costs one python call and prints nothing unless a pattern matched.
+DB_TOOLS='(^|[[:space:];&|])(psql|mysql|mariadb|sqlcmd|mongosh|mongo|redis-cli|cqlsh)\b|\baws[[:space:]]+(rds|redshift|dynamodb|docdb)\b'
+SRV_TOOLS='(^|[[:space:];&|])(ssh|scp|plink|rsync)\b|\baws[[:space:]]+(ssm|ec2)\b'
+PROD_HIT=0
+if echo "$CMD" | grep -qE "$DB_TOOLS"; then
+  prod_guarded prodDatabase "this targets a database declared in production.databases."
+  [ -n "$PROD_TARGET" ] && PROD_HIT=1
+fi
+if echo "$CMD" | grep -qE "$SRV_TOOLS"; then
+  prod_guarded prodServer "this targets a host declared in production.hosts."
+  [ -n "$PROD_TARGET" ] && PROD_HIT=1
+fi
 # `git reset HEAD --hard` required `--hard` to follow `reset` immediately, so
 # naming the ref bypassed it. Allow non-separator argument tokens in between;
 # `--soft HEAD~1` still does not match, because it has no `--hard` to find.
@@ -233,7 +305,17 @@ else
     ENVHIT=0
   fi
 fi
-[ "$ENVHIT" = "1" ] && block "command targets production. If this is not production, rename the argument or run it yourself."
+# The unconfigurable `prod`/`production`-in-an-argument rule, which predates
+# the two keys above and stays. It is skipped ONLY when a declared
+# `production.*` pattern already matched this command, because then the
+# configured level has answered the same question with better information --
+# leaving both in would mean `guards.prodDatabase: full` still refused
+# `prod-db-1`, which is a key that reads as configurable and is not.
+#
+# With nothing declared, `PROD_HIT` is 0 and this line behaves exactly as it
+# did before schema 6. That is what makes the new default behaviour-preserving
+# rather than merely behaviour-neutral-sounding.
+[ "$ENVHIT" = "1" ] && [ "$PROD_HIT" = "0" ] && block "command targets production. If this is not production, rename the argument or run it yourself."
 
 # --- secrets: never let VALUES reach the transcript -----------------------
 # Retrieving a secret is fine. Printing it is not: the value lands in context,

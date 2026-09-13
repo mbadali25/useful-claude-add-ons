@@ -157,13 +157,19 @@ still writes only the repo file.
   "bitbucket": { "mergeGate": { "enabled": false, "branch": null, "preset": "standard" } },
   "github": { "mergeGate": { "enabled": false, "branch": null } },
   "install": {"policy": "manual"},
-  "guards": { "terraformApply": "block", "forcePush": "block", "adminMerge": "block", "mergeGate": "block" }
+  "guards": { "terraformApply": "block", "forcePush": "block", "adminMerge": "block", "mergeGate": "block",
+              "prodDatabase": "none", "prodServer": "none" },
+  "production": { "databases": [], "hosts": [] }
 }
 ```
 
 `schema: 6` — this repo is born current. It never trips `upgradeNeeded`, which fires on
 any config predating the `pm` and `graph` blocks, the per-role provider table, the
-`docs.theme` default moving to null, `install.policy`, or the `guards` block.
+`docs.theme` default moving to null, `install.policy`, or the `guards` block. `production.databases` and
+`production.hosts` are the globs `guards.prodDatabase` and `guards.prodServer`
+match commands against, and they are repo-only: the LEVEL is a machine fact, what
+IS production is a fact about this checkout. Empty lists mean those two guards
+match nothing, which is why they can default to `none` and change no behaviour.
 `qa.provider`: `auto` walks `qa.order` and uses the first provider that passes its
 probe, announcing which ran. Name a provider (`codex`, `copilot`, `claude`) to pin it
 and hard-fail instead of falling back.

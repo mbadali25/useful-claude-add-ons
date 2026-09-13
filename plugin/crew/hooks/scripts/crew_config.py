@@ -381,9 +381,17 @@ def default_config():
         # globally would fail `is_global_path`'s rule that every
         # globally-settable key is a real repo key.
         "install": copy.deepcopy(crew_state.INSTALL_DEFAULTS),
-        # Same rule, same ratchet, four more keys. Both layers, because a repo
+        # Same rule, same ratchet, six more keys. Both layers, because a repo
         # that may only NARROW still has to be able to say so.
         "guards": copy.deepcopy(crew_state.GUARD_DEFAULTS),
+        # REPO ONLY, and the asymmetry is the design. `guards.prodDatabase`
+        # and `guards.prodServer` say how much of production crew may reach,
+        # which is a machine fact and ratchets; `production.databases` and
+        # `production.hosts` say WHAT production IS, which is a fact about
+        # this checkout. Absent from `default_global_config()`, so
+        # `filter_global` prunes it out of a global file and reports it --
+        # one repo's hostnames must never become every repo's.
+        "production": copy.deepcopy(crew_state.PRODUCTION_DEFAULTS),
     }
 
 
@@ -522,10 +530,13 @@ def default_global_config():
         # the only key whose global value a repo cannot override upward --
         # see `crew_state.effective_ratcheted`.
         "install": copy.deepcopy(crew_state.INSTALL_DEFAULTS),
-        # The four guards, and the strongest case on this list for the ratchet
+        # The six guards, and the strongest case on this list for the ratchet
         # rather than precedence. `guards.forcePush` decides whether a command
-        # that destroys history on a remote runs without a word; the repo file
-        # asking for that arrived inside a clone written by someone else.
+        # that destroys history on a remote runs without a word, and
+        # `guards.prodDatabase` whether crew may write to a production
+        # database; the repo file asking for either arrived inside a clone
+        # written by someone else. Note what is NOT here: `production.*`, the
+        # patterns those two match against, which is a repo fact.
         "guards": copy.deepcopy(crew_state.GUARD_DEFAULTS),
     }
 
@@ -978,6 +989,74 @@ def _log_guard(root, row):
         pass
 
 
+def production_patterns(root, name):
+    """The `production.*` globs for one production guard, REPO LAYER ONLY.
+
+    Read straight out of the repo file with `crew_state.load_config`, the same
+    raw read `resolve_ratcheted` uses for the repo layer, rather than through
+    `resolve_config`,
+    and that is the enforcement of the repo-only rule rather than a shortcut: a
+    `production` block in a machine-global file must reach no repo, and the way
+    to guarantee that is to never read the global layer here at all.
+    `filter_global` already prunes it and reports it; this is what makes the
+    report true.
+
+    Returns `[]` for anything that is not a list of strings, which is the
+    fail-closed direction for a PATTERN list: no patterns means no matches, and
+    no matches means the guard refuses nothing nobody declared.
+    """
+    key = {"prodDatabase": "databases", "prodServer": "hosts"}[name]
+    cfg = crew_state.load_config(root) or {}
+    block = cfg.get("production")
+    if not isinstance(block, dict):
+        return []
+    patterns = block.get(key)
+    if not isinstance(patterns, list):
+        return []
+    return [p for p in patterns if isinstance(p, str) and p.strip()]
+
+
+def _guard_row(name, policy, decision, reason, marker, target, resolved):
+    """The dict every guard decision returns, built in ONE place.
+
+    One constructor because two of them drifting is how a caller comes to read
+    a key that one branch sets and the other does not, and the two branches
+    here are exactly the shape that invites it.
+    """
+    return {
+        "guard": name,
+        "policy": policy,
+        "decision": decision,
+        "reason": reason,
+        "marker": marker,
+        "target": target,
+        "heldDownBy": resolved["heldDownBy"],
+        "repo": resolved["repo"],
+        "global": resolved["global"],
+    }
+
+
+def _maybe_log(root, record, decision, name, policy, target, command):
+    """Append the decision row, unless it is a refusal in a non-crew repo.
+
+    `.crew/` is created only when it is missing AND the decision was not a
+    refusal: a refusal is already visible on stderr, and creating a crew
+    directory inside a repo that never asked for one is a side effect nobody
+    requested.
+    """
+    if not record:
+        return
+    if decision == "block" and not os.path.isdir(os.path.join(root, ".crew")):
+        return
+    # Tabs and newlines in a command would forge a row. Same normalisation
+    # `crew_incident_log` (`_common.sh:104`) applies, and for the same reason.
+    flat = command
+    for char in ("\t", "\r", "\n"):
+        flat = flat.replace(char, " ")
+    _log_guard(root, (str(int(time.time())), name, policy, decision,
+                      target or "-", flat))
+
+
 def guard_decision(root, name, command, path=None, record=False):
     """What crew's command guard must do about `command` under `guards.<name>`.
 
@@ -1016,6 +1095,22 @@ def guard_decision(root, name, command, path=None, record=False):
     marker = guard_marker(root, name, command)
     target = push_target(command) if name == "forcePush" else ""
 
+    if name in crew_state.PROD_GUARD_NAMES:
+        # A different vocabulary and a different question, so a different
+        # branch rather than three more cases bolted onto the policy chain.
+        # The patterns come from the REPO layer alone -- `production_patterns`
+        # is where that is enforced -- while `policy` above already came
+        # through the ratchet, so the level narrows and the patterns do not.
+        decision, reason, target, access = crew_state.prod_decision(
+            policy, command, production_patterns(root, name))
+        # `ask` is not in this vocabulary, so there is nothing to approve and
+        # naming a marker file would invite a user to create one that nothing
+        # reads.
+        out = _guard_row(name, policy, decision, reason, "", target, resolved)
+        out["access"] = access
+        _maybe_log(root, record, decision, name, policy, target, command)
+        return out
+
     if policy == "allow":
         decision, reason = "allow", f"guards.{name} is `allow`"
     elif policy == "ask":
@@ -1033,26 +1128,10 @@ def guard_decision(root, name, command, path=None, record=False):
     else:
         decision, reason = "block", f"guards.{name} is `block`"
 
-    out = {
-        "guard": name,
-        "policy": policy,
-        "decision": decision,
-        "reason": reason,
-        "marker": marker,
-        "target": target,
-        "heldDownBy": resolved["heldDownBy"],
-        "repo": resolved["repo"],
-        "global": resolved["global"],
-    }
-    if record and not (decision == "block" and not os.path.isdir(
-            os.path.join(root, ".crew"))):
-        _log_guard(root, (
-            str(int(time.time())), name, policy, decision, target or "-",
-            # Tabs and newlines in a command would forge a row. Same
-            # normalisation `crew_incident_log` (`_common.sh:104`) applies, and
-            # for the same reason.
-            command.replace("\t", " ").replace("\r", " ").replace("\n", " "),
-        ))
+    out = _guard_row(name, policy, decision, reason, marker,
+                     target, resolved)
+    out["access"] = ""
+    _maybe_log(root, record, decision, name, policy, target, command)
     return out
 
 
@@ -1771,6 +1850,8 @@ _GUARD_ACTIONS = {
                   "rule somebody put there",
     "mergeGate": "taking a live repository's merge gate down and putting it "
                  "back, through /crew:gate",
+    "prodDatabase": "a database matching a `production.databases` pattern",
+    "prodServer": "a host matching a `production.hosts` pattern",
 }
 
 
@@ -1802,6 +1883,35 @@ def _guard_widening_notes(name, what):
     }
 
 
+def _prod_widening_notes(name, what):
+    """The `! widens to` note for one production guard, total over
+    `PROD_LEVELS`.
+
+    Total for the same reason `_guard_widening_notes` is: the CLI indexes this
+    with the tier being granted, so a missing key is a `KeyError` where a
+    reader is being told what they just bought, rather than a note describing
+    the wrong tier.
+    """
+    del name
+    return {
+        "none": (
+            f"crew refuses every command aimed at {what}. This is the "
+            "narrowest level and nothing widens into it."
+        ),
+        "read": (
+            f"crew may run commands against {what} that it can POSITIVELY "
+            "classify as read-only. Anything it cannot classify - an "
+            "interactive session, an unrecognised tool, a command it cannot "
+            "parse - is treated as a write and refused."
+        ),
+        "full": (
+            f"crew may run ANY command against {what}, writes and deletes "
+            f"included. Every one is recorded in `{crew_state.GUARD_LOG_PATH}`, "
+            "so the record exists - but nothing stops it at the time."
+        ),
+    }
+
+
 _RATCHETED = {
     "pm.authority": (
         crew_state.authority_rank,
@@ -1824,6 +1934,19 @@ _RATCHETED.update({
         _guard_widening_notes(_name, _GUARD_ACTIONS[_name]),
     )
     for _name in crew_state.GUARD_NAMES
+})
+# The two production guards, whose vocabulary is `none`/`read`/`full` rather
+# than `block`/`ask`/`allow`. They ratchet by the same table and warn on the
+# same line; only the words differ, and they differ because reusing the other
+# three tier names for a different meaning is how a reader comes to believe
+# `read` stops at a prompt.
+_RATCHETED.update({
+    f"guards.{_name}": (
+        crew_state.prod_level_rank,
+        crew_state.normalise_prod_level,
+        _prod_widening_notes(_name, _GUARD_ACTIONS[_name]),
+    )
+    for _name in crew_state.PROD_GUARD_NAMES
 })
 
 
@@ -2026,7 +2149,8 @@ def main(argv=None):
                              "installed, under install.policy")
     parser.add_argument("--guard", metavar="NAME", default=None,
                         help="what the command guard must do about NAME "
-                             "(" + ", ".join(crew_state.GUARD_NAMES) + ")")
+                             "(" + ", ".join(crew_state.ALL_GUARD_NAMES)
+                             + ")")
     parser.add_argument("--command", default="",
                         help="the command being judged, for --guard")
     parser.add_argument("--record", action="store_true",
@@ -2042,12 +2166,13 @@ def main(argv=None):
         # twice: a PowerShell reimplementation of the ratchet would be a
         # second mechanism for the rule whose entire point is that a repo
         # cannot widen it. Both flavours shell out to this.
-        if args.guard not in crew_state.GUARD_NAMES:
+        if args.guard not in crew_state.ALL_GUARD_NAMES:
             # Exit 2, and the callers treat any non-zero as `block`. A typo'd
             # guard name must not resolve to a policy at all: `block` returned
             # quietly here would look like a deliberate setting forever.
             print(f"unknown guard: {args.guard} (known: "
-                  + ", ".join(crew_state.GUARD_NAMES) + ")", file=sys.stderr)
+                  + ", ".join(crew_state.ALL_GUARD_NAMES) + ")",
+                  file=sys.stderr)
             return 2
         out = guard_decision(args.root, args.guard, args.command,
                              args.global_path, record=args.record)
@@ -2067,9 +2192,15 @@ def main(argv=None):
         # target's slot. PowerShell's `-split` does not collapse, so the two
         # flavours disagreed about a line they read from the same producer,
         # which is the drift this shared CLI exists to prevent.
+        #
+        # `access` is the sixth field, APPENDED. Both flavours read
+        # six names now: bash's `read` hands every leftover word to
+        # the LAST variable, so a field appended without teaching the
+        # reader about it would arrive silently glued onto `reason`.
         print("\t".join(field or "-" for field in
                         (out["decision"], out["policy"], out["marker"],
-                         out["target"], out["reason"])))
+                         out["target"], out["reason"],
+                         out.get("access", ""))))
         return 0
 
     if args.install_plan is not None:

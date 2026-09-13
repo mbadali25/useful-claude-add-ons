@@ -96,6 +96,8 @@
     "terraformApply": "block",
     "forcePush": "block",
     "adminMerge": "block",
-    "mergeGate": "block"
+    "mergeGate": "block",
+    "prodDatabase": "none",
+    "prodServer": "none"
   }
 }

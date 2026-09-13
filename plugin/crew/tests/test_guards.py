@@ -162,10 +162,17 @@ def test_the_four_guards_are_declared_in_both_layers_and_default_to_block():
     repo = crew_config.default_config()
     glob = crew_config.default_global_config()
 
-    assert set(repo["guards"]) == set(crew_state.GUARD_NAMES)
+    assert set(repo["guards"]) == set(crew_state.ALL_GUARD_NAMES)
     assert repo["guards"] == glob["guards"]
     for name in crew_state.GUARD_NAMES:
         assert repo["guards"][name] == "block", name
+        assert crew_config.is_global_path(f"guards.{name}"), name
+    # The two production guards share the block and the ratchet and NOT the
+    # vocabulary, so their floor is asserted in their own words. A test that
+    # looped `== "block"` over all six would either fail or, worse, be
+    # "fixed" by giving them a tier name that means nothing to them.
+    for name in crew_state.PROD_GUARD_NAMES:
+        assert repo["guards"][name] == "none", name
         assert crew_config.is_global_path(f"guards.{name}"), name
 
 
@@ -230,8 +237,12 @@ def test_the_schema_6_bump_reaches_a_repo_at_schema_5(tmp_path):
     written = json.loads(
         (root / ".crew" / "config.json").read_text("utf-8"))
     assert written["schema"] == crew_state.SCHEMA_CURRENT
-    assert written["guards"] == {name: "block"
-                                 for name in crew_state.GUARD_NAMES}
+    assert written["guards"] == crew_state.GUARD_DEFAULTS
+    # Six keys, two vocabularies, one migration. The production pair lands
+    # at `none` WITH an empty `production` block, so the strictest level
+    # there is refuses the empty set until somebody declares a pattern --
+    # which is what let them ship inside a mandatory migration.
+    assert written["production"] == {"databases": [], "hosts": []}
     assert written["github"] == {"mergeGate": {"enabled": False,
                                                "branch": None}}
     # The keys are NAMED in the notes, or the report cannot say what it added.
@@ -321,7 +332,16 @@ def test_the_ratchet_is_one_table_covering_install_policy_and_all_four_guards():
     resolves."""
     assert set(crew_state.RATCHETED_KEYS) == {
         "install.policy", "guards.terraformApply", "guards.forcePush",
-        "guards.adminMerge", "guards.mergeGate"}
+        "guards.adminMerge", "guards.mergeGate", "guards.prodDatabase",
+        "guards.prodServer"}
+    # Two vocabularies, one table. The production guards ratchet by
+    # `none` < `read` < `full` and must never be normalised through the policy
+    # tiers -- that would resolve every `read` to `block` and report a level
+    # nobody set.
+    assert crew_state.RATCHETED_KEYS["guards.prodServer"][0] == (
+        crew_state.PROD_LEVELS)
+    assert crew_state.RATCHETED_KEYS["guards.forcePush"][0] == (
+        crew_state.GUARD_POLICIES)
     assert "pm.authority" not in crew_state.RATCHETED_KEYS
     assert crew_state.ratchet_spec("tracker") is None
 
@@ -644,9 +664,10 @@ def test_the_cli_line_never_emits_an_empty_field(tmp_path, capsys):
     line = capsys.readouterr().out.rstrip("\n")
 
     fields = line.split("\t")
-    assert len(fields) == 5, fields
+    assert len(fields) == 6, fields
     assert all(fields), fields
     assert fields[3] == "-"      # no target branch for this guard
+    assert fields[5] == "-"      # and no access class: not a prod guard
 
 
 # ---- both shell flavours ---------------------------------------------------
@@ -857,3 +878,344 @@ def test_ps1_fails_closed_and_says_so_when_the_resolver_cannot_answer(
 
     assert proc.returncode == 2, proc.stderr[-600:]
     assert "could not read it" in proc.stderr, proc.stderr[-600:]
+
+
+# ---- production access: guards.prodDatabase / guards.prodServer ------------
+#
+# A second vocabulary in the same block, so everything below asserts against
+# `none`/`read`/`full` rather than reusing the policy tests' `block`/`ask`/
+# `allow`. The classifier is the part that must never guess, so its
+# unclassifiable cases get as many assertions as its positive ones.
+
+_PROD = {"databases": ["prod-db-*", "*.rds.example.com"],
+         "hosts": ["prod-web-*", "10.0.*"]}
+
+# Commands aimed at a DECLARED target, by what the classifier must call them.
+_PROD_READS = (
+    "psql -h prod-db-1 -c 'select count(*) from orders'",
+    "mysql -h prod-db-2 -e 'show tables'",
+    "ssh deploy@prod-web-1 'tail -n 50 /var/log/app.log'",
+    "ssh deploy@prod-web-1 'systemctl status app'",
+    "ssh deploy@prod-web-1 'cat /etc/hostname | grep web'",
+    "aws rds describe-db-instances --db-instance-identifier prod-db-1",
+)
+_PROD_WRITES = (
+    "psql -h prod-db-1 -c 'delete from orders'",
+    "psql -h prod-db-1 -c 'select 1; drop table orders'",
+    "psql -h prod-db-1 -c 'select * into backup from orders'",
+    "ssh deploy@prod-web-1 'systemctl restart app'",
+    "ssh deploy@prod-web-1 'tail -n 5 /var/log/app.log > /tmp/out'",
+    "aws rds delete-db-instance --db-instance-identifier prod-db-1",
+)
+# Unclassifiable is a WRITE. Listed separately because these are the cases the
+# whole `read` level rests on: each one is a command crew cannot read, and
+# `read` is only a floor if crew refuses what it cannot read.
+_PROD_UNKNOWN = (
+    "psql -h prod-db-1",                       # interactive session
+    "ssh deploy@prod-web-1",                   # interactive login
+    "ssh deploy@prod-web-1 'somebinary --go'",  # unrecognised tool
+    "ssh deploy@prod-web-1 'sed -i s/a/b/ /etc/app.conf'",
+    "aws ssm start-session --target prod-web-1",
+)
+
+
+def _prod_ceiling(tmp_path):
+    """A machine-global file at the CEILING, so the repo value is what varies.
+
+    With the global layer unset the ratchet correctly holds every repo value
+    down to `none` -- which is its own test, and would otherwise make every
+    case below pass for the wrong reason.
+    """
+    return _global_file(tmp_path, guards={name: "full" for name
+                                          in crew_guards.PROD_GUARD_NAMES})
+
+
+def _prod_repo(tmp_path, level, production=None, name="repo"):
+    root = tmp_path / name
+    (root / ".crew").mkdir(parents=True, exist_ok=True)
+    cfg = {"schema": crew_state.SCHEMA_CURRENT,
+           "guards": {"prodDatabase": level, "prodServer": level},
+           "production": _PROD if production is None else production}
+    (root / ".crew" / "config.json").write_text(json.dumps(cfg), "utf-8")
+    return str(root)
+
+
+def _guard_for(command):
+    """Which of the two guards a command is routed to by the shells."""
+    return "prodDatabase" if command.split()[0] in (
+        "psql", "mysql", "mariadb", "sqlcmd") or " rds " in command \
+        else "prodServer"
+
+
+def test_the_two_production_guards_are_declared_in_both_layers_at_none():
+    """Same block, same ratchet, different vocabulary. `none` is both the
+    default and the floor, so an undeclared key and an unknown value resolve
+    identically."""
+    repo = crew_config.default_config()
+    glob = crew_config.default_global_config()
+
+    for name in crew_guards.PROD_GUARD_NAMES:
+        assert repo["guards"][name] == "none", name
+        assert glob["guards"][name] == "none", name
+        assert crew_config.is_global_path(f"guards.{name}"), name
+    assert set(repo["guards"]) == set(crew_guards.ALL_GUARD_NAMES)
+
+
+def test_production_is_repo_only_and_a_global_one_is_reported():
+    """The asymmetry that makes the design work: the LEVEL is a machine fact
+    and ratchets; WHAT IS PRODUCTION is a fact about this checkout. A global
+    `production` block would carry one repo's hostnames into every other repo
+    on the machine, so it is pruned -- and REPORTED, because a key that
+    silently does nothing is worse than one refused out loud."""
+    assert "production" in crew_config.default_config()
+    assert "production" not in crew_config.default_global_config()
+    assert not crew_config.is_global_path("production.hosts")
+    assert not crew_config.is_global_path("production.databases")
+
+    kept, ignored = crew_config.filter_global(
+        {"production": {"hosts": ["prod-web-*"]}, "guards": {"prodServer": "read"}})
+
+    assert "production" not in kept
+    assert any(path.startswith("production") for path in ignored)
+
+
+def test_production_patterns_never_read_the_global_layer(tmp_path,
+                                                         monkeypatch):
+    """Enforced by reading the repo file rather than by a rule in prose: a
+    `production` block in a global file must reach no repo, and the way to
+    guarantee that is to never read the global layer here at all.
+
+    `GLOBAL_CONFIG_PATH` is pointed at the fixture rather than only passing
+    `path`, and that is what gives the test teeth. `filter_global` already
+    prunes `production` out of the merged layer, so a mutation that routed
+    this through `resolve_config` would change nothing and the test would pass
+    against it -- protected twice, tested against neither. Patching the path a
+    DIRECT global read would use covers the second guard as well."""
+    # The repo declares NO `production` block at all, which is the state the
+    # bug would be invisible in: a repo with an empty one already wins any
+    # merge, so a test using that would pass against a global fallback.
+    root = tmp_path / "no-production"
+    (root / ".crew").mkdir(parents=True)
+    (root / ".crew" / "config.json").write_text(json.dumps(
+        {"schema": crew_state.SCHEMA_CURRENT,
+         "guards": {"prodServer": "read"}}), "utf-8")
+    root = str(root)
+    path = _global_file(tmp_path)
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump({"production": {"hosts": ["*"], "databases": ["*"]}}, handle)
+    monkeypatch.setattr(crew_config, "GLOBAL_CONFIG_PATH", path)
+
+    assert crew_config.production_patterns(root, "prodServer") == []
+    out = crew_config.guard_decision(
+        root, "prodServer", "ssh deploy@prod-web-1 'rm -r /srv'", path)
+    assert out["decision"] == "allow"
+    assert out["target"] == ""
+
+
+@pytest.mark.parametrize("command", _PROD_READS)
+def test_the_classifier_calls_a_read_a_read(command):
+    assert crew_guards.classify_access(command) == "read", command
+
+
+@pytest.mark.parametrize("command", _PROD_WRITES + _PROD_UNKNOWN)
+def test_everything_else_is_a_write_including_what_it_cannot_read(command):
+    """Unknown is not read. A classifier answering "probably fine" would make
+    `read` a slower `full`, and the commands it cannot parse are exactly the
+    ones a reader would most want refused."""
+    assert crew_guards.classify_access(command) == "write", command
+
+
+def test_with_no_patterns_declared_the_guard_matches_nothing(tmp_path):
+    """The property the default rests on. `none` is the strictest level there
+    is, and it ships as the default because with nothing declared it refuses
+    the empty set -- so an upgrade changes no behaviour until somebody says
+    what production is."""
+    root = _prod_repo(tmp_path, "none", production={"databases": [],
+                                                    "hosts": []})
+    path = _prod_ceiling(tmp_path)
+
+    for command in _PROD_WRITES + _PROD_UNKNOWN:
+        out = crew_config.guard_decision(root, _guard_for(command), command,
+                                         path)
+        assert out["decision"] == "allow", command
+        assert out["target"] == "", command
+
+
+@pytest.mark.parametrize("command", _PROD_READS + _PROD_WRITES
+                         + _PROD_UNKNOWN)
+def test_none_refuses_every_match(tmp_path, command):
+    root = _prod_repo(tmp_path, "none")
+    out = crew_config.guard_decision(root, _guard_for(command), command,
+                                     _prod_ceiling(tmp_path))
+    assert out["decision"] == "block", command
+    assert out["target"], "a refusal must name the pattern it matched"
+
+
+@pytest.mark.parametrize("command", _PROD_READS)
+def test_read_permits_what_it_can_classify_as_read_only(tmp_path, command):
+    root = _prod_repo(tmp_path, "read")
+    out = crew_config.guard_decision(root, _guard_for(command), command,
+                                     _prod_ceiling(tmp_path))
+    assert out["decision"] == "allow", command
+    assert out["access"] == "read"
+
+
+@pytest.mark.parametrize("command", _PROD_WRITES + _PROD_UNKNOWN)
+def test_read_refuses_writes_and_everything_unclassifiable(tmp_path, command):
+    root = _prod_repo(tmp_path, "read")
+    out = crew_config.guard_decision(root, _guard_for(command), command,
+                                     _prod_ceiling(tmp_path))
+    assert out["decision"] == "block", command
+    assert out["access"] == "write"
+
+
+@pytest.mark.parametrize("command", _PROD_READS + _PROD_WRITES
+                         + _PROD_UNKNOWN)
+def test_full_allows_everything_and_logs_it(tmp_path, command):
+    root = _prod_repo(tmp_path, "full")
+    out = crew_config.guard_decision(root, _guard_for(command), command,
+                                     _prod_ceiling(tmp_path), record=True)
+    assert out["decision"] == "allow", command
+    log = os.path.join(root, crew_state.GUARD_LOG_PATH)
+    assert os.path.isfile(log)
+    with open(log, encoding="utf-8") as handle:
+        assert command.replace("\t", " ") in handle.read()
+
+
+def test_a_repo_cannot_widen_the_production_level(tmp_path):
+    """The same ratchet as the other four, on the table rather than in a
+    second copy of the rule."""
+    root = _prod_repo(tmp_path, "full")
+    path = _global_file(tmp_path, guards={"prodServer": "read"})
+
+    resolved = crew_config.resolve_guard(root, "prodServer", path)
+
+    assert resolved["effective"] == "read"
+    assert resolved["heldDownBy"] == "global"
+    out = crew_config.guard_decision(
+        root, "prodServer", "ssh deploy@prod-web-1 'systemctl restart app'",
+        path)
+    assert out["decision"] == "block"
+
+
+def test_an_unknown_production_level_fails_closed_to_none(tmp_path):
+    root = _prod_repo(tmp_path, "READ-ONLY-PLEASE")
+    out = crew_config.guard_decision(
+        root, "prodDatabase", "psql -h prod-db-1 -c 'select 1'",
+        _prod_ceiling(tmp_path))
+    assert out["policy"] == "none"
+    assert out["decision"] == "block"
+
+
+def test_a_production_guard_names_no_marker(tmp_path):
+    """`ask` is not in this vocabulary. Naming a marker file would invite a
+    user to create one that nothing reads -- a control that looks like it
+    works and does not."""
+    root = _prod_repo(tmp_path, "read")
+    out = crew_config.guard_decision(
+        root, "prodDatabase", "psql -h prod-db-1 -c 'delete from t'",
+        _prod_ceiling(tmp_path))
+    assert out["marker"] == ""
+    assert out["decision"] == "block"
+
+
+def test_the_cli_answers_for_the_production_guards_too(tmp_path, capsys):
+    """Both shells read this one line, so the field count is the contract.
+    `access` is the sixth field and is appended, never inserted."""
+    root = _prod_repo(tmp_path, "read")
+    rc = crew_config.main(["--root", root, "--guard", "prodServer",
+                           "--command", "ssh deploy@prod-web-1 'ls /srv'",
+                           "--global-path", _prod_ceiling(tmp_path)])
+    assert rc == 0
+    fields = capsys.readouterr().out.strip().split("\t")
+    assert len(fields) == 6
+    assert fields[0] == "allow" and fields[1] == "read"
+    assert fields[5] == "read"
+    assert all(field for field in fields), "an empty field shifts bash's read"
+
+
+@pytest.mark.parametrize("level,command,expected", [
+    ("none", _PROD_READS[0], 2),
+    ("none", "ssh deploy@prod-web-1 'ls /srv'", 2),
+    ("read", _PROD_READS[0], 0),
+    ("read", "ssh deploy@prod-web-1 'systemctl restart app'", 2),
+    ("read", "ssh deploy@prod-web-1", 2),
+    ("full", "psql -h prod-db-1 -c 'delete from orders'", 0),
+    ("read", "ssh deploy@staging-web-1 'systemctl restart app'", 0),
+    ("read", "psql -h dev-db-9 -c 'delete from orders'", 0),
+])
+@needs_bash
+def test_sh_honours_the_production_level(tmp_path, level, command, expected):
+    root = _prod_repo(tmp_path, level)
+    home = _home(tmp_path, guards={name: "full"
+                                   for name in crew_guards.PROD_GUARD_NAMES})
+    proc = _run_sh(root, home, command)
+    assert proc.returncode == expected, (command, proc.stderr[-600:])
+
+
+@pytest.mark.parametrize("level,command,expected", [
+    ("none", _PROD_READS[0], 2),
+    ("none", "ssh deploy@prod-web-1 'ls /srv'", 2),
+    ("read", _PROD_READS[0], 0),
+    ("read", "ssh deploy@prod-web-1 'systemctl restart app'", 2),
+    ("read", "ssh deploy@prod-web-1", 2),
+    ("full", "psql -h prod-db-1 -c 'delete from orders'", 0),
+    ("read", "ssh deploy@staging-web-1 'systemctl restart app'", 0),
+    ("read", "psql -h dev-db-9 -c 'delete from orders'", 0),
+])
+@needs_pwsh
+def test_ps1_honours_the_production_level(tmp_path, level, command, expected):
+    """The identical table in the other flavour. Written out rather than
+    shared: the two scripts are what is under test."""
+    root = _prod_repo(tmp_path, level)
+    home = _home(tmp_path, guards={name: "full"
+                                   for name in crew_guards.PROD_GUARD_NAMES})
+    proc = _run_ps1(root, home, command)
+    assert proc.returncode == expected, (command, proc.stderr[-600:])
+
+
+@needs_bash
+def test_sh_says_nothing_when_no_production_pattern_matches(tmp_path):
+    """These two guards fire on ORDINARY commands -- every `ssh`, every
+    `psql`. A crew banner above each one is how a guard becomes noise people
+    switch off, so silence when nothing matched is a property, not an
+    omission."""
+    root = _prod_repo(tmp_path, "read")
+    home = _home(tmp_path)
+    proc = _run_sh(root, home, "ssh deploy@staging-web-1 'ls /srv'")
+    assert proc.returncode == 0
+    assert "prodServer" not in proc.stderr
+
+
+@needs_pwsh
+def test_ps1_says_nothing_when_no_production_pattern_matches(tmp_path):
+    root = _prod_repo(tmp_path, "read")
+    home = _home(tmp_path)
+    proc = _run_ps1(root, home, "ssh deploy@staging-web-1 'ls /srv'")
+    assert proc.returncode == 0
+    assert "prodServer" not in proc.stderr
+
+
+@needs_bash
+def test_sh_still_blocks_the_old_prod_rule_when_nothing_is_declared(tmp_path):
+    """The unconfigurable `prod`-in-an-argument rule predates these keys and
+    stays. With nothing declared it behaves exactly as it did before schema 6,
+    which is what makes the new default behaviour-PRESERVING rather than only
+    behaviour-neutral-sounding."""
+    root = _prod_repo(tmp_path, "none", production={"databases": [],
+                                                    "hosts": []})
+    proc = _run_sh(root, _home(tmp_path), "psql -h prod-db-1 -c 'select 1'")
+    assert proc.returncode == 2
+    assert "targets production" in proc.stderr
+
+
+@needs_bash
+def test_sh_lets_full_reach_a_host_the_old_rule_would_refuse(tmp_path):
+    """And the other half of that: once a pattern IS declared, the configured
+    level answers, and the old rule stands down for that command. Leaving both
+    in would mean `full` still refused `prod-db-1` -- a key that reads as
+    configurable and is not."""
+    root = _prod_repo(tmp_path, "full")
+    home = _home(tmp_path, guards={"prodDatabase": "full"})
+    proc = _run_sh(root, home, "psql -h prod-db-1 -c 'delete from orders'")
+    assert proc.returncode == 0, proc.stderr[-600:]

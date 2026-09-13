@@ -25,7 +25,9 @@ nothing in the suite patches one through `crew_state` -- a string-keyed patch
 there rebinds a copy the reading function never sees, which is a guard failing
 open while wearing the label of a check that happened.
 """
+import fnmatch
 import os
+import shlex
 
 # What crew may do when a skill it needs is NOT installed. Ordered least to most
 # permissive and read only through `install_policy_rank`, the same contract
@@ -101,7 +103,55 @@ GUARD_POLICY_DEFAULT = "block"
 # else with its own layering rule.
 GUARD_NAMES = ("terraformApply", "forcePush", "adminMerge", "mergeGate")
 
-GUARD_DEFAULTS = {name: GUARD_POLICY_DEFAULT for name in GUARD_NAMES}
+# The production-access guards, which live in the same `guards` block and
+# ratchet by the same table, but have their OWN three-value vocabulary:
+#
+#   none   crew may not touch a declared production target at all
+#   read   crew may run what the guard can positively classify as read-only
+#   full   crew may run anything, and every run is logged
+#
+# `ask` is deliberately absent. The other four guards answer "may crew do this
+# one dangerous thing", where a per-command yes is meaningful. These answer
+# "how much of production may crew reach", which is a standing posture, not a
+# per-command question -- and an `ask` here would mean a marker per distinct
+# SQL string, which is a prompt nobody would read by the tenth query.
+#
+# Ordered least to most permissive, append only, read only through
+# `prod_level_rank`. Note that `none` is BOTH the default and the floor, so an
+# unknown value and an undeclared key resolve the same way.
+PROD_LEVELS = ("none", "read", "full")
+PROD_LEVEL_DEFAULT = "none"
+
+PROD_GUARD_NAMES = ("prodDatabase", "prodServer")
+
+# Every guard, in declaration order: the four policy guards then the two
+# production ones. `GUARD_DEFAULTS` is keyed off this, so a name that exists in
+# neither tuple cannot reach the config block at all.
+ALL_GUARD_NAMES = GUARD_NAMES + PROD_GUARD_NAMES
+
+GUARD_DEFAULTS = dict(
+    [(name, GUARD_POLICY_DEFAULT) for name in GUARD_NAMES]
+    + [(name, PROD_LEVEL_DEFAULT) for name in PROD_GUARD_NAMES])
+
+# What counts as production, and it is a REPO-ONLY block on purpose.
+#
+# The LEVEL is a property of the machine and its owner -- "this laptop may read
+# production" is the same sentence in every checkout. WHAT IS PRODUCTION is a
+# property of the checkout: `prod-db-*` means one cluster in one repo and
+# something else entirely in the next. A machine-global list would carry one
+# repo's hostnames into every other repo on the machine, which is how a guard
+# comes to refuse innocent commands (and, worse, to pass dangerous ones because
+# the global list names the wrong estate).
+#
+# So `production.*` is absent from `default_global_config()`, `filter_global`
+# prunes it out of a global file and reports it, and the level ratchets while
+# the patterns do not.
+#
+# WITH NO PATTERNS DECLARED THE GUARD MATCHES NOTHING. That is what lets the
+# default be `none` without changing anybody's behaviour at upgrade: an
+# existing repo gains two keys whose combined effect is "refuse access to the
+# empty set". Declaring a pattern is the act that turns them on.
+PRODUCTION_DEFAULTS = {"databases": [], "hosts": []}
 
 # The one-shot approval marker `ask` stops for, and where the guard writes what
 # it let through. Both live under `.crew/` beside `.approved-<env>-<sha>`,
@@ -186,6 +236,47 @@ def guard_policy_rank(value):
     return GUARD_POLICIES.index(normalise_guard_policy(value))
 
 
+def normalise_prod_level(value):
+    """`value` as a known production-access level, else `none`.
+
+    The fourth key to need this and the fourth identical reason: `read` and
+    `full` each buy a capability against a live production system, so an
+    unknown collapses to the least permissive tier. A typo in a hand-edited
+    config costs crew access rather than granting it, and `none` against a
+    declared production host is a refusal somebody notices immediately --
+    which is the direction a mistake should fail in.
+    """
+    if isinstance(value, str):
+        cleaned = value.strip().lower()
+        if cleaned in PROD_LEVELS:
+            return cleaned
+    return PROD_LEVEL_DEFAULT
+
+
+def prod_level_rank(value):
+    """`value`'s position in `PROD_LEVELS`. Higher is more permissive.
+
+    Routed through `normalise_prod_level` first, so an unknown ranks 0 and
+    every comparison built on this is fail-safe by construction. The one
+    function permitted to know the levels are ordered.
+    """
+    return PROD_LEVELS.index(normalise_prod_level(value))
+
+
+def guard_tiers(name):
+    """The `(tiers, normalise, rank)` triple a guard's VALUES obey.
+
+    Two vocabularies in one block, so the vocabulary is looked up by name
+    rather than assumed: `guards.forcePush` is `block`/`ask`/`allow` and
+    `guards.prodServer` is `none`/`read`/`full`. A caller that assumed one of
+    them would normalise every value of the other to that vocabulary's floor
+    and then report a level nobody set.
+    """
+    if name in PROD_GUARD_NAMES:
+        return (PROD_LEVELS, normalise_prod_level, prod_level_rank)
+    return (GUARD_POLICIES, normalise_guard_policy, guard_policy_rank)
+
+
 # Every key whose two layers combine by RATCHET rather than by precedence, and
 # the three things a ratchet needs: the ordered tier tuple, how to normalise a
 # value, and how to rank one.
@@ -207,9 +298,7 @@ RATCHETED_KEYS = {
                        install_policy_rank),
 }
 RATCHETED_KEYS.update({
-    f"guards.{_name}": (GUARD_POLICIES, normalise_guard_policy,
-                        guard_policy_rank)
-    for _name in GUARD_NAMES
+    f"guards.{_name}": guard_tiers(_name) for _name in ALL_GUARD_NAMES
 })
 
 
@@ -305,3 +394,319 @@ def install_plan(name, policy):
         "command": command,
         "reason": f"install.policy is `{resolved}`",
     }
+
+
+# --- What is production, and what is a read of it ---------------------------
+#
+# Two questions, deliberately separate functions, because they fail in opposite
+# directions. "Does this command touch production" over-matching costs a
+# refusal somebody notices; under-matching costs a production write nobody
+# does. "Is this command read-only" is the one that must never guess.
+
+# The shell commands crew can positively classify as read-only over `ssh`.
+# A LIST, not a pattern: a pattern saying "anything without a redirect" would
+# clear a recursive delete and `systemctl stop`. Anything not named here is a
+# WRITE -- see `classify_access` for why that is the only safe default.
+PROD_READ_COMMANDS = frozenset((
+    "cat", "head", "tail", "less", "more", "ls", "dir", "stat", "file",
+    "grep", "egrep", "fgrep", "zgrep", "wc", "sort", "uniq", "cut", "awk",
+    "sed", "df", "du", "free", "uptime", "uname", "hostname", "whoami", "id",
+    "date", "ps", "top", "netstat", "ss", "journalctl", "dmesg", "echo",
+    "true", "which", "env", "printenv",
+))
+
+# `sed` and `awk` are on that list and both can write (`sed -i`, or a
+# redirect). The redirect check below catches the redirect; `-i` is caught
+# here, by name, because it is the one in-place flag that does not look like
+# one. The tools whose read/write split is a SUBCOMMAND get their own table:
+# `systemctl status` is a read and `systemctl stop` is not, and a list keyed on
+# the binary alone cannot tell those apart.
+PROD_WRITE_FLAGS = frozenset(("-i", "--in-place"))
+PROD_SUBCOMMAND_READS = {
+    "systemctl": frozenset(("status", "show", "list-units", "list-unit-files",
+                            "is-active", "is-enabled", "cat")),
+    "docker": frozenset(("ps", "logs", "inspect", "images", "stats", "top",
+                         "version", "info", "port", "diff", "history")),
+    "kubectl": frozenset(("get", "describe", "logs", "top", "explain",
+                          "api-resources", "version", "cluster-info")),
+    "ip": frozenset(("addr", "a", "link", "l", "route", "r", "neigh")),
+}
+
+# PowerShell's verb-noun grammar makes the read set nameable rather than
+# listable: `Get-Service` and `Get-Content` are reads by construction.
+PROD_READ_PS_VERBS = ("get-", "measure-", "test-", "show-", "find-",
+                      "search-", "select-", "compare-", "format-", "out-")
+
+# SQL statements crew can positively classify as read-only. `WITH` is
+# deliberately absent: `WITH x AS (...) DELETE FROM ...` is a write that opens
+# with a read-looking keyword, which is exactly the shape this list must not
+# clear.
+PROD_READ_SQL = ("select", "show", "explain", "describe", "desc", "analyze")
+
+# The flags whose VALUE names a target, per tool. A value is a target even when
+# it looks like an option, because `-h --prod` is a hostname called `--prod`
+# and dropping it would be a silent miss.
+PROD_TARGET_FLAGS = frozenset((
+    "-h", "--host", "--hostname", "-S", "--server", "-d", "--dbname",
+    "--database", "--db-instance-identifier", "--db-cluster-identifier",
+    "--target", "--instance-id", "--cluster", "--endpoint", "--endpoint-url",
+))
+
+# The AWS CLI verbs that only read. Prefix-matched, so `describe-db-instances`
+# and `list-clusters` are covered without an enumeration that goes stale on
+# every AWS release -- and `start-session`, `modify-*`, `delete-*` and
+# `reboot-*` are not on it, so they classify as writes.
+PROD_READ_AWS_PREFIXES = ("describe-", "list-", "get-", "search-", "lookup-",
+                          "batch-get-", "scan-")
+
+_PROD_SPLIT = (";", "&&", "||", "|", "\n", "&")
+_PROD_REDIRECTS = (">", "tee ")
+
+
+def _prod_tokens(command):
+    """`command` as argv, or None when it cannot be parsed.
+
+    None is not an error the caller may ignore: an unbalanced quote means crew
+    does not know what the command says, and a command crew cannot read is not
+    a command crew can classify as a read.
+    """
+    try:
+        return shlex.split(command, posix=True)
+    except ValueError:
+        return None
+
+
+def production_targets(command):
+    """Every host, instance or database name `command` could be aimed at.
+
+    Deliberately generous. A candidate that matches nothing costs nothing,
+    while a target crew failed to extract is a production system the guard
+    does not know it is looking at. So: every non-option token, the host half
+    of every `user@host`, the host out of every `scheme://user@host:port/path`
+    connection string, and the value of every flag in `PROD_TARGET_FLAGS`
+    whether or not that value looks like an option.
+    """
+    tokens = _prod_tokens(command)
+    if tokens is None:
+        # Unparseable: fall back to whitespace so a target inside a broken
+        # quote is still offered to the matcher. `classify_access` refuses the
+        # same command separately, and the two must not depend on each other.
+        tokens = command.split()
+    out = []
+    expect_value = False
+    for token in tokens:
+        cleaned = token.strip().strip("'\"")
+        if not cleaned:
+            continue
+        if expect_value:
+            out.append(cleaned)
+            expect_value = False
+            continue
+        flag, sep, inline = cleaned.partition("=")
+        if flag.lower() in PROD_TARGET_FLAGS:
+            if sep:
+                out.append(inline)
+            else:
+                expect_value = True
+            continue
+        if cleaned.startswith("-"):
+            continue
+        out.append(cleaned)
+        if "://" in cleaned:
+            cleaned = cleaned.split("://", 1)[1].split("/", 1)[0]
+            out.append(cleaned)
+        if "@" in cleaned:
+            cleaned = cleaned.rsplit("@", 1)[1]
+            out.append(cleaned)
+        if ":" in cleaned:
+            out.append(cleaned.split(":", 1)[0])
+    return [t for t in dict.fromkeys(out) if t]
+
+
+def matches_production(command, patterns):
+    """The first declared pattern `command` aims at, or None.
+
+    None when `patterns` is empty, and that is the property the default rests
+    on: with nothing declared the guard matches nothing, so `none` changes no
+    behaviour until somebody says what production is.
+    """
+    for pattern in patterns or ():
+        if not isinstance(pattern, str) or not pattern.strip():
+            continue
+        needle = pattern.strip().lower()
+        for target in production_targets(command):
+            if fnmatch.fnmatch(target.lower(), needle):
+                return pattern.strip()
+    return None
+
+
+def _classify_segment(segment):
+    """One pipeline segment: `read` only when it is positively a read."""
+    tokens = _prod_tokens(segment)
+    if not tokens:
+        return "write"
+    head = os.path.basename(tokens[0]).lower()
+    if head.endswith(".exe"):
+        head = head[:-4]
+    if any(flag in PROD_WRITE_FLAGS for flag in tokens[1:]):
+        return "write"
+    if any(head.startswith(verb) for verb in PROD_READ_PS_VERBS):
+        return "read"
+    if head in PROD_SUBCOMMAND_READS:
+        rest = [t for t in tokens[1:] if not t.startswith("-")]
+        if rest and rest[0].lower() in PROD_SUBCOMMAND_READS[head]:
+            return "read"
+        return "write"
+    if head in PROD_READ_COMMANDS:
+        return "read"
+    return "write"
+
+
+def _classify_shell(text):
+    """A remote shell command line. EVERY segment must be a read."""
+    if any(token in text for token in _PROD_REDIRECTS):
+        return "write"
+    remaining = [text]
+    for sep in _PROD_SPLIT:
+        nxt = []
+        for chunk in remaining:
+            nxt.extend(chunk.split(sep))
+        remaining = nxt
+    segments = [c.strip() for c in remaining if c.strip()]
+    if not segments:
+        return "write"
+    if all(_classify_segment(seg) == "read" for seg in segments):
+        return "read"
+    return "write"
+
+
+def _classify_sql(sql):
+    """A SQL payload. Every statement must open with a read-only keyword."""
+    statements = [s.strip() for s in sql.split(";") if s.strip()]
+    if not statements:
+        return "write"
+    for statement in statements:
+        words = statement.lower().replace("(", " ").split()
+        if not words or words[0] not in PROD_READ_SQL:
+            return "write"
+        # `SELECT ... INTO` creates a table. A read-looking keyword opening a
+        # write is the whole reason this is a list and not a prefix check.
+        if "into" in words:
+            return "write"
+    return "read"
+
+
+def _sql_payload(tokens):
+    """The SQL a client was handed, or None when it was handed none.
+
+    None means an interactive session (`psql prod-db`), which is unclassifiable
+    by construction: nothing in the command line says what will be typed into
+    it. The caller turns None into `write`.
+    """
+    flags = ("-c", "--command", "-e", "--execute", "-q", "-Q", "--query",
+             "--eval")
+    for index, token in enumerate(tokens):
+        flag, sep, inline = token.partition("=")
+        if flag in flags:
+            if sep:
+                return inline
+            if index + 1 < len(tokens):
+                return tokens[index + 1]
+            return None
+    return None
+
+
+def _classify_aws(tokens):
+    """`aws <service> <verb>`: a read only on a known read-only verb prefix."""
+    words = [t for t in tokens[1:] if not t.startswith("-")]
+    if len(words) < 2:
+        return "write"
+    verb = words[1].lower()
+    if any(verb.startswith(prefix) for prefix in PROD_READ_AWS_PREFIXES):
+        return "read"
+    return "write"
+
+
+def _classify_ssh(tokens):
+    """`ssh [opts] host [remote command]`. No remote command is a write.
+
+    An interactive login is the unclassifiable case that matters most: the
+    command line names a host and nothing else, so `read` would be crew
+    deciding that whatever gets typed next will be harmless.
+    """
+    takes_value = ("-i", "-p", "-o", "-l", "-F", "-b", "-c", "-D", "-e", "-I",
+                   "-J", "-L", "-m", "-O", "-Q", "-R", "-S", "-W", "-w")
+    index, host = 1, None
+    while index < len(tokens):
+        token = tokens[index]
+        if token in takes_value:
+            index += 2
+            continue
+        if token.startswith("-"):
+            index += 1
+            continue
+        host = token
+        index += 1
+        break
+    if host is None or index >= len(tokens):
+        return "write"
+    return _classify_shell(" ".join(tokens[index:]))
+
+
+def classify_access(command):
+    """`read` when crew can PROVE `command` only reads, `write` otherwise.
+
+    Unknown is a write. Not a hedge -- the whole value of `read` as a level is
+    that it is a floor crew cannot fall through, and a classifier answering
+    "probably fine" would make `read` a slower `full`. Every tool crew does not
+    recognise, every unparseable quote, every interactive session and every
+    command carrying a redirect lands here as a write, and the caller refuses
+    it under `read` while naming what it could not classify.
+    """
+    tokens = _prod_tokens(command)
+    if not tokens:
+        return "write"
+    head = os.path.basename(tokens[0]).lower()
+    if head.endswith(".exe"):
+        head = head[:-4]
+    if head == "aws":
+        return _classify_aws(tokens)
+    if head in ("ssh", "plink"):
+        return _classify_ssh(tokens)
+    if head in ("psql", "mysql", "mariadb", "sqlcmd", "mongosh", "mongo",
+                "redis-cli", "sqlite3", "cqlsh"):
+        payload = _sql_payload(tokens)
+        if payload is None:
+            return "write"
+        return _classify_sql(payload)
+    return "write"
+
+
+def prod_decision(level, command, patterns):
+    """What `guards.prodDatabase` / `guards.prodServer` do about `command`.
+
+    Returns `(decision, reason, target, access)`, `decision` being `allow` or
+    `block` -- `ask` is not in this vocabulary. `target` is the declared
+    pattern that matched, or "" when none did, and no match is an ALLOW that
+    says so: a guard refusing commands aimed at nothing anybody declared would
+    be refusing on a fact nobody stated.
+    """
+    resolved = normalise_prod_level(level)
+    matched = matches_production(command, patterns)
+    if matched is None:
+        return ("allow", "no declared production target matches", "", "")
+    access = classify_access(command)
+    if resolved == "full":
+        return ("allow",
+                f"guards level is `full`, {access} access to `{matched}`",
+                matched, access)
+    if resolved == "read" and access == "read":
+        return ("allow",
+                f"classified read-only against `{matched}`, permitted by "
+                "`read`", matched, access)
+    if resolved == "read":
+        return ("block",
+                f"`read` permits only what crew can classify as read-only, "
+                f"and this is not: `{matched}`", matched, access)
+    return ("block", f"`none` permits no access to `{matched}`", matched,
+            access)

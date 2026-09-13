@@ -201,7 +201,21 @@ surface it, do not re-derive it by hand:
   record lives. Say unprompted that these keys take the NARROWER of the repo
   and global layers, exactly as `install.policy` does, so `allow` needs both
   layers to say `allow`; and that `guards.mergeGate` governs `/crew:gate`
-  rather than the command guard. `github.mergeGate` is the GitHub twin of
+  rather than the command guard.
+
+  Then the two the same block adds in a DIFFERENT vocabulary:
+  `guards.prodDatabase` and `guards.prodServer` are `none` | `read` | `full`,
+  not `block` | `ask` | `allow`, and they arrive at `none`. Say the thing that
+  makes `none` safe rather than alarming: they match against
+  `production.databases` and `production.hosts`, which arrive EMPTY, and **with
+  no patterns declared the guard matches nothing**. So nothing is refused until
+  the user declares what production is, and the older unconfigurable
+  `prod`-in-an-argument rule is unchanged until they do. Say too that those two
+  lists are REPO-ONLY while the levels ratchet across both layers — the level
+  is a fact about the machine, what counts as production is a fact about the
+  checkout — and that under `read` anything crew cannot positively classify as
+  read-only, an interactive `psql` session included, is treated as a write and
+  refused. `github.mergeGate` is the GitHub twin of
   `bitbucket.mergeGate`, off by default and with no `preset` key — the
   Bitbucket one has a `preset` that binds to nothing, and it was not copied.
 - **A machine-global theme that defeats it** — when the report warns that

@@ -10,7 +10,8 @@ All notable changes to this repository are documented here. Format follows [Keep
   command, and schema 6.** Crew's command guard refused a fixed set of
   dangerous actions with no way to opt out. Schema 6 adds `guards` —
   `terraformApply`, `forcePush`, `adminMerge`, `mergeGate`, each `block` |
-  `ask` | `allow` and all four defaulting to `block` — plus `github.mergeGate`
+  `ask` | `allow` and all four defaulting to `block`, plus `prodDatabase` and
+  `prodServer` as `none` | `read` | `full` defaulting to `none` — plus `github.mergeGate`
   as the twin of `bitbucket.mergeGate` minus `preset`, which is not copied
   because it binds to nothing (`CONFIG.md` §8).
 
@@ -29,6 +30,28 @@ All notable changes to this repository are documented here. Format follows [Keep
   explicit.
   **Under `allow` nothing is silent**: every decision appends a row to
   `.crew/guard.log`, not only the permissive ones.
+
+  **Two more keys, one more vocabulary.** `guards.prodDatabase` and
+  `guards.prodServer` are `none` | `read` | `full` rather than
+  `block` | `ask` | `allow`, and they answer a different question: how much of
+  production may crew reach. `none` refuses every command aimed at a declared
+  target; `read` permits only what crew can POSITIVELY classify as read-only —
+  SELECT-only SQL, a named read-only program over `ssh`, an AWS `describe-`/
+  `list-`/`get-` verb — and treats everything it cannot classify, an
+  interactive `psql` session included, as a write; `full` permits everything
+  and logs each one. `ask` is deliberately absent: a marker file per distinct
+  SQL string is a prompt nobody reads by the tenth query.
+
+  **The level is a machine fact; what is production is not.** The two levels
+  ratchet across both layers like the rest. The glob lists they match against,
+  `production.databases` and `production.hosts`, are **repo-only** — absent
+  from the global template, pruned out of a global file and reported there —
+  because `prod-db-*` names one cluster in one repo and something else in the
+  next. **With no patterns declared the guard matches nothing**, which is how
+  the strictest level ships as the default and changes nobody's behaviour at
+  upgrade; the older unconfigurable `prod`-in-an-argument rule is untouched
+  until a pattern is declared, and stands down only for commands a declared
+  pattern already matched.
 
   **Two of these are NEW refusals, and no default turns a new refusal into an
   old one.** `guards.adminMerge` refuses `gh pr merge --admin`, which no crew

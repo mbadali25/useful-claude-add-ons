@@ -72,8 +72,9 @@ structural exceptions, both visible above: the global layer is pruned before it
 is consulted at all (§2), and `schema` is lifted out of the merge entirely
 (§4).
 
-**And six exceptions that are not visible above, because they do not go through
-this function at all: `install.policy` (§15) and the four `guards.*` (§16).**
+**And seven exceptions that are not visible above, because they do not go
+through this function at all: `install.policy` (§15) and the six `guards.*`
+(§16).**
 Each resolves to the *lower* of the two layers rather than to the repo's, so a
 cloned repo cannot widen what the machine owner allowed. Anything reading one
 through `resolve_config` gets the precedence answer and is wrong;
@@ -126,11 +127,12 @@ both directions:
 `is_global_path` agrees with `filter_global` by construction — both stop
 descending at a template **leaf**.
 
-**Measured, not argued.** `leaf_paths(default_global_config())` yields **51**
-leaves. `leaf_paths(default_config())` yields **92**, so **41** are repo-only.
-For all 92, `filter_global` and `plan_global_write` agree on whether the path is
-settable. (45 / 86 before schema 6 added the four `guards.*` and the two
-`github.mergeGate` keys, and 44 / 85 before schema 5 added `install.policy`.
+**Measured, not argued.** `leaf_paths(default_global_config())` yields **53**
+leaves. `leaf_paths(default_config())` yields **96**, so **43** are repo-only.
+For all 96, `filter_global` and `plan_global_write` agree on whether the path is
+settable. (45 / 86 before schema 6 added the six `guards.*`, the two
+`github.mergeGate` keys and the repo-only `production.databases` /
+`production.hosts`, and 44 / 85 before schema 5 added `install.policy`.
 All six of schema 6's keys are settable in both layers, so they moved the first
 two numbers and not the third — the same shape `install.policy` had. Re-measure
 rather than trusting these: they are a fact about one commit.)
@@ -613,11 +615,12 @@ them:
 
 ---
 
-## 10. Global-settable keys — all 51
+## 10. Global-settable keys — all 53
 
-Settable in **either** layer; repo wins — **except `install.policy` and the
-four `guards.*`, where the narrower of the two layers wins instead** (§15,
-§16). Defaults are identical in `default_config()` and
+Settable in **either** layer; repo wins — **except `install.policy` and the six
+`guards.*`, where the narrower of the two layers wins instead** (§15, §16).
+`production.databases` and `production.hosts` are deliberately **not** here:
+they are repo-only, and §16 says why. Defaults are identical in `default_config()` and
 `default_global_config()` — verified by comparison.
 
 | Key | Type | Default |
@@ -673,6 +676,8 @@ four `guards.*`, where the narrower of the two layers wins instead** (§15,
 | `guards.forcePush` | `block` \| `ask` \| `allow` (narrower layer wins, §16) | `"block"` |
 | `guards.adminMerge` | `block` \| `ask` \| `allow` (narrower layer wins, §16) | `"block"` |
 | `guards.mergeGate` | `block` \| `ask` \| `allow` (narrower layer wins, §16) | `"block"` |
+| `guards.prodDatabase` | `none` \| `read` \| `full` (narrower layer wins, §16) | `"none"` |
+| `guards.prodServer` | `none` \| `read` \| `full` (narrower layer wins, §16) | `"none"` |
 
 `crew_state.QA_PROVIDERS` and `DEV_PROVIDERS` are both
 `["claude", "codex", "copilot"]` (dumped by execution). `qa.provider`
@@ -903,7 +908,7 @@ the command, and both layers' values.
 ### It resolves to the narrower layer, not the repo's
 
 This was the one key that does not follow §1's precedence rule; since schema 6
-it is one of **five** (§16), and the rule now lives in one table,
+it is one of **seven** (§16), and the rule now lives in one table,
 `crew_state.RATCHETED_KEYS`, rather than in a bespoke pair of functions per key.
 The reason is the threat model rather than taste. **crew reads config out of cloned
 repositories.** A repo file travels inside somebody else's clone; the global
@@ -968,8 +973,9 @@ never "one key per bump"; it was "no key without a consumer".
 
 ## 16. `guards` — the configurable guardrails
 
-Four keys, one block, one ratchet. What crew's command guard does about each
-dangerous action it recognises.
+Six keys, one block, one ratchet, **two vocabularies**. What crew's command
+guard does about each dangerous action it recognises, and how much of
+production crew may reach.
 
 | Key | Type | Default | Layer | Read by |
 |---|---|---|---|---|
@@ -977,6 +983,10 @@ dangerous action it recognises.
 | `guards.forcePush` | `block` \| `ask` \| `allow` | `"block"` | both, **narrower wins** | `hooks/scripts/guard.sh`, `guard.ps1` |
 | `guards.adminMerge` | `block` \| `ask` \| `allow` | `"block"` | both, **narrower wins** | `hooks/scripts/guard.sh`, `guard.ps1` |
 | `guards.mergeGate` | `block` \| `ask` \| `allow` | `"block"` | both, **narrower wins** | `commands/gate.md`, `commands/promote.md` |
+| `guards.prodDatabase` | `none` \| `read` \| `full` | `"none"` | both, **narrower wins** | `hooks/scripts/guard.sh`, `guard.ps1` |
+| `guards.prodServer` | `none` \| `read` \| `full` | `"none"` | both, **narrower wins** | `hooks/scripts/guard.sh`, `guard.ps1` |
+| `production.databases` | list of globs | `[]` | **repo only** | `crew_config.py::production_patterns` |
+| `production.hosts` | list of globs | `[]` | **repo only** | `crew_config.py::production_patterns` |
 
 Read one with `crew_config.py --guard <name> [--json]`, which prints the
 decision, both layers' values and which one is holding it down. The two shell
@@ -989,6 +999,97 @@ flavours call exactly that CLI — see "one resolver, two flavours" below.
 | `block` *(default)* | Refuses, exactly as the guard did before these keys existed. |
 | `ask` | Refuses, prints the **exact** command, and names the one marker file that approves **that** command. Creating it and re-running lets it through for 15 minutes; the next command asks again, and so does the same command tomorrow. |
 | `allow` | Runs it, prints what it let through, and appends a row to `.crew/guard.log`. |
+
+### Production access — `prodDatabase`, `prodServer`, and `production.*`
+
+Two guards with their own vocabulary, in the same block and on the same
+ratchet.
+
+| Value | What crew does |
+|---|---|
+| `none` *(default)* | Refuses every command aimed at a declared production target. |
+| `read` | Permits what the guard can **positively classify** as read-only. Everything else — including everything it cannot classify — is refused. |
+| `full` | Permits anything, and appends a row to `.crew/guard.log` for each one. |
+
+**`ask` is not a value here, and its absence is a decision.** The other four
+guards answer "may crew do this one dangerous thing", where a per-command yes
+means something. These answer "how much of production may crew reach", which is
+a standing posture. An `ask` would mean a marker file per distinct SQL string —
+a prompt nobody reads by the tenth query, which is consent theatre rather than
+consent.
+
+**The level is global; what is production is not.** `guards.prodDatabase` and
+`guards.prodServer` are settable in both layers and ratchet like the rest:
+"this machine may read production" is the same sentence in every checkout.
+`production.databases` and `production.hosts` are **repo-only** — absent from
+`default_global_config()`, pruned out of a global file by `filter_global` and
+**reported** there. `prod-db-*` names one cluster in one repo and something else
+in the next, so a machine-global list would carry one repo's hostnames into
+every other repo on the machine: refusing innocent commands in one place and,
+worse, passing dangerous ones in another because the list describes the wrong
+estate.
+
+**With no patterns declared the guard matches nothing.** That is what lets the
+strictest possible level ship as the default without changing anybody's
+behaviour: an upgraded repo gains two keys whose combined effect is "refuse
+access to the empty set". Declaring a pattern is the act that turns them on.
+It also means an empty `production` block is not a misconfiguration to warn
+about — it is the normal state of a repo that has no production estate.
+
+**Unknown is a write, and that is the whole value of `read`.**
+`crew_guards.py::classify_access` answers `read` only when it can prove it,
+from named lists rather than from a "looks harmless" heuristic:
+
+- **SQL** (`psql`, `mysql`, `mariadb`, `sqlcmd`, `mongosh`, `redis-cli`,
+  `sqlite3`, `cqlsh`) — every statement in the payload must open with
+  `SELECT`, `SHOW`, `EXPLAIN`, `DESCRIBE`/`DESC` or `ANALYZE`, and none may
+  contain `INTO`. `WITH` is deliberately absent: `WITH x AS (...) DELETE FROM
+  ...` is a write that opens with a read-looking keyword. A client invoked with
+  **no** `-c`/`-e`/`--query` payload is an interactive session and therefore
+  unclassifiable.
+- **Remote shell** (`ssh`, `plink`) — there must BE a remote command, and every
+  segment of it, split on `;` `&&` `||` `|` and `&`, must name a read-only
+  program: `cat`, `head`, `tail`, `less`, `ls`, `stat`, `grep`, `wc`, `sort`,
+  `cut`, `awk`, `sed`, `df`, `du`, `free`, `uptime`, `uname`, `hostname`,
+  `whoami`, `id`, `ps`, `top`, `netstat`, `ss`, `journalctl`, `dmesg`, `echo`,
+  `which`, `env` — or a PowerShell `Get-*` / `Test-*` / `Measure-*` /
+  `Show-*` / `Find-*` / `Select-*` verb. `systemctl`, `docker`, `kubectl` and
+  `ip` are read-only only on a named subcommand (`systemctl status`, never
+  `systemctl restart`). Any redirect, and `sed -i`, make it a write.
+- **AWS** — `aws <service> <verb>` is a read only on a `describe-`, `list-`,
+  `get-`, `search-`, `lookup-`, `batch-get-` or `scan-` verb. `aws ssm
+  start-session` is not on that list, and an interactive session is exactly the
+  case `read` must refuse.
+
+Everything else is a write: an unrecognised tool, a command with an unbalanced
+quote, a bare login. A classifier that answered "probably fine" would make
+`read` a slower `full`, and the commands it cannot read are precisely the ones
+a reader would most want it to refuse.
+
+**The guards are silent when nothing matches.** Unlike the other four, these
+two fire on ordinary commands — every `ssh`, every `psql` reaches them. A crew
+banner above each one is how a guard becomes noise people switch off, so the
+line is printed only when a declared pattern actually matched. The row in
+`.crew/guard.log` is written by `crew_config.py --record` either way, so
+"nothing is silent" still holds where it means anything.
+
+**The older, unconfigurable `prod` rule stays** — the one that blocks when
+`prod` or `production` is the whole argument, or its first or last
+hyphen-joined segment, to `psql`/`mysql`/`sqlcmd`/`mongo`/`az`/`aws`/`gcloud`.
+It is skipped for a command **only** when a declared `production.*` pattern
+already matched it, because then the configured level has answered the same
+question with better information. Leaving both in would mean
+`guards.prodDatabase: full` still refused `prod-db-1` — a key that reads as
+configurable and is not. With nothing declared, that rule behaves exactly as it
+did before schema 6.
+
+**No python is a stand-down; a failed resolver is a refusal.** Without any
+python crew can read no config at all, so refusing every `ssh` in every repo
+would be the guard people switch off — and the unconfigurable rule above still
+blocks on its own regex with no python, so the floor does not move. A python
+that IS present and then fails is crew broken on the question of whether this
+command targets production, and that blocks, loudly, in both flavours.
+
 
 **`ask` is a marker, not a prompt, and it had to be.** A `PreToolUse` hook has
 no interactive stdin — exit 2 blocks and the retry blocks again — so an `ask`

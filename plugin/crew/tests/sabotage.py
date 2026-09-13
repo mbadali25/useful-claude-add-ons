@@ -222,6 +222,75 @@ MUTATIONS = (
         "tests/test_guards.py::test_ps1_honours_each_policy",
     ),
     (
+        # THE one the production levels rest on: unknown becomes a read. Every
+        # command the classifier positively recognises is still classified the
+        # same way, so every `read` test that uses a real SELECT or a real
+        # `tail` keeps passing -- only the commands crew CANNOT read change
+        # answer, from refused to permitted. That is `read` silently becoming
+        # `full` for exactly the inputs nobody can predict: an interactive
+        # `psql prod-db-1`, an unrecognised binary over ssh, a command with an
+        # unbalanced quote. The replacement is also the natural one to write,
+        # which is why it needs a test rather than a reviewer.
+        "an unclassifiable command counts as a read, so `read` permits what "
+        "crew cannot read",
+        GUARDS,
+        # Anchored on `_classify_segment`'s fall-through, which is where an
+        # unrecognised program over `ssh` actually lands. The fall-through at
+        # the bottom of `classify_access` looks like the same claim and is
+        # not: every unclassifiable case in the suite reaches a tool-specific
+        # branch first, so mutating that one came back STILL GREEN -- a
+        # mutation of a line no input reaches proves nothing about the line
+        # that decides.
+        '    if head in PROD_READ_COMMANDS:\n        return "read"\n'
+        '    return "write"',
+        '    if head in PROD_READ_COMMANDS:\n        return "read"\n'
+        '    return "read"',
+        ("tests/test_guards.py::"
+         "test_everything_else_is_a_write_including_what_it_cannot_read"),
+    ),
+    (
+        # The patterns start falling back to the machine-global file, so a
+        # global `production` block reaches every repo that declared none.
+        # Nothing looks wrong: the guard still refuses and still names a
+        # pattern, it just names one from a file this repo never wrote, about
+        # an estate that is not this one.
+        #
+        # Two earlier attempts came back STILL GREEN and both are worth
+        # recording, because each was vacuous for its own reason. Routing
+        # through `resolve_config` changes nothing: `filter_global` prunes
+        # `production` out of the global layer before the merge, so the claim
+        # is protected twice and that mutation defeats neither guard. Then
+        # `... or read_global_config()` never fires, because a repo config
+        # carrying `schema` is truthy whether or not it declares `production`
+        # -- a fallback on the wrong object. This one merges, which is the
+        # shape a well-meaning "make it work globally too" edit takes.
+        "the production patterns fall back to the machine-global file, so a "
+        "global block reaches every repo",
+        CONFIG,
+        "    cfg = crew_state.load_config(root) or {}",
+        "    cfg = {**read_global_config(),\n"
+        "           **(crew_state.load_config(root) or {})}",
+        ("tests/test_guards.py::"
+         "test_production_patterns_never_read_the_global_layer"),
+    ),
+    (
+        # The ratchet reads the production levels through the POLICY
+        # vocabulary. `none`/`read`/`full` are not in `GUARD_POLICIES`, so
+        # every one of them normalises to `block` -- and `block` is not a
+        # value these two keys have. The guard then reports a tier nobody set,
+        # which is the two-vocabularies-in-one-block failure this table exists
+        # to prevent.
+        "the production guards are ranked by the block/ask/allow table",
+        GUARDS,
+        "    if name in PROD_GUARD_NAMES:\n"
+        "        return (PROD_LEVELS, normalise_prod_level, prod_level_rank)",
+        "    if False:\n"
+        "        return (PROD_LEVELS, normalise_prod_level, prod_level_rank)",
+        ("tests/test_guards.py::"
+         "test_the_ratchet_is_one_table_covering_install_policy_and_all_four_"
+         "guards"),
+    ),
+    (
         # The approval stops expiring, and `ask` quietly becomes a permanent
         # per-command `allow`. This is the mutation with the least visible
         # symptom in the file: every decision is still correct the first time,
@@ -257,9 +326,11 @@ MUTATIONS = (
         # quietly rewritten.
         "under `allow` the guard stops recording what it let through",
         CONFIG,
-        "    if record and not (decision == \"block\" and not os.path.isdir(",
-        "    if record and decision != \"allow\" and not ("
-        "decision == \"block\" and not os.path.isdir(",
+        "    if not record:\n        return\n"
+        "    if decision == \"block\"",
+        "    if not record:\n        return\n"
+        "    if decision == \"allow\":\n        return\n"
+        "    if decision == \"block\"",
         "tests/test_guards.py::test_under_allow_nothing_is_silent",
     ),
     (
