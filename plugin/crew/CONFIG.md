@@ -4,11 +4,22 @@ Every key crew reads, which of the two layers may set it, what it defaults to,
 and where the code that acts on it lives.
 
 **This file is derived from the code, not from the templates' comments.** Every
-claim below is either a `path:line` you can open, or a value printed by running
-the function named beside it. Where a claim rests only on a comment, it says so.
+claim below is either a `file::symbol` you can grep for, a file plus the config
+key named beside it, or a value printed by running the function named beside it.
+Where a claim rests only on a comment, it says so.
 Where no consumer could be found, it says "no consumer found" and never
 "unused" — see [Keys with no consumer found](#keys-with-no-consumer-found),
 which is the most load-bearing section here.
+
+**Citations name symbols, never line numbers, and that is deliberate.** This
+document used to cite `path:line`. When the citations were last measured, **11
+of 13 checkable line numbers were wrong** — every one of them still landing on
+real code, in the wrong function, which is the shape that survives a citation
+check and does not survive reading. A line number here buys precision that lasts
+until the next commit to grow the file above it. A symbol name is greppable, and
+it breaks loudly when the symbol is renamed instead of quietly pointing at a
+stranger. For a key-reference row, the key in the first column is the anchor:
+it was verified to appear in the cited script for all 23 rows.
 
 Re-derive the tables with:
 
@@ -26,7 +37,7 @@ print(json.dumps(c.leaf_paths(c.default_global_config()), indent=1))"
 | Layer | File | Read by |
 |---|---|---|
 | repo | `.crew/config.json` in the repository root | `crew_state.load_config` |
-| machine-global | `~/.claude/crew/config.json` | `crew_config.read_global_config` (`crew_config.py:585`) |
+| machine-global | `~/.claude/crew/config.json` | `crew_config.py::read_global_config` |
 
 Both are optional. `read_global_config` **never raises**: an absent, malformed,
 or non-object global file returns `{}` and is indistinguishable from no file at
@@ -35,12 +46,12 @@ all. That contract is load-bearing — `resolve_config` is reached from a
 session on the machine.
 
 Nothing in `crew_config` ever writes the global file except
-`write_global_config` (`crew_config.py:1388`), which its own docstring names as
+`crew_config.py::write_global_config`, which its own docstring names as
 the only function in crew that writes outside the repo.
 
 ### How the two are merged
 
-`resolve_config` (`crew_config.py:638`) is the single resolver. Read it as five
+`crew_config.py::resolve_config` is the single resolver. Read it as five
 steps, in this order:
 
 ```python
@@ -82,19 +93,19 @@ explicit `null` as a supplied value, so it beat the global layer — and the
 global file therefore did nothing for any repo that had been initialised, which
 is every managed repo.
 
-`null_shadows` (`crew_config.py:448`) and `without_null_shadows`
-(`crew_config.py:494`) fix that on the read path. The rule is deliberately
+`crew_config.py::null_shadows` and `without_null_shadows`
+(`crew_config.py`) fix that on the read path. The rule is deliberately
 narrow, and the narrowness is the point:
 
 - A repo `null` is dropped **only** where the global layer supplies a real
-  value at that path (`_layer_supplies`, `crew_config.py:717`).
+  value at that path (`_layer_supplies`, `crew_config.py::_layer_supplies`).
 - A repo `null` with nothing underneath it is left alone. `context.reserveTokens:
   null` still means *off* and does not silently become `100000`.
 
 It is not fixed inside `merge_defaults` because `crew_upgrade.upgrade_config`
 shares that function, and changing null semantics there would rewrite users'
 files on migration rather than only resolving them for a read
-(`crew_config.py:471-474`, a comment).
+(`crew_config.py`, a comment).
 
 ---
 
@@ -102,13 +113,13 @@ files on migration rather than only resolving them for a read
 
 > **What the global file may WRITE is exactly what the global layer may SUPPLY.**
 
-One definition, `default_global_config()` (`crew_config.py:325`), enforced from
+One definition, `default_global_config()` (`crew_config.py::default_global_config`), enforced from
 both directions:
 
 | Direction | Function | Mechanism |
 |---|---|---|
-| READ — what a global file may supply | `filter_global` (`:543`) | `_prune` (`:517`) keeps only keys present in `default_global_config()`, and returns the dropped paths as `ignored` |
-| WRITE — what a guided flow may set | `plan_global_write` (`:1301`) | refuses any path for which `is_global_path` (`:566`) is false, by name, with the full allowed list in the message |
+| READ — what a global file may supply | `filter_global` | `_prune` keeps only keys present in `default_global_config()`, and returns the dropped paths as `ignored` |
+| WRITE — what a guided flow may set | `plan_global_write` | refuses any path for which `is_global_path` is false, by name, with the full allowed list in the message |
 
 `is_global_path` agrees with `filter_global` by construction — both stop
 descending at a template **leaf**.
@@ -125,18 +136,18 @@ rather than trusting these: they are a fact about one commit.)
 The two rules agree on **which paths**. The write path additionally rejects
 **values** the read path only reports:
 
-- `plan_global_write` runs `validate_providers` (`crew_config.py:171`) on the
+- `plan_global_write` runs `crew_config.py::validate_providers` on the
   *merged result*, and raises `ProviderError` for a bad `qa.provider`,
   `dev.provider`, a bad name inside `qa.order`, or a bad provider in
   `qa.roles.<r>` / `dev.roles.<r>`.
 - `resolve_config` **never raises**. A bad provider already on disk is reported
-  by `provider_problems` (`crew_config.py:611`) and nothing more.
+  by `crew_config.py::provider_problems` and nothing more.
 
 A reader who takes "exactly what" to mean "identical behaviour" will be
 surprised the first time a write is refused for a value a file on disk is
 allowed to hold. That asymmetry is deliberate: refuse at the boundary where the
 value enters, report at the boundary that must not crash a session hook
-(`crew_config.py:1338-1345`, a comment stating exactly this).
+(`crew_config.py`, a comment stating exactly this).
 
 ### Open tables
 
@@ -175,7 +186,7 @@ enforces in code rather than prose:
   heard of*.
 - A change to `pm.authority` that **widens** is flagged with
   `widens_authority`, computed by `crew_state.authority_rank`, not by equality.
-  The comment at `crew_config.py:1367-1381` records why: the equality form was
+  The comment at `crew_config.py` records why: the equality form was
   correct only while `act` was the top tier, and with three tiers it was wrong
   in *both* directions — `act → autonomous` computed `False` (the widest grant
   crew offers shipping unannounced) and `autonomous → act` computed `True` (a
@@ -190,7 +201,7 @@ enforces in code rather than prose:
   `default_global_config()` returns the same value — verified by comparison, so
   there is no second default to keep in your head.
 - A **list is a leaf.** `qa.order` and `notify.events` are replaced wholesale,
-  never merged element-wise (`leaf_paths`, `crew_config.py:432`).
+  never merged element-wise (`leaf_paths`, `crew_config.py::leaf_paths`).
 - **The tables list the keys `default_config()` DECLARES.** As of 0.19.11 that
   is every key any crew code is known to read — ten were in use and declared by
   nothing until then, and §12.3 records what that cost and how it was found.
@@ -230,7 +241,7 @@ This is the only key in the file handled outside the merge.
 | Type | string enum |
 | Values | `report-only` (default), `act`, `autonomous` |
 | Layer | global-settable |
-| Consumer | `crew_state.normalise_authority` / `authority_rank`; `pm_brief.py`; `crew_config.py:66` |
+| Consumer | `crew_state.normalise_authority` / `authority_rank`; `pm_brief.py`; `crew_config.py` |
 
 `crew_state.AUTHORITIES` is `["report-only", "act", "autonomous"]` (dumped by
 execution). `authority_rank` returns `report-only` 0, `act` 1, `autonomous` 2 —
@@ -241,7 +252,7 @@ The tiers are a **floor**, not a set: anything `act` may do, `autonomous` may
 do.
 
 What each tier grants, quoted verbatim from `_WIDENING_NOTES`
-(`crew_config.py:1281`) — this is the string crew itself prints on a widening:
+(`crew_config.py`) — this is the string crew itself prints on a widening:
 
 - **`report-only`** — "the PM reports and recommends only. This is the narrowest
   tier and nothing widens into it."
@@ -268,7 +279,7 @@ of that last sentence. Four entries, id and description verbatim:
 
 `_WIDENING_NOTES` is keyed on **every** member of `AUTHORITIES` on purpose, so a
 tier added without a note is a `KeyError` at the point of use rather than a
-warning that silently describes the wrong thing (`crew_config.py:1275-1280`, a
+warning that silently describes the wrong thing (`crew_config.py`, a
 comment naming that as the failure that produced the table).
 
 ---
@@ -280,12 +291,12 @@ comment naming that as the failure that produced the table).
 | Type | string enum |
 | Values | `session`, `system` (default), `change` |
 | Layer | global-settable |
-| Consumer | `crew_state.normalise_granularity`, called at `crew_state.py:1220` |
+| Consumer | `crew_state.normalise_granularity`, called at `crew_state.py::normalise_granularity` |
 
 `crew_state.TICKET_GRANULARITIES` is `["session", "system", "change"]` (dumped
 by execution). Normalised once in `crew_state.collect` alongside `pm.authority`,
 so every consumer downstream reads a value guaranteed to be one of the three
-and none of them re-decides what a typo means (`crew_state.py:2730-2734`, a
+and none of them re-decides what a typo means (`crew_state.py`, a
 comment).
 
 `system` files one ticket per session and opens a second only when the work
@@ -299,14 +310,14 @@ declares no system boundary; the documented behaviour is that it falls back to
 
 | | Layer | Default | Consumer |
 |---|---|---|---|
-| `docs.theme` | global-settable | `null` | `crew_state.py:35`; `crew-house-style/SKILL.md:66` |
-| `docs.reportTheme` | global-settable | `null` | `crew-house-style/SKILL.md:66` (prose only) |
+| `docs.theme` | global-settable | `null` | `crew_state.py`; `crew-house-style/SKILL.md` |
+| `docs.reportTheme` | global-settable | `null` | `crew-house-style/SKILL.md` (prose only) |
 
 Both are doc-builder theme-pack names, passed as `--brand <name>`.
 
 ### What `null` means
 
-Quoted verbatim from `crew_upgrade.py:98-102`, the comment above `DOCS_BLOCK`:
+Quoted verbatim from `crew_upgrade.py::DOCS_BLOCK`, the comment above `DOCS_BLOCK`:
 
 > Both keys' `None` now mean ONE thing -- "I have no answer, ask the next
 > authority". For `reportTheme` that authority is `theme`; for `theme` it is
@@ -319,8 +330,7 @@ out unbranded.
 
 ### The one-shot rewrite
 
-`crew_upgrade.py` carries two constants (`:131` and `:138`, applied at
-`:437-441`):
+`crew_upgrade.py` carries two constants, applied together:
 
 ```python
 _DOCS_THEME_REWRITTEN_FROM = "neutral"
@@ -330,7 +340,7 @@ _DOCS_THEME_REWRITTEN_UNTIL_SCHEMA = 4
 A `docs.theme` of `"neutral"` in a config below schema 4 is rewritten to `null`
 on upgrade. This is the **single documented exception** to crew's rule of
 carrying a user's value forward untouched, and the justification given in
-`crew-setup/SKILL.md:218-224` is that `docs.theme` **had never had a consumer**,
+`crew-setup/SKILL.md` is that `docs.theme` **had never had a consumer**,
 so no value in it could be a preference anyone formed by watching it work.
 Leaving `"neutral"` would have meant every upgraded repo passing an explicit
 `--brand neutral` that overrode an installed brand pack — de-branding documents
@@ -403,9 +413,9 @@ standing.
 | `bitbucket.mergeGate.branch` | string or `null` | `null` | global-settable |
 | `bitbucket.mergeGate.preset` | string | `"standard"` | global-settable |
 
-Written by `crew_upgrade.BITBUCKET_BLOCK` (`crew_upgrade.py:150`).
+Written by `crew_upgrade.py::BITBUCKET_BLOCK`.
 
-Rationale, from `crew-setup/SKILL.md:226-230` — this is prose, and it is the
+Rationale, from `crew-setup/SKILL.md` — this is prose, and it is the
 only statement of intent in the repo:
 
 > off by default, because a gate that arrived switched on would start failing
@@ -416,7 +426,7 @@ only statement of intent in the repo:
 
 ### A correction to the docstring
 
-`default_global_config()`'s docstring (`crew_config.py:445-447`) says
+`default_global_config()`'s docstring (`crew_config.py::default_global_config`) says
 `mergeGate.branch` "stays null in both layers because the branch is [a
 per-checkout fact]". Measured: `is_global_path("bitbucket.mergeGate.branch")`
 returns **True**, and `plan_global_write` accepts it. The docstring is
@@ -448,7 +458,7 @@ for a gate. A default may not be the thing that removes a protection. The only
 safe reading of "off" is silence.
 
 **`branch: null` means promote passes no `--branch` and lets the script ask the
-API.** `merge_gate.sh:198-202` resolves `.mainbranch.name`, and `:202` dies
+API.** `merge_gate.sh` resolves `.mainbranch.name`, and dies
 asking for `--branch` when it cannot. Because the alternative — promote
 substituting `main` — is wrong, and silently wrong, on a repo still on `master`
 or on a Gitflow `develop`: the gate would look configured and watch a branch
@@ -459,7 +469,7 @@ an answer.
 **`preset: "standard"` means nothing today, and promote says so rather than
 binding it.** `merge_gate.sh` has **no `--preset` flag**. The preset a bare
 `enable` applies is one hardcoded JSON literal, `PRESET` at
-`merge_gate.sh:65`, and nothing selects it. Two moves were available and both
+`merge_gate.sh`, and nothing selects it. Two moves were available and both
 are wrong. Letting `"standard"` quietly mean "whatever `PRESET` holds" invents
 a binding: the word would read as a value that was honoured, and would go on
 reading that way after `PRESET` changed underneath it — §9's own trap, one
@@ -510,30 +520,30 @@ settling the default in the same diff.
 
 | Key | Every reference it has |
 |---|---|
-| `bitbucket.mergeGate.preset` | `crew_upgrade.py:151` (writes it), `crew-setup/SKILL.md:157` (sample JSON) and `:226` (rationale), both templates, `tests/test_crew_config.py` + `tests/test_upgrade.py` (assert the default and the layering). `commands/promote.md` **names it in order to say it selects nothing** — there is no `--preset` flag to bind it to (§8) |
-| `graph.enabled` | `crew_upgrade.py:48` (writes it), `crew-graph/SKILL.md:165` (a table describing it) |
-| `graph.tool` | as above, `crew-graph/SKILL.md:166` — which reads "Always `\"graphify\"` today" |
-| `graph.mode` | as above, `crew-graph/SKILL.md:168` — "Always `\"code-only\"` today" |
-| `graph.commitHook` | as above, `crew-graph/SKILL.md:169` |
-| `jira.project` | `crew-setup/SKILL.md:284` (writes it) and `:145` (sample JSON), `crew_config.py:335`/`:1319`/`:1442` (docstrings and one printed sentence), both templates. `commands/jira-sync.md` never mentions it |
+| `bitbucket.mergeGate.preset` | `crew_upgrade.py` (writes it), `crew-setup/SKILL.md` (sample JSON and rationale), both templates, `tests/test_crew_config.py` + `tests/test_upgrade.py` (assert the default and the layering). `commands/promote.md` **names it in order to say it selects nothing** — there is no `--preset` flag to bind it to (§8) |
+| `graph.enabled` | `crew_upgrade.py` (writes it), `crew-graph/SKILL.md` (a table describing it) |
+| `graph.tool` | as above, `crew-graph/SKILL.md` — which reads "Always `\"graphify\"` today" |
+| `graph.mode` | as above, `crew-graph/SKILL.md` — "Always `\"code-only\"` today" |
+| `graph.commitHook` | as above, `crew-graph/SKILL.md` |
+| `jira.project` | `crew-setup/SKILL.md` (writes it, and its sample JSON), `crew_config.py` (docstrings and one printed sentence), both templates. `commands/jira-sync.md` never mentions it |
 
 The `graph` block's **only** key any crew code reads is `graph.out`, at
-`crew_state.py:674`. Verified by grepping every tracked `.py`, `.sh` and `.ps1`
-for `get("graph")` and `["graph"]`: the other hits are `crew_state.py:2646` and
-`pm_brief.py:59`, which read `knowledge["graph"]` — the *state* dict
-`read_knowledge` builds, not the config block — and `crew_upgrade.py:335-343`,
+`crew_state.py`. Verified by grepping every tracked `.py`, `.sh` and `.ps1`
+for `get("graph")` and `["graph"]`: the other hits are `crew_state.py` and
+`pm_brief.py`, which read `knowledge["graph"]` — the *state* dict
+`read_knowledge` builds, not the config block — and `crew_upgrade.py`,
 which drops the removed `obsidian` sub-block.
 
 The `bitbucket` block is read by no crew **code** — verified the same way,
 grepping for `get("bitbucket")` and `["bitbucket"]` across every tracked file,
-whose only hits are `crew_config.py:374` and `:498` writing the defaults in.
+whose only hits are the two places in `crew_config.py` writing the defaults in.
 Its consumer is prose: `commands/promote.md` (§8), with a committed regression
 test in `tests/test_promote_merge_gate.py`. `preset` is on this list because
 promote names it only to say it binds to nothing.
 
 `jira.project` is the one on this list that most looks like it should work.
-`/crew:jira-sync` gates on `tracker == "jira"` (`commands/jira-sync.md:11`) and
-then caches `jira.cloudId` (`:25`) — a key `default_config()` does not declare
+`/crew:jira-sync` gates on `tracker == "jira"` (`commands/jira-sync.md`) and
+then caches `jira.cloudId` — a key `default_config()` does not declare
 at all, and that nothing reads back either. So the Jira block ships two keys and
 crew consumes neither. `jira.cloudId` is counted in §12.3 rather than here,
 because being undeclared is the larger of its two problems.
@@ -553,12 +563,12 @@ them:
 
 | Key(s) | Consumer |
 |---|---|
-| `obsidian.columns.*` (five keys) | `commands/obsidian-sync.md:94`, which instructs: "Read the names from `obsidian.columns` rather than hardcoding them" |
-| `sdp.portal`, `sdp.noteVisibility`, `sdp.closeOnDone` | `commands/sdp-sync.md:103`, `:63`, `:85` |
-| `secondOpinion.provider`, `.sendsCode`, `.keyEnv` | `agents/planner.md:50` and `:54`, `commands/plan.md:21`, `skills/crew-providers/SKILL.md:96` |
-| `docs.reportTheme` | `skills/crew-house-style/SKILL.md:66`, with a committed regression test in `tests/test_docs_routing.py:132-165` that binds it to the findings-report genre |
+| `obsidian.columns.*` (five keys) | `commands/obsidian-sync.md`, which instructs: "Read the names from `obsidian.columns` rather than hardcoding them" |
+| `sdp.portal`, `sdp.noteVisibility`, `sdp.closeOnDone` | `commands/sdp-sync.md` |
+| `secondOpinion.provider`, `.sendsCode`, `.keyEnv` | `agents/planner.md`, `commands/plan.md`, `skills/crew-providers/SKILL.md` |
+| `docs.reportTheme` | `skills/crew-house-style/SKILL.md`, with a committed regression test in `tests/test_docs_routing.py` that binds it to the findings-report genre |
 | `bitbucket.mergeGate.enabled`, `.branch` | `commands/promote.md`, `## The Bitbucket merge gate` — the flags it passes to `skills/bitbucket/scripts/merge_gate.sh`, with a committed regression test in `tests/test_promote_merge_gate.py`. `.preset` is **not** here: see §8 and §9 |
-| `pm.maxDispatches` | `agents/pm.md:396` ("Stop after `pm.maxDispatches` roles in one pass"). Also coerced to `int` at `crew_state.py:2727` |
+| `pm.maxDispatches` | `agents/pm.md` ("Stop after `pm.maxDispatches` roles in one pass"). Also coerced to `int` at `crew_state.py` |
 
 ---
 
@@ -619,11 +629,11 @@ narrower of the two layers wins instead** (§15). Defaults are identical in
 `crew_state.QA_PROVIDERS` and `DEV_PROVIDERS` are both
 `["claude", "codex", "copilot"]` (dumped by execution). `qa.provider`
 additionally accepts `"auto"`; a `dev.provider` of `"auto"` is **not** valid —
-`validate_providers` (`crew_config.py:171`) checks `qa.provider` against
+`crew_config.py::validate_providers` checks `qa.provider` against
 `QA_PROVIDERS + ["auto"]` and `dev.provider` against `DEV_PROVIDERS` alone.
 
 The three numeric `pm.*` keys are coerced with `int_or` once, in
-`crew_state.collect` (`crew_state.py:2727`), because they come from a
+`crew_state.py::collect`, because they come from a
 hand-edited JSON file and an unguarded comparison against a string is a
 `TypeError` that takes out every session in the repo.
 
@@ -648,42 +658,42 @@ repository or one checkout.
 | `schema` | integer | `4` | see §4 |
 | `tier` | integer | `0` | `crew_state.collect` |
 | `roles` | list (a leaf) | `["explorer", "qa-reviewer"]` | `crew_state.collect` |
-| `tracker` | string | `"files"` | `crew_state.py:2771`, `pm_brief.py:33`, `commands/ticket.md:13` |
+| `tracker` | string | `"files"` | `crew_state.py`, `pm_brief.py`, `commands/ticket.md` |
 | `jira.project` | string or `null` | `null` | **no consumer found**, §9 |
-| `jira.cloudId` | string or `null` | `null` | written by `commands/jira-sync.md:25`; **read by nothing**, §9 |
+| `jira.cloudId` | string or `null` | `null` | written by `commands/jira-sync.md`; **read by nothing**, §9 |
 | `sdp.portal` | string or `null` | `null` | prose, §9 |
 | `sdp.noteVisibility` | string | `"private"` | prose, §9 |
 | `sdp.closeOnDone` | boolean | `false` | prose, §9 |
-| `obsidian.vaultPath` | path or `null` | `null` | `commands/obsidian-sync.md:12` |
-| `obsidian.boardDir` | path or `null` | `null` | `commands/obsidian-sync.md:16` |
-| `obsidian.board` | filename | `"Board.md"` | `commands/obsidian-sync.md:16` |
+| `obsidian.vaultPath` | path or `null` | `null` | `commands/obsidian-sync.md` |
+| `obsidian.boardDir` | path or `null` | `null` | `commands/obsidian-sync.md` |
+| `obsidian.board` | filename | `"Board.md"` | `commands/obsidian-sync.md` |
 | `obsidian.columns.backlog` | string | `"Backlog"` | prose, §9 |
 | `obsidian.columns.ready` | string | `"Ready"` | prose, §9 |
 | `obsidian.columns.inProgress` | string | `"In Progress"` | prose, §9 |
 | `obsidian.columns.review` | string | `"Review"` | prose, §9 |
 | `obsidian.columns.done` | string | `"Done"` | prose, §9 |
-| `verifyGate` | boolean | `true` | `hooks/scripts/verify-gate.sh:24` |
-| `context.enabled` | boolean | `true` | `hooks/scripts/context-watch.ps1:28` |
-| `context.warnAt` | float | `0.8` | `context-watch.ps1:30` |
-| `context.budgetTokens` | integer or `null` | `null` | `context-watch.ps1:31` |
-| `context.reserveTokens` | integer or `null` | `100000` | `context-watch.ps1:39` |
-| `context.handoffPath` | path | `".work/HANDOFF.md"` | `auto-clear.ps1:82` |
-| `context.keepTranscripts` | integer | `5` | `handoff-write.ps1:22` |
-| `context.autoClear.unsafeFocus` | boolean | `false` | `auto-clear.sh:93`, gating `wtype` at `:187` — **consent, not capability**, see §14 |
-| `context.autoWrapUp` | boolean | `false` | `context-watch.ps1:33`, `context-watch.sh:41` |
-| `context.autoResume` | boolean | `false` | `handoff-read.ps1:36`, `handoff-read.sh:35` |
+| `verifyGate` | boolean | `true` | `hooks/scripts/verify-gate.sh` |
+| `context.enabled` | boolean | `true` | `hooks/scripts/context-watch.ps1` |
+| `context.warnAt` | float | `0.8` | `context-watch.ps1` |
+| `context.budgetTokens` | integer or `null` | `null` | `context-watch.ps1` |
+| `context.reserveTokens` | integer or `null` | `100000` | `context-watch.ps1` |
+| `context.handoffPath` | path | `".work/HANDOFF.md"` | `auto-clear.ps1` |
+| `context.keepTranscripts` | integer | `5` | `handoff-write.ps1` |
+| `context.autoClear.unsafeFocus` | boolean | `false` | `auto-clear.sh`, gating `wtype` — **consent, not capability**, see §14 |
+| `context.autoWrapUp` | boolean | `false` | `context-watch.ps1`, `context-watch.sh` |
+| `context.autoResume` | boolean | `false` | `handoff-read.ps1`, `handoff-read.sh` |
 | `context.staleHandoff.maxAgeHours` | integer | `72` | `crew_state.STALE_HANDOFF_DEFAULTS` |
 | `context.staleHandoff.maxCommitsBehind` | integer | `3` | `crew_state.STALE_HANDOFF_DEFAULTS` |
-| `emergency.standDown` | boolean | `true` | `hooks/scripts/_common.sh:54` |
-| `emergency.ttlMinutes` | integer | `120` | `crew_incident.py:80` |
-| `emergency.maxTtlMinutes` | integer | `480` | `crew_incident.py:198` |
-| `platform.os` | string or `null` | `null` | `crew_platform.py:347` |
-| `platform.wsl` | boolean or `null` | `null` | `crew_platform.py:347` |
-| `platform.shell` | string or `null` | `null` | `crew_platform.py:347` |
-| `platform.windowsHostIp` | string or `null` | `null` | `crew_platform.py:347` |
+| `emergency.standDown` | boolean | `true` | `hooks/scripts/_common.sh` |
+| `emergency.ttlMinutes` | integer | `120` | `crew_incident.py` |
+| `emergency.maxTtlMinutes` | integer | `480` | `crew_incident.py` |
+| `platform.os` | string or `null` | `null` | `crew_platform.py` |
+| `platform.wsl` | boolean or `null` | `null` | `crew_platform.py` |
+| `platform.shell` | string or `null` | `null` | `crew_platform.py` |
+| `platform.windowsHostIp` | string or `null` | `null` | `crew_platform.py` |
 | `graph.enabled` | boolean | `true` | **no consumer found**, §9 |
 | `graph.tool` | string | `"graphify"` | **no consumer found**, §9 |
-| `graph.out` | path | `"graphify-out"` | `crew_state.py:674` |
+| `graph.out` | path | `"graphify-out"` | `crew_state.py` |
 | `graph.mode` | string | `"code-only"` | **no consumer found**, §9 |
 | `graph.commitHook` | boolean | `false` | **no consumer found**, §9 |
 
@@ -720,11 +730,11 @@ change with its own review. Item 3 is the one that affects behaviour.
    committed templates and `crew-setup/SKILL.md` honest.
 
    Three of the twelve — `graph.obsidian.dir`, `.layout` and `.confirmed` — were
-   genuinely removed in 0.16.13; `crew_upgrade.py:339-343` drops them from an
-   existing config and says so, and `crew-graph/SKILL.md:172-174` states the
+   genuinely removed in 0.16.13; `crew_upgrade.py` drops them from an
+   existing config and says so, and `crew-graph/SKILL.md` states the
    removal correctly.
 
-2. **`crew_config.py:445-447`**, on `bitbucket.mergeGate.branch` — see §8. The
+2. **`crew_config.py`**, on `bitbucket.mergeGate.branch` — see §8. The
    docstring's "stays null in both layers" describes the default value, and
    reads as a statement about settability, which it is not. Still open: it is a
    comment, and correcting it is a change to `crew_config.py` rather than to
@@ -734,10 +744,10 @@ change with its own review. Item 3 is the one that affects behaviour.
    because how it was found is worth more than the fact that it is fixed.
 
    Nine were read by a hook script — the six `context.autoClear.*` at
-   `auto-clear.ps1:67`, `context.autoWrapUp` at `context-watch.ps1:33`,
-   `context.autoResume` at `handoff-read.ps1:36`, and
-   `context.autoClear.unsafeFocus` at `auto-clear.sh:93`. The tenth,
-   `jira.cloudId`, is written by `commands/jira-sync.md:25` and read back by
+   `auto-clear.ps1`, `context.autoWrapUp` at `context-watch.ps1`,
+   `context.autoResume` at `handoff-read.ps1`, and
+   `context.autoClear.unsafeFocus` at `auto-clear.sh`. The tenth,
+   `jira.cloudId`, is written by `commands/jira-sync.md` and read back by
    nothing, so it is also in §9.
 
    They worked. `merge_defaults` carries an undeclared repo-layer key straight
@@ -758,7 +768,7 @@ change with its own review. Item 3 is the one that affects behaviour.
 
    Fixed in 0.19.11: all ten declared, and `context.autoClear` made globally
    settable because how a terminal is driven to accept a keystroke is a fact
-   about the machine — `crew_platform.py:384-393` already validates `method`
+   about the machine — `crew_platform.py::concerns` already validates `method`
    per platform. `unsafeFocus` is the exception and gets §14.
 
 ---
@@ -786,13 +796,13 @@ change with its own review. Item 3 is the one that affects behaviour.
 seven leaves are settable in `~/.claude/crew/config.json`, and every other key
 under `context` is repo-only. The argument is that how a terminal is driven to
 accept a keystroke is a fact about the machine, in the same sense provider
-availability is — `crew_platform.py:384-393` validates `method` against what
+availability is — `crew_platform.py::concerns` validates `method` against what
 *this* platform can actually deliver and reports one it cannot honour.
 
 ### What the widening costs
 
 `windowTitle` is the guard that stops SendKeys typing into whatever happens to
-have focus: `auto-clear.ps1:21` calls it REQUIRED and `:128` refuses to send
+have focus: `auto-clear.ps1` calls it REQUIRED and the SendKeys call refuses to send
 without it. Machine-global is the right home for it — a terminal's title is a
 property of the machine — but **a wrong global value now aims keystrokes at the
 wrong window in every repo on that machine rather than in one.** That is the
@@ -800,7 +810,7 @@ trade, taken deliberately.
 
 Its default is `null` where the scripts fall back to `""`. The two are
 behaviourally identical (`if ($a.windowTitle)` is false for either, and
-`auto-clear.sh:90` does the same), and `null` wins the tiebreak: `""` can read
+`auto-clear.sh` does the same), and `null` wins the tiebreak: `""` can read
 to a human as a *deliberate* blank, and on this particular key that misreading
 is dangerous.
 
@@ -812,7 +822,7 @@ the global layer. `is_global_path("context.autoClear.unsafeFocus")` returns
 
 It is **consent, not capability**. Setting it `true` accepts that `wtype` types
 into whatever currently has focus, which Wayland offers no way to check
-(`auto-clear.sh:187`). The rest of the block describes the machine; this one
+(`auto-clear.sh`). The rest of the block describes the machine; this one
 accepts a risk. One `true` in a machine-global file would accept blind
 keystroke injection for every repo on the box.
 
