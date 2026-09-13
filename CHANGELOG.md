@@ -6,6 +6,43 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
+- **`crew` 0.19.31: `/crew:change`, change requests into SDP, Jira or a file,
+  and a gate that refuses to file an unanswered one.** One process, three
+  backends, chosen by crew's existing `tracker`: SDP files against the
+  configured `change.sdpTemplate` through the SDP tooling, Jira creates the
+  configured `change.jiraIssueType`, and `local` writes
+  `.work/changes/<id>.md`. The content is identical in all three. Missing
+  tooling for the chosen backend is a **stop that names the install** — never a
+  quiet fall-through to `local`, which would file a production change into a
+  text file nobody reads.
+
+  **The ten questions are the feature, and they are enforced in Python rather
+  than in prose.** The template's own rule is that every question must be
+  answered; a command file can say that and cannot enforce it, because nothing
+  parses a command file at runtime and "I checked the answers" is exactly the
+  shape of claim that collapses an unknown into the safe-looking value. So
+  `plugin/crew/hooks/scripts/crew_change.py` is a pure validator with no I/O:
+  `new` gates questions 1-9 and names every one that is empty or a placeholder,
+  `close` gates question 10 — the post-change validation results — and nothing
+  else. The asymmetry is deliberate: requiring 10 at filing time would make the
+  gate unsatisfiable and teach the operator that `N/A` is how you get past it.
+  25 placeholder spellings are refused (`TBD`, `N/A`, `see above`, `none`, `?`,
+  …), matched against the whole normalised answer so "none of the databases are
+  affected" passes; `no` is deliberately not on the list, because it is a true
+  answer to "has there been a notification sent".
+
+  **Schema 7** adds the `change` block to both config layers, and
+  `change.requireForProduction` joins the ratchet table as a permission a repo
+  may turn **on** and may never turn off — the opposite direction to every
+  other ratcheted key, achieved by ordering its tiers `(True, False)` so the
+  existing `min(rank(repo), rank(global))` yields it with no second mechanism.
+  It is also the one ratcheted key whose default is not its floor: absent reads
+  as the shipped `false`, while a malformed value reads as `true` and fails
+  closed. Default `false` keeps today's `/crew:promote` behaviour exactly.
+  When it is on, promote's first gate requires an approved change for **this**
+  sha, read from the backend every time — a cached `approved` is a claim about
+  the past — with "could not read the state" and "outside the change window"
+  both stops rather than passes.
 - **`github` 1.0.0: a merge-gate script that reads both of GitHub's gate
   surfaces, not whichever one the repo happens to use.** `skills/github/
   scripts/merge_gate.sh` is the twin of `skills/bitbucket/scripts/
