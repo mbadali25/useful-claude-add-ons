@@ -1,0 +1,74 @@
+{
+  "version": "1.177.0",
+  "results": [
+    {
+      "check_id": "python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected",
+      "path": "backend/src/common/drata.py",
+      "start": { "line": 106, "col": 12 },
+      "end": { "line": 106, "col": 48 },
+      "extra": {
+        "severity": "WARNING",
+        "message": "Detected a dynamic value being used with urllib. urllib supports 'file://' schemes, so a dynamic value controlled by a malicious actor may allow them to read arbitrary files. Audit uses of urllib calls to ensure user data cannot control the URLs, or consider using the 'requests' library instead.",
+        "metadata": {
+          "cwe": ["CWE-939: Improper Authorization in Handler for Custom URL Scheme"],
+          "owasp": ["A01:2021 - Broken Access Control"],
+          "shortlink": "https://sg.run/dKZZ",
+          "references": ["https://cwe.mitre.org/data/definitions/939.html"],
+          "confidence": "LOW",
+          "impact": "MEDIUM",
+          "category": "security"
+        }
+      }
+    },
+    {
+      "check_id": "python.flask.security.audit.debug-enabled.debug-enabled",
+      "path": "backend/src/api/handler.py",
+      "start": { "line": 42, "col": 5 },
+      "end": { "line": 42, "col": 30 },
+      "extra": {
+        "severity": "ERROR",
+        "message": "Detected Flask app with debug=True. Do not deploy to production with this flag enabled as it will leak sensitive information.",
+        "fix": "app.run(debug=False)",
+        "metadata": {
+          "cwe": ["CWE-489: Active Debug Code"],
+          "shortlink": "https://sg.run/9ZoO",
+          "confidence": "HIGH",
+          "impact": "MEDIUM",
+          "category": "security"
+        }
+      }
+    },
+    {
+      "check_id": "python.lang.best-practice.sleep.arbitrary-sleep",
+      "path": "backend/src/jobs/handler.py",
+      "start": { "line": 311, "col": 9 },
+      "end": { "line": 311, "col": 23 },
+      "extra": {
+        "severity": "INFO",
+        "message": "time.sleep() call; did you mean to leave this in?",
+        "metadata": { "category": "best-practice" }
+      }
+    },
+    {
+      "check_id": "generic.secrets.security.detected-generic-secret.detected-generic-secret",
+      "path": "scripts/deploy.sh",
+      "start": { "line": 7, "col": 1 },
+      "end": { "line": 7, "col": 40 },
+      "extra": {
+        "severity": "NOTICE",
+        "message": "Generic secret detected.",
+        "metadata": { "category": "security" }
+      }
+    }
+  ],
+  "errors": [
+    {
+      "code": 3,
+      "level": "warn",
+      "type": "SourceParseError",
+      "message": "Syntax error at line frontend/src/app/legacy.ts:88",
+      "path": "frontend/src/app/legacy.ts"
+    }
+  ],
+  "paths": { "scanned": ["backend", "frontend", "scripts"] }
+}

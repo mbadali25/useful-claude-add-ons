@@ -104,6 +104,22 @@ $externallyProvided = @{
     'New-ScheduledTaskSettingsSet'  = 'ScheduledTasks (Windows-only)'
     'Register-ScheduledTask'        = 'ScheduledTasks (Windows-only)'
     'Start-ScheduledTask'           = 'ScheduledTasks (Windows-only)'
+    # The Defender module ships with Windows and does not exist on Linux, so these
+    # resolve for a developer running this check and not for the CI runner - the
+    # same shape as the ScheduledTasks entries directly above. Listed by exact
+    # name rather than by a '*-MpPreference' pattern, so a typo in one of them is
+    # still caught.
+    #
+    # SCOPED, unlike ScheduledTasks: these three configure Windows Defender
+    # exclusions, which narrows the protection on the machine that runs them. A
+    # global exemption would let any future script call them unremarked. The one
+    # caller is gizmoduck's exclusions script, which registers the paths its
+    # scanners need - nikto, sqlmap and the Nuclei template library are the same
+    # category of software Defender's HackTool family exists to catch, and they
+    # are CORRECT detections rather than false positives.
+    'Get-MpPreference'    = @{ Paths = @('*/plugin/gizmoduck/scripts/defender-exclusions.ps1') }
+    'Add-MpPreference'    = @{ Paths = @('*/plugin/gizmoduck/scripts/defender-exclusions.ps1') }
+    'Remove-MpPreference' = @{ Paths = @('*/plugin/gizmoduck/scripts/defender-exclusions.ps1') }
     # Here for a DIFFERENT reason than everything above, which is why it is
     # commented separately: nvidia-smi is not a cmdlet from an unimportable
     # module, it is an ordinary external binary shipped with the NVIDIA driver.

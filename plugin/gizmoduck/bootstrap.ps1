@@ -276,6 +276,18 @@ function Install-Checkov {
   if ($LASTEXITCODE -ne 0) { throw "$pip exited $LASTEXITCODE" }
 }
 
+function Install-Semgrep {
+  # Semgrep is the only source-reading tool here, and the only one that can
+  # see a check that is MISSING - an authorization gate nobody wrote has no
+  # signature, no CVE and no misconfigured resource to find. Native Windows
+  # support was verified against 1.177.0; no WSL or Docker required.
+  if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
+    throw "python is not available on this machine"
+  }
+  python -m pip install --user --upgrade semgrep
+  if ($LASTEXITCODE -ne 0) { throw "pip exited $LASTEXITCODE" }
+}
+
 function Install-DependencyCheck {
   $rel = Invoke-RestMethod "https://api.github.com/repos/jeremylong/DependencyCheck/releases/latest" `
           -Headers @{ "User-Agent" = "gizmoduck-bootstrap" }
@@ -381,6 +393,7 @@ Try-Install "nikto"            { Install-Nikto }
 Try-Install "testssl.sh"       { Install-Testssl }
 Try-Install "trivy"            { Install-Trivy }
 Try-Install "checkov"          { Install-Checkov }
+Try-Install "semgrep"          { Install-Semgrep }
 Try-Install "dependency-check" { Install-DependencyCheck }
 
 # dependency-check's first run downloads the entire NVD CVE corpus. Without an
@@ -427,6 +440,26 @@ if ($script:Failed.Count -gt 0) {
   Write-Host "!! sqlmap, ZAP, a Nuclei template), see docs/antivirus-exclusions.md." -ForegroundColor Yellow
 } else {
   Write-Host ">> all tools installed."
+}
+
+# --- Defender exclusions ---------------------------------------------------
+#
+# Run BEFORE the closing banner, because a missing exclusion is the most common
+# reason a fresh install looks fine and then finds nothing: Defender deletes
+# rather than quarantines here, so a flagged Nuclei template or a deleted
+# nikto.pl presents as "the scan came back clean".
+#
+# Preview only. Registering an exclusion narrows the protection on a machine
+# and needs elevation, so it stays a decision the operator makes on purpose -
+# the bootstrap shows what is missing and prints the one command that fixes it.
+$exclScript = Join-Path $PSScriptRoot "scripts\defender-exclusions.ps1"
+if ((Get-Command Get-MpPreference -ErrorAction SilentlyContinue) -and (Test-Path $exclScript)) {
+  Write-Host ""
+  Write-Host ">> checking Windows Defender exclusions..."
+  & $exclScript
+  Write-Host ""
+  Write-Host ">> to register any missing ones, from an ELEVATED prompt:" -ForegroundColor Cyan
+  Write-Host "   powershell -ExecutionPolicy Bypass -File `"$exclScript`" -Apply" -ForegroundColor Cyan
 }
 
 Write-Host ""

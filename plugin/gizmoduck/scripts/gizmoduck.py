@@ -66,8 +66,8 @@ REPORT_DETAIL_FLOOR = 2  # Medium
 # land under `web` here. Widening this precisely would mean normalize.py
 # growing a `kind`/`category` field on every finding - out of scope for this
 # task and not this file's to add.
-# All nine tools (Global Constraints: nuclei, zap, nikto, nmap, testssl,
-# trivy, depcheck, checkov, sqlmap) must resolve to a real category here.
+# All ten tools (nuclei, zap, nikto, nmap, testssl, trivy, depcheck, checkov,
+# sqlmap, semgrep) must resolve to a real category here.
 # sqlmap only ever runs against a `web`-kind target (a concrete injection
 # point - scanners/sqlmap.py), same as nuclei/zap/nikto/nmap/testssl, so it
 # joins them rather than getting a category of its own. Missing an entry
@@ -79,10 +79,16 @@ _TOOL_CATEGORY = {
     "sqlmap": "web",
     "depcheck": "deps",
     "checkov": "iac",
+    # semgrep reads source, which no other tool here does, so it gets its own
+    # category rather than being folded into one of the existing three. Without
+    # an entry it would fall through to "other" - the exact path by which
+    # sqlmap's findings once existed in the data and appeared nowhere in the
+    # report.
+    "semgrep": "code",
 }
-CATEGORY_ORDER = ["web", "deps", "iac"]
+CATEGORY_ORDER = ["web", "deps", "iac", "code"]
 CATEGORY_LABEL = {"web": "Web", "deps": "Dependencies", "iac": "Infrastructure as Code",
-                  "other": "Other"}
+                  "code": "Source Code", "other": "Other"}
 
 
 def category_of(f):
@@ -782,6 +788,47 @@ def cmd_doctor():
         safe_print("!! NVD_API_KEY: not set — dependency-check's first NVD sync will be "
                     "rate-limited to ~5 req/30s; get a free key at "
                     "https://nvd.nist.gov/developers/request-an-api-key")
+
+    # Every registered adapter, asked whether it can actually run. Driven off
+    # the registry rather than a hand-written list here, so a tool added to
+    # scanners/ can never be missing from doctor - which is the state that
+    # makes "gizmoduck is set up" mean one tool is present and the rest are
+    # anybody's guess.
+    #
+    # These never flip `ok` and never change the exit code, matching the
+    # existing convention that only nuclei and its templates fail this check:
+    # a routine run skips an unavailable tool per target and records it, so a
+    # partial toolchain is a degraded scan rather than a broken install.
+    safe_print("")
+    safe_print("-- scanners --")
+    try:
+        import scanners as _scanners
+    except ImportError as exc:
+        safe_print(f"!! scanner registry unavailable: {exc}")
+    else:
+        missing = []
+        for name in sorted(_scanners.ADAPTERS):
+            mod = _scanners.ADAPTERS[name]
+            kinds = ",".join(getattr(mod, "KINDS", []) or [])
+            try:
+                present = bool(mod.is_available())
+            except Exception as exc:                      # noqa: BLE001
+                safe_print(f"!! {name:<10} [{kinds}] check failed: "
+                           f"{type(exc).__name__}: {exc}")
+                missing.append(name)
+                continue
+            if present:
+                safe_print(f"OK {name:<10} [{kinds}]")
+            else:
+                safe_print(f"!! {name:<10} [{kinds}] not installed — "
+                           f"targets of this kind will scan without it")
+                missing.append(name)
+        if missing:
+            safe_print("")
+            safe_print(f"!! {len(missing)} of {len(_scanners.ADAPTERS)} scanners "
+                       f"unavailable: {', '.join(missing)}")
+            safe_print("!! Run bootstrap.sh / bootstrap.ps1 to install them. A scan "
+                       "missing tools is incomplete, not clean.")
 
     sys.exit(0 if ok else 1)
 

@@ -50,6 +50,19 @@ _SCANNERS = {"deps": "vuln", "iac": "misconfig"}
 DEFAULT_TIMEOUT = 600
 DEFAULT_TRIVY_TIMEOUT = "10m0s"
 
+# Vendored/installed trees that contribute no dependency coverage (trivy reads
+# lockfiles, not installed packages) and plenty of secret-scanner noise from
+# third-party test fixtures. See the comment at the --skip-dirs loop in run().
+#
+# THE `**/` PREFIX IS LOAD-BEARING. A bare `.venv` matches only a directory at
+# the scan root, so `backend/.venv/` sails straight through - verified against
+# trivy directly: `--skip-dirs .venv` still returned 3 secrets from
+# `backend/.venv/Lib/site-packages/moto/`, while `--skip-dirs '**/.venv/**'`
+# returned 0. Do not "simplify" these back to bare directory names.
+DEFAULT_SKIP_DIRS = ("**/.venv/**", "**/venv/**", "**/node_modules/**",
+                     "**/.terraform/**", "**/site-packages/**",
+                     "**/frontend_dist/**", "**/.git/**")
+
 
 def _attr(obj, key, default=None):
     if obj is None:
@@ -124,6 +137,21 @@ def run(target, outdir, opts=None):
     trivy_timeout = opts.get("trivy_timeout", DEFAULT_TRIVY_TIMEOUT)
     argv = ["trivy", "fs", "--format", "json", "--scanners", scanner,
             "--timeout", trivy_timeout, "--output", str(raw_path), str(path)]
+
+    # Skip vendored and installed trees. Trivy reads LOCKFILES for dependency
+    # CVEs - requirements.txt, package-lock.json, go.sum - so an installed
+    # .venv or node_modules adds no dependency coverage at all. What it does
+    # add is secret-scanner noise from third-party test fixtures, and that is
+    # not hypothetical: a real sweep of 18 modules reported moto's mock AWS
+    # access key as a CRITICAL committed secret and its test CA keys as HIGH,
+    # all out of a gitignored virtualenv. Those three outranked the one genuine
+    # critical in the same run (unrestricted security-group egress) and buried
+    # it.
+    #
+    # Overridable per target, because a repo that genuinely vendors its
+    # dependencies into the tree has the opposite need.
+    for d in opts.get("trivy_skip_dirs", DEFAULT_SKIP_DIRS):
+        argv += ["--skip-dirs", d]
 
     timeout = opts.get("timeout", DEFAULT_TIMEOUT)
     result = base.run_tool(argv, timeout=timeout, cwd=opts.get("cwd"))

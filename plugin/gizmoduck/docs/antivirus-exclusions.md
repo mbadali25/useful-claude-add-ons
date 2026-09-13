@@ -66,6 +66,40 @@ machine, not a blanket "exclude everything gizmoduck touches" list.
 
 ## 3. Ready-to-run commands (Windows Defender, elevated PowerShell)
 
+**There is a script for this now.** `scripts/defender-exclusions.ps1` applies
+exactly the list below, derived from the same install locations
+`bootstrap.ps1` uses so the two cannot drift apart:
+
+```powershell
+# Preview - shows what is missing, changes nothing, needs no elevation
+powershell -ExecutionPolicy Bypass -File .\scripts\defender-exclusions.ps1
+
+# Register them - needs an ELEVATED prompt
+powershell -ExecutionPolicy Bypass -File .\scripts\defender-exclusions.ps1 -Apply
+
+# Reverse it - removes exactly what the script adds, nothing else
+powershell -ExecutionPolicy Bypass -File .\scripts\defender-exclusions.ps1 -Remove
+
+# Skip the two wide interpreter exclusions (perl.exe, java.exe)
+powershell -ExecutionPolicy Bypass -File .\scripts\defender-exclusions.ps1 -Apply -NoInterpreterExclusions
+```
+
+`bootstrap.ps1` runs the preview automatically at the end of an install and
+prints the `-Apply` command, but never registers anything itself: an exclusion
+narrows the protection on a machine, so it stays a decision somebody makes on
+purpose.
+
+The script refuses to run if any path it is about to exclude resolves to
+something broad - a drive root, `%USERPROFILE%`, `%LOCALAPPDATA%`, Program
+Files. That guard exists because an unset environment variable would otherwise
+turn `$env:LOCALAPPDATA\Programs
+uclei` into `\Programs
+uclei`, and a
+mistyped exclusion at that level disables Defender across everything beneath it.
+
+The commands it runs, for reference or to apply by hand:
+
+
 Run these from an elevated PowerShell prompt. They cover the paths and
 processes that were actually needed tonight; drop any line for a tool you
 haven't hit a detection on.
