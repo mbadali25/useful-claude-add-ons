@@ -814,9 +814,15 @@ def read_diagrams(root, cfg):
         if not found or found.group(1)[:7] != head[:7]:
             behind.append(stem)
 
+    # Exact stem only. `startswith(kind + "-")` used to count here, which let a
+    # SPECIFIC diagram discharge the obligation for a GENERAL one: a repo with
+    # `process-bitbucket-svg.mmd` and no `process.mmd` reported nothing missing,
+    # because one narrow process diagram was accepted as proof that the process
+    # is documented. The kinds in DIAGRAM_KINDS are the three overviews, and a
+    # diagram about one flow is not an overview of all of them.
     missing = [
         kind for kind in DIAGRAM_KINDS
-        if not any(stem == kind or stem.startswith(kind + "-") for stem in stems)
+        if not any(stem == kind for stem in stems)
     ]
 
     return {
