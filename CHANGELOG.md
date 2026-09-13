@@ -6,6 +6,35 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`gizmoduck` 0.5.2, `obsidian-vault` 0.3.7, `claude-memories-vault` 1.1.1:
+  the same customer's identifiers removed from the entries `crew` 0.19.24 could
+  not reach.** That change scrubbed `plugin/crew/` and reported, without
+  touching, the hits sitting in other marketplace entries -- each needs its own
+  version bump, so each waited for one. Scrubbed here with the same replacement
+  vocabulary, so every example still teaches what it taught: in `gizmoduck`, a
+  ticket-key prefix in both bootstrap comments and across four test modules and
+  a fixture, the customer's project name in the checkov scanner tests, and two
+  of its public hostnames in test and spec prose; in `obsidian-vault`, a vault
+  name embedding the customer's abbreviation and full brand, across two command
+  docs, `vault_ops.py`, `vault_profiles.py` and both test modules; in
+  `claude-memories-vault`, a session-note title in the frontmatter example. The
+  two `docs/superpowers/` files carrying the same markers are not a marketplace
+  entry and bump nothing.
+
+  Hostnames became RFC 2606 reserved names rather than another plausible
+  domain. `gizmoduck` is a vulnerability scanner and those strings appear as
+  scan targets, so a replacement that resolves to a real third party would be
+  worse than what was being fixed.
+
+  The vault tests exist to prove a chosen vault name can differ from its
+  directory basename, so both sides were renamed to names that still differ --
+  collapsing them to one string would leave the suite green while proving
+  nothing.
+
+  **Git history is again deliberately not rewritten**, for the same reason:
+  force-pushing a public marketplace breaks every clone and every commit-pinned
+  install URL in the README.
+
 - **`crew` 0.19.24: a customer's identifiers removed from the shipped examples.**
   Five files under `plugin/crew/` carried real values from a client engagement
   rather than invented ones: a live 12-digit AWS account number and two
