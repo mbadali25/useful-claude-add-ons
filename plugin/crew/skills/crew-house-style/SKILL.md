@@ -117,3 +117,42 @@ which costs more than saying nothing:
 Never fall back to pandoc or LibreOffice for a doc-builder format —
 `doc-builder/SKILL.md` rules that out explicitly, and neither is assumed to
 exist on any machine here.
+
+### When the configured theme does not resolve
+
+The two paths above are about whether doc-builder is **available**. This one is
+about what the **config says**, and it fails differently: `docs.theme` or
+`docs.reportTheme` names a brand pack that doc-builder cannot find.
+
+**Relay doc-builder's error and stop.** Do not fall back to unbranded, and do
+not pre-check the name yourself.
+
+doc-builder already answers this. `--brand <name>` that matches nothing raises
+`BrandNotFound` (`skills/doc-builder/scripts/resolve_brand.py:78-82`, raised at
+`:317`), whose message is `No brand pack named 'x'. Installed: a, b.` — or
+`Installed: (none - only 'neutral')`. It subclasses `BrandError(SystemExit)`
+(`:66-67`), so the script exits non-zero and the message is already on stderr.
+Repeat it; the installed-names list is the part the user needs and you cannot
+produce it as well as doc-builder can.
+
+**Falling back to unbranded is the worse failure of the two.** A config that
+names a brand is an explicit instruction, so producing an unbranded document
+there hands the user a deliverable that is wrong in the one way they took the
+trouble to configure against — and, unlike a missing doc-builder, nothing about
+the result says so. A document that was not produced is recoverable in a minute.
+A wrongly-branded one sent to a client is not.
+
+**Do not validate the theme name before calling.** This is the same rule as *Do
+not detect Word yourself*, and here it also gets the answer wrong: a crew-side
+check comparing `docs.theme` against installed pack names would reject values
+doc-builder accepts. `_match_explicit` (`resolve_brand.py:298-317`) takes a pack
+name, a **skill directory name**, a path to a `brand.json`, or a directory
+containing one — matching case-insensitively — and `neutral` always resolves
+(`:301`) whether or not a pack of that name is installed. A crew-side allowlist
+would therefore fail closed on correct configuration, which is the expensive
+direction: it blocks work that would have succeeded, and the config looks fine.
+
+Crew's own job here is to **notice that the theme was configured and did not
+apply**, and to say which key held it — `docs.theme` or `docs.reportTheme` —
+because doc-builder only ever sees a `--brand` value and cannot know which of
+crew's two keys supplied it.

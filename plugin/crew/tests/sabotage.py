@@ -167,6 +167,50 @@ MUTATIONS = (
         "test_the_two_config_keys_are_bound_to_different_genres",
     ),
     (
+        # The defect the rule exists to forbid, written as the thing a helpful
+        # person would actually write. An unresolvable theme is the one failure
+        # here that is the CONFIG's fault rather than the machine's, and falling
+        # back to unbranded is the worst outcome available: the user named a
+        # brand, so an unbranded document is wrong in exactly the way they
+        # configured against, and nothing in the artefact says so. The two
+        # degraded paths above both leave a trace -- a different tool in the
+        # handoff, or doc-builder's own message. This one leaves none.
+        "an unresolvable theme falls back to unbranded instead of stopping",
+        HOUSE_STYLE,
+        "**Relay doc-builder's error and stop.**",
+        "**Produce the document unbranded and note it in the handoff.**",
+        "tests/test_docs_routing.py::"
+        "test_an_unresolvable_theme_is_relayed_and_never_falls_back",
+    ),
+    (
+        # The other half, and the one that looks like an improvement. Checking
+        # the theme name before calling reads as defensive programming, and it
+        # is the same mistake as crew probing for Word: a second copy of
+        # doc-builder's check that goes stale on doc-builder's next release.
+        # Worse here, because doc-builder accepts a skill directory name, a
+        # path, a directory and `neutral` -- so an allowlist of installed pack
+        # names rejects valid configuration and blocks work that would have
+        # succeeded.
+        "crew is allowed to validate the theme name itself",
+        HOUSE_STYLE,
+        "**Do not validate the theme name before calling.**",
+        "**Check the theme name against the installed packs before calling.**",
+        "tests/test_docs_routing.py::"
+        "test_an_unresolvable_theme_is_relayed_and_never_falls_back",
+    ),
+    (
+        # The justification, not the rule. A bare prohibition with its reason
+        # removed is the shape that gets "simplified" away by the next reader,
+        # who cannot see what it was protecting. This mutation leaves the rule
+        # standing and deletes only why it is true.
+        "the reason a crew-side allowlist is wrong is removed",
+        HOUSE_STYLE,
+        "would therefore fail closed on correct configuration, which is the expensive",
+        "is therefore a reasonable belt-and-braces check, which is the safe",
+        "tests/test_docs_routing.py::"
+        "test_crew_is_not_told_to_allowlist_theme_names",
+    ),
+    (
         # The false sentence itself. `upgradeNeeded` shipped ONE fixed string
         # -- "config has no schema" -- and bumping SCHEMA_CURRENT to 4 aimed
         # it at every schema-2 and schema-3 repo in existence. It sorts third
