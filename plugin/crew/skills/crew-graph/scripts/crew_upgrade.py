@@ -177,6 +177,38 @@ GITHUB_BLOCK = {
     },
 }
 
+# `/crew:change`'s block. Lives here rather than in `crew_config` for the same
+# reason `GRAPH_BLOCK` and `GITHUB_BLOCK` do: `CONFIG_BLOCKS` below has to
+# reference it, and `crew_config` imports THIS module, never the reverse.
+#
+# Six keys, and every one has a consumer landing in the same change -- the bar
+# `SCHEMA_5_KEYS`' comment sets for a mandatory migration. `requester` and
+# `implementor` are read by `commands/change.md` as the defaults for the
+# template's Requestor Details and for answers 2 and 3; `sdpTemplate` and
+# `jiraIssueType` are what the SDP and Jira backends file against; `category`
+# is the template's own Category field. `requireForProduction` is read by
+# `commands/promote.md` gate 1.
+#
+# All six are nullable-or-false on arrival, which is what makes the migration
+# neutral: a repo that upgrades and never runs `/crew:change` promotes exactly
+# as it did yesterday. `requireForProduction` is the only one that could not
+# have been, and `false` is what keeps it honest -- see
+# `crew_guards.CHANGE_REQUIREMENTS` for why `false` is the default and `true`
+# is the floor, which for this one key are not the same value.
+#
+# `requester` and `implementor` are person-and-machine facts, which is why the
+# whole block is in the machine-global template too: somebody who files changes
+# under one name files them under that name in every repo, and making them say
+# so once per checkout is the friction the global layer exists to remove.
+CHANGE_BLOCK = {
+    "requester": None,
+    "implementor": None,
+    "requireForProduction": False,
+    "sdpTemplate": "Change Management Request",
+    "jiraIssueType": "Change",
+    "category": None,
+}
+
 # The sha group must run to END OF LINE, and the prefix must be LAZY. Both,
 # not either.
 #
@@ -237,6 +269,7 @@ CONFIG_BLOCKS = (
     # of a machine-global file and reports it: the level ratchets across
     # both layers, the patterns are a fact about this checkout.
     ("production", crew_state.PRODUCTION_DEFAULTS),
+    ("change", CHANGE_BLOCK),
 )
 
 # The keys schema 3 introduced. Named here rather than diffed generically so
@@ -292,6 +325,28 @@ SCHEMA_6_KEYS = ("guards.terraformApply", "guards.forcePush",
                  "github.mergeGate.enabled", "github.mergeGate.branch",
                  "production.databases", "production.hosts")
 
+# The keys schema 7 introduces: the whole `change` block, for `/crew:change`.
+#
+# Six keys and six consumers, all landing together -- see `CHANGE_BLOCK`. The
+# rule from schema 5 ("a key added ahead of a need costs more to undo than a
+# second bump costs to pay") is satisfied, not waived.
+#
+# Behaviour-neutral on arrival, and unlike schema 6 that claim has no exception
+# to declare. `requireForProduction` lands `false`, which is what every repo
+# already did: promote's gate 1 asks for no change request. The other five are
+# null or a default template name, read by a command that has to be invoked
+# before any of them is consulted. Nobody's promotion starts failing because
+# they upgraded.
+#
+# The one thing that IS new and is worth saying out loud rather than hiding
+# behind "neutral": the repo gains `/crew:change`, and gains the ability to turn
+# `requireForProduction` on. Turning it on is a one-way ratchet across the two
+# config layers (a repo may turn it ON, never off), so the report says which
+# direction the key moves in before anybody sets it.
+SCHEMA_7_KEYS = ("change.requester", "change.implementor",
+                 "change.requireForProduction", "change.sdpTemplate",
+                 "change.jiraIssueType", "change.category")
+
 
 def upgrade_config(cfg):
     """Bring a config up to the current schema. Pure.
@@ -339,7 +394,7 @@ def upgrade_config(cfg):
              "tierFrom": 0, "tierTo": 0,
              "schemaFrom": crew_state.int_or(cfg.get("schema", 1), 1),
              "providerKeysAdded": [], "installKeysAdded": [],
-             "guardKeysAdded": [],
+             "guardKeysAdded": [], "changeKeysAdded": [],
              "schemaStamped": False,
              # Keys this upgrade removed outright. Distinct from
              # "unmigrated", which blocks the schema stamp: a dropped key is
@@ -402,6 +457,7 @@ def upgrade_config(cfg):
     notes["providerKeysAdded"] = _keys_added(cfg, notes, SCHEMA_3_KEYS)
     notes["installKeysAdded"] = _keys_added(cfg, notes, SCHEMA_5_KEYS)
     notes["guardKeysAdded"] = _keys_added(cfg, notes, SCHEMA_6_KEYS)
+    notes["changeKeysAdded"] = _keys_added(cfg, notes, SCHEMA_7_KEYS)
 
     # `graph.obsidian` was removed in 0.16.13. Drop it loudly rather than
     # carrying it forward: a key that survives an upgrade but no longer has a
@@ -764,6 +820,26 @@ def _config_lines(notes):
             "`/crew:config` — nothing here chose anything but the floor for "
             "you."
         )
+    if notes["changeKeysAdded"]:
+        lines.append(
+            "- schema "
+            f"{notes['schemaFrom']} -> {crew_state.SCHEMA_CURRENT}, which "
+            "added the `change` block for `/crew:change`: "
+            + ", ".join(notes["changeKeysAdded"])
+            + ". **This one IS behaviour-neutral, with no exception to "
+            "declare.** `change.requireForProduction` arrives `false`, which "
+            "is what every promotion already did — `/crew:promote production` "
+            "asks for no change request, exactly as before. The other five are "
+            "null or a default template name and are read only by "
+            "`/crew:change`, which you have to invoke. Set "
+            "`change.requester` and `change.implementor` once with "
+            "`/crew:config` and every repo on this machine files under them. "
+            "Note the direction `change.requireForProduction` ratchets, "
+            "because it is the opposite of the other ratcheted keys and it is "
+            "easier to read than to discover: a repo may turn the requirement "
+            "ON and never off, so a machine-global `true` cannot be defeated "
+            "by a `false` in a repo you cloned (CONFIG.md §17)."
+        )
     if notes["providerKeysAdded"]:
         lines.append(
             "- schema "
@@ -1003,6 +1079,18 @@ def main(argv=None):
                     "behaviour-neutral - `guards.adminMerge` and `tofu` under "
                     "`guards.terraformApply` are new refusals. Run "
                     "/crew:config to set them)")
+        # At the CLI and not only in UPGRADE.md, for the reason the comment
+        # above `installKeysAdded` records: a repo with no `.crew/codemap/`
+        # writes no UPGRADE.md at all, so a key that decides whether a
+        # production promotion can happen would arrive announced nowhere.
+        if notes["changeKeysAdded"]:
+            print(f"schema {notes['schemaFrom']} -> "
+                  f"{crew_state.SCHEMA_CURRENT}: added "
+                  + ", ".join(notes["changeKeysAdded"])
+                  + " (change.requireForProduction arrives `false` - promote "
+                    "asks for no change request, exactly as before. It "
+                    "ratchets the OTHER way from the guards: a repo may turn "
+                    "it ON, never off. Run /crew:config to set it)")
         if notes["unmigrated"]:
             print("NOT migrated (wrong type, left as written): "
                   + ", ".join(notes["unmigrated"]))

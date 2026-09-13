@@ -1044,7 +1044,16 @@ def test_a_global_neutral_is_reported_because_it_defeats_the_migration(
     the worse of the two states, because it looks fixed.
 
     Reported and never rewritten: a per-repo upgrade editing a machine-global
-    file would change every other repo on the machine."""
+    file would change every other repo on the machine.
+
+    Both halves key on `WARNING: your machine-global config`, the warning's own
+    opening words, rather than on the bare phrase `machine-global`. The bare
+    phrase stopped distinguishing anything at schema 7, whose paragraph
+    describes `change.requireForProduction`'s ratchet and says "machine-global"
+    in passing -- so the negative assertion below started failing on an
+    unrelated, correct line. A negative assertion that a second feature can
+    trip is not testing the first one."""
+    warning = "WARNING: your machine-global config"
     path = tmp_path / "global.json"
     path.write_text(json.dumps({"docs": {"theme": "neutral"}}), "utf-8")
     monkeypatch.setattr(crew_state, "GLOBAL_CONFIG_PATH", str(path))
@@ -1053,13 +1062,15 @@ def test_a_global_neutral_is_reported_because_it_defeats_the_migration(
     _, notes = crew_upgrade.upgrade_config({"schema": 3,
                                             "docs": {"theme": "neutral"}})
     said = "\n".join(crew_upgrade._config_lines(notes))
-    assert "machine-global" in said
+    assert warning in said
     assert "will not edit it for you" in said
 
     # A global that does not carry the old default says nothing at all.
     path.write_text(json.dumps({"docs": {"theme": "solomon"}}), "utf-8")
     assert crew_upgrade.global_theme_defeats_migration() is False
-    assert "machine-global" not in "\n".join(crew_upgrade._config_lines(notes))
+    quiet = "\n".join(crew_upgrade._config_lines(notes))
+    assert warning not in quiet
+    assert "will not edit it for you" not in quiet
 
 
 def test_an_unreadable_global_config_is_not_a_crash_or_a_warning(
@@ -1131,7 +1142,13 @@ def test_the_global_warning_stays_quiet_when_the_repo_names_its_own_theme(
     Ungated, the warning told such a repo that a global neutral "is the value
     this repo now resolves to" -- false -- and recommended a machine-wide edit
     that would have changed nothing there and something in every other repo.
-    A warning wrong about the case it fires on is worse than no warning."""
+    A warning wrong about the case it fires on is worse than no warning.
+
+    Keyed on the warning's own opening words for the reason written out in
+    `test_a_global_neutral_is_reported_because_it_defeats_the_migration`: the
+    bare phrase `machine-global` also appears in schema 7's paragraph, so it
+    no longer distinguishes this warning from anything else in the report."""
+    warning = "WARNING: your machine-global config"
     path = tmp_path / "global.json"
     path.write_text(json.dumps({"docs": {"theme": "neutral"}}), "utf-8")
     monkeypatch.setattr(crew_state, "GLOBAL_CONFIG_PATH", str(path))
@@ -1143,11 +1160,10 @@ def test_the_global_warning_stays_quiet_when_the_repo_names_its_own_theme(
     _, explicit = crew_upgrade.upgrade_config(
         {"schema": 3, "docs": {"theme": "solomon"}})
     assert explicit["docsThemeAfter"] == "solomon"
-    assert "machine-global" not in "\n".join(
-        crew_upgrade._config_lines(explicit))
+    assert warning not in "\n".join(crew_upgrade._config_lines(explicit))
 
     # And a repo with no answer of its own still gets warned.
     _, deferring = crew_upgrade.upgrade_config(
         {"schema": 3, "docs": {"theme": "neutral"}})
     assert deferring["docsThemeAfter"] is None
-    assert "machine-global" in "\n".join(crew_upgrade._config_lines(deferring))
+    assert warning in "\n".join(crew_upgrade._config_lines(deferring))

@@ -121,7 +121,7 @@ still writes only the repo file.
 
 ```json
 {
-  "schema": 6,
+  "schema": 7,
   "tier": 0,
   "roles": ["explorer", "qa-reviewer"],
   "qa": {
@@ -159,13 +159,21 @@ still writes only the repo file.
   "install": {"policy": "manual"},
   "guards": { "terraformApply": "block", "forcePush": "block", "adminMerge": "block", "mergeGate": "block",
               "prodDatabase": "none", "prodServer": "none" },
-  "production": { "databases": [], "hosts": [] }
+  "production": { "databases": [], "hosts": [] },
+  "change": { "requester": null, "implementor": null, "requireForProduction": false,
+              "sdpTemplate": "Change Management Request", "jiraIssueType": "Change", "category": null }
 }
 ```
 
-`schema: 6` — this repo is born current. It never trips `upgradeNeeded`, which fires on
+`schema: 7` — this repo is born current. It never trips `upgradeNeeded`, which fires on
 any config predating the `pm` and `graph` blocks, the per-role provider table, the
-`docs.theme` default moving to null, `install.policy`, or the `guards` block. `production.databases` and
+`docs.theme` default moving to null, `install.policy`, the `guards` block, or the
+`change` block. `change` is `/crew:change`'s: `requester` and `implementor` are the
+person and default into the template's Requestor Details, `sdpTemplate` and
+`jiraIssueType` name what the SDP and Jira backends file against, and
+`requireForProduction` is `false`, so `/crew:promote production` asks for no change
+request until somebody turns it on. It is the one key in crew a repo may only turn
+ON — see CONFIG.md §17. `production.databases` and
 `production.hosts` are the globs `guards.prodDatabase` and `guards.prodServer`
 match commands against, and they are repo-only: the LEVEL is a machine fact, what
 IS production is a fact about this checkout. Empty lists mean those two guards
