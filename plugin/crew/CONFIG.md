@@ -351,6 +351,14 @@ an oversight that the next person helpfully fixes.
 overriding *which skill builds* a findings report is the obvious next key. It is
 deliberately not added.
 
+**There is only one builder for the key to choose between.** `skills/report-builder/`
+is a deprecated stub — its frontmatter reads "Do NOT use this skill", and it ships a
+lone `SKILL.md` with no scripts; `skills/solomon-doc-builder/` is a brand pack, a
+`SKILL.md` over `assets/` and likewise no scripts; every builder script in this repo
+lives in `skills/doc-builder/scripts/`. So "a different report builder" is, in every
+case anyone has actually wanted, a different *brand pack* — and that is selected by
+name with `docs.reportTheme`, which already works.
+
 **Which builder runs is derived, not preferred.** The routing table in
 `crew-house-style/SKILL.md` picks a skill from the format the reader needs and
 from what is installed. doc-builder is scoped to branded findings reports and

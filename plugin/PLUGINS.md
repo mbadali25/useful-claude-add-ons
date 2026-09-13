@@ -14,7 +14,7 @@ Read the **Hooks** section of any plugin before installing it. Commands and agen
 | **Version** | 0.16.22 |
 | **Install** | `claude plugin install crew@useful-claude-add-ons` |
 | **Menu item** | 21, `repo-plugins` — **off by default**. Menu item 22, `graphify`, is a separate, also-off-by-default install of the `graphify` CLI this plugin's graph feature depends on — see **The code graph** below. |
-| **Registers** | 29 agents, 24 commands, 17 skills, 20 hook entries (10 scripts × `.sh`/`.ps1`) across 5 events |
+| **Registers** | 54 agents, 24 commands, 17 skills, 20 hook entries (10 scripts × `.sh`/`.ps1`) across 5 events |
 | **Upstream guide** | [`crew/README.md`](crew/README.md) — 25 sections, the authoritative version |
 
 Built for the awkward case: several repositories, mixed stacks, legacy code, and almost no test coverage. The workflow is file-backed tickets, one implementation session, an independent reviewer, and deterministic gates that block on failure rather than offering an opinion.
@@ -150,9 +150,11 @@ to CI or to branch protection.
 
 First run in a new repository: `/crew:init`, then `/crew:onboard`, then `/crew:verify`.
 
-### Agents — 14, tiered plus the manager
+### Agents — one per `agents/*.md`
 
 Tier 0 installs with everyone; tiers 1 and 2 are added as the work demands. `/crew:scale` decides from evidence rather than taste.
+
+**The table below is abridged** — it lists the whole tier ladder, the manager, and only the specialists that existed when it was written. Every specialist is registered in `crew_state.SPECIALIST_ROLES` and listed in full in [`crew/README.md`](crew/README.md), which `tests/test_role_ladder.py` checks against the code in both directions. Count them with `ls plugin/crew/agents/*.md` rather than by counting rows here.
 
 | Agent | Tools | Model | Tier | Role |
 |---|---|---|---|---|
@@ -451,7 +453,7 @@ Four committed suites, all sabotage-tested - three under `plugin/crew/hooks/scri
 | `validate-prompts.py` | 110 | Frontmatter, tool names, referenced agents and paths, read-only agents holding no write tools |
 | `tests/` (pytest, one level up) | 324 | The Python behind the hooks: `crew_state`, `pm_brief`, `pm_pulse`, both flavours of `context-watch`, and the two gates that stand down. Run it — it is the suite that catches renderer regressions the shell suite cannot see, such as a new brief line squeezing the top finding out of a capped brief |
 
-What none of them proves is whether the prompts produce good work. The 24 commands and 29 agents are instructions to a model; only a live session on a real ticket exercises those, which is what setup phase 7 is for.
+What none of them proves is whether the prompts produce good work. Every command and every agent is an instruction to a model; only a live session on a real ticket exercises those, which is what setup phase 7 is for.
 
 ### Optional integrations
 

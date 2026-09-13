@@ -555,7 +555,64 @@ claims to check, and say explicitly that refuting the brief is a valid and value
 outcome. A lane that believes its brief is a lane that can only find the bugs you
 already suspected.
 
-## Crew's agent count is wrong in seven places and right in none
+## Crew's agent count is wrong in seven places and right in none — CLOSED 2026-09-12
+
+**Closed 2026-09-12 at `39b8fefa`** (clean tree, `HEAD == origin/main`). Measured
+**54 agents, 24 commands, 17 skills, 20 hook entries across 5 events**, two ways
+that agree: `ls plugin/crew/agents/*.md | wc -l` gives 54, every file carrying a
+`name:` frontmatter key with no README or template among them; and
+`crew_state.ROLE_TIERS` (13) + `crew_state.SPECIALIST_ROLES` (40) + `pm` = 54,
+with both set differences against the filenames empty. Re-run those two rather
+than trusting this paragraph.
+
+**Where the `29` came from — no previous pass identified it.** `plugin/PLUGINS.md`'s
+agent table has exactly 29 data rows: 13 tiered + 15 specialists + `pm`. It was
+written when there were 15 specialists and never grew with `SPECIALIST_ROLES`.
+`marketplace.json`'s "29 ... (13 tiered, 15 domain specialists)" is that table
+transcribed. So correcting only the `29` there would have shipped a sentence
+asserting `13 + 15 + 1 = 54`; the `15` had to move to `40` in the same edit. The
+table itself was left at 29 rows — writing 25 specialist rows is authoring, not
+counting — but the heading above it no longer states a number and a new line
+marks it abridged, so the next reader who counts rows is not misled the same way.
+
+**Eleven sites changed, not seven.** A sweep for the same claim found four the
+table below missed, which is that table's own lesson arriving on schedule. Where
+the prose allowed it the figure is gone rather than corrected.
+
+| Site | Was | Now |
+|---|---|---|
+| `scripts/install-prerequisites.sh:899`, `.ps1:855` | `11 agents, 21 commands` | `54 agents, 24 commands` — identical text in both, and width-neutral, so `pick_fit` / `Format-PickerLine` are unaffected |
+| `.claude-plugin/marketplace.json:217` | `29 ... (13 tiered, 15 domain specialists` | `54 ... (13 tiered, 40 domain specialists` — description string only, no version field touched |
+| `plugin/PLUGINS.md:17` | `29 agents` | `54 agents` |
+| `plugin/PLUGINS.md:153` | `### Agents — 14, tiered plus the manager` | `### Agents — one per \`agents/*.md\`` — no figure; a new paragraph beneath marks the table abridged and gives the ladder/specialist/manager breakdown. No `.md` anywhere links to the old anchor (checked), and the section has no TOC entry |
+| `plugin/PLUGINS.md:456` | `The 24 commands and 29 agents are` | `Every command and every agent is` |
+| `README.md:165` | `50 subagents` | `54 subagents` |
+| `plugin/crew/README.md:1982` | `50 agents — 13 ..., 36 domain specialists` | `54 agents — 13 ..., 40 domain specialists`, plus the `ls` re-measure |
+| `README.md:883` | `29 agents, ...` | `54 agents, ...` — **not in the old table** |
+| `plugin/README.md:414` | `50 agents, ...` | `54 agents, ...` — **not in the old table** |
+| `plugin/crew/README.md:2051` | `The 24 commands and 29 agents are` | `Every command and every agent is` — **not in the old table** |
+| `INSTALLATION.md:250` | `11 subagents, 23 slash commands, 16 bundled skills` | `54 subagents, 24 slash commands, 17 bundled skills` — **not in the old table**; the commands and skills figures went with it rather than leaving a line this change had already touched two-thirds wrong |
+
+**Do not count the rows of `plugin/crew/README.md`'s specialist table.** It lists
+`skill-author` twice, so a row count gives 41 specialists where the code has 40.
+`tests/test_role_ladder.py` compares *sets* in both directions, so the duplicate
+passes it. That is why the re-measure line added at `:1982` points at
+`ls plugin/crew/agents/*.md` and explicitly not at the table above it. The
+duplicate row is left in place — it is a separate finding from the count.
+
+**Still wrong, left deliberately.**
+`plugin/crew/hooks/scripts/_test/setup-walkthrough.sh:9` says "the 21 commands and
+10 agents" in a comment — the same claim, but in a test file rather than anything
+a user reads. `README.md:590`, `plugin/README.md:370` and `plugin/UPDATE.md:366`
+say "taking crew to 14 agents" inside release-note sections, where it is a true
+statement about 0.15.1 and **must not** be changed.
+
+`python3 scripts/check-marketplace.py` passes. It cannot catch this class, and the
+"Why no check catches it" note below still holds. No version was bumped and
+`CHANGELOG.md` was not touched, by instruction; `scripts/_test/drift-detection.sh`
+was run green at `69678908` by the user for this change and was not re-run here.
+
+---
 
 **Re-measured 2026-09-12 at `e7cc93a2`. Every figure below replaces one from the
 2026-09-06 pass, and the heading changed with them** — this entry used to read
