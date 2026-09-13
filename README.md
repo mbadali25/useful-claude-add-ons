@@ -591,26 +591,8 @@ Generated from [`skills/UPDATE.md`](skills/UPDATE.md) by `scripts/sync-updates.p
 
 ### Unreleased
 
-Four new skills, taking the marketplace from 25 to 29.
-
-- **`jira-manager`** — Jira Cloud over the REST API v3 with an email + API
-  token, no MCP connector and no OAuth flow. JQL search, create, update fields,
-  assign, transition, comment, log work. Sourcing the helper needs no
-  credentials, so `jira_get_cloud_id` is usable during setup; each function
-  that needs them checks at call time. Needs `curl` 7.76+ and `jq`.
-- **`knowbe4-admin`** — KnowBe4 KSAT administration: diagnose SCIM user-sync
-  against Microsoft Entra ID or Okta, pull Reporting API data, and route each
-  change to the surface that actually owns it.
-- **`power-automate-api`** — Power Automate cloud flows through the API instead
-  of the maker portal. Flow definitions, expressions the designer mangles,
-  trigger inputs, connection references, run history, and the Flow/BAP auth
-  errors. Every write is preceded by a snapshot to
-  `~/.pa-api-cache/snapshots` and by validation, both enforced in code.
-- **`report-builder`** — human-facing reports authored as HTML and converted to
-  `.docx`/`.pdf` by Word. The browser is not the target; Word's HTML parser is,
-  and it drops correct CSS silently. Carries the five measured traps, a
-  greyscale-safe palette, and a test that runs the checklist against an
-  artifact the builder actually emitted.
+No standalone skills added this round. The 25 skills registered in
+`.claude-plugin/marketplace.json` are unchanged.
 
 <!-- END skills/UPDATE.md -->
 
