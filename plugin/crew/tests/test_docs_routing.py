@@ -111,6 +111,27 @@ def _degraded_paths():
     return parts[1], parts[2]
 
 
+def _doc_builder_bullet():
+    """Just the `- `doc-builder` —` routing bullet, up to the next top-level item.
+
+    Scoped deliberately. The genre binding lives in this bullet, and asserting it
+    against the whole "Generating it" section made the test a hostage to every
+    other sentence that happens to name the key -- the degraded-path rules below
+    the table name both keys for unrelated reasons, and an assertion of the form
+    "EVERY line mentioning reportTheme must say findings report" turns each of
+    those into a false failure. Both existing sabotage mutations rewrite text
+    inside this bullet, so narrowing to it costs no coverage: verified by running
+    them.
+    """
+    generating = _read(_HOUSE_STYLE).split("## Generating it", 1)[1]
+    lines = generating.split("\n")
+    start = next(i for i, line in enumerate(lines)
+                 if line.startswith("- `doc-builder` —"))
+    end = next((i for i in range(start + 1, len(lines))
+                if lines[i].startswith("- `")), len(lines))
+    return lines[start:end]
+
+
 def test_the_routing_table_routes_doc_builder_and_names_both_keys():
     """The call site. Before this, `docs.theme` configured a tool crew's own
     documented generation path never mentioned -- the table routed DOCX and
@@ -144,9 +165,9 @@ def test_the_two_config_keys_are_bound_to_different_genres():
 
     # The report genre prefers reportTheme, and says so in one sentence with
     # both names in it -- not two unrelated mentions elsewhere in the file.
-    report_rule = [line for line in generating.split("\n")
+    report_rule = [line for line in _doc_builder_bullet()
                    if "docs.reportTheme" in line]
-    assert report_rule, "no line binds docs.reportTheme to anything"
+    assert report_rule, "no line in the doc-builder bullet binds docs.reportTheme"
 
     # `"findings report"`, NOT `"report"`. Testing for "report" here was
     # tautological and shipped that way: `"docs.reportTheme".lower()` contains
@@ -287,6 +308,72 @@ def test_crew_is_told_not_to_detect_word_itself():
     generating = _read(_HOUSE_STYLE).split("## Generating it", 1)[1]
 
     assert "Do not detect Word yourself" in generating
+
+
+def test_an_unresolvable_theme_is_relayed_and_never_falls_back():
+    """A theme naming a pack doc-builder cannot find is a THIRD failure, and it
+    is not either of the two above: doc-builder is installed and Word is
+    irrelevant. The config is wrong.
+
+    Falling back to unbranded here is the worst available outcome. A config that
+    names a brand is an explicit instruction, so an unbranded document is wrong
+    in the one way the user configured against -- and nothing in the artefact
+    says so. A document that was not produced costs a minute; a wrongly-branded
+    one sent to a client does not.
+
+    Asserted against doc-builder's real behaviour rather than a paraphrase:
+    BrandNotFound subclasses BrandError(SystemExit), so the script already exits
+    non-zero with a message naming the installed packs.
+    """
+    house = _read(_HOUSE_STYLE)
+    section = house.split("### When the configured theme does not resolve", 1)
+    assert len(section) == 2, "no section covers an unresolvable theme"
+    rule = section[1]
+
+    # Relay, and stop. Both halves, because "do not fall back" without "relay"
+    # leaves an agent with no instruction at all.
+    assert "Relay doc-builder's error and stop" in rule
+    assert "Do not fall back to unbranded" in rule
+
+    # It must name the real exception, not describe one. A paraphrase goes stale
+    # silently; a name can be grepped for when doc-builder changes.
+    assert "BrandNotFound" in rule
+    assert "resolve_brand.py" in rule
+
+    # And it must forbid crew pre-validating the name -- the same rule as
+    # "Do not detect Word yourself", which is already asserted separately.
+    assert "Do not validate the theme name before calling" in rule
+
+
+def test_crew_is_not_told_to_allowlist_theme_names():
+    """The reason the prohibition above is not merely stylistic.
+
+    doc-builder accepts more than pack names -- a skill directory name, a path
+    to a brand.json, a directory holding one, and `neutral` whether or not a
+    pack of that name exists. A crew-side allowlist built from installed pack
+    names would therefore reject valid configuration, which fails in the
+    expensive direction: the work is blocked and the config looks fine.
+
+    This test reads doc-builder's own resolver, so it goes red if that widens or
+    narrows and crew's prose stops matching it.
+    """
+    resolver = os.path.join(_DOC_BUILDER_SCRIPTS, "resolve_brand.py")
+    assert os.path.exists(resolver), resolver
+    src = _read(resolver)
+
+    # The four accepted shapes, and the always-valid name.
+    assert "if wanted.lower() == \"neutral\":" in src
+    assert "if os.path.isfile(wanted):" in src
+    assert "if os.path.isdir(wanted):" in src
+    assert "skill_dir.lower()" in src
+    assert "raise BrandNotFound(wanted, names)" in src
+
+    # crew's prose has to say WHY, not just "do not" -- a bare prohibition gets
+    # optimised away by the next person who thinks they are helping.
+    rule = _read(_HOUSE_STYLE).split(
+        "### When the configured theme does not resolve", 1)[1]
+    assert "skill directory name" in rule
+    assert "fail closed on correct configuration" in rule
 
 
 def test_anthropic_office_skills_keeps_docx_and_pdf():

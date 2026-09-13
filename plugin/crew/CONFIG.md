@@ -333,6 +333,49 @@ A user who did mean neutral sets it again and it is honoured.
 **Read §9 with this in mind.** It is the precedent for every zero-consumer key
 in this file.
 
+### Why there is no `docs.reportBuilder`
+
+Recorded because the absence is a decision, and an undocumented absence reads as
+an oversight that the next person helpfully fixes.
+
+`docs.reportTheme` overrides `docs.theme` for one genre, so a `reportBuilder`
+overriding *which skill builds* a findings report is the obvious next key. It is
+deliberately not added.
+
+**Which builder runs is derived, not preferred.** The routing table in
+`crew-house-style/SKILL.md` picks a skill from the format the reader needs and
+from what is installed. doc-builder is scoped to branded findings reports and
+screenshot SOPs, and explicitly does *not* take DOCX and PDF over generally —
+`crew-house-style/SKILL.md` gives the reason as a property of the tools rather
+than a preference: doc-builder's `--to-docx`/`--to-pdf` run through Microsoft
+Word over COM, and `anthropic-office-skills` needs neither, so routing every
+DOCX and PDF to doc-builder would break crew's document path on Linux and macOS.
+A config key cannot express that, because the right answer changes with the
+machine. A user who set `reportBuilder: doc-builder` on a Mac would be
+configuring a failure.
+
+**It would be a third authority over a question that already has two.** Format
+and installed-set decide today, and they cannot disagree — one narrows the
+other. Adding a preference creates a conflict with no documented resolution, and
+the first person to hit it has to guess whether their config or their platform
+wins.
+
+**A key with no consumer is a bug in this file's own terms.** See §9, and see
+the `docs.theme` rewrite above: the single documented exception to carrying a
+user's value forward exists *because* `docs.theme` had never had a consumer, so
+no value in it could be a preference anyone formed by watching it work. Adding
+`reportBuilder` with nothing reading it manufactures that same problem again,
+and the next schema bump inherits it.
+
+**What to do instead of adding it.** If doc-builder is genuinely wrong for a
+repo's reports, that is a routing-table change in `crew-house-style/SKILL.md`,
+where it is visible to every reader and covered by `tests/test_docs_routing.py`
+— not a per-repo key that changes behaviour invisibly.
+
+This entry is the answer to "should there be a `reportBuilder`?". If the case
+changes, change this section; do not add the key beside it and leave this
+standing.
+
 ---
 
 ## 8. `bitbucket.mergeGate`
