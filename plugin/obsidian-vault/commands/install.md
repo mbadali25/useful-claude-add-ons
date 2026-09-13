@@ -144,7 +144,7 @@ Both are in Obsidian's own registry and have no
 | Vault | Path |
 |---|---|
 | `claude-anew-theselectsource` | `C:\repos\claude-anew-theselectsource` |
-| `claude-anew-thd-codegraph` | `C:\repos\claude-anew-thd-codegraph` |
+| `claude-anew-acme-codegraph` | `C:\repos\claude-anew-acme-codegraph` |
 
 Neither has an entry in `~/.claude/obsidian/config.json`, so both need step 1's
 `/obsidian-vault:init` before `enable-plugin` has a name to resolve. Confirm

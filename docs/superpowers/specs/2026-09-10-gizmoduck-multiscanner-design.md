@@ -122,16 +122,16 @@ active scans.
 ```yaml
 authorized_by: "<name/ticket> — I confirm authorization to test these targets"
 targets:
-  - name: www.thdmarketplace.com
+  - name: www.example.com
     kind: web
-    url: https://www.thdmarketplace.com
+    url: https://www.example.com
     options: { zap_active: false, nmap_vuln: false, sqlmap: false }
-  - name: thd-processors-terraform
+  - name: acme-processors-terraform
     kind: iac
-    path: ../TheHomeDepot/terraform/thd-processors
-  - name: thd-processors-deps
+    path: ../ACME/terraform/acme-processors
+  - name: acme-processors-deps
     kind: deps
-    path: ../TheHomeDepot/terraform/thd-processors
+    path: ../ACME/terraform/acme-processors
 ```
 
 Kind → default tools:
@@ -182,7 +182,7 @@ Extend `cmd_report` / `report_template.py`:
 - A **coverage table** at the top: rows = targets, columns = tools, cells =
   ran ✓ / skipped(missing) / skipped(active-off) / error. This makes gaps
   explicit so an absent finding is never mistaken for a clean result — directly
-  addressing the registration.thdmarketplace.com "0 vs 21" lesson from the
+  addressing the registration.example.com "0 vs 21" lesson from the
   initial scans.
 - Detail floor unchanged: itemize Critical/High/Medium, count Low/Info, state
   how many suppressed.

@@ -102,7 +102,7 @@ def _declines_without_confirm():
 @pytest.fixture
 def manifest():
     return routine.Manifest(
-        authorized_by="THDDEV-0000 - test harness",
+        authorized_by="ACME-0000 - test harness",
         targets=[
             routine.Target(name="site-a", kind="web",
                             url="https://a.example/x?id=1",
@@ -179,7 +179,7 @@ def test_sqlmap_does_not_run_without_the_confirm_token(
 
 def test_sqlmap_runs_once_confirm_is_supplied(manifest, fake_registry, tmp_path):
     rm = routine.run_routine(manifest, tmp_path, registry=fake_registry,
-                             confirm="THDDEV-0000-approved")
+                             confirm="ACME-0000-approved")
     assert rm.status("site-a", "sqlmap") == "ran"
 
 
@@ -253,7 +253,7 @@ def test_nmap_records_safe_mode_when_vuln_was_not_requested(
 
 def test_nmap_records_safe_plus_vuln_mode_when_opted_in(fake_registry, tmp_path):
     m = routine.Manifest(
-        authorized_by="THDDEV-0000 - test harness",
+        authorized_by="ACME-0000 - test harness",
         targets=[routine.Target(name="site-c", kind="web",
                                 url="https://c.example/",
                                 options={"nmap_vuln": True})],
@@ -420,7 +420,7 @@ def test_trivy_kind_is_threaded_through_run_opts_and_parse_kwarg(tmp_path):
     reg = FakeRegistry([trivy, checkov], {"iac": ["checkov", "trivy"]})
 
     m = routine.Manifest(
-        authorized_by="THDDEV-0000 - test harness",
+        authorized_by="ACME-0000 - test harness",
         targets=[routine.Target(name="infra", kind="iac", path="../infra")],
     )
     routine.run_routine(m, tmp_path, registry=reg)

@@ -85,7 +85,7 @@ tags:
   - gotcha
 project: "anew"
 sources:
-  - "[[Session - THD slowness incident and deploy pipeline repair 2026-08-18]]"
+  - "[[Session - ACME slowness incident and deploy pipeline repair 2026-08-18]]"
 ---
 ```
 

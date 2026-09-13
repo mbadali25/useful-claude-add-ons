@@ -26,7 +26,7 @@ success.
 The remaining vaults on that machine are the detection fixtures:
 
     claude-memories-codegraphs   layout "org/repo" in config, 1 plugin
-    claude-anew-thd-codegraph   26,146 notes, 0 plugins, <org>/<repo> on disk
+    claude-anew-acme-codegraph  26,146 notes, 0 plugins, <org>/<repo> on disk
     claude-anew-theselectsource 18,402 notes, 0 plugins, <org>/<repo> on disk
 
 The last two are the interesting ones: no plugins at all means no REST API,
@@ -75,7 +75,7 @@ MEASURED_AUTHORED = [
 ]
 MEASURED_GRAPH = ["obsidian-local-rest-api", "code-graph"]
 MEASURED_NOTES = {"memories": 1361, "anew-codegraph": 22027,
-                  "anew-thd": 26146, "theselectsource": 18402}
+                  "anew-acme": 26146, "theselectsource": 18402}
 
 
 # --- 1. The three sets, and the two zero-diff invariants ---------------------
@@ -281,11 +281,12 @@ def _t_detection():
         check("a configured org/repo layout is a declaration", verdict["kind"], "graph")
         check_in("...and says so", "layout", " ".join(verdict["reasons"]))
 
-        # anew-thd and theselectsource: ZERO plugins. No declaration to read, so
-        # the verdict has to come from structure plus the absence of a contract.
+        # anew-acme and theselectsource: ZERO plugins. No declaration to read,
+        # so the verdict has to come from structure plus the absence of a
+        # contract.
         for name, org, repo, count in (
-                ("claude-anew-thd-codegraph", "anew", "TheHomeDepot",
-                 MEASURED_NOTES["anew-thd"]),
+                ("claude-anew-acme-codegraph", "anew", "ACME",
+                 MEASURED_NOTES["anew-acme"]),
                 ("claude-anew-theselectsource", "codegraphs", "ANEW-Warehouse",
                  MEASURED_NOTES["theselectsource"])):
             vault = make_vault(tmp, name, plugins=None,
@@ -353,8 +354,8 @@ def _t_split():
         # by hand here so the assertion is against a known number, not against
         # whatever the code happens to produce.
         vault = make_vault(tmp, "mixed", plugins=[], notes=[
-            ("anew/TheHomeDepot/alpha.md", "Links [[beta]] and [[alpha]].\n"),
-            ("anew/TheHomeDepot/beta.md", "Links [[gamma]].\n"),
+            ("anew/ACME/alpha.md", "Links [[beta]] and [[alpha]].\n"),
+            ("anew/ACME/beta.md", "Links [[gamma]].\n"),
             ("wiki/gamma.md", "Links [[alpha|the alpha node]] and [[gamma#head]].\n"),
             ("Welcome.md", "Embeds ![[beta]].\n"),
         ])
@@ -400,7 +401,7 @@ def _t_split():
         # the limit, not the note count, and turning it off breaks nothing
         # permanently. This fixture has a real export-sized generated side.
         bulk = make_vault(tmp, "bulk", plugins=[], notes=(
-            [(f"anew/TheHomeDepot/n{i}.md", GRAPH_NOTE) for i in range(1000)]
+            [(f"anew/ACME/n{i}.md", GRAPH_NOTE) for i in range(1000)]
             + [("wiki/hand-written.md", "[[n1]]\n")]))
         big = vault_profiles.gather_evidence(bulk, note_count=120000)
         big["plugins"] = ["obsidian-local-rest-api", "omnisearch", "text-extractor"]
@@ -447,12 +448,12 @@ def _t_cli():
         # Declared by config rather than by size, which is how the real
         # claude-memories-codegraphs vault is classified: a nearly-empty export
         # target still has to come out `graph`.
-        graphv = make_vault(tmp, "thd", plugins=None,
-                            notes=[("anew/TheHomeDepot/a.md", GRAPH_NOTE)])
+        graphv = make_vault(tmp, "acme", plugins=None,
+                            notes=[("anew/ACME/a.md", GRAPH_NOTE)])
         cp_path = obsidian_common.community_plugins_path(authored)
 
         with Sandbox({"memories": {"path": authored, "default": True},
-                      "thd": {"path": graphv, "layout": "org/repo"}}):
+                      "acme": {"path": graphv, "layout": "org/repo"}}):
             code, out = run_cli(["profile", "--vault", "memories"])
             check("a vault missing most of its profile reports problems",
                   code, vault_ops.EXIT_PROBLEMS)
@@ -461,7 +462,7 @@ def _t_cli():
             check_in("profile lists what the vault lacks", "lacks", out)
             check_in("profile lists what the vault carries", "carries", out)
 
-            code, out = run_cli(["profile", "--vault", "thd", "--json"])
+            code, out = run_cli(["profile", "--vault", "acme", "--json"])
             data = json.loads(out)["vaults"][0]
             check("json carries the verdict", data["kind"], "graph")
             check("json carries the evidence behind it",
@@ -471,7 +472,7 @@ def _t_cli():
                   ["obsidian-local-rest-api", "code-graph"])
 
             # --profile overrides detection, and the disagreement stays visible.
-            code, out = run_cli(["profile", "--vault", "thd", "--profile", "authored"])
+            code, out = run_cli(["profile", "--vault", "acme", "--profile", "authored"])
             check_in("an override says detection disagreed", "detection said: graph", out)
 
             # THE RULE: a bare --apply must not enable a whole profile.
@@ -515,20 +516,20 @@ def _t_cli():
 
             # --set is a config write, so it is a dry run first like everything
             # else here, and it enables nothing on its own.
-            code, out = run_cli(["profile", "--vault", "thd", "--set", "authored"])
+            code, out = run_cli(["profile", "--vault", "acme", "--set", "authored"])
             check("--set without --apply is a dry run", code, vault_ops.EXIT_PROBLEMS)
             check_in("...which names the disagreement with detection", "DISAGREES", out)
-            check(".. and wrote nothing", vault_profiles.configured_profile("thd"), None)
-            code, out = run_cli(["profile", "--vault", "thd", "--set", "authored",
+            check(".. and wrote nothing", vault_profiles.configured_profile("acme"), None)
+            code, out = run_cli(["profile", "--vault", "acme", "--set", "authored",
                                  "--apply"])
             check("--set --apply stores the override", code, vault_ops.EXIT_OK)
-            check("...in config", vault_profiles.configured_profile("thd"), "authored")
-            code, out = run_cli(["profile", "--vault", "thd"])
+            check("...in config", vault_profiles.configured_profile("acme"), "authored")
+            code, out = run_cli(["profile", "--vault", "acme"])
             check_in("...and the stored override still shows what detection said",
                      "detection said: graph", out)
-            code, _ = run_cli(["profile", "--vault", "thd", "--set", "auto", "--apply"])
+            code, _ = run_cli(["profile", "--vault", "acme", "--set", "auto", "--apply"])
             check("--set auto hands the vault back to detection",
-                  vault_profiles.configured_profile("thd"), None)
+                  vault_profiles.configured_profile("acme"), None)
 
             code, out = run_cli(["profile", "--set", "graph"])
             check("--set without --vault is a usage error", code, vault_ops.EXIT_USAGE)

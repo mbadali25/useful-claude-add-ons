@@ -848,7 +848,7 @@ def test_sqlmap_does_not_run_without_the_confirm_token(fake_registry):
 - [ ] **Step 4:** Run tests; verify PASS.
 - [ ] **Step 5:** Commit as `feat: add routine orchestration with a per-cell run manifest`.
 
-**The four statuses are not interchangeable** and each needs its own test: `ran`, `skipped-missing`, `skipped-active`, `error:<reason>`. Collapsing "we didn't run it" into "we found nothing" is the exact failure that made a previous scan of `registration.thdmarketplace.com` report zero findings when it had actually been blocked by a WAF.
+**The four statuses are not interchangeable** and each needs its own test: `ran`, `skipped-missing`, `skipped-active`, `error:<reason>`. Collapsing "we didn't run it" into "we found nothing" is the exact failure that made a previous scan of `registration.example.com` report zero findings when it had actually been blocked by a WAF.
 
 ---
 

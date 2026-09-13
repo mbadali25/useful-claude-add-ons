@@ -6,7 +6,7 @@ handed a run-manifest dict it renders a coverage table above the findings.
 Neither is optional plumbing dressed up as a feature - the coverage table is
 what stops a `skipped-missing` or `error` cell from reading as a clean scan,
 which is the exact failure a previous real run made
-(registration.thdmarketplace.com: 0 findings because a WAF blocked the scan,
+(registration.example.com: 0 findings because a WAF blocked the scan,
 not because the site was clean).
 
 The regression test (`test_plain_nuclei_input_renders_unchanged`) is the
