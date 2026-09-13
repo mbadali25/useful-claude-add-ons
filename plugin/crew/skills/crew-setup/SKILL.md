@@ -121,7 +121,7 @@ still writes only the repo file.
 
 ```json
 {
-  "schema": 4,
+  "schema": 5,
   "tier": 0,
   "roles": ["explorer", "qa-reviewer"],
   "qa": {
@@ -154,7 +154,8 @@ still writes only the repo file.
   "pm": { "enabled": true, "mode": "adaptive", "quietLines": 8, "maxLines": 40, "authority": "report-only", "ticketGranularity": "system", "maxDispatches": 3 },
   "graph": { "enabled": true, "tool": "graphify", "out": "graphify-out", "mode": "code-only", "commitHook": false },
   "docs": { "theme": null, "reportTheme": null },
-  "bitbucket": { "mergeGate": { "enabled": false, "branch": null, "preset": "standard" } }
+  "bitbucket": { "mergeGate": { "enabled": false, "branch": null, "preset": "standard" } },
+  "install": {"policy": "manual"}
 }
 ```
 

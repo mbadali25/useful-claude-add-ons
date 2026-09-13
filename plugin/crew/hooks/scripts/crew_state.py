@@ -51,7 +51,7 @@ from crew_endpoints import (
 #
 # So: a migration that must reach existing repos REQUIRES a bump here. Adding
 # one to `upgrade_config` without touching this line ships nothing.
-SCHEMA_CURRENT = 4
+SCHEMA_CURRENT = 5
 
 # The machine-global config file. `crew_config` owns the LAYERING and re-exports
 # this name; the path itself lives here for the same reason `PM_DEFAULTS` and
@@ -918,6 +918,54 @@ AUTONOMOUS_STOPS = (
 TICKET_GRANULARITIES = ("session", "system", "change")
 GRANULARITY_DEFAULT = "system"
 
+
+# What crew may do when a skill it needs is NOT installed. Ordered least to most
+# permissive and read only through `install_policy_rank`, the same contract
+# AUTHORITIES carries and for the same reason. Append only, never reorder.
+#
+#   manual  name the gap and the command; run nothing
+#   ask     offer to run it, and run it only on an explicit yes
+#   auto    run it without asking
+#
+# The default is `manual`, so a repo migrated to schema 5 behaves exactly as it
+# did at schema 4: crew installs nothing it was not already installing, which is
+# nothing. A mandatory migration that started running commands on other people's
+# machines would be indefensible.
+INSTALL_POLICIES = ("manual", "ask", "auto")
+INSTALL_POLICY_DEFAULT = "manual"
+INSTALL_DEFAULTS = {"policy": INSTALL_POLICY_DEFAULT}
+
+# The ONLY commands `auto` can ever reach, as literal argv tuples keyed by the
+# plugin name crew routes to.
+#
+# This table is the whole safety argument for `auto`, so it is worth stating
+# plainly why it is a literal and not a lookup. crew reads config out of cloned
+# repositories, and skills are files a repo author writes. If the command were
+# assembled from a config value, read out of a skill file, or built by
+# interpolating the name crew was handed, then `auto` plus one attacker-supplied
+# string is arbitrary code execution on the machine of anyone who cloned that
+# repo. So:
+#
+#   * the command is never built from the name -- it is looked up BY the name,
+#     and a name absent here is not installable at any policy;
+#   * the values are argv tuples, not strings, so nothing is ever handed to a
+#     shell and quoting cannot be escaped out of;
+#   * adding an entry is a crew source change that goes through review, which is
+#     the property a runtime lookup would not have.
+#
+# Keyed on the names crew itself routes to. A skill crew does not route to has
+# no business being installed on crew's say-so, even when it exists in the
+# marketplace.
+INSTALLABLE = {
+    "doc-builder": (
+        "claude", "plugin", "install", "doc-builder@useful-claude-add-ons"),
+    "bitbucket": (
+        "claude", "plugin", "install", "bitbucket@useful-claude-add-ons"),
+    "mermaid-svg-bitbucket": (
+        "claude", "plugin", "install",
+        "mermaid-svg-bitbucket@useful-claude-add-ons"),
+}
+
 PM_DEFAULTS = {
     "enabled": True,
     "mode": "adaptive",
@@ -1213,6 +1261,99 @@ def authority_rank(value):
     ordered; nothing else may compare authority strings.
     """
     return AUTHORITIES.index(normalise_authority(value))
+
+
+def normalise_install_policy(value):
+    """`value` as a known install policy, else the restrictive default.
+
+    Authority's rule, not granularity's, and the distinction matters. An
+    unrecognised granularity falls back to the documented default because no
+    granularity is more permissive than another -- it only decides how the same
+    work is filed. An install policy DOES buy a capability: `auto` runs commands
+    without asking. So an unknown collapses to `manual`, the least permissive
+    tier, and a typo in a hand-edited config costs capability rather than
+    granting it.
+    """
+    if isinstance(value, str):
+        cleaned = value.strip().lower()
+        if cleaned in INSTALL_POLICIES:
+            return cleaned
+    return INSTALL_POLICY_DEFAULT
+
+
+def install_policy_rank(value):
+    """`value`'s position in `INSTALL_POLICIES`. Higher is more permissive.
+
+    Routed through `normalise_install_policy` first, so an unknown ranks 0 and
+    every comparison built on this is fail-safe by construction. This is the one
+    function permitted to know that the policies are ordered; nothing else may
+    compare install-policy strings, exactly as with `authority_rank`.
+    """
+    return INSTALL_POLICIES.index(normalise_install_policy(value))
+
+
+def effective_install_policy(repo_value, global_value):
+    """The policy in force given both layers: the LOWER-ranked of the two.
+
+    Narrowing-only, in the one direction that matters. Every other key in crew
+    resolves by precedence -- the repo answers, and the global layer answers
+    only where the repo is silent. That rule is wrong here, because the two
+    layers are written by different people for different reasons: the global
+    file is the machine owner saying how much they trust crew on THIS machine,
+    and the repo file travels in a clone from someone else.
+
+    Straight precedence would let a cloned repo's `install.policy: auto`
+    override a machine owner who chose `manual`, which is a repo author granting
+    themselves a capability on a stranger's machine. Taking the lower rank means
+    neither layer can widen what the other allows: a repo may ask for LESS than
+    the machine permits and be obeyed, and may ask for more and be refused.
+
+    Absent on either side is the default, and the default is the floor, so a
+    missing value can never widen anything either.
+    """
+    return INSTALL_POLICIES[min(install_policy_rank(repo_value),
+                                install_policy_rank(global_value))]
+
+
+def install_plan(name, policy):
+    """What crew may do about `name` not being installed, under `policy`.
+
+    Returns `{"name", "policy", "action", "command", "reason"}` where `action`
+    is one of:
+
+        "report"   say it is missing and name the command; run nothing
+        "ask"      offer to run it; run only on an explicit yes
+        "run"      run it
+
+    Two independent gates, and the first one does not consult the policy at all.
+    A name absent from `INSTALLABLE` is `"report"` at EVERY policy including
+    `auto` -- there is no command to run, and the absence of one is not a reason
+    to construct one. That ordering is the point: it means no value of `policy`,
+    and no value anywhere in any config file, can produce a command that is not
+    already written in crew's own source.
+
+    `command` is an argv tuple or None. It is never a string, so no caller can
+    hand it to a shell without noticing.
+    """
+    resolved = normalise_install_policy(policy)
+    command = INSTALLABLE.get(name)
+    if command is None:
+        return {
+            "name": name,
+            "policy": resolved,
+            "action": "report",
+            "command": None,
+            "reason": ("not a plugin crew routes to, so crew ships no install "
+                       "command for it"),
+        }
+    action = {"manual": "report", "ask": "ask", "auto": "run"}[resolved]
+    return {
+        "name": name,
+        "policy": resolved,
+        "action": action,
+        "command": command,
+        "reason": f"install.policy is `{resolved}`",
+    }
 
 
 def normalise_granularity(value):

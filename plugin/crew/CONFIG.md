@@ -61,6 +61,13 @@ structural exceptions, both visible above: the global layer is pruned before it
 is consulted at all (§2), and `schema` is lifted out of the merge entirely
 (§4).
 
+**And one exception that is not visible above, because it does not go through
+this function at all: `install.policy` (§15).** It resolves to the *lower* of
+the two layers rather than to the repo's, so a cloned repo cannot widen what
+the machine owner allowed. Anything reading it through `resolve_config` gets
+the precedence answer and is wrong; `crew_config.resolve_install_policy` is the
+only correct reader.
+
 **Resolve through this function, never by re-reading `.crew/config.json`.**
 That file is one layer of three and does not know about the `roles` tables at
 all. `skills/crew-review/SKILL.md` carries the scar: reading it directly made
@@ -106,10 +113,12 @@ both directions:
 `is_global_path` agrees with `filter_global` by construction — both stop
 descending at a template **leaf**.
 
-**Measured, not argued.** `leaf_paths(default_global_config())` yields **44**
-leaves. `leaf_paths(default_config())` yields **85**, so **41** are repo-only.
-For all 85, `filter_global` and `plan_global_write` agree on whether the path is
-settable.
+**Measured, not argued.** `leaf_paths(default_global_config())` yields **45**
+leaves. `leaf_paths(default_config())` yields **86**, so **41** are repo-only.
+For all 86, `filter_global` and `plan_global_write` agree on whether the path is
+settable. (44 / 85 before schema 5 added `install.policy`, which is settable in
+both layers and so moved the first two numbers and not the third. Re-measure
+rather than trusting these: they are a fact about one commit.)
 
 ### The one asymmetry, and it matters
 
@@ -500,9 +509,10 @@ them:
 
 ---
 
-## 10. Global-settable keys — all 44
+## 10. Global-settable keys — all 45
 
-Settable in **either** layer; repo wins. Defaults are identical in
+Settable in **either** layer; repo wins — **except `install.policy`, where the
+narrower of the two layers wins instead** (§15). Defaults are identical in
 `default_config()` and `default_global_config()` — verified by comparison.
 
 | Key | Type | Default |
@@ -533,6 +543,7 @@ Settable in **either** layer; repo wins. Defaults are identical in
 | `notify.tokenEnv` | string or `null` | `null` |
 | `notify.chatId` | string or `null` | `null` |
 | `notify.events` | list (a leaf) | `["phase", "gate", "waiting"]` |
+| `install.policy` | `manual` \| `ask` \| `auto` (narrower layer wins, §15) | `"manual"` |
 | `pm.enabled` | boolean | `true` |
 | `pm.mode` | string | `"adaptive"` |
 | `pm.quietLines` | integer | `8` |
@@ -762,3 +773,75 @@ Implemented as an `AUTOCLEAR_CONSENT_KEYS` exclusion over the one
 `AUTOCLEAR_DEFAULTS` literal, rather than as a second hand-maintained copy of
 the block, and covered by a test that goes red if the exclusion is dropped —
 because dropping it is the tidy-up a future reader will reach for.
+
+
+## 15. `install.policy`
+
+What crew may do when a skill it routes to is **not installed**. Added by schema
+5, which is the only thing that schema cut.
+
+| Value | What crew does |
+|---|---|
+| `manual` *(default)* | Names the missing skill and the command. Runs nothing. |
+| `ask` | Offers to install, and runs the command only after an explicit yes. |
+| `auto` | Installs without asking. |
+
+Read it with `crew_config.py --install-plan <name>`, which prints the action,
+the command, and both layers' values.
+
+### It resolves to the narrower layer, not the repo's
+
+This is the one key that does not follow §1's precedence rule, and the reason is
+the threat model rather than taste. **crew reads config out of cloned
+repositories.** A repo file travels inside somebody else's clone; the global
+file is this machine's owner saying how much they trust crew here. Under
+precedence, a repo shipping `install.policy: auto` would override an owner who
+chose `manual`, and crew would start running commands because of a file the user
+never wrote.
+
+So the effective value is the **lower-ranked of the two layers**
+(`crew_state.effective_install_policy`). Neither layer can widen what the other
+allows: a repo may ask for *less* than the machine permits and is obeyed, and
+may ask for more and is refused.
+
+Absent counts as `manual` on either side, which has a consequence worth stating
+plainly because it surprises people: **`auto` requires both layers to say
+`auto`.** Setting it in a repo alone does nothing. When a layer is holding the
+value down, `--install-plan` says which one — a value that quietly does nothing
+is worse than one refused out loud, which is the same rule
+`default_global_config` applies to the keys it ignores.
+
+### `auto` can only ever run a command from crew's own source
+
+`auto` is defensible exactly as long as no string a repo author controls can
+become a command. Two properties enforce that, and both are asserted in
+`tests/test_install_policy.py`:
+
+- **The command is looked up, never built.** `crew_state.INSTALLABLE` maps a
+  plugin name to a literal argv tuple. `install_plan` consults that table
+  **before** it consults the policy, so a name crew does not ship gets `report`
+  and a null command *at every policy including `auto`*. There is no code path
+  from a config value to a command string.
+- **Commands are argv tuples, not strings.** Nothing is handed to a shell, so
+  quoting cannot be escaped out of.
+
+Adding an installable plugin is therefore a change to crew's source that goes
+through review — which is precisely the property a runtime lookup would not
+have.
+
+### The migration is behaviour-neutral, and had to be
+
+Bumping `SCHEMA_CURRENT` makes **every crew repo on every machine** report
+`upgradeNeeded`, so this migration is mandatory. It lands the key as `manual`,
+which is what crew already did at schema 4: nothing. Nobody's machine starts
+installing anything because they upgraded.
+
+### Why schema 5 carries one key
+
+The obvious economy is to bundle: a schema bump prompts every repo on every
+machine and costs the same for one key or six. The user ruled against it on
+2026-09-12, and the evidence is in this file — `docs.theme` (§7) shipped ahead
+of a consumer and cost a **mandatory migration with a one-shot value rewrite**
+to undo, and §9 lists the keys still waiting for one. A key added ahead of a
+need has cost more here than a second bump would cost to pay. If a real key
+turns up later it gets its own bump.

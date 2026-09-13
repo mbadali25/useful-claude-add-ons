@@ -256,7 +256,11 @@ def test_a_repo_with_a_schema_is_not_told_it_has_none():
     line = _upgrade_finding({"isCrew": True, "schema": 3, "schemaDeclared": 3,
                              "schemaKeyPresent": True,
                              "pm": {"enabled": True, "mode": "adaptive"}})
-    assert "3" in line and "4" in line, line
+    # Derived, not literal. This read `"3" in line and "4" in line`, which
+    # pinned the assertion to the schemas current when it was written and went
+    # red on the next bump for a reason that had nothing to do with what it
+    # tests -- that a repo WITH a schema is not told it has none.
+    assert "3" in line and str(crew_state.SCHEMA_CURRENT) in line, line
     assert "no schema" not in line, line
     assert "declares no schema" not in line, line
     assert "predates" not in line, line
