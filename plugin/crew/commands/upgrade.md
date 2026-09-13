@@ -171,6 +171,19 @@ surface it, do not re-derive it by hand:
   OVERRIDES an installed brand pack. **If they did mean neutral, say they can
   set it again and it will stick** — the rewrite is one-shot, gated on the
   schema it landed in, so no later `--force` will take it away again.
+- **Schema 4 → 5** — when the report says `install.policy` was added, read the
+  whole line out, and lead with what did NOT happen: it arrives as `manual`,
+  which is what crew already did — name a missing skill and its install command,
+  and run nothing. **Nobody's machine started installing anything because they
+  upgraded.** Then say what the other values buy: `ask` lets crew offer and
+  install only after an explicit yes, `auto` lets it install without asking. Two
+  things are worth saying unprompted because neither is guessable. First, under
+  every policy crew can only run a command from its own source — never a string
+  from a repo config or a skill file, which matters because crew reads config
+  out of cloned repositories. Second, the key resolves to the NARROWER of the
+  repo and machine-global layers rather than the repo winning, so `auto` needs
+  both layers to say `auto`; a user who sets it in one place and sees nothing
+  change is not looking at a bug.
 - **A machine-global theme that defeats it** — when the report warns that
   `~/.claude/crew/config.json` still sets `docs.theme` to `"neutral"`, read it
   out and do NOT offer to edit that file as part of this command. It is

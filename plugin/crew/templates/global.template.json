@@ -82,5 +82,8 @@
       "branch": null,
       "preset": "standard"
     }
+  },
+  "install": {
+    "policy": "manual"
   }
 }

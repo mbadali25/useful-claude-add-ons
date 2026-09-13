@@ -207,6 +207,7 @@ CONFIG_BLOCKS = (
     ("worktree", crew_state.WORKTREE_DEFAULTS),
     ("docs", DOCS_BLOCK),
     ("bitbucket", BITBUCKET_BLOCK),
+    ("install", crew_state.INSTALL_DEFAULTS),
 )
 
 # The keys schema 3 introduced. Named here rather than diffed generically so
@@ -217,6 +218,19 @@ CONFIG_BLOCKS = (
 # on the block's own `provider`, exactly as it did before.
 SCHEMA_3_KEYS = ("qa.fallback", "qa.roles", "dev.fallback", "dev.roles")
 
+# The key schema 5 introduced. One key, deliberately: bumping SCHEMA_CURRENT
+# makes every crew repo on every machine report `upgradeNeeded`, so this
+# migration is mandatory and costs the same whether it carries one key or six.
+# The user ruled on 2026-09-12 that it carries this one alone -- a key added
+# ahead of a need has cost more to undo here than a second bump would cost to
+# pay, and `docs.theme` is the worked example sitting one block above.
+#
+# Behaviour-neutral on arrival, which is the bar a mandatory migration has to
+# clear: it lands as `manual`, and `manual` is what crew already did at schema
+# 4, which is nothing. Nobody's machine starts running install commands because
+# they upgraded.
+SCHEMA_5_KEYS = ("install.policy",)
+
 
 def upgrade_config(cfg):
     """Bring a config up to the current schema. Pure.
@@ -226,7 +240,8 @@ def upgrade_config(cfg):
 
         {"unmigrated": [...], "rolesAdded": [...], "rolesUnknown": [...],
          "tierFrom": int, "tierTo": int, "schemaFrom": int,
-         "providerKeysAdded": [...], "schemaStamped": bool}
+         "providerKeysAdded": [...], "installKeysAdded": [...],
+         "schemaStamped": bool}
 
     Four rules, each of which used to be wrong here:
 
@@ -262,7 +277,8 @@ def upgrade_config(cfg):
     notes = {"unmigrated": [], "rolesAdded": [], "rolesUnknown": [],
              "tierFrom": 0, "tierTo": 0,
              "schemaFrom": crew_state.int_or(cfg.get("schema", 1), 1),
-             "providerKeysAdded": [], "schemaStamped": False,
+             "providerKeysAdded": [], "installKeysAdded": [],
+             "schemaStamped": False,
              # Keys this upgrade removed outright. Distinct from
              # "unmigrated", which blocks the schema stamp: a dropped key is
              # a completed migration, not a failed one.
@@ -327,6 +343,17 @@ def upgrade_config(cfg):
         supplied = crew_state.dict_or_empty(cfg.get(block_key))
         if leaf not in supplied:
             notes["providerKeysAdded"].append(dotted)
+
+    # Same rule for schema 5's key, and computed the same way: from the
+    # incoming file, so a config hand-edited to carry `install.policy` already
+    # is not reported as having just gained it.
+    for dotted in SCHEMA_5_KEYS:
+        block_key, leaf = dotted.split(".")
+        if _block_untouched(notes, block_key):
+            continue
+        supplied = crew_state.dict_or_empty(cfg.get(block_key))
+        if leaf not in supplied:
+            notes["installKeysAdded"].append(dotted)
 
     # `graph.obsidian` was removed in 0.16.13. Drop it loudly rather than
     # carrying it forward: a key that survives an upgrade but no longer has a
@@ -617,6 +644,20 @@ def _config_lines(notes):
             "that OVERRIDES an installed brand pack, de-branding documents "
             "that are correctly branded today. If you did mean neutral, set "
             "it again and it will now be honoured."
+        )
+    if notes["installKeysAdded"]:
+        lines.append(
+            "- schema "
+            f"{notes['schemaFrom']} -> {crew_state.SCHEMA_CURRENT}, which "
+            "added `install.policy`: what crew may do when a skill it needs "
+            "is not installed. It arrives as `manual`, which is what crew "
+            "already did — name the missing skill and the command, and run "
+            "nothing. **Your machine did not start installing anything "
+            "because you upgraded.** `ask` lets crew offer; `auto` lets it "
+            "install without asking. Under every policy crew can only run a "
+            "command from its own source, never one from a repo config or a "
+            "skill file. Set it with `/crew:config` — nothing here chose "
+            "anything but the floor for you."
         )
     if notes["providerKeysAdded"]:
         lines.append(

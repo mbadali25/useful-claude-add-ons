@@ -1,5 +1,5 @@
 {
-  "schema": 4,
+  "schema": 5,
   "tier": 0,
   "roles": [
     "explorer",
@@ -142,5 +142,8 @@
       "branch": null,
       "preset": "standard"
     }
+  },
+  "install": {
+    "policy": "manual"
   }
 }

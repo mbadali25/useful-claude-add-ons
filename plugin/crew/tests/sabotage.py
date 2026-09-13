@@ -173,6 +173,50 @@ MUTATIONS = (
         "test_the_two_config_keys_are_bound_to_different_genres",
     ),
     (
+        # The defect the rule exists to forbid, written as the thing a helpful
+        # person would actually write. An unresolvable theme is the one failure
+        # here that is the CONFIG's fault rather than the machine's, and falling
+        # back to unbranded is the worst outcome available: the user named a
+        # brand, so an unbranded document is wrong in exactly the way they
+        # configured against, and nothing in the artefact says so. The two
+        # degraded paths above both leave a trace -- a different tool in the
+        # handoff, or doc-builder's own message. This one leaves none.
+        "an unresolvable theme falls back to unbranded instead of stopping",
+        HOUSE_STYLE,
+        "**Relay doc-builder's error and stop.**",
+        "**Produce the document unbranded and note it in the handoff.**",
+        "tests/test_docs_routing.py::"
+        "test_an_unresolvable_theme_is_relayed_and_never_falls_back",
+    ),
+    (
+        # The other half, and the one that looks like an improvement. Checking
+        # the theme name before calling reads as defensive programming, and it
+        # is the same mistake as crew probing for Word: a second copy of
+        # doc-builder's check that goes stale on doc-builder's next release.
+        # Worse here, because doc-builder accepts a skill directory name, a
+        # path, a directory and `neutral` -- so an allowlist of installed pack
+        # names rejects valid configuration and blocks work that would have
+        # succeeded.
+        "crew is allowed to validate the theme name itself",
+        HOUSE_STYLE,
+        "**Do not validate the theme name before calling.**",
+        "**Check the theme name against the installed packs before calling.**",
+        "tests/test_docs_routing.py::"
+        "test_an_unresolvable_theme_is_relayed_and_never_falls_back",
+    ),
+    (
+        # The justification, not the rule. A bare prohibition with its reason
+        # removed is the shape that gets "simplified" away by the next reader,
+        # who cannot see what it was protecting. This mutation leaves the rule
+        # standing and deletes only why it is true.
+        "the reason a crew-side allowlist is wrong is removed",
+        HOUSE_STYLE,
+        "would therefore fail closed on correct configuration, which is the expensive",
+        "is therefore a reasonable belt-and-braces check, which is the safe",
+        "tests/test_docs_routing.py::"
+        "test_crew_is_not_told_to_allowlist_theme_names",
+    ),
+    (
         # The false sentence itself. `upgradeNeeded` shipped ONE fixed string
         # -- "config has no schema" -- and bumping SCHEMA_CURRENT to 4 aimed
         # it at every schema-2 and schema-3 repo in existence. It sorts third
@@ -376,12 +420,15 @@ MUTATIONS = (
          "test_the_suite_cannot_reach_the_real_machine_global_config"),
     ),
     (
-        # The schema stays at 3, which is what shipped to Codex for review and
+        # The schema stays one behind -- the shape that shipped to Codex for
+        # review as "3" and
         # what Codex caught by RUNNING it: status "already current", value
         # unchanged. The rewrite below is untouched and still perfect -- it
         # simply never executes, because run() returns before calling
         # upgrade_config for any config at or above SCHEMA_CURRENT, and every
-        # existing config is at 3.
+        # existing config is already at the older number. Re-pinned to 4 -> 5
+        # when install.policy cut schema 5; the mutation is "do not bump",
+        # whatever the current pair of numbers happens to be.
         #
         # The mutation is pinned here because it is invisible to every unit
         # test of the transformation itself: `upgrade_config` is pure and goes
@@ -389,10 +436,14 @@ MUTATIONS = (
         # exactly the gap that let it reach review.
         "the schema is not bumped, so the migration never runs",
         STATE,
+        "SCHEMA_CURRENT = 5",
         "SCHEMA_CURRENT = 4",
-        "SCHEMA_CURRENT = 3",
-        ("tests/test_upgrade.py::"
-         "test_the_theme_migration_actually_reaches_an_existing_repo"),
+        # Re-pinned to the install.policy test when this entry went VACUOUS.
+        # The theme test migrates a repo at schema 3, which keeps passing with
+        # the bump reverted -- a schema-3 repo is behind either way. Only a repo
+        # at the PREVIOUS schema can tell whether the current bump happened.
+        ("tests/test_install_policy.py::"
+         "test_the_schema_bump_actually_reaches_a_repo_at_the_previous_schema"),
     ),
     (
         # The one-shot gate goes, so the rewrite matches on the VALUE forever.
@@ -479,14 +530,18 @@ MUTATIONS = (
         # the second half visible -- a suite carrying only the two transitions
         # that existed at two tiers stays green with this bug restored, which
         # is precisely why the matrix is enumerated as data.
+        # Re-pinned when `install.policy` made the ratchet shared: the
+        # comparison moved out of the change-entry literal and into `_widens`.
+        # The mutation is unchanged in substance -- restore the pre-0.17.0
+        # equality test -- and it is still the registry's single copy of the
+        # rule that is being corrupted, which is the point of having one.
         "widening test compares authority by equality instead of rank",
         CONFIG,
-        "                and crew_state.authority_rank(value)\n"
-        "                > crew_state.authority_rank(\n"
-        "                    None if before is _MISSING else before)",
-        "                and crew_state.normalise_authority(value) == \"act\"\n"
-        "                and crew_state.normalise_authority(\n"
-        "                    None if before is _MISSING else before) != \"act\"",
+        "    rank = spec[0]\n"
+        "    return rank(after) > rank(None if before is _MISSING else before)",
+        "    return (crew_state.normalise_authority(after) == \"act\"\n"
+        "            and crew_state.normalise_authority(\n"
+        "                None if before is _MISSING else before) != \"act\")",
         ("tests/test_crew_config.py::"
          "test_every_authority_transition_is_classified"),
     ),
@@ -498,10 +553,10 @@ MUTATIONS = (
         # under-describes the grant it is there to announce.
         "the widening warning names a hardcoded tier",
         CONFIG,
-        '                granted = crew_state.normalise_authority('
-        'change["after"])\n'
-        '                print(f"  ! pm.authority widens to `{granted}`: "\n'
-        '                      + _WIDENING_NOTES[granted])',
+        '                _, normalise, notes = _RATCHETED[change["path"]]\n'
+        '                granted = normalise(change["after"])\n'
+        '                print(f"  ! {change[\'path\']} widens to `{granted}`: "\n'
+        '                      + notes[granted])',
         '                print("  ! pm.authority widens to `act`: the PM will '
         'dispatch "\n'
         '                      "roles itself and report after.")',
@@ -1469,6 +1524,83 @@ MUTATIONS = (
         ("tests/test_promote_merge_gate.py::"
          "test_merge_gate_sh_rejects_preset_which_is_why_the_key_stays_"
          "unwired"),
+    ),
+    (
+        # install.policy, mutation 1: the narrowing ratchet becomes ordinary
+        # precedence. This is the single most realistic wrong version, because
+        # precedence is what EVERY other key in crew does -- a reader who
+        # noticed this key resolving differently from its neighbours would
+        # "fix" it to match them. It is also the whole attack: crew reads
+        # config out of cloned repositories, so under precedence a repo
+        # shipping `auto` overrides a machine owner who chose `manual` and crew
+        # starts running commands because of a file the user never wrote.
+        "install.policy resolves by precedence instead of narrowing",
+        STATE,
+        "    return INSTALL_POLICIES[min(install_policy_rank(repo_value),",
+        "    return INSTALL_POLICIES[max(install_policy_rank(repo_value),",
+        ("tests/test_install_policy.py::"
+         "test_two_layers_can_only_narrow_never_widen"),
+    ),
+    (
+        # install.policy, mutation 2: the policy is consulted before the
+        # table. Reordering these two reads looks like a tidy-up and changes
+        # nothing for any name crew actually ships -- every existing test that
+        # installs doc-builder still passes. What it changes is the case
+        # nobody types by hand: at `auto`, a name crew ships no command for
+        # stops being inert. That is the difference between "auto runs one of
+        # three commands in crew's source" and "auto runs what it was handed".
+        "install_plan consults the policy before the shipped-command table",
+        STATE,
+        "    command = INSTALLABLE.get(name)\n    if command is None:",
+        "    command = INSTALLABLE.get(name)\n    if command is None and "
+        "resolved != \"auto\":",
+        ("tests/test_install_policy.py::"
+         "test_a_name_crew_does_not_ship_is_inert_at_every_policy"),
+    ),
+    (
+        # install.policy, mutation 3: an unrecognised value falls back to the
+        # DEFAULT rather than the floor. Here those are the same string, so
+        # this mutation is invisible today -- it goes wrong the moment anybody
+        # changes the default, which is exactly the kind of latent break a
+        # sabotage entry is for. Written against `normalise_granularity`'s
+        # rule, which IS "fall back to the documented default" and is correct
+        # there because no granularity is more permissive than another.
+        "an unknown install policy falls back to the default, not the floor",
+        STATE,
+        "        if cleaned in INSTALL_POLICIES:\n            return cleaned\n"
+        "    return INSTALL_POLICY_DEFAULT",
+        "        if cleaned in INSTALL_POLICIES:\n            return cleaned\n"
+        "    return INSTALL_POLICIES[-1]",
+        ("tests/test_install_policy.py::"
+         "test_an_unknown_policy_collapses_to_the_floor_not_the_default"),
+    ),
+    (
+        # install.policy, mutation 4: the narrowing happens but stops being
+        # ANNOUNCED. The safe behaviour survives, so nothing breaks and no
+        # command runs that should not. What breaks is the user's model: they
+        # set `auto`, watch crew keep asking, and have nothing telling them
+        # which layer refused. `default_global_config` already states the rule
+        # this violates -- a value that quietly does nothing is worse than one
+        # refused out loud.
+        "the layer holding install.policy down is no longer named",
+        CONFIG,
+        '    held = None\n    if rank(repo_value) > rank(effective):',
+        '    held = None\n    if False:',
+        ("tests/test_install_policy.py::"
+         "test_the_narrowing_layer_is_always_named"),
+    ),
+    (
+        # install.policy, mutation 5: the mandatory migration stops being
+        # behaviour-neutral. A schema bump makes every crew repo on every
+        # machine report `upgradeNeeded`, so this migration runs on machines
+        # whose owners did not ask for it. Landing anything but the floor means
+        # upgrading crew is what granted the capability.
+        "the schema 5 migration lands install.policy above the floor",
+        STATE,
+        'INSTALL_DEFAULTS = {"policy": INSTALL_POLICY_DEFAULT}',
+        'INSTALL_DEFAULTS = {"policy": "auto"}',
+        ("tests/test_install_policy.py::"
+         "test_the_migration_is_behaviour_neutral"),
     ),
 )
 
