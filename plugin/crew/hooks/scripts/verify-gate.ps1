@@ -157,11 +157,42 @@ if (Test-CrewIncidentActive) {
   exit 0
 }
 
+# Records the commit this gate has proven clean. Mirrors record_verified in
+# verify-gate.sh; called on every exit-0 path and on none that exit nonzero.
+function Write-CrewVerified {
+  $verified = (git rev-parse HEAD 2>$null)
+  if ($verified) {
+    if (-not (Test-Path .crew)) { New-Item -ItemType Directory .crew -Force | Out-Null }
+    Set-Content -Path .crew/.verify-verified-at -Value $verified.Trim() -Encoding ascii
+  }
+}
+
+# SCOPE. Mirrors verify-gate.sh exactly; the long rationale lives there. In
+# short: diffing the working tree against HEAD made a COMMIT enough to end a
+# turn this gate would otherwise have blocked, so the baseline is now the last
+# commit the gate actually verified, falling back to the merge-base with the
+# default branch, falling back to HEAD. Unknown resolves to checking MORE.
+$base = ""
+if (Test-Path .crew/.verify-verified-at) {
+  $cand = (Get-Content .crew/.verify-verified-at -TotalCount 1 -ErrorAction SilentlyContinue)
+  if ($cand) { $cand = $cand.Trim() }
+  if ($cand) {
+    git cat-file -e "$cand^{commit}" 2>$null
+    if ($LASTEXITCODE -eq 0) { $base = $cand }
+  }
+}
+if (-not $base) {
+  $def = (git symbolic-ref --short refs/remotes/origin/HEAD 2>$null)
+  if ($def) { $def = $def -replace '^origin/', '' } else { $def = "main" }
+  $base = (git merge-base HEAD $def 2>$null)
+}
+if (-not $base) { $base = "HEAD" }
+
 $changed = @()
-$changed += (git diff --name-only HEAD 2>$null)
+$changed += (git diff --name-only $base 2>$null)
 $changed += (git ls-files --others --exclude-standard 2>$null)
-$changed = $changed | Where-Object { $_ -and $_.Trim() }
-if (-not $changed) { exit 0 }
+$changed = $changed | Where-Object { $_ -and $_.Trim() } | Sort-Object -Unique
+if (-not $changed) { Write-CrewVerified; exit 0 }
 
 # LOCK: mirrors verify-gate.sh. From here on is the real (possibly minutes-
 # long) smoke/verify work, and both scripts fire for the same Stop event;
@@ -309,4 +340,8 @@ if ($unmapped.Count -gt 0 -and $vm.unmapped -eq "fail") {
 }
 
 if ($failed) { exit 2 }
+
+# Record what was just proven clean. Written ONLY on the pass path, so the
+# marker can never claim more than was actually checked. See verify-gate.sh.
+Write-CrewVerified
 exit 0

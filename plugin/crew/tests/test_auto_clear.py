@@ -34,7 +34,11 @@ _ROOT = context._ROOT  # pylint: disable=protected-access
 _SH = (_ROOT + "/hooks/scripts/auto-clear.sh").replace("\\", "/")
 _PS1 = _ROOT + "/hooks/scripts/auto-clear.ps1"
 
-_BASH = shutil.which("bash")
+# Not shutil.which("bash"): under PowerShell that resolves WSL's bash, which
+# cannot open a Windows path and exits 127 for every script handed to it.
+# resolve_bash() proves a candidate by running one, and returns None when there
+# is none - so the `sh` flavour is skipped rather than parametrized in to fail.
+_BASH = crew_fixtures.resolve_bash()
 # The .ps1 flavour is native Windows ONLY: its send path is
 # System.Windows.Forms.SendKeys against a Win32 foreground window, so on a Linux
 # runner with pwsh installed (the CI job has one) the script now stands down

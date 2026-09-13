@@ -6,9 +6,14 @@
 #
 # This proves the MECHANISM end to end - detection, scaffolding, the CLAUDE.md
 # audit, the smoke and regression runners, tool resolution, and all three gates.
-# It does NOT prove the prompts: the 21 commands and 10 agents are instructions
-# to a model, and only a live session exercises those. validate-prompts.py
-# checks their structure; nothing here checks their judgement.
+# It does NOT prove the prompts: every file under commands/ and agents/ is a set
+# of instructions to a model, and only a live session exercises those.
+# validate-prompts.py checks their structure; nothing here checks their
+# judgement. (This line used to say "the 21 commands and 10 agents". Both were
+# wrong - 24 and 54 when it was corrected - and a count in a comment nothing
+# reads is a fact with a decay rate and no reader, so it states the scope
+# instead. `ls plugin/crew/commands/*.md plugin/crew/agents/*.md` if you want
+# the number today.)
 set -uo pipefail
 
 P="$(cd "$(dirname "$0")/../../.." && pwd)"

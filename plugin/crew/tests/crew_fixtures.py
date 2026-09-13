@@ -5,7 +5,101 @@ test asks git for HEAD and comparing against a mocked sha would test the mock.
 """
 import json
 import os
+import pathlib
+import shutil
 import subprocess
+import sys
+import tempfile
+
+# Sentinel exit code for the bash probe. Any value a failing-to-launch bash
+# would not produce on its own: 127 is "command not found", 126 is "found but
+# not executable", 1 and 2 are ordinary script failures.
+_PROBE_EXIT = 37
+_BASH = "unprobed"
+
+
+def _usable(candidate):
+    """Does this bash actually run a script living at a Windows path?
+
+    This is the whole point of the module-level probe. `shutil.which("bash")`
+    answers "is there a file called bash", which is not the question. Under
+    PowerShell on Windows it returns `C:\\WINDOWS\\system32\\bash.EXE` -- WSL's
+    -- which cannot open a Windows path at all: handed one it exits 127 with
+    "No such file or directory" for a file that demonstrably exists.
+    """
+    tmp = tempfile.mkdtemp()
+    try:
+        script = os.path.join(tmp, "probe.sh")
+        # newline="\n": a CRLF script dies on its shebang as `bad interpreter`.
+        with open(script, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(f"exit {_PROBE_EXIT}\n")
+        try:
+            done = subprocess.run(
+                [candidate, script.replace("\\", "/")],
+                capture_output=True, text=True, timeout=30,
+                stdin=subprocess.DEVNULL, check=False,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return False
+        return done.returncode == _PROBE_EXIT
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def resolve_bash():
+    """A bash that can run a script at a Windows path, or None.
+
+    Returns None rather than a path that will not work, so a caller can SKIP the
+    `sh` flavour instead of parametrizing it in and collecting failures. The
+    previous version of this logic lived copied in six test modules and treated
+    "a bash was found" as "a working bash was found"; under PowerShell that made
+    `_HAS_BASH` True against WSL's bash and 52 tests failed with `assert 127 ==
+    2`. Two agents independently reported that as pre-existing breakage on main
+    -- a harness assumption wearing the label of a regression.
+
+    Every candidate is PROVED by running one, because the failure mode here is
+    precisely that a plausible-looking path does not work.
+    """
+    global _BASH  # pylint: disable=global-statement
+    if _BASH != "unprobed":
+        return _BASH
+
+    candidates = []
+    found = shutil.which("bash")
+    if found:
+        parts = pathlib.Path(found).parts
+        lower = [p.lower() for p in parts]
+        # Git for Windows ships two bashes. usr/bin/bash.exe is the raw MSYS
+        # binary and cannot resolve its own mount table when launched from
+        # python.exe; bin/bash.exe is the shim that bootstraps MSYS first.
+        if "usr" in lower and "bin" in lower:
+            shim = pathlib.Path(*parts[:lower.index("usr")]) / "bin" / "bash.exe"
+            if shim.exists():
+                candidates.append(str(shim))
+        candidates.append(found)
+    # Named last, never by editing PATH. Prepending Git's bin/ to PATH is what
+    # makes `check-marketplace.py` hang -- it moves `git` to a build that never
+    # returns for that script -- so the two gates would want opposite
+    # environments. Resolving the interpreter here leaves PATH alone.
+    for guess in (r"C:\Program Files\Git\bin\bash.exe",
+                  r"C:\Program Files (x86)\Git\bin\bash.exe"):
+        if guess not in candidates and os.path.isfile(guess):
+            candidates.append(guess)
+
+    for candidate in candidates:
+        if _usable(candidate):
+            _BASH = candidate
+            return _BASH
+
+    print(
+        "crew tests: no usable bash - the 'sh' flavour is SKIPPED, not failed. "
+        + (f"Found {found!r} but it cannot run a script at a Windows path."
+           if found else "No bash on PATH.")
+        + " Install Git for Windows, or run the suite from Git Bash.",
+        file=sys.stderr,
+    )
+    _BASH = None
+    return _BASH
 
 
 def _git(root, *args):

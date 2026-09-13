@@ -18,39 +18,18 @@ import datetime
 import json
 import os
 import pathlib
-import shutil
 import subprocess
 
 import pytest
+
+import crew_fixtures
 
 import context  # noqa: F401  pylint: disable=unused-import
 
 _GATE = (pathlib.Path(__file__).resolve().parents[1]
          / "hooks" / "scripts" / "promote-gate.sh")
 
-
-def _resolve_bash():
-    """Only Git for Windows' `bin/bash.exe` shim works when spawned by python.
-
-    `shutil.which("bash")` gives WSL's under PowerShell (cannot open a Windows
-    path at all) and the raw MSYS binary under Git Bash (cannot resolve its own
-    mount table from a non-MSYS parent). Returning None rather than a found-
-    but-unusable path is the point: "found a bash" is not "found a working
-    bash", and conflating them turns a skip into `assert 127 == 2`.
-    """
-    for candidate in (r"C:\Program Files\Git\bin\bash.exe",
-                      "/usr/bin/bash", "/bin/bash"):
-        if pathlib.Path(candidate).exists():
-            return candidate
-    found = shutil.which("bash")
-    if not found:
-        return None
-    if "system32" in [p.lower() for p in pathlib.Path(found).parts]:
-        return None
-    return found
-
-
-_BASH = _resolve_bash()
+_BASH = crew_fixtures.resolve_bash()
 needs_bash = pytest.mark.skipif(_BASH is None, reason="no MSYS/POSIX bash")
 
 _PAYLOAD = json.dumps({"tool_input": {"command": "deploy-prod"}})
