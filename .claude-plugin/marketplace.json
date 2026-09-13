@@ -86,6 +86,12 @@
       "version": "1.0.2"
     },
     {
+      "name": "github",
+      "source": "./skills/github",
+      "description": "GitHub branch protection and repository rulesets via gh - read both gate surfaces, export them to a file, remove them, and restore from that export.",
+      "version": "1.0.0"
+    },
+    {
       "name": "i-have-adhd",
       "source": "./skills/i-have-adhd",
       "description": "ADHD-friendly output shaping - leads with next action, numbers steps, suppresses tangents. Manual invoke via /i-have-adhd.",
