@@ -94,6 +94,12 @@ PM_BRIEF = os.path.join(CREW, "hooks", "scripts", "pm_brief.py")
 # this file SAYS WHAT IT DOES, deliberately one copy each -- so the only
 # way to sabotage "the two agree" is to break one of them.
 UPGRADE_DOC = os.path.join(CREW, "commands", "upgrade.md")
+PROMOTE_DOC = os.path.join(CREW, "commands", "promote.md")
+# Outside the crew plugin, for the same reason BUILD_REPORT is: promote.md
+# claims things about the `bitbucket` entry's script, and the only way to
+# sabotage a claim about another entry's interface is to break that interface.
+MERGE_GATE = os.path.join(
+    ROOT, "skills", "bitbucket", "scripts", "merge_gate.sh")
 
 GUARD = '    if out["family"] is not None and out["family"] in authors:'
 ROLE_PIN = '    decided = resolve_role(cfg, "dev", "developer")'
@@ -1410,6 +1416,59 @@ MUTATIONS = (
         'and out["family"] is not None:',
         ("tests/test_provider_table.py::"
          "test_an_unpinned_localgpu_qa_reviewer_is_still_barred"),
+    ),
+    (
+        # `enabled: false` -- the shipped default -- is rewritten to mean
+        # "apply the disabled preset". That is not a weaker version of the
+        # rule; it is the OPPOSITE action against a live repo. `disable`
+        # deletes branch restrictions, so a promote reading the default this
+        # way would strip protections from every repo that never asked crew
+        # for a gate, on a config nobody edited.
+        #
+        # The headline sentence only, deliberately. The key stays named, so
+        # the test's FIRST assertion ("`enabled: false`" is in the section)
+        # still passes and the meaning assertion is the only thing that can
+        # catch this -- the vacuous-assertion trap this file's header is
+        # about. The paragraph below it, which forbids exactly this reading
+        # in prose, is left standing too: prose is not what an agent obeys
+        # when the headline says otherwise.
+        #
+        # The replacement deliberately does NOT contain the phrase "apply the
+        # disabled preset". That string is what the test asserts in order to
+        # prove the PROHIBITION is still in the file, so a mutation carrying
+        # it would keep that assertion satisfied out of its own text -- the
+        # mutation propping up an assertion about the document is exactly the
+        # coupling this file's header warns against.
+        "enabled: false is rewritten to mean run the disable subcommand",
+        PROMOTE_DOC,
+        "**`enabled: false` - the shipped default - means do nothing at all.**",
+        "**`enabled: false` - the shipped default - means run the `disable` "
+        "subcommand.**",
+        ("tests/test_promote_merge_gate.py::"
+         "test_enabled_false_means_do_nothing_at_all"),
+    ),
+    (
+        # A `--preset` flag appears on `enable`, so `merge_gate.sh` starts
+        # accepting the one thing CONFIG.md §8 says it cannot. That reason is
+        # the whole basis for leaving `bitbucket.mergeGate.preset` unwired,
+        # and this is what makes the reason get RE-EXAMINED rather than
+        # inherited the day the flag lands.
+        #
+        # Anchored on the `--from-export` arm and not on the `*)` fallthrough,
+        # which is byte-identical in `cmd_disable` and `cmd_enable` and so is
+        # not a unique anchor. The mutation still reaches the test through the
+        # `enable` parametrisation; `disable` keeps rejecting it, which is the
+        # honest shape -- one of the two params goes red, and one red param is
+        # a red test.
+        "merge_gate.sh grows the --preset flag CONFIG.md says it lacks",
+        MERGE_GATE,
+        '      --from-export) from_export="${2:?--from-export needs a value}"; '
+        'shift 2 ;;',
+        '      --from-export) from_export="${2:?--from-export needs a value}"; '
+        'shift 2 ;;\n      --preset) shift 2 ;;',
+        ("tests/test_promote_merge_gate.py::"
+         "test_merge_gate_sh_rejects_preset_which_is_why_the_key_stays_"
+         "unwired"),
     ),
 )
 
