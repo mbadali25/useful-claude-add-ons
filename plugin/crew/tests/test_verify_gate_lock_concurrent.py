@@ -20,13 +20,14 @@ reported on.
 """
 import json
 import os
-import pathlib
 import shutil
 import subprocess
 import sys
 import time
 
 import pytest
+
+import crew_fixtures
 
 import context  # noqa: F401  pylint: disable=unused-import
 
@@ -35,24 +36,7 @@ _VERIFY_SH = os.path.join(_ROOT, "hooks", "scripts", "verify-gate.sh")
 _VERIFY_PS1 = os.path.join(_ROOT, "hooks", "scripts", "verify-gate.ps1")
 _PWSH = shutil.which("pwsh")
 
-
-def _resolve_bash():
-    """Same resolver as `test_context_watch.py`: prefer Git for Windows'
-    bin/bash.exe shim over the raw usr/bin MSYS binary."""
-    found = shutil.which("bash")
-    if not found:
-        return None
-    parts = pathlib.Path(found).parts
-    lower = [p.lower() for p in parts]
-    if "usr" in lower and "bin" in lower:
-        root = pathlib.Path(*parts[:lower.index("usr")])
-        shim = root / "bin" / "bash.exe"
-        if shim.exists():
-            return str(shim)
-    return found
-
-
-_BASH = _resolve_bash()
+_BASH = crew_fixtures.resolve_bash()
 
 pytestmark = pytest.mark.skipif(
     not sys.platform.startswith("win") or _PWSH is None or _BASH is None,

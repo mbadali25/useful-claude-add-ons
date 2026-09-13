@@ -600,7 +600,11 @@ passes it. That is why the re-measure line added at `:1982` points at
 `ls plugin/crew/agents/*.md` and explicitly not at the table above it. The
 duplicate row is left in place — it is a separate finding from the count.
 
-**Still wrong, left deliberately.**
+**Fixed 2026-09-13 (crew 0.19.28).** That comment no longer carries a count at
+all: it names the two directories and says to `ls` them, because a count in a
+comment nothing reads is a fact with a decay rate and no reader. It said "the 21
+commands and 10 agents"; the real figures when it was corrected were 24 and 54.
+As filed, it read:
 `plugin/crew/hooks/scripts/_test/setup-walkthrough.sh:9` says "the 21 commands and
 10 agents" in a comment — the same claim, but in a test file rather than anything
 a user reads. `README.md:590`, `plugin/README.md:370` and `plugin/UPDATE.md:366`
@@ -1954,7 +1958,24 @@ decided not to" is the half that otherwise gets rediscovered as a new finding.
 Filed 2026-09-13 against `main` at `819bf382`. Three findings, all reproduced
 here rather than relayed; the first two are one problem seen from two ends.
 
-### 1. Under PowerShell the crew suite runs against WSL bash and 52 tests fail
+### 1. ~~Under PowerShell the crew suite runs against WSL bash and 52 tests fail~~ — CLOSED 2026-09-13 (crew 0.19.28)
+
+**CLOSED.** `crew_fixtures.resolve_bash()` now PROVES a candidate by running a
+probe script at a Windows path and checking a sentinel exit code, so "found" is
+no longer mistaken for "working". It returns None when nothing works, and the
+`sh` flavour is then SKIPPED with a printed reason instead of parametrized in to
+fail.
+
+The logic lived copied in SIX test modules, and a seventh (`test_auto_clear.py`)
+had a bare `shutil.which` with no resolver at all. That seventh is why the first
+pass still left 16 failures, and it is the check-the-neighbouring-case lesson
+arriving on schedule. Measured under PowerShell: **52 failures -> 0**. The `sh`
+flavour is not skipped there but RESOLVED, to `C:\Program Files\Git\bin\bash.exe`.
+1411 passed under Git Bash and under PowerShell.
+
+**`### 2` below is NOT reopened by this.** The fix resolves the interpreter
+rather than prepending Git's `bin` to `PATH`, so `git` is untouched and the
+`check-marketplace.py` hang is not reintroduced. That entry stays open.
 
 `plugin/crew/tests/test_context_watch.py:40` resolves the shell with
 `shutil.which("bash")`. Under PowerShell that returns
@@ -1993,7 +2014,13 @@ editing `PATH` breaks the other. Neither is fixed. What is needed is for
 `_resolve_bash` to reject a non-MSYS bash outright rather than for callers to
 launder `PATH`.
 
-### 3. `crew_upgrade.py` prints schema 3's added keys at the CLI and not schema 5's
+### 3. ~~`crew_upgrade.py` prints schema 3's added keys at the CLI and not schema 5's~~ — CLOSED 2026-09-13 (crew 0.19.28)
+
+**CLOSED.** `main()` gained the missing branch and prints `installKeysAdded`
+with its floor in the same breath -- the floor is the reassurance, and it only
+reassures if it is said. Covered by
+`test_the_cli_announces_the_new_key_and_does_not_only_write_it_to_a_file`, and
+sabotage-verified: stubbing the branch to `if False` turns it red.
 
 `plugin/crew/skills/crew-graph/scripts/crew_upgrade.py:845-850` prints
 `providerKeysAdded`. There is no matching branch for `installKeysAdded`, which
@@ -2010,7 +2037,20 @@ even at its floor. One `if` and a line of text.
 **Not verified:** no fix is attempted for any of the three, and
 `scripts/_test/drift-detection.sh` was not run for this entry.
 
-## Crew's graph-refresh string contradicts this repo's CLAUDE.md since #121
+## ~~Crew's graph-refresh string contradicts this repo's CLAUDE.md since #121~~ — CLOSED 2026-09-13 (crew 0.19.28)
+
+**CLOSED for the pulse, and deliberately not by swapping the string.**
+`_read_graph` now reports `reportTracked` -- whether `GRAPH_REPORT.md` beside
+`graph.json` is TRACKED, asked of git rather than of the filesystem, because an
+untracked report is a local artefact and does not make the pair something the
+repo maintains. `pm_brief._graph_fields` turns that into `{graphCommand}`:
+`graphify update .` where the report is tracked, `graphify . --no-viz
+--code-only` where it is not, and the same where the answer is unknown -- the
+older default, and the safe one on the majority case.
+
+**The other three call sites named above are still fixed prose** --
+`commands/onboard.md`, `commands/upgrade.md` and `crew-graph/SKILL.md` -- and
+are the remaining half of this finding. They were out of scope for this change.
 
 Filed 2026-09-13 against `main` at `af9995ed`. Recorded, not to be chased.
 
@@ -2042,7 +2082,31 @@ in crew, so it owes a bump and a CHANGELOG entry. Not costed further.
 this machine track the pair -- which is the number that decides whether the
 detecting version is worth writing at all.
 
-## The Stop gate cannot see a committed change, and closing that is a design call
+## ~~The Stop gate cannot see a committed change, and closing that is a design call~~ — CLOSED 2026-09-13 (crew 0.19.28)
+
+**CLOSED. The design call was made rather than escalated.**
+
+The baseline is now the last commit the gate itself verified
+(`.crew/.verify-verified-at`, machine-local, written ONLY on a pass), falling
+back to the merge-base with the default branch, falling back to HEAD.
+
+The rejected alternative was a marker written at turn start by another hook. It
+dates the turn precisely, but an absent marker degrades to the old behaviour,
+and a gate that silently verifies less when its input is missing is this repo's
+recurring bug. This baseline fails the other way: unknown means checking MORE.
+
+**One narrowing survives, and it is asserted rather than hidden.** ON the
+default branch with no marker yet there is no branch point -- merge-base(HEAD,
+main) IS HEAD -- so a commit still ends that one turn. It lasts exactly one
+turn, because the marker is written on every clean exit including the "nothing
+changed" one.
+`test_on_the_default_branch_with_no_marker_a_commit_still_ends_the_turn` records
+it and tells its reader to delete it if the window is ever closed.
+
+Both flavours changed. Nine cases in `plugin/crew/tests/test_verify_gate_baseline.py`,
+sabotage-verified three ways: reverting the baseline to HEAD turns 4 red,
+trusting an unresolvable marker turns 1 red, and writing the marker before the
+checks run turns 1 red.
 
 Filed 2026-09-13 against `main` at `a2e57ad9`. Found by the Rule of Two review
 of `plugin/crew/` (Codex, D5) and reproduced here before filing.

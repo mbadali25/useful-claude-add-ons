@@ -244,6 +244,28 @@ def test_the_migration_is_behaviour_neutral():
     assert out["schema"] == crew_state.SCHEMA_CURRENT
 
 
+def test_the_cli_announces_the_new_key_and_does_not_only_write_it_to_a_file(
+        tmp_path, capsys):
+    """The one upgrade note a user would most want unprompted was the one they
+    had to go looking for.
+
+    `installKeysAdded` reached `.crew/codemap/UPGRADE.md` and never the
+    terminal, because the CLI had a branch for `providerKeysAdded` and no
+    matching one for this. The block's own comment gives the rule: printed at
+    the CLI "not only buried in UPGRADE.md", for the things "a user must not
+    learn about later". A key governing whether crew may run install commands
+    is in that class even arriving at its floor -- the floor is the reassurance,
+    and it only reassures if it is said.
+    """
+    root = crew_fixtures.make_repo(tmp_path, config={"schema": 4})
+    crew_upgrade.main(["--root", str(root)])
+    out = capsys.readouterr().out
+
+    assert "install.policy" in out
+    # The floor, in the same breath, or the announcement reads as a warning.
+    assert "manual" in out
+
+
 def test_the_migration_does_not_touch_a_policy_already_set():
     """Computed from the incoming file, not from the version number: a config
     hand-edited to carry the key already is not reported as having gained it,
