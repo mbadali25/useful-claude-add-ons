@@ -749,3 +749,64 @@ claude plugin uninstall obsidian-vault@useful-claude-add-ons
 
 The hooks go with it. `~/.claude/obsidian/config.json` is left in place;
 delete it by hand for no trace.
+
+## `rule-of-two` — two adversarial reviewers from different model families
+
+| | |
+|---|---|
+| **Source** | [`rule-of-two/`](rule-of-two) |
+| **Version** | 0.1.0 |
+| **Install** | `claude plugin install rule-of-two@useful-claude-add-ons` |
+| **Registers** | 1 agent, 2 commands, 0 skills, 0 hook entries |
+| **Upstream guide** | [`rule-of-two/README.md`](rule-of-two/README.md) |
+
+Two reviewers tear apart the same Claude Code agent, skill or plugin against
+one shared rubric, and neither sees the other's findings: a Claude subagent on
+Fable, and a Codex agent on `gpt-6-astra` driven through `codex exec`. They are
+picked from different model families on purpose - a second opinion from the
+same family shares the first one's blind spots, which is the failure mode this
+plugin exists to avoid.
+
+**Coverage is a reported outcome, not an assumption.** If Codex is missing,
+unauthenticated, times out or its model is retired, the report's own title says
+this is one review and not two. If the two model names cannot be resolved to
+families, it says "could not tell" rather than claiming independence. The title
+and the banner are both derived in code from a five-value coverage enum in
+which `UNKNOWN` is a real value, and the word "independent" appears in the
+report only under `TWO_CROSS_FAMILY`. A single-reviewer report never ships
+under the Rule of Two name.
+
+**No hooks.** Deliberate invocation only: `/rule-of-two:review <path>` runs the
+review, `/rule-of-two:config` reports which two models are configured and what
+their families resolve to.
+
+**Standalone.** It carries its own two-model configuration and never reads
+crew's. It can hand its findings to crew as work if crew happens to be
+installed, but it does not require crew, read crew's config, or fail without
+it.
+
+### Scope
+
+The first cut reviews Claude Code **artifacts** - agents, skills, commands and
+plugins - against the repo's `Skill-Authoring-Standard.md` and the failure
+shapes recorded in `CLAUDE.md`. It is not an architecture, plan, product-idea
+or code-diff reviewer; for those, use crew's `architect-reviewer`, `planner` or
+`code-reviewer`.
+
+### Tests
+
+`plugin/rule-of-two/scripts/_test/test_rule_of_two.py` asserts against the
+**rendered report text** rather than the function that computes coverage, and
+stubs the subprocess layer so no real `codex` is launched. `--sabotage` breaks
+one guard at a time and asserts the suite goes red, then restores it: the
+renderer banner, the title, the evidence gate, the family-alias matching, and
+the verdict line.
+
+### Uninstall
+
+```bash
+claude plugin uninstall rule-of-two@useful-claude-add-ons
+```
+
+Nothing outside the plugin directory is written, so there is nothing to clean
+up.

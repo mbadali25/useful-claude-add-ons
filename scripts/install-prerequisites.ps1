@@ -766,7 +766,7 @@ $script:Catalog = @(
     [pscustomobject]@{ Key = 'skillui';           Default = $false; Name = 'SkillUI (npm) + Playwright/Chromium - extract a design system from a URL' }
     [pscustomobject]@{ Key = 'strix';             Default = $false; Name = 'Strix AI pentesting CLI (needs Docker + an LLM API key)' }
     [pscustomobject]@{ Key = 'obsidian';          Default = $false; Name = 'Obsidian desktop + claude-obsidian + obsidian-skills plugins' }
-    [pscustomobject]@{ Key = 'repo-plugins';      Default = $false; Name = "This repo's plugins: crew, gizmoduck, localgpu, obsidian-vault (agents, hooks)" }
+    [pscustomobject]@{ Key = 'repo-plugins';      Default = $false; Name = "This repo's plugins: crew, gizmoduck, localgpu, obsidian-vault, rule-of-two (agents, hooks)" }
     [pscustomobject]@{ Key = 'graphify';          Default = $false; Name = 'graphify code graph (uv tool install graphifyy; per-repo, not global)' }
     [pscustomobject]@{ Key = 'ms-mcp';            Default = $false; Name = 'Microsoft MCP servers (mcp-servers/): Graph, Intune, Office 365 user/admin - needs az login or tenant credentials' }
     [pscustomobject]@{ Key = 'aws-docs-mcp';      Default = $false; Name = 'MCP server: AWS Knowledge (docs + API refs, hosted by AWS, no credentials)' }
@@ -856,6 +856,7 @@ $script:PluginCatalog = @(
     [pscustomobject]@{ Key = 'gizmoduck'; Selected = $true; Name = 'gizmoduck               - Nuclei scans: diff, triaged reports, SDP tickets. No hooks'; Spec = 'gizmoduck@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons' }
     [pscustomobject]@{ Key = 'localgpu'; Selected = $true; Name = 'localgpu                - Local models via Ollama: index, search, ask. MCP, no hooks'; Spec = 'localgpu@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons' }
     [pscustomobject]@{ Key = 'obsidian-vault'; Selected = $true; Name = 'obsidian-vault          - Multi-vault memory: gardener/reflector agents, bridge+guard hooks'; Spec = 'obsidian-vault@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons' }
+    [pscustomobject]@{ Key = 'rule-of-two'; Selected = $true; Name = 'rule-of-two              - Two-family adversarial review of agents, skills, plugins. No hooks'; Spec = 'rule-of-two@useful-claude-add-ons|mbadali25/useful-claude-add-ons|useful-claude-add-ons' }
 )
 
 # --- Team plugins (menu item 4) -----------------------------------------------
@@ -893,7 +894,7 @@ $script:Groups = @(
     [pscustomobject]@{ MenuKey = 'own-skills'; Single = 'skill';   Catalog = { $script:SkillCatalog };     Flag = '-Skills';    Noun = 'skills';            Title = 'Pick individual skills from this repo'; Label = "This repo's marketplace + {0} of {1} skills  >" }
     [pscustomobject]@{ MenuKey = 'team'; Single = 'team plugin';         Catalog = { $script:TeamCatalog };      Flag = '-Team';      Noun = 'team plugins';      Title = 'Pick team plugins';                     Label = 'Team plugins: {0} of {1} (superpowers, frontend-design, excalidraw)  >' }
     [pscustomobject]@{ MenuKey = 'community'; Single = 'community plugin';    Catalog = { $script:CommunityCatalog }; Flag = '-Community'; Noun = 'community plugins'; Title = 'Pick community plugins';                Label = 'Community marketplaces + {0} of {1} plugins  >' }
-    [pscustomobject]@{ MenuKey = 'repo-plugins'; Single = 'plugin'; Catalog = { $script:PluginCatalog };    Flag = '-Plugins';   Noun = 'plugins';           Title = "Pick plugins from this repo";           Label = "This repo's plugins: {0} of {1} (crew, gizmoduck, localgpu, obsidian-vault)  >" }
+    [pscustomobject]@{ MenuKey = 'repo-plugins'; Single = 'plugin'; Catalog = { $script:PluginCatalog };    Flag = '-Plugins';   Noun = 'plugins';           Title = "Pick plugins from this repo";           Label = "This repo's plugins: {0} of {1} (crew, gizmoduck, localgpu, obsidian-vault, rule-of-two)  >" }
 )
 
 function Get-Group {

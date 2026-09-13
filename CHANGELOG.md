@@ -59,6 +59,40 @@ All notable changes to this repository are documented here. Format follows [Keep
   working tree cannot see that, which is exactly why the bump belongs in the
   final commit.
 
+- **`rule-of-two` 0.1.0: two adversarial reviewers from different model
+  families, and a report that says so when only one of them ran.** A Claude
+  subagent on Fable and a Codex agent on `gpt-6-astra` tear apart the same
+  Claude Code agent, skill or plugin against one shared rubric
+  (`templates/rubric.md`), neither seeing the other's findings, and return a
+  viability verdict with cited defects and the edits worth making. Scope is
+  artifacts only - not architecture, plans, product ideas or code diffs.
+
+  The load-bearing property is that **coverage is a reported outcome**. If
+  Codex is missing, unauthenticated, times out or its model is retired, the
+  report's own title says this is one review and not two; if the two model
+  names cannot be resolved to families, it says "could not tell" rather than
+  claiming independence. Title and banner are both derived in code from a
+  five-value coverage enum in which `UNKNOWN` is a real value, and the word
+  "independent" appears in the report only when two reviewers ran and resolved
+  to different families. That is the repo's recurring bug - an unknown
+  collapsing into the safe-looking value - and it is asserted against the
+  *rendered report*, not the function that computes it.
+
+  `scripts/_test/test_rule_of_two.py` carries 228 checks with the subprocess
+  layer stubbed, so no real `codex` is launched; `--sabotage` breaks one guard
+  at a time (the banner, the title, the evidence gate, family-alias matching,
+  the verdict line) and asserts the suite goes red, then restores it.
+
+  Model spellings were verified rather than asserted, with a control in each
+  case: `claude-fable-5-1` exits 0 where an invented name exits 1 with
+  `[claude-code:unrecognized_model]`, and `codex exec -m gpt-6-astra` replies
+  where an invented name exits 1 with "model is not supported". Both controls
+  are quoted in the plugin's README.
+
+  No hooks, and no dependency on `crew` - it carries its own two-model config
+  and never reads crew's, though it will offer findings to crew as tickets if
+  a `.crew/` directory happens to be there.
+
 - **`crew` 0.19.14: the pm can now route the trigger 0.19.13 added, and
   `UPGRADE.md` stops carrying a line nothing can read.** Two gaps left by that
   release, both of the same shape -- a value that exists in the code and does
