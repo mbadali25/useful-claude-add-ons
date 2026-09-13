@@ -69,6 +69,11 @@ function Invoke-Guard([string]$name, [string]$msg) {
       if ($target) { [Console]::Error.WriteLine("Target branch: $target") }
       [Console]::Error.WriteLine("To approve THIS command and nothing else, then re-run it:")
       [Console]::Error.WriteLine("  New-Item -ItemType File $marker")
+      # The window, and whether a marker already there has fallen outside it,
+      # come from $reason rather than being spelled here: the bound is
+      # GUARD_APPROVAL_TTL in crew_guards.py, and a number restated in two
+      # shells is a number that will disagree with itself.
+      if ($reason) { [Console]::Error.WriteLine($reason) }
       exit 2
     }
     'block'  { Block $msg }

@@ -987,7 +987,7 @@ flavours call exactly that CLI — see "one resolver, two flavours" below.
 | Value | What crew does |
 |---|---|
 | `block` *(default)* | Refuses, exactly as the guard did before these keys existed. |
-| `ask` | Refuses, prints the **exact** command, and names the one marker file that approves **that** command. Creating it and re-running lets it through; the next command asks again. |
+| `ask` | Refuses, prints the **exact** command, and names the one marker file that approves **that** command. Creating it and re-running lets it through for 15 minutes; the next command asks again, and so does the same command tomorrow. |
 | `allow` | Runs it, prints what it let through, and appends a row to `.crew/guard.log`. |
 
 **`ask` is a marker, not a prompt, and it had to be.** A `PreToolUse` hook has
@@ -1004,6 +1004,21 @@ would silently approve every later one.
 The marker is **not consumed on read**. Both hook flavours are registered on
 Windows, so one command can be judged twice; deleting the marker on the first
 read would refuse the second. It is the user's to remove.
+
+**It expires 15 minutes after it is created** (`GUARD_APPROVAL_TTL` in
+`crew_guards.py`, read by `crew_config.py::_approval_is_live`). Not consuming
+it on read answers "can one command be judged twice"; it does not answer "how
+long is a yes good for", and the two are separate properties. `.crew/` is
+gitignored and nothing prunes it, so an approval with no time bound is a
+standing per-command `allow` that outlives the session, the task and the
+person who gave it — `ask` in the config, `allow` on disk. The design note
+asks `ask` to stop for a yes *at that moment*, and a file with no expiry is
+not that moment. `promote-gate.sh`'s marker needs no bound because its key is
+a commit sha, so the next commit invalidates it; keying on the command text
+gives up that natural expiry, so the bound has to be explicit. A marker dated
+in the *future* expires the same way: crew cannot date that yes, and an
+approval it cannot date is not one. Both shells print the window, taken from
+the resolver's `reason` field rather than restated in bash and PowerShell.
 
 **Under `allow` nothing is silent.** The stderr line goes with the session; the
 row in `.crew/guard.log` is the durable half, and it is written for every

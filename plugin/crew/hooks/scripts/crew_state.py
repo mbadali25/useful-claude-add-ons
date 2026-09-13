@@ -46,6 +46,7 @@ from crew_endpoints import (
 # by a test rather than by this comment.
 from crew_guards import (
     GUARD_APPROVAL_PREFIX,
+    GUARD_APPROVAL_TTL,
     GUARD_DEFAULTS,
     GUARD_LOG_PATH,
     GUARD_NAMES,

@@ -111,6 +111,24 @@ GUARD_DEFAULTS = {name: GUARD_POLICY_DEFAULT for name in GUARD_NAMES}
 GUARD_APPROVAL_PREFIX = ".approved-guard-"
 GUARD_LOG_PATH = os.path.join(".crew", "guard.log")
 
+# How long an `ask` approval stays good for, in seconds.
+#
+# Without a bound, `ask` is a permanent per-command `allow`: the marker is a
+# file under `.crew/`, which is gitignored and never cleaned, so a force push
+# approved once is approved next week, in the next session, for the next agent
+# working the same worktree -- with nothing on screen saying an approval from
+# another day is what let it through. The design note asks `ask` to stop for a
+# yes "at that moment", and a file with no time bound is not that moment.
+#
+# `promote-gate.sh`'s `.approved-<env>-<sha>` needs no TTL because its key is a
+# commit sha, so the next commit invalidates it. Keying on the command text --
+# which is what makes approving one force push not approve the next -- gives up
+# that natural expiry, so the bound has to be explicit.
+#
+# 15 minutes: long enough to read the refusal, create the marker and re-run,
+# and short enough that it cannot outlive the decision it records.
+GUARD_APPROVAL_TTL = 900
+
 
 def normalise_install_policy(value):
     """`value` as a known install policy, else the restrictive default.

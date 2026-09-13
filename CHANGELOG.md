@@ -20,7 +20,13 @@ All notable changes to this repository are documented here. Format follows [Keep
   with no reachable behaviour. So `ask` refuses, prints the *exact* command,
   and names `.crew/.approved-guard-<name>-<sha256(command)[:16]>`, the same
   shape and directory as `promote-gate.sh`'s `.approved-<env>-<sha>`. Keyed on
-  the command, so approving one force push does not approve the next.
+  the command, so approving one force push does not approve the next, and it
+  **expires 15 minutes after it is created**: `.crew/` is gitignored and
+  nothing prunes it, so an approval with no time bound is a standing
+  per-command `allow` that outlives the session, the task and the person who
+  gave it. `promote-gate.sh`'s marker needs no bound because its key is a
+  commit sha; keying on the command text gives that up, so the bound is
+  explicit.
   **Under `allow` nothing is silent**: every decision appends a row to
   `.crew/guard.log`, not only the permissive ones.
 

@@ -933,6 +933,31 @@ def guard_marker(root, name, command):
         root, ".crew", f"{crew_state.GUARD_APPROVAL_PREFIX}{name}-{digest}")
 
 
+def _approval_age(marker):
+    """Seconds since `marker` was created, or None when there is no approval.
+
+    None covers absent, unreadable and every other OSError, because an approval
+    crew cannot read is not an approval: this is the fail-closed direction, and
+    the caller turns None back into `ask`.
+    """
+    try:
+        return time.time() - os.path.getmtime(marker)
+    except OSError:
+        return None
+
+
+def _approval_is_live(marker):
+    """True when `marker` is an approval from THIS moment, not from some day.
+
+    `abs()` is deliberate. A marker dated in the future is not a fresher
+    approval; it is a clock that disagrees or a timestamp somebody set by hand,
+    and either way crew cannot say when the yes was given. An approval that
+    cannot be dated is not one, so it expires the same as a stale one.
+    """
+    age = _approval_age(marker)
+    return age is not None and abs(age) <= crew_state.GUARD_APPROVAL_TTL
+
+
 def _log_guard(root, row):
     """Append one tab-separated row to `.crew/guard.log`. Best effort.
 
@@ -961,13 +986,21 @@ def guard_decision(root, name, command, path=None, record=False):
 
         "block"   refuse, exactly as the guard did before these keys existed
         "ask"     refuse, print the exact command, and name the marker that
-                  approves THAT command and only that command
+                  approves THAT command and only that command, for the next
+                  `GUARD_APPROVAL_TTL` seconds
         "allow"   let it through
 
     `policy` is the configured value and `decision` is what to DO, and they are
     separate keys because they differ in the case the whole `ask` design turns
-    on: policy `ask` with the marker already present is decision `allow`. A
+    on: policy `ask` with a live marker present is decision `allow`. A
     caller that read one field would either re-ask forever or never ask at all.
+
+    The marker is read through `_approval_is_live`, never with a bare
+    `os.path.exists`. `.crew/` is gitignored and nothing prunes it, so an
+    approval with no time bound is a standing per-command `allow` that outlives
+    the session, the task and the person who gave it -- `ask` in the config and
+    `allow` on disk, which is the label-without-the-behaviour failure the whole
+    block exists to avoid.
 
     **Under `allow` nothing is silent.** `record=True` appends a row to
     `.crew/guard.log` for every decision, not only the permissive ones -- the
@@ -986,10 +1019,17 @@ def guard_decision(root, name, command, path=None, record=False):
     if policy == "allow":
         decision, reason = "allow", f"guards.{name} is `allow`"
     elif policy == "ask":
-        if os.path.exists(marker):
+        if _approval_is_live(marker):
             decision, reason = "allow", f"approved for this command: {marker}"
+        elif _approval_age(marker) is not None:
+            decision, reason = "ask", (
+                f"guards.{name} is `ask`: the approval at {marker} is outside "
+                f"the {crew_state.GUARD_APPROVAL_TTL // 60}-minute window")
         else:
-            decision, reason = "ask", f"guards.{name} is `ask`"
+            decision, reason = "ask", (
+                f"guards.{name} is `ask`: an approval is good for "
+                f"{crew_state.GUARD_APPROVAL_TTL // 60} minutes, so it cannot "
+                f"become a standing grant nobody revisits")
     else:
         decision, reason = "block", f"guards.{name} is `block`"
 

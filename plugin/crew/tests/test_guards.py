@@ -30,9 +30,11 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_config
+import crew_guards
 import crew_state
 import crew_upgrade
 import pytest
@@ -496,6 +498,58 @@ def test_an_ask_marker_approves_one_command_and_not_the_next(tmp_path):
         root, "forcePush", first, path)["decision"] == "allow"
     assert crew_config.guard_decision(
         root, "forcePush", second, path)["decision"] == "ask"
+
+
+@pytest.mark.parametrize("offset", [
+    # Stale: yesterday's yes, still sitting in a gitignored directory nothing
+    # prunes. Without the bound this is the shape that turns `ask` into a
+    # permanent per-command `allow` -- the same command runs unasked next
+    # session, for the next agent in the same worktree, with nothing on screen
+    # saying an approval from another day is what let it through.
+    -86400,
+    -(crew_guards.GUARD_APPROVAL_TTL + 60),
+    # Dated in the future: not a fresher approval, a clock that disagrees or a
+    # timestamp set by hand. Crew cannot say when the yes was given, and an
+    # approval it cannot date is not one.
+    crew_guards.GUARD_APPROVAL_TTL + 60,
+])
+def test_an_ask_approval_outside_the_window_asks_again(tmp_path, offset):
+    """`ask` must stop for a yes AT THAT MOMENT, which a file with no time
+    bound is not. The marker survives `os.path.exists` either way, so the only
+    thing separating `ask` from a standing grant is that the age is read."""
+    root = _repo(tmp_path, guards={"forcePush": "ask"})
+    path = _global_file(tmp_path, guards={"forcePush": "allow"})
+    command = _TRIPS["forcePush"]
+
+    out = crew_config.guard_decision(root, "forcePush", command, path)
+    _touch(out["marker"])
+    assert crew_config.guard_decision(
+        root, "forcePush", command, path)["decision"] == "allow"
+
+    stamp = time.time() + offset
+    os.utime(out["marker"], (stamp, stamp))
+    again = crew_config.guard_decision(root, "forcePush", command, path)
+
+    assert again["decision"] == "ask"
+    assert os.path.exists(out["marker"]), (
+        "the marker is the user's to remove; expiring it must not delete it")
+    assert "outside the" in again["reason"]
+    assert str(crew_guards.GUARD_APPROVAL_TTL // 60) in again["reason"]
+
+
+def test_the_first_ask_says_how_long_an_approval_lasts(tmp_path):
+    """The bound is only honest if the person creating the marker is told it
+    exists. It rides in `reason`, which both shells print, so the number lives
+    in one place rather than being restated in bash and in PowerShell."""
+    root = _repo(tmp_path, guards={"forcePush": "ask"})
+    path = _global_file(tmp_path, guards={"forcePush": "allow"})
+
+    out = crew_config.guard_decision(root, "forcePush", _TRIPS["forcePush"],
+                                     path)
+
+    assert out["decision"] == "ask"
+    assert str(crew_guards.GUARD_APPROVAL_TTL // 60) in out["reason"]
+    assert "\t" not in out["reason"] and "\n" not in out["reason"]
 
 
 def test_the_force_push_target_branch_is_named_or_said_to_be_unknown(tmp_path):

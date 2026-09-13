@@ -78,6 +78,11 @@ guarded() {  # $1 = guard name, $2 = the refusal message
       [ -n "$target" ] && printf 'Target branch: %s\n' "$target" >&2
       printf 'To approve THIS command and nothing else, then re-run it:\n' >&2
       printf '  touch %s\n' "$marker" >&2
+      # The window, and whether a marker already there has fallen outside it,
+      # come from `reason` rather than being spelled here: the bound is
+      # GUARD_APPROVAL_TTL in crew_guards.py, and a number restated in two
+      # shells is a number that will disagree with itself.
+      [ -n "$reason" ] && printf '%s\n' "$reason" >&2
       exit 2
       ;;
     block)

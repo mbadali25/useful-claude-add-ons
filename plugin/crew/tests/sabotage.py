@@ -203,8 +203,10 @@ MUTATIONS = (
         # own rather than folding it into the policy test.
         "guard.sh's `ask` prints the command and then runs it anyway",
         GUARD_SH,
-        "      printf '  touch %s\\n' \"$marker\" >&2\n      exit 2",
-        "      printf '  touch %s\\n' \"$marker\" >&2\n      return 0",
+        "      [ -n \"$reason\" ] && printf '%s\\n' \"$reason\" >&2\n"
+        "      exit 2",
+        "      [ -n \"$reason\" ] && printf '%s\\n' \"$reason\" >&2\n"
+        "      return 0",
         "tests/test_guards.py::test_sh_honours_each_policy",
     ),
     (
@@ -213,11 +215,29 @@ MUTATIONS = (
         # piece of code that can be wrong on its own.
         "guard.ps1's `ask` prints the command and then runs it anyway",
         GUARD_PS1,
-        '      [Console]::Error.WriteLine("  New-Item -ItemType File $marker")\n'
+        "      if ($reason) { [Console]::Error.WriteLine($reason) }\n"
         "      exit 2",
-        '      [Console]::Error.WriteLine("  New-Item -ItemType File $marker")\n'
+        "      if ($reason) { [Console]::Error.WriteLine($reason) }\n"
         "      return",
         "tests/test_guards.py::test_ps1_honours_each_policy",
+    ),
+    (
+        # The approval stops expiring, and `ask` quietly becomes a permanent
+        # per-command `allow`. This is the mutation with the least visible
+        # symptom in the file: every decision is still correct the first time,
+        # the marker is still keyed on the command, both flavours still print
+        # the same lines, and nothing goes wrong until a marker from another
+        # day is still sitting in a gitignored directory nothing prunes. The
+        # replacement is the obvious, natural spelling -- `os.path.exists` is
+        # what this line said before the bound was added -- which is why it
+        # needs a test rather than a reviewer.
+        "an `ask` approval never expires, so one yes covers that command "
+        "forever",
+        CONFIG,
+        "        if _approval_is_live(marker):",
+        "        if os.path.exists(marker):",
+        ("tests/test_guards.py::"
+         "test_an_ask_approval_outside_the_window_asks_again"),
     ),
     (
         # `allow` goes silent: the row stops being written, so there is no
@@ -227,14 +247,19 @@ MUTATIONS = (
         # not asked at the time, and the log is then the only place the event
         # exists once the session is gone.
         #
-        # Mutating the CALL rather than `_log_guard`'s body: emptying the body
-        # would also stop the block rows being written and could trip a
-        # different assertion first, and a mutation whose label names one
-        # claim has to leave every other claim's assertions satisfied.
+        # The mutation excludes `allow` from the call and nothing else, so the
+        # block and ask rows keep being written and the only claim it breaks
+        # is the one it is labelled with. An earlier version read `if False
+        # and ...`, which stopped EVERY row -- the same effect as emptying
+        # `_log_guard`'s body, while this comment claimed it was narrower. A
+        # comment that misdescribes its own mutation is exactly the failure
+        # this file's header is about, so it is corrected here rather than
+        # quietly rewritten.
         "under `allow` the guard stops recording what it let through",
         CONFIG,
         "    if record and not (decision == \"block\" and not os.path.isdir(",
-        "    if False and not (decision == \"block\" and not os.path.isdir(",
+        "    if record and decision != \"allow\" and not ("
+        "decision == \"block\" and not os.path.isdir(",
         "tests/test_guards.py::test_under_allow_nothing_is_silent",
     ),
     (
