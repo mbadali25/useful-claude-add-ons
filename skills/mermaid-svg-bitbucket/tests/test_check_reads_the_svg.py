@@ -95,8 +95,13 @@ def test_damaged_svg_is_reported_and_fails(tmp_path, kind, version):
     assert "DAMAGED" in out, out
     assert "diagrams/flow.mmd" in out, out
     # Naming the file is not enough - the reason has to be in the output, or a
-    # future failure for an unrelated cause satisfies this test.
-    assert "up to date" not in out.split("DAMAGED")[0], out
+    # future failure for an unrelated cause satisfies this test. The summary has
+    # to agree, too: a damaged diagram must never be counted as verified.
+    # This line used to read `"up to date" not in out.split("DAMAGED")[0]`, which
+    # 1.2.1 made vacuous - the failure summary no longer contains that phrase for
+    # any input, so the assertion passed whether or not the bug was present.
+    # Assert against the wording the summary actually prints.
+    assert "0 diagram(s) verified; 0 stale, 1 damaged, 0 unverified." in out, out
 
 
 def test_intact_svg_with_recorded_hash_passes(tmp_path):

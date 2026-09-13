@@ -214,9 +214,19 @@ All notable changes to this repository are documented here. Format follows [Keep
   itself a failure, that shape would have dropped a whole category of finding,
   and `test_damaged_and_unverified_are_both_reported` holds it open.
 
-  Sabotage-tested: reverting the unverified branch to `return 0` reddens both
-  new tests, and each asserts the exit code and the message text separately, so
-  a right-code/useless-text regression still fails. Suite: 14 passed, 0 failed.
+  Changing the summary's wording quietly disarmed an existing assertion.
+  `test_damaged_svg_is_reported_and_fails` ended on
+  `assert "up to date" not in out.split("DAMAGED")[0]`, and the failure summary
+  no longer contains that phrase for any input -- so the line passed whether or
+  not the bug it guarded for existed. It now asserts the counts the summary
+  actually prints. Keyed on the new wording it reddens on sabotage; keyed on the
+  old, it could not.
+
+  Sabotage-tested twice: reverting the unverified branch to `return 0` reddens
+  both new tests (2 failed, 12 passed), and dropping `damaged` from the verified
+  count reddens five (5 failed, 9 passed). Each test asserts the exit code and
+  the message text separately, so a right-code/useless-text regression still
+  fails. Suite: 14 passed, 0 failed.
 
 - **`report-builder` 2.0.0 and `solomon-sop-maker` 2.0.0 are now redirect
   stubs.** Both descriptions open with "Do NOT use this skill - use

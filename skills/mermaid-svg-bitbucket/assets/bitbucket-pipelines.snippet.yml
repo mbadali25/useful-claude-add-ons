@@ -4,10 +4,17 @@
 # referenced from `pipelines:`.
 #
 # A) verify-diagrams (RECOMMENDED)
-#    Fails the PR build if a committed SVG is stale. Devs run the script
-#    locally and commit. No push credentials in CI, no commit loops, and the
-#    diff shows up in review where a human can look at it. --check is a hash
-#    comparison, so it needs neither Node nor Chromium: ~5 seconds.
+#    Fails the PR build if a committed SVG is stale, damaged, or could not be
+#    content-verified. Devs run the script locally and commit. No push
+#    credentials in CI, no commit loops, and the diff shows up in review where a
+#    human can look at it. --check is a hash comparison, so it needs neither
+#    Node nor Chromium: ~5 seconds.
+#
+#    First run on a repo whose .mermaid-svg.json predates manifest version 2 is
+#    RED, once: those entries carry no svgHash, so nothing can say the committed
+#    SVG is the one that was rendered. Run `render_mermaid.py --force` locally
+#    and commit the result - --force is required, since the source hash already
+#    matches and a plain run would skip them. Green from then on.
 #
 # B) render-diagrams
 #    Renders and commits back to the branch. Convenient, but the pipeline needs
