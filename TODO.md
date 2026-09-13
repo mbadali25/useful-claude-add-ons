@@ -600,7 +600,7 @@ passes it. That is why the re-measure line added at `:1982` points at
 `ls plugin/crew/agents/*.md` and explicitly not at the table above it. The
 duplicate row is left in place — it is a separate finding from the count.
 
-**Fixed 2026-09-13 (crew 0.19.26).** That comment no longer carries a count at
+**Fixed 2026-09-13 (crew 0.19.28).** That comment no longer carries a count at
 all: it names the two directories and says to `ls` them, because a count in a
 comment nothing reads is a fact with a decay rate and no reader. It said "the 21
 commands and 10 agents"; the real figures when it was corrected were 24 and 54.
@@ -1958,7 +1958,7 @@ decided not to" is the half that otherwise gets rediscovered as a new finding.
 Filed 2026-09-13 against `main` at `819bf382`. Three findings, all reproduced
 here rather than relayed; the first two are one problem seen from two ends.
 
-### 1. ~~Under PowerShell the crew suite runs against WSL bash and 52 tests fail~~ — CLOSED 2026-09-13 (crew 0.19.26)
+### 1. ~~Under PowerShell the crew suite runs against WSL bash and 52 tests fail~~ — CLOSED 2026-09-13 (crew 0.19.28)
 
 **CLOSED.** `crew_fixtures.resolve_bash()` now PROVES a candidate by running a
 probe script at a Windows path and checking a sentinel exit code, so "found" is
@@ -2014,7 +2014,7 @@ editing `PATH` breaks the other. Neither is fixed. What is needed is for
 `_resolve_bash` to reject a non-MSYS bash outright rather than for callers to
 launder `PATH`.
 
-### 3. ~~`crew_upgrade.py` prints schema 3's added keys at the CLI and not schema 5's~~ — CLOSED 2026-09-13 (crew 0.19.26)
+### 3. ~~`crew_upgrade.py` prints schema 3's added keys at the CLI and not schema 5's~~ — CLOSED 2026-09-13 (crew 0.19.28)
 
 **CLOSED.** `main()` gained the missing branch and prints `installKeysAdded`
 with its floor in the same breath -- the floor is the reassurance, and it only
@@ -2037,7 +2037,7 @@ even at its floor. One `if` and a line of text.
 **Not verified:** no fix is attempted for any of the three, and
 `scripts/_test/drift-detection.sh` was not run for this entry.
 
-## ~~Crew's graph-refresh string contradicts this repo's CLAUDE.md since #121~~ — CLOSED 2026-09-13 (crew 0.19.26)
+## ~~Crew's graph-refresh string contradicts this repo's CLAUDE.md since #121~~ — CLOSED 2026-09-13 (crew 0.19.28)
 
 **CLOSED for the pulse, and deliberately not by swapping the string.**
 `_read_graph` now reports `reportTracked` -- whether `GRAPH_REPORT.md` beside
@@ -2082,7 +2082,7 @@ in crew, so it owes a bump and a CHANGELOG entry. Not costed further.
 this machine track the pair -- which is the number that decides whether the
 detecting version is worth writing at all.
 
-## ~~The Stop gate cannot see a committed change, and closing that is a design call~~ — CLOSED 2026-09-13 (crew 0.19.26)
+## ~~The Stop gate cannot see a committed change, and closing that is a design call~~ — CLOSED 2026-09-13 (crew 0.19.28)
 
 **CLOSED. The design call was made rather than escalated.**
 

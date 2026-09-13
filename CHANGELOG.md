@@ -6,7 +6,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
-- **`crew` 0.19.26: five backlog items, and the one that mattered is the Stop
+- **`crew` 0.19.28: five backlog items, and the one that mattered is the Stop
   gate.** The gate diffed the WORKING TREE against HEAD, so a committed change
   was invisible to it and **`git commit` was a complete bypass** -- the same
   file exited 2 while dirty and 0 once committed. A gate you can pass by running
@@ -22,7 +22,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   so the window is one turn wide. Both flavours changed; nine cases in
   `test_verify_gate_baseline.py`, sabotage-verified three ways.
 
-- **`crew` 0.19.26: the test suite mistook a bash it found for a bash that
+- **`crew` 0.19.28: the test suite mistook a bash it found for a bash that
   works.** Under PowerShell `shutil.which("bash")` returns `C:\WINDOWS\system32\bash.EXE`
   -- WSL's -- which cannot open a Windows path and exits 127 for every script
   handed to it. `_HAS_BASH` was then True, so the `sh` flavour was parametrized
@@ -35,7 +35,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   Measured: 52 -> 0 under PowerShell, resolving to `C:\Program Files\Git\bin\bash.exe`,
   with `PATH` untouched so the `check-marketplace.py` hang is not reintroduced.
 
-- **`crew` 0.19.26: the upgrade CLI announced schema 3's new keys and not
+- **`crew` 0.19.28: the upgrade CLI announced schema 3's new keys and not
   schema 5's.** `installKeysAdded` reached `.crew/codemap/UPGRADE.md` and never
   the terminal, because there was a branch for `providerKeysAdded` and no
   matching one for it. A key governing whether crew may run install commands is
@@ -43,7 +43,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   and it arrives as `manual`, which is the reassurance, and only reassures if it
   is said.
 
-- **`crew` 0.19.26: the pulse recommended a graph refresh that its host repo's
+- **`crew` 0.19.28: the pulse recommended a graph refresh that its host repo's
   CLAUDE.md forbids.** Not fixed by swapping the string, which would be right
   here and wrong in every repo that does not track `GRAPH_REPORT.md`. The state
   now reports whether that report is TRACKED beside `graph.json` -- asked of
@@ -52,7 +52,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   three prose call sites still say the fixed command and are recorded as the
   remaining half.
 
-- **`crew` 0.19.26: a comment claiming "the 21 commands and 10 agents".** Both
+- **`crew` 0.19.28: a comment claiming "the 21 commands and 10 agents".** Both
   wrong (24 and 54). Replaced with the scope and an `ls`, rather than a fresh
   pair of numbers with the same decay rate and no reader.
 
