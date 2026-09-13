@@ -155,15 +155,21 @@ FINDINGS = {
         "merge usually discarded the branch commit the anchor recorded",
     ),
     "knowledgeBehind": (
-        "some codemap anchors are behind HEAD, so those notes may describe "
-        "code that has since changed",
-        "run /crew:onboard --refresh <subsystem> before relying on them",
+        "some codemap anchors are behind HEAD - a lag, which is NOT by "
+        "itself evidence that any note is wrong",
+        "check before refreshing: git diff --name-only <anchor>..HEAD -- "
+        "<the paths that note cites>. Empty output means the note is "
+        "current despite the lag - re-derive with /crew:onboard --refresh "
+        "<subsystem> only when it is not empty",
     ),
     "diagramsStale": (
-        "{staleCount} diagram(s) are anchored behind HEAD ({staleNames}), so "
-        "they draw code that has since moved",
-        "run /crew:diagram refresh - it re-verifies anchors and rewrites only "
-        "the diagrams whose code actually changed",
+        "{staleCount} diagram(s) are anchored behind HEAD ({staleNames}) - a "
+        "lag, not proof any drawing is wrong",
+        "judge by whether cited files moved, not by this count: git diff "
+        "--name-only <anchor>..HEAD -- <the paths in that diagram's %% "
+        "Anchors: line>. Re-anchoring is itself a commit, so this count "
+        "never reaches zero - /crew:diagram refresh rewrites only the "
+        "diagrams whose code actually changed",
     ),
     "diagramsMissing": (
         "no {missingNames} diagram for a repo whose subsystems are already "
