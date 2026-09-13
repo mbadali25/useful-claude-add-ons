@@ -2,11 +2,11 @@
      The five rules people usually try to write into CLAUDE.md are split here
      between this file (judgment) and .crew/verify.json (mechanism). -->
 
-# thd-processors
+# acme-processors
 
 **Stack:** Terraform 1.7 + Python 3.13 Lambdas   **Runs:** TFC workspace, no local apply
 **Platform:** wsl2/Ubuntu   **Shell:** bash
-**Talks to:** S3 (anew-aws-datastore), SQL Server THDSalvage, SES, EventBridge
+**Talks to:** S3 (acme-aws-datastore), SQL Server ACMESalvage, SES, EventBridge
 
 ## Commands
 | fmt/lint | `terraform fmt -recursive && tflint` |

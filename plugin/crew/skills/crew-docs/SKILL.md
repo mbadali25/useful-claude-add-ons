@@ -60,7 +60,7 @@ Keep a Changelog format, semantic versions, newest first.
 ```markdown
 ## [Unreleased]
 ### Added
-- Scheduled report Lambda replacing the sbmovement .NET job (THDDEV-1058)
+- Scheduled report Lambda replacing the sbmovement .NET job (ACME-1058)
 ### Fixed
 - Header validation rejected files with a UTF-8 BOM
 ```
