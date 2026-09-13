@@ -15,6 +15,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
+      # PyYAML is NOT optional here. `validate-prompts.py` parses frontmatter
+      # with it so its parse is no weaker than the loader's; without it that
+      # script now exits 1 rather than falling back to a line-splitter that
+      # reports passes for files Claude Code refuses to load. Declared as its
+      # own step so a missing dependency reads as a setup failure rather than
+      # as the validation failing.
+      - name: Install the validator's dependency
+        run: python -m pip install --upgrade pip pyyaml
       - name: Check the marketplace is internally consistent
         run: python3 scripts/check-marketplace.py
       # The UPDATE.md mirrors are generated, so the only thing keeping them

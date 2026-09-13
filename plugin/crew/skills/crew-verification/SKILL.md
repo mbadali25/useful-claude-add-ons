@@ -144,11 +144,21 @@ Nothing errors, and the finding style simply changes. Namespace the name if you
 meant the other agent.
 
 **A named agent that is not installed is a reported gap, never a silent skip.**
-This is the whole risk of the feature: `.crew/verify.json` is committed and
-shared, so a rule naming an agent that one machine has and another does not will
-quietly review less on the second machine, and nothing about the output looks
+This is the whole risk of the feature: the map is **machine-local** —
+`.gitignore` ignores `.crew/*`, so `verify.json` is written by whoever ran
+`/crew:init` on this box and travels nowhere. A rule therefore names whatever
+was installed *there*, and on any other machine it can ask for an agent that
+does not exist, quietly reviewing less while nothing about the output looks
 different. `/crew:review` therefore lists every agent a matched rule asked for
 and could not find, and treats it exactly like a specialist that was skipped.
+
+(This paragraph used to say `.crew/verify.json` "is committed and shared". It
+is not, and never has been here. The conclusion was right and the reason was
+backwards — which is worse than a wrong conclusion, because it sends the reader
+hunting a tracked file that does not exist. `commands/review.md` carried the
+same sentence and was corrected first; this is its neighbour, found by a review
+rather than by the first fix, which is the argument for checking the neighbour
+every time.)
 
 Two agents, one job, is the failure mode on the other side. Naming `security`,
 `security-auditor` and `security-engineer` on the same rule buys three

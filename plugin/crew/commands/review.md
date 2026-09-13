@@ -11,6 +11,10 @@ same branch - clobber each other's diff and output mid-run. Claim one that is
 scoped to both:
 
 ```bash
+# `mkdir -p` first: `mktemp -d` creates the LEAF, never the parents, so without
+# this it fails with "No such file or directory" on any checkout where
+# `.work/review/` does not already exist - which is every fresh one.
+mkdir -p .work/review
 SCRATCH=$(mktemp -d ".work/review/$(git rev-parse --abbrev-ref HEAD 2>/dev/null | tr -c 'A-Za-z0-9._-' '-')-XXXXXX")
 echo "SCRATCH=$SCRATCH"
 ```

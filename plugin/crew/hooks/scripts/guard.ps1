@@ -7,7 +7,12 @@ if ([string]::IsNullOrWhiteSpace($cmd)) { exit 0 }
 function Block($msg) { [Console]::Error.WriteLine("BLOCKED: $msg"); exit 2 }
 
 # destructive operations
-if ($cmd -match '(?i)\bterraform\s+(apply|destroy)')            { Block "terraform apply/destroy is manual. Run plan and show it." }
+# $tfPre is $gitPre's reason applied to the neighbour that never got it:
+# `terraform -chdir=infra apply` sailed through a rule requiring `apply` to sit
+# immediately after `terraform`, while the git rules below had already been
+# fixed for that exact shape.
+$tfPre = '(?i)\bterraform(\s+-\S+)*\s+'
+if ($cmd -match "${tfPre}(apply|destroy)")                      { Block "terraform apply/destroy is manual. Run plan and show it." }
 if ($cmd -match '(?i)\b(DROP|TRUNCATE)\s+(TABLE|DATABASE|SCHEMA)') { Block "destructive DDL. Write a migration with a rollback." }
 # Mirrors guard.sh: the git rules used to require the subcommand to sit
 # immediately after `git`, so `git -C /path push --force`, `git -c a=b push -f`
@@ -19,10 +24,17 @@ $gitPre = '(?i)\bgit\s+(-\S+\s+([^-]\S*\s+)?)*'
 # Observed: `git push -q origin br; echo done; [ -f $x ] && ...` was blocked
 # because the `.*` reached the `-f` three commands later. The leading-plus
 # check below already scoped itself this way; this line did not.
-if ($cmd -match "${gitPre}push\b[^;&|]*(--force|-f)\b")          { Block "force push." }
+# `[^;&|]*` is why `git push 2>&1 --force origin main` passed: `2>&1` CONTAINS
+# an `&`, so the scan stopped before `--force`. $arg allows `&` only as part of
+# a redirection (`&` then a digit), so `2>&1` is crossed while `&&`, a trailing
+# `&` and `|` still stop the scan exactly as before.
+$arg = '([^;&|]|&[0-9])*'
+if ($cmd -match "${gitPre}push\b${arg}(--force|-f)\b")           { Block "force push." }
 # `git push origin +main` is a force push with no --force token in it.
-if ($cmd -match "${gitPre}push\b[^;&|]*\s\+[^\s;&|]")            { Block "force push (leading-plus refspec)." }
-if ($cmd -match "${gitPre}(reset\s+--hard|clean\s+-[a-z]*f)")    { Block "destroys uncommitted work." }
+if ($cmd -match "${gitPre}push\b${arg}\s\+[^\s;&|]")             { Block "force push (leading-plus refspec)." }
+# `git reset HEAD --hard` required `--hard` to follow `reset` immediately, so
+# naming the ref bypassed it. `--soft HEAD~1` still does not match: no `--hard`.
+if ($cmd -match "${gitPre}(reset(\s+[^\s;&|]+)*\s+--hard|clean\s+-[a-z]*f)") { Block "destroys uncommitted work." }
 if ($cmd -match '(?i)Remove-Item\s+.*-Recurse.*-Force.*[A-Z]:\\?\s*$') { Block "recursive delete of a drive root." }
 # Argument-position match, not substring presence. Mirrors guard.sh: the old
 # check matched "prod"/"production" as a whole word ANYWHERE in the command
@@ -84,7 +96,13 @@ if ($cmd -match $secretRead) {
     Block "this pipes a secret value to a file cmdlet, which persists it. Capture it into a variable instead: `$env:DB_PASS = (...)"
   }
   # The one safe shape: assign the output to a variable.
-  if ($cmd -notmatch '(^|\s|;)\$(env:)?[A-Za-z_][A-Za-z0-9_]*\s*=\s*\(') {
+  # The assignment must capture THIS read. The old test asked only whether an
+  # assignment appeared anywhere, so `$unrelated = (Get-Date); aws
+  # secretsmanager get-secret-value ...` satisfied it and printed the secret.
+  # Requiring the secret read to sit INSIDE the parenthesised expression, with
+  # no separator between, is the difference between "a capture happened" and
+  # "this was captured".
+  if ($cmd -notmatch "(^|\s|;)\`$(env:)?[A-Za-z_][A-Za-z0-9_]*\s*=\s*\([^;&|]*${secretRead}") {
     Block "this prints a secret value into the transcript. Capture it instead, e.g. `$env:DB_PASS = (aws secretsmanager get-secret-value --secret-id NAME --query SecretString --output text)"
   }
 }

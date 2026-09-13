@@ -36,3 +36,20 @@ def _no_real_global_config(tmp_path, monkeypatch):
     unused = str(tmp_path / "unused-global-config.json")
     monkeypatch.setattr(crew_config, "GLOBAL_CONFIG_PATH", unused)
     monkeypatch.setattr(crew_state, "GLOBAL_CONFIG_PATH", unused)
+
+    # Same rule, second environment channel. `pm_brief.main` resolves its root
+    # as `payload["cwd"] or $CLAUDE_PROJECT_DIR or os.getcwd()`, so a test that
+    # pins the fallback with `monkeypatch.chdir(tmp_path)` pins only the THIRD
+    # rung -- the environment variable sits above it and wins. Claude Code sets
+    # that variable to the repo you have open; CI does not set it at all.
+    #
+    # So `test_main_exits_zero_on_garbage_stdin` asserted "garbage in, nothing
+    # out" and got it in CI while, under Claude Code with a crew repo open, the
+    # same call produced a full 669-character brief. Green where nobody looks,
+    # red on the maintainer's machine -- the mirror image of the bug its own
+    # comment says the chdir pin was added to fix.
+    #
+    # Cleared for every test by default. A test that wants the variable sets it
+    # afterwards (`monkeypatch.setenv`, or an explicit `env=` for a subprocess)
+    # and that still wins; this only removes the ambient value nobody declared.
+    monkeypatch.delenv("CLAUDE_PROJECT_DIR", raising=False)

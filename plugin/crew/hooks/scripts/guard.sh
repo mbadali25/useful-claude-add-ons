@@ -18,7 +18,13 @@ CMD=$(crew_strip_cr "$CMD")
 block() { echo "BLOCKED: $1" >&2; exit 2; }
 
 # --- destructive operations ----------------------------------------------
-echo "$CMD" | grep -qE '\bterraform[[:space:]]+(apply|destroy)' && block "terraform apply/destroy is manual. Run plan and show it."
+# TF_PRE is GIT_PRE's reason applied to the neighbour that never got it:
+# `terraform -chdir=infra apply` sailed through a rule that required `apply` to
+# sit immediately after `terraform`, while the git rules eleven lines below had
+# already been fixed for exactly that shape. Re-review the fix to a guard as
+# hard as the guard: the sibling rule was the one still broken.
+TF_PRE='\bterraform([[:space:]]+-[^[:space:]]+)*[[:space:]]+'
+echo "$CMD" | grep -qE "${TF_PRE}(apply|destroy)" && block "terraform apply/destroy is manual. Run plan and show it."
 echo "$CMD" | grep -qiE '\b(DROP|TRUNCATE)[[:space:]]+(TABLE|DATABASE|SCHEMA)' && block "destructive DDL. Write a migration with a rollback."
 # The git rules used to require the subcommand to sit immediately after `git`,
 # so every one of them was bypassed by the option forms people actually use in
@@ -33,10 +39,21 @@ GIT_PRE='\bgit[[:space:]]+(-[^[:space:]]+[[:space:]]+([^-][^[:space:]]*[[:space:
 # was blocked as a force push because the `.*` reached the `-f` in the shell
 # test three commands later. The leading-plus check below already scoped
 # itself this way; this line simply did not.
-echo "$CMD" | grep -qE "${GIT_PRE}push\b[^;&|]*(--force|-f)\b" && block "force push."
+# ...and `[^;&|]*` is why `git push 2>&1 --force origin main` passed: `2>&1`
+# CONTAINS an `&`, so the scan stopped before `--force` was ever reached. The
+# narrowing above is correct and the bypass is its direct consequence - which
+# is the sharpest example this repo has of re-reviewing a guard fix as hard as
+# the guard. ARG allows `&` only when it is part of a redirection (`&` followed
+# by a digit), so `2>&1` is crossed while `&&`, a trailing `&` and `|` still
+# stop the scan exactly as before.
+ARG='([^;&|]|&[0-9])*'
+echo "$CMD" | grep -qE "${GIT_PRE}push\b${ARG}(--force|-f)\b" && block "force push."
 # `git push origin +main` is a force push with no --force token in it.
-echo "$CMD" | grep -qE "${GIT_PRE}push\b[^;&|]*[[:space:]]\+[^[:space:];&|]" && block "force push (leading-plus refspec)."
-echo "$CMD" | grep -qE "${GIT_PRE}(reset[[:space:]]+--hard|clean[[:space:]]+-[a-z]*f)" && block "destroys uncommitted work."
+echo "$CMD" | grep -qE "${GIT_PRE}push\b${ARG}[[:space:]]\+[^[:space:];&|]" && block "force push (leading-plus refspec)."
+# `git reset HEAD --hard` required `--hard` to follow `reset` immediately, so
+# naming the ref bypassed it. Allow non-separator argument tokens in between;
+# `--soft HEAD~1` still does not match, because it has no `--hard` to find.
+echo "$CMD" | grep -qE "${GIT_PRE}(reset([[:space:]]+[^[:space:];&|]+)*[[:space:]]+--hard|clean[[:space:]]+-[a-z]*f)" && block "destroys uncommitted work."
 echo "$CMD" | grep -qE '\brm[[:space:]]+-[a-z]*rf?[[:space:]]+/' && block "recursive delete from root."
 # Argument-position match, not substring presence. The old check matched
 # "prod"/"production" as a whole word ANYWHERE in the command text, plus one
@@ -136,7 +153,14 @@ if echo "$CMD" | grep -qiE "$SECRET_READ"; then
 
   # The one safe shape: assign the output to a shell variable, so the value
   # is never rendered. VAR=$(...) or export VAR=$(...).
-  if ! echo "$CMD" | grep -qE '(^|[[:space:]]|;)(export[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*=["]?([$][(]|[`])'; then
+  # The assignment must capture THIS read. The old test asked only whether an
+  # assignment appeared anywhere in the command, so `X=$(date); aws
+  # secretsmanager get-secret-value ...` satisfied it and printed the secret:
+  # an unrelated capture was accepted as evidence that the dangerous half was
+  # captured. Requiring the secret read to sit INSIDE the substitution, with no
+  # command separator between, is the difference between "a capture happened"
+  # and "this was captured".
+  if ! echo "$CMD" | grep -qiE "(^|[[:space:]]|;)(export[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*=[\"]?([$][(]|\`)[^;&|]*${SECRET_READ}"; then
     block "this prints a secret value into the transcript. Capture it instead, e.g. DB_PASS=\$(aws secretsmanager get-secret-value --secret-id NAME --query SecretString --output text)"
   fi
 fi

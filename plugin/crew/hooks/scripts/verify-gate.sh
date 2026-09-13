@@ -60,6 +60,23 @@ if [ -f .crew/.deploy-in-flight ]; then
   fi
 fi
 
+# SCOPE, and it is narrower than the gate's name suggests. This sees the
+# WORKING TREE against HEAD plus untracked files -- so a change that has been
+# committed is invisible here, and committing is enough to end a turn that
+# would otherwise have been blocked. Measured, not theorised: with a rule
+# mapping `**/*.py` to a failing command, a dirty `mod.py` exits 2, and the
+# same file exits 0 once committed.
+#
+# This is left as-is deliberately, because closing it is a DESIGN decision and
+# not a bug fix: the gate has no notion of "this turn", and giving it one means
+# choosing a baseline (the merge-base with the default branch? a marker written
+# at turn start?) that changes gate behaviour in every repo that has one. That
+# choice is not this script's to make quietly. TODO.md carries it with the
+# reproduction.
+#
+# What is NOT acceptable is the boundary being undocumented, which it was until
+# 2026-09-13 -- a reader had no way to tell this scope from an oversight, and a
+# gate whose limits are unstated gets trusted past them.
 CHANGED=$(git diff --name-only HEAD 2>/dev/null; git ls-files --others --exclude-standard 2>/dev/null)
 [ -z "$CHANGED" ] && exit 0
 

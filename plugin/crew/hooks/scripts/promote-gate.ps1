@@ -10,7 +10,19 @@ $root = if ($env:CLAUDE_PROJECT_DIR) { $env:CLAUDE_PROJECT_DIR } else { "." }
 Set-Location $root -ErrorAction SilentlyContinue
 if (-not (Test-Path .crew/verify.json)) { exit 0 }
 
-try { $vm = Get-Content .crew/verify.json -Raw | ConvertFrom-Json } catch { exit 0 }
+# Fail CLOSED on a map that will not parse. An ABSENT verify.json (line 11) is
+# a repo that opted out of gating; an UNPARSEABLE one is corruption, and the
+# two are not the same fact. `catch { exit 0 }` treated them identically, so a
+# single stray comma in verify.json silently removed every pre-deploy check
+# while the deploy went ahead looking gated.
+try {
+  $vm = Get-Content .crew/verify.json -Raw | ConvertFrom-Json
+} catch {
+  [Console]::Error.WriteLine("PROMOTION BLOCKED: .crew/verify.json could not be parsed, so no pre-deploy check ran.")
+  [Console]::Error.WriteLine("  This is not a pass. Fix the JSON, or delete the file if this repo should not be gated.")
+  [Console]::Error.WriteLine("  $($_.Exception.Message)")
+  exit 2
+}
 if (-not $vm.environments) { exit 0 }
 
 # Which environment does this command deploy to?
@@ -131,8 +143,19 @@ if (-not ($cfg.PSObject.Properties.Name -contains 'rollback')) {
   if (-not $m.Success) {
     $problems.Add("'$($cfg.rollback)' has no 'last verified: YYYY-MM-DD' line. An unverified rollback is not a rollback.")
   } else {
-    $age = (Get-Date).Date - [datetime]::ParseExact($m.Groups[1].Value, 'yyyy-MM-dd', $null)
-    if ($age.Days -gt 90) {
+    # A date-SHAPED string is not a date: the regex accepts `2026-99-99`, which
+    # ParseExact throws on. Unhandled, that error left the deploy ALLOWED with
+    # the in-flight marker written - the same fail-open as the bash twin, and
+    # the reason both flavours are fixed in one change rather than one now and
+    # the other when somebody next reads it.
+    $verified = $null
+    try {
+      $verified = [datetime]::ParseExact($m.Groups[1].Value, 'yyyy-MM-dd', $null)
+    } catch {
+      $problems.Add("'$($cfg.rollback)' has 'last verified: $($m.Groups[1].Value)', which is date-shaped but not a real date. An unparseable verification date is not a verification.") | Out-Null
+    }
+    $age = if ($verified) { (Get-Date).Date - $verified } else { $null }
+    if ($age -and $age.Days -gt 90) {
       $problems.Add("'$($cfg.rollback)' was last verified $($age.Days) days ago (ceiling is 90). Re-run it against a real environment first.")
     }
   }

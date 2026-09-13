@@ -19,6 +19,20 @@ import os
 import re
 import sys
 
+try:
+    import yaml
+except ImportError as exc:  # pragma: no cover - CI job, not a test
+    # Fail LOUDLY rather than falling back to the line-splitting parser this
+    # file used to ship. A degraded parse here is indistinguishable from a
+    # clean run: it reports passes for files the loader will refuse. If this
+    # fires in CI, the workflow is missing its `pip install pyyaml`.
+    sys.stderr.write(
+        "validate-prompts.py needs PyYAML to parse frontmatter the way the "
+        "loader does.\nInstall it (`pip install pyyaml`) and re-run. Refusing "
+        "to validate with a weaker parser than the thing being validated.\n"
+    )
+    raise SystemExit(1) from exc
+
 os.chdir(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", ".."))
 
 PASSED = []
@@ -36,18 +50,44 @@ def bad(msg):
 
 
 def frontmatter(path):
-    """Return (frontmatter dict, body). The dict is None when there is none."""
+    """Return (frontmatter dict, body). The dict is None when there is none.
+
+    This parses YAML, and it did not used to. The old version split each line
+    on the first `:` and kept the halves, which accepts text the loader
+    rejects: `commands/pm.md` shipped an unquoted `argument-hint:` whose value
+    was a bracketed, nested flow sequence, PyYAML refused it at the `|`, and
+    Claude Code therefore did not load `/crew:pm` at all -- while this script
+    reported 293 passes and zero failures.
+
+    A validator whose parse is WEAKER than the loader's cannot fail where the
+    loader fails; it can only agree with itself. That is this repo's named bug
+    class -- a check placed where the evidence has already been dropped -- in
+    the one script whose whole job is to catch exactly this.
+    """
     with open(path, encoding="utf-8") as handle:
         text = handle.read()
     if not text.startswith("---\n"):
         return None, text
     end = text.index("\n---\n", 3)
-    fields = {}
-    for line in text[4:end].split("\n"):
-        if ":" in line and not line.startswith(" "):
-            key, value = line.split(":", 1)
-            fields[key.strip()] = value.strip()
-    return fields, text[end + 5:]
+    raw = text[4:end]
+    try:
+        fields = yaml.safe_load(raw)
+    except yaml.YAMLError as exc:
+        detail = str(exc).replace("\n", " ")
+        bad(f"{path}: frontmatter is not valid YAML, so this file will not "
+            f"load: {detail}")
+        return {}, text[end + 5:]
+    if fields is None:
+        fields = {}
+    if not isinstance(fields, dict):
+        bad(f"{path}: frontmatter parsed as {type(fields).__name__}, not a "
+            f"mapping. It must be `key: value` pairs.")
+        return {}, text[end + 5:]
+    # Every later check indexes this like a string map and compares with `in`.
+    # A value that is legitimately a list or bool would otherwise raise inside
+    # an unrelated check and read as that check failing.
+    return {str(k): v if isinstance(v, str) else str(v)
+            for k, v in fields.items()}, text[end + 5:]
 
 
 AGENTS = {os.path.basename(f)[:-3] for f in glob.glob("agents/*.md")}
