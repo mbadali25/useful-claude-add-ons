@@ -29,6 +29,16 @@ both were "the guard trusted its input":
     review comes from `--output-last-message` and the diagnostics are kept
     separately as `log`.
 
+A third arrived the same way, from the first run against a foreign artifact:
+
+  * The per-side bullet printed the caller's `model_id` verbatim while the
+    family was resolved from the ALIAS alone, so a mis-pasted `--model-id`
+    named the wrong family's model on the page while coverage still computed
+    TWO_CROSS_FAMILY and the banner still said the Rule of Two held.
+    `verify_model_id` now resolves both names and downgrades coverage to
+    TWO_FAMILY_UNVERIFIED, printing the contradiction, whenever the two
+    disagree or the id resolves to no known family.
+
 Stdlib only. No dependency on crew, its config, or its provider order.
 """
 
@@ -315,6 +325,55 @@ def resolve_family(model) -> str:
     return UNKNOWN_FAMILY
 
 
+def verify_model_id(model, model_id, alias_family: str) -> tuple:
+    """Corroborate a dispatch alias against the model id recorded beside it.
+
+    Two names are recorded for one reviewer and they live in different
+    namespaces: the alias is what the command DISPATCHED on, and `model_id`
+    is what the caller says was actually asked for - typed by hand into
+    `commands/review.md` step 3, from a table the operator is reading with
+    their eyes. `render_report` printed that id verbatim ("requested as
+    `X`") with nothing checking that X belongs to the same family as the
+    alias next to it, while `resolve_family` read only the alias. So a
+    mis-paste rendered the wrong family's model on the page under a banner
+    still saying the Rule of Two held: a wrong value wearing the label of a
+    check that happened, which is this repo's recurring shape.
+
+    Returns `(id_family, mismatch)`. `mismatch` is the empty string when the
+    id corroborates the alias, and the caller downgrades coverage when it is
+    not empty.
+
+    An ABSENT id is not a disagreement and is not reported as one. Nothing
+    is claimed about a name that was never recorded - `render_report`
+    suppresses the "requested as" clause entirely when it is empty, so there
+    is no printed statement to be wrong - and `run_codex` records no id at
+    all, so treating an absent one as unverified would downgrade every real
+    report and make the outcome meaningless.
+
+    An id that resolves to NO KNOWN FAMILY is a mismatch, not a pass.
+    Unknown must never read as corroboration; that is the whole thesis of
+    this file applied one rung further out.
+    """
+    if not isinstance(model_id, str) or not model_id.strip():
+        return "", ""
+    recorded = model_id.strip()
+    id_family = resolve_family(recorded)
+    if id_family == alias_family and id_family != UNKNOWN_FAMILY:
+        return id_family, ""
+    alias = model.strip() if isinstance(model, str) and model.strip() \
+        else "(unset)"
+    if id_family == UNKNOWN_FAMILY:
+        return id_family, (
+            f"the model id recorded beside alias `{alias}` (-> "
+            f"{alias_family}) is `{recorded}`, which resolves to no known "
+            f"family, so it corroborates nothing"
+        )
+    return id_family, (
+        f"alias `{alias}` resolves to {alias_family}, but the model id "
+        f"recorded beside it, `{recorded}`, resolves to {id_family}"
+    )
+
+
 # --------------------------------------------------------------------------
 # Result validation
 # --------------------------------------------------------------------------
@@ -382,23 +441,39 @@ def normalize_result(raw, side_label: str) -> dict:
 
 COVERAGE_TWO_CROSS_FAMILY = "TWO_CROSS_FAMILY"
 COVERAGE_TWO_SAME_FAMILY = "TWO_SAME_FAMILY"
+COVERAGE_TWO_FAMILY_UNVERIFIED = "TWO_FAMILY_UNVERIFIED"
 COVERAGE_TWO_FAMILY_UNKNOWN = "TWO_FAMILY_UNKNOWN"
 COVERAGE_ONE_REVIEW = "ONE_REVIEW"
 COVERAGE_NO_REVIEW = "NO_REVIEW"
 
 
 def compute_coverage(claude_ran: bool, codex_ran: bool,
-                     claude_family: str, codex_family: str) -> str:
+                     claude_family: str, codex_family: str,
+                     family_unverified: bool) -> str:
     """Decide the coverage outcome. Order matters: 'did it run' first.
 
     A family comparison over a reviewer that never ran is meaningless, so the
     run check is asked first and the family check never rescues it.
+
+    `family_unverified` is asked BEFORE the UNKNOWN check, and deliberately.
+    Both outcomes are unsatisfied, so `coverage_is_satisfied` does not care -
+    but only the UNVERIFIED banner prints the contradiction, and an
+    unresolvable alias sitting next to a mis-pasted id would otherwise be
+    reported as a plain "could not tell" with the operator never told that
+    two recorded names actively disagree.
+
+    There is no default. A caller that has not run the id check must say so
+    rather than inherit a False, because a check that never happened
+    silently becoming "nothing wrong" is the exact failure this file exists
+    to police.
     """
     ran = [claude_ran, codex_ran]
     if not any(ran):
         return COVERAGE_NO_REVIEW
     if not all(ran):
         return COVERAGE_ONE_REVIEW
+    if family_unverified:
+        return COVERAGE_TWO_FAMILY_UNVERIFIED
     if UNKNOWN_FAMILY in (claude_family, codex_family):
         return COVERAGE_TWO_FAMILY_UNKNOWN
     if claude_family == codex_family:
@@ -582,6 +657,9 @@ def render_title(state: dict) -> str:
         return f"# Single-reviewer review, NOT the Rule of Two - {artifact}"
     if coverage == COVERAGE_TWO_SAME_FAMILY:
         return f"# Same-family review, NOT the Rule of Two - {artifact}"
+    if coverage == COVERAGE_TWO_FAMILY_UNVERIFIED:
+        return (f"# Two reviews, model identity unverified, NOT the Rule of "
+                f"Two - {artifact}")
     if coverage == COVERAGE_TWO_FAMILY_UNKNOWN:
         return (f"# Two reviews, cross-family check inconclusive - "
                 f"{artifact}")
@@ -606,6 +684,25 @@ def render_banner(state: dict) -> str:
             f"{claude['model']} ({claude['family']}) and "
             f"{codex['model']} ({codex['family']}) both ran, and resolve to "
             f"different model families. The Rule of Two held."
+        )
+
+    if coverage == COVERAGE_TWO_FAMILY_UNVERIFIED:
+        # The exact contradiction, in the banner, not only in the bullet. An
+        # operator who mis-pasted one id needs to be told which two names
+        # disagree and what each resolved to, or "unverified" is just a new
+        # word for the same unanswered question.
+        reasons = "; ".join(
+            side["family_mismatch"] for side in (claude, codex)
+            if side.get("family_mismatch")
+        )
+        return (
+            f"**Coverage: two reviews ran, but a reviewer's own two recorded "
+            f"names disagree about its family.** {reasons}. A model id that "
+            f"does not corroborate the alias dispatched beside it leaves that "
+            f"reviewer's family unestablished, so this is an unanswered "
+            f"question, not a passed check - the Rule of Two is NOT "
+            f"established here. Fix the recorded id, or re-run the review, "
+            f"before reading this as a cross-family result."
         )
 
     if coverage == COVERAGE_TWO_FAMILY_UNKNOWN:
@@ -758,8 +855,15 @@ def render_report(state: dict) -> str:
         asked = f", requested as `{asked}`" if asked else ""
         verdict = f" - verdict: **{side['verdict']}**" if side.get(
             "verdict") else ""
+        # The clause above is the one that shipped wrong: it printed whatever
+        # id the caller typed, next to a family resolved from the alias alone.
+        # It is now marked in place rather than dropped - dropping it would
+        # hide the mis-pasted value from the person who has to correct it.
+        mismatch = side.get("family_mismatch", "")
+        mismatch = (f" - **that id does NOT corroborate the alias**: "
+                    f"{mismatch}") if mismatch else ""
         lines.append(f"- {label}: alias `{side['model'] or '(unset)'}`"
-                     f"{asked} - {status}{detail}{verdict}")
+                     f"{asked} - {status}{detail}{verdict}{mismatch}")
     lines.append(f"- Config source: {state.get('config_source', 'unknown')}")
 
     if claude["ran"] and codex["ran"]:
@@ -859,15 +963,28 @@ def build_state(artifact: str, config: dict, config_source: str,
     codex = normalize_result(codex_result, "Reviewer B (Codex)")
     claude_family = resolve_family(claude["model"])
     codex_family = resolve_family(codex["model"])
+    # The id is checked on BOTH sides, symmetrically. `run_codex` records no
+    # id today, but `hydrate_state` reads a state file someone else wrote, and
+    # a check installed on one side only is this repo's documented shape -
+    # right about its own case, one rung short of its neighbour.
+    claude_id_family, claude_mismatch = verify_model_id(
+        claude["model"], claude["model_id"], claude_family)
+    codex_id_family, codex_mismatch = verify_model_id(
+        codex["model"], codex["model_id"], codex_family)
     coverage = compute_coverage(
-        claude["ran"], codex["ran"], claude_family, codex_family)
+        claude["ran"], codex["ran"], claude_family, codex_family,
+        bool(claude_mismatch or codex_mismatch))
     return {
         "artifact": artifact,
         "config_source": config_source,
         "coverage": coverage,
         "coverage_satisfied": coverage_is_satisfied(coverage),
-        "claude": {**claude, "family": claude_family},
-        "codex": {**codex, "family": codex_family},
+        "claude": {**claude, "family": claude_family,
+                   "id_family": claude_id_family,
+                   "family_mismatch": claude_mismatch},
+        "codex": {**codex, "family": codex_family,
+                  "id_family": codex_id_family,
+                  "family_mismatch": codex_mismatch},
     }
 
 

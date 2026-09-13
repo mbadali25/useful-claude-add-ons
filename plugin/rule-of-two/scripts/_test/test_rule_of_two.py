@@ -189,6 +189,115 @@ def test_same_family_is_not_independent() -> None:
           "NOT the Rule of Two" in report.splitlines()[0])
 
 
+def test_model_id_must_corroborate_the_alias() -> None:
+    """A recorded model id naming another family is not a passed check.
+
+    `render_report` printed each side's `model_id` verbatim with nothing
+    checking it against the alias beside it, while `resolve_family` read only
+    the alias. A mis-pasted `--model-id` therefore named the wrong family's
+    model in the per-side bullet while coverage still computed
+    TWO_CROSS_FAMILY and the banner still said the Rule of Two held - a wrong
+    value wearing the label of a check that happened.
+
+    Downgraded rather than refused: this script's whole design reports a
+    degraded input instead of aborting on it (`cmd_assemble` says so of an
+    unreadable result file, `run_codex` of every failure), and a refusal
+    would throw away two real reviews and leave the operator who made the
+    typo with nothing on the page to correct it from.
+    """
+    print("model id -> must corroborate its alias, or coverage downgrades")
+
+    def with_ids(claude_id: str, codex_id: str = "") -> dict:
+        return rot.build_state(
+            "demo", rot.DEFAULT_CONFIG, "built-in defaults",
+            {"ran": True, "model": "fable", "model_id": claude_id,
+             "text": REVIEW_A},
+            {"ran": True, "model": "gpt-6-astra", "model_id": codex_id,
+             "text": REVIEW_B})
+
+    # 1. The mismatch: an id from the other family, beside a good alias.
+    s = with_ids("gpt-6-astra")
+    report = rot.render_report(s)
+    low = report.lower()
+    check("a cross-family id downgrades coverage",
+          s["coverage"] == rot.COVERAGE_TWO_FAMILY_UNVERIFIED, s["coverage"])
+    check("coverage_satisfied is False", s["coverage_satisfied"] is False)
+    check("a contradicted id never claims independence",
+          "independent" not in low,
+          "'independent' appears where a model id contradicted its alias")
+    check("the banner names both contradicting names",
+          "`fable`" in report and "`gpt-6-astra`" in report)
+    check("the banner names what each one resolved to",
+          "anthropic" in low and "openai" in low)
+    check("the title withdraws the Rule of Two name",
+          "NOT the Rule of Two" in report.splitlines()[0],
+          report.splitlines()[0])
+    check("the per-side bullet marks the id, rather than dropping it",
+          "does not corroborate the alias" in low
+          and "requested as `gpt-6-astra`" in report)
+    check("the report carries the 'what is missing' section",
+          "what is missing" in low)
+    check("the side that was not contradicted is not accused",
+          s["codex"]["family_mismatch"] == "", s["codex"]["family_mismatch"])
+
+    # 2. The unknown id. Resolving to nothing must never read as agreement.
+    s = with_ids("claude-fable-5-1", codex_id="some-retired-model-name")
+    report = rot.render_report(s)
+    low = report.lower()
+    check("an unresolvable id downgrades coverage",
+          s["coverage"] == rot.COVERAGE_TWO_FAMILY_UNVERIFIED, s["coverage"])
+    check("an unresolvable id never claims independence",
+          "independent" not in low)
+    check("the reason says the id resolves to no known family",
+          "no known family" in low, s["codex"]["family_mismatch"])
+    check("the id's own resolved family is recorded",
+          s["codex"]["id_family"] == rot.UNKNOWN_FAMILY,
+          s["codex"]["id_family"])
+    check("the corroborated side is not accused",
+          s["claude"]["family_mismatch"] == "", s["claude"]["family_mismatch"])
+
+    # 3. The matching case must still hold, or the guard is useless.
+    s = with_ids("claude-fable-5-1", codex_id="gpt-6-astra")
+    report = rot.render_report(s)
+    low = report.lower()
+    check("two corroborated ids still hold",
+          s["coverage"] == rot.COVERAGE_TWO_CROSS_FAMILY, s["coverage"])
+    check("two corroborated ids still say the Rule of Two held",
+          "rule of two held" in low)
+    check("two corroborated ids still claim two independent reviews",
+          "two independent reviews" in low)
+    check("nothing is marked as uncorroborating", "corroborate" not in low)
+
+    # 4. An absent id is an absence, not a disagreement. `run_codex` records
+    #    none, so treating it as unverified would downgrade every real report.
+    s = with_ids("", codex_id="")
+    check("no recorded id at all is still TWO_CROSS_FAMILY",
+          s["coverage"] == rot.COVERAGE_TWO_CROSS_FAMILY, s["coverage"])
+    check("an absent id is not reported as a mismatch",
+          s["claude"]["family_mismatch"] == ""
+          and s["codex"]["family_mismatch"] == "")
+
+    # And the function itself, on both sides of the table.
+    check("a corroborating pair passes",
+          rot.verify_model_id("fable", "claude-fable-5-1", "anthropic")[1]
+          == "")
+    check("a contradicting pair is flagged",
+          rot.verify_model_id("fable", "gpt-6-astra", "anthropic")[1] != "")
+    check("a contradicting pair reports the id's own family",
+          rot.verify_model_id("fable", "gpt-6-astra", "anthropic")[0]
+          == "openai")
+    check("an unresolvable id is flagged, not passed",
+          rot.verify_model_id("gpt-6-astra", "no-such-model", "openai")[1]
+          != "")
+    check("an id beside an unresolvable alias is flagged too",
+          rot.verify_model_id("sonnetting", "claude-opus-5",
+                              rot.UNKNOWN_FAMILY)[1] != "")
+    for absent in ("", "   ", None, 7):
+        check(f"an absent id ({absent!r}) is not a disagreement",
+              rot.verify_model_id("fable", absent, "anthropic") == ("", ""),
+              str(rot.verify_model_id("fable", absent, "anthropic")))
+
+
 def test_neither_ran() -> None:
     print("neither reviewer ran -> NO_REVIEW")
     s = state(False, False, claude_reason="x", codex_reason="y",
@@ -1193,6 +1302,7 @@ TESTS = [
     test_loose_prefix_does_not_resolve_confidently,
     test_empty_model_is_unknown_not_blank,
     test_same_family_is_not_independent,
+    test_model_id_must_corroborate_the_alias,
     test_neither_ran,
     test_happy_path_is_the_only_independent_one,
     test_truthy_string_ran_is_not_a_run,
@@ -1322,6 +1432,21 @@ def _sabotage_heading_demotion():
     return lambda: setattr(rot, "_demote_headings", original)
 
 
+def _sabotage_model_id_check():
+    """The recorded model id is printed again without being checked.
+
+    This is the shipped 0.1.1 behaviour exactly: the id's family is still
+    resolvable, nothing compares it to the alias, and no mismatch is ever
+    reported. Varying only that keeps the sabotage aimed at the guard rather
+    than at the key set around it.
+    """
+    original = rot.verify_model_id
+    rot.verify_model_id = lambda model, model_id, alias_family: (
+        rot.resolve_family(model_id) if isinstance(model_id, str)
+        and model_id.strip() else "", "")
+    return lambda: setattr(rot, "verify_model_id", original)
+
+
 def _sabotage_method_note():
     """The report stops saying the two reviewers worked differently."""
     original = rot.render_method_note
@@ -1339,6 +1464,8 @@ SABOTAGES = [
      _sabotage_heading_demotion),
     ("the report stops reporting the method asymmetry",
      _sabotage_method_note),
+    ("a recorded model id is printed without being checked against its alias",
+     _sabotage_model_id_check),
 ]
 
 
@@ -1349,9 +1476,11 @@ def sabotage() -> int:
     to fail, not a hypothetical - a banner that did not reflect coverage, a
     title that kept the name after the banner had withdrawn it, an evidence
     gate that trusted a model-written `ran`, loose alias prefixes, a substring
-    verdict search, review bodies colliding with the section holding them, and
-    a report that presented two differently-run reviews as equal. Read the
-    list rather than a count written here; it grows every time one is found.
+    verdict search, review bodies colliding with the section holding them, a
+    report that presented two differently-run reviews as equal, and a recorded
+    model id printed with nothing checking it against the alias beside it.
+    Read the list rather than a count written here; it grows every time one is
+    found.
 
     Each sabotage varies exactly one thing. One that also dropped a key would
     fail the suite for the wrong reason and prove nothing about the guard it
