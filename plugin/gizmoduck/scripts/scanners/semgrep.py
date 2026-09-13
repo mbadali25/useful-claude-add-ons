@@ -115,7 +115,7 @@ def _load(raw_path):
         raise base.ParseError("%s: invalid JSON: %s" % (raw_path, e)) from e
     if not isinstance(data, dict) or "results" not in data:
         raise base.ParseError(
-            "%s: not a semgrep report (no 'results' key)" % raw_path)
+            f"{raw_path}: not a semgrep report (no 'results' key)")
     return data
 
 
@@ -134,8 +134,8 @@ def parse(raw_path, target):
     for r in data.get("results") or []:
         if not isinstance(r, dict):
             raise base.ParseError(
-                "%s: results[] contains a %s, expected an object"
-                % (raw_path, type(r).__name__))
+                f"{raw_path}: results[] contains a "
+                f"{type(r).__name__}, expected an object")
         extra = r.get("extra") or {}
         meta = extra.get("metadata") or {}
         rule_id = r.get("check_id") or "rule"
@@ -149,7 +149,7 @@ def parse(raw_path, target):
 
         line = (r.get("start") or {}).get("line")
         path = r.get("path") or ""
-        where = "%s:%s" % (path, line) if line else path
+        where = f"{path}:{line}" if line else path
 
         cwe = meta.get("cwe")
         cwe = cwe if isinstance(cwe, list) else ([cwe] if cwe else [])
@@ -201,7 +201,7 @@ def scan_errors(raw_path):
         if isinstance(e, dict):
             where = (e.get("path") or (e.get("location") or {}).get("path") or "")
             msg = e.get("message") or e.get("long_msg") or e.get("type") or "error"
-            out.append("%s: %s" % (where, msg) if where else str(msg))
+            out.append(f"{where}: {msg}" if where else str(msg))
         else:
             out.append(str(e))
     return out
