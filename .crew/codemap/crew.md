@@ -3,6 +3,10 @@ verified: 2026-09-12
 re-derived, not re-verified: the live claims below were taken from the source at
 this anchor, not carried forward and re-pointed. The historical sections are
 accounts of past work and are marked as such.
+scope of that claim, measured rather than asserted: the first pass left 33
+citations on lines byte-identical to the previous version of this file. All 33
+were then re-resolved against HEAD - see "What the first re-derivation missed".
+
 
 # crew
 
@@ -162,19 +166,24 @@ than summarised from memory, the four defects were:
 
 The substantive fix for (1) and (2): `dispatch.json` (one shared, mutable
 file) is replaced by `.work/dispatch.d/`, one immutable file per dispatch
-(`plugin/crew/hooks/scripts/crew_state.py:1101`,
+(`plugin/crew/hooks/scripts/crew_state.py:1645`,
 `DISPATCH_DIR = (".work", "dispatch.d")`, with the reasoning at
-`plugin/crew/hooks/scripts/crew_state.py:1084-1100`), bounded by
-`DISPATCH_FILES_MAX` (`plugin/crew/hooks/scripts/crew_state.py:1108`). The
+`plugin/crew/hooks/scripts/crew_state.py:1625-1644`), bounded by
+`DISPATCH_FILES_MAX` (`plugin/crew/hooks/scripts/crew_state.py:1652`). The
 legacy single file is still read (`DISPATCH_PATH` at
-`plugin/crew/hooks/scripts/crew_state.py:1048`; the legacy history and slot
-are drained at `plugin/crew/hooks/scripts/crew_state.py:1274-1300`,
-`read_dispatch` at `:1413`) so an older record is not silently discarded.
+`plugin/crew/hooks/scripts/crew_state.py:1592`; it is opened by
+`_read_record_file` (`plugin/crew/hooks/scripts/crew_state.py:1765-1792`) and
+drained into history by `_history_items`
+(`plugin/crew/hooks/scripts/crew_state.py:1795-1847`), with `read_dispatch` at
+`plugin/crew/hooks/scripts/crew_state.py:1957-2018`) so an older record is not
+silently discarded.
 
 **Refined at this anchor:** the previous version called the legacy file "a
 lower-priority fallback", which understates the mechanism. Priority is
 *structural*, not a timestamp comparison: `_merge_history`
-(`plugin/crew/hooks/scripts/crew_state.py:1306-1318`) ranks entries by
+(`plugin/crew/hooks/scripts/crew_state.py:1850-1954`; the tier rule is stated in
+its own docstring at `plugin/crew/hooks/scripts/crew_state.py:1853-1856` and
+enforced at `:1948`) ranks entries by
 `(tier, sort key)`, with `.work/dispatch.d/` at tier 1 and anything read out
 of the legacy `dispatch.json` at tier 0, so nothing in the legacy file can
 outrank the store *no matter what its `at` says*. The hazard that motivates it
@@ -313,12 +322,26 @@ that exists only in one clone's untracked state reaches nobody) holds only
 **declared** records — `source: "declared"`, written only by
 `declare_endpoint` (`plugin/crew/hooks/scripts/crew_endpoints.py:254`), the
 one function allowed to write that source, the only writer of the file at all,
-and the one entry point named in `plugin/crew/agents/pm.md:276` and
-`plugin/crew/commands/work.md:64` for turning a researched candidate into a
-fact. Both of those still invoke it through the `crew_state.py` CLI
-(`crew_state.py --root . --declare-endpoint …`) — the *implementation* moved
-modules, the *command line* did not, which is why those two files needed no
-change in the split.
+and the one entry point for turning a researched candidate into a fact.
+
+**Corrected here.** The previous pass said that entry point was named in two
+files: a line in `plugin/crew/agents/pm.md` (cited at a line number that is now
+blank - deliberately not repeated here, because a checker walking these
+citations cannot tell a quoted wrong one from a broken one) and
+`plugin/crew/commands/work.md:64`. Only the second survives: `plugin/crew/commands/work.md:63-64` still spells out
+`crew_state.py --root . --declare-endpoint …`, but `pm.md` names the declare
+path **nowhere**. Its single remaining mention of endpoints is the trigger row
+at `plugin/crew/agents/pm.md:286`, which tells the pm to send `gizmoduck:scan`
+for a declared endpoint and nobody for a candidate - it describes what to do
+with a declaration, never how one is made. So the pm agent is told to act on
+declared endpoints without being told what declares them; the instruction lives
+only in `work.md`, which the pm does not read. That gap is stated, not fixed
+here - it is a change to a shipped agent file and belongs in its own commit with
+its own version bump.
+
+It still runs through the `crew_state.py` CLI: the *implementation* moved
+modules, the *command line* did not, which is why `work.md` needed no change in
+the split.
 
 Ids are minted from a sequence counter persisted alongside the records
 (`nextSeq`, not `len(records) + 1`, which collides the moment a record is
@@ -380,7 +403,9 @@ one the old two-check description dropped, and it is the one that closes a
 having run.
 
 `endpointUnscanned` fires when a record needs an artifact it does not have
-(`plugin/crew/hooks/scripts/crew_state.py:2092`), gated entirely on
+(evaluated in `evaluate_triggers`,
+`plugin/crew/hooks/scripts/crew_state.py:2690-2738`, at
+`plugin/crew/hooks/scripts/crew_state.py:2718`), gated entirely on
 `gizmoduck_installed` (`plugin/crew/hooks/scripts/crew_endpoints.py:498`) —
 checked at project `.claude/settings.local.json`, project
 `.claude/settings.json`, user-global `~/.claude/settings.local.json`, then
@@ -393,21 +418,24 @@ read as an implicit `false`, when the file is absent, its JSON does not parse,
 JSON boolean — the string `"false"` is truthy in Python, so the type is checked
 rather than the truthiness.
 
-Placed in `TRIGGERS` (`plugin/crew/hooks/scripts/crew_state.py:486`) at
-`:501`, just below `handoffPending` (`:493`) and above `graphStale` (`:502`):
+Placed in `TRIGGERS` (`plugin/crew/hooks/scripts/crew_state.py:833-863`) at
+`plugin/crew/hooks/scripts/crew_state.py:848`, below `handoffPending` (`:840`)
+and directly above `graphStale` (`:849`):
 a live, unscanned endpoint is an actionable security gap like an unfinished
 handoff, not a documentation-freshness finding.
 
 **Corrected at this anchor:** the "candidates are not confirmed until
 researched" text is no longer in the `FINDINGS` entry. `pm_brief.FINDINGS`
 now interpolates two pre-composed fields
-(`plugin/crew/hooks/scripts/pm_brief.py:132-135`,
+(`plugin/crew/hooks/scripts/pm_brief.py:143-144`,
 `"{endpointSummary}"` / `"{endpointAction}"`) and the sentence lives in
-`_endpoint_fields` (`plugin/crew/hooks/scripts/pm_brief.py:249`, the literal at
-`:303`: *"candidates are NOT confirmed endpoints until researched"*). The
+`_endpoint_fields` (`plugin/crew/hooks/scripts/pm_brief.py:289-366`, the literal
+at `plugin/crew/hooks/scripts/pm_brief.py:343`: *"candidates are NOT confirmed
+endpoints until researched"*; the two fields are returned at `:364-365`). The
 claim is still true; its location is not where it was. The split into
 declared/candidate is keyed on `status`, not `source`
-(`plugin/crew/hooks/scripts/pm_brief.py:281-282`), so a record whose two fields
+(`plugin/crew/hooks/scripts/pm_brief.py:322`, with the reasoning at
+`plugin/crew/hooks/scripts/pm_brief.py:300`), so a record whose two fields
 disagree still renders as a candidate rather than a confirmed fact — and it is
 pre-composed so a candidates-only state never reads "0 declared endpoint(s)"
 with an action telling the user to scan none of them.
@@ -535,3 +563,48 @@ The other nine subsystem notes in `.crew/codemap/` cover their own areas;
 - `git cat-file -e <sha>^{commit}` from `read_knowledge`, to tell a resolvable anchor from one this repository does not contain. `git_out` returns `None` on any failure, so a missing git lands as "cannot tell" rather than raising out of a SessionStart hook.
 - `crew_state._repo_digest` (`plugin/crew/hooks/scripts/crew_state.py:1022`) hashes `normcase(realpath(repo_root))` with `blake2b`, degrading to `abspath` when `realpath` raises, so a hook never dies for an unstattable path.
 - `_SEPARATORS` (`plugin/crew/hooks/scripts/crew_state.py:1017`) is derived from `os.sep`/`os.altsep` rather than written as a regex character class.
+
+
+## What the first re-derivation missed
+
+This section exists because the check that found it was run *after* the file was
+written, and nearly was not run at all.
+
+The pass that produced this note claimed in its own header that every live claim
+was taken from the source at this anchor. A sweep afterwards - diffing this file
+against its previous version and flagging every citation sitting on a
+byte-identical line - found **33 citations that had simply been carried
+forward**. The header was true of the sections that were rewritten and false of
+the ones that were not, and nothing in the file distinguished them.
+
+That is this repository's recurring failure wearing yet another costume: a claim
+that covers the whole file, resting on evidence gathered from part of it. The
+header said "re-derived", the reader has no way to tell which paragraphs that
+covers, and the confident label is what makes it expensive - a note marked
+`behind` gets re-checked, a note marked re-derived does not.
+
+All 33 were then resolved against HEAD, by AST for definitions and by reading
+the line otherwise. The split was not random:
+
+- **21 resolved correctly.** Every `plugin/crew/hooks/scripts/crew_endpoints.py`
+  citation still lands on the exact `def` it names, as do the four into
+  `plugin/crew/hooks/scripts/_test/run-tests.sh`, the one into
+  `plugin/crew/hooks/scripts/_common.sh`, and both gizmoduck command citations.
+  Those files did not move between the two anchors.
+- **12 were wrong**, all in the three files that grew: `crew_state.py`,
+  `pm_brief.py` and `plugin/crew/agents/pm.md`. The errors were large, not
+  off-by-one - `TRIGGERS` was cited at `:486`, which is a blank line inside
+  `archive_stale_handoff`'s docstring; it is at `:833`. `DISPATCH_PATH` was
+  cited at `:1048`, a `hashlib.blake2b` call; it is at `:1592`.
+
+Two of the twelve were found only because a blank cited line is detectable
+without knowing what the line should say. The other ten needed the name to be
+checked against the text at the line it claimed, which is the only check that
+distinguishes a stale number from a correct one when both point at real code.
+
+**The reusable form.** A re-derivation cannot be verified by the thing doing the
+re-deriving. Diff the new note against the old one and treat every surviving
+line with a citation on it as unverified until something independent resolves
+it, because those are exactly the lines the re-derivation did not touch - and
+they are invisible from inside the work, since every paragraph you actually
+rewrote looks right when you read back over it.
