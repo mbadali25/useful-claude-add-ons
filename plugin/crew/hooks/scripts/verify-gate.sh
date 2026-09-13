@@ -60,25 +60,80 @@ if [ -f .crew/.deploy-in-flight ]; then
   fi
 fi
 
-# SCOPE, and it is narrower than the gate's name suggests. This sees the
-# WORKING TREE against HEAD plus untracked files -- so a change that has been
-# committed is invisible here, and committing is enough to end a turn that
-# would otherwise have been blocked. Measured, not theorised: with a rule
-# mapping `**/*.py` to a failing command, a dirty `mod.py` exits 2, and the
-# same file exits 0 once committed.
+# Records the commit this gate has proven clean. Called on every exit-0 path
+# below and on none that exit nonzero: a marker written before the checks ran
+# would turn a FAILING turn into a verified baseline for the next one, and the
+# gate would wave the same unverified code through forever after blocking once.
+# A dirty tree is deliberately not recorded either -- HEAD is the only thing a
+# future diff can be taken against, and the working tree the checks actually
+# saw is not addressable by any sha.
+record_verified() {
+  VERIFIED=$(git rev-parse HEAD 2>/dev/null) || return 0
+  [ -n "$VERIFIED" ] || return 0
+  mkdir -p .crew 2>/dev/null && printf '%s\n' "$VERIFIED" > .crew/.verify-verified-at
+}
+
+# SCOPE. This used to diff the WORKING TREE against HEAD, which meant a change
+# that had been committed was invisible and COMMITTING WAS ENOUGH TO END A TURN
+# the gate would otherwise have blocked. Measured, not theorised: with a rule
+# mapping `**/*.py` to a failing command, a dirty `mod.py` exited 2 and the
+# same file exited 0 once committed. A gate you can pass by running `git
+# commit` is not a gate.
 #
-# This is left as-is deliberately, because closing it is a DESIGN decision and
-# not a bug fix: the gate has no notion of "this turn", and giving it one means
-# choosing a baseline (the merge-base with the default branch? a marker written
-# at turn start?) that changes gate behaviour in every repo that has one. That
-# choice is not this script's to make quietly. TODO.md carries it with the
-# reproduction.
+# The baseline is now the last commit this gate actually verified, so work that
+# was committed mid-turn is still in scope. Three sources, in order, and the
+# order is the decision:
 #
-# What is NOT acceptable is the boundary being undocumented, which it was until
-# 2026-09-13 -- a reader had no way to tell this scope from an oversight, and a
-# gate whose limits are unstated gets trusted past them.
-CHANGED=$(git diff --name-only HEAD 2>/dev/null; git ls-files --others --exclude-standard 2>/dev/null)
-[ -z "$CHANGED" ] && exit 0
+#   1. `.crew/.verify-verified-at`, written ONLY on a pass. It means "everything
+#      up to this sha was checked and was clean", which is exactly the question
+#      a baseline has to answer. It is machine-local (`.crew/` is gitignored),
+#      because "what has been verified here" is a fact about this checkout and
+#      travels with nobody.
+#   2. The merge-base with the default branch, when there is no marker or it
+#      names a commit this repo no longer contains (a squash merge, a rebase).
+#      Nothing on this branch has been shown to be verified, so all of it is in
+#      scope. Unknown resolves to checking MORE, never less.
+#   3. HEAD, when there is no branch point to use -- a detached checkout, or
+#      sitting ON the default branch, where merge-base(HEAD, main) IS HEAD.
+#
+# That third case is the one narrowing that survives, and it is worth stating
+# plainly rather than leaving to be discovered: with no marker yet, ON the
+# default branch, a commit still ends the turn. It lasts exactly one turn,
+# because the marker is written on EVERY clean exit below -- including the
+# "nothing changed" one -- so the first quiet turn in a checkout establishes a
+# baseline and every turn after it is covered. Closing even that window needs a
+# turn-start signal this script does not receive.
+#
+# The rejected alternative was a marker written at turn start by another hook.
+# It dates the turn precisely, but a missing marker degrades to today's
+# behaviour, and a gate that silently verifies less when its input is absent is
+# this repo's recurring bug: an unknown collapsing into the permissive value.
+# This baseline fails the other way.
+BASE=""
+if [ -f .crew/.verify-verified-at ]; then
+  read -r CAND < .crew/.verify-verified-at
+  # Trust it only if it still names a commit. A marker surviving a squash merge
+  # would otherwise diff against nothing and report the whole branch as clean.
+  if [ -n "$CAND" ] && git cat-file -e "${CAND}^{commit}" 2>/dev/null; then
+    BASE="$CAND"
+  fi
+fi
+if [ -z "$BASE" ]; then
+  # `... | sed ... || echo main` does NOT work here: the || binds to the whole
+  # pipeline and sed exits 0 even when symbolic-ref failed, so merge-base gets
+  # an empty string. Branch on the ref itself.
+  DEF=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null) || DEF=""
+  DEF=${DEF#origin/}
+  [ -z "$DEF" ] && DEF=main
+  BASE=$(git merge-base HEAD "$DEF" 2>/dev/null) || BASE=""
+fi
+[ -z "$BASE" ] && BASE=HEAD
+CHANGED=$(git diff --name-only "$BASE" 2>/dev/null; git ls-files --others --exclude-standard 2>/dev/null)
+CHANGED=$(printf '%s\n' "$CHANGED" | sort -u | sed '/^$/d')
+if [ -z "$CHANGED" ]; then
+  record_verified
+  exit 0
+fi
 
 # LOCK: from here on is the real (possibly minutes-long) smoke/verify work,
 # and both this script and verify-gate.ps1 are firing for the same Stop
@@ -231,4 +286,6 @@ if [ -n "$UNMAPPED" ] && grep -q '"unmapped"[[:space:]]*:[[:space:]]*"fail"' .cr
 fi
 
 [ "$FAILED" -eq 0 ] || exit 2
+
+record_verified
 exit 0

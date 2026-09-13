@@ -196,6 +196,41 @@ def _with(trigger, **over):
     return state
 
 
+def test_the_graph_refresh_command_matches_how_the_repo_stores_its_graph():
+    """Crew ships to many repos, and the right refresh command differs.
+
+    A repo that TRACKS `GRAPH_REPORT.md` beside `graph.json` maintains the pair
+    and needs `graphify update .`; one that does not wants `--no-viz`, which
+    skips the report precisely because nothing stores it.
+
+    Naming one command unconditionally is how crew's pulse came to recommend,
+    inside its own host repository, the command that repository's CLAUDE.md
+    tells you not to use. The same sabotage hole as the test below applies:
+    dropping `fields.update(_graph_fields(state))` has to break something.
+    """
+    tracked = _with("graphStale",
+                    graph={"present": True, "current": False, "builtAt": "a",
+                           "path": "x", "reportTracked": True})
+    out = chr(10).join(pm_brief.render(tracked))
+    assert "graphify update ." in out
+    assert "--no-viz" not in out
+
+    untracked = _with("graphStale",
+                      graph={"present": True, "current": False, "builtAt": "a",
+                             "path": "x", "reportTracked": False})
+    out = chr(10).join(pm_brief.render(untracked))
+    assert "graphify . --no-viz --code-only" in out
+
+    # Unknown falls back to the --no-viz form rather than raising: an older
+    # state dict, or a graph block this version did not write, must not take
+    # out a brief that runs from SessionStart.
+    absent = _with("graphStale",
+                   graph={"present": True, "current": False, "builtAt": "a",
+                          "path": "x"})
+    out = chr(10).join(pm_brief.render(absent))
+    assert "graphify . --no-viz --code-only" in out
+
+
 def test_the_brief_renders_the_unverifiable_names_and_count():
     """The distinction has to reach the LINE, not just the state dict.
 

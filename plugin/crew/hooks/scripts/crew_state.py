@@ -202,7 +202,28 @@ def read_metrics(root, window=METRICS_WINDOW):
         # Each blank row is its own ticket. The sentinel is a TUPLE: `cells[1]`
         # is always a str, so no row can collide with it, and only `.values()`
         # is read below, so the key never escapes.
-        ticket = cells[1] or ("\x00unlabelled", len(by_ticket))
+        # GROUP BY THE TICKET ID, not by the whole cell. /crew:review step 3
+        # asks the reviewer and the round to be named, and every real writer
+        # puts that in this cell - `T-1 (harness r2)`, `T-1 (#263 rebased
+        # db6f3b5)`. Keyed raw, those never repeat, so the grouping this
+        # function's docstring calls load-bearing silently becomes a no-op and
+        # each extra ROUND lands as a DIVISOR. That is the same "rate reads too
+        # LOW" failure the docstring warns about, reached from the other side.
+        #
+        # Measured on AI-Software 2026-09-13 (its .work/FINDINGS.md F82): 53
+        # scored rows produced 53 distinct keys and a reported 4.2, where
+        # grouping by id gives 15.0 over 20 real tickets. HEALTHY_HIGH is 2.0
+        # and is calibrated PER TICKET, so the verdict was comparing two
+        # different quantities and understating the overrun more than 3x.
+        #
+        # A row with no id keeps its raw cell rather than joining a shared
+        # "no id" bucket: pooling unknowns into one identity is exactly the
+        # collapse the blank-cell sentinel below exists to prevent.
+        ticket = cells[1]
+        found = _TICKET_RE.search(ticket) if ticket else None
+        if found:
+            ticket = found.group(1)
+        ticket = ticket or ("\x00unlabelled", len(by_ticket))
         total = by_ticket.pop(ticket, 0) + block + fix
         by_ticket[ticket] = total
 
@@ -657,6 +678,20 @@ def _built_at_commit(path):
     return found.group(1).decode("ascii") if found else None
 
 
+# Paths whose contents cannot invalidate a graph OF THE CODE, used by
+# _read_graph to tell "HEAD moved" apart from "the code moved". Deliberately
+# short and deliberately a DENY-list: anything not named here still counts as
+# code, so a path nobody anticipated stales the graph rather than silently
+# not doing so. The graph's own output directory is excluded separately by
+# _read_graph, because it is configurable (`graph.out`) and so is not a
+# constant.
+GRAPH_NONCODE_PATHS = (
+    "docs/**",
+    ".crew/**",
+    ".work/**",
+)
+
+
 def _read_graph(root, cfg):
     """Graph presence, and whether it was built at the current HEAD.
 
@@ -676,17 +711,69 @@ def _read_graph(root, cfg):
     # passes dict_or_empty but `os.path.join` raises TypeError on a non-str.
     if not isinstance(out, str) or not out:
         out = GRAPH_OUT_DEFAULT
-    path = os.path.join(contained_path(root, out, GRAPH_OUT_DEFAULT),
-                        "graph.json")
+    out_dir = contained_path(root, out, GRAPH_OUT_DEFAULT)
+    path = os.path.join(out_dir, "graph.json")
+
+    # Which refresh command to recommend is a fact about THIS repo, not a
+    # constant. A repo that tracks GRAPH_REPORT.md beside graph.json needs
+    # `graphify update .`, which keeps the pair consistent; one that does not
+    # wants `graphify . --no-viz --code-only`, where --no-viz skips the report
+    # precisely because nothing stores it. Crew ships to many repos and used to
+    # name the second unconditionally, so in a repo of the first kind its own
+    # pulse recommended the command that repo's CLAUDE.md says not to use.
+    # Asked of git, not of the filesystem: an untracked report is a local
+    # artefact and does not make the pair a thing this repo maintains.
+    report = os.path.join(out_dir, "GRAPH_REPORT.md")
+    rel = os.path.relpath(report, root).replace("\\", "/")
+    report_tracked = bool(git_out(root, "ls-files", "--", rel))
+
     if not os.path.exists(path):
         return {"present": False, "current": False, "builtAt": None,
-                "path": path}
+                "path": path, "reportTracked": report_tracked}
 
     built = _built_at_commit(path)
     head = git_out(root, "rev-parse", "--short=7", "HEAD")
-    current = bool(built) and bool(head) and built[:7] == head[:7]
-    return {"present": True, "current": current,
-            "builtAt": built, "path": path}
+    if not built or not head:
+        return {"present": True, "current": False, "builtAt": built,
+                "path": path, "reportTracked": report_tracked}
+
+    # Fast path, and the only one that needs no second git call.
+    if built[:7] == head[:7]:
+        return {"present": True, "current": True, "builtAt": built,
+                "path": path, "reportTracked": report_tracked}
+
+    # Not HEAD -- but "not HEAD" is not the same as "stale", and treating it
+    # that way gave this trigger NO FIXPOINT. graphify-out/ is a TRACKED
+    # artefact in the repos this runs in, so recording a rebuild takes a
+    # commit, and that commit moves HEAD past the sha the rebuild just
+    # stamped. Clearing graphStale therefore re-fired it, every time, forever.
+    # Measured in AI-Software on 2026-09-13: cleared once, fired again on the
+    # same action, taking that session's trigger count from four to five.
+    #
+    # The question this check actually wants answered is whether any CODE
+    # moved since the graph was built. So ask git exactly that, over
+    # everything EXCEPT the paths that cannot change a graph of the code: the
+    # graph's own output directory, crew's own state, and docs.
+    #
+    # The exclusion list is a DENY-list on purpose. A path nobody thought
+    # about still counts as code and still stales the graph, so the failure
+    # direction stays honest -- the same reason a missing `built_at_commit`
+    # sidecar resolves to stale rather than to fresh.
+    #
+    # This mirrors `verify-anchors.py`, which measures each subsystem against
+    # its OWN pathspec rather than against all of HEAD, and which reports
+    # FRESH for trees this function used to call stale.
+    trimmed = out.rstrip("/")
+    excludes = [f":(exclude){trimmed}/**"]
+    excludes += [f":(exclude){g}" for g in GRAPH_NONCODE_PATHS]
+    changed = git_out(root, "diff", "--name-only", f"{built}..{head}",
+                      "--", ".", *excludes)
+    # None means the diff could not run at all -- an unresolvable `built` sha
+    # (squash-merged, rebased away, or garbage-collected) lands here. Unknown
+    # resolves to stale, the honest direction.
+    current = changed is not None and changed == ""
+    return {"present": True, "current": current, "builtAt": built,
+            "path": path, "reportTracked": report_tracked}
 
 
 def read_knowledge(root, cfg):

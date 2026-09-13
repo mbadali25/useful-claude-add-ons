@@ -578,6 +578,54 @@ def test_a_pull_of_older_commits_makes_the_graph_stale(tmp_path):
     assert got["current"] is False, "backdated commit must invalidate the graph"
 
 
+def test_a_docs_only_commit_leaves_the_graph_current(tmp_path):
+    """The treadmill. `graphStale` had no fixpoint while graphify-out is tracked.
+
+    Freshness used to be `built_sha == HEAD`. Rebuilding the graph produces a
+    commit (graphify-out/ is a tracked artefact in the repos this runs in), and
+    that commit moves HEAD past the sha the rebuild just stamped - so the act
+    of clearing the trigger re-fired it, every time, forever. Observed in
+    AI-Software on 2026-09-13: cleared once, fired again on the same action,
+    taking the trigger count from four to five.
+
+    What the check actually wants to know is whether any CODE moved since the
+    graph was built. A commit touching only docs, or the graph artefact itself,
+    cannot invalidate a graph of the code.
+    """
+    root = crew_fixtures.make_repo(tmp_path, graph=True, graph_sha="head")
+    assert crew_state.read_knowledge(str(root), {})["graph"]["current"] is True
+
+    (root / "docs").mkdir()
+    (root / "docs" / "note.md").write_text("# not code\n", encoding="utf-8")
+    crew_fixtures.commit_file(root, "docs/note.md")
+
+    got = crew_state.read_knowledge(str(root), {})["graph"]
+    assert got["current"] is True, (
+        "a docs-only commit must not stale the graph - otherwise the trigger "
+        "can never be cleared, because clearing it requires a commit"
+    )
+
+
+def test_a_commit_to_the_graph_artefact_itself_leaves_the_graph_current(tmp_path):
+    """Committing the rebuild must not invalidate the rebuild."""
+    root = crew_fixtures.make_repo(tmp_path, graph=True, graph_sha="head")
+    (root / "graphify-out" / "GRAPH_REPORT.md").write_text("x\n", encoding="utf-8")
+    crew_fixtures.commit_file(root, "graphify-out/GRAPH_REPORT.md")
+
+    got = crew_state.read_knowledge(str(root), {})["graph"]
+    assert got["current"] is True
+
+
+def test_a_code_commit_still_stales_the_graph(tmp_path):
+    """The over-correction guard. Narrowing must not stop real staleness."""
+    root = crew_fixtures.make_repo(tmp_path, graph=True, graph_sha="head")
+    (root / "app.py").write_text("def f(): pass\n", encoding="utf-8")
+    crew_fixtures.commit_file(root, "app.py")
+
+    got = crew_state.read_knowledge(str(root), {})["graph"]
+    assert got["current"] is False, "a code commit MUST still stale the graph"
+
+
 def test_graph_out_dir_comes_from_config(tmp_path):
     root = crew_fixtures.make_repo(tmp_path)
     (root / "custom-out").mkdir()
@@ -1061,3 +1109,57 @@ def test_traversal_in_a_branch_name_cannot_leave_the_worktree_root(tmp_path):
     got = crew_state.worktree_path(cfg, str(tmp_path / "repo"), "a/../../b")
     assert os.path.dirname(got) == os.path.abspath(str(root))
     assert os.path.abspath(got).startswith(os.path.abspath(str(root)) + os.sep)
+
+
+def test_metrics_groups_rounds_that_carry_a_descriptive_suffix(tmp_path):
+    """Rounds of one ticket group even when each row's label differs.
+
+    The grouping above keys on the ticket cell, and its docstring calls that
+    load-bearing. But /crew:review's own step 3 asks for a reviewer and a
+    round to be named, and every real writer puts that in the ticket cell:
+    `ANEWINF-870 (H1 harness r2)`, `ANEWINF-870 (H1 harness r3)`. The raw
+    cells then never repeat, the grouping is a no-op, and the extra rows
+    become DIVISORS -- exactly the failure the docstring exists to warn
+    about, arrived at from the other direction.
+
+    Measured on AI-Software 2026-09-13 (.work/FINDINGS.md F82): 53 scored
+    rows produced 53 distinct keys, reporting 4.2 findings per "ticket" where
+    grouping by the ticket id gives 15.0 over 20 real tickets. HEALTHY_HIGH
+    is 2.0 and is calibrated per ticket, so the verdict was comparing two
+    different quantities and understating the overrun by more than 3x.
+
+    Three rounds of T-1 (4+1, 1+3, 2+0) plus one row for T-2: one ticket with
+    11 findings and one with 0, so 2 tickets and a rate of 5.5. Ungrouped it
+    reads 4 tickets and 2.75.
+    """
+    root = crew_fixtures.make_repo(
+        tmp_path,
+        metrics=[
+            ("T-1 (harness r1)", 4, 1),
+            ("T-1 (harness r2)", 1, 3),
+            ("T-1 (#263 rebased db6f3b5)", 2, 0),
+            ("T-2 (r1)", 0, 0),
+        ],
+    )
+    got = crew_state.read_metrics(str(root))
+    assert got["tickets"] == 2, "three rounds of T-1 are one ticket, not three"
+    assert got["findings"] == 11
+    assert got["rate"] == 5.5
+
+
+def test_metrics_rows_with_no_ticket_id_keep_their_raw_label(tmp_path):
+    """Extracting an id must not pool rows that have none.
+
+    `safety-fixes r4 branch A` and `alt-tab-inputhook` are real rows from
+    AI-Software's metrics file. Neither carries a TICKET-123 id, so neither
+    can be grouped by one -- and falling back to a shared "no id" bucket
+    would merge them, which is the unknown-collapsing-into-one-value bug the
+    blank-cell sentinel above already exists to prevent. They keep the raw
+    cell, which is today's behaviour and is distinct per row.
+    """
+    root = crew_fixtures.make_repo(
+        tmp_path, metrics=[("safety-fixes r4 branch A", 1, 0), ("alt-tab-inputhook", 2, 0)]
+    )
+    got = crew_state.read_metrics(str(root))
+    assert got["tickets"] == 2, "two unrelated unlabelled rows are not one ticket"
+    assert got["findings"] == 3

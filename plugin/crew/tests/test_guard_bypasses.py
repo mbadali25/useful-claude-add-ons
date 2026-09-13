@@ -33,43 +33,15 @@ import subprocess
 
 import pytest
 
+import crew_fixtures
+
 import context  # noqa: F401  pylint: disable=unused-import
 
 _HOOKS = pathlib.Path(__file__).resolve().parents[1] / "hooks" / "scripts"
 _GUARD_SH = _HOOKS / "guard.sh"
 _GUARD_PS1 = _HOOKS / "guard.ps1"
 
-
-def _resolve_bash():
-    """A bash that can open Windows paths when spawned from python.
-
-    `shutil.which("bash")` returns WSL's `C:/Windows/System32/bash.EXE` under
-    PowerShell and `Git/usr/bin/bash.exe` under Git Bash. The first cannot open
-    a Windows path at all; the second is the raw MSYS binary, which fails to
-    resolve its own mount table when its parent is not an MSYS process. Only
-    `Git/bin/bash.exe`, the launcher shim, works from python on Windows.
-
-    Returning None when no usable bash is found is the point: "found a bash" is
-    not "found a working bash", and treating the two as the same is what made
-    52 tests in this suite fail as `assert 127 == 2` instead of skipping.
-    """
-    for candidate in (
-        r"C:\Program Files\Git\bin\bash.exe",
-        "/usr/bin/bash",
-        "/bin/bash",
-    ):
-        if pathlib.Path(candidate).exists():
-            return candidate
-    found = shutil.which("bash")
-    if not found:
-        return None
-    parts = [p.lower() for p in pathlib.Path(found).parts]
-    if "system32" in parts:          # WSL: cannot open a Windows path
-        return None
-    return found
-
-
-_BASH = _resolve_bash()
+_BASH = crew_fixtures.resolve_bash()
 _PWSH = shutil.which("pwsh")
 
 needs_bash = pytest.mark.skipif(_BASH is None, reason="no MSYS/POSIX bash")
