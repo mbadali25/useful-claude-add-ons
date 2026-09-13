@@ -1,6 +1,9 @@
 # install-scripts
-anchor: useful-claude-add-ons@d61342c3
-verified: 2026-09-06
+anchor: useful-claude-add-ons@7b0d8f3a
+verified: 2026-09-12
+re-verified, not re-derived: every claim below was re-read against the files it
+cites at this anchor and its citation re-pointed where the code had moved. The
+claims themselves are the previous pass's, not a fresh derivation.
 
 ## Does
 `scripts/install-prerequisites.sh` (bash) and `scripts/install-prerequisites.ps1` (PowerShell) are
@@ -12,11 +15,11 @@ differs per row and is *not* uniformly `claude plugin install`: plugins and skil
 own package managers (see **Calls out to**). DERIVED.
 
 ## Entry points
-- `scripts/install-prerequisites.sh:720` - `MENU_KEYS`, the top-level picker's ordered key list;
-  `MENU_DEFAULT` is the parallel tick list at `:727`. DERIVED. Run directly by a user on Linux,
+- `scripts/install-prerequisites.sh:720-727` - `MENU_KEYS`, the top-level picker's ordered key
+  list, now **24** keys; `MENU_DEFAULT` is the parallel tick list at `:728`. DERIVED. Run directly by a user on Linux,
   macOS or Git Bash.
-- `scripts/install-prerequisites.ps1:750` - `$script:Catalog`, the Windows equivalent, carrying
-  `Key` and `Default` on one line per row. Same 21 keys in the same order. DERIVED.
+- `scripts/install-prerequisites.ps1:750-775` - `$script:Catalog`, the Windows equivalent,
+  carrying `Key` and `Default` on one line per row. Same 24 keys in the same order. DERIVED.
 - `scripts/_test/drift-detection.sh:21` - sets `SCRIPT` to the real `.sh`; `:82` lifts
   `install_plugin` out of it with an `eval "$(awk ...)"` over the function body, so the
   update-detection path can be exercised without running the installer. DERIVED.
@@ -43,27 +46,30 @@ own package managers (see **Calls out to**). DERIVED.
   DERIVED.
 - The tools it provisions - Playwright CLI, skillui, strix, graphify, Obsidian - each through its
   own package manager. For graphify that is `uv tool install graphifyy` at
-  `scripts/install-prerequisites.sh:2324`, with `uv` itself bootstrapped via `pip3`/`pip` just
+  `scripts/install-prerequisites.sh:2429`, with `uv` itself bootstrapped via `pip3`/`pip` just
   above. DERIVED. (`:2307` was cited here previously; that line is the *idempotence* skip, not the
-  install.)
+  install - and it is now `:2412`.)
 - `https://knowledge-mcp.global.api.aws/mcp` and `https://learn.microsoft.com/api/mcp` — registered, not called by the installer. Both were probed live before being added and answered a real MCP `initialize`.
 - `uvx awslabs.aws-pricing-mcp-server@latest`, recorded by `claude mcp add` rather than executed, which is why the `uv` check above has to happen first.
 
 ## Landmines
 - **Matched pair, and confirmed in sync at this anchor - by mechanical diff, not by eye.**
-  Skill catalogs: `scripts/install-prerequisites.sh:803-838` (`SKILL_KEYS` at `:803-811`,
-  `SKILL_NAME` at `:812-838`) against `scripts/install-prerequisites.ps1:805-830`
-  (`$script:SkillCatalog`) - 25 keys, same order, and the 25 description strings diff
-  byte-identical. Plugin catalogs: `scripts/install-prerequisites.sh:852-863` (`PLUGIN_KEYS` at
-  `:852-857`, `PLUGIN_NAME` at `:858-863`) against `scripts/install-prerequisites.ps1:843-846` (the
-  four entries; `$script:PluginCatalog = @(` is `:842`, closing paren `:847`) - same four keys
+  Skill catalogs: `scripts/install-prerequisites.sh:807-878` (`SKILL_KEYS` at `:807-842`,
+  `SKILL_NAME` at `:843-878`) against `scripts/install-prerequisites.ps1:808-843`
+  (`$script:SkillCatalog`) - **34** keys, same order, and the 34 description strings diff
+  byte-identical. Plugin catalogs: `scripts/install-prerequisites.sh:892-903` (`PLUGIN_KEYS` at
+  `:892-897`, `PLUGIN_NAME` at `:898-903`) against `scripts/install-prerequisites.ps1:855-858` (the
+  four entries; `$script:PluginCatalog = @(` is `:854`, closing paren `:859`) - same four keys
   (`crew`, `gizmoduck`, `localgpu`, `obsidian-vault`), same order, descriptions diff identical.
   DERIVED. (The previous range `ps1:842-844` claimed to show four keys and spanned two of them.)
-  Top-level menu: the 21 `MENU_KEYS` and the 21 `$script:Catalog` keys match in order, and
-  `MENU_DEFAULT` (`sh:727`, eight `1`s then thirteen `0`s) matches the `Default` column
-  entry-for-entry. DERIVED - all 21 diffed, not just `repo-plugins`.
+  Top-level menu: the 24 `MENU_KEYS` and the 24 `$script:Catalog` keys match in order, and
+  `MENU_DEFAULT` (`scripts/install-prerequisites.sh:728`, eight `1`s then sixteen `0`s) matches the
+  `Default` column entry-for-entry. DERIVED - all 24 diffed, not just `repo-plugins`.
+  The counts 21 -> 24 and 25 -> 34 are the re-verification's own finding: the previous pass
+  recorded 21 menu rows and 25 skills, and both lists have since grown. The *claim* - that the two
+  sides agree entry-for-entry - still holds at the new sizes.
   Top-level *names* legitimately differ where the platform differs: the `prereqs` row names apt
-  packages and sudo on the `.sh` (`:729`) and Chocolatey and Administrator on the `.ps1` (`:751`).
+  packages and sudo on the `.sh` (`:730`) and Chocolatey and Administrator on the `.ps1` (`:751`).
   DERIVED. Do not "fix" that into agreement.
 
 - **The parity checker guards keys, not text - so agreeing descriptions can be jointly wrong.**
@@ -73,28 +79,32 @@ own package managers (see **Calls out to**). DERIVED.
   `MENU_KEYS` against `$script:Catalog` keys and `MENU_DEFAULT` against the `Default` flags - again
   no descriptive text. DERIVED.
   Live consequence: both scripts advertise `crew - Virtual dev team: 11 agents, 21 commands` at
-  `scripts/install-prerequisites.sh:859` / `scripts/install-prerequisites.ps1:843`; the counts on
-  disk are 29 agents and 24 commands. They agree with each other, so the matched-pair rule passes
-  and `check-marketplace.py` stays green on a figure that is wrong on both sides. Tracked in
-  `TODO.md:381-392`. DERIVED.
+  `scripts/install-prerequisites.sh:899` / `scripts/install-prerequisites.ps1:855`; the counts on
+  disk are **54 agents and 24 commands**. They agree with each other, so the matched-pair rule
+  passes and `check-marketplace.py` stays green on a figure that is wrong on both sides. Tracked in
+  `TODO.md:564-580`. DERIVED.
+  Re-verification finding: that TODO entry records the gap as `29 agents, 24 commands`, which was
+  true when it was written and is not true now - `ls plugin/crew/agents/*.md` counts 54. So the
+  *correction* has itself gone stale while the thing it corrects has not moved at all. The
+  advertised `11 agents` has been wrong continuously; only the size of the error changed.
   JUDGEMENT: "the pair is in sync" is a weaker statement than it reads. Sync is enforced;
   correctness of the description text is enforced by nothing.
 
-- **Nothing may bypass `pick_fit` / `Format-PickerLine`** - `scripts/install-prerequisites.sh:1223`
-  and `scripts/install-prerequisites.ps1:1062`. Clipping is degradation; a line that *wraps* throws
+- **Nothing may bypass `pick_fit` / `Format-PickerLine`** - `scripts/install-prerequisites.sh:1268`
+  and `scripts/install-prerequisites.ps1:1076`. Clipping is degradation; a line that *wraps* throws
   off the cursor-up redraw count and smears the menu over what was above it. Every title, label and
-  hint in `picker_draw` (`scripts/install-prerequisites.sh:1235`) and `Invoke-Picker`
-  (`scripts/install-prerequisites.ps1:1071`) routes through one of the two - re-checked line by
+  hint in `picker_draw` (`scripts/install-prerequisites.sh:1280`) and `Invoke-Picker`
+  (`scripts/install-prerequisites.ps1:1085`) routes through one of the two - re-checked line by
   line, not taken from the comment. DERIVED.
   One line in each does **not** route through the clipper: the scroll indicator `showing N-M of T`
-  (`scripts/install-prerequisites.sh:1271-1272`, `scripts/install-prerequisites.ps1:1140-1141`).
+  (`scripts/install-prerequisites.sh:1316-1317`, `scripts/install-prerequisites.ps1:1154-1155`).
   Its content is bounded to roughly 22 characters and both scripts floor the window at 40 columns
-  (`term_cols` at `scripts/install-prerequisites.sh:1150`, `if ($winW -lt 40) { $winW = 40 }` at
-  `scripts/install-prerequisites.ps1:1105`), so it cannot wrap today. DERIVED.
+  (`term_cols` at `scripts/install-prerequisites.sh:1195`, `if ($winW -lt 40) { $winW = 40 }` at
+  `scripts/install-prerequisites.ps1:1119`), so it cannot wrap today. DERIVED.
   JUDGEMENT: route it anyway if that string ever grows - the bound is incidental, not enforced.
   The two clippers are **not** interchangeable: bash appends a one-character ellipsis and reserves
-  1 (`scripts/install-prerequisites.sh:1229`); PowerShell appends three dots, reserves 3, and pads
-  the result out to `Width` (`scripts/install-prerequisites.ps1:1067-1068`). The `.ps1` carries a
+  1 (`scripts/install-prerequisites.sh:1274`); PowerShell appends three dots, reserves 3, and pads
+  the result out to `Width` (`scripts/install-prerequisites.ps1:1081-1082`). The `.ps1` carries a
   comment recording that reserving 1 there returned `Width + 2`. Porting a change between them
   without accounting for that is the wrap this pair exists to prevent. DERIVED.
 
@@ -105,22 +115,29 @@ own package managers (see **Calls out to**). DERIVED.
   `scripts/_test/drift-detection.sh` asserts both by name (`already current` at `:137` and `:157`,
   `already installed` at `:190`). The previous note cited `:626` for "already current"; that is the
   wrong branch, and the distinction is the whole point of the drift suite.
-  Per-tool "already installed" branches: playwright-cli `sh:2089` / `ps1:1926`, skillui `sh:2133` /
-  `ps1:1972`, strix `sh:2172` / `ps1:2014`, graphify `sh:2307` / `ps1:2179`, and the PowerShell
-  `Install-ClaudePlugin` mirror at `ps1:648`, `:667`, `:676`. DERIVED - the `.ps1` citations are
-  new; the previous note claimed "both sides" while citing only `.sh` lines.
+  Per-tool "already installed" branches, all repo-relative because `sh:`/`ps1:` shorthand cannot
+  be pasted into `git diff` and this note cites four different `.sh` files:
+  playwright-cli `scripts/install-prerequisites.sh:2194` / `scripts/install-prerequisites.ps1:1994`,
+  skillui `scripts/install-prerequisites.sh:2238` / `scripts/install-prerequisites.ps1:2040`,
+  strix `scripts/install-prerequisites.sh:2277` / `scripts/install-prerequisites.ps1:2082`,
+  graphify `scripts/install-prerequisites.sh:2412` / `scripts/install-prerequisites.ps1:2247`,
+  and the PowerShell `Install-ClaudePlugin` mirror at `scripts/install-prerequisites.ps1:648`,
+  `:667`, `:676`. DERIVED - the `.ps1` citations are new; the previous note claimed "both sides"
+  while citing only `.sh` lines.
 
 - **The `repo-plugins` menu row defaults to OFF; the four plugins inside it are pre-ticked.**
-  `MENU_DEFAULT` index 18 is `0` at `scripts/install-prerequisites.sh:727` against
+  `MENU_DEFAULT` index 18 is `0` at `scripts/install-prerequisites.sh:728` against
   `Default = $false` at `scripts/install-prerequisites.ps1:769`, each carrying the same reasoning
-  in a comment (`sh:849-850`, `ps1:838-839`) - a hook runs whether or not Claude agrees with it, so
-  it is opted into explicitly. DERIVED. (`ps1:840` was inside the previous citation; that line
-  documents the `Spec` string format, not the reasoning.)
+  in a comment (`scripts/install-prerequisites.sh:889-890`,
+  `scripts/install-prerequisites.ps1:851-852`) - a hook runs whether or not Claude agrees with it,
+  so it is opted into explicitly. DERIVED. Index 18 was re-counted against the current 24-key
+  `MENU_KEYS` rather than carried over, because the list grew: `repo-plugins` is still index 18.
   Precision that matters: the gate is the single outer row, which covers all four plugins - and by
   the scripts' own descriptions `gizmoduck` and `localgpu` register no hooks
-  (`scripts/install-prerequisites.sh:860-861`). So the rule as implemented is "the row carrying
+  (`scripts/install-prerequisites.sh:900-901`). So the rule as implemented is "the row carrying
   plugins is off", not "hook-registering plugins are off". `PLUGIN_STATE` is all `1`
-  (`scripts/install-prerequisites.sh:870-871`) and every `Selected` is `$true` (`ps1:843-846`), so
+  (`scripts/install-prerequisites.sh:910-911`) and every `Selected` is `$true`
+  (`scripts/install-prerequisites.ps1:855-858`), so
   the inner rows are pre-ticked and take effect only once the outer row is turned on. DERIVED.
 
 - **`json_query` resolves `jq` then `python3` and nothing else, with stderr discarded.**
@@ -132,7 +149,8 @@ own package managers (see **Calls out to**). DERIVED.
   JUDGEMENT: the failure direction is reinstall-everything rather than silently-skip, so it is loud
   and slow rather than wrong - but it is still an unknown collapsing into a value, and the user is
   told nothing. `setup_notify` does better, trying `python3` then `python` and warning on neither
-  (`scripts/install-prerequisites.sh:1601-1603`) - still no `py`.
+  (`scripts/install-prerequisites.sh:1646-1648`) - still no `py`. Note the function at `:1601` is
+  `notify_prereqs`; `setup_notify` itself begins at `:1642`.
 
 - **The `pwsh`-not-on-PATH landmine does not live here.** Neither script invokes `pwsh` or
   `powershell` as a subprocess - grepped both, zero hits. DERIVED. That one belongs to hook
@@ -145,35 +163,47 @@ own package managers (see **Calls out to**). DERIVED.
   plausible - but CI's own skip behaviour was not inspected. Carried forward unchanged; the suite
   was **not executed** in this pass.
 - Picker behaviour under redirected output was reasoned about from the width floors, not executed.
-  `picker_supported` (`scripts/install-prerequisites.sh:1154`) refuses a non-tty, `TERM=dumb` and a
+  `picker_supported` (`scripts/install-prerequisites.sh:1199`) refuses a non-tty, `TERM=dumb` and a
   window under 10 lines; the PowerShell side has no equivalent pre-flight and instead swallows a
-  `CursorVisible` failure (`scripts/install-prerequisites.ps1:1098`). Whether
-  `[Console]::WindowWidth` (`Get-PickerConsole`, `scripts/install-prerequisites.ps1:1042`) throws
+  `CursorVisible` failure (`scripts/install-prerequisites.ps1:1112`). Whether
+  `[Console]::WindowWidth` (`Get-PickerConsole`, `scripts/install-prerequisites.ps1:1056`) throws
   before that point in a redirected host was not tested.
 - `scripts/check-marketplace.py` was read for `check_catalogs` (`:166`), `check_menu_parity`
   (`:194`) and `check_group_parity` (`:233`) only. The remaining checks in that file were not
   traced.
-- The `ms-mcp` and `obsidian-mcp` install paths (`scripts/install-prerequisites.sh:2356` onward)
+- The `ms-mcp` and `obsidian-mcp` install paths (`scripts/install-prerequisites.sh:2461` onward)
   were not read; nothing in this note depends on them.
 
 ## Re-anchor provenance
-The per-path staleness check came back **empty**. `git diff --name-only a02331ee..HEAD` over this
-note's cited paths - `scripts/install-prerequisites.sh`, `scripts/install-prerequisites.ps1`,
-`scripts/_test/drift-detection.sh`, `scripts/check-marketplace.py` - lists no files, so by the
-repo's usual signal this note was current and needed no work.
 
-It was re-read anyway, and the empty diff turned out to be a **false clean bill**. Six citation
-defects were present at the previous anchor - wrong when written, not drifted into. The expensive
-one was `scripts/install-prerequisites.sh:626`, cited three times for three different claims (the
-`claude` CLI call site, the `claude plugin list --json` read, and the `SKIP | already current`
-message) and correct for none of them: it is a `skip` call on the `--no-update` branch, and the
-message there is `already installed`. `git diff` cannot see a citation that never matched.
+**This pass re-verified; it did not re-derive.** Every claim above is the previous pass's. What
+changed is the citations: each was re-read against the file it names, and re-pointed where the code
+had moved. Four counts were corrected because the underlying lists grew. No claim was added, and
+none was removed.
 
-Re-read in full for this pass: `scripts/install-prerequisites.sh` lines 160-200, 236-275, 383, 558,
-615-646, 715-772, 795-880, 1145-1175, 1223-1290, 1595-1612, 2085-2092, 2130-2136, 2169-2175,
-2303-2345; `scripts/install-prerequisites.ps1` lines 745-775, 795-860, 1042-1150, plus the
-`already installed` / `already current` branches at 648-728, 1926, 1972, 2014, 2179;
-`scripts/_test/drift-detection.sh` lines 15-35, 58-68, 78-88, 130-138, 150-158, 185-192;
-`scripts/check-marketplace.py` lines 166-262. Both key lists and both name lists were diffed
-mechanically rather than compared by eye. `scripts/_test/drift-detection.sh` was not executed (it
-drives the real `claude` CLI). Neither install script was modified.
+The previous anchor, `useful-claude-add-ons@d61342c3`, **does not resolve in this repository** -
+`git cat-file -e d61342c3^{commit}` fails. So `git diff --name-only <anchor>..HEAD -- <cited paths>`,
+which is the entire re-verification mechanism, could not run at all. The anchor was written by
+`519754fa` ("crew 0.16.28: fix the codemap anchor writer, and refresh five subsystems (#82)"), a
+**squash** merge - and a squash discards the branch commit, so the sha the writer recorded died with
+the branch. Fixed for future passes in crew 0.19.13: the writer now records
+`git merge-base HEAD origin/main`, a commit that is already on the trunk and survives the squash.
+
+Because the anchor could not be used, the citations were re-pointed mechanically instead: the two
+install scripts were aligned between revisions with `difflib`, and every cited line was mapped by
+**content** - the text at the old line had to equal the text at the new one, or the citation was
+set aside for a full re-read rather than renumbered. Two lines failed that test and were re-read:
+`MENU_DEFAULT` (the array grew from 21 entries to 24) and the `.ps1` skill catalog (25 -> 34).
+
+That alignment also settled where these claims actually came from, and the answer is **not** the
+recorded anchor. Every citation in this note matches `0131d0f0` (2026-09-05) exactly, and none
+matches `519754fa` (2026-09-09), where the same lines already sat 73 (`.sh`) and 62 (`.ps1`) lines
+further down. The note's own `verified: 2026-09-06` line was the honest record; the anchor was
+three days and two commits ahead of the evidence. This is the tree-moved-under-the-measurement trap
+recorded in `TODO.md`, and it is worth naming precisely: the anchor was not merely unresolvable, it
+was never the commit the claims were true of. A resolvable-but-wrong anchor would have produced a
+confident, empty `git diff` - a clean bill of health for citations that were already off by 73
+lines.
+
+Not executed in this pass: `scripts/_test/drift-detection.sh` (it drives the real `claude` CLI).
+Neither install script was modified.
