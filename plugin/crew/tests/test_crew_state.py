@@ -578,6 +578,54 @@ def test_a_pull_of_older_commits_makes_the_graph_stale(tmp_path):
     assert got["current"] is False, "backdated commit must invalidate the graph"
 
 
+def test_a_docs_only_commit_leaves_the_graph_current(tmp_path):
+    """The treadmill. `graphStale` had no fixpoint while graphify-out is tracked.
+
+    Freshness used to be `built_sha == HEAD`. Rebuilding the graph produces a
+    commit (graphify-out/ is a tracked artefact in the repos this runs in), and
+    that commit moves HEAD past the sha the rebuild just stamped - so the act
+    of clearing the trigger re-fired it, every time, forever. Observed in
+    AI-Software on 2026-09-13: cleared once, fired again on the same action,
+    taking the trigger count from four to five.
+
+    What the check actually wants to know is whether any CODE moved since the
+    graph was built. A commit touching only docs, or the graph artefact itself,
+    cannot invalidate a graph of the code.
+    """
+    root = crew_fixtures.make_repo(tmp_path, graph=True, graph_sha="head")
+    assert crew_state.read_knowledge(str(root), {})["graph"]["current"] is True
+
+    (root / "docs").mkdir()
+    (root / "docs" / "note.md").write_text("# not code\n", encoding="utf-8")
+    crew_fixtures.commit_file(root, "docs/note.md")
+
+    got = crew_state.read_knowledge(str(root), {})["graph"]
+    assert got["current"] is True, (
+        "a docs-only commit must not stale the graph - otherwise the trigger "
+        "can never be cleared, because clearing it requires a commit"
+    )
+
+
+def test_a_commit_to_the_graph_artefact_itself_leaves_the_graph_current(tmp_path):
+    """Committing the rebuild must not invalidate the rebuild."""
+    root = crew_fixtures.make_repo(tmp_path, graph=True, graph_sha="head")
+    (root / "graphify-out" / "GRAPH_REPORT.md").write_text("x\n", encoding="utf-8")
+    crew_fixtures.commit_file(root, "graphify-out/GRAPH_REPORT.md")
+
+    got = crew_state.read_knowledge(str(root), {})["graph"]
+    assert got["current"] is True
+
+
+def test_a_code_commit_still_stales_the_graph(tmp_path):
+    """The over-correction guard. Narrowing must not stop real staleness."""
+    root = crew_fixtures.make_repo(tmp_path, graph=True, graph_sha="head")
+    (root / "app.py").write_text("def f(): pass\n", encoding="utf-8")
+    crew_fixtures.commit_file(root, "app.py")
+
+    got = crew_state.read_knowledge(str(root), {})["graph"]
+    assert got["current"] is False, "a code commit MUST still stale the graph"
+
+
 def test_graph_out_dir_comes_from_config(tmp_path):
     root = crew_fixtures.make_repo(tmp_path)
     (root / "custom-out").mkdir()

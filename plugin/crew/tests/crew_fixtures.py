@@ -88,6 +88,17 @@ def head_sha(root, length=7):
     return done.stdout.strip()
 
 
+def commit_file(root, path, message=None):
+    """Stage and commit one path at the current time. The ordinary case.
+
+    commit_with_date() exists for the backdated-pull regression; this is the
+    plain one, used by the tests that ask which PATHS a commit touched rather
+    than when it happened.
+    """
+    _git(root, "add", path)
+    _git(root, "commit", "-q", "-m", message or ("add " + path))
+
+
 def commit_with_date(root, path, iso_date):
     """Commit one file with both dates forced, simulating a pulled commit.
 

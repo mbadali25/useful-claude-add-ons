@@ -657,6 +657,20 @@ def _built_at_commit(path):
     return found.group(1).decode("ascii") if found else None
 
 
+# Paths whose contents cannot invalidate a graph OF THE CODE, used by
+# _read_graph to tell "HEAD moved" apart from "the code moved". Deliberately
+# short and deliberately a DENY-list: anything not named here still counts as
+# code, so a path nobody anticipated stales the graph rather than silently
+# not doing so. The graph's own output directory is excluded separately by
+# _read_graph, because it is configurable (`graph.out`) and so is not a
+# constant.
+GRAPH_NONCODE_PATHS = (
+    "docs/**",
+    ".crew/**",
+    ".work/**",
+)
+
+
 def _read_graph(root, cfg):
     """Graph presence, and whether it was built at the current HEAD.
 
@@ -684,7 +698,44 @@ def _read_graph(root, cfg):
 
     built = _built_at_commit(path)
     head = git_out(root, "rev-parse", "--short=7", "HEAD")
-    current = bool(built) and bool(head) and built[:7] == head[:7]
+    if not built or not head:
+        return {"present": True, "current": False,
+                "builtAt": built, "path": path}
+
+    # Fast path, and the only one that needs no second git call.
+    if built[:7] == head[:7]:
+        return {"present": True, "current": True,
+                "builtAt": built, "path": path}
+
+    # Not HEAD -- but "not HEAD" is not the same as "stale", and treating it
+    # that way gave this trigger NO FIXPOINT. graphify-out/ is a TRACKED
+    # artefact in the repos this runs in, so recording a rebuild takes a
+    # commit, and that commit moves HEAD past the sha the rebuild just
+    # stamped. Clearing graphStale therefore re-fired it, every time, forever.
+    # Measured in AI-Software on 2026-09-13: cleared once, fired again on the
+    # same action, taking that session's trigger count from four to five.
+    #
+    # The question this check actually wants answered is whether any CODE
+    # moved since the graph was built. So ask git exactly that, over
+    # everything EXCEPT the paths that cannot change a graph of the code: the
+    # graph's own output directory, crew's own state, and docs.
+    #
+    # The exclusion list is a DENY-list on purpose. A path nobody thought
+    # about still counts as code and still stales the graph, so the failure
+    # direction stays honest -- the same reason a missing `built_at_commit`
+    # sidecar resolves to stale rather than to fresh.
+    #
+    # This mirrors `verify-anchors.py`, which measures each subsystem against
+    # its OWN pathspec rather than against all of HEAD, and which reports
+    # FRESH for trees this function used to call stale.
+    excludes = [":(exclude)%s/**" % out.rstrip("/")]
+    excludes += [":(exclude)%s" % g for g in GRAPH_NONCODE_PATHS]
+    changed = git_out(root, "diff", "--name-only", "%s..%s" % (built, head),
+                      "--", ".", *excludes)
+    # None means the diff could not run at all -- an unresolvable `built` sha
+    # (squash-merged, rebased away, or garbage-collected) lands here. Unknown
+    # resolves to stale, the honest direction.
+    current = changed is not None and changed == ""
     return {"present": True, "current": current,
             "builtAt": built, "path": path}
 
