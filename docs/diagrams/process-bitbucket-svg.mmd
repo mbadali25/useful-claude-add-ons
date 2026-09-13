@@ -1,4 +1,5 @@
-%% Generated from useful-claude-add-ons@8631fd0e on 2026-09-12. Verify before trusting.
+%% Generated from useful-claude-add-ons@8631fd0e on 2026-09-12, updated against
+%% 694e9bd4 on 2026-09-13 for the 1.2.1 exit-code change. Verify before trusting.
 %% Anchors: skills/mermaid-svg-bitbucket/scripts/render_mermaid.py, skills/mermaid-svg-bitbucket/assets/mermaid-config.json, skills/mermaid-svg-bitbucket/assets/bitbucket-pipelines.snippet.yml, skills/mermaid-svg-bitbucket/SKILL.md
 %% mermaid-svg-bitbucket: how a fenced block becomes a committed SVG, and what each gate can and cannot see.
 %% --
@@ -33,9 +34,18 @@
 %% Now: render records svgHash and --check compares it. A manifest predating version
 %%   2 has no hash to compare, so it gets a structural check - non-empty, an <svg
 %%   element, a closing tag - and is reported UNVERIFIED rather than counted as up to
-%%   date. Exit 0 there is deliberate: structurally-intact is the strongest claim
-%%   available without a recorded hash, and the output carries that caveat instead of
-%%   the summary swallowing it.
+%%   date.
+%% UNVERIFIED exited 0 until 1.2.1, on the argument that structurally-intact is the
+%%   strongest claim available without a recorded hash. It is - and that is the reason
+%%   to go red, not a reason to stay green: the caveat was in the output while the exit
+%%   code, which is the only part CI reads, still said pass. A green line meaning less
+%%   than its reader assumes is the defect this diagram was drawn to expose, so the
+%%   fix kept reproducing it one layer down. It now exits 1, naming render --force as
+%%   the one-time fix, and stays distinct in the text from DAMAGED: UNVERIFIED does not
+%%   claim the SVG is wrong, only that nothing can say it is right.
+%%   Both failures are reported in one pass - stale, damaged and unverified sections
+%%   print together before the single exit - because returning on the first category
+%%   found is how the unverified count used to vanish whenever anything else was wrong.
 %%   postprocess()'s foreignObject refusal is still a RENDER-time gate only; it never
 %%   runs in CI strategy A, which is the recommended one and needs neither Node nor
 %%   Chromium precisely because it does not render.
@@ -82,8 +92,8 @@ flowchart TB
         C6["a real truncated render and a zero-byte file<br/>both exit 1 now, under <b>either</b> manifest<br/>version - the committed regression proves it<br/>by damaging a genuine mmdc render"]
         C2["but returns 1 on the <b>FIRST</b> Markdown file<br/>still holding an unrendered fence :336-339,<br/>before any other file is examined.<br/>Asymmetric on purpose or not, the effect is<br/>that one fence hides the rest."]
         C3(["exit 1 - 'Run scripts/render_mermaid.py<br/>and commit the result.'"])
-        C4(["exit 0 - 'All N diagram(s) up to date.'<br/>printed <b>only</b> when nothing was unverified"])
-        C7(["exit 0 - 'N could not be content-verified'<br/>the unknown survives into the output<br/>instead of collapsing into C4"])
+        C4(["exit 0 - 'All N diagram(s) up to date.'<br/>the <b>only</b> green state: every SVG compared<br/>against a recorded hash and matched"])
+        C7(["exit 1 - 'N could not be content-verified'<br/><b>was exit 0 until 1.2.1.</b> The caveat was in the<br/>output while the exit code - the only part CI<br/>reads - still said pass. Names render --force<br/>as the one-time fix, and stays distinct from<br/>DAMAGED: no claim the SVG is wrong, only that<br/>nothing can say it is right"])
         C1 --- C2
         C1 --- C5
         C5 --- C6

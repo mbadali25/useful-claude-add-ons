@@ -183,6 +183,41 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
+- **`mermaid-svg-bitbucket` 1.2.1: `--check` now exits 1 on `UNVERIFIED`, not
+  0.** 1.2.0 taught `--check` to open the SVG instead of trusting
+  `svg.exists()`. A manifest predating `version: 2` has no `svgHash` to compare,
+  so it got a structural check instead -- non-empty, an `<svg` element, a
+  closing tag -- and reported `UNVERIFIED` while exiting 0. The caveat was in
+  the output; the exit code, which is the only part CI reads, still said pass.
+
+  That is the same defect 1.2.0 was written to fix, one layer down: a green line
+  meaning less than its reader assumes. Structurally-intact with no recorded
+  hash is the strongest claim the tool can honestly make, and that is an
+  argument for saying so loudly rather than for passing. It now exits 1.
+
+  The red is one-time and the failure names the command that ends it: one
+  `render_mermaid.py --force`, then commit the re-rendered SVGs and the
+  rewritten manifest. `--force` is load-bearing in that sentence -- the source
+  hash already matches, so `current` is true at
+  `skills/mermaid-svg-bitbucket/scripts/render_mermaid.py:390` and a plain run
+  skips the file at `:413` without ever reaching the line that records
+  a hash. A message naming a fix that does not fix it would have been the
+  cheaper mistake to make and the more expensive one to find.
+
+  `UNVERIFIED` and `DAMAGED` share the exit code and stay separate findings in
+  the text, because they are not the same news: `DAMAGED` says the SVG is
+  provably not what was rendered, `UNVERIFIED` says nothing about the SVG at
+  all. The report also prints stale, damaged and unverified in **one** pass
+  before a single exit -- the old shape returned on stale-or-damaged before the
+  unverified section ran, so the count of what could not be checked disappeared
+  from the output whenever anything else was also wrong. Now that unverified is
+  itself a failure, that shape would have dropped a whole category of finding,
+  and `test_damaged_and_unverified_are_both_reported` holds it open.
+
+  Sabotage-tested: reverting the unverified branch to `return 0` reddens both
+  new tests, and each asserts the exit code and the message text separately, so
+  a right-code/useless-text regression still fails. Suite: 14 passed, 0 failed.
+
 - **`report-builder` 2.0.0 and `solomon-sop-maker` 2.0.0 are now redirect
   stubs.** Both descriptions open with "Do NOT use this skill - use
   `doc-builder` instead", so nothing referencing the old names breaks and

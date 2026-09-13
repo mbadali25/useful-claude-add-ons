@@ -83,9 +83,11 @@ def svg_digest(path: Path) -> str:
 
 def svg_structure_ok(path: Path) -> tuple[bool, str]:
     """A cheap integrity check that needs no recorded hash, for SVGs written by a
-    version of this script that did not record one. It is what stands between a
-    pre-v2 manifest and a silent pass, so it must stay honest about what it
-    cannot see: a well-formed SVG with wrong contents passes here."""
+    version of this script that did not record one. It separates the two pre-v2
+    outcomes - a file that is provably broken (DAMAGED) from one that is merely
+    unproven (UNVERIFIED) - and it must stay honest about what it cannot see: a
+    well-formed SVG with wrong contents passes here. Passing is why UNVERIFIED
+    still exits 1; it is the absence of evidence, not evidence."""
     try:
         raw = path.read_bytes()
     except OSError as exc:
@@ -329,7 +331,8 @@ def main() -> int:
                     help="SVG background; keep it opaque so diagrams stay legible "
                          "against Bitbucket dark mode (default: #ffffff)")
     ap.add_argument("--check", action="store_true",
-                    help="verify SVGs are current; do not write anything. Exits 1 if stale.")
+                    help="verify SVGs are current; do not write anything. Exits 1 if any "
+                         "diagram is stale, damaged, or could not be content-verified.")
     ap.add_argument("--force", action="store_true", help="re-render even if the hash matches")
     ap.add_argument("--no-rewrite", action="store_true",
                     help="only render standalone .mmd files; leave Markdown untouched")
@@ -424,7 +427,12 @@ def main() -> int:
 
     # ---- report -----------------------------------------------------------
     if args.check:
-        if stale or damaged:
+        # One failure block for all three findings. An earlier shape returned on
+        # stale-or-damaged BEFORE the unverified section ran, so the count of
+        # what could not be checked vanished from the output whenever anything
+        # else was also wrong - the same "unknown collapses into a tidier
+        # answer" bug in a smaller costume. Print every section, then exit once.
+        if stale or damaged or unverified:
             if stale:
                 print("Diagrams are out of date:")
                 for k in stale:
@@ -433,22 +441,33 @@ def main() -> int:
                 print("Diagrams whose SVG on disk is damaged:")
                 for k, why in damaged:
                     print(f"  DAMAGED: {k} - {why}")
-            print("\nRun scripts/render_mermaid.py and commit the result.")
+            if unverified:
+                print("Diagrams that could not be content-verified:")
+                for k in unverified:
+                    print(f"  UNVERIFIED: {k} - no svgHash recorded "
+                          f"(manifest predates version {MANIFEST_VERSION})")
+            verified = len(mmd_files) - len(stale) - len(damaged) - len(unverified)
+            print(f"\n{verified} diagram(s) verified; {len(stale)} stale, "
+                  f"{len(damaged)} damaged, {len(unverified)} unverified.")
+            if stale or damaged:
+                print("Run scripts/render_mermaid.py and commit the result.")
+            if unverified:
+                # UNVERIFIED is a different finding from DAMAGED and the text has
+                # to keep them apart: nothing here says the SVG is wrong, only
+                # that no recorded hash exists to say it is right. Exiting 1 on
+                # that is the point - a green CI line meaning less than its
+                # reader assumes is the defect --check was fixed for. The red is
+                # one-time, and the command that ends it is named here.
+                print("UNVERIFIED is not DAMAGED. These SVGs passed a structural "
+                      "check - non-empty, an <svg element, a closing tag - and "
+                      "nothing says they are wrong; what is missing is a recorded "
+                      "hash to compare them against, so nothing says they are "
+                      "right either.")
+                print("Run scripts/render_mermaid.py --force once to re-render "
+                      "and record their hashes (--force is required: the source "
+                      "hash already matches, so a plain run would skip them). "
+                      "They pass from then on.")
             return 1
-        # Never print "all up to date" while something was not actually checked.
-        # The count of what could not be verified has to survive into the output,
-        # or this line claims a check that did not happen for those files.
-        if unverified:
-            print(f"{len(mmd_files) - len(unverified)} diagram(s) up to date; "
-                  f"{len(unverified)} could not be content-verified:")
-            for k in unverified:
-                print(f"  UNVERIFIED: {k} - no svgHash recorded "
-                      f"(manifest predates version {MANIFEST_VERSION})")
-            print("\nThese passed a structural check only: non-empty, an <svg "
-                  "element, a closing tag.")
-            print("Re-run scripts/render_mermaid.py --force once to record "
-                  "their hashes.")
-            return 0
         print(f"All {len(mmd_files)} diagram(s) up to date.")
         return 0
 

@@ -105,20 +105,102 @@ def test_intact_svg_with_recorded_hash_passes(tmp_path):
     assert "All 1 diagram(s) up to date." in out, out
 
 
-def test_legacy_manifest_does_not_claim_a_check_it_did_not_do(tmp_path):
-    """An intact SVG under a v1 manifest passes, but must not be called verified.
+def test_legacy_manifest_is_unverified_and_fails(tmp_path):
+    """An intact SVG under a v1 manifest must be reported UNVERIFIED and exit 1.
 
-    Exit 0 is deliberate: the structural check is the strongest test available
-    without a recorded hash, and turning every pre-v2 repo's CI red would be a
-    behaviour change rather than a fix. What is NOT allowed is the summary
-    claiming "All N up to date" - that is the unknown collapsing into the
-    safe-looking value, which is the bug this file exists to prevent.
+    This case exited 0 until 1.2.1, on the argument that a structural check is
+    the strongest claim available without a recorded hash. It is - and that is
+    the reason to go red, not a reason to stay green. A CI line that means less
+    than its reader assumes is the exact defect --check was fixed for one
+    release earlier, so shipping a weaker green under the same name reintroduces
+    it in the fix.
+
+    The red is one-time: one render --force records the hash and the same SVG
+    passes from then on, which test_recording_the_hash_turns_the_red_green
+    asserts against the committed fixture.
     """
     code, out = check(build(tmp_path, GOOD_SVG, manifest_version=1))
-    assert code == 0, out
+    assert code == 1, f"an unverified diagram passed --check:\n{out}"
     assert "UNVERIFIED" in out, out
-    assert "All 1 diagram(s) up to date." not in out, out
     assert "could not be content-verified" in out, out
+    # UNVERIFIED and DAMAGED are different findings and the text must keep them
+    # apart - this SVG is intact, and calling it damaged sends someone hunting a
+    # corruption that is not there. Match the finding line ("DAMAGED: <file>"),
+    # not the bare word, which the explanation deliberately uses to contrast the
+    # two.
+    assert "  DAMAGED: " not in out, out
+    assert "0 damaged" in out, out
+    assert "All 1 diagram(s) up to date." not in out, out
+    # A failure naming no fix is a failure someone will suppress instead. Assert
+    # the exit code and the remedy separately, so a message-only regression -
+    # right code, useless text - still reddens this test.
+    assert "--force" in out, f"the failure must name the command that ends it:\n{out}"
+
+
+def test_recording_the_hash_turns_the_red_green(tmp_path):
+    """The same intact SVG passes once its svgHash is on record.
+
+    render() cannot run here: CI has no mmdc, and resolve_mmdc() returns the
+    bare name "mmdc", which on Windows resolves to a .CMD that subprocess.run
+    cannot execute without shell=True. So the post-render state is built with
+    the script's own Manifest and svg_digest - the same call render() makes, at
+    the same point - rather than a hand-computed digest that could drift from
+    the function under test.
+    """
+    root = build(tmp_path, GOOD_SVG, manifest_version=1)
+    assert check(root)[0] == 1, "fixture is not red before the hash is recorded"
+
+    manifest = R.Manifest(root / R.MANIFEST_NAME)
+    entry = dict(manifest.get("diagrams/flow.mmd"))
+    entry["svgHash"] = R.svg_digest(root / "diagrams" / "flow.svg")
+    manifest.put("diagrams/flow.mmd", **entry)
+    manifest.data["version"] = R.MANIFEST_VERSION
+    manifest.save()
+
+    code, out = check(root)
+    assert code == 0, out
+    assert "All 1 diagram(s) up to date." in out, out
+    assert "UNVERIFIED" not in out, out
+
+
+def build_mixed(tmp_path: Path) -> Path:
+    """Two diagrams: one v2 entry whose SVG was damaged after rendering, and one
+    legacy entry with an intact SVG. Both findings have to reach the output."""
+    root = tmp_path / "repo"
+    (root / "diagrams").mkdir(parents=True)
+    config = SKILL / "assets" / "mermaid-config.json"
+    fingerprint = hashlib.sha256(config.read_bytes()).hexdigest()[:16] + ":#ffffff"
+
+    entries = {}
+    for name, payload, record_hash in (("broken", DAMAGE["truncated"], True),
+                                       ("legacy", GOOD_SVG, False)):
+        (root / "diagrams" / f"{name}.mmd").write_text(SOURCE, encoding="utf-8", newline="\n")
+        (root / "diagrams" / f"{name}.svg").write_bytes(payload)
+        entry = {"hash": R.digest(SOURCE, fingerprint), "svg": f"diagrams/{name}.svg"}
+        if record_hash:
+            entry["svgHash"] = hashlib.sha256(GOOD_SVG).hexdigest()[:16]
+        entries[f"diagrams/{name}.mmd"] = entry
+
+    (root / R.MANIFEST_NAME).write_text(
+        json.dumps({"version": 2, "diagrams": entries}, indent=2) + "\n", encoding="utf-8")
+    return root
+
+
+def test_damaged_and_unverified_are_both_reported(tmp_path):
+    """A damaged diagram must not hide an unverified one.
+
+    The report block used to return on stale-or-damaged before the unverified
+    section ran, so the count of what could not be checked disappeared from the
+    output whenever anything else was also wrong. Now that unverified is itself
+    a failure, that shape would silently drop a whole category of finding.
+    """
+    code, out = check(build_mixed(tmp_path))
+    assert code == 1, out
+    assert "DAMAGED: diagrams/broken.mmd" in out, out
+    assert "UNVERIFIED: diagrams/legacy.mmd" in out, out
+    # The summary counts every category, so a stale or damaged file can never be
+    # tallied as verified.
+    assert "0 diagram(s) verified; 0 stale, 1 damaged, 1 unverified." in out, out
 
 
 def test_render_records_the_hash_of_the_postprocessed_file(tmp_path):
