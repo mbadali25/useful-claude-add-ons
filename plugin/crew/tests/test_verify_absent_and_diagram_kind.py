@@ -13,6 +13,7 @@ not be checked reported as something that was checked and found clean.
    the command must name which one happened.
 """
 import os
+import subprocess
 
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_fixtures
@@ -154,7 +155,16 @@ def test_review_states_the_gap_rule_it_used_to_justify_wrongly():
 def test_verify_json_really_is_ignored_here():
     """The claim the fix rests on, checked against the repo rather than
     asserted. If `.crew/verify.json` ever becomes tracked, this test fails and
-    the wording in review.md gets revisited instead of quietly going stale."""
+    the wording in review.md gets revisited instead of quietly going stale.
+
+    It asserts NOT-TRACKED, not not-present. It used to assert the file was
+    absent from disk, which is a different claim and a wrong one: `/crew:verify`
+    is a command crew itself ships, and writing `.crew/verify.json` is the whole
+    of what it does. So the moment anyone ran it in this checkout, crew's own
+    suite went red over a file crew had just been asked to create - a test
+    failing for doing the documented thing. Trackedness is what the docstring
+    always claimed and what review.md's wording actually rests on.
+    """
     repo = os.path.dirname(os.path.dirname(os.path.dirname(
         os.path.dirname(os.path.abspath(__file__)))))
     gitignore = os.path.join(repo, ".gitignore")
@@ -163,7 +173,14 @@ def test_verify_json_really_is_ignored_here():
     with open(gitignore, encoding="utf-8") as handle:
         body = handle.read().replace("\r\n", "\n")
     assert ".crew/*" in body
-    assert not os.path.isfile(os.path.join(repo, ".crew", "verify.json"))
+
+    tracked = subprocess.run(
+        ["git", "-C", repo, "ls-files", "--error-unmatch", ".crew/verify.json"],
+        capture_output=True, text=True, check=False)
+    assert tracked.returncode != 0, (
+        ".crew/verify.json is TRACKED. review.md says the map does not travel "
+        "between machines; if that changed, revisit the wording there."
+    )
 
 
 def test_review_no_longer_pins_a_number_to_the_roster():

@@ -44,43 +44,58 @@ from crew_endpoints import (
 # itself. `tests/test_module_split.py` is what actually asserts each one
 # resolves to the object `crew_guards` defines, so deleting one here is caught
 # by a test rather than by this comment.
+#
+# The suppression on every name below is for ruff, which does not read the
+# pylint pragma above. It is per-name on purpose. A file-level suppression
+# would also silence a genuinely unused import added here later, and an
+# `__all__` would be worse still: ruff accepts one as proof of re-export, but
+# it doubles as this module's advertised public surface, and a list holding
+# only the `crew_guards` names would declare `read_metrics`,
+# `evaluate_triggers` and the rest private while every caller spells them
+# `crew_state.<name>`.
+#
+# This comment deliberately does NOT spell the directive out. Ruff scans
+# comments for one, so writing the literal token here made it read this prose
+# as two malformed directives and warn about them - documentation of the
+# convention becoming a live claim, which is the same trap `check_self_claims`
+# hit on the paragraph explaining its own marker syntax.
 from crew_guards import (
-    ALL_GUARD_NAMES,
-    CHANGE_REQUIREMENTS,
-    CHANGE_REQUIREMENT_DEFAULT,
-    GUARD_APPROVAL_PREFIX,
-    GUARD_APPROVAL_TTL,
-    GUARD_DEFAULTS,
-    GUARD_LOG_PATH,
-    GUARD_NAMES,
-    GUARD_POLICIES,
-    GUARD_POLICY_DEFAULT,
-    INSTALL_DEFAULTS,
-    INSTALL_POLICIES,
-    INSTALL_POLICY_DEFAULT,
-    INSTALLABLE,
-    PRODUCTION_DEFAULTS,
-    PROD_GUARD_NAMES,
-    PROD_LEVELS,
-    PROD_LEVEL_DEFAULT,
-    RATCHETED_KEYS,
-    effective_install_policy,
-    effective_ratcheted,
-    guard_policy_rank,
-    install_plan,
-    install_policy_rank,
-    normalise_guard_policy,
-    normalise_install_policy,
-    normalise_require_for_production,
-    require_change_rank,
-    classify_access,
-    guard_tiers,
-    matches_production,
-    normalise_prod_level,
-    prod_decision,
-    prod_level_rank,
-    production_targets,
-    ratchet_spec,
+    ALL_GUARD_NAMES,  # noqa: F401
+    CHANGE_REQUIREMENTS,  # noqa: F401
+    CHANGE_REQUIREMENT_DEFAULT,  # noqa: F401
+    GUARD_APPROVAL_PREFIX,  # noqa: F401
+    GUARD_APPROVAL_TTL,  # noqa: F401
+    GUARD_DEFAULTS,  # noqa: F401
+    GUARD_LOG_PATH,  # noqa: F401
+    GUARD_NAMES,  # noqa: F401
+    GUARD_POLICIES,  # noqa: F401
+    GUARD_POLICY_DEFAULT,  # noqa: F401
+    INSTALL_DEFAULTS,  # noqa: F401
+    INSTALL_POLICIES,  # noqa: F401
+    INSTALL_POLICY_DEFAULT,  # noqa: F401
+    INSTALLABLE,  # noqa: F401
+    PRODUCTION_DEFAULTS,  # noqa: F401
+    PROD_GUARD_NAMES,  # noqa: F401
+    PROD_LEVELS,  # noqa: F401
+    PROD_LEVEL_DEFAULT,  # noqa: F401
+    RATCHETED_KEYS,  # noqa: F401
+    effective_install_policy,  # noqa: F401
+    effective_ratcheted,  # noqa: F401
+    guard_policy_rank,  # noqa: F401
+    install_plan,  # noqa: F401
+    install_policy_rank,  # noqa: F401
+    normalise_guard_policy,  # noqa: F401
+    normalise_install_policy,  # noqa: F401
+    normalise_require_for_production,  # noqa: F401
+    require_change_rank,  # noqa: F401
+    classify_access,  # noqa: F401
+    guard_tiers,  # noqa: F401
+    matches_production,  # noqa: F401
+    normalise_prod_level,  # noqa: F401
+    prod_decision,  # noqa: F401
+    prod_level_rank,  # noqa: F401
+    production_targets,  # noqa: F401
+    ratchet_spec,  # noqa: F401
 )
 # pylint: enable=unused-import
 
