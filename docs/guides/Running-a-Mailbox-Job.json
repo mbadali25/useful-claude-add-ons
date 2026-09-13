@@ -15,7 +15,7 @@
 
     { "type": "heading", "keep_with_next": true, "text": "2. Set up, once per computer" },
     { "type": "para", "text": "One command. It installs the skills and everything they need. In Windows PowerShell:" },
-    { "type": "step", "text": "`irm 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/5d2e29501ae0fa765d025c119c210ffeae7af5c9/scripts/install-prerequisites.ps1' | iex`" },
+    { "type": "step", "text": "`irm 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/9fde7d828c4145552ba5e045cfafe8efa89216f4/scripts/install-prerequisites.ps1' | iex`" },
     { "type": "step", "text": "Pick **exchange-mailbox-cleanup** and **exchange-mailbox-restore** from the list it shows. Take **infra-work-ticketing** as well if you want the assistant to open ServiceDesk Plus tickets for you - it works without it and keeps the record in the closing report instead." },
     { "type": "tip", "text": "There is nothing else to install. The skills carry their own scripts, so there is no repository to clone and no path to set. Anything else they need - the Exchange and Graph modules - the assistant checks for and installs under your own user profile after asking you once, so it never needs an administrator prompt." },
 
