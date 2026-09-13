@@ -6,6 +6,25 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`obsidian-vault` 0.3.8: a second client's identity removed from the shipped
+  examples and from `TODO.md`.** A different sub-company from the one the three
+  entries above covered, scrubbed the same way and with the same replacement
+  vocabulary, so no example loses what it taught. In `obsidian-vault`, a vault
+  name embedding that client's brand appeared in the install command's
+  per-machine vault table, in `vault_profiles.py`'s commentary on the profile
+  set, and in both test modules -- the docstring fixture table, the
+  measured-notes key, the zero-plugin classification tuple, and the
+  not-installed diagnose fixture. The renamed vault still differs from the
+  other zero-plugin vault it sits beside, so the detection cases that depend on
+  telling two plugin-less vaults apart still do. Root `TODO.md` carried four
+  references to the consumer repo one finding was filed from, two of them file
+  paths inside that repo; they stay paths, so the finding still says where its
+  evidence lives. `TODO.md` sits outside every entry and bumps nothing, and no
+  other marketplace entry carried the marker.
+
+  **Git history is again deliberately not rewritten**, for the reason the entry
+  below gives.
+
 - **`gizmoduck` 0.5.2, `obsidian-vault` 0.3.7, `claude-memories-vault` 1.1.1:
   the same customer's identifiers removed from the entries `crew` 0.19.24 could
   not reach.** That change scrubbed `plugin/crew/` and reported, without
