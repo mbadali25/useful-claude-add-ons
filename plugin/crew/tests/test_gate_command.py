@@ -12,10 +12,12 @@ Same two directions as `test_docs_routing.py` and `test_promote_merge_gate.py`:
   * The interface it names EXISTS. Bitbucket's `merge_gate.sh` is on disk and
     its argument loop is asked directly, never grepped: `usage()` is a `sed` of
     the script's own header comment, so a grep "confirms" a flag whether or not
-    it is wired. `skills/github/scripts/merge_gate.sh` is built in a parallel
-    stream, so its presence is a SKIP and its absence is not a failure -- but
-    the reference to it in the prose is asserted unconditionally, because that
-    reference is what the parallel stream is being written against.
+    it is wired. `skills/github/scripts/merge_gate.sh` was built in a parallel
+    stream and LANDED on `main` in #141, so the check that was a SKIP while it
+    was in flight now runs for real against the file. The guard stays: its
+    absence is still a skip rather than a failure, because a suite that turns
+    red when a sibling skill is uninstalled is testing the checkout, not the
+    command.
 
 Every run here is offline. `BB_CMD=false` cannot reach a network.
 """
@@ -282,16 +284,17 @@ def test_bitbucket_merge_gate_sh_has_no_status_subcommand():
 
 
 @pytest.mark.skipif(not os.path.isfile(_GH_GATE),
-                    reason="skills/github/scripts/merge_gate.sh is being "
-                           "built in a parallel stream")
+                    reason="skills/github/scripts/merge_gate.sh is not "
+                           "installed in this checkout")
 def test_github_merge_gate_sh_matches_the_interface_gate_md_documents():
-    """A SKIP while the parallel stream is in flight, and a real check the
-    moment the file lands -- so the interface `gate.md` documents is verified
-    against the script rather than against a message about the script.
+    """The interface `gate.md` documents, verified against the script rather
+    than against a message about the script.
 
-    Deliberately NOT a `pytest.xfail` and not deleted: a skip that names the
-    reason is the honest state, and it becomes coverage on its own the day the
-    file appears."""
+    This was a SKIP while the GitHub stream was in flight, and it became
+    coverage on its own the day #141 landed -- which is the whole reason it was
+    written as a guarded check rather than as an `xfail` or not at all. It
+    stays guarded: `skills/github` is a separate marketplace entry, and a
+    checkout without it should skip rather than fail."""
     proc = subprocess.run(
         [_BASH, _GH_GATE.replace("\\", "/"), "enable", "o", "r",
          "--branch", "main"],

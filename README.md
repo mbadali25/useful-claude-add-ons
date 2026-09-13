@@ -9,13 +9,13 @@ One-line bootstrap — no `git clone` needed. Pulls the prerequisite installer s
 **Windows** (elevated PowerShell):
 
 ```powershell
-irm 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/9fde7d828c4145552ba5e045cfafe8efa89216f4/scripts/install-prerequisites.ps1' | iex
+irm 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/13d6fe9979315892798b56ef9d409195c67c34f6/scripts/install-prerequisites.ps1' | iex
 ```
 
 **Linux**:
 
 ```bash
-curl -fsSL 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/9fde7d828c4145552ba5e045cfafe8efa89216f4/scripts/install-prerequisites.sh' | bash
+curl -fsSL 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/13d6fe9979315892798b56ef9d409195c67c34f6/scripts/install-prerequisites.sh' | bash
 ```
 
 Both links are pinned to a specific commit SHA rather than `main`, so the exact script you're running is fixed and auditable — it can't silently change between when you review it and when you run it. **Update the SHA above whenever `scripts/install-prerequisites.*` changes**: after merging to `main`, run `git rev-parse HEAD` and swap it into both URLs.
@@ -49,7 +49,7 @@ The menu is a cursor picker — **↑/↓ to move, Space to tick, Enter to start
   ----------------------
     [x] Prerequisites: git, nodejs, npm, python3, pip3 (needs root or sudo)
     [x] Claude Code CLI (@anthropic-ai/claude-code) + PATH export
-  > [x] This repo's marketplace + 34 of 34 skills  >
+  > [x] This repo's marketplace + 35 of 35 skills  >
     [x] Team plugins: superpowers, frontend-design, excalidraw-generator
     ...
   ↑↓ move   Space toggle   Enter start   A all   N none   D defaults   Q cancel
@@ -149,7 +149,7 @@ For this repo's own skills, [`scripts/check-marketplace.py`](scripts/check-marke
 |---|---|---|
 | 1 Prerequisites | Chocolatey + git, awscli, nodejs, python (Windows) / git, nodejs, npm, python3, pip3 via apt/dnf/yum/pacman/zypper/apk (Linux) | package manager |
 | 2 Claude Code CLI | `@anthropic-ai/claude-code`, a persistent `PATH` entry for the npm global bin, and an update to the latest published version if one already exists | npm |
-| 3 This repo | The `useful-claude-add-ons` marketplace and, by default, all 34 skills<!-- claim: skills-count --> in [`skills/`](skills/) — narrow it with → in the menu or `--skills` | this repo |
+| 3 This repo | The `useful-claude-add-ons` marketplace and, by default, all 35 skills<!-- claim: skills-count --> in [`skills/`](skills/) — narrow it with → in the menu or `--skills` | this repo |
 | 4 Team plugins | `superpowers`, `frontend-design`, `excalidraw-generator` | 3 marketplaces (only the ones behind a ticked plugin) |
 | 5 find-skills | The `find-skills` skill, into the user skills dir | `vercel-labs/skills` |
 | 6 Community | `adhd-output-style`, `azure-tools`, `anthropic-office-skills`, `agent-browser`, `ppt-master`, `voltagent-infra`, `voltagent-qa-sec` | 4 marketplaces (only the ones behind a ticked plugin) |
@@ -834,6 +834,7 @@ See [`Skill-Authoring-Standard.md`](Skill-Authoring-Standard.md) for how a skill
 | [`drata`](skills/drata) | Compliance | Drata Public API — controls, monitoring tests, evidence, personnel, policies, frameworks, risks, vendors, assets across US/EU/APAC regions. | SOC 2 or ISO 27001 audit prep; exporting evidence or a personnel roster for an auditor; chasing a failing monitor; a CI compliance gate. | Automatic |
 | [`exchange-mailbox-cleanup`](skills/exchange-mailbox-cleanup) | M365 / Exchange | Walks a non-technical operator through Exchange Online mailbox cleanup and offboarding, one step at a time - preflight and module install under the user profile, SDP ticket, litigation hold, preservation baseline, account deletion, eDiscovery export. Typed confirmation naming the count on every irreversible step. | "Sarah left on Friday - put her mailbox on hold and free up the licence"; a `holdlist.csv` of leavers from HR; "delete the account but keep the email". | Automatic |
 | [`exchange-mailbox-restore`](skills/exchange-mailbox-restore) | M365 / Exchange | Walks the same operator through restoring a mailbox or removing a hold. Triage on `MailboxState` first, then exactly one of five mutually exclusive paths - two of which destroy the preserved copy and are gated accordingly. Installs alongside `exchange-mailbox-cleanup`, whose preflight and references it shares. | "The manager needs to read the ex-employee's mail"; "we deleted someone by mistake last week"; "take Dave off litigation hold, he's staying". | Automatic |
+| [`github`](skills/github) | SCM / DevOps | Branch protection and repository rulesets through `gh` — reads both gate surfaces, exports them to a file before touching anything, removes them, and restores from that export. | Clearing a merge gate for a release and putting it back exactly as it was; working out why a merge is still blocked after protection was "turned off"; a 403/404 from the branch-protection endpoint. | Automatic |
 | [`i-have-adhd`](skills/i-have-adhd) | Productivity | Reshapes Claude's output for ADHD-friendly reading — leads with the next action, numbers steps, suppresses tangents. Persists for the session once invoked. | A long debugging session that has turned into a wall of text; multi-step infra work where it's easy to lose your place between turns. | Manual — `/i-have-adhd` |
 | [`infra-work-ticketing`](skills/infra-work-ticketing) | Ops / Ticketing | Makes sure infrastructure work gets a ticket and a work note in Zoho ServiceDesk Plus Cloud or Jira Cloud — asks whether a ticket exists, logs the work as it happens, opens one when there isn't. Prefers the ServiceDesk Plus MCP connector so the audit trail names a person, and falls back to the `ticketctl.py` API client when it refuses. | About to change a firewall, DNS record, or AD object with no ticket open; logging what was actually done onto an existing ticket; CAB-ready change documentation. | Automatic |
 | [`intune-graph`](skills/intune-graph) | Endpoint Mgmt | Microsoft Intune via Microsoft Graph — device lookup/troubleshooting, compliance and configuration profiles, Win32/LOB app deployment, bulk report exports. | "Why is this laptop non-compliant?"; pushing a sync to a set of machines; packaging and deploying a Win32 app; exporting device inventory; a 403/429 from `graph.microsoft.com`. | Automatic |
