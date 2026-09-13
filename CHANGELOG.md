@@ -4,6 +4,41 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Fixed
+
+- **`crew` 0.19.34: `knowledgeBehind` and `diagramsStale` had no fixpoint, so
+  refreshing could never clear them.** Both compared `anchor == HEAD` and
+  nothing else. `.crew/codemap/` and `docs/diagrams/` are **tracked**, so
+  recording a refresh takes a commit — and that commit moves HEAD past the sha
+  the refresh just wrote. The map was behind again the instant it was saved.
+
+  Measured in a throwaway fixture rather than argued: a codemap anchored at
+  HEAD reports `behind: []` while uncommitted and `behind: ['sub']` once
+  committed.
+
+  `_read_graph` already carried this fix and names the failure in its own
+  comment — "treating it that way gave this trigger NO FIXPOINT". It had been
+  applied to the graph trigger only.
+
+  `read_knowledge` now asks what its docstring always claimed it asked:
+  `git diff --name-only <anchor>..HEAD -- <the paths the map cites>`, with empty
+  output read as current despite the lag. That comparison was documented and
+  never implemented, so every map went behind on any commit anywhere in the
+  repo — the same as no signal at all. `read_diagrams` takes the deny-list form,
+  since a diagram draws nodes rather than `path:line`; `docs/**` being excluded
+  is what makes it terminate.
+
+  `None` stays distinct from `False` throughout: an unresolvable sha, a missing
+  git or a failed diff resolves to **stale**, and `unresolvable` remains its own
+  third value. A rotted citation narrows nothing — paths that no longer exist are
+  dropped, so a map whose citations broke falls back to the wider comparison
+  rather than reading current *because* it cites a deleted file.
+
+  Effect here: `knowledgeBehind` 10 → 8 (two maps were already current, agreeing
+  with an independent per-path sweep run before any code changed);
+  `diagramsStale` 6 → 6, which is correct — this makes the triggers clearable, it
+  does not declare stale things fresh.
+
 ### Added
 
 - **`crew` 0.19.33: tests for two properties CLAUDE.md calls load-bearing and

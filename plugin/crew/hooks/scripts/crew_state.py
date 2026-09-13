@@ -765,6 +765,58 @@ GRAPH_NONCODE_PATHS = (
     ".work/**",
 )
 
+# A repo-relative path cited inside a codemap, with or without a `:line`
+# suffix. Anchors are written repo-relative on purpose precisely so they can
+# be pasted into `git diff -- <path>`; a bare `config.py:99` resolves by eye
+# and cannot be. Only paths that still EXIST are used, so a citation that has
+# rotted narrows nothing and the caller falls back to the wider comparison.
+_CITED_PATH_RE = re.compile(
+    r"`([A-Za-z0-9_][A-Za-z0-9_./-]*\.(?:py|sh|ps1|ya?ml|json|md))(?::\d+)?`"
+)
+
+
+def _moved_since(root, sha, head, paths=None):
+    """Did anything the caller cares about change between `sha` and HEAD?
+
+    Returns True (moved), False (nothing moved), or None (could not tell).
+    None is NOT False: an unresolvable sha, a missing git, or a diff that
+    fails lands there, and every caller resolves it to stale. An unknown must
+    not collapse into the safe-looking value.
+
+    With `paths`, the question is asked of exactly those. Without them it is
+    asked of the whole tree MINUS the paths that cannot change what the
+    artefact describes -- a deny-list, so a path nobody thought about still
+    counts and the failure direction stays honest.
+
+    The deny-list is what gives these triggers a FIXPOINT. `.crew/**` and
+    `docs/**` are excluded, and those are where codemaps and diagrams live, so
+    the commit that RECORDS a refresh does not immediately un-refresh it.
+    Without that, re-anchoring cleared the trigger and the commit saving the
+    re-anchor fired it again, forever -- which is why `knowledgeBehind` sat at
+    10 and `diagramsStale` at 6 in this repo no matter what anyone refreshed.
+    """
+    if not sha or not head:
+        return None
+    if paths:
+        changed = git_out(root, "diff", "--name-only", f"{sha}..{head}",
+                          "--", *paths)
+    else:
+        excludes = [f":(exclude){g}" for g in GRAPH_NONCODE_PATHS]
+        changed = git_out(root, "diff", "--name-only", f"{sha}..{head}",
+                          "--", ".", *excludes)
+    if changed is None:
+        return None
+    return changed != ""
+
+
+def _cited_paths(root, text):
+    """The repo-relative paths a map cites and that still exist on disk."""
+    found = []
+    for path in dict.fromkeys(_CITED_PATH_RE.findall(text or "")):
+        if os.path.exists(os.path.join(root, path)):
+            found.append(path)
+    return found
+
 
 def _read_graph(root, cfg):
     """Graph presence, and whether it was built at the current HEAD.
@@ -895,7 +947,8 @@ def read_knowledge(root, cfg):
         if not head:
             continue
         stem = name[: -len(".md")]
-        found = _ANCHOR_RE.search(read_text(os.path.join(mapdir, name)) or "")
+        body = read_text(os.path.join(mapdir, name)) or ""
+        found = _ANCHOR_RE.search(body)
         if not found:
             # No anchor at all. Previously this counted as `behind`, which
             # read as "the code moved" when the truth is "nothing here can be
@@ -913,7 +966,19 @@ def read_knowledge(root, cfg):
         # accepted as an anchor.
         if git_out(root, "cat-file", "-e", sha + "^{commit}") is None:
             unresolvable.append(stem)
-        else:
+            continue
+        # Not HEAD is not the same as stale, and this is the comparison the
+        # docstring above has always described: ask git whether the paths THIS
+        # map cites moved, and read empty output as current despite the lag.
+        # It was documented and never implemented, so every map went `behind`
+        # on any commit at all -- including the commit that recorded its own
+        # refresh, which is why refreshing never cleared the trigger.
+        #
+        # A map citing nothing resolvable falls back to the whole tree minus
+        # the deny-list, and a diff that cannot run at all returns None, which
+        # is stale. Both keep the honest direction: this narrows the question,
+        # it never answers it with "probably fine".
+        if _moved_since(root, sha, head, _cited_paths(root, body)) is not False:
             behind.append(stem)
 
     return {
@@ -972,7 +1037,24 @@ def read_diagrams(root, cfg):
         found = _DIAGRAM_ANCHOR_RE.search(
             read_text(os.path.join(dirpath, name)) or ""
         )
-        if not found or found.group(1)[:7] != head[:7]:
+        if not found:
+            behind.append(stem)
+            continue
+        sha = found.group(1)
+        if sha[:7] == head[:7]:
+            continue
+        # Same fixpoint problem, same fix as _read_graph and read_knowledge.
+        # A diagram cites no file paths -- it draws nodes, not `path:line` --
+        # so there is nothing to narrow to and the question is asked of the
+        # whole tree minus the deny-list. `docs/**` is in that list, which is
+        # exactly what makes it terminate: committing the re-anchored .mmd
+        # touches only docs/, so it does not immediately stale itself.
+        #
+        # Before this, `docs/diagrams/` being TRACKED meant recording a
+        # refresh advanced HEAD past the sha just written, and the diagram was
+        # behind again the instant it was saved. CLAUDE.md states that as a
+        # property of the repo; it was a property of this comparison.
+        if _moved_since(root, sha, head) is not False:
             behind.append(stem)
 
     # Exact stem only. `startswith(kind + "-")` used to count here, which let a
