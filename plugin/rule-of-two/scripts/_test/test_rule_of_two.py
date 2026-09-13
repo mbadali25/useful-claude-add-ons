@@ -24,6 +24,7 @@ is stubbed, so the suite tests this code rather than the local machine.
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -897,6 +898,294 @@ def test_build_prompt_carries_the_shared_method() -> None:
               "the agent duplicates the rubric's method; they will drift")
 
 
+# --------------------------------------------------------------------------
+# The command files, checked against the code they drive
+# --------------------------------------------------------------------------
+
+PLUGIN_DIR = Path(rot.__file__).resolve().parents[1]
+COMMAND_FILES = sorted((PLUGIN_DIR / "commands").glob("*.md"))
+
+# A snake_case word, backticked or bare. Bare too, deliberately: the defect
+# this catches shipped as prose - "if `codex_available` is false" - and a
+# scanner that only reads code spans would miss the same sentence unquoted.
+SNAKE_TOKEN_RE = re.compile(r"\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b")
+
+# Tokens that are snake_case and are NOT keys the `config` payload emits.
+# Every entry is a deliberate exception with a reason; anything else a command
+# file names must be a key the payload actually carries, or the rename that
+# left it behind has drifted again.
+NON_PAYLOAD_TOKENS = {
+    "rule_of_two": "the script's filename",
+    "model_id": "the --model-id FLAG, not a payload key",
+    "render_method_note": "a function in rule_of_two.py",
+    "_make_stdout_safe": "a function in rule_of_two.py",
+    "author_families": "crew's config key, named to say this plugin never "
+                       "reads it",
+    "qa_order": "crew's config key, same reason",
+}
+
+
+def _emitted_config_keys() -> set:
+    """Every key name the `config` subcommand actually prints, nested included."""
+    import contextlib
+    import io
+    buffer = io.StringIO()
+    with contextlib.redirect_stdout(buffer):
+        rot.main(["config"])
+    payload = json.loads(buffer.getvalue())
+
+    keys = set()
+
+    def walk(node):
+        if isinstance(node, dict):
+            for key, value in node.items():
+                keys.add(key)
+                walk(value)
+        elif isinstance(node, list):
+            for item in node:
+                walk(item)
+
+    walk(payload)
+    return keys
+
+
+def test_command_files_name_only_keys_config_emits() -> None:
+    """A command file must never read a key the script stopped emitting.
+
+    `commands/review.md` told its reader to check `codex_available` for a
+    whole release after `cmd_config` had renamed the field to `codex_found` -
+    `config.md` was updated at the rename and its neighbour was not, which is
+    this repo's documented shape exactly. Grepping for the one retired name
+    would only fix this instance, so the emitted set is DERIVED by running
+    `config` and reading the keys back: the next rename goes red without
+    anyone remembering to add it here.
+    """
+    print("command files -> name only keys the config payload emits")
+    emitted = _emitted_config_keys()
+    check("the payload still carries the key this test hangs on",
+          "codex_found" in emitted, str(sorted(emitted)))
+    check("there are command files to scan", bool(COMMAND_FILES),
+          str(PLUGIN_DIR))
+    for path in COMMAND_FILES:
+        body = path.read_text(encoding="utf-8")
+        unknown = sorted({
+            tok for tok in SNAKE_TOKEN_RE.findall(body)
+            if tok not in emitted and tok not in NON_PAYLOAD_TOKENS
+        })
+        check(f"{path.name} names no key config does not emit",
+              not unknown, f"unknown tokens: {unknown}")
+        # The specific retired name, asserted on its own so the allowlist can
+        # never quietly re-admit it.
+        check(f"{path.name} does not mention the retired codex_available",
+              "codex_available" not in body)
+
+
+def test_command_files_resolve_a_plugin_root_fallback() -> None:
+    """`${CLAUDE_PLUGIN_ROOT}` is empty in a checkout, and expands to nothing.
+
+    An unset one turns `"${CLAUDE_PLUGIN_ROOT}/scripts/rule_of_two.py"` into
+    `/scripts/rule_of_two.py` - not an error a reader can act on, just a path
+    nobody wrote. Every command file that invokes the script must therefore
+    resolve a root with a fallback, and must not invoke it through the bare
+    variable.
+    """
+    print("command files -> run from a checkout, not only when installed")
+    for path in COMMAND_FILES:
+        body = path.read_text(encoding="utf-8")
+        if "rule_of_two.py" not in body:
+            continue
+        check(f"{path.name} never invokes through a bare CLAUDE_PLUGIN_ROOT",
+              "${CLAUDE_PLUGIN_ROOT}/scripts" not in body)
+        check(f"{path.name} defaults CLAUDE_PLUGIN_ROOT",
+              "${CLAUDE_PLUGIN_ROOT:-}" in body)
+        check(f"{path.name} falls back to a checkout layout",
+              "plugin/rule-of-two/scripts/rule_of_two.py" in body)
+        check(f"{path.name} fails loudly when neither resolves",
+              "cannot find rule-of-two" in body)
+    review = (PLUGIN_DIR / "commands" / "review.md").read_text(encoding="utf-8")
+    # The script half runs from a checkout; the subagent half cannot, and
+    # saying only the first would be the half-truth that sends someone hunting
+    # a broken dispatch.
+    check("review.md says the subagent needs the plugin installed",
+          "is not registered" in review and "plugin is not installed" in review)
+
+
+def test_default_timeout_fits_under_the_caller_ceiling() -> None:
+    """A timeout longer than the caller's own ceiling cannot report anything.
+
+    Claude Code kills a Bash call at 600s. The first release defaulted to 900,
+    so a foreground review was killed by the harness and recorded as a TOOL
+    failure - `run_codex` never reached its own TimeoutExpired branch, and the
+    "codex did not run" outcome this plugin is built around never got written.
+    """
+    print("codex timeout -> under the caller's 600s ceiling, with headroom")
+    default = rot.DEFAULT_CONFIG["codex"]["timeout_seconds"]
+    check("the ceiling is stated as a constant, not remembered",
+          rot.CALLER_TIMEOUT_CEILING_SECONDS == 600,
+          repr(rot.CALLER_TIMEOUT_CEILING_SECONDS))
+    check("the default is under the ceiling",
+          default < rot.CALLER_TIMEOUT_CEILING_SECONDS, repr(default))
+    check("the default leaves at least 60s of headroom",
+          rot.CALLER_TIMEOUT_CEILING_SECONDS - default >= 60, repr(default))
+
+    # And the value that actually reaches the subprocess. A second copy of the
+    # number lived in `cmd_codex` as a literal default, so lowering the table
+    # alone would have left 900 reachable - right about its own case, one rung
+    # short of its neighbour.
+    seen = {}
+    real = rot.run_codex
+
+    def spy(model, prompt, timeout_seconds, cwd):
+        seen["timeout"] = timeout_seconds
+        return {"ran": False, "reason": "stubbed", "model": model,
+                "text": "", "log": ""}
+
+    rot.run_codex = spy
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "prompt.txt").write_text("p", encoding="utf-8")
+            import contextlib
+            import io
+            with contextlib.redirect_stdout(io.StringIO()):
+                rot.main(["--repo-root", str(root), "codex",
+                          "--prompt-file", str(root / "prompt.txt")])
+    finally:
+        rot.run_codex = real
+    check("the timeout that reaches run_codex is the lowered default",
+          seen.get("timeout") == default, repr(seen.get("timeout")))
+    # By AST, not by grep: the prose above explains why 900 was wrong, and a
+    # text search cannot tell an explanation from a surviving literal.
+    import ast
+    literals = {node.value for node in ast.walk(
+        ast.parse(Path(rot.__file__).read_text(encoding="utf-8")))
+        if isinstance(node, ast.Constant) and isinstance(node.value, int)}
+    check("no 900s literal survives anywhere in the script",
+          900 not in literals, str(sorted(x for x in literals if x > 100)))
+
+
+# --------------------------------------------------------------------------
+# Report shape: nesting, and the method asymmetry
+# --------------------------------------------------------------------------
+
+BODY_WITH_HEADINGS = (
+    "**VIABLE WITH CHANGES**\n\n"
+    "## Strengths\n\nGood.\n\n"
+    "## Defects\n\n- `plugin/x/y.md:3` wrong.\n\n"
+    "### A nested one\n\nDetail.\n\n"
+    "```bash\n# not a heading, this is a shell comment\n"
+    "## still not a heading\n```\n\n"
+    "###### Already at six\n\nEnd.\n"
+)
+
+
+def test_review_bodies_nest_under_their_reviewer_section() -> None:
+    """A review's `## Defects` must not sit level with `## Reviewer A`.
+
+    The bodies are pasted under `## {label}` containers, and the rubric's own
+    section order gives every review an H2 `## Defects`. Rendered raw, two of
+    them landed at the same level as the reviewer sections holding them, so
+    Reviewer B's findings read as a sibling of Reviewer A's rather than as
+    part of B. This is deterministic, so it is done in code: rubric item 16
+    calls prose telling a model to compute something a function could compute
+    a defect, and that applies to this plugin too.
+    """
+    print("review bodies -> headings nested, code fences untouched")
+    s = rot.build_state(
+        "demo", rot.DEFAULT_CONFIG, "built-in defaults",
+        {"ran": True, "model": "fable", "text": BODY_WITH_HEADINGS},
+        {"ran": True, "model": "gpt-6-astra", "text": BODY_WITH_HEADINGS})
+    report = rot.render_report(s)
+
+    # Fence-aware, because the fixture deliberately puts a `## still not a
+    # heading` line inside a code block: a scanner that counted it would
+    # report the guard broken for doing exactly the right thing.
+    h2, in_fence = [], False
+    for ln in report.splitlines():
+        if ln.lstrip()[:3] in ("```", "~~~"):
+            in_fence = not in_fence
+            continue
+        if not in_fence and ln.startswith("## ") and not ln.startswith("###"):
+            h2.append(ln)
+    check("the only H2s are the report's own sections",
+          set(h2) <= {"## Reviewer A (Claude)", "## Reviewer B (Codex)",
+                      "## What is missing"}, str(h2))
+    check("a review's '## Defects' is demoted, not dropped",
+          "#### Defects" in report and "\n## Defects" not in report)
+    check("a review's H3 is demoted too", "##### A nested one" in report)
+    check("H6 clamps rather than growing a seventh #",
+          "###### Already at six" in report and "#######" not in report)
+    check("a '#' inside a fenced block is left alone",
+          "# not a heading, this is a shell comment" in report
+          and "### not a heading" not in report)
+    check("'## still not a heading' inside the fence is untouched",
+          "## still not a heading" in report)
+    check("the reviewer sections themselves are still H2",
+          "## Reviewer A (Claude)" in report
+          and "## Reviewer B (Codex)" in report)
+
+    # Both bodies are identical here, so a demotion applied to one side only
+    # would still leave two copies; assert the count instead.
+    check("both bodies are demoted, not just the first",
+          report.count("#### Defects") == 2, str(report.count("#### Defects")))
+
+
+def test_method_asymmetry_is_reported_when_codex_ran() -> None:
+    """The two reviewers are not allowed to work the same way. Say so.
+
+    `run_codex` dispatches under `-s read-only`, which cannot write - not even
+    the temp directory a suite needs - while `rubric.md` step 3 orders both
+    reviewers to run what is runnable and the Claude reviewer has a Bash tool.
+    Unreported, a difference between the two reports is ambiguous between
+    procedure and judgement, which is the confound the rubric itself warns
+    about. The claim is about CAPABILITY: what each reviewer was permitted to
+    do. Whether the Claude side ran anything is not recorded anywhere, and the
+    note must not imply it was.
+    """
+    print("codex sandbox -> the method asymmetry is on the page")
+    check("the sandbox is still read-only",
+          rot.CODEX_SANDBOX == "read-only", rot.CODEX_SANDBOX)
+    check("the sandbox constant is what reaches the argv",
+          '"-s", CODEX_SANDBOX' in Path(rot.__file__).read_text(
+              encoding="utf-8").replace("'", '"'))
+
+    ran = rot.render_report(state(True, True))
+    low = ran.lower()
+    check("the report says the two were not worked the same way",
+          "not allowed to work the same way" in low)
+    check("the note names the sandbox", "read-only" in low)
+    check("the note says codex reviewed statically", "statically" in low)
+    check("the note does not claim the Claude side actually ran anything",
+          "whether it did is not recorded" in low)
+    # Guarded, not assumed: with the note missing this is a FAILED CHECK, and
+    # an unguarded .index() would raise instead - a sabotage run that crashes
+    # proves nothing about whether the suite catches the sabotage.
+    check("the note sits above the reviewer sections",
+          "not allowed to work the same way" in low
+          and low.index("not allowed to work the same way")
+          < low.index("## reviewer a"))
+    # It must not survive into the happy path's independence claim as a
+    # contradiction: both statements are true together.
+    check("a cross-family report still claims two independent reviews",
+          "two independent reviews" in low)
+
+    # No asymmetry to report when only one method was used.
+    absent = rot.render_report(state(True, False, codex_text="",
+                                     codex_reason="no `codex` executable"))
+    check("a one-reviewer report carries no method note",
+          "not allowed to work the same way" not in absent.lower())
+    none = rot.render_report(state(False, False, claude_text="", codex_text="",
+                                   claude_reason="x", codex_reason="y"))
+    check("a no-review report carries no method note",
+          "not allowed to work the same way" not in none.lower())
+
+    # The rubric must not keep ordering a reviewer to do what it cannot.
+    rubric = (PLUGIN_DIR / "templates" / "rubric.md").read_text(
+        encoding="utf-8")
+    check("the rubric tells the read-only reviewer to state it",
+          "read-only" in rubric and "What I could not" in rubric)
+
+
 TESTS = [
     test_codex_missing_reports_one_review,
     test_claude_missing_reports_one_review,
@@ -927,6 +1216,11 @@ TESTS = [
     test_config_command_does_not_overstate_readiness,
     test_non_ascii_review_does_not_fail_the_run,
     test_build_prompt_carries_the_shared_method,
+    test_command_files_name_only_keys_config_emits,
+    test_command_files_resolve_a_plugin_root_fallback,
+    test_default_timeout_fits_under_the_caller_ceiling,
+    test_review_bodies_nest_under_their_reviewer_section,
+    test_method_asymmetry_is_reported_when_codex_ran,
 ]
 
 
@@ -1020,22 +1314,48 @@ def _sabotage_verdict_substring():
     return lambda: setattr(rot, "find_verdict", original)
 
 
+def _sabotage_heading_demotion():
+    """Review bodies are pasted in raw, colliding with their own section."""
+    original = rot._demote_headings
+    rot._demote_headings = lambda text, by=2: (
+        text if isinstance(text, str) else "")
+    return lambda: setattr(rot, "_demote_headings", original)
+
+
+def _sabotage_method_note():
+    """The report stops saying the two reviewers worked differently."""
+    original = rot.render_method_note
+    rot.render_method_note = lambda state: ""
+    return lambda: setattr(rot, "render_method_note", original)
+
+
 SABOTAGES = [
     ("renderer always claims two independent reviews", _sabotage_banner),
     ("title always carries the Rule of Two name", _sabotage_title),
     ("evidence gate accepts any truthy 'ran'", _sabotage_evidence_gate),
     ("aliases match as loose prefixes", _sabotage_family_prefixes),
     ("verdict is a substring search again", _sabotage_verdict_substring),
+    ("review bodies collide with their own section heading",
+     _sabotage_heading_demotion),
+    ("the report stops reporting the method asymmetry",
+     _sabotage_method_note),
 ]
 
 
 def sabotage() -> int:
     """Break each guard on purpose; the suite must go red for every one.
 
-    The three sabotages are the three ways this plugin has actually been
-    seen to fail: a banner that does not reflect coverage, a title that
-    keeps the name after the banner has withdrawn it, and an evidence gate
-    that trusts a model-written `ran` field.
+    Every entry in SABOTAGES is a way this plugin has actually been observed
+    to fail, not a hypothetical - a banner that did not reflect coverage, a
+    title that kept the name after the banner had withdrawn it, an evidence
+    gate that trusted a model-written `ran`, loose alias prefixes, a substring
+    verdict search, review bodies colliding with the section holding them, and
+    a report that presented two differently-run reviews as equal. Read the
+    list rather than a count written here; it grows every time one is found.
+
+    Each sabotage varies exactly one thing. One that also dropped a key would
+    fail the suite for the wrong reason and prove nothing about the guard it
+    is aimed at.
     """
     failed_to_catch = []
     for label, install in SABOTAGES:

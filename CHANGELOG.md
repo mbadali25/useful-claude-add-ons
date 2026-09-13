@@ -4,6 +4,86 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Fixed
+
+- **`rule-of-two` 0.1.1: five defects its first real run against another
+  artifact exposed.** Four of them were invisible to the plugin's own
+  self-reviews, because a self-review runs installed, in this repo, on a tree
+  the reviewer already knows.
+
+  **The two reviewers were not allowed to work the same way, and the report
+  did not say so.** `run_codex` dispatches under `codex exec -s read-only`,
+  which cannot write - not even the temporary directory a test suite needs -
+  so Codex could not do `templates/rubric.md` step 3 ("run what is runnable")
+  while the Claude reviewer, holding a Bash tool, could. Every difference
+  between the two reports was therefore ambiguous between procedure and
+  judgement, which is precisely the confound that rubric warns about, and
+  nothing on the page said which. **Reported rather than equalised**: the
+  sandbox stays `read-only` and `render_method_note` prints the asymmetry
+  directly under the coverage banner whenever Codex ran. `workspace-write`
+  against a throwaway copy was considered and rejected - the live checkout must
+  never be writable to a reviewer, so it needs a copy, and even with one the
+  two methods stay unequal because the Claude side is not sandboxed the same
+  way. The note is phrased as capability, not observation: whether the Claude
+  reviewer actually ran anything is recorded nowhere, and it must not imply it
+  was. Step 3 of the rubric now tells a reviewer that cannot execute to say so
+  under "What I could not check", so the doc no longer orders both to do what
+  one cannot.
+
+  **The 900-second default could never fire.** A single Bash call from Claude
+  Code is killed at 600s, so a foreground review died as a *tool* failure and
+  `run_codex` never reached its own `TimeoutExpired` branch - the "codex did
+  not run" outcome this plugin is built around, lost to a number. Now 480,
+  with `CALLER_TIMEOUT_CEILING_SECONDS` stating the ceiling it is chosen
+  against so the suite asserts the relationship rather than a remembered
+  figure. `cmd_codex` carried a second copy of 900 as a literal default, so
+  lowering the table alone would have fixed the configured path and left the
+  defaulted one - right about its own case, one rung short of its neighbour.
+  Detached launch is deliberately *not* offered as an alternative.
+
+  **`commands/review.md` read `codex_available`, a key `cmd_config` stopped
+  emitting.** `config.md` was updated at the rename and its neighbour was not,
+  and the suite already asserted `"codex_available" not in payload` while
+  nothing checked the file telling an operator to read it. The new check
+  **derives** the emitted key set by running `config` and reading the keys
+  back, then fails on any snake_case token in a command file that is neither
+  emitted nor in a short, reasoned allowlist - so the next rename goes red
+  without anyone remembering to add it.
+
+  **The commands could not run from a checkout.** `${CLAUDE_PLUGIN_ROOT}` is
+  set only when the plugin is installed, and an unset variable expands to
+  nothing, so every invocation became `/scripts/rule_of_two.py` - not an error
+  anyone could act on, just a path nobody wrote. Both command files now default
+  it and walk up from `$PWD` for the plugin directory, failing loudly if
+  neither resolves. The agent-dispatch half genuinely cannot work this way:
+  `rule-of-two:reviewer-claude` is a plugin-registered subagent type, so from a
+  clone the Claude dispatch fails and is recorded with `--failed`. The README
+  says that plainly rather than leaving someone to discover it.
+
+  **Report headings collided.** A review arrives in the rubric's section order,
+  so it carries its own `## Defects` - pasted raw under `## Reviewer A
+  (Claude)`, that sat at the same level as the section containing it, twice,
+  making Reviewer B's findings read as a sibling of Reviewer A's.
+  `_demote_headings` pushes a body's headings down two levels, clamps at H6,
+  and leaves fenced blocks alone so a `# comment` in a code block is not
+  rewritten. In code rather than in the rubric, because rubric item 16 calls
+  prose telling a model to compute what a function could compute a defect.
+
+  **One item of the brief did not survive checking.** It asked for
+  `PYTHONIOENCODING=utf-8` to be documented as required on Windows "per the
+  README". No file in this repository has ever mentioned that variable, and it
+  is not required: `_make_stdout_safe` reconfigures stdout and stderr to UTF-8
+  on startup. Measured rather than argued - with `PYTHONIOENCODING=cp1252`
+  forced, `assemble` on an em-dash-and-curly-quote review exits 0 and the suite
+  passes. Documenting a requirement the code does not have would have been a
+  claim outrunning its evidence, in a plugin whose rubric hunts exactly that,
+  so `review.md`, `config.md` and the README instead say plainly that no
+  variable is needed and cite the function that makes it true.
+
+  Two sabotages were added for the two new guards (bodies pasted in raw; the
+  method note removed) and both were seen to go red. Read `SABOTAGES` and the
+  suite's own tail for the counts rather than a number written here.
+
 ### Added
 
 - **`crew` 0.19.22: two unknowns that reported themselves as clean.** One bug

@@ -141,6 +141,36 @@ discover:
   a model, with no code path and therefore no test. A Fable dispatch could not
   be made to fail on demand to observe it.
 
+## Running it from a checkout, and the half that cannot
+
+`${CLAUDE_PLUGIN_ROOT}` is set **only when the plugin is installed**. In a
+plain clone it is empty, and an unset variable expands to nothing - so 0.1.0's
+commands ran `/scripts/rule_of_two.py` and failed on a path nobody wrote,
+with no message saying why. Both command files now default it and, when it is
+empty, walk up from `$PWD` looking for `plugin/rule-of-two/scripts/rule_of_two.py`
+(or for a directory that *is* the plugin), failing loudly with
+`cannot find rule-of-two` if neither resolves. The script itself already
+resolved `templates/rubric.md` relative to its own `__file__`, so nothing else
+needed changing.
+
+**The agent-dispatch half still needs the plugin installed.** The subagent
+type `rule-of-two:reviewer-claude` is registered by the plugin; from a
+checkout it does not exist, and no path fallback can conjure it. So from a
+clone you get `/rule-of-two:config`, `build-prompt`, `codex`, `record-claude`,
+`assemble` and `render` - and a Claude dispatch that fails, which the command
+records with `--failed` and the report states as a one-reviewer outcome. That
+is the honest result, and it is why `/rule-of-two:review` must not substitute
+some other agent for the missing one: the two reviewers are comparable only
+because they were handed the same rubric.
+
+**No `PYTHONIOENCODING` is required, on Windows or anywhere else.** The
+script reconfigures its own stdout and stderr to UTF-8 in `_make_stdout_safe`,
+so a report full of en-dashes cannot fail the run that produced it. Verified
+here rather than assumed: with `PYTHONIOENCODING=cp1252` forced, `assemble`
+on an em-dash-and-curly-quote review exits 0 and the suite passes. If you ever
+see a `UnicodeEncodeError` from these commands, that function has regressed -
+setting the variable would hide the regression rather than fix it.
+
 ## The test, and the sabotage check
 
 ```bash
@@ -168,11 +198,16 @@ every one**, then restores them all and asserts it goes green again:
 2. the title always carries the Rule of Two name,
 3. the evidence gate accepts any truthy `ran`,
 4. aliases match as loose prefixes,
-5. the verdict is a substring search again.
+5. the verdict is a substring search again,
+6. review bodies are pasted in raw and collide with their own section
+   heading,
+7. the report stops saying the two reviewers were run differently.
 
 None of these is hypothetical. Every one is a way this plugin has actually
-been observed to fail, on its own self-reviews - the list grew from three to
-five after the second round, which is the point of running it twice.
+been observed to fail - the first five on its own self-reviews, the last two
+on its first real run against another artifact. Read `SABOTAGES` rather than
+this list's length: it grows every time another one is found, and it has done
+so at every round so far.
 
 Each sabotage varies exactly one thing. A sabotage that also drops a
 dictionary key would fail the suite for the wrong reason and prove nothing
@@ -247,6 +282,35 @@ defect they agreed was blocking.
 applies an explicit **timeout**, and maps a `TimeoutExpired` to *did not run*
 rather than *ran and found nothing*.
 
+**The timeout must be shorter than the caller's own.** A single Bash call
+from Claude Code is killed at 600 s, so 0.1.0's default of 900 could never
+fire: the harness killed the command first and the run was recorded as a
+*tool* failure, not as the script's own "codex did not run" - the reported
+outcome this whole plugin is built around, lost to a number. The default is
+now **480**, and `CALLER_TIMEOUT_CEILING_SECONDS` states the ceiling it is
+chosen against so the suite asserts the relationship instead of a remembered
+number. Detached launch is *not* offered as an alternative; one mechanism,
+documented once.
+
+**Codex reviews statically, and the report says so.** `-s read-only` cannot
+write - not even the temporary directory a test suite needs - so Codex cannot
+do `templates/rubric.md` step 3, while the Claude reviewer has a Bash tool and
+can. That is the procedure-versus-judgement confound the rubric itself warns
+about, so it is **reported rather than equalised**: `render_method_note`
+prints it directly under the coverage banner whenever Codex ran, phrased as
+capability ("Reviewer A was permitted to run them - whether it did is not
+recorded here"), because whether the Claude side actually ran anything is not
+recorded anywhere and must not be implied.
+
+The alternative considered and rejected: `workspace-write` against a throwaway
+copy of the tree. The live checkout must never be writable to a reviewer, so
+it needs a copy; and even with one the two methods would still not be equal,
+because the Claude side is not sandboxed the same way. Paying for a copy to
+buy an asymmetry that survives it is a bad trade. Raising the sandbox without
+changing the note would be the exact "the report says one thing, the code does
+another" defect this plugin exists to catch, so the suite asserts the constant,
+the note and the rubric's wording together.
+
 Both are deliberate departures from crew, which is the anti-pattern here and
 not the pattern. crew's real invocation is a shell snippet inside a command
 prompt at `plugin/crew/commands/review.md:297`, with no stdin redirect and no
@@ -273,7 +337,7 @@ present are overridden.
     "pin_model_id": "claude-fable-5-1",
     "fallback_model_id": "claude-opus-5"
   },
-  "codex": { "pin": "gpt-6-astra", "timeout_seconds": 900 }
+  "codex": { "pin": "gpt-6-astra", "timeout_seconds": 480 }
 }
 ```
 
@@ -322,9 +386,23 @@ whether or not crew is installed. If a `.crew/` directory is present,
 tickets; if it is not, the findings are yours to act on and the command does
 not suggest installing anything.
 
+## Report shape
+
+The report's own headings are the H1 title and one H2 per reviewer. A review
+arrives in the rubric's section order, which gives it an H2 `## Defects` of
+its own - pasted in raw, that lands at the **same level** as the reviewer
+section meant to contain it, and 0.1.0 rendered two of them, so Reviewer B's
+findings read as a sibling of Reviewer A's rather than as part of B.
+`_demote_headings` pushes every heading in a review body down two levels on
+the way in, clamping at H6 and leaving anything inside a fenced block alone -
+a `# comment` in a ``` fence is code, and moving it would edit the reviewer's
+evidence. It is a function rather than a line in the rubric telling a model to
+type `###`, because rubric item 16 calls prose that tells a model to compute
+something a function could compute a defect, and that applies here too.
+
 ## Registration
 
-**Registered at 0.1.0.** The entry is in `.claude-plugin/marketplace.json`,
+**Registered at 0.1.0, shipping 0.1.1.** The entry is in `.claude-plugin/marketplace.json`,
 the catalog rows are in the root `README.md` and `plugin/README.md`, the
 section is in `plugin/PLUGINS.md`, and both install scripts carry
 `rule-of-two` last in their plugin catalogs, in the same order with the same

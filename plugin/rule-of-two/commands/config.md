@@ -5,12 +5,44 @@ allowed-tools: Bash, Read
 
 Show the resolved Rule of Two configuration.
 
+`${CLAUDE_PLUGIN_ROOT}` is set only when the plugin is **installed**. In a
+plain checkout it is empty and expands to nothing, so the command below would
+run `/scripts/rule_of_two.py` and fail on a path nobody wrote. Resolve a root
+either way:
+
 ```bash
 PY=""
 for c in python3 python py; do command -v "$c" >/dev/null 2>&1 && { PY="$c"; break; }; done
 [ -n "$PY" ] || { echo "no python3/python/py on PATH" >&2; exit 1; }
-"$PY" "${CLAUDE_PLUGIN_ROOT}/scripts/rule_of_two.py" --repo-root . config
+
+ROOT="${CLAUDE_PLUGIN_ROOT:-}"
+if [ -z "$ROOT" ]; then
+  d="$PWD"
+  while :; do
+    if [ -f "$d/plugin/rule-of-two/scripts/rule_of_two.py" ]; then
+      ROOT="$d/plugin/rule-of-two"; break
+    fi
+    if [ -f "$d/scripts/rule_of_two.py" ] && [ -f "$d/templates/rubric.md" ]; then
+      ROOT="$d"; break
+    fi
+    parent="$(dirname "$d")"
+    [ "$parent" = "$d" ] && break   # a drive root: dirname stops moving
+    d="$parent"
+  done
+fi
+[ -n "$ROOT" ] || { echo "cannot find rule-of-two: install the plugin, or run from a checkout containing plugin/rule-of-two/" >&2; exit 1; }
+
+"$PY" "$ROOT/scripts/rule_of_two.py" --repo-root . config
 ```
+
+This half runs from a checkout. `/rule-of-two:review` also dispatches the
+`rule-of-two:reviewer-claude` subagent, which is registered by the plugin and
+therefore exists only when the plugin is installed - so a checkout can read
+its configuration and cannot run the Claude reviewer.
+
+No `PYTHONIOENCODING` is needed on Windows: the script reconfigures its own
+stdout and stderr to UTF-8 on startup
+(`plugin/rule-of-two/scripts/rule_of_two.py:1047`).
 
 Report four things, in this order:
 
@@ -59,9 +91,16 @@ To change it, write `.rule-of-two.json` at the repo root:
     "pin_model_id": "claude-fable-5-1",
     "fallback_model_id": "claude-opus-5"
   },
-  "codex": { "pin": "gpt-6-astra", "timeout_seconds": 900 }
+  "codex": { "pin": "gpt-6-astra", "timeout_seconds": 480 }
 }
 ```
+
+`timeout_seconds` must stay under **600**, which is the ceiling on a single
+Bash call from Claude Code. A longer value cannot do anything: the caller
+kills the command first, and the run is recorded as a tool failure instead of
+the script's own "codex did not run", which is the reported outcome this
+plugin is built around. The default is 480, leaving headroom for the
+surrounding shell.
 
 Only the keys present are overridden; the rest fall back to the built-in
 defaults. If the user wants a machine-wide setting instead of a per-repo one,
