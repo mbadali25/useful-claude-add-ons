@@ -106,13 +106,13 @@ def _load(raw_path):
         with open(raw_path, encoding="utf-8") as fh:
             content = fh.read()
     except OSError as e:
-        raise base.ParseError("%s: could not read file: %s" % (raw_path, e)) from e
+        raise base.ParseError(f"{raw_path}: could not read file: {e}") from e
     if not content.strip():
-        raise base.ParseError("%s: empty output" % raw_path)
+        raise base.ParseError(f"{raw_path}: empty output")
     try:
         data = json.loads(content)
     except ValueError as e:
-        raise base.ParseError("%s: invalid JSON: %s" % (raw_path, e)) from e
+        raise base.ParseError(f"{raw_path}: invalid JSON: {e}") from e
     if not isinstance(data, dict) or "results" not in data:
         raise base.ParseError(
             f"{raw_path}: not a semgrep report (no 'results' key)")

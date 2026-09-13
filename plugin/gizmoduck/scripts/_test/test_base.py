@@ -33,10 +33,10 @@ def test_every_kind_default_names_a_registered_adapter():
     from a clean scan."""
     import scanners
     for kind, names in scanners.KIND_DEFAULTS.items():
-        assert names, "kind %r has an empty default adapter list" % kind
+        assert names, f"kind {kind!r} has an empty default adapter list"
         for name in names:
             assert name in scanners.ADAPTERS, \
-                "kind %r defaults to unknown adapter %r" % (kind, name)
+                f"kind {kind!r} defaults to unknown adapter {name!r}"
 
 
 def test_every_kind_has_a_location_resolver():
