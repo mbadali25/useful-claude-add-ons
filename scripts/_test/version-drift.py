@@ -148,8 +148,13 @@ def s_linear_clean(tmp: str) -> None:
 def s_merge_interleaved(tmp: str) -> None:
     """A branch bumps and changes crew; main's own manifest commit is dated between.
 
-    Walking by date, the walk meets main's still-1.0.0 manifest before it
-    reaches the branch's bump, stops there, and the window collapses.
+    A control, not a discriminator: both orderings catch this one, and measuring
+    said so (5 runs of 5 for each arm). The window does collapse to the merge -
+    but HEAD here is a later `change crew` commit, so the diff from the merge to
+    HEAD is non-empty anyway and the drift is reported for a reason that has
+    nothing to do with which history was walked. Kept because it is a real shape
+    and the check must not go quiet on it; do NOT expect it to go red when an
+    arm is deleted. The two cases that do that are named below.
     """
     init(tmp)
     sh(tmp, "git", "checkout", "-q", "-b", "feature")
@@ -241,6 +246,38 @@ def s_pr_merge_ref(tmp: str) -> None:
     merge(tmp, "pr", "Merge pr into main", 300)
 
 
+def s_main_merged_into_branch(tmp: str) -> None:
+    """The shape that actually happened, reproduced from this repo's own history.
+
+    crew 0.19.29 was bumped on a working branch (8e9f3486); `origin/main` was
+    then merged INTO that branch (fc88d0d1), bringing plugin/crew changes with
+    it. The merge's FIRST parent is the branch - the mirror image of the CI
+    merge ref, where the first parent is the base. main's own manifest commit
+    (13d6fe99, the github skill) is dated after the branch's bump, so it sits
+    above that bump in the date-ordered log and stops the walk at the merge.
+
+    Confirmed against the real commits, not just reasoned about: with the
+    checker pointed at a detached worktree parked on fc88d0d1, the date walk
+    alone resolves the bump to fc88d0d1 itself and reports clean, while the
+    first-parent walk resolves it to 8e9f3486 and reports plugin/crew dirty.
+    That is the miss that shipped, and it is why `merge: published...` below is
+    not the only case carrying this arm.
+    """
+    init(tmp)
+    sh(tmp, "git", "checkout", "-q", "-b", "branch")
+    manifest(tmp, "1.0.1")
+    commit(tmp, "crew 1.0.1 on the working branch", 100)
+
+    sh(tmp, "git", "checkout", "-q", "main")
+    plugin_file(tmp, "crew", "v1 landed on main after the branch bumped\n")
+    manifest(tmp, "1.0.0", other_version="1.0.9")
+    commit(tmp, "register OTHER on main; crew still 1.0.0 here", 400)
+
+    # Merge main INTO the branch: the branch is the first parent.
+    sh(tmp, "git", "checkout", "-q", "branch")
+    merge(tmp, "main", "Merge origin/main into the working branch", 500, "-X", "ours")
+
+
 CASES = [
     ("linear: bump then change", s_linear_stale, 1),
     ("linear: change then bump", s_linear_clean, 0),
@@ -250,6 +287,8 @@ CASES = [
      s_merge_at_head, 0),
     ("merge: published, changed with no bump, then an unrelated merge",
      s_published_then_changed_then_merge, 1),
+    ("merge: origin/main merged INTO the branch (the real 0.19.29 shape)",
+     s_main_merged_into_branch, 1),
     ("CI pull_request merge ref: the PR bumps then changes", s_pr_merge_ref, 1),
 ]
 

@@ -294,6 +294,15 @@ _DECLARED: dict[tuple[str, str], dict[str, str] | None] = {}
 def declared_at(commit: str) -> dict[str, str] | None:
     """{name: version} as the manifest declared it at `commit`, or None if unreadable.
 
+    None ends the caller's walk, which narrows the window rather than widening
+    it - the one direction that under-checks. It covers an unreadable blob and
+    also a manifest whose entries are malformed, which before this was an
+    uncaught raise and a loud crash. Both are quiet here. That is survivable
+    only because the walk is over committed history, so a malformed manifest in
+    it was already rejected by this script when it landed, and because CI sets
+    `fetch-depth: 0` for this check by name. Neither is a guarantee; if a
+    shallow clone ever reaches this code the walk goes short and silent.
+
     Cached: the two history walks cover mostly the same commits, and every
     marketplace entry walks them again, so the uncached form fetched and parsed
     the same few dozen blobs some eighty times over and cost three minutes.
