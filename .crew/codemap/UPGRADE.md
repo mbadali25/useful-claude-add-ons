@@ -10,6 +10,12 @@ Nothing below was applied automatically. Conflicts are the map and
 the graph disagreeing, and either can be wrong: the graph misses
 generated call sites, reflection, and dynamic dispatch.
 
+Each run OVERWRITES this file, so the three `none`s below say this run
+found nothing — not that the previous run's 68 findings were resolved.
+Those are at `git show 5b2e1a7a:.crew/codemap/UPGRADE.md` (62
+contradictions, 5 added by the graph, 1 anchor left stale on purpose),
+and whether any of them still stands is unmeasured here.
+
 ## Config
 - roles added: none
 - tier: 2 (unchanged)
