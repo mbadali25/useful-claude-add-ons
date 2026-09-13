@@ -237,7 +237,28 @@ def read_metrics(root, window=METRICS_WINDOW):
         # Each blank row is its own ticket. The sentinel is a TUPLE: `cells[1]`
         # is always a str, so no row can collide with it, and only `.values()`
         # is read below, so the key never escapes.
-        ticket = cells[1] or ("\x00unlabelled", len(by_ticket))
+        # GROUP BY THE TICKET ID, not by the whole cell. /crew:review step 3
+        # asks the reviewer and the round to be named, and every real writer
+        # puts that in this cell - `T-1 (harness r2)`, `T-1 (#263 rebased
+        # db6f3b5)`. Keyed raw, those never repeat, so the grouping this
+        # function's docstring calls load-bearing silently becomes a no-op and
+        # each extra ROUND lands as a DIVISOR. That is the same "rate reads too
+        # LOW" failure the docstring warns about, reached from the other side.
+        #
+        # Measured on AI-Software 2026-09-13 (its .work/FINDINGS.md F82): 53
+        # scored rows produced 53 distinct keys and a reported 4.2, where
+        # grouping by id gives 15.0 over 20 real tickets. HEALTHY_HIGH is 2.0
+        # and is calibrated PER TICKET, so the verdict was comparing two
+        # different quantities and understating the overrun more than 3x.
+        #
+        # A row with no id keeps its raw cell rather than joining a shared
+        # "no id" bucket: pooling unknowns into one identity is exactly the
+        # collapse the blank-cell sentinel below exists to prevent.
+        ticket = cells[1]
+        found = _TICKET_RE.search(ticket) if ticket else None
+        if found:
+            ticket = found.group(1)
+        ticket = ticket or ("\x00unlabelled", len(by_ticket))
         total = by_ticket.pop(ticket, 0) + block + fix
         by_ticket[ticket] = total
 
