@@ -51,11 +51,24 @@ report still read as careful work.
    it - a citation to a file that does not exist is a defect, and a common
    one.
 
-3. **Run what is runnable.** If the artifact ships a test suite, run it and
-   report what it said. If it ships a script with a `--help` or a read-only
-   subcommand, run that. A reviewer who only reads is guessing about
-   behaviour. Never run anything that mutates state outside the repo, never
-   install anything, and never run a destructive path to see what it does.
+3. **Run what is runnable, or say you could not.** If the artifact ships a
+   test suite, run it and report what it said. If it ships a script with a
+   `--help` or a read-only subcommand, run that. A reviewer who only reads is
+   guessing about behaviour. Never run anything that mutates state outside the
+   repo, never install anything, and never run a destructive path to see what
+   it does.
+
+   **You may not be able to do this step at all, and that is a stated
+   unknown, not a skipped one.** The Codex reviewer is dispatched under
+   `codex exec -s read-only`, which cannot write - including to the temporary
+   directory a test suite needs - so it cannot execute anything and reviews
+   the artifact statically. If that is you, say so in one line here and list
+   every claim you could only check by reading under "What I could not
+   check". Do not report unrun behaviour as verified, and do not treat a test
+   suite you could not launch as a suite that failed.
+
+   The report says this too, above your findings, so a reader is not handed
+   two reviews as though they were produced the same way.
 
 4. **Hunt the local failure shapes.** This repo has a documented set of
    defects that have already shipped, and they recur. Check for them by name:

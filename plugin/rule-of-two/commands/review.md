@@ -24,26 +24,69 @@ produces.
 
 # Steps
 
-1. **Resolve Python and a scratch directory.** Git Bash ships without
-   `python3`, so resolve it and fail loudly rather than exiting quietly:
+1. **Resolve Python, the plugin root, and a scratch directory.** Git Bash
+   ships without `python3`, so resolve it and fail loudly rather than exiting
+   quietly. `${CLAUDE_PLUGIN_ROOT}` is set only when the plugin is
+   **installed**; it is empty in a plain checkout of this repository, and an
+   unset one expands to nothing, so every command below would silently run
+   `/scripts/rule_of_two.py` and fail on a path nobody wrote. Fall back to
+   finding the script's own directory:
 
    ```bash
    PY=""
    for c in python3 python py; do command -v "$c" >/dev/null 2>&1 && { PY="$c"; break; }; done
    [ -n "$PY" ] || { echo "no python3/python/py on PATH" >&2; exit 1; }
+
+   ROOT="${CLAUDE_PLUGIN_ROOT:-}"
+   if [ -z "$ROOT" ]; then
+     d="$PWD"
+     while :; do
+       if [ -f "$d/plugin/rule-of-two/scripts/rule_of_two.py" ]; then
+         ROOT="$d/plugin/rule-of-two"; break
+       fi
+       if [ -f "$d/scripts/rule_of_two.py" ] && [ -f "$d/templates/rubric.md" ]; then
+         ROOT="$d"; break
+       fi
+       parent="$(dirname "$d")"
+       [ "$parent" = "$d" ] && break   # a drive root: dirname stops moving
+       d="$parent"
+     done
+   fi
+   [ -n "$ROOT" ] || { echo "cannot find rule-of-two: install the plugin, or run from a checkout containing plugin/rule-of-two/" >&2; exit 1; }
+
    SCRATCH="$(mktemp -d)"
    ```
+
+   Use `"$ROOT"` for every invocation below, never a bare
+   `${CLAUDE_PLUGIN_ROOT}`.
+
+   **Nothing here needs `PYTHONIOENCODING`.** A review is full of en-dashes
+   and curly quotes and a Windows console is cp1252, but `rule_of_two.py`
+   reconfigures its own stdout and stderr to UTF-8 on startup
+   (`_make_stdout_safe` in `plugin/rule-of-two/scripts/rule_of_two.py` - named
+   rather than cited by line, because the line moves and a citation that stops
+   resolving is a defect this plugin's own rubric hunts), so
+   printing a finished report cannot fail the run that produced it. If you
+   ever see a `UnicodeEncodeError` from these commands, that function has
+   regressed - setting the variable would hide the regression rather than fix
+   it.
 
 2. **Show the configuration and the coverage you are starting from.**
 
    ```bash
-   "$PY" "${CLAUDE_PLUGIN_ROOT}/scripts/rule_of_two.py" --repo-root . config
+   "$PY" "$ROOT/scripts/rule_of_two.py" --repo-root . config
    ```
 
-   Report the two models and where the config came from. If
-   `codex_available` is false, say so now - the user should know before the
-   Claude review runs that this is heading for a one-reviewer report, not
-   after.
+   Report the two models and where the config came from. If `codex_found` is
+   false, say so now - the user should know before the Claude review runs that
+   this is heading for a one-reviewer report, not after. Report `codex_found`
+   as discovery and nothing more, and quote `codex_readiness` rather than
+   paraphrasing it: `codex_auth_verified` is `false` on every run, because
+   authentication, model existence and entitlement all fail at dispatch rather
+   than at discovery. Read the key names out of the payload you just printed -
+   this file names only keys `config` actually emits, and the suite asserts
+   that, because the previous name for `codex_found` outlived its rename here
+   for a whole release.
 
 3. **Dispatch the Claude reviewer**, on the model the config names.
 
@@ -51,6 +94,16 @@ produces.
    the `rule-of-two:reviewer-claude` subagent with the **pin** as an explicit
    model override, passing the artifact path unchanged. Tell it nothing about
    what you expect it to find.
+
+   **This half needs the plugin installed.** The subagent type
+   `rule-of-two:reviewer-claude` is registered by the plugin, so in a plain
+   checkout it does not exist and the dispatch fails. The fallback in step 1
+   gets the *script* half running from a checkout; it cannot conjure a
+   subagent type. If the dispatch fails for that reason, record it with
+   `--failed --reason "rule-of-two:reviewer-claude is not registered; the
+   plugin is not installed"` and let the report say what it says - a
+   one-reviewer report is the honest outcome, and inlining the rubric into
+   some other agent would make the two reviewers incomparable.
 
    If that dispatch fails because the model is unavailable, retry **once**
    with the fallback alias. Do not fall back for any other reason - a
@@ -65,7 +118,7 @@ produces.
 
    ```bash
    # $SCRATCH/claude-review.txt holds the subagent's report verbatim
-   "$PY" "${CLAUDE_PLUGIN_ROOT}/scripts/rule_of_two.py" --repo-root . \
+   "$PY" "$ROOT/scripts/rule_of_two.py" --repo-root . \
      record-claude --ran --model "<the alias that ran>" \
      --model-id "<the matching *_model_id from config>" \
      --text-file "$SCRATCH/claude-review.txt" \
@@ -83,7 +136,7 @@ produces.
 4. **Build the Codex prompt** with the helper. Do not assemble it by hand:
 
    ```bash
-   "$PY" "${CLAUDE_PLUGIN_ROOT}/scripts/rule_of_two.py" \
+   "$PY" "$ROOT/scripts/rule_of_two.py" \
      build-prompt --artifact "<the path>" --out "$SCRATCH/codex-prompt.txt"
    ```
 
@@ -98,7 +151,7 @@ produces.
 5. **Run the Codex reviewer.**
 
    ```bash
-   "$PY" "${CLAUDE_PLUGIN_ROOT}/scripts/rule_of_two.py" --repo-root . \
+   "$PY" "$ROOT/scripts/rule_of_two.py" --repo-root . \
      codex --prompt-file "$SCRATCH/codex-prompt.txt" \
      --out "$SCRATCH/codex-result.json"
    ```
@@ -110,6 +163,17 @@ produces.
    not replace this with a bare `codex exec` call.
 
    A missing binary, a timeout, a non-zero exit, and a run that produced no
+   **Codex runs under `-s read-only` and reviews statically.** It cannot
+   execute the artifact's tests or scripts - a read-only sandbox cannot even
+   create the temporary directory a suite needs - so the rubric's step 3 is
+   not available to it, while the Claude reviewer is permitted to run things.
+   That asymmetry is deliberate and is **printed under the coverage banner**
+   by `render_method_note`, so a reader is never handed two reports as though
+   they were produced the same way. Do not raise the sandbox to
+   `workspace-write` against this checkout, and do not delete the note the
+   script prints.
+
+   A missing binary, a timeout, a non-zero exit, and a run that produced no
    final message are all recorded as `"ran": false` with a reason. That is
    correct - none of them produced a review. Do not retry more than once, and
    do not substitute a second Claude reviewer for the missing Codex one. Two
@@ -119,7 +183,7 @@ produces.
 6. **Assemble the report.**
 
    ```bash
-   "$PY" "${CLAUDE_PLUGIN_ROOT}/scripts/rule_of_two.py" --repo-root . \
+   "$PY" "$ROOT/scripts/rule_of_two.py" --repo-root . \
      assemble --artifact "<the path>" \
      --claude-result "$SCRATCH/claude-result.json" \
      --codex-result "$SCRATCH/codex-result.json" \
@@ -128,7 +192,14 @@ produces.
 
 7. **Present it.** Lead with the title and coverage banner exactly as
    rendered - both are derived from coverage, and both are the script's to
-   write. Then the two verdicts.
+   write, as is the method note directly beneath them. Then the two verdicts.
+
+   The reviewers' own section headings are pushed down two levels on the way
+   into the report, so each body nests under its `## Reviewer A (Claude)` /
+   `## Reviewer B (Codex)` container instead of colliding with it. Do not
+   "fix" the extra `#` characters back out: two `## Defects` at the same level
+   as the reviewer sections makes the second reviewer's findings read as a
+   sibling of the first's.
 
    Where the reviewers disagree, say so explicitly and do not adjudicate. A
    disagreement between two families is the most informative thing in the

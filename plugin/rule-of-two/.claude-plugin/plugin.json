@@ -1,6 +1,6 @@
 {
   "name": "rule-of-two",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Two adversarial reviewers from different model families - a Claude agent and a Codex agent - tear apart a Claude Code agent, skill or plugin against one shared rubric and return a viability verdict with cited defects, weaknesses and the edits worth making. Use when reviewing a skill, agent, command or plugin as an artifact: 'is this skill worth shipping', 'tear apart this plugin', 'will this agent's description actually trigger', 'review my SKILL.md', 'does this duplicate something we already have'. Coverage is a reported outcome: if only one reviewer runs, or the two models cannot be resolved to different families, the report says so in its own title rather than passing a single-family opinion off as two. Do NOT use for architecture, implementation plans, product ideas or code diffs - use crew's architect-reviewer, planner or code-reviewer. Standalone - its own two-model config, never crew's. No hooks.",
   "author": {
     "name": "Matthew Badali",
