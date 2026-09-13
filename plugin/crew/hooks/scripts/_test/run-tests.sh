@@ -973,8 +973,13 @@ check(got["total"] == 3, f"total should be 3, got {got['total']}")
 check("architecture" not in got["behind"], "anchored-at-HEAD must not be behind")
 check("data-flow-orders" in got["behind"], "wrong anchor must be behind")
 check("process-refund" in got["behind"], "missing anchor must be behind")
-# Prefix matching: data-flow-orders.mmd satisfies the data-flow KIND.
-check(got["missing"] == [], f"all three kinds present, got missing={got['missing']}")
+# Exact-stem matching: `data-flow-orders.mmd` is a diagram ABOUT one flow,
+# not the data-flow overview, so it does NOT discharge that kind. Same for
+# `process-refund.mmd`. Only `architecture.mmd` matches a kind here. This
+# assertion was inverted when the prefix clause was dropped: it used to
+# encode the bug, letting one narrow diagram stand in for the overview.
+check(got["missing"] == ["data-flow", "process"],
+      f"a specific diagram must not satisfy its kind, got missing={got['missing']}")
 
 # A directory with no diagrams at all reports every kind missing, and must not
 # raise on the absent directory.

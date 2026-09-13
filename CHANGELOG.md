@@ -44,6 +44,14 @@ All notable changes to this repository are documented here. Format follows [Keep
   restoring the three `review.md` defects turns three red. 11 new tests in
   `plugin/crew/tests/test_verify_absent_and_diagram_kind.py`.
 
+  One committed assertion **encoded the bug** and had to be inverted:
+  `plugin/crew/hooks/scripts/_test/run-tests.sh:976` read "Prefix matching:
+  data-flow-orders.mmd satisfies the data-flow KIND" and asserted
+  `missing == []`. It now asserts `["data-flow", "process"]`. That suite is run
+  by CI's Marketplace job and is not part of the pytest set, which is how it
+  reached CI red after a green local pytest run -- the `check` job runs seven
+  steps and `check-marketplace.py` is only the first.
+
 - **`crew` 0.19.14: the pm can now route the trigger 0.19.13 added, and
   `UPGRADE.md` stops carrying a line nothing can read.** Two gaps left by that
   release, both of the same shape -- a value that exists in the code and does
