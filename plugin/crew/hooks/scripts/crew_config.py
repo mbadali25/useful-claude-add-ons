@@ -372,6 +372,11 @@ def default_config():
         "graph": copy.deepcopy(crew_upgrade.GRAPH_BLOCK),
         "docs": copy.deepcopy(crew_upgrade.DOCS_BLOCK),
         "bitbucket": copy.deepcopy(crew_upgrade.BITBUCKET_BLOCK),
+        # Present on BOTH sides. A repo may narrow what the machine allows --
+        # see `crew_state.effective_install_policy` -- and a key that exists
+        # only globally would fail `is_global_path`'s rule that every
+        # globally-settable key is a real repo key.
+        "install": copy.deepcopy(crew_state.INSTALL_DEFAULTS),
     }
 
 
@@ -496,6 +501,12 @@ def default_global_config():
         }},
         "docs": copy.deepcopy(crew_upgrade.DOCS_BLOCK),
         "bitbucket": copy.deepcopy(crew_upgrade.BITBUCKET_BLOCK),
+        # How much crew may do about a skill it needs and cannot find. This is
+        # a machine fact in the strongest sense on this list: it is the machine
+        # owner saying how much they trust crew to run commands HERE. It is
+        # also the only key whose global value a repo cannot override upward --
+        # see `crew_state.effective_install_policy`.
+        "install": copy.deepcopy(crew_state.INSTALL_DEFAULTS),
     }
 
 
@@ -745,6 +756,71 @@ def resolve_config(root):
     else:
         merged.pop("schema", None)
     return merged
+
+
+def resolve_install_policy(root, path=None):
+    """The install policy in force at `root`, and where it came from.
+
+    Returns `{"effective", "repo", "global", "heldDownBy"}`.
+
+    **Deliberately NOT routed through `resolve_config`.** Every other key in
+    crew resolves by precedence -- the repo answers and the global layer answers
+    only where the repo is silent -- and that rule is wrong here, in the one
+    direction that costs something. A repo config travels inside a clone written
+    by someone else; the global file is this machine's owner. Under precedence a
+    cloned repo carrying `install.policy: auto` would override a machine owner
+    who chose `manual`, which is a repo author granting themselves the right to
+    run commands on a stranger's machine.
+
+    So the two layers are read raw and combined by
+    `crew_state.effective_install_policy`, which takes the LOWER rank. Neither
+    layer can widen what the other allows.
+
+    `heldDownBy` names the layer that is doing the narrowing, or None when both
+    agree. It exists because of the rule `default_global_config` states for the
+    keys it refuses: a value that quietly does nothing is worse than one refused
+    out loud. A user who sets `auto` in a repo and sees crew keep asking needs to
+    be told that their machine-global `manual` is why -- otherwise the key looks
+    broken and the next step is to go looking for the bug.
+    """
+    repo_cfg = crew_state.dict_or_empty(
+        crew_state.load_config(root).get("install"))
+    global_cfg, _ = filter_global(read_global_config(path))
+    global_install = crew_state.dict_or_empty(global_cfg.get("install"))
+
+    repo_value = repo_cfg.get("policy")
+    global_value = global_install.get("policy")
+    effective = crew_state.effective_install_policy(repo_value, global_value)
+
+    rank = crew_state.install_policy_rank
+    held = None
+    if rank(repo_value) > rank(effective):
+        held = "global"
+    elif rank(global_value) > rank(effective):
+        held = "repo"
+    return {
+        "effective": effective,
+        "repo": crew_state.normalise_install_policy(repo_value),
+        "global": crew_state.normalise_install_policy(global_value),
+        "heldDownBy": held,
+    }
+
+
+def install_plan_for(root, name, path=None):
+    """`crew_state.install_plan` for `name`, under the policy in force here.
+
+    This is the function crew actually calls when a skill it routes to is not
+    installed. It is the only place the two halves meet, and neither half can be
+    skipped: the policy comes from `resolve_install_policy` (so a repo cannot
+    widen it) and the command comes from `crew_state.INSTALLABLE` (so no config
+    value can name one).
+    """
+    resolved = resolve_install_policy(root, path)
+    plan = crew_state.install_plan(name, resolved["effective"])
+    plan["heldDownBy"] = resolved["heldDownBy"]
+    plan["repoPolicy"] = resolved["repo"]
+    plan["globalPolicy"] = resolved["global"]
+    return plan
 
 
 def layered_state(root):
@@ -1348,6 +1424,23 @@ def _set_path(target, parts, value):
 # thing -- the failure mode that produced this table. `report-only` is present
 # because the key set has to be total, not because it can ever be reached here:
 # it is rank 0, so nothing widens INTO it.
+_INSTALL_WIDENING_NOTES = {
+    "manual": (
+        "crew names the missing skill and the command and runs nothing. This "
+        "is the narrowest policy and nothing widens into it."
+    ),
+    "ask": (
+        "crew will offer to install a missing skill and run the command only "
+        "after you say yes. The command is always one crew ships."
+    ),
+    "auto": (
+        "crew will install a missing skill WITHOUT asking. It can only ever "
+        "run a command from its own source (`crew_state.INSTALLABLE`), never a "
+        "string from a skill file, a repo config, or anywhere a repo author "
+        "controls - but it will run one without stopping to ask."
+    ),
+}
+
 _WIDENING_NOTES = {
     "report-only": (
         "the PM reports and recommends only. This is the narrowest tier and "
@@ -1368,12 +1461,58 @@ _WIDENING_NOTES = {
 }
 
 
+# Every key that ratchets, and the three things a ratchet needs: how to rank a
+# value, how to normalise one for display, and what to SAY about the tier being
+# granted. A registry rather than a second copy of the rule, because the comment
+# on `widens` below is a record of what happens when a ratchet is written out by
+# hand -- it was wrong in both directions at once. One mechanism can be wrong;
+# two can disagree, and then only one of them gets fixed.
+#
+# Adding a key here is the whole cost of ratcheting it. Nothing else needs to
+# know, and nothing else is permitted to compare these values.
+def _widens(dotted, before, after):
+    """Does setting `dotted` to `after` GRANT something it did not have?
+
+    Rank, never equality, and that is the whole lesson here. This logic lived
+    inline as `after == "act" and before != "act"`, which was correct only while
+    `act` was the top tier. A third tier made it wrong in both directions at
+    once: `act -> autonomous` computed False, so the widest grant crew offers
+    would ship unannounced, and `autonomous -> act` computed True, so dialling
+    DOWN warned about a widening. The second is the more corrosive -- a warning
+    that fires on the safe direction is one users learn to click past, which
+    costs the first case its only defence.
+
+    Both ranks normalise first, so an unrecognised `before` ranks 0 and anything
+    above it correctly reads as a widening. A key that does not ratchet never
+    widens.
+    """
+    spec = _RATCHETED.get(dotted)
+    if spec is None:
+        return False
+    rank = spec[0]
+    return rank(after) > rank(None if before is _MISSING else before)
+
+
+_RATCHETED = {
+    "pm.authority": (
+        crew_state.authority_rank,
+        crew_state.normalise_authority,
+        _WIDENING_NOTES,
+    ),
+    "install.policy": (
+        crew_state.install_policy_rank,
+        crew_state.normalise_install_policy,
+        _INSTALL_WIDENING_NOTES,
+    ),
+}
+
+
 def plan_global_write(updates, path=None):
     """What writing `updates` to the global file would change. Pure.
 
     `updates` is a flat `{"pm.authority": "act"}` mapping. Returns
     `(merged, changes)` where `changes` is a list of
-    `{"path", "before", "after", "widens_authority"}` for the entries that
+    `{"path", "before", "after", "widens"}` for the entries that
     would actually differ.
 
     Two rules enforced here rather than in prose:
@@ -1427,11 +1566,12 @@ def plan_global_write(updates, path=None):
             "path": dotted,
             "before": None if before is _MISSING else before,
             "after": value,
-            # Never silently. `pm.authority` is the one key whose wrong value
-            # the user cannot recover from by noticing -- they either get
+            # Never silently. These are the keys whose wrong value the user
+            # cannot recover from by noticing -- `pm.authority` gives them
             # agents they did not ask for or a report where they expected
-            # work -- so a widening is marked, printed on the dry run, and
-            # printed again on the write.
+            # work, and `install.policy` runs commands on their machine -- so
+            # a widening is marked, printed on the dry run, and printed again
+            # on the write.
             #
             # RANK, never equality. This read
             # `after == "act" and before != "act"`, which was correct only
@@ -1444,12 +1584,11 @@ def plan_global_write(updates, path=None):
             # to click past, which costs the first case its only defence.
             # `authority_rank` normalises first, so an unrecognised `before`
             # ranks 0 and anything above it correctly reads as a widening.
-            "widens_authority": (
-                dotted == "pm.authority"
-                and crew_state.authority_rank(value)
-                > crew_state.authority_rank(
-                    None if before is _MISSING else before)
-            ),
+            # Renamed from `widens_authority` when `install.policy` became the
+            # second ratcheted key. The old name would have had to either lie
+            # about install policy or spawn a sibling flag beside it, and a
+            # sibling is how the two-mechanism failure starts.
+            "widens": _widens(dotted, before, value),
         })
         _set_path(merged, parts, value)
     return merged, changes
@@ -1543,8 +1682,34 @@ def main(argv=None):
                         help="a global key to set, e.g. pm.authority='\"act\"'")
     parser.add_argument("--apply", action="store_true",
                         help="actually write; without it --set is a dry run")
+    parser.add_argument("--install-plan", metavar="NAME", default=None,
+                        help="what crew may do about NAME not being "
+                             "installed, under install.policy")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
+
+    if args.install_plan is not None:
+        plan = install_plan_for(args.root, args.install_plan, args.global_path)
+        if args.json:
+            print(json.dumps(plan, indent=2, sort_keys=True))
+            return 0
+        print(f"{plan['name']}: {plan['action']}  ({plan['reason']})")
+        if plan["command"] is None:
+            # Say what WOULD make it installable. A bare "report" here reads as
+            # a policy decision, and it is not one -- no policy can install a
+            # name crew ships no command for.
+            print("  no command: crew ships an install command only for "
+                  + ", ".join(sorted(crew_state.INSTALLABLE)))
+        else:
+            print("  command: " + " ".join(plan["command"]))
+        print(f"  policy: repo={plan['repoPolicy']} "
+              f"global={plan['globalPolicy']} -> {plan['policy']}")
+        if plan["heldDownBy"]:
+            # Never let the narrowing be invisible. See resolve_install_policy.
+            print(f"  ! the {plan['heldDownBy']} layer is holding this down to "
+                  f"`{plan['policy']}`; the other layer asks for more and "
+                  "cannot have it")
+        return 0
 
     if args.set:
         updates = {}
@@ -1571,7 +1736,7 @@ def main(argv=None):
         for change in changes or []:
             print(f"  {change['path']}: {json.dumps(change['before'])} -> "
                   f"{json.dumps(change['after'])}")
-            if change["widens_authority"]:
+            if change["widens"]:
                 # Name the tier being GRANTED, not a hardcoded one. This said
                 # "widens to `act`" whatever the target was, so setting
                 # `autonomous` warned about the wrong tier and described only
@@ -1580,9 +1745,10 @@ def main(argv=None):
                 # choose. A warning that under-describes the grant is the exact
                 # failure this marker exists to prevent, so it is driven off
                 # the value rather than written out once.
-                granted = crew_state.normalise_authority(change["after"])
-                print(f"  ! pm.authority widens to `{granted}`: "
-                      + _WIDENING_NOTES[granted])
+                _, normalise, notes = _RATCHETED[change["path"]]
+                granted = normalise(change["after"])
+                print(f"  ! {change['path']} widens to `{granted}`: "
+                      + notes[granted])
         if not changes:
             print("  nothing to change")
         return 0

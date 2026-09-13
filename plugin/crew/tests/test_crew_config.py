@@ -251,7 +251,8 @@ def test_the_ten_keys_crew_read_but_never_declared_are_declared():
                    "context.autoWrapUp", "context.autoResume",
                    "jira.cloudId"):
         assert dotted in declared, dotted
-    assert len(declared) == 85
+    # 86 since schema 5 added install.policy.
+    assert len(declared) == 86
 
 
 def test_autoclear_is_global_and_its_siblings_are_not():
@@ -1004,13 +1005,13 @@ def test_a_widening_of_authority_is_always_marked(tmp_path, monkeypatch):
     path = _global(tmp_path, monkeypatch, contents={
         "pm": {"authority": "report-only"}})
     _, changes = crew_config.plan_global_write({"pm.authority": "act"}, str(path))
-    assert changes[0]["widens_authority"] is True
+    assert changes[0]["widens"] is True
 
     # Narrowing is not a widening, and neither is a no-op.
     path.write_text(json.dumps({"pm": {"authority": "act"}}), encoding="utf-8")
     _, narrowing = crew_config.plan_global_write(
         {"pm.authority": "report-only"}, str(path))
-    assert narrowing[0]["widens_authority"] is False
+    assert narrowing[0]["widens"] is False
     _, nothing = crew_config.plan_global_write({"pm.authority": "act"}, str(path))
     assert not nothing
 
@@ -1038,7 +1039,7 @@ def test_every_authority_transition_is_classified(tmp_path, monkeypatch):
                         encoding="utf-8")
         _, changes = crew_config.plan_global_write(
             {"pm.authority": after}, str(path))
-        assert changes[0]["widens_authority"] is expected, (
+        assert changes[0]["widens"] is expected, (
             f"{before} -> {after} should be "
             f"{'a widening' if expected else 'no widening'}")
 
@@ -1051,7 +1052,7 @@ def test_an_unreadable_authority_widens_into_anything(tmp_path, monkeypatch):
     for after in ("act", "autonomous"):
         _, changes = crew_config.plan_global_write(
             {"pm.authority": after}, str(path))
-        assert changes[0]["widens_authority"] is True
+        assert changes[0]["widens"] is True
 
 
 def test_the_widening_warning_names_the_tier_it_grants(tmp_path, monkeypatch,
@@ -1092,7 +1093,7 @@ def test_ticket_granularity_is_settable_in_both_layers(tmp_path, monkeypatch):
     merged, changes = crew_config.plan_global_write(
         {"pm.ticketGranularity": "session"}, str(path))
     assert merged["pm"]["ticketGranularity"] == "session"
-    assert changes[0]["widens_authority"] is False
+    assert changes[0]["widens"] is False
     kept, ignored = crew_config.filter_global(
         {"pm": {"ticketGranularity": "change"}})
     assert kept == {"pm": {"ticketGranularity": "change"}}
