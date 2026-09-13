@@ -1,4 +1,10 @@
-anchor: useful-claude-add-ons@d61342c3
+anchor: useful-claude-add-ons@7b0d8f3a
+verified: 2026-09-12
+re-verified, not re-derived: every claim below was re-read against the files it
+cites at this anchor and its citation re-pointed where the code had moved. The
+large exception is every claim drawn from `.crew/verify.json`, which is absent
+from this checkout - those are marked UNVERIFIABLE HERE at the claim and their
+line numbers are carried forward unchecked.
 
 # Verification harness
 
@@ -11,7 +17,8 @@ one — see `marketplace-registration.md`), and `_verify/run-all.sh` (minutes).
 overstates it, and in the direction that hides work — it implies the three
 scripts are the whole harness. **DERIVED:** of the 15 rules in
 `.crew/verify.json:5-168`, six name commands that are *not* one of those three
-scripts: `python -m pytest plugin/crew/tests plugin/gizmoduck/scripts/_test -q`
+scripts (all six line numbers in this paragraph are **UNVERIFIABLE HERE** (`.crew/verify.json` is absent from this checkout)):
+`python -m pytest plugin/crew/tests plugin/gizmoduck/scripts/_test -q`
 (`:12`), `bash scripts/_test/menu-groups.sh` (`:54`),
 `bash plugin/crew/hooks/scripts/_test/run-tests.sh` (`:64`),
 `npm --prefix mcp-servers test` (`:76`), `python3 -m pytest plugin/crew/tests -q`
@@ -27,7 +34,7 @@ It returned two moved paths: `.claude-plugin/marketplace.json` and
 `_verify/run-all.sh`.
 
 **What was re-read, in full, at this anchor:** `_verify/smoke.sh` (all 362
-lines), `_verify/run-all.sh` (all 150 lines), `.crew/verify.json` (all 200
+lines), `_verify/run-all.sh` (150 lines then, **159 now**), `.crew/verify.json` (all 200
 lines), `scripts/check-marketplace.py:166-191`, `:263-277`, `:298-328`,
 `:377-405`, and the function index of the whole file. `git diff` of both moved
 paths across the anchor range.
@@ -52,7 +59,22 @@ at this anchor (~163s, and this was a read-only refresh).
 --error-unmatch` reports it as unknown to git; `.crew/verify.json:104` says so
 too). So `git diff --name-only <anchor>..HEAD` can *never* list it, and the
 per-path check can never show it moving. Any claim about it has to be re-read
-from disk every time. Its own `anchor:` field reads
+from disk every time.
+
+**And at this anchor that remedy fails, because the file is not on disk.**
+`.crew/verify.json` does not exist in this checkout at all - `.gitignore:282`
+(`.crew/*`) keeps it out of the repository, and nothing recreated it here. So
+the 31 citations into it below could not be re-read, re-pointed, or refuted.
+They are carried forward exactly as the previous pass wrote them and marked
+UNVERIFIABLE HERE at each claim.
+
+That is a fact about the harness, not just about this note. `CLAUDE.md` calls
+`.crew/verify.json` "the mechanism" for per-path verify commands, and
+`/crew:review` reads it to decide which specialist reviewers a diff requires. On
+a machine where the file is absent, that routing selects nobody and produces
+output indistinguishable from a diff that needed no specialist - the same
+fail-open shape this repo keeps re-encountering. Re-anchoring this note without
+saying so would have been a third instance of it. Its own `anchor:` field reads
 `useful-claude-add-ons@1c899d7` (`.crew/verify.json:4`), which is behind this
 note's — that is a fact about that file's bookkeeping, not evidence about the
 rules.
@@ -139,37 +161,42 @@ gave the function as `:298-326` and the branches as "306-311"; the body runs to
 
 ## `.crew/verify.json` — the mechanism, path to command
 
-**DERIVED**, read directly at this anchor: **15** rules (`grep -c '"paths"'`
-over the file, cross-checked by reading `:5-168`), mapping a glob of changed
-paths to shell commands, plus for one rule a required review agent. The previous
-version of this note said 13; the file is untracked, so nothing but re-reading
-it can catch that drifting. Notable ones relevant to subsystems covered
+**DERIVED at the PREVIOUS anchor, and **UNVERIFIABLE HERE** (`.crew/verify.json` is absent from this checkout) at this one.** Every line
+number in this section is carried forward unchecked; none of it was re-read for
+this pass, because the file it describes is not present. Read as history: 15
+rules (`grep -c '"paths"'` over the file, cross-checked by reading `:5-168`),
+mapping a glob of changed paths to shell commands, plus for one rule a required
+review agent. The previous version of this note said 13; the file is untracked,
+so nothing but re-reading it can catch that drifting - and on this machine even
+that is impossible. Notable ones relevant to subsystems covered
 elsewhere in this codemap:
 
 - `plugin/localgpu/cli/**`, `plugin/localgpu/mcp/**` → `bash _verify/run-all.sh`
   (`.crew/verify.json:16-25`) — its `why` field records that until 2026-09-05
   neither this file nor `_verify/smoke.sh` ran `cli/_test`'s pytest suite at
-  all; `run-all.sh` now covers both `cli/_test` (`_verify/run-all.sh:91-95`) and
-  `mcp/_test` (`:72-76`).
+  all; `run-all.sh` now covers both `cli/_test` (`_verify/run-all.sh:100-104`) and
+  `mcp/_test` (`_verify/run-all.sh:81-85`). Those two citations were re-read and
+  re-pointed; the `.crew/verify.json:16-25` citation above them is **UNVERIFIABLE HERE** (`.crew/verify.json` is absent from this checkout).
 - `.claude-plugin/marketplace.json`, `skills/**`, `plugin/**` →
-  `bash _verify/smoke.sh` (`.crew/verify.json:26-36`) — the
+  `bash _verify/smoke.sh` (`.crew/verify.json:26-36`, **UNVERIFIABLE HERE** (`.crew/verify.json` is absent from this checkout)) — the
   one-script-covers-everything registration gate. **Caveat, and it is the whole
   point of the `marketplace-registration.md` correction:** smoke.sh does *not*
   run `check_versions`, so this rule does not cover version drift despite its
   `why` field claiming "and version drift (files changed since that version was
-  last set)" (`.crew/verify.json:35`). Version drift is reached only through
-  `_verify/run-all.sh:46`, which invokes `check-marketplace.py` directly.
+  last set)" (`.crew/verify.json:35`, **UNVERIFIABLE HERE** (`.crew/verify.json` is absent from this checkout)). Version drift is reached
+  only through `_verify/run-all.sh:46`, which invokes `check-marketplace.py`
+  directly - that line did not move and was re-read at this anchor.
 - `plugin/*/hooks/**` → `bash _verify/smoke.sh` **and**
   `bash plugin/crew/hooks/scripts/_test/run-tests.sh`, with a required
-  `security` review agent (`.crew/verify.json:58-70`) — **DERIVED:** the only
+  `security` review agent (`.crew/verify.json:58-70`, **UNVERIFIABLE HERE** (`.crew/verify.json` is absent from this checkout)) — **DERIVED:** the only
   rule in the file carrying an `agents` key (one match for `"agents"` in the
   whole file), because a hook runs unconditionally and this is the suite the
   file describes as "the only thing that proves a blocking guard still BLOCKS".
 - `scripts/install-prerequisites.sh`, `.ps1` → `bash _verify/smoke.sh` **and**
-  `bash scripts/_test/menu-groups.sh` (`.crew/verify.json:47-57`) — the
+  `bash scripts/_test/menu-groups.sh` (`.crew/verify.json:47-57`, **UNVERIFIABLE HERE** (`.crew/verify.json` is absent from this checkout)) — the
   matched-pair proof plus the sub-picker / group-flag behaviour smoke.sh's
   check 5 does not reach.
-- `mcp-servers/**` → `npm --prefix mcp-servers test` (`.crew/verify.json:71-79`)
+- `mcp-servers/**` → `npm --prefix mcp-servers test` (`.crew/verify.json:71-79`, **UNVERIFIABLE HERE** (`.crew/verify.json` is absent from this checkout))
   — the TypeScript monorepo's own vitest/`node --test` suites. As of 4e2bfb78
   that command is gated on a freshness check: `mcp-servers/package.json:10-11`
   runs `check-dist-fresh.test.mjs` before the workspace suites, and each package
@@ -188,7 +215,7 @@ anchor range. In order:
 4. localgpu `cli/_test` under the same venv (`:91-95`) — skipped when no venv.
 5. **New since the previous anchor** (added by `b7b7101d`, not by 4e2bfb78):
    gizmoduck's `tickets` confirmation-gate suite, `pytest
-   plugin/gizmoduck/scripts/_test/` (`_verify/run-all.sh:102-107`), gated on
+   plugin/gizmoduck/scripts/_test/` (`_verify/run-all.sh:111-116`), gated on
    `import pytest` succeeding for the resolved interpreter rather than on a
    venv. Its comment states nothing ran that suite before.
 6. `crew-setup` round-trip (`:110-111`).
@@ -202,7 +229,7 @@ anchor range. In order:
    never automatic, because it drives the real Claude Code CLI.
 
 **Not run by `run-all.sh`, and worth knowing:** `plugin/crew/tests` and
-`plugin/crew/tests/sabotage.py`. `.crew/verify.json:96-105` maps them, and its
+`plugin/crew/tests/sabotage.py`. `.crew/verify.json:96-105` (**UNVERIFIABLE HERE** (`.crew/verify.json` is absent from this checkout)) maps them, and its
 own `why` says the durable wiring "belongs in `_verify/run-all.sh` … both are
 off this round's surface". Reading `_verify/run-all.sh` at this anchor confirms
 that wiring still has not landed: neither command appears in the file. Since
@@ -224,9 +251,9 @@ pytest suites against a bootstrapped localgpu venv and a real PowerShell, and
 its own header estimates minutes, not seconds (`_verify/run-all.sh:3`).
 ## Entry points
 
-- `plugin/crew/tests/test_crew_config.py:1152` — `test_resolve_config_inherits_a_global_through_the_init_template`, the END-TO-END null-shadow test. The helper-level tests above it (`:1084`) pass with the call site deleted from `resolve_config`; this one does not. That gap was found by sabotage, not by review.
-- `plugin/crew/tests/test_crew_state.py:871` — `test_a_backslash_in_a_branch_name_is_flattened_too`, which catches the `[\/]+` character class that matched `/` alone.
-- `plugin/crew/tests/test_crew_state.py:905` — `test_two_repos_with_the_same_basename_do_not_share_a_leaf`, the cross-repo worktree collision the security review raised.
+- `plugin/crew/tests/test_crew_config.py:1483` — `test_resolve_config_inherits_a_global_through_the_init_template`, the END-TO-END null-shadow test. The helper-level tests above it (`:1084`) pass with the call site deleted from `resolve_config`; this one does not. That gap was found by sabotage, not by review.
+- `plugin/crew/tests/test_crew_state.py:968` — `test_a_backslash_in_a_branch_name_is_flattened_too`, which catches the `[\/]+` character class that matched `/` alone.
+- `plugin/crew/tests/test_crew_state.py:1002` — `test_two_repos_with_the_same_basename_do_not_share_a_leaf`, the cross-repo worktree collision the security review raised.
 
 ## Owns data
 
@@ -235,3 +262,26 @@ its own header estimates minutes, not seconds (`_verify/run-all.sh:3`).
 ## Calls out to
 
 - `pwsh` from `plugin/crew/tests/test_verify_gate_bash_resolver.py`, which is where two tests fail on this machine: they replace `PATH` and `SystemRoot` with fake trees and pwsh cannot then initialise (`Win32Exception 126`). Environmental and pre-existing — confirmed identical at `1f97e51c`.
+
+
+## Re-verification pass, 2026-09-12
+
+**Re-verified, not re-derived.** Every claim above is the previous pass's. What changed: eleven
+citations were re-pointed after re-reading the files they name, `_verify/run-all.sh`'s length was
+re-measured (150 -> 159), and every claim resting on `.crew/verify.json` was marked UNVERIFIABLE
+HERE rather than re-anchored silently.
+
+The previous anchor, `useful-claude-add-ons@d61342c3`, does not resolve in this repository - a
+squash merge discarded the branch commit its writer recorded. Fixed for future passes in crew
+0.19.13, which records `git merge-base HEAD origin/main` instead. See
+`.crew/codemap/install-scripts.md` for the full account.
+
+Citations were re-pointed by aligning each cited file between revisions with `difflib` and matching
+on **content**, not by applying an offset. Every citation outside `.crew/verify.json` mapped
+cleanly: **zero** needed a full re-read, which is why this note required less correction than its
+neighbours despite being the one with the largest unverifiable block.
+
+Count at this anchor: 31 of this note's `path:line` citations point into `.crew/verify.json`. None
+of them could be checked. That is the single largest concentration of unverifiable claims in the
+codemap, and it is structural rather than accidental - the file is machine-local by design, so no
+clone of this repository can ever verify them.

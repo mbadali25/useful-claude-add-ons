@@ -123,7 +123,7 @@ TITLE_PT = SUBTITLE_PT = HEADING_PT = CAPTION_PT = None
 def configure(brand=None) -> Style:
     """Bind the module to one brand. Resolves the default pack when none is
     given. Call it once at the top of any script that reads the S.* constants."""
-    global STYLE
+    global STYLE  # pylint: disable=global-statement
     brand = brand or resolve_brand.resolve()
     STYLE = Style(brand)
     g = globals()
@@ -257,7 +257,7 @@ def _split_spans(text):
         sys.stderr.write(
             "warning: link markup does not parse as [label](url), so it will\n"
             "         render as literal text -- check for an unclosed bracket\n"
-            "         or paren in: %r\n" % text[:120])
+            f"         or paren in: {text[:120]!r}\n")
 
     segments = []
     pos = 0
@@ -274,7 +274,7 @@ def _split_spans(text):
     return segments
 
 
-class SopBuilder(object):
+class SopBuilder:
     """Builds one step-by-step SOP .docx on the active brand pack's house template."""
 
     def __init__(self, title, subtitle="", template=None, brand=None):
@@ -283,8 +283,8 @@ class SopBuilder(object):
         if template:
             if not os.path.exists(template):
                 raise FileNotFoundError(
-                    "Template not found: %s\nRun make_template.py to regenerate it, "
-                    "or remove \"template\" from brand.json to synthesise one." % template
+                    f"Template not found: {template}\nRun make_template.py to regenerate it, "
+                    "or remove \"template\" from brand.json to synthesise one."
                 )
             self.doc = docx.Document(template)
         else:
@@ -467,7 +467,16 @@ class SopBuilder(object):
         p = self.doc.add_paragraph()
         _spacing(p, after=80)
         _hanging_indent(p, STEP_INDENT)
-        marker = p.add_run("%d." % number)
+        # The one site in this repo that keeps `%`-formatting, and it is
+        # deliberate: `number` is `blk.get("number")` straight out of a
+        # user-authored JSON spec, so its TYPE is not known here, and
+        # `%d` is the only form that both truncates a real number the
+        # way this has always rendered (1.5 -> "1.") AND rejects a
+        # non-number loudly. `{number:d}` raises on the float that used
+        # to work; `{int(number)}` accepts the string "1" that used to
+        # raise. Both were caught on review, in that order. Neither
+        # substitution is this line, so the line stays.
+        marker = p.add_run("%d." % number)  # pylint: disable=consider-using-f-string
         marker.bold = True
         marker.font.color.rgb = RGBColor.from_string(self.style.ACCENT_RED)
         tab = p.add_run()
@@ -617,8 +626,7 @@ def resolve_output(spec, base_dir, out=None, brand=None):
     if brand is None or not brand.masters_dir:
         raise SystemExit(
             "No output path: the spec has no \"output\", --out was not given, and "
-            "the %s brand pack has no masters directory. Pass --out."
-            % (brand.name if brand else "active"))
+            f"the {(brand.name if brand else 'active')} brand pack has no masters directory. Pass --out.")
     # Must already exist. Creating C:\...\sops_new on a machine that does not
     # have the masters checked out would write a production document nowhere
     # anyone looks.
@@ -640,12 +648,12 @@ def build_from_spec(spec, base_dir=".", out=None, brand=None, dry_run=False):
     for blk in spec["body"]:
         kind = blk["type"]
         if kind not in _DISPATCH:
-            raise ValueError("Unknown block type: %r" % kind)
+            raise ValueError(f"Unknown block type: {kind!r}")
         if kind == "image":
             if not os.path.isabs(blk["path"]):
                 blk = dict(blk, path=os.path.normpath(os.path.join(base_dir, blk["path"])))
             if not os.path.isfile(blk["path"]):
-                raise FileNotFoundError("image not found: %s" % blk["path"])
+                raise FileNotFoundError(f"image not found: {blk['path']}")
             images += 1
         _DISPATCH[kind](b, blk)
     out = resolve_output(spec, base_dir, out, brand)
@@ -658,14 +666,16 @@ def build_from_spec(spec, base_dir=".", out=None, brand=None, dry_run=False):
         # first generated revision - the safety net held a copy of the thing
         # it was protecting against. Seconds plus a random tail cannot collide.
         stamp = _dt.datetime.now().strftime("%Y%m%d-%H%M%S") + "-" + _uuid.uuid4().hex[:4]
-        backup = os.path.join(os.path.dirname(out), "_backup_%s" % stamp, os.path.basename(out))
+        backup = os.path.join(os.path.dirname(out), f"_backup_{stamp}", os.path.basename(out))
     if dry_run:
         print("DRY RUN - nothing written.")
-        print("  brand   : %s" % brand.name)
-        print("  blocks  : %d (%d image(s))" % (len(spec["body"]), images))
-        print("  output  : %s%s" % (out, "  (EXISTS - would be backed up first)" if exists else "  (new)"))
+        print(f"  brand   : {brand.name}")
+        print(f"  blocks  : {len(spec['body']):d} ({images:d} image(s))")
+        status = ("  (EXISTS - would be backed up first)" if exists
+                  else "  (new)")
+        print(f"  output  : {out}{status}")
         if backup:
-            print("  backup  : %s" % backup)
+            print(f"  backup  : {backup}")
         return out
 
     os.makedirs(os.path.dirname(out) or ".", exist_ok=True)
@@ -673,10 +683,10 @@ def build_from_spec(spec, base_dir=".", out=None, brand=None, dry_run=False):
         # Never overwrite a production master without keeping the previous
         # one. Git may not be watching the masters directory.
         if os.path.exists(backup):
-            raise SystemExit("Refusing to overwrite an existing backup: %s" % backup)
+            raise SystemExit(f"Refusing to overwrite an existing backup: {backup}")
         os.makedirs(os.path.dirname(backup), exist_ok=True)
         shutil.copy2(out, backup)
-        print("Backed up previous master to %s" % backup)
+        print(f"Backed up previous master to {backup}")
     return b.save(out)
 
 
@@ -700,15 +710,15 @@ def main(argv=None):
                           brand=brand, dry_run=args.dry_run)
     if args.dry_run:
         return 0
-    print("Built: %s" % out)
+    print(f"Built: {out}")
     if args.to_pdf:
         from build_report import to_word  # pylint: disable=import-outside-toplevel
         rc = to_word(out, want_docx=False, want_pdf=True)
         if rc:
             return rc
-    print('Next: python check_conformance.py "%s" -v   (Gate 1)' % out)
+    print(f'Next: python check_conformance.py "{out}" -v   (Gate 1)')
     if args.to_pdf:
-        print('      python verify_borders.py "%s" -v   (Gate 2)' % (os.path.splitext(out)[0] + ".pdf"))
+        print(f'      python verify_borders.py "{(os.path.splitext(out)[0] + ".pdf")}" -v   (Gate 2)')
     else:
         print("      then render the PDF (--to-pdf) and run verify_borders.py on it (Gate 2)")
     return 0

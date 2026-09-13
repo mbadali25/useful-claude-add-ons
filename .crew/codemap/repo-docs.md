@@ -1,6 +1,10 @@
 # repo-docs
-anchor: useful-claude-add-ons@d61342c3
-verified: 2026-09-06
+anchor: useful-claude-add-ons@7b0d8f3a
+verified: 2026-09-12
+re-verified, not re-derived: every claim below was re-read against the files it
+cites at this anchor and its citation re-pointed where the code had moved. Claims
+resting on machine-local files that are absent from this checkout are marked
+UNVERIFIABLE HERE at the claim, not in a preamble.
 
 ## Does
 Holds the repo's hand-written documentation - the Mermaid diagram sources under `docs/diagrams/`,
@@ -49,34 +53,45 @@ mirrored README sections and does not write it - DERIVED.)
 - **`docs/adr/` does not exist, and three documents about *this* repo say otherwise.** DERIVED:
   the directory is absent from the working tree, is not in `.gitignore`, and
   `git log --all --diff-filter=A -- 'docs/adr/*'` is empty - no ADR has ever been committed. The
-  three claims are `CLAUDE.md:78` ("Decisions in `docs/adr/`"), `CHANGELOG.md:1423` ("It also stops
-  claiming `docs/adr/`, which is now `scribe`'s"), and `.crew/STATUS.md:39`, which records
-  `docs/adr/` as **scaffolded**. That last one is the trap: it reads as a completed step.
+  three claims are `CLAUDE.md:78` ("Decisions in `docs/adr/`"), `CHANGELOG.md:2057-2058` ("It also
+  stops claiming `docs/adr/`, which is now `scribe`'s"), and `.crew/STATUS.md:39`
+  (**UNVERIFIABLE HERE**: the file is machine-local, gitignored via `.gitignore:282`, and absent
+  from this checkout, so this line could not be re-read), which records `docs/adr/` as
+  **scaffolded**. That last one is the trap: it reads as a completed step.
   (A prior version of this note cited `CHANGELOG.md:1195-1196` for the scribe/ADR assignment. That
   range is about `obsidian-vault` doctor vault-collision labelling and has nothing to do with ADRs;
-  the scribe passage is at `CHANGELOG.md:1396-1397`. Corrected 2026-09-06 by reading both ranges.)
-  JUDGEMENT: the many other `docs/adr/` references under `plugin/crew/` - `agents/scribe.md:38`,
-  `skills/crew-docs/SKILL.md:30`, `README.md:1501`, and others - are the crew plugin instructing
+  the scribe passage is at `CHANGELOG.md:2030-2031`. Corrected 2026-09-06 by reading both ranges.)
+  JUDGEMENT: the many other `docs/adr/` references under `plugin/crew/` -
+  `plugin/crew/agents/scribe.md:38`, `plugin/crew/skills/crew-docs/SKILL.md:30`,
+  `plugin/crew/README.md:1436`, and others - are the crew plugin instructing
   *any* repo it is installed into, not claims about this one. Do not count them.
+  (Those three were written as `agents/scribe.md:38`, `skills/crew-docs/SKILL.md:30` and
+  `README.md:1501`. Not repo-relative, so they resolve by eye and cannot be pasted into
+  `git diff --name-only <anchor>..HEAD -- <paths>` - the rule `CLAUDE.md` states and the mechanism
+  this whole note depends on. Re-pointed and made repo-relative here.)
 
 - **`/crew:handoff` does not write `docs/HANDOFF.md`.** DERIVED
   `plugin/crew/commands/handoff.md:7` - "Write `.work/HANDOFF.md` following the `crew-context`
-  skill" - and `.crew/config.json:5`, `"handoffPath": ".work/HANDOFF.md"`.
+  skill" - and `.crew/config.json:5`, `"handoffPath": ".work/HANDOFF.md"` (machine-local and
+  gitignored; present in this checkout and re-read, but not checkable by anyone cloning the repo).
   `plugin/crew/skills/crew-context/SKILL.md:62` says the same. `docs/HANDOFF.md` is human-authored
-  and reached from `README.md:629`; the two files are unrelated despite the shared basename.
-  DERIVED: its newest entry is `docs/HANDOFF.md:9`, dated 2026-08-23 - fourteen days behind this
-  anchor. The newest-first ordering it claims at `:3-4` does hold across all four entries
+  and reached from `README.md:730`; the two files are unrelated despite the shared basename.
+  DERIVED: its newest entry is `docs/HANDOFF.md:9`, dated 2026-08-23 - **twenty** days behind this
+  anchor, up from fourteen at the previous one, because the file has not been touched since.
+  Re-measured, not carried forward: a "days behind" figure is stale the day after it is written. The newest-first ordering it claims at `:3-4` does hold across all four entries
   (`:9`, `:108`, `:141`, `:305`).
   (A prior version said `/crew:handoff` writes this file. False, and false in the direction that
   makes a stale document look maintained. Corrected 2026-09-06.)
 
 - **The machine-read diagram header is line 1, not `%% Anchors:`.** DERIVED: staleness is decided
-  by `_DIAGRAM_ANCHOR_RE` at `plugin/crew/hooks/scripts/crew_state.py:293-297`, which matches
-  `%% Generated from <repo>@<sha>` or `%% anchor: <sha>`, and is applied at `:464-468` where
+  by `_DIAGRAM_ANCHOR_RE` at `plugin/crew/hooks/scripts/crew_state.py:598-602` (the comment
+  explaining why it cannot reuse `_ANCHOR_RE` is at `:586-597`), which matches
+  `%% Generated from <repo>@<sha>` or `%% anchor: <sha>`, and is applied at
+  `plugin/crew/hooks/scripts/crew_state.py:811-815` where
   `found.group(1)[:7] != head[:7]` marks a diagram behind. `%% Anchors:` - the source-path list -
   is read by **no code in this repo**: grep finds it only at
   `plugin/crew/skills/crew-diagrams/SKILL.md:31` (the documented example) and
-  `plugin/crew/hooks/scripts/_test/run-tests.sh:865` (a fixture). So the two headers do different
+  `plugin/crew/hooks/scripts/_test/run-tests.sh:962` (a fixture). So the two headers do different
   jobs: line 1 makes a diagram *machine*-checkable, line 2 makes it *hand*-re-verifiable via
   `git diff --name-only <anchor>..HEAD -- <the listed paths>`. Losing line 2 costs the hand
   re-check and nothing else; the PM will still report the diagram as current.
@@ -86,15 +101,16 @@ mirrored README sections and does not write it - DERIVED.)
   both headers are "read by the `crew-diagrams` skill". Both wrong: wrong header, wrong reader.
   Corrected 2026-09-06 by reading the regex and its call site.)
 
-- **`TODO.md`'s `render.sh` entry is at `:687-716`, and it is stale in one specific way.** DERIVED:
-  the section heading is `TODO.md:687`, "`render.sh` cannot render a diagram on Windows - it hands
-  `mmdc` a `/tmp` path". Its symptom report is accurate history - six failures for six on
-  2026-09-05 (`TODO.md:697-698`), and its own proposed fix at `TODO.md:708` is "resolve the temp
+- **`TODO.md`'s `render.sh` entry is at `TODO.md:870-899`, and it is stale in one specific way.**
+  DERIVED: the section heading is `TODO.md:870`, "`render.sh` cannot render a diagram on Windows -
+  it hands `mmdc` a `/tmp` path". Its symptom report is accurate history - six failures for six on
+  2026-09-05 (`TODO.md:880-881`), and its own proposed fix at `TODO.md:891` is "resolve the temp
   path through `cygpath -w`". That fix has since landed:
   `plugin/crew/skills/crew-diagrams/scripts/render.sh:32-35` sets `PCFG_ARG` from
-  `cygpath -w "$PCFG"` when `cygpath` exists. What is stale is only that the heading is not marked
-  CLOSED, unlike its neighbours at `TODO.md:487`, `:603` and `:719` which carry
-  "- CLOSED 2026-09-06".
+  `cygpath -w "$PCFG"` when `cygpath` exists - that citation is unchanged and was re-read, not
+  assumed. What is stale is only that the heading is still not marked CLOSED, unlike its neighbours
+  at `TODO.md:670`, `TODO.md:786` and `TODO.md:902`, which carry "- CLOSED 2026-09-06". Re-checked
+  at this anchor: the heading remains unmarked.
   DERIVED `render.sh:27-31` names the real trigger: a caller with `MSYS_NO_PATHCONV=1` set, which
   turns off MSYS's own argument rewrite. Without that variable the same command renders. The
   Mermaid sources were never the problem.
@@ -134,37 +150,40 @@ mirrored README sections and does not write it - DERIVED.)
   or callers can observe changed", not on a version bump. The 3896-line history was not read back.
 - The contents of `docs/superpowers/plans/` and `specs/` beyond their filenames.
 - Why `.crew/STATUS.md:39` records `docs/adr/` as scaffolded when it has never been committed.
-  Most likely git not tracking an empty directory, but that is a guess and was not confirmed.
+  Most likely git not tracking an empty directory, but that is a guess and was not confirmed - and
+  it is now **unconfirmable from a clone**: `.crew/STATUS.md` is gitignored and absent here, so the
+  line cannot be read at all at this anchor.
 
 ## Re-anchor provenance
-Re-read on 2026-09-06 at HEAD `1f97e51c`, moving the anchor from `a02331ee`. Every `path:line`
-below was resolved by reading the line, not by grep alone.
 
-- Read in full or in the cited range: `docs/HANDOFF.md` (`:1-12`, all `^## ` headings, 443 lines
-  total), `docs/remaining-setup.md:1-12`, `docs/runbooks/rollback.md:1-22`, `CHANGELOG.md:1-10`,
-  `:1190-1200`, `:1392-1428`, `TODO.md:687-720` plus all `^## ` headings,
-  `plugin/crew/skills/crew-diagrams/scripts/render.sh` (63 lines, `:1-60` read),
-  `plugin/crew/skills/crew-diagrams/scripts/_test/render.sh` (79 lines, header and case list),
-  `plugin/crew/hooks/scripts/crew_state.py:281-300` and `:455-478`,
-  `plugin/crew/skills/crew-diagrams/SKILL.md:20-45`,
-  `plugin/crew/hooks/scripts/_test/run-tests.sh:858-875`, `.crew/STATUS.md:36-42`, `CLAUDE.md:78`
-  and `:201`, `.crew/config.json:5`, `.gitignore:357`.
-- Commands run: `ls` over `docs/`, `docs/diagrams/`, `docs/diagrams/out/`, `docs/runbooks/`,
-  `docs/superpowers/{plans,specs}/`, `scripts/_test/`; `git ls-files docs/diagrams/`;
-  `git log --all --diff-filter=A -- 'docs/adr/*'` (empty); `git log --all --name-only -- docs/adr`
-  (empty); repo-wide greps for `docs/adr`, `cygpath`, `Anchors:`, `CHANGELOG` under
-  `plugin/crew/hooks/` and `scripts/`.
-- Not run: `render.sh`, per instruction. Not edited: `TODO.md`, `CLAUDE.md`, and everything else -
-  only this file changed.
-- Five claims were corrected as false (`CHANGELOG.md:1195-1196`, the `/crew:handoff` writer, the
-  `%% Anchors:` falsifiability claim and its reader, the `TODO.md:361-391` range, and the
-  now-obsolete "run render.sh to verify" instruction); two were added (`CLAUDE.md`'s wrong test
-  path, the missing `docs/runbooks/INDEX.md`); one undercount was fixed (two documents citing
-  `docs/adr/`, actually three). The `docs/adr/` absence, the three anchored diagrams, `CHANGELOG.md:5`,
-  the `cygpath` fix and the `mmdc` call site were confirmed.
-- Two citations were right about the file and wrong about the line, and were shifted rather than
-  dropped: the `cygpath` block is `plugin/crew/skills/crew-diagrams/scripts/render.sh:32-35`, not
-  `:33-36`; and `docs/diagrams/out/` is produced at `plugin/crew/skills/crew-diagrams/scripts/render.sh:20`
-  and `:45`, not at `:1`, which is the shebang. Written repo-relative because TWO files are
-  named `render.sh` — this one and `plugin/crew/skills/crew-diagrams/scripts/_test/render.sh` —
-  so the bare form is ambiguous as well as unpasteable into `git diff -- <path>`.
+**This pass re-verified; it did not re-derive.** Every claim above is the previous pass's. What
+changed is the citations: each was re-read against the file it names and re-pointed where the text
+had moved, three were rewritten repo-relative, and two figures that decay with time (the HANDOFF
+age, the TODO line range) were re-measured.
+
+The previous anchor, `useful-claude-add-ons@d61342c3`, **does not resolve in this repository**, so
+`git diff --name-only <anchor>..HEAD -- <cited paths>` could not run. See
+`.crew/codemap/install-scripts.md` for the mechanism: a squash merge discarded the branch commit
+the writer recorded, fixed in crew 0.19.13.
+
+Citations were re-pointed by aligning each cited file between revisions with `difflib` and matching
+on **content** - the text at the old line had to equal the text at the new one - rather than by
+applying an offset.
+
+That alignment turned up something the previous provenance section did not record: **this note is
+mixed-base.** Its `TODO.md` citations match `519754fa`, while its `CHANGELOG.md`,
+`crew_state.py` and `run-tests.sh` citations match `1f97e51c` - the commit the provenance section
+names. So the note was assembled across at least two trees, and a single `anchor:` line was never
+able to describe it. A per-path re-check driven by that one anchor would have been right about some
+citations and wrong about others with nothing to distinguish them.
+
+Not re-checkable at this anchor, and marked at each claim rather than here: `.crew/STATUS.md`
+(gitignored, absent from this checkout) and `.crew/config.json` (gitignored, present here but not
+for anyone cloning).
+
+Found while verifying, and left for someone with the scope to fix it: `CLAUDE.md:202` says the
+`render.sh` cygpath regression check lives in `scripts/_test/render.sh`. That file does not exist.
+The check is real and does cover the case - `plugin/crew/skills/crew-diagrams/scripts/_test/render.sh`,
+79 lines, exercising `MSYS_NO_PATHCONV=1` at `:74` - so the claim is true and the path is wrong,
+which is the shape that sends a reader looking for a missing test and concluding it was never
+written.

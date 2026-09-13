@@ -17,7 +17,7 @@
       "name": "bitbucket",
       "source": "./skills/bitbucket",
       "description": "Git over HTTPS with Atlassian API tokens plus the Bitbucket Cloud REST API - PRs, pipelines, comments, branches.",
-      "version": "1.1.0"
+      "version": "1.2.1"
     },
     {
       "name": "checkpoint-email",
@@ -65,7 +65,7 @@
       "name": "doc-builder",
       "source": "./skills/doc-builder",
       "description": "Finished documents as DOCX and PDF through Word - findings reports via HTML, screenshot SOPs via OOXML - with the house style supplied by whichever brand pack is installed. Also install solomon-doc-builder for automatic Solomon house style; --brand neutral (or DOC_BUILDER_BRAND=neutral) always turns branding off.",
-      "version": "1.1.0"
+      "version": "1.2.1"
     },
     {
       "name": "drata",
@@ -77,7 +77,7 @@
       "name": "exchange-mailbox-cleanup",
       "source": "./skills/exchange-mailbox-cleanup",
       "description": "Walks a non-technical operator through Exchange Online mailbox cleanup and offboarding - preflight, litigation hold, preservation check, account deletion - with typed confirmation on every irreversible step.",
-      "version": "1.0.1"
+      "version": "1.0.2"
     },
     {
       "name": "exchange-mailbox-restore",
@@ -107,13 +107,13 @@
       "name": "jira-manager",
       "source": "./skills/jira-manager",
       "description": "Jira Cloud over the REST API with email + API token - JQL search, create, update, assign, transition, comment, log work. No MCP connector.",
-      "version": "1.1.0"
+      "version": "1.0.1"
     },
     {
       "name": "knowbe4-admin",
       "source": "./skills/knowbe4-admin",
       "description": "KnowBe4 KSAT admin: diagnose SCIM sync against Entra ID or Okta, pull reporting data, and make changes on the correct surface.",
-      "version": "1.0.0"
+      "version": "1.0.1"
     },
     {
       "name": "mermaid-svg-bitbucket",
@@ -143,7 +143,7 @@
       "name": "power-automate-api",
       "source": "./skills/power-automate-api",
       "description": "Power Automate cloud flows through the API instead of the maker portal - definitions, expressions, triggers, connection references, run history, and the Flow/BAP auth errors.",
-      "version": "1.1.0"
+      "version": "1.0.2"
     },
     {
       "name": "repo-docs",
@@ -215,13 +215,13 @@
       "name": "crew",
       "source": "./plugin/crew",
       "description": "Virtual dev team for multi-repo legacy work - 29 context-isolated agents (13 tiered, 15 domain specialists opted into per repo, and the standing manager), 24 slash commands, 17 bundled skills, and deterministic hooks that block unsafe commands, gate unverified turns, brief the PM at session start, re-engage it to assign work when project state changes, carry a handoff across compaction (archiving one it judges stale rather than injecting it as current), recreate a missing or broken .crew/config.json from a single-source template, and layer a guided, walkthrough-written machine-global config under the per-repo one.",
-      "version": "0.16.35"
+      "version": "0.19.14"
     },
     {
       "name": "gizmoduck",
       "source": "./plugin/gizmoduck",
       "description": "Nuclei vulnerability scans on hosts and websites, diffed against a baseline, rendered as triaged Markdown/HTML/PDF reports that itemise Critical/High/Medium and count the rest, and turned into ServiceDesk Plus tickets for Critical and High findings after one batch confirmation. No hooks, no agents.",
-      "version": "0.3.0"
+      "version": "0.5.0"
     },
     {
       "name": "localgpu",

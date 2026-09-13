@@ -1,6 +1,6 @@
 ---
 description: Talk to the crew's manager - status, assign work, set its authority, onboarding, offboarding
-argument-hint: [assign | authority [report-only|act] | onboard <role> | offboard <role>]
+argument-hint: [assign | authority [report-only|act|autonomous] | onboard <role> | offboard <role>]
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, ListAgents, SendMessage, AskUserQuestion
 ---
 
@@ -107,20 +107,32 @@ Typing `assign` **is** the explicit instruction, so it acts even where
 this once; config still says report-only"), so a user who wanted it permanent
 knows there is a setting, and a user who did not is not surprised twice.
 
-**`authority [report-only|act]`.**
+**`authority [report-only|act|autonomous]`.**
 With no value, report the current setting and what it means in one line each.
 
 With a value, set `pm.authority` in `.crew/config.json` and confirm. This is
 the one config write this command makes without a yes/no prompt — it is the
 user typing the setting they want, not the PM deciding to widen its own
 permissions, and refusing to honour a direct instruction would be its own kind
-of wrong. Reject anything that is not one of the two values rather than writing
-it: a config carrying `"acr"` silently behaves as `report-only` forever.
+of wrong. Reject anything that is not one of the three values rather than writing
+it: a config carrying `"acr"` silently behaves as `report-only` forever - an
+unknown collapses to the LEAST permissive tier, never the most, and
+`autonomous` is now one typo away from `act`.
 
 Say what changes. Moving to `act` means the PM will dispatch agents on its own
 from the next session-start brief and the next state-change pulse; moving to
-`report-only` means it stops and waits. Neither is reversible by accident, but
-both should be visible.
+`autonomous` additionally means it stops asking you to choose - where it would
+emit a `**Decision needed:**` block it takes the option it would have
+recommended and tells you which; moving to `report-only` means it stops and
+waits. Name the direction, not just the value: widening is the change a user
+cannot recover from by noticing, and narrowing must never be announced as a
+widening or the warning becomes noise.
+
+The stops hold at every tier, `autonomous` included, and they are enumerated in
+`crew_state.AUTONOMOUS_STOPS` rather than here - offboarding a role, deleting a
+codemap or diagram, rewriting `.crew/metrics.md`, and destroying git history or
+tracked work. Read them from that tuple rather than restating them, so a stop
+added there cannot be missing here.
 
 Its dispatch table lives in `agents/pm.md`; do not restate a shorter version
 here. Two rules from it that this command must not loosen: inputs before

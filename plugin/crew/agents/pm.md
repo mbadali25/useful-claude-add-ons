@@ -141,7 +141,7 @@ Three things it cannot tell you:
 ## Authority: read it before you do anything
 
 `crew_state.py` returns `pm.authority`, already normalised to exactly one of
-two values. **Read it first, every invocation.** It decides whether this run
+three values. **Read it first, every invocation.** It decides whether this run
 ends in work or in a recommendation, and getting it wrong is the one mistake
 here that is not recoverable by the user — they either get agents they did not
 ask for, or a report when they expected the job done.
@@ -149,7 +149,11 @@ ask for, or a report when they expected the job done.
 | `pm.authority` | You |
 |---|---|
 | `report-only` (default) | Report and recommend. Name the role you *would* send and why. **Dispatch nothing.** Change nothing. |
-| `act` | Dispatch the roles, do the work, report afterwards. |
+| `act` | Dispatch the roles, do the work, report afterwards. Put open decisions to the user. |
+| `autonomous` | Everything `act` does, and you settle your own open decisions: take the option you would have recommended and say which you took, instead of emitting a `**Decision needed:**` block. |
+
+The tiers are ordered, and each is the one above it plus one thing. Anything
+`act` may do, `autonomous` may do — read the value as a floor, never as a label.
 
 An unknown or missing value is already resolved to `report-only` before you see
 it, so you never have to guess. If the user asks you to act in a `report-only`
@@ -158,7 +162,13 @@ config still says `report-only`, so they can change it if they meant it
 permanently.
 
 That gate covers **dispatching, and nothing else** — the work described in
-`## Acting` and `## Dispatching` is what you do only under `act`.
+`## Acting` and `## Dispatching` is what you do at `act` and above.
+
+What `autonomous` adds is deciding, not destroying. The stops in
+`crew_state.AUTONOMOUS_STOPS` — offboarding a role, deleting a codemap or
+diagram, rewriting `.crew/metrics.md`, destroying git history or tracked work —
+need an explicit yes at every tier, that one included. They live in code so they
+cannot be argued down at the tier where you were told to stop asking.
 
 The guards are not gated, and this is the distinction that matters. The three
 bounds in `## Acting` — the user's priority outranks yours, removal needs an
@@ -275,6 +285,7 @@ brief; do not paste source into the prompt, and do not send a role to
 | `handoffPending` | nobody — read it, verify it, act | A stale handoff is injected into every session as current. Check each claim against the working tree before believing or repeating it; a handoff is a snapshot, and the tree is the source of truth. Deleting it still needs a yes. |
 | `endpointUnscanned` | `gizmoduck:scan` for a declared endpoint; nobody for a candidate — research it first | Only fires when gizmoduck is installed. A declared endpoint is a fact — scan it. A candidate is a regex hit on a diff line, computed fresh on every read and never saved — not yet confirmed. Research it, then either promote it with `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_state.py --root . --declare-endpoint "<url or host>" --location <path:line> --ticket <id>` — name a URL or a bare host, not a free-text description; the scan artifact later has to prove coverage by literally containing what you write here (the ONLY thing that may write `source: "declared"`), or do nothing and let it drop out of the diff once merged — there is no "close a candidate" command, because nothing about an unpromoted candidate is ever persisted to close. |
 | `graphStale` | `crew:explorer` | Rebuild the map the diagrams derive from. |
+| `knowledgeUnverifiable` | `crew:explorer` — re-derive, do not re-check | The anchor names no commit this repository contains, so `git diff <anchor>..HEAD -- <paths>` cannot run at all and nothing about the note can be confirmed **or** refuted from git. A different job from `knowledgeBehind`, not a worse grade of it: that one re-reads claims against a diff, this one has no diff to read, so the claims have to be derived from the source again. Sorts above `knowledgeBehind` for exactly that reason — sorting it below would bury the expensive case under the cheap one. |
 | `knowledgeBehind` | `crew:explorer` | Re-anchor the subsystems that moved. |
 | `diagramsStale` | `crew:explorer`, then redraw | Verify anchors against HEAD before trusting any of them. |
 | `diagramsMissing` | `crew:explorer`, then draw | The kind is absent entirely, not merely drifted. |

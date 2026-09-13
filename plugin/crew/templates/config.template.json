@@ -1,5 +1,5 @@
 {
-  "schema": 3,
+  "schema": 4,
   "tier": 0,
   "roles": [
     "explorer",
@@ -46,7 +46,8 @@
   },
   "tracker": "files",
   "jira": {
-    "project": null
+    "project": null,
+    "cloudId": null
   },
   "sdp": {
     "portal": null,
@@ -77,6 +78,17 @@
     "reserveTokens": 100000,
     "handoffPath": ".work/HANDOFF.md",
     "keepTranscripts": 5,
+    "autoClear": {
+      "enabled": false,
+      "method": "auto",
+      "windowTitle": null,
+      "command": "/clear",
+      "delaySeconds": 3,
+      "minHandoffLines": 5,
+      "unsafeFocus": false
+    },
+    "autoWrapUp": false,
+    "autoResume": false,
     "staleHandoff": {
       "maxAgeHours": 72,
       "maxCommitsBehind": 3
@@ -110,6 +122,7 @@
     "quietLines": 8,
     "maxLines": 40,
     "authority": "report-only",
+    "ticketGranularity": "system",
     "maxDispatches": 3
   },
   "graph": {
@@ -118,5 +131,16 @@
     "out": "graphify-out",
     "mode": "code-only",
     "commitHook": false
+  },
+  "docs": {
+    "theme": null,
+    "reportTheme": null
+  },
+  "bitbucket": {
+    "mergeGate": {
+      "enabled": false,
+      "branch": null,
+      "preset": "standard"
+    }
   }
 }

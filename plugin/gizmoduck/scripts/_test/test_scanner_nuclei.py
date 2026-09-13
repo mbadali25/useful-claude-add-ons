@@ -303,7 +303,7 @@ def test_run_treats_a_template_load_failure_as_rejected_not_clean(monkeypatch, t
 
     monkeypatch.setattr(nuclei.base, "run_tool", fake_run_tool)
 
-    raw_path, result = nuclei.run("https://example.com", str(tmp_path), {})
+    raw_path, _ = nuclei.run("https://example.com", str(tmp_path), {})
 
     assert raw_path is None
     assert not os.path.exists(os.path.join(str(tmp_path), "nuclei.jsonl"))
@@ -322,7 +322,7 @@ def test_run_a_genuinely_empty_stdout_on_clean_exit_is_still_a_clean_scan(
 
     monkeypatch.setattr(nuclei.base, "run_tool", fake_run_tool)
 
-    raw_path, result = nuclei.run("https://example.com", str(tmp_path), {})
+    raw_path, _ = nuclei.run("https://example.com", str(tmp_path), {})
 
     assert raw_path is not None
     assert os.path.isfile(raw_path)

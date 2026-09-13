@@ -1,4 +1,9 @@
-anchor: useful-claude-add-ons@d61342c3
+anchor: useful-claude-add-ons@7b0d8f3a
+verified: 2026-09-12
+re-verified, not re-derived: every claim below was re-read against the files it
+cites at this anchor and its citation re-pointed where the code had moved. One
+section - the agent/command counts - was re-measured and had inverted, and is
+corrected in place rather than carried forward.
 
 # Marketplace and registration
 
@@ -21,8 +26,8 @@ Re-read at this anchor, in full, not merely re-resolved:
   `check_registration`, `check_catalogs`, `check_docs`, `check_versions`.
 - `_verify/smoke.sh` — the header, `run_marketplace_check()`, the `check` roster,
   and `version_agreement_check`'s registration.
-- `scripts/install-prerequisites.sh:803-872` and
-  `scripts/install-prerequisites.ps1:805-848` — the skill and plugin catalogs.
+- `scripts/install-prerequisites.sh:807-912` and
+  `scripts/install-prerequisites.ps1:808-859` — the skill and plugin catalogs.
 - `.claude-plugin/marketplace.json` in full (via `json.load`, counted by `source`
   prefix), plus the `crew` entry's `description`.
 - `skills/README.md` (table head), `plugin/README.md` (catalog rows),
@@ -72,10 +77,10 @@ places. Confirmed by reading each file.
 | | Skill | Plugin |
 |---|---|---|
 | Marketplace entry | `.claude-plugin/marketplace.json` (one flat `plugins` array — the file does not distinguish skills from plugins by field, only by `source` prefix) | same file |
-| Catalog doc | `skills/README.md` — table header at `skills/README.md:36`, first entry row at `:38` | `plugin/PLUGINS.md` (a `## \`name\`` section) **and** `plugin/README.md` (a table row) |
+| Catalog doc | `skills/README.md` — table header at `skills/README.md:87`, first entry row at `skills/README.md:89` | `plugin/PLUGINS.md` (a `## \`name\`` section) **and** `plugin/README.md` (a table row) |
 | Root README | linked via `README.md` under `skills/{name}` | linked via `README.md` under `plugin/{name}` |
-| `.sh` install script | `SKILL_KEYS`/`SKILL_NAME`/`SKILL_SPEC` arrays, `scripts/install-prerequisites.sh:803` (`SKILL_KEYS=(`) through `:845` (`unset _i` after `SKILL_STATE`) | `PLUGIN_KEYS`/`PLUGIN_NAME`/`PLUGIN_SPEC`, `scripts/install-prerequisites.sh:852` (`PLUGIN_KEYS=(`) through `:872` |
-| `.ps1` install script | `$script:SkillCatalog`, `scripts/install-prerequisites.ps1:805` | `$script:PluginCatalog`, `scripts/install-prerequisites.ps1:842` |
+| `.sh` install script | `SKILL_KEYS`/`SKILL_NAME`/`SKILL_SPEC` arrays, `scripts/install-prerequisites.sh:807` (`SKILL_KEYS=(`) through `scripts/install-prerequisites.sh:885` (`unset _i` after `SKILL_STATE`) | `PLUGIN_KEYS`/`PLUGIN_NAME`/`PLUGIN_SPEC`, `scripts/install-prerequisites.sh:892` (`PLUGIN_KEYS=(`) through `scripts/install-prerequisites.sh:912` |
+| `.ps1` install script | `$script:SkillCatalog`, `scripts/install-prerequisites.ps1:808` | `$script:PluginCatalog`, `scripts/install-prerequisites.ps1:854` |
 | Own manifest version | none (skills have no `plugin.json`) | `plugin/<name>/.claude-plugin/plugin.json`, bumped in lockstep with the marketplace entry |
 
 ### Counts: measure, do not read them here
@@ -152,18 +157,47 @@ the marketplace name lists, for equality including order. It never looks at
 menu text. `check_docs` likewise tests only for the presence of a link substring,
 not the surrounding cell. **Nothing in the gate reads descriptive prose anywhere.**
 
-The consequence is live today. `plugin/crew/agents/` holds 29 files and
-`plugin/crew/commands/` holds 24 (`ls plugin/crew/agents/*.md | wc -l`). Four
-places state those counts correctly — `.claude-plugin/marketplace.json`'s `crew`
-`description`, `plugin/PLUGINS.md:17`, `plugin/README.md:370`, `README.md:773`.
-Four state them wrongly, and every check passes:
+The consequence is live today, and **re-measuring it at this anchor inverted the
+finding.** On disk: `plugin/crew/agents/` holds **54** `.md` files,
+`plugin/crew/commands/` holds **24**, `plugin/crew/skills/` holds **17**.
 
-| Location | Says | Actual |
-|---|---|---|
-| `scripts/install-prerequisites.sh:859` | `11 agents, 21 commands` | 29 agents, 24 commands |
-| `scripts/install-prerequisites.ps1:843` | `11 agents, 21 commands` | 29 agents, 24 commands |
-| `plugin/PLUGINS.md:153` (heading) | `Agents — 14, tiered plus the manager` | 29 |
-| `README.md:162` (menu-item 19 prose) | `17 subagents, 24 slash commands` | 29 subagents |
+The previous pass recorded 29 agents and named four places that stated the count
+*correctly*. Every one of those four has since become wrong, or was never a
+current-state claim at all. **No place in the repo now states the agent count
+correctly**, and every check still passes:
+
+| Location | Says | Actual | Was |
+|---|---|---|---|
+| `.claude-plugin/marketplace.json:217` (`crew` `description`) | `29 context-isolated agents` | 54 | listed as correct |
+| `plugin/PLUGINS.md:17` (`Registers` row) | `29 agents, 24 commands, 17 skills` | 54 agents; commands and skills correct | listed as correct |
+| `plugin/PLUGINS.md:153` (heading) | `Agents — 14, tiered plus the manager` | 54 | already wrong |
+| `README.md:165` (menu-item 19 prose) | `50 subagents, 24 slash commands, 17 bundled skills` | 54 subagents; the rest correct | already wrong, at `:162` |
+| `scripts/install-prerequisites.sh:899` | `11 agents, 21 commands` | 54 agents, 24 commands | already wrong |
+| `scripts/install-prerequisites.ps1:855` | `11 agents, 21 commands` | 54 agents, 24 commands | already wrong |
+
+Two of the previously-cited "correct" places were misclassified rather than
+drifted, and the distinction matters because it is not fixable by editing a
+number:
+
+- `plugin/README.md:370` and its twin `README.md:590` sit under the heading
+  `### crew 0.15.1` and read "Three new agents and a skill, taking crew to 14
+  agents and 17 bundled skills." That is a **changelog entry**: correct as
+  history, and never a statement about the current build. Counting it as a place
+  that states the count correctly was an error in the previous pass, not drift.
+- `README.md:773` is now a PowerShell code block about `vault-automation/`. The
+  citation no longer points at anything to do with counts.
+
+Only the commands figure (24) and the skills figure (17) survive re-measurement
+unchanged, and only in `plugin/PLUGINS.md:17` and `README.md:165`. DERIVED -
+counted with `os.listdir` over the three directories at this anchor.
+
+JUDGEMENT: the interesting part is not that a number went stale. It is that the
+*correction* went stale faster than the thing it corrected. `11 agents` in the
+install scripts has been continuously wrong and is trivially detectable; the
+carefully-derived "these four are right" list rotted silently, because nothing
+re-checks a claim that something is correct. A finding that records which places
+are RIGHT acquires an expiry date the moment it is written, and nothing in this
+repo enforces it.
 
 `check_menu_parity` (`scripts/check-marketplace.py:194-230`) and
 `check_group_parity` (`:233-260`) were read too, and compare the same way: menu
@@ -171,10 +205,18 @@ Four state them wrongly, and every check passes:
 `Default = $true/$false`). No descriptive string is compared anywhere in either.
 So the two install-script lines being *consistently* wrong means the matched-pair
 rule passes cleanly — the pair agrees, it is simply agreeing on a stale sentence. The installer's understatement
-is tracked in `TODO.md` under "The installer menu undersells crew by eighteen
-agents and three commands"; the `PLUGINS.md:153` and `README.md:162` figures are
-the same class of drift and are recorded here because they were found while
-verifying it.
+is tracked in `TODO.md:558-600`, whose heading reads "Crew's agent count is wrong
+in three places, right in four" - quoted wrongly by the previous pass as "The
+installer menu undersells crew by eighteen agents and three commands", which
+appears nowhere in that file. The `plugin/PLUGINS.md:153` and `README.md:165`
+figures are the same class of drift and are recorded here because they were found
+while verifying it.
+
+**That TODO entry is itself stale at this anchor**, and in the same direction as
+everything else in this section: it records 29 agents and "right in four", both
+measured 2026-09-06 at `1f97e51c`. On disk today it is 54 and right in none. The
+entry even instructs the reader to "re-measure rather than trusting this line" -
+advice that was followed here, and that is the only reason the drift surfaced.
 
 **JUDGEMENT:** treat "the gate is green" as a statement about structure only —
 which directories are registered, which keys line up in which order, which links
@@ -240,7 +282,9 @@ does not derive a count from the header comment.
 
 **DERIVED.** `.crew/verify.json` — which `CLAUDE.md` names as "the mechanism" for
 per-path verify commands, and which invokes this gate as
-`python scripts/check-marketplace.py` (`.crew/verify.json:11`) — is **gitignored**
+`python scripts/check-marketplace.py` (`.crew/verify.json:11`, **UNVERIFIABLE HERE**:
+the file is machine-local and absent from this checkout, so this line number could
+not be re-read and is carried forward unchecked) — is **gitignored**
 via `.gitignore:282` (`.crew/*`). Two consequences for anyone re-anchoring a note
 that cites it:
 
@@ -261,9 +305,10 @@ print(len(json.load(open('.crew/verify.json'))['rules']))"` — never from a dif
 **DERIVED.** `check_group_parity` (`scripts/check-marketplace.py:238-243`)
 enumerates **four** sub-picker groups, not two: `own-skills`
 (`SKILL_KEYS`/`SkillCatalog`), `repo-plugins` (`PLUGIN_KEYS`/`PluginCatalog`),
-and also `team` (`TEAM_KEYS`/`TeamCatalog`, `scripts/install-prerequisites.sh:878`
-and `scripts/install-prerequisites.ps1:856`) and `community`
-(`COMMUNITY_KEYS`/`CommunityCatalog`, `:894` and `:866`).
+and also `team` (`TEAM_KEYS`/`TeamCatalog`, `scripts/install-prerequisites.sh:918`
+and `scripts/install-prerequisites.ps1:868`) and `community`
+(`COMMUNITY_KEYS`/`CommunityCatalog`, `scripts/install-prerequisites.sh:934` and
+`scripts/install-prerequisites.ps1:878`).
 
 The last two hold plugins from *other people's* marketplaces. They are checked
 for `.sh`/`.ps1` agreement, and for being non-empty — but `check_catalogs`

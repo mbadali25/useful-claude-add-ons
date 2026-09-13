@@ -85,8 +85,7 @@ EMU_PER_INCH = int(Inches(1))
 def _specs_dir():
     d = BRAND.specs_dir if BRAND else None
     if not d:
-        raise SystemExit("The %s brand pack has no specs directory; pass --out."
-                         % (BRAND.name if BRAND else "active"))
+        raise SystemExit(f"The {(BRAND.name if BRAND else 'active')} brand pack has no specs directory; pass --out.")
     return d
 
 
@@ -129,12 +128,12 @@ def _ext_for_part(part):
 # without re-parsing free text. This IS the honesty mechanism the task asks
 # for: nothing below is ever swallowed, only ever appended here.
 # --------------------------------------------------------------------------
-class Ledger(object):
+class Ledger:
     def __init__(self):
         self.warnings = []
 
     def add(self, category, ctx, message):
-        self.warnings.append("[%s] %s: %s" % (category, ctx, message))
+        self.warnings.append(f"[{category}] {ctx}: {message}")
 
     def category_counts(self):
         counts = Counter()
@@ -176,7 +175,7 @@ def _flag_exotic_run_formatting(run, ctx, ledger, check_underline=True,
     if f.strike or f.double_strike:
         bad.append("strike")
     if f.highlight_color:
-        bad.append("highlight=%s" % f.highlight_color)
+        bad.append(f"highlight={f.highlight_color}")
     if f.all_caps:
         bad.append("all_caps")
     if f.small_caps:
@@ -188,9 +187,8 @@ def _flag_exotic_run_formatting(run, ctx, ledger, check_underline=True,
     if bad:
         text = (run.text or "")[:40]
         ledger.add("formatting", ctx,
-                   "run %r has %s -- not expressible as **bold**/[link] markup, "
-                   "DROPPED (text kept, styling lost on rebuild)"
-                   % (text, ", ".join(bad)))
+                   f"run {text!r} has {', '.join(bad)} -- not expressible as **bold**/[link] markup, "
+                   "DROPPED (text kept, styling lost on rebuild)")
 
 
 def _run_markup(run, ctx, ledger, expect_bold, italic_is_house=False):
@@ -202,16 +200,16 @@ def _run_markup(run, ctx, ledger, expect_bold, italic_is_house=False):
                                 italic_is_house=italic_is_house)
     if "**" in text:
         ledger.add("literal-markup", ctx,
-                    "run %r contains a literal '**' -- will be misread as a bold "
-                    "delimiter when this spec is rebuilt" % text[:40])
+                    f"run {text[:40]!r} contains a literal '**' -- will be misread as a bold "
+                    "delimiter when this spec is rebuilt")
     if S._LINK_RE.search(text):
         ledger.add("literal-markup", ctx,
-                    "run %r contains a '[..](..)'  -shaped substring that is not "
+                    f"run {text[:40]!r} contains a '[..](..)'  -shaped substring that is not "
                     "an actual hyperlink here -- will be misread as a link when "
-                    "this spec is rebuilt" % text[:40])
+                    "this spec is rebuilt")
     bold = bool(run.bold)
     if bold and not expect_bold:
-        return "**%s**" % text
+        return f"**{text}**"
     return text
 
 
@@ -227,9 +225,9 @@ def _hyperlink_label_markup(hyperlink, ctx, ledger):
         _flag_exotic_run_formatting(r, ctx, ledger, check_underline=False)
         if "[" in text or "]" in text:
             ledger.add("literal-markup", ctx,
-                        "hyperlink label run %r contains '[' or ']' -- will break "
-                        "the [label](url) delimiter on rebuild" % text[:40])
-        parts.append("**%s**" % text if r.bold else text)
+                        f"hyperlink label run {text[:40]!r} contains '[' or ']' -- will break "
+                        "the [label](url) delimiter on rebuild")
+        parts.append(f"**{text}**" if r.bold else text)
     return "".join(parts)
 
 
@@ -242,13 +240,12 @@ def _check_hyperlink_style(hyperlink, ctx, ledger):
         colour = _rgb(r)
         if colour is not None and colour.upper() != S.LINK_BLUE:
             ledger.add("hyperlink-style", ctx,
-                       "hyperlink %r run colour is %s, house is %s -- rebuild "
-                       "will use house colour regardless (original look lost)"
-                       % (hyperlink.text[:40], colour, S.LINK_BLUE))
+                       f"hyperlink {hyperlink.text[:40]!r} run colour is {colour}, house is {S.LINK_BLUE} -- rebuild "
+                       "will use house colour regardless (original look lost)")
         if not r.font.underline:
             ledger.add("hyperlink-style", ctx,
-                       "hyperlink %r is not underlined in the source -- rebuild "
-                       "always underlines (original look lost)" % hyperlink.text[:40])
+                       f"hyperlink {hyperlink.text[:40]!r} is not underlined in the source -- rebuild "
+                       "always underlines (original look lost)")
 
 
 def _items_to_markup(items, ctx, ledger, expect_bold=False,
@@ -270,21 +267,20 @@ def _items_to_markup(items, ctx, ledger, expect_bold=False,
             label_md = _hyperlink_label_markup(item, ctx, ledger)
             if not url:
                 ledger.add("unresolved-link", ctx,
-                           "hyperlink %r has no resolvable target (r:id missing or "
+                           f"hyperlink {item.text[:40]!r} has no resolvable target (r:id missing or "
                            "dead relationship) -- emitted as plain text, the LINK "
-                           "ITSELF IS LOST" % item.text[:40])
+                           "ITSELF IS LOST")
                 parts.append(label_md.replace("**", ""))
                 continue
             _check_hyperlink_style(item, ctx, ledger)
-            parts.append("[%s](%s)" % (label_md, url))
+            parts.append(f"[{label_md}]({url})")
         elif isinstance(item, Run):
             parts.append(_run_markup(item, ctx, ledger, expect_bold,
                                      italic_is_house=italic_is_house))
         else:
             ledger.add("structure", ctx,
-                       "paragraph contains a %r inline-content item this extractor "
-                       "does not handle -- its text, if any, is DROPPED"
-                       % type(item).__name__)
+                       f"paragraph contains a {type(item).__name__!r} inline-content item this extractor "
+                       "does not handle -- its text, if any, is DROPPED")
     return "".join(parts)
 
 
@@ -326,8 +322,8 @@ def _extract_banner(doc, ledger):
     fills = re.findall(r'<w:shd[^>]*w:fill="([0-9A-Fa-f]{6})"', tbl._tbl.xml)
     if S.ACCENT_RED not in [f.upper() for f in fills]:
         ledger.add("banner", "banner",
-                   "accent bar cell is not shaded %s (found %s) -- rebuild always "
-                   "uses house accent colour regardless" % (S.ACCENT_RED, fills))
+                   f"accent bar cell is not shaded {S.ACCENT_RED} (found {fills}) -- rebuild always "
+                   "uses house accent colour regardless")
     if not tbl.rows or len(tbl.rows[0].cells) < 2:
         ledger.add("banner", "banner", "banner table does not have the expected "
                    "2 cells -- title/subtitle extraction FAILED")
@@ -340,9 +336,8 @@ def _extract_banner(doc, ledger):
         ledger.add("banner", "banner", "banner cell has no title text")
     if len(texts) > 2:
         ledger.add("banner", "banner",
-                   "banner cell has %d non-blank paragraphs, expected 1 (title) or "
-                   "2 (title+subtitle) -- extra text %r is DROPPED"
-                   % (len(texts), texts[2:]))
+                   f"banner cell has {len(texts):d} non-blank paragraphs, expected 1 (title) or "
+                   f"2 (title+subtitle) -- extra text {texts[2:]!r} is DROPPED")
     return title, subtitle
 
 
@@ -361,26 +356,26 @@ def _extract_image(para, doc, ctx, ledger):
 
     if vml_picts:
         ledger.add("legacy-image", ctx,
-                   "%d legacy VML <w:pict> image(s) found -- not extracted (this "
+                   f"{len(vml_picts):d} legacy VML <w:pict> image(s) found -- not extracted (this "
                    "format predates the DrawingML pictures every master in the "
-                   "current survey uses)" % len(vml_picts))
+                   "current survey uses)")
 
     if anchors:
         ledger.add("anchor-image", ctx,
-                   "%d floating/anchored image(s) (wp:anchor) found -- this "
+                   f"{len(anchors):d} floating/anchored image(s) (wp:anchor) found -- this "
                    "contradicts the survey finding that no master uses floating "
                    "images. Extracted as a plain inline centered picture like "
                    "every other image block; the original floating position and "
                    "text-wrap behaviour CANNOT be expressed by the image block "
-                   "type and is LOST" % len(anchors))
+                   "type and is LOST")
         inlines = inlines + anchors  # best-effort: still try to pull pixels/width
 
     if not inlines:
         return None
     if len(inlines) > 1:
         ledger.add("multi-image", ctx,
-                   "%d images in one paragraph -- only the first is extracted, "
-                   "the rest are DROPPED" % len(inlines))
+                   f"{len(inlines):d} images in one paragraph -- only the first is extracted, "
+                   "the rest are DROPPED")
 
     inline = inlines[0]
     extent = inline.find(qn("wp:extent"))
@@ -399,8 +394,8 @@ def _extract_image(para, doc, ctx, ledger):
         return None
     rel = doc.part.rels.get(rid)
     if rel is None:
-        ledger.add("structure", ctx, "image r:embed %r has no matching "
-                   "relationship -- cannot extract its bytes, skipped entirely" % rid)
+        ledger.add("structure", ctx, f"image r:embed {rid!r} has no matching "
+                   "relationship -- cannot extract its bytes, skipped entirely")
         return None
     target_part = rel.target_part
     blob = target_part.blob
@@ -451,15 +446,17 @@ def _walk_document(doc, ctx_name, ledger):
                 preview = re.sub(r"\s+", " ", "".join(
                     t.text or "" for t in el.findall(".//" + qn("w:t"))
                 ))[:80]
-                ledger.add("extra-table", "body position %d" % i,
-                           "a %s table beyond the title banner -- this contradicts "
-                           "the survey finding of at most 1 table per master. Its "
-                           "content (preview: %r) is NOT representable by this spec "
-                           "format and was NOT extracted" % (
-                               "%dx%d" % (len(el.findall(qn("w:tr"))),
-                                          len(el.find(qn("w:tr")).findall(qn("w:tc")))
-                                          if el.find(qn("w:tr")) is not None else 0),
-                               preview))
+                first_row = el.find(qn("w:tr"))
+                n_rows = len(el.findall(qn("w:tr")))
+                n_cols = (len(first_row.findall(qn("w:tc")))
+                          if first_row is not None else 0)
+                shape = f"{n_rows:d}x{n_cols:d}"
+                ledger.add("extra-table", f"body position {i:d}",
+                           f"a {shape} table beyond the title banner -- this "
+                           "contradicts the survey finding of at most 1 table "
+                           "per master. Its content (preview: "
+                           f"{preview!r}) is NOT representable by this spec "
+                           "format and was NOT extracted")
                 stats["unrepresentable_table"] += 1
             i += 1
             continue
@@ -467,15 +464,16 @@ def _walk_document(doc, ctx_name, ledger):
             i += 1
             continue
         if el.tag != qn("w:p"):
-            ledger.add("structure", "body position %d" % i,
-                       "unrecognized top-level body element <%s> -- skipped, not "
-                       "representable" % el.tag.split("}")[-1])
+            local_tag = el.tag.split("}")[-1]
+            ledger.add("structure", f"body position {i:d}",
+                       f"unrecognized top-level body element <{local_tag}> -- "
+                       "skipped, not representable")
             stats["unrepresentable_element"] += 1
             i += 1
             continue
 
         para = Paragraph(el, doc)
-        ctx = "%s para %d %r" % (ctx_name, i, para.text[:40])
+        ctx = f"{ctx_name} para {i:d} {para.text[:40]!r}"
         kind, _ = C._classify_para(para)
 
         if kind == "image":
@@ -537,8 +535,8 @@ def _walk_document(doc, ctx_name, ledger):
             if actual_no is not None and actual_no != expected_step_no:
                 block["number"] = actual_no
                 ledger.add("custom-number", ctx,
-                           "step is numbered %d, auto-numbering would give %d -- "
-                           "explicit \"number\" recorded" % (actual_no, expected_step_no))
+                           f"step is numbered {actual_no:d}, auto-numbering would give {expected_step_no:d} -- "
+                           "explicit \"number\" recorded")
                 expected_step_no = actual_no + 1
             elif actual_no is not None:
                 expected_step_no = actual_no + 1
@@ -596,9 +594,9 @@ def _walk_document(doc, ctx_name, ledger):
             size_pt = first_run.font.size.pt if first_run.font.size else None
             if size_pt == S.HEADING_PT and first_run.font.name != S.HEADING_FONT:
                 ledger.add("possible-heading", ctx,
-                           "paragraph is %.1fpt (heading size) but font is %r, not "
-                           "%r -- the classifier does not count this as a heading; "
-                           "verify by eye" % (size_pt, first_run.font.name, S.HEADING_FONT))
+                           f"paragraph is {size_pt:.1f}pt (heading size) but font is {first_run.font.name!r}, not "
+                           f"{S.HEADING_FONT!r} -- the classifier does not count this as a heading; "
+                           "verify by eye")
         i += 1
 
     return title, subtitle, body_blocks, stats
@@ -619,7 +617,7 @@ def _self_check(doc, spec_for_check, ledger):
         actual = [C._classify_para(p) for p in doc.paragraphs]
         diff = C._diff_blocks("(freshly extracted spec)", expected, actual)
     except Exception as exc:  # never let the self-check crash extraction
-        ledger.add("selfcheck", "self-check", "could not run: %s" % exc)
+        ledger.add("selfcheck", "self-check", f"could not run: {exc}")
         return
     if diff:
         ledger.add("selfcheck", "self-check", diff)
@@ -658,7 +656,8 @@ def _finalize_and_write(doc, spec, master_path, slug, out_path, assets_dir,
     # it would resolve that path and silently overwrite the production master.
     # That happened once during this tool's own development. Redirect a
     # scratch extraction's output to a scratch .docx instead, and say so.
-    _norm = lambda p: os.path.normcase(os.path.normpath(os.path.abspath(p)))
+    def _norm(p):
+        return os.path.normcase(os.path.normpath(os.path.abspath(p)))
     # The brand's specs directory is only a DEFAULT. A pack with none (neutral)
     # must not stop an extraction whose --out was given explicitly; such an
     # extraction is simply always "scratch" and gets the redirect below.
@@ -666,16 +665,16 @@ def _finalize_and_write(doc, spec, master_path, slug, out_path, assets_dir,
     if real_specs is None or _norm(spec_dir) != _norm(real_specs):
         scratch_docx = os.path.splitext(os.path.basename(out_path))[0] + ".docx"
         spec["output"] = scratch_docx
+        where = real_specs or "the brand's specs directory (this pack has none)"
         spec.setdefault("_warnings", []).append(
-            "Extracted outside %s, so \"output\" was redirected to the local "
-            "%r rather than the real master, to stop a rebuild overwriting "
-            "production. Point it at the master deliberately if that is what "
-            "you want." % (real_specs or "the brand's specs directory (this pack has none)",
-                           scratch_docx))
+            f'Extracted outside {where}, so "output" was redirected to the '
+            f"local {scratch_docx!r} rather than the real master, to stop a "
+            "rebuild overwriting production. Point it at the master "
+            "deliberately if that is what you want.")
         sys.stderr.write(
-            "note: extracted outside specs/, so \"output\" points at %r rather\n"
+            f"note: extracted outside specs/, so \"output\" points at {scratch_docx!r} rather\n"
             "      than the real master -- building this spec will not\n"
-            "      overwrite production.\n" % scratch_docx)
+            "      overwrite production.\n")
 
     planned_images = []  # (abs_path, blob)
     seq = 0
@@ -691,13 +690,13 @@ def _finalize_and_write(doc, spec, master_path, slug, out_path, assets_dir,
             # write and no usable "path" -- record a placeholder rather than
             # emitting a spec the builder would crash on with a KeyError.
             blk["path"] = None
-            ledger.add("image-missing", "image %d" % seq,
+            ledger.add("image-missing", f"image {seq:d}",
                        "could not be extracted -- \"path\" is null; this spec "
                        "CANNOT be built as-is")
             continue
         source_text = blk.get("caption") or name_hint or ""
         name_slug = _slugify(source_text, max_words=4) or "img"
-        fname = "%02d-%s%s" % (seq, name_slug, ext)
+        fname = f"{seq:02d}-{name_slug}{ext}"
         abs_path = os.path.join(assets_dir, fname)
         planned_images.append((abs_path, blob))
         blk["path"] = _to_spec_relpath(abs_path, spec_dir)
@@ -738,7 +737,7 @@ def _finalize_and_write(doc, spec, master_path, slug, out_path, assets_dir,
 def extract_one(master_path, slug=None, out_path=None, assets_dir=None, force=False):
     master_path = os.path.abspath(master_path)
     if not os.path.isfile(master_path):
-        raise SystemExit("master not found: %s" % master_path)
+        raise SystemExit(f"master not found: {master_path}")
     slug = slug or _slugify(os.path.splitext(os.path.basename(master_path))[0])
     out_path = os.path.abspath(out_path or os.path.join(_specs_dir(), slug + ".json"))
     assets_dir = os.path.abspath(assets_dir or os.path.join(BRAND.assets_dir, slug))
@@ -748,13 +747,14 @@ def extract_one(master_path, slug=None, out_path=None, assets_dir=None, force=Fa
     written = _finalize_and_write(doc, spec, master_path, slug, out_path, assets_dir,
                                   force, ledger)
 
-    print("Wrote: %s" % out_path)
+    print(f"Wrote: {out_path}")
     for p in written[1:]:
-        print("Wrote: %s" % p)
-    print("\nBlocks: %s" % ", ".join("%d %s" % (n, k) for k, n in sorted(stats.items())))
-    print("Warnings: %d" % len(ledger.warnings))
+        print(f"Wrote: {p}")
+    blocks = ", ".join(f"{n:d} {k}" for k, n in sorted(stats.items()))
+    print(f"\nBlocks: {blocks}")
+    print(f"Warnings: {len(ledger.warnings):d}")
     for w in ledger.warnings:
-        print("  %s" % w)
+        print(f"  {w}")
     return out_path
 
 
@@ -801,37 +801,36 @@ def report_all():
             continue
         rows.append((name, stats, n_links, image_fail, ledger))
 
-    print("%-55s %-42s %5s %5s %6s" % ("MASTER", "BLOCKS", "IMGS", "LINKS", "ISSUES"))
+    print(f"{'MASTER'!s:<55} {'BLOCKS'!s:<42} {'IMGS'!s:>5} {'LINKS'!s:>5} {'ISSUES'!s:>6}")
     clean, needs_attention = [], []
     for row in rows:
         name = row[0]
         if row[1] is None:
-            print("%-55s ERROR: %s" % (name[:55], row[4]))
-            needs_attention.append((name, "could not be read: %s" % row[4]))
+            print(f"{name[:55]!s:<55} ERROR: {row[4]}")
+            needs_attention.append((name, f"could not be read: {row[4]}"))
             continue
         _, stats, n_links, image_fail, ledger = row
-        blocks_str = ", ".join("%d %s" % (stats[k], k) for k in _BLOCK_KINDS if stats.get(k))
+        blocks_str = ", ".join(f"{stats[k]:d} {k}" for k in _BLOCK_KINDS if stats.get(k))
         issues = len(ledger.warnings)
-        print("%-55s %-42s %5d %5d %6d" % (
-            name[:55], blocks_str[:42], stats.get("image", 0), n_links, issues))
+        print(f"{name[:55]!s:<55} {blocks_str[:42]!s:<42} {stats.get('image', 0):>5d} {n_links:>5d} {issues:>6d}")
         if issues == 0 and image_fail == 0:
             clean.append(name)
         else:
             cats = ledger.category_counts()
-            top = ", ".join("%s=%d" % (c, n) for c, n in cats.most_common(5))
-            needs_attention.append((name, top or "issues=%d" % issues))
+            top = ", ".join(f"{c}={n:d}" for c, n in cats.most_common(5))
+            needs_attention.append((name, top or f"issues={issues:d}"))
 
-    print("\n%d masters checked." % len(rows))
+    print(f"\n{len(rows):d} masters checked.")
     print("\nClean candidates for just-in-time extraction (0 issues found):")
     if clean:
         for name in clean:
-            print("  - %s" % name)
+            print(f"  - {name}")
     else:
         print("  (none)")
     print("\nNeed human attention before/while extracting:")
     if needs_attention:
         for name, why in needs_attention:
-            print("  - %-55s %s" % (name[:55], why))
+            print(f"  - {name[:55]!s:<55} {why}")
     else:
         print("  (none)")
     return 0
@@ -856,7 +855,7 @@ def main(argv):
                     help="mode 2: report extractability of every master in the brand's masters_dir")
     args = ap.parse_args(argv[1:])
 
-    global BRAND
+    global BRAND  # pylint: disable=global-statement
     BRAND = resolve_brand.resolve(args.brand)
     S.configure(BRAND)
 
@@ -881,7 +880,7 @@ def main(argv):
         extract_one(args.master, slug=args.slug, out_path=args.out,
                    assets_dir=args.assets_out, force=args.force)
     except FileExistsError as exc:
-        print("ERROR: %s" % exc, file=sys.stderr)
+        print(f"ERROR: {exc}", file=sys.stderr)
         return 1
     return 0
 

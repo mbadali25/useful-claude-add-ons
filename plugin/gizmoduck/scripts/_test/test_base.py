@@ -53,5 +53,5 @@ def test_every_registered_adapter_satisfies_the_protocol():
     for name, mod in scanners.ADAPTERS.items():
         for attr in ("NAME", "KINDS", "ACTIVE", "DEFAULT_ENABLED",
                      "is_available", "run", "parse"):
-            assert hasattr(mod, attr), "%s missing %s" % (name, attr)
+            assert hasattr(mod, attr), f"{name} missing {attr}"
         assert mod.NAME == name

@@ -199,7 +199,16 @@ did not write it.
   native `mmdc` could open. Without that variable the same command renders. So the reproduction
   requires the variable, and a report of "render.sh is broken" that does not name the environment
   it ran in is not yet a bug report. `render.sh` now converts that path with `cygpath` itself and
-  carries a regression check for it in `scripts/_test/render.sh`.
+  carries a regression check for it in
+  `plugin/crew/skills/crew-diagrams/scripts/_test/render.sh` (79 lines; the
+  `MSYS_NO_PATHCONV=1` case is `:74`, asserting the render produces a non-empty
+  SVG with that variable set). Until 2026-09-12 this line named a repo-root
+  path under `scripts/` that does not exist and never has - written out here it
+  would be indistinguishable, to any checker walking these citations, from a
+  citation that broke. The claim was true and the path was wrong, which is the
+  more expensive shape: a reader who goes looking finds nothing and concludes
+  the regression check was never written, so the next person to hit the bug
+  re-derives it from scratch.
 
 - **Run the states; do not reason about them.** A guard suite reported 24 passed / 33 failed, and
   the cause was `MSYS_NO_PATHCONV=1` in the *runner's* environment mangling `/c/repos/...` into

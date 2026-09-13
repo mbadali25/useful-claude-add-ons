@@ -197,6 +197,29 @@ _DIRECTIVES = {
         "has pm.authority set to report-only. If the user wants the work done, "
         "they will say so, or run /crew:pm assign."
     ),
+    # `autonomous` is `act` plus one thing: where `act` would stop and emit a
+    # "Decision needed:" block, this tier picks its own recommended option and
+    # says which it picked. The stop list is NOT relaxed -- it is spelled out
+    # here from AUTONOMOUS_STOPS rather than summarised, because this is the
+    # one directive where a model has been told to stop asking, and "use your
+    # judgement about the exceptions" is not a boundary.
+    "autonomous": (
+        "Crew PM: the project state changed and these are now outstanding. Act "
+        "on them in the order given, using the crew role that fits each one, "
+        "and report what you did when finished. If the user has already said "
+        "what they want prioritised, that ordering wins over this one. Where "
+        "you would otherwise stop and ask the user to choose, choose the "
+        "option you would have recommended, say which you chose and why, and "
+        "keep going -- do not emit a 'Decision needed:' block for anything "
+        "else. Stay on these findings: fix an unrelated problem only when it "
+        "BLOCKS one of them, and ticket or TODO the rest rather than following "
+        "it. Dispatch by actually calling the Agent tool -- a description of "
+        "who you would send is not a dispatch, and a report written in the "
+        "future tense means nothing ran. These still need an explicit yes from "
+        "the user before you do them, at this tier as at every other: "
+        + "; ".join(what for _, what in crew_state.AUTONOMOUS_STOPS)
+        + "."
+    ),
 }
 
 

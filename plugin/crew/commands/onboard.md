@@ -75,6 +75,32 @@ verified: <date>
 **Anchors are the whole point.** Every claim names a file path. A map without
 anchors cannot be re-verified, so it silently rots and you keep trusting it.
 
+**Which sha to record, and why it is not `HEAD`.** Use a commit that is already
+on the default branch:
+
+```bash
+# On a feature branch this is the newest commit the trunk already has, which
+# survives a squash, a rebase and a merge alike. On the default branch it IS
+# HEAD, so the common case is unchanged.
+git rev-parse --short=7 "$(git merge-base HEAD origin/main 2>/dev/null || echo HEAD)"
+```
+
+`git rev-parse --short HEAD` on a feature branch records a commit that **a
+squash merge destroys**. The anchor then names an object the repository does
+not contain, `git diff --name-only <anchor>..HEAD -- <paths>` cannot run, and
+the map can be neither confirmed nor refuted -- while `crew_state` reports it
+as `knowledgeUnverifiable` and the reader has to re-derive from scratch.
+
+That is not hypothetical. Five maps in this repository carry
+`useful-claude-add-ons@d61342c3`, written by `519754fa` -- whose subject is
+"fix the codemap anchor writer" and which has one parent, because it was
+squash merged. The four anchors that still resolve trace to commits made
+directly on the default branch.
+
+A merge-base anchor is slightly older than the work, and that is the right
+direction to be wrong in: the per-path check then reports a superset of what
+changed, so it over-reports staleness rather than under-reporting it.
+
 **Write `.crew/codemap/INDEX.md`** — one line per subsystem: name, one-sentence
 purpose, anchor sha. This is the only codemap file loaded by default.
 
@@ -119,15 +145,20 @@ python3 ${CLAUDE_PLUGIN_ROOT}/skills/crew-graph/scripts/crew_upgrade.py \
 ```
 
 `--force` is required here even on an up-to-date schema: without it,
-`crew_upgrade.py` sees `schema >= 2` and returns `already current` without
-reconciling anything.
+`crew_upgrade.py` sees a `schema` at or above the current one and returns
+`already current` without reconciling anything. The comparison is against
+`crew_state.SCHEMA_CURRENT`, which moves — it has been 2, 3 and 4. Do not
+restate the number here; this line said `2` long after the code had left it.
 
 `--force` is not free on a repo that was never behind schema. Say these
 consequences before running it, not after:
 
 - `.crew/codemap/UPGRADE.md` is overwritten unconditionally, including its
-  header claiming `from schema: 1 -> 2` — false on a repo that was already
-  current. If a previous `/crew:upgrade` left contradictions there that
+  `schema <from> -> <current>` header — which reads as a migration on a repo
+  that was already current, since `--force` runs the whole thing anyway.
+  (This line used to quote the header as the literal `from schema: 1 -> 2`.
+  It is interpolated from `notes["schemaFrom"]` and `crew_state.SCHEMA_CURRENT`,
+  so the numbers move; do not restate them.) If a previous `/crew:upgrade` left contradictions there that
   nobody has verified yet, this run erases that list. Read the existing
   `UPGRADE.md` before running `--refresh` if one is present, and fold its
   unresolved contradictions into what you report afterward.

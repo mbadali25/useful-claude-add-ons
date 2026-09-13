@@ -65,7 +65,8 @@ _red_mask = _ink_mask  # old name, kept for any caller that imported it
 def _coverage(mask, x0, y0, x1, y1):
     """Fraction of each edge that carries red ink, searching a small band."""
     h, w = mask.shape
-    clip = lambda v, hi: max(0, min(int(v), hi))
+    def clip(v, hi):
+        return max(0, min(int(v), hi))
     x0, x1 = clip(x0, w - 1), clip(x1, w - 1)
     y0, y1 = clip(y0, h - 1), clip(y1, h - 1)
     out = {}
@@ -140,15 +141,17 @@ def check_pdf(path):
             else:
                 kind = "clipped"
                 problems += len(bad)
-            rows.append(dict(page=pno + 1, img=idx, cov=cov, bad=bad, kind=kind))
+            rows.append({"page": pno + 1, "img": idx, "cov": cov,
+                         "bad": bad, "kind": kind})
 
     expected = _expected_bordered_count(path)
     seen = sum(1 for r in rows if r["kind"] in ("ok", "clipped"))
     if expected is not None and seen != expected:
         problems += abs(expected - seen)
-        rows.append(dict(page=0, img=0, cov={}, bad=[], kind="count",
-                         note="docx declares %d bordered screenshot(s), %d found in the PDF"
-                              % (expected, seen)))
+        rows.append({"page": 0, "img": 0, "cov": {}, "bad": [],
+                     "kind": "count",
+                     "note": f"docx declares {expected:d} bordered "
+                             f"screenshot(s), {seen:d} found in the PDF"})
     return rows, problems
 
 
@@ -160,7 +163,7 @@ def main():
     resolve_brand.add_brand_argument(ap)
     args = ap.parse_args()
 
-    global IMAGE_BORDER_RED
+    global IMAGE_BORDER_RED  # pylint: disable=global-statement
     brand = resolve_brand.resolve(args.brand)
     IMAGE_BORDER_RED = brand.sop["image_border"].upper()
 
@@ -177,26 +180,24 @@ def main():
         try:
             rows, missing = check_pdf(path)
         except Exception as exc:
-            print("ERROR %-52s %s" % (name[:52], exc))
+            print(f"ERROR {name[:52]!s:<52} {exc}")
             failed += 1
             continue
         total_missing += missing
         status = "FAIL " if missing else "PASS "
         bordered = sum(1 for r in rows if r["kind"] in ("ok", "clipped"))
-        print("%s%-58s %d bordered screenshot(s), %d edge(s) clipped"
-              % (status, name[:58], bordered, missing))
+        print(f"{status}{name[:58]!s:<58} {bordered:d} bordered screenshot(s), {missing:d} edge(s) clipped")
         for r in rows:
             if r["kind"] == "count":
-                print("        !! %s" % r["note"])
+                print(f"        !! {r['note']}")
             elif r["kind"] == "clipped" or (args.verbose and r["kind"] != "unbordered"):
-                cov = ", ".join("%s %.0f%%" % (k, v * 100) for k, v in r["cov"].items())
-                flag = "  <-- %s CLIPPED" % "/".join(r["bad"]) if r["bad"] else ""
-                print("        p%d img%d: %s%s" % (r["page"], r["img"], cov, flag))
+                cov = ", ".join(f"{k} {v * 100:.0f}%" for k, v in r["cov"].items())
+                flag = f"  <-- {'/'.join(r['bad'])} CLIPPED" if r["bad"] else ""
+                print(f"        p{r['page']:d} img{r['img']:d}: {cov}{flag}")
         if missing:
             failed += 1
 
-    print("\n%d PDF(s) checked, %d with missing borders, %d edges missing total."
-          % (len(paths), failed, total_missing))
+    print(f"\n{len(paths):d} PDF(s) checked, {failed:d} with missing borders, {total_missing:d} edges missing total.")
     return 1 if failed else 0
 
 

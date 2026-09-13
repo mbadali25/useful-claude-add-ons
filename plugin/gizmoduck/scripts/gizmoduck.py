@@ -253,9 +253,9 @@ def load(path):
                 continue
             if not _is_raw_nuclei_record(r):
                 raise ValueError(
-                    "%s: line matches neither raw Nuclei JSONL (`template-id` + "
+                    f"{path}: line matches neither raw Nuclei JSONL (`template-id` + "
                     "`info`) nor an already-normalized finding (`template_id` + "
-                    "`severity_name`): %.200r" % (path, line)
+                    f"`severity_name`): {line!r:.200}"
                 )
             info = r.get("info", {})
             cls = info.get("classification") or {}

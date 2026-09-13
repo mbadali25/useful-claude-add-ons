@@ -20,11 +20,24 @@ its `schema` field.
   backup, no write. Say the config could not be parsed and stop; a migration
   tool must never write `upgrade_config({})` over a file it could not
   understand.
-- `schema >= 3` (the current schema) and `$ARGUMENTS` does not contain
-  `--force` — print **"already current"** and stop. Do not touch the config, the codemap, or
-  the graph. `crew_upgrade.py` makes this same check and returns
-  `already current` without writing anything; do not re-derive graph facts
+- The config's `schema` is **already at or above the current one** and
+  `$ARGUMENTS` does not contain `--force` — print **"already current"** and stop. Do not
+  touch the config, the codemap, or the graph. `crew_upgrade.py` makes this same check and
+  returns `already current` without writing anything; do not re-derive graph facts
   or spend a `crew:explorer` budget ahead of a call that is about to no-op.
+
+  **Do not hardcode the number here, and do not carry one over from a previous
+  version of this file.** This step said `schema >= 3` while the code had moved
+  to 4, which is worse than an out-of-date comment: this prose is an
+  INSTRUCTION, so the command stopped at step 1 and reported "already current"
+  for repos that genuinely needed migrating, and `crew_upgrade.py`'s own correct
+  check was never reached. A schema bump would have shipped a migration that
+  the documented flow refused to run. Read the current number from
+  `crew_state.SCHEMA_CURRENT` if you need to state it:
+
+  ```
+  python3 -c "import sys; sys.path.insert(0, '${CLAUDE_PLUGIN_ROOT}/hooks/scripts'); import crew_state; print(crew_state.SCHEMA_CURRENT)"
+  ```
 - Otherwise, continue.
 
 ## 2. Say what is about to happen, before it happens
@@ -148,6 +161,24 @@ surface it, do not re-derive it by hand:
   that quietly re-routed someone's development work to a different model would
   be indefensible, and the only way a user can be sure it did not is to be
   told.
+- **Schema 3 → 4** — when the report says `docs.theme` was rewritten, read the
+  whole line out, including WHY it was allowed. This is the one value an
+  upgrade changes rather than preserving, so a user who notices their config
+  differs from what they wrote is owed the reason unprompted: the key has
+  never had a consumer, so no value in it can be a preference anyone formed by
+  watching it work. Leaving `"neutral"` would mean that, once the pass-through
+  lands, every upgraded repo passes an explicit `--brand neutral` that
+  OVERRIDES an installed brand pack. **If they did mean neutral, say they can
+  set it again and it will stick** — the rewrite is one-shot, gated on the
+  schema it landed in, so no later `--force` will take it away again.
+- **A machine-global theme that defeats it** — when the report warns that
+  `~/.claude/crew/config.json` still sets `docs.theme` to `"neutral"`, read it
+  out and do NOT offer to edit that file as part of this command. It is
+  machine-global: every other repo on the box changes with it, and none of
+  them is the one being upgraded. The repo config is now correct and the
+  EFFECTIVE value is still neutral, which is why the warning exists — a repo
+  that looks migrated and resolves the old value is worse than one that
+  obviously did not migrate.
 - **Blocks left unmigrated** — a `pm`, `graph`, `qa`, `dev` or `roles` value
   that arrived as the wrong type is left exactly as the user wrote it, and
   `schema` is deliberately NOT stamped current. The status is then `upgraded

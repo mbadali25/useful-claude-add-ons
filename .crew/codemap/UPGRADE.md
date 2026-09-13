@@ -1,7 +1,10 @@
 # Upgrade report
 status: upgraded
 to schema: 3
-graph anchor: d61342c
+graph build compared against: d61342c
+  (not an anchor: this file is a one-time report, not a subsystem map,
+   and nothing re-verifies it. The sha records what this run read; it
+   may not resolve later, and a squash merge is enough to kill it.)
 
 Nothing below was applied automatically. Conflicts are the map and
 the graph disagreeing, and either can be wrong: the graph misses

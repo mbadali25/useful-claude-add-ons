@@ -93,8 +93,11 @@ import crew_upgrade  # pylint: disable=wrong-import-position
 
 # A module attribute, not a baked-in constant used directly everywhere, so a
 # test can point it at a scratch file instead of the real machine-wide one.
-GLOBAL_CONFIG_PATH = os.path.join(
-    os.path.expanduser("~"), ".claude", "crew", "config.json")
+# Re-exported, not redefined. Canonical in `crew_state` for the same reason the
+# provider tuples below are: `crew_upgrade` needs the path and must not import
+# this module. Two definitions of one path is how a migration ends up reading a
+# different file from the one the resolver merges.
+GLOBAL_CONFIG_PATH = crew_state.GLOBAL_CONFIG_PATH
 
 
 # The provider names crew RECOGNISES, split by what the role decides.
@@ -227,6 +230,43 @@ def validate_providers(cfg):
     return cfg
 
 
+# The `context.autoClear` block, defined ONCE because both templates carry it
+# and a second literal is a second thing to drift. Values are the fallbacks the
+# hook scripts already apply, read out of them rather than out of any doc:
+# `auto-clear.ps1:78-82` for method/delaySeconds/command/windowTitle/
+# minHandoffLines, and `:69` for enabled, which exits unless it is exactly true.
+#
+# `windowTitle` is None here and `""` in the script. The script treats both as
+# "not set" (`if ($a.windowTitle)` is false for either), and null is what
+# "not set" means everywhere else in this file, so null is the honest default.
+AUTOCLEAR_DEFAULTS = {
+    "enabled": False,
+    "method": "auto",
+    "windowTitle": None,
+    "command": "/clear",
+    "delaySeconds": 3,
+    "minHandoffLines": 5,
+    # Wayland only, read at `auto-clear.sh:93` and gating the `wtype` method
+    # at `:187`. Missed on the first pass because the .ps1 consumers never
+    # read it, and the first pass read the Windows scripts -- a default set
+    # from one platform's consumer is a default half-derived.
+    "unsafeFocus": False,
+}
+
+# Keys inside `autoClear` that are CONSENT rather than capability, and so are
+# declared but never granted machine-wide. `unsafeFocus: true` accepts that
+# `wtype` types into whatever currently has focus, which Wayland offers no way
+# to check. The rest of the block is a description of the machine and belongs
+# in the global layer; this is a decision about accepting a risk, and one
+# `true` set once would accept it for every repo on the box.
+#
+# The repo already draws this line and enforces it the same way:
+# `graph.obsidian.confirmed` is refused by `plan_global_write` and pruned by
+# `filter_global` because consent to act outside the repo is not a capability
+# a guided flow may hand over. Same reasoning, same treatment.
+AUTOCLEAR_CONSENT_KEYS = ("unsafeFocus",)
+
+
 def default_config():
     """A fresh, current `.crew/config.json`, as a plain dict.
 
@@ -254,7 +294,15 @@ def default_config():
             "sendsCode": False,
         },
         "tracker": "files",
-        "jira": {"project": None},
+        # `cloudId` is cached by `/crew:jira-sync` (commands/jira-sync.md:25)
+        # and was read by nothing and declared by nothing until 0.19.10. An
+        # undeclared key still WORKS -- `merge_defaults` carries a repo-layer
+        # key it has never heard of straight through -- but it is invisible to
+        # `leaf_paths`, so it appeared in no key listing, and `is_global_path`
+        # returns False for any path absent from the global template, which
+        # made it silently un-settable in the global layer. Declaring it is
+        # what makes the key set the file's own answer rather than a guess.
+        "jira": {"project": None, "cloudId": None},
         "sdp": {
             "portal": None,
             "noteVisibility": "private",
@@ -281,6 +329,14 @@ def default_config():
             "reserveTokens": 100000,
             "handoffPath": ".work/HANDOFF.md",
             "keepTranscripts": 5,
+            # These three were read by hook scripts and declared here by
+            # nothing until 0.19.10 -- `auto-clear.ps1:67`,
+            # `context-watch.ps1:33` and `handoff-read.ps1:36` respectively.
+            # See the `jira.cloudId` note above for why undeclared is not the
+            # same as unused, and why it still cost something.
+            "autoClear": copy.deepcopy(AUTOCLEAR_DEFAULTS),
+            "autoWrapUp": False,
+            "autoResume": False,
             # See crew_state.STALE_HANDOFF_DEFAULTS for why these two figures
             # specifically -- generous on purpose, since archiving a note
             # someone is still using is worse than leaving a stale one in
@@ -314,6 +370,8 @@ def default_config():
         },
         "pm": copy.deepcopy(crew_state.PM_DEFAULTS),
         "graph": copy.deepcopy(crew_upgrade.GRAPH_BLOCK),
+        "docs": copy.deepcopy(crew_upgrade.DOCS_BLOCK),
+        "bitbucket": copy.deepcopy(crew_upgrade.BITBUCKET_BLOCK),
     }
 
 
@@ -378,6 +436,17 @@ def default_global_config():
         once per repo is the friction that produced the split. An earlier
         draft of this docstring argued the opposite and is gone rather than
         left contradicting the code.
+      * `docs` -- which doc-builder brand this person's documents come out
+        in. A theme is a standing answer about who is writing, the same shape
+        of fact as `notify`'s chat: someone with a house brand wants it on
+        every repo without saying so once per checkout. A repo with its own
+        client brand still overrides it, which is why it is in both layers
+        rather than only this one.
+      * `bitbucket` -- whether a pull request has to pass the merge gate, and
+        which preset. A person who works this way works this way everywhere;
+        `mergeGate.branch` stays null in both layers because the branch is
+        resolved from the API per repo, so a global value for it would be the
+        one key here that genuinely IS a fact about a checkout.
 
     `qa.roles` and `dev.roles` are empty dicts, which `leaf_paths` treats as
     LEAVES -- so the whole per-role table is one settable path and a pin for
@@ -408,6 +477,25 @@ def default_global_config():
             "events": ["phase", "gate", "waiting"],
         },
         "pm": copy.deepcopy(crew_state.PM_DEFAULTS),
+        # `context.autoClear` and NOTHING ELSE under `context`. How a terminal
+        # is driven to accept a keystroke is a fact about the machine, in the
+        # same sense provider availability is: `crew_platform.py:384-393`
+        # validates `method` against what THIS platform can actually deliver
+        # and reports a method it cannot honour. Someone with two machines
+        # would otherwise set it per repo forever, for every repo.
+        #
+        # The siblings stay repo-only and are refused by name, which is
+        # measured rather than assumed -- see `test_autoclear_is_global_and_
+        # its_siblings_are_not`. `_prune` and `is_global_path` both descend
+        # structurally, so naming `context` here grants exactly the six
+        # `autoClear` leaves and nothing beside them.
+        "context": {"autoClear": {
+            key: copy.deepcopy(value)
+            for key, value in AUTOCLEAR_DEFAULTS.items()
+            if key not in AUTOCLEAR_CONSENT_KEYS
+        }},
+        "docs": copy.deepcopy(crew_upgrade.DOCS_BLOCK),
+        "bitbucket": copy.deepcopy(crew_upgrade.BITBUCKET_BLOCK),
     }
 
 
@@ -1254,6 +1342,32 @@ def _set_path(target, parts, value):
     node[parts[-1]] = value
 
 
+# What each tier actually grants, for the `!` line on a widening. Keyed on
+# every member of `AUTHORITIES` so a tier added without a note is a KeyError at
+# the point of use rather than a warning that silently describes the wrong
+# thing -- the failure mode that produced this table. `report-only` is present
+# because the key set has to be total, not because it can ever be reached here:
+# it is rank 0, so nothing widens INTO it.
+_WIDENING_NOTES = {
+    "report-only": (
+        "the PM reports and recommends only. This is the narrowest tier and "
+        "nothing widens into it."
+    ),
+    "act": (
+        "the PM will dispatch roles itself and report after. It still asks you "
+        "to choose when a decision is open. Removal, deletion and offboarding "
+        "still stop for an explicit yes."
+    ),
+    "autonomous": (
+        "the PM will dispatch roles itself AND stop asking you to choose - "
+        "where it would put a decision to you it takes the option it would "
+        "have recommended and says which. Offboarding a role, deleting a "
+        "codemap or diagram, rewriting .crew/metrics.md, and destroying git "
+        "history or tracked work still stop for an explicit yes."
+    ),
+}
+
+
 def plan_global_write(updates, path=None):
     """What writing `updates` to the global file would change. Pure.
 
@@ -1318,11 +1432,23 @@ def plan_global_write(updates, path=None):
             # agents they did not ask for or a report where they expected
             # work -- so a widening is marked, printed on the dry run, and
             # printed again on the write.
+            #
+            # RANK, never equality. This read
+            # `after == "act" and before != "act"`, which was correct only
+            # while "act" was the top tier. With a third tier it is wrong in
+            # both directions at once: act -> autonomous computes False, so the
+            # widest grant crew offers would ship unannounced; and
+            # autonomous -> act computes True, so DIALLING DOWN warns about a
+            # widening. The second is the more corrosive of the two -- a
+            # warning that fires on the safe direction is a warning users learn
+            # to click past, which costs the first case its only defence.
+            # `authority_rank` normalises first, so an unrecognised `before`
+            # ranks 0 and anything above it correctly reads as a widening.
             "widens_authority": (
                 dotted == "pm.authority"
-                and crew_state.normalise_authority(value) == "act"
-                and crew_state.normalise_authority(
-                    None if before is _MISSING else before) != "act"
+                and crew_state.authority_rank(value)
+                > crew_state.authority_rank(
+                    None if before is _MISSING else before)
             ),
         })
         _set_path(merged, parts, value)
@@ -1446,9 +1572,17 @@ def main(argv=None):
             print(f"  {change['path']}: {json.dumps(change['before'])} -> "
                   f"{json.dumps(change['after'])}")
             if change["widens_authority"]:
-                print("  ! pm.authority widens to `act`: the PM will dispatch "
-                      "roles itself and report after. Removal, deletion and "
-                      "offboarding still stop for an explicit yes.")
+                # Name the tier being GRANTED, not a hardcoded one. This said
+                # "widens to `act`" whatever the target was, so setting
+                # `autonomous` warned about the wrong tier and described only
+                # what `act` does -- omitting the single thing `autonomous`
+                # actually adds, which is that the PM stops asking you to
+                # choose. A warning that under-describes the grant is the exact
+                # failure this marker exists to prevent, so it is driven off
+                # the value rather than written out once.
+                granted = crew_state.normalise_authority(change["after"])
+                print(f"  ! pm.authority widens to `{granted}`: "
+                      + _WIDENING_NOTES[granted])
         if not changes:
             print("  nothing to change")
         return 0

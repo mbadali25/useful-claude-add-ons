@@ -89,8 +89,14 @@ the key the incident was about.
 > this machine; a repo can still override it.
 > - `report-only` (default) — it tells you what it would do, you decide.
 > - `act` — it dispatches roles and refreshes diagrams on its own, reports
->   after. Removal, deletion, offboarding and rewriting `.crew/metrics.md`
->   still stop for an explicit yes, whatever this is set to.
+>   after. It still asks you to choose when a decision is genuinely open.
+> - `autonomous` — everything `act` does, and it stops asking: where it would
+>   put a choice to you it takes the option it would have recommended and
+>   tells you which.
+>
+> Four things stop for an explicit yes whatever this is set to, `autonomous`
+> included: offboarding a role, deleting a codemap or diagram, rewriting
+> `.crew/metrics.md`, and destroying git history or tracked work.
 
 Default `report-only` on any hesitation.
 

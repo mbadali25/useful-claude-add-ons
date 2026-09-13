@@ -11,6 +11,30 @@ claim "this is tested" is checked here rather than asserted.
 A mutation whose anchor no longer matches is a FAILURE, not a skip: the anchor
 drifting is how this suite would quietly stop testing anything.
 
+WHAT A RED RESULT DOES NOT PROVE, and the blind spot of this whole technique:
+a mutation going red proves the TEST failed. It never proves WHICH assertion
+failed. So a test with several assertions, covered by one mutation, can hold a
+vacuous assertion forever -- the mutation trips an earlier line, this file
+prints RED, and the mutation's own label claims coverage the suite does not
+have.
+
+Measured here, not hypothetical. `test_the_two_config_keys_are_bound_to_
+different_genres` was written to prove `docs.reportTheme` binds to the
+findings-report genre. It found the line naming that key, asserted the line
+existed, then asserted `"report"` was in it -- and `"docs.reportTheme"`
+contains `"report"`, so the second assertion could not fail once the first
+had. Its mutation deleted the key from the sentence, tripping the FIRST
+assertion. Red every run, binding unchecked. Four other vacuous assertions on
+that same branch were each caught by a mutation coming back green, which is the
+normal way this file earns its keep; this one could not be, and it was the
+assertion that had been specifically asked for.
+
+So when you add a mutation for a multi-assertion test, write the one that
+leaves every EARLIER assertion satisfied -- here, keep the key in the sentence
+and only widen the genre -- and treat a label naming one assertion as a claim
+about that assertion alone. Both entries are in MUTATIONS below, next to each
+other, on purpose.
+
 It edits real source in place, so putting the file back is as load-bearing as
 the mutation. `d362a2bd` shipped `crew_state.py` with a live mutation still in
 it -- a killed run had skipped the `finally`, the next run copied the mutated
@@ -54,7 +78,22 @@ COMMON = os.path.join(CREW, "hooks", "scripts", "crew_common.py")
 LADDER_DOC = os.path.join(CREW, "skills", "crew-scaling", "SKILL.md")
 PLATFORM = os.path.join(CREW, "hooks", "scripts", "crew_platform.py")
 CONFIG = os.path.join(CREW, "hooks", "scripts", "crew_config.py")
+UPGRADE = os.path.join(
+    CREW, "skills", "crew-graph", "scripts", "crew_upgrade.py")
+CONFTEST = os.path.join(CREW, "tests", "conftest.py")
+HOUSE_STYLE = os.path.join(
+    CREW, "skills", "crew-house-style", "SKILL.md")
+
+# Outside the crew plugin on purpose. The routing table makes a claim about
+# ANOTHER marketplace entry's interface, and the only way to sabotage that
+# claim is to break the interface it names.
+BUILD_REPORT = os.path.join(
+    ROOT, "skills", "doc-builder", "scripts", "build_report.py")
 PM_BRIEF = os.path.join(CREW, "hooks", "scripts", "pm_brief.py")
+# The other half of the upgrade message. The brief NAMES the migration and
+# this file SAYS WHAT IT DOES, deliberately one copy each -- so the only
+# way to sabotage "the two agree" is to break one of them.
+UPGRADE_DOC = os.path.join(CREW, "commands", "upgrade.md")
 
 GUARD = '    if out["family"] is not None and out["family"] in authors:'
 ROLE_PIN = '    decided = resolve_role(cfg, "dev", "developer")'
@@ -64,6 +103,427 @@ BLOCK_ONLY = (
 )
 
 MUTATIONS = (
+    (
+        # `--brand` stops existing on the findings-report script, so crew's
+        # routing table names a flag the tool does not accept -- the ticket's
+        # original defect (prose describing an interface nobody ran) one layer
+        # out.
+        #
+        # Mutated at the CALL SITE rather than in the table, because that is
+        # the half a grep cannot check: neither script spells "--brand"
+        # literally, both get it from `resolve_brand.add_brand_argument`, and
+        # both docstrings show `--brand neutral` in an example. So grepping
+        # either file "confirms" the flag whether or not it is wired to
+        # anything. The test asks argparse instead.
+        #
+        # build_report.py and not build_sop.py: build_report is stdlib (its
+        # win32com import is lazy), so this mutation runs on any machine,
+        # including a CI runner with neither python-docx nor pywin32.
+        "the findings-report script stops accepting --brand",
+        BUILD_REPORT,
+        "    resolve_brand.add_brand_argument(ap)",
+        "    pass  # resolve_brand.add_brand_argument(ap)",
+        ("tests/test_docs_routing.py::"
+         "test_every_routed_script_exists_and_accepts_brand"),
+    ),
+    (
+        # The routing entry goes, which is the state this whole ticket was
+        # opened for: `docs.theme` configuring a tool crew's own documented
+        # generation path never mentions, so there is no call site for a
+        # `--brand` to attach to and the setting quietly does nothing.
+        "doc-builder is dropped from the routing table",
+        HOUSE_STYLE,
+        "- `doc-builder` — branded findings reports and screenshot SOPs. Pass",
+        "- `doc-builder-removed` — branded findings reports and SOPs. Pass",
+        "tests/test_docs_routing.py::"
+        "test_the_routing_table_routes_doc_builder_and_names_both_keys",
+    ),
+    (
+        # `docs.reportTheme` stops being bound to the report genre, so it
+        # degrades into a synonym for `docs.theme`: two keys, one meaning, and
+        # the client-deliverable case the second key exists for silently
+        # stops being expressible. Nothing else in the suite notices, because
+        # the key still merges and still resolves.
+        "reportTheme is no longer bound to the report genre",
+        HOUSE_STYLE,
+        "`--brand <docs.theme>`; for a findings report prefer `docs.reportTheme` when",
+        "`--brand <docs.theme>`; the brand applies to every generated document, when",
+        "tests/test_docs_routing.py::"
+        "test_the_two_config_keys_are_bound_to_different_genres",
+    ),
+    (
+        # The sharper half of the same defect, and the one the first mutation
+        # could not reach. The key STAYS in the sentence -- only the genre
+        # widens -- so the test's "is reportTheme bound to anything" assertion
+        # still passes and the binding assertion is the only thing that can
+        # catch it. The original assertion here was `"report" in line`, which
+        # `docs.reportTheme` satisfies by its own name; it went red on this
+        # entry's sibling above for the WRONG assert and so read as covered.
+        "reportTheme widens to every document, not just the findings report",
+        HOUSE_STYLE,
+        "`--brand <docs.theme>`; for a findings report prefer `docs.reportTheme` when",
+        "`--brand <docs.theme>`; for every document prefer `docs.reportTheme` when",
+        "tests/test_docs_routing.py::"
+        "test_the_two_config_keys_are_bound_to_different_genres",
+    ),
+    (
+        # The false sentence itself. `upgradeNeeded` shipped ONE fixed string
+        # -- "config has no schema" -- and bumping SCHEMA_CURRENT to 4 aimed
+        # it at every schema-2 and schema-3 repo in existence. It sorts third
+        # in TRIGGERS, so it leads the brief: the first thing a user reads
+        # after a mandatory migration described a situation they are not in.
+        "every repo is told its config has no schema, whatever it declares",
+        PM_BRIEF,
+        "    if not key_present:",
+        "    if True:",
+        "tests/test_pm_brief.py::"
+        "test_a_repo_with_a_schema_is_not_told_it_has_none",
+    ),
+    (
+        # A schema `int_or` cannot read collapses to 1, and 1 reads as a
+        # pre-PM config. The user then hunts a migration instead of the
+        # character they mistyped. This repo's named recurring bug, in the
+        # sentence that reports it.
+        "an unparseable schema is reported as a pre-PM config",
+        PM_BRIEF,
+        "    elif crew_state.int_or(declared, None) is None:",
+        "    elif False:",
+        "tests/test_pm_brief.py::"
+        "test_an_unparseable_schema_is_reported_as_a_typo_not_as_a_pre_pm_config",
+    ),
+    (
+        # ABSENT and None collapsed into one, which is the same bug one level
+        # up: every hand-built state -- the crew:pm agent's, a stale cache's
+        # -- would be told its config declares no schema.
+        "an absent schemaDeclared is read as an explicit null",
+        PM_BRIEF,
+        "        declared, key_present = schema, True",
+        "        declared, key_present = None, False",
+        "tests/test_pm_brief.py::"
+        "test_a_hand_built_state_without_the_key_is_not_told_it_has_no_schema",
+    ),
+    (
+        # collect() stops carrying the raw value, so the real SessionStart
+        # path silently falls back to the hand-built branch. Every hand-built
+        # test above keeps passing; only a test that drives the collector on a
+        # real repo can see it.
+        "collect() no longer carries the raw declared schema",
+        STATE,
+        '        "schemaDeclared": raw_cfg.get("schema") if raw_cfg else None,',
+        '        "schemaDeclaredGone": None,',
+        "tests/test_pm_brief.py::"
+        "test_collect_carries_the_raw_schema_so_the_brief_can_tell_them_apart",
+    ),
+    (
+        # The command's half. The brief names "3 -> 4" and nothing explains
+        # what that migration does -- a user reads a version number and is
+        # told to run a command whose report walks past the entry for it.
+        "the current migration loses its entry in upgrade.md section 5",
+        UPGRADE_DOC,
+        "- **Schema 3 \u2192 4**",
+        "- **The docs theme migration**",
+        "tests/test_pm_brief.py::"
+        "test_the_brief_and_upgrade_md_agree_on_the_current_migration",
+    ),
+    (
+        # Codex's finding, and the reason `schemaKeyPresent` exists at all.
+        # `{"schema": null}` reads back from `.get()` as None, the same value
+        # an ABSENT key gives -- so keying the "no schema" sentence on the
+        # VALUE calls an explicit null a pre-PM config and sends the user
+        # hunting a migration instead of the word they typed. The same
+        # collapse the whole finding was rewritten to remove, one level down.
+        "an explicit null schema is read as an absent one",
+        PM_BRIEF,
+        '        key_present = bool(state.get("schemaKeyPresent"))',
+        "        key_present = declared is not None",
+        "tests/test_pm_brief.py::"
+        "test_an_explicit_null_schema_is_not_read_as_an_absent_one",
+    ),
+    (
+        # The collector half. Every hand-built test keeps passing without
+        # this flag because it supplies the flag itself; only a test driven
+        # through collect() on a real repo can see it go missing.
+        "collect() no longer records whether the schema key is present",
+        STATE,
+        '        "schemaKeyPresent": bool(raw_cfg) and "schema" in raw_cfg,',
+        '        "schemaKeyPresentGone": False,',
+        "tests/test_pm_brief.py::"
+        "test_an_explicit_null_schema_is_not_read_as_an_absent_one",
+    ),
+    (
+        # doc-builder takes DOCX and PDF over generally -- the "simplification"
+        # that looks tidier and breaks crew's document path on Linux and macOS,
+        # because doc-builder's converter runs through Microsoft Word via COM
+        # and anthropic-office-skills needs neither.
+        "doc-builder is given DOCX and PDF outright",
+        HOUSE_STYLE,
+        "- `anthropic-office-skills:docx` — DOCX\n"
+        "- `anthropic-office-skills:pdf` — PDF",
+        "- `doc-builder` — DOCX and PDF",
+        "tests/test_docs_routing.py::"
+        "test_anthropic_office_skills_keeps_docx_and_pdf",
+    ),
+    (
+        # The two degraded paths collapse into one sentence. A missing Word is
+        # then reported as a missing doc-builder, which sends the reader to
+        # install something they already have while the actual cause -- an
+        # absent Word COM pipeline -- goes unmentioned. Same misdiagnosis shape
+        # as the PSModulePath trap.
+        "the two degraded paths are conflated into one",
+        HOUSE_STYLE,
+        "  branded HTML report and, through `python-docx`, the branded SOP `.docx`. So",
+        "  document unbranded via anthropic-office-skills, exactly as above. So",
+        "tests/test_docs_routing.py::"
+        "test_the_two_degraded_paths_are_stated_separately",
+    ),
+    (
+        # Crew is told to probe for Word after all -- a second copy of
+        # doc-builder's capability check living in a different repo entry,
+        # which is what the table's own "Do not reimplement any of them" rule
+        # exists to prevent, and which goes stale the moment doc-builder's
+        # requirements change.
+        "crew is told to detect Word itself",
+        HOUSE_STYLE,
+        "**Do not detect Word yourself.**",
+        "**Check whether Word is available before routing.**",
+        "tests/test_docs_routing.py::test_crew_is_told_not_to_detect_word_itself",
+    ),
+    (
+        # The table names a script that does not exist. This is the ticket's
+        # original defect one layer out: prose describing an interface nobody
+        # ran. The check that catches it invokes the script's own argparse, so
+        # a renamed or removed script fails here rather than at handoff time
+        # in front of whoever the document was for.
+        "the routing table names a script that does not exist",
+        HOUSE_STYLE,
+        "`scripts/build_report.py` is the findings report,",
+        "`scripts/build_findings.py` is the findings report,",
+        "tests/test_docs_routing.py::"
+        "test_the_routed_scripts_are_the_ones_the_table_names",
+    ),
+    (
+        # The global warning stops checking whether the repo has an answer of
+        # its own, and starts firing on repos the global can never reach. It
+        # then states something false -- that a global neutral "is the value
+        # this repo now resolves to" on a repo whose theme is `solomon` -- and
+        # sends the reader to edit a machine-global file that would change
+        # nothing there and something in every other repo on the machine.
+        "the global warning fires even when the repo names its own theme",
+        UPGRADE,
+        '    if notes["docsThemeAfter"] is None and global_theme_defeats_migration():',
+        '    if global_theme_defeats_migration():',
+        ("tests/test_upgrade.py::"
+         "test_the_global_warning_stays_quiet_when_the_repo_names_its_own_theme"),
+    ),
+    (
+        # The rewrite stops being atomic with the schema stamp. A single
+        # wrong-typed block anywhere then produces a config with a null theme
+        # and schema still at 3 -- so repairing the block and setting neutral
+        # back re-runs the rewrite and erases it a second time. Half a
+        # migration that keeps re-applying its own half.
+        "the theme rewrite is no longer atomic with the schema stamp",
+        UPGRADE,
+        '    if (notes["schemaStamped"]\n'
+        '            and notes["schemaFrom"] < _DOCS_THEME_REWRITTEN_UNTIL_SCHEMA',
+        '    if (notes["schemaFrom"] < _DOCS_THEME_REWRITTEN_UNTIL_SCHEMA',
+        ("tests/test_upgrade.py::"
+         "test_a_partly_failed_migration_does_not_rewrite_the_theme"),
+    ),
+    (
+        # The global warning goes. The repo config comes out migrated and the
+        # EFFECTIVE theme is unchanged, because repo null defers to the global
+        # file that still says neutral. That is the worse of the two states --
+        # it looks fixed -- and silence is what makes it so.
+        "a global neutral that defeats the migration is not reported",
+        UPGRADE,
+        '    if notes["docsThemeAfter"] is None and global_theme_defeats_migration():',
+        "    if False:",
+        ("tests/test_upgrade.py::"
+         "test_a_global_neutral_is_reported_because_it_defeats_the_migration"),
+    ),
+    (
+        # The global read stops being best-effort. `global_theme_defeats_
+        # migration` runs while BUILDING THE REPORT, which is after the repo
+        # config has already been written -- so an unreadable global file
+        # would take down a run whose real work had succeeded, and the caller
+        # could not tell a failed upgrade from a failed report.
+        "the global config read is no longer best-effort",
+        UPGRADE,
+        "    except (OSError, ValueError):\n        return False",
+        "    except KeyError:\n        return False",
+        ("tests/test_upgrade.py::"
+         "test_an_unreadable_global_config_is_not_a_crash_or_a_warning"),
+    ),
+    (
+        # conftest isolates only `crew_config`'s binding again. `crew_upgrade`
+        # reads the path through `crew_state`, so the suite goes back to
+        # reading the DEVELOPER'S REAL ~/.claude/crew/config.json -- the exact
+        # thing that fixture exists to prevent. It fails loudly here and is
+        # otherwise invisible: on a machine whose global config happens not to
+        # set a theme, every test still passes.
+        "the global-config isolation fixture patches only one of the two names",
+        CONFTEST,
+        '    monkeypatch.setattr(crew_config, "GLOBAL_CONFIG_PATH", unused)\n'
+        '    monkeypatch.setattr(crew_state, "GLOBAL_CONFIG_PATH", unused)',
+        '    monkeypatch.setattr(crew_config, "GLOBAL_CONFIG_PATH", unused)',
+        ("tests/test_upgrade.py::"
+         "test_the_suite_cannot_reach_the_real_machine_global_config"),
+    ),
+    (
+        # The schema stays at 3, which is what shipped to Codex for review and
+        # what Codex caught by RUNNING it: status "already current", value
+        # unchanged. The rewrite below is untouched and still perfect -- it
+        # simply never executes, because run() returns before calling
+        # upgrade_config for any config at or above SCHEMA_CURRENT, and every
+        # existing config is at 3.
+        #
+        # The mutation is pinned here because it is invisible to every unit
+        # test of the transformation itself: `upgrade_config` is pure and goes
+        # on passing. Only an end-to-end run through `run()` sees it, which is
+        # exactly the gap that let it reach review.
+        "the schema is not bumped, so the migration never runs",
+        STATE,
+        "SCHEMA_CURRENT = 4",
+        "SCHEMA_CURRENT = 3",
+        ("tests/test_upgrade.py::"
+         "test_the_theme_migration_actually_reaches_an_existing_repo"),
+    ),
+    (
+        # The one-shot gate goes, so the rewrite matches on the VALUE forever.
+        # A user who takes the upgrade report at its word -- "if you did mean
+        # neutral, set it again and it will now be honoured" -- has it erased
+        # by the next `--force`, and by every force after that. The report
+        # then states something the code contradicts, which is worse than
+        # having made no promise.
+        "the theme rewrite is no longer one-shot",
+        UPGRADE,
+        '            and notes["schemaFrom"] < _DOCS_THEME_REWRITTEN_UNTIL_SCHEMA\n'
+        '            and crew_state.dict_or_empty(cfg.get("docs")).get("theme")',
+        '            and crew_state.dict_or_empty(cfg.get("docs")).get("theme")',
+        ("tests/test_upgrade.py::"
+         "test_a_deliberately_restored_neutral_survives_a_forced_rerun"),
+    ),
+    (
+        # The pre-0.18.0 default, restored. This is the mutation that matters
+        # on this change, because restoring it breaks NOTHING visible: the key
+        # still has no consumer, so no document comes out differently and no
+        # other test notices. It only becomes a de-branding bug later, when the
+        # wiring lands and every upgraded repo starts passing an explicit
+        # `--brand neutral` over an installed pack. A defect whose damage is
+        # deferred to a future commit is exactly the kind a suite forgets to
+        # hold, so it is pinned here rather than left to the templates.
+        "docs.theme default goes back to the string neutral",
+        UPGRADE,
+        '    "theme": None,\n    "reportTheme": None,',
+        '    "theme": "neutral",\n    "reportTheme": None,',
+        ("tests/test_upgrade.py::"
+         "test_upgrade_config_adds_the_docs_and_bitbucket_blocks"),
+    ),
+    (
+        # The migration silently does nothing. The template change alone is
+        # NOT the fix: `_merged` lets a supplied value win, so an existing
+        # config carrying "neutral" keeps it forever and only NEW repos get
+        # null. Deleting the rewrite leaves every already-installed machine in
+        # the broken state while a fresh clone looks correct -- the "exists
+        # only on other people's machines" shape this repo keeps paying for.
+        "the neutral -> null migration is dropped",
+        UPGRADE,
+        '    if (notes["schemaStamped"]\n'
+        '            and notes["schemaFrom"] < _DOCS_THEME_REWRITTEN_UNTIL_SCHEMA\n'
+        '            and crew_state.dict_or_empty(cfg.get("docs")).get("theme")\n'
+        '            == _DOCS_THEME_REWRITTEN_FROM):\n'
+        '        notes["rewrittenKeys"].append("docs.theme")\n'
+        '        out["docs"]["theme"] = None',
+        '    pass',
+        ("tests/test_upgrade.py::"
+         "test_upgrade_rewrites_the_old_neutral_theme_default_to_null"),
+    ),
+    (
+        # The rewrite stops being announced. The value still changes under the
+        # user; only the sentence explaining it disappears. That is the worse
+        # half of the two: a config that differs from what someone wrote, with
+        # the upgrade report silent about which value moved and why it was
+        # allowed to.
+        "a rewritten theme is no longer reported",
+        UPGRADE,
+        '    if "docs.theme" in notes["rewrittenKeys"]:',
+        '    if False:',
+        ("tests/test_upgrade.py::"
+         "test_the_report_explains_a_rewritten_theme_and_stays_quiet_otherwise"),
+    ),
+    (
+        # The rewrite over-reaches and catches every theme, not just the old
+        # default. This is the fix performing the exact bug it exists to
+        # prevent: a user who deliberately set `solomon` gets silently
+        # de-branded BY THE MIGRATION. Cheap to write by accident -- it is one
+        # comparison loosened to a truthiness check.
+        "the migration rewrites any theme, not only the old default",
+        UPGRADE,
+        '            and crew_state.dict_or_empty(cfg.get("docs")).get("theme")\n'
+        '            == _DOCS_THEME_REWRITTEN_FROM):',
+        '            and crew_state.dict_or_empty(cfg.get("docs")).get("theme")):',
+        ("tests/test_upgrade.py::"
+         "test_upgrade_rewrites_only_the_exact_old_default"),
+    ),
+    (
+        # The pre-0.17.0 form, restored. It is wrong in BOTH directions once a
+        # third tier exists: act -> autonomous reads as no widening (the widest
+        # grant crew offers, shipped unannounced), and autonomous -> act reads
+        # as a widening when it is a narrowing. The matrix test is what makes
+        # the second half visible -- a suite carrying only the two transitions
+        # that existed at two tiers stays green with this bug restored, which
+        # is precisely why the matrix is enumerated as data.
+        "widening test compares authority by equality instead of rank",
+        CONFIG,
+        "                and crew_state.authority_rank(value)\n"
+        "                > crew_state.authority_rank(\n"
+        "                    None if before is _MISSING else before)",
+        "                and crew_state.normalise_authority(value) == \"act\"\n"
+        "                and crew_state.normalise_authority(\n"
+        "                    None if before is _MISSING else before) != \"act\"",
+        ("tests/test_crew_config.py::"
+         "test_every_authority_transition_is_classified"),
+    ),
+    (
+        # Codex's round-1 FIX on this branch, restored. The `!` line named a
+        # hardcoded tier, so setting `autonomous` warned about `act` and
+        # described only what `act` grants -- omitting the one thing the tier
+        # adds. Same bug class as the rank fix two entries up: the warning
+        # under-describes the grant it is there to announce.
+        "the widening warning names a hardcoded tier",
+        CONFIG,
+        '                granted = crew_state.normalise_authority('
+        'change["after"])\n'
+        '                print(f"  ! pm.authority widens to `{granted}`: "\n'
+        '                      + _WIDENING_NOTES[granted])',
+        '                print("  ! pm.authority widens to `act`: the PM will '
+        'dispatch "\n'
+        '                      "roles itself and report after.")',
+        ("tests/test_crew_config.py::"
+         "test_the_widening_warning_names_the_tier_it_grants"),
+    ),
+    (
+        # A capability gate that names a rung instead of a floor. Restoring it
+        # makes `autonomous` -- the WIDER tier -- unable to act at all, which
+        # presents as "the new tier does nothing" rather than as a guard bug.
+        "can_act names a rung instead of a floor",
+        STATE,
+        '    return authority_rank(pm.get("authority")) >= authority_rank("act")',
+        '    return normalise_authority(pm.get("authority")) == "act"',
+        "tests/test_pm_brief.py::test_autonomous_can_act_too",
+    ),
+    (
+        # An unknown authority collapsing UPWARD is the repo's named recurring
+        # bug class, in the one field where it grants capability. `index` on a
+        # raw value would raise, so the mutation returns the top rank instead:
+        # the shape a "be permissive on bad input" fix would actually take.
+        "an unreadable authority ranks highest instead of lowest",
+        STATE,
+        "    return AUTHORITIES.index(normalise_authority(value))",
+        "    return (AUTHORITIES.index(value) if value in AUTHORITIES\n"
+        "            else len(AUTHORITIES) - 1)",
+        "tests/test_pm_brief.py::test_authority_rank_is_ordered_and_fails_closed",
+    ),
     (
         "family guard deleted",
         STATE,

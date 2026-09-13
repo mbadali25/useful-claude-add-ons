@@ -232,6 +232,50 @@ Generated from [`plugin/UPDATE.md`](plugin/UPDATE.md) by `scripts/sync-updates.p
 
 <!-- BEGIN plugin/UPDATE.md -->
 
+### crew 0.17.0
+
+A third PM authority tier, and a setting for how many tickets a session's work
+becomes.
+
+| Added | What it does |
+|---|---|
+| `pm.authority: "autonomous"` | Everything `act` does, plus one thing: where the PM would stop and put a choice to you, it takes the option it would have recommended and says which it took. It still composes the options first - a decision made without them worked out is a guess, not autonomy |
+| `pm.ticketGranularity` | `session`, `system` (default) or `change`. `system` files one ticket per session and opens a second only when the work reaches another system - in a marketplace repo, a registered `skills/<name>/` or `plugin/<name>/` entry |
+| `/crew:pm authority autonomous` | Reads and sets the new tier, and names the direction of the change rather than only the new value |
+
+The three tiers are **ordered**, and every gate now reads the setting as a floor
+rather than as a label - anything `act` may do, `autonomous` may do. That
+ordering is what the release is really about, because the two-tier code tested
+`== "act"` in two places and both were wrong once a third tier existed:
+
+- The global-config writer marked a widening as `after == "act" and before !=
+  "act"`. With three tiers that is wrong in **both** directions at once.
+  `act -> autonomous` came out as no widening, so the widest grant crew offers
+  would have shipped unannounced; and `autonomous -> act` came out as a
+  widening when it is a *narrowing*. The second is the more corrosive, because
+  a warning that fires on the safe direction is one people learn to click past,
+  which costs the first case its only defence.
+- The capability gate named a rung instead of a floor, which would have made
+  `autonomous` unable to act at all - the wider tier, less capable than the one
+  below it.
+
+Four things need an explicit yes at **every** tier, `autonomous` included:
+offboarding a role, deleting a codemap or diagram, rewriting `.crew/metrics.md`,
+and destroying git history or tracked work. They are enumerated in
+`crew_state.AUTONOMOUS_STOPS` rather than written out in prose, because a stop
+in a skill file is advice the model weighs against the task in front of it while
+a stop in code is a list a reader can diff and a test can assert on.
+
+An unrecognised authority still resolves to `report-only` - the least permissive
+tier, never the most. That direction matters more with three tiers than it did
+with two, since `autonomous` is now one typo away from `act`.
+
+A repo with no marketplace declares no system boundary, so `system` granularity
+behaves as `session` there - one ticket - and says so rather than guessing a
+boundary from the directory tree. A tree-shaped guess would file an ordinary
+change touching `src/` and `tests/` as two tickets, which is one piece of work
+torn in half.
+
 ### localgpu 0.1.7
 
 A new plugin: the GPU in this machine, as a sidecar for one repository. Two
@@ -591,8 +635,59 @@ Generated from [`skills/UPDATE.md`](skills/UPDATE.md) by `scripts/sync-updates.p
 
 ### Unreleased
 
-No standalone skills added this round. The 25 skills registered in
-`.claude-plugin/marketplace.json` are unchanged.
+Nine new skills, taking the marketplace from 25 to 34.
+
+- **`jira-manager`** — Jira Cloud over the REST API v3 with an email + API
+  token, no MCP connector and no OAuth flow. JQL search, create, update fields,
+  assign, transition, comment, log work. Sourcing the helper needs no
+  credentials, so `jira_get_cloud_id` is usable during setup; each function
+  that needs them checks at call time. Needs `curl` 7.76+ and `jq`.
+- **`knowbe4-admin`** — KnowBe4 KSAT administration: diagnose SCIM user-sync
+  against Microsoft Entra ID or Okta, pull Reporting API data, and route each
+  change to the surface that actually owns it.
+- **`power-automate-api`** — Power Automate cloud flows through the API instead
+  of the maker portal. Flow definitions, expressions the designer mangles,
+  trigger inputs, connection references, run history, and the Flow/BAP auth
+  errors. Every write is preceded by a snapshot to
+  `~/.pa-api-cache/snapshots` and by validation, both enforced in code.
+- **`report-builder`** — human-facing reports authored as HTML and converted to
+  `.docx`/`.pdf` by Word. The browser is not the target; Word's HTML parser is,
+  and it drops correct CSS silently. Carries the five measured traps, a
+  greyscale-safe palette, and a test that runs the checklist against an
+  artifact the builder actually emitted.
+- **`doc-builder`** — finished, human-facing documents as DOCX and PDF through
+  Microsoft Word, in the installed brand pack's house style or a neutral one.
+  Two pipelines behind one skill: findings-style reports (HTML through Word
+  COM) and step-by-step procedures with screenshots (python-docx OOXML,
+  because `add_picture()` writes neither the border nor the `effectExtent`
+  Word needs to avoid clipping a screenshot border). Brand resolves
+  automatically from any installed brand pack (for example
+  `solomon-doc-builder`); `report-builder` and `solomon-sop-maker` are now
+  deprecated stubs that redirect here.
+- **`exchange-mailbox-cleanup`** — walks a non-technical operator, one step at
+  a time, through the Exchange Online Mailbox Cleanup runbook for terminated
+  users: applies a seven-year Litigation Hold, verifies the mail stays
+  searchable, deletes the account, confirms the mailbox went inactive with the
+  hold intact, and exports from Purview eDiscovery. The skill only prints
+  commands for the operator's own Windows PowerShell 5.1 window; it never runs
+  `Connect-ExchangeOnline` or any mutating cmdlet itself.
+- **`exchange-mailbox-restore`** — the reverse walkthrough: triages what state
+  a mailbox is really in, then takes exactly one of five paths — remove a
+  Litigation Hold, restore an inactive mailbox's mail into a shared mailbox,
+  recover an inactive mailbox for a returning employee, undelete an account
+  inside the 30-day window, or remove the last hold for authorised permanent
+  destruction. Same print-only contract as the cleanup skill; the destructive
+  paths are gated by typed confirmations (`RECOVER 1`, `DESTROY 1`).
+- **`solomon-doc-builder`** — a brand pack, not a builder: Solomon Associates'
+  palette, fonts, footer, and SOP masters location for `doc-builder`. Contains
+  no scripts; installing it alongside `doc-builder` applies Solomon styling to
+  every document automatically from then on, with `--brand neutral` (or
+  `DOC_BUILDER_BRAND=neutral`) as the always-wins off switch.
+- **`solomon-sop-maker`** — deprecated 2026-09-10, split into `doc-builder`
+  (the python-docx SOP pipeline, both conformance gates, the template spec,
+  screenshot rules) and `solomon-doc-builder` (the Solomon brand values). A
+  stub kept only so old references to the name still resolve; it contains no
+  scripts and does nothing itself.
 
 <!-- END skills/UPDATE.md -->
 

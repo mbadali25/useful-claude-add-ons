@@ -129,7 +129,7 @@ def _build_plan(url, context_name, active, report_dir, report_file):
             "template": REPORT_TEMPLATE,
             "reportDir": str(report_dir),
             "reportFile": report_file,
-            "reportTitle": "Gizmoduck ZAP scan - %s" % context_name,
+            "reportTitle": f"Gizmoduck ZAP scan - {context_name}",
         },
     })
     return {
@@ -166,7 +166,7 @@ def run(target, outdir, opts):
 
     url = getattr(target, "url", None) or str(target)
     context_name = _context_name(target)
-    report_path = outdir / ("%s.json" % NAME)
+    report_path = outdir / (f"{NAME}.json")
 
     # DEFECT 1 (critical): establish freshness BEFORE invoking ZAP. A stale
     # report left in outdir from a previous run would otherwise still be
@@ -198,13 +198,13 @@ def _as_list(value, label):
     if value is None:
         return []
     if not isinstance(value, list):
-        raise base.ParseError("zap: %r must be a list, got %r" % (label, type(value).__name__))
+        raise base.ParseError(f"zap: {label!r} must be a list, got {type(value).__name__!r}")
     return value
 
 
 def _as_obj(value, label):
     if not isinstance(value, dict):
-        raise base.ParseError("zap: %r entry is not an object: %r" % (label, value))
+        raise base.ParseError(f"zap: {label!r} entry is not an object: {value!r}")
     return value
 
 
@@ -229,11 +229,11 @@ def parse(raw_path, target):
         with open(raw_path, "r", encoding="utf-8") as fh:
             data = json.load(fh)
     except (OSError, ValueError) as e:
-        raise base.ParseError("zap: could not read %s: %s" % (raw_path, e)) from e
+        raise base.ParseError(f"zap: could not read {raw_path}: {e}") from e
 
     if not isinstance(data, dict):
         raise base.ParseError(
-            "zap: expected a JSON object at the top level, got %r" % type(data).__name__)
+            f"zap: expected a JSON object at the top level, got {type(data).__name__!r}")
 
     # DEFECT 1: `site` must be PRESENT, not merely absent-or-empty. `{}` is
     # not the report ZAP's report job produces (which always carries `site`,
@@ -255,13 +255,13 @@ def parse(raw_path, target):
             ref_raw = alert.get("reference")
             if ref_raw is not None and not isinstance(ref_raw, str):
                 raise base.ParseError(
-                    "zap: 'reference' must be a string, got %r" % type(ref_raw).__name__)
+                    f"zap: 'reference' must be a string, got {type(ref_raw).__name__!r}")
             reference = [line for line in (ref_raw or "").splitlines()
                         if line.strip()]
             tags = []
             cweid = alert.get("cweid")
             if cweid not in (None, "", "-1"):
-                tags.append("cwe:%s" % cweid)
+                tags.append(f"cwe:{cweid}")
 
             instances = _as_list(alert.get("instances"), "instances") or [{}]
             for inst in instances:

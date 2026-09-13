@@ -198,14 +198,40 @@ The shapes that pass green forever, all of which have shipped:
 | Syntax standing in for behaviour | a parse check, a lint pass, a dry run reported as "it runs" | everything that only happens at runtime |
 | A sample that cannot discriminate | two rows, so every sort ties; an empty scope, so a deny "passes" | the ordering or permission it claims to prove |
 | An assertion on the wrong object | the workflow run, not the job; the exit code, not the artifact | a step that was skipped, a deploy that shipped nothing |
+| One mutation, several assertions | a test with four asserts and one mutation against it | which assertion caught it — see below |
 
-Two rules follow, and both are cheap:
+Three rules follow, and all three are cheap:
 
 - **Assert against the real number, not a floor you know is safe.** If the
   count is derived, derive it in the check.
 - **A negative proof needs a populated positive side.** "Access was denied"
   means nothing against an empty scope. State the setup that makes the denial
   discriminating, or the proof does not count.
+- **A passing mutation proves the TEST failed. It never proves WHICH assertion
+  failed.** So a multi-assertion test covered by a single mutation can hold a
+  vacuous assertion indefinitely: the mutation trips an earlier line, the
+  harness prints RED, and the label on the mutation claims coverage the suite
+  does not have.
+
+  The measured case. A test was meant to prove `docs.reportTheme` binds to the
+  findings-report genre and so cannot degrade into a synonym for `docs.theme`.
+  It selected the line containing `docs.reportTheme`, asserted the line was
+  found, then asserted `"report"` appeared in it — and `"docs.reportTheme"`
+  contains `"report"`, so the second assertion could not fail once the first
+  had passed. Its mutation deleted the key from the sentence outright, which
+  tripped the FIRST assertion. RED, every run, with the binding unchecked.
+
+  This one is worth stating as a general gap rather than as one test's bug,
+  because it is the exact blind spot of the technique. Four other vacuous
+  assertions on the same branch were all caught by a mutation coming back
+  green — that is the normal way this harness earns its keep. This one could
+  not be, and it was the assertion that had been specifically requested.
+
+  Two cheap defences: **write the mutation that leaves every earlier assertion
+  satisfied** (here, keep the key in the sentence and only widen the genre),
+  and when a test has several assertions, ask which mutation distinguishes
+  each one rather than assuming the label on the entry is a claim about all
+  of them.
 
 The reviewer's half of this is in `/crew:review`: re-run the mutation rather
 than reading a transcript of it.

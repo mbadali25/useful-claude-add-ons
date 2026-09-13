@@ -32,12 +32,36 @@ from crew_endpoints import (
     scan_artifact_path,
 )
 
-# 3 as of 0.16.0: `qa` and `dev` gained a per-ROLE provider table and a
-# declared `fallback`. Bumping this makes every existing crew repo report
-# `upgradeNeeded` at session start, so the migration in
-# `crew_upgrade.upgrade_config` is mandatory rather than optional -- see
-# `evaluate_triggers`, which is the line that fires.
-SCHEMA_CURRENT = 3
+# 4 as of 0.18.0: `docs.theme`'s default moved from `"neutral"` to null, and
+# the old default is rewritten forward. 3 was 0.16.0: `qa` and `dev` gained a
+# per-ROLE provider table and a declared `fallback`.
+#
+# Bumping this makes every existing crew repo report `upgradeNeeded` at session
+# start, so the migration in `crew_upgrade.upgrade_config` is mandatory rather
+# than optional -- see `evaluate_triggers`, which is the line that fires.
+#
+# The bump is not decoration on the 4 migration, it is the whole delivery
+# mechanism, and leaving it at 3 made that migration DEAD ON ARRIVAL. `run()`
+# returns "already current" for any config at or above this number without
+# ever calling `upgrade_config`, and every existing config is at 3 -- so the
+# rewrite would have reached only repos that were already behind, which is
+# nobody it was written for. A fresh clone would have looked correct while
+# every installed machine kept the old default forever. Caught in review by
+# Codex, which ran it: status `already current`, value unchanged.
+#
+# So: a migration that must reach existing repos REQUIRES a bump here. Adding
+# one to `upgrade_config` without touching this line ships nothing.
+SCHEMA_CURRENT = 4
+
+# The machine-global config file. `crew_config` owns the LAYERING and re-exports
+# this name; the path itself lives here for the same reason `PM_DEFAULTS` and
+# the provider tuples do -- modules that must not import `crew_config` still
+# need it. `crew_upgrade` is the case that forced the move: it has to warn when
+# a global value would defeat a repo migration it just performed, and importing
+# `crew_config` to find that out is the cyclic import both modules' docstrings
+# exist to prevent.
+GLOBAL_CONFIG_PATH = os.path.join(
+    os.path.expanduser("~"), ".claude", "crew", "config.json")
 
 # Verbatim from crew-scaling/SKILL.md. Below the floor the review is broken
 # rather than thorough; above the ceiling the tickets are too large.
@@ -668,9 +692,32 @@ def _read_graph(root, cfg):
 def read_knowledge(root, cfg):
     """Codemap inventory plus graph freshness.
 
-    `behind` names maps whose anchor is not HEAD. That is not the same as
-    wrong -- see the design note in the plan. Without git there is no HEAD to
-    compare against, so nothing is claimed either way.
+    `behind` names maps whose anchor RESOLVES to a commit and is not HEAD.
+    That is not the same as wrong -- see the design note in the plan. Without
+    git there is no HEAD to compare against, so nothing is claimed either way.
+
+    `unresolvable` names maps whose anchor is absent, or names an object this
+    repository does not contain. It is a THIRD value, exclusive of `behind`,
+    and the distinction decides what the reader does next:
+
+      behind        the anchor resolves, so `git diff --name-only
+                    <anchor>..HEAD -- <the paths the map cites>` runs. Empty
+                    output means the map is current despite the lag. RE-CHECK.
+      unresolvable  that command cannot run at all. Nothing about the map can
+                    be confirmed or refuted from git. RE-DERIVE.
+
+    Folding the second into the first is this repo's named bug: an unknown
+    collapsing into the safe-looking value. "Behind" is a definite, cheap
+    finding; a reader who cannot tell the two apart does the cheap thing, and
+    a map that cannot be verified goes on being trusted.
+
+    Measured case that produced this: five maps written by `519754fa`
+    ("crew 0.16.28: fix the codemap anchor writer ... (#82)") carry
+    `useful-claude-add-ons@d61342c3`. `git cat-file -t d61342c3` reports
+    "Not a valid object name". That commit has ONE parent -- it was squash
+    merged -- so the branch sha the writer recorded was discarded by the
+    merge. The anchors that survived trace to commits made directly on the
+    default branch.
     """
     head = git_out(root, "rev-parse", "--short=7", "HEAD")
     mapdir = os.path.join(root, ".crew", "codemap")
@@ -679,20 +726,39 @@ def read_knowledge(root, cfg):
     except OSError:
         names = []
 
-    subsystems, behind = 0, []
+    subsystems, behind, unresolvable = 0, [], []
     for name in names:
         if not name.endswith(".md") or name in _NOT_SUBSYSTEMS:
             continue
         subsystems += 1
         if not head:
             continue
+        stem = name[: -len(".md")]
         found = _ANCHOR_RE.search(read_text(os.path.join(mapdir, name)) or "")
-        if not found or found.group(1)[:7] != head[:7]:
-            behind.append(name[: -len(".md")])
+        if not found:
+            # No anchor at all. Previously this counted as `behind`, which
+            # read as "the code moved" when the truth is "nothing here can be
+            # checked". Same class as a sha that does not resolve, so it gets
+            # the same answer.
+            unresolvable.append(stem)
+            continue
+        sha = found.group(1)
+        if sha[:7] == head[:7]:
+            continue
+        # `cat-file -e` is the cheapest existence probe git has, and `git_out`
+        # returns None on any failure, so a missing git or a broken repo lands
+        # here as "cannot tell" rather than raising out of a SessionStart hook.
+        # `^{commit}` so a sha that happens to name a blob or a tree is not
+        # accepted as an anchor.
+        if git_out(root, "cat-file", "-e", sha + "^{commit}") is None:
+            unresolvable.append(stem)
+        else:
+            behind.append(stem)
 
     return {
         "subsystems": subsystems,
         "behind": behind,
+        "unresolvable": unresolvable,
         "graph": _read_graph(root, cfg),
     }
 
@@ -781,6 +847,11 @@ TRIGGERS = (
     # reviewNotWorking/ticketsTooLarge do.
     "endpointUnscanned",
     "graphStale",
+    # Above `knowledgeBehind` on purpose, and it is the whole point of keeping
+    # them separate. A map that cannot be re-verified is a worse finding than
+    # one that merely needs re-checking, and it has a different fix. Sorting
+    # it below would bury the expensive case under the cheap one.
+    "knowledgeUnverifiable",
     "knowledgeBehind",
     # Below the codemap findings on purpose. A diagram is drawn FROM the map,
     # so refreshing diagrams while the map they derive from is behind HEAD just
@@ -802,8 +873,50 @@ TRIGGERS = (
 # for a permissions field has to be the restrictive one. `"Act"`, `"ACT"` and
 # `" act "` are accepted as `act` -- those are the same intent typed carelessly,
 # not a different one.
-AUTHORITIES = ("report-only", "act")
+# ORDER IS LOAD-BEARING, not presentation. The index of a name in this tuple is
+# its rank, and `authority_rank` is what every widening test and every
+# capability gate compares -- so appending a tier here grants it everything the
+# tiers before it had, and inserting one in the middle re-ranks the ones after
+# it. Append only, and never reorder.
+#
+# Before 0.17.0 there were two tiers and every consumer tested `== "act"`.
+# That equality is exactly wrong once a third tier exists, and it fails in BOTH
+# directions: `plan_global_write` computed a widening as
+# `after == "act" and before != "act"`, which reports act -> autonomous as no
+# widening at all (the case that ships an unannounced grant) and reports
+# autonomous -> act as a widening when it is a NARROWING (the case that teaches
+# the user the warning is noise). `can_act` had the mirror bug -- an
+# `== "act"` test makes the MORE permissive tier less capable than the one
+# below it. Rank, never equality.
+AUTHORITIES = ("report-only", "act", "autonomous")
 AUTHORITY_DEFAULT = "report-only"
+
+# The stops that hold even at the top tier, enumerated HERE rather than in
+# prose. A stop described only in a skill file is advice the model may weigh
+# against the task in front of it; a stop in code is a list a reader can diff,
+# a test can assert on, and nobody can paraphrase away. Each entry is
+# (slug, what the PM must not do without an explicit yes).
+#
+# The first three are the bound-2 stops `act` already carried, restated at this
+# tier because a wider authority is precisely where someone would assume they
+# lapsed. The fourth is new with `autonomous`: a PM that dispatches without
+# asking is a PM that can reach git, and every item under it destroys work that
+# exists nowhere else once it runs.
+AUTONOMOUS_STOPS = (
+    ("offboard-role", "offboarding a role, or removing one from the roster"),
+    ("delete-map", "deleting a codemap file or a diagram"),
+    ("rewrite-metrics", "rewriting .crew/metrics.md"),
+    ("git-destruction",
+     "destroying git history or tracked work - force-push, branch delete, "
+     "history rewrite, or rm of a tracked file"),
+)
+
+# How many tickets one session's work becomes. The default is `system`: one
+# session is one ticket, and a second ticket is opened only when the work
+# reaches into another system. Splitting per change was the pre-0.17.0
+# behaviour and is kept as `change` for anyone who wants it back.
+TICKET_GRANULARITIES = ("session", "system", "change")
+GRANULARITY_DEFAULT = "system"
 
 PM_DEFAULTS = {
     "enabled": True,
@@ -811,6 +924,7 @@ PM_DEFAULTS = {
     "quietLines": 8,
     "maxLines": 40,
     "authority": AUTHORITY_DEFAULT,
+    "ticketGranularity": GRANULARITY_DEFAULT,
     # Guardrail. The PM stops dispatching after this many roles in one pass and
     # says what it did not get to, rather than working a queue until the context
     # runs out. Blockers found mid-task do not count against it -- see the
@@ -1076,7 +1190,12 @@ def tier_for_roles(roles):
 
 
 def normalise_authority(value):
-    """`value` as a known authority, else the restrictive default."""
+    """`value` as a known authority, else the restrictive default.
+
+    An unknown collapses to `report-only` -- the LEAST permissive tier, never
+    the most. A typo in a hand-edited config must cost capability, not grant
+    it, and `autonomous` is now a spelling mistake away from `act`.
+    """
     if isinstance(value, str):
         cleaned = value.strip().lower()
         if cleaned in AUTHORITIES:
@@ -1084,14 +1203,68 @@ def normalise_authority(value):
     return AUTHORITY_DEFAULT
 
 
+def authority_rank(value):
+    """`value`'s position in `AUTHORITIES`. Higher is more permissive.
+
+    Routed through `normalise_authority` first, so an unknown ranks 0 and every
+    comparison built on this is fail-safe by construction: unknown is never
+    >= anything but itself, and a widening FROM unknown always reports as a
+    widening. This is the one function permitted to know that the tiers are
+    ordered; nothing else may compare authority strings.
+    """
+    return AUTHORITIES.index(normalise_authority(value))
+
+
+def normalise_granularity(value):
+    """`value` as a known ticket granularity, else the default.
+
+    Unlike authority, no value here is more permissive than another -- this
+    setting buys nobody a capability, it only decides how the same work is
+    filed. So the fallback is the documented default rather than an extreme.
+    """
+    if isinstance(value, str):
+        cleaned = value.strip().lower()
+        if cleaned in TICKET_GRANULARITIES:
+            return cleaned
+    return GRANULARITY_DEFAULT
+
+
 def can_act(state):
     """True when the PM may act on its findings rather than just report them.
 
     Reads from a full state dict so callers cannot disagree about where the
     field lives or what an absent one means.
+
+    Rank, not equality. This tested `== "act"` while there were two tiers,
+    which silently made `autonomous` -- the WIDER tier -- unable to act at all.
+    A gate that says "at least this rung" keeps working when a rung is added
+    above it; one that names a rung does not.
     """
     pm = dict_or_empty(state.get("pm"))
-    return normalise_authority(pm.get("authority")) == "act"
+    return authority_rank(pm.get("authority")) >= authority_rank("act")
+
+
+def can_autodecide(state):
+    """True when the PM picks its own recommended option instead of asking.
+
+    Deliberately a SECOND predicate rather than a wider `can_act`. "May
+    dispatch without asking" and "may settle an open decision without asking"
+    are different questions, and folding them into one gate would have changed
+    `act`'s behaviour as a side effect of adding a tier above it -- an `act`
+    repo would have stopped emitting `**Decision needed:**` blocks that its
+    user is relying on. `act` still asks; only `autonomous` decides.
+
+    `AUTONOMOUS_STOPS` is not overridden by this. Those need an explicit yes at
+    every tier.
+    """
+    pm = dict_or_empty(state.get("pm"))
+    return authority_rank(pm.get("authority")) >= authority_rank("autonomous")
+
+
+def ticket_granularity(state):
+    """The configured ticket granularity, normalised."""
+    pm = dict_or_empty(state.get("pm"))
+    return normalise_granularity(pm.get("ticketGranularity"))
 
 
 def merge_defaults(defaults, supplied, discarded=None, _path=""):
@@ -2546,6 +2719,7 @@ def evaluate_triggers(state):
         # An absent graph is stale by definition -- there is nothing to trust.
         "graphStale": not graph.get("present") or not graph.get("current"),
         "knowledgeBehind": bool(knowledge.get("behind")),
+        "knowledgeUnverifiable": bool(knowledge.get("unresolvable")),
         "diagramsStale": bool(diagrams.get("behind")),
         # Only meaningful once there is something to draw from. A repo with no
         # codemap has not decided what its subsystems ARE yet, and demanding
@@ -2605,6 +2779,7 @@ def collect(root, cfg_override=None):
     # downstream then reads a value that is guaranteed to be one of AUTHORITIES,
     # and none of them has to re-decide what a typo means.
     pm["authority"] = normalise_authority(pm.get("authority"))
+    pm["ticketGranularity"] = normalise_granularity(pm.get("ticketGranularity"))
 
     tier = cfg.get("tier")
     roles = cfg.get("roles")
@@ -2618,6 +2793,27 @@ def collect(root, cfg_override=None):
         # all) read as current the moment any global config file exists.
         # Read from raw_cfg, exactly what /crew:upgrade itself reads.
         "schema": int_or(raw_cfg.get("schema", 1), 1) if raw_cfg else SCHEMA_CURRENT,
+        # The RAW value beside the normalised one, because `int_or(..., 1)`
+        # collapses three different states into the number 1: the key is
+        # absent (a genuinely pre-schema config), the key says something that
+        # will not parse (`true`, `"three"`), and the key honestly says 1.
+        # `upgradeNeeded`'s finding text used to assert the first of those for
+        # all three -- "config has no schema" -- which is false for every
+        # schema-2 and schema-3 repo, and those are now the entire installed
+        # population. An unknown collapsing into a safe-looking value is this
+        # repo's named recurring bug, and the fix is the standard one: keep
+        # the unknown as its own value instead of letting a default wear the
+        # label of a fact. This is exactly what the file said, unvalidated.
+        #
+        # `schemaKeyPresent` is the other half and is NOT redundant: a config
+        # saying `"schema": null` reads back from `.get()` as None, which is
+        # the same value an ABSENT key gives. Without the flag the brief calls
+        # an explicit null a pre-PM config and sends the user hunting a
+        # migration instead of the word they typed -- the same collapse this
+        # pair exists to remove, one level further down. Found by Codex, not
+        # by me, on the commit that introduced these keys.
+        "schemaDeclared": raw_cfg.get("schema") if raw_cfg else None,
+        "schemaKeyPresent": bool(raw_cfg) and "schema" in raw_cfg,
         "tier": tier if isinstance(tier, int) and not isinstance(tier, bool) else None,
         "roles": roles if isinstance(roles, list) else [],
         "tracker": cfg.get("tracker"),

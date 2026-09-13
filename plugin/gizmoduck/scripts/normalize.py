@@ -96,7 +96,7 @@ def sev_from_riskcode(code):
 
 
 def synthetic_id(tool, rule_id):
-    return "%s:%s" % (tool, rule_id or "unknown")
+    return f"{tool}:{rule_id or 'unknown'}"
 
 
 def make_finding(tool, target, rule_id, name, severity,
@@ -242,8 +242,7 @@ def merge_category(findings, category):
     """
     if category not in _KEY_FUNCS:
         raise ValueError(
-            "merge_category: category must be one of %s, got %r"
-            % (sorted(_KEY_FUNCS), category))
+            f"merge_category: category must be one of {sorted(_KEY_FUNCS)}, got {category!r}")
     key_fn = _KEY_FUNCS[category]
 
     groups = {}

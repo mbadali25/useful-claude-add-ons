@@ -183,6 +183,189 @@ Nothing to build. The entry was opened because the check had not been located,
 which is a different finding from it being absent, and the two are worth
 keeping distinguishable.
 
+## A green check on a stacked PR is a claim about its BASE, not about `main`
+
+Found 2026-09-12 merging #101 and #102. Not a code bug — a review-process one,
+and the first of today's five that is about how work is checked rather than what
+the code does.
+
+#102 was opened with `--base pylint-to-zero` because it depended on #101. While
+#101 was open, `gh pr checks 102` read **12 passed, 0 failed** and
+`mergeStateStatus=CLEAN`. Both were true, and both were about `pylint-to-zero`.
+
+When #101 merged, **GitHub did not retarget #102.** Its base stayed pointed at a
+branch that no longer existed. #102's head was `7e690647`, which is not a
+descendant of `e46d5ba8` — the `ignored-modules` fix #101 shipped — so it still
+carried an rcfile without `docx`, `pymupdf` or `PIL`. Retargeted to `main` by
+hand, and the same PR read **3 build failures**, on 3.11, 3.12 and 3.13, for
+exactly the bug #101 had just fixed. The other 9 checks stayed green throughout.
+
+So the sequence that ships a regression is: read CLEAN, watch the parent merge,
+merge on the reading you already have. Nothing announces that the reading went
+stale, because nothing changed about the PR — what changed is the question the
+answer was to.
+
+**What to do instead**, in order:
+
+1. After the parent lands, **retarget the stacked PR to `main` yourself** —
+   `gh pr edit <n> --base main`. Do not assume GitHub did it.
+2. Merge `main` into the branch. A rebase would be cleaner history, but this
+   repo's guard hook refuses a force push, so a merge commit is the available
+   move, not a preference.
+3. **Re-read the checks after the retarget**, never before, and merge on that
+   reading with `--match-head-commit`.
+
+Verify against the ref you are merging INTO. This is the same rule the
+`check-marketplace` correction records — a measurement without its ref can only
+be believed, not checked — arriving by a different route: there the ref was a
+dirty working tree, here it was a base branch that had been deleted.
+
+## The paired one: a gate that skips its own check and still passes
+
+`scripts/check-marketplace.py` prints
+
+    note: not a git checkout - skipping the version-drift check
+
+and then exits 0. So a run against a `git archive` export passes **without
+running the check that matters**, and version drift — the thing the gate exists
+for — goes unmeasured while the output says "all checks passed".
+
+Hit 2026-09-12 while closing the "Five marketplace entries are shipping stale"
+entry. It was caught only because the checker names the skip out loud, which is
+the design property worth copying: where a check can decline to run, "could not
+tell" has to be its own visible value rather than collapsing into the passing
+one. Use `git worktree add --detach <tmp> origin/main` to measure a named ref;
+an archive is not a git checkout.
+
+## The third: an empty result from a misused API is indistinguishable from a real absence
+
+Found 2026-09-12, one step short of being published. Checking whether
+`filter_global` silently swallows a scalar landing where a block is expected
+(`{"qa": 5}` -- it keeps it and reports `ignored: []`), the next question was
+whether the `_prune` comment's claim that `_layer_supplies` "already reports
+that correctly" was true. `inspect_global` was called as
+`inspect_global(path)`.
+
+The signature is `inspect_global(root, path=None)`, and it RETURNS a dict
+rather than printing. So the call did not fail. It bound the path to `root`,
+found no config there, and returned a result that read as "nothing to report"
+-- one step from the conclusion "the comment claims coverage that does not
+exist."
+
+Called properly, `inspect_global(root, path)["findings"]` emits
+`[missing-keys] not set globally, so the built-in default applies: qa.provider,
+qa.order, qa.fallback, ...`, listing every `qa.*` leaf. The comment is true and
+there is no gap.
+
+**A function that answers a different question does not look like an error.**
+It looks like an answer. Before reporting an absence -- a missing finding, an
+empty list, a check that found nothing -- confirm the call was the one you
+meant: check the signature, and prove the probe can produce a non-empty result
+at all by feeding it a case that must trip it.
+
+## The fourth: `git stash` captured a tree believed to be clean
+
+Found 2026-09-12, and the only one of these whose cost would have landed in a
+merged commit rather than in a report.
+
+Switching branches mid-task, `git stash -q -u` was run on a working tree
+believed clean. It was not: the post-commit graphify hook had regenerated
+`graphify-out/GRAPH_REPORT.md` and `graphify-out/graph.json`, which are
+generated artifacts CLAUDE.md says must never be hand-edited or committed. The
+stash captured both silently -- a stash of nothing and a stash of two generated
+files look identical at the prompt.
+
+`git stash show --name-only stash@{0}` named them, the finding-1 commit was
+confirmed intact, and the stash was dropped rather than popped. Had it been
+popped later and swept into `git add -A`, the generated graph would have gone
+into a crew PR.
+
+**Check what a stash captured before trusting that it captured nothing**, the
+same way you check what a gate measured. `git stash list` shows that a stash
+exists; only `git stash show --name-only` says what is in it. The hook that
+makes this likely is the repo's own: it rebuilds the graph after every commit
+and every branch switch, so the tree is rarely clean for long after a commit.
+
+## The fifth: a test that pins a number proves the number is stable, not right
+
+Found 2026-09-12, and it is the one that indicts a check rather than a claim.
+
+The 0.19.10 change declared nine previously-undeclared config keys and added
+`assert len(declared) == 84`, with a docstring saying in as many words: "a
+tenth key arriving undeclared is the same bug again, and a membership-only test
+would pass while it happened."
+
+There already was a tenth. `context.autoClear.unsafeFocus` is read at
+`auto-clear.sh:93` and gates the `wtype` method at `:187`. The test shipped
+green at 84 because 84 was what the tree held, not what was correct. **A pinned
+number is a regression detector, not a correctness check** -- it freezes
+whatever the author counted, including a miscount, and then defends it.
+
+It is still worth pinning: the count is the only thing that will catch the
+ELEVENTH key. But the number itself has to be derived by a method that could
+have disagreed with the author, and here it could not: the author enumerated
+the keys by reading the `.ps1` consumers, and the assertion counted exactly
+what that enumeration produced. The check and the thing it checked shared a
+source.
+
+So when pinning a count, say in the test where the number came from, and make
+the derivation independent of the enumeration it is meant to guard. The tenth
+key was found by reading the `.sh` consumers -- a source the first pass had
+not used -- not by any test.
+
+## The sixth: measuring a tree mid-branch-switch
+
+Recorded 2026-09-12, hit by a second person reviewing the above. A verification
+script run against `HEAD` returned the pre-change counts (75 leaves / 38
+global) on a checkout that was already at the post-change commit: the working
+tree was mid-switch to another branch when the script read it. Re-run on a
+settled tree it returned 85 / 44.
+
+One step from reporting that a change was not present when it was. The repo's
+own lesson covers it -- run the states, do not reason about them -- and this
+adds the corollary: **check that the tree you measured is the tree you meant.**
+A background hook that rebuilds on branch switch, which this repo has, widens
+the window in which that is false.
+
+## The seventh: a correction that outlives the thing it corrected
+
+Found 2026-09-12, and the only one on this list that is CREATED by fixing
+something.
+
+`plugin/crew/README.md` §11 carried a sample `.crew/config.json` that had
+drifted badly. Before it was dealt with, a pointer paragraph was added saying,
+in effect: "the sample JSON and table above are older than `CONFIG.md` and
+disagree with it; where they differ, `CONFIG.md` is the one that was checked."
+True and useful at the time.
+
+The next change deleted the sample. The pointer paragraph survived it, and now
+told readers to distrust a sample that was no longer there -- a confident
+sentence about a thing that did not exist, left behind by the act of removing
+the thing.
+
+**Deletion is exactly when this happens**, because the person removing content
+is thinking about the content and not about what referred to it. A correction,
+a caveat, a "see the table above", a test name that describes the old
+behaviour: each is a reference, and a reference outliving its referent is worse
+than no reference, because it reads as current.
+
+When you delete something, grep for what pointed at it. Here that was one
+paragraph in the same file, found only because the deleted region was re-read
+afterwards rather than assumed correct.
+
+These seven and the struck "already red on `main`" claim are one failure in
+eight costumes: a check that did not run, a check that ran against the wrong
+ref, a check that answered a different question, an API that answered a
+different question, a state believed known without being read, a check that
+froze its author's own miscount, a measurement of a tree that was moving
+underneath it, and a correction still standing after its subject was deleted.
+Each produces a confident sentence that is not true, and none of them looks
+like a failure at the moment it happens.
+
+Two sentences cover all eight. Prove the thing you believe is empty actually
+is. And make the check's source independent of the thing it is checking --
+where they share one, the check can only confirm, never contradict.
+
 ## Deferred by design, not oversight
 
 - **`plugin/crew` is unmapped** in `.crew/codemap/`. It is the file set the
@@ -372,29 +555,43 @@ claims to check, and say explicitly that refuting the brief is a valid and value
 outcome. A lane that believes its brief is a lane that can only find the bugs you
 already suspected.
 
-## Crew's agent count is wrong in three places, right in four
+## Crew's agent count is wrong in seven places and right in none
 
-`scripts/install-prerequisites.sh:859` and `scripts/install-prerequisites.ps1:843`
-both read:
+**Re-measured 2026-09-12 at `e7cc93a2`. Every figure below replaces one from the
+2026-09-06 pass, and the heading changed with them** — this entry used to read
+"wrong in three places, right in four".
 
-```
-crew                    - Virtual dev team: 11 agents, 21 commands, safety hooks
-```
-
-Actual on disk: **29 agents, 24 commands** (`ls plugin/crew/agents/*.md`,
-`ls plugin/crew/commands/*.md` — re-measure rather than trusting this line).
-
-The installer is not the only wrong site. Verified 2026-09-06 at `1f97e51c`:
+Actual on disk: **54 agents, 24 commands**. The 54 is `13` (`ROLE_TIERS`) `+ 40`
+(`SPECIALIST_ROLES`) `+ pm`, checked in both directions — no role named in code
+lacks an agent file, and no agent file is unreachable from the roster. Re-measure
+with `ls plugin/crew/agents/*.md` and `ls plugin/crew/commands/*.md` rather than
+trusting this line; that instruction is the only part of the old entry that
+survived contact with a second measurement.
 
 | Location | Says | Actual |
 |---|---|---|
-| `scripts/install-prerequisites.sh:859`, `.ps1:843` | `11 agents, 21 commands` | 29 / 24 |
-| `plugin/PLUGINS.md:153` | `Agents — 14, tiered plus the manager` | 29 |
-| `README.md:162` | `17 subagents` (its `24 slash commands` is correct) | 29 |
+| `scripts/install-prerequisites.sh:899`, `.ps1:855` | `11 agents, 21 commands` | 54 / 24 |
+| `plugin/PLUGINS.md:17` | `29 agents, 24 commands` | 54 / 24 |
+| `plugin/PLUGINS.md:153` | `Agents — 14, tiered plus the manager` | 54 |
+| `plugin/PLUGINS.md:454` | `24 commands and 29 agents` | 54 |
+| `README.md:165` | `50 subagents, 24 slash commands` | 54 |
+| `plugin/crew/README.md:1978` | `50 agents — 13 tiered, 36 specialists, and pm` | 54 = 13 + 40 + pm |
+| `.claude-plugin/marketplace.json` crew description | `29 ... (13 tiered, 15 domain specialists ...)` | 54 = 13 + 40 + pm |
 
-Correct in four places, so this is drift and not a convention:
-`.claude-plugin/marketplace.json`'s crew description, `plugin/PLUGINS.md:17`,
-`plugin/README.md:370`, `README.md:773` — all four read 29 agents, 24 commands.
+**The "right in four" claim has inverted, and that is the durable lesson here.**
+The 2026-09-06 entry named four places as correct: `marketplace.json`'s crew
+description, `plugin/PLUGINS.md:17`, `plugin/README.md:370` and `README.md:773`.
+None of them is a correct current-state claim today. Two were never current-state
+claims at all — `plugin/README.md:370` is a line inside the `### crew 0.15.1`
+changelog section, where "14 agents" is a true statement about 0.15.1 and not
+about now — and `README.md:773` is now an unrelated PowerShell fence.
+
+A finding that records which places are RIGHT acquires an expiry date the moment
+it is written, because nothing re-checks a claim that something is correct. The
+wrong sites at least get re-read when someone fixes them. This is the same shape
+as ["a correction that outlives the thing it corrected"](#the-seventh-a-correction-that-outlives-the-thing-it-corrected)
+above. If you record a correct-list again, record the command that regenerates
+it, not the list.
 
 **Why no check catches it.** `check_catalogs`, `check_menu_parity` and
 `check_group_parity` compare keys and booleans, never descriptive strings, so
@@ -424,6 +621,46 @@ whether the check that would have caught it is worth writing: the counts are
 derivable from `ls plugin/crew/agents/*.md` and `commands/*.md`, so a smoke check
 comparing the installer's advertised numbers against the directory contents is
 about ten lines and would cover every plugin's menu line, not just crew's.
+
+## The eighth: a re-derivation cannot be verified by the thing doing the re-deriving
+
+Found 2026-09-12, during the pass that re-anchored the five codemap notes.
+
+`.crew/codemap/crew.md` was re-derived from source and its header said so: "the
+live claims below were taken from the source at this anchor, not carried forward
+and re-pointed." A sweep afterwards — diff the new file against its previous
+version, flag every citation sitting on a **byte-identical** line — found **33
+citations that had simply been carried forward**. The header was true of the
+paragraphs that were rewritten and false of the ones that were not, and nothing
+in the file distinguished them to a reader.
+
+Twelve of the 33 were wrong, and wrong by hundreds of lines rather than by one:
+`TRIGGERS` was cited at `crew_state.py:486`, a blank line inside
+`archive_stale_handoff`'s docstring, and is at `:833`. `DISPATCH_PATH` was cited
+at `:1048`, a `hashlib.blake2b` call, and is at `:1592`.
+
+**The 21 that were correct are what makes this dangerous.** Those files had not
+moved between the two anchors, so a spot check would have landed on a correct
+citation about two times in three and concluded the file was fine.
+
+This is trap five's shape — the check and the thing checked sharing a source —
+but sharper, because here the *claim* and the *evidence for it* were the same
+act. Re-reading your own re-derivation cannot find the paragraphs you did not
+re-derive: every paragraph you actually rewrote reads correctly when you check
+it, and the ones you skipped are invisible from inside the work precisely
+because you never looked at them.
+
+**The reusable form.** After any refresh of a document that cites code, diff it
+against the version it replaced and treat every surviving line carrying a
+`path:line` as unverified until something independent resolves it. Those are
+exactly the lines the refresh did not touch. The cheap version of the check —
+does every citation name a file that exists, with the cited line in range and
+not blank — costs about twenty lines and catches the whole class, including the
+two of the twelve that pointed at blank lines.
+
+It nearly was not run at all. Every citation had been verified *before* being
+written and nothing verified them after, and the pass was one step from being
+declared done.
 
 ## The staleness triggers are unsatisfiable for tracked artifacts
 
@@ -1031,6 +1268,619 @@ kept in its words so a reader can check it rather than trust it.
    paying for.
 8. **`jira-api.sh:131` — account-search values are not URL-encoded**, so any
    name with a space fails lookup. Repro: `jira_find_account_id "Jane Doe"`.
+
+## Ticket B: `docs.theme` has no consumer, and its default is silently overridden
+
+Raised 2026-09-12 by team-lead, who measured it correctly: `docs.theme` and
+`docs.reportTheme` are settable in BOTH config layers and six files in
+`plugin/crew` mention them -- two templates, two tests, `crew_upgrade.py` and
+`crew-setup/SKILL.md`. Every one is a template, a test or a migration. **No code
+in crew consumes either key.** Confirmed independently here with the same grep.
+
+Two premises in the original report need correcting before anyone works this,
+because both would send the work in the wrong direction.
+
+**1. A resolver already exists, and it is good.**
+`skills/doc-builder/scripts/resolve_brand.py` (with
+`scripts/_test/test_resolve_brand.py`) resolves a brand-pack name through a
+five-step order -- `--brand`, `DOC_BUILDER_BRAND`, sibling skill directories,
+the plugin cache, then neutral -- and announces which step matched. The
+fall-through to neutral is announced LOUDLY and names every location searched,
+which is most of the "skill not installed" degraded path the ticket asks for.
+So the work is NOT "write a resolver". It is narrower: **crew stores a theme
+name and never passes it to the resolver that already exists.** The wiring is
+the ticket.
+
+**2. The two brand-pack layouts are deliberate, not an inconsistency.**
+The report warned that a resolver assuming one uniform layout "will find
+`neutral` and miss `solomon`". It is the other way round, and by design. Every
+discovery glob is `<skill>/assets/brand.json` -- the FLAT shape, which is what
+`solomon-doc-builder/assets/brand.json` has. The nested
+`doc-builder/assets/brands/neutral/brand.json` is excluded from discovery on
+purpose (`_is_own`) because neutral is the built-in fallback rather than a
+discovered pack. Verified by running it: `--list` reports `neutral (built in)`
+and finds `solomon` under sibling skills.
+
+**The actual defect, found by running the resolver rather than reading it.**
+With both skills installed and no `--brand`, resolution prints:
+
+```
+brand: solomon -- the only brand pack found in sibling skill directories
+```
+
+Neutral is not a candidate, so "the only pack found" is solomon and there is no
+ambiguity to stop on. A user whose crew config says `docs.theme: "neutral"` --
+the shipped default, which `/crew:config --show` will print back to them -- gets
+**solomon-branded documents**. That is one client's footer on another client's
+report, which is the exact failure `resolve_brand.py`'s own docstring says its
+ambiguity check exists to prevent. It happens only because the key has no
+consumer, so the check never sees the user's stated answer.
+
+So this is worse than a key that quietly does nothing. It is a key whose
+documented default is actively contradicted by whatever pack happens to be
+installed, while the config UI reports the default as being in effect.
+
+**The wrong brand is also a partly broken one, which misdirects the diagnosis.**
+Confirmed on this machine and reproduced independently by team-lead: solomon's
+pack resolves `masters_dir` to `C:/repos/OnboardingSOPs/sops_new`, and the
+script prints it as `(NOT FOUND on this machine)`. So a user who never chose
+solomon gets a brand whose template directory does not exist, and the first
+failure they hit is a MISSING TEMPLATE rather than a wrong footer. That points
+the diagnosis at doc-builder's assets, or at their own checkout, and away from
+branding entirely -- which is where the actual defect is. A wrong answer that
+fails in an unrelated-looking way costs more than one that fails plainly.
+
+`--list` makes the same point: `neutral` is shown, labelled `(built in)`. It is
+VISIBLE and still not a candidate, so nothing reads as missing and no ambiguity
+stop fires. Everything looks correct from the outside.
+
+**Acceptance criterion for this ticket:** an unresolvable or unset theme must
+not fall through to "whatever happens to be installed". Fail loud, or fall back
+to neutral and say so, the way the resolver already does for a genuinely missing
+pack.
+
+Repro, both halves:
+
+```
+python skills/doc-builder/scripts/resolve_brand.py            # -> solomon
+python skills/doc-builder/scripts/resolve_brand.py --brand neutral  # -> neutral
+```
+
+Scope when this is picked up: pass `docs.theme` through to `--brand` /
+`DOC_BUILDER_BRAND`, and decide what an unresolvable theme name does. It must
+NOT fall through to "whatever is installed" -- that is the bug above. Fail loud
+or fall back to neutral and say so, the way the resolver already does for a
+missing pack.
+
+### Design settled 2026-09-12: crew passes the name through, it resolves nothing
+
+Crew reads the merged `docs.theme` and passes `--brand <name>`; `docs.reportTheme`
+goes to the findings-report script. Two keys are implementable because the two
+pipelines are separate scripts. Crew adds the one thing doc-builder lacks -- a
+per-repo setting with a machine-global default, which neither a per-invocation
+flag nor a machine-wide env var can express. Keep the layering and add nothing
+else. Do NOT write a second resolver.
+
+**The refusal is real, and it is narrower than it sounds. Measured, not read.**
+With two discovered packs the resolver exits 1 and names them:
+
+```
+$ DOC_BUILDER_SKILLS_DIR=<two packs> resolve_brand.py
+More than one brand pack is installed (...): alpha, beta.
+Pass --brand <name> (or set DOC_BUILDER_BRAND) to say which one this document is for.
+exit=1
+```
+
+With exactly ONE discovered pack it returns that pack silently, exit 0. `neutral`
+is never a discovery candidate, so this repo -- doc-builder plus
+solomon-doc-builder -- is the one-pack case. **The refusal therefore does not
+protect the common configuration**, which is a single client brand installed.
+That is not an argument against pass-through; it is the argument FOR it, because
+pass-through is what creates protection in exactly the case the refusal leaves
+open.
+
+**`docs.theme` does NOT ship as `null`. It ships as `"neutral"`.** Verified in
+all three places that define it -- `crew_upgrade.DOCS_BLOCK` (`theme: "neutral"`,
+`reportTheme: None`) and both templates. Only `reportTheme` is null. The design
+note that "both are null in the templates today" is wrong on the half that
+matters, and building on it would ship a behaviour change nobody chose:
+
+- Under pass-through with the default untouched, every repo passes
+  `--brand neutral`. That is an explicit instruction, so it **overrides an
+  installed client pack**. Today that pack wins; afterwards neutral would.
+  Upgrading crew would silently DE-BRAND an existing Solomon user's documents,
+  and the config file would not have changed to explain it.
+- `null` meaning "pass no `--brand`, let doc-builder resolve" is the right
+  semantic, and it preserves the refusal exactly -- but today it only describes
+  `reportTheme`.
+
+**The `null` default cost a MANDATORY migration, and that is coupled to the
+(a)/(b)/(c) decision below.** `run()` returns "already current" for any config
+at or above `SCHEMA_CURRENT` and never calls `upgrade_config`, so the rewrite
+reaches an existing repo only if the schema is bumped. It went 3 -> 4. That
+makes every crew repo on every machine report `upgradeNeeded` at session start
+until someone runs `/crew:upgrade`, which also backs up the codemap and
+reconciles it -- a whole-population migration spent on a key that has never done
+anything. Correct groundwork under (a) or (c); under (b) it is two mandatory
+migrations back to back, 4 to add a default nobody can observe and 5 to remove
+it. Take the merge and the scoping decision together. Commit `69c4a9fe` -- the
+two false doc claims -- is separable, needs only a patch bump, and is true under
+all three.
+
+**RATIFIED AND SHIPPED 2026-09-12, crew 0.18.0: option 2, `theme: null`, with
+the migration.** Team-lead took the recommendation and resolved the cost rather
+than accepting it. The migration ambiguity I raised -- telling a deliberately
+typed `neutral` from a template-inherited one -- dissolves, and the reason is
+worth keeping: **`docs.theme` has never had a consumer**, so no user has ever
+been able to set it and observe an effect, so no existing value can encode a
+considered preference. It is inherited or it is inert. There is no third case to
+preserve, which is why rewriting is safe here and would not be for any key that
+ever worked. That sentence is now in the migration's own comment, because the
+next reader will meet it expecting the usual rule and needs to see why this is
+the documented exception rather than a violation of it.
+
+Residual cost, accepted and stated in the release note: someone who typed
+`"neutral"` meaning it retypes it once the key works. They get neutral anyway
+unless a pack is installed, so the window is narrow.
+
+The original framing of the two options is kept below, because the reasoning is
+what justifies the migration comment.
+
+So the ticket carries a decision, and the recommendation is the second option:
+
+1. Keep `theme: "neutral"`. Predictable, and the config then means what it says
+   -- but the first upgrade silently stops applying an installed brand pack.
+2. **(Recommended)** Ship `theme: null` and treat null as "pass no `--brand`".
+   Pass-through then only ever NARROWS from doc-builder's own behaviour, the
+   upgrade is a no-op for every existing user, and pinning a brand becomes an
+   opt-in the user performs deliberately. Cost: the migration has to move an
+   existing `"neutral"` forward, and `"neutral"` typed deliberately must stay
+   distinguishable from `"neutral"` inherited from a template nobody edited --
+   which is why this is a decision and not a default.
+
+Degraded path: use what exists. `resolve_brand.py` already reports what would be
+used and why, and `--list` enumerates visible packs. Do not invent separate
+detection. It must degrade rather than throw when doc-builder is not installed
+at all -- a second code path, and it needs its own test.
+
+**The refusal is not a guard pass-through must avoid defeating -- it is a guard
+pass-through EXTENDS.** Team-lead adopted this framing over their own after the
+measurement above: the refuse-to-guess behaviour fires only at two or more
+discovered packs, `neutral` is never a discovery candidate, so the ordinary
+configuration -- one client pack installed -- is the one-pack case where the
+refusal never fires at all. Pass-through is therefore not a risk to an existing
+safety property; it is the safety property for exactly the case the existing one
+leaves open. Use this framing, not "must not defeat the refusal".
+
+**Does `solomon-doc-builder` need a crew reference once this lands? No, and 0 is
+the correct final number.** Pass-through means crew hands over a NAME and
+doc-builder discovers the pack; crew never has to know that `solomon` exists.
+Adding a reference would hardcode one client's name into a general-purpose
+plugin, which is the coupling pass-through exists to avoid. So its 0 is correct
+for a different reason than `report-builder`'s 0 -- that one is a deprecated
+stub, this one is a plugin that is correctly ignorant of its clients. Neither
+should be "fixed" to make a count look better.
+
+### Blocker found 2026-09-12: there is no call site, and the routing table names a different tool
+
+Measured before writing any wiring, and it changes the ticket's size. Both
+findings below are about crew as it ships at 0.17.0.
+
+**1. No crew agent or command invokes doc-builder.** Grepping `plugin/crew` for
+`doc-builder`, `DOC_BUILDER`, `resolve_brand` and `--brand`, outside tests, returns
+FOUR files and not one of them is an invocation: `crew_config.py:383` (a help
+string naming the key), `crew_upgrade.py` (the migration block and its comment),
+and `crew-setup/SKILL.md` (the setup doc). `agents/docs-writer.md:49` says a
+document "ships as HTML, DOCX or PDF" and names no tool at all. So "pass the
+configured name through as `--brand`" has nothing to pass it FROM. Pass-through
+is still the right design; it just has no attachment point yet, and building one
+is a larger change than wiring an existing one.
+
+**2. Crew's document routing table exists, and doc-builder is not in it.**
+`plugin/crew/skills/crew-house-style/SKILL.md:63-70` is the "Generating it"
+section, and it is explicit -- "Route to the skill that owns the format. Do not
+reimplement any of them" -- then routes DOCX to `anthropic-office-skills:docx`,
+PDF to `anthropic-office-skills:pdf`, decks to `anthropic-office-skills:pptx` or
+`ppt-master`, and `.vsdx` to `visio-diagrams`. **doc-builder appears nowhere.**
+
+That is the real mismatch, and it is bigger than a missing call site.
+`docs.theme` names a doc-builder brand pack, while crew's own documented
+generation path goes to a tool that has no brand packs and would not know what to
+do with the name. Wiring `--brand` into the route that exists is not possible,
+because that route does not lead to doc-builder. So the ticket implies one of
+three decisions, and this is a scoping question for whoever owns crew's document
+story rather than something to settle inside a wiring ticket:
+
+- **(a)** Add doc-builder to the house-style routing table as the owner of
+  branded DOCX/PDF, and pass `--brand` there. Largest change: it edits crew's
+  documented generation policy, not just a config key.
+- **(b)** Leave the routing table alone and drop `docs.theme` / `docs.reportTheme`
+  entirely, since crew does not use the tool they configure. Smallest change, and
+  honest -- but it discards a setting someone wanted.
+- **(c)** Keep the keys, keep them inert, and say so everywhere they appear.
+  Already done as of this branch's first commit, which is why the two false
+  present-tense claims are now corrected. This is the current state, and it is a
+  stopping point rather than a fix.
+
+**The degraded path the ticket asks for is already written, three lines below the
+routing table.** `crew-house-style/SKILL.md:74-80` tells the crew that these are
+user- and plugin-level skills crew does not bundle, that the one you want may be
+missing, and to hand over the markdown saying "PDF export unavailable,
+`anthropic-office-skills:pdf` is not installed" rather than improvising a
+generator. Whatever lands for doc-builder should match that sentence shape rather
+than invent a second convention.
+
+**Corrected on this branch already (commit 1 of B):** `crew_upgrade.py:71` and
+`crew-setup/SKILL.md:201` both described the pass-through in the PRESENT TENSE,
+and both justified the `"neutral"` default with "the default resolves to exactly
+what doc-builder already falls back to" -- which is false, as measured above:
+doc-builder falls back to neutral only when no pack is discovered, and returns
+the installed pack otherwise. That false premise is the entire stated reason the
+default is `"neutral"` rather than `null`, so correcting it strengthens the
+`theme: null` recommendation from a preference to a correction: the author's own
+stated intent was "the default changes nothing about how documents come out
+today", and `null` is what implements that intent while `"neutral"` overrides an
+installed pack. Each key's `null` then means one thing -- "I have no answer, ask
+the next authority" -- which for `reportTheme` is `theme` and for `theme` is
+doc-builder's own resolution. One rule, not two.
+
+**`report-builder`'s 0 references are correct, not a gap.** Its SKILL.md
+declares it a deprecated stub as of 2026-09-10, superseded by `doc-builder`, and
+its 2.0.0 catalog entry already says so. An earlier concern of mine that the
+entry misdescribed the skill was unfounded -- team-lead checked and I am
+recording the correction here so nobody re-opens it. `solomon-doc-builder` also
+has 0 references in `plugin/crew`; that one IS the gap above, since it is the
+pack the theme key is supposed to select. For contrast, `doc-builder` has 3 and
+`bitbucket` has 8.
+
+## A raw `Agent` dispatch writes no record, so crew misreports its own authorship
+
+Found 2026-09-11, during the bitbucket merge-gate work. Belongs with the ticket C
+/ D config work, not chased on its own.
+
+`.work/dispatch.d/` holds exactly one record on this branch — a `developer` from
+2026-09-06, made on `main`. Six roles were dispatched on `bitbucket-merge-gate`
+in this session and not one of them was recorded, because the recorder fires on
+crew's own command paths and a bare `Agent` tool call is not one of them.
+
+The consequence is not a missing log line. `crew_state.py` and
+`crew_config.py --models` read that store to answer "who wrote this diff", and
+with a record that predates the merge-base they correctly report:
+
+```
+author family: claude  (STALE RECORD - the dispatch was made on a different
+branch, so BOTH the recorded family and the config family are struck)
+last dev dispatch: role=developer provider=claude model=None branch=main |
+current branch=bitbucket-merge-gate
+```
+
+That is the guard failing *safe* — striking both families costs a reviewer rung
+rather than clearing one wrongly — so nothing shipped unreviewed. But it fails
+safe by accident: the store is not empty-and-honest, it is stale-and-confident,
+and the guard only survives because the staleness check happens to catch it. A
+record from a dispatch made on THIS branch would read as fresh and authoritative
+while describing none of the work under review. That is the same class as
+`crew_config.py --models` deriving author family from config describing the next
+run — an unknown wearing the label of a check that happened.
+
+Two candidate fixes, neither chosen: have the `Agent` path write a record, or
+have the readers treat "no record for any commit in this range" as its own value
+distinct from a stale one. The second is the one that matches this repo's
+standing rule that a probe which can fail needs "could not tell" as a real value.
+
+Re-measure before acting: `ls .work/dispatch.d/` and
+`python3 <crew>/hooks/scripts/crew_config.py --root . --models`.
+
+**Narrowed 2026-09-12, on the ticket C/D branch, where this was folded in as
+instructed.** The choice between the two candidate fixes is no longer open, and
+it was settled by what is reachable rather than by preference: **the first is
+not implementable from inside crew.** The `Agent` tool is supplied by the
+harness, not by the plugin; crew registers `PreToolUse`, `Stop`, `PreCompact`
+and `SessionStart` hooks and none of them can interpose on a bare `Agent` call
+to write a record for it. So "have the `Agent` path write a record" is a change
+to Claude Code, not to this repo, and listing it as an option here reads as a
+choice somebody could take.
+
+That leaves the reader-side fix, which is also the one this repo's standing rule
+already points at: **"no record covers any commit in this range" must be its own
+value, distinct from "a record exists and is older than the range".** Today both
+collapse into `STALE RECORD`, which is why the current behaviour is
+stale-and-confident rather than empty-and-honest. Not done on this branch -- it
+is a change to the author-family guard, and C/D were an authority and config
+change; mixing them would have put a guard edit inside a release whose test
+matrix is about something else.
+
+**A second defect, found while running the suite for C/D.** Two tests in
+`plugin/crew/tests/test_provider_table.py` call `crew_state.author_families(".")`
+-- a literal `"."`, so they read whatever dispatch store is in the CURRENT
+WORKING DIRECTORY rather than a fixture:
+
+- `test_an_unset_copilot_model_is_not_barred_against_another_unset_one`
+- `test_author_family_honours_a_per_role_dev_pin_over_the_block_default`
+
+Both pass in a CLEAN checkout and both fail on any developer machine that has
+ever used crew here, because `.work/` is gitignored and therefore absent from a
+fresh clone but present locally. Measured rather than inferred: a worktree at
+`7a234ba0` passes 124/124, and the same worktree with this repo's real
+`.work/dispatch.json` and `.work/dispatch.d/` copied in fails exactly these two.
+
+Say "clean checkout", not "CI". **CI does not currently run these tests at
+all** -- the `Pytest (crew + gizmoduck plugins)` job collects 954 items and dies
+on 12 gizmoduck `ImportError`s before executing one of them, so its log reports
+neither test by name. An earlier draft of this entry said "both pass in CI",
+which is an overclaim of exactly the kind this file exists to stop: it cites a
+green signal that was never produced. The clean-worktree run is the real
+evidence, and it is enough.
+
+So this is environmental and pre-existing, not from the C/D branch -- but it
+means the local suite is not the suite a clean checkout runs, and a developer
+who sees these two red learns to ignore red. Fix belongs with the reader-side work above, since it is
+the same store: pass a `tmp_path` root like the neighbouring tests do.
+
+**FIXED 2026-09-12 on `crew-docbuilder-route` (crew 0.19.2).** Both now take
+`tmp_path`. Swept the suite for the same shape: the only other literal `"."` is
+an unrelated branch-name fixture. Note which half was wrong -- the tests were
+right about the code and wrong about the world, so the green they produced on a
+clean machine was exactly as untrustworthy as the red they produced here. The
+reader-side fix above ("no record covers this range" as its own value) is
+untouched and still open; this entry closes only the fixture bug.
+
+## No claim of the form "CI proves X" is available for any crew or gizmoduck test
+
+Recorded 2026-09-12 so the four ticketed failures above and below are read
+correctly. The `Pytest (crew + gizmoduck plugins)` job collects 954 items and
+dies on 12 gizmoduck `ImportError`s before executing one of them. It therefore
+reports NO test by name, passing or failing.
+
+The consequence is easy to state and easy to forget: **until those imports are
+fixed, "CI is green on this test" is not a sentence anyone can say about
+anything in that job.** The only evidence available is a local run, and the only
+honest phrasing is "clean checkout" or "local, at <ref>". An earlier entry here
+said two tests "pass in CI"; they do not, because nothing in that job passes or
+fails -- it never runs. Corrected, and recorded here rather than only at the
+entry, because the trap is general.
+
+The jobs that DO produce usable signal are `Marketplace` (`check`) and the
+`test (ubuntu-latest)` / `test (windows-latest)` pair. Cite those freely.
+
+### Root-caused and fixed 2026-09-12: PyYAML was never installed
+
+Diagnosed by team-lead from run 34701704505 and confirmed here by reproducing
+it: `ModuleNotFoundError: No module named 'yaml'`.
+`.github/workflows/pytest-crew.yml` installed only `pytest~=8.0`, while
+`plugin/gizmoduck/scripts/routine.py` and `scripts/scanners/zap.py` both import
+yaml and the tests pull them in transitively. Collection dies, and ONE
+interrupted collection takes the whole job down -- so crew's tests never ran
+either, on any of 3.11, 3.12 and 3.13.
+
+Reproduced locally by blocking the yaml import rather than by reading the log:
+same 12 collection errors, exactly. With `pyyaml` installed the same command
+runs **1282 passed, 4 failed, 1 skipped**, and the 4 are the already-ticketed
+stale ones below. So the job goes from useless to red-that-runs.
+
+The comment at `:25-29` asserted gizmoduck's suite was "stdlib-only subprocess
+tests, no extra install step needed". That was false and it is exactly what
+would have stopped the next person adding the dependency, so it is rewritten
+rather than merely supplemented.
+
+### Still open: the job reports crew's failures under gizmoduck's path
+
+Found while verifying the above, NOT fixed, because fixing it changes what the
+job collects and that deserves its own look. In the combined run all four crew
+failures are printed as `plugin/gizmoduck/test_provider_table.py` and
+`plugin/gizmoduck/test_role_ladder.py` -- files that do not exist. Neither
+test is gizmoduck's.
+
+The cause is `plugin/gizmoduck/pytest.ini`. With two args whose common ancestor
+is `plugin/`, pytest finds no config there and falls back to searching each
+arg's ancestors, hitting gizmoduck's ini and adopting `plugin/gizmoduck` as
+rootdir -- so every path is rendered relative to it. Its `addopts = -q` is also
+silently applied to the whole run.
+
+**Correction, same day, by running the workflow's command verbatim rather than
+an approximation of it.** This entry claimed `-q` is "why the job's output has
+no header line naming the rootdir". That is false about the job: the workflow
+runs `pytest ... -v`, the command line is applied after `addopts`, so `-v` wins
+and the header IS printed -- `rootdir: .../plugin/gizmoduck`, naming the cause
+outright. The header was missing from MY simulations, which omitted `-v`; I
+then attributed my own missing header to the job. The rootdir misattribution is
+real and unchanged; only the explanation of why nobody noticed was wrong, and
+it was wrong in the direction that makes the CI log look less informative than
+it is.
+
+**The trap in fixing it:** that same ini supplies `pythonpath = scripts`, and
+gizmoduck's tests may depend on it. Adding a repo-root pytest config would take
+the ini out of play and could break them for a reason unrelated to the change.
+Splitting the workflow into two steps (with `if: always()`) keeps each suite
+under its own rootdir and is the likelier right answer, but it must be verified
+by running, not reasoned about. Until then a CI reader looking up a gizmoduck
+path will find nothing there, which is the same misdiagnosis shape as the
+`PSModulePath` and Exchange-module traps.
+
+With the four failures below now fixed, the combined run is **1286 passed, 1
+skipped, 0 failed**, so there are no misattributed paths to look at at the
+moment. That makes this cheaper to leave open and easier to forget: the next
+failure in either suite is the one that gets misfiled.
+
+## Nothing checks that shipped prose states the right version
+
+Recorded 2026-09-12, on `crew-docbuilder-route`. Team-lead's finding, and it is
+sharper than the bug that produced it.
+
+`validate-prompts.py` returned **293 passed, 0 failed** and the hook suite
+**134 passed, 0 failed** while two stale schema numbers sat in command prose; a
+sweep then found four more, including `README.md` calling the current schema 2
+in three places, one of them the settings table. Both gates were green
+throughout. They check structure -- frontmatter, required sections, referenced
+files -- and nothing at all about whether a sentence stating a version states
+the current one.
+
+So: **a green prompt-validation run is not evidence that shipped documentation
+matches the code.** Right now nothing produces that evidence.
+
+The `pm_brief` `upgradeNeeded` message is the same class and shows the cost.
+It asserted "config has no schema" for every repo; bumping `SCHEMA_CURRENT` to
+4 aimed that at the entire installed population, in the trigger that sorts
+third and therefore leads the brief. Not one gate moved. It was caught by a
+person reading the file.
+
+A checkable rule exists for at least the schema case, because `SCHEMA_CURRENT`
+is a single constant: any prose naming a schema number could be checked against
+it. `plugin/crew/tests/test_pm_brief.py::test_the_brief_and_upgrade_md_agree_on_the_current_migration`
+is the first instance of that idea -- it fails if a future bump ships without
+its `commands/upgrade.md` section 5 entry -- but it covers exactly one pair of
+files. The general sweep is not written.
+
+## The sabotage harness could not restore twice on 2026-09-12, and left a live mutation each time
+
+Found while adding the five `upgradeNeeded` mutations. Both runs died with:
+
+```
+OSError: [WinError 1224] The requested operation cannot be performed on a file
+with a user-mapped section open
+WARNING: could not restore .../crew_state.py: [WinError 1224] ...
+```
+
+once at mutation 46 on `crew_state.py` and once at mutation 15 on
+`crew_upgrade.py`. The third run of the same suite passed 103/103. So it is
+intermittent, and the cause was not identified -- something on this machine
+transiently holds a mapped section on a just-written `.py`, which on Windows is
+what a scanner does immediately after a write.
+
+**The harness's own design is what made this safe, and it is worth saying which
+part.** The `.bak` was the good copy both times, the startup guard refuses to
+run while one exists, and the file left in the tree was verifiably the mutated
+one -- `git diff` showed a mutation nobody wrote. Recovery was `cp` the `.bak`
+over the target and delete it, then confirm against `git diff`. Do NOT delete a
+`.bak` without diffing it against the target first: the target is the corrupt
+side, not the backup.
+
+### The fix, and the ACCEPTANCE CONDITION it does not ship without
+
+`shutil.copy2` has no retry. A transient sharing violation is exactly the
+failure a short backoff absorbs, and absorbing it would turn a crashed run that
+leaves a live mutation into a slightly slower clean one. Not done here: it is a
+change to the safety mechanism itself, and that branch was a docs-routing
+release.
+
+**REQUIREMENT on whoever takes this, not advice.** The retry is not finished
+until the copy has been made to fail on purpose and the retry has been watched
+absorb it. A passing sabotage suite is NOT evidence the retry works -- the
+suite passes when no copy fails, which is the ordinary case and was the case
+on two of three runs the day this was found. Ship it on a green suite alone
+and the retry is untested code in the one path that exists to prevent a
+corrupted tree.
+
+That is not a general caution; it is this exact defect class, and it has now
+cost time here five times in one week -- the schema-3 migration that was dead
+on arrival, the `PSModulePath` scrub, the `grep`-killed harness, the
+`find_module` import blocker that blocked nothing, and a claim in this very
+file that `addopts = -q` hid a CI header the job in fact prints. Each looked
+live and was not, and each was caught by running the mechanism rather than
+reading it. A retry loop is an unusually good hiding place for the same shape,
+because the happy path exercises none of it.
+
+Concretely: make `shutil.copy2` raise `OSError` on its first call or two (patch
+it, or hold a real mapped section on the target), confirm the run completes and
+the tree is clean afterwards, and confirm an error that does NOT clear still
+surfaces as a failure rather than being swallowed by the loop.
+
+## The specialist role tables disagree with the code, on `main`
+
+Found 2026-09-12, running the full crew suite for the C/D branch. Pre-existing:
+`plugin/crew/tests/test_role_ladder.py` fails these two at `7a234ba0` itself,
+before any of this branch's commits.
+
+```
+FAILED test_onboarding_specialist_table_matches_the_code_set
+FAILED test_the_readme_roster_table_matches_the_code
+```
+
+`crew_state.SPECIALIST_ROLES` names four roles that neither the onboarding table
+nor the README roster lists: `powershell-7-expert`, `powershell-5.1-expert`,
+`skill-author`, `exchange-online-specialist`. The code is the side with more, so
+these are roles that exist and are undiscoverable rather than documented roles
+that vanished -- a reader of either table cannot learn they can onboard them.
+
+Belongs with ticket B (the crew referencing work), which is already about crew's
+tables disagreeing with what is installed. Not fixed here on scope discipline:
+C/D was an authority and config change, and these two suites were red before it
+started and are equally red after.
+
+**FIXED 2026-09-12 on `crew-docbuilder-route` (crew 0.19.2)**, which is where
+ticket B landed. All four rows added to both `plugin/crew/README.md` and
+`plugin/crew/skills/crew-pm/onboarding.md`, written from each agent's own
+frontmatter description rather than invented. The tables were telling the truth
+and the code was the side with more, exactly as this entry read it.
+
+## RESOLVED 2026-09-12 — Five marketplace entries are shipping stale (inherited, not from this branch)
+
+**All five are bumped and the gate is green.** Closed rather than deleted: the
+table below is what "shipping stale" looked like, and rediscovering that costs
+more than the space it takes. The evidence that closed it:
+
+| Entry | Was | Now |
+|---|---|---|
+| `skills/exchange-mailbox-cleanup` | 1.0.0 | **1.0.2** |
+| `skills/exchange-mailbox-restore` | 1.0.1 | **1.0.2** |
+| `skills/jira-manager` | 1.0.0 | **1.0.1** |
+| `skills/power-automate-api` | 1.0.0 | **1.0.2** |
+| `plugin/gizmoduck` | 0.2.5 | **0.4.0** |
+
+Measured the way the entry itself asks for — on a named ref, not a working tree.
+`git worktree add --detach <tmp> origin/main`, then `python3
+scripts/check-marketplace.py` in that worktree: **"all checks passed", exit 0**,
+with zero drift reported. The worktree matters: run against a `git archive`
+export the checker prints "note: not a git checkout - skipping the version-drift
+check" and passes without testing the thing at issue, so a green result there
+would have meant nothing.
+
+A caution earned the same day, recorded because it nearly landed in a PR body:
+this checker was reported as "already red on `main`" during the pylint work, and
+it was not. The red came from uncommitted edits in the working tree of the
+machine running it. A checker result without its ref is not a measurement.
+
+The original entry follows, unchanged.
+
+---
+
+
+Found 2026-09-11 while running `python3 scripts/check-marketplace.py` as the gate
+for the bitbucket merge-gate work. The gate reported **6 problems, 0 of them
+introduced by branch `bitbucket-merge-gate`**; `plugin/crew` was the one that
+branch owed and it has since been bumped, leaving **5**. Each is a directory that changed
+after its `version` was last set, so `claude plugin update` compares the declared
+version, finds no change, and every already-installed copy reports "already at
+the latest version" forever. Nothing in the repo looks wrong; the bug exists only
+on other people's machines.
+
+Measured per entry as `git log --oneline <sha-version-was-set>..origin/main --
+<dir>` — all six are already red on `origin/main`, so none of this is caused by
+uncommitted work:
+
+| Entry | Version | Set at | Commits on `origin/main` since |
+|---|---|---|---|
+| `skills/exchange-mailbox-cleanup` | 1.0.0 | `b678e3cf` | 4 |
+| `skills/exchange-mailbox-restore` | 1.0.1 | `b678e3cf` | 1 |
+| `skills/jira-manager` | 1.0.0 | `ee9fcc2e` | 3 |
+| `skills/power-automate-api` | 1.0.0 | `ee9fcc2e` | 3 |
+| `plugin/gizmoduck` | 0.2.5 | `9338e89d` | 76 |
+| ~~`plugin/crew`~~ | ~~0.16.33~~ | ~~`a1363e48`~~ | ~~5~~ — **fixed, now 0.16.34** |
+
+Deferred rather than fixed, for two different reasons:
+
+- The five above touch nothing this branch changed, so bumping them here is scope
+  creep — and each bump pushes a plugin update to every machine that installed
+  it, which is a shipping decision, not a lint fix. They need the user's call on
+  whether to bump all five in one housekeeping commit or leave them.
+- `plugin/crew` was the exception: commits `089af55e` and `f8bdb25e` on this
+  branch touch five files under `plugin/crew/`, so that bump **was** owed by this
+  branch, and it landed in the branch's final commit at 0.16.34 — both
+  `.claude-plugin/marketplace.json` and `plugin/crew/.claude-plugin/plugin.json`,
+  which must always match.
+
+Re-measure before acting. These counts are facts about `origin/main` at
+`bd4d125a`, and the gate is the only thing that tracks them.
 
 ### Not ticketed, decided instead
 

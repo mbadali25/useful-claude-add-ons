@@ -90,11 +90,11 @@ def _require_unique_target_name(name, seen):
     """
     if name in seen:
         raise ValueError(
-            "duplicate target name %r; target names must be unique - "
+            f"duplicate target name {name!r}; target names must be unique - "
             "they key the run manifest, each finding's own 'target' "
             "field, and the per-target output directory, so two targets "
             "sharing one name silently overwrite each other's coverage "
-            "and collide on disk" % name)
+            "and collide on disk")
     seen.add(name)
 
 
@@ -130,8 +130,8 @@ _LOCATION_FIELD = {"web": "url", "host": "host", "iac": "path",
 def _location_field_name(kind):
     try:
         return _LOCATION_FIELD[kind]
-    except KeyError:
-        raise ValueError("no location resolver for kind %r" % kind)
+    except KeyError as exc:
+        raise ValueError(f"no location resolver for kind {kind!r}") from exc
 
 
 def load_manifest(path, registry=None):
@@ -173,17 +173,18 @@ def load_manifest(path, registry=None):
 
         kind = raw.get("kind")
         if kind not in reg.KIND_DEFAULTS:
+            known = ", ".join(sorted(reg.KIND_DEFAULTS))
             raise ValueError(
-                "unknown target kind %r for target %r; known kinds: %s"
-                % (kind, name, ", ".join(sorted(reg.KIND_DEFAULTS))))
+                f"unknown target kind {kind!r} for target {name!r}; "
+                f"known kinds: {known}")
 
         url, path_, host = raw.get("url"), raw.get("path"), raw.get("host")
         field_name = _location_field_name(kind)
         if not {"url": url, "path": path_, "host": host}[field_name]:
             raise ValueError(
-                "target %r (kind=%s) is missing its required %r field; "
+                f"target {name!r} (kind={kind}) is missing its required {field_name!r} field; "
                 "routine refuses to run any scanner until every target's "
-                "location is resolvable" % (name, kind, field_name))
+                "location is resolvable")
 
         targets.append(Target(
             name=name,
@@ -301,8 +302,7 @@ def _location(target):
     value = getattr(target, field_name)
     if not value:
         raise ValueError(
-            "target %r (kind=%s) has no %r set"
-            % (target.name, target.kind, field_name))
+            f"target {target.name!r} (kind={target.kind}) has no {field_name!r} set")
     return value
 
 
@@ -324,8 +324,8 @@ def _ran_status(name, mod, target):
         base = "default"
 
     if extras:
-        return "ran(%s+%s)" % (base, "+".join(extras))
-    return "ran(%s)" % base
+        return f"ran({base}+{'+'.join(extras)})"
+    return f"ran({base})"
 
 
 def _mode_of(status):
@@ -378,7 +378,7 @@ class RunManifest:
             "authorized_by": self.authorized_by,
             "generated_at": self.generated_at,
             "cells": [
-                dict(target=t, tool=tool, **data)
+                {"target": t, "tool": tool, **data}
                 for (t, tool), data in sorted(self._cells.items())
             ],
         }
@@ -473,7 +473,7 @@ def run_routine(manifest, outdir, registry=None, confirm=None):
 
                 if raw_path is None:
                     rm.record(target.name, name,
-                              "error:returncode=%s" % result.returncode,
+                              f"error:returncode={result.returncode}",
                               duration=time.monotonic() - start)
                     continue
 
@@ -499,7 +499,7 @@ def run_routine(manifest, outdir, registry=None, confirm=None):
                           duration=time.monotonic() - start,
                           count=len(findings), errors=parse_errors)
             except Exception as exc:
-                rm.record(target.name, name, "error:%s" % exc,
+                rm.record(target.name, name, f"error:{exc}",
                           duration=time.monotonic() - start)
                 continue
 

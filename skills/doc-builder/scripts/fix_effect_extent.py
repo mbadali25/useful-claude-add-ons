@@ -70,7 +70,7 @@ def main():
     if args.dir:
         sops = os.path.abspath(args.dir)
         if not os.path.isdir(sops):
-            print("Not a directory: %s" % sops, file=sys.stderr)
+            print(f"Not a directory: {sops}", file=sys.stderr)
             return 2
     else:
         sops = resolve_brand.resolve(args.brand).require_masters_dir()
@@ -93,21 +93,21 @@ def main():
         name = os.path.basename(path)
         bordered, needing = audit(path)
         if not needing:
-            print("ok    %-58s %d bordered, none needing a fix" % (name[:58], bordered))
+            print(f"ok    {name[:58]!s:<58} {bordered:d} bordered, none needing a fix")
             continue
         if args.dry_run:
-            print("WOULD %-58s %d of %d inline(s) need effectExtent" % (name[:58], needing, bordered))
+            print(f"WOULD {name[:58]!s:<58} {needing:d} of {bordered:d} inline(s) need effectExtent")
             total += needing
             continue
         shutil.copy2(path, os.path.join(backup_dir, name))
         changed = patch(path)
         total += changed
-        print("FIXED %-58s %d inline(s) patched" % (name[:58], changed))
+        print(f"FIXED {name[:58]!s:<58} {changed:d} inline(s) patched")
 
     verb = "would be" if args.dry_run else "were"
-    print("\n%d inline shape(s) %s patched across %d master(s)." % (total, verb, len(paths)))
+    print(f"\n{total:d} inline shape(s) {verb} patched across {len(paths):d} master(s).")
     if not args.dry_run and total:
-        print("Backups: %s" % backup_dir)
+        print(f"Backups: {backup_dir}")
         print("Next: rebuild the PDFs, then run verify_borders.py")
     return 0
 

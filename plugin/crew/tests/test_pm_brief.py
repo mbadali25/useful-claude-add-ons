@@ -10,6 +10,7 @@ import context  # noqa: F401  pylint: disable=unused-import
 import crew_fixtures
 import crew_state
 import pm_brief
+import pm_pulse
 
 HEALTHY = {
     "isCrew": True, "schema": 2, "tier": 1,
@@ -195,9 +196,185 @@ def _with(trigger, **over):
     return state
 
 
+def test_the_brief_renders_the_unverifiable_names_and_count():
+    """The distinction has to reach the LINE, not just the state dict.
+
+    Splitting `behind` from `unresolvable` inside crew_state and then not
+    interpolating the new fields would leave the brief saying nothing specific
+    -- or raising KeyError inside .format() and taking out the whole brief,
+    which is the contract _incident_fields documents.
+
+    Added because a sabotage run found this exact hole: deleting
+    `fields.update(_knowledge_fields(state))` from pm_brief broke nothing.
+    Every other mutation of the reporting path went red; this one did not,
+    because no test rendered the finding.
+    """
+    state = _with("knowledgeUnverifiable",
+                  knowledge={"subsystems": 3, "behind": [],
+                             "unresolvable": ["crew", "repo-docs"],
+                             "graph": {"present": False, "current": False,
+                                       "builtAt": None, "path": "x"}})
+    out = chr(10).join(pm_brief.render(state))
+    assert "2 codemap anchor(s)" in out
+    assert "crew" in out and "repo-docs" in out
+    # And the ACTION half, which is what makes the finding actionable rather
+    # than an observation.
+    assert "/crew:onboard --refresh" in out
+
+
 def test_expanded_brief_names_the_finding_and_one_action():
     out = "\n".join(pm_brief.render(_with("upgradeNeeded", schema=1)))
     assert "/crew:upgrade" in out
+
+
+UPGRADE_MD = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(pm_brief.__file__))),
+    "..", "commands", "upgrade.md")
+
+
+def _upgrade_finding(state):
+    """The one `upgradeNeeded` finding line, or None."""
+    for line in pm_brief.render(dict(state, triggers=["upgradeNeeded"])):
+        if line.startswith("- "):
+            return line
+    return None
+
+
+def test_a_repo_with_a_schema_is_not_told_it_has_none():
+    """The regression this whole finding was rewritten for.
+
+    `pm_brief` shipped ONE sentence for this trigger -- "this setup predates
+    the PM and the code graph (config has no schema)" -- and bumping
+    SCHEMA_CURRENT to 4 pointed it at every schema-2 and schema-3 repo in
+    existence. `upgradeNeeded` sorts third in TRIGGERS, so it leads the brief:
+    the first thing a user read after a mandatory migration described a
+    situation they were not in.
+
+    Asserting the NEW wording alone would not catch a regression to the old
+    one, because both mention a schema. Assert the old claim is absent.
+    """
+    line = _upgrade_finding({"isCrew": True, "schema": 3, "schemaDeclared": 3,
+                             "schemaKeyPresent": True,
+                             "pm": {"enabled": True, "mode": "adaptive"}})
+    assert "3" in line and "4" in line, line
+    assert "no schema" not in line, line
+    assert "declares no schema" not in line, line
+    assert "predates" not in line, line
+
+
+def test_a_repo_with_no_schema_key_still_gets_the_pre_pm_wording():
+    """The other half, and the reason this is not just a rewording.
+
+    A config with no `schema` key at all genuinely does predate the PM, and
+    that sentence is the right one for it. A fix that made every repo read
+    "config is at schema 1" would trade one false sentence for another.
+    """
+    line = _upgrade_finding({"isCrew": True, "schema": 1, "schemaDeclared": None,
+                             "pm": {"enabled": True, "mode": "adaptive"}})
+    assert "predates" in line, line
+    assert "declares no schema" in line, line
+
+
+def test_an_unparseable_schema_is_reported_as_a_typo_not_as_a_pre_pm_config():
+    """`int_or` turns `true` and `"three"` into 1, which is this repo's named
+    recurring bug: an unknown collapsing into a safe-looking value.
+
+    Reported as 1 with no caveat, a typo'd schema reads as a pre-PM config and
+    the user goes looking for a migration instead of for the character they
+    mistyped. The raw value has to survive into the sentence.
+    """
+    # `None` is in this list because of Codex: a config saying
+    # `"schema": null` reads back from `.get()` as None, exactly as an ABSENT
+    # key does, so the first version of this code called an explicit null a
+    # pre-PM config. `schemaKeyPresent` is what separates them.
+    for bad in (True, "three", None):
+        line = _upgrade_finding(
+            {"isCrew": True, "schema": 1, "schemaDeclared": bad,
+             "schemaKeyPresent": True,
+             "pm": {"enabled": True, "mode": "adaptive"}})
+        assert "not a version number" in line, (bad, line)
+        assert "predates" not in line, (bad, line)
+
+
+def test_a_hand_built_state_without_the_key_is_not_told_it_has_no_schema():
+    """`collect()` always sets `schemaDeclared`; the crew:pm agent, the tests
+    and any stale cache do not.
+
+    Treating an ABSENT key as None would re-tell a schema-3 hand-built state
+    that it declares no schema -- the same collapse this finding was fixed
+    for, one level up.
+    """
+    line = _upgrade_finding({"isCrew": True, "schema": 3,
+                             "pm": {"enabled": True, "mode": "adaptive"}})
+    assert "predates" not in line, line
+    assert "schema 3" in line, line
+
+
+def test_collect_carries_the_raw_schema_so_the_brief_can_tell_them_apart(
+        tmp_path):
+    """The four tests above hand-build `schemaDeclared`. This one earns them.
+
+    Every one of them would keep passing if `collect()` stopped setting the
+    key, while the real SessionStart path silently fell back to the hand-built
+    branch and told a schema-3 repo it is at schema 3 by luck rather than by
+    reading its file. Drive the actual collector, on an actual repo.
+    """
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"schema": 3, "tier": 0, "roles": [],
+                          "tracker": "files"})
+    state = crew_state.collect(root)
+    assert state["schemaDeclared"] == 3
+    assert state["schemaKeyPresent"] is True
+    assert "upgradeNeeded" in crew_state.evaluate_triggers(state)
+
+    line = _upgrade_finding(dict(state, pm=dict(state["pm"], mode="adaptive")))
+    assert "schema 3" in line and "predates" not in line, line
+
+
+def test_an_explicit_null_schema_is_not_read_as_an_absent_one(tmp_path):
+    """Codex's finding, driven through the collector rather than hand-built.
+
+    `{"schema": null}` and a config with no `schema` key are the same value
+    once `.get()` has run, and only `schemaKeyPresent` separates them. Written
+    as a fixture-repo test because the hand-built ones cannot see a collector
+    that stops setting the flag -- they would supply it themselves.
+    """
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"schema": None, "tier": 0, "roles": [],
+                          "tracker": "files"})
+    state = crew_state.collect(root)
+    assert state["schemaDeclared"] is None
+    assert state["schemaKeyPresent"] is True
+
+    line = _upgrade_finding(dict(state, pm=dict(state["pm"], mode="adaptive")))
+    assert "not a version number" in line, line
+    assert "predates" not in line, line
+    # Rendered as the user typed it in the file, not as Python spells it.
+    assert "null" in line and "None" not in line, line
+
+
+def test_the_brief_and_upgrade_md_agree_on_the_current_migration():
+    """The brief NAMES the hop; `commands/upgrade.md` section 5 says what it
+    does. Neither is much use without the other, and each can be right alone.
+
+    One copy of the prose on purpose: duplicating the per-migration text into
+    a one-line brief is a copy that drifts, and it would drift in the sentence
+    a user reads first. What this checks instead is that the two halves are
+    both present for the CURRENT schema -- so a future SCHEMA_CURRENT bump
+    that forgets its section-5 entry fails here rather than shipping a brief
+    that names a migration nothing explains.
+    """
+    current = crew_state.SCHEMA_CURRENT
+    with io.open(UPGRADE_MD, encoding="utf-8") as handle:
+        doc = handle.read()
+    heading = f"**Schema {current - 1} @ARROW@ {current}**"
+    assert heading.replace("@ARROW@", "→") in doc, heading
+
+    line = _upgrade_finding(
+        {"isCrew": True, "schema": current - 1, "schemaDeclared": current - 1,
+         "schemaKeyPresent": True,
+         "pm": {"enabled": True, "mode": "adaptive"}})
+    assert f"{current - 1} -> {current}" in line, line
 
 
 def test_the_brief_is_pure_ascii(tmp_path):
@@ -294,6 +471,85 @@ def test_default_authority_is_report_only():
     autonomous underneath them -- consent to install is not consent to
     delegate."""
     assert crew_state.PM_DEFAULTS["authority"] == "report-only"
+
+
+def test_autonomous_brief_says_it_settles_its_own_questions():
+    out = _authority("autonomous")
+    assert "settles its own open questions" in out
+    # The stops are the half a reader needs most at this tier, and the brief
+    # is the ONE restatement every SessionStart prints -- so a phrase narrower
+    # than AUTONOMOUS_STOPS here is the version most readers actually get. It
+    # said "destroying git history" while the tuple says "git history or
+    # tracked work", which reads as putting `rm` of a tracked file outside the
+    # stop.
+    assert "still asks before" in out
+    assert "tracked work" in out
+
+
+def test_authority_rank_is_ordered_and_fails_closed():
+    """Rank is the only thing permitted to know the tiers are ordered."""
+    ranks = [crew_state.authority_rank(name) for name in crew_state.AUTHORITIES]
+    assert ranks == sorted(ranks) == list(range(len(crew_state.AUTHORITIES)))
+    # An unknown ranks LOWEST, never highest -- the whole fail-safe property.
+    assert crew_state.authority_rank("nonsense") == 0
+    assert crew_state.authority_rank(None) == 0
+
+
+def test_autonomous_can_act_too():
+    """The bug an `== "act"` gate creates: the WIDER tier unable to act at all.
+    A capability gate names a floor, never a rung."""
+    assert crew_state.can_act({"pm": {"authority": "autonomous"}})
+    assert crew_state.can_act({"pm": {"authority": "act"}})
+    assert not crew_state.can_act({"pm": {"authority": "report-only"}})
+
+
+def test_only_autonomous_decides_for_itself():
+    """A second predicate on purpose. Folding auto-decide into `can_act` would
+    have stopped `act` repos emitting the Decision-needed blocks they rely on,
+    as a side effect of adding a tier above them."""
+    assert crew_state.can_autodecide({"pm": {"authority": "autonomous"}})
+    assert not crew_state.can_autodecide({"pm": {"authority": "act"}})
+    assert not crew_state.can_autodecide({"pm": {"authority": "report-only"}})
+    assert not crew_state.can_autodecide({})
+    assert not crew_state.can_autodecide({"pm": "nonsense"})
+
+
+def test_the_stop_list_lives_in_code():
+    """Enumerated, not paraphrased. A stop that exists only in prose is advice
+    the model weighs against the task; this is a list a test can assert on."""
+    slugs = [slug for slug, _ in crew_state.AUTONOMOUS_STOPS]
+    assert slugs == ["offboard-role", "delete-map", "rewrite-metrics",
+                     "git-destruction"]
+    # Every stop reaches the directive the autonomous PM actually receives.
+    directive = pm_pulse.directive({"pm": {"authority": "autonomous"}})
+    for _, what in crew_state.AUTONOMOUS_STOPS:
+        assert what in directive
+
+
+@pytest.mark.parametrize("value", ["Session", "  CHANGE ", "system"])
+def test_granularity_accepts_carelessly_typed_values(value):
+    assert crew_state.normalise_granularity(value) in ("session", "change",
+                                                       "system")
+
+
+@pytest.mark.parametrize("value", ["ticket", "", None, True, 1, [], {}])
+def test_unknown_granularity_falls_back_to_the_default(value):
+    assert crew_state.normalise_granularity(value) == "system"
+
+
+def test_default_granularity_is_one_ticket_per_session():
+    assert crew_state.PM_DEFAULTS["ticketGranularity"] == "system"
+
+
+def test_collect_normalises_granularity_once():
+    root = tempfile.mkdtemp()
+    os.makedirs(os.path.join(root, ".crew"))
+    with open(os.path.join(root, ".crew", "config.json"), "w",
+              encoding="utf-8") as handle:
+        json.dump({"schema": 2, "pm": {"ticketGranularity": "SESSION"}}, handle)
+    assert crew_state.collect(root)["pm"]["ticketGranularity"] == "session"
+    assert crew_state.ticket_granularity(
+        {"pm": {"ticketGranularity": "nonsense"}}) == "system"
 
 
 def test_healthy_state_stays_quiet():

@@ -12,7 +12,7 @@ def _find_root(start: Path) -> Path:
     for p in [start, *start.parents]:
         if (p / ".claude-plugin" / "plugin.json").is_file():
             return p
-    raise RuntimeError("plugin root not found above %s" % start)
+    raise RuntimeError(f"plugin root not found above {start}")
 
 
 @pytest.fixture(scope="session")

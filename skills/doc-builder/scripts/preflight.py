@@ -50,7 +50,9 @@ DEFAULT_VENV = os.path.join(SKILL_ROOT, ".venv")
 # (pip name, import name, what breaks without it). The order is the order the
 # report prints in. Keep this list and requirements.txt in step.
 PACKAGES = [
-    ("python-docx", "docx", "build_sop.py, check_conformance.py, fix_effect_extent.py, extract_spec.py, make_template.py"),
+    ("python-docx", "docx",
+     "build_sop.py, check_conformance.py, fix_effect_extent.py, "
+     "extract_spec.py, make_template.py"),
     ("pywin32", "win32com.client", "--to-docx / --to-pdf (Word COM) in build_report.py and build_sop.py"),
     ("PyMuPDF", "pymupdf", "verify_borders.py (Gate 2)"),
     ("Pillow", "PIL", "verify_borders.py, screenshot anonymisation"),
@@ -70,7 +72,8 @@ PROBE = (
 def probe(python, import_name, pip_name):
     """(ok, version_or_error) by importing in a fresh interpreter."""
     r = subprocess.run([python, "-c", PROBE, import_name, pip_name],
-                       capture_output=True, text=True, timeout=120)
+                       capture_output=True, text=True, timeout=120,
+                       check=False)
     if r.returncode == 0:
         return True, r.stdout.strip()
     err = (r.stderr.strip().splitlines() or ["(no error text)"])[-1]
@@ -105,14 +108,14 @@ def locked(path):
         return None
     owner = os.path.join(os.path.dirname(path), "~$" + os.path.basename(path)[2:])
     if os.path.exists(owner):
-        return "Word has %s open (owner file %s present)" % (os.path.basename(path), os.path.basename(owner))
+        return f"Word has {os.path.basename(path)} open (owner file {os.path.basename(owner)} present)"
     try:
         with open(path, "r+b"):
             pass
     except PermissionError as exc:
-        return "%s is open in another program (%s)" % (os.path.basename(path), exc.strerror or exc)
+        return f"{os.path.basename(path)} is open in another program ({exc.strerror or exc})"
     except OSError as exc:
-        return "%s cannot be opened for writing: %s" % (os.path.basename(path), exc)
+        return f"{os.path.basename(path)} cannot be opened for writing: {exc}"
     return None
 
 
@@ -126,7 +129,7 @@ def pip_install(python, pkgs, user):
 def make_venv(path):
     if os.path.isfile(venv_python(path)):
         return 0
-    print("$ %s -m venv %s" % (sys.executable, path), flush=True)
+    print(f"$ {sys.executable} -m venv {path}", flush=True)
     return subprocess.call([sys.executable, "-m", "venv", path])
 
 
@@ -148,10 +151,11 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--install", action="store_true",
-                    help="install whatever is missing without asking (still --user or --venv, never system-wide)")
+                    help="install whatever is missing without asking "
+                         "(still --user or --venv, never system-wide)")
     ap.add_argument("--venv", nargs="?", const=DEFAULT_VENV, metavar="DIR",
-                    help="install into a virtual environment the skill owns (default %s) instead of --user"
-                         % DEFAULT_VENV)
+                    help="install into a virtual environment the skill "
+                         f"owns (default {DEFAULT_VENV}) instead of --user")
     ap.add_argument("--target", action="append", default=[], metavar="FILE",
                     help="a .docx/.pdf about to be written; report if a program has it locked (repeatable)")
     args = ap.parse_args(argv)
@@ -160,8 +164,10 @@ def main(argv=None):
     python = sys.executable
     if args.venv and os.path.isfile(venv_python(args.venv)):
         python = venv_python(args.venv)
-    print("python   : %s (%s)" % (python, sys.version.split()[0]))
-    print("installs : %s" % ("virtual environment %s" % args.venv if args.venv else "per-user site-packages (pip --user)"))
+    print(f"python   : {python} ({sys.version.split()[0]})")
+    installs = (f"virtual environment {args.venv}" if args.venv
+                else "per-user site-packages (pip --user)")
+    print(f"installs : {installs}")
 
     # -- packages ---------------------------------------------------------------
     print("\n== Python packages ==")
@@ -172,17 +178,18 @@ def main(argv=None):
         # then be absent from the venv the scripts are told to run with.
         print("  (virtual environment not created yet - every package will be installed into it)")
         for pip_name, _, used_by in PACKAGES:
-            print("  %-5s %-12s -> needed by %s" % ("MISSING", pip_name, used_by))
+            print(f"  {'MISSING'!s:<5} {pip_name!s:<12} -> needed by {used_by}")
         missing = [p[0] for p in PACKAGES]
     else:
         for pip_name, import_name, used_by in PACKAGES:
             ok, info = probe(python, import_name, pip_name)
-            print("  %-5s %-12s %s" % ("ok" if ok else "MISSING", pip_name, info if ok else "-> needed by " + used_by))
+            print(f"  {'ok' if ok else 'MISSING'!s:<5} {pip_name!s:<12} {info if ok else '-> needed by ' + used_by}")
             if not ok:
                 missing.append(pip_name)
 
     if missing:
-        question = "Install %s with pip%s?" % (", ".join(missing), " --user" if not args.venv else " into " + (args.venv or ""))
+        where = " --user" if not args.venv else " into " + (args.venv or "")
+        question = f"Install {', '.join(missing)} with pip{where}?"
         if args.install or confirm(question):
             if args.venv:
                 if make_venv(args.venv) != 0:
@@ -191,32 +198,34 @@ def main(argv=None):
                 python = venv_python(args.venv)
             code = pip_install(python, missing, user=not args.venv)
             if code != 0:
-                print("\nFAILED: pip exited %d. The error text is above, verbatim. Stopping - "
-                      "not retrying, and not falling back to a system-wide install." % code, file=sys.stderr)
+                print(f"\nFAILED: pip exited {code:d}. The error text is above, verbatim. Stopping - "
+                      "not retrying, and not falling back to a system-wide install.", file=sys.stderr)
                 return 2
             print("\n== verifying in a fresh interpreter ==")
             for pip_name, import_name, _ in PACKAGES:
                 if pip_name not in missing:
                     continue
                 ok, info = probe(python, import_name, pip_name)
-                print("  %-5s %-12s %s" % ("ok" if ok else "FAIL", pip_name, info))
+                print(f"  {'ok' if ok else 'FAIL'!s:<5} {pip_name!s:<12} {info}")
                 if not ok:
                     rc = 2
             if args.venv:
-                print("\nRun the scripts with this interpreter:\n  %s <script>.py ..." % python)
+                print(f"\nRun the scripts with this interpreter:\n  {python} <script>.py ...")
         else:
-            print("\nNot installed. To install under your profile:\n  %s -m pip install --user %s\n"
-                  "or run this script again with --install." % (python, " ".join(missing)))
+            print(f"\nNot installed. To install under your profile:\n"
+                  f"  {python} -m pip install --user "
+                  f"{' '.join(missing)}\n"
+                  "or run this script again with --install.")
             rc = max(rc, 3)
 
     # -- Word --------------------------------------------------------------------
     print("\n== Microsoft Word (COM) ==")
     present, info = word_installed()
     if present:
-        print("  ok    %s" % info)
+        print(f"  ok    {info}")
     else:
         rc = max(rc, 1)
-        print("  ABSENT  %s" % info)
+        print(f"  ABSENT  {info}")
         print("  Unavailable on this machine: build_report.py --to-docx/--to-pdf, build_sop.py --to-pdf,\n"
               "  and therefore verify_borders.py (Gate 2), which needs a rendered PDF.\n"
               "  Still available: the report HTML and the SOP .docx. Convert them on a machine with Word;\n"
@@ -229,12 +238,13 @@ def main(argv=None):
             why = locked(t)
             if why:
                 rc = max(rc, 1)
-                print("  LOCKED  %s\n          Close %s before converting - Word will otherwise fail \"read-only\"."
-                      % (why, os.path.basename(t)))
+                print(f"  LOCKED  {why}\n"
+                      f"          Close {os.path.basename(t)} before "
+                      'converting - Word will otherwise fail "read-only".')
             else:
-                print("  ok      %s" % t)
+                print(f"  ok      {t}")
 
-    print("\n%s" % ("Ready." if rc == 0 else "Not ready - see above."))
+    print(f"\n{('Ready.' if rc == 0 else 'Not ready - see above.')}")
     return rc
 
 

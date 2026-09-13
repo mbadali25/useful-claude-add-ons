@@ -777,113 +777,31 @@ like an absent one — the same reasoning `_read_config_strict` documents for
 the repo side — so a typo in your global config degrades one repo's settings
 to defaults rather than breaking every session on the machine.
 
-This is the same shape that produces:
+The full key reference is **[`CONFIG.md`](CONFIG.md)** — every key in both
+layers with its type, its default, which layer may set it, and a `path:line`
+for the code that reads it. It is derived by executing `default_config()` and
+`default_global_config()` rather than by reading comments, and it marks the
+keys for which no consumer could be found instead of assuming one exists.
 
-```json
-{
-  "schema": 2,
-  "tier": 0,
-  "roles": ["explorer", "qa-reviewer"],
-  "qa": { "provider": "auto" },
-  "secondOpinion": { "provider": "gemini", "mode": "cli", "model": "gemini-2.5-flash", "sendsCode": false },
-  "tracker": "files",
-  "jira": { "cloudId": null, "project": null },
-  "sdp": { "portal": null, "noteVisibility": "private", "closeOnDone": false },
-  "obsidian": {
-    "vaultPath": null,
-    "boardDir": null,
-    "board": "Board.md",
-    "columns": {
-      "backlog": "Backlog",
-      "ready": "Ready",
-      "inProgress": "In Progress",
-      "review": "Review",
-      "done": "Done"
-    }
-  },
-  "memory": { "mode": "repo", "vaultPath": null },
-  "verifyGate": true,
-  "context": {
-    "enabled": true,
-    "warnAt": 0.8,
-    "budgetTokens": null,
-    "reserveTokens": 100000,
-    "handoffPath": ".work/HANDOFF.md",
-    "autoClear": { "enabled": false, "method": "auto", "windowTitle": null, "command": "/clear", "delaySeconds": 3, "minHandoffLines": 5 },
-    "autoWrapUp": false,
-    "autoResume": false,
-    "staleHandoff": { "maxAgeHours": 72, "maxCommitsBehind": 3 }
-  },
-  "emergency": { "standDown": true, "ttlMinutes": 120, "maxTtlMinutes": 480 },
-  "notify": {
-    "provider": "none",
-    "events": ["gate", "review", "waiting"],
-    "urlEnv": "CREW_TEAMS_WEBHOOK",
-    "tokenEnv": "CREW_TELEGRAM_TOKEN",
-    "chatId": null
-  },
-  "pm": { "enabled": true, "mode": "adaptive", "quietLines": 8, "maxLines": 40, "authority": "report-only", "maxDispatches": 3 },
-  "graph": { "out": "graphify-out", "obsidian": { "dir": null, "layout": "flat", "confirmed": false } }
-}
-```
+A sample `.crew/config.json` used to sit here, and a table of selected keys
+under it. Both are **deleted rather than corrected**, deliberately. The sample
+had drifted to 59 leaves against the real 85: twelve keys it showed no longer
+existed, and twenty-eight that did were missing, including the whole `dev`
+block. It drifted because it was a second copy of something derived elsewhere,
+which is the same failure as the `UPDATE.md` mirrors and the stale schema
+numbers — and like those, it passed every green check the repo had. A duplicate
+that agrees today is a duplicate that disagrees later, so correcting it would
+only have reset the clock.
 
-**The `context` and `notify` blocks are not optional decoration.** Four of the
-six hooks read them, and each treats an absent block as "switched off" rather
-than as an error — so a config without them produces a session where the context
-watch never fires and no notification is ever sent, with nothing saying so. If
-you do not want notifications, write `"provider": "none"` and mean it; do not
-omit the block and assume.
-
-| Key | Values | Effect |
-|---|---|---|
-| `schema` | integer | Config layout version. Absent means a pre-PM (`v1`) setup — `/crew:upgrade` brings it to the current schema (2). Never hand-edit this; `/crew:upgrade` sets it. |
-| `verifyGate` | `true`, `false` | Whether the `Stop` hook blocks on failed checks. Set `false` only while first building the harness. |
-| `context.enabled` | `true`, `false` | The `Stop` context watch. **Absent block = off.** |
-| `context.warnAt` | `0.0`–`1.0` | Fraction of budget at which the handoff is requested. Default `0.8`. |
-| `context.budgetTokens` | integer or `null` | `null` (the default) works the window out from the model id and this session's own peak usage. Set a number to pin it. |
-| `context.reserveTokens` | integer (default `100000`), or `0`/`null` for off | Headroom floor. The warning fires at the **later** of `warnAt` and this many tokens remaining, so it can only ever delay it. Without this, 0.8 of a 1M window asks for a handoff with 200k still free. See §16. |
-| `context.handoffPath` | path | Where the handoff note lives. Default `.work/HANDOFF.md`. |
-| `context.staleHandoff.maxAgeHours` | number (default `72`) | How old (by the note's own `written:` line, or file mtime if that's absent) before `handoff-read`/`pm_brief` archive it instead of printing or injecting it. |
-| `context.staleHandoff.maxCommitsBehind` | integer (default `3`) | How many commits landed past the note's `head:` line before it is archived as describing a past state. |
-| `emergency.standDown` | `true` (default), `false` | Whether `/crew:emergency` may stand the `verify` and `promote` gates down. `false` keeps them gating; the incident is still declared, recorded and briefed. The command guard never stands down either way. See §24. |
-| `emergency.ttlMinutes` | integer (default `120`) | How long a declared incident lasts before it expires on its own and the gates come back. |
-| `emergency.maxTtlMinutes` | integer (default `480`) | Ceiling on one `extend`, measured from now, so repeated extensions cannot drift into a permanent state. |
-| `notify.provider` | `teams`, `telegram`, `none` | Outbound notifications. **Absent block = off.** Credentials come from env vars, never config. |
-| `notify.events` | subset of `phase`, `gate`, `review`, `waiting`, `done` | Which events send. Empty or absent sends everything; a channel that pings constantly gets muted within a week. |
-| `notify.urlEnv` / `notify.tokenEnv` | env var **name** | The name of the variable holding the webhook URL or bot token — never the value itself. |
-| `notify.chatId` | string | Telegram only. Group ids are negative; that is normal. |
-| `secondOpinion.provider` | `gemini`, `local`, `none` | Design partner. `sendsCode` stays `false` on any free tier. |
-| `qa.provider` | `auto`, `codex`, `claude` | `auto` prefers Codex, falls back to Claude, announces which ran. `codex` fails loudly instead of falling back. |
-| `tracker` | `files`, `jira`, `sdp`, `obsidian` | Where tickets live. `jira` and `sdp` each additionally require their MCP connector; without it every ticket command stops on the same missing precondition. `obsidian` requires no connector — its precondition is a vault directory that exists on this machine. |
-| `obsidian.vaultPath` | path or `null` | The vault holding the board. `null` falls back to `memory.vaultPath`, so one vault needs one setting. |
-| `obsidian.boardDir` | path relative to the vault | Where the board and its ticket notes live. `Boards/<repo>` by default — one folder per repo, so cards can be `[[T-0042]]` wikilinks that resolve. |
-| `obsidian.board` | filename (default `Board.md`) | The board file inside `boardDir`. |
-| `obsidian.columns` | five lane names | Maps crew's statuses to the board's headings. Rename lanes here rather than on the board, so an existing board keeps working. A named lane that is absent is a setup error, not a lane to create. |
-| `sdp.noteVisibility` | `private` (default), `public` | Whether the push note lands on the requester-visible thread. Private by default because a requester is often not an engineer. |
-| `sdp.closeOnDone` | `true`, `false` (default) | Whether completing a ticket closes the request or only transitions it. `false` leaves closure to whoever owns the queue. |
-| `sdp.portal` | string or `null` | Only needed where the connector serves more than one SDP instance. |
-| `memory.mode` | `repo`, `obsidian` | Where the code map lives. `obsidian` also needs `vaultPath`. |
-| `worktree.root` | directory path or `null` | Where `git worktree add` puts a crew worktree — `/crew:emergency` running two candidate fixes side by side, and tier-3 parallel sessions. `null` (the default) means the checkout's parent, which is what crew did before the key existed. Crew adds `<repo>-<branch>` beneath it, so several repos can share one root. `~` and environment variables are expanded; a relative path resolves against the repo, not the working directory. Inheritable from the global file — which disk has room is a fact about the machine. |
-| `tier` / `roles` | see §22 | Which agents are in play. Managed by `/crew:scale`. |
-| `context.autoWrapUp` | `true`, `false` (default `false`) | At `warnAt`, instructs the session to reach a stopping point and write the handoff, instead of just asking. The `/clear` itself stays manual either way — no hook can trigger one. See §16. |
-| `context.autoResume` | `true`, `false` (default `false`) | Opens the next `SessionStart` already holding the last handoff as `additionalContext`. See §16 — read the limitation before enabling it. |
-| `context.autoClear.enabled` | `true`, `false` (default `false`) | **Experimental.** Types `/clear` into the terminal once the handoff is written. Read §16's "Auto-clear" before enabling — it presses a key on your behalf. |
-| `context.autoClear.method` | `auto`, `tmux`, `xdotool`, `wtype`, `windows`, `none` | How the keystroke is delivered. `tmux` is the only one that targets its destination exactly; the rest depend on window focus. |
-| `context.autoClear.windowTitle` | string or `null` | Required for every method except `tmux`. Without it those methods refuse rather than typing into an unidentified window. |
-| `context.autoClear.command` | string (default `/clear`) | What gets typed. `/compact` is the other sensible value. |
-| `context.autoClear.delaySeconds` | integer (default `3`) | How long to wait for the prompt to come back before typing. |
-| `context.autoClear.minHandoffLines` | integer (default `5`) | Refuse to clear if the handoff has fewer non-blank lines than this. A stub note is worse than no clear. |
-| `pm.enabled` / `mode` / `quietLines` / `maxLines` | see `crew-pm` skill | Whether and how verbosely the `SessionStart` PM brief speaks, and whether the `Stop` pulse re-engages it at all. |
-| `pm.authority` | `report-only` (default), `act` | What the PM does about what it finds. `report-only` recommends and stops. `act` lets it dispatch crew roles and refresh diagrams on its own — see the `crew-pm` skill for the guardrails that bound it. An unrecognised value resolves to `report-only`: a typo in a permissions field must fail closed. |
-| `pm.maxDispatches` | integer (default `3`) | Roles the PM may dispatch in one pass under `act`. Blockers it hits mid-task do not count against it. |
-| `graph.out` | path (default `graphify-out`) | Where `graphify` wrote `graph.json`. Freshness is read from graphify's own `built_at_commit` field in that file, never a timestamp. |
-| `graph.obsidian.dir` | path or `null` | Export target directory. What it means depends on `graph.obsidian.layout` — see `crew-graph`'s Obsidian section. |
-| `graph.obsidian.layout` | `flat` (default), `org/repo` | How the skill asks you to structure `graph.obsidian.dir`. `flat`: `dir` is the export target verbatim, e.g. `<vault>/codegraphs/<repo>/` — unchanged from before this key existed. `org/repo`: `dir` is a per-org folder, e.g. `<vault>/<org>`, and the skill appends `/<repo>`. |
-| `graph.obsidian.confirmed` | `true`, `false` (default `false`) | Consent gate for exporting the graph into an Obsidian vault. Only explicit consent given in session sets this — `/crew:upgrade` never grants it. See `crew-graph`'s Obsidian section. |
+`CONFIG.md` is derived by executing `default_config()` and
+`default_global_config()`, and `tests/test_crew_config.py` holds drift gates
+that compare both committed templates and `crew-setup/SKILL.md`'s inline copy
+against those functions byte-for-byte. That is why there is no third copy here.
 
 The promotion sequence lives in `.crew/verify.json`, not here — see §23. Config
 holds preferences; `verify.json` holds the checks, so that one file answers "what
 runs when" for both a working tree and a deployed environment.
+
 
 ---
 
@@ -1990,7 +1908,7 @@ a worktree each, so a half-applied one cannot land on top of the other.
 | `/crew:sdp-sync <REQUEST-ID> [--push]` | Sync one ServiceDesk Plus request with the local cache — see §13b |
 | `/crew:obsidian-sync <T-####> [--push]` | Sync one Obsidian Kanban card with the local cache — see §13c |
 | `/crew:pm [onboard\|offboard <role>]` | Crew-manager status, or add/remove a role — see §22 |
-| `/crew:upgrade [--force]` | Bring a pre-schema-2 (`v1`) setup forward — see §11 |
+| `/crew:upgrade [--force]` | Bring a setup behind the current schema forward — see §11 |
 | `/crew:emergency <what is broken>` | Declare a time-boxed incident: gates stand down and record what they skipped, lanes investigate in parallel — see §24. `status`, `extend [min]`, `end` |
 | `/crew:model` | Report the resolved provider and model for every role, and which family would be reviewing which — see §12 |
 | `/crew:roster` | Print the crew as configured: roles, tier, and what each one is for |
@@ -2055,6 +1973,10 @@ a worktree each, so a half-applied one cannot land on top of the other.
 | `powershell-security-hardening` | read/write | `sonnet` | — | PowerShell automation and remoting hardened to an enterprise baseline |
 | `skill-author` | read/write | `sonnet` | — | Claude Code skills, slash commands and plugins - frontmatter, discovery, operator walkthrough |
 | `workflow-orchestrator` | read/write, no Bash | `sonnet` | — | Multi-state business processes, with error handling and transaction management |
+| `exchange-online-specialist` | read/write | `sonnet` | — | Exchange Online and Purview automation through ExchangeOnlineManagement and Security & Compliance PowerShell, where a wrong answer is a compliance answer |
+| `powershell-5.1-expert` | read/write | `sonnet` | — | Windows PowerShell 5.1 — the in-box edition on every Windows Server, for modules with no PowerShell 7 story |
+| `powershell-7-expert` | read/write | `sonnet` | — | PowerShell 7, for modern language features, real parallelism and UTF-8 defaults — and for whether a host can run `pwsh` at all |
+| `skill-author` | read/write | `sonnet` | — | Claude Code skills, commands and plugins: frontmatter, the description that decides whether a skill fires, and the operator walkthrough |
 | `pm` | read/write, scoped to `.crew/` and generated diagrams | `opus` | — | The standing manager: scope, onboarding, communication, ticket hygiene, and dispatch |
 
 50 agents — 13 on the tier ladder, 36 domain specialists off it, and `pm`. `pm` sits outside the tier ladder — it is not sized in or out by `/crew:scale`, it is the thing doing the sizing. The specialist rows above are a readable copy of `crew_state.SPECIALIST_ROLES`; `tests/test_role_ladder.py` checks that copy against the code in both directions, so a row here with no registration behind it, or an `agents/<name>.md` nobody registered, fails the suite rather than shipping as a role `/crew:pm onboard` calls unrecognised.

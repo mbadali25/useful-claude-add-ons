@@ -27,6 +27,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from typing import NoReturn
 
 DEFAULT_PER_PAGE = 500
 MAX_PER_PAGE = 500
@@ -53,7 +54,7 @@ def token():
     return tok
 
 
-def die(msg, code=1):
+def die(msg, code=1) -> NoReturn:
     print(f"error: {msg}", file=sys.stderr)
     sys.exit(code)
 
@@ -176,7 +177,8 @@ def emit(rows, fmt, out_path=None, max_table_rows=25):
     if fmt == "json":
         text = json.dumps(rows, indent=2)
         if out_path:
-            open(out_path, "w").write(text)
+            with open(out_path, "w", encoding="utf-8") as fh:
+                fh.write(text)
             print(f"Wrote {len(rows)} records to {out_path}", file=sys.stderr)
         else:
             print(text)
@@ -436,7 +438,7 @@ def cmd_duplicates(args):
 
     for u in users:
         email = norm(u.get("email"))
-        local = email.split("@")[0] if "@" in email else ""
+        local = email.split("@", maxsplit=1)[0] if "@" in email else ""
         add(norm(u.get("employee_number")), "employee_number", u)
         add(local, "email_local_part", u)
         name = f"{norm(u.get('first_name'))} {norm(u.get('last_name'))}".strip()
@@ -448,7 +450,7 @@ def cmd_duplicates(args):
     # cluster - reporting the same pair three times inflates the count and
     # hides how many real people are affected.
     merged = {}
-    for (kind, key), members in clusters.items():
+    for (kind, _key), members in clusters.items():
         if len(members) < 2:
             continue
         ids = frozenset(m.get("id") for m in members)

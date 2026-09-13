@@ -49,6 +49,15 @@ run "marketplace: full gate, including version drift" 400 "$PY" scripts/check-ma
 run "install scripts: sub-picker catalogs, group flags, parent implication" 400 \
     bash scripts/_test/menu-groups.sh
 
+# 2b. check-powershell.ps1's exemption list, which is the one place that check can be
+#     silently switched off. An entry there exempts a cmdlet name from "PowerShell
+#     cannot resolve this"; while the list was flat, the 23 names added for the
+#     Exchange skills exempted the same names in EVERY file, so a typo'd Get-ADUser
+#     anywhere in the repo passed. The cases pin both directions - out of scope still
+#     blocks, in scope did not get laxer - and both must-blocks are sabotage-proven.
+run "powershell checker: exemptions are path-scoped, not global" 400 \
+    bash scripts/_test/check-powershell.sh
+
 # 3. localgpu's own suite, on the venv that owns numpy (system python has none).
 #    Root resolution matches _verify/smoke.sh's localgpu_cli_check: $LOCALGPU_HOME
 #    first, else the platform defaults ($HOME/.local/share/localgpu on POSIX,
