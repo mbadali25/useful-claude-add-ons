@@ -329,6 +329,7 @@ def check_versions(entries, fail):
 
 
 CLAIM_RE = re.compile(r"<!--\s*claim:\s*([a-z0-9-]+(?::[a-z0-9._-]+)?)\s*-->")
+CODE_SPAN_RE = re.compile(r"`[^`]*`")
 SKILLS_RE = re.compile(r"(\d+)(?:\s+of\s+(\d+))?\s+skills\b")
 VERSION_ROW_RE = re.compile(r"^\|\s*\*\*Version\*\*\s*\|\s*([0-9][0-9.]*)")
 BIND_WINDOW = 12
@@ -378,8 +379,20 @@ def check_self_claims(entries, fail):
 
     for path in sorted(git("ls-files", "*.md").split()):
         lines = read(os.path.join(ROOT, path)).splitlines()
+        fenced = False
         for index, line in enumerate(lines):
-            for claim in CLAIM_RE.finditer(line):
+            if line.lstrip().startswith("```"):
+                fenced = not fenced
+                continue
+            # A marker only counts where it would really be an invisible HTML
+            # comment. Inside a fence or a `code span` it renders as literal
+            # text to every reader, so it is documentation of the convention --
+            # CLAUDE.md describes the syntax -- and not a claim about anything.
+            # Scanning it anyway made this checker fail on the very paragraph
+            # explaining it, which is how this line came to exist.
+            if fenced:
+                continue
+            for claim in CLAIM_RE.finditer(CODE_SPAN_RE.sub("", line)):
                 kind = claim.group(1)
                 window = lines[index : index + BIND_WINDOW]
 

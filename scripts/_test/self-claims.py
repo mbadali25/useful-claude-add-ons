@@ -181,6 +181,38 @@ CASES: list[tuple[str, dict, int, str]] = [
         0,
         "",
     ),
+    # --- documenting the convention is not making a claim -----------------
+    # CLAUDE.md explains this syntax, and the first version of the check read
+    # that explanation as nine live claims and failed on the paragraph
+    # describing itself. A marker only counts where it would really be an
+    # invisible HTML comment.
+    (
+        "a marker inside a code span is documentation, not a claim",
+        {
+            "CLAUDE.md": "Write `<!-- claim: skills-count -->` beside it. "
+            "`17 skills` is true of crew's bundle and false of the marketplace.\n"
+        },
+        0,
+        "",
+    ),
+    (
+        "a marker inside a fenced block is not a claim either",
+        {"README.md": "```\n<!-- claim: skills-count -->\n9 skills\n```\n"},
+        0,
+        "",
+    ),
+    (
+        "a real marker still works on a line that also has a code span",
+        {"README.md": "all 3 skills<!-- claim: skills-count --> in `skills/`\n"},
+        0,
+        "",
+    ),
+    (
+        "a real marker on a line with a code span still catches a wrong number",
+        {"README.md": "all 9 skills<!-- claim: skills-count --> in `skills/`\n"},
+        1,
+        "registers 3",
+    ),
 ]
 
 
