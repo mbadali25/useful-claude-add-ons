@@ -6,6 +6,38 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
+- **`crew` 0.19.14: the pm can now route the trigger 0.19.13 added, and
+  `UPGRADE.md` stops carrying a line nothing can read.** Two gaps left by that
+  release, both of the same shape -- a value that exists in the code and does
+  not reach the person who has to act on it.
+
+  `knowledgeUnverifiable` had no row in `plugin/crew/agents/pm.md`'s dispatch
+  table. The trigger fired, the brief printed the finding, and the pm's own
+  routing table listed ten of the eleven other triggers and not that one. It
+  now has a row that says what makes it different from `knowledgeBehind`: there
+  is no diff to re-read, so the claims have to be derived from source again,
+  which is also why it sorts above.
+
+  `crew_upgrade.py` wrote `graph anchor: <sha>` into `.crew/codemap/UPGRADE.md`.
+  `_NOT_SUBSYSTEMS` excludes that file from `read_knowledge` and `_ANCHOR_RE`
+  requires `anchor:` at line start, so the line was read by **nothing** -- it
+  could be reported as neither behind nor unresolvable, while looking
+  machine-checked to a human. Anchor-shaped, unreadable and eventually dead is
+  worse than either honest state, and it is the category 0.19.13 did not cover:
+  that release made `unresolvable` a reported value of its own, but a line no
+  regex matches never reaches the reporting path at all. The writer now emits
+  `graph build compared against: <sha>` followed by three lines saying plainly
+  that it is not an anchor, that nothing re-verifies this file, and that the
+  sha may stop resolving. `test_report_header_is_not_anchor_shaped` asserts
+  against **both** anchor regexes rather than against the literal text, so any
+  accepted anchor spelling reintroduced later goes red; sabotage-tested by
+  restoring the old line, which fails with the offending line quoted.
+
+  The committed `.crew/codemap/UPGRADE.md` was updated to the header the fixed
+  writer emits, with the four lines lifted out of the writer's own source
+  rather than retyped, so the data file cannot drift from the code that
+  generates it.
+
 - **`crew` 0.16.33: a lingering handoff note is now archived, not just warned
   about.** `pm_brief`'s `handoffPending` finding, and `handoff-read`'s printed
   path, both only ever asked whether `.work/HANDOFF.md` existed -- true the
