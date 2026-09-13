@@ -57,7 +57,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   exported ruleset verbatim, dropping the classic-present/object export check
   (which let the delete land), and dropping the `--allow-inherited` stderr
   warning. Each went red on the cases that name it.
-- **`crew` 0.19.29: guardrails you can turn down per machine, a `/crew:gate`
+- **`crew` 0.19.30: guardrails you can turn down per machine, a `/crew:gate`
   command, and schema 6.** Crew's command guard refused a fixed set of
   dangerous actions with no way to opt out. Schema 6 adds `guards` —
   `terraformApply`, `forcePush`, `adminMerge`, `mergeGate`, each `block` |
@@ -195,7 +195,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 - **`crew` 0.19.28: a comment claiming "the 21 commands and 10 agents".** Both
   wrong (24 and 54). Replaced with the scope and an `ls`, rather than a fresh
   pair of numbers with the same decay rate and no reader.
-- **`crew` 0.19.29: `/crew:config --explain` contradicted the run for every
+- **`crew` 0.19.30: `/crew:config --explain` contradicted the run for every
   ratcheted key.** It printed the *merged* value, and ratcheted keys do not
   resolve by precedence — so a repo `install.policy: auto` over a
   machine-global `manual` printed `install.policy  repo  "auto"` while crew
@@ -204,14 +204,14 @@ All notable changes to this repository are documented here. Format follows [Keep
   prints the effective value and, beneath the table, names which layer is
   holding each key down and what each layer asked for.
 
-- **`crew` 0.19.29: the schema-5 migration told the CLI nothing.** It added
+- **`crew` 0.19.30: the schema-5 migration told the CLI nothing.** It added
   `install.policy`, wrote its paragraph into `.crew/codemap/UPGRADE.md` and
   printed nothing at the CLI — so a repo with no codemap directory (which is
   where that file is written) gained a key governing whether crew may run
   commands on the machine and learned about it nowhere. A filed defect, fixed
   rather than repeated for schema 6's list.
 
-- **`crew` 0.19.29: three `consider-using-f-string` warnings from 0.19.25's
+- **`crew` 0.19.30: three `consider-using-f-string` warnings from 0.19.25's
   `graphStale` fix.** Not this change's, and named rather than absorbed: they
   were pushed to `main` and make the pylint job red on `main` today,
   independently of anything here. Three lines, fixed in their own commit.
