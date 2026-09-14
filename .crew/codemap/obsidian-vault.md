@@ -61,8 +61,9 @@ violation visible at all. (JUDGEMENT.)
 - Machine-global vault registry `~/.claude/obsidian/config.json`, named by
   `obsidian_common.config_path` (`plugin/obsidian-vault/hooks/scripts/obsidian_common.py:62-63`)
   and read by `read_config` (`:66-73`); each vault's HTTP port lives there. Shape documented at
-  `plugin/obsidian-vault/README.md:36-44`. (DERIVED. The note previously cited `README.md:39`,
-  which is one row *inside* that JSON block rather than the block.)
+  `plugin/obsidian-vault/README.md:36-44`. (DERIVED. The note previously cited
+  `plugin/obsidian-vault/README.md:39`, which is one row *inside* that JSON block rather than the
+  block.)
 
 ## Calls out to
 - Obsidian's Local REST API plugin, one MCP server per vault on its own port, registered via
@@ -175,7 +176,8 @@ cited.
 **Re-anchored `1f97e51c` -> `34a333f0` on 2026-09-14.** The per-path diff over this note's cited
 paths flagged two moved files. `plugin/obsidian-vault/.claude-plugin/plugin.json` bumped
 `0.3.6` -> `0.3.8`; the marketplace entry moved with it (both re-read and re-cited above,
-`marketplace.json:242`). `plugin/obsidian-vault/hooks/scripts/vault_profiles.py` changed only in a
+`.claude-plugin/marketplace.json:242`). `plugin/obsidian-vault/hooks/scripts/vault_profiles.py`
+changed only in a
 comment - two client names in the reference-machine list were anonymized (`claude-anew-thd-codegraph`
 -> `claude-anew-acme-codegraph`, `claude-anew-theselectsource` -> `claude-anew-acme-select`) - and
 this note makes no claim that names or depends on those strings, so nothing here needed
