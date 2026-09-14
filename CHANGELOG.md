@@ -6,6 +6,29 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
+- **Menu item 25, `perplexity-mcp`: register the Perplexity MCP server.** Off by
+  default like every row from 9 on, and added at the END of both catalogs so no
+  existing number moves. Registers `npx -y @perplexity-ai/mcp-server` with
+  `--env PERPLEXITY_API_KEY=<key>`, through the same `add_mcp_server` /
+  `Add-McpServer` helper every other row uses, so an already-registered server is
+  reported and skipped rather than re-added. The key comes from
+  `--perplexity-api-key` / `-PerplexityApiKey`, falling back to `PERPLEXITY_API_KEY`
+  in the environment; with neither — or with a blank or whitespace-only value — the
+  item prints where to create one and **skips**, because a server registered with an
+  empty key looks installed and can never authenticate. Neither script ever echoes,
+  logs or interpolates the key, and `scripts/_test/menu-groups.sh` case 8 asserts
+  that with a sentinel key: it greps the whole captured run for the value and fails
+  if it appears. That suite's stub records the `claude` command line in a file rather
+  than on stdout for exactly that reason. This is the server
+  [`web-research`](skills/web-research/) calls; that skill still registers nothing
+  itself, and its own text ("nothing in this repo registers it") now describes the
+  skill rather than the marketplace — worth a follow-up there.
+- **`check_menu_parity` also counts `MENU_NAME`.** `MENU_KEYS` order and
+  `MENU_DEFAULT` length were checked; the labels array was not, so a row added to
+  `MENU_KEYS` alone passed every gate and shifted every label after it onto the next
+  item's text — the `obsidian-mcp` bug, recorded further down this file. Sabotaged:
+  deleting the new label fails the check with "MENU_NAME has 24 labels but MENU_KEYS
+  has 25 rows".
 - **`web-research` 1.0.0: makes live-web research fire on intent rather than on
   the word "perplexity".** It registers nothing — the `perplexity` MCP server is
   already registered globally, and the skill's whole job is routing: which of

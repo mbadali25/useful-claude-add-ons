@@ -220,6 +220,21 @@ def check_menu_parity(fail):
             f"      .sh:  {sh_keys}\n"
             f"      .ps1: {ps_menu}"
         )
+    # MENU_NAME is one quoted label per line and its entries contain spaces, so
+    # bash_array (which splits on whitespace) can only count it, not read it. Nothing
+    # else checks this length: when obsidian-mcp was added to MENU_KEYS and not to
+    # MENU_NAME, every label from that row on displayed the NEXT item's text and every
+    # check stayed green.
+    name_block = re.search(r"^MENU_NAME=\((.*?)^\)", shell, re.S | re.M)
+    if not name_block:
+        fail("the .sh has no MENU_NAME array")
+    else:
+        labels = len(re.findall(r'^\s*"', name_block.group(1), re.M))
+        if labels != len(sh_keys):
+            fail(
+                f"MENU_NAME has {labels} labels but MENU_KEYS has {len(sh_keys)} rows "
+                "in the .sh - every label from the gap on shows another item's text"
+            )
     if len(sh_defaults) != len(sh_keys):
         fail("MENU_DEFAULT has a different length from MENU_KEYS in the .sh")
     elif sh_defaults != ps_defaults:

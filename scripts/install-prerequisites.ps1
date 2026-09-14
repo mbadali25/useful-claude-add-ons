@@ -46,6 +46,8 @@ Common switches:
     -SkillUIGuide       print the SkillUI quick start after installing it, no prompt
     -NotifySetup        scaffold the notify config after installing it, no prompt
     -ObsidianRepoRoot   root the Obsidian item suggests for the vault (default: C:\repos)
+    -PerplexityApiKey   Perplexity API key; falls back to $env:PERPLEXITY_API_KEY, and
+                        without either the item explains and skips
     -NoUpdate           never update an already-installed plugin, only report it
     -ForceRefresh       reinstall a plugin whose files changed in its marketplace
                         but whose declared version did not (see 'content drift')
@@ -74,6 +76,9 @@ param(
     [string]$ObsidianRepoRoot = 'C:\repos',  # root the Obsidian item suggests for the vault
     [string]$ObsidianMcpUrl = 'http://127.0.0.1:27123/mcp/',  # vault-server MCP endpoint (through an SSH tunnel)
     [string]$ObsidianMcpKey,                 # Local REST API key; without it the item explains and skips
+    # The parameter wins over the environment; with neither, the item explains and skips.
+    # The key itself is never echoed, logged, or put in a step name.
+    [string]$PerplexityApiKey = $env:PERPLEXITY_API_KEY,
     [Alias('PluginHubScope')]
     [ValidateSet('user', 'project', 'local')]
     [string]$InstallScope = 'user'  # machine-wide by default, not per-project
@@ -772,6 +777,7 @@ $script:Catalog = @(
     [pscustomobject]@{ Key = 'aws-docs-mcp';      Default = $false; Name = 'MCP server: AWS Knowledge (docs + API refs, hosted by AWS, no credentials)' }
     [pscustomobject]@{ Key = 'aws-pricing-mcp';   Default = $false; Name = 'MCP server: AWS Pricing (Price List API - needs AWS creds with pricing:*)' }
     [pscustomobject]@{ Key = 'ms-learn-mcp';      Default = $false; Name = 'MCP server: Microsoft Learn (Azure, SharePoint and Power Automate docs, no credentials)' }
+    [pscustomobject]@{ Key = 'perplexity-mcp';    Default = $false; Name = 'MCP server: Perplexity (web-grounded search for the web-research skill - needs an API key)' }
 )
 
 $script:Selected = @{}
@@ -1951,6 +1957,28 @@ if (Test-Selected 'obsidian-mcp') {
         Add-McpServer -Name 'obsidian-server' -Url $ObsidianMcpUrl `
             -Headers @{ Authorization = "Bearer $ObsidianMcpKey" } `
             -Note "Requires an SSH tunnel to the vault server: ssh -N -L 27123:127.0.0.1:27123 <user>@<server>"
+    }
+}
+
+if (Test-Selected 'perplexity-mcp') {
+    Invoke-Step "Register the Perplexity MCP server" {
+        # The key is per-account and metered, so it cannot be baked in: it comes from
+        # -PerplexityApiKey, or from PERPLEXITY_API_KEY in the environment. A
+        # whitespace-only value counts as absent - registering with an empty key gives
+        # a server that looks installed and can never authenticate.
+        if ([string]::IsNullOrWhiteSpace($PerplexityApiKey)) {
+            Write-Skip "Perplexity MCP: no -PerplexityApiKey given and PERPLEXITY_API_KEY is not set"
+            Write-Host "        Create a key under your Perplexity account settings (API):"
+            Write-Host "          https://docs.perplexity.ai/getting-started/quickstart"
+            Write-Host "        Then re-run with the key:"
+            Write-Host "          .\install-prerequisites.ps1 -Select perplexity-mcp -PerplexityApiKey <key>"
+            Write-Host "        This is the server the web-research skill calls."
+            return
+        }
+        Add-McpServer -Name 'perplexity' `
+            -CommandArgs @('npx', '-y', '@perplexity-ai/mcp-server') `
+            -EnvVars @{ PERPLEXITY_API_KEY = $PerplexityApiKey } `
+            -Note "Backs the web-research skill. Restart the session, then 'claude mcp list' shows it as Connected."
     }
 }
 

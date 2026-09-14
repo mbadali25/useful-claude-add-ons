@@ -86,6 +86,7 @@ Terminals that can't read a key press one at a time — no `stty`, `TERM=dumb`, 
 | 22 | MCP server: **AWS Knowledge** — AWS docs, API references and regional availability, hosted by AWS. **No credentials** | |
 | 23 | MCP server: **AWS Pricing** — the Price List API. **Needs AWS credentials whose role allows `pricing:*`**; the calls themselves are free | |
 | 24 | MCP server: **Microsoft Learn** — Azure, SharePoint and Power Automate / Power Platform docs plus code samples. **No credentials** | |
+| 25 | MCP server: **Perplexity** — web-grounded search, ask, research and reason; the server the [`web-research`](skills/web-research/) skill calls. **Needs a Perplexity API key** | |
 
 Menu numbers are identical on Windows and Linux, and an already-registered MCP server, marketplace, or plugin is reported and skipped rather than re-added. Numbers can shift as items are added, so scripted runs should prefer the stable keys (`--select supabase,strix`) over positions.
 
@@ -126,6 +127,7 @@ Everything that can be a plugin **is** installed as one, using the CLI's own `cl
 | `-ObsidianRepoRoot` / `--obsidian-repo-root` | Root that item 18 suggests for the Obsidian vault — `C:\repos` on Windows, `~/repos` on Linux. Only affects the printed next step; the vault itself is created by [`claude-obsidian-setup/`](claude-obsidian-setup/). |
 | `-ObsidianMcpUrl` / `--obsidian-mcp-url` | MCP endpoint item 12 registers for the Obsidian vault server. Default `http://127.0.0.1:27123/mcp/` — loopback, because the endpoint is normally reached through an SSH tunnel. |
 | `-ObsidianMcpKey` / `--obsidian-mcp-key` | Local REST API key for item 12. Per-deployment, so there is no default: without it the item explains how to get one and skips. |
+| `-PerplexityApiKey` / `--perplexity-api-key` | Perplexity API key for item 25. Falls back to `PERPLEXITY_API_KEY` in the environment; with neither set the item explains how to get one and skips rather than registering a server that can never authenticate. |
 
 > On Windows, run from an **elevated** prompt for the full setup. Without elevation the script skips menu item 1 (Chocolatey and its packages: git/awscli/nodejs/python) and runs everything else you selected.
 
@@ -169,6 +171,7 @@ For this repo's own skills, [`scripts/check-marketplace.py`](scripts/check-marke
 | 22 AWS Knowledge | A remote HTTP endpoint (`https://knowledge-mcp.global.api.aws/mcp`), not a launched command — nothing to install and no AWS account involved. Separate from row 9 on purpose: row 9's server reads a real account, this one reads published documentation, so a machine that may not have the first can still have the second. Public and rate-limited | `claude mcp add --transport http` |
 | 23 AWS Pricing | `uvx awslabs.aws-pricing-mcp-server@latest`, installing `uv` first if it is absent — the same bootstrap row 9 does. The one of these three that **does** need credentials: the Price List API is an AWS API call, not a document fetch, and the role needs `pricing:*`. The calls are free of charge | `uvx` + `claude mcp add` |
 | 24 Microsoft Learn | A remote HTTP endpoint (`https://learn.microsoft.com/api/mcp`). One server for three of this repo's domains — `learn.microsoft.com` carries the Azure, SharePoint and Power Automate / Power Platform documentation, so `intune-graph`, `power-automate-api` and the SharePoint skills all resolve against it rather than against three separate servers | `claude mcp add --transport http` |
+| 25 Perplexity | `npx -y @perplexity-ai/mcp-server`, registered with `--env PERPLEXITY_API_KEY=<key>` so the CLI has the key when it launches the server. Unlike row 21 this **does** write the key into the MCP registration — an stdio server started by Claude Code has no other way to receive it. The key comes from `--perplexity-api-key` / `-PerplexityApiKey` or `PERPLEXITY_API_KEY`, is never printed, and with neither set the row explains how to get one and skips. This is the server the [`web-research`](skills/web-research/) skill calls | `claude mcp add` |
 
 Items 1–8 are the default set. Everything from 9 on is opt-in.
 
