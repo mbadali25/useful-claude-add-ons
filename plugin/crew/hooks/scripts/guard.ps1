@@ -177,8 +177,19 @@ if ($cmd -match "${ghMerge}${arg}--admin\b")                     { Invoke-Guard 
 # `production.databases` / `production.hosts` in the repo config, through
 # crew_config.py. Same two regexes as guard.sh, same deliberately wide list: a
 # tool absent here never reaches the resolver.
-$dbTools = '(?i)(^|[\s;&|])(psql|mysql|mariadb|sqlcmd|mongosh|mongo|redis-cli|cqlsh)\b|\baws\s+(rds|redshift|dynamodb|docdb)\b'
-$srvTools = '(?i)(^|[\s;&|])(ssh|scp|plink|rsync)\b|\baws\s+(ssm|ec2)\b'
+#
+# `([^\s;&|]*[\\/])?` is guard.sh's fix, for the same bypass in this flavour:
+# both alternations required the executable to follow whitespace or a
+# separator, so `/usr/bin/ssh prod-web-1 ...` and `C:\tools\ssh.exe ...`
+# reached the resolver in neither flavour -- prodServer bypassed at `none` by
+# typing a path. It cost the other direction too: `PROD_HIT` stayed false, so
+# `/usr/bin/psql -h prod-db-1 ...` was refused by Test-EnvArgHit below even at
+# `full`. `\b` after the name already allows the `.exe` suffix.
+#
+# The `aws` alternations are deliberately NOT given the prefix: `\baws` already
+# matches inside `/usr/local/bin/aws`.
+$dbTools = '(?i)(^|[\s;&|])([^\s;&|]*[\\/])?(psql|mysql|mariadb|sqlcmd|mongosh|mongo|redis-cli|cqlsh)\b|\baws\s+(rds|redshift|dynamodb|docdb)\b'
+$srvTools = '(?i)(^|[\s;&|])([^\s;&|]*[\\/])?(ssh|scp|plink|rsync)\b|\baws\s+(ssm|ec2)\b'
 $prodHit = $false
 if ($cmd -match $dbTools) {
   Invoke-ProdGuard prodDatabase "this targets a database declared in production.databases."
@@ -264,7 +275,17 @@ if ($cmd -match $secretRead) {
   # Requiring the secret read to sit INSIDE the parenthesised expression, with
   # no separator between, is the difference between "a capture happened" and
   # "this was captured".
-  if ($cmd -notmatch "(^|\s|;)\`$(env:)?[A-Za-z_][A-Za-z0-9_]*\s*=\s*\([^;&|]*${secretRead}") {
+  #
+  # ...and that was still a question about ANY occurrence, in both flavours: a
+  # command carrying two secret reads, the first captured and the second
+  # printed, satisfied it and printed the second. So this COUNTS, exactly as
+  # guard.sh does -- every occurrence must be carried by a capture, and one
+  # uncaptured occurrence is a refusal. See guard.sh for why the gap excludes
+  # `)` and why this is not done by splitting on separators.
+  $secretHeld = "(^|\s|;)\`$(env:)?[A-Za-z_][A-Za-z0-9_]*\s*=\s*\([^;&|)]*${secretRead}"
+  $secretCount = [regex]::Matches($cmd, $secretRead).Count
+  $heldCount = [regex]::Matches($cmd, $secretHeld).Count
+  if ($heldCount -lt $secretCount) {
     Block "this prints a secret value into the transcript. Capture it instead, e.g. `$env:DB_PASS = (aws secretsmanager get-secret-value --secret-id NAME --query SecretString --output text)"
   }
 }

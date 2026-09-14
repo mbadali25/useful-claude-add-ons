@@ -28,11 +28,22 @@ pass() { PASS=$((PASS+1)); }
 PY=$(command -v python3 || command -v python || command -v py) || {
   echo "SKIP: no python available to build test payloads" >&2; exit 0; }
 
+# The command travels on STDIN, and that is not a style choice.
+#
+# Git Bash's MSYS runtime rewrites anything that looks like a POSIX path on its
+# way to a native binary. Handed as `"$PY" - Bash '/usr/bin/ssh prod-web-1
+# "ls"'`, the payload this function built said `C:/Program Files/Git/usr/bin/ssh
+# prod-web-1 "ls"` -- so every `expect` line naming a command that STARTS with a
+# path was asserting about a command the harness had silently rewritten, and the
+# guard was answering about a program called `Program`.
+#
+# Measured here, all three channels, because the obvious repair does not work:
+# an ENVIRONMENT variable is converted exactly as an argv value is
+# (`CREW_TEST_CMD` came back rewritten too). Only stdin is passed through
+# untouched. The tool name still travels in the environment -- `Bash` and
+# `PowerShell` have no path shape -- because stdin is now spoken for.
 json_cmd() {  # $1 = tool_name, $2 = command
-  "$PY" - "$1" "$2" <<'PYEOF'
-import sys, json
-print(json.dumps({"tool_name": sys.argv[1], "tool_input": {"command": sys.argv[2]}}))
-PYEOF
+  printf '%s' "$2" | CREW_TEST_TOOL="$1" "$PY" -c 'import os, sys, json; print(json.dumps({"tool_name": os.environ["CREW_TEST_TOOL"], "tool_input": {"command": sys.stdin.read()}}))'
 }
 
 guard() {  # $1 = command -> echoes exit code
@@ -260,6 +271,11 @@ expect 2 'vault kv get secret/db | tee /tmp/s.txt'
 expect 2 'aws secretsmanager get-secret-value --secret-id db --query SecretString --output text'
 expect 2 'aws ssm get-parameter --name /db/pass --with-decryption'
 expect 2 'kubectl get secret db -o yaml'
+# EVERY read must be captured, not one of them. This exited 0: the exemption
+# asked whether ANY secret read sat inside a capture, so capturing the first
+# value licensed printing the second.
+expect 2 'X=$(aws secretsmanager get-secret-value --secret-id first); aws secretsmanager get-secret-value --secret-id second'
+expect 2 'vault kv get secret/first; vault kv get secret/second'
 expect 2 'cat .env'
 expect 2 'cat .env.production'
 # Schema 6's NEW refusals. Both of these exited 0 in BOTH flavours against
@@ -309,6 +325,11 @@ expect 0 'gh pr comment 42 --body "This fixes the prod outage from yesterday, se
 # the sanctioned way to handle a secret: capture, never render
 expect 0 'DB_PASS=$(aws secretsmanager get-secret-value --secret-id db --query SecretString --output text)'
 expect 0 'export DB_PASS=$(vault kv get -field=pass secret/db)'
+# Two reads, two captures. Counting occurrences must not become "one capture
+# per command line" -- and a capture whose substitution carries a pipe is the
+# shape a false block would take.
+expect 0 'A=$(aws secretsmanager get-secret-value --secret-id first); B=$(aws secretsmanager get-secret-value --secret-id second)'
+expect 0 'DB_PASS=$(aws secretsmanager get-secret-value --secret-id db | jq -r .SecretString)'
 expect 0 'npm test'
 expect 0 'grep -r TODO src/'
 expect 0 'cat README.md'
@@ -352,6 +373,11 @@ echo "== guard.sh: production access, guards.prod* = none (exit 2) =="
 prod_level none
 expect 2 'psql -h prod-db-1 -c "select 1"'
 expect 2 'ssh deploy@prod-web-1 "tail -n 5 /var/log/app.log"'
+# Spelling the tool as a path bypassed the SELECTOR, so `prod_guarded` was
+# never called and `none` -- the strictest level there is -- refused nothing.
+# Both of these exited 0.
+expect 2 '/usr/bin/ssh prod-web-1 "touch /tmp/crew-proof"'
+expect 2 '/usr/bin/psql -h prod-db-1 -c "select 1"'
 
 echo "== guard.sh: production access, guards.prod* = read =="
 prod_level read
@@ -373,11 +399,31 @@ expect 2 'aws ssm start-session --target prod-web-1'
 # any level. A guard that fired on these is the guard people switch off.
 expect 0 'ssh deploy@staging-web-1 "systemctl restart app"'
 expect 0 'psql -h dev-db-9 -c "delete from orders"'
+expect 0 '/usr/bin/ssh staging-web-1 "systemctl restart app"'
+# A read-only classification that was never a read. `env` is a WRAPPER, so
+# accepting it by name cleared every write behind four characters; `ip link` is
+# an OBJECT, so checking only the subcommand cleared `set`; and only the FIRST
+# `-c` was inspected, so a SELECT licensed the statement after it. All three
+# exited 0.
+expect 2 'ssh prod-web-1 "env touch /tmp/crew-proof"'
+expect 2 'ssh prod-web-1 "ip link set eth0 down"'
+expect 2 'psql -h prod-db-1 -c "select 1" -c "delete from orders"'
+# ...and the reads those three must not have cost. A fix that refused these
+# would be "block everything" wearing a classifier's clothes.
+expect 0 'ssh prod-web-1 "env"'
+expect 0 'ssh prod-web-1 "env FOO=bar ls /srv"'
+expect 0 'ssh prod-web-1 "ip addr show"'
+expect 0 'psql -h prod-db-1 -c "select 1" -c "select 2"'
+expect 0 '/usr/bin/ssh prod-web-1 "tail -n 50 /var/log/app.log"'
 
 echo "== guard.sh: production access, guards.prod* = full =="
 prod_level full
 expect 0 'psql -h prod-db-1 -c "delete from orders"'
 expect 0 'ssh deploy@prod-web-1 "systemctl restart app"'
+# The same selector miss cost the OTHER direction, and this case is the
+# evidence: with the path unmatched, PROD_HIT stayed 0 and the unconfigurable
+# `prod`-in-an-argument rule refused a command `full` permits. It exited 2.
+expect 0 '/usr/bin/psql -h prod-db-1 -c "delete from orders"'
 
 # Back to the empty scratch repo for anything that follows.
 export CLAUDE_PROJECT_DIR="$GUARD_PIN/repo"

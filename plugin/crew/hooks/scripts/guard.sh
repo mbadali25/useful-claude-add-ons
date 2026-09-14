@@ -41,13 +41,38 @@ block() { echo "BLOCKED: $1" >&2; exit 2; }
 # fallback.
 GUARD_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# `--command=$CMD` as ONE argument, with MSYS2_ARG_CONV_EXCL naming it, and
+# both halves are load-bearing on Windows.
+#
+# Git Bash's MSYS runtime rewrites an argument that LOOKS like a POSIX path
+# before the native python ever sees it. Measured here: `--command
+# '/usr/bin/ssh prod-web-1 "ls"'` arrives as
+# `C:/Program Files/Git/usr/bin/ssh prod-web-1 "ls"`, which `shlex` then splits
+# at the space in `Program Files` -- so the program crew classifies is
+# `Program`, not `ssh`, and a read comes back unclassifiable. It fails closed,
+# and it also writes a command nobody typed into `.crew/guard.log`.
+# `MSYS2_ARG_CONV_EXCL` matches an argument by PREFIX, so the value has to
+# travel attached to the flag; passed as a separate token it is converted
+# anyway (measured both ways).
+#
+# `--root` is deliberately left convertible: it IS a path, and native python
+# needs `C:/repos/...` rather than `/c/repos/...`. Setting MSYS_NO_PATHCONV for
+# the whole call would take that conversion away too, and a `--root` python
+# cannot open reads as a repo with no config -- which is the guard failing OPEN
+# while looking like it checked.
+#
+# Off Windows the variable is unread and `--command=` is ordinary argparse, so
+# this is one spelling on every platform rather than a branch on the OS.
+GUARD_ARG_EXCL='--command'
+
 guarded() {  # $1 = guard name, $2 = the refusal message
   local py out decision policy marker target reason access
   py=$(crew_py) \
     || block "$2 [guards.$1 stays \`block\`: no python to read the config]"
-  out=$("$py" "$GUARD_DIR/crew_config.py" \
+  out=$(MSYS2_ARG_CONV_EXCL="$GUARD_ARG_EXCL" "$py" \
+        "$GUARD_DIR/crew_config.py" \
         --root "${CLAUDE_PROJECT_DIR:-.}" \
-        --guard "$1" --command "$CMD" --record 2>/dev/null) \
+        --guard "$1" "--command=$CMD" --record 2>/dev/null) \
     || block "$2 [guards.$1 stays \`block\`: crew could not read it]"
   out=$(crew_strip_cr "$out")
   IFS=$'\t' read -r decision policy marker target reason access <<<"$out"
@@ -118,9 +143,14 @@ prod_guarded() {  # $1 = guard name, $2 = the refusal message
   # python that IS here and then fails is crew broken, on a question whose
   # answer decides whether a production write runs. That one blocks, loudly.
   py=$(crew_py) || return 0
-  out=$("$py" "$GUARD_DIR/crew_config.py" \
+  # `--command=$CMD` and MSYS2_ARG_CONV_EXCL for the reason stated above
+  # `guarded`, and it matters MOST here: this is the guard whose answer is
+  # computed from the command text, so a path rewritten on the way in is a
+  # classification of a command nobody ran.
+  out=$(MSYS2_ARG_CONV_EXCL="$GUARD_ARG_EXCL" "$py" \
+        "$GUARD_DIR/crew_config.py" \
         --root "${CLAUDE_PROJECT_DIR:-.}" \
-        --guard "$1" --command "$CMD" --record 2>/dev/null) \
+        --guard "$1" "--command=$CMD" --record 2>/dev/null) \
     || block "$2 [guards.$1: crew could not read it, and could not tell whether this targets production]"
   out=$(crew_strip_cr "$out")
   IFS=$'\t' read -r decision policy marker target reason access <<<"$out"
@@ -207,8 +237,23 @@ echo "$CMD" | grep -qE "${GH_MERGE}${ARG}--admin\b" && guarded adminMerge "gh pr
 # crew_config.py. This regex is deliberately the crude half: a tool that is not
 # listed here never reaches the resolver, so the list errs wide, and a match
 # here costs one python call and prints nothing unless a pattern matched.
-DB_TOOLS='(^|[[:space:];&|])(psql|mysql|mariadb|sqlcmd|mongosh|mongo|redis-cli|cqlsh)\b|\baws[[:space:]]+(rds|redshift|dynamodb|docdb)\b'
-SRV_TOOLS='(^|[[:space:];&|])(ssh|scp|plink|rsync)\b|\baws[[:space:]]+(ssm|ec2)\b'
+#
+# `([^[:space:];&|]*[/\\])?` is what makes the list err wide enough to cover the
+# SPELLING as well as the name. Both alternations required the executable to
+# follow whitespace or a separator, so `/usr/bin/ssh prod-web-1 ...` matched
+# neither and never reached the resolver -- prodServer was bypassed at `none`
+# by typing a path, and `classify_access` never got a say because it was never
+# called. It costs both directions: the same miss left `PROD_HIT` at 0, so
+# `/usr/bin/psql -h prod-db-1 ...` was refused by the unconfigurable rule below
+# even at `full`, a key that reads as configurable answering nothing.
+# `[/\\]` covers the Windows spelling too, and `\b` after the name already
+# allows the `.exe` suffix.
+#
+# The `aws` alternations are deliberately NOT given the prefix: `\baws` already
+# matches inside `/usr/local/bin/aws` -- `\b` fires at the `/`-to-`a` boundary
+# -- so adding one there would be a second way to say the same thing.
+DB_TOOLS='(^|[[:space:];&|])([^[:space:];&|]*[/\\])?(psql|mysql|mariadb|sqlcmd|mongosh|mongo|redis-cli|cqlsh)\b|\baws[[:space:]]+(rds|redshift|dynamodb|docdb)\b'
+SRV_TOOLS='(^|[[:space:];&|])([^[:space:];&|]*[/\\])?(ssh|scp|plink|rsync)\b|\baws[[:space:]]+(ssm|ec2)\b'
 PROD_HIT=0
 if echo "$CMD" | grep -qE "$DB_TOOLS"; then
   prod_guarded prodDatabase "this targets a database declared in production.databases."
@@ -338,7 +383,28 @@ if echo "$CMD" | grep -qiE "$SECRET_READ"; then
   # captured. Requiring the secret read to sit INSIDE the substitution, with no
   # command separator between, is the difference between "a capture happened"
   # and "this was captured".
-  if ! echo "$CMD" | grep -qiE "(^|[[:space:]]|;)(export[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*=[\"]?([$][(]|\`)[^;&|]*${SECRET_READ}"; then
+  #
+  # ...and that fix was still a question about ANY occurrence, which is the
+  # next rung: a command carrying TWO secret reads, the first captured and the
+  # second printed, satisfied it and printed the second. So this counts instead
+  # of matching -- every occurrence of the read must be carried by a capture,
+  # and one uncaptured occurrence is a refusal. `grep -o` counts matches rather
+  # than lines, which is the difference between "some" and "every".
+  #
+  # Deliberately NOT done by splitting the command on `;&|` and testing each
+  # piece: `A=$(... | jq -r .SecretString)` splits into a piece holding a
+  # secret read and no capture, and the refusal that follows is the same false
+  # block the `[^;&|]*` narrowing further up this file exists to prevent.
+  #
+  # The gap also excludes `)`, which the one-occurrence form did not need: a
+  # greedy `[^;&|]*` spanning `A=$(read1) B=$(read2)` matches ONCE where the
+  # command holds two captures, and the count would then refuse a command in
+  # which every value is captured. No real gap between `$(` and the tool name
+  # carries a `)`.
+  SECRET_HELD="(^|[[:space:]]|;)(export[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*=[\"]?([$][(]|\`)[^;&|)]*${SECRET_READ}"
+  SECRET_N=$(echo "$CMD" | grep -oiE "$SECRET_READ" | wc -l | tr -d '[:space:]')
+  HELD_N=$(echo "$CMD" | grep -oiE "$SECRET_HELD" | wc -l | tr -d '[:space:]')
+  if [ "${HELD_N:-0}" -lt "${SECRET_N:-1}" ]; then
     block "this prints a secret value into the transcript. Capture it instead, e.g. DB_PASS=\$(aws secretsmanager get-secret-value --secret-id NAME --query SecretString --output text)"
   fi
 fi

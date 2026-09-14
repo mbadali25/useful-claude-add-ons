@@ -6,6 +6,29 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`crew` 0.19.38: six ways a command was spelled past a guard.** Each is the
+  same shape - a spelling the guard did not recognise collapsing into the
+  safe-looking answer, with nothing saying a check had been skipped.
+  `env <write>` classified as a read, because `env` sat on the read-command
+  list and the classifier stopped at the executable name; it is a wrapper now,
+  and an `env` carrying `-i`, `-u`, `-S` or `--chdir` is unclassifiable rather
+  than clear. `ip link set eth0 down` classified as a read, because the
+  subcommand table is keyed on what `ip link` names, which is an object and not
+  a verb. `psql -c 'select 1' -c 'delete from orders'` was classified on its
+  first payload only, and psql, mysql and sqlcmd all take the flag more than
+  once. `/usr/bin/ssh prod-web-1 ...` reached no resolver in either flavour,
+  because both host-tool selectors required the executable to follow whitespace
+  or a separator - so `prodServer` was bypassed at `none` by typing a path, and
+  in the other direction an absolute-path `psql` was refused even at `full`.
+  A command carrying two secret reads, the first captured and the second
+  printed, satisfied a check that asked about ANY occurrence; both flavours
+  count now. And on Windows, Git Bash rewrote `--command '/usr/bin/ssh ...'`
+  into a native path before python saw it, so crew classified `Program` rather
+  than `ssh` and wrote a command nobody typed into `.crew/guard.log`.
+  Seven sabotage mutations, one per defect plus the `.ps1` twin of two, all
+  red; `plugin/crew/tests/test_guard_command_spelling.py` carries the
+  must-block and must-allow pair for each.
+
 - **`crew` 0.19.37: `verify-gate.ps1` ran every rule in one process and let
   each rule change the next one's world.** Measured on aws-managed-services on
   2026-09-13, where the gate failed at every Stop with `bash -n scripts/x.sh`,
