@@ -1,6 +1,6 @@
 # obsidian-vault
-anchor: useful-claude-add-ons@1f97e51c
-verified: 2026-09-06
+anchor: useful-claude-add-ons@34a333f0
+verified: 2026-09-14
 
 ## Does
 Turns one or more Obsidian vaults into Claude Code's durable memory: a PostToolUse guard that
@@ -124,14 +124,15 @@ violation visible at all. (JUDGEMENT.)
   ships - this repo's rule for a hook that can block. (DERIVED.)
 
 ## Measured this pass
-- `env -u MSYS_NO_PATHCONV bash plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh` on `main`
-  at `1f97e51c`, worktree `C:\repos\personal\useful-claude-add-ons`:
+- `env -u MSYS_NO_PATHCONV bash plugin/obsidian-vault/hooks/scripts/_test/run-tests.sh` re-run at
+  `34a333f0`, worktree `C:\repos\personal\useful-claude-add-ons\.claude\worktrees\codemap-refresh`:
   **RESULT: 65 passed, 0 failed.** (DERIVED - run, not inferred. `MSYS_NO_PATHCONV` is unset
   deliberately; CLAUDE.md records that leaving it set mangles the suite's paths and produces a
   false regression.)
-- Plugin version is `0.3.6` in both places that must agree:
+- Plugin version is `0.3.8` in both places that must agree:
   `plugin/obsidian-vault/.claude-plugin/plugin.json:3` and the `obsidian-vault` entry in
-  `.claude-plugin/marketplace.json`. (DERIVED.)
+  `.claude-plugin/marketplace.json:242`. (DERIVED - bumped from `0.3.6` between anchors; both
+  places still agree.)
 
 ## Unverified
 - `plugin/obsidian-vault/agents/gardener.md` and `plugin/obsidian-vault/agents/reflector.md` were
@@ -170,3 +171,13 @@ Re-read in full this pass: `plugin/obsidian-vault/hooks/hooks.json` (all 22 line
 matchers), and the marketplace entry. Every function range quoted above came from `ast.parse`
 printing `lineno`-`end_lineno`, not from counting `sed` output. The suite was executed rather than
 cited.
+
+**Re-anchored `1f97e51c` -> `34a333f0` on 2026-09-14.** The per-path diff over this note's cited
+paths flagged two moved files. `plugin/obsidian-vault/.claude-plugin/plugin.json` bumped
+`0.3.6` -> `0.3.8`; the marketplace entry moved with it (both re-read and re-cited above,
+`marketplace.json:242`). `plugin/obsidian-vault/hooks/scripts/vault_profiles.py` changed only in a
+comment - two client names in the reference-machine list were anonymized (`claude-anew-thd-codegraph`
+-> `claude-anew-acme-codegraph`, `claude-anew-theselectsource` -> `claude-anew-acme-select`) - and
+this note makes no claim that names or depends on those strings, so nothing here needed
+correction.
+The regression suite was re-run rather than assumed: still 65 passed, 0 failed.

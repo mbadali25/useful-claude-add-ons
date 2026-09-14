@@ -1,6 +1,6 @@
 # skills-itsm
-anchor: useful-claude-add-ons@1f97e51c
-verified: 2026-09-06
+anchor: useful-claude-add-ons@34a333f0
+verified: 2026-09-14
 
 ## Does
 `infra-work-ticketing` gets infrastructure work logged to ServiceDesk Plus or Jira through an MCP
@@ -125,6 +125,12 @@ text the note claims.
 
 **Also checked, outside this note's subsystem.** That the gizmoduck gate the carve-out names is real
 rather than aspirational: `plugin/gizmoduck/scripts/gizmoduck.py` implements `--yes DIGEST` with
-`_records_digest` at `:122-141`, binding the approval to the exact previewed batch, and refuses a
-stale or mismatched digest rather than treating it as a bare yes (`:475-479`). Recorded here only
+`_records_digest` at `:184-203`, binding the approval to the exact previewed batch, and refuses a
+stale or mismatched digest rather than treating it as a bare yes (`:974-980`). Recorded here only
 because the carve-out's meaning depends on it; the gizmoduck subsystem is documented elsewhere.
+
+**Re-anchored `1f97e51c` -> `34a333f0` on 2026-09-14.** One cited path moved:
+`plugin/gizmoduck/scripts/gizmoduck.py` had code inserted ahead of both citations above, shifting
+`_records_digest` from `:122-141` to `:184-203` and the stale/mismatched-digest refusal from
+`:475-479` to `:974-980`. Both were re-read at their new locations and still say what this note
+claims. No other claim in this note cites gizmoduck.py, so nothing else needed correcting.

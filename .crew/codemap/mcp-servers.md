@@ -1,6 +1,6 @@
 # mcp-servers
-anchor: useful-claude-add-ons@1f97e51c
-verified: 2026-09-06
+anchor: useful-claude-add-ons@34a333f0
+verified: 2026-09-14
 
 ## Does
 An npm workspace monorepo shipping four thin stdio MCP servers for Microsoft Graph, Intune and
@@ -113,3 +113,12 @@ when `o365-user` takes a different credential path; the `device` link was cited 
 
 Not re-verified: nothing was built, installed or executed beyond importing `checkPackage` as a
 library to read mtimes. No test suite was run.
+
+**Re-anchored `1f97e51c` -> `34a333f0` on 2026-09-14, re-anchor-only.** `git diff --name-only
+1f97e51c..34a333f0 -- mcp-servers/` shows one changed file, `mcp-servers/README.md`, which this note
+does not cite - zero of the ~25 `path:line` citations above changed. Body prose was left as written
+rather than rewritten. Spot-checked at this pass: `writeGate.ts:19-26` (still gates on
+`MCP_MS_ALLOW_WRITES` and `confirm: true` exactly as quoted) and the `check-dist-fresh.test.mjs`
+test count (`grep -c '^test(' mcp-servers/scripts/_test/check-dist-fresh.test.mjs` still returns
+14). The `1f97e51c` dates inside the Landmines section (2026-09-06 "re-verified unchanged") are
+historical records of that earlier pass and are left as written; this pass did not repeat them.
