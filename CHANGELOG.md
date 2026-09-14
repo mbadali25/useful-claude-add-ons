@@ -6,6 +6,34 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`crew` 0.19.35: two defects in 0.19.34, both one rung from the fix that
+  introduced them.** Found by a Rule of Two review, each reproduced before being
+  believed. This is CLAUDE.md's "re-review the fix to a guard as hard as the
+  guard" landing on the guard fix from the previous release.
+
+  `_CITED_PATH_RE` carried an extension allowlist — py, sh, ps1, yaml, json, md,
+  which is the set *this* repo contains — and it **failed open**. A map citing
+  `src/OrderService.cs:1` beside `appsettings.json` yielded only the json, so once
+  the C# moved the map reported `behind: []`. Any .NET, TypeScript, Go or
+  Terraform repo got a freshness signal structurally unable to see its own source,
+  and every fixpoint fixture used `.py` so the suite could not see it. Measured on
+  this repo, the widened pattern gives the `mcp-servers` map **10 TypeScript
+  files** it had been blind to. Existence is now the only gate, with a test that
+  widening did not turn every code span into a pathspec.
+
+  "A diagram cites no file paths" was **false**, and had been written into a code
+  comment as the justification for using the whole-tree deny-list. `crew-diagrams`
+  writes `%% Anchors: a/b.py, c/d.sh` for exactly this purpose. Measured here, 4
+  of 6 diagrams had **zero** changed files among their own declared anchors while
+  the deny-list called all 6 stale — so the wrong claim was also the reason the
+  count would not come down, and four correct diagrams would have been redrawn.
+  `diagramsStale` 6 → 2. A diagram with no anchors line still falls back to the
+  deny-list, asserted, since an empty pathspec would make every unanchored diagram
+  read current forever.
+
+  `knowledgeBehind` stays 8 — this repo is all `.py` and `.sh`, so the widened
+  pattern changes nothing here. It was never this repo the allowlist broke.
+
 - **`crew` 0.19.34: `knowledgeBehind` and `diagramsStale` had no fixpoint, so
   refreshing could never clear them.** Both compared `anchor == HEAD` and
   nothing else. `.crew/codemap/` and `docs/diagrams/` are **tracked**, so
