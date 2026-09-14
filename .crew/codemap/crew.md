@@ -1,10 +1,14 @@
-anchor: useful-claude-add-ons@975480b7
+anchor: useful-claude-add-ons@f9bb78a6
 verified: 2026-09-14
 Narrow pass, not a re-derivation: only the "Where every live count of crew's
 shape agrees" table (below) was re-read against its cited files at this
-anchor, because `f12003e2` (#166, "fix three stale self-describing counts")
-landed between the previous anchor and this one and changed three of the four
-places that table quotes. Everything else in this note carries forward from
+anchor, because `f9bb78a6` (#169, "Finish the crew skill-count sweep: fix the
+last three 17s, add plugin-skills marker") landed since the previous anchor
+and fixed the two places that table's previous pass had recorded as still
+wrong. Also re-read: `check_crew_ignore_policy`'s line citation
+(`scripts/check-marketplace.py`), which shifted because `f9bb78a6` inserted
+53 lines earlier in that file, inside/after `check_versions` and
+`check_self_claims`. Everything else in this note carries forward from
 `0a9d8937` unread.
 
 
@@ -133,6 +137,17 @@ The reusable rule, still followed here: a re-derivation cannot be verified by
 the thing doing the re-deriving. This pass's own "Citation freshness" section
 below is that check, run again.
 
+## Re-anchor provenance — 975480b7 -> f9bb78a6, 2026-09-14
+
+Narrow pass, not a re-derivation: `f9bb78a6` (#169) fixed the two places the
+"Where every live count of crew's shape agrees" table (below) had recorded
+as still stating 17 skills (`README.md:166` and `INSTALLATION.md:251`), plus
+a third the table had never carried a row for (`README.md:885`). Only that
+table, and the `check_crew_ignore_policy` citation that moved as a side
+effect of the same commit's edits to `scripts/check-marketplace.py`, were
+re-read against `f9bb78a6`; nothing else in this note was re-checked, and no
+other path was diffed.
+
 ## Re-anchor provenance — 0a9d8937 -> 975480b7, 2026-09-14
 
 Narrow pass, not a re-derivation: `f12003e2` (#166, "fix three stale
@@ -157,7 +172,10 @@ not.
 explanation, not just an outdated count.** `plugin/crew/skills/` holds **18**
 directories. The claim that 17 was correct because the count excludes
 `find-skills` (a vendored third-party skill — `plugin/crew/README.md:2359`
-confirms it is bundled, and its own `BUNDLING-NOTE.md:1` says the same) does
+confirms it is bundled, and its own
+`plugin/crew/skills/find-skills/BUNDLING-NOTE.md:3-4` says the same — "This
+is a third-party skill from the open skills ecosystem, vendored here at the
+user's request rather than installed with `npx skills add`") does
 not hold up against the primary artifact: `plugin/PLUGINS.md`'s own "Bundled
 skills" roster table lists `find-skills` as one of its rows, so the repo's own
 enumeration already counts it as one of the 17/18. The real defect was a
@@ -182,30 +200,38 @@ standing manager on neither list. 13 + 40 + 1 = 54, and the two-way check
 every roster name backed by a file) holds — same membership as the previous
 anchor, re-verified rather than assumed unchanged since `crew_state.py` moved.
 
-### Where every live count of crew's shape agrees — and where it no longer does
+### Where every live count of crew's shape agrees — FIXED at f9bb78a6
 
-**Re-read at this anchor** (975480b7), not swept fresh: `f12003e2` ("crew
-0.19.51: fix three stale self-describing counts", #166) landed between the
-previous anchor and this one and corrected the skill count in three of these
-four places from 17 to 18. It did not touch the root `README.md` or
-`INSTALLATION.md`, so those two still say 17. The table below is no longer
-one number agreed everywhere — it is 18 in three places and 17 in two.
+**Re-read at this anchor** (`f9bb78a6`). `f12003e2` ("crew 0.19.51: fix three
+stale self-describing counts", #166) corrected three of the five live places
+from 17 to 18 but left `README.md:166` and `INSTALLATION.md:251` untouched,
+plus never carried a row for `README.md:885`, a fourth place stating the same
+figure. `f9bb78a6` (#169, "Finish the crew skill-count sweep: fix the last
+three 17s, add plugin-skills marker") fixed all three the same day and added
+a `plugin-skills:<name>` marker type to `check_self_claims`
+(`scripts/check-marketplace.py:430-777`, the new branch at `:516-542`) that
+counts `plugin/<name>/skills/` on disk and checks marked numbers against it —
+the check `skills-count` never provided, because it only ever verified the
+marketplace-wide total. Every live site below now reads 18 and carries
+`<!-- claim: plugin-skills:crew -->`.
 
 | Place | Says |
 |---|---|
 | `.claude-plugin/marketplace.json:223` | 54 context-isolated agents (13 tiered, 40 domain specialists, and the standing manager), 26 slash commands, **18** bundled skills — fixed by `f12003e2` |
-| `plugin/PLUGINS.md:17` | 54 agents, 26 commands, **18** skills, 20 hook entries (10 scripts × `.sh`/`.ps1`) across 5 events — fixed by `f12003e2` |
-| `README.md:166`, `INSTALLATION.md:251` | 54 subagents, 26 slash commands, **17** bundled skills, 20 hook entries across 5 events — unchanged; `f12003e2` did not touch either file (confirmed: `git diff --name-only 0a9d8937..975480b7 -- README.md INSTALLATION.md` returns nothing) |
-| `scripts/install-prerequisites.sh:902`, `.ps1:856` | 54 agents, 26 commands — does not state a skill count, so it is not part of the split |
+| `plugin/PLUGINS.md:17` | 54 agents, 26 commands, **18** skills, 20 hook entries (10 scripts × `.sh`/`.ps1`) across 5 events — fixed by `f12003e2`, marker added by `f9bb78a6` |
+| `plugin/README.md:414` | 54 agents, 26 commands, **18** skills, 20 hook entries — same figure, marker added by `f9bb78a6` |
+| `README.md:166` | 54 subagents, 26 slash commands, **18** bundled skills, 20 hook entries across 5 events — **fixed by `f9bb78a6`**, marker-checked |
+| `README.md:885` | 54 agents, 26 commands, **18** skills, 20 hook entries — **fixed by `f9bb78a6`**, marker-checked (this row did not exist in the previous pass) |
+| `INSTALLATION.md:251` | 54 subagents, 26 slash commands, **18** bundled skills, 20 hook entries — **fixed by `f9bb78a6`**, marker-checked |
+| `scripts/install-prerequisites.sh:902`, `.ps1:856` | 54 agents, 26 commands — does not state a skill count, so it is not part of this table |
 
-Agent and command counts still agree everywhere. The skill count does not:
-three places read 18, two read 17, and nothing in this repo's own tooling
-would catch that split — `check-marketplace.py` has no reference to
-`ROLE_TIERS`, `SPECIALIST_ROLES`, or a command/skill count, so this table has
-always been maintained by hand, and the hand missed two of five places this
-time. This is a finding for the report, not a fix made in this note: bringing
-`README.md:166` and `INSTALLATION.md:251` to 18 is a source-file edit, not a
-codemap correction.
+Agent and command counts still agree everywhere, and the skill count now
+does too — five live sites, all reading 18, four of them (all but
+`.claude-plugin/marketplace.json`, which the `skills-count` marker already
+covers as part of the marketplace total) marker-checked by
+`check_self_claims`. Two changelog entries under versioned release headings
+(`plugin/README.md:370`, `README.md:591`) still read 17 and are correctly
+untouched — they are history, true when written.
 
 **JUDGEMENT, unchanged reasoning from the previous anchor:** this note does not
 list specialists by name. `SPECIALIST_ROLES` is the authority and cheap to
@@ -578,7 +604,9 @@ written one here yet, but it is not ignored — `git check-ignore` confirms the
 negation pattern matches it, not the block).
 
 `check_crew_ignore_policy`
-(`scripts/check-marketplace.py:727-891`) is the enforcer: it treats
+(`scripts/check-marketplace.py:780-944`, moved from `:727-891` — `f9bb78a6`
+#169 inserted 53 lines earlier in this file, inside/after `check_versions`
+and inside `check_self_claims`) is the enforcer: it treats
 `.gitignore` as the authority and checks that every file carrying a
 `crew-ignore-policy:list` marker states the identical set. **Six files carry
 that marker** per the function's own docstring at `:746-756`: `.gitignore` and

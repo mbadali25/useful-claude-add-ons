@@ -1,13 +1,19 @@
-anchor: useful-claude-add-ons@975480b7
+anchor: useful-claude-add-ons@f9bb78a6
 verified: 2026-09-14
-Re-anchor only, no content change: this pass ran
-`git diff --name-only 0a9d8937..975480b7 -- _verify/ .crew/verify.json
-scripts/check-marketplace.py plugin/crew/tests/ plugin/crew/hooks/` (the
-paths this note cites) and it returned nothing, so every claim below carries
-forward from `0a9d8937` unverified-but-unchanged rather than re-read. That
-per-path check was prompted by a skills-count correction made elsewhere in
-the codemap (`crew.md`, `marketplace-registration.md`, `repo-docs.md`); this
-note has no crew-bundle skill-count claim to correct.
+Narrow pass: `f9bb78a6` (#169, "Finish the crew skill-count sweep") touched
+`scripts/check-marketplace.py` (+53 lines, inside/after `check_versions` and
+inside `check_self_claims`) and `scripts/_test/self-claims.py`, both paths
+this note cites. Verified directly: `main()` still calls the same **eleven**
+check functions, in the same order — the release added a new claim type
+(`plugin-skills:<name>`) inside `check_self_claims`'s existing body, not a
+twelfth function call. Every citation into `check-marketplace.py` below that
+fell after the insertion point was re-read and re-pointed; citations at or
+above line 402 (`check_versions` and everything before it) did not move.
+`scripts/_test/self-claims.py` is cited nowhere in this note by name or line,
+so its growth (+111 lines, new test cases for the marker) needed no citation
+fix. Everything else in this note, including `_verify/`, `.crew/verify.json`
+and `plugin/crew/`, was not re-diffed this pass and carries forward from
+`975480b7` unread.
 
 History, from the `0a9d8937` pass, not re-verified at this anchor: that pass
 was "re-verified, not re-derived: every claim below was re-read against the
@@ -46,6 +52,34 @@ maps" section below, which replaces the previous, history-only account. The
 accurate statement remains: `.crew/verify.json` maps a changed path to the
 commands that verify it, and those commands are *often but not always* one of
 the three scripted layers.
+
+## Re-anchor provenance — 975480b7 -> f9bb78a6, 2026-09-14
+
+`git diff --name-only 975480b7..f9bb78a6 -- _verify/ .crew/verify.json
+scripts/check-marketplace.py plugin/crew/tests/ plugin/crew/hooks/` (the same
+five paths the previous pass checked) returns one:
+`scripts/check-marketplace.py`. Also touched by `f9bb78a6` but outside this
+note's cited-path list: `README.md`, `INSTALLATION.md`, `plugin/PLUGINS.md`,
+`plugin/README.md`, `scripts/_test/self-claims.py` — none of which this note
+cites.
+
+**Re-read directly rather than assumed:** `main()`
+(`scripts/check-marketplace.py:991-1021`, moved from `:938-968`) still calls
+the same eleven functions in the same order, at `:1000-1010` (moved from
+`:947-957`). The count did not change. What changed is internal to
+`check_self_claims` (`:430-777`, moved from `:412-...`): a new claim type,
+`plugin-skills:<name>`, recognised alongside the existing `skills-count` and
+`plugin-version:<name>` types, backed by a new helper `count_plugin_skills`
+(`:413-427`) that counts `SKILL.md`-bearing subdirectories of
+`plugin/<name>/skills/` directly from disk. This is a behavior change to one
+existing check, not an addition to `main()`'s eleven — see "`check_self_claims`
+gained a marker type" below for what it fixes and how it was proven.
+
+Every citation into `check-marketplace.py` at or below the insertion point
+(module-level regexes and everything inside/after `check_self_claims`) moved
+by a uniform **+53 lines**; everything at or above `check_versions`'s end
+(`:402`) did not move. Confirmed by reading `git show f9bb78a6 -- scripts/check-marketplace.py`'s
+three hunks, all opening at old line 405 or later, before applying the offset.
 
 ## Re-anchor provenance — 0a9d8937 -> 975480b7, 2026-09-14
 
@@ -176,19 +210,17 @@ for a run-time failure by the next reader.
 ## `scripts/check-marketplace.py` — the direct gate
 
 **DERIVED, re-read at this anchor because the file changed substantially.**
-`main()` is now `scripts/check-marketplace.py:938-968`, moved from `:377-405`.
-Its check calls are `:947-957`, in this order: `check_registration`,
+`main()` is now `scripts/check-marketplace.py:991-1021`, moved from
+`:938-968` (and from `:377-405` before that). Its check calls are
+`:1000-1010` (moved from `:947-957`), in this order: `check_registration`,
 `check_skill_manifests`, `check_plugin_manifests`, `check_catalogs`,
 `check_menu_parity`, `check_group_parity`, `check_docs`, `check_hook_commands`,
 `check_versions`, `check_self_claims`, `check_crew_ignore_policy`.
 
-That is **eleven** functions, not the nine this note previously corrected
-"eight" to. Two were added between the previous anchor and this one:
-`check_self_claims` (`3374e8e0`, #139) and `check_crew_ignore_policy`
-(`0a9d8937`, #161, this note's anchor as of the previous pass).
-`marketplace-registration.md` has
-been updated to the same figure in this pass — the two-notes disagreement this
-note used to flag no longer exists.
+That is still **eleven** functions — unchanged at `f9bb78a6` (#169), which
+only extended `check_self_claims`'s own body with a new claim type rather
+than adding a twelfth call. `marketplace-registration.md` has been updated to
+the same figure in this pass.
 
 All eleven run every time this script is invoked directly — see
 `marketplace-registration.md` for the correction to the "runs everything except
@@ -206,10 +238,35 @@ history walk alongside the full one (`:379`, `:385`) and `bump_candidates`
 (`:334-368`, new) to try version-bump candidates from both, because the
 single-parent walk went blind across a merge commit.
 
+### `check_self_claims` gained a marker type, not a new check
+
+**DERIVED, new at this anchor.** `f9bb78a6` (#169) added a third claim type
+to `check_self_claims` (`scripts/check-marketplace.py:430-777`): alongside
+`skills-count` (the marketplace-wide total) and `plugin-version:<name>`, it
+now recognises `plugin-skills:<name>` (`:516-542`), which counts
+`SKILL.md`-bearing subdirectories of `plugin/<name>/skills/` on disk via the
+new helper `count_plugin_skills` (`:413-427`) and fails if a marked number
+disagrees. The commit's own message states why: `skills-count` only ever
+verified the marketplace's total skill-plugin count, which is a different
+quantity from a bundled plugin's own skill count, so crew's bundle drifting
+from 17 to 18 on disk went uncaught through two correction passes
+(`f12003e2` #166, `b76ad19a` #168) even with the gate green throughout. Five
+sites are now marked with `<!-- claim: plugin-skills:crew -->`:
+`README.md:166`, `README.md:885`, `INSTALLATION.md:251`,
+`plugin/PLUGINS.md:17` and `plugin/README.md:414` — see
+`marketplace-registration.md` for what each said before and after.
+`scripts/_test/self-claims.py` grew by 111 lines of new unit cases for the
+type (confirmed present by `git show f9bb78a6 --stat`; not read line by
+line this pass).
+
+`main()`'s call count and order are unaffected — see the section above.
+This is a behavior change inside one existing check, not an addition to the
+eleven.
+
 ## `scripts/_test/crew-ignore-policy.py` — new sabotage suite, not yet wired locally
 
 **DERIVED, new at this anchor.** `check_crew_ignore_policy`
-(`scripts/check-marketplace.py:727-889`) is the newest of the eleven checks
+(`scripts/check-marketplace.py:780-942`, moved from `:727-889`) is the newest of the eleven checks
 `main()` runs; its own sabotage suite,
 `scripts/_test/crew-ignore-policy.py` (755 lines), asserts it three ways rather
 than one - counted by AST, not by trusting a header comment: **29** entries in
@@ -238,7 +295,7 @@ actually maps" below. It is also not one of `_verify/smoke.sh`'s eight covered
 functions, since `check_crew_ignore_policy` itself is not.
 
 `.crew/codemap/` is explicitly out of the check's scope
-(`scripts/check-marketplace.py:750-753`): a generated map restating the policy
+(`scripts/check-marketplace.py:803-806`, moved from `:750-753`): a generated map restating the policy
 would be fixed by regenerating it, not by editing it, so this note's own
 citations of the policy elsewhere (see `CLAUDE.md`'s `## Memory` section) are
 never something this gate checks.
@@ -395,7 +452,8 @@ its own header estimates minutes, not seconds (`_verify/run-all.sh:3`).
 - `plugin/crew/tests/test_crew_config.py:1488` (moved from `:1483`) — `test_resolve_config_inherits_a_global_through_the_init_template`, the END-TO-END null-shadow test. The helper-level tests above it pass with the call site deleted from `resolve_config`; this one does not. That gap was found by sabotage, not by review.
 - `plugin/crew/tests/test_crew_state.py:1016` (moved from `:968`) — `test_a_backslash_in_a_branch_name_is_flattened_too`, which catches the `[\/]+` character class that matched `/` alone.
 - `plugin/crew/tests/test_crew_state.py:1050` (moved from `:1002`) — `test_two_repos_with_the_same_basename_do_not_share_a_leaf`, the cross-repo worktree collision the security review raised.
-- `scripts/check-marketplace.py:727` — `check_crew_ignore_policy`, new at this anchor: the `.crew/` ignore-policy gate, sabotage-tested by `scripts/_test/crew-ignore-policy.py` (see below).
+- `scripts/check-marketplace.py:780` (moved from `:727`) — `check_crew_ignore_policy`: the `.crew/` ignore-policy gate, sabotage-tested by `scripts/_test/crew-ignore-policy.py` (see below).
+- `scripts/check-marketplace.py:430` (moved from `:412`) — `check_self_claims`, unchanged in scope beyond the `plugin-skills:<name>` marker type `f9bb78a6` (#169) added (see above).
 
 ## Owns data
 
