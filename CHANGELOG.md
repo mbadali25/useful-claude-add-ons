@@ -6,7 +6,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
-- **`crew` 0.19.39: a config crew could not read was read as a config that
+- **`crew` 0.19.40: a config crew could not read was read as a config that
   permitted.** Three defects, one shape - the state "crew does not know" had no
   value of its own, so each collapsed into the value that permits.
   `production.hosts: "prod-web-*"`, a string where a list belongs and the single
@@ -39,7 +39,20 @@ All notable changes to this repository are documented here. Format follows [Keep
   from bare `.crew/` presence, and `heal_config` wrote a full default config
   into a repo that never opted in.
   `crew_guards.py` is unchanged: the unknown is kept away from `prod_decision`
-  rather than taught to it. Five new sabotage mutations, all red.
+  rather than taught to it. Six new sabotage mutations, all red.
+
+  0.19.39 was this change with one defect still in it, caught by CI and never
+  released: `production_declaration` opens `.crew/config.json`, and when
+  `.crew` is itself a plain FILE the two platforms raise different exceptions
+  for that one tree - POSIX `NotADirectoryError`, Windows `FileNotFoundError`.
+  Only the second was caught, so the state came back `absent` on Windows and
+  `unreadable` on Linux, and `unreadable` blocks every `ssh` at
+  `prodServer: none` in a repo that never opted in. Both read `absent` now,
+  which is what `crew_platform.main` means by a root - a `.crew/` DIRECTORY -
+  while a directory in place of the config FILE is still `unreadable`. The
+  test that should have caught it built the tree and let the platform pick the
+  exception, so it could only exercise the runner's own OS; the new pair
+  raises each explicitly.
 
 - **`crew` 0.19.38: six ways a command was spelled past a guard.** Each is the
   same shape - a spelling the guard did not recognise collapsing into the
