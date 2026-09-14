@@ -6,6 +6,43 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`crew` 0.19.42: a rule crew could not represent was split, not refused.**
+  The ordered rule list was newline-delimited text, so a `run` entry in
+  `.crew/verify.json` carrying a newline split into two rules and the second
+  half ran as a command nobody wrote. Four readers had the same shape:
+  `verify-gate.sh`, `verify-gate.ps1`, and `crew-setup`'s `resolve-tools.sh`
+  and `map-audit.sh`. The REJECTION is the fix and the separator is the belt -
+  all four refuse any `run` / `always` / `default` entry (plus
+  `environments[].{deploy,smoke,regression,verify}` in `resolve-tools.sh`)
+  containing `
+`, ``, `` or ``, with an identical named
+  `PARSE_ERROR` naming the entry, the character and the entry's opening text;
+  `verify-gate.sh` then frames its records with `` between and ``
+  inside. `verify-gate.ps1` never had the framing bug - it reads objects, not
+  text - but takes the same rejection, because without it the same map blocks
+  the turn on bash and passes on PowerShell. A `2>/dev/null` in
+  `resolve-tools.sh` that would have swallowed the refusal is gone.
+  Separately, three NON-CONTENTION lock collapses in both flavours - `mkdir`
+  failing with no lock directory present, the lock path being a regular file,
+  and a lock directory whose age cannot be read - each read as "someone holds
+  the lock" and exited 0, which is the stale-lock fail-open that made a manual
+  re-run exit 0 in under a second. Each now runs the checks WITHOUT the lock
+  and says so on stderr.
+  Still open, deliberately: a lock left by a HARD-KILLED holder stands later
+  gates down for the rest of the 700 s age window. The obvious narrowing is a
+  same-flavour PID liveness check, and its premise was measured false here - a
+  bash process was started, its `$$` recorded, hard-killed, and a second bash
+  asked `kill -0 <pid>` at +0.5 s, +5 s and +15 s; all three reported the dead
+  process ALIVE, while a pid that never existed correctly reported "No such
+  process". Shipping that check would turn "could not tell" into a confident
+  "the holder is alive". The measurement is recorded in `verify-gate.sh` and in
+  both lock test docstrings instead of the check.
+  0.19.41 was this change with its CHANGELOG committed CRLF into a blob this
+  repo stores LF, which turns every later diff of this file into a whole-file
+  rewrite. Renormalised here rather than by amending the pushed commit: the
+  force push that would have taken is refused by `guard.sh`, correctly, and
+  fixing forward costs one version number and no rewritten history.
+
 - **`crew` 0.19.40: a config crew could not read was read as a config that
   permitted.** Three defects, one shape - the state "crew does not know" had no
   value of its own, so each collapsed into the value that permits.
