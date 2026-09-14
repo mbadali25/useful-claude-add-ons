@@ -8,6 +8,42 @@ python3 - << 'PY'
 import json, os, glob, re, sys
 
 vm = json.load(open(".crew/verify.json"))
+
+# A command is ONE LINE. The same rule verify-gate.sh and resolve-tools.sh
+# enforce over the same map, refused in the same words: three readers of `run`
+# that disagree about what a rule IS would let setup write a map the gate then
+# refuses at the end of a turn. Here the symptom was a false report rather than
+# a skipped check - the `.sh|.py|...` token scan below runs over the joined
+# text, so half of a multi-line entry reads as a filename and is reported under
+# "rules pointing at files that do not exist", sending the reader after a file
+# nobody named. A report drawn from a map crew cannot represent is not a
+# report, so this refuses to print one.
+FRAMING = {"\n": "a newline", "\r": "a carriage return",
+           "\x1d": "an ASCII group separator (0x1d)",
+           "\x1e": "an ASCII record separator (0x1e)"}
+
+def reject_unrepresentable(where, entries):
+    if not isinstance(entries, list):
+        return
+    for i, c in enumerate(entries):
+        if not isinstance(c, str):
+            continue
+        for ch, name in FRAMING.items():
+            if ch in c:
+                head = c.split(ch, 1)[0].strip()[:60]
+                print(f"PARSE_ERROR: .crew/verify.json {where}[{i}] contains "
+                      f"{name}, so crew cannot represent it as one command. "
+                      f"The entry begins: {head!r}. Split it into separate "
+                      f"entries, or move it into a script and call that.",
+                      file=sys.stderr)
+                sys.exit(4)
+
+for ri, rule in enumerate(vm.get("rules", []) or []):
+    if isinstance(rule, dict):
+        reject_unrepresentable(f"rules[{ri}].run", rule.get("run"))
+reject_unrepresentable("always", vm.get("always"))
+reject_unrepresentable("default", vm.get("default"))
+
 cmds = []
 for r in vm.get("rules", []): cmds += r.get("run", [])
 cmds += vm.get("always", []) + vm.get("default", [])
@@ -66,3 +102,13 @@ print("Check before acting: a runner that globs a directory (pytest, playwright)
 print("may cover files this cannot see - but a restrictive --grep or -k means it")
 print("does not, which is exactly the gap worth finding.")
 PY
+STATUS=$?
+# Exit 4 is the ONLY status meaning "the map names a command crew cannot
+# represent"; the PARSE_ERROR above says which entry. Translated to 2 so this
+# script agrees with verify-gate.sh and resolve-tools.sh on the exit code as
+# well as on the message. Still read-only: nothing was written either way.
+if [ "$STATUS" -eq 4 ]; then
+  echo "map-audit: refusing to audit .crew/verify.json - it names a command crew cannot represent (see the PARSE_ERROR above). Fix that entry first; verify-gate.sh refuses the same map." >&2
+  exit 2
+fi
+exit "$STATUS"

@@ -26,6 +26,21 @@ double-run, by this script's own header. Age comes from the lock directory's
 own creation stamp now, and the holder removes its own lock as the engine
 exits.
 
+**Backing off is not passing, so exit 0 needs an actual holder.** `New-Item
+-ItemType Directory` fails for a path that is already a FILE, for an
+unwritable `.crew` and for a read-only tree exactly as it fails for "already
+there", and all of them read as "someone else is working". Measured on the
+bash twin, where the same collapse was the same shape: with `.crew` present as
+a file the gate exited 0 in 0.65s on every turn, for ever, with nothing on
+stderr. The two cases at the bottom of this file are the must-block half of
+that fix; the four backoff cases above them are the must-allow half and are
+unchanged.
+
+**What is still open, deliberately:** a lock directory left by a hard-killed
+holder still backs later gates off for the rest of the age window. See the
+bash twin's docstring for the measurement that rules out a pid-based
+narrowing.
+
 Windows + pwsh only: POSIX has no sibling .ps1 to race against, so the lock
 is only reachable through this script there.
 """
@@ -202,6 +217,40 @@ def test_the_lock_never_records_a_pid(tmp_path):
 
     assert "pid" not in names, f"the lock records a PID again: {names}"
     assert names == ["token"], names
+
+
+def test_a_lock_path_that_is_a_file_does_not_stand_the_gate_down(tmp_path):
+    """Nothing holds a regular file, so a lock path that is one leaves no
+    holder to wait for. It used to read as held, and the gate exited 0 for
+    the whole age window against a verify.json a running gate exits 2 on."""
+    root = _repo(tmp_path)
+    _lock(root).write_text("not a directory\n", encoding="utf-8")
+
+    result = _run_verify(root)
+
+    assert result.returncode == 2, f"stdout: {result.stdout} stderr: {result.stderr}"
+    assert "could not be parsed" in result.stderr, result.stderr
+    assert "WITHOUT the lock" in result.stderr, result.stderr
+
+
+def test_a_crew_directory_that_is_a_file_does_not_stand_the_gate_down(tmp_path):
+    """The permanent version of the same collapse: with `.crew` itself a
+    file the lock can never be created, so the gate exited 0 on EVERY turn
+    with nothing on stderr. The checks have to run."""
+    root = _repo(tmp_path)
+    # No .crew means no verify.json, so the gate takes the smoke path -- which
+    # sits after the lock and is what proves the lock was not what stopped it.
+    shutil.rmtree(root / ".crew")
+    (root / ".crew").write_text("not a directory\n", encoding="utf-8")
+    (root / "_verify").mkdir()
+    (root / "_verify" / "smoke.sh").write_text(
+        "echo FAIL: deliberate\nexit 1\n", encoding="utf-8", newline="\n")
+
+    result = _run_verify(root)
+
+    assert result.returncode == 2, f"stdout: {result.stdout} stderr: {result.stderr}"
+    assert "Smoke FAILED" in result.stderr, result.stderr
+    assert "WITHOUT the lock" in result.stderr, result.stderr
 
 
 def test_an_open_incident_stands_down_without_claiming_the_lock(tmp_path):

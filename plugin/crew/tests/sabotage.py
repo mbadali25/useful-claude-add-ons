@@ -109,6 +109,17 @@ GUARD_PS1 = os.path.join(CREW, "hooks", "scripts", "guard.ps1")
 # flavour, and "one flavour stands down and nothing notices" is this plugin's
 # recurring failure rather than a hypothetical one.
 PROMOTE_PS1 = os.path.join(CREW, "hooks", "scripts", "promote-gate.ps1")
+# The Stop gate and its matched PowerShell pair, plus the two setup scripts
+# that read the same `.crew/verify.json`. Four files rather than one because
+# "a `run` entry is one command" is a claim about the MAP, and a rule the gate
+# refuses while setup happily resolves it is the disagreement the rejection
+# exists to remove -- so each reader is sabotaged separately.
+VERIFY_SH = os.path.join(CREW, "hooks", "scripts", "verify-gate.sh")
+VERIFY_PS1 = os.path.join(CREW, "hooks", "scripts", "verify-gate.ps1")
+RESOLVE_TOOLS = os.path.join(
+    CREW, "skills", "crew-setup", "scripts", "resolve-tools.sh")
+MAP_AUDIT = os.path.join(
+    CREW, "skills", "crew-setup", "scripts", "map-audit.sh")
 # Split out of `crew_state.py` on 2026-09-13 -- see its docstring. Five
 # mutations below moved here with the code they target; none was
 # re-anchored onto a nearby line, which this file's own header forbids.
@@ -2238,6 +2249,110 @@ MUTATIONS = (
         "  if ($heldCount -lt 1) {",
         ("tests/test_guard_command_spelling.py::"
          "test_ps1_every_secret_read_must_be_captured"),
+    ),
+    (
+        # The state the whole framing fix exists for. Without the rejection a
+        # `run` entry carrying a newline is half a command: the matcher's
+        # record boundary moves, and the rest of the rule is reported as an
+        # unmapped PATH rather than run. Measured on a fixture whose rule was
+        # ["echo first\necho second", "exit 1"]: with "unmapped": "warn" the
+        # gate exited 0 while the rule contained `exit 1`.
+        #
+        # The paired test asserts the MESSAGE, not the status, and that is the
+        # point of this entry. Under this mutation the fixture still exits 2 --
+        # the \x1d separator keeps the entry whole and the read loop then evals
+        # `exit 1` for real -- so a test pinned to the exit code alone would be
+        # green with the defect restored, which is the vacuous shape this
+        # file's own header is about.
+        "the Stop gate stops rejecting a `run` entry it cannot represent",
+        VERIFY_SH,
+        'for ri, rule in enumerate(cfg.get("rules", []) or []):\n'
+        "    if isinstance(rule, dict):\n"
+        '        reject_unrepresentable(f"rules[{ri}].run", rule.get("run"))\n'
+        'reject_unrepresentable("always", cfg.get("always"))\n'
+        'reject_unrepresentable("default", cfg.get("default"))',
+        "pass",
+        ("tests/test_verify_gate_rule_framing.py::"
+         "test_a_multiline_run_entry_is_refused_by_name"),
+    ),
+    (
+        # The belt, restored to the newline it used to be. NO INPUT CAN REACH
+        # IT once the rejection above is in place, which is exactly why the
+        # test it is paired with reads the source rather than driving the
+        # script: every behavioural case in that file stays green under this
+        # mutation, because no command is allowed to contain a newline any
+        # more. Written down rather than dropped -- the separator is what
+        # holds if the rejection is ever narrowed, and a defence with no
+        # mutation is a defence nobody notices going.
+        "the matcher's record separator goes back to a newline",
+        VERIFY_SH,
+        'sys.stdout.write("\\x1e".join(cmds) + "\\x1d" '
+        '+ "\\x1e".join(unmatched) + "\\n")',
+        'print("\\x1e".join(cmds))\nprint("\\x1e".join(unmatched))',
+        ("tests/test_verify_gate_rule_framing.py::"
+         "test_the_two_halves_of_the_framing_contract_agree"),
+    ),
+    (
+        # "I could not create a lock" collapsing back into "someone holds the
+        # lock" -- this repo's named recurring bug, in the one place where the
+        # consequence is the entire gate silently off. `mkdir` fails for
+        # ENOTDIR and EACCES exactly as it fails for EEXIST, and with `.crew`
+        # present as a file the gate exited 0 in 0.65s on every turn, for
+        # ever, with nothing on stderr.
+        "a lock that could not be created reads as a lock someone holds",
+        VERIFY_SH,
+        '    echo "VERIFY GATE: could not create the lock at $LOCK and '
+        "nothing is holding it (is .crew a file, read-only, or is the lock "
+        "path not a directory?). No other gate can be waited for, so the "
+        'checks are running WITHOUT the lock - at worst they run twice this '
+        'turn." >&2\n'
+        "    UNLOCKED=1\n"
+        "  else\n",
+        "    exit 0\n  else\n",
+        ("tests/test_verify_gate_lock_sh.py::"
+         "test_a_lock_path_that_is_a_file_does_not_stand_the_gate_down"),
+    ),
+    (
+        # The matched pair's half. verify-gate.ps1 never had the framing bug
+        # -- it reads objects, not text -- so this is not a duplicate of the
+        # first entry: it is the claim that the PAIR agrees. With the refusal
+        # gone the same map blocks the turn on bash and passes it here.
+        #
+        # The fixture still exits 2 under this mutation, because `bash -c`
+        # runs both halves and the second rule is `exit 1`. The status
+        # assertion therefore still passes and only the message assertion
+        # catches it, which is the shape this file's header asks for.
+        "the PowerShell gate stops rejecting a `run` entry it cannot "
+        "represent",
+        VERIFY_PS1,
+        "if ($null -ne $bad) {\n  [Console]::Error.WriteLine($bad)",
+        "if ($false) {\n  [Console]::Error.WriteLine($bad)",
+        ("tests/test_verify_gate_rule_framing.py::"
+         "test_the_powershell_gate_refuses_the_same_map_by_name"),
+    ),
+    (
+        # Setup's half. resolve-tools.sh writes the table a user pastes back
+        # into verify.json, and a multi-line entry tokenised into junk came
+        # out as MISSING TOOLS -- names nobody wrote, beside real ones. The
+        # python still exits 4 under this mutation; the shell just stops
+        # acting on it, which is how a fail-closed check usually dies.
+        "resolve-tools ignores the refusal and prints a table anyway",
+        RESOLVE_TOOLS,
+        '    if [ "$PY_STATUS" -eq 4 ]; then',
+        "    if false; then",
+        ("tests/test_verify_gate_rule_framing.py::"
+         "test_resolve_tools_refuses_the_same_map_by_name"),
+    ),
+    (
+        # The third reader. map-audit.sh's token scan reads half a multi-line
+        # entry as a filename and files it under "rules pointing at files that
+        # do not exist", so the reader goes hunting a file nobody named.
+        "map-audit ignores the refusal and prints a drift report anyway",
+        MAP_AUDIT,
+        'if [ "$STATUS" -eq 4 ]; then',
+        "if false; then",
+        ("tests/test_verify_gate_rule_framing.py::"
+         "test_map_audit_refuses_the_same_map_by_name"),
     ),
 )
 

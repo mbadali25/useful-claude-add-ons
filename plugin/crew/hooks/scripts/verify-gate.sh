@@ -159,36 +159,89 @@ fi
 # two would otherwise wedge the gate for every later turn. A lock older than
 # 700s (comfortably above the hook's own 600s timeout) is one whose holder
 # was hard-killed before its trap ran, and is reclaimed.
+#
+# BACKING OFF IS NOT PASSING, so every path that exits 0 here has to have
+# seen an actual holder. `mkdir` failing is not that evidence on its own: it
+# fails for ENOTDIR, EACCES and a read-only filesystem exactly as it fails
+# for EEXIST, and the first version of this block read every one of them as
+# "someone else is working". Measured in a fixture: with `.crew` present as a
+# FILE the gate exited 0 in 0.65s on every turn, for ever, against a
+# verify.json a running gate exits 2 on -- the whole point of the gate,
+# silently off, with nothing on stderr to say so. With the lock path itself a
+# file it did the same for the 700s window. So the three questions are kept
+# apart below, and only the first of them may back off:
+#
+#   1. A lock DIRECTORY is there      -> a holder plausibly exists.
+#   2. mkdir failed and none is there -> no holder; there is no lock to wait
+#                                        for. Run the checks unlocked and say
+#                                        so. The worst case is the double-run
+#                                        this lock exists to avoid, which the
+#                                        header already ranks below a silent
+#                                        skip.
+#   3. A directory whose age is unreadable -> undatable, so it cannot be told
+#                                        from a corpse. Same answer as 2, and
+#                                        loudly, rather than a permanent
+#                                        silent stand-down.
+#
+# WHAT THIS DOES NOT FIX, and the measurement is the reason. Case 1 is still
+# only plausible, not proven: a lock DIRECTORY left behind by a hard-killed
+# holder backs every later gate off for the rest of the age window, so a
+# manual re-run exits 0 in under a second with nothing on stderr. The obvious
+# narrowing is to read the pid out of the token and ask whether that process
+# is alive -- only for a token THIS flavour wrote, so the cross-namespace
+# objection above would not apply. It does not work on the platform it would
+# have to work on. Measured 2026-09-13 on Git for Windows bash: a bash process
+# was started, its `$$` recorded, hard-killed, and a SECOND bash asked
+# `kill -0 <that pid>` at +0.5s, +5s and +15s. All three reported the dead
+# process ALIVE (exit 0), while a pid that never existed correctly reported
+# "No such process". A same-flavour liveness check would therefore read every
+# corpse as a live holder -- it would never reclaim, and the one time it fired
+# it would be on evidence that does not hold. The age window stays the only
+# answer for a lock directory that can be dated.
 LOCK=".crew/.verify-gate.lock"
 LOCK_TTL=700
 RECLAIMED=0
+# Set when the checks run with no lock held. Nothing is cleaned up on that
+# path -- no token is written, so the trap has nothing to match and another
+# process's lock is never removed on a guess.
+UNLOCKED=0
 # GNU stat and BSD stat spell this differently and neither accepts the
 # other's flag; `date -r` is not portable here either, since BSD `date -r`
 # reads its argument as epoch seconds rather than as a file.
 lock_mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null; }
 mkdir -p .crew 2>/dev/null
 if ! mkdir "$LOCK" 2>/dev/null; then
-  HOLDER_AT=$(lock_mtime "$LOCK" | tr -dc '0-9')
-  # Unreadable mtime: assume held rather than reclaim on a guess.
-  [ -z "$HOLDER_AT" ] && exit 0
-  NOW=$(date +%s)
-  [ $((NOW - HOLDER_AT)) -le "$LOCK_TTL" ] 2>/dev/null && exit 0
-  rm -rf "$LOCK" 2>/dev/null
-  mkdir "$LOCK" 2>/dev/null || exit 0
-  RECLAIMED=1
+  if [ ! -d "$LOCK" ]; then
+    echo "VERIFY GATE: could not create the lock at $LOCK and nothing is holding it (is .crew a file, read-only, or is the lock path not a directory?). No other gate can be waited for, so the checks are running WITHOUT the lock - at worst they run twice this turn." >&2
+    UNLOCKED=1
+  else
+    HOLDER_AT=$(lock_mtime "$LOCK" | tr -dc '0-9')
+    if [ -z "$HOLDER_AT" ]; then
+      echo "VERIFY GATE: a lock directory is present at $LOCK but its age cannot be read, so a live holder cannot be told from one that was killed. The checks are running WITHOUT the lock rather than standing down for a holder that may not exist." >&2
+      UNLOCKED=1
+    else
+      NOW=$(date +%s)
+      [ $((NOW - HOLDER_AT)) -le "$LOCK_TTL" ] 2>/dev/null && exit 0
+      rm -rf "$LOCK" 2>/dev/null
+      mkdir "$LOCK" 2>/dev/null || exit 0
+      RECLAIMED=1
+    fi
+  fi
 fi
-# A token of our own, so a SECOND reclaimer that deleted our fresh lock and
-# took its own is detectable: whoever's token is on disk once both have
-# written owns the turn, and the other backs off instead of both running.
-LOCK_TOKEN="sh-$$-$(date +%s)-${RANDOM:-0}"
-trap 'if [ "$(cat "$LOCK/token" 2>/dev/null)" = "$LOCK_TOKEN" ]; then rm -rf "$LOCK" 2>/dev/null; fi' EXIT INT TERM
-printf '%s\n' "$LOCK_TOKEN" > "$LOCK/token" 2>/dev/null
-# Only the reclaim path can race another reclaimer; the plain-mkdir winner
-# cannot be clobbered, since its lock is far too young for anyone to reclaim.
-# Do not tax the common path with the settle wait.
-if [ "$RECLAIMED" -eq 1 ]; then
-  sleep 1
-  [ "$(cat "$LOCK/token" 2>/dev/null)" = "$LOCK_TOKEN" ] || exit 0
+if [ "$UNLOCKED" -eq 0 ]; then
+  # A token of our own, so a SECOND reclaimer that deleted our fresh lock and
+  # took its own is detectable: whoever's token is on disk once both have
+  # written owns the turn, and the other backs off instead of both running.
+  LOCK_TOKEN="sh-$$-$(date +%s)-${RANDOM:-0}"
+  trap 'if [ "$(cat "$LOCK/token" 2>/dev/null)" = "$LOCK_TOKEN" ]; then rm -rf "$LOCK" 2>/dev/null; fi' EXIT INT TERM
+  printf '%s\n' "$LOCK_TOKEN" > "$LOCK/token" 2>/dev/null
+  # Only the reclaim path can race another reclaimer; the plain-mkdir winner
+  # cannot be clobbered, since its lock is far too young for anyone to reclaim.
+  # Do not tax the common path with the settle wait.
+  if [ "$RECLAIMED" -eq 1 ]; then
+    sleep 1
+    [ "$(cat "$LOCK/token" 2>/dev/null)" = "$LOCK_TOKEN" ] || exit 0
+  fi
 fi
 
 if [ ! -f .crew/verify.json ]; then
@@ -224,6 +277,53 @@ except (OSError, ValueError) as e:
     print(f"PARSE_ERROR: {e}", file=sys.stderr)
     sys.exit(3)
 
+# A command is ONE LINE, and a command that is not is REJECTED rather than
+# split or quietly accepted. Two separate places assume it:
+#
+#   1. This matcher returns two records - the commands, and the paths no rule
+#      matched - down one text channel. A `\n` inside a command moved the
+#      record boundary, so the rest of that command and EVERY command after it
+#      landed in the unmapped record and never ran.
+#   2. The caller feeds the command record to `eval` from a line-oriented read
+#      loop, which would split a surviving multi-line command into separately
+#      evaled lines even with the boundary right.
+#
+# Measured on a fixture with run = ["echo first\necho second", "exit 1"]:
+# with "unmapped": "warn" the gate exited 0 while the rule contained `exit 1`;
+# with "fail" it exited 2 but named `echo second` and `exit 1` as unmapped
+# PATHS, pointing the reader at files that do not exist.
+#
+# So: a rule crew cannot represent is not a rule that passed. The separators
+# below are the belt; this rejection is the braces, and it names the entry.
+# The set is every character that can move a record or line boundary - the two
+# separators included, since a command carrying one would split exactly the
+# way a newline used to.
+FRAMING = {"\n": "a newline", "\r": "a carriage return",
+           "\x1d": "an ASCII group separator (0x1d)",
+           "\x1e": "an ASCII record separator (0x1e)"}
+
+def reject_unrepresentable(where, entries):
+    if not isinstance(entries, list):
+        return
+    for i, c in enumerate(entries):
+        if not isinstance(c, str):
+            continue
+        for ch, name in FRAMING.items():
+            if ch in c:
+                head = c.split(ch, 1)[0].strip()[:60]
+                print(f"PARSE_ERROR: .crew/verify.json {where}[{i}] contains "
+                      f"{name}, so crew cannot represent it as one command. "
+                      f"The entry begins: {head!r}. Split it into separate "
+                      f"entries, or move it into a script and call that.",
+                      file=sys.stderr)
+                sys.exit(4)
+
+for ri, rule in enumerate(cfg.get("rules", []) or []):
+    if isinstance(rule, dict):
+        reject_unrepresentable(f"rules[{ri}].run", rule.get("run"))
+reject_unrepresentable("always", cfg.get("always"))
+reject_unrepresentable("default", cfg.get("default"))
+
 def matches(path, pat):
     # fnmatch's * spans '/', so '**/*.tf' demands a literal slash and silently
     # skips every root-level file - exactly the ones a Terraform module keeps
@@ -245,8 +345,12 @@ for f in changed:
 for c in cfg.get("always",[]):
     if c not in cmds: cmds.append(c)
 if not cmds: cmds = cfg.get("default",[])
-print("\x1e".join(cmds))
-print("\x1e".join(unmatched))
+# Two records down one channel. The RECORD separator is \x1d (ASCII group
+# separator) and the FIELD separator inside each record is \x1e; neither can
+# appear in a command, because reject_unrepresentable above refused the map
+# outright if one did. It used to be a bare newline, which a command
+# containing one silently moved.
+sys.stdout.write("\x1e".join(cmds) + "\x1d" + "\x1e".join(unmatched) + "\n")
 PY
 )
 PY_STATUS=$?
@@ -259,12 +363,23 @@ rm -f "$CHANGED_FILE"
 if [ "$PY_STATUS" -eq 3 ]; then
   echo "VERIFY GATE: .crew/verify.json could not be parsed. Verification did NOT run. Work is not complete." >&2
   exit 2
+elif [ "$PY_STATUS" -eq 4 ]; then
+  # Exit 4 is the OTHER kind of bad map: it parsed as JSON, and one of its
+  # commands cannot be represented as a single command. The PARSE_ERROR line
+  # above names the entry. A separate status from 3 because the two send the
+  # reader to different places - a JSON error is a typo anywhere in the file,
+  # this is one named entry that has to be rewritten.
+  echo "VERIFY GATE: .crew/verify.json names a command crew cannot represent (see the PARSE_ERROR above for which one and why). Verification did NOT run. Work is not complete." >&2
+  exit 2
 elif [ "$PY_STATUS" -ne 0 ]; then
   echo "VERIFY GATE: could not RUN the matcher - python exited $PY_STATUS before parsing. .crew/verify.json was NOT shown to be invalid; do not go looking for corruption there. Verification did NOT run. Work is not complete." >&2
   exit 2
 fi
-CMDS=$(echo "$MATCHED" | sed -n 1p | tr '\036' '\n')
-UNMAPPED=$(echo "$MATCHED" | sed -n 2p | tr '\036' '\n')
+# \035 is the record separator the matcher wrote between the two records, and
+# \036 the field separator inside each. `sed -n 1p` used to take the first
+# NEWLINE-delimited line, which is what a command containing a newline moved.
+CMDS=$(printf '%s\n' "$MATCHED" | tr '\035' '\n' | sed -n 1p | tr '\036' '\n')
+UNMAPPED=$(printf '%s\n' "$MATCHED" | tr '\035' '\n' | sed -n 2p | tr '\036' '\n')
 
 FAILED=0
 while IFS= read -r c; do

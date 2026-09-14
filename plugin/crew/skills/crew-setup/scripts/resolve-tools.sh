@@ -23,11 +23,54 @@ TOOLS="$*"
 if [ -z "$TOOLS" ]; then
   if [ -f .crew/verify.json ] && [ -n "$PY" ]; then
     # First bare word of every command in every `run` / environment list.
-    TOOLS=$("$PY" - <<'PY' 2>/dev/null
-import json, os, re, shlex
+    #
+    # stderr is NOT redirected to /dev/null here any more. It used to be, and
+    # that is what turned an unreadable map into "nothing to resolve": the
+    # named refusal below would have gone to the same place as a traceback.
+    TOOLS=$("$PY" - <<'PY'
+import json, os, re, shlex, sys
 seen, out = set(), []
 try: cfg = json.load(open(".crew/verify.json"))
 except Exception: raise SystemExit
+
+# A command is ONE LINE. The same rule verify-gate.sh enforces, for the same
+# map, refused in the same words -- the three readers of `run` have to agree,
+# or setup writes a verify.json the gate then refuses at the end of a turn.
+# Here the symptom was different and just as quiet: `scan` splits on shell
+# operators, not on newlines, so a multi-line entry was tokenised into junk
+# tool names and reported as MISSING TOOLS -- names nobody wrote, next to real
+# ones, in the table a user copies into verify.json.
+FRAMING = {"\n": "a newline", "\r": "a carriage return",
+           "\x1d": "an ASCII group separator (0x1d)",
+           "\x1e": "an ASCII record separator (0x1e)"}
+
+def reject_unrepresentable(where, entries):
+    if not isinstance(entries, list):
+        return
+    for i, c in enumerate(entries):
+        if not isinstance(c, str):
+            continue
+        for ch, name in FRAMING.items():
+            if ch in c:
+                head = c.split(ch, 1)[0].strip()[:60]
+                print(f"PARSE_ERROR: .crew/verify.json {where}[{i}] contains "
+                      f"{name}, so crew cannot represent it as one command. "
+                      f"The entry begins: {head!r}. Split it into separate "
+                      f"entries, or move it into a script and call that.",
+                      file=sys.stderr)
+                sys.exit(4)
+
+for ri, rule in enumerate(cfg.get("rules", []) or []):
+    if isinstance(rule, dict):
+        reject_unrepresentable(f"rules[{ri}].run", rule.get("run"))
+reject_unrepresentable("always", cfg.get("always"))
+reject_unrepresentable("default", cfg.get("default"))
+for env_name, env in (cfg.get("environments", {}) or {}).items():
+    if isinstance(env, dict):
+        for key in ("deploy", "smoke", "regression", "verify"):
+            reject_unrepresentable(f"environments[{env_name!r}].{key}",
+                                   env.get(key))
+
 cmds = []
 for r in cfg.get("rules", []): cmds += r.get("run", [])
 cmds += cfg.get("always", []) + cfg.get("default", [])
@@ -70,6 +113,17 @@ for c in cmds:
 print(" ".join(out))
 PY
 )
+    PY_STATUS=$?
+    # Exit 4 is the ONLY status meaning "the map names a command crew cannot
+    # represent"; the PARSE_ERROR above says which entry. Fail closed rather
+    # than print a tool table derived from junk tokens - the table is what a
+    # user pastes back into verify.json, so a wrong row here becomes a wrong
+    # rule there. Any other non-zero status leaves TOOLS empty and falls
+    # through to the "nothing to resolve" exit below, unchanged.
+    if [ "$PY_STATUS" -eq 4 ]; then
+      echo "resolve-tools: refusing to resolve tools from .crew/verify.json - it names a command crew cannot represent (see the PARSE_ERROR above). Fix that entry first; verify-gate.sh refuses the same map." >&2
+      exit 2
+    fi
   fi
 fi
 [ -z "$TOOLS" ] && { echo "resolve-tools: nothing to resolve (no args and no .crew/verify.json)" >&2; exit 0; }

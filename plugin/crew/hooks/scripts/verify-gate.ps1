@@ -214,46 +214,77 @@ if (-not $changed) { Write-CrewVerified; exit 0 }
 # looked for the token under wherever the last rule left the cwd, found
 # nothing, and kept the lock -- so a failing gate was followed by a Stop that
 # exited 0 silently for up to $lockTtl seconds (aws-managed-services, 2026-09-13).
+#
+# BACKING OFF IS NOT PASSING, so every path that exits 0 here has to have seen
+# an actual holder, and a failed New-Item is not that evidence on its own -- it
+# fails for a lock path that is a FILE, for an unwritable .crew and for a
+# read-only tree exactly as it fails for "the directory is already there".
+# Mirrors verify-gate.sh, where the same collapse was measured: with `.crew`
+# present as a file the gate exited 0 in 0.65s on every turn, for ever, with
+# nothing on stderr. Three questions, kept apart, and only the first may back
+# off: a lock DIRECTORY is there (a holder plausibly exists); no directory is
+# there (nobody to wait for -- run unlocked and say so); a directory whose
+# stamp cannot be read (undatable, so a live holder cannot be told from a
+# corpse -- run unlocked and say so).
+#
+# WHAT THIS DOES NOT FIX is the same as over there: a lock directory left by a
+# hard-killed holder still backs later gates off for the rest of the age
+# window. See verify-gate.sh for the measurement that rules out a pid-based
+# narrowing.
 $lock = Join-Path (Get-Location).Path ".crew/.verify-gate.lock"
 $lockTtl = 700
 $reclaimed = $false
+# Set when the checks run with no lock held. Nothing is cleaned up on that
+# path -- no token is written, so the exit handler has nothing to match and
+# another process's lock is never removed on a guess.
+$unlocked = $false
 if (-not (Test-Path ".crew")) { New-Item -ItemType Directory -Path ".crew" -Force -ErrorAction SilentlyContinue | Out-Null }
 try {
   New-Item -ItemType Directory -Path $lock -ErrorAction Stop | Out-Null
 } catch {
-  $holderAt = $null
-  try { $holderAt = (Get-Item $lock -Force -ErrorAction Stop).LastWriteTimeUtc } catch { }
-  # Unreadable stamp: assume held rather than reclaim on a guess.
-  if ($null -eq $holderAt) { exit 0 }
-  $age = ([DateTimeOffset]::UtcNow - [DateTimeOffset]::new($holderAt, [TimeSpan]::Zero)).TotalSeconds
-  if ($age -le $lockTtl) { exit 0 }
-  Remove-Item -Recurse -Force $lock -ErrorAction SilentlyContinue
-  try {
-    New-Item -ItemType Directory -Path $lock -ErrorAction Stop | Out-Null
-  } catch { exit 0 }
-  $reclaimed = $true
+  if (-not (Test-Path $lock -PathType Container)) {
+    [Console]::Error.WriteLine("VERIFY GATE: could not create the lock at $lock and nothing is holding it (is .crew a file, read-only, or is the lock path not a directory?). No other gate can be waited for, so the checks are running WITHOUT the lock - at worst they run twice this turn.")
+    $unlocked = $true
+  } else {
+    $holderAt = $null
+    try { $holderAt = (Get-Item $lock -Force -ErrorAction Stop).LastWriteTimeUtc } catch { }
+    if ($null -eq $holderAt) {
+      [Console]::Error.WriteLine("VERIFY GATE: a lock directory is present at $lock but its age cannot be read, so a live holder cannot be told from one that was killed. The checks are running WITHOUT the lock rather than standing down for a holder that may not exist.")
+      $unlocked = $true
+    } else {
+      $age = ([DateTimeOffset]::UtcNow - [DateTimeOffset]::new($holderAt, [TimeSpan]::Zero)).TotalSeconds
+      if ($age -le $lockTtl) { exit 0 }
+      Remove-Item -Recurse -Force $lock -ErrorAction SilentlyContinue
+      try {
+        New-Item -ItemType Directory -Path $lock -ErrorAction Stop | Out-Null
+      } catch { exit 0 }
+      $reclaimed = $true
+    }
+  }
 }
-# A token of our own, so a SECOND reclaimer that deleted our fresh lock and
-# took its own is detectable: whoever's token is on disk once both have
-# written owns the turn, and the other backs off instead of both running.
-$lockToken = "ps1-$PID-$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())-$(Get-Random)"
-$tokenFile = Join-Path $lock "token"
-# PowerShell.Exiting fires on `exit` from this script, which is every path
-# below; it does not fire on a hard kill, which is what the age window above
-# is for. Mirrors the sh trap on EXIT INT TERM.
-$null = Register-EngineEvent PowerShell.Exiting -Action ([scriptblock]::Create(@"
+if (-not $unlocked) {
+  # A token of our own, so a SECOND reclaimer that deleted our fresh lock and
+  # took its own is detectable: whoever's token is on disk once both have
+  # written owns the turn, and the other backs off instead of both running.
+  $lockToken = "ps1-$PID-$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())-$(Get-Random)"
+  $tokenFile = Join-Path $lock "token"
+  # PowerShell.Exiting fires on `exit` from this script, which is every path
+  # below; it does not fire on a hard kill, which is what the age window above
+  # is for. Mirrors the sh trap on EXIT INT TERM.
+  $null = Register-EngineEvent PowerShell.Exiting -Action ([scriptblock]::Create(@"
   if ((Get-Content -Raw -ErrorAction SilentlyContinue '$tokenFile') -replace '\s','' -eq '$lockToken') {
     Remove-Item -Recurse -Force '$lock' -ErrorAction SilentlyContinue
   }
 "@))
-Set-Content -Path $tokenFile -Value $lockToken -Encoding utf8 -ErrorAction SilentlyContinue
-# Only the reclaim path can race another reclaimer; the plain-New-Item winner
-# cannot be clobbered, since its lock is far too young for anyone to reclaim.
-# Do not tax the common path with the settle wait.
-if ($reclaimed) {
-  Start-Sleep -Seconds 1
-  $onDisk = (Get-Content -Raw -ErrorAction SilentlyContinue $tokenFile) -replace '\s', ''
-  if ($onDisk -ne $lockToken) { exit 0 }
+  Set-Content -Path $tokenFile -Value $lockToken -Encoding utf8 -ErrorAction SilentlyContinue
+  # Only the reclaim path can race another reclaimer; the plain-New-Item winner
+  # cannot be clobbered, since its lock is far too young for anyone to reclaim.
+  # Do not tax the common path with the settle wait.
+  if ($reclaimed) {
+    Start-Sleep -Seconds 1
+    $onDisk = (Get-Content -Raw -ErrorAction SilentlyContinue $tokenFile) -replace '\s', ''
+    if ($onDisk -ne $lockToken) { exit 0 }
+  }
 }
 
 if (-not (Test-Path .crew/verify.json)) {
@@ -291,6 +322,56 @@ try {
   [Console]::Error.WriteLine($_.Exception.Message)
   exit 2
 }
+
+# A command is ONE LINE, and a command that is not is REJECTED. The matched
+# twin of the rejection in verify-gate.sh, and the reason it is here as well
+# is that WITHOUT it the pair disagrees: over there a multi-line entry moved
+# the record boundary and the rest of the rule silently never ran, while here
+# `bash -c` would happily run both halves. A map that blocks the turn on one
+# flavour and passes it on the other is worse than either answer, so both
+# refuse it and both name the entry. This script never serialises the two
+# lists through a text channel, so the separator half of that fix has no twin
+# here - only the rejection does.
+function Get-CrewUnrepresentable($Entries, [string]$Where) {
+  if ($null -eq $Entries) { return $null }
+  $framing = [ordered]@{
+    "`n" = "a newline"; "`r" = "a carriage return"
+    [string][char]0x1d = "an ASCII group separator (0x1d)"
+    [string][char]0x1e = "an ASCII record separator (0x1e)"
+  }
+  $i = 0
+  foreach ($c in @($Entries)) {
+    if ($c -is [string]) {
+      foreach ($ch in $framing.Keys) {
+        if ($c.Contains([string]$ch)) {
+          $head = $c.Split([string]$ch)[0].Trim()
+          if ($head.Length -gt 60) { $head = $head.Substring(0, 60) }
+          return ("PARSE_ERROR: .crew/verify.json $Where[$i] contains " +
+                  "$($framing[$ch]), so crew cannot represent it as one " +
+                  "command. The entry begins: '$head'. Split it into separate " +
+                  "entries, or move it into a script and call that.")
+        }
+      }
+    }
+    $i++
+  }
+  return $null
+}
+
+$bad = $null
+$ri = 0
+foreach ($r in @($vm.rules)) {
+  if ($null -eq $bad -and $null -ne $r) { $bad = Get-CrewUnrepresentable $r.run "rules[$ri].run" }
+  $ri++
+}
+if ($null -eq $bad) { $bad = Get-CrewUnrepresentable $vm.always "always" }
+if ($null -eq $bad) { $bad = Get-CrewUnrepresentable $vm.default "default" }
+if ($null -ne $bad) {
+  [Console]::Error.WriteLine($bad)
+  [Console]::Error.WriteLine("VERIFY GATE: .crew/verify.json names a command crew cannot represent (see the PARSE_ERROR above for which one and why). Verification did NOT run. Work is not complete.")
+  exit 2
+}
+
 $cmds = [System.Collections.ArrayList]@()
 $unmapped = [System.Collections.ArrayList]@()
 

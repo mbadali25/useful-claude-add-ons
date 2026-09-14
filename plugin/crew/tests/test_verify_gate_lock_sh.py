@@ -20,9 +20,30 @@ creates it, so there is no half-written state and nothing to misread.
 **The lock sits after the emergency lane and the empty-changed-set exit.** A
 turn that does no work must not claim a lock, because the holder is what
 removes it.
+
+**Backing off is not passing, so exit 0 needs an actual holder.** `mkdir`
+fails for ENOTDIR, EACCES and a read-only tree exactly as it fails for "the
+directory is already there", and every one of those read as "someone else is
+working". Measured: with `.crew` present as a FILE the gate exited 0 in 0.65s
+on every turn, for ever, with nothing on stderr -- the gate silently off,
+wearing the exit code of a pass. With the lock path itself a file it did the
+same for the whole age window. The two cases at the bottom of this file are
+the must-block half of that fix; the four backoff cases above them are the
+must-allow half and are unchanged.
+
+**What is still open, deliberately.** A lock DIRECTORY left behind by a
+hard-killed holder still backs later gates off for the rest of the age window.
+The obvious narrowing -- read the pid out of the token and ask whether that
+process is alive, only for a token this flavour wrote -- was tried and
+measured false on 2026-09-13: a hard-killed Git Bash's `$$` still answered
+`kill -0` from a second bash as ALIVE at +0.5s, +5s and +15s, while a pid that
+never existed correctly reported "No such process". So there is no reliable
+liveness signal here and the age window remains the only answer for a lock
+that can be dated. Recorded rather than left to be rediscovered.
 """
 import json
 import os
+import shutil
 import subprocess
 import time
 
@@ -191,6 +212,41 @@ def test_the_lock_never_records_a_pid(tmp_path):
 
     assert "pid" not in names, f"the lock records a PID again: {names}"
     assert names == ["token"], names
+
+
+def test_a_lock_path_that_is_a_file_does_not_stand_the_gate_down(tmp_path):
+    """`mkdir` fails on a path that is already a regular file, and that
+    failure used to read as "held": the gate exited 0 in under a second, for
+    the whole age window, against a verify.json a running gate exits 2 on.
+    Nothing holds a regular file, so there is no holder to wait for."""
+    root = _repo(tmp_path)
+    _lock(root).write_text("not a directory\n", encoding="utf-8")
+
+    result = _run_verify(root)
+
+    assert result.returncode == 2, f"stdout: {result.stdout} stderr: {result.stderr}"
+    assert "could not be parsed" in result.stderr, result.stderr
+    assert "WITHOUT the lock" in result.stderr, result.stderr
+
+
+def test_a_crew_directory_that_is_a_file_does_not_stand_the_gate_down(tmp_path):
+    """The permanent version of the same collapse: with `.crew` itself a
+    file, neither `mkdir -p .crew` nor the lock can ever succeed, so the gate
+    exited 0 on EVERY turn with nothing on stderr. The checks have to run."""
+    root = _repo(tmp_path)
+    # No .crew means no verify.json, so the gate takes the smoke path -- which
+    # sits after the lock and is what proves the lock was not what stopped it.
+    shutil.rmtree(root / ".crew")
+    (root / ".crew").write_text("not a directory\n", encoding="utf-8")
+    (root / "_verify").mkdir()
+    (root / "_verify" / "smoke.sh").write_text(
+        "echo FAIL: deliberate\nexit 1\n", encoding="utf-8", newline="\n")
+
+    result = _run_verify(root)
+
+    assert result.returncode == 2, f"stdout: {result.stdout} stderr: {result.stderr}"
+    assert "Smoke FAILED" in result.stderr, result.stderr
+    assert "WITHOUT the lock" in result.stderr, result.stderr
 
 
 def test_an_open_incident_stands_down_without_claiming_the_lock(tmp_path):
