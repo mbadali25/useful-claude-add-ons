@@ -52,7 +52,22 @@ version bump is not a rollback.**
    changed.**
    ```bash
    git rev-parse HEAD
-   # then replace the SHA in BOTH raw.githubusercontent.com URLs in README.md
+   # Find every tracked site first - do NOT assume it is only README.md.
+   # Three carry the SHA today: README.md twice, and the one-liner embedded in
+   # docs/guides/Running-a-Mailbox-Job.json, which this step used to omit.
+   grep -rn '<old-sha>' --include='*.md' --include='*.json' . \
+     | grep -v node_modules | grep -v graphify-out | grep -v '.claude/worktrees'
+   ```
+   Re-measure rather than trusting that count: an install one-liner can be pasted
+   into a new guide at any time, and a missed site fails silently - it serves an
+   older script with no error anywhere. `.claude/worktrees/` copies are agent
+   worktrees, not tracked sites.
+
+   Then confirm the new pin actually serves what you think, rather than assuming
+   the SHA is enough:
+   ```bash
+   curl -sS -o /dev/null -w '%{http_code}\n' \
+     "https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/<new-sha>/scripts/install-prerequisites.sh"
    ```
    Verify whether it is even needed, rather than assuming from the SHA looking old:
    ```bash
