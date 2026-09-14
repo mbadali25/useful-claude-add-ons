@@ -187,8 +187,12 @@ def test_the_lock_never_records_a_pid(tmp_path):
     # lock's contents can be read while it is actually held.
     (root / ".crew" / "verify.json").unlink()
     (root / "_verify").mkdir()
+    # newline="\n": write_text is text mode, so on Windows the \n would become
+    # \r\n and bash would fail on `sleep 3\r` instead of sleeping -- the lock
+    # would be released before it could be read, and the failure would read as
+    # a lock bug rather than a fixture one.
     (root / "_verify" / "smoke.sh").write_text(
-        "sleep 3\necho 'SMOKE: ok'\n", encoding="utf-8")
+        "sleep 3\necho 'SMOKE: ok'\n", encoding="utf-8", newline="\n")
 
     proc = subprocess.Popen(  # pylint: disable=consider-using-with
         [_BASH, _VERIFY_SH], stdin=subprocess.PIPE, stdout=subprocess.PIPE,

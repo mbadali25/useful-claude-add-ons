@@ -50,7 +50,7 @@ Built for the awkward case: several repositories, mixed stacks, legacy code, and
 | Benefit | Which roles provide it |
 |---|---|
 | An isolated context window | `explorer`, `security`, `qa-reviewer` |
-| A restricted tool set | `explorer` and `security` are read-only |
+| A restricted tool set | `explorer` holds no `Write`, `Edit` or `Bash`; `security` holds no `Write` or `Edit` but does hold `Bash` |
 | Genuinely independent eyes | Codex, or `qa-reviewer` in its own context |
 
 Everything else — project management, business analysis, architecture, documentation, training — is a file, a command, or you. Those are not agents because there is nothing for an agent to isolate.
@@ -87,10 +87,12 @@ else, and records the result in `.crew/config.json`. It distinguishes native
 Linux, macOS, WSL1, WSL2, Git Bash on Windows, and native Windows, and reports
 which toolchains are actually present.
 
-Every hook is registered once, as bash, so `bash` must be on `PATH` — Git Bash
-satisfies that. Only the `PreToolUse` guards branch, and they branch on which
-**tool** the command came from rather than on the OS, so a `Bash` call is judged
-by bash rules even on Windows. See
+Every hook is registered **twice** in `hooks.json` — once as bash, once as its
+`.ps1` twin with `shell: powershell` — because `hooks.json` cannot know which
+shell a given machine has, so one flavour failing is expected rather than a
+fault. Only the `PreToolUse` guards branch, and they branch on which **tool** the
+command came from rather than on the OS, so a `Bash` call is judged by bash rules
+even on Windows. See
 [How the Windows half works](#how-the-windows-half-works).
 
 **If WSL is available, run Claude Code inside it.** One shell, one code path, and
@@ -511,8 +513,14 @@ This is a data file a hook reads, deliberately not knowledge an agent carries.
 Agent judgment about which tests to skip is exactly the judgment that skips the
 important one, confidently, on the turn it mattered.
 
-`agents` names **any installed subagent**, not only crew's eleven. That last rule
-names one crew does not ship. A bare name resolves to crew's own role first
+`agents` names **any installed subagent**, not only crew's own roles. This
+sentence said "crew's eleven" until 2026-09-14, long after `agents/` stopped
+holding eleven files; the count is deliberately gone rather than corrected,
+because the roster moves and nothing checks a number written here — the same
+shape `commands/review.md` uses, which `tests/test_verify_absent_and_diagram_kind.py`
+holds in place. Both rules above happen to name roles crew does ship, but a name
+from any other installed plugin works the same way. A bare name resolves to
+crew's own role first
 (`security` → `crew:security`), then to any other installed agent of that name;
 namespace it when you mean the other one. This is how a machine's domain
 specialists get pulled in *by path match* rather than when somebody remembers
@@ -1517,7 +1525,7 @@ message.
 documentation becomes noise — a CHANGELOG with an entry per typo fix is
 unreadable, and a README rewritten every sprint stops being trusted.
 
-So each document has a trigger condition, checked once per ticket at step 10 of
+So each document has a trigger condition, checked once per ticket at step 12 of
 `/crew:work`:
 
 | Document | Update when | Never |
@@ -1560,7 +1568,7 @@ type?"** Not how the system works — that's architecture. Not why it was built
 that way — that's an ADR. A procedure someone half-awake can follow without
 judgement calls.
 
-`/crew:work` step 10 captures one when a ticket involved a procedure that will
+`/crew:work` step 11 captures one when a ticket involved a procedure that will
 be repeated, is destructive, or lived only in one person's head. Drafts are built
 from the commands **actually run in the session**, plus `verify.json` and the
 terraform config for real resource names — never from memory, because a wrong
@@ -2031,7 +2039,7 @@ CONFIG.md §17 has the table and the reasoning.
 |---|---|
 | `/crew:ticket <description>` | Scope a request into a ticket |
 | `/crew:work <id>` | Work one ticket end to end |
-| `/crew:review` | Independent QA — Codex or Claude fallback |
+| `/crew:review` | Independent QA — Codex, then Copilot, then Claude: the first that probes clean |
 | `/crew:onboard [--refresh <area>]` | Build or refresh the code map |
 | `/crew:reference [--api\|--features\|--audit]` | Enumerate the API and features into `docs/reference/`, anchored to `file:line` |
 | `/crew:init` | Guided phased setup, resumable |
@@ -2063,16 +2071,16 @@ CONFIG.md §17 has the table and the reasoning.
 | Agent | Tools | Model | Tier | Role |
 |---|---|---|---|---|
 | `explorer` | read-only | `sonnet` | 0 | Maps code, returns summaries not contents |
-| `qa-reviewer` | read-only | `opus` | 0 | Hostile review; the Codex fallback |
-| `security` | read-only | `sonnet` | 1 | Exploitable defects in the diff |
+| `qa-reviewer` | read-only + Bash | `opus` | 0 | Hostile review; the last rung of `qa.order`, reached when neither Codex nor Copilot probes clean |
+| `security` | read-only + Bash | `sonnet` | 1 | Exploitable defects in the diff |
 | `smoke-author` | read/write | `sonnet` | 1 | Builds and repairs the safety net |
 | `developer` | read/write | `sonnet` | 1 | Implements one scoped change; never reviews it |
 | `browser-tester` | read/write | `sonnet` | 2 | Playwright specs, visual baselines, user flows |
-| `analyst` | read-only | `sonnet` | 2 | Anchored findings and options, never tickets |
-| `planner` | read-only | `sonnet` | 2 | Design second opinion from an abstracted brief |
-| `dba` | read-only | `sonnet` | 2 | Migrations, locks, online safety |
+| `analyst` | read-only + Bash | `sonnet` | 2 | Anchored findings and options, never tickets |
+| `planner` | read-only + Bash | `sonnet` | 2 | Design second opinion from an abstracted brief |
+| `dba` | read-only + Bash | `sonnet` | 2 | Migrations, locks, online safety |
 | `docs-writer` | read/write | `sonnet` | 2 | Architecture and data flow from real code |
-| `infrastructure-architect` | read-only | `sonnet` | 2 | AWS network and account design, with tradeoffs. Never applies to a live account |
+| `infrastructure-architect` | read-only + Bash | `sonnet` | 2 | AWS network and account design, with tradeoffs. Never applies to a live account |
 | `scribe` | read/write | `sonnet` | 2 | The durable record: ADRs, CHANGELOG entries, handoff notes, and what was rejected |
 | `researcher` | read-only + web | `sonnet` | 2 | External research only. Every claim carries its source |
 | `sharepoint-developer` | read/write | `sonnet` | — | SPFx, Graph and REST, list and library schema, permissions. Never changes a live tenant unasked |
@@ -2089,7 +2097,7 @@ CONFIG.md §17 has the table and the reasoning.
 | `terraform-engineer` | read/write | `sonnet` | — | Writes HCL and returns a plan. Never runs `apply`, `destroy` or a state operation |
 | `network-engineer` | read/write | `sonnet` | — | Routing, DNS, firewalls, TLS, hybrid links. Names the layer that failed; never changes a live device |
 | `windows-infra-admin` | read/write | `sonnet` | — | AD, GPO, DNS and DHCP automation with an export and a rollback. Never runs the change against a live domain |
-| `qa-researcher` | read-only + Perplexity MCP | `sonnet` | — | Checks what a diff assumes about the outside world against live sources. Complements a code reviewer; never replaces one |
+| `qa-researcher` | read-only + Bash + Perplexity MCP | `sonnet` | — | Checks what a diff assumes about the outside world against live sources. Complements a code reviewer; never replaces one |
 | `ad-security-reviewer` | read/write | `sonnet` | — | AD privilege paths, delegation and authentication hardening reviewed by eye instead of enumerated |
 | `ai-writing-auditor` | read/write | `sonnet` | — | Audits prose for AI writing tells and rewrites them out |
 | `api-designer` | read/write | `sonnet` | — | REST and GraphQL surface design, OpenAPI, auth patterns and versioning before the endpoints exist |
@@ -2099,29 +2107,25 @@ CONFIG.md §17 has the table and the reasoning.
 | `compliance-auditor` | read-only | `sonnet` | — | GDPR, HIPAA, PCI DSS, SOC 2 and ISO control gaps, and audit preparation |
 | `database-administrator` | read/write | `sonnet` | — | Performance, high availability, disaster recovery and the rest of running a production database |
 | `design-bridge` | read/write + web | `sonnet` | — | Turns a DESIGN.md brand spec into UI instructions that actually match it |
-| `exchange-online-specialist` | read/write | `sonnet` | — | Exchange Online and Purview: mailbox lifecycle, litigation hold, retention, eDiscovery |
+| `exchange-online-specialist` | read/write | `sonnet` | — | Exchange Online and Purview automation through ExchangeOnlineManagement and Security & Compliance PowerShell, where a wrong answer is a compliance answer |
 | `fintech-engineer` | read/write | `sonnet` | — | Payment and financial systems where accuracy and regulatory fit are the requirement |
 | `git-workflow-manager` | read/write | `sonnet` | — | Branching strategy, merge management and the workflow a team actually follows |
 | `graphql-architect` | read/write | `sonnet` | — | Federated schema design across services, and query performance in a distributed graph |
-| `kimi-consult` | read-only (Bash) | `sonnet` | — | A second opinion from a different model family, through the Copilot CLI |
+| `kimi-consult` | read-only + Bash | `sonnet` | — | A second opinion from a different model family, through the Copilot CLI |
 | `legacy-modernizer` | read/write | `sonnet` | — | Incremental migration of a legacy system without stopping the business |
 | `microservices-architect` | read/write | `sonnet` | — | Service decomposition and the communication patterns between the pieces |
 | `multi-agent-coordinator` | read/write, no Bash | `sonnet` | — | State sharing, synchronisation and failure handling across concurrent agents |
 | `payment-integration` | read/write | `sonnet` | — | Gateway integration, PCI scope, and fraud handling on the money path |
 | `penetration-tester` | read-only + Bash | `sonnet` | — | Authorized offensive testing that proves a vulnerability rather than reporting a possibility |
 | `platform-engineer` | read/write | `sonnet` | — | Internal developer platforms, golden paths and self-service infrastructure |
-| `powershell-5.1-expert` | read/write | `sonnet` | — | Windows PowerShell 5.1, the in-box edition every Windows Server carries |
-| `powershell-7-expert` | read/write | `sonnet` | — | PowerShell 7: parallelism, UTF-8 defaults, REST-first modules, and whether a host can run pwsh |
-| `powershell-security-hardening` | read/write | `sonnet` | — | PowerShell automation and remoting hardened to an enterprise baseline |
-| `skill-author` | read/write | `sonnet` | — | Claude Code skills, slash commands and plugins - frontmatter, discovery, operator walkthrough |
-| `workflow-orchestrator` | read/write, no Bash | `sonnet` | — | Multi-state business processes, with error handling and transaction management |
-| `exchange-online-specialist` | read/write | `sonnet` | — | Exchange Online and Purview automation through ExchangeOnlineManagement and Security & Compliance PowerShell, where a wrong answer is a compliance answer |
 | `powershell-5.1-expert` | read/write | `sonnet` | — | Windows PowerShell 5.1 — the in-box edition on every Windows Server, for modules with no PowerShell 7 story |
 | `powershell-7-expert` | read/write | `sonnet` | — | PowerShell 7, for modern language features, real parallelism and UTF-8 defaults — and for whether a host can run `pwsh` at all |
+| `powershell-security-hardening` | read/write | `sonnet` | — | PowerShell automation and remoting hardened to an enterprise baseline |
 | `skill-author` | read/write | `sonnet` | — | Claude Code skills, commands and plugins: frontmatter, the description that decides whether a skill fires, and the operator walkthrough |
+| `workflow-orchestrator` | read/write, no Bash | `sonnet` | — | Multi-state business processes, with error handling and transaction management |
 | `pm` | read/write, scoped to `.crew/` and generated diagrams | `opus` | — | The standing manager: scope, onboarding, communication, ticket hygiene, and dispatch |
 
-54 agents — 13 on the tier ladder (`crew_state.ROLE_TIERS`), 40 domain specialists off it (`crew_state.SPECIALIST_ROLES`), and `pm`. Re-measure with `ls plugin/crew/agents/*.md`, which is one file per agent — not by counting the rows above, which repeat a name. `pm` sits outside the tier ladder — it is not sized in or out by `/crew:scale`, it is the thing doing the sizing. The specialist rows above are a readable copy of `crew_state.SPECIALIST_ROLES`; `tests/test_role_ladder.py` checks that copy against the code in both directions, so a row here with no registration behind it, or an `agents/<name>.md` nobody registered, fails the suite rather than shipping as a role `/crew:pm onboard` calls unrecognised.
+54 agents — 13 on the tier ladder (`crew_state.ROLE_TIERS`), 40 domain specialists off it (`crew_state.SPECIALIST_ROLES`), and `pm`. Re-measure with `ls plugin/crew/agents/*.md`, which is one file per agent; the table above is now one row per agent too, but it repeated four names until 2026-09-14, so the file count is still the authority. **"read-only" in the Tools column means no `Write` and no `Edit`** — it does not mean no `Bash`, which is why the rows that hold `Bash` say so. `validate-prompts.py` enforces exactly that: a description saying read-only may not carry `Write` or `Edit`, and `Bash` is not part of that check. `pm` sits outside the tier ladder — it is not sized in or out by `/crew:scale`, it is the thing doing the sizing. The specialist rows above are a readable copy of `crew_state.SPECIALIST_ROLES`; `tests/test_role_ladder.py` checks that copy against the code in both directions, so a row here with no registration behind it, or an `agents/<name>.md` nobody registered, fails the suite rather than shipping as a role `/crew:pm onboard` calls unrecognised.
 
 **No tier grants a specialist, and that is deliberate.** Every ladder role closes a defect class any repo can have, so `roles_for_tier` hands out every rung up to the declared tier — which is exactly how a repo with no database ends up with `dba`. "This repo does SharePoint" is not a defect class; it is a fact about one checkout, and it is knowable on day one. Put these on the ladder and every tier-2 repo on the machine gets a SharePoint developer it will never dispatch. So they are opted into per repo with `/crew:pm onboard <role>`, justified by what is actually in the repo — a `package.json` with a server entry point, an SPFx `config/package-solution.json`, an exported flow definition — rather than by a pattern in `.crew/metrics.md`, and onboarding one leaves `tier` where it was: the crew has specialised, not grown.
 
@@ -2177,11 +2181,23 @@ Hooks are deterministic. That is their whole value — a hook cannot be argued o
 ### Four suites, and what each can actually prove
 
 ```bash
-bash   hooks/scripts/_test/run-tests.sh           # 77 cases - the hooks
+bash   hooks/scripts/_test/run-tests.sh           # 177 cases - the hooks
 bash   hooks/scripts/_test/setup-walkthrough.sh   # 32 cases - the setup scripts
-python hooks/scripts/_test/validate-prompts.py    # 110 checks - command/agent structure
-pytest tests/                                     # 234 cases - the python modules and both hook flavours
+python hooks/scripts/_test/validate-prompts.py    # 298 checks - command/agent structure
+pytest tests/                                     # 1404 passed, 1 skipped - the python modules and both hook flavours
 ```
+
+Those four figures were measured at `61af85cb`, and each is the line that suite
+**printed on the run** rather than a count of anything read: `RESULT: 177 passed,
+0 failed`, `SCRIPT PHASES: 32 passed, 0 failed`, `PASS: 298 checks`, and pytest's
+own `1404 passed, 1 skipped` (the skip is a platform case — see the table below).
+Three of the four were stale by more than a factor of two before this correction,
+because each is written by hand and nothing checks it:
+`scripts/check-marketplace.py` only verifies a number carrying a
+`<!-- claim: ... -->` marker, and it implements exactly two marker types —
+`skills-count` and `plugin-version:<name>` — neither of which can express a suite
+count. No marker is available for these, so re-run the suite rather than trusting
+the comment.
 
 | Suite | Proves | Cannot prove |
 |---|---|---|
@@ -2217,10 +2233,14 @@ the first mutation, so a restore that silently did nothing fails the suite
 instead of passing quietly. SIGKILL is still uncatchable by anything, which is
 why the startup refusal exists.
 
-`run-tests.sh` is 77 cases: 20 the guard must block, 14 it must allow, 12 for the
-promotion gate, 15 for the emergency lane (including that the guard still blocks
-during one, and that an expired incident gates again), plus the verify gate's
-root-level glob matching and its `stop_hook_active` exit. `guard.sh` produced two
+`run-tests.sh` printed `RESULT: 177 passed, 0 failed` at `61af85cb`. It covers
+what the guard must block and must allow, the promotion gate, the emergency lane
+(including that the guard still blocks during one, and that an expired incident
+gates again), and the verify gate's root-level glob matching and its
+`stop_hook_active` exit. The per-category split is deliberately not stated here:
+the runner prints one total and no breakdown, so any decomposition written in
+this paragraph would be a hand count that goes stale the first time a case is
+added — which is what happened to the previous one. `guard.sh` produced two
 real regressions in two review passes — a substring `prod` match that blocked
 `s3://my-product-images`, and a secret rule that exempted `> file` so writing a
 secret to disk passed while printing one blocked. Both were found by running it,
@@ -2239,7 +2259,7 @@ Every event is registered **twice** in `hooks.json`, once per flavour, with `she
 { "matcher": "PowerShell", "hooks": [{ "type": "command", "shell": "powershell", "command": "& '${CLAUDE_PLUGIN_ROOT}/hooks/scripts/guard.ps1'", "timeout": 10 }] }
 ```
 
-That distinction is load-bearing. A `Bash` tool call is bash syntax *even on Windows*, so judging it with PowerShell rules gets it backwards in both directions: it blocks the correct capture form (`DB_PASS=$(...)`) and misses the wrong one. Branch on the tool and each command is judged by the rules of the language it is written in. (`hooks/scripts/_common.sh` also ships a `crew_tool_dispatch` helper for judging a command from inside a single bash-registered script — a valid alternative shape — but it is unused here in favour of the explicit dual-matcher registration above.)
+That distinction is load-bearing. A `Bash` tool call is bash syntax *even on Windows*, so judging it with PowerShell rules gets it backwards in both directions: it blocks the correct capture form (`DB_PASS=$(...)`) and misses the wrong one. Branch on the tool and each command is judged by the rules of the language it is written in. (`hooks/scripts/_common.sh` also ships a `crew_tool_dispatch` helper for judging a command from inside a single bash-registered script — the other valid shape for the same problem. It is **called**, not dead code: `guard.sh:7` and `promote-gate.sh:27` both invoke it. With the dual-matcher registration above in place it never actually fires, because a `PowerShell` tool call reaches `guard.ps1` directly and never enters `guard.sh` — so it is a belt-and-braces second path, and deleting it on the assumption that nothing calls it would silently remove the fallback for anyone who registers one of these scripts on a single matcher.)
 
 The other six hooks judge no command, so both flavours are simply wired to their event with no branch: `verify-gate.sh`/`.ps1`, `context-watch.sh`/`.ps1`, `handoff-read.sh`/`.ps1`, `handoff-write.sh`/`.ps1`, `pm-brief.sh`/`.ps1`, and `notify.sh`/`.ps1` are all registered in `hooks.json`, one entry per flavour per event.
 
@@ -2248,7 +2268,9 @@ Two things worth knowing:
 - **`hooks.json` has no way to know in advance which shell a given machine actually has**, so both flavours are wired and one is expected to fail — that is by design, not a bug. On Windows this is measured, not hypothetical: Git for Windows ships two `bash.exe` binaries, and `usr/bin/bash.exe` exits 127 running these scripts where `bin/bash.exe` runs them fine, so which one resolves first on `PATH` decides whether the `.sh` side works at all. The `.ps1` twin is what actually gates the machine when it doesn't.
 - **A bare `command` string with no `shell` field still goes to Git Bash on Windows** (PowerShell only when Git Bash isn't installed), not to whatever `bash` a non-MSYS parent process might resolve to. Versions of this plugin before 0.2.0 relied on the `.sh` side deferring to a `.ps1` twin that was never actually invoked, so on Windows the command guard blocked nothing and the `Stop` gate ran nothing — fixed by registering both flavours explicitly instead of assuming one would pick up the other's slack.
 
-`python3` is not required. Every script resolves `python3`, then `python`, then `py`, and `guard.sh` prefers `jq` when present. With none available the hook says so on stderr and exits 0 — loudly inert rather than silently passing.
+**`python3` is not required by the hooks.** Every hook script resolves `python3`, then `python`, then `py` — that is `crew_py()` in `hooks/scripts/_common.sh` — and `guard.sh` prefers `jq` when present. With none available the hook says so on stderr and exits 0 — loudly inert rather than silently passing.
+
+The **commands** are the other half, and they do require it: 10 of the files under `commands/` now invoke `python3` by name. Those are instructions to the model rather than scripts that source `_common.sh`, so they get no resolution step. On a machine where only `python` or `py` resolves, the hooks stay inert-but-honest and the slash commands fail at the call site. At `61af85cb` that count was **nine**: `commands/emergency.md` invoked bare `python` at five call sites while its own text claimed all three names were resolved — the one command meant to be run under pressure was the only one that broke on a default Ubuntu or WSL box. It was brought into line on 2026-09-14, which is what moved the count to 10.
 
 ---
 

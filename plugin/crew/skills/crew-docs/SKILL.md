@@ -31,7 +31,7 @@ no sha answers that, which is why these stay manual.
 | `docs/diagrams/` | The structure a diagram shows moved (see `crew-diagrams`) | Cosmetic changes |
 | `docs/runbooks/` | An operational procedure changed, or a new one was needed | Anything `make deploy` already does |
 
-`/crew:work` step 10 asks this question once per ticket. The honest answer is
+`/crew:work` step 12 asks this question once per ticket. The honest answer is
 usually "none of them."
 
 ## Generated blocks are not yours to edit

@@ -917,9 +917,9 @@ def _read_graph(root, cfg):
     # direction stays honest -- the same reason a missing `built_at_commit`
     # sidecar resolves to stale rather than to fresh.
     #
-    # This mirrors `verify-anchors.py`, which measures each subsystem against
-    # its OWN pathspec rather than against all of HEAD, and which reports
-    # FRESH for trees this function used to call stale.
+    # This mirrors `read_knowledge` below -- its `_moved_since(..., _cited_paths(root, body))` call measures each
+    # subsystem against its OWN pathspec rather than against all of HEAD, and reports current for trees this function
+    # used to call stale. It named `verify-anchors.py` until 2026-09-14; no such file has ever existed in this repo.
     trimmed = out.rstrip("/")
     excludes = [f":(exclude){trimmed}/**"]
     excludes += [f":(exclude){g}" for g in GRAPH_NONCODE_PATHS]

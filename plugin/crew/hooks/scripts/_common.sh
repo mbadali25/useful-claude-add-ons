@@ -2,10 +2,16 @@
 # Shared helpers for crew hook scripts. Sourced, never run directly.
 #
 # Two problems this solves:
-#   1. Every hook is registered once, as bash. The PreToolUse guard hands off
-#      to its .ps1 twin when the command being judged is PowerShell - the
-#      branch is which TOOL was used, not which OS is running. The other hooks
-#      judge no command, and are reached through `bash`, so bash does the work.
+#   1. Every hook is registered TWICE in hooks.json - once as bash, once as
+#      its .ps1 twin with `shell: powershell` - because hooks.json cannot know
+#      which shell a given machine has. So a .sh script here is only ever
+#      reached through bash, and `crew_tool_dispatch` below is the OTHER shape
+#      for the same problem: a single bash-registered script handing off to its
+#      twin when the command being judged came from the PowerShell tool. The
+#      branch is which TOOL was used, not which OS is running. `guard.sh` and
+#      `promote-gate.sh` call it, and it is harmless alongside the dual
+#      registration - the dual-matcher entries mean a PowerShell tool call
+#      reaches guard.ps1 directly and the dispatch never fires.
 #   2. python3 is not a given. Git Bash ships without it, and every script
 #      here parses hook JSON from stdin.
 

@@ -6,6 +6,55 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`crew` 0.19.44: fourteen things this repo said about itself that were not
+  true.** Each was checked against the code before it was changed.
+  "Every hook is registered once, as bash" - in the README and in
+  `_common.sh`'s own header - when `hooks.json` has 20 entries naming 20
+  distinct scripts, 10 pairs each registered twice, once as bash and once as
+  its `.ps1` twin with `shell: powershell`; the "so `bash` must be on `PATH`"
+  conclusion went with it. Seven agents described as "read-only" whose
+  frontmatter carries `Bash`. Four agent names appearing twice in the roster
+  table, which is now 54 rows and 54 unique names, one per agent file. "step
+  10" for the docs step, which is 12, in three places. The review fallback
+  written "Codex or Claude", omitting Copilot, which sits between them in
+  `order`. `crew_tool_dispatch` called unused when it is called at `guard.sh:7`
+  and `promote-gate.sh:27`. "python3 is not required" stated without scope -
+  true of hooks, which all go through `crew_py()`, false of command files,
+  which invoke it by name. A citation to `verify-anchors.py`, a file that does
+  not exist anywhere in this repo. `crew-setup` claiming the `--brand` wiring
+  "does not exist" when `crew-house-style` passes it, `CONFIG.md` names that
+  file as the consumer, and a committed regression test asserts it by running
+  doc-builder's own argparse. And five bare `python` invocations in
+  `emergency.md`, under prose claiming every call resolves `python3`/`python`/
+  `py`, which was false in both directions.
+  Four suite counts re-measured by RUNNING each suite rather than reading a
+  number: `run-tests.sh` 77 to 177, `validate-prompts.py` 110 to 298, pytest
+  234 to 1404, `setup-walkthrough.sh` 32 unchanged. The README's decomposition
+  of `run-tests.sh` into 20/14/12/15 is replaced by the line the runner
+  actually prints, because it prints one total and no breakdown and inventing a
+  new split would be the same defect again. The same four counts in
+  `PLUGINS.md` are corrected here, that file being the only place left carrying
+  the old ones. NO claim marker was added and none can be: `check_self_claims`
+  implements exactly `skills-count` and `plugin-version:<name>`, neither can
+  express a suite count, and any other type is a hard error by design - so the
+  numbers stay unmarked, which is the silence `scripts/_test/self-claims.py`
+  asserts, and the README now says so rather than leaving it to be guessed.
+  Two reported items came back differently. "crew's eleven" was a real defect
+  whose fix is NOT a corrected count: a committed test's docstring already
+  states this repo's decided policy for that exact string - the roster is a
+  moving number nothing checks, so remove the count rather than correct it.
+  And `crew-context`'s per-repo handoff marker is a FALSE POSITIVE, left
+  unchanged: it carries no `session_id`, the claim is taken atomically by
+  `set -o noclobber` and `FileMode::CreateNew`, and SessionStart clears it - the
+  doc accurately documents a known bug and says so.
+  `newline="
+"` added to the two `write_text` calls that write
+  `_verify/smoke.sh`; the third already carried it. The reported CONSEQUENCE
+  did not reproduce - the CRLF form ran under Git Bash's `bin/bash.exe` in
+  3.07 s, rc 0, output identical to the LF form - so this is a hardening against
+  a documented landmine rather than the repair of an observed failure, and the
+  comment says which.
+
 - **`crew` 0.19.43: the agent prompts claimed a mechanism crew does not have.**
   Thirty fabricated blocks are gone from sixteen files under
   `plugin/crew/agents/`: fifteen `Progress tracking:` blocks, each a fenced JSON
