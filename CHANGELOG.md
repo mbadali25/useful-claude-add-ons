@@ -6,6 +6,37 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`crew` 0.19.43: the agent prompts claimed a mechanism crew does not have.**
+  Thirty fabricated blocks are gone from sixteen files under
+  `plugin/crew/agents/`: fifteen `Progress tracking:` blocks, each a fenced JSON
+  object of invented counters (`files_reviewed: 47`, `uptime: "99.97%"`,
+  `messages_processed: "234K/min"`), and fifteen `Delivery notification:`
+  blocks, each a quoted sentence the agent is told to emit about work it has not
+  measured. Crew implements no notification channel and counts none of those
+  things, so an agent following them performed a ritual with no receiver while a
+  reader believed crew had a reporting mechanism it does not have. Found
+  repo-wide rather than from the review's list; `multi-agent-coordinator.md`'s
+  `- Progress tracking` bullet is deliberately kept, being a coordination
+  pattern in a list rather than a block.
+  Seventeen agents across five overlapping clusters now say what they are NOT
+  for, naming the concrete alternative, in `description:` - which is what the
+  dispatcher routes on.
+  `qa-reviewer.md`'s model claims were FALSE as written rather than merely
+  unhedged, so the file says so instead of softening them into something
+  unfalsifiable: `QA_DEFAULTS["roles"]` and `DEV_DEFAULTS["roles"]` are both
+  empty, and `crew-providers/SKILL.md` says in its own words that its table is
+  "a configuration to adopt, not what crew ships". The Sol and Luna pins
+  therefore hold only where a repo wrote them, and "most dev work is
+  codex-authored, so those pins never fire on it" is conditional on a second pin
+  that does not ship either. Both branches are stated, the frequency claim is
+  removed rather than reworded, and the file now says no proportion is available
+  to the reviewer.
+  The review's other suggestion for `qa-reviewer` - read `crew_config.py
+  --models` rather than assume - is deliberately NOT taken: that command is this
+  repo's own example of the recurring bug, deriving author family from config
+  describing the NEXT run and barring Codex, the only independent reviewer, on a
+  Claude-authored diff.
+
 - **`crew` 0.19.42: a rule crew could not represent was split, not refused.**
   The ordered rule list was newline-delimited text, so a `run` entry in
   `.crew/verify.json` carrying a newline split into two rules and the second

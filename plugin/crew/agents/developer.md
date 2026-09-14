@@ -1,6 +1,6 @@
 ---
 name: developer
-description: Implements one scoped change - a ticket, a fix, a refactor - in its own context and returns a summary of what it changed. Use when the PM has work that needs code written rather than reviewed, mapped, or planned. Never reviews its own diff.
+description: Implements one scoped change - a ticket, a fix, a refactor - in its own context and returns a summary of what it changed. Use when the PM has work that needs code written rather than reviewed, mapped, or planned. Never reviews its own diff. Do NOT use this when the change turns on Node.js specifics; use crew:node-developer instead.
 tools: Read, Write, Edit, Bash, Grep, Glob, Skill
 model: sonnet
 ---

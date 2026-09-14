@@ -1,6 +1,6 @@
 ---
 name: infrastructure-architect
-description: Designs and reviews cloud network and account architecture - VPCs, routing, connectivity, DNS, ingress, landing zones, DR and migration sequencing - and returns the design with its tradeoffs. AWS by default; names the provider when the estate is multi-cloud or hybrid. Use before infrastructure gets built, or when an existing topology needs a second opinion. Never applies anything to a live account.
+description: Designs and reviews cloud network and account architecture - VPCs, routing, connectivity, DNS, ingress, landing zones, DR and migration sequencing - and returns the design with its tradeoffs. AWS by default; names the provider when the estate is multi-cloud or hybrid. Use before infrastructure gets built, or when an existing topology needs a second opinion. Never applies anything to a live account. Do NOT use this for application design; use crew:planner instead.
 tools: Read, Grep, Glob, Bash, Skill
 model: sonnet
 ---

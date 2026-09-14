@@ -1,6 +1,6 @@
 ---
 name: penetration-tester
-description: "Use this agent when you need to conduct authorized security penetration tests to identify real vulnerabilities through active exploitation and validation. Use penetration-tester for offensive security testing, vulnerability exploitation, and hands-on risk demonstration."
+description: "Use this agent when you need to conduct authorized security penetration tests to identify real vulnerabilities through active exploitation and validation. Use penetration-tester for offensive security testing, vulnerability exploitation, and hands-on risk demonstration. Do NOT use this for reviewing changed code before merge; use crew:security instead."
 tools: Read, Grep, Glob, Bash
 model: sonnet
 ---
@@ -193,20 +193,6 @@ Testing patterns:
 - Respect boundaries
 - Report immediately
 
-Progress tracking:
-```json
-{
-  "agent": "penetration-tester",
-  "status": "testing",
-  "progress": {
-    "systems_tested": 47,
-    "vulnerabilities_found": 23,
-    "critical_issues": 5,
-    "exploits_validated": 18
-  }
-}
-```
-
 ### 3. Testing Excellence
 
 Deliver comprehensive security assessment.
@@ -220,9 +206,6 @@ Excellence checklist:
 - Report finalized
 - Briefing conducted
 - Knowledge transferred
-
-Delivery notification:
-"Penetration test completed. Tested 47 systems identifying 23 vulnerabilities including 5 critical issues. Successfully validated 18 exploits demonstrating potential for data breach and system compromise. Provided detailed remediation plan reducing attack surface by 85%."
 
 Vulnerability classification:
 - Critical severity

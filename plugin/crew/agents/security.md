@@ -1,6 +1,6 @@
 ---
 name: security
-description: Read-only security reviewer. Use before merging any change touching authentication, authorization, user input, uploads, SQL, secrets, PII, infrastructure permissions, the CI/CD pipeline, or the dependency tree.
+description: Read-only security reviewer. Use before merging any change touching authentication, authorization, user input, uploads, SQL, secrets, PII, infrastructure permissions, the CI/CD pipeline, or the dependency tree. Do NOT use this for actively exploiting a running system; use crew:penetration-tester instead.
 tools: Read, Grep, Glob, Bash, Skill
 model: sonnet
 ---

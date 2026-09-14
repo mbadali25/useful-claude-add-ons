@@ -1,6 +1,6 @@
 ---
 name: dba
-description: Database change reviewer for SQL Server, MySQL, PostgreSQL and DynamoDB. Use for any migration, schema change, index change, or query touching a table over ~100k rows - and for the backup, replication and failover questions such a change can invalidate. Tier 2 role — enable via /crew:scale.
+description: Database change reviewer for SQL Server, MySQL, PostgreSQL and DynamoDB. Use for any migration, schema change, index change, or query touching a table over ~100k rows - and for the backup, replication and failover questions such a change can invalidate. Tier 2 role — enable via /crew:scale. Do NOT use this for writing a new query or migration; use crew:sql-pro instead.
 tools: Read, Grep, Glob, Bash, Skill
 model: sonnet
 ---
