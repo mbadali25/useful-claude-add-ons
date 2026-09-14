@@ -52,6 +52,8 @@
 #                         root the Obsidian item suggests for the vault (default: ~/repos)
 #   --perplexity-api-key <key> Perplexity API key; falls back to $PERPLEXITY_API_KEY in
 #                         the environment, and without either the item explains and skips
+#                         (both key flags also take the --flag=value spelling; an
+#                         unknown option is reported with any value redacted)
 
 set -uo pipefail
 
@@ -119,7 +121,18 @@ while [ $# -gt 0 ]; do
     # The flag wins over the environment; with neither, the item explains and skips.
     # The key itself is never echoed, logged, or put in a step name.
     --perplexity-api-key) PERPLEXITY_API_KEY="${2:-}"; shift ;;
-    *) echo "Unknown option: $1" >&2 ;;
+    # The '--flag=value' spelling, for the two flags that carry a secret. Without
+    # these it fell through to the unknown-option arm below, which printed the whole
+    # token - so a key typed the wrong way round landed on the terminal and in any
+    # log capturing it, and the run then carried on as though no key had been given.
+    --obsidian-mcp-key=*)   OBSIDIAN_MCP_KEY="${1#*=}" ;;
+    --perplexity-api-key=*) PERPLEXITY_API_KEY="${1#*=}" ;;
+    # Report the option NAME, never the value beside it: an unknown option is exactly
+    # where a mistyped secret arrives. A bare token is redacted whole - it is most
+    # likely the value of the option before it.
+    --*=*) echo "Unknown option: ${1%%=*}=<redacted>" >&2 ;;
+    -*)    echo "Unknown option: $1" >&2 ;;
+    *)     echo "Unknown option: <redacted value>" >&2 ;;
   esac
   shift
 done

@@ -234,10 +234,27 @@ check "and that key is not printed either"    no  "$(saw "$SENTINEL")"
 
 # The real 'claude mcp list' puts a tick before "Connected"; the name is all the
 # script's parser reads off the line, and this file stays ASCII.
+run_perplexity - "--perplexity-api-key=$SENTINEL"
+check "the --flag=value spelling works too"   yes "$(logged "--env PERPLEXITY_API_KEY=$SENTINEL")"
+check "and does not print the key"            no  "$(saw "$SENTINEL")"
+
+# The '=' spelling used to fall through to the unknown-option arm, which echoed the
+# whole token - so the way to get this wrong was also the way to print the key.
+run_perplexity - "--not-a-real-flag=$SENTINEL" --perplexity-api-key "$SENTINEL"
+check "an unknown --flag=value is redacted"   yes "$(saw 'Unknown option: --not-a-real-flag=<redacted>')"
+check "and its value is not printed"          no  "$(saw "$SENTINEL")"
+run_perplexity - --not-a-real-flag "$SENTINEL" --perplexity-api-key "$SENTINEL"
+check "a bare value after one is redacted"    yes "$(saw 'Unknown option: <redacted value>')"
+check "and is not printed either"             no  "$(saw "$SENTINEL")"
+
 MCP_LIST="perplexity: npx -y @perplexity-ai/mcp-server - Connected"
 run_perplexity - --perplexity-api-key "$SENTINEL"
 check "an already-registered server is skipped" yes "$(saw "MCP server 'perplexity' already registered")"
 check "and is not re-added"                     no  "$(logged 'mcp add')"
+# Pinned on BOTH sides: scripts/_test/ps-install-keys.sh asserts the .ps1 prints this
+# same note on this same path. It did not - it returned before the note - so the row
+# said one thing on Linux and another on Windows.
+check "and the note is printed anyway"          yes "$(saw 'Backs the web-research skill')"
 MCP_LIST=""
 
 echo

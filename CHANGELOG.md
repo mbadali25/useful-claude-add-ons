@@ -64,6 +64,38 @@ All notable changes to this repository are documented here. Format follows [Keep
   `npx -y @perplexity-ai/mcp-server --help` parses no argv, so it hangs on stdin
   with a key and exits 1 without one.
 
+### Fixed — install scripts
+
+- **A key given as `--perplexity-api-key=<key>` was printed on the terminal.** The
+  `=` spelling matched no arm of the argument loop, so it fell through to
+  `*) echo "Unknown option: $1"`, which echoed the whole token — the secret, verbatim,
+  into the terminal and any log capturing it — and the run then carried on as though
+  no key had been given and skipped the row. Both key flags now accept the `=` form
+  (`--obsidian-mcp-key` has the same shape and the same hole, so it is fixed in the
+  same line), and the unknown-option arm reports `--some-flag=<redacted>` for a
+  `=` token and `<redacted value>` for a bare one. PowerShell had the identical
+  defect one layer lower: it does not bind `-Name=value` at all, and its binder error
+  quoted the whole token, so the fix there is a `ValueFromRemainingArguments`
+  parameter that catches unbound tokens before the binder can print them. A
+  consequence worth knowing: an unrecognised option on Windows now warns and the run
+  continues, as it always has on Linux, where it used to abort the run.
+- **The Perplexity row's closing note was printed on Linux and not on Windows.** The
+  `.sh` prints it after `add_mcp_server` returns, which includes the
+  already-registered path; the `.ps1` passed it as `-Note`, which `Add-McpServer`
+  emits only where it actually registered. Windows showed the SKIP alone. The `.ps1`
+  now prints the note itself, after the call.
+- **`scripts/_test/ps-install-keys.sh`: the first committed check that runs
+  `install-prerequisites.ps1`.** Nineteen cases over the key-taking row — no key, a
+  whitespace-only key, the flag, the `=` spelling, the environment fallback, unknown-
+  option redaction, and the already-registered path including that note — under a stub
+  `claude` that records its command line to a file rather than stdout, so "the key is
+  never printed" cannot pass for the wrong reason. It SKIPS loudly off Windows, where
+  that script cannot start. Sabotage-proven: restoring `-Note` fails the note case,
+  and dropping the `=` handling fails four.
+- **`INSTALLATION.md` no longer claims "Neither script ever prints the key."** It was
+  an unqualified security absolute that the repro above falsified, and nothing checks
+  it. It now states what the item's own output does and does not contain.
+
 ### Changed
 
 - **`web-research` 1.0.1: the operator section now describes both ways the server

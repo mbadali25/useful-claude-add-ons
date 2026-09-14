@@ -47,7 +47,9 @@ Common switches:
     -NotifySetup        scaffold the notify config after installing it, no prompt
     -ObsidianRepoRoot   root the Obsidian item suggests for the vault (default: C:\repos)
     -PerplexityApiKey   Perplexity API key; falls back to $env:PERPLEXITY_API_KEY, and
-                        without either the item explains and skips
+                        without either the item explains and skips. Both key
+                        parameters also take the -Flag=value spelling; an unknown
+                        option is reported with any value redacted, and the run goes on
     -NoUpdate           never update an already-installed plugin, only report it
     -ForceRefresh       reinstall a plugin whose files changed in its marketplace
                         but whose declared version did not (see 'content drift')
@@ -81,7 +83,12 @@ param(
     [string]$PerplexityApiKey = $env:PERPLEXITY_API_KEY,
     [Alias('PluginHubScope')]
     [ValidateSet('user', 'project', 'local')]
-    [string]$InstallScope = 'user'  # machine-wide by default, not per-project
+    [string]$InstallScope = 'user',  # machine-wide by default, not per-project
+    # Anything the binder could not match lands here instead of failing with an error
+    # that quotes the whole token: '-PerplexityApiKey=<key>' is not a spelling
+    # PowerShell binds, and its own message printed the key. Handled just below.
+    [Parameter(ValueFromRemainingArguments = $true)]
+    [string[]]$ExtraArgs
 )
 
 # Under 'irm ... | iex' this runs in the caller's scope, so both of the following are
@@ -95,6 +102,27 @@ $ErrorActionPreference = 'Stop'
 # version gate has to be a real statement or a PS 3/4 host would fail somewhere deep in.
 if ($PSVersionTable.PSVersion -lt [Version]'5.1') {
     throw "PowerShell 5.1 or newer is required (this host is $($PSVersionTable.PSVersion))."
+}
+
+# The .sh's unknown-option arm, in the flavour PowerShell needs. Two jobs, both of
+# them the same one the .sh does at its argument loop: accept the '-Flag=value'
+# spelling for the two flags that carry a secret, and report anything else by NAME
+# only. Left to the binder, '-PerplexityApiKey=<key>' failed with a message quoting
+# the whole token, which put the key on the terminal. Like the .sh, an unknown
+# option is reported and the run continues.
+foreach ($arg in @($ExtraArgs)) {
+    if ($arg -match '^-{1,2}PerplexityApiKey=(.*)$') {
+        $PerplexityApiKey = $Matches[1]
+    } elseif ($arg -match '^-{1,2}ObsidianMcpKey=(.*)$') {
+        $ObsidianMcpKey = $Matches[1]
+    } elseif ($arg -match '^-{1,2}[^=]+=') {
+        Write-Host "Unknown option: $(($arg -split '=', 2)[0])=<redacted>"
+    } elseif ($arg -match '^-') {
+        Write-Host "Unknown option: $arg"
+    } else {
+        # A bare token, most likely the value of the option before it.
+        Write-Host "Unknown option: <redacted value>"
+    }
 }
 
 $script:FailedSteps = @()
@@ -1977,8 +2005,13 @@ if (Test-Selected 'perplexity-mcp') {
         }
         Add-McpServer -Name 'perplexity' `
             -CommandArgs @('npx', '-y', '@perplexity-ai/mcp-server') `
-            -EnvVars @{ PERPLEXITY_API_KEY = $PerplexityApiKey } `
-            -Note "Backs the web-research skill. Restart the session, then 'claude mcp list' shows it as Connected."
+            -EnvVars @{ PERPLEXITY_API_KEY = $PerplexityApiKey }
+        # Printed here rather than passed as -Note, which Add-McpServer emits only on
+        # the path where it actually registered. The .sh prints its note after the
+        # helper returns, so on an already-registered server Linux said SKIP and then
+        # the note while Windows said only SKIP - the same row behaving differently on
+        # one platform, which is the failure the matched-pair rule exists to catch.
+        Write-Ok "Backs the web-research skill. Restart the session, then 'claude mcp list' shows it as Connected."
     }
 }
 
