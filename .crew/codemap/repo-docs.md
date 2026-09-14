@@ -123,13 +123,29 @@ unchanged position despite the file's other changes.)
   since it is not the runbook's owner.
 - DERIVED `CHANGELOG.md:5` — the `## [Unreleased]` heading. Position unchanged
   despite the file growing by roughly 1400 lines since the previous anchor.
-- `README.md:12` and `:18` — the bootstrap one-liners, pinned to
-  `9ea10e213726e0f98ee99e619aacf2700f571a01`. Verified still current:
-  `git log --oneline 9ea10e21..HEAD -- scripts/install-prerequisites.sh
-  scripts/install-prerequisites.ps1` returns nothing, so neither install
-  script has changed since that commit was pinned and the URLs are not stale
-  despite `install-prerequisites.sh` appearing in `crew.md`'s changed-file set
-  for an unrelated reason (a counts-string edit, not a behavioural change).
+- `README.md:12` and `:18` — the bootstrap one-liners, **re-pinned
+  `9ea10e21` -> `1b19e5d80513cbd170a7271d59bd246c98e0ec03` on 2026-09-14**
+  because both install scripts changed in `1b19e5d8`, which registered the
+  `web-research` skill. Re-pin by running the same check the old pin passed:
+  `git log --oneline <pinned-sha>..HEAD -- scripts/install-prerequisites.sh
+  scripts/install-prerequisites.ps1`. Empty output means the pin is current;
+  any commit listed means both URLs are serving a script that no longer
+  matches the repo, and the pin must move. That command now returns nothing
+  at `1b19e5d8`.
+
+  **A third site carries the same SHA and the runbook does not mention it.**
+  `docs/guides/Running-a-Mailbox-Job.json:18` embeds the PowerShell one-liner
+  inside a JSON step string, so `docs/runbooks/rollback.md:55` — which says to
+  replace the SHA in "BOTH raw.githubusercontent.com URLs in README.md" — is
+  an undercount, and following it literally leaves that guide installing an
+  older script with no error anywhere. It was re-pinned here too. Re-measure
+  with `grep -rn <old-sha> --include='*.md' --include='*.json' .` rather than
+  trusting this list; `.claude/worktrees/` copies are agent worktrees and are
+  not tracked sites.
+
+  Both re-pinned URLs were fetched at this pass: each returns HTTP 200 and the
+  served bodies contain the `web-research` entry (2 occurrences in the `.sh`,
+  1 in the `.ps1`), so the pin is known good rather than merely plausible.
 - `TODO.md` — re-resolved rather than trusted at its old line numbers, per
   this note's own standing rule that `TODO.md` is edited often. The render.sh
   entry moved from `:870-899` to `:1061-1091`; see "TODO.md's render.sh entry"
