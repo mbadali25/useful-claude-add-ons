@@ -1,190 +1,323 @@
 # repo-docs
-anchor: useful-claude-add-ons@7b0d8f3a
-verified: 2026-09-12
-re-verified, not re-derived: every claim below was re-read against the files it
-cites at this anchor and its citation re-pointed where the code had moved. Claims
-resting on machine-local files that are absent from this checkout are marked
-UNVERIFIABLE HERE at the claim, not in a preamble.
+anchor: useful-claude-add-ons@0a9d8937
+verified: 2026-09-14
+re-verified and, where the code moved under it, re-derived: every claim below
+was re-read against the files it cites at this anchor. Claims resting on
+machine-local files absent from this checkout are marked UNVERIFIABLE HERE at
+the claim, not in a preamble.
+
+## Re-anchor provenance — 7b0d8f3a -> 0a9d8937, 2026-09-14
+
+`git diff --name-only 7b0d8f3a..HEAD -- <the 13 repo paths this note cites>`
+returns five: `plugin/crew/README.md`,
+`plugin/crew/hooks/scripts/_test/run-tests.sh`,
+`plugin/crew/skills/crew-docs/SKILL.md`,
+`plugin/crew/skills/crew-runbooks/SKILL.md` and `scripts/sync-updates.py`.
+The other eight — `docs/diagrams/*.mmd`, `docs/HANDOFF.md`,
+`docs/remaining-setup.md`, `docs/runbooks/rollback.md`, `CHANGELOG.md`,
+`README.md`, `TODO.md` and `.gitignore` — are closed by that result for any
+citation that survives byte-identical; two of them (`CHANGELOG.md`, `TODO.md`)
+still needed their *line numbers* re-taken because both files grew a great
+deal in this range even though the passages this note cites did not change in
+substance.
+
+**The two changes that matter most from this pass are not line-number drift —
+read these even if you skip the rest of the diff-by-diff detail:**
+
+1. **`docs/adr/` now exists.** The previous four versions of this note carried
+   a landmine titled "`docs/adr/` does not exist, and three documents about
+   *this* repo say otherwise." That is no longer true. `docs/adr/0001-promote-
+   stays-unarmed.md` was added in crew 0.19.33 (`dd96981d`, within this diff
+   range), recording the `/crew:promote` "stays unarmed" decision. DERIVED:
+   `ls docs/adr/` returns exactly that one file; `git log --diff-filter=A --
+   'docs/adr/*'` shows one add, that commit. `CLAUDE.md:147`'s "Decisions in
+   `docs/adr/`." is therefore now a TRUE claim, not a false one — the opposite
+   correction from every previous pass over this landmine. See "docs/adr/ now
+   exists" below for what replaces the old entry.
+2. **The diagram provenance claim inverted.** The previous version said
+   `%% Anchors: <paths>` — the second header line in each `.mmd` — "is read by
+   **no code** in this repo," citing only a skill doc and a test fixture as
+   uses. At this anchor `_DIAGRAM_ANCHORS_RE` and `_diagram_paths` are real
+   functions in `plugin/crew/hooks/scripts/crew_freshness.py`, and
+   `read_diagrams` calls `_diagram_paths` at
+   `plugin/crew/hooks/scripts/crew_freshness.py:522` specifically to get the
+   path list `_moved_since` diffs against. This is not new code introduced in
+   this range — it predates this note's previous anchor — so the earlier
+   claim was wrong when it was written, not made wrong by a later change.
+   Found while cross-checking `crew.md`'s citations into the same module for
+   this pass; see "The machine-read diagram header" below for the corrected
+   account.
 
 ## Does
-Holds the repo's hand-written documentation - the Mermaid diagram sources under `docs/diagrams/`,
-planning artifacts under `docs/superpowers/`, one operational runbook, handoff notes, and the
-top-level `CHANGELOG.md`. Nothing under `docs/` is generated except the rendered diagram images in
-`docs/diagrams/out/`. (JUDGEMENT: the "prose is never auto-refreshed" rule is not written down
-anywhere as a rule; it is inferred from there being no writer. The one script that names
-`CHANGELOG.md`, `scripts/sync-updates.py:20` and `:73`, only discusses relative links inside
-mirrored README sections and does not write it - DERIVED.)
+Holds the repo's hand-written documentation — Mermaid diagram sources under
+`docs/diagrams/`, planning artifacts under `docs/superpowers/`, one
+operational runbook, handoff notes, `docs/adr/` (new — see above), and the
+top-level `CHANGELOG.md`. Nothing under `docs/` is generated except the
+rendered diagram images in `docs/diagrams/out/`. (JUDGEMENT: "prose is never
+auto-refreshed" is not written down as a rule; it is inferred from there being
+no writer. `scripts/sync-updates.py` — changed in this range, re-read rather
+than carried — mirrors README sections between locations and gained a new
+guard this pass, `splice`'s duplicate-marker check at `:114-125`: a second
+`BEGIN`/`END` pair for the same marker used to update silently only the
+first occurrence and report "already current," which is how `skills/README.md`
+carried a stale count through CI for four days. It still does not write
+`CHANGELOG.md` — DERIVED, the same citations as before, `:20` and `:73`,
+unchanged position despite the file's other changes.)
 
 ## Entry points
 
-- DERIVED `docs/diagrams/architecture.mmd:1-2` - and `data-flow.mmd:1-2`, `process.mmd:1-2`
-  alongside it. Line 1 is `%% anchor: useful-claude-add-ons@<sha>`, line 2 is `%% Anchors: <paths>`.
-  All three currently read `1f97e51c`, i.e. HEAD - they are not behind at this anchor.
-- DERIVED `docs/HANDOFF.md:1-5` - rolling handoff notes, newest first. Maintained by hand; see the
-  landmine below, it is **not** what `/crew:handoff` writes.
-- DERIVED `docs/remaining-setup.md:1-6` - the ordered manual checklist for the four workstreams
-  needing credentials, consent, or a decision no script can make.
-- DERIVED `docs/runbooks/rollback.md:9-14` - the "When to use this" list: `check-marketplace.py`
-  fails on `main`, a plugin ships with a broken `version`, or an install-script change breaks a
-  fresh machine. Carries `last verified: 2026-09-05` at `:3`.
-- DERIVED `CHANGELOG.md:5` - the `## [Unreleased]` heading, exactly at line 5.
-- `README.md:12` and `:18` — the bootstrap one-liners, pinned to a commit SHA. They must be re-pinned after any change to either install script, or the documented command installs the previous script.
-- `TODO.md` — 8 Codex findings inside `pa.py` and `jira-api.sh`, each with its repro, plus the recorded decision NOT to rewrite the published tenant snapshot.
+- DERIVED `docs/diagrams/architecture.mmd:1-2` — and `data-flow.mmd:1-2`,
+  `process.mmd:1-2` alongside it. Line 1 is
+  `%% anchor: useful-claude-add-ons@<sha>`, line 2 is
+  `%% Anchors: <paths>`. All three currently read `1f97e51c`, which is
+  **behind** this anchor (`0a9d8937`) — re-measured, not carried forward from
+  a previous "currently HEAD" claim that would now be false.
+- DERIVED `docs/adr/0001-promote-stays-unarmed.md` — the one ADR in the repo,
+  "accepted, 2026-09-13," recording that `/crew:promote production` stays
+  unconfigured here rather than being wired to a real environment. New this
+  pass; see "docs/adr/ now exists" below.
+- DERIVED `docs/HANDOFF.md:1-9` — rolling handoff notes, newest first.
+  Maintained by hand; see the landmine below, it is **not** what
+  `/crew:handoff` writes. File unchanged in this range (closed by the
+  per-path check); its newest entry is still dated 2026-08-23 — **22 days**
+  behind this anchor, up from 20 at the previous anchor and 14 before that.
+  Re-measured each pass because a "days behind" figure is stale the day after
+  it is written.
+- DERIVED `docs/remaining-setup.md:1-6` — the ordered manual checklist for the
+  four workstreams needing credentials, consent, or a decision no script can
+  make. Unchanged file, not re-read beyond confirming it still exists.
+- DERIVED `docs/runbooks/rollback.md:9-14` — the "When to use this" list.
+  Unchanged file (closed by the per-path check); still carries
+  `last verified: 2026-09-05` at `:3`, now nine days stale by the same
+  re-measurement logic as `HANDOFF.md`, and this note cannot refresh that date
+  since it is not the runbook's owner.
+- DERIVED `CHANGELOG.md:5` — the `## [Unreleased]` heading. Position unchanged
+  despite the file growing by roughly 1400 lines since the previous anchor.
+- `README.md:12` and `:18` — the bootstrap one-liners, pinned to
+  `9ea10e213726e0f98ee99e619aacf2700f571a01`. Verified still current:
+  `git log --oneline 9ea10e21..HEAD -- scripts/install-prerequisites.sh
+  scripts/install-prerequisites.ps1` returns nothing, so neither install
+  script has changed since that commit was pinned and the URLs are not stale
+  despite `install-prerequisites.sh` appearing in `crew.md`'s changed-file set
+  for an unrelated reason (a counts-string edit, not a behavioural change).
+- `TODO.md` — re-resolved rather than trusted at its old line numbers, per
+  this note's own standing rule that `TODO.md` is edited often. The render.sh
+  entry moved from `:870-899` to `:1061-1091`; see "TODO.md's render.sh entry"
+  below.
 
 ## Owns data
 
-- DERIVED `docs/diagrams/out/*.svg` and `*.png` (six files, three names x two formats), produced by
-  `plugin/crew/skills/crew-diagrams/scripts/render.sh` - output dir created at `:20`, `mmdc`
-  invoked at `:45` and again at `:49` on the failure path. **`out/` is gitignored**
-  (`.gitignore:357`); `git ls-files docs/diagrams/` returns only the three `.mmd` sources. Never
-  hand-edit anything under `out/` - it is regenerated wholesale.
-- DERIVED `docs/superpowers/` is hand-written: `plans/` (2 files) and `specs/` (5 files). Nothing
-  in the repo reads either directory back at runtime - a repo-wide grep for `docs/superpowers`
-  outside `docs/` itself and this codemap returns nothing.
-- Counts that drift silently and are checked by nothing: `28 skills` (README, INSTALLATION), `50 agents` (plugin/README.md), community `7 of 4 marketplaces`, `Seven MCP servers` (INSTALLATION.md).
+- DERIVED `docs/diagrams/out/*.svg` and `*.png` (six files, three names x two
+  formats), produced by
+  `plugin/crew/skills/crew-diagrams/scripts/render.sh` — output dir created at
+  `:20`, `mmdc` invoked at `:45` and again at `:49` on the failure path.
+  Re-read this pass (the file is not in the 5 changed paths, and both line
+  numbers are unchanged). `docs/diagrams/out/` itself is gitignored at
+  `.gitignore:409` (moved from `:357` — `.gitignore` grew by 66 lines in this
+  range, mostly the `.crew/` ignore-policy rewrite, and this unrelated entry
+  shifted along with everything below it). `git ls-files docs/diagrams/`
+  returns only the three `.mmd` sources.
+- DERIVED `docs/superpowers/` is hand-written: `plans/` and `specs/`.
+  Unchanged; not re-counted file-by-file this pass, only confirmed present.
+- **The self-stated counts on the front page have moved and are now partly
+  machine-checked; the previous version of this line was wrong on three
+  counts at once.** `README.md:52` and `:152` state **35 skills**, not 28 —
+  `python3 scripts/check-marketplace.py` reports "marketplace: 35 skills, 5
+  plugins" at this anchor, so 35 is current. `README.md:152` carries
+  `<!-- claim: skills-count -->`, so this number is no longer "checked by
+  nothing": `check_self_claims`
+  (`scripts/check-marketplace.py:412-...`) verifies marked numbers against
+  `marketplace.json`, and this repo's own `CLAUDE.md` documents the
+  convention. `plugin/README.md:414`'s agent count is also no longer stale —
+  it reads "54 agents, 26 commands, 17 skills, 20 hook entries," matching
+  `crew.md`'s inventory exactly, not the "50 agents" the previous version of
+  this note recorded. **Not re-verified this pass:** whether `7 of 4
+  marketplaces` (community count) and `Seven MCP servers`
+  (`INSTALLATION.md:213`) are still accurate — neither carries a
+  `claim:` marker, so `check_self_claims` does not cover them, and this note
+  did not independently re-count the community marketplace list or the MCP
+  server rows. Flagged as unverified rather than repeated as fact.
 
 ## Calls out to
 
-- DERIVED `mmdc` (mermaid-cli), at `plugin/crew/skills/crew-diagrams/scripts/render.sh:45`
-  (`-s 2`, silenced) and `:49` (the retry that prints the last five lines of stderr on FAIL).
-- `raw.githubusercontent.com` at the pinned sha. Verified after the merge rather than assumed: the `.ps1` returns 200 and the `.sh` at that sha contains the new menu keys.
+- DERIVED `mmdc` (mermaid-cli), at
+  `plugin/crew/skills/crew-diagrams/scripts/render.sh:45` (`-s 2`, silenced)
+  and `:49` (the retry that prints the last five lines of stderr on FAIL).
+  File unchanged in this range; both line numbers re-read and confirmed
+  identical to the previous anchor.
+- `raw.githubusercontent.com` at the pinned sha — unchanged and re-verified
+  above under "Entry points."
+
+## docs/adr/ now exists — replaces the previous "does not exist" landmine
+
+**This entire entry is new; it replaces four prior passes' worth of a landmine
+that no longer applies.** `docs/adr/0001-promote-stays-unarmed.md` was added
+by crew 0.19.33 (`dd96981d0b`, "tests for reportTracked and anchor truncation,
+both found by mutation," which folded in the ADR as an incidental part of a
+different change — the commit message says so directly: "CLAUDE.md names
+`docs/adr/` and the directory did not exist yet ... this starts the numbered
+series the project file already calls for").
+
+The ADR itself (`docs/adr/0001-promote-stays-unarmed.md:1-10`) records that
+`/crew:promote production --dry-run` and `--status` both stop immediately in
+this repo because `.crew/verify.json` declares no `environments` block — a
+deliberate, accepted decision (2026-09-13) to leave production promotion
+unconfigured here rather than wire it to a real environment. Its own opening
+line explains why it is a numbered ADR rather than a fourth flat document
+under `docs/`: the design records already there (`change-requests.md`,
+`guard-overrides.md`, `rule-of-two.md`) are specifications, not decisions.
+
+**Every previous claim this note made about `docs/adr/` is now the wrong way
+round, and is corrected rather than merely deleted so the reversal is
+visible:**
+
+- `CLAUDE.md:147` — "Decisions in `docs/adr/`." — is now TRUE. (Previously
+  cited as a false claim alongside two others.)
+- `CHANGELOG.md:3429-3430` (moved from `:2057-2058`) — "It also stops claiming
+  `docs/adr/`, which is now `scribe`'s" — was always true of *authorship*
+  (crew:scribe owns ADRs, not this note) and remains true; what changed is
+  only that the directory it discusses now has content.
+- `.crew/STATUS.md:39`'s claim that `docs/adr/` was "scaffolded" —
+  **UNVERIFIABLE HERE** as before: `STATUS.md` is machine-local and absent
+  from this checkout (`ls .crew/` returns only `codemap/` and `verify.json`
+  at this anchor). If that file still exists on the machine that wrote it, its
+  claim would now read as true rather than as the premature "scaffolded"
+  label the earlier version of this note flagged as a trap. Cannot confirm
+  either way from a clone.
+
+JUDGEMENT: the many `docs/adr/` references under `plugin/crew/` —
+`plugin/crew/agents/scribe.md`, `plugin/crew/skills/crew-docs/SKILL.md`,
+`plugin/crew/README.md`, and others — are the crew plugin instructing *any*
+repo it is installed into, not claims about this one. Not re-enumerated this
+pass; the previous pass's citations into them were not re-verified and should
+not be trusted without a fresh read if they are needed again.
 
 ## Landmines
-- **`docs/adr/` does not exist, and three documents about *this* repo say otherwise.** DERIVED:
-  the directory is absent from the working tree, is not in `.gitignore`, and
-  `git log --all --diff-filter=A -- 'docs/adr/*'` is empty - no ADR has ever been committed. The
-  three claims are `CLAUDE.md:78` ("Decisions in `docs/adr/`"), `CHANGELOG.md:2057-2058` ("It also
-  stops claiming `docs/adr/`, which is now `scribe`'s"), and `.crew/STATUS.md:39`
-  (**UNVERIFIABLE HERE**: the file is machine-local — `STATUS.md` is not on the `.crew/*` stanza's
-  un-ignore list, which is `codemap/`, `endpoints.json`, `verify.json` — and absent
-  from this checkout, so this line could not be re-read), which records `docs/adr/` as
-  **scaffolded**. That last one is the trap: it reads as a completed step.
-  (A prior version of this note cited `CHANGELOG.md:1195-1196` for the scribe/ADR assignment. That
-  range is about `obsidian-vault` doctor vault-collision labelling and has nothing to do with ADRs;
-  the scribe passage is at `CHANGELOG.md:2030-2031`. Corrected 2026-09-06 by reading both ranges.)
-  JUDGEMENT: the many other `docs/adr/` references under `plugin/crew/` -
-  `plugin/crew/agents/scribe.md:38`, `plugin/crew/skills/crew-docs/SKILL.md:30`,
-  `plugin/crew/README.md:1436`, and others - are the crew plugin instructing
-  *any* repo it is installed into, not claims about this one. Do not count them.
-  (Those three were written as `agents/scribe.md:38`, `skills/crew-docs/SKILL.md:30` and
-  `README.md:1501`. Not repo-relative, so they resolve by eye and cannot be pasted into
-  `git diff --name-only <anchor>..HEAD -- <paths>` - the rule `CLAUDE.md` states and the mechanism
-  this whole note depends on. Re-pointed and made repo-relative here.)
 
-- **`/crew:handoff` does not write `docs/HANDOFF.md`.** DERIVED
-  `plugin/crew/commands/handoff.md:7` - "Write `.work/HANDOFF.md` following the `crew-context`
-  skill" - and `.crew/config.json:5`, `"handoffPath": ".work/HANDOFF.md"` (machine-local and
-  gitignored; present in this checkout and re-read, but not checkable by anyone cloning the repo).
-  `plugin/crew/skills/crew-context/SKILL.md:62` says the same. `docs/HANDOFF.md` is human-authored
-  and reached from `README.md:730`; the two files are unrelated despite the shared basename.
-  DERIVED: its newest entry is `docs/HANDOFF.md:9`, dated 2026-08-23 - **twenty** days behind this
-  anchor, up from fourteen at the previous one, because the file has not been touched since.
-  Re-measured, not carried forward: a "days behind" figure is stale the day after it is written. The newest-first ordering it claims at `:3-4` does hold across all four entries
-  (`:9`, `:108`, `:141`, `:305`).
-  (A prior version said `/crew:handoff` writes this file. False, and false in the direction that
-  makes a stale document look maintained. Corrected 2026-09-06.)
+- **The machine-read diagram header is line 1, and line 2 is also read, by
+  code that exists but was previously missed.** Corrected this pass — see the
+  top of this note. Staleness is decided by `_DIAGRAM_ANCHOR_RE`
+  (`plugin/crew/hooks/scripts/crew_freshness.py:128-132`, the reasoning
+  comment at `:116-127`), matching `%% Generated from <repo>@<sha>` or
+  `%% anchor: <sha>`, applied in `read_diagrams`
+  (`plugin/crew/hooks/scripts/crew_freshness.py:473-524`) where
+  `sha[:7] == head[:7]` (`:513`) decides `current` vs not. A diagram whose
+  anchor is old is only marked `behind`, though, once `_moved_since(root, sha,
+  head, _diagram_paths(root, body))` is not `False` (`:522`) — and
+  `_diagram_paths` is exactly the function that reads the `%% Anchors:` line
+  this note previously said nothing consumed. `_DIAGRAM_ANCHORS_RE` (the
+  plural-name regex for that second line) and `_diagram_paths` both live in
+  `crew_freshness.py`, re-exported through
+  `plugin/crew/hooks/scripts/crew_state.py:120` and `:127`.
+  So: line 1 makes a diagram machine-checkable at all; line 2 is what narrows
+  "the anchor is old" down to "and something it actually cites moved" —
+  **not** merely a hand-re-verification aid the way the previous version of
+  this note described it. Losing line 2 now costs more than a manual check:
+  without it, `_diagram_paths` falls back to the whole-tree deny-list diff
+  (documented in `read_diagrams`'s own docstring,
+  `plugin/crew/hooks/scripts/crew_freshness.py:481-486`), which will report
+  `behind` far more readily than a correctly-scoped one would.
+  DERIVED `plugin/crew/skills/crew-diagrams/SKILL.md:37-43` (unchanged,
+  content and line range both re-confirmed): a source with no parseable
+  provenance still counts as `behind` outright — unknown resolves to stale.
 
-- **The machine-read diagram header is line 1, not `%% Anchors:`.** DERIVED: staleness is decided
-  by `_DIAGRAM_ANCHOR_RE` at `plugin/crew/hooks/scripts/crew_state.py:598-602` (the comment
-  explaining why it cannot reuse `_ANCHOR_RE` is at `:586-597`), which matches
-  `%% Generated from <repo>@<sha>` or `%% anchor: <sha>`, and is applied at
-  `plugin/crew/hooks/scripts/crew_state.py:811-815` where
-  `found.group(1)[:7] != head[:7]` marks a diagram behind. `%% Anchors:` - the source-path list -
-  is read by **no code in this repo**: grep finds it only at
-  `plugin/crew/skills/crew-diagrams/SKILL.md:31` (the documented example) and
-  `plugin/crew/hooks/scripts/_test/run-tests.sh:962` (a fixture). So the two headers do different
-  jobs: line 1 makes a diagram *machine*-checkable, line 2 makes it *hand*-re-verifiable via
-  `git diff --name-only <anchor>..HEAD -- <the listed paths>`. Losing line 2 costs the hand
-  re-check and nothing else; the PM will still report the diagram as current.
-  DERIVED `plugin/crew/skills/crew-diagrams/SKILL.md:37-43`: a source with no parseable provenance
-  counts as *behind*, deliberately - unknown resolves to stale.
-  (A prior version said `%% Anchors:` was "the only thing making a diagram falsifiable" and that
-  both headers are "read by the `crew-diagrams` skill". Both wrong: wrong header, wrong reader.
-  Corrected 2026-09-06 by reading the regex and its call site.)
+- **`/crew:handoff` does not write `docs/HANDOFF.md`.** Unchanged from the
+  previous anchor; re-confirmed rather than re-derived since none of the
+  files this claim rests on are in the changed set. DERIVED
+  `plugin/crew/commands/handoff.md:7` — "Write `.work/HANDOFF.md` following
+  the `crew-context` skill" — and `.crew/config.json:5`,
+  `"handoffPath": ".work/HANDOFF.md"` (machine-local and gitignored; present
+  in this checkout and re-read, but not checkable by anyone cloning the
+  repo). `plugin/crew/skills/crew-context/SKILL.md:62` says the same
+  ("Write it to `.work/HANDOFF.md`"), unchanged position, re-confirmed.
+  `docs/HANDOFF.md` is human-authored; the two files are unrelated
+  despite the shared basename. **Corrected this pass:** the previous version
+  said `docs/HANDOFF.md` is "reached from `README.md:730`." `README.md`
+  changed in this range (17 lines) and no longer mentions `HANDOFF` anywhere —
+  grepped for both the full path and the bare word, zero hits. Whatever linked
+  to it before this range does not now; not investigated further, since
+  `README.md` is outside this note's five changed files and finding where the
+  link went would mean reading the whole diff rather than the cited line.
 
-- **`TODO.md`'s `render.sh` entry is at `TODO.md:870-899`, and it is stale in one specific way.**
-  DERIVED: the section heading is `TODO.md:870`, "`render.sh` cannot render a diagram on Windows -
-  it hands `mmdc` a `/tmp` path". Its symptom report is accurate history - six failures for six on
-  2026-09-05 (`TODO.md:880-881`), and its own proposed fix at `TODO.md:891` is "resolve the temp
-  path through `cygpath -w`". That fix has since landed:
-  `plugin/crew/skills/crew-diagrams/scripts/render.sh:32-35` sets `PCFG_ARG` from
-  `cygpath -w "$PCFG"` when `cygpath` exists - that citation is unchanged and was re-read, not
-  assumed. What is stale is only that the heading is still not marked CLOSED, unlike its neighbours
-  at `TODO.md:670`, `TODO.md:786` and `TODO.md:902`, which carry "- CLOSED 2026-09-06". Re-checked
-  at this anchor: the heading remains unmarked.
-  DERIVED `render.sh:27-31` names the real trigger: a caller with `MSYS_NO_PATHCONV=1` set, which
-  turns off MSYS's own argument rewrite. Without that variable the same command renders. The
-  Mermaid sources were never the problem.
-  (A prior version cited this as `TODO.md:361-391` - off by roughly 320 lines, and landing inside
-  an unrelated section. `TODO.md` is edited often; re-resolve any line citation into it rather
-  than trusting one. Corrected 2026-09-06.)
+- **`TODO.md`'s `render.sh` entry moved to `TODO.md:1061-1091`.** Re-resolved
+  this pass by reading the file directly (not carried from the old
+  `:870-899`, which no longer points at this section — `TODO.md` grew by
+  roughly 1400 lines in this range even though it is not in the 5-file
+  changed set the per-path check names, which means it changed in ways that
+  did not touch any of the *other* passages this note cites, not that it was
+  untouched). The section heading, "`render.sh` cannot render a diagram on
+  Windows — it hands `mmdc` a `/tmp` path," is still **not** marked CLOSED,
+  unlike its now-numerous neighbours that are (`TODO.md:634`, `:1093`, `:2037`,
+  `:2116`, `:2161`, and others). Its content is unchanged in substance: six
+  failures for six on 2026-09-05, the same three sources rendering cleanly
+  when `mmdc` is invoked directly, and the same proposed fix
+  (`cygpath -w`), which has since landed —
+  `plugin/crew/skills/crew-diagrams/scripts/render.sh:32-35` sets `PCFG_ARG`
+  from `cygpath -w "$PCFG"` when `cygpath` exists, re-read this pass and
+  unchanged from the previous anchor.
+  `plugin/crew/skills/crew-diagrams/scripts/render.sh:27-31` still names the
+  real trigger: `MSYS_NO_PATHCONV=1` set in the caller's environment, not a
+  Mermaid problem.
 
-- **The regression test for that fix is not where `CLAUDE.md` says it is.** DERIVED
-  `CLAUDE.md:201` states the check "lives in `scripts/_test/render.sh`". That file does not exist -
-  `scripts/_test/` holds `drift-detection.sh` and `menu-groups.sh` and nothing else. The real path
-  is `plugin/crew/skills/crew-diagrams/scripts/_test/render.sh` (79 lines), whose header at
-  `:2-14` states the `MSYS_NO_PATHCONV=1` trigger and whose case 2 at `:72-74` runs
-  `env MSYS_NO_PATHCONV=1` and asserts a **non-zero output file**, not exit 0 - because the broken
-  script still created `out/` and printed a summary line. Not fixed here: this note may only edit
-  itself.
+- **The regression test for that fix is no longer misdocumented — this
+  landmine is resolved, not carried forward.** Four previous versions of this
+  note recorded that `CLAUDE.md` cited the wrong path for the `render.sh`
+  regression test (`scripts/_test/render.sh`, which does not exist, instead
+  of `plugin/crew/skills/crew-diagrams/scripts/_test/render.sh`, which does).
+  At this anchor, `CLAUDE.md:280-281` correctly names
+  `plugin/crew/skills/crew-diagrams/scripts/_test/render.sh` and its
+  `MSYS_NO_PATHCONV=1` case at `:74` — verified directly: the file is 79
+  lines, case 2 (`MSYS_NO_PATHCONV=1`) runs at line 74, and it asserts a
+  non-zero output file rather than exit 0, exactly as `CLAUDE.md` now says.
+  `CLAUDE.md` itself records the correction date as 2026-09-12. Kept as an
+  entry here, rather than silently dropped, because a landmine repeated four
+  times and then fixed is worth one line saying so — the next reader who
+  remembers the old warning should not go looking for a bug that is gone.
 
-- **`docs/runbooks/INDEX.md` does not exist.** DERIVED: `docs/runbooks/` contains `rollback.md`
-  alone, while `plugin/crew/commands/runbook.md:22` ("Add the symptom row to
-  `docs/runbooks/INDEX.md`"), `plugin/crew/skills/crew-runbooks/SKILL.md:80` and
-  `plugin/crew/README.md:1549` all describe it as the symptom-keyed index.
-  JUDGEMENT: with one runbook this costs nothing; it becomes a real gap at the second.
+- **`docs/runbooks/INDEX.md` does not exist — unchanged.** DERIVED:
+  `docs/runbooks/` still contains `rollback.md` alone (re-confirmed this
+  pass), while `plugin/crew/skills/crew-runbooks/SKILL.md:80` (unchanged
+  position despite the file being in this range's changed set — the edit was
+  elsewhere) and `plugin/crew/README.md:1604` (moved from `:1549`) both still
+  describe `docs/runbooks/INDEX.md` as the symptom-keyed index. JUDGEMENT:
+  with one runbook this costs nothing; it becomes a real gap at the second.
 
-- **A count written into a file under `docs/` changes that count.** JUDGEMENT. Recording "N
-  diagrams" or "N ADRs" *there* is self-referential. State the invariant and how to re-measure -
-  `ls docs/diagrams/*.mmd` and read line 1 of each - rather than a total that looks measured and is
-  wrong by one. This note is under `.crew/codemap/`, so its own counts are not self-referential;
-  they are still only true at this anchor.
+- **A count written into a file under `docs/` changes that count.** JUDGEMENT,
+  unchanged. This note is under `.crew/codemap/`, so its own counts are not
+  self-referential; they are still only true at this anchor.
 
 ## Unverified
-- Whether `render.sh` succeeds end to end on this machine. Not run - the harness for this refresh
-  was told not to, and CLAUDE.md records that its failure output is misleading here. The committed
-  regression test above is the evidence that the `cygpath` path is covered; that the test *passes*
-  on this machine is **unknown**, it was read and not executed.
-- Whether `CHANGELOG.md` entries are strictly one per plugin-version bump throughout. Only the
-  opening `[Unreleased]` entries were read (`CHANGELOG.md:5-10`), and the rule actually written
-  down is different: `plugin/crew/skills/crew-docs/SKILL.md:26` gates an entry on "Behaviour users
-  or callers can observe changed", not on a version bump. The 3896-line history was not read back.
-- The contents of `docs/superpowers/plans/` and `specs/` beyond their filenames.
-- Why `.crew/STATUS.md:39` records `docs/adr/` as scaffolded when it has never been committed.
-  Most likely git not tracking an empty directory, but that is a guess and was not confirmed - and
-  it is now **unconfirmable from a clone**: `.crew/STATUS.md` is gitignored and absent here, so the
-  line cannot be read at all at this anchor.
+- Whether `render.sh` succeeds end to end on this machine. Not run this pass
+  either. The committed regression test (above) is evidence the `cygpath`
+  path is covered in principle; that it *passes* here is still unmeasured.
+- `7 of 4 marketplaces` and `Seven MCP servers` (`INSTALLATION.md:213`) — see
+  "Owns data" above. Neither is marker-checked and neither was independently
+  recounted this pass.
+- Whether `CHANGELOG.md` entries are strictly one per plugin-version bump
+  throughout. Only the opening `[Unreleased]` region was read this pass; the
+  now much larger history (over 5800 lines) was not read back. The rule
+  actually written down remains `plugin/crew/skills/crew-docs/SKILL.md:26`
+  (position unchanged, re-confirmed), gating an entry on "Behaviour users or
+  callers can observe changed," not on a version bump.
+- The contents of `docs/superpowers/plans/` and `specs/` beyond their
+  filenames.
+- Whether the community counts this note has never independently verified
+  (`7 of 4 marketplaces`) reflect the current state of that external list at
+  all — out of scope for a repo-local codemap regardless.
 
-## Re-anchor provenance
+## Older provenance, kept as an account of process rather than a current claim
 
-**This pass re-verified; it did not re-derive.** Every claim above is the previous pass's. What
-changed is the citations: each was re-read against the file it names and re-pointed where the text
-had moved, three were rewritten repo-relative, and two figures that decay with time (the HANDOFF
-age, the TODO line range) were re-measured.
-
-The previous anchor, `useful-claude-add-ons@d61342c3`, **does not resolve in this repository**, so
-`git diff --name-only <anchor>..HEAD -- <cited paths>` could not run. See
-`.crew/codemap/install-scripts.md` for the mechanism: a squash merge discarded the branch commit
-the writer recorded, fixed in crew 0.19.13.
-
-Citations were re-pointed by aligning each cited file between revisions with `difflib` and matching
-on **content** - the text at the old line had to equal the text at the new one - rather than by
-applying an offset.
-
-That alignment turned up something the previous provenance section did not record: **this note is
-mixed-base.** Its `TODO.md` citations match `519754fa`, while its `CHANGELOG.md`,
-`crew_state.py` and `run-tests.sh` citations match `1f97e51c` - the commit the provenance section
-names. So the note was assembled across at least two trees, and a single `anchor:` line was never
-able to describe it. A per-path re-check driven by that one anchor would have been right about some
-citations and wrong about others with nothing to distinguish them.
-
-Not re-checkable at this anchor, and marked at each claim rather than here: `.crew/STATUS.md`
-(gitignored, absent from this checkout) and `.crew/config.json` (gitignored, present here but not
-for anyone cloning).
-
-Found while verifying, and left for someone with the scope to fix it: `CLAUDE.md:202` says the
-`render.sh` cygpath regression check lives in `scripts/_test/render.sh`. That file does not exist.
-The check is real and does cover the case - `plugin/crew/skills/crew-diagrams/scripts/_test/render.sh`,
-79 lines, exercising `MSYS_NO_PATHCONV=1` at `:74` - so the claim is true and the path is wrong,
-which is the shape that sends a reader looking for a missing test and concluding it was never
-written.
+Five prior re-anchors are on record: `1f97e51c` (initial), then `3167721f`,
+`b56d41f`, `d61342c3` (unresolvable — a squash merge discarded the branch
+commit the writer recorded, fixed by crew 0.19.13's anchor-writer change), and
+`7b0d8f3a`. Each corrected at least one claim the previous version got wrong —
+a `CHANGELOG.md` range that pointed at the wrong topic, three landmines not
+written repo-relative, a `TODO.md` citation off by roughly 320 lines, and the
+diagram-header reader misattribution corrected at the top of this pass. The
+lesson each one reinforced, kept here rather than repeated at every citation:
+`TODO.md` and `CHANGELOG.md` are edited often enough that a line-number
+citation into either should be treated as provisional the moment either file
+is known to have grown, and this note is mixed-base by nature — its citations
+into files that changed in this range are re-derived, and its citations into
+files that did not are closed by the per-path check, and the two are not
+interchangeable evidence.
