@@ -405,8 +405,26 @@ def check_versions(entries, fail):
 CLAIM_RE = re.compile(r"<!--\s*claim:\s*([a-z0-9-]+(?::[a-z0-9._-]+)?)\s*-->")
 CODE_SPAN_RE = re.compile(r"`[^`]*`")
 SKILLS_RE = re.compile(r"(\d+)(?:\s+of\s+(\d+))?\s+skills\b")
+PLUGIN_SKILLS_RE = re.compile(r"(\d+)\s+(?:bundled\s+)?skills?\b")
 VERSION_ROW_RE = re.compile(r"^\|\s*\*\*Version\*\*\s*\|\s*([0-9][0-9.]*)")
 BIND_WINDOW = 12
+
+
+def count_plugin_skills(name: str) -> int:
+    """How many bundled skills ``plugin/<name>/skills/`` actually holds.
+
+    Counted the same way a person verifies it by eye - a subdirectory with its
+    own ``SKILL.md`` - rather than a raw directory listing, so a stray file or
+    an in-progress folder with no ``SKILL.md`` yet does not inflate the count.
+    """
+    skills_dir = os.path.join(ROOT, "plugin", name, "skills")
+    if not os.path.isdir(skills_dir):
+        return 0
+    return sum(
+        1
+        for entry in os.listdir(skills_dir)
+        if os.path.isfile(os.path.join(skills_dir, entry, "SKILL.md"))
+    )
 
 
 def check_self_claims(entries, fail):
@@ -424,6 +442,13 @@ def check_self_claims(entries, fail):
     and `0 skills` are all true sentences about something else. A checker that
     cannot say WHICH thing a number describes has to either accept every number
     or reject correct ones, and both are worse than silence.
+
+    `skills-count` only ever verified the marketplace total, which is why
+    crew's own bundle count drifted (17 vs the 18 on disk) through two
+    correction passes with nothing catching it -- there was no marker for "a
+    plugin's own skills/ count" until `plugin-skills:<name>` was added
+    alongside it. Mark a plugin's own figure with that type; `skills-count`
+    still means the marketplace total and nothing else.
 
     So: an unmarked number is deliberately not checked, and that silence is the
     design rather than a gap. Marking a claim is how an author opts it in.
@@ -486,6 +511,34 @@ def check_self_claims(entries, fail):
                         fail(
                             f"{path}:{index + 1}: claims {'/'.join(stated)} skills, "
                             f"but marketplace.json registers {skills}"
+                        )
+
+                elif kind.startswith("plugin-skills:"):
+                    name = kind.split(":", 1)[1]
+                    plugin_names = {
+                        e["name"] for e in entries if e["source"].startswith("./plugin/")
+                    }
+                    if name not in plugin_names:
+                        fail(
+                            f"{path}:{index + 1}: claim names plugin '{name}', which has "
+                            "no entry with source ./plugin/ in marketplace.json"
+                        )
+                        continue
+                    found = next(
+                        (m for m in (PLUGIN_SKILLS_RE.search(w) for w in window) if m), None
+                    )
+                    if not found:
+                        fail(
+                            f"{path}:{index + 1}: claim 'plugin-skills:{name}' binds to "
+                            f"nothing within {BIND_WINDOW} lines - the number it marked is "
+                            "gone, so either restore it or delete the marker"
+                        )
+                        continue
+                    actual = count_plugin_skills(name)
+                    if int(found.group(1)) != actual:
+                        fail(
+                            f"{path}:{index + 1}: claims {found.group(1)} skills for plugin "
+                            f"'{name}', but plugin/{name}/skills/ has {actual}"
                         )
 
                 elif kind.startswith("plugin-version:"):
