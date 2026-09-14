@@ -183,23 +183,65 @@ CASES: list[tuple[str, dict, int, str]] = [
     (
         "`.crew/` with a trailing slash, which kills every negation below it",
         base(**{".gitignore": GOOD_GITIGNORE.replace(".crew/*\n", ".crew/\n")}),
-        2,
+        5,
         "trailing slash",
-    ),
-    (
-        "the approval marker listed ABOVE the negations, where one can re-admit it",
-        base(**{".gitignore": "# crew-ignore-policy:list\n.crew/*\n.crew/.approved-*\n"
-                              "!.crew/codemap/\n!.crew/endpoints.json\n"
-                              "!.crew/verify.json\n"}),
-        1,
-        "ABOVE",
     ),
     (
         "the approval marker dropped from the shipped template",
         base(**{CHECKER.POLICY_TEMPLATE: GOOD_TEMPLATE.replace(
             ".crew/.approved-*\n", "")}),
         1,
-        "does not list `.crew/.approved-*`",
+        "no active `.crew/.approved-*` rule",
+    ),
+    # --- the four mutations Codex found, each of which produced ZERO failures
+    # --- against the first version of this check.
+    (
+        "BLOCK 1a: the template's negation COMMENTED OUT, prose left intact",
+        base(**{CHECKER.POLICY_TEMPLATE: GOOD_TEMPLATE.replace(
+            "!.crew/endpoints.json\n", "# !.crew/endpoints.json\n")}),
+        1,
+        "omits !.crew/endpoints.json",
+    ),
+    (
+        # Reported against the TEMPLATE, not against .gitignore, and that is
+        # right: .gitignore is the authority, so when it loses a rule every
+        # other source is what now disagrees with it. The failure names a real
+        # divergence and points at a real file either way.
+        "BLOCK 1b: a .gitignore negation DELETED while a comment still names it",
+        base(**{".gitignore": GOOD_GITIGNORE.replace(
+            "!.crew/endpoints.json\n",
+            "# the endpoint ledger, !.crew/endpoints.json, travels\n")}),
+        1,
+        "adds !.crew/endpoints.json",
+    ),
+    (
+        "BLOCK 1c: the active `.crew/*` DELETED, its explanatory comment left behind",
+        base(**{CHECKER.POLICY_TEMPLATE: GOOD_TEMPLATE.replace(
+            ".crew/*\n", "# `.crew/*`, never `.crew/`, or the negations die\n")}),
+        2,
+        "no active `.crew/*` rule",
+    ),
+    (
+        "BLOCK 2: `.crew/*` moved BELOW the negations, suppressing all three",
+        base(**{CHECKER.POLICY_TEMPLATE: "## 3c\n\n<!-- crew-ignore-policy:list -->\n\n"
+                                         "```gitignore\n!.crew/codemap/\n"
+                                         "!.crew/endpoints.json\n!.crew/verify.json\n"
+                                         ".crew/*\n.crew/.approved-*\n```\n"}),
+        3,
+        "git disagrees with the stated policy",
+    ),
+    (
+        # Asserted because the FIRST version of this check claimed the opposite,
+        # and was wrong. `.crew/*` already ignores the marker and none of the
+        # three exceptions re-admits it, so where `.crew/.approved-*` sits
+        # relative to the negations does not change what git does. Proven by
+        # probing git rather than by reading the lines.
+        "the approval marker ABOVE the negations is harmless, and git says so",
+        base(**{".gitignore": "# crew-ignore-policy:list\n.crew/*\n.crew/.approved-*\n"
+                              "!.crew/codemap/\n!.crew/endpoints.json\n"
+                              "!.crew/verify.json\n"}),
+        0,
+        "",
     ),
     # --- must allow ------------------------------------------------------
     (
@@ -245,6 +287,18 @@ CASES: list[tuple[str, dict, int, str]] = [
     (
         "an UNMARKED file mentioning two paths in passing is still not checked",
         base(**{"TODO.md": "`!.crew/verify.json` followed `!.crew/codemap/`.\n"}),
+        0,
+        "",
+    ),
+    (
+        # Found while sabotage-testing: the 0.19.46 CHANGELOG entry describes
+        # this check and names its marker, which silently made an append-only
+        # history file a marked source. It passed only because the policy it
+        # describes is today's. The next entry recording a CHANGE to the list
+        # would state the old list, correctly, and fail for being accurate.
+        "CHANGELOG.md is history and is never a declaration, even carrying the marker",
+        base(**{"CHANGELOG.md": "<!-- crew-ignore-policy:list -->\n0.19.0 un-ignored "
+                                "only `!.crew/metrics.md`, which is no longer the list.\n"}),
         0,
         "",
     ),

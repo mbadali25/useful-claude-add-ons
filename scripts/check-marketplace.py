@@ -24,6 +24,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MARKETPLACE = os.path.join(ROOT, ".claude-plugin", "marketplace.json")
@@ -532,6 +533,13 @@ POLICY_TEMPLATE = "plugin/crew/skills/crew-setup/SKILL.md"
 # rule that tried to tell a definition from a declaration is one more thing that
 # can be wrong.
 POLICY_SELF = ("scripts/check-marketplace.py", "scripts/_test/crew-ignore-policy.py")
+# CHANGELOG.md is append-only history and must NOT be bound to the current
+# policy. It became a marked source by accident - the 0.19.46 entry describes
+# this check and names its marker - and it passed only because the policy it
+# describes happens to be today's. The next entry to record a CHANGE to the list
+# would state the OLD list, correctly, and fail a gate for being accurate about
+# the past. History is not a declaration of present policy.
+POLICY_HISTORY = ("CHANGELOG.md",)
 _UNIGNORE_RE = re.compile(r"!\.crew/([A-Za-z0-9_.*-]+/?)")
 
 
@@ -543,6 +551,61 @@ def _unignored(text: str) -> set[str]:
     slash would fail correct lines.
     """
     return {name.rstrip("/") for name in _UNIGNORE_RE.findall(text)}
+
+
+def _active_rules(block: str) -> list[str]:
+    """The lines of a gitignore block that git actually obeys.
+
+    Comments and blank lines are not rules. Extracting over the raw block made
+    three separate mutations invisible, each of which breaks the policy while
+    leaving prose that still describes it: commenting out a negation, deleting a
+    rule whose explanatory comment above it still names the path, and deleting
+    the active `.crew/*` while its comment kept the substring alive. A checker
+    that reads a comment as an effective rule is checking the documentation of
+    the policy rather than the policy.
+    """
+    rules = []
+    for line in block.replace("\r\n", "\n").split("\n"):
+        stripped = line.strip()
+        if stripped and not stripped.startswith("#"):
+            rules.append(stripped)
+    return rules
+
+
+def _ignore_behaviour(rules: list[str], exceptions: set[str]) -> list[str]:
+    """Ask git what these rules actually do, instead of reading them.
+
+    Every textual assertion here has a mutation that satisfies the text and
+    breaks the behaviour - ordering above all, since a `.crew/*` written BELOW
+    the negations suppresses all of them while every "is the path present"
+    check still passes. So the rules are written into a throwaway repo and
+    `git check-ignore` is asked directly. That is the same program that will
+    decide this in the real repo, which is the only opinion that counts.
+
+    Returns a list of behaviour descriptions that are wrong, empty when right.
+    """
+    probes = {".crew/config.json": True, ".crew/.approved-production-abc1234": True}
+    for name in sorted(exceptions):
+        probe = (f".crew/{name}INDEX.md" if name.endswith("/")
+                 else f".crew/{name}")
+        probes[probe] = False
+    with tempfile.TemporaryDirectory() as tmp:
+        subprocess.run(["git", "-C", tmp, "init", "-q"],
+                       capture_output=True, check=False)
+        with open(os.path.join(tmp, ".gitignore"), "w",
+                  encoding="utf-8", newline="\n") as handle:
+            handle.write("\n".join(rules) + "\n")
+        wrong = []
+        for probe, want_ignored in sorted(probes.items()):
+            done = subprocess.run(["git", "-C", tmp, "check-ignore", "-q", probe],
+                                  capture_output=True, check=False)
+            is_ignored = done.returncode == 0
+            if is_ignored != want_ignored:
+                wrong.append(
+                    f"{probe} is {'ignored' if is_ignored else 'NOT ignored'} "
+                    f"but must be {'ignored' if want_ignored else 'tracked'}"
+                )
+        return wrong
 
 
 def _policy_block(relative: str, text: str) -> str | None:
@@ -620,7 +683,7 @@ def check_crew_ignore_policy(fail):
     marked: set[str] = set()
     for relative in sorted(set(git("ls-files").splitlines()) | {POLICY_GITIGNORE}):
         relative = relative.replace("\\", "/")
-        if relative in POLICY_SELF:
+        if relative in POLICY_SELF or relative in POLICY_HISTORY:
             continue
         path = os.path.join(ROOT, *relative.split("/"))
         if not os.path.isfile(path):
@@ -647,33 +710,39 @@ def check_crew_ignore_policy(fail):
                 "it - without one there is nothing for a consuming repo to copy."
             )
             continue
-        sources[relative] = _unignored(body)
-        if re.search(r"(?m)^\s*\.crew/\s*$", body):
+        # ACTIVE rules only, everywhere below. A commented-out negation is not a
+        # negation, and reading one as effective is how three mutations that each
+        # break the policy produced zero failures.
+        rules = _active_rules(body)
+        # Kept with the trailing slash for the behavioural probe (a directory
+        # needs a path INSIDE it to probe), and without it for set comparison.
+        declared_raw = {name for rule in rules for name in _UNIGNORE_RE.findall(rule)}
+        declared = {name.rstrip("/") for name in declared_raw}
+        sources[relative] = declared
+        if any(rule == ".crew/" for rule in rules):
             fail(
                 f"{relative}: ignores `.crew/` with a trailing slash. Git refuses to "
                 "descend into it, so every `!.crew/...` negation below is silently "
                 "dead. Write `.crew/*`."
             )
-        if ".crew/*" not in body:
+        if ".crew/*" not in rules:
             fail(
-                f"{relative}: carries the {POLICY_MARKER} marker but never writes "
-                "`.crew/*`, so there is no base ignore for the un-ignore list to "
-                "carve out of."
+                f"{relative}: has no active `.crew/*` rule, so there is no base ignore "
+                "for the un-ignore list to carve out of. A comment mentioning it is "
+                "not a rule."
             )
-        last_negation = body.rfind("!.crew/")
-        approval = body.find(".crew/.approved-*")
-        if approval == -1:
+        if ".crew/.approved-*" not in rules:
             fail(
-                f"{relative}: does not list `.crew/.approved-*`. promote-gate writes "
-                "that marker itself, so a trackable one dirties the tree the moment "
-                "the gate creates the file it just asked for, then blocks on it."
+                f"{relative}: has no active `.crew/.approved-*` rule. `.crew/*` already "
+                "covers the marker, so this is belt-and-braces - but it is the entry a "
+                "consuming repo would have to keep if it ever narrowed the base ignore, "
+                "and it documents WHY the marker must never be trackable."
             )
-        elif approval < last_negation:
-            fail(
-                f"{relative}: lists `.crew/.approved-*` ABOVE the last `!.crew/` "
-                "negation. Later rules win, so a negation below it could re-admit "
-                "the approval marker."
-            )
+        # The behavioural check. It subsumes every ordering question - including
+        # a `.crew/*` written BELOW the negations, which suppresses all three
+        # while satisfying every "is this line present" assertion above.
+        for wrong in _ignore_behaviour(rules, declared_raw):
+            fail(f"{relative}: git disagrees with the stated policy - {wrong}.")
 
     for required in (POLICY_GITIGNORE, POLICY_TEMPLATE):
         if required not in marked:

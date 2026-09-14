@@ -4,8 +4,8 @@
   "_note": [
     "Built by /crew:verify on 2026-09-13 against 5238be3d. Every `run` command",
     "below was TIMED on this machine before it was written down; the seconds in",
-    "each `why` are measurements, not estimates. This file is machine-local:",
-    ".gitignore:287 ignores .crew/*, so nothing here travels to another clone.",
+    "each `why` are measurements, not estimates. This file is TRACKED as of 2026-09-14:",
+    ".gitignore un-ignores !.crew/verify.json, so this file DOES travel;",
     "CI (six workflows, all on [push, pull_request] with NO path filters) is the",
     "gate that everyone else gets; this map only makes the LOCAL Stop gate",
     "selective. Do not read it as the whole of this repo's verification.",
@@ -126,9 +126,9 @@
       "why": "0s. Frontmatter, tool permissions and every ${CLAUDE_PLUGIN_ROOT} path a command/agent/skill names. Wrapped in a subshell ON PURPOSE: verify-gate.sh runs each command with `eval` in its own shell, so a bare `cd` would move the gate's working directory for every check after it. map-audit.sh reports this rule as 'pointing at a file that does not exist' - that is a FALSE POSITIVE: it resolves the path from the repo root while the subshell resolves it from plugin/crew, which is also the working-directory marketplace.yml sets for the same step. Verified exit 0 with that cwd on 2026-09-13. Do not 'fix' it by rewriting the path from the root; the script itself resolves its inputs relative to cwd." },
 
     { "paths": ["**/*.ps1", "**/*.psm1"],
-      "run": ["\"/c/Program Files/PowerShell/7/pwsh\" -NoProfile -File ./scripts/check-powershell.ps1"],
+      "run": ["sh -c 'for c in pwsh \"/c/Program Files/PowerShell/7/pwsh\" \"/mnt/c/Program Files/PowerShell/7/pwsh\"; do if command -v \"$c\" >/dev/null 2>&1 || [ -x \"$c\" ]; then exec \"$c\" -NoProfile -File ./scripts/check-powershell.ps1; fi; done; echo \"TOOL MISSING: pwsh (PowerShell 7) is on no PATH and at no known Windows location, so the .ps1 checks DID NOT RUN. This is a missing tool, not a failed check. Install PowerShell 7.\" >&2; exit 127'"],
       "agents": ["powershell-security-hardening"],
-      "why": "3s. Every .ps1 here is Windows-only end to end, so a call to a cmdlet that does not exist parses cleanly and fails only on the one platform nothing here can run. PROVEN red by appending Invoke-TotallyMadeUpCmdlet to plugin/crew/hooks/scripts/guard.ps1. pwsh is named ABSOLUTELY because CLAUDE.md records that a bare `pwsh` is not on Git Bash's PATH and the gate reports that as a failed check rather than a missing tool. NOTE the script's two known limitations (README of _verify): CI mode enumerates via `git ls-files`, so an UNTRACKED .ps1 is invisible to it, and `param([string]$Path)` takes one path, silently dropping the rest of a list." },
+      "why": "3s. Every .ps1 here is Windows-only end to end, so a call to a cmdlet that does not exist parses cleanly and fails only on the one platform nothing here can run. PROVEN red by appending Invoke-TotallyMadeUpCmdlet to plugin/crew/hooks/scripts/guard.ps1. The interpreter is RESOLVED, not named. This file is TRACKED as of 2026-09-14, so it travels to clones that are not this machine, and a hardcoded /c/Program Files/PowerShell/7/pwsh fails on every one of them - verify-gate.sh runs this command and blocks completion on a non-zero exit, so even a Linux clone with pwsh ON PATH was blocked by this rule. Order matters: bare `pwsh` first, then the two Windows locations, because CLAUDE.md records that a bare `pwsh` is not always on Git Bash's PATH. When nothing resolves it exits 127 with TOOL MISSING on stderr rather than 0 - a tool that could not run must never report as a check that passed. NOTE the script's two known limitations (README of _verify): CI mode enumerates via `git ls-files`, so an UNTRACKED .ps1 is invisible to it, and `param([string]$Path)` takes one path, silently dropping the rest of a list." },
 
     { "paths": ["**/*.py", ".pylintrc", "ruff.toml"],
       "run": ["python3 -m ruff check .",

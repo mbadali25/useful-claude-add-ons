@@ -539,21 +539,38 @@ IGNORED; only `codemap/`, `endpoints.json` and `verify.json` are tracked. None o
 those three is written by a promote or an incident:
 
 - `codemap/` is written by `/crew:onboard`.
-- `endpoints.json` has exactly one writer, `declare_endpoint`
-  (`plugin/crew/hooks/scripts/crew_endpoints.py:258` states this in its own
-  docstring), reachable only through `crew_state.py`'s `--declare-endpoint` CLI
-  from the PM/work ticket flow.
+- `endpoints.json` has **two** writers, not one. `declare_endpoint`
+  (`plugin/crew/hooks/scripts/crew_endpoints.py:258`) is reachable through
+  `crew_state.py`'s `--declare-endpoint` CLI from the PM/work ticket flow, and
+  `record_scan_artifact()` at `crew_endpoints.py:757` also writes the ledger,
+  reached via `crew_state.py:2846` and instructed by
+  `plugin/gizmoduck/commands/report.md:37`.
+  **This correction is why the entry is worth re-reading rather than trusting.**
+  An earlier version of this section said `declare_endpoint` was "the only
+  writer of `endpoints.json` at all" — quoting that function's own docstring,
+  which says exactly that and is wrong about its own module. A docstring is a
+  claim, not a measurement. Neither writer is on a promote or an incident path,
+  so the conclusion below is unchanged; the evidence under it was not.
 - `verify.json` is written by `/crew:verify`, which is map authoring, not a
   deploy.
 - The incident path writes `.crew/incident-skips.log` and `.crew/incidents/`
   (`commands/emergency.md:90,101`), both ignored.
 
-**The residual risk is a different claim, and it is real.** A consuming repo that
-adopts the un-ignore list but omits `.crew/.approved-*` from below it tracks the
-approval marker, and the deadlock opens there. That is closed at the data layer
-by `crew-setup/SKILL.md` §3c, which now ships `.crew/.approved-*` explicitly
-below the negations, and by `check_crew_ignore_policy` keeping the list from
-drifting.
+**A residual risk was claimed here and it does not exist.** This section said a
+consuming repo that adopts the un-ignore list but omits `.crew/.approved-*`
+tracks the approval marker and opens the deadlock. That is false, and it was
+asserted from reading the rules rather than running them. `.crew/*` already
+ignores the marker and none of the three negations re-admits it: with both
+`.crew/.approved-*` and `.crew/*.lock` deleted from this repo's `.gitignore`,
+`git check-ignore` still reports `.crew/.approved-production-abc` and
+`.crew/x.lock` as IGNORED, and the three un-ignored paths as tracked — byte for
+byte the same verdicts as with them present. Omitting the explicit rule changes
+nothing.
+
+So the explicit entries are documentation, not mechanism, and `§3c` ships them
+for that reason. `check_crew_ignore_policy` now settles this class of question by
+building a throwaway repo and asking `git check-ignore` rather than by reading
+the lines, which is what would have caught the claim when it was written.
 
 So the code change is written down here rather than made. `promote-gate.sh` is a
 **blocking** hook, and this repo's `CLAUDE.md` requires a committed,

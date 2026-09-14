@@ -314,8 +314,17 @@ __marimo__/
 # reviews which change - and that is a fact about the CODE, decided once, not a
 # fact about this machine. Ignored, every clone read "no verification map" and
 # selected no specialist, which is indistinguishable from "no rule matched".
-# Checked clone-safe before tracking: top-level keys are `_note`, `anchor`,
-# `default`, `rules`, `unmapped`, `version` - no absolute path, URL or hostname.
+# Clone-safety was claimed here on the strength of a regex sweep for `C:\` and
+# `/Users/`. That sweep did not look for the Git Bash `/c/...` form, and the map
+# contained exactly that: a rule invoking
+# "/c/Program Files/PowerShell/7/pwsh" absolutely, which verify-gate.sh executes
+# and blocks completion on. A Linux clone with pwsh ON PATH would still have been
+# blocked by it. The rule now resolves its interpreter instead, and the withdrawn
+# claim is recorded rather than deleted: "checked for absolute paths" was the
+# thing that made nobody look again. What IS true and re-checkable: the file
+# carries no URL, hostname or credential, and its top-level keys are `_note`,
+# `anchor`, `default`, `rules`, `unmapped`, `version`. Any `run` command added
+# here has to resolve its tools, because this file travels now.
 # The machine-specific half of crew's state is `config.json` (obsidian.vaultPath,
 # boardDir, pm.authority), and that one stays ignored above.
 !.crew/verify.json
@@ -354,10 +363,12 @@ graphify-out/*
 .work/*.local.md
 
 # --- crew promotion gate ---------------------------------------------------
-# promote-gate.sh refuses to deploy when the tree is dirty and writes its own
-# approval marker into .crew/. So the marker must never be trackable: a tracked
-# marker dirties the tree the moment the gate writes it, and the gate then
-# blocks on the file it just told you to create.
+# promote-gate.sh refuses to deploy when the tree is dirty, and separately
+# requires an approval marker at .crew/.approved-<env>-<sha>. The OPERATOR
+# creates that marker; the gate only looks for it (promote-gate.sh:235). The
+# file the gate writes itself is .crew/.deploy-in-flight (promote-gate.sh:288).
+# An earlier version of this comment said the gate writes the approval marker,
+# which made the deadlock sound automatic when it is not.
 #
 # This block used to assert that ".crew/ and .work/ are ALREADY fully ignored
 # above" and that "the whole of crew's state - config.json, verify.json,
@@ -369,11 +380,17 @@ graphify-out/*
 # else under `.crew/`, including `config.json` and `STATUS.md`, is machine-local.
 # `.work/` is ignored entirely, PROMOTIONS.md included.
 #
-# These two entries are therefore not redundant belt-and-braces, they are the
-# thing that keeps the deadlock unreachable: they name the files whose tracking
-# would wedge a promotion, and they must stay below the negations so nothing
-# above can re-admit them. Every clone still starts with no crew config and must
-# run /crew:init itself.
+# These two entries ARE redundant belt-and-braces, and saying otherwise was the
+# second wrong claim in this block. `.crew/*` already ignores both, and none of
+# the three negations above re-admits either - `git check-ignore` confirms
+# `.crew/.approved-production-abc` and `.crew/x.lock` are ignored with these two
+# lines deleted. They are kept because they NAME the files whose tracking would
+# wedge a promotion, which is documentation a future narrowing of the base
+# ignore would need; they are not what makes the deadlock unreachable today.
+# Their position below the negations is likewise harmless rather than
+# load-bearing. `check_crew_ignore_policy` now proves all of this by asking git
+# instead of reading these lines. Every clone still starts with no crew config
+# and must run /crew:init itself.
 .crew/.approved-*
 .crew/*.lock
 .work/cache/

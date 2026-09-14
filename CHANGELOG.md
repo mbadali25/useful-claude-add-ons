@@ -6,6 +6,52 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`crew` 0.19.47: the checker shipped in 0.19.46 read comments as rules, and
+  three mutations proved it.** Codex review of PR #161 returned DO NOT MERGE.
+  `check_crew_ignore_policy` extracted paths from the raw source block, so a
+  COMMENTED-OUT negation still counted, a deleted rule whose explanatory comment
+  named the path still counted, and a deleted `.crew/*` whose comment mentioned
+  it still satisfied the base-ignore check. Each mutation produced zero
+  failures. Extraction now runs over ACTIVE rules only - non-blank, non-comment.
+  The deeper fix is that the check stopped reading the rules and started running
+  them. `_ignore_behaviour` writes the rules into a throwaway repo and asks
+  `git check-ignore` what they actually do. That is the same program that
+  decides it for real, and it subsumes every ordering question at once -
+  including `.crew/*` written BELOW the negations, which suppresses all three
+  while satisfying every is-this-line-present assertion. All four mutations were
+  re-applied to the real files and the real gate went RED for each.
+  Two claims this repo made about itself were disproven by that probe and are
+  corrected rather than quietly dropped. `.crew/.approved-*` and `.crew/*.lock`
+  are **redundant** belt-and-braces: with both deleted, `git check-ignore`
+  returns byte-identical verdicts, so omitting the explicit rule does NOT make
+  the approval marker trackable, and the `.gitignore` comment plus `TODO.md`
+  section that said otherwise were wrong. The gate also does not WRITE that
+  marker - the operator creates it (`promote-gate.sh:235`); the file the gate
+  writes is `.crew/.deploy-in-flight` (`:288`).
+  **`.crew/verify.json` was not clone-safe and the sweep that said it was looked
+  for the wrong thing.** It searched for `C:\` and `/Users/` and never for the
+  Git Bash `/c/...` form, which is exactly what rule 129 contained: a hardcoded
+  `"/c/Program Files/PowerShell/7/pwsh"`. `verify-gate.sh` executes that and
+  blocks completion on a non-zero exit, so this PR - which is what makes the map
+  travel - would have blocked every Linux clone, including one with pwsh ON
+  PATH. The rule now resolves its interpreter: bare `pwsh` first, then the two
+  Windows locations, and exit 127 with TOOL MISSING on stderr when none
+  resolves, because a tool that could not run must never report as a check that
+  passed. The withdrawn clone-safety claim is recorded in `.gitignore` rather
+  than deleted - "already checked for absolute paths" is what stopped anyone
+  looking twice.
+  `TODO.md` also claimed `declare_endpoint` was the only writer of
+  `endpoints.json`, quoting that function's own docstring, which asserts it and
+  is wrong about its own module: `record_scan_artifact` at
+  `crew_endpoints.py:757` writes the ledger too. Neither is on a promote or
+  incident path, so `promote-gate.sh` still does not change - but the evidence
+  under that conclusion did.
+  One more found while sabotage-testing: the 0.19.46 CHANGELOG entry named the
+  marker, which silently made an append-only history file a marked source. It
+  passed only because the policy it describes is today's; the next entry
+  recording a change to the list would have failed for being accurate about the
+  past. History is excluded, with a regression case.
+
 - **`crew` 0.19.46: the repo stated three `.crew/` ignore policies at once, and
   one of them was in the same file that contradicted it.** `.gitignore` ignored
   `.crew/*` and re-admitted `codemap/` and `endpoints.json` - then, fifty lines
