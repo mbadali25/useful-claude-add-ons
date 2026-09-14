@@ -1,4 +1,5 @@
-"""Invariants of the crew_state / crew_endpoints / crew_common / crew_guards split.
+"""Invariants of the crew_state / crew_endpoints / crew_common / crew_guards /
+crew_freshness split.
 
 `crew_state` re-exports every name below so its callers did not have to change.
 A re-export is a SECOND BINDING, not an alias: `crew_endpoints.read_endpoints`
@@ -9,8 +10,8 @@ guard failing open while wearing the label of a check that happened.
 
 That is not a hypothesis. It is what happened to the 21 tests that patched
 `crew_state.gizmoduck_installed`; they surfaced as AttributeError only because
-`crew_state` does not re-export that name. The seven names it DOES re-export
-have no such backstop, so this file is the backstop: a string-keyed patch of
+`crew_state` does not re-export that name. Every name it DOES re-export has no
+such backstop, so this file is the backstop: a string-keyed patch of
 any of them fails here, loudly, naming the module to patch instead.
 
 Checked by AST rather than by grep so `setattr(crew_state , "read_text")` and
@@ -22,6 +23,7 @@ import os
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_common
 import crew_endpoints
+import crew_freshness
 import crew_guards
 import crew_state
 
@@ -30,7 +32,12 @@ _SCRIPTS = os.path.join(os.path.dirname(_TESTS), "hooks", "scripts")
 
 
 def _reexported():
-    """Names `crew_state` imports from the two split modules, by reading it."""
+    """Names `crew_state` imports from the split modules, by reading it.
+
+    Read out of the source rather than listed here, so a module split that
+    adds a fourth owner is covered the moment its import line lands -- the
+    only thing this function needs told is the module NAME, below.
+    """
     with open(os.path.join(_SCRIPTS, "crew_state.py"),
               encoding="utf-8") as handle:
         source = handle.read()
@@ -38,7 +45,7 @@ def _reexported():
     for node in ast.parse(source).body:
         if (isinstance(node, ast.ImportFrom)
                 and node.module in ("crew_common", "crew_endpoints",
-                                    "crew_guards")):
+                                    "crew_guards", "crew_freshness")):
             for alias in node.names:
                 names[alias.asname or alias.name] = node.module
     return names
@@ -59,7 +66,7 @@ def test_crew_state_re_exports_exactly_what_its_callers_reach_for():
     somewhere else.
     """
     owners = {"crew_common": crew_common, "crew_endpoints": crew_endpoints,
-              "crew_guards": crew_guards}
+              "crew_guards": crew_guards, "crew_freshness": crew_freshness}
     reexported = _reexported()
     assert reexported, "crew_state imports from neither split module"
     for name, module in reexported.items():

@@ -6,6 +6,39 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`crew` 0.19.45: `crew_state.py` split, because the alternative was shaving
+  another comment.** The module was 3299 lines against `max-module-lines =
+  3300`. It had been one line from failing CI three times, and each time
+  somebody shaved a comment to buy room - trading documented reasoning for a
+  line count. `.pylintrc:113` says what to do on the third occasion, and this is
+  that. The boundary is where the AST put it rather than where the ticket
+  guessed: scanning every top-level symbol's references showed the slice closed
+  except for three outbound edges, with no cycle, and one question running
+  through all of it - has the artefact's recorded sha moved since. Moving only
+  the named helpers would have left the module around 3210, one comment from the
+  ceiling again, so the whole slice moved. 474 lines are byte-identical and no
+  comment was shaved to make it fit. `crew_state.py` 3299 to 2858;
+  `crew_freshness.py` 537; `max-module-lines` unchanged.
+  21 names moved and all stay reachable through `crew_state`, following
+  `crew_guards`' re-export shape rather than inventing a second convention.
+  Zero call sites needed editing - every external caller already spelled them
+  `crew_state.<name>` - and an AST scan confirmed no test rebinds a moved name
+  with `monkeypatch.setattr`, which would have bound the copy rather than the
+  original.
+  One sabotage mutation was anchored inside the moved lines, found by scanning
+  every mutation's anchor text against the moved block by AST rather than by
+  eye; its `FILE` constant moved with it and it is still red.
+  `CLAUDE.md`'s Memory section cited `crew_state.py:409` and `:467` for the
+  anchor comparison. Both numbers were ALREADY wrong before this change - the
+  comparisons were at `:991` and `:1074` - and both have now moved file as well
+  as line. They name `crew_freshness.py` and the right lines, the expression is
+  corrected to what is actually greppable, and a clause is added for the third
+  hit that grep returns, which is `_read_graph`'s fast path and not the codemap
+  one.
+  Equivalence was checked directly rather than only by the suite: every moved
+  function, constant and pattern dumped through the `crew_state.` surface before
+  and after, identical.
+
 - **`crew` 0.19.44: fourteen things this repo said about itself that were not
   true.** Each was checked against the code before it was changed.
   "Every hook is registered once, as bash" - in the README and in

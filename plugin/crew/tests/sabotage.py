@@ -124,6 +124,14 @@ MAP_AUDIT = os.path.join(
 # mutations below moved here with the code they target; none was
 # re-anchored onto a nearby line, which this file's own header forbids.
 GUARDS = os.path.join(CREW, "hooks", "scripts", "crew_guards.py")
+# Split out of `crew_state.py` on 2026-09-14 -- see its docstring. ONE mutation
+# below moved here with the code it targets, the diagram-kind one, because one
+# is all that was anchored in the moved lines; it was not re-anchored onto a
+# nearby line, which this file's own header forbids. Counted by reading every
+# mutation's anchor text against the moved block rather than by eye, and the
+# count is a fact about that block, not a target -- re-derive it if the seam
+# moves again.
+FRESHNESS = os.path.join(CREW, "hooks", "scripts", "crew_freshness.py")
 GATE_DOC = os.path.join(CREW, "commands", "gate.md")
 # The ten-question gate, and the command that routes through it. The gate is
 # the only MECHANICAL part of `/crew:change`; everything else about the feature
@@ -2006,7 +2014,7 @@ MUTATIONS = (
         # missing -- the unknown collapsing into the safe-looking value, in the
         # signal whose whole job is to say what is undocumented.
         "a specific diagram again satisfies its general kind",
-        STATE,
+        FRESHNESS,
         "        if not any(stem == kind for stem in stems)",
         "        if not any(stem == kind or stem.startswith(kind + \"-\")\n"
         "               for stem in stems)",
