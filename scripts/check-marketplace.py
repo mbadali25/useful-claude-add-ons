@@ -563,12 +563,24 @@ def _active_rules(block: str) -> list[str]:
     the active `.crew/*` while its comment kept the substring alive. A checker
     that reads a comment as an effective rule is checking the documentation of
     the policy rather than the policy.
+
+    Returned **verbatim**, not stripped. Leading whitespace is significant to
+    git and this was got wrong once: `.strip()` made `!.crew/endpoints.json` and
+    ` !.crew/endpoints.json` identical, so a genuinely broken exception was
+    repaired by the checker and then verified in its repaired form. Measured -
+    with the leading space, git leaves `.crew/endpoints.json` IGNORED while
+    `.crew/verify.json` on the next line is correctly un-ignored.
+
+    Only a line whose FIRST character is `#` is a comment, which is also
+    measured rather than assumed: git treats `  # foo` as a pattern matching a
+    file of that name, so stripping before the comment test would drop a line
+    git obeys.
     """
     rules = []
     for line in block.replace("\r\n", "\n").split("\n"):
-        stripped = line.strip()
-        if stripped and not stripped.startswith("#"):
-            rules.append(stripped)
+        if not line.strip() or line.startswith("#"):
+            continue
+        rules.append(line)
     return rules
 
 
@@ -583,22 +595,77 @@ def _ignore_behaviour(rules: list[str], exceptions: set[str]) -> list[str]:
     decide this in the real repo, which is the only opinion that counts.
 
     Returns a list of behaviour descriptions that are wrong, empty when right.
+
+    **Every way this probe can fail to answer is its own finding.** An earlier
+    version read any non-zero status as "not ignored", which merged git's 1
+    ("checked, not ignored") with its 128 ("fatal, no answer"), and discarded
+    the `git init` status entirely. Mocking either produced an empty finding
+    list and a clean report - the recurring bug this repo names, an unknown
+    wearing the label of a check that happened. `git check-ignore` documents
+    0 = ignored, 1 = not ignored, 128 = error; anything that is not 0 or 1 is
+    reported as UNVERIFIABLE rather than resolved either way.
+
+    The probe repo is also isolated from this machine, and the two halves of
+    that isolation were measured rather than assumed - they are not equally
+    load-bearing, and saying so is the point.
+
+    **The environment scrub is load-bearing, demonstrated.** With `GIT_WORK_TREE`
+    inherited from the caller, `git init` in the temp directory exits 128
+    (`GIT_WORK_TREE ... not allowed without specifying GIT_DIR`) and the probe
+    can answer nothing. Stripping `GIT_*` fixes it; that exact pair was run both
+    ways.
+
+    **The `-c core.excludesFile=` flags are insurance, and no case was found
+    where they change a verdict.** They were added for a global excludes file
+    that ignores `.crew/verify.json`, and then the test showed the verdict is the
+    same with and without them - because a repository `.gitignore` outranks both
+    `core.excludesFile` and `info/exclude` in git's precedence order, so nothing
+    at those layers can overturn a rule under test here. Kept because they cost
+    nothing, documented as unproven because the alternative is a comment claiming
+    a guarantee nobody checked.
     """
     probes = {".crew/config.json": True, ".crew/.approved-production-abc1234": True}
     for name in sorted(exceptions):
         probe = (f".crew/{name}INDEX.md" if name.endswith("/")
                  else f".crew/{name}")
         probes[probe] = False
+
+    env = {k: v for k, v in os.environ.items()
+           if not k.startswith(("GIT_", "XDG_"))}
+    # An empty value is what git documents for "no file", and NOSYSTEM covers
+    # /etc/gitconfig, which GIT_CONFIG_SYSTEM alone does not reliably suppress
+    # on older git.
+    env.update({"GIT_CONFIG_GLOBAL": "", "GIT_CONFIG_SYSTEM": "",
+                "GIT_CONFIG_NOSYSTEM": "1", "HOME": "", "USERPROFILE": ""})
+    base = ["git", "-c", "core.excludesFile=", "-c", "core.attributesFile="]
+
     with tempfile.TemporaryDirectory() as tmp:
-        subprocess.run(["git", "-C", tmp, "init", "-q"],
-                       capture_output=True, check=False)
+        started = subprocess.run([*base, "-C", tmp, "init", "-q"],
+                                 capture_output=True, text=True,
+                                 check=False, env=env)
+        if started.returncode != 0:
+            detail = (started.stderr or started.stdout or "").strip().splitlines()
+            return ["UNVERIFIABLE: could not create the probe repository "
+                    f"(git init exited {started.returncode}"
+                    + (f": {detail[-1]}" if detail else "")
+                    + "). Nothing about these rules was checked."]
         with open(os.path.join(tmp, ".gitignore"), "w",
                   encoding="utf-8", newline="\n") as handle:
             handle.write("\n".join(rules) + "\n")
         wrong = []
         for probe, want_ignored in sorted(probes.items()):
-            done = subprocess.run(["git", "-C", tmp, "check-ignore", "-q", probe],
-                                  capture_output=True, check=False)
+            done = subprocess.run([*base, "-C", tmp, "check-ignore", "-q", "--", probe],
+                                  capture_output=True, text=True,
+                                  check=False, env=env)
+            if done.returncode not in (0, 1):
+                detail = (done.stderr or "").strip().splitlines()
+                wrong.append(
+                    f"UNVERIFIABLE: `git check-ignore` exited {done.returncode} for "
+                    f"{probe}, which is neither 0 (ignored) nor 1 (not ignored)"
+                    + (f" - {detail[-1]}" if detail else "")
+                    + ". Whether this path is ignored is UNKNOWN, not clean"
+                )
+                continue
             is_ignored = done.returncode == 0
             if is_ignored != want_ignored:
                 wrong.append(

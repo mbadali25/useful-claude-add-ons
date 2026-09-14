@@ -6,6 +6,46 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`crew` 0.19.48: the round-1 fix normalised the bug away, and the probe that
+  replaced it could not tell a fatal git error from a clean result.** Codex
+  re-reviewed and returned two BLOCKs, both inside the code written to fix the
+  previous round - this repo's documented pattern of a fix being right about its
+  own case and one rung short of its neighbour.
+  `_active_rules` called `.strip()`, so `!.crew/endpoints.json` and
+  ` !.crew/endpoints.json` became the same string: the checker REPAIRED a broken
+  rule and then verified the repair. Measured - with the leading space git leaves
+  `.crew/endpoints.json` IGNORED while the next line's `.crew/verify.json` is
+  correctly un-ignored. Rules are now kept verbatim. The comment test was
+  measured too, and only a line whose FIRST character is `#` is a comment: git
+  treats `  # foo` as a pattern, so stripping before that test would have
+  dropped a line git obeys.
+  `_ignore_behaviour` read any non-zero `git check-ignore` status as "not
+  ignored", merging 1 (checked, not ignored) with 128 (fatal, no answer), and
+  discarded the `git init` status entirely. Mocking either produced an empty
+  finding list and a clean report - the recurring bug this repo names, an unknown
+  wearing the label of a check that happened. 0, 1 and everything else are now
+  three outcomes, and anything that is not 0 or 1 is reported as UNVERIFIABLE
+  rather than resolved either way.
+  The probe is isolated from the machine, and the two halves of that were
+  measured rather than asserted. The environment scrub is load-bearing: with
+  `GIT_WORK_TREE` inherited, `git init` exits 128 and the probe answers nothing;
+  stripping `GIT_*` fixes it, run both ways. The `-c core.excludesFile=` flags
+  are NOT demonstrated to change any verdict - a repository `.gitignore` outranks
+  both `core.excludesFile` and `info/exclude` in git's precedence, so nothing at
+  those layers can overturn a rule under test. They are kept as free insurance
+  and documented as unproven, because the alternative is a comment claiming a
+  guarantee nobody checked.
+  `.crew/verify.json`'s interpreter resolution now tries `pwsh.exe` and the
+  Windows locations with and without the suffix: under WSL the reachable binary
+  is the Windows one and is named `pwsh.exe`, so the previous list reported TOOL
+  MISSING on a box where PowerShell was installed and usable.
+  Two rationale corrections from 0.19.47 had not propagated. `plugin/crew/
+  README.md`, `crew-setup/SKILL.md`, `phases.md`, `CLAUDE.md` and
+  `plugin/PLUGINS.md` still said the ordering of `.crew/.approved-*` was
+  load-bearing, or that the GATE writes the approval marker. The operator creates
+  it; the gate writes `.crew/.deploy-in-flight`. Found by grepping the claim
+  rather than the three cited lines.
+
 - **`crew` 0.19.47: the checker shipped in 0.19.46 read comments as rules, and
   three mutations proved it.** Codex review of PR #161 returned DO NOT MERGE.
   `check_crew_ignore_policy` extracted paths from the raw source block, so a

@@ -11,7 +11,7 @@ Read the **Hooks** section of any plugin before installing it. Commands and agen
 | | |
 |---|---|
 | **Source** | [`crew/`](crew) |
-| **Version** | 0.19.47<!-- claim: plugin-version:crew --> |
+| **Version** | 0.19.48<!-- claim: plugin-version:crew --> |
 | **Install** | `claude plugin install crew@useful-claude-add-ons` |
 | **Menu item** | 21, `repo-plugins` — **off by default**. Menu item 22, `graphify`, is a separate, also-off-by-default install of the `graphify` CLI this plugin's graph feature depends on — see **The code graph** below. |
 | **Registers** | 54 agents, 26 commands, 17 skills, 20 hook entries (10 scripts × `.sh`/`.ps1`) across 5 events |
@@ -266,7 +266,7 @@ Setup is nine resumable phases (`/crew:init`), and every artifact it writes is a
 | `.work/` | as work happens | Tickets, findings, the handoff note, and `PROMOTIONS.md` |
 | `CLAUDE.md` | phase 1 | Created if absent; if present, missing sections are **appended, never overwritten** |
 
-`.crew/` and `.work/` must be gitignored - the deploy gate writes a marker there, and an ungitignored marker dirties the tree and blocks the next deploy.
+`.crew/*` and `.work/` must be gitignored (`.crew/*` with the glob, plus the named un-ignore list `!.crew/codemap/`, `!.crew/endpoints.json`, `!.crew/verify.json`) - the operator creates an approval marker under `.crew/` and the gate writes `.crew/.deploy-in-flight` there, and either one tracked dirties the tree and blocks the next deploy.
 
 ### Setup phase order
 

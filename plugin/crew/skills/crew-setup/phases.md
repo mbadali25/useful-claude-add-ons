@@ -411,9 +411,10 @@ promotion reads.
 
 **Two consequences to set up now.** `.gitignore` must carry the §3c block —
 `.crew/*` (not `.crew/`, which stops git descending and kills every negation),
-the named un-ignore list, then `.crew/.approved-*` and `.work/` below it. If the
-approval marker is trackable, the gate dirties the tree the moment it writes the
-file it just told you to create, and then blocks on it. And the rollback runbook
+the named un-ignore list, then `.crew/.approved-*` and `.work/`. If the approval
+marker is trackable, creating it dirties the tree and the gate then blocks on the
+very file it asked for — note that **you** create `.crew/.approved-<env>-<sha>`,
+not the gate, which only looks for it. And the rollback runbook
 needs a literal `last verified: YYYY-MM-DD` line, because that is what the hook
 greps for.
 

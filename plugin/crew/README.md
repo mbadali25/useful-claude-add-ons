@@ -1879,10 +1879,16 @@ against the right environment, after the soak. A hook fires before a command and
 after a turn; it cannot watch the middle. The row you append is a claim - which
 is exactly why it must record failures too.
 
-Two setup consequences. First, `.gitignore` must ignore `.crew/*` and `.work/`
-and must list `.crew/.approved-*` explicitly *below* the un-ignore list, or the
-gate's own approval marker dirties the tree and blocks the deploy it was written
-to authorise. Write `.crew/*`, never `.crew/` — a trailing slash makes git refuse
+Two setup consequences. First, `.gitignore` must ignore `.crew/*` and `.work/`,
+which is what keeps the approval marker out of the tree — an approval marker git
+tracks dirties the tree, and the gate then blocks on the file the operator was
+told to create. `.crew/.approved-*` is listed explicitly as documentation of
+which file that is; measured with `git check-ignore`, deleting that line changes
+nothing, because `.crew/*` already covers it and none of the negations re-admits
+it. Its position relative to the un-ignore list is likewise not load-bearing.
+(This paragraph previously said both were, and that the *gate* writes the marker.
+The operator creates it; the file the gate writes is `.crew/.deploy-in-flight`.)
+Write `.crew/*`, never `.crew/` — a trailing slash makes git refuse
 to descend into the directory, and nothing can be re-included from a directory
 git never entered, so `!.crew/codemap/`, `!.crew/endpoints.json` and
 `!.crew/verify.json` all silently do nothing. Second, the rollback runbook needs

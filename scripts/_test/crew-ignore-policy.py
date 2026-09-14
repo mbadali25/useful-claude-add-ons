@@ -291,6 +291,24 @@ CASES: list[tuple[str, dict, int, str]] = [
         "",
     ),
     (
+        # BLOCK 1 of round 2. `.strip()` before the probe made this line and a
+        # correct one identical, so the checker repaired the rule and then
+        # verified the repair. Measured: with the leading space git leaves
+        # .crew/endpoints.json IGNORED while .crew/verify.json is un-ignored.
+        "a leading space on an exception, which git does NOT treat as the same rule",
+        base(**{".gitignore": GOOD_GITIGNORE.replace(
+            "!.crew/endpoints.json\n", " !.crew/endpoints.json\n")}),
+        1,
+        ".crew/endpoints.json is ignored but must be tracked",
+    ),
+    (
+        "a leading space in the shipped template is caught the same way",
+        base(**{CHECKER.POLICY_TEMPLATE: GOOD_TEMPLATE.replace(
+            "!.crew/verify.json\n", "\t!.crew/verify.json\n")}),
+        1,
+        ".crew/verify.json is ignored but must be tracked",
+    ),
+    (
         # Found while sabotage-testing: the 0.19.46 CHANGELOG entry describes
         # this check and names its marker, which silently made an append-only
         # history file a marked source. It passed only because the policy it
@@ -322,8 +340,95 @@ CASES: list[tuple[str, dict, int, str]] = [
 ]
 
 
+GOOD_RULES = [".crew/*", "!.crew/codemap/", "!.crew/endpoints.json",
+              "!.crew/verify.json", ".crew/.approved-*"]
+GOOD_EXCEPTIONS = {"codemap/", "endpoints.json", "verify.json"}
+
+
+class _Broken:
+    """Force one git subcommand to fail, leaving the rest real.
+
+    Mocks the failures that cannot be produced by writing a fixture: a fatal
+    `git check-ignore` (status 128 - a corrupt index, a pathspec git rejects, a
+    binary that cannot run) and a `git init` that does not create a repo (a full
+    disk, a read-only temp directory, an interfering GIT_DIR).
+    """
+
+    def __init__(self, subcommand: str, status: int, message: str):
+        self.subcommand = subcommand
+        self.status = status
+        self.message = message
+        self.real = CHECKER.subprocess.run
+
+    def __call__(self, cmd, *args, **kwargs):
+        if isinstance(cmd, (list, tuple)) and self.subcommand in cmd:
+            return subprocess.CompletedProcess(
+                cmd, self.status, stdout="", stderr=self.message)
+        return self.real(cmd, *args, **kwargs)
+
+
+def run_probe(broken: _Broken | None) -> list[str]:
+    """`_ignore_behaviour` on a CORRECT rule set, with one git call sabotaged.
+
+    The rules are right, so any finding at all means the probe reported its own
+    inability to answer - which is the whole point. A silent empty list here is
+    the bug: an unknown collapsing into the safe-looking value.
+    """
+    saved = CHECKER.subprocess.run
+    if broken:
+        CHECKER.subprocess.run = broken
+    try:
+        return CHECKER._ignore_behaviour(  # pylint: disable=protected-access
+            list(GOOD_RULES), set(GOOD_EXCEPTIONS))
+    finally:
+        CHECKER.subprocess.run = saved
+
+
+PROBE_CASES: list[tuple[str, _Broken | None, int, str]] = [
+    (
+        "correct rules, real git: the probe finds nothing to report",
+        None,
+        0,
+        "",
+    ),
+    (
+        "BLOCK 2a: `git check-ignore` exits 128 on every probe",
+        _Broken("check-ignore", 128, "fatal: unable to read index file"),
+        5,
+        "UNVERIFIABLE",
+    ),
+    (
+        "BLOCK 2b: `git check-ignore` exits 129 (usage), also not an answer",
+        _Broken("check-ignore", 129, "usage: git check-ignore"),
+        5,
+        "is UNKNOWN, not clean",
+    ),
+    (
+        "BLOCK 2c: `git init` fails, so no probe repo exists at all",
+        _Broken("init", 128, "fatal: cannot mkdir: No space left on device"),
+        1,
+        "could not create the probe repository",
+    ),
+]
+
+
 def main() -> int:
     passed = failed = 0
+    for name, broken, expected, needle in PROBE_CASES:
+        problems = run_probe(broken)
+        ok = len(problems) == expected
+        if ok and needle:
+            ok = any(needle in p for p in problems)
+        if ok:
+            passed += 1
+            print(f"  ok   {name}")
+        else:
+            failed += 1
+            print(f"  FAIL {name}")
+            print(f"       expected {expected} finding(s)"
+                  + (f" containing {needle!r}" if needle else ""))
+            print(f"       got {len(problems)}: {problems}")
+
     for name, files, expected, needle in CASES:
         problems = run(files)
         ok = len(problems) == expected

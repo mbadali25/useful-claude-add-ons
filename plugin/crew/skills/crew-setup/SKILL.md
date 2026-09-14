@@ -485,10 +485,12 @@ the first secret exists is the only time it is free.
 !.crew/endpoints.json
 !.crew/verify.json
 
-# Below the negations on purpose - a later rule wins, so nothing above can
-# re-admit these. `.crew/.approved-*` is promote-gate's own approval marker:
-# track it and the gate dirties the tree the moment it writes the file it just
-# told you to create, then blocks the deploy that marker was authorising.
+# Documentation, not mechanism: `.crew/*` above already ignores every one of
+# these and no negation re-admits them, so deleting these lines changes nothing
+# git does. They are listed because `.crew/.approved-<env>-<sha>` is the
+# promotion approval marker THE OPERATOR creates - promote-gate only looks for
+# it - and a tracked one dirties the tree, after which the gate blocks on the
+# very file you were told to create. Keep them if you ever narrow `.crew/*`.
 .crew/.approved-*
 .crew/*.lock
 .crew/*.local
