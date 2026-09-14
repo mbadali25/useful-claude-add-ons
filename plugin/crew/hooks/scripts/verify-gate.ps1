@@ -138,6 +138,9 @@ try { if (($raw | ConvertFrom-Json).stop_hook_active) { exit 0 } } catch { }
 
 $root = if ($env:CLAUDE_PROJECT_DIR) { $env:CLAUDE_PROJECT_DIR } else { "." }
 Set-Location $root
+# Absolute from here on: the rule loop returns to $root before every rule, and
+# a "." that was correct at this line points somewhere else once a rule has cd'd.
+$root = (Get-Location).Path
 
 if (Test-Path .crew/config.json) {
   $cfg = Get-Content .crew/config.json -Raw | ConvertFrom-Json
@@ -206,7 +209,12 @@ if (-not $changed) { Write-CrewVerified; exit 0 }
 # exists for, and fails silently the other way when the two id spaces happen
 # to collide. Age comes from the lock DIRECTORY's own creation stamp instead,
 # and the holder removes its own lock as the engine exits.
-$lock = ".crew/.verify-gate.lock"
+# Absolute, not relative: the Exiting handler below runs after every rule has
+# executed, and a rule is allowed to `cd`. With a relative path the handler
+# looked for the token under wherever the last rule left the cwd, found
+# nothing, and kept the lock -- so a failing gate was followed by a Stop that
+# exited 0 silently for up to $lockTtl seconds (aws-managed-services, 2026-09-13).
+$lock = Join-Path (Get-Location).Path ".crew/.verify-gate.lock"
 $lockTtl = 700
 $reclaimed = $false
 if (-not (Test-Path ".crew")) { New-Item -ItemType Directory -Path ".crew" -Force -ErrorAction SilentlyContinue | Out-Null }
@@ -301,36 +309,61 @@ foreach ($f in $changed) {
 foreach ($c in $vm.always) { if ($cmds -notcontains $c) { [void]$cmds.Add($c) } }
 if ($cmds.Count -eq 0) { foreach ($c in $vm.default) { [void]$cmds.Add($c) } }
 
-# .crew/verify.json rules are authored as literal "bash <script>" strings
-# (see run-all.sh's own rule). Invoke-Expression resolves that leading `bash`
-# through the same PATH lookup Resolve-CrewBash exists to route around, so
-# every rule command needs the same substitution the legacy-smoke branch
-# above gets. Resolve once; every rule in a repo shares one Windows install.
+# .crew/verify.json rules are bash-flavoured strings - `bash _verify/smoke.sh`,
+# `FDM_MODULE=x bash case.sh`, `cd e2e && npx playwright test --grep @flow`. So
+# RUN them with bash rather than evaluating them as PowerShell. Resolve once;
+# every rule in a repo shares one Windows install, and Resolve-CrewBash already
+# routes around WSL's bash.exe.
 $bashExe = $null
 
+# verify-gate.sh evals each rule inside `$(...)`, a subshell. This is the
+# matched twin of that contract, and the only way to honour it is to hand the
+# rule to the same interpreter the sh side uses. Invoke-Expression could not:
+# it made the gate reimplement bash in PowerShell, and every hand-rolled piece
+# was its own way to be wrong. Measured on two repos on 2026-09-13:
+#
+#   1. `cd <module> && npm test` moved THIS process's cwd, so every later rule
+#      - `bash -n scripts/x.sh`, pytest, ruff - ran from the wrong directory
+#      and reported files missing that exist (aws-managed-services T-0019; and
+#      on TheSelectSource the next rule died on every Stop).
+#   2. `$?` after Invoke-Expression is Invoke-Expression's OWN status, so a
+#      failed `cd` and a nonexistent command both read as a pass. Six rules of
+#      one run silently passed.
+#   3. `FDM_MODULE=x bash case.sh` is bash syntax; to PowerShell it is a
+#      command named `FDM_MODULE=x`.
+#   4. `--grep @flow` parsed as a splat of an unset `$flow` ("The variable
+#      '$flow' cannot be retrieved") - a rule failing on PowerShell's own
+#      parse, before it was ever a command.
+#
+# A bash child gets the rule's own semantics, so 1, 3 and 4 stop existing
+# rather than being worked around, and $LASTEXITCODE is the rule's real status.
+# Push-Location/Pop-Location keeps the gate's own cwd correct for the marker
+# and the unmapped report whatever the rule does to its own.
+#
+# The `bash -c` shape is from PR #151 (another session, measured on
+# TheSelectSource); Resolve-CrewBash and findings 1-3 are from #153. Folded
+# here so this function has one lineage rather than two.
 $failed = $false
 foreach ($c in $cmds) {
-  $run = $c
-  # Only resolves a leading literal `bash` token. A rule written as
-  # `cd x && bash y.sh` (or any other form where `bash` isn't the first
-  # word) skips this substitution entirely and still resolves bash via PATH.
-  if ($c -match '^bash(\s|$)') {
-    if (-not $bashExe) { $bashExe = Resolve-CrewBash }
-    $run = "& '$bashExe'" + $c.Substring(4)
-  }
-  # A cmdlet leaves $LASTEXITCODE at its previous value, so a stale 0 reads as a
-  # pass and a stale nonzero reads as a failure. Reset it, and check $? as well
-  # - that is the only signal a failing cmdlet gives.
+  if (-not $bashExe) { $bashExe = Resolve-CrewBash }
+  # A native command leaves $LASTEXITCODE at its previous value when it fails
+  # to start, so a stale 0 would read as a pass. Reset it first.
   $global:LASTEXITCODE = 0
-  $out = Invoke-Expression $run 2>&1
-  $ok = $?
-  if (-not $ok -or $LASTEXITCODE -ne 0) {
+  Push-Location $root
+  try {
+    $out = & $bashExe -c $c 2>&1
+    $ok = ($LASTEXITCODE -eq 0)
+  } finally {
+    Pop-Location
+  }
+  if (-not $ok) {
     [Console]::Error.WriteLine("VERIFY FAILED: $c")
-    if ($bashExe -and $run -ne $c) { [Console]::Error.WriteLine("bash: $bashExe") }
+    [Console]::Error.WriteLine("bash: $bashExe")
     $out | Select-Object -Last 25 | ForEach-Object { [Console]::Error.WriteLine($_) }
     $failed = $true
   }
 }
+Set-Location $root
 
 if ($unmapped.Count -gt 0 -and $vm.unmapped -eq "fail") {
   [Console]::Error.WriteLine("UNMAPPED CHANGES - .crew/verify.json has no rule for:")

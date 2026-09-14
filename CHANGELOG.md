@@ -6,6 +6,47 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`crew` 0.19.37: `verify-gate.ps1` ran every rule in one process and let
+  each rule change the next one's world.** Measured on aws-managed-services on
+  2026-09-13, where the gate failed at every Stop with `bash -n scripts/x.sh`,
+  pytest "no tests ran" and ruff `E902 cannot find the path` for files that
+  exist. Rule 11 of that run was `cd drata-insights/frontend && npm test`;
+  `Invoke-Expression` runs in the gate's own scope, so the `cd` moved its
+  working directory and rules 12-27 ran from the wrong place. Three more
+  defects fell out of the same loop, each confirmed with a two-line pwsh
+  experiment before being believed: `$ok = $?` after Invoke-Expression was
+  Invoke-Expression's OWN status, so a failed `cd` and a command that does not
+  exist both read as passes (six rules of that run passed silently);
+  `FDM_MODULE=x bash case.sh` - bash syntax the sh twin evals natively - was a
+  command named `FDM_MODULE=x`, and by the previous point also a pass; and the
+  lock's Exiting handler compared a RELATIVE token path, found nothing once the
+  cwd had moved, kept the lock, and the next Stop within the 700 s TTL was
+  silently ungated after a failing one.
+
+  The loop now returns to the project root before every rule and after the
+  last, captures the rule's own `$?` inside a `& { }` block with the `2>&1` on
+  the block (a redirect on Invoke-Expression itself drops a native command's
+  stderr, which is a failing case script's whole report; a parse error is a
+  failed rule, not a crashed gate), peels leading `NAME=value` pairs into
+  `$env:` for that one rule and removes them again (a `$null` restore leaves
+  the variable present and empty, so absent-before is removed, not set), and
+  resolves the lock path absolutely. `verify-gate.sh` never had any of this: it
+  evals each rule inside `$(...)`, a subshell.
+
+  **Then the loop stopped reimplementing bash and started using it.** Folded
+  in from PR #151 (another session, measured on TheSelectSource): rules are
+  bash strings, so they are handed to `bash -c` inside
+  `Push-Location`/`Pop-Location` and judged on the child's exit status.
+  That deletes the three workarounds above rather than keeping them - bash
+  does `NAME=value` natively, IS bash, and reports its own status - and it
+  fixes one they could not: `--grep @flow` parsed as a splat of an unset
+  `$flow`, a PowerShell PARSE failure that survives anything built on
+  `Invoke-Expression`. 66 lines out, 41 in. #151's own fixtures quoted the
+  interpreter for PowerShell, a rule shape only half the matched pair could
+  ever execute; they are bash-quoted now. Ten cases in
+  `tests/test_verify_gate_rule_cwd.py`; reverting the loop to
+  `Invoke-Expression` reddens five of them.
+
 - **`crew` 0.19.35: two defects in 0.19.34, both one rung from the fix that
   introduced them.** Found by a Rule of Two review, each reproduced before being
   believed. This is CLAUDE.md's "re-review the fix to a guard as hard as the
