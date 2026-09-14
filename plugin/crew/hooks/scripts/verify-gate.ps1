@@ -309,81 +309,56 @@ foreach ($f in $changed) {
 foreach ($c in $vm.always) { if ($cmds -notcontains $c) { [void]$cmds.Add($c) } }
 if ($cmds.Count -eq 0) { foreach ($c in $vm.default) { [void]$cmds.Add($c) } }
 
-# .crew/verify.json rules are authored as literal "bash <script>" strings
-# (see run-all.sh's own rule). Invoke-Expression resolves that leading `bash`
-# through the same PATH lookup Resolve-CrewBash exists to route around, so
-# every rule command needs the same substitution the legacy-smoke branch
-# above gets. Resolve once; every rule in a repo shares one Windows install.
+# .crew/verify.json rules are bash-flavoured strings - `bash _verify/smoke.sh`,
+# `FDM_MODULE=x bash case.sh`, `cd e2e && npx playwright test --grep @flow`. So
+# RUN them with bash rather than evaluating them as PowerShell. Resolve once;
+# every rule in a repo shares one Windows install, and Resolve-CrewBash already
+# routes around WSL's bash.exe.
 $bashExe = $null
 
-# Every rule runs in THIS process, so what a rule does to the session, the
-# next rule inherits. verify-gate.sh has no such problem: it evals each rule
-# inside `$(...)`, a subshell. Three things this loop has to do by hand to
-# match that contract, each of which was measured missing on
-# aws-managed-services on 2026-09-13 (T-0019 there):
+# verify-gate.sh evals each rule inside `$(...)`, a subshell. This is the
+# matched twin of that contract, and the only way to honour it is to hand the
+# rule to the same interpreter the sh side uses. Invoke-Expression could not:
+# it made the gate reimplement bash in PowerShell, and every hand-rolled piece
+# was its own way to be wrong. Measured on two repos on 2026-09-13:
 #
-#   1. `cd <module> && npm test` moved the gate's cwd for every rule after it,
-#      so `bash -n scripts/x.sh`, pytest and ruff reported files missing that
-#      exist. Set-Location $root before each rule; the marker and the unmapped
-#      report after the loop need the root too.
-#   2. `$? ` after Invoke-Expression is Invoke-Expression's OWN status. A
-#      failed `cd` and a command that does not exist both read ok=True with
-#      LASTEXITCODE=0, so six rules of that run silently passed. The rule's own
-#      status is captured INSIDE the expression instead, and a parse error
-#      (which Invoke-Expression throws, aborting the whole gate) is a failed
-#      rule, not a crashed gate.
-#   3. `FDM_MODULE=x bash case.sh` is bash syntax the sh twin evals natively.
-#      Here it is a command named `FDM_MODULE=x`. Peel leading NAME=value
-#      pairs off into $env: for that one rule, then restore them.
+#   1. `cd <module> && npm test` moved THIS process's cwd, so every later rule
+#      - `bash -n scripts/x.sh`, pytest, ruff - ran from the wrong directory
+#      and reported files missing that exist (aws-managed-services T-0019; and
+#      on TheSelectSource the next rule died on every Stop).
+#   2. `$?` after Invoke-Expression is Invoke-Expression's OWN status, so a
+#      failed `cd` and a nonexistent command both read as a pass. Six rules of
+#      one run silently passed.
+#   3. `FDM_MODULE=x bash case.sh` is bash syntax; to PowerShell it is a
+#      command named `FDM_MODULE=x`.
+#   4. `--grep @flow` parsed as a splat of an unset `$flow` ("The variable
+#      '$flow' cannot be retrieved") - a rule failing on PowerShell's own
+#      parse, before it was ever a command.
+#
+# A bash child gets the rule's own semantics, so 1, 3 and 4 stop existing
+# rather than being worked around, and $LASTEXITCODE is the rule's real status.
+# Push-Location/Pop-Location keeps the gate's own cwd correct for the marker
+# and the unmapped report whatever the rule does to its own.
+#
+# The `bash -c` shape is from PR #151 (another session, measured on
+# TheSelectSource); Resolve-CrewBash and findings 1-3 are from #153. Folded
+# here so this function has one lineage rather than two.
 $failed = $false
 foreach ($c in $cmds) {
-  Set-Location $root
-  $run = $c
-  $savedEnv = @{}
-  while ($run -match '^([A-Za-z_][A-Za-z0-9_]*)=("([^"]*)"|''([^'']*)''|(\S*))\s+(.+)$') {
-    $name = $Matches[1]
-    $value = if ($null -ne $Matches[3]) { $Matches[3] } elseif ($null -ne $Matches[4]) { $Matches[4] } else { $Matches[5] }
-    if (-not $savedEnv.ContainsKey($name)) { $savedEnv[$name] = [Environment]::GetEnvironmentVariable($name) }
-    [Environment]::SetEnvironmentVariable($name, $value)
-    $run = $Matches[6]
-  }
-  # Only resolves a leading literal `bash` token (after any env prefix). A
-  # rule written as `cd x && bash y.sh` (or any other form where `bash` isn't
-  # the first word) skips this substitution entirely and still resolves bash
-  # via PATH.
-  $bashResolved = $false
-  if ($run -match '^bash(\s|$)') {
-    if (-not $bashExe) { $bashExe = Resolve-CrewBash }
-    $run = "& '$bashExe'" + $run.Substring(4)
-    $bashResolved = $true
-  }
-  # A cmdlet leaves $LASTEXITCODE at its previous value, so a stale 0 reads as a
-  # pass and a stale nonzero reads as a failure. Reset it. $global:CrewRuleOk
-  # is assigned from `$?` inside the block, right after the rule, where it is
-  # the rule's own last status; it stays $false if the block never got that
-  # far. The `2>&1` sits on the BLOCK, not on Invoke-Expression: measured
-  # 2026-09-13, a redirect on Invoke-Expression drops what a native command
-  # wrote to stderr (a failing case script's whole report), and a redirect on
-  # the block with `$?` read OUTSIDE it reports the block's status, which is
-  # true for a failed native command. Only this shape gets both right.
+  if (-not $bashExe) { $bashExe = Resolve-CrewBash }
+  # A native command leaves $LASTEXITCODE at its previous value when it fails
+  # to start, so a stale 0 would read as a pass. Reset it first.
   $global:LASTEXITCODE = 0
-  $global:CrewRuleOk = $false
+  Push-Location $root
   try {
-    $out = Invoke-Expression ('& { ' + $run + '; $global:CrewRuleOk = $? } 2>&1')
-  } catch {
-    $out = @($_.Exception.Message)
+    $out = & $bashExe -c $c 2>&1
+    $ok = ($LASTEXITCODE -eq 0)
+  } finally {
+    Pop-Location
   }
-  $ok = $global:CrewRuleOk
-  # SetEnvironmentVariable($name, $null) from PowerShell leaves the variable
-  # present and EMPTY (the $null becomes ""), so a variable that did not exist
-  # before the rule has to be removed, not set back.
-  foreach ($name in $savedEnv.Keys) {
-    if ($null -eq $savedEnv[$name]) { Remove-Item "env:$name" -ErrorAction SilentlyContinue }
-    else { [Environment]::SetEnvironmentVariable($name, $savedEnv[$name]) }
-  }
-  if (-not $ok -or $LASTEXITCODE -ne 0) {
+  if (-not $ok) {
     [Console]::Error.WriteLine("VERIFY FAILED: $c")
-    if ($bashResolved) { [Console]::Error.WriteLine("bash: $bashExe") }
+    [Console]::Error.WriteLine("bash: $bashExe")
     $out | Select-Object -Last 25 | ForEach-Object { [Console]::Error.WriteLine($_) }
     $failed = $true
   }

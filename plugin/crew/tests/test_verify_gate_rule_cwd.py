@@ -38,8 +38,17 @@ import context  # noqa: F401  pylint: disable=unused-import
 _ROOT = context._ROOT  # pylint: disable=protected-access
 _VERIFY_PS1 = os.path.join(_ROOT, "hooks", "scripts", "verify-gate.ps1")
 _PWSH = shutil.which("pwsh")
-# The interpreter running this suite, quoted for a PowerShell command line.
-_PY = "& '" + sys.executable.replace("'", "''") + "'"
+# The interpreter running this suite, quoted for a BASH command line.
+#
+# It used to be quoted for PowerShell (`& 'C:\...\python.exe'`), because the
+# gate evaluated each rule with Invoke-Expression. It no longer does: rules are
+# handed to bash, which is the only way the .ps1 can honour the same contract
+# as verify-gate.sh, whose rules have always been bash. A rule written in
+# PowerShell syntax could never have run on the sh side, so these fixtures were
+# testing a rule shape that only half the matched pair could execute.
+# Backslashes are turned into forward slashes because Git Bash execs that form
+# and treats a backslash inside single quotes as a literal character.
+_PY = "'" + sys.executable.replace("\\", "/").replace("'", "'\\''") + "'"
 
 pytestmark = pytest.mark.skipif(
     not sys.platform.startswith("win") or _PWSH is None,
@@ -104,6 +113,32 @@ def test_a_cd_rule_does_not_move_the_rules_after_it(tmp_path):
     result = _run_verify(root)
 
     assert result.returncode == 0, f"stdout: {result.stdout} stderr: {result.stderr}"
+    assert "VERIFY FAILED" not in result.stderr
+
+
+def test_an_at_prefixed_argument_is_not_a_powershell_splat(tmp_path):
+    """`--grep @flow` is an ordinary argument to every tool that takes it, and
+    it is NOT valid PowerShell: `@flow` is a splat of the variable `$flow`.
+
+    Measured on TheSelectSource (PR #151): under Invoke-Expression this rule
+    failed with "The variable '$flow' cannot be retrieved because it has not
+    been set" - the rule never ran at all, and the gate reported a failure
+    whose cause was PowerShell's parser rather than anything in the repo.
+
+    This is the half of the fold that #153's own cases do not cover: the cwd
+    and status findings are reproducible under either design, but this one is
+    only fixed by handing the rule to bash. If someone reverts to
+    Invoke-Expression, this is the test that says so.
+    """
+    root = _repo(tmp_path, [
+        # python -c "..." --grep @flow  ->  argv is ['-c', '--grep', '@flow']
+        _py_exit_unless("sys.argv[2] == '@flow'", 7) + " --grep @flow",
+    ])
+
+    result = _run_verify(root)
+
+    assert result.returncode == 0, f"stdout: {result.stdout} stderr: {result.stderr}"
+    assert "cannot be retrieved" not in result.stderr
     assert "VERIFY FAILED" not in result.stderr
 
 
