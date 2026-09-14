@@ -1925,14 +1925,21 @@ MUTATIONS = (
     ),
     (
         # Accept any assignment anywhere as proof the secret was captured.
-        # Dropping the `[^;&|]*${SECRET_READ}` tail is a plausible "simplify
+        # Dropping the `[^;&|)]*${SECRET_READ}` tail is a plausible "simplify
         # the regex" edit, and every pre-existing must-block case still passes:
         # the only shape it breaks is the compound command, which is the one an
         # attacker would type.
+        #
+        # RE-ANCHORED, not re-pointed: the regex it mutates moved out of the
+        # `if ! echo ... ; then` line and into `SECRET_HELD=` when the
+        # exemption started counting occurrences rather than matching one. It
+        # is the same claim about the same expression, which is the only case
+        # this file's header allows a new anchor for -- the code was not
+        # deleted, it was renamed.
         "a secret read is cleared by an unrelated assignment",
         GUARD_SH,
-        "[^;&|]*${SECRET_READ}\"; then",
-        "\"; then",
+        "[^;&|)]*${SECRET_READ}\"",
+        "\"",
         ("tests/test_guard_bypasses.py::"
          "test_sh_secret_read_needs_the_assignment_to_capture_IT"),
     ),
@@ -2020,6 +2027,100 @@ MUTATIONS = (
         "cache is authoritative,",
         ("tests/test_change_command.py::"
          "test_promote_gate_one_requires_an_approved_change_for_this_sha"),
+    ),
+    (
+        # A WRAPPER is read THROUGH, not treated as the thing that ran. This
+        # inversion is the shape the bug had: `env` was a name on the read
+        # list, so `env touch /tmp/x` was a read because `env` is. Every
+        # command crew positively recognises still classifies the same way, so
+        # only the wrapped ones change answer -- which is `read` becoming
+        # `full` for anything anybody thinks to prefix.
+        "a wrapper counts as the command, so `env <write>` is a read",
+        GUARDS,
+        "        if _head_name(tokens[0]) not in PROD_WRAPPERS:\n"
+        "            return tokens",
+        "        if _head_name(tokens[0]) in PROD_WRAPPERS:\n"
+        "            return []",
+        ("tests/test_guard_command_spelling.py::"
+         "test_a_write_wearing_a_reads_spelling_is_a_write"),
+    ),
+    (
+        # The original code, restored: the object is checked and the action
+        # that decides is not. `ip link show` and `ip link set eth0 down` are
+        # then the same answer, and the second one takes the interface down.
+        "only `ip`'s object is checked, so `ip link set` is a read",
+        GUARDS,
+        "        actions = PROD_SUBCOMMAND_ACTIONS.get(head)\n"
+        "        if (actions is not None and len(rest) > 1\n"
+        "                and rest[1].lower() not in actions):\n"
+        "            return \"write\"\n"
+        "        return \"read\"",
+        "        return \"read\"",
+        ("tests/test_guard_command_spelling.py::"
+         "test_a_write_wearing_a_reads_spelling_is_a_write"),
+    ),
+    (
+        # Back to the first payload only. `-c 'select 1' -c '<write>'` reads
+        # as a SELECT, and the statement crew inspects is the one an author
+        # would put first.
+        "only the first SQL payload is inspected",
+        GUARDS,
+        "        if all(_classify_sql(payload) == \"read\" "
+        "for payload in payloads):\n"
+        "            return \"read\"\n"
+        "        return \"write\"",
+        "        return _classify_sql(payloads[0])",
+        ("tests/test_guard_command_spelling.py::"
+         "test_a_write_wearing_a_reads_spelling_is_a_write"),
+    ),
+    (
+        # The selector stops recognising a path, so `prod_guarded` is never
+        # called and `classify_access` never gets a say. Nothing in the
+        # transcript says a guard stood down: the command simply runs.
+        "guard.sh's host-tool selector misses an absolute path",
+        GUARD_SH,
+        "SRV_TOOLS='(^|[[:space:];&|])([^[:space:];&|]*[/\\\\])?"
+        "(ssh|scp|plink|rsync)\\b",
+        "SRV_TOOLS='(^|[[:space:];&|])(ssh|scp|plink|rsync)\\b",
+        ("tests/test_guard_command_spelling.py::"
+         "test_sh_refuses_the_spelling"),
+    ),
+    (
+        # The same claim in the other flavour, and not a duplicate: the two
+        # selectors are separate code and were both wrong.
+        "guard.ps1's host-tool selector misses an absolute path",
+        GUARD_PS1,
+        "$srvTools = '(?i)(^|[\\s;&|])([^\\s;&|]*[\\\\/])?"
+        "(ssh|scp|plink|rsync)\\b",
+        "$srvTools = '(?i)(^|[\\s;&|])(ssh|scp|plink|rsync)\\b",
+        ("tests/test_guard_command_spelling.py::"
+         "test_ps1_refuses_the_spelling"),
+    ),
+    (
+        # `grep -c` counts LINES, so any capture anywhere satisfies the whole
+        # command -- which is the exemption the bug had, one rung up from the
+        # "an assignment exists somewhere" version #132 fixed. The first
+        # secret is captured, the second is printed, and the guard exits 0.
+        "guard.sh accepts one capture as evidence for every secret read",
+        GUARD_SH,
+        "  SECRET_N=$(echo \"$CMD\" | grep -oiE \"$SECRET_READ\" "
+        "| wc -l | tr -d '[:space:]')\n"
+        "  HELD_N=$(echo \"$CMD\" | grep -oiE \"$SECRET_HELD\" "
+        "| wc -l | tr -d '[:space:]')",
+        "  SECRET_N=1\n"
+        "  HELD_N=$(echo \"$CMD\" | grep -coiE \"$SECRET_HELD\" "
+        "| tr -d '[:space:]')",
+        ("tests/test_guard_command_spelling.py::"
+         "test_sh_every_secret_read_must_be_captured"),
+    ),
+    (
+        # The same, in the flavour that implements it separately.
+        "guard.ps1 accepts one capture as evidence for every secret read",
+        GUARD_PS1,
+        "  if ($heldCount -lt $secretCount) {",
+        "  if ($heldCount -lt 1) {",
+        ("tests/test_guard_command_spelling.py::"
+         "test_ps1_every_secret_read_must_be_captured"),
     ),
 )
 

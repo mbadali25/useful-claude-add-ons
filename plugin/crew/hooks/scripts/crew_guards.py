@@ -490,8 +490,24 @@ PROD_READ_COMMANDS = frozenset((
     "grep", "egrep", "fgrep", "zgrep", "wc", "sort", "uniq", "cut", "awk",
     "sed", "df", "du", "free", "uptime", "uname", "hostname", "whoami", "id",
     "date", "ps", "top", "netstat", "ss", "journalctl", "dmesg", "echo",
-    "true", "which", "env", "printenv",
+    "true", "which", "printenv",
 ))
+
+# `env` is NOT on that list, and its absence is the point. It is a WRAPPER:
+# `env touch /tmp/x` runs `touch`, so a classifier that stopped at the
+# executable name cleared every write on the machine behind four characters.
+# It is handled in `_classify_segment` instead -- bare `env` prints the
+# environment and is a read, `env FOO=bar <cmd>` is whatever `<cmd>` is, and
+# `env` carrying an option is unclassifiable (`-i`, `-u`, `-S`, `--chdir` each
+# change what runs or where).
+#
+# A frozenset rather than a special case in the function, because the shape
+# recurs: `nohup`, `nice`, `timeout`, `stdbuf`, `xargs` and `sudo` are all
+# wrappers. None of them is added here -- none is on the read list, so each
+# already classifies as a write, which is the correct answer. Adding one would
+# be a decision to look THROUGH it, and `env` is the only one this list ever
+# looked through by accident.
+PROD_WRAPPERS = frozenset(("env",))
 
 # `sed` and `awk` are on that list and both can write (`sed -i`, or a
 # redirect). The redirect check below catches the redirect; `-i` is caught
@@ -508,6 +524,25 @@ PROD_SUBCOMMAND_READS = {
     "kubectl": frozenset(("get", "describe", "logs", "top", "explain",
                           "api-resources", "version", "cluster-info")),
     "ip": frozenset(("addr", "a", "link", "l", "route", "r", "neigh")),
+}
+
+# The tools whose read/write split is a subcommand AND THEN AN ACTION. `ip
+# link` names an OBJECT, not a verb: `ip link show` reads and `ip link set eth0
+# down` takes the interface down, and a table keyed on the object alone cleared
+# both. Same defect as `env`, one table further in.
+#
+# Keyed by tool so this is one mechanism rather than a special case: a tool
+# absent here is judged on its subcommand alone, which is right for
+# `systemctl`, `docker` and `kubectl` -- their subcommand IS the verb. `ip` is
+# the only object-then-verb grammar crew recognises.
+#
+# The abbreviations `ip` itself accepts are deliberately NOT here. `ip link s`
+# resolves to `set`, not `show`, so accepting `s` as a read would re-open the
+# exact hole this table closes -- and `ip a s`, the common spelling of a read,
+# is refused instead. That costs a refusal somebody notices; the other
+# direction costs an interface nobody noticed going down.
+PROD_SUBCOMMAND_ACTIONS = {
+    "ip": frozenset(("show", "list", "lst", "get")),
 }
 
 # PowerShell's verb-noun grammar makes the read set nameable rather than
@@ -618,23 +653,71 @@ def matches_production(command, patterns):
     return None
 
 
+def _head_name(token):
+    """`token` as the program it names: basename, lowered, `.exe` dropped.
+
+    One function because three places asked the same question and a fourth
+    would have asked it differently. `/usr/bin/ssh`, `C:\\tools\\ssh.exe` and
+    `ssh` are one program, and a guard that answers differently for the three
+    spellings is a guard bypassed by typing a path.
+    """
+    head = os.path.basename(token).lower()
+    if head.endswith(".exe"):
+        head = head[:-4]
+    return head
+
+
+def _unwrap(tokens):
+    """`tokens` with every read-neutral wrapper stripped, or None.
+
+    None means the wrapper cannot be read, which the caller turns into a
+    write. `[]` means the wrapper ran nothing -- bare `env`, which prints the
+    environment -- and the caller turns THAT into a read.
+
+    Assignments are stripped with the wrapper (`env FOO=bar cmd` runs `cmd`).
+    An OPTION is not stripped, it refuses: `env -i` clears the environment,
+    `env -u` unsets, `env -S` re-splits the string into a different command
+    line and `env --chdir` runs somewhere else. Each of those changes what
+    runs, and "crew cannot tell" must never collapse into "read".
+    """
+    while tokens:
+        if _head_name(tokens[0]) not in PROD_WRAPPERS:
+            return tokens
+        rest = tokens[1:]
+        while rest and "=" in rest[0] and not rest[0].startswith("-"):
+            rest = rest[1:]
+        if rest and rest[0].startswith("-"):
+            return None
+        tokens = rest
+    return tokens
+
+
 def _classify_segment(segment):
     """One pipeline segment: `read` only when it is positively a read."""
     tokens = _prod_tokens(segment)
     if not tokens:
         return "write"
-    head = os.path.basename(tokens[0]).lower()
-    if head.endswith(".exe"):
-        head = head[:-4]
+    tokens = _unwrap(tokens)
+    if tokens is None:
+        return "write"
+    if not tokens:
+        # Every wrapper stripped and nothing left to run: `env` on its own,
+        # which prints the environment.
+        return "read"
+    head = _head_name(tokens[0])
     if any(flag in PROD_WRITE_FLAGS for flag in tokens[1:]):
         return "write"
     if any(head.startswith(verb) for verb in PROD_READ_PS_VERBS):
         return "read"
     if head in PROD_SUBCOMMAND_READS:
         rest = [t for t in tokens[1:] if not t.startswith("-")]
-        if rest and rest[0].lower() in PROD_SUBCOMMAND_READS[head]:
-            return "read"
-        return "write"
+        if not rest or rest[0].lower() not in PROD_SUBCOMMAND_READS[head]:
+            return "write"
+        actions = PROD_SUBCOMMAND_ACTIONS.get(head)
+        if (actions is not None and len(rest) > 1
+                and rest[1].lower() not in actions):
+            return "write"
+        return "read"
     if head in PROD_READ_COMMANDS:
         return "read"
     return "write"
@@ -674,24 +757,39 @@ def _classify_sql(sql):
     return "read"
 
 
-def _sql_payload(tokens):
-    """The SQL a client was handed, or None when it was handed none.
+def _sql_payloads(tokens):
+    """EVERY SQL payload a client was handed, in the order it was handed them.
 
-    None means an interactive session (`psql prod-db`), which is unclassifiable
-    by construction: nothing in the command line says what will be typed into
-    it. The caller turns None into `write`.
+    A LIST, and returning only the first was a bypass by spelling: `psql -h
+    prod-db-1 -c 'select 1' -c 'delete from orders'` runs BOTH, and psql, mysql
+    and sqlcmd all accept the flag more than once. One statement inspected out
+    of two is a classifier answering a question nobody asked -- and the
+    statement it reads is the one an author would put first.
+
+    An EMPTY list means an interactive session (`psql prod-db`), which is
+    unclassifiable by construction: nothing in the command line says what will
+    be typed into it. The caller turns that into `write`.
     """
     flags = ("-c", "--command", "-e", "--execute", "-q", "-Q", "--query",
              "--eval")
-    for index, token in enumerate(tokens):
-        flag, sep, inline = token.partition("=")
+    out = []
+    index = 0
+    while index < len(tokens):
+        flag, sep, inline = tokens[index].partition("=")
         if flag in flags:
             if sep:
-                return inline
-            if index + 1 < len(tokens):
-                return tokens[index + 1]
-            return None
-    return None
+                out.append(inline)
+            elif index + 1 < len(tokens):
+                out.append(tokens[index + 1])
+                index += 1
+            else:
+                # A flag with no value. `""` and not a skip: the payload is
+                # MISSING, which `_classify_sql` calls a write, and dropping it
+                # would make a truncated command line read as the statements
+                # that came before it.
+                out.append("")
+        index += 1
+    return out
 
 
 def _classify_aws(tokens):
@@ -744,19 +842,19 @@ def classify_access(command):
     tokens = _prod_tokens(command)
     if not tokens:
         return "write"
-    head = os.path.basename(tokens[0]).lower()
-    if head.endswith(".exe"):
-        head = head[:-4]
+    head = _head_name(tokens[0])
     if head == "aws":
         return _classify_aws(tokens)
     if head in ("ssh", "plink"):
         return _classify_ssh(tokens)
     if head in ("psql", "mysql", "mariadb", "sqlcmd", "mongosh", "mongo",
                 "redis-cli", "sqlite3", "cqlsh"):
-        payload = _sql_payload(tokens)
-        if payload is None:
+        payloads = _sql_payloads(tokens)
+        if not payloads:
             return "write"
-        return _classify_sql(payload)
+        if all(_classify_sql(payload) == "read" for payload in payloads):
+            return "read"
+        return "write"
     return "write"
 
 
