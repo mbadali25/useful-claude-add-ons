@@ -38,6 +38,11 @@ def _write(path, text):
         handle.write(text)
 
 
+def _read(path):
+    with open(path, encoding="utf-8") as handle:
+        return handle.read()
+
+
 def _refresh_codemap(root, stem="sub"):
     """Write a codemap anchored at HEAD and commit it, as a refresh would."""
     mapdir = os.path.join(root, ".crew", "codemap")
@@ -212,3 +217,141 @@ def test_pathlib_is_not_needed_for_these(tmp_path):
     """Guard against the fixture helpers drifting under these tests."""
     root = crew_fixtures.make_repo(tmp_path)
     assert pathlib.Path(root, ".crew").is_dir()
+
+
+# ----------------------------------- languages this repo does not happen to use
+
+def test_a_map_citing_a_language_this_repo_lacks_still_narrows(tmp_path):
+    """The fail-open found ONE RUNG from the fix that introduced it.
+
+    `_CITED_PATH_RE` shipped with an extension allowlist -- py, sh, ps1, yaml,
+    json, md -- which is the set THIS repo contains. crew ships to other
+    people's repos. A map citing `src/OrderService.cs` beside
+    `appsettings.json` yielded only the json, so once the C# moved the map
+    reported current: the narrowing was structurally unable to see the
+    subsystem's own source, and the whole suite was green because every
+    fixture used .py.
+
+    Not a hypothetical about other repos. Measured on this one at the same
+    time, the widened pattern gives the `mcp-servers` map 10 TypeScript files
+    it had been blind to.
+    """
+    root = crew_fixtures.make_repo(tmp_path, codemap={})
+    os.makedirs(os.path.join(root, "src"), exist_ok=True)
+    _write(os.path.join(root, "src", "OrderService.cs"), "class A {}\n")
+    _write(os.path.join(root, "appsettings.json"), "{}\n")
+    crew_fixtures.commit_file(str(root), "src/OrderService.cs")
+    crew_fixtures.commit_file(str(root), "appsettings.json")
+
+    mapdir = os.path.join(root, ".crew", "codemap")
+    os.makedirs(mapdir, exist_ok=True)
+    head = crew_fixtures.head_sha(root, length=40)
+    _write(os.path.join(mapdir, "orders.md"),
+           f"anchor: repo@{head}\n\n# orders\n\n## Entry points\n"
+           "- `src/OrderService.cs:1`\n- `appsettings.json`\n")
+    _git(root, "add", "-f", ".crew/codemap/orders.md")
+    _git(root, "commit", "-q", "-m", "refresh orders")
+
+    cited = crew_state._cited_paths(
+        str(root), _read(os.path.join(mapdir, "orders.md")))
+    assert "src/OrderService.cs" in cited, "the .cs citation was dropped"
+
+    # Fixpoint half: committing the refresh must not stale it.
+    assert crew_state.read_knowledge(str(root), {})["behind"] == []
+
+    # Sensitivity half: moving the .cs MUST stale it. This is the assertion the
+    # allowlist failed -- it reported current here.
+    _write(os.path.join(root, "src", "OrderService.cs"), "class A { int x; }\n")
+    crew_fixtures.commit_file(str(root), "src/OrderService.cs")
+    assert crew_state.read_knowledge(str(root), {})["behind"] == ["orders"], (
+        "a map whose only changed citation is a .cs file reported current"
+    )
+
+
+def test_backticked_prose_and_flags_are_not_treated_as_paths(tmp_path):
+    """Dropping the allowlist must not turn every code span into a pathspec.
+
+    Existence is the gate, so a backticked token naming nothing is ignored.
+    Without this, widening the pattern would trade a fail-open for a
+    fail-loud-on-everything.
+    """
+    root = crew_fixtures.make_repo(tmp_path)
+    _write(os.path.join(root, "real.py"), "value = 1\n")
+    body = ("anchor: repo@" + "f" * 40 + "\n"
+            "- `real.py:1` is a path\n"
+            "- `--force-refresh` is a flag\n"
+            "- `reportTracked` is a key\n")
+    assert crew_state._cited_paths(str(root), body) == ["real.py"]
+
+
+# --------------------------------------------- diagrams declare their own paths
+
+def test_a_diagram_is_measured_against_its_own_anchors_line(tmp_path):
+    """crew-diagrams writes `%% Anchors: a/b.py, c/d.sh`, and that is the
+    pathspec.
+
+    The first version of this fix claimed in a comment that a diagram cites no
+    paths -- "it draws nodes, not path:line" -- and used the whole-tree
+    deny-list on that basis. Measured on this repo, 4 of 6 diagrams had ZERO
+    changed files among their own anchors while the deny-list called all 6
+    stale. So the wrong claim was also the reason the count would not come
+    down, and four correct diagrams would have been redrawn.
+    """
+    root = crew_fixtures.make_repo(tmp_path)
+    _write(os.path.join(root, "drawn.py"), "value = 1\n")
+    _write(os.path.join(root, "other.py"), "value = 1\n")
+    crew_fixtures.commit_file(str(root), "drawn.py")
+    crew_fixtures.commit_file(str(root), "other.py")
+
+    diagrams = os.path.join(root, "docs", "diagrams")
+    os.makedirs(diagrams, exist_ok=True)
+    head = crew_fixtures.head_sha(root, length=40)
+    _write(os.path.join(diagrams, "architecture.mmd"),
+           f"%% anchor: repo@{head}\n%% Anchors: drawn.py\ngraph TD\n  a-->b\n")
+    crew_fixtures.commit_file(str(root), "docs/diagrams/architecture.mmd")
+
+    # A file the diagram does NOT claim to draw must not stale it.
+    _write(os.path.join(root, "other.py"), "value = 2\n")
+    crew_fixtures.commit_file(str(root), "other.py")
+    assert crew_state.read_diagrams(str(root), {})["behind"] == [], (
+        "a diagram went stale because a file outside its Anchors line moved"
+    )
+
+    # A file it DOES claim must.
+    _write(os.path.join(root, "drawn.py"), "value = 3\n")
+    crew_fixtures.commit_file(str(root), "drawn.py")
+    assert crew_state.read_diagrams(str(root), {})["behind"] == ["architecture"]
+
+
+def test_a_diagram_with_no_anchors_line_falls_back_to_the_deny_list(tmp_path):
+    """Omitting the line must not make a diagram quieter.
+
+    If a missing anchors line narrowed to nothing, `git diff --` with an empty
+    pathspec reports no changes and every unanchored diagram would read current
+    forever -- the same collapse, reintroduced by the fix for it.
+    """
+    root = crew_fixtures.make_repo(tmp_path)
+    diagrams = os.path.join(root, "docs", "diagrams")
+    os.makedirs(diagrams, exist_ok=True)
+    head = crew_fixtures.head_sha(root, length=40)
+    _write(os.path.join(diagrams, "architecture.mmd"),
+           f"%% anchor: repo@{head}\ngraph TD\n  a-->b\n")
+    crew_fixtures.commit_file(str(root), "docs/diagrams/architecture.mmd")
+    assert crew_state.read_diagrams(str(root), {})["behind"] == []
+
+    _write(os.path.join(root, "app.py"), "value = 1\n")
+    crew_fixtures.commit_file(str(root), "app.py")
+    assert crew_state.read_diagrams(str(root), {})["behind"] == ["architecture"]
+
+
+def test_a_rotted_diagram_anchor_path_narrows_nothing(tmp_path):
+    """Same rule as codemaps: a deleted path must not stay in the pathspec, or
+    the diagram reads current BECAUSE its anchor broke."""
+    root = crew_fixtures.make_repo(tmp_path)
+    diagrams = os.path.join(root, "docs", "diagrams")
+    os.makedirs(diagrams, exist_ok=True)
+    _write(os.path.join(diagrams, "architecture.mmd"),
+           "%% anchor: repo@" + "f" * 40
+           + "\n%% Anchors: gone.py\ngraph TD\n  a-->b\n")
+    assert crew_state._diagram_paths(
+        str(root), _read(os.path.join(diagrams, "architecture.mmd"))) == []

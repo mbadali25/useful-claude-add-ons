@@ -765,13 +765,30 @@ GRAPH_NONCODE_PATHS = (
     ".work/**",
 )
 
-# A repo-relative path cited inside a codemap, with or without a `:line`
-# suffix. Anchors are written repo-relative on purpose precisely so they can
-# be pasted into `git diff -- <path>`; a bare `config.py:99` resolves by eye
-# and cannot be. Only paths that still EXIST are used, so a citation that has
-# rotted narrows nothing and the caller falls back to the wider comparison.
+# A repo-relative path cited in a codemap, with or without a `:line` suffix.
+#
+# NO EXTENSION ALLOWLIST, deliberately. This listed py|sh|ps1|ya?ml|json|md for
+# one release -- the set THIS repo contains -- and crew ships elsewhere.
+# Measured: a map citing `src/OrderService.cs:1` beside `appsettings.json`
+# yielded only the json, so once the C# moved the map read `behind: []`. A
+# .NET, TS, Go or Terraform repo got a freshness signal structurally unable to
+# see its own source: this repo's named bug, one rung from the fix that
+# introduced it. So match anything path-shaped (a `/` or a dot, which keeps
+# prose and `--flags` out) and let existence in `_cited_paths` be the only
+# gate. A rotted citation then narrows nothing and the caller widens instead.
 _CITED_PATH_RE = re.compile(
-    r"`([A-Za-z0-9_][A-Za-z0-9_./-]*\.(?:py|sh|ps1|ya?ml|json|md))(?::\d+)?`"
+    r"`([A-Za-z0-9_][A-Za-z0-9_.@+-]*(?:/[A-Za-z0-9_.@+-]+)*"
+    r"(?:\.[A-Za-z0-9_+-]+)?)(?::\d+)?`"
+)
+
+# What a diagram declares it was drawn from: `%% Anchors: a/b.py, c/d.sh`.
+# A diagram DOES cite paths. The first version of this code asserted the
+# opposite -- "it draws nodes, not path:line" -- and used the whole-tree
+# deny-list on that basis; measured here, 4 of 6 diagrams had ZERO changed
+# files among their own anchors while the deny-list called all 6 stale. The
+# wrong claim was also the reason the count would not come down.
+_DIAGRAM_ANCHORS_RE = re.compile(
+    r"^\s*%%\s*Anchors:\s*(.+)$", re.MULTILINE | re.IGNORECASE
 )
 
 
@@ -784,16 +801,15 @@ def _moved_since(root, sha, head, paths=None):
     not collapse into the safe-looking value.
 
     With `paths`, the question is asked of exactly those. Without them it is
-    asked of the whole tree MINUS the paths that cannot change what the
-    artefact describes -- a deny-list, so a path nobody thought about still
-    counts and the failure direction stays honest.
+    asked of the whole tree MINUS what cannot change the artefact -- a
+    deny-list, so a path nobody thought about still counts.
 
-    The deny-list is what gives these triggers a FIXPOINT. `.crew/**` and
-    `docs/**` are excluded, and those are where codemaps and diagrams live, so
-    the commit that RECORDS a refresh does not immediately un-refresh it.
-    Without that, re-anchoring cleared the trigger and the commit saving the
-    re-anchor fired it again, forever -- which is why `knowledgeBehind` sat at
-    10 and `diagramsStale` at 6 in this repo no matter what anyone refreshed.
+    That exclusion is what gives these triggers a FIXPOINT: `.crew/**` and
+    `docs/**` hold the codemaps and diagrams, so the commit that RECORDS a
+    refresh does not immediately un-refresh it. Without it, re-anchoring
+    cleared the trigger and the commit saving the re-anchor fired it again,
+    forever -- which is why `knowledgeBehind` sat at 10 no matter who
+    refreshed what.
     """
     if not sha or not head:
         return None
@@ -810,12 +826,27 @@ def _moved_since(root, sha, head, paths=None):
 
 
 def _cited_paths(root, text):
-    """The repo-relative paths a map cites and that still exist on disk."""
+    """Paths a map cites that still exist. Existence is the only filter, and a
+    deleted citation is dropped so it cannot narrow to something unchangeable.
+    """
     found = []
     for path in dict.fromkeys(_CITED_PATH_RE.findall(text or "")):
         if os.path.exists(os.path.join(root, path)):
             found.append(path)
     return found
+
+
+def _diagram_paths(root, text):
+    """The paths a diagram declares in its `%% Anchors:` line, if it has one."""
+    found = _DIAGRAM_ANCHORS_RE.search(text or "")
+    if not found:
+        return []
+    paths = []
+    for raw in found.group(1).split(","):
+        path = raw.strip().strip("`")
+        if path and os.path.exists(os.path.join(root, path)):
+            paths.append(path)
+    return paths
 
 
 def _read_graph(root, cfg):
@@ -1034,27 +1065,22 @@ def read_diagrams(root, cfg):
         stems.append(stem)
         if not head:
             continue
-        found = _DIAGRAM_ANCHOR_RE.search(
-            read_text(os.path.join(dirpath, name)) or ""
-        )
+        body = read_text(os.path.join(dirpath, name)) or ""
+        found = _DIAGRAM_ANCHOR_RE.search(body)
         if not found:
             behind.append(stem)
             continue
         sha = found.group(1)
         if sha[:7] == head[:7]:
             continue
-        # Same fixpoint problem, same fix as _read_graph and read_knowledge.
-        # A diagram cites no file paths -- it draws nodes, not `path:line` --
-        # so there is nothing to narrow to and the question is asked of the
-        # whole tree minus the deny-list. `docs/**` is in that list, which is
-        # exactly what makes it terminate: committing the re-anchored .mmd
-        # touches only docs/, so it does not immediately stale itself.
-        #
-        # Before this, `docs/diagrams/` being TRACKED meant recording a
-        # refresh advanced HEAD past the sha just written, and the diagram was
-        # behind again the instant it was saved. CLAUDE.md states that as a
-        # property of the repo; it was a property of this comparison.
-        if _moved_since(root, sha, head) is not False:
+        # Same fixpoint problem, same fix as _read_graph and read_knowledge:
+        # `docs/diagrams/` is TRACKED, so recording a refresh advanced HEAD
+        # past the sha just written and the diagram was behind the instant it
+        # was saved. Narrowed to the paths the diagram declares -- see
+        # _DIAGRAM_ANCHORS_RE for why the first version of this did not.
+        # A diagram with no anchors line falls back to the deny-list, so
+        # nothing gets quieter by omitting one.
+        if _moved_since(root, sha, head, _diagram_paths(root, body)) is not False:
             behind.append(stem)
 
     # Exact stem only. `startswith(kind + "-")` used to count here, which let a
