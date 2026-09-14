@@ -6,6 +6,32 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`crew` 0.19.36: `verify-gate.ps1` ran every rule in one process and let
+  each rule change the next one's world.** Measured on aws-managed-services on
+  2026-09-13, where the gate failed at every Stop with `bash -n scripts/x.sh`,
+  pytest "no tests ran" and ruff `E902 cannot find the path` for files that
+  exist. Rule 11 of that run was `cd drata-insights/frontend && npm test`;
+  `Invoke-Expression` runs in the gate's own scope, so the `cd` moved its
+  working directory and rules 12-27 ran from the wrong place. Three more
+  defects fell out of the same loop, each confirmed with a two-line pwsh
+  experiment before being believed: `$ok = $?` after Invoke-Expression was
+  Invoke-Expression's OWN status, so a failed `cd` and a command that does not
+  exist both read as passes (six rules of that run passed silently);
+  `FDM_MODULE=x bash case.sh` - bash syntax the sh twin evals natively - was a
+  command named `FDM_MODULE=x`, and by the previous point also a pass; and the
+  lock's Exiting handler compared a RELATIVE token path, found nothing once the
+  cwd had moved, kept the lock, and the next Stop within the 700 s TTL was
+  silently ungated after a failing one.
+
+  The loop now returns to the project root before every rule and after the
+  last, captures the rule's own `$?` inside the expression (a parse error is a
+  failed rule, not a crashed gate), peels leading `NAME=value` pairs into
+  `$env:` for that one rule and removes them again (a `$null` restore leaves
+  the variable present and empty, so absent-before is removed, not set), and
+  resolves the lock path absolutely. `verify-gate.sh` never had any of this: it
+  evals each rule inside `$(...)`, a subshell. Eight cases in
+  `tests/test_verify_gate_rule_cwd.py`, six of them red against 0.19.35.
+
 - **`crew` 0.19.35: two defects in 0.19.34, both one rung from the fix that
   introduced them.** Found by a Rule of Two review, each reproduced before being
   believed. This is CLAUDE.md's "re-review the fix to a guard as hard as the

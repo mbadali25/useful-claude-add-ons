@@ -138,6 +138,9 @@ try { if (($raw | ConvertFrom-Json).stop_hook_active) { exit 0 } } catch { }
 
 $root = if ($env:CLAUDE_PROJECT_DIR) { $env:CLAUDE_PROJECT_DIR } else { "." }
 Set-Location $root
+# Absolute from here on: the rule loop returns to $root before every rule, and
+# a "." that was correct at this line points somewhere else once a rule has cd'd.
+$root = (Get-Location).Path
 
 if (Test-Path .crew/config.json) {
   $cfg = Get-Content .crew/config.json -Raw | ConvertFrom-Json
@@ -206,7 +209,12 @@ if (-not $changed) { Write-CrewVerified; exit 0 }
 # exists for, and fails silently the other way when the two id spaces happen
 # to collide. Age comes from the lock DIRECTORY's own creation stamp instead,
 # and the holder removes its own lock as the engine exits.
-$lock = ".crew/.verify-gate.lock"
+# Absolute, not relative: the Exiting handler below runs after every rule has
+# executed, and a rule is allowed to `cd`. With a relative path the handler
+# looked for the token under wherever the last rule left the cwd, found
+# nothing, and kept the lock -- so a failing gate was followed by a Stop that
+# exited 0 silently for up to $lockTtl seconds (aws-managed-services, 2026-09-13).
+$lock = Join-Path (Get-Location).Path ".crew/.verify-gate.lock"
 $lockTtl = 700
 $reclaimed = $false
 if (-not (Test-Path ".crew")) { New-Item -ItemType Directory -Path ".crew" -Force -ErrorAction SilentlyContinue | Out-Null }
@@ -308,29 +316,74 @@ if ($cmds.Count -eq 0) { foreach ($c in $vm.default) { [void]$cmds.Add($c) } }
 # above gets. Resolve once; every rule in a repo shares one Windows install.
 $bashExe = $null
 
+# Every rule runs in THIS process, so what a rule does to the session, the
+# next rule inherits. verify-gate.sh has no such problem: it evals each rule
+# inside `$(...)`, a subshell. Three things this loop has to do by hand to
+# match that contract, each of which was measured missing on
+# aws-managed-services on 2026-09-13 (T-0019 there):
+#
+#   1. `cd <module> && npm test` moved the gate's cwd for every rule after it,
+#      so `bash -n scripts/x.sh`, pytest and ruff reported files missing that
+#      exist. Set-Location $root before each rule; the marker and the unmapped
+#      report after the loop need the root too.
+#   2. `$? ` after Invoke-Expression is Invoke-Expression's OWN status. A
+#      failed `cd` and a command that does not exist both read ok=True with
+#      LASTEXITCODE=0, so six rules of that run silently passed. The rule's own
+#      status is captured INSIDE the expression instead, and a parse error
+#      (which Invoke-Expression throws, aborting the whole gate) is a failed
+#      rule, not a crashed gate.
+#   3. `FDM_MODULE=x bash case.sh` is bash syntax the sh twin evals natively.
+#      Here it is a command named `FDM_MODULE=x`. Peel leading NAME=value
+#      pairs off into $env: for that one rule, then restore them.
 $failed = $false
 foreach ($c in $cmds) {
+  Set-Location $root
   $run = $c
-  # Only resolves a leading literal `bash` token. A rule written as
-  # `cd x && bash y.sh` (or any other form where `bash` isn't the first
-  # word) skips this substitution entirely and still resolves bash via PATH.
-  if ($c -match '^bash(\s|$)') {
+  $savedEnv = @{}
+  while ($run -match '^([A-Za-z_][A-Za-z0-9_]*)=("([^"]*)"|''([^'']*)''|(\S*))\s+(.+)$') {
+    $name = $Matches[1]
+    $value = if ($null -ne $Matches[3]) { $Matches[3] } elseif ($null -ne $Matches[4]) { $Matches[4] } else { $Matches[5] }
+    if (-not $savedEnv.ContainsKey($name)) { $savedEnv[$name] = [Environment]::GetEnvironmentVariable($name) }
+    [Environment]::SetEnvironmentVariable($name, $value)
+    $run = $Matches[6]
+  }
+  # Only resolves a leading literal `bash` token (after any env prefix). A
+  # rule written as `cd x && bash y.sh` (or any other form where `bash` isn't
+  # the first word) skips this substitution entirely and still resolves bash
+  # via PATH.
+  $bashResolved = $false
+  if ($run -match '^bash(\s|$)') {
     if (-not $bashExe) { $bashExe = Resolve-CrewBash }
-    $run = "& '$bashExe'" + $c.Substring(4)
+    $run = "& '$bashExe'" + $run.Substring(4)
+    $bashResolved = $true
   }
   # A cmdlet leaves $LASTEXITCODE at its previous value, so a stale 0 reads as a
-  # pass and a stale nonzero reads as a failure. Reset it, and check $? as well
-  # - that is the only signal a failing cmdlet gives.
+  # pass and a stale nonzero reads as a failure. Reset it. $global:CrewRuleOk
+  # is assigned from `$?` inside the expression, where it is the rule's own
+  # last status; it stays $false if the expression never got that far.
   $global:LASTEXITCODE = 0
-  $out = Invoke-Expression $run 2>&1
-  $ok = $?
+  $global:CrewRuleOk = $false
+  try {
+    $out = Invoke-Expression ($run + '; $global:CrewRuleOk = $?') 2>&1
+  } catch {
+    $out = @($_.Exception.Message)
+  }
+  $ok = $global:CrewRuleOk
+  # SetEnvironmentVariable($name, $null) from PowerShell leaves the variable
+  # present and EMPTY (the $null becomes ""), so a variable that did not exist
+  # before the rule has to be removed, not set back.
+  foreach ($name in $savedEnv.Keys) {
+    if ($null -eq $savedEnv[$name]) { Remove-Item "env:$name" -ErrorAction SilentlyContinue }
+    else { [Environment]::SetEnvironmentVariable($name, $savedEnv[$name]) }
+  }
   if (-not $ok -or $LASTEXITCODE -ne 0) {
     [Console]::Error.WriteLine("VERIFY FAILED: $c")
-    if ($bashExe -and $run -ne $c) { [Console]::Error.WriteLine("bash: $bashExe") }
+    if ($bashResolved) { [Console]::Error.WriteLine("bash: $bashExe") }
     $out | Select-Object -Last 25 | ForEach-Object { [Console]::Error.WriteLine($_) }
     $failed = $true
   }
 }
+Set-Location $root
 
 if ($unmapped.Count -gt 0 -and $vm.unmapped -eq "fail") {
   [Console]::Error.WriteLine("UNMAPPED CHANGES - .crew/verify.json has no rule for:")
