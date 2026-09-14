@@ -6,7 +6,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
-- **`crew` 0.19.36: `verify-gate.ps1` ran every rule in one process and let
+- **`crew` 0.19.37: `verify-gate.ps1` ran every rule in one process and let
   each rule change the next one's world.** Measured on aws-managed-services on
   2026-09-13, where the gate failed at every Stop with `bash -n scripts/x.sh`,
   pytest "no tests ran" and ruff `E902 cannot find the path` for files that
@@ -31,8 +31,21 @@ All notable changes to this repository are documented here. Format follows [Keep
   `$env:` for that one rule and removes them again (a `$null` restore leaves
   the variable present and empty, so absent-before is removed, not set), and
   resolves the lock path absolutely. `verify-gate.sh` never had any of this: it
-  evals each rule inside `$(...)`, a subshell. Eight cases in
-  `tests/test_verify_gate_rule_cwd.py`, six of them red against 0.19.35.
+  evals each rule inside `$(...)`, a subshell.
+
+  **Then the loop stopped reimplementing bash and started using it.** Folded
+  in from PR #151 (another session, measured on TheSelectSource): rules are
+  bash strings, so they are handed to `bash -c` inside
+  `Push-Location`/`Pop-Location` and judged on the child's exit status.
+  That deletes the three workarounds above rather than keeping them - bash
+  does `NAME=value` natively, IS bash, and reports its own status - and it
+  fixes one they could not: `--grep @flow` parsed as a splat of an unset
+  `$flow`, a PowerShell PARSE failure that survives anything built on
+  `Invoke-Expression`. 66 lines out, 41 in. #151's own fixtures quoted the
+  interpreter for PowerShell, a rule shape only half the matched pair could
+  ever execute; they are bash-quoted now. Ten cases in
+  `tests/test_verify_gate_rule_cwd.py`; reverting the loop to
+  `Invoke-Expression` reddens five of them.
 
 - **`crew` 0.19.35: two defects in 0.19.34, both one rung from the fix that
   introduced them.** Found by a Rule of Two review, each reproduced before being
