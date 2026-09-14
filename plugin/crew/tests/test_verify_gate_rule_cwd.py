@@ -164,6 +164,23 @@ def test_an_env_prefix_still_resolves_a_leading_bash(tmp_path):
     assert result.returncode == 0, f"stdout: {result.stdout} stderr: {result.stderr}"
 
 
+def test_a_failing_rules_stderr_reaches_the_report(tmp_path):
+    """The gate's report is the last 25 lines a failing rule wrote. A case
+    script writes its FAIL lines to stderr; a `2>&1` placed on
+    Invoke-Expression itself dropped them (measured 2026-09-13: `VERIFY
+    FAILED: ... frontend-dist-matches.sh` followed by nothing), which is a
+    verdict with no evidence. The redirect has to sit on the rule's block."""
+    root = _repo(tmp_path, [
+        f'{_PY} -c "import sys; sys.stderr.write(\'CREW-STDERR-EVIDENCE\\n\'); sys.exit(11)"',
+    ])
+
+    result = _run_verify(root)
+
+    assert result.returncode == 2, f"stdout: {result.stdout} stderr: {result.stderr}"
+    assert "VERIFY FAILED" in result.stderr
+    assert "CREW-STDERR-EVIDENCE" in result.stderr
+
+
 def test_the_lock_is_released_after_a_cd_rule_and_a_failure(tmp_path):
     """test_verify_gate_lock.py proves cleanup on a plain exit 2. This is the
     measured leak: cwd moved by a rule, then a failing rule, then a lock left

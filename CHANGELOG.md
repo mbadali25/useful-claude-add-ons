@@ -24,7 +24,9 @@ All notable changes to this repository are documented here. Format follows [Keep
   silently ungated after a failing one.
 
   The loop now returns to the project root before every rule and after the
-  last, captures the rule's own `$?` inside the expression (a parse error is a
+  last, captures the rule's own `$?` inside a `& { }` block with the `2>&1` on
+  the block (a redirect on Invoke-Expression itself drops a native command's
+  stderr, which is a failing case script's whole report; a parse error is a
   failed rule, not a crashed gate), peels leading `NAME=value` pairs into
   `$env:` for that one rule and removes them again (a `$null` restore leaves
   the variable present and empty, so absent-before is removed, not set), and

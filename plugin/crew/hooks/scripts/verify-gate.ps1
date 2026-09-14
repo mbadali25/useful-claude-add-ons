@@ -359,12 +359,17 @@ foreach ($c in $cmds) {
   }
   # A cmdlet leaves $LASTEXITCODE at its previous value, so a stale 0 reads as a
   # pass and a stale nonzero reads as a failure. Reset it. $global:CrewRuleOk
-  # is assigned from `$?` inside the expression, where it is the rule's own
-  # last status; it stays $false if the expression never got that far.
+  # is assigned from `$?` inside the block, right after the rule, where it is
+  # the rule's own last status; it stays $false if the block never got that
+  # far. The `2>&1` sits on the BLOCK, not on Invoke-Expression: measured
+  # 2026-09-13, a redirect on Invoke-Expression drops what a native command
+  # wrote to stderr (a failing case script's whole report), and a redirect on
+  # the block with `$?` read OUTSIDE it reports the block's status, which is
+  # true for a failed native command. Only this shape gets both right.
   $global:LASTEXITCODE = 0
   $global:CrewRuleOk = $false
   try {
-    $out = Invoke-Expression ($run + '; $global:CrewRuleOk = $?') 2>&1
+    $out = Invoke-Expression ('& { ' + $run + '; $global:CrewRuleOk = $? } 2>&1')
   } catch {
     $out = @($_.Exception.Message)
   }
