@@ -127,9 +127,9 @@ both directions:
 `is_global_path` agrees with `filter_global` by construction — both stop
 descending at a template **leaf**.
 
-**Measured, not argued.** `leaf_paths(default_global_config())` yields **53**
-leaves. `leaf_paths(default_config())` yields **96**, so **43** are repo-only.
-For all 96, `filter_global` and `plan_global_write` agree on whether the path is
+**Measured, not argued.** `leaf_paths(default_global_config())` yields **59**
+leaves. `leaf_paths(default_config())` yields **102**, so **43** are repo-only.
+For all 102, `filter_global` and `plan_global_write` agree on whether the path is
 settable. (45 / 86 before schema 6 added the six `guards.*`, the two
 `github.mergeGate` keys and the repo-only `production.databases` /
 `production.hosts`, and 44 / 85 before schema 5 added `install.policy`.

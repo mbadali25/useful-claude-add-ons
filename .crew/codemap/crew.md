@@ -138,19 +138,27 @@ below is that check, run again.
 |---|---|---|
 | Agents | 54 | `.md` files in `plugin/crew/agents/` |
 | Commands | 26 | `.md` files in `plugin/crew/commands/` |
-| Skills | 17 | subdirectories of `plugin/crew/skills/`, minus `find-skills` |
+| Skills | 18 | subdirectories of `plugin/crew/skills/` |
 
-`plugin/crew/skills/` holds **18** directories, not 17. The eighteenth is
-`find-skills`, a vendored third-party skill from the open skills ecosystem —
-`plugin/crew/skills/find-skills/BUNDLING-NOTE.md:1` and
-`plugin/crew/README.md:2357`'s "A note on the bundled find-skills" section both
-say so, and `plugin/crew/README.md:2359` states it outright: "a third-party skill
-... this vendored copy ... is bundled for the crew rollout." Every self-stated
-count in the repo (marketplace entry, `PLUGINS.md`, `README.md`,
-`install-prerequisites.{sh,ps1}`) says 17, consistently, and
-`python3 scripts/check-marketplace.py` passes at this anchor — so the counting
-rule is not this note's invention, it is what the rest of the repo already
-agrees on.
+**Corrected 2026-09-14 — the previous version of this note had the wrong
+explanation, not just an outdated count.** `plugin/crew/skills/` holds **18**
+directories. The claim that 17 was correct because the count excludes
+`find-skills` (a vendored third-party skill — `plugin/crew/README.md:2359`
+confirms it is bundled, and its own `BUNDLING-NOTE.md:1` says the same) does
+not hold up against the primary artifact: `plugin/PLUGINS.md`'s own "Bundled
+skills" roster table lists `find-skills` as one of its rows, so the repo's own
+enumeration already counts it as one of the 17/18. The real defect was a
+missing row — `crew-change` (added in crew 0.19.31, commit `53294344`) was
+never added to that roster, so the table stayed at 17 rows after an 18th
+directory landed. `python3 scripts/check-marketplace.py` passing at the prior
+anchor is not corroboration for the "minus find-skills" rule: `check_self_claims`'s
+`skills-count` marker checks the *marketplace's* total skill-plugin count
+(`source` starting `./skills/`), a different quantity from crew's own bundled
+count, and never touches this number at all. The marketplace entry,
+`PLUGINS.md` and `README.md` are corrected to 18 in the same change that fixed
+this note; `scripts/install-prerequisites.{sh,ps1}` do not state a skill count
+at all (checked by grep) — the previous version of this note was wrong to cite
+them as saying 17.
 
 The 54 agents still decompose exactly, re-counted at this anchor: `ROLE_TIERS`
 has **13** entries (`plugin/crew/hooks/scripts/crew_state.py:906-923`),
@@ -450,17 +458,25 @@ from global inheritance.
 
 | | Leaves | Source |
 |---|---|---|
-| `default_config()` | **100** | `plugin/crew/hooks/scripts/crew_config.py:274` |
-| `default_global_config()` | **57** | `plugin/crew/hooks/scripts/crew_config.py:407` |
+| `default_config()` | **102** | `plugin/crew/hooks/scripts/crew_config.py:274` |
+| `default_global_config()` | **59** | `plugin/crew/hooks/scripts/crew_config.py:407` |
 | repo-only | **43** | the difference |
 
-Both totals rose (86 -> 100, 45 -> 57) and repo-only rose too this time
+**Corrected 2026-09-14 — the previous version of this table undercounted the
+first two figures by two each.** Re-derived by executing
+`leaf_paths(default_config())` and `leaf_paths(default_global_config())` from
+`plugin/crew/hooks/scripts/`, matching `plugin/crew/CONFIG.md`'s own
+re-measurement. Re-run rather than trusting either file: both are a fact about
+one commit.
+
+Both totals rose (86 -> 102, 45 -> 59) and repo-only rose too this time
 (41 -> 43) — a different shape than the previous anchor's "both rose by
-exactly one." DERIVED by set difference: the growth is schema 6's four guards
-plus two production guards plus `github.mergeGate.{enabled,branch}` (all seven
-present in both defaults, so globally settable — that is 7 of the +14/+12), and
-schema 7's six `change.*` keys, all repo-only (accounting for the remaining
-+2 repo-only and none of the +12 global). `upgradeNeeded` is still
+exactly one." **The per-schema breakdown of that growth is not re-derived at
+this anchor and its arithmetic did not close even before this correction**
+("four guards plus two production guards plus `github.mergeGate.{enabled,branch}`"
+is eight items, not the "seven" the text named, and "six `change.*` keys"
+does not account for "+2 repo-only") — re-derive it from the schema 6/7 diffs
+rather than trusting either the old or a patched-up version of it. `upgradeNeeded` is still
 `schema < SCHEMA_CURRENT` and compares no key sets, so none of this required a
 migration prompt beyond the schema bump itself.
 
