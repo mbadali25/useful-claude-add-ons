@@ -1,13 +1,29 @@
 # repo-docs
-anchor: useful-claude-add-ons@975480b7
+anchor: useful-claude-add-ons@f9bb78a6
 verified: 2026-09-14
 Narrow pass, not a full re-verification: only the "self-stated counts on the
 front page" claim below (the one quoting `plugin/README.md:414`) was re-read
-against its cited file at this anchor, because `f12003e2` (#166) landed since
-`0a9d8937` and changed the number it quotes. Everything else in this note
-carries forward from `0a9d8937` unread. Claims resting on machine-local files
-absent from this checkout are marked UNVERIFIABLE HERE at the claim, not in a
-preamble.
+against its cited file at this anchor, because `f9bb78a6` (#169, "Finish the
+crew skill-count sweep") landed since `975480b7` and added a
+`<!-- claim: plugin-skills:crew -->` marker beside that line's number
+(the number itself, 18, was already correct as of `f12003e2` and did not
+change again). Everything else in this note carries forward from `975480b7`
+unread. Claims resting on machine-local files absent from this checkout are
+marked UNVERIFIABLE HERE at the claim, not in a preamble.
+
+## Re-anchor provenance — 975480b7 -> f9bb78a6, 2026-09-14
+
+Narrow pass: this pass did not diff the 13 repo paths this note's per-path
+check tracks against `f9bb78a6` — `plugin/README.md` has never been one of
+them; the note cites it separately, in the "self-stated counts" claim below,
+without folding it into the tracked-path list. `f9bb78a6`'s own changed-file
+set — `README.md`, `INSTALLATION.md`, `plugin/PLUGINS.md`,
+`plugin/README.md`, `scripts/check-marketplace.py`,
+`scripts/_test/self-claims.py` — touches none of the 13 either. This pass
+re-read only `plugin/README.md:414` (below), because `f9bb78a6` is known to
+have added a claim marker there. The rest of this note, including the
+`0a9d8937 -> 975480b7` section immediately below, is retained as history and
+was not re-checked.
 
 ## Re-anchor provenance — 0a9d8937 -> 975480b7, 2026-09-14
 
@@ -152,14 +168,21 @@ unchanged position despite the file's other changes.)
   plugins" at this anchor, so 35 is current. `README.md:152` carries
   `<!-- claim: skills-count -->`, so this number is no longer "checked by
   nothing": `check_self_claims`
-  (`scripts/check-marketplace.py:412-...`) verifies marked numbers against
-  `marketplace.json`, and this repo's own `CLAUDE.md` documents the
-  convention. `plugin/README.md:414`'s agent count is also no longer stale —
-  as of `f12003e2` (#166, "fix three stale self-describing counts", landed
-  since the previous anchor) it reads "54 agents, 26 commands, 18 skills, 20
-  hook entries," matching `crew.md:139-141`'s inventory exactly (54 / 26 /
-  18), not the "17 skills" this note previously quoted and not the "50
-  agents" the version before that recorded. **Not re-verified this pass:**
+  (`scripts/check-marketplace.py:430-...`, moved from `:412-...` —
+  `f9bb78a6` #169 inserted 53 lines earlier in the file) verifies marked
+  numbers against `marketplace.json`, and this repo's own `CLAUDE.md`
+  documents the convention. `plugin/README.md:414`'s agent count is also no
+  longer stale — as of `f12003e2` (#166, "fix three stale self-describing
+  counts") it reads "54 agents, 26 commands, 18 skills, 20 hook entries,"
+  matching `crew.md`'s inventory exactly (54 / 26 / 18). **Re-read at this
+  anchor:** `f9bb78a6` (#169) did not change that number again — it added a
+  `<!-- claim: plugin-skills:crew -->` marker to the same line instead,
+  using a new claim type `check_self_claims` gained specifically to check a
+  plugin's own bundled-skill count (`skills-count` only ever checked the
+  marketplace-wide total, which is why crew's bundle count had drifted
+  uncaught in the first place). The line now reads "54 agents, 26 commands,
+  18 skills<!-- claim: plugin-skills:crew -->, 20 hook entries" verbatim.
+  **Not re-verified this pass:**
   whether `7 of 4
   marketplaces` (community count) and `Seven MCP servers`
   (`INSTALLATION.md:213`) are still accurate — neither carries a

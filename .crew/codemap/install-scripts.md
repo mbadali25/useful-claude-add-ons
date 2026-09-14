@@ -1,6 +1,20 @@
 # install-scripts
-anchor: useful-claude-add-ons@0a9d8937
+anchor: useful-claude-add-ons@f9bb78a6
 verified: 2026-09-14
+Re-anchor only, no content change: `f9bb78a6` (#169, the crew skill-count
+sweep prompting this pass) did not touch either install script — confirmed
+by `git show f9bb78a6 --stat`, which lists only `README.md`,
+`INSTALLATION.md`, `plugin/PLUGINS.md`, `plugin/README.md`,
+`scripts/check-marketplace.py` and `scripts/_test/self-claims.py`. This
+note's two citations into `scripts/check-marketplace.py`
+(`check_group_parity` at `:234`, `check_menu_parity` at `:195`) are also
+unaffected: `f9bb78a6`'s edits all land at or after old line 405, inside and
+after `check_versions`/`check_self_claims` (confirmed by reading the diff's
+hunk headers), well below both cited lines. Every claim below carries
+forward from `0a9d8937` unread, re-anchored only.
+
+## History, from the `0a9d8937` pass
+
 re-verified, not re-derived: every claim below was re-read against the files it
 cites at this anchor and its citation re-pointed where the code had moved. One
 new skill (`github`) was inserted mid-array in both scripts, shifting every
