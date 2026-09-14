@@ -1,10 +1,24 @@
 # repo-docs
-anchor: useful-claude-add-ons@0a9d8937
+anchor: useful-claude-add-ons@975480b7
 verified: 2026-09-14
-re-verified and, where the code moved under it, re-derived: every claim below
-was re-read against the files it cites at this anchor. Claims resting on
-machine-local files absent from this checkout are marked UNVERIFIABLE HERE at
-the claim, not in a preamble.
+Narrow pass, not a full re-verification: only the "self-stated counts on the
+front page" claim below (the one quoting `plugin/README.md:414`) was re-read
+against its cited file at this anchor, because `f12003e2` (#166) landed since
+`0a9d8937` and changed the number it quotes. Everything else in this note
+carries forward from `0a9d8937` unread. Claims resting on machine-local files
+absent from this checkout are marked UNVERIFIABLE HERE at the claim, not in a
+preamble.
+
+## Re-anchor provenance — 0a9d8937 -> 975480b7, 2026-09-14
+
+Narrow pass: this pass did not diff the 13 repo paths this note cites against
+`975480b7`. It re-read only the "self-stated counts on the front page" claim
+(below) because `f12003e2` (#166) is known to have changed
+`plugin/README.md:414`'s skill count since `0a9d8937`, and it separately
+flagged (found, not fixed) a stale-looking `.mmd`-count claim noticed while
+in the file — see "Owns data" below. The rest of this note, including the
+`7b0d8f3a -> 0a9d8937` section immediately below, is retained as history and
+was not re-checked.
 
 ## Re-anchor provenance — 7b0d8f3a -> 0a9d8937, 2026-09-14
 
@@ -117,6 +131,18 @@ unchanged position despite the file's other changes.)
   range, mostly the `.crew/` ignore-policy rewrite, and this unrelated entry
   shifted along with everything below it). `git ls-files docs/diagrams/`
   returns only the three `.mmd` sources.
+
+  **Found, not fixed, while touching this file for the skills-count
+  correction (2026-09-14):** `git ls-files docs/diagrams/` at 975480b7 returns
+  **six** `.mmd` files (`architecture.mmd`, `data-flow-crew-config.mmd`,
+  `data-flow.mmd`, `process-bitbucket-svg.mmd`, `process-crew-brief.mmd`,
+  `process.mmd`), not three, and two of them changed since `0a9d8937`. Whether
+  "three .mmd sources" and "six files, three names x two formats" above are
+  stale, or were always scoped to a subset `render.sh` targets rather than the
+  whole directory, was not determined this pass — that requires reading
+  `render.sh`'s actual invocation site(s) and is a separate piece of work from
+  the skill-count correction this pass made. Reported here rather than
+  silently carried forward or silently re-derived.
 - DERIVED `docs/superpowers/` is hand-written: `plans/` and `specs/`.
   Unchanged; not re-counted file-by-file this pass, only confirmed present.
 - **The self-stated counts on the front page have moved and are now partly
@@ -129,9 +155,12 @@ unchanged position despite the file's other changes.)
   (`scripts/check-marketplace.py:412-...`) verifies marked numbers against
   `marketplace.json`, and this repo's own `CLAUDE.md` documents the
   convention. `plugin/README.md:414`'s agent count is also no longer stale —
-  it reads "54 agents, 26 commands, 17 skills, 20 hook entries," matching
-  `crew.md`'s inventory exactly, not the "50 agents" the previous version of
-  this note recorded. **Not re-verified this pass:** whether `7 of 4
+  as of `f12003e2` (#166, "fix three stale self-describing counts", landed
+  since the previous anchor) it reads "54 agents, 26 commands, 18 skills, 20
+  hook entries," matching `crew.md:139-141`'s inventory exactly (54 / 26 /
+  18), not the "17 skills" this note previously quoted and not the "50
+  agents" the version before that recorded. **Not re-verified this pass:**
+  whether `7 of 4
   marketplaces` (community count) and `Seven MCP servers`
   (`INSTALLATION.md:213`) are still accurate — neither carries a
   `claim:` marker, so `check_self_claims` does not cover them, and this note
