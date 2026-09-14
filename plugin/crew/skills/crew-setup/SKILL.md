@@ -216,15 +216,29 @@ review that quietly ran on the fallback looks identical to one that ran on the p
 the difference matters most exactly when the pin was chosen to get a different family
 onto the diff.
 
-`docs.theme` / `docs.reportTheme`: `theme` is a doc-builder theme-pack skill name, INTENDED
-to be passed straight through as that tool's `--brand`. **That wiring does not exist as of
-crew 0.18.0** — nothing in crew reads either key, and no crew agent or command invokes
-doc-builder at all, so there is no call site to pass it from. This paragraph asserted the
-pass-through in the present tense until 2026-09-12; it is written as intent now, because a
-doc that describes unbuilt wiring is why nobody goes looking for the missing half. See
-TODO.md, "Ticket B".
+`docs.theme` / `docs.reportTheme`: `theme` is a doc-builder theme-pack skill name, passed
+straight through as that tool's `--brand`.
 
-Do not tell the user the theme is in effect. It is not, for either key, on any machine.
+**The pass-through consumer is prose, not code, and that is the whole reason this paragraph
+kept going wrong.** `skills/crew-house-style/SKILL.md` is what reads both keys — it instructs
+the model to route to `doc-builder` and pass `--brand <docs.theme>`, preferring
+`docs.reportTheme` for a findings report. A grep for `--brand` or `resolve_brand` in crew's
+own Python finds nothing, which is what this paragraph previously read as "the wiring does
+not exist"; the wiring is a skill instruction, and `tests/test_docs_routing.py` is the
+committed regression test that binds `docs.reportTheme` to the findings-report genre — it
+asserts the flag by running doc-builder's own argparse, not by grepping for the string.
+`CONFIG.md` §7 carries the consumer table for both keys, and its §9 subsection "Keys whose
+only consumer is prose" lists `docs.reportTheme`.
+
+So: this paragraph asserted the pass-through in the present tense until 2026-09-12, was
+rewritten to deny it entirely, and is corrected again on 2026-09-14. Both earlier versions
+were wrong in the same way — they treated "no Python reads it" and "nothing reads it" as the
+same sentence. Before editing it a fourth time, check `crew-house-style/SKILL.md` and
+`tests/test_docs_routing.py`, not just a grep of the scripts.
+
+A null theme passes no `--brand` at all and lets doc-builder resolve for itself, so do not
+tell the user a theme is in effect when either key is null — that is doc-builder's answer to
+give, not crew's.
 
 Both default to `null`, and null means the same thing in both: **"I have no answer, ask the
 next authority."** For `reportTheme` that authority is `docs.theme`; for `docs.theme` it is
@@ -233,12 +247,15 @@ brand from the rest of the docs, which is the client-deliverable case.
 
 `docs.theme` shipped as `"neutral"` through 0.17.1 and `/crew:upgrade` rewrites that one
 value to null — the only value the upgrade rewrites rather than preserving. Say so if the
-user asks why their config changed, and say why it was safe: the key has never had a
-consumer, so no value in it can be a preference anyone formed by watching it work. Leaving
-`"neutral"` would mean that, once the wiring lands, every upgraded repo passes an explicit
-`--brand neutral` that OVERRIDES an installed brand pack — de-branding documents that come
-out correctly branded today, with nothing in the config file changed to explain it. A user
-who did mean neutral sets it again and it is honoured.
+user asks why their config changed, and say why it was safe: **through 0.17.1 the key had no
+consumer at all**, so no value sitting in it could be a preference anyone formed by watching
+it work. That is a claim about the releases the rewrite applies to, not about today —
+`crew-house-style/SKILL.md` reads the key now, which is exactly why leaving `"neutral"` in
+place would be harmful rather than merely inert: every upgraded repo would pass an explicit
+`--brand neutral` that OVERRIDES an installed brand pack, de-branding documents that come out
+correctly branded today, with nothing in the config file changed to explain it. A user who
+did mean neutral sets it again and it is honoured. (`CONFIG.md` §7 cites this paragraph for
+that justification, so keep the historical claim here if you reword it.)
 
 `bitbucket.mergeGate`: off by default, because a gate that arrived switched on would start
 failing merges nobody asked it to watch. `branch: null` means the repo's main branch is

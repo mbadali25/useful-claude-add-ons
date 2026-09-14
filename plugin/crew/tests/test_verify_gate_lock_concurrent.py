@@ -65,11 +65,16 @@ def _repo(tmp_path):
     _git(root, "add", "-A")
     _git(root, "commit", "-q", "-m", "fixture")
     (root / "unverified.py").write_text("x = 1\n", encoding="utf-8")
+    # newline="\n" is load-bearing, not tidiness: write_text is TEXT mode, so
+    # on Windows -- the only platform this module runs on -- every \n would
+    # become \r\n and bash would read `sleep 3\r` as a command that does not
+    # exist. The overlap this test depends on would vanish and the failure
+    # would look like a lock bug.
     (root / "_verify" / "smoke.sh").write_text(
         'echo "ran" >> "$(dirname "$0")/../runs.txt"\n'
         "sleep 3\n"
         "echo 'SMOKE: ok'\n",
-        encoding="utf-8")
+        encoding="utf-8", newline="\n")
     return root
 
 
