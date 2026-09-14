@@ -36,6 +36,7 @@ Run: python3 scripts/_test/crew-ignore-policy.py
 
 from __future__ import annotations
 
+import ast
 import importlib.util
 import os
 import subprocess
@@ -114,8 +115,29 @@ def build(tmp: str, files: dict[str, str]) -> None:
             "fixture `git init` failed, so every case below would fail for a "
             f"reason unrelated to the code under test: {started.stderr.strip()}")
     # -f: the fixture .gitignore ignores paths the fixture itself creates.
-    subprocess.run(["git", "-C", tmp, "add", "-A", "-f"],
-                   check=False, capture_output=True, env=env)
+    staged = subprocess.run(["git", "-C", tmp, "add", "-A", "-f"],
+                            check=False, capture_output=True, text=True, env=env)
+    if staged.returncode != 0:
+        raise RuntimeError(
+            "fixture `git add` failed, so the checker would see an empty index: "
+            f"{staged.stderr.strip()}")
+
+    # Staging can also "succeed" and stage nothing. That is the damaging case,
+    # and it is the neighbour of last round's `git init` check: the checker
+    # reads its sources from `git ls-files`, so an empty index means it never
+    # sees the shipped template - and the "template losing its marker" case,
+    # which expects exactly one `does not carry` finding, then PASSES because
+    # the fixture was never built rather than because the checker worked. A
+    # fixture that failed to exist must be an ERROR, never a test result.
+    listed = subprocess.run(["git", "-C", tmp, "ls-files"],
+                            check=False, capture_output=True, text=True, env=env)
+    tracked = {line.strip() for line in listed.stdout.split("\n") if line.strip()}
+    missing = set(files) - tracked
+    if listed.returncode != 0 or missing:
+        raise RuntimeError(
+            "fixture staged an index that does not contain every file written "
+            f"(missing: {sorted(missing) or 'ls-files failed'}). Every case "
+            "below would be judging an empty fixture, not the checker.")
 
 
 def run(files: dict[str, str]) -> list[str]:
@@ -496,17 +518,41 @@ def no_other_suite_contradicts_us() -> list[str]:
         return [f"UNVERIFIABLE: {other} not found, so suite agreement was not "
                 "checked. This is not a pass."]
     with open(other, encoding="utf-8") as handle:
-        lines = handle.read().replace("\r\n", "\n").split("\n")
+        source = handle.read()
+    try:
+        tree = ast.parse(source)
+    except SyntaxError as exc:
+        return [f"UNVERIFIABLE: {other} does not parse ({exc}), so suite "
+                "agreement was not checked. This is not a pass."]
+
     bad = []
-    for number, line in enumerate(lines, 1):
-        code = line.split("#", 1)[0]
-        if not code.strip().startswith("assert"):
+    # The expected test must EXIST. Without this the check passes on an empty
+    # file, on a renamed test, and on one deleted outright - finding nothing
+    # and reporting agreement, which is the same bug this whole check exists
+    # to prevent, one level up.
+    wanted = "test_verify_json_really_is_tracked_here"
+    functions = {node.name for node in ast.walk(tree)
+                 if isinstance(node, ast.FunctionDef)}
+    if wanted not in functions:
+        bad.append(
+            f"UNVERIFIABLE: {other} has no `{wanted}`. Either it was renamed or "
+            "removed; either way this check would now pass by finding nothing."
+        )
+
+    # Parsed, not grepped. The line-based version missed the same contradiction
+    # written across several lines - `assert (\n  body.index(...) < ... \n)` -
+    # because no single line both starts with `assert` and holds the operands.
+    # `ast.unparse` normalises the whole statement to one string, so layout
+    # stops mattering.
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assert):
             continue
-        if ".approved-*" in code and ".index(" in code:
+        rendered = ast.unparse(node.test)
+        if ".approved-*" in rendered and ".index(" in rendered:
             bad.append(
-                f"{other}:{number} asserts an ORDERING for `.crew/.approved-*` "
-                f"that this suite accepts either way - {code.strip()[:70]}. "
-                "Position is not load-bearing; git says so."
+                f"{other}:{node.lineno} asserts an ORDERING for "
+                f"`.crew/.approved-*` that this suite accepts either way - "
+                f"{rendered[:70]}. Position is not load-bearing; git says so."
             )
     return bad
 

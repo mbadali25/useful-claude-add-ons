@@ -6,6 +6,28 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`crew` 0.19.50: two fixture failures that read as test results.** Codex
+  round 4 - one BLOCK, one FIX, both in `scripts/_test/crew-ignore-policy.py`
+  rather than the checker, and both the same class: a suite reporting on itself
+  rather than on the code.
+  The fixture ran `git add -A -f` with `check=False` and discarded the result.
+  The checker reads its sources from `git ls-files`, so an empty index means it
+  never sees the shipped template - and the "template losing its marker" case,
+  which expects exactly one `does not carry` finding, then PASSES because the
+  fixture was never built. Reproduced directly before fixing: with the index
+  staged and with it empty, that case produced the same single finding both
+  times. Staging is now checked, and so is the resulting index - every file
+  written must appear in `git ls-files`, or the fixture raises. This is the
+  neighbour of the `git init` check added in 0.19.49, which is the shape every
+  round of this review has had.
+  The suite-agreement check grepped one file for single lines starting with
+  `assert` that contained both `.approved-*` and `.index(`. It now parses with
+  `ast` and inspects whole `Assert` statements via `ast.unparse`, so the same
+  contradiction written across several lines - the form a reformat produces -
+  is caught. It also asserts the expected test EXISTS by name, because the
+  grep version passed on an empty file, a renamed test and a deleted one: a
+  check that can pass by finding nothing is the same bug one level up.
+
 - **`crew` 0.19.49: the fix for a false PASS on a leading space became a false
   FAIL on a trailing one.** Round 2 blocked because `.strip()` normalised a
   broken rule into a valid one. The fix made handling verbatim. Round 3 blocks
