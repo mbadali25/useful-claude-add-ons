@@ -318,9 +318,10 @@ does, using this same template, the next time the repo is opened. See
 
 Leave `platform` as nulls. The `platform-sync` `SessionStart` hook fills it in
 on the first run and repairs it whenever the repo is opened on a different OS -
-it is the one block that is committed and is therefore wrong for everybody who
-did not run `/crew:init`. Do not hand-write values there; they will be
-overwritten, which is the point.
+`config.json` is machine-local (`.crew/*` ignores it and it is not on the
+un-ignore list), but "this machine" is not fixed: one checkout is opened from
+Windows and from WSL, and WSL2's `windowsHostIp` changes on reboot. Do not
+hand-write values there; they will be overwritten, which is the point.
 
 ## 3b. Jira only — wire the MCP connector
 
@@ -460,20 +461,59 @@ Act on what it found, and say why:
 
 ## 3c. Gitignore secrets before any exist
 
-Append `.env`, `.env.*`, `!.env.example`, `.crew/*.local`, `.crew/.hook-*`,
-`.crew/transcripts/`, `.work/dispatch.json` and `.work/dispatch.d/` to
-`.gitignore` during setup. Doing this before the first secret exists is the only
-time it is free.
-Those last two are the record of which roles, providers and models have run here —
+<!-- crew-ignore-policy:list - this block is the shipped template. check-marketplace.py's
+     check_crew_ignore_policy asserts its un-ignore list matches this repo's own
+     .gitignore, so the template cannot drift from the policy it teaches. -->
+
+Append this block to `.gitignore` during setup, in this order. Doing it before
+the first secret exists is the only time it is free.
+
+```gitignore
+.env
+.env.*
+!.env.example
+
+# crew state. `.crew/*`, NOT `.crew/`: a trailing slash makes git refuse to
+# descend into the directory at all, and nothing can be re-included from a
+# directory git never entered - every negation below would silently do nothing.
+.crew/*
+
+# The named un-ignore list, and it is a closed list. These three describe the
+# CODE, are decided once, and are worth the same on every clone: the code map,
+# the endpoint ledger a security scan is owed against, and the verification map.
+!.crew/codemap/
+!.crew/endpoints.json
+!.crew/verify.json
+
+# Below the negations on purpose - a later rule wins, so nothing above can
+# re-admit these. `.crew/.approved-*` is promote-gate's own approval marker:
+# track it and the gate dirties the tree the moment it writes the file it just
+# told you to create, then blocks the deploy that marker was authorising.
+.crew/.approved-*
+.crew/*.lock
+.crew/*.local
+.crew/.hook-*
+.crew/transcripts/
+.work/
+```
+
+Everything under `.crew/` not on that list - `config.json` with its machine
+paths and its `pm.authority` trust decision, `STATUS.md`, `metrics.md`, the
+incident state - describes one checkout on one machine. A fresh clone runs
+`/crew:init` and generates its own.
+
+`.work/dispatch.json` and `.work/dispatch.d/` are covered by `.work/` above; if
+this repo tracks part of `.work/` for its own reasons, ignore **both** by name.
+They are the record of which roles, providers and models have run here —
 the self-review guard reads them to know who WROTE the diff. **Both**: since
 0.16.7 each dispatch writes its own file under `.work/dispatch.d/` and
 `dispatch.json` keeps only a convenience pointer to the most recent one, so
 ignoring the single file and not the directory commits the actual record. It
 describes one checkout on one machine, so a committed copy would travel to a
-colleague and claim a dispatch that never happened there. `.crew/.hook-*` is the once-per-session
-claim marker (see `hooks/scripts/hook_once.py`) — a repo that commits `.crew/`,
-which crew's own design encourages, collects one of these per claimed hook per
-session and shows them in every `git status` if they are not ignored.
+colleague and claim a dispatch that never happened there. `.crew/.hook-*` is the
+once-per-session claim marker (see `hooks/scripts/hook_once.py`): `.crew/*`
+already covers it, and it is named anyway because it is the entry whose absence
+shows up as noise in every `git status` rather than as a failure.
 
 ## 4. Write the repo CLAUDE.md
 

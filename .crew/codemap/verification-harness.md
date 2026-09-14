@@ -61,12 +61,17 @@ too). So `git diff --name-only <anchor>..HEAD` can *never* list it, and the
 per-path check can never show it moving. Any claim about it has to be re-read
 from disk every time.
 
-**And at this anchor that remedy fails, because the file is not on disk.**
-`.crew/verify.json` does not exist in this checkout at all - `.gitignore:282`
-(`.crew/*`) keeps it out of the repository, and nothing recreated it here. So
-the 31 citations into it below could not be re-read, re-pointed, or refuted.
-They are carried forward exactly as the previous pass wrote them and marked
-UNVERIFIABLE HERE at each claim.
+**At the previous anchor that remedy failed, because the file was not on disk:**
+`.crew/*` kept `.crew/verify.json` out of the repository and nothing recreated
+it here, so the 31 citations into it below could not be re-read, re-pointed or
+refuted, and each is marked UNVERIFIABLE HERE.
+
+**That reason expired on 2026-09-14.** `!.crew/verify.json` joined the named
+un-ignore list and the file is now tracked, so the 31 citations ARE re-readable
+from a fresh clone. They have NOT been re-read — this edit changes what is
+possible, not what was checked. Re-running `/crew:onboard --refresh
+verification-harness` is what would clear the marks, and until someone does,
+UNVERIFIABLE HERE means "not checked", which is the honest value either way.
 
 That is a fact about the harness, not just about this note. `CLAUDE.md` calls
 `.crew/verify.json` "the mechanism" for per-path verify commands, and

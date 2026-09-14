@@ -86,9 +86,12 @@ record_verified() {
 #
 #   1. `.crew/.verify-verified-at`, written ONLY on a pass. It means "everything
 #      up to this sha was checked and was clean", which is exactly the question
-#      a baseline has to answer. It is machine-local (`.crew/` is gitignored),
-#      because "what has been verified here" is a fact about this checkout and
-#      travels with nobody.
+#      a baseline has to answer. It is machine-local -- `.crew/*` is ignored and
+#      the un-ignore list is `codemap/`, `endpoints.json`, `verify.json`, so this
+#      marker is not on it -- because "what has been verified here" is a fact
+#      about this checkout and travels with nobody. Note `verify.json` IS
+#      tracked: the MAP travels, the record of what was checked against it does
+#      not, and conflating the two is how a clone inherits a pass it never ran.
 #   2. The merge-base with the default branch, when there is no marker or it
 #      names a commit this repo no longer contains (a squash merge, a rebase).
 #      Nothing on this branch has been shown to be verified, so all of it is in

@@ -143,7 +143,14 @@ version bump moves every anchor without invalidating a word. Empty output means 
 lag. The same comparison for `graphify-out/` and `docs/diagrams/` can never come out current: they
 are tracked, so committing one advances HEAD past the sha it records.
 
-Decisions in `docs/adr/`; the rest of `.crew/` is machine-local and stays ignored.
+<!-- crew-ignore-policy:list -->
+Decisions in `docs/adr/`. The gitignore policy for the rest, stated once: `.crew/*` is ignored
+and a **named** list is un-ignored — `!.crew/codemap/`, `!.crew/endpoints.json`,
+`!.crew/verify.json`. Nothing else under `.crew/` is tracked, `.work/` is ignored entirely, and
+`.crew/.approved-*` sits below the negations so promote-gate's own marker can never be trackable.
+`scripts/check-marketplace.py::check_crew_ignore_policy` asserts that list is the same set here, in
+crew-setup's shipped template, and in every doc that states it — so change the list in one place and
+the gate tells you the other places exist.
 
 ## Landmines - every one of these has already shipped broken
 

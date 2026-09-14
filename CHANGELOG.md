@@ -6,6 +6,67 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`crew` 0.19.46: the repo stated three `.crew/` ignore policies at once, and
+  one of them was in the same file that contradicted it.** `.gitignore` ignored
+  `.crew/*` and re-admitted `codemap/` and `endpoints.json` - then, fifty lines
+  below those negations, a comment block asserted that ".crew/ and .work/ are
+  ALREADY fully ignored above" and that "the whole of crew's state - config.json,
+  verify.json, STATUS.md, INDEX.md, PROMOTIONS.md - is local to each machine and
+  never committed". Both halves shipped, in one file, for months. Elsewhere
+  `README.md` said `.crew/config.json` "is committed" and used that as the entire
+  rationale for the `platform-sync` hook; `commands/review.md` and
+  `crew-verification/SKILL.md` each carried a paragraph correcting an *earlier*
+  wrong claim in the opposite direction. The policy, now stated in one form
+  everywhere: `.crew/*` is ignored and a NAMED list is un-ignored -
+  `!.crew/codemap/`, `!.crew/endpoints.json`, `!.crew/verify.json`. `.work/`
+  stays ignored entirely, `config.json` stays machine-local, and
+  `.crew/.approved-*` sits BELOW the negations so promote-gate's own approval
+  marker can never become trackable.
+  `check_crew_ignore_policy` in `scripts/check-marketplace.py` is what stops it
+  drifting again: the list is read from `.gitignore` (the only copy git obeys)
+  and every file carrying the `crew-ignore-policy:list` marker must state the
+  same set. Marker-keyed on purpose, like `check_self_claims` - `TODO.md` and
+  `commands/review.md` mention one or two paths in passing and must NOT be read
+  as declaring the list. `scripts/_test/crew-ignore-policy.py` asserts that
+  silence alongside the failures, 16 cases, and each of the four guard branches
+  was sabotaged individually and confirmed to take the suite red.
+  The marker carries a colon because the first version did not: a bare
+  `crew-ignore-policy` is a legal filename, and the CI step that runs the suite
+  names the file, so `.github/workflows/marketplace.yml` was flagged for
+  declaring a policy it was only citing.
+  Review caught a live false positive before merge, worth keeping visible: the
+  ordering assertion searched the WHOLE markdown file, so one sentence written
+  below §3c's fence would move the last `!.crew/` past `.crew/.approved-*` and
+  fail a correct template - the "fails correct lines" mode, inside the check
+  written to prevent it. Ordering is now scoped to the fenced block, with a
+  must-allow case for prose on either side of it. The same round found the
+  no-fenced-block path reporting "does not carry the marker" about a file that
+  plainly does; carrying the marker and declaring a list are now separate facts.
+  **This repo now tracks `.crew/verify.json`, which is a practice change rather
+  than a docs fix.** Its own `CLAUDE.md` already described that file as "the
+  mechanism" for per-path verification while nothing tracked it, so every clone
+  read "no verification map" and selected no specialist - indistinguishable from
+  "no rule matched". Checked clone-safe first: no URL, hostname or Windows
+  absolute path. One thing the check surfaced and did not fix -
+  `.crew/verify.json:129` runs `"/c/Program Files/PowerShell/7/pwsh"`, an
+  absolute path in Git Bash form that carries no secret but cannot run on a
+  Linux clone.
+  `promote-gate.sh` was **not** changed. Its clean-tree check does run before the
+  step that tells you to create the approval marker, but under this list no file
+  that is both tracked and written during a promote or an incident exists -
+  `git check-ignore` on ten candidate paths, plus `crew_endpoints.py:258`
+  naming `declare_endpoint` as the sole writer of `endpoints.json`. The reorder
+  is written down in `TODO.md` with the evidence instead, because a blocking hook
+  needs a sabotage-tested regression suite and spending one on an unreachable
+  deadlock buys nothing. The reachable version of that deadlock is a consuming
+  repo that adopts the un-ignore list but omits `.crew/.approved-*`, and the
+  shipped template in `crew-setup/SKILL.md` §3c now lists it explicitly.
+  `test_verify_absent_and_diagram_kind.py` had a trip-wire asserting the map was
+  NOT tracked, whose docstring said that if it ever became tracked "this test
+  fails and the wording in review.md gets revisited instead of quietly going
+  stale". It fired, and the wording was revisited. It is re-armed pointing the
+  other way, and now also pins the ordering the policy depends on.
+
 - **`crew` 0.19.45: `crew_state.py` split, because the alternative was shaving
   another comment.** The module was 3299 lines against `max-module-lines =
   3300`. It had been one line from failing CI three times, and each time

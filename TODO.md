@@ -469,7 +469,15 @@ thing. The obvious-looking fix is a bug.
 
 ## Correction: nothing under `.crew/` is committed, and one commit message says otherwise
 
-`.gitignore:277` ignores `.crew/` deliberately, with a stated rationale —
+**RESOLVED 2026-09-14, except item 1.** The closing paragraph's proposal was taken:
+`!.crew/verify.json` is on the named un-ignore list and this repo tracks its own
+map, so items 2 and 3 no longer describe the repo. Item 4 was already resolved
+earlier by `!.crew/codemap/`. Item 1 stands as a permanent note about `ae1c92ee`
+and must not be deleted — an amended-away wrong commit message is still wrong in
+the history other lanes have read. The rest is kept below as the record of what
+the policy was and why it changed.
+
+`.gitignore` ignored the whole of `.crew/` deliberately, with a stated rationale —
 `obsidian.vaultPath` and `boardDir` are absolute paths valid on one machine, and
 `pm.authority` is a trust decision a clone should not inherit. That is correct
 and should stay. But three consequences were not obvious and bit this session:
@@ -504,6 +512,57 @@ If the intent is for `verify.json` specifically to travel while the rest of
 `.crew/` stays machine-local, that is a one-line negation in `.gitignore`
 (`!.crew/verify.json`) plus a decision about whether its `agents` lists are
 portable. Not doing it unasked — it changes what a clone inherits.
+
+**Done, with the `agents` decision made the other way.** The lists are NOT
+assumed portable; `commands/review.md` and `crew-verification/SKILL.md` now say
+that tracking the map makes a named-but-missing agent *more* likely, because a
+committed map reaches machines whose roster nobody checked, and the existing GAP
+report is what covers it. One thing surfaced that the clone-safety check missed:
+`.crew/verify.json:129` runs `"/c/Program Files/PowerShell/7/pwsh"`, an absolute
+Windows path in Git Bash form. It carries no username, host or secret, so it is
+safe to commit, but that rule cannot run on a Linux clone. Left as-is — it is a
+live rule in this repo's own map and rewriting it is not this change's job.
+
+## Reorder promote-gate's clean-tree check below `requireHuman` — NOT reachable here, do not ship it blind
+
+`plugin/crew/hooks/scripts/promote-gate.sh:158` (`# 4. clean tree`) blocks on a
+dirty working tree before the `requireHuman` step at `:234` tells you to create
+`.crew/.approved-<env>-<sha>`. The `.ps1` has the same shape. The claimed failure
+is a deadlock: the gate blocks on a dirty tree, the fix for the block is to write
+a file into `.crew/`, and writing it dirties the tree again.
+
+**Measured 2026-09-14: not reachable under this repo's policy, and not reachable
+via the un-ignore list on any flow.** `git check-ignore` on ten candidate paths
+says `.crew/.approved-*`, `.crew/.deploy-in-flight`, `.crew/.verify-verified-at`,
+`.crew/.verify-gate.lock`, `.crew/config.json` and `.crew/STATUS.md` are all
+IGNORED; only `codemap/`, `endpoints.json` and `verify.json` are tracked. None of
+those three is written by a promote or an incident:
+
+- `codemap/` is written by `/crew:onboard`.
+- `endpoints.json` has exactly one writer, `declare_endpoint`
+  (`plugin/crew/hooks/scripts/crew_endpoints.py:258` states this in its own
+  docstring), reachable only through `crew_state.py`'s `--declare-endpoint` CLI
+  from the PM/work ticket flow.
+- `verify.json` is written by `/crew:verify`, which is map authoring, not a
+  deploy.
+- The incident path writes `.crew/incident-skips.log` and `.crew/incidents/`
+  (`commands/emergency.md:90,101`), both ignored.
+
+**The residual risk is a different claim, and it is real.** A consuming repo that
+adopts the un-ignore list but omits `.crew/.approved-*` from below it tracks the
+approval marker, and the deadlock opens there. That is closed at the data layer
+by `crew-setup/SKILL.md` §3c, which now ships `.crew/.approved-*` explicitly
+below the negations, and by `check_crew_ignore_policy` keeping the list from
+drifting.
+
+So the code change is written down here rather than made. `promote-gate.sh` is a
+**blocking** hook, and this repo's `CLAUDE.md` requires a committed,
+sabotage-tested regression suite with must-block and must-allow cases before one
+changes. Doing that for a deadlock nobody can currently reach spends the suite on
+a hypothetical. If a flow ever writes a tracked `.crew/` path during a promote,
+the fix is: move the `# 4. clean tree` block below the `requireHuman` verdict in
+**both** shells, and the must-allow case is "`verify.json` tracked and dirty,
+marker creation still reachable".
 
 ## Landmine candidate: an 8-character anchor can never match, and fails silently
 

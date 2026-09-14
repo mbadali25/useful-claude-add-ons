@@ -519,6 +519,204 @@ def check_self_claims(entries, fail):
                     )
 
 
+POLICY_MARKER = "crew-ignore-policy:list"
+POLICY_GITIGNORE = ".gitignore"
+# Forward slashes throughout: these are compared against `git ls-files`, which
+# emits POSIX separators on every platform. os.path.join would produce
+# backslashes here on Windows and the required-source check would report the
+# shipped template as missing its marker on Windows only.
+POLICY_TEMPLATE = "plugin/crew/skills/crew-setup/SKILL.md"
+# The two files that IMPLEMENT the check necessarily contain the marker string
+# and example paths, and scanning them makes the checker fail on its own
+# docstring. Excluded by path rather than by a cleverer marker rule, because a
+# rule that tried to tell a definition from a declaration is one more thing that
+# can be wrong.
+POLICY_SELF = ("scripts/check-marketplace.py", "scripts/_test/crew-ignore-policy.py")
+_UNIGNORE_RE = re.compile(r"!\.crew/([A-Za-z0-9_.*-]+/?)")
+
+
+def _unignored(text: str) -> set[str]:
+    """The `!.crew/<path>` set a file declares, with trailing slashes normalised.
+
+    `!.crew/codemap/` in a .gitignore and `!.crew/codemap` in prose are the same
+    claim about the same directory, and a set comparison that failed on the
+    slash would fail correct lines.
+    """
+    return {name.rstrip("/") for name in _UNIGNORE_RE.findall(text)}
+
+
+def _policy_block(relative: str, text: str) -> str | None:
+    """The region of a required source whose ORDER is load-bearing.
+
+    `.gitignore` is that region entire: one stanza, read top to bottom by git.
+    A markdown source is not - `crew-setup/SKILL.md` is five hundred lines of
+    prose around a fenced block, and only the block is what a consuming repo
+    copies. Searching the whole document for the last `!.crew/` would let one
+    sentence written BELOW §3c - exactly the edit this policy invites - push the
+    last negation past `.crew/.approved-*` and fail a correct template. Returns
+    None when a markdown source ships no block at all, which is its own failure
+    rather than a silent pass.
+    """
+    if not relative.endswith(".md"):
+        return text
+    fence = re.search(r"```gitignore\n(.*?)```", text, re.S)
+    return fence.group(1) if fence else None
+
+
+def check_crew_ignore_policy(fail):
+    """The `.crew/` un-ignore list is one set, stated in several places at once.
+
+    The policy: `.crew/*` is ignored and a NAMED list is un-ignored. The list
+    lives in `.gitignore` (which is what git actually obeys, so it is the
+    authority here), is shipped to consuming repos by `crew-setup/SKILL.md` §3c,
+    and is restated in prose by several docs. Those had drifted into stating
+    three different policies at once - `.gitignore` re-admitted two paths while a
+    comment fifty lines below it asserted that "the whole of crew's state ... is
+    local to each machine and never committed".
+
+    **A file opts in with the `crew-ignore-policy:list` marker**, the same
+    discipline `check_self_claims` uses for numbers: a file that carries it must
+    state the WHOLE list, and an unmarked file is deliberately not checked.
+    `TODO.md` and `commands/review.md` each mention one or two paths in passing,
+    and a checker that read "two mentions" as "a declaration" would fail them for
+    being correctly narrow. That silence is asserted by
+    `scripts/_test/crew-ignore-policy.py`.
+
+    **Six files carry the marker today**, and naming them is the point - the
+    scope of this check is exactly that set, not "every file that mentions
+    `.crew/`": `.gitignore` and `crew-setup/SKILL.md` (required, below),
+    `CLAUDE.md`, `plugin/crew/README.md`, `crew-setup/phases.md` and
+    `crew-verification/SKILL.md`. The codemap under `.crew/codemap/` restates the
+    list and is deliberately OUT of scope: it is a derived map with its own
+    `anchor:` staleness mechanism, and a generated artefact that fails this gate
+    would be fixed by regenerating it, not by editing it. So the list can still
+    drift in an unmarked file. What cannot happen is the failure this was written
+    for - the authority and the shipped template disagreeing with each other and
+    with the docs, silently.
+
+    The marker carries a colon because a bare hyphenated word is also a legal
+    FILENAME, and `.github/workflows/marketplace.yml` names this check's own test
+    file in a `run:` line. The first version flagged the workflow for declaring a
+    policy it was only citing.
+
+    Three ways this could pass while checking nothing, each made its own failure:
+
+    1. **An empty extraction.** A doc that stops using the backticked `!.crew/x`
+       form yields an empty set, and empty == empty is a pass. A marked file that
+       declares nothing therefore fails.
+    2. **Every marker deleted.** `.gitignore` and the shipped template are
+       required to carry one, so the check cannot be silenced by removing them.
+    3. **A trailing slash on `.crew/`.** `.crew/` stops git descending into the
+       directory at all, and nothing can be re-included from a directory git
+       never entered - every negation below it silently does nothing while the
+       file still reads as though the policy were in force.
+    """
+    sources: dict[str, set[str]] = {}
+    # Carrying the marker and successfully DECLARING a list are two different
+    # facts, and collapsing them made the no-fenced-block case report "does not
+    # carry the marker" about a file that plainly does - a wrong answer wearing
+    # the label of a different check. Tracked separately so each failure says
+    # the thing that is actually true.
+    marked: set[str] = set()
+    for relative in sorted(set(git("ls-files").splitlines()) | {POLICY_GITIGNORE}):
+        relative = relative.replace("\\", "/")
+        if relative in POLICY_SELF:
+            continue
+        path = os.path.join(ROOT, *relative.split("/"))
+        if not os.path.isfile(path):
+            continue
+        try:
+            with open(path, encoding="utf-8", errors="replace") as handle:
+                text = handle.read()
+        except OSError:
+            continue
+        if POLICY_MARKER not in text:
+            continue
+        marked.add(relative)
+        if relative not in (POLICY_GITIGNORE, POLICY_TEMPLATE):
+            # A prose doc states the list in a sentence, so the whole file is
+            # the declaration. Order is meaningless in prose and is not checked.
+            sources[relative] = _unignored(text)
+            continue
+
+        body = _policy_block(relative, text)
+        if body is None:
+            fail(
+                f"{relative}: carries the {POLICY_MARKER} marker but has no ```gitignore "
+                "fenced block. The shipped template is the block, not the prose around "
+                "it - without one there is nothing for a consuming repo to copy."
+            )
+            continue
+        sources[relative] = _unignored(body)
+        if re.search(r"(?m)^\s*\.crew/\s*$", body):
+            fail(
+                f"{relative}: ignores `.crew/` with a trailing slash. Git refuses to "
+                "descend into it, so every `!.crew/...` negation below is silently "
+                "dead. Write `.crew/*`."
+            )
+        if ".crew/*" not in body:
+            fail(
+                f"{relative}: carries the {POLICY_MARKER} marker but never writes "
+                "`.crew/*`, so there is no base ignore for the un-ignore list to "
+                "carve out of."
+            )
+        last_negation = body.rfind("!.crew/")
+        approval = body.find(".crew/.approved-*")
+        if approval == -1:
+            fail(
+                f"{relative}: does not list `.crew/.approved-*`. promote-gate writes "
+                "that marker itself, so a trackable one dirties the tree the moment "
+                "the gate creates the file it just asked for, then blocks on it."
+            )
+        elif approval < last_negation:
+            fail(
+                f"{relative}: lists `.crew/.approved-*` ABOVE the last `!.crew/` "
+                "negation. Later rules win, so a negation below it could re-admit "
+                "the approval marker."
+            )
+
+    for required in (POLICY_GITIGNORE, POLICY_TEMPLATE):
+        if required not in marked:
+            fail(
+                f"{required} does not carry the `{POLICY_MARKER}` marker. It is a "
+                "required source: without it this check has nothing to compare against "
+                "and would pass by finding nothing."
+            )
+
+    canonical = sources.get(POLICY_GITIGNORE)
+    if not canonical:
+        fail(
+            f"{POLICY_GITIGNORE} declares no `!.crew/...` paths. The un-ignore list "
+            "cannot be read, so nothing below was compared - this is a failure, not a "
+            "repo with an empty list."
+        )
+        return
+
+    for relative, declared in sorted(sources.items()):
+        if relative == POLICY_GITIGNORE:
+            continue
+        if not declared:
+            fail(
+                f"{relative}: carries the `{POLICY_MARKER}` marker but declares no "
+                "`!.crew/...` path. An empty declaration compares equal to nothing and "
+                "would pass silently."
+            )
+            continue
+        if declared != canonical:
+            missing = sorted(canonical - declared)
+            extra = sorted(declared - canonical)
+            detail = []
+            if missing:
+                detail.append("omits " + ", ".join(f"!.crew/{n}" for n in missing))
+            if extra:
+                detail.append("adds " + ", ".join(f"!.crew/{n}" for n in extra))
+            fail(
+                f"{relative}: states a different `.crew/` un-ignore list than "
+                f"{POLICY_GITIGNORE} - {'; '.join(detail)}. The list is one set; change "
+                "it in one place and every place that states it has to follow."
+            )
+
+
 def check_hook_commands(entries, fail):
     r"""Every shell-form hook command survives the shell that will actually run it.
 
@@ -584,6 +782,7 @@ def main() -> int:
     check_hook_commands(entries, fail)
     check_versions(entries, fail)
     check_self_claims(entries, fail)
+    check_crew_ignore_policy(fail)
 
     skills = sum(1 for e in entries if e["source"].startswith("./skills/"))
     plugins = len(entries) - skills

@@ -1118,8 +1118,10 @@ read would refuse the second. It is the user's to remove.
 **It expires 15 minutes after it is created** (`GUARD_APPROVAL_TTL` in
 `crew_guards.py`, read by `crew_config.py::_approval_is_live`). Not consuming
 it on read answers "can one command be judged twice"; it does not answer "how
-long is a yes good for", and the two are separate properties. `.crew/` is
-gitignored and nothing prunes it, so an approval with no time bound is a
+long is a yes good for", and the two are separate properties. This marker is
+gitignored (`.crew/*`, and it is not on the `codemap/` / `endpoints.json` /
+`verify.json` un-ignore list) and nothing prunes it, so an approval with no
+time bound is a
 standing per-command `allow` that outlives the session, the task and the
 person who gave it — `ask` in the config, `allow` on disk. The design note
 asks `ask` to stop for a yes *at that moment*, and a file with no expiry is

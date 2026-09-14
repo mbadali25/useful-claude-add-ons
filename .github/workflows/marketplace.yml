@@ -32,6 +32,14 @@ jobs:
       # a correct line six months from now.
       - name: Self-claim marker suite
         run: python3 scripts/_test/self-claims.py
+      # check_crew_ignore_policy is marker-keyed for the same reason and has the
+      # same failure mode: a file that mentions one `.crew/` path in passing must
+      # NOT be read as declaring the list, or the check starts failing correct
+      # lines. Three ways it could pass while checking nothing - an empty
+      # extraction, every marker deleted, `.crew/` with a trailing slash that
+      # kills every negation below it - each get a case here.
+      - name: crew ignore-policy suite
+        run: python3 scripts/_test/crew-ignore-policy.py
       # The version-drift check resolves "when was this version set" by walking
       # marketplace.json's history, and that walk is only monotonic on a linear
       # one. Across a merge it can stop at the merge commit, which then diffs

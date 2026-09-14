@@ -55,7 +55,8 @@ mirrored README sections and does not write it - DERIVED.)
   `git log --all --diff-filter=A -- 'docs/adr/*'` is empty - no ADR has ever been committed. The
   three claims are `CLAUDE.md:78` ("Decisions in `docs/adr/`"), `CHANGELOG.md:2057-2058` ("It also
   stops claiming `docs/adr/`, which is now `scribe`'s"), and `.crew/STATUS.md:39`
-  (**UNVERIFIABLE HERE**: the file is machine-local, gitignored via `.gitignore:282`, and absent
+  (**UNVERIFIABLE HERE**: the file is machine-local — `STATUS.md` is not on the `.crew/*` stanza's
+  un-ignore list, which is `codemap/`, `endpoints.json`, `verify.json` — and absent
   from this checkout, so this line could not be re-read), which records `docs/adr/` as
   **scaffolded**. That last one is the trap: it reads as a completed step.
   (A prior version of this note cited `CHANGELOG.md:1195-1196` for the scribe/ADR assignment. That

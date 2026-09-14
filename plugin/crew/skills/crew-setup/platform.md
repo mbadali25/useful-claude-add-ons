@@ -26,10 +26,13 @@ the same JSON shape. Record the result in `.crew/config.json`:
 
 **You no longer have to remember to re-detect.** A `SessionStart` hook
 (`hooks/scripts/platform-sync.{sh,ps1}`, both delegating to `crew_platform.py`)
-does it on every session start and repairs the block in place, because the block
-is committed and is therefore wrong for everybody who did not run `/crew:init` -
-and `windowsHostIp` is wrong for the same person after a reboot, since WSL2's
-gateway changes.
+does it on every session start and repairs the block in place. `.crew/config.json`
+is machine-local - the policy is `.crew/*` ignored with a named un-ignore list of
+`codemap/`, `endpoints.json` and `verify.json`, and the config is not on it - so
+the block is never wrong because it travelled. It goes wrong in place: the same
+checkout opened from Windows and from WSL is two machines sharing one file, and
+`windowsHostIp` is wrong for the same person after a reboot, since WSL2's gateway
+changes.
 
 It writes the seven derived facts above and nothing else. A preference this OS
 cannot honour - an `autoClear.method` that only exists on the other platform, a
