@@ -104,6 +104,11 @@ PROMOTE_SH = os.path.join(CREW, "hooks", "scripts", "promote-gate.sh")
 MERGE_GATE = os.path.join(
     ROOT, "skills", "bitbucket", "scripts", "merge_gate.sh")
 GUARD_PS1 = os.path.join(CREW, "hooks", "scripts", "guard.ps1")
+# The PowerShell half of the deploy gate. Added with the mutation that proves
+# its `-ErrorAction Stop` is load-bearing: PROMOTE_SH alone covered the bash
+# flavour, and "one flavour stands down and nothing notices" is this plugin's
+# recurring failure rather than a hypothetical one.
+PROMOTE_PS1 = os.path.join(CREW, "hooks", "scripts", "promote-gate.ps1")
 # Split out of `crew_state.py` on 2026-09-13 -- see its docstring. Five
 # mutations below moved here with the code they target; none was
 # re-anchored onto a nearby line, which this file's own header forbids.
@@ -268,12 +273,23 @@ MUTATIONS = (
         # carrying `schema` is truthy whether or not it declares `production`
         # -- a fallback on the wrong object. This one merges, which is the
         # shape a well-meaning "make it work globally too" edit takes.
+        # RE-ANCHORED a third time, and the reason is worth having: the line it
+        # used to patch -- `cfg = crew_state.load_config(root) or {}` -- was
+        # DELETED when `production_declaration` took over the read, because that
+        # helper answers `{}` for absent, unparseable and not-an-object alike
+        # and building four states on it would have reimplemented the collapse.
+        # So this mutation now patches the point where the repo layer is found
+        # to hold no `production` block at all, which is the same place the
+        # global fallback would be written by anyone adding one.
         "the production patterns fall back to the machine-global file, so a "
         "global block reaches every repo",
         CONFIG,
-        "    cfg = crew_state.load_config(root) or {}",
-        "    cfg = {**read_global_config(),\n"
-        "           **(crew_state.load_config(root) or {})}",
+        "    if \"production\" not in cfg:\n"
+        "        return ProductionDeclaration(PROD_DECL_ABSENT, [], \"\")\n"
+        "    block = cfg[\"production\"]",
+        "    if \"production\" not in cfg:\n"
+        "        cfg = read_global_config()\n"
+        "    block = cfg.get(\"production\")",
         ("tests/test_guards.py::"
          "test_production_patterns_never_read_the_global_layer"),
     ),
@@ -328,14 +344,115 @@ MUTATIONS = (
         # comment that misdescribes its own mutation is exactly the failure
         # this file's header is about, so it is corrected here rather than
         # quietly rewritten.
+        #
+        # RE-ANCHORED, not re-aimed: the anchor used to include `_maybe_log`'s
+        # `if decision == "block" and not os.path.isdir(...)` line, which was
+        # DELETED when the "never create `.crew/`" rule moved to `_log_guard`
+        # (see the two D5 mutations below). The mutation itself is unchanged --
+        # same insertion, same claim, same test -- and the anchor now ends at
+        # the comment that follows, which is the nearest line that still exists
+        # in the same function. This file's header forbids re-anchoring a
+        # mutation whose CODE was deleted onto whatever is nearest; the code
+        # this one mutates was not deleted, only the line it was written next
+        # to.
         "under `allow` the guard stops recording what it let through",
         CONFIG,
         "    if not record:\n        return\n"
-        "    if decision == \"block\"",
+        "    # Tabs and newlines in a command would forge a row.",
         "    if not record:\n        return\n"
         "    if decision == \"allow\":\n        return\n"
-        "    if decision == \"block\"",
+        "    # Tabs and newlines in a command would forge a row.",
         "tests/test_guards.py::test_under_allow_nothing_is_silent",
+    ),
+    (
+        # D2. `malformed` stops being one of the states that cannot be
+        # answered, so a `production.hosts` holding a STRING is handed to
+        # `prod_decision` as an empty pattern list again -- which reads it as
+        # "nothing declared, nothing matches, allow". The `unreadable` half is
+        # left intact on purpose: this is the exact defect that shipped, the
+        # wrong-SHAPED config rather than the unreadable file, and a mutation
+        # that broke both would go red on either test and prove nothing about
+        # which of them covers this one.
+        "a wrong-shaped `production` block is treated as nothing declared",
+        CONFIG,
+        "        if declared.state in (PROD_DECL_MALFORMED, "
+        "PROD_DECL_UNREADABLE):",
+        "        if declared.state in (PROD_DECL_UNREADABLE,):",
+        ("tests/test_malformed_production_never_permits.py::"
+         "test_a_declaration_crew_cannot_read_blocks_a_write"),
+    ),
+    (
+        # D2, the platform half. Drop `NotADirectoryError` and `.crew` being a
+        # plain FILE goes back to `unreadable` on POSIX while staying `absent`
+        # on Windows -- one repo state, two verdicts, and the blocking one lands
+        # on a repo that never opted in. The forced-exception test is what makes
+        # this red on either platform; a fixture can only raise whichever
+        # exception the runner's own OS picks, which is how it shipped green.
+        "a config that is not there blocks, on one platform only",
+        CONFIG,
+        "    except (FileNotFoundError, NotADirectoryError):",
+        "    except FileNotFoundError:",
+        ("tests/test_unmanaged_repo_is_left_untouched.py::"
+         "test_a_config_that_is_not_there_reads_absent_on_every_platform"),
+    ),
+    (
+        # D2, the half no in-process test can see. The refusal keeps every
+        # word of its reason and loses only the TARGET, which is the field both
+        # shells check first: `prod_guarded` in guard.sh and Invoke-ProdGuard
+        # in guard.ps1 each `return` silently when it is empty, before looking
+        # at the decision at all. So this mutation is invisible to
+        # `guard_decision`'s callers in python and turns the hook back into
+        # exit 0 with nothing printed. `""` is also the honest-looking value a
+        # reviewer would suggest ("no pattern matched, so name none").
+        "a refusal crew cannot back with a pattern is swallowed by the hooks",
+        CONFIG,
+        "            f\"<unread production.{PROD_DECL_KEYS[name]}>\", access)",
+        "            \"\", access)",
+        ("tests/test_malformed_production_never_permits.py::"
+         "test_sh_refuses_a_write_when_it_cannot_read_the_declaration"),
+    ),
+    (
+        # D5. The `makedirs` goes back, which is the single line that adopted a
+        # plain repo into crew: the next SessionStart resolves its root from
+        # bare `.crew/` presence and heal_config writes a default config into
+        # it. Every other assertion in the suite still passes -- the row is
+        # still written, the decision is unchanged, and in a real crew repo the
+        # directory already exists so nothing differs at all.
+        "the guard log creates `.crew/` in a repo that never opted in",
+        CONFIG,
+        "        if not os.path.isdir(os.path.dirname(path)):\n            return",
+        "        os.makedirs(os.path.dirname(path), exist_ok=True)",
+        ("tests/test_unmanaged_repo_is_left_untouched.py::"
+         "test_an_allowed_command_then_a_session_start_leaves_nothing_behind"),
+    ),
+    (
+        # D3, bash. The exit-status check on the env-resolution step goes away,
+        # so a verify.json that will not parse leaves ENVNAME empty and the
+        # `[ -z "$ENVNAME" ] && exit 0` below reads that as "this command
+        # deploys nothing". Mutated to `-eq 999` rather than deleted, for the
+        # same reason the VERDICT_STATUS mutation above is: the surrounding
+        # message and the empty-ENVNAME test still read correctly, so the file
+        # looks complete.
+        "the promote gate reads an unparseable map as `not a deployment`",
+        PROMOTE_SH,
+        'if [ "$ENV_STATUS" -ne 0 ]; then',
+        'if [ "$ENV_STATUS" -eq 999 ]; then',
+        ("tests/test_promote_gate_unreadable_map.py::"
+         "test_sh_blocks_on_the_stray_comma_that_started_this"),
+    ),
+    (
+        # D3, PowerShell. `-ErrorAction Stop` goes away and Get-Content's
+        # failure becomes non-terminating again, so the catch never fires, $vm
+        # stays null, and the `environments` test two lines down reads the
+        # corruption as a map that declares nothing. The parse-error path is
+        # untouched, so the mutation isolates UNREADABLE from UNPARSEABLE --
+        # they are different facts and the .ps1 only ever covered one.
+        "promote-gate.ps1 reads an unreadable map as one that gates nothing",
+        PROMOTE_PS1,
+        "Get-Content .crew/verify.json -Raw -ErrorAction Stop",
+        "Get-Content .crew/verify.json -Raw",
+        ("tests/test_promote_gate_unreadable_map.py::"
+         "test_ps1_blocks_when_the_map_is_not_a_file_at_all"),
     ),
     (
         # `/crew:gate` stops reading `guards.mergeGate` before it acts. The

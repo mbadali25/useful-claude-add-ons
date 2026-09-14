@@ -6,6 +6,54 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`crew` 0.19.40: a config crew could not read was read as a config that
+  permitted.** Three defects, one shape - the state "crew does not know" had no
+  value of its own, so each collapsed into the value that permits.
+  `production.hosts: "prod-web-*"`, a string where a list belongs and the single
+  most likely way to write the key wrong, returned `[]` from
+  `production_patterns`, and `prod_decision` reads `[]` as "nothing declared, so
+  nothing matches, so allow" - the host restriction was off at every level
+  including `prodServer: none`, while the config still read as though production
+  had been declared. `production_declaration` returns five states now, not a
+  list: `declared`, `absent`, `empty`, `malformed`, `unreadable`. Only the
+  middle two mean nothing was declared; the other two allow at `full` and allow
+  a read-classified command at `read` - the levels where the unknown changes
+  nothing - and block otherwise, with a non-empty target, because both shells
+  return silently on an empty one.
+  `promote-gate.sh` collapsed absent, unreadable and not-a-map into
+  `except Exception: sys.exit(0)`, so a stray comma removed every pre-deploy
+  check while the deploy went ahead looking gated, output byte-identical to
+  "this command deploys nothing"; the exit status carries the distinction now
+  and every reason goes to stderr. `[ -f ]` became `[ -e ]` - a directory named
+  `.crew/verify.json` is not an opt-out - and `deploy: "deploy-prod"` as a bare
+  string, which the loop iterated by CHARACTER so that it matched any command
+  containing a `d`, is normalised to one entry.
+  `promote-gate.ps1`'s `Get-Content` failure is non-terminating, so a directory
+  in place of the map left `$vm` null, the catch never fired, and
+  `-not $vm.environments` read the corruption as "nothing declared" and exited
+  0; `-ErrorAction Stop` plus type checks on the document, on `environments`, on
+  each environment and on each `deploy`.
+  Separately, `_log_guard` no longer creates `.crew/`. The caller skipped only
+  refusals in a repo with no `.crew/`, which is the half that never fires - one
+  allowed `ssh` created the directory, the next SessionStart resolved its root
+  from bare `.crew/` presence, and `heal_config` wrote a full default config
+  into a repo that never opted in.
+  `crew_guards.py` is unchanged: the unknown is kept away from `prod_decision`
+  rather than taught to it. Six new sabotage mutations, all red.
+
+  0.19.39 was this change with one defect still in it, caught by CI and never
+  released: `production_declaration` opens `.crew/config.json`, and when
+  `.crew` is itself a plain FILE the two platforms raise different exceptions
+  for that one tree - POSIX `NotADirectoryError`, Windows `FileNotFoundError`.
+  Only the second was caught, so the state came back `absent` on Windows and
+  `unreadable` on Linux, and `unreadable` blocks every `ssh` at
+  `prodServer: none` in a repo that never opted in. Both read `absent` now,
+  which is what `crew_platform.main` means by a root - a `.crew/` DIRECTORY -
+  while a directory in place of the config FILE is still `unreadable`. The
+  test that should have caught it built the tree and let the platform pick the
+  exception, so it could only exercise the runner's own OS; the new pair
+  raises each explicitly.
+
 - **`crew` 0.19.38: six ways a command was spelled past a guard.** Each is the
   same shape - a spelling the guard did not recognise collapsing into the
   safe-looking answer, with nothing saying a check had been skipped.

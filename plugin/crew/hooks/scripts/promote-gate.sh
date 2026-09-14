@@ -27,7 +27,12 @@ INPUT=$(cat)
 crew_tool_dispatch promote-gate.ps1 "$INPUT"
 
 cd "${CLAUDE_PROJECT_DIR:-.}" 2>/dev/null || exit 0
-[ -f .crew/verify.json ] || exit 0
+# NO map at all is an opt-out: a repo that never wrote one is not gated, and
+# that is the only state this line may pass. `-e`, not `-f`, on purpose -- a
+# DIRECTORY named .crew/verify.json is not an opt-out, it is a map that cannot
+# be read, and `-f` answered false for it and exited 0 here. Everything that
+# exists goes on to the read below, which decides readable from unreadable.
+[ -e .crew/verify.json ] || exit 0
 
 PY=$(crew_py) || exit 0   # no python: cannot read the map, so do not pretend to gate
 
@@ -39,22 +44,98 @@ fi
 CMD=$(crew_strip_cr "$CMD")
 [ -z "$CMD" ] && exit 0
 
-# Which environment, if any, does this command deploy to?
-ENVNAME=$("$PY" - "$CMD" <<'PY' 2>/dev/null
+# Which environment, if any, does this command deploy to? And - separately -
+# could the map be read AT ALL?
+#
+# Fail CLOSED on a map that will not parse. `except Exception: sys.exit(0)`
+# collapsed three different facts into one: an ABSENT verify.json (handled
+# above, and an opt-out), an UNREADABLE one, and one holding something other
+# than a map of environments. The last two are corruption, and a single stray
+# comma in .crew/verify.json therefore removed every pre-deploy check while the
+# deploy went ahead looking gated - no output, exit 0, byte-identical to "this
+# command deploys nothing". promote-gate.ps1 fixed this first and carries the
+# same reasoning at its own `ConvertFrom-Json`; this is the port.
+#
+# The EXIT STATUS carries the distinction, and the ONLY thing this step writes
+# to stdout is an environment name: 3 unreadable, 4 malformed, 0 for a name or
+# for nothing matching. Every reason goes to STDERR, unredirected, which is both
+# how the reader sees it and what keeps the status check load-bearing - a reason
+# printed to stdout would land in ENVNAME, be read as the name of an environment
+# nobody declared, and block for an unrelated reason further down while this
+# check was disabled. `VAR=$(cmd)` captures stdout only, so nothing on stderr
+# can pollute ENVNAME and there is no reason to suppress it.
+#
+# A traceback lands as a non-zero status too, which blocks for the same reason
+# and says so.
+#
+# Deliberately ABOVE the emergency lane, matching the .ps1: an incident turns an
+# unmet precondition into a recorded skip, and every skip row names the
+# environment - which is precisely what could not be determined here. There is
+# nothing to record and nothing to stand down.
+ENVNAME=$("$PY" - "$CMD" <<'PY'
 import json, sys
 cmd = sys.argv[1]
+
+
+def unreadable(why, status):
+    print(why, file=sys.stderr)
+    sys.exit(status)
+
+
 try:
-    envs = json.load(open(".crew/verify.json")).get("environments", {})
-except Exception:
-    sys.exit(0)
+    with open(".crew/verify.json", encoding="utf-8-sig", errors="replace") as fh:
+        raw = fh.read()
+except OSError as exc:
+    unreadable(f".crew/verify.json exists and could not be read: {exc}", 3)
+try:
+    doc = json.loads(raw)
+except ValueError as exc:
+    unreadable(f".crew/verify.json does not parse as JSON: {exc}", 4)
+if not isinstance(doc, dict):
+    unreadable(f".crew/verify.json holds a JSON {type(doc).__name__}, "
+               "not an object", 4)
+envs = doc.get("environments", {})
+if not isinstance(envs, dict):
+    unreadable(f"`environments` in .crew/verify.json is a "
+               f"{type(envs).__name__}, not an object, so no environment can "
+               "be read out of it", 4)
 for name, cfg in envs.items():
-    for d in cfg.get("deploy", []):
+    if not isinstance(cfg, dict):
+        unreadable(f"environment `{name}` in .crew/verify.json is a "
+                   f"{type(cfg).__name__}, not an object", 4)
+    declared = cfg.get("deploy", [])
+    if isinstance(declared, str):
+        # ONE command, not a list of them. The .ps1's `foreach` already reads a
+        # bare string as a single entry; this loop iterated its CHARACTERS, so
+        # `deploy: "deploy-prod"` matched any command containing a `d` and
+        # `echo done` wrote a .crew/.deploy-in-flight marker for a deploy that
+        # never happened - which the Stop gate then demands a PROMOTIONS row
+        # for. Normalised here so both flavours read the same shape.
+        declared = [declared]
+    if not isinstance(declared, list) or not all(
+            isinstance(d, str) for d in declared):
+        unreadable(f"environment `{name}` in .crew/verify.json has a `deploy` "
+                   "that is not a command or a list of commands", 4)
+    for d in declared:
         # Substring both ways: the declared command may be run with extra flags,
         # or wrapped. Deliberately generous - a missed match means no gate.
         if d and (d in cmd or cmd in d):
             print(name); sys.exit(0)
 PY
 )
+ENV_STATUS=$?
+
+# Immediately after the substitution, like VERDICT_STATUS below: `set -uo
+# pipefail` is on and `-e` is not, so anything between the two lines eats $?.
+if [ "$ENV_STATUS" -ne 0 ]; then
+  echo "PROMOTION BLOCKED: .crew/verify.json could not be read as a deployment map (exit $ENV_STATUS)." >&2
+  echo "  The reason is printed above this line, on stderr, by the check itself" >&2
+  echo "  - or, if nothing is there, the check crashed and the traceback is." >&2
+  echo "  This is NOT a pass. Crew cannot tell whether this command deploys," >&2
+  echo "  so it cannot tell whether a pre-deploy gate applies to it. Fix the" >&2
+  echo "  JSON, or delete .crew/verify.json if this repo should not be gated." >&2
+  exit 2
+fi
 [ -z "$ENVNAME" ] && exit 0
 
 # Emergency lane: an open incident turns every block into a recorded skip.

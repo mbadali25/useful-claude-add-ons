@@ -366,3 +366,33 @@ def test_a_clean_run_reports_pass_and_leaves_no_backup(tmp_path, monkeypatch,
     assert "SABOTAGE SUITE: PASS" in capsys.readouterr().out
     assert sabotage.digest(target) == pristine
     assert not os.path.exists(target + ".bak")
+
+
+def test_every_shipped_anchor_is_present_in_its_target_exactly_once():
+    """The one test here that reads real crew sources -- read-only, never written.
+
+    `apply_mutation` returns False when an anchor is missing or ambiguous, and
+    `main` reports that as ANCHOR LOST. But nothing reports it until somebody
+    pays for a full mutation run, and a full run is minutes per mutation. So an
+    ordinary edit that deletes the line a mutation aims at leaves the table
+    silently pointing at nothing: the mutation stops testing anything and the
+    suite stops being able to say so. That happened in this change -- an edit
+    removed `cfg = crew_state.load_config(root) or {}` from `crew_config.py`
+    and orphaned the mutation anchored to it.
+
+    This is the cheap standing check for it. Anchors are `find` strings, so the
+    same drift also breaks a mutation that is now ambiguous (two hits), which
+    `apply_mutation` refuses just as hard as zero.
+    """
+    seen = {}
+    orphans = []
+    for label, target, find, _replace, _test in sabotage.MUTATIONS:
+        if target not in seen:
+            seen[target] = sabotage.read(target)
+        hits = seen[target].count(find)
+        if hits != 1:
+            orphans.append(f"{hits} hit(s) for {label} in "
+                           f"{os.path.basename(target)}")
+    assert not orphans, "\n".join(orphans)
+    assert len(sabotage.MUTATIONS) > 100, (
+        "the table shrank -- a mutation was deleted rather than re-anchored")

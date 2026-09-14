@@ -102,6 +102,41 @@ def resolve_bash():
     return _BASH
 
 
+_PWSH = "unprobed"
+
+
+def resolve_pwsh():
+    """PowerShell 7, or None when this machine has none.
+
+    `shutil.which("pwsh")` alone is not enough here, and the reason is the
+    mirror image of `resolve_bash`'s: pwsh is NOT on Git Bash's PATH on this
+    repo's own development machine, so a suite launched from Git Bash skipped
+    every `.ps1` case while reporting a pass. The install location is named as
+    a fallback rather than assumed, so a machine that really has no pwsh still
+    SKIPS instead of failing -- `which` first, because a pwsh somewhere else on
+    PATH is the one the user means.
+
+    Deliberately not `powershell.exe`: the `.ps1` hooks are registered for
+    PowerShell 7 (`shell: "powershell"` -> pwsh) and Windows PowerShell 5.1
+    differs in ways these scripts rely on, `ConvertFrom-Json` included.
+    """
+    global _PWSH  # pylint: disable=global-statement
+    if _PWSH != "unprobed":
+        return _PWSH
+
+    found = shutil.which("pwsh")
+    candidates = [found] if found else []
+    for guess in (r"C:\Program Files\PowerShell\7\pwsh.exe",
+                  r"C:\Program Files (x86)\PowerShell\7\pwsh.exe"):
+        if guess not in candidates and os.path.isfile(guess):
+            candidates.append(guess)
+    _PWSH = candidates[0] if candidates else None
+    if _PWSH is None:
+        print("crew tests: no pwsh - the '.ps1' flavour is SKIPPED, not "
+              "failed.", file=sys.stderr)
+    return _PWSH
+
+
 def _git(root, *args):
     subprocess.run(
         ("git",) + args, cwd=root, check=True,
