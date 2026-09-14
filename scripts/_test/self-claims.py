@@ -45,12 +45,30 @@ ENTRIES = [
 SKILLS = 3  # three ./skills/ entries above
 
 
-def build(tmp: str, docs: dict[str, str], plugin_version: str = "2.5.1") -> None:
-    """Write a fixture repo: the docs under test plus one plugin manifest."""
+def build(
+    tmp: str,
+    docs: dict[str, str],
+    plugin_version: str = "2.5.1",
+    widget_skills: list[str] | None = None,
+) -> None:
+    """Write a fixture repo: the docs under test plus one plugin manifest.
+
+    ``widget_skills`` names the subdirectories of ``plugin/widget/skills/`` to
+    create, each with its own ``SKILL.md`` -- mirroring how `plugin-skills:`
+    counts a real plugin's bundle. ``None`` creates no ``skills/`` directory at
+    all, which `count_plugin_skills` treats the same as zero.
+    """
     manifest = os.path.join(tmp, "plugin", "widget", ".claude-plugin")
     os.makedirs(manifest, exist_ok=True)
     with open(os.path.join(manifest, "plugin.json"), "w", encoding="utf-8") as fh:
         json.dump({"name": "widget", "version": plugin_version}, fh)
+
+    if widget_skills is not None:
+        for skill in widget_skills:
+            skill_dir = os.path.join(tmp, "plugin", "widget", "skills", skill)
+            os.makedirs(skill_dir, exist_ok=True)
+            with open(os.path.join(skill_dir, "SKILL.md"), "w", encoding="utf-8") as fh:
+                fh.write(f"# {skill}\n")
 
     for name, body in docs.items():
         path = os.path.join(tmp, name)
@@ -62,10 +80,14 @@ def build(tmp: str, docs: dict[str, str], plugin_version: str = "2.5.1") -> None
     subprocess.run(["git", "-C", tmp, "add", "-A"], check=False, capture_output=True)
 
 
-def run(docs: dict[str, str], plugin_version: str = "2.5.1") -> list[str]:
+def run(
+    docs: dict[str, str],
+    plugin_version: str = "2.5.1",
+    widget_skills: list[str] | None = None,
+) -> list[str]:
     """Run check_self_claims against a fixture and return its failures."""
     with tempfile.TemporaryDirectory() as tmp:
-        build(tmp, docs, plugin_version)
+        build(tmp, docs, plugin_version, widget_skills)
         saved = CHECKER.ROOT
         CHECKER.ROOT = tmp
         try:
@@ -215,11 +237,92 @@ CASES: list[tuple[str, dict, int, str]] = [
     ),
 ]
 
+# `plugin-skills:<name>` -- a plugin's OWN bundled-skill count, as opposed to
+# `skills-count`'s marketplace total. Each case names how many SKILL.md-bearing
+# directories to create under plugin/widget/skills/, distinct from CASES above
+# because this marker type reads the filesystem, not marketplace.json.
+CASES_PLUGIN_SKILLS: list[tuple[str, dict, int, str, list[str] | None]] = [
+    # --- must block ------------------------------------------------------
+    (
+        "a marked plugin-skills count that disagrees with the filesystem",
+        {"P.md": "widget bundles 5 skills<!-- claim: plugin-skills:widget -->.\n"},
+        1,
+        "plugin/widget/skills/ has 2",
+        ["alpha", "beta"],
+    ),
+    (
+        "a plugin-skills claim naming a plugin with no ./plugin/ entry",
+        {"P.md": "<!-- claim: plugin-skills:ghost -->\n5 skills\n"},
+        1,
+        "no entry",
+        None,
+    ),
+    (
+        "a plugin-skills marker whose target was edited away binds to nothing",
+        {"P.md": "<!-- claim: plugin-skills:widget -->\n" + "filler\n" * 20},
+        1,
+        "binds to nothing",
+        ["alpha"],
+    ),
+    # --- must allow ------------------------------------------------------
+    (
+        "a marked plugin-skills count that matches the filesystem",
+        {"P.md": "widget bundles 2 skills<!-- claim: plugin-skills:widget -->.\n"},
+        0,
+        "",
+        ["alpha", "beta"],
+    ),
+    (
+        "a marked plugin-skills count of zero, no skills/ directory at all",
+        {"P.md": "widget bundles 0 skills<!-- claim: plugin-skills:widget -->.\n"},
+        0,
+        "",
+        None,
+    ),
+    (
+        "'bundled skills' phrasing, not just 'skills', still binds",
+        {"P.md": "54 agents, 2 bundled skills<!-- claim: plugin-skills:widget -->.\n"},
+        0,
+        "",
+        ["alpha", "beta"],
+    ),
+    (
+        "singular 'skill' still binds",
+        {"P.md": "1 skill<!-- claim: plugin-skills:widget -->, no agents.\n"},
+        0,
+        "",
+        ["alpha"],
+    ),
+    # --- the silence, asserted ------------------------------------------
+    (
+        "an unmarked plugin skill count is not the checker's business",
+        {"P.md": "widget bundles 5 skills, actually 2.\n"},
+        0,
+        "",
+        ["alpha", "beta"],
+    ),
+]
+
 
 def main() -> int:
     passed = failed = 0
     for name, docs, expected, needle in CASES:
         problems = run(docs)
+        ok = len(problems) == expected
+        if ok and needle:
+            ok = any(needle in p for p in problems)
+        if ok:
+            passed += 1
+            print(f"  ok   {name}")
+        else:
+            failed += 1
+            print(f"  FAIL {name}")
+            print(f"       expected {expected} problem(s)"
+                  + (f" containing {needle!r}" if needle else ""))
+            print(f"       got {len(problems)}: {problems}")
+
+    for name, docs, expected, needle, widget_skills in CASES_PLUGIN_SKILLS:
+        problems = run(docs, widget_skills=widget_skills)
         ok = len(problems) == expected
         if ok and needle:
             ok = any(needle in p for p in problems)
