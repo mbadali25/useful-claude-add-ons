@@ -20,9 +20,10 @@ All notable changes to this repository are documented here. Format follows [Keep
   that with a sentinel key: it greps the whole captured run for the value and fails
   if it appears. That suite's stub records the `claude` command line in a file rather
   than on stdout for exactly that reason. This is the server
-  [`web-research`](skills/web-research/) calls; that skill still registers nothing
-  itself, and its own text ("nothing in this repo registers it") now describes the
-  skill rather than the marketplace — worth a follow-up there.
+  [`web-research`](skills/web-research/) calls — and `skills/web-research/SKILL.md`
+  says of that server "Nothing in this repo registers it, and nothing should." That
+  file is a separate marketplace entry and was deliberately left untouched here, so
+  the two now disagree and one of them needs a decision.
 - **`check_menu_parity` also counts `MENU_NAME`.** `MENU_KEYS` order and
   `MENU_DEFAULT` length were checked; the labels array was not, so a row added to
   `MENU_KEYS` alone passed every gate and shifted every label after it onto the next

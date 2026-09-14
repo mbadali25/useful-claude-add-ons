@@ -7,6 +7,10 @@
 # parts that can be checked without a terminal; the cursor behaviour itself needs a
 # pty and is exercised by hand.
 #
+# Case 8 is not a group case: it covers the one menu row that takes a SECRET on the
+# command line, so it lives here rather than in a file of its own - this is where the
+# end-to-end runs of the install script already are.
+#
 # Needs: bash. Installs nothing and touches no real config - the end-to-end cases run
 # the script with --dry-run and CLAUDE_CONFIG_DIR pointed at a temp directory, so it
 # settles the selection, prints it and stops.
