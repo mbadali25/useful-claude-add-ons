@@ -172,7 +172,10 @@ not.
 explanation, not just an outdated count.** `plugin/crew/skills/` holds **18**
 directories. The claim that 17 was correct because the count excludes
 `find-skills` (a vendored third-party skill — `plugin/crew/README.md:2359`
-confirms it is bundled, and its own `BUNDLING-NOTE.md:1` says the same) does
+confirms it is bundled, and its own
+`plugin/crew/skills/find-skills/BUNDLING-NOTE.md:3-4` says the same — "This
+is a third-party skill from the open skills ecosystem, vendored here at the
+user's request rather than installed with `npx skills add`") does
 not hold up against the primary artifact: `plugin/PLUGINS.md`'s own "Bundled
 skills" roster table lists `find-skills` as one of its rows, so the repo's own
 enumeration already counts it as one of the 17/18. The real defect was a
