@@ -6,7 +6,7 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
-- **`crew` 0.19.41: a rule crew could not represent was split, not refused.**
+- **`crew` 0.19.42: a rule crew could not represent was split, not refused.**
   The ordered rule list was newline-delimited text, so a `run` entry in
   `.crew/verify.json` carrying a newline split into two rules and the second
   half ran as a command nobody wrote. Four readers had the same shape:
@@ -37,6 +37,11 @@ All notable changes to this repository are documented here. Format follows [Keep
   process". Shipping that check would turn "could not tell" into a confident
   "the holder is alive". The measurement is recorded in `verify-gate.sh` and in
   both lock test docstrings instead of the check.
+  0.19.41 was this change with its CHANGELOG committed CRLF into a blob this
+  repo stores LF, which turns every later diff of this file into a whole-file
+  rewrite. Renormalised here rather than by amending the pushed commit: the
+  force push that would have taken is refused by `guard.sh`, correctly, and
+  fixing forward costs one version number and no rewritten history.
 
 - **`crew` 0.19.40: a config crew could not read was read as a config that
   permitted.** Three defects, one shape - the state "crew does not know" had no
