@@ -584,6 +584,37 @@ def _active_rules(block: str) -> list[str]:
     return rules
 
 
+def _git_canonical(rule: str) -> str:
+    """A rule reduced to the form git compares, for PRESENCE checks only.
+
+    The probe always sees the original line. This is for asking "is there a
+    `.crew/*` rule here", where an exact string match is wrong in one direction
+    and `.strip()` is wrong in the other - which is exactly how this check failed
+    twice. Round 2: `.strip()` made a leading space vanish, a false PASS on a
+    broken rule. Round 3: verbatim comparison rejected `.crew/* `, a false FAIL
+    on a correct one. Git treats the two ends differently, so the fix is neither.
+
+    Measured against git, not taken from the documentation:
+
+    - a trailing SPACE is stripped (`.crew/* ` ignores `.crew/config.json`)
+    - a trailing TAB is **not** - `.crew/*\\t` matched nothing. The docs say
+      "trailing spaces", and they mean spaces. Stripping all trailing whitespace
+      here would accept a rule git does not honour.
+    - a backslash-escaped trailing space is literal, so `.crew/*\\ ` is a rule
+      about a path ending in a space and matched nothing
+    - a leading space is significant
+    - a trailing `\\r` (a CRLF file) is removed
+    """
+    if rule.endswith("\r"):
+        rule = rule[:-1]
+    while rule.endswith(" "):
+        backslashes = len(rule[:-1]) - len(rule[:-1].rstrip("\\"))
+        if backslashes % 2:
+            break        # escaped: the space is part of the pattern
+        rule = rule[:-1]
+    return rule
+
+
 def _ignore_behaviour(rules: list[str], exceptions: set[str]) -> list[str]:
     """Ask git what these rules actually do, instead of reading them.
 
@@ -781,24 +812,29 @@ def check_crew_ignore_policy(fail):
         # negation, and reading one as effective is how three mutations that each
         # break the policy produced zero failures.
         rules = _active_rules(body)
+        # Presence is asked of the CANONICAL form (git strips a trailing
+        # space, keeps a leading one); the probe below still sees the
+        # originals, so a rule that is broken rather than merely untidy is
+        # caught there instead of being normalised away.
+        canonical = [_git_canonical(rule) for rule in rules]
         # Kept with the trailing slash for the behavioural probe (a directory
         # needs a path INSIDE it to probe), and without it for set comparison.
         declared_raw = {name for rule in rules for name in _UNIGNORE_RE.findall(rule)}
         declared = {name.rstrip("/") for name in declared_raw}
         sources[relative] = declared
-        if any(rule == ".crew/" for rule in rules):
+        if ".crew/" in canonical:
             fail(
                 f"{relative}: ignores `.crew/` with a trailing slash. Git refuses to "
                 "descend into it, so every `!.crew/...` negation below is silently "
                 "dead. Write `.crew/*`."
             )
-        if ".crew/*" not in rules:
+        if ".crew/*" not in canonical:
             fail(
                 f"{relative}: has no active `.crew/*` rule, so there is no base ignore "
                 "for the un-ignore list to carve out of. A comment mentioning it is "
                 "not a rule."
             )
-        if ".crew/.approved-*" not in rules:
+        if ".crew/.approved-*" not in canonical:
             fail(
                 f"{relative}: has no active `.crew/.approved-*` rule. `.crew/*` already "
                 "covers the marker, so this is belt-and-braces - but it is the entry a "

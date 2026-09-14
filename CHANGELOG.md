@@ -6,6 +6,46 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`crew` 0.19.49: the fix for a false PASS on a leading space became a false
+  FAIL on a trailing one.** Round 2 blocked because `.strip()` normalised a
+  broken rule into a valid one. The fix made handling verbatim. Round 3 blocks
+  because verbatim comparison rejects `.crew/* `, which git honours - the same
+  rung-short pattern, inverted. The right answer was neither: git treats the two
+  ends of a line differently, so presence checks now use `_git_canonical`, while
+  the behavioural probe still sees the original text.
+  Probed directly rather than taken from the documentation, and one result is
+  not what "strip trailing whitespace" would predict: a trailing SPACE is
+  stripped by git, a trailing TAB is **not** (`.crew/*<TAB>` matched nothing), a
+  backslash-escaped trailing space is literal, a leading space is significant,
+  and a trailing `\r` is removed. A blanket `rstrip()` would have accepted the
+  tab - so that mutation is now its own regression case.
+  **Two committed suites disagreed about what was correct.**
+  `test_verify_absent_and_diagram_kind.py` asserted `.crew/.approved-*` must sit
+  below the un-ignore list, while `scripts/_test/crew-ignore-policy.py` asserted
+  the alternate ordering PASSES. Both green, and whichever a reader opened first
+  looked authoritative. The ordering assertion is gone - git says position does
+  not matter - and the agreement between the two suites is now itself checked, so
+  this specific contradiction cannot come back silently.
+  That test file was a SIXTH file carrying the withdrawn claims, and the 0.19.48
+  sweep reported five. The sweep was the problem: it grepped `--include="*.md"`
+  for particular wordings, so a `.py` file asserting the same thing in code was
+  invisible to it. Re-run across every tracked file with no extension filter and
+  on the concept rather than the phrasing.
+  The suite is now runnable by someone other than its author. In a shell with
+  `GIT_WORK_TREE` set it reported 28 of 34 failures - the fixture's own `git
+  init` failing, nothing to do with the code under test. Its git calls are
+  scrubbed, a failed fixture init raises instead of cascading, and it passes
+  identically under `GIT_WORK_TREE`, `GIT_DIR`, `GIT_CONFIG_GLOBAL` and
+  `MSYS_NO_PATHCONV`, and from a fresh clone.
+  One self-inflicted bug worth recording: the scrub first called `clean_env()`
+  as the argument of an `os.environ.update()` that followed `os.environ.clear()`,
+  so it read an already-emptied environment and python could not find git at all.
+  Same shape as this repo's `open(p, "w")` landmine - the destructive call
+  happening before the value it needs exists. Compute first, then clear.
+  Also removed five stray `\r\r\n` sequences in `check-marketplace.py` left by
+  line-based patching on a CRLF file; pylint reported them as
+  `E0001: invalid non-printable character U+000D` while the gate still ran.
+
 - **`crew` 0.19.48: the round-1 fix normalised the bug away, and the probe that
   replaced it could not tell a fatal git error from a clean result.** Codex
   re-reviewed and returned two BLOCKs, both inside the code written to fix the

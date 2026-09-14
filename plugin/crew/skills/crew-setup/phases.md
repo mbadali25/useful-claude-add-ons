@@ -210,8 +210,10 @@ record what they skipped, and it expires on its own. Set
 <!-- crew-ignore-policy:list -->
 Write the gitignore block from `SKILL.md` §3c — `.crew/*` ignored, the named
 un-ignore list `!.crew/codemap/`, `!.crew/endpoints.json`, `!.crew/verify.json`,
-then `.crew/.approved-*` and the rest below it. `.crew/transcripts/` is inside
-that block and is the one nobody may drop: raw transcripts contain everything the
+then `.crew/.approved-*` and the rest. Copy §3c's order for readability; only one
+ordering is load-bearing, and it is that `.crew/*` comes BEFORE the negations —
+written after them it suppresses all three. `.crew/transcripts/` is inside that
+block and is the one nobody may drop: raw transcripts contain everything the
 session saw, including any secret that reached it.
 
 **Done when:** `.crew/config.json` is complete, `claude-md-audit.sh` reports no

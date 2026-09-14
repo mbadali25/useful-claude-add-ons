@@ -174,14 +174,23 @@ def test_verify_json_really_is_tracked_here():
     2026-09-14 it became tracked, this test went red, and the wording was
     revisited - which is the whole of what the trip-wire was for.
 
-    It now asserts the new state and the ordering that new state depends on: the
-    un-ignore list is below `.crew/*`, and `.crew/.approved-*` is below the list,
-    so promote-gate's own approval marker can never become trackable. Get that
-    order wrong and the gate dirties the tree writing the file it just asked for.
+    It asserted two things after that, and the SECOND one was wrong: that
+    `.crew/.approved-*` must sit below the un-ignore list or the approval marker
+    becomes trackable. Measured with `git check-ignore`, deleting that line
+    entirely changes no verdict, because `.crew/*` already covers the marker and
+    no negation re-admits it - so its position is not load-bearing either.
 
-    `check_crew_ignore_policy` in scripts/check-marketplace.py is what keeps the
-    LIST from drifting across the docs; this is the narrower claim that the one
-    repo running this suite actually tracks its own map.
+    That made two suites in this repo disagree about what is correct:
+    `scripts/_test/crew-ignore-policy.py` has a case asserting the alternate
+    ordering PASSES, and this asserted it must fail. A contradiction between two
+    committed suites is worse than either being wrong alone, because whichever
+    one you read first looks authoritative. The ordering assertion is gone.
+
+    What remains is the part that is genuinely about THIS repo: that the base
+    ignore uses the glob rather than a trailing slash, and that the map is
+    tracked. Whether the rules actually behave as claimed is
+    `check_crew_ignore_policy`'s job, and it settles it by asking git rather than
+    by reading the file - which is what caught the wrong assertion above.
     """
     repo = os.path.dirname(os.path.dirname(os.path.dirname(
         os.path.dirname(os.path.abspath(__file__)))))
@@ -194,11 +203,13 @@ def test_verify_json_really_is_tracked_here():
         "`.crew/` with a trailing slash stops git descending into the directory, "
         "and every `!.crew/...` negation below it silently does nothing."
     )
-    assert body.index(".crew/*") < body.index("!.crew/verify.json")
-    assert body.index("!.crew/verify.json") < body.index(".crew/.approved-*"), (
-        "`.crew/.approved-*` must sit BELOW the un-ignore list: later rules win, "
-        "so a negation below it could re-admit promote-gate's own marker."
+    assert body.index(".crew/*") < body.index("!.crew/verify.json"), (
+        "the base ignore must precede the negations; a `.crew/*` written below "
+        "them suppresses every one."
     )
+    # NO assertion about where `.crew/.approved-*` sits. It used to be here and
+    # it was wrong - see the docstring. `scripts/_test/crew-ignore-policy.py`
+    # owns rule BEHAVIOUR and proves it against git.
 
     tracked = subprocess.run(
         ["git", "-C", repo, "ls-files", "--error-unmatch", ".crew/verify.json"],

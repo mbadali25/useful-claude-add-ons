@@ -83,6 +83,22 @@ GOOD_TEMPLATE = """\
 """
 
 
+def clean_env() -> dict[str, str]:
+    """The caller's environment with git's own variables removed.
+
+    The suite has to be runnable by someone other than its author, in whatever
+    shell they happen to be in. Without this it reported 28 of 34 failures in a
+    shell with `GIT_WORK_TREE` set - `git init` in the fixture fails, `git
+    ls-files` returns nothing, and every case fails for a reason that has
+    nothing to do with the code under test. A suite that is only green in one
+    person's shell is a suite nobody else can use to check them.
+    """
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    env.update({"GIT_CONFIG_GLOBAL": "", "GIT_CONFIG_SYSTEM": "",
+                "GIT_CONFIG_NOSYSTEM": "1"})
+    return env
+
+
 def build(tmp: str, files: dict[str, str]) -> None:
     """Write a fixture repo and git-add it so `git ls-files` sees the files."""
     for name, body in files.items():
@@ -90,24 +106,43 @@ def build(tmp: str, files: dict[str, str]) -> None:
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w", encoding="utf-8", newline="\n") as handle:
             handle.write(body)
-    subprocess.run(["git", "-C", tmp, "init", "-q"], check=False, capture_output=True)
+    env = clean_env()
+    started = subprocess.run(["git", "-C", tmp, "init", "-q"],
+                             check=False, capture_output=True, text=True, env=env)
+    if started.returncode != 0:
+        raise RuntimeError(
+            "fixture `git init` failed, so every case below would fail for a "
+            f"reason unrelated to the code under test: {started.stderr.strip()}")
     # -f: the fixture .gitignore ignores paths the fixture itself creates.
     subprocess.run(["git", "-C", tmp, "add", "-A", "-f"],
-                   check=False, capture_output=True)
+                   check=False, capture_output=True, env=env)
 
 
 def run(files: dict[str, str]) -> list[str]:
     """Run check_crew_ignore_policy against a fixture and return its failures."""
     with tempfile.TemporaryDirectory() as tmp:
         build(tmp, files)
-        saved = CHECKER.ROOT
+        saved_root = CHECKER.ROOT
+        # The checker's own `git ls-files` inherits this process's environment,
+        # so the scrub has to cover it too - not just the calls this file makes.
+        saved_env = dict(os.environ)
+        # Computed BEFORE the clear, not as its argument. Written the other way
+        # round first, and `clean_env()` then read an already-emptied environ
+        # and returned almost nothing, so python could not find git at all -
+        # the same shape as this repo's `open(p, "w")` landmine, where the
+        # destructive call happens before the value it needs is produced.
+        scrubbed = clean_env()
         CHECKER.ROOT = tmp
+        os.environ.clear()
+        os.environ.update(scrubbed)
         try:
             problems: list[str] = []
             CHECKER.check_crew_ignore_policy(problems.append)
             return problems
         finally:
-            CHECKER.ROOT = saved
+            CHECKER.ROOT = saved_root
+            os.environ.clear()
+            os.environ.update(saved_env)
 
 
 def base(**overrides: str) -> dict[str, str]:
@@ -291,6 +326,32 @@ CASES: list[tuple[str, dict, int, str]] = [
         "",
     ),
     (
+        # BLOCK 1 of round 3, the exact inverse of round 2. Verbatim comparison
+        # rejected this CORRECT rule. Probed directly: git strips a trailing
+        # space, so `.crew/* ` does ignore `.crew/config.json`.
+        "a TRAILING space on the base rule, which git strips, must PASS",
+        base(**{".gitignore": GOOD_GITIGNORE.replace(".crew/*\n", ".crew/* \n")}),
+        0,
+        "",
+    ),
+    (
+        "a trailing space on `.crew/.approved-*` must PASS for the same reason",
+        base(**{CHECKER.POLICY_TEMPLATE: GOOD_TEMPLATE.replace(
+            ".crew/.approved-*\n", ".crew/.approved-* \n")}),
+        0,
+        "",
+    ),
+    (
+        # Measured, and NOT what "strip trailing whitespace" would predict. Git
+        # honours trailing SPACES only; `.crew/*<TAB>` matched nothing when
+        # probed, so a tab leaves the repo with no working base ignore. A fix
+        # that stripped all trailing whitespace would wrongly accept it.
+        "a trailing TAB is not a trailing space, so it must still FAIL",
+        base(**{".gitignore": GOOD_GITIGNORE.replace(".crew/*\n", ".crew/*\t\n")}),
+        2,
+        "no active `.crew/*` rule",
+    ),
+    (
         # BLOCK 1 of round 2. `.strip()` before the probe made this line and a
         # correct one identical, so the checker repaired the rule and then
         # verified the repair. Measured: with the leading space git leaves
@@ -412,8 +473,56 @@ PROBE_CASES: list[tuple[str, _Broken | None, int, str]] = [
 ]
 
 
+def no_other_suite_contradicts_us() -> list[str]:
+    """The other suite must not assert an ordering this one accepts.
+
+    Round 3 blocked on exactly that: this suite had a case asserting the
+    alternate `.crew/.approved-*` ordering PASSES, while
+    `plugin/crew/tests/test_verify_absent_and_diagram_kind.py` asserted it must
+    FAIL. Both were committed, both green, and whichever a reader opened first
+    looked authoritative. A contradiction between two suites is worse than
+    either being wrong alone, because there is nothing in either file saying the
+    other exists.
+
+    So the agreement is now itself checked. Cheap and narrow on purpose: it
+    looks for an index-comparison pinning `.crew/.approved-*` against the
+    negations, which is the specific shape that was wrong. It cannot catch every
+    future disagreement, and is not meant to - it catches this one coming back.
+    """
+    other = os.path.join(os.path.dirname(os.path.dirname(HERE)),
+                         "plugin", "crew", "tests",
+                         "test_verify_absent_and_diagram_kind.py")
+    if not os.path.isfile(other):
+        return [f"UNVERIFIABLE: {other} not found, so suite agreement was not "
+                "checked. This is not a pass."]
+    with open(other, encoding="utf-8") as handle:
+        lines = handle.read().replace("\r\n", "\n").split("\n")
+    bad = []
+    for number, line in enumerate(lines, 1):
+        code = line.split("#", 1)[0]
+        if not code.strip().startswith("assert"):
+            continue
+        if ".approved-*" in code and ".index(" in code:
+            bad.append(
+                f"{other}:{number} asserts an ORDERING for `.crew/.approved-*` "
+                f"that this suite accepts either way - {code.strip()[:70]}. "
+                "Position is not load-bearing; git says so."
+            )
+    return bad
+
+
 def main() -> int:
     passed = failed = 0
+    agreement = no_other_suite_contradicts_us()
+    if agreement:
+        failed += 1
+        print("  FAIL the two suites disagree about `.crew/.approved-*` ordering")
+        for problem in agreement:
+            print(f"       {problem}")
+    else:
+        passed += 1
+        print("  ok   no other suite asserts a contradicting ordering")
+
     for name, broken, expected, needle in PROBE_CASES:
         problems = run_probe(broken)
         ok = len(problems) == expected
