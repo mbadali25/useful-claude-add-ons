@@ -206,6 +206,12 @@
       "version": "1.1.0"
     },
     {
+      "name": "web-research",
+      "source": "./skills/web-research",
+      "description": "Live-web research through the already-registered Perplexity MCP server - routes each question to search, ask, research or reason, with recency and domain filters, and hands library and API reference to Context7 instead.",
+      "version": "1.0.0"
+    },
+    {
       "name": "web-testing-playwright",
       "source": "./skills/web-testing-playwright",
       "description": "Drive a real browser with Playwright - screenshots across viewports, console errors, failed requests, form and login flows, plus Windows/Linux browser setup.",

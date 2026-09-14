@@ -4,6 +4,45 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added
+
+- **`web-research` 1.0.0: makes live-web research fire on intent rather than on
+  the word "perplexity".** It registers nothing — the `perplexity` MCP server is
+  already registered globally, and the skill's whole job is routing: which of
+  `perplexity_search` / `_ask` / `_research` / `_reason` fits the question,
+  when recency and domain filters matter, and where the boundary sits.
+  The routing carries one fact the server's own tool descriptions do not: in
+  `@perplexity-ai/mcp-server` **1.2.1**, `perplexity_research` accepts **no
+  filters at all** — `researchInputSchema` is `{ messages }` and the handler
+  passes `undefined` options — so a recency or domain argument sent to the one
+  tool you would most want to filter is dropped silently and the call still
+  succeeds. `perplexity_search` likewise takes no `search_context_size`, but does
+  take `max_results`, `max_tokens_per_page` and `country`. Both read out of
+  `dist/server.js`, tabulated per tool, and marked as a fact about 1.2.1 that the
+  live schema overrides.
+  Two boundaries are stated rather than implied. Library, framework, SDK, API,
+  CLI and **cloud-service** reference goes to **Context7**, not here, because
+  "find current docs for X" is the one phrase both surfaces match; the split is
+  documentation (how a thing is used) versus currency (what is true about it
+  now), stated in the skill's own words rather than by citing a machine-local
+  rules file that no installer of the skill would have. And when the server is
+  down, `WebSearch`/`WebFetch` is a **weaker**
+  answer — no recency filter, no domain restriction, no citation structure — so
+  the skill requires saying so rather than downgrading silently.
+  The trigger is description matching, which is probabilistic and not
+  enforceable. `SKILL.md` says that about itself in its own words and points the
+  user at the lever they own (a line in their `CLAUDE.md`). No hook ships with
+  it: this repo defaults hooks to OFF and requires a sabotage-tested regression
+  suite, which routing guidance does not warrant.
+  No credential is in any file — the API key stays in the existing global
+  registration, and the operator section names the env var — `PERPLEXITY_API_KEY`,
+  the name `dist/index.js` itself reads — without ever printing its value. Its
+  connectivity probe is `claude mcp list`, run and verified to print
+  `perplexity: npx -y @perplexity-ai/mcp-server - ✔ Connected` and no key. The
+  skill also warns against the probe that looks obvious and is not:
+  `npx -y @perplexity-ai/mcp-server --help` parses no argv, so it hangs on stdin
+  with a key and exits 1 without one.
+
 ### Fixed
 
 - **`crew` 0.19.50: two fixture failures that read as test results.** Codex

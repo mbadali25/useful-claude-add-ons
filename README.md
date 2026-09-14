@@ -49,7 +49,7 @@ The menu is a cursor picker — **↑/↓ to move, Space to tick, Enter to start
   ----------------------
     [x] Prerequisites: git, nodejs, npm, python3, pip3 (needs root or sudo)
     [x] Claude Code CLI (@anthropic-ai/claude-code) + PATH export
-  > [x] This repo's marketplace + 35 of 35 skills  >
+  > [x] This repo's marketplace + 36 of 36 skills  >
     [x] Team plugins: superpowers, frontend-design, excalidraw-generator
     ...
   ↑↓ move   Space toggle   Enter start   A all   N none   D defaults   Q cancel
@@ -149,7 +149,7 @@ For this repo's own skills, [`scripts/check-marketplace.py`](scripts/check-marke
 |---|---|---|
 | 1 Prerequisites | Chocolatey + git, awscli, nodejs, python (Windows) / git, nodejs, npm, python3, pip3 via apt/dnf/yum/pacman/zypper/apk (Linux) | package manager |
 | 2 Claude Code CLI | `@anthropic-ai/claude-code`, a persistent `PATH` entry for the npm global bin, and an update to the latest published version if one already exists | npm |
-| 3 This repo | The `useful-claude-add-ons` marketplace and, by default, all 35 skills<!-- claim: skills-count --> in [`skills/`](skills/) — narrow it with → in the menu or `--skills` | this repo |
+| 3 This repo | The `useful-claude-add-ons` marketplace and, by default, all 36 skills<!-- claim: skills-count --> in [`skills/`](skills/) — narrow it with → in the menu or `--skills` | this repo |
 | 4 Team plugins | `superpowers`, `frontend-design`, `excalidraw-generator` | 3 marketplaces (only the ones behind a ticked plugin) |
 | 5 find-skills | The `find-skills` skill, into the user skills dir | `vercel-labs/skills` |
 | 6 Community | `adhd-output-style`, `azure-tools`, `anthropic-office-skills`, `agent-browser`, `ppt-master`, `voltagent-infra`, `voltagent-qa-sec` | 4 marketplaces (only the ones behind a ticked plugin) |
@@ -854,6 +854,7 @@ See [`Skill-Authoring-Standard.md`](Skill-Authoring-Standard.md) for how a skill
 | [`terraform-docs-readme`](skills/terraform-docs-readme) | IaC / Docs | Regenerates a Terraform module's `README.md` with `terraform-docs` — wires up `.terraform-docs.yml`, the `main.tf` header block, `footer.md`, and the `BEGIN_TF_DOCS`/`END_TF_DOCS` injection markers, and diagnoses why a variable, header, or footer isn't showing up. | A module README out of date after new variables or outputs; "the docs table is missing a variable"; a header or `footer.md` that isn't picked up; first-time terraform-docs setup. | Automatic |
 | [`visio-diagrams`](skills/visio-diagrams) | Docs / Diagrams | Generates native Visio `.vsdx` from a YAML/JSON spec with a stdlib-only writer (no Visio install, works in CI), or drives Visio over COM when real stencil masters, themes, or swimlanes are required — plus SVG preview, OPC verification, and reading/retitling an existing `.vsdx`. | "Make a Visio of our prod network"; turning a subnet list into a topology diagram; a CAB/audit or as-built diagram someone else has to edit; converting Mermaid to `.vsdx`; retitling shapes in an approved corporate template. | Automatic |
 | [`wazuh-onprem`](skills/wazuh-onprem) | Security / SIEM | Self-hosted Wazuh across all four surfaces — Server API, Indexer API, Dashboard saved-objects API, and `ossec.conf` over SSH. | Searching `wazuh-alerts` to build an incident timeline; wiring Slack/PagerDuty alerting into `ossec.conf`; onboarding an O365 or Cloudflare log feed; backing up or migrating dashboards. | Automatic |
+| [`web-research`](skills/web-research) | Research | Live-web research through the Perplexity MCP server that is already registered globally — routes each question to `perplexity_search`, `_ask`, `_research` or `_reason`, applies recency and domain filters, and hands library/API reference to Context7 instead. | "What's the latest on X?"; current pricing or a CVE for a product; "is this still true"; comparing vendors; anything where training data would be stale. | Automatic |
 | [`web-testing-playwright`](skills/web-testing-playwright) | Testing / QA | Drives a real browser with Playwright — screenshots at multiple viewports, console errors, failed network requests, form and login flows — plus browser setup for Windows and Linux. | "Is my site up?"; a page rendering blank with a JS error; verifying a login or checkout flow end to end; a layout that breaks at mobile viewport. | Automatic |
 | [`work-log-reporter`](skills/work-log-reporter) | Productivity | Keeps a committed per-session `work-log/` of what was done and what was touched, then generates a formatted email report with a PDF attachment and sends it over SMTP. | End-of-day or standup writeup; "email my manager what I worked on"; a billable record of which systems, databases, and tables were touched. | Automatic |
 
