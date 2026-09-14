@@ -20,10 +20,7 @@ All notable changes to this repository are documented here. Format follows [Keep
   that with a sentinel key: it greps the whole captured run for the value and fails
   if it appears. That suite's stub records the `claude` command line in a file rather
   than on stdout for exactly that reason. This is the server
-  [`web-research`](skills/web-research/) calls — and `skills/web-research/SKILL.md`
-  says of that server "Nothing in this repo registers it, and nothing should." That
-  file is a separate marketplace entry and was deliberately left untouched here, so
-  the two now disagree and one of them needs a decision.
+  [`web-research`](skills/web-research/) calls.
 - **`check_menu_parity` also counts `MENU_NAME`.** `MENU_KEYS` order and
   `MENU_DEFAULT` length were checked; the labels array was not, so a row added to
   `MENU_KEYS` alone passed every gate and shifted every label after it onto the next
@@ -66,6 +63,20 @@ All notable changes to this repository are documented here. Format follows [Keep
   skill also warns against the probe that looks obvious and is not:
   `npx -y @perplexity-ai/mcp-server --help` parses no argv, so it hangs on stdin
   with a key and exits 1 without one.
+
+### Changed
+
+- **`web-research` 1.0.1: the operator section now describes both ways the server
+  arrives.** It read "Perplexity is registered **globally** ... Nothing in this repo
+  registers it, and nothing should" — a design assertion that menu item 25 reverses,
+  and the kind of half-change that looks correct until someone holds both halves.
+  Rewritten to name the two paths (by hand in `~/.claude.json`, or by the
+  installers' row 25) and to say the skill does not care which; `claude mcp list`
+  is still the probe. The same claim in the file's opening paragraph and in the
+  marketplace description went with it, and the catalog rows in `README.md` and
+  `skills/README.md` no longer say "already registered globally". Either path
+  leaves the key on disk in the MCP registration, which the section now states,
+  since that is the one copy anything should reference.
 
 ### Fixed
 

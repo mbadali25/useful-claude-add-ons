@@ -22,10 +22,10 @@ description: >
 
 Four read-only MCP tools on the `perplexity` server, backed by the Perplexity
 Agent API. All four hit the live web and return citations. Nothing here mutates
-anything, and nothing here needs installing or registering: the server is already
-registered globally and its API key lives in the existing registration. **Never
-copy that key into a file, an example, a `.mcp.json`, or a report — reference the
-existing registration instead.**
+anything, and this skill registers nothing itself: the server is registered once
+per machine — by hand, or by this repo's installers — and its API key lives in
+that registration. **Never copy that key into a file, an example, a `.mcp.json`,
+or a report — reference the existing registration instead.**
 
 ## Trigger honesty — read this once
 
@@ -137,9 +137,21 @@ Context7 and the field reports from Perplexity, and say which came from which.
 
 ## Operator: is the server actually connected?
 
-Perplexity is registered **globally** (`~/.claude.json`, server name `perplexity`,
-run via `npx @perplexity-ai/mcp-server`). Nothing in this repo registers it, and
-nothing should.
+The `perplexity` server reaches a machine one of two ways, and this skill works
+the same either way:
+
+- **By hand, globally** — `~/.claude.json`, server name `perplexity`, run via
+  `npx @perplexity-ai/mcp-server`. This is how it got onto the machine this skill
+  was written on.
+- **By this repo's installers** — `scripts/install-prerequisites.sh` /
+  `.ps1`, menu row 25 (`--select perplexity-mcp`). The key comes from
+  `--perplexity-api-key` / `-PerplexityApiKey`, or from `PERPLEXITY_API_KEY` in
+  the environment; with neither, the row prints where to create one and skips
+  rather than registering a server that can never authenticate.
+
+Either way the key ends up on disk in the MCP registration, which is the one
+copy of it to reference — never a second one in a file, an example, a
+`.mcp.json`, or a report.
 
 **To check, run `claude mcp list` in a terminal.** It prints
 `Checking MCP server health…` and then one line per server; the one you want
