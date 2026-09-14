@@ -839,6 +839,7 @@ $script:SkillCatalog = @(
     [pscustomobject]@{ Key = 'terraform-docs-readme';   Selected = $true; Name = 'terraform-docs-readme   - Regenerate a Terraform module README with terraform-docs' }
     [pscustomobject]@{ Key = 'visio-diagrams';          Selected = $true; Name = 'visio-diagrams          - Native .vsdx diagrams from a spec, or via Visio COM' }
     [pscustomobject]@{ Key = 'wazuh-onprem';            Selected = $true; Name = 'wazuh-onprem            - Self-hosted Wazuh: server, indexer, dashboards, ossec.conf' }
+    [pscustomobject]@{ Key = 'web-research';            Selected = $true; Name = 'web-research            - Live-web research via Perplexity MCP: search, ask, research' }
     [pscustomobject]@{ Key = 'web-testing-playwright';  Selected = $true; Name = 'web-testing-playwright  - Real-browser testing: screenshots, console, form flows' }
     [pscustomobject]@{ Key = 'work-log-reporter';       Selected = $true; Name = 'work-log-reporter       - Session work log + emailed PDF report over SMTP' }
 )

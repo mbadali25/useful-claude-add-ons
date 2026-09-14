@@ -838,6 +838,7 @@ SKILL_KEYS=(
   "terraform-docs-readme"
   "visio-diagrams"
   "wazuh-onprem"
+  "web-research"
   "web-testing-playwright"
   "work-log-reporter"
 )
@@ -875,6 +876,7 @@ SKILL_NAME=(
   "terraform-docs-readme   - Regenerate a Terraform module README with terraform-docs"
   "visio-diagrams          - Native .vsdx diagrams from a spec, or via Visio COM"
   "wazuh-onprem            - Self-hosted Wazuh: server, indexer, dashboards, ossec.conf"
+  "web-research            - Live-web research via Perplexity MCP: search, ask, research"
   "web-testing-playwright  - Real-browser testing: screenshots, console, form flows"
   "work-log-reporter       - Session work log + emailed PDF report over SMTP"
 )
