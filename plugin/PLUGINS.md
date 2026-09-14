@@ -11,10 +11,10 @@ Read the **Hooks** section of any plugin before installing it. Commands and agen
 | | |
 |---|---|
 | **Source** | [`crew/`](crew) |
-| **Version** | 0.19.50<!-- claim: plugin-version:crew --> |
+| **Version** | 0.19.51<!-- claim: plugin-version:crew --> |
 | **Install** | `claude plugin install crew@useful-claude-add-ons` |
 | **Menu item** | 21, `repo-plugins` — **off by default**. Menu item 22, `graphify`, is a separate, also-off-by-default install of the `graphify` CLI this plugin's graph feature depends on — see **The code graph** below. |
-| **Registers** | 54 agents, 26 commands, 17 skills, 20 hook entries (10 scripts × `.sh`/`.ps1`) across 5 events |
+| **Registers** | 54 agents, 26 commands, 18 skills, 20 hook entries (10 scripts × `.sh`/`.ps1`) across 5 events |
 | **Upstream guide** | [`crew/README.md`](crew/README.md) — 25 sections, the authoritative version |
 
 Built for the awkward case: several repositories, mixed stacks, legacy code, and almost no test coverage. The workflow is file-backed tickets, one implementation session, an independent reviewer, and deterministic gates that block on failure rather than offering an opinion.
@@ -228,13 +228,14 @@ Four bounds keep `act` honest. A priority the user has stated **outranks** the P
 
 The fifth bound is about scope rather than permission, and it is the one that makes autonomy survivable: **a problem the PM stumbles on gets fixed only if it blocks a finding it was already working.** Everything else becomes a ticket (if a `tracker` is configured) or a `TODO.md` line with its reason, and the report has to say what was deferred and where it went. Autonomy's failure mode is not doing the wrong thing, it is doing too many things — refreshing a diagram, noticing a bug, fixing it, noticing thin tests, writing tests, and never finishing the diagram. It writes only inside `.crew/`, `docs/diagrams/`, and `TODO.md` — application source is always someone else's job.
 
-### Bundled skills — 17
+### Bundled skills — 18
 
 These are ordinary skills, scoped to `crew`'s own workflow. They work on every Claude surface, including chat, unlike the hooks and agents.
 
 | Skill | What it covers |
 |---|---|
 | `crew-setup` | Platform detection **and toolchain resolution**, nine phased setup steps, provider wiring, and reconciling an existing repo `CLAUDE.md` against the template section by section |
+| `crew-change` | The change-request template, the ten questions a change board requires, and how each field maps onto ServiceDesk Plus, Jira and a local file |
 | `crew-verification` | The change-to-check map, the `_verify/` layout, secrets handling, browser-test policy, and the five promotion gates for development -> qa -> production |
 | `crew-context` | Context exhaustion — warn near the limit, write handoffs, resume after a clear or compact |
 | `crew-docs` | Keeping `CHANGELOG.md`, `README.md`, `SECURITY.md`, `TODO.md` and ADRs current as work lands, plus the anchored API and feature reference under `docs/reference/` |
