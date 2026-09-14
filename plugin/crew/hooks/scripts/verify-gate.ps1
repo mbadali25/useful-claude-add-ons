@@ -310,23 +310,30 @@ $bashExe = $null
 
 $failed = $false
 foreach ($c in $cmds) {
-  $run = $c
-  # Only resolves a leading literal `bash` token. A rule written as
-  # `cd x && bash y.sh` (or any other form where `bash` isn't the first
-  # word) skips this substitution entirely and still resolves bash via PATH.
-  if ($c -match '^bash(\s|$)') {
-    if (-not $bashExe) { $bashExe = Resolve-CrewBash }
-    $run = "& '$bashExe'" + $c.Substring(4)
-  }
-  # A cmdlet leaves $LASTEXITCODE at its previous value, so a stale 0 reads as a
-  # pass and a stale nonzero reads as a failure. Reset it, and check $? as well
-  # - that is the only signal a failing cmdlet gives.
+  # Rules are bash-flavoured strings - `bash _verify/smoke.sh`, `cd e2e && npx
+  # playwright test --grep @flow` - so run them WITH bash, not through
+  # Invoke-Expression. Measured 2026-09-13 on TheSelectSource, two defects from
+  # evaluating them as PowerShell: (1) `cd e2e && ...` moved THIS process's
+  # working directory, so the next rule, `bash _verify/smoke.sh`, ran from e2e/
+  # and died with "No such file or directory" on every Stop; (2) `--grep @flow`
+  # parsed as a splat of an unset `$flow` ("The variable '$flow' cannot be
+  # retrieved"). A bash child process gets the rule's own semantics, its cwd
+  # cannot leak into the next rule, and `$LASTEXITCODE` is the rule's real exit
+  # status. Resolve-CrewBash already routes around WSL's bash.exe.
+  if (-not $bashExe) { $bashExe = Resolve-CrewBash }
+  # A native command leaves $LASTEXITCODE at its previous value only when it
+  # fails to start; reset it so a stale 0 cannot read as a pass.
   $global:LASTEXITCODE = 0
-  $out = Invoke-Expression $run 2>&1
-  $ok = $?
-  if (-not $ok -or $LASTEXITCODE -ne 0) {
+  Push-Location $root
+  try {
+    $out = & $bashExe -c $c 2>&1
+    $ok = ($LASTEXITCODE -eq 0)
+  } finally {
+    Pop-Location
+  }
+  if (-not $ok) {
     [Console]::Error.WriteLine("VERIFY FAILED: $c")
-    if ($bashExe -and $run -ne $c) { [Console]::Error.WriteLine("bash: $bashExe") }
+    [Console]::Error.WriteLine("bash: $bashExe")
     $out | Select-Object -Last 25 | ForEach-Object { [Console]::Error.WriteLine($_) }
     $failed = $true
   }

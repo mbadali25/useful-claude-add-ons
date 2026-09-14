@@ -6,6 +6,27 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`crew` 0.19.35: the Windows Stop gate ran `.crew/verify.json` rules through
+  `Invoke-Expression`, which broke two ways on a real repo.** Rules are
+  bash-flavoured strings (`bash _verify/smoke.sh`, `cd e2e && npx playwright
+  test --grep @flow`). Evaluated as PowerShell, (1) the `cd e2e && …` rule moved
+  the gate's OWN working directory, so the next rule ran from `e2e/` and died
+  with `bash: _verify/smoke.sh: No such file or directory` on every Stop — the
+  repo root was never at fault; (2) `--grep @flow` parsed as a splat of an unset
+  `$flow` ("The variable '$flow' cannot be retrieved because it has not been
+  set").
+
+  Measured on TheSelectSource 2026-09-13, and only after clearing a stale
+  `.crew/.verify-gate.lock` — with the lock held, every manual re-run backed
+  off in under a second with exit 0, which read as "passes for me".
+
+  `verify-gate.ps1` now runs each rule as `bash -c "<rule>"` from the repo root
+  inside `Push-Location`/`Pop-Location`, judging on the child's real exit
+  status. A rule gets its own semantics, its `cd` cannot leak into the next
+  rule, and the same repo's gate went from exit 2 to exit 0 (Playwright `@flow`
+  plus the host smoke, 21 s). `verify-gate.sh` already ran rules inside a
+  `$( eval … )` subshell and had neither defect.
+
 - **`crew` 0.19.34: `knowledgeBehind` and `diagramsStale` had no fixpoint, so
   refreshing could never clear them.** Both compared `anchor == HEAD` and
   nothing else. `.crew/codemap/` and `docs/diagrams/` are **tracked**, so
