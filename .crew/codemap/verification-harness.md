@@ -1,18 +1,28 @@
-anchor: useful-claude-add-ons@0a9d8937
+anchor: useful-claude-add-ons@975480b7
 verified: 2026-09-14
-re-verified, not re-derived: every claim below was re-read against the files it
-cites at this anchor and its citation re-pointed where the code had moved. The
-big structural change this pass: `.crew/verify.json` is now tracked
+Re-anchor only, no content change: this pass ran
+`git diff --name-only 0a9d8937..975480b7 -- _verify/ .crew/verify.json
+scripts/check-marketplace.py plugin/crew/tests/ plugin/crew/hooks/` (the
+paths this note cites) and it returned nothing, so every claim below carries
+forward from `0a9d8937` unverified-but-unchanged rather than re-read. That
+per-path check was prompted by a skills-count correction made elsewhere in
+the codemap (`crew.md`, `marketplace-registration.md`, `repo-docs.md`); this
+note has no crew-bundle skill-count claim to correct.
+
+History, from the `0a9d8937` pass, not re-verified at this anchor: that pass
+was "re-verified, not re-derived: every claim below was re-read against the
+files it cites at this anchor and its citation re-pointed where the code had
+moved." Its big structural change was `.crew/verify.json` becoming tracked
 (`!.crew/verify.json` joined the gitignore un-ignore list in crew 0.19.46,
-`0a9d8937`) and **present in this checkout**, so every UNVERIFIABLE HERE mark
-the previous four passes carried is now either confirmed, corrected, or
-replaced with an actual reading - none is carried forward unread. Separately,
-`scripts/check-marketplace.py`'s `main()` grew from nine check functions to
-eleven (`check_self_claims` and `check_crew_ignore_policy`, both added between
-the last anchor and this one), and `_verify/run-all.sh`'s own citations turned
-out to be wrong independent of any code change - they were never correctly
-re-derived after an earlier insertion, and this pass fixes them from a full
-read rather than an offset.
+`0a9d8937`) and present in that checkout, so every UNVERIFIABLE HERE mark the
+previous four passes carried was confirmed, corrected, or replaced with an
+actual reading. Separately, `scripts/check-marketplace.py`'s `main()` grew
+from nine check functions to eleven (`check_self_claims` and
+`check_crew_ignore_policy`, both added between the anchor before that one and
+`0a9d8937`), and `_verify/run-all.sh`'s own citations turned out to be wrong
+independent of any code change — they were never correctly re-derived after
+an earlier insertion, and that pass fixed them from a full read rather than
+an offset.
 
 # Verification harness
 
@@ -36,6 +46,16 @@ maps" section below, which replaces the previous, history-only account. The
 accurate statement remains: `.crew/verify.json` maps a changed path to the
 commands that verify it, and those commands are *often but not always* one of
 the three scripted layers.
+
+## Re-anchor provenance — 0a9d8937 -> 975480b7, 2026-09-14
+
+Re-anchor only: this pass diffed only the five paths this note's own
+"History" section names (`_verify/`, `.crew/verify.json`,
+`scripts/check-marketplace.py`, `plugin/crew/tests/`, `plugin/crew/hooks/`)
+against `975480b7`, prompted by an unrelated skills-count correction made
+elsewhere in the codemap. The diff was empty, so nothing below was re-read.
+The rest of this note, including the `7b0d8f3a -> 0a9d8937` section
+immediately below, is retained as history and was not re-checked.
 
 ## Re-anchor provenance — 7b0d8f3a -> 0a9d8937, 2026-09-14
 
@@ -77,7 +97,8 @@ to `:1050`.
 
 **`.crew/verify.json` is no longer gitignored and untracked.** `!.crew/verify.json`
 joined the named un-ignore list in crew 0.19.46 (`0a9d8937`, this note's
-anchor), and the file is tracked and present in this checkout. Every citation
+anchor as of the previous pass), and the file is tracked and present in this
+checkout. Every citation
 into it below was written from an actual read this pass, not carried forward.
 Several turned out to need correction rather than confirmation - see "What
 `.crew/verify.json` actually maps", which replaces the previous history-only
@@ -164,7 +185,8 @@ Its check calls are `:947-957`, in this order: `check_registration`,
 That is **eleven** functions, not the nine this note previously corrected
 "eight" to. Two were added between the previous anchor and this one:
 `check_self_claims` (`3374e8e0`, #139) and `check_crew_ignore_policy`
-(`0a9d8937`, #161, this note's anchor commit). `marketplace-registration.md` has
+(`0a9d8937`, #161, this note's anchor as of the previous pass).
+`marketplace-registration.md` has
 been updated to the same figure in this pass — the two-notes disagreement this
 note used to flag no longer exists.
 

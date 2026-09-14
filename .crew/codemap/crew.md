@@ -1,8 +1,11 @@
-anchor: useful-claude-add-ons@0a9d8937
+anchor: useful-claude-add-ons@975480b7
 verified: 2026-09-14
-re-derived, not re-verified: every live claim below was taken from the source at
-this anchor. The historical sections are accounts of past work and are marked as
-such; their coordinates were re-taken even where their stories did not change.
+Narrow pass, not a re-derivation: only the "Where every live count of crew's
+shape agrees" table (below) was re-read against its cited files at this
+anchor, because `f12003e2` (#166, "fix three stale self-describing counts")
+landed between the previous anchor and this one and changed three of the four
+places that table quotes. Everything else in this note carries forward from
+`0a9d8937` unread.
 
 
 # crew
@@ -130,6 +133,16 @@ The reusable rule, still followed here: a re-derivation cannot be verified by
 the thing doing the re-deriving. This pass's own "Citation freshness" section
 below is that check, run again.
 
+## Re-anchor provenance — 0a9d8937 -> 975480b7, 2026-09-14
+
+Narrow pass, not a re-derivation: `f12003e2` (#166, "fix three stale
+self-describing counts") landed between the previous anchor and this one and
+changed three of the four places the "Where every live count of crew's shape
+agrees" table (below) quotes. Only that table was re-read against its cited
+files at this anchor; nothing else in this note was re-checked, and no other
+path was diffed. See that table's own header for what changed and what did
+not.
+
 ## Inventory
 
 **DERIVED at this anchor**, counted by walking the directories:
@@ -169,24 +182,30 @@ standing manager on neither list. 13 + 40 + 1 = 54, and the two-way check
 every roster name backed by a file) holds — same membership as the previous
 anchor, re-verified rather than assumed unchanged since `crew_state.py` moved.
 
-### Where every live count of crew's shape agrees
+### Where every live count of crew's shape agrees — and where it no longer does
 
-**DERIVED at this anchor**, swept for a number adjacent to "agent"/"command"/
-"skill" on a line naming crew:
+**Re-read at this anchor** (975480b7), not swept fresh: `f12003e2` ("crew
+0.19.51: fix three stale self-describing counts", #166) landed between the
+previous anchor and this one and corrected the skill count in three of these
+four places from 17 to 18. It did not touch the root `README.md` or
+`INSTALLATION.md`, so those two still say 17. The table below is no longer
+one number agreed everywhere — it is 18 in three places and 17 in two.
 
 | Place | Says |
 |---|---|
-| `.claude-plugin/marketplace.json:223` | 54 context-isolated agents (13 tiered, 40 domain specialists, and the standing manager), 26 slash commands, 17 bundled skills |
-| `plugin/PLUGINS.md:17` | 54 agents, 26 commands, 17 skills, 20 hook entries (10 scripts × `.sh`/`.ps1`) across 5 events |
-| `README.md:166`, `INSTALLATION.md:251` | 54 subagents, 26 slash commands, 17 bundled skills, 20 hook entries across 5 events |
-| `scripts/install-prerequisites.sh:902`, `.ps1:856` | 54 agents, 26 commands |
+| `.claude-plugin/marketplace.json:223` | 54 context-isolated agents (13 tiered, 40 domain specialists, and the standing manager), 26 slash commands, **18** bundled skills — fixed by `f12003e2` |
+| `plugin/PLUGINS.md:17` | 54 agents, 26 commands, **18** skills, 20 hook entries (10 scripts × `.sh`/`.ps1`) across 5 events — fixed by `f12003e2` |
+| `README.md:166`, `INSTALLATION.md:251` | 54 subagents, 26 slash commands, **17** bundled skills, 20 hook entries across 5 events — unchanged; `f12003e2` did not touch either file (confirmed: `git diff --name-only 0a9d8937..975480b7 -- README.md INSTALLATION.md` returns nothing) |
+| `scripts/install-prerequisites.sh:902`, `.ps1:856` | 54 agents, 26 commands — does not state a skill count, so it is not part of the split |
 
-Every one of these lines moved between the anchors — the command count changed
-and the file grew around it — and every one still agrees. Not checked
-mechanically: `check-marketplace.py` still has no reference to `ROLE_TIERS`,
-`SPECIALIST_ROLES`, or a command/skill count, so this agreement is maintained
-by hand, same as the previous anchor found. The next command or specialist
-added is a fresh chance for these to drift apart silently.
+Agent and command counts still agree everywhere. The skill count does not:
+three places read 18, two read 17, and nothing in this repo's own tooling
+would catch that split — `check-marketplace.py` has no reference to
+`ROLE_TIERS`, `SPECIALIST_ROLES`, or a command/skill count, so this table has
+always been maintained by hand, and the hand missed two of five places this
+time. This is a finding for the report, not a fix made in this note: bringing
+`README.md:166` and `INSTALLATION.md:251` to 18 is a source-file edit, not a
+codemap correction.
 
 **JUDGEMENT, unchanged reasoning from the previous anchor:** this note does not
 list specialists by name. `SPECIALIST_ROLES` is the authority and cheap to
