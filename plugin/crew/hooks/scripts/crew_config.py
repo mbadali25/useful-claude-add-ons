@@ -1080,14 +1080,31 @@ def production_declaration(root, name):
     try:
         with open(path, encoding="utf-8-sig", errors="replace") as handle:
             raw = handle.read()
-    except FileNotFoundError:
+    except (FileNotFoundError, NotADirectoryError):
+        # Absent, and `NotADirectoryError` belongs here rather than below
+        # because it is `.crew` ITSELF not being a directory -- a plain file
+        # named `.crew`, which is not a crew repo at all: `crew_platform.main`
+        # resolves a root by looking for a `.crew/` DIRECTORY, so no config can
+        # exist under that name and none ever did. Treating it as unreadable
+        # would block every `ssh` in a repo that never opted in, which is the
+        # false refusal `test_unmanaged_repo_is_left_untouched.py` exists to
+        # prevent.
+        #
+        # Both names, because the two platforms raise DIFFERENT ones for the
+        # same tree and only one of them was caught. Measured on this exact
+        # fixture (`.crew` written as a file, then `open(".crew/config.json")`):
+        # POSIX raises `NotADirectoryError`, Windows raises `FileNotFoundError`
+        # -- so the guard allowed on Windows and blocked on Linux for one repo
+        # state, and the local run was green while CI was red. A guard whose
+        # answer depends on the OS has no answer.
         return ProductionDeclaration(PROD_DECL_ABSENT, [], "")
     except (OSError, ValueError) as exc:
-        # Everything that is not "it is not there": a directory in its place
-        # (`PermissionError` on Windows, `IsADirectoryError` on POSIX -- so the
-        # split is on FileNotFoundError, never on a subclass of the other
-        # side), a permissions denial, an unreadable mount. `ValueError` covers
-        # a path python rejects before touching the disk (an embedded NUL).
+        # Everything that is not "it is not there": a directory in place of the
+        # config FILE (`PermissionError` on Windows, `IsADirectoryError` on
+        # POSIX -- so the split is on the two names above, never on a subclass
+        # of this side), a permissions denial, an unreadable mount.
+        # `ValueError` covers a path python rejects before touching the disk
+        # (an embedded NUL).
         return ProductionDeclaration(
             PROD_DECL_UNREADABLE, [],
             f"`.crew/config.json` exists and could not be read "

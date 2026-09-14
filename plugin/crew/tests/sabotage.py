@@ -382,6 +382,20 @@ MUTATIONS = (
          "test_a_declaration_crew_cannot_read_blocks_a_write"),
     ),
     (
+        # D2, the platform half. Drop `NotADirectoryError` and `.crew` being a
+        # plain FILE goes back to `unreadable` on POSIX while staying `absent`
+        # on Windows -- one repo state, two verdicts, and the blocking one lands
+        # on a repo that never opted in. The forced-exception test is what makes
+        # this red on either platform; a fixture can only raise whichever
+        # exception the runner's own OS picks, which is how it shipped green.
+        "a config that is not there blocks, on one platform only",
+        CONFIG,
+        "    except (FileNotFoundError, NotADirectoryError):",
+        "    except FileNotFoundError:",
+        ("tests/test_unmanaged_repo_is_left_untouched.py::"
+         "test_a_config_that_is_not_there_reads_absent_on_every_platform"),
+    ),
+    (
         # D2, the half no in-process test can see. The refusal keeps every
         # word of its reason and loses only the TARGET, which is the field both
         # shells check first: `prod_guarded` in guard.sh and Invoke-ProdGuard

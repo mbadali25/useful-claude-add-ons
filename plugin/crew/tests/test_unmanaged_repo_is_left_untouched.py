@@ -25,6 +25,7 @@ that possible.
 
 SABOTAGE-TEST THIS FILE before trusting it: see `sabotage.py`.
 """
+import builtins
 import json
 import os
 import subprocess
@@ -218,7 +219,16 @@ def test_the_log_write_is_still_best_effort(tmp_path):
     """`.crew` existing as a FILE is neither a directory to write into nor an
     absent one, and `guard_decision` must still return its decision: a guard
     that died over its own audit line would turn a logging failure into a
-    blocked command, which is the worse of the two outcomes."""
+    blocked command, which is the worse of the two outcomes.
+
+    `allow` and not `block`, because a plain file named `.crew` is not a crew
+    repo at all -- `crew_platform.main` resolves a root by looking for a
+    `.crew/` DIRECTORY -- so nothing was declared, rather than a declaration
+    crew could not read.
+
+    This assertion is platform-dependent at the source and was NOT when it was
+    written: see the two tests below, which are what pin it.
+    """
     root = tmp_path / "crew-is-a-file"
     root.mkdir()
     (root / ".crew").write_text("not a directory\n", encoding="utf-8")
@@ -227,3 +237,56 @@ def test_the_log_write_is_still_best_effort(tmp_path):
                                      record=True)
 
     assert out["decision"] == "allow"
+
+
+@pytest.mark.parametrize("raised", [FileNotFoundError, NotADirectoryError])
+def test_a_config_that_is_not_there_reads_absent_on_every_platform(
+        tmp_path, monkeypatch, raised):
+    """The two exceptions `open(".crew/config.json")` raises for ONE tree, on
+    two platforms, must reach the same state.
+
+    Measured on the fixture above, `.crew` written as a plain file: POSIX
+    raises `NotADirectoryError`, Windows raises `FileNotFoundError`. Only the
+    second was caught, so `production_declaration` answered `absent` on Windows
+    and `unreadable` on Linux -- and `unreadable` blocks every `ssh` at
+    `prodServer: none`. The same repo, the same command, a different verdict
+    per OS, with a green local run and a red CI.
+
+    Both are raised HERE rather than by building the tree, because a fixture
+    can only ever exercise the runner's own platform: the test that was
+    supposed to catch this passed on the machine that wrote it.
+    """
+    root = crew_fixtures.make_repo(
+        tmp_path, config={"production": {"hosts": ["prod-web-*"]}}, git=False)
+    real = builtins.open
+
+    def refuse(path, *args, **kwargs):
+        # Narrowed to the one path, so nothing else in the process -- pytest's
+        # own assertion rewriting included -- is affected by the patch.
+        if str(path).endswith("config.json"):
+            raise raised(f"forced {raised.__name__}")
+        return real(path, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "open", refuse)
+
+    found = crew_config.production_declaration(str(root), "prodServer")
+
+    assert found.state == crew_config.PROD_DECL_ABSENT
+    assert found.patterns == []
+
+
+def test_a_config_file_that_is_a_directory_is_still_unreadable(tmp_path):
+    """The other side of that split, kept red if the catch above widens.
+
+    A DIRECTORY named `.crew/config.json` is a config that is there and cannot
+    be read, which is `unreadable` -- the state that blocks. Broadening the
+    absent branch to `OSError` would take this with it and hand back the
+    fail-open the five states exist to remove.
+    """
+    root = crew_fixtures.make_repo(tmp_path, config={}, git=False)
+    (root / ".crew" / "config.json").unlink()
+    (root / ".crew" / "config.json").mkdir()
+
+    found = crew_config.production_declaration(str(root), "prodServer")
+
+    assert found.state == crew_config.PROD_DECL_UNREADABLE
