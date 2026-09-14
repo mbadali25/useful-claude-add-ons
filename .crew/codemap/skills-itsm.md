@@ -1,6 +1,6 @@
 # skills-itsm
-anchor: useful-claude-add-ons@1f97e51c
-verified: 2026-09-06
+anchor: useful-claude-add-ons@34a333f0
+verified: 2026-09-14
 
 ## Does
 `infra-work-ticketing` gets infrastructure work logged to ServiceDesk Plus or Jira through an MCP
@@ -66,8 +66,9 @@ the paper trail, the other pages the person.
 - **A failed MCP write is lost; a failed `ticketctl.py` write is not.** DERIVED
   `skills/infra-work-ticketing/SKILL.md:387-390` - "The MCP server has no such queue. A failed
   `sdp_add_note` is simply gone", and the instruction is to re-send through `ticketctl.py note`
-  rather than retrying the MCP call. The local queue at `ticketctl.py:2054` covers only the
-  fallback transport, which is the path the skill tells you *not* to use by default.
+  rather than retrying the MCP call. The local queue at
+  `skills/infra-work-ticketing/scripts/ticketctl.py:2054` covers only the fallback transport,
+  which is the path the skill tells you *not* to use by default.
 - **The Telegram token is env-only, and the code enforces it** - DERIVED
   `skills/notify/scripts/notify.py:88` and `:193` read
   `os.environ.get(tgc.get("bot_token_env", "TELEGRAM_BOT_TOKEN"))` and nothing reads a literal token
@@ -115,16 +116,25 @@ one claim reworded.
 displaced by the insertion, text unchanged).
 
 **Content drift corrected.** The tabulated tool list omitted `sdp_list_notes`
-(`SKILL.md:90`); added. `sdp_link_account` (`:135`) is named in the skill but is not a row in the
-`:86-101` table, so it is now cited separately rather than folded into the table's list.
+(`skills/infra-work-ticketing/SKILL.md:90`); added. `sdp_link_account` (`:135`) is named in the
+skill but is not a row in the `:86-101` table, so it is now cited separately rather than folded
+into the table's list.
 
-**Re-verified unchanged, by reading each line.** `SKILL.md:17`, `:86`, `:90`, `:101`, `:135`,
-`:139-141`; `ticketctl.py:1927`, `:2054`, `:2093`; `notify.py:63`, `:88`, `:182`, `:187`, `:193`,
-`:255`, `:314`, `:325`; `tg.py:38`; `notify/SKILL.md:38-41`, `:113`, `:161`. All resolved to the
-text the note claims.
+**Re-verified unchanged, by reading each line.**
+`skills/infra-work-ticketing/SKILL.md:17`, `:86`, `:90`, `:101`, `:135`, `:139-141`;
+`skills/infra-work-ticketing/scripts/ticketctl.py:1927`, `:2054`, `:2093`;
+`skills/notify/scripts/notify.py:63`, `:88`, `:182`, `:187`, `:193`, `:255`, `:314`, `:325`;
+`skills/notify/scripts/tg.py:38`; `skills/notify/SKILL.md:38-41`, `:113`, `:161`. All resolved to
+the text the note claims.
 
 **Also checked, outside this note's subsystem.** That the gizmoduck gate the carve-out names is real
 rather than aspirational: `plugin/gizmoduck/scripts/gizmoduck.py` implements `--yes DIGEST` with
-`_records_digest` at `:122-141`, binding the approval to the exact previewed batch, and refuses a
-stale or mismatched digest rather than treating it as a bare yes (`:475-479`). Recorded here only
+`_records_digest` at `:184-203`, binding the approval to the exact previewed batch, and refuses a
+stale or mismatched digest rather than treating it as a bare yes (`:974-980`). Recorded here only
 because the carve-out's meaning depends on it; the gizmoduck subsystem is documented elsewhere.
+
+**Re-anchored `1f97e51c` -> `34a333f0` on 2026-09-14.** One cited path moved:
+`plugin/gizmoduck/scripts/gizmoduck.py` had code inserted ahead of both citations above, shifting
+`_records_digest` from `:122-141` to `:184-203` and the stale/mismatched-digest refusal from
+`:475-479` to `:974-980`. Both were re-read at their new locations and still say what this note
+claims. No other claim in this note cites gizmoduck.py, so nothing else needed correcting.
