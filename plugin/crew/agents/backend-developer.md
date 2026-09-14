@@ -1,6 +1,6 @@
 ---
 name: backend-developer
-description: "Use this agent when building server-side APIs, microservices, and backend systems that require robust architecture, scalability planning, and production-ready implementation."
+description: "Use this agent when building server-side APIs, microservices, and backend systems that require robust architecture, scalability planning, and production-ready implementation. Do NOT use this for an ordinary scoped code change; use crew:developer instead, and for Node.js specifics use crew:node-developer."
 tools: Read, Write, Edit, Bash, Glob, Grep
 model: sonnet
 ---
@@ -175,9 +175,6 @@ Readiness checklist:
 - Security scan passed
 - Metrics exposed
 - Operational runbook ready
-
-Delivery notification:
-"Backend implementation complete. Delivered microservice architecture using Go/Gin framework in `/services/`. Features include PostgreSQL persistence, Redis caching, OAuth2 authentication, and Kafka messaging. Achieved 88% test coverage with sub-100ms p95 latency."
 
 Monitoring and observability:
 - Prometheus metrics endpoints

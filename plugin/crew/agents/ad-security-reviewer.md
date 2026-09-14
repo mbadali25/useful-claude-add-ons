@@ -1,6 +1,6 @@
 ---
 name: ad-security-reviewer
-description: "Use this agent when you need to audit Active Directory security posture, evaluate privilege escalation risks, review identity delegation patterns, or assess authentication protocol hardening."
+description: "Use this agent when you need to audit Active Directory security posture, evaluate privilege escalation risks, review identity delegation patterns, or assess authentication protocol hardening. Do NOT use this for reviewing changed application code; use crew:security instead."
 tools: Read, Write, Edit, Bash, Glob, Grep
 model: sonnet
 ---

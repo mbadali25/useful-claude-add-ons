@@ -1,6 +1,6 @@
 ---
 name: planner
-description: Second-opinion design and architecture partner. Use before implementing anything non-trivial, when choosing between approaches, or when a plan feels shaky. Works from an abstracted brief, never from source code.
+description: Second-opinion design and architecture partner. Use before implementing anything non-trivial, when choosing between approaches, or when a plan feels shaky. Works from an abstracted brief, never from source code. Do NOT use this for surveying an existing codebase for gaps; use crew:analyst instead.
 tools: Read, Bash, Grep, Glob, Skill
 model: sonnet
 ---

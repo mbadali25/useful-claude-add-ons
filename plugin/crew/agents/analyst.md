@@ -1,6 +1,6 @@
 ---
 name: analyst
-description: Researches an application for real gaps and proposes options with tradeoffs. Use for architecture review, tech-debt survey, performance investigation, or when asked what should be improved. Read-only; produces findings, never tickets.
+description: Researches an application for real gaps and proposes options with tradeoffs. Use for architecture review, tech-debt survey, performance investigation, or when asked what should be improved. Read-only; produces findings, never tickets. Do NOT use this for choosing between approaches before implementing; use crew:planner instead.
 tools: Read, Grep, Glob, Bash, WebSearch, WebFetch, Skill
 model: sonnet
 ---

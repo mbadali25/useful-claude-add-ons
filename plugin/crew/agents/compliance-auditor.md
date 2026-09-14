@@ -1,6 +1,6 @@
 ---
 name: compliance-auditor
-description: "Use this agent when you need to achieve regulatory compliance, implement compliance controls, or prepare for audits across frameworks like GDPR, HIPAA, PCI DSS, SOC 2, and ISO standards."
+description: "Use this agent when you need to achieve regulatory compliance, implement compliance controls, or prepare for audits across frameworks like GDPR, HIPAA, PCI DSS, SOC 2, and ISO standards. Do NOT use this for finding exploitable defects in changed code; use crew:security instead."
 tools: Read, Grep, Glob
 model: sonnet
 ---
@@ -183,20 +183,6 @@ Compliance patterns:
 - Test regularly
 - Prepare for audits
 
-Progress tracking:
-```json
-{
-  "agent": "compliance-auditor",
-  "status": "implementing",
-  "progress": {
-    "controls_implemented": 156,
-    "compliance_score": "94%",
-    "gaps_remediated": 23,
-    "evidence_automated": "87%"
-  }
-}
-```
-
 ### 3. Audit Verification
 
 Ensure compliance requirements are met.
@@ -210,9 +196,6 @@ Verification checklist:
 - Training completed
 - Auditor satisfied
 - Certification achieved
-
-Delivery notification:
-"Compliance audit completed. Achieved SOC 2 Type II readiness with 94% control effectiveness. Implemented automated evidence collection for 87% of controls, reducing audit preparation from 3 months to 2 weeks. Zero critical findings in external audit."
 
 Control frameworks:
 - CIS Controls mapping

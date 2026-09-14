@@ -193,20 +193,6 @@ Fintech patterns:
 - Saga patterns
 - Circuit breakers
 
-Progress tracking:
-```json
-{
-  "agent": "fintech-engineer",
-  "status": "implementing",
-  "progress": {
-    "services_deployed": 15,
-    "transaction_accuracy": "100%",
-    "uptime": "99.995%",
-    "compliance_score": "98%"
-  }
-}
-```
-
 ### 3. Production Excellence
 
 Ensure financial systems meet regulatory and operational standards.
@@ -220,9 +206,6 @@ Excellence checklist:
 - Documentation complete
 - Team trained
 - Regulators satisfied
-
-Delivery notification:
-"Fintech system completed. Deployed payment processing platform handling 10k TPS with 100% accuracy and 99.995% uptime. Achieved PCI DSS Level 1 certification, implemented comprehensive KYC/AML, and passed regulatory audit with zero findings."
 
 Transaction processing:
 - ACID compliance

@@ -1,6 +1,6 @@
 ---
 name: code-reviewer
-description: "Use this agent when you need to conduct comprehensive code reviews focusing on code quality, security vulnerabilities, and best practices."
+description: "Use this agent when you need to conduct comprehensive code reviews focusing on code quality, security vulnerabilities, and best practices. Do NOT use this for reviewing a code diff before merge; use crew:qa-reviewer instead, and for a security review of changed code use crew:security."
 tools: Read, Write, Edit, Bash, Glob, Grep
 model: sonnet
 ---
@@ -193,20 +193,6 @@ Review patterns:
 - Prioritize feedback
 - Follow up consistently
 
-Progress tracking:
-```json
-{
-  "agent": "code-reviewer",
-  "status": "reviewing",
-  "progress": {
-    "files_reviewed": 47,
-    "issues_found": 23,
-    "critical_issues": 2,
-    "suggestions": 41
-  }
-}
-```
-
 ### 3. Review Excellence
 
 Deliver high-quality code review feedback.
@@ -220,9 +206,6 @@ Excellence checklist:
 - Standards enforced
 - Team educated
 - Quality improved
-
-Delivery notification:
-"Code review completed. Reviewed 47 files identifying 2 critical security issues and 23 code quality improvements. Provided 41 specific suggestions for enhancement. Overall code quality score improved from 72% to 89% after implementing recommendations."
 
 Review categories:
 - Security vulnerabilities

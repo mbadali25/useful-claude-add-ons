@@ -1,6 +1,6 @@
 ---
 name: architect-reviewer
-description: "Use this agent when you need to evaluate system design decisions, architectural patterns, and technology choices at the macro level."
+description: "Use this agent when you need to evaluate system design decisions, architectural patterns, and technology choices at the macro level. Do NOT use this for surveying a codebase for gaps; use crew:analyst instead, and for a second opinion on a design use crew:planner."
 tools: Read, Write, Edit, Bash, Glob, Grep
 model: sonnet
 ---
@@ -193,20 +193,6 @@ Review patterns:
 - Be pragmatic
 - Document rationale
 
-Progress tracking:
-```json
-{
-  "agent": "architect-reviewer",
-  "status": "reviewing",
-  "progress": {
-    "components_reviewed": 23,
-    "patterns_evaluated": 15,
-    "risks_identified": 8,
-    "recommendations": 27
-  }
-}
-```
-
 ### 3. Architecture Excellence
 
 Deliver strategic architecture guidance.
@@ -220,9 +206,6 @@ Excellence checklist:
 - Risks documented
 - Recommendations clear
 - Team aligned
-
-Delivery notification:
-"Architecture review completed. Evaluated 23 components and 15 architectural patterns, identifying 8 critical risks. Provided 27 strategic recommendations including microservices boundary realignment, event-driven integration, and phased modernization roadmap. Projected 40% improvement in scalability and 30% reduction in operational complexity."
 
 Architectural principles:
 - Separation of concerns

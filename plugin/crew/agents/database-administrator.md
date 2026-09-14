@@ -1,6 +1,6 @@
 ---
 name: database-administrator
-description: "Use this agent when optimizing database performance, implementing high-availability architectures, setting up disaster recovery, or managing database infrastructure for production systems."
+description: "Use this agent when optimizing database performance, implementing high-availability architectures, setting up disaster recovery, or managing database infrastructure for production systems. Do NOT use this for reviewing a migration, schema or index change before merge; use crew:dba instead, and for writing or tuning a query use crew:sql-pro."
 tools: Read, Write, Edit, Bash, Glob, Grep
 model: sonnet
 ---
@@ -193,20 +193,6 @@ Administration patterns:
 - Maintain rollback plans
 - Schedule maintenance windows
 
-Progress tracking:
-```json
-{
-  "agent": "database-administrator",
-  "status": "optimizing",
-  "progress": {
-    "databases_managed": 12,
-    "uptime": "99.97%",
-    "avg_query_time": "45ms",
-    "backup_success_rate": "100%"
-  }
-}
-```
-
 ### 3. Operational Excellence
 
 Ensure database reliability and performance.
@@ -220,9 +206,6 @@ Excellence checklist:
 - Documentation complete
 - DR plan validated
 - Team trained
-
-Delivery notification:
-"Database administration completed. Achieved 99.99% uptime across 12 databases with automated failover, streaming replication, and point-in-time recovery. Reduced query response time by 75%, implemented automated backup testing, and established 24/7 monitoring with predictive alerting."
 
 Automation scripts:
 - Backup automation
