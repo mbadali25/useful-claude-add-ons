@@ -77,6 +77,7 @@ whether the self-review guard is barring it, and which fallback is armed.
 """
 
 import argparse
+import collections
 import copy
 import hashlib
 import json
@@ -996,44 +997,208 @@ def _log_guard(root, row):
     line would turn a logging failure into a blocked command, which is a worse
     outcome than a missing row. The caller has already printed to stderr.
 
-    `.crew/` is created only when it is missing AND the decision was not a
-    refusal, because a refusal is already visible and creating a crew directory
-    inside a repo that never asked for one is a side effect nobody requested.
+    `.crew/` IS NEVER CREATED HERE, whatever the decision was. This is the
+    line that used to call `os.makedirs` on it, and that is not a logging
+    detail: the next SessionStart resolves its root from bare `.crew/`
+    presence -- the "No candidate has a *readable* config" loop in
+    `crew_platform.main` -- and `heal_config` then writes a full default
+    `config.json` into it. So ONE allowed `ssh` in a plain repo adopted that
+    repo into crew, and the opt-in promise `heal_config` states in capitals
+    ("a directory with no `.crew/` is not a crew repository and must not be
+    colonized") was gone before it was ever consulted.
+
+    The caller used to skip only REFUSALS in a repo with no `.crew/`, which is
+    the half that never fires: a refusal is rare, and an ordinary allowed
+    command -- every `ssh` and every `psql` reaches the production guards -- is
+    the one each session runs. The rule lives here now, at the creation site,
+    and covers every decision: write into a `.crew/` that exists, never make
+    one. An unmanaged repo loses the row, which is the cheaper loss of the two.
     """
     try:
         path = os.path.join(root, crew_state.GUARD_LOG_PATH)
-        os.makedirs(os.path.dirname(path), exist_ok=True)
+        if not os.path.isdir(os.path.dirname(path)):
+            return
         with open(path, "a", encoding="utf-8") as handle:
             handle.write("\t".join(row) + "\n")
     except OSError:
         pass
 
 
+# Which `production` key each production guard reads. One mapping, because
+# two copies of it is how a guard comes to read the other guard's key.
+PROD_DECL_KEYS = {"prodDatabase": "databases", "prodServer": "hosts"}
+
+# The five states a `production.<key>` declaration can be in. Four of them
+# used to be one value -- `[]` -- and that collapse is what
+# `production_declaration` exists to undo. Spelled as constants rather than
+# bare strings so a caller comparing against a typo fails at the name.
+PROD_DECL_DECLARED = "declared"      # a list with at least one usable glob
+PROD_DECL_ABSENT = "absent"          # nobody said what production is
+PROD_DECL_EMPTY = "empty"            # the empty set, declared on purpose
+PROD_DECL_MALFORMED = "malformed"    # something is there and is not globs
+PROD_DECL_UNREADABLE = "unreadable"  # the file is there and crew cannot read it
+
+ProductionDeclaration = collections.namedtuple(
+    "ProductionDeclaration", ("state", "patterns", "detail"))
+
+
+def production_declaration(root, name):
+    """WHAT this repo declared as production for one guard, in FIVE states.
+
+    Returns `ProductionDeclaration(state, patterns, detail)`. `state` is one of
+    the `PROD_DECL_*` constants above, `patterns` holds every usable glob found
+    (so a malformed list carrying three good entries and one integer still
+    matches its three), and `detail` is a phrase naming what could not be read,
+    for the refusal message. `detail` is "" for the three states that are not a
+    failure to read.
+
+    Only `absent` and `empty` mean "no production target was declared".
+    `malformed` and `unreadable` mean crew DOES NOT KNOW what this repo's
+    production is -- and until this function existed all four answered `[]`,
+    which `crew_guards.prod_decision` reads as "nothing declared, so nothing
+    matches, so allow". `"hosts": "prod-web-*"` -- a string where a list
+    belongs, the single most likely way to write this key wrong -- therefore
+    disabled the host restriction completely, at every level including
+    `prodServer: none`, while the config still read as though production had
+    been declared. That is this repo's named bug class: an unknown collapsing
+    into the safe-looking value, in the guard whose whole job is to refuse.
+
+    The read is deliberately NOT `crew_state.load_config`, and not
+    `crew_common.read_text` either. `load_config` returns `{}` for absent, for
+    unparseable and for not-an-object alike; `read_text` returns None for both
+    absent and unreadable, because it catches `OSError` wholesale. Building on
+    either one would reimplement the collapse one layer down. Hence the open
+    right here, with `FileNotFoundError` split from every other `OSError`.
+
+    REPO LAYER ONLY, which is enforced by never reading the global layer at
+    all rather than by a rule in prose: a `production` block in a
+    machine-global file must reach no repo. `filter_global` already prunes it
+    and reports it; this is what makes that report true.
+    """
+    key = PROD_DECL_KEYS[name]
+    path = os.path.join(root, ".crew", "config.json")
+    try:
+        with open(path, encoding="utf-8-sig", errors="replace") as handle:
+            raw = handle.read()
+    except FileNotFoundError:
+        return ProductionDeclaration(PROD_DECL_ABSENT, [], "")
+    except (OSError, ValueError) as exc:
+        # Everything that is not "it is not there": a directory in its place
+        # (`PermissionError` on Windows, `IsADirectoryError` on POSIX -- so the
+        # split is on FileNotFoundError, never on a subclass of the other
+        # side), a permissions denial, an unreadable mount. `ValueError` covers
+        # a path python rejects before touching the disk (an embedded NUL).
+        return ProductionDeclaration(
+            PROD_DECL_UNREADABLE, [],
+            f"`.crew/config.json` exists and could not be read "
+            f"({type(exc).__name__})")
+    try:
+        cfg = json.loads(raw)
+    except ValueError as exc:
+        return ProductionDeclaration(
+            PROD_DECL_MALFORMED, [],
+            f"`.crew/config.json` does not parse as JSON ({exc})")
+    if not isinstance(cfg, dict):
+        return ProductionDeclaration(
+            PROD_DECL_MALFORMED, [],
+            f"`.crew/config.json` holds a JSON {type(cfg).__name__}, not an "
+            f"object")
+    if "production" not in cfg:
+        return ProductionDeclaration(PROD_DECL_ABSENT, [], "")
+    block = cfg["production"]
+    if not isinstance(block, dict):
+        return ProductionDeclaration(
+            PROD_DECL_MALFORMED, [],
+            f"`production` is a {type(block).__name__}, not an object")
+    if key not in block:
+        return ProductionDeclaration(PROD_DECL_ABSENT, [], "")
+    declared = block[key]
+    if not isinstance(declared, list):
+        return ProductionDeclaration(
+            PROD_DECL_MALFORMED, [],
+            f"`production.{key}` is a {type(declared).__name__}, not a list "
+            f"of glob strings")
+    patterns = [p for p in declared if isinstance(p, str) and p.strip()]
+    if len(patterns) != len(declared):
+        # A list that is PARTLY globs. The entries crew could read are kept
+        # and still match, and the state is still `malformed`, because the
+        # entries it could not read are each a production target that may or
+        # may not be there -- exactly the thing a `block` level is about.
+        return ProductionDeclaration(
+            PROD_DECL_MALFORMED, patterns,
+            f"{len(declared) - len(patterns)} of the {len(declared)} entries "
+            f"in `production.{key}` are not glob strings")
+    if not patterns:
+        return ProductionDeclaration(PROD_DECL_EMPTY, [], "")
+    return ProductionDeclaration(PROD_DECL_DECLARED, patterns, "")
+
+
 def production_patterns(root, name):
     """The `production.*` globs for one production guard, REPO LAYER ONLY.
 
-    Read straight out of the repo file with `crew_state.load_config`, the same
-    raw read `resolve_ratcheted` uses for the repo layer, rather than through
-    `resolve_config`,
-    and that is the enforcement of the repo-only rule rather than a shortcut: a
-    `production` block in a machine-global file must reach no repo, and the way
-    to guarantee that is to never read the global layer here at all.
-    `filter_global` already prunes it and reports it; this is what makes the
-    report true.
-
-    Returns `[]` for anything that is not a list of strings, which is the
-    fail-closed direction for a PATTERN list: no patterns means no matches, and
-    no matches means the guard refuses nothing nobody declared.
+    The globs alone, for a caller that only needs to match against them.
+    Anything DECIDING whether to refuse must use `production_declaration`
+    instead: `[]` here is the answer for four different states, and three of
+    them are not "nothing was declared".
     """
-    key = {"prodDatabase": "databases", "prodServer": "hosts"}[name]
-    cfg = crew_state.load_config(root) or {}
-    block = cfg.get("production")
-    if not isinstance(block, dict):
-        return []
-    patterns = block.get(key)
-    if not isinstance(patterns, list):
-        return []
-    return [p for p in patterns if isinstance(p, str) and p.strip()]
+    return production_declaration(root, name).patterns
+
+
+def _prod_undeclarable(name, policy, command, declared):
+    """The production decision when crew CANNOT READ what production is.
+
+    Returns the same `(decision, reason, target, access)` tuple
+    `crew_guards.prod_decision` does, and exists because that function cannot
+    be asked this question: it takes a pattern LIST, and the honest input here
+    is "the list is unknown", which no list can spell. `[]` least of all --
+    `[]` spells "the empty set was declared", which is a statement the repo
+    made, and the collapse of the two is the defect.
+
+    The LEVEL still decides, because at two of the three levels nothing turns
+    on the unknown:
+
+      full  every access to every declared target is permitted, so a target
+            crew failed to read would have been allowed had it read it.
+      read  a command crew can classify as read-only is permitted whether or
+            not it matches a declared target, so again the answer is the same
+            either way.
+
+    Everything else blocks -- `none`, and `read` against anything not
+    classified read-only -- and the refusal carries a NON-EMPTY `target`. That
+    is load-bearing, not cosmetic. `guard.sh`'s `prod_guarded` and
+    `guard.ps1`'s `Invoke-ProdGuard` both return silently when the target field
+    is empty, correctly, because an empty target means no declared pattern
+    matched; a `block` with an empty target is therefore a refusal both shells
+    would swallow on their way to exit 0. "Could not tell" has to be its own
+    value in the target field too, or the decision dies between this resolver
+    and the hook that enforces it.
+
+    The two ALLOW branches keep the target EMPTY on purpose, and that asymmetry
+    is deliberate. An empty target is what keeps an ordinary `ssh` silent, and
+    in `guard.sh` a non-empty one also sets `PROD_HIT=1`, which suppresses the
+    crude "`prod` as an argument" fallback further down the same script.
+    Filling it on an allow would remove that fallback in exactly the repo whose
+    config crew could not read. Both allow branches still carry the unread
+    declaration in `reason`, and every caller gets it in the row's
+    `declaration` key, so the state survives into every value derived from it
+    without weakening a check that still works.
+    """
+    level = crew_state.normalise_prod_level(policy)
+    access = crew_state.classify_access(command)
+    unread = f"crew could not read what production is: {declared.detail}"
+    if level == "full":
+        return ("allow",
+                f"guards level is `full`, {access} access -- and {unread}",
+                "", access)
+    if level == "read" and access == "read":
+        return ("allow",
+                f"classified read-only, permitted by `read` -- and {unread}",
+                "", access)
+    return ("block",
+            f"`{level}` cannot be applied because {unread}. Crew cannot tell "
+            f"whether this command reaches production, and a check that could "
+            f"not run is not a check that passed. Fix `.crew/config.json`.",
+            f"<unread production.{PROD_DECL_KEYS[name]}>", access)
 
 
 def _guard_row(name, policy, decision, reason, marker, target, resolved):
@@ -1057,16 +1222,17 @@ def _guard_row(name, policy, decision, reason, marker, target, resolved):
 
 
 def _maybe_log(root, record, decision, name, policy, target, command):
-    """Append the decision row, unless it is a refusal in a non-crew repo.
+    """Append the decision row. Every decision, allow and refusal alike.
 
-    `.crew/` is created only when it is missing AND the decision was not a
-    refusal: a refusal is already visible on stderr, and creating a crew
-    directory inside a repo that never asked for one is a side effect nobody
-    requested.
+    The "unless it is a refusal in a repo with no `.crew/`" rule that used to
+    live here was half a fail-safe, and the wrong half: it read as "do not
+    colonize a plain repo" while applying only to the decision that almost
+    never happens there. `_log_guard` now enforces that rule for every
+    decision, at the line that actually created the directory. See its
+    docstring -- the reasoning belongs beside the `makedirs` it removed, not
+    beside the caller that used to guess when to skip it.
     """
     if not record:
-        return
-    if decision == "block" and not os.path.isdir(os.path.join(root, ".crew")):
         return
     # Tabs and newlines in a command would forge a row. Same normalisation
     # `crew_incident_log` (`_common.sh:104`) applies, and for the same reason.
@@ -1081,7 +1247,8 @@ def guard_decision(root, name, command, path=None, record=False):
     """What crew's command guard must do about `command` under `guards.<name>`.
 
     Returns `{"guard", "policy", "decision", "reason", "marker", "target",
-    "heldDownBy", "repo", "global"}` where `decision` is one of:
+    "heldDownBy", "repo", "global", "access", "declaration"}` where `decision`
+    is one of:
 
         "block"   refuse, exactly as the guard did before these keys existed
         "ask"     refuse, print the exact command, and name the marker that
@@ -1118,16 +1285,31 @@ def guard_decision(root, name, command, path=None, record=False):
     if name in crew_state.PROD_GUARD_NAMES:
         # A different vocabulary and a different question, so a different
         # branch rather than three more cases bolted onto the policy chain.
-        # The patterns come from the REPO layer alone -- `production_patterns`
-        # is where that is enforced -- while `policy` above already came
-        # through the ratchet, so the level narrows and the patterns do not.
-        decision, reason, target, access = crew_state.prod_decision(
-            policy, command, production_patterns(root, name))
+        # The patterns come from the REPO layer alone -- `production_
+        # declaration` is where that is enforced -- while `policy` above
+        # already came through the ratchet, so the level narrows and the
+        # patterns do not.
+        #
+        # THE STATE IS READ BEFORE THE PATTERNS ARE USED. A declaration crew
+        # could not read is not handed to `prod_decision` at all: that function
+        # answers "no declared production target matches" for an empty list,
+        # which is the right answer for an empty list and the wrong one for an
+        # unknown. Keeping the two apart here, rather than teaching
+        # `prod_decision` a fourth argument, is what let this land without
+        # changing `crew_guards.py`.
+        declared = production_declaration(root, name)
+        if declared.state in (PROD_DECL_MALFORMED, PROD_DECL_UNREADABLE):
+            decision, reason, target, access = _prod_undeclarable(
+                name, policy, command, declared)
+        else:
+            decision, reason, target, access = crew_state.prod_decision(
+                policy, command, declared.patterns)
         # `ask` is not in this vocabulary, so there is nothing to approve and
         # naming a marker file would invite a user to create one that nothing
         # reads.
         out = _guard_row(name, policy, decision, reason, "", target, resolved)
         out["access"] = access
+        out["declaration"] = declared.state
         _maybe_log(root, record, decision, name, policy, target, command)
         return out
 
@@ -1151,6 +1333,12 @@ def guard_decision(root, name, command, path=None, record=False):
     out = _guard_row(name, policy, decision, reason, marker,
                      target, resolved)
     out["access"] = ""
+    # Set in BOTH branches, exactly as `access` is: a key one branch defines
+    # and the other does not is how a caller comes to read a missing key, which
+    # is what `_guard_row`'s docstring is about. The four guards here read no
+    # `production` block at all, so the honest value is "not applicable" rather
+    # than any of the five declaration states.
+    out["declaration"] = ""
     _maybe_log(root, record, decision, name, policy, target, command)
     return out
 
@@ -2250,6 +2438,14 @@ def main(argv=None):
         # six names now: bash's `read` hands every leftover word to
         # the LAST variable, so a field appended without teaching the
         # reader about it would arrive silently glued onto `reason`.
+        #
+        # `declaration` -- which of the five `PROD_DECL_*` states the repo's
+        # `production` block was in -- is deliberately NOT a seventh field, for
+        # that exact reason: appending one here would glue it onto `access` in
+        # bash while PowerShell ignored it, and the two flavours would disagree
+        # about a line they read from the same producer. It reaches a shell
+        # inside `reason`, which every flavour already prints, and reaches a
+        # programmatic caller through `--json`.
         print("\t".join(field or "-" for field in
                         (out["decision"], out["policy"], out["marker"],
                          out["target"], out["reason"],

@@ -10,26 +10,74 @@ $root = if ($env:CLAUDE_PROJECT_DIR) { $env:CLAUDE_PROJECT_DIR } else { "." }
 Set-Location $root -ErrorAction SilentlyContinue
 if (-not (Test-Path .crew/verify.json)) { exit 0 }
 
+# Every way the map can be unreadable ends here, in one message, because the
+# reader's next action is the same for all of them: look at the file.
+function Deny-UnreadableMap([string]$Why) {
+  [Console]::Error.WriteLine("PROMOTION BLOCKED: $Why")
+  [Console]::Error.WriteLine("  This is NOT a pass. Crew cannot tell whether this command deploys, so it")
+  [Console]::Error.WriteLine("  cannot tell whether a pre-deploy gate applies to it. Fix .crew/verify.json,")
+  [Console]::Error.WriteLine("  or delete it if this repo should not be gated.")
+  exit 2
+}
+
 # Fail CLOSED on a map that will not parse. An ABSENT verify.json (line 11) is
 # a repo that opted out of gating; an UNPARSEABLE one is corruption, and the
 # two are not the same fact. `catch { exit 0 }` treated them identically, so a
 # single stray comma in verify.json silently removed every pre-deploy check
 # while the deploy went ahead looking gated.
+#
+# `-ErrorAction Stop` is what makes the catch cover UNREADABLE as well as
+# unparseable, and it is not decoration: Get-Content's failure is a
+# NON-TERMINATING error, so without it a directory named .crew/verify.json left
+# $vm null, the catch never fired, and `-not $vm.environments` two lines down
+# read the corruption as "nothing declared" and exited 0. Measured, on Windows:
+# exit 0 with a red Get-Content error on stderr and the deploy allowed.
+#
+# What this flavour CANNOT match is bash's strictness, and the difference is
+# worth knowing rather than assuming away: PowerShell 7's ConvertFrom-Json
+# ACCEPTS a trailing comma, which python's json rejects. So the stray comma
+# that motivated this block is caught by promote-gate.sh and parses cleanly
+# here. That asymmetry is safe in the direction that matters - this flavour
+# still runs every check below on a map it could read - and closing it would
+# mean shipping a second JSON parser.
 try {
-  $vm = Get-Content .crew/verify.json -Raw | ConvertFrom-Json
+  $vm = Get-Content .crew/verify.json -Raw -ErrorAction Stop | ConvertFrom-Json
 } catch {
-  [Console]::Error.WriteLine("PROMOTION BLOCKED: .crew/verify.json could not be parsed, so no pre-deploy check ran.")
-  [Console]::Error.WriteLine("  This is not a pass. Fix the JSON, or delete the file if this repo should not be gated.")
-  [Console]::Error.WriteLine("  $($_.Exception.Message)")
-  exit 2
+  Deny-UnreadableMap ".crew/verify.json could not be read or parsed, so no pre-deploy check ran. $($_.Exception.Message)"
 }
-if (-not $vm.environments) { exit 0 }
+# The same absent/malformed split, one level in. `environments` ABSENT gates
+# nothing, exactly like the bash flavour's `.get("environments", {})`.
+# `environments` PRESENT and not an object is corruption: the property
+# enumeration below finds no environment in it, so every deploy sailed through
+# on "this command deploys nothing".
+if ($vm -isnot [System.Management.Automation.PSCustomObject]) {
+  Deny-UnreadableMap ".crew/verify.json does not hold a JSON object."
+}
+$envProperty = $vm.PSObject.Properties['environments']
+if (-not $envProperty) { exit 0 }
+if ($envProperty.Value -isnot [System.Management.Automation.PSCustomObject]) {
+  Deny-UnreadableMap "``environments`` in .crew/verify.json is not an object, so no environment can be read out of it."
+}
 
 # Which environment does this command deploy to?
 $envName = $null
 foreach ($p in $vm.environments.PSObject.Properties) {
-  foreach ($dep in $p.Value.deploy) {
-    if ($dep -and ($cmd -like "*$dep*" -or $dep -like "*$cmd*")) { $envName = $p.Name; break }
+  if ($p.Value -isnot [System.Management.Automation.PSCustomObject]) {
+    Deny-UnreadableMap "environment ``$($p.Name)`` in .crew/verify.json is not an object."
+  }
+  $declared = $p.Value.deploy
+  if ($null -ne $declared) {
+    # A bare string is ONE command. Stated rather than left to the `foreach`,
+    # which already treats it that way, because promote-gate.sh has to
+    # normalise it explicitly (it iterated the string's characters) and the two
+    # flavours must be reading the same shape for the same reason.
+    if ($declared -is [string]) { $declared = @($declared) }
+    if ($declared -isnot [array] -or @($declared | Where-Object { $_ -isnot [string] }).Count -gt 0) {
+      Deny-UnreadableMap "environment ``$($p.Name)`` in .crew/verify.json has a ``deploy`` that is not a command or a list of commands."
+    }
+    foreach ($dep in $declared) {
+      if ($dep -and ($cmd -like "*$dep*" -or $dep -like "*$cmd*")) { $envName = $p.Name; break }
+    }
   }
   if ($envName) { break }
 }
