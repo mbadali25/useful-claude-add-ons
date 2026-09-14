@@ -56,8 +56,9 @@
               "python3 scripts/sync-updates.py --check",
               "./scripts/_test/menu-groups.sh",
               "bash scripts/_test/check-powershell.sh",
+              "bash scripts/_test/ps-install-keys.sh",
               "bash -n scripts/install-prerequisites.sh"],
-      "why": "46s total, timed end to end on 2026-09-13. This is marketplace.yml's own step list for scripts/, minus the two suites that live under plugin/. The install scripts are a matched pair (CLAUDE.md) and menu-groups.sh is what proves the sub-picker keys still line up. version-drift.py (5s) builds six throwaway git repos to pin check-marketplace's own history walk by commit SHAPE; its two arms are each broken by a different case, so neither can be deleted quietly." },
+      "why": "46s total when it was timed end to end on 2026-09-13, plus 10s for ps-install-keys.sh, added and timed on 2026-09-14 - re-time rather than adding the two figures, the rest were not re-measured that day. This is marketplace.yml's own step list for scripts/, minus the two suites that live under plugin/. ps-install-keys.sh is the only committed check that RUNS install-prerequisites.ps1: it drives the key-taking row under a stub claude, and SKIPS (exit 0, loudly) off Windows, where that script cannot run at all - so on the Linux CI runner it reports rather than checks, and this local rule is where it does its work. The install scripts are a matched pair (CLAUDE.md) and menu-groups.sh is what proves the sub-picker keys still line up. version-drift.py (5s) builds six throwaway git repos to pin check-marketplace's own history walk by commit SHAPE; its two arms are each broken by a different case, so neither can be deleted quietly." },
 
     { "paths": ["plugin/crew/hooks/scripts/verify-gate.sh",
                 "plugin/crew/hooks/scripts/verify-gate.ps1",

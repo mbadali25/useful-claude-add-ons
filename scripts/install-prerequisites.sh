@@ -50,6 +50,10 @@
 #   --obsidian-mcp-url <url>   vault-server MCP endpoint (default http://127.0.0.1:27123/mcp/)
 #   --obsidian-mcp-key <key>   Local REST API key; without it the item explains and skips
 #                         root the Obsidian item suggests for the vault (default: ~/repos)
+#   --perplexity-api-key <key> Perplexity API key; falls back to $PERPLEXITY_API_KEY in
+#                         the environment, and without either the item explains and skips
+#                         (both key flags also take the --flag=value spelling; an
+#                         unknown option is reported with any value redacted)
 
 set -uo pipefail
 
@@ -114,7 +118,21 @@ while [ $# -gt 0 ]; do
     --obsidian-repo-root) OBSIDIAN_REPO_ROOT="${2:-$HOME/repos}"; shift ;;
     --obsidian-mcp-url)   OBSIDIAN_MCP_URL="${2:-}"; shift ;;
     --obsidian-mcp-key)   OBSIDIAN_MCP_KEY="${2:-}"; shift ;;
-    *) echo "Unknown option: $1" >&2 ;;
+    # The flag wins over the environment; with neither, the item explains and skips.
+    # The key itself is never echoed, logged, or put in a step name.
+    --perplexity-api-key) PERPLEXITY_API_KEY="${2:-}"; shift ;;
+    # The '--flag=value' spelling, for the two flags that carry a secret. Without
+    # these it fell through to the unknown-option arm below, which printed the whole
+    # token - so a key typed the wrong way round landed on the terminal and in any
+    # log capturing it, and the run then carried on as though no key had been given.
+    --obsidian-mcp-key=*)   OBSIDIAN_MCP_KEY="${1#*=}" ;;
+    --perplexity-api-key=*) PERPLEXITY_API_KEY="${1#*=}" ;;
+    # Report the option NAME, never the value beside it: an unknown option is exactly
+    # where a mistyped secret arrives. A bare token is redacted whole - it is most
+    # likely the value of the option before it.
+    --*=*) echo "Unknown option: ${1%%=*}=<redacted>" >&2 ;;
+    -*)    echo "Unknown option: $1" >&2 ;;
+    *)     echo "Unknown option: <redacted value>" >&2 ;;
   esac
   shift
 done
@@ -723,9 +741,9 @@ MENU_KEYS=(
   "aws-mcp" "azure-mcp" "playwright-mcp" "obsidian-mcp"
   "supabase" "context7" "playwright-cli" "skillui" "strix" "obsidian"
   "repo-plugins" "graphify" "ms-mcp"
-  "aws-docs-mcp" "aws-pricing-mcp" "ms-learn-mcp"
+  "aws-docs-mcp" "aws-pricing-mcp" "ms-learn-mcp" "perplexity-mcp"
 )
-MENU_DEFAULT=(1 1 1 1 1 1 1 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+MENU_DEFAULT=(1 1 1 1 1 1 1 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
 MENU_NAME=(
   "Prerequisites: git, nodejs, npm, python3, pip3 (needs root or sudo)"
   "Claude Code CLI (@anthropic-ai/claude-code) + PATH export + update check"
@@ -751,6 +769,7 @@ MENU_NAME=(
   "MCP server: AWS Knowledge (docs + API refs, hosted by AWS, no credentials)"
   "MCP server: AWS Pricing (Price List API - needs AWS creds with pricing:*)"
   "MCP server: Microsoft Learn (Azure, SharePoint and Power Automate docs, no credentials)"
+  "MCP server: Perplexity (web-grounded search for the web-research skill - needs an API key)"
 )
 
 SELECTED=""
@@ -2157,6 +2176,31 @@ install_obsidian_mcp() {
 }
 if is_selected "obsidian-mcp"; then
   run_step "Register the Obsidian vault server MCP endpoint" install_obsidian_mcp
+fi
+
+install_perplexity_mcp() {
+  # The key is per-account and metered, so it cannot be baked in: it comes from
+  # --perplexity-api-key, or from PERPLEXITY_API_KEY in the environment. A
+  # whitespace-only value counts as absent - registering with an empty key gives a
+  # server that looks installed and can never authenticate.
+  case "${PERPLEXITY_API_KEY:-}" in
+    *[![:space:]]*) ;;
+    *)
+      skip "Perplexity MCP: no --perplexity-api-key given and PERPLEXITY_API_KEY is not set"
+      printf '        Create a key under your Perplexity account settings (API):\n'
+      printf '          https://docs.perplexity.ai/getting-started/quickstart\n'
+      printf '        Then re-run with the key:\n'
+      printf '          ./install-prerequisites.sh --select perplexity-mcp --perplexity-api-key <key>\n'
+      printf '        This is the server the web-research skill calls.\n'
+      return 0
+      ;;
+  esac
+  add_mcp_server "perplexity" "PERPLEXITY_API_KEY=${PERPLEXITY_API_KEY}" \
+    npx -y @perplexity-ai/mcp-server || return 1
+  ok "Backs the web-research skill. Restart the session, then 'claude mcp list' shows it as Connected."
+}
+if is_selected "perplexity-mcp"; then
+  run_step "Register the Perplexity MCP server" install_perplexity_mcp
 fi
 
 

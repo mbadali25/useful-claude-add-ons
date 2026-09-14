@@ -208,8 +208,8 @@
     {
       "name": "web-research",
       "source": "./skills/web-research",
-      "description": "Live-web research through the already-registered Perplexity MCP server - routes each question to search, ask, research or reason, with recency and domain filters, and hands library and API reference to Context7 instead.",
-      "version": "1.0.0"
+      "description": "Live-web research through the Perplexity MCP server - routes each question to search, ask, research or reason, with recency and domain filters, and hands library and API reference to Context7 instead.",
+      "version": "1.0.1"
     },
     {
       "name": "web-testing-playwright",

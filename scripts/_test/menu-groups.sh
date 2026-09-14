@@ -7,6 +7,10 @@
 # parts that can be checked without a terminal; the cursor behaviour itself needs a
 # pty and is exercised by hand.
 #
+# Case 8 is not a group case: it covers the one menu row that takes a SECRET on the
+# command line, so it lives here rather than in a file of its own - this is where the
+# end-to-end runs of the install script already are.
+#
 # Needs: bash. Installs nothing and touches no real config - the end-to-end cases run
 # the script with --dry-run and CLAUDE_CONFIG_DIR pointed at a temp directory, so it
 # settles the selection, prints it and stops.
@@ -170,6 +174,88 @@ one="$(CLAUDE_CONFIG_DIR="$TMP/cfg" PATH="$TMP/bin:$PATH" \
   bash "$SCRIPT" --select community --community ppt-master 2>&1 \
   | sed 's/\x1b\[[0-9;]*m//g' | grep -c '^==> Marketplace:')"
 check "one plugin -> one marketplace step"         "1" "$one"
+
+echo "8. the Perplexity row registers with a key, and never prints one"
+# This row is the only one that takes a secret on the command line, so the cases that
+# matter are: no key at all, a blank key, the environment fallback, and - the one that
+# would be a real incident - the key turning up in the script's output.
+#
+# The stub records what it was asked for in a FILE, not on stdout: a stub that echoed
+# its arguments would put the key in the captured output itself and make the
+# "never printed" case pass or fail for the wrong reason.
+cat > "$TMP/bin/claude" <<'STUB'
+#!/bin/sh
+printf '%s\n' "$*" >> "$CLAUDE_STUB_LOG"
+if [ "$1" = "mcp" ] && [ "$2" = "list" ] && [ -n "${CLAUDE_STUB_MCP_LIST:-}" ]; then
+  printf '%s\n' "$CLAUDE_STUB_MCP_LIST"
+fi
+exit 0
+STUB
+chmod +x "$TMP/bin/claude"
+SENTINEL='PPLX-SENTINEL-DO-NOT-PRINT'
+run_perplexity() {
+  # $1 the value of PERPLEXITY_API_KEY for the run ('-' for unset); the rest are extra
+  # flags. Leaves the run's output in $TMP/pplx.out and the stub's calls in $TMP/pplx.log.
+  local envkey="$1"; shift
+  : > "$TMP/pplx.log"
+  if [ "$envkey" = "-" ]; then
+    CLAUDE_CONFIG_DIR="$TMP/cfg" PATH="$TMP/bin:$PATH" \
+      CLAUDE_STUB_LOG="$TMP/pplx.log" CLAUDE_STUB_MCP_LIST="${MCP_LIST:-}" \
+      bash "$SCRIPT" --select perplexity-mcp "$@" >"$TMP/pplx.out" 2>&1
+  else
+    CLAUDE_CONFIG_DIR="$TMP/cfg" PATH="$TMP/bin:$PATH" \
+      CLAUDE_STUB_LOG="$TMP/pplx.log" CLAUDE_STUB_MCP_LIST="${MCP_LIST:-}" \
+      PERPLEXITY_API_KEY="$envkey" bash "$SCRIPT" --select perplexity-mcp "$@" >"$TMP/pplx.out" 2>&1
+  fi
+}
+# -e is not decoration: one of the patterns below starts with '--env', which grep
+# would otherwise read as an option and refuse, reporting a genuine match as 'no'.
+saw()     { grep -qF -e "$1" "$TMP/pplx.out" && echo yes || echo no; }
+logged()  { grep -qF -e "$1" "$TMP/pplx.log" && echo yes || echo no; }
+
+MCP_LIST=""
+run_perplexity -
+check "no key at all: the row skips"        yes "$(saw 'no --perplexity-api-key given')"
+check "and registers nothing"               no  "$(logged 'mcp add')"
+check "and says where to get one"           yes "$(saw 'docs.perplexity.ai')"
+
+run_perplexity '   '
+check "a whitespace-only key counts as none" yes "$(saw 'no --perplexity-api-key given')"
+check "and still registers nothing"          no  "$(logged 'mcp add')"
+
+run_perplexity - --perplexity-api-key "$SENTINEL"
+check "--perplexity-api-key registers the server" \
+  yes "$(logged "mcp add --scope user perplexity --env PERPLEXITY_API_KEY=$SENTINEL -- npx -y @perplexity-ai/mcp-server")"
+check "and the key is NOWHERE in the output"  no  "$(saw "$SENTINEL")"
+
+run_perplexity "$SENTINEL"
+check "PERPLEXITY_API_KEY is the fallback"    yes "$(logged "--env PERPLEXITY_API_KEY=$SENTINEL")"
+check "and that key is not printed either"    no  "$(saw "$SENTINEL")"
+
+# The real 'claude mcp list' puts a tick before "Connected"; the name is all the
+# script's parser reads off the line, and this file stays ASCII.
+run_perplexity - "--perplexity-api-key=$SENTINEL"
+check "the --flag=value spelling works too"   yes "$(logged "--env PERPLEXITY_API_KEY=$SENTINEL")"
+check "and does not print the key"            no  "$(saw "$SENTINEL")"
+
+# The '=' spelling used to fall through to the unknown-option arm, which echoed the
+# whole token - so the way to get this wrong was also the way to print the key.
+run_perplexity - "--not-a-real-flag=$SENTINEL" --perplexity-api-key "$SENTINEL"
+check "an unknown --flag=value is redacted"   yes "$(saw 'Unknown option: --not-a-real-flag=<redacted>')"
+check "and its value is not printed"          no  "$(saw "$SENTINEL")"
+run_perplexity - --not-a-real-flag "$SENTINEL" --perplexity-api-key "$SENTINEL"
+check "a bare value after one is redacted"    yes "$(saw 'Unknown option: <redacted value>')"
+check "and is not printed either"             no  "$(saw "$SENTINEL")"
+
+MCP_LIST="perplexity: npx -y @perplexity-ai/mcp-server - Connected"
+run_perplexity - --perplexity-api-key "$SENTINEL"
+check "an already-registered server is skipped" yes "$(saw "MCP server 'perplexity' already registered")"
+check "and is not re-added"                     no  "$(logged 'mcp add')"
+# Pinned on BOTH sides: scripts/_test/ps-install-keys.sh asserts the .ps1 prints this
+# same note on this same path. It did not - it returned before the note - so the row
+# said one thing on Linux and another on Windows.
+check "and the note is printed anyway"          yes "$(saw 'Backs the web-research skill')"
+MCP_LIST=""
 
 echo
 if [ "$FAIL" -eq 0 ]; then green "$PASS passed, 0 failed"; exit 0; fi

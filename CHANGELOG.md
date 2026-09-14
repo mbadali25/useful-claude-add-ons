@@ -6,6 +6,27 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
+- **Menu item 25, `perplexity-mcp`: register the Perplexity MCP server.** Off by
+  default like every row from 9 on, and added at the END of both catalogs so no
+  existing number moves. Registers `npx -y @perplexity-ai/mcp-server` with
+  `--env PERPLEXITY_API_KEY=<key>`, through the same `add_mcp_server` /
+  `Add-McpServer` helper every other row uses, so an already-registered server is
+  reported and skipped rather than re-added. The key comes from
+  `--perplexity-api-key` / `-PerplexityApiKey`, falling back to `PERPLEXITY_API_KEY`
+  in the environment; with neither — or with a blank or whitespace-only value — the
+  item prints where to create one and **skips**, because a server registered with an
+  empty key looks installed and can never authenticate. Neither script ever echoes,
+  logs or interpolates the key, and `scripts/_test/menu-groups.sh` case 8 asserts
+  that with a sentinel key: it greps the whole captured run for the value and fails
+  if it appears. That suite's stub records the `claude` command line in a file rather
+  than on stdout for exactly that reason. This is the server
+  [`web-research`](skills/web-research/) calls.
+- **`check_menu_parity` also counts `MENU_NAME`.** `MENU_KEYS` order and
+  `MENU_DEFAULT` length were checked; the labels array was not, so a row added to
+  `MENU_KEYS` alone passed every gate and shifted every label after it onto the next
+  item's text — the `obsidian-mcp` bug, recorded further down this file. Sabotaged:
+  deleting the new label fails the check with "MENU_NAME has 24 labels but MENU_KEYS
+  has 25 rows".
 - **`web-research` 1.0.0: makes live-web research fire on intent rather than on
   the word "perplexity".** It registers nothing — the `perplexity` MCP server is
   already registered globally, and the skill's whole job is routing: which of
@@ -42,6 +63,52 @@ All notable changes to this repository are documented here. Format follows [Keep
   skill also warns against the probe that looks obvious and is not:
   `npx -y @perplexity-ai/mcp-server --help` parses no argv, so it hangs on stdin
   with a key and exits 1 without one.
+
+### Fixed — install scripts
+
+- **A key given as `--perplexity-api-key=<key>` was printed on the terminal.** The
+  `=` spelling matched no arm of the argument loop, so it fell through to
+  `*) echo "Unknown option: $1"`, which echoed the whole token — the secret, verbatim,
+  into the terminal and any log capturing it — and the run then carried on as though
+  no key had been given and skipped the row. Both key flags now accept the `=` form
+  (`--obsidian-mcp-key` has the same shape and the same hole, so it is fixed in the
+  same line), and the unknown-option arm reports `--some-flag=<redacted>` for a
+  `=` token and `<redacted value>` for a bare one. PowerShell had the identical
+  defect one layer lower: it does not bind `-Name=value` at all, and its binder error
+  quoted the whole token, so the fix there is a `ValueFromRemainingArguments`
+  parameter that catches unbound tokens before the binder can print them. A
+  consequence worth knowing: an unrecognised option on Windows now warns and the run
+  continues, as it always has on Linux, where it used to abort the run.
+- **The Perplexity row's closing note was printed on Linux and not on Windows.** The
+  `.sh` prints it after `add_mcp_server` returns, which includes the
+  already-registered path; the `.ps1` passed it as `-Note`, which `Add-McpServer`
+  emits only where it actually registered. Windows showed the SKIP alone. The `.ps1`
+  now prints the note itself, after the call.
+- **`scripts/_test/ps-install-keys.sh`: the first committed check that runs
+  `install-prerequisites.ps1`.** Nineteen cases over the key-taking row — no key, a
+  whitespace-only key, the flag, the `=` spelling, the environment fallback, unknown-
+  option redaction, and the already-registered path including that note — under a stub
+  `claude` that records its command line to a file rather than stdout, so "the key is
+  never printed" cannot pass for the wrong reason. It SKIPS loudly off Windows, where
+  that script cannot start. Sabotage-proven: restoring `-Note` fails the note case,
+  and dropping the `=` handling fails four.
+- **`INSTALLATION.md` no longer claims "Neither script ever prints the key."** It was
+  an unqualified security absolute that the repro above falsified, and nothing checks
+  it. It now states what the item's own output does and does not contain.
+
+### Changed
+
+- **`web-research` 1.0.1: the operator section now describes both ways the server
+  arrives.** It read "Perplexity is registered **globally** ... Nothing in this repo
+  registers it, and nothing should" — a design assertion that menu item 25 reverses,
+  and the kind of half-change that looks correct until someone holds both halves.
+  Rewritten to name the two paths (by hand in `~/.claude.json`, or by the
+  installers' row 25) and to say the skill does not care which; `claude mcp list`
+  is still the probe. The same claim in the file's opening paragraph and in the
+  marketplace description went with it, and the catalog rows in `README.md` and
+  `skills/README.md` no longer say "already registered globally". Either path
+  leaves the key on disk in the MCP registration, which the section now states,
+  since that is the one copy anything should reference.
 
 ### Fixed
 
