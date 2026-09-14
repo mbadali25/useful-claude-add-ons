@@ -124,14 +124,22 @@ unchanged position despite the file's other changes.)
 - DERIVED `CHANGELOG.md:5` — the `## [Unreleased]` heading. Position unchanged
   despite the file growing by roughly 1400 lines since the previous anchor.
 - `README.md:12` and `:18` — the bootstrap one-liners, **re-pinned
-  `9ea10e21` -> `1b19e5d80513cbd170a7271d59bd246c98e0ec03` on 2026-09-14**
-  because both install scripts changed in `1b19e5d8`, which registered the
-  `web-research` skill. Re-pin by running the same check the old pin passed:
+  `9ea10e21` -> `1b19e5d8` -> `0a2d49b069bd178092e75a8cfd1a1c9df6690cd3`,
+  both moves on 2026-09-14** — first because `1b19e5d8` registered the
+  `web-research` skill, then because `0a2d49b0` added menu item 25, the
+  Perplexity MCP server. Re-pin by running the same check the old pin passed:
   `git log --oneline <pinned-sha>..HEAD -- scripts/install-prerequisites.sh
   scripts/install-prerequisites.ps1`. Empty output means the pin is current;
   any commit listed means both URLs are serving a script that no longer
   matches the repo, and the pin must move. That command now returns nothing
-  at `1b19e5d8`.
+  at `0a2d49b0`.
+
+  **Two pin moves in one day is the rate to expect, not an anomaly.** Any
+  change registering a marketplace entry edits both install scripts, because
+  registration means touching both in the same commit. So the pin goes stale
+  on essentially every entry that ships. Treat the re-pin as part of merging
+  such a change rather than as periodic maintenance, and do not read a recent
+  move as evidence the pin is fresh.
 
   **A third site carries the same SHA and the runbook does not mention it.**
   `docs/guides/Running-a-Mailbox-Job.json:18` embeds the PowerShell one-liner
