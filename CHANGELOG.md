@@ -6,6 +6,215 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Fixed
 
+- **`crew` 0.19.50: two fixture failures that read as test results.** Codex
+  round 4 - one BLOCK, one FIX, both in `scripts/_test/crew-ignore-policy.py`
+  rather than the checker, and both the same class: a suite reporting on itself
+  rather than on the code.
+  The fixture ran `git add -A -f` with `check=False` and discarded the result.
+  The checker reads its sources from `git ls-files`, so an empty index means it
+  never sees the shipped template - and the "template losing its marker" case,
+  which expects exactly one `does not carry` finding, then PASSES because the
+  fixture was never built. Reproduced directly before fixing: with the index
+  staged and with it empty, that case produced the same single finding both
+  times. Staging is now checked, and so is the resulting index - every file
+  written must appear in `git ls-files`, or the fixture raises. This is the
+  neighbour of the `git init` check added in 0.19.49, which is the shape every
+  round of this review has had.
+  The suite-agreement check grepped one file for single lines starting with
+  `assert` that contained both `.approved-*` and `.index(`. It now parses with
+  `ast` and inspects whole `Assert` statements via `ast.unparse`, so the same
+  contradiction written across several lines - the form a reformat produces -
+  is caught. It also asserts the expected test EXISTS by name, because the
+  grep version passed on an empty file, a renamed test and a deleted one: a
+  check that can pass by finding nothing is the same bug one level up.
+
+- **`crew` 0.19.49: the fix for a false PASS on a leading space became a false
+  FAIL on a trailing one.** Round 2 blocked because `.strip()` normalised a
+  broken rule into a valid one. The fix made handling verbatim. Round 3 blocks
+  because verbatim comparison rejects `.crew/* `, which git honours - the same
+  rung-short pattern, inverted. The right answer was neither: git treats the two
+  ends of a line differently, so presence checks now use `_git_canonical`, while
+  the behavioural probe still sees the original text.
+  Probed directly rather than taken from the documentation, and one result is
+  not what "strip trailing whitespace" would predict: a trailing SPACE is
+  stripped by git, a trailing TAB is **not** (`.crew/*<TAB>` matched nothing), a
+  backslash-escaped trailing space is literal, a leading space is significant,
+  and a trailing `\r` is removed. A blanket `rstrip()` would have accepted the
+  tab - so that mutation is now its own regression case.
+  **Two committed suites disagreed about what was correct.**
+  `test_verify_absent_and_diagram_kind.py` asserted `.crew/.approved-*` must sit
+  below the un-ignore list, while `scripts/_test/crew-ignore-policy.py` asserted
+  the alternate ordering PASSES. Both green, and whichever a reader opened first
+  looked authoritative. The ordering assertion is gone - git says position does
+  not matter - and the agreement between the two suites is now itself checked, so
+  this specific contradiction cannot come back silently.
+  That test file was a SIXTH file carrying the withdrawn claims, and the 0.19.48
+  sweep reported five. The sweep was the problem: it grepped `--include="*.md"`
+  for particular wordings, so a `.py` file asserting the same thing in code was
+  invisible to it. Re-run across every tracked file with no extension filter and
+  on the concept rather than the phrasing.
+  The suite is now runnable by someone other than its author. In a shell with
+  `GIT_WORK_TREE` set it reported 28 of 34 failures - the fixture's own `git
+  init` failing, nothing to do with the code under test. Its git calls are
+  scrubbed, a failed fixture init raises instead of cascading, and it passes
+  identically under `GIT_WORK_TREE`, `GIT_DIR`, `GIT_CONFIG_GLOBAL` and
+  `MSYS_NO_PATHCONV`, and from a fresh clone.
+  One self-inflicted bug worth recording: the scrub first called `clean_env()`
+  as the argument of an `os.environ.update()` that followed `os.environ.clear()`,
+  so it read an already-emptied environment and python could not find git at all.
+  Same shape as this repo's `open(p, "w")` landmine - the destructive call
+  happening before the value it needs exists. Compute first, then clear.
+  Also removed five stray `\r\r\n` sequences in `check-marketplace.py` left by
+  line-based patching on a CRLF file; pylint reported them as
+  `E0001: invalid non-printable character U+000D` while the gate still ran.
+
+- **`crew` 0.19.48: the round-1 fix normalised the bug away, and the probe that
+  replaced it could not tell a fatal git error from a clean result.** Codex
+  re-reviewed and returned two BLOCKs, both inside the code written to fix the
+  previous round - this repo's documented pattern of a fix being right about its
+  own case and one rung short of its neighbour.
+  `_active_rules` called `.strip()`, so `!.crew/endpoints.json` and
+  ` !.crew/endpoints.json` became the same string: the checker REPAIRED a broken
+  rule and then verified the repair. Measured - with the leading space git leaves
+  `.crew/endpoints.json` IGNORED while the next line's `.crew/verify.json` is
+  correctly un-ignored. Rules are now kept verbatim. The comment test was
+  measured too, and only a line whose FIRST character is `#` is a comment: git
+  treats `  # foo` as a pattern, so stripping before that test would have
+  dropped a line git obeys.
+  `_ignore_behaviour` read any non-zero `git check-ignore` status as "not
+  ignored", merging 1 (checked, not ignored) with 128 (fatal, no answer), and
+  discarded the `git init` status entirely. Mocking either produced an empty
+  finding list and a clean report - the recurring bug this repo names, an unknown
+  wearing the label of a check that happened. 0, 1 and everything else are now
+  three outcomes, and anything that is not 0 or 1 is reported as UNVERIFIABLE
+  rather than resolved either way.
+  The probe is isolated from the machine, and the two halves of that were
+  measured rather than asserted. The environment scrub is load-bearing: with
+  `GIT_WORK_TREE` inherited, `git init` exits 128 and the probe answers nothing;
+  stripping `GIT_*` fixes it, run both ways. The `-c core.excludesFile=` flags
+  are NOT demonstrated to change any verdict - a repository `.gitignore` outranks
+  both `core.excludesFile` and `info/exclude` in git's precedence, so nothing at
+  those layers can overturn a rule under test. They are kept as free insurance
+  and documented as unproven, because the alternative is a comment claiming a
+  guarantee nobody checked.
+  `.crew/verify.json`'s interpreter resolution now tries `pwsh.exe` and the
+  Windows locations with and without the suffix: under WSL the reachable binary
+  is the Windows one and is named `pwsh.exe`, so the previous list reported TOOL
+  MISSING on a box where PowerShell was installed and usable.
+  Two rationale corrections from 0.19.47 had not propagated. `plugin/crew/
+  README.md`, `crew-setup/SKILL.md`, `phases.md`, `CLAUDE.md` and
+  `plugin/PLUGINS.md` still said the ordering of `.crew/.approved-*` was
+  load-bearing, or that the GATE writes the approval marker. The operator creates
+  it; the gate writes `.crew/.deploy-in-flight`. Found by grepping the claim
+  rather than the three cited lines.
+
+- **`crew` 0.19.47: the checker shipped in 0.19.46 read comments as rules, and
+  three mutations proved it.** Codex review of PR #161 returned DO NOT MERGE.
+  `check_crew_ignore_policy` extracted paths from the raw source block, so a
+  COMMENTED-OUT negation still counted, a deleted rule whose explanatory comment
+  named the path still counted, and a deleted `.crew/*` whose comment mentioned
+  it still satisfied the base-ignore check. Each mutation produced zero
+  failures. Extraction now runs over ACTIVE rules only - non-blank, non-comment.
+  The deeper fix is that the check stopped reading the rules and started running
+  them. `_ignore_behaviour` writes the rules into a throwaway repo and asks
+  `git check-ignore` what they actually do. That is the same program that
+  decides it for real, and it subsumes every ordering question at once -
+  including `.crew/*` written BELOW the negations, which suppresses all three
+  while satisfying every is-this-line-present assertion. All four mutations were
+  re-applied to the real files and the real gate went RED for each.
+  Two claims this repo made about itself were disproven by that probe and are
+  corrected rather than quietly dropped. `.crew/.approved-*` and `.crew/*.lock`
+  are **redundant** belt-and-braces: with both deleted, `git check-ignore`
+  returns byte-identical verdicts, so omitting the explicit rule does NOT make
+  the approval marker trackable, and the `.gitignore` comment plus `TODO.md`
+  section that said otherwise were wrong. The gate also does not WRITE that
+  marker - the operator creates it (`promote-gate.sh:235`); the file the gate
+  writes is `.crew/.deploy-in-flight` (`:288`).
+  **`.crew/verify.json` was not clone-safe and the sweep that said it was looked
+  for the wrong thing.** It searched for `C:\` and `/Users/` and never for the
+  Git Bash `/c/...` form, which is exactly what rule 129 contained: a hardcoded
+  `"/c/Program Files/PowerShell/7/pwsh"`. `verify-gate.sh` executes that and
+  blocks completion on a non-zero exit, so this PR - which is what makes the map
+  travel - would have blocked every Linux clone, including one with pwsh ON
+  PATH. The rule now resolves its interpreter: bare `pwsh` first, then the two
+  Windows locations, and exit 127 with TOOL MISSING on stderr when none
+  resolves, because a tool that could not run must never report as a check that
+  passed. The withdrawn clone-safety claim is recorded in `.gitignore` rather
+  than deleted - "already checked for absolute paths" is what stopped anyone
+  looking twice.
+  `TODO.md` also claimed `declare_endpoint` was the only writer of
+  `endpoints.json`, quoting that function's own docstring, which asserts it and
+  is wrong about its own module: `record_scan_artifact` at
+  `crew_endpoints.py:757` writes the ledger too. Neither is on a promote or
+  incident path, so `promote-gate.sh` still does not change - but the evidence
+  under that conclusion did.
+  One more found while sabotage-testing: the 0.19.46 CHANGELOG entry named the
+  marker, which silently made an append-only history file a marked source. It
+  passed only because the policy it describes is today's; the next entry
+  recording a change to the list would have failed for being accurate about the
+  past. History is excluded, with a regression case.
+
+- **`crew` 0.19.46: the repo stated three `.crew/` ignore policies at once, and
+  one of them was in the same file that contradicted it.** `.gitignore` ignored
+  `.crew/*` and re-admitted `codemap/` and `endpoints.json` - then, fifty lines
+  below those negations, a comment block asserted that ".crew/ and .work/ are
+  ALREADY fully ignored above" and that "the whole of crew's state - config.json,
+  verify.json, STATUS.md, INDEX.md, PROMOTIONS.md - is local to each machine and
+  never committed". Both halves shipped, in one file, for months. Elsewhere
+  `README.md` said `.crew/config.json` "is committed" and used that as the entire
+  rationale for the `platform-sync` hook; `commands/review.md` and
+  `crew-verification/SKILL.md` each carried a paragraph correcting an *earlier*
+  wrong claim in the opposite direction. The policy, now stated in one form
+  everywhere: `.crew/*` is ignored and a NAMED list is un-ignored -
+  `!.crew/codemap/`, `!.crew/endpoints.json`, `!.crew/verify.json`. `.work/`
+  stays ignored entirely, `config.json` stays machine-local, and
+  `.crew/.approved-*` sits BELOW the negations so promote-gate's own approval
+  marker can never become trackable.
+  `check_crew_ignore_policy` in `scripts/check-marketplace.py` is what stops it
+  drifting again: the list is read from `.gitignore` (the only copy git obeys)
+  and every file carrying the `crew-ignore-policy:list` marker must state the
+  same set. Marker-keyed on purpose, like `check_self_claims` - `TODO.md` and
+  `commands/review.md` mention one or two paths in passing and must NOT be read
+  as declaring the list. `scripts/_test/crew-ignore-policy.py` asserts that
+  silence alongside the failures, 16 cases, and each of the four guard branches
+  was sabotaged individually and confirmed to take the suite red.
+  The marker carries a colon because the first version did not: a bare
+  `crew-ignore-policy` is a legal filename, and the CI step that runs the suite
+  names the file, so `.github/workflows/marketplace.yml` was flagged for
+  declaring a policy it was only citing.
+  Review caught a live false positive before merge, worth keeping visible: the
+  ordering assertion searched the WHOLE markdown file, so one sentence written
+  below §3c's fence would move the last `!.crew/` past `.crew/.approved-*` and
+  fail a correct template - the "fails correct lines" mode, inside the check
+  written to prevent it. Ordering is now scoped to the fenced block, with a
+  must-allow case for prose on either side of it. The same round found the
+  no-fenced-block path reporting "does not carry the marker" about a file that
+  plainly does; carrying the marker and declaring a list are now separate facts.
+  **This repo now tracks `.crew/verify.json`, which is a practice change rather
+  than a docs fix.** Its own `CLAUDE.md` already described that file as "the
+  mechanism" for per-path verification while nothing tracked it, so every clone
+  read "no verification map" and selected no specialist - indistinguishable from
+  "no rule matched". Checked clone-safe first: no URL, hostname or Windows
+  absolute path. One thing the check surfaced and did not fix -
+  `.crew/verify.json:129` runs `"/c/Program Files/PowerShell/7/pwsh"`, an
+  absolute path in Git Bash form that carries no secret but cannot run on a
+  Linux clone.
+  `promote-gate.sh` was **not** changed. Its clean-tree check does run before the
+  step that tells you to create the approval marker, but under this list no file
+  that is both tracked and written during a promote or an incident exists -
+  `git check-ignore` on ten candidate paths, plus `crew_endpoints.py:258`
+  naming `declare_endpoint` as the sole writer of `endpoints.json`. The reorder
+  is written down in `TODO.md` with the evidence instead, because a blocking hook
+  needs a sabotage-tested regression suite and spending one on an unreachable
+  deadlock buys nothing. The reachable version of that deadlock is a consuming
+  repo that adopts the un-ignore list but omits `.crew/.approved-*`, and the
+  shipped template in `crew-setup/SKILL.md` §3c now lists it explicitly.
+  `test_verify_absent_and_diagram_kind.py` had a trip-wire asserting the map was
+  NOT tracked, whose docstring said that if it ever became tracked "this test
+  fails and the wording in review.md gets revisited instead of quietly going
+  stale". It fired, and the wording was revisited. It is re-armed pointing the
+  other way, and now also pins the ordering the policy depends on.
+
 - **`crew` 0.19.45: `crew_state.py` split, because the alternative was shaving
   another comment.** The module was 3299 lines against `max-module-lines =
   3300`. It had been one line from failing CI three times, and each time

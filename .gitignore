@@ -276,6 +276,11 @@ __marimo__/
 # network config and shared secrets; never commit)
 .meraki-snapshots/
 
+# crew-ignore-policy:list - this stanza is the AUTHORITY for the `.crew/` un-ignore
+# list - it is what git actually obeys. `check_crew_ignore_policy` in
+# scripts/check-marketplace.py reads the list from here and fails any file
+# carrying the same marker that states a different set.
+#
 # Per-repo crew state. Machine-specific by nature: obsidian.vaultPath and
 # boardDir are absolute paths that exist on one machine, and pm.authority is a
 # trust decision its owner makes, not one a clone should inherit. Treat it like
@@ -301,6 +306,28 @@ __marimo__/
 # an obligation anyone else can see or discharge, so the ledger has to
 # travel with the repo like the code it describes does.
 !.crew/endpoints.json
+
+# ...and the verification map. This one is a PRACTICE CHANGE, made 2026-09-14,
+# not a restatement of what was already true: `verify.json` was ignored like
+# everything else here, and README/commands/review.md said so. But the map is
+# the per-path rule set - which checks run on which files, which specialist
+# reviews which change - and that is a fact about the CODE, decided once, not a
+# fact about this machine. Ignored, every clone read "no verification map" and
+# selected no specialist, which is indistinguishable from "no rule matched".
+# Clone-safety was claimed here on the strength of a regex sweep for `C:\` and
+# `/Users/`. That sweep did not look for the Git Bash `/c/...` form, and the map
+# contained exactly that: a rule invoking
+# "/c/Program Files/PowerShell/7/pwsh" absolutely, which verify-gate.sh executes
+# and blocks completion on. A Linux clone with pwsh ON PATH would still have been
+# blocked by it. The rule now resolves its interpreter instead, and the withdrawn
+# claim is recorded rather than deleted: "checked for absolute paths" was the
+# thing that made nobody look again. What IS true and re-checkable: the file
+# carries no URL, hostname or credential, and its top-level keys are `_note`,
+# `anchor`, `default`, `rules`, `unmapped`, `version`. Any `run` command added
+# here has to resolve its tools, because this file travels now.
+# The machine-specific half of crew's state is `config.json` (obsidian.vaultPath,
+# boardDir, pm.authority), and that one stays ignored above.
+!.crew/verify.json
 
 # Written by the GitHub Copilot CLI when --model is passed; pins the model for
 # anyone running `copilot` in this repo. crew owns provider model choice
@@ -336,14 +363,34 @@ graphify-out/*
 .work/*.local.md
 
 # --- crew promotion gate ---------------------------------------------------
-# promote-gate.sh refuses to deploy when the tree is dirty and writes its own
-# approval marker into .crew/. .crew/ and .work/ are ALREADY fully ignored above
-# (lines ~268/278), so the whole of crew's state - config.json, verify.json,
+# promote-gate.sh refuses to deploy when the tree is dirty, and separately
+# requires an approval marker at .crew/.approved-<env>-<sha>. The OPERATOR
+# creates that marker; the gate only looks for it (promote-gate.sh:235). The
+# file the gate writes itself is .crew/.deploy-in-flight (promote-gate.sh:288).
+# An earlier version of this comment said the gate writes the approval marker,
+# which made the deadlock sound automatic when it is not.
+#
+# This block used to assert that ".crew/ and .work/ are ALREADY fully ignored
+# above" and that "the whole of crew's state - config.json, verify.json,
 # STATUS.md, INDEX.md, PROMOTIONS.md - is local to each machine and never
-# committed. These entries are redundant belt-and-braces under that, kept
-# because they name the specific files whose tracking would deadlock a
-# promotion. NOTE: because .crew/ is ignored, every clone starts with no crew
-# config and must run /crew:init itself.
+# committed". That was false from the moment `!.crew/codemap/` was added ~50
+# lines above, and it stayed in the file contradicting its own stanza. The
+# policy, stated once: `.crew/*` is ignored, and a NAMED list is un-ignored -
+# `!.crew/codemap/`, `!.crew/endpoints.json`, `!.crew/verify.json`. Everything
+# else under `.crew/`, including `config.json` and `STATUS.md`, is machine-local.
+# `.work/` is ignored entirely, PROMOTIONS.md included.
+#
+# These two entries ARE redundant belt-and-braces, and saying otherwise was the
+# second wrong claim in this block. `.crew/*` already ignores both, and none of
+# the three negations above re-admits either - `git check-ignore` confirms
+# `.crew/.approved-production-abc` and `.crew/x.lock` are ignored with these two
+# lines deleted. They are kept because they NAME the files whose tracking would
+# wedge a promotion, which is documentation a future narrowing of the base
+# ignore would need; they are not what makes the deadlock unreachable today.
+# Their position below the negations is likewise harmless rather than
+# load-bearing. `check_crew_ignore_policy` now proves all of this by asking git
+# instead of reading these lines. Every clone still starts with no crew config
+# and must run /crew:init itself.
 .crew/.approved-*
 .crew/*.lock
 .work/cache/

@@ -7,10 +7,13 @@ not be checked reported as something that was checked and found clean.
    was documented, because it matched on `startswith(kind + "-")`. A diagram
    about one flow is not an overview of all of them, and the repo that has only
    the narrow one is exactly the repo that needs telling.
-2. `/crew:review` step 0b read a `.crew/verify.json` that is absent on every
-   fresh clone (`.gitignore:282`) and selected nobody, which is what it also
-   does when a map exists and matches nothing. Those are different findings and
-   the command must name which one happened.
+2. `/crew:review` step 0b read a `.crew/verify.json` that could be absent and
+   selected nobody, which is what it also does when a map exists and matches
+   nothing. Those are different findings and the command must name which one
+   happened. (Since 2026-09-14 `!.crew/verify.json` is on the `.crew/*` stanza's
+   named un-ignore list and this repo tracks its own map, so the absent case is
+   now a repo that never ran `/crew:init` rather than every fresh clone. The
+   distinction the command has to draw is unchanged.)
 """
 import os
 import subprocess
@@ -135,14 +138,24 @@ def test_review_distinguishes_absent_from_matched_nothing():
     assert "If no matched rule names an agent, skip to step 1." not in text
 
 
-def test_review_does_not_claim_verify_json_is_committed():
-    """The premise was false and load-bearing for the GAP paragraph.
+def test_review_states_the_gap_without_resting_it_on_trackedness():
+    """The premise under the GAP paragraph has now been wrong in BOTH directions.
 
-    `.crew/*` is ignored, so a claim that the map travels between machines
-    sends the reader hunting a tracked file that has never existed here.
+    It first claimed the map "is committed and travels between machines" when
+    `.crew/*` ignored it and nothing tracked it. That was corrected, and this
+    test pinned the correction. On 2026-09-14 the policy changed -
+    `!.crew/verify.json` joined the named un-ignore list - and the correction
+    became the stale claim, so a test asserting the old wording is absent would
+    now be pinning a second wrong reason.
+
+    So this no longer pins EITHER reason. What it pins is the property that
+    survived both: the GAP conclusion must not be derived from whether the map
+    travels. A map that travels makes a named-but-missing agent more likely, not
+    less, because it reaches machines whose roster nobody checked.
     """
     text = _review_text()
-    assert "is committed and travels between machines" not in text
+    assert "machine-local, so it was written against whatever was installed" not in text
+    assert "Tracking the map makes this MORE likely" in text
 
 
 def test_review_states_the_gap_rule_it_used_to_justify_wrongly():
@@ -152,18 +165,32 @@ def test_review_states_the_gap_rule_it_used_to_justify_wrongly():
     assert "Never drop it silently." in text
 
 
-def test_verify_json_really_is_ignored_here():
-    """The claim the fix rests on, checked against the repo rather than
-    asserted. If `.crew/verify.json` ever becomes tracked, this test fails and
-    the wording in review.md gets revisited instead of quietly going stale.
+def test_verify_json_really_is_tracked_here():
+    """The trip-wire fired, and this is it re-armed pointing the other way.
 
-    It asserts NOT-TRACKED, not not-present. It used to assert the file was
-    absent from disk, which is a different claim and a wrong one: `/crew:verify`
-    is a command crew itself ships, and writing `.crew/verify.json` is the whole
-    of what it does. So the moment anyone ran it in this checkout, crew's own
-    suite went red over a file crew had just been asked to create - a test
-    failing for doing the documented thing. Trackedness is what the docstring
-    always claimed and what review.md's wording actually rests on.
+    It used to assert `.crew/verify.json` was NOT tracked, with a docstring
+    saying "if `.crew/verify.json` ever becomes tracked, this test fails and the
+    wording in review.md gets revisited instead of quietly going stale". On
+    2026-09-14 it became tracked, this test went red, and the wording was
+    revisited - which is the whole of what the trip-wire was for.
+
+    It asserted two things after that, and the SECOND one was wrong: that
+    `.crew/.approved-*` must sit below the un-ignore list or the approval marker
+    becomes trackable. Measured with `git check-ignore`, deleting that line
+    entirely changes no verdict, because `.crew/*` already covers the marker and
+    no negation re-admits it - so its position is not load-bearing either.
+
+    That made two suites in this repo disagree about what is correct:
+    `scripts/_test/crew-ignore-policy.py` has a case asserting the alternate
+    ordering PASSES, and this asserted it must fail. A contradiction between two
+    committed suites is worse than either being wrong alone, because whichever
+    one you read first looks authoritative. The ordering assertion is gone.
+
+    What remains is the part that is genuinely about THIS repo: that the base
+    ignore uses the glob rather than a trailing slash, and that the map is
+    tracked. Whether the rules actually behave as claimed is
+    `check_crew_ignore_policy`'s job, and it settles it by asking git rather than
+    by reading the file - which is what caught the wrong assertion above.
     """
     repo = os.path.dirname(os.path.dirname(os.path.dirname(
         os.path.dirname(os.path.abspath(__file__)))))
@@ -172,14 +199,24 @@ def test_verify_json_really_is_ignored_here():
         return  # not a checkout of this repo; nothing to claim
     with open(gitignore, encoding="utf-8") as handle:
         body = handle.read().replace("\r\n", "\n")
-    assert ".crew/*" in body
+    assert ".crew/*" in body, (
+        "`.crew/` with a trailing slash stops git descending into the directory, "
+        "and every `!.crew/...` negation below it silently does nothing."
+    )
+    assert body.index(".crew/*") < body.index("!.crew/verify.json"), (
+        "the base ignore must precede the negations; a `.crew/*` written below "
+        "them suppresses every one."
+    )
+    # NO assertion about where `.crew/.approved-*` sits. It used to be here and
+    # it was wrong - see the docstring. `scripts/_test/crew-ignore-policy.py`
+    # owns rule BEHAVIOUR and proves it against git.
 
     tracked = subprocess.run(
         ["git", "-C", repo, "ls-files", "--error-unmatch", ".crew/verify.json"],
         capture_output=True, text=True, check=False)
-    assert tracked.returncode != 0, (
-        ".crew/verify.json is TRACKED. review.md says the map does not travel "
-        "between machines; if that changed, revisit the wording there."
+    assert tracked.returncode == 0, (
+        ".crew/verify.json is NOT tracked. This repo's README and review.md say "
+        "the verification map travels; if that changed back, revisit them both."
     )
 
 

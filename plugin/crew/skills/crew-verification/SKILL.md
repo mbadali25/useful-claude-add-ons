@@ -144,21 +144,22 @@ Nothing errors, and the finding style simply changes. Namespace the name if you
 meant the other agent.
 
 **A named agent that is not installed is a reported gap, never a silent skip.**
-This is the whole risk of the feature: the map is **machine-local** —
-`.gitignore` ignores `.crew/*`, so `verify.json` is written by whoever ran
-`/crew:init` on this box and travels nowhere. A rule therefore names whatever
-was installed *there*, and on any other machine it can ask for an agent that
-does not exist, quietly reviewing less while nothing about the output looks
-different. `/crew:review` therefore lists every agent a matched rule asked for
+<!-- crew-ignore-policy:list -->
+This is the whole risk of the feature: the map **travels and the agent roster
+does not**. `.gitignore` ignores `.crew/*` with a named un-ignore list —
+`!.crew/codemap/`, `!.crew/endpoints.json`, `!.crew/verify.json` — so the map is
+committed, while the agents a rule names are whatever happened to be installed on
+the box that wrote it. On any other machine a rule can ask for an agent that does
+not exist, quietly reviewing less while nothing about the output looks different. `/crew:review` therefore lists every agent a matched rule asked for
 and could not find, and treats it exactly like a specialist that was skipped.
 
-(This paragraph used to say `.crew/verify.json` "is committed and shared". It
-is not, and never has been here. The conclusion was right and the reason was
-backwards — which is worse than a wrong conclusion, because it sends the reader
-hunting a tracked file that does not exist. `commands/review.md` carried the
-same sentence and was corrected first; this is its neighbour, found by a review
-rather than by the first fix, which is the argument for checking the neighbour
-every time.)
+(This paragraph has now been wrong in both directions. It first said
+`.crew/verify.json` "is committed and shared" when nothing tracked it; that was
+corrected, and `commands/review.md` — its neighbour, found by a review rather
+than by the first fix — was corrected with it. On 2026-09-14 the policy changed
+and the correction became the stale claim: the map is on the un-ignore list and
+IS committed. The conclusion outlived both readings of the mechanism, which is
+the argument for stating the conclusion separately from the reason.)
 
 Two agents, one job, is the failure mode on the other side. Naming `security`,
 `security-auditor` and `security-engineer` on the same rule buys three

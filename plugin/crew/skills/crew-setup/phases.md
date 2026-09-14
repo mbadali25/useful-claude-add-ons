@@ -207,8 +207,14 @@ declares a time-boxed incident, the verify and promote gates stand down and
 record what they skipped, and it expires on its own. Set
 `emergency.standDown: false` if this repository must never skip a gate.
 
-Add `.crew/transcripts/` to `.gitignore` — raw transcripts contain everything
-the session saw, including any secret that reached it.
+<!-- crew-ignore-policy:list -->
+Write the gitignore block from `SKILL.md` §3c — `.crew/*` ignored, the named
+un-ignore list `!.crew/codemap/`, `!.crew/endpoints.json`, `!.crew/verify.json`,
+then `.crew/.approved-*` and the rest. Copy §3c's order for readability; only one
+ordering is load-bearing, and it is that `.crew/*` comes BEFORE the negations —
+written after them it suppresses all three. `.crew/transcripts/` is inside that
+block and is the one nobody may drop: raw transcripts contain everything the
+session saw, including any secret that reached it.
 
 **Done when:** `.crew/config.json` is complete, `claude-md-audit.sh` reports no
 missing sections and no remaining placeholders,
@@ -405,15 +411,20 @@ And `verify-gate.sh` will not let the turn end after a deploy that wrote no
 `.work/PROMOTIONS.md` row. So the log is not paperwork - it is the thing the next
 promotion reads.
 
-**Two consequences to set up now.** `.gitignore` must cover `.crew/` and `.work/`,
-or the gate's own marker file dirties the tree and blocks the next deploy. And
-the rollback runbook needs a literal `last verified: YYYY-MM-DD` line, because
-that is what the hook greps for.
+**Two consequences to set up now.** `.gitignore` must carry the §3c block —
+`.crew/*` (not `.crew/`, which stops git descending and kills every negation),
+the named un-ignore list, then `.crew/.approved-*` and `.work/`. If the approval
+marker is trackable, creating it dirties the tree and the gate then blocks on the
+very file it asked for — note that **you** create `.crew/.approved-<env>-<sha>`,
+not the gate, which only looks for it. And the rollback runbook
+needs a literal `last verified: YYYY-MM-DD` line, because that is what the hook
+greps for.
 
 **Done when:** the `environments` block matches how this repo genuinely ships,
 `.work/PROMOTIONS.md` exists with its header, production has a `rollback` path
 pointing at a runbook that carries a fresh `last verified` line, `.gitignore`
-covers `.crew/` and `.work/`, and `--dry-run` prints a sequence I recognise.
+carries the §3c block (`.crew/*`, the un-ignore list, `.crew/.approved-*` and
+`.work/` below it), and `--dry-run` prints a sequence I recognise.
 
 ## Phase 7 — First real ticket
 

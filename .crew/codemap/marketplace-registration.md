@@ -337,9 +337,13 @@ in that one header block.
 
 **DERIVED.** `.crew/verify.json` — which `CLAUDE.md` names as "the mechanism" for
 per-path verify commands, and which invokes this gate as
-`python scripts/check-marketplace.py` — is **gitignored** via `.gitignore:282`
-(`.crew/*`), with `!.crew/codemap/` at `:291` and `!.crew/endpoints.json` at
-`:298` re-admitting two paths beside it and nothing else.
+`python scripts/check-marketplace.py` — **was** gitignored via the `.crew/*`
+stanza, which re-admitted `!.crew/codemap/` and `!.crew/endpoints.json` and
+nothing else. As of 2026-09-14 `!.crew/verify.json` is on that list and the file
+is tracked, so the gate's own invocation is now inside git's reach and this
+section's heading no longer describes it. (Line numbers into `.gitignore` are
+deliberately dropped here: the three that used to be cited all moved when a
+negation was added above them.)
 
 **UNVERIFIABLE HERE, and stated as its own value rather than carried forward as
 though it had been checked:** the file is absent from this checkout. The previous

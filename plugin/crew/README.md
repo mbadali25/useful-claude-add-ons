@@ -127,13 +127,19 @@ Full detail, including a bash-to-PowerShell command translation table, is in
 
 ### The platform block fixes itself
 
-`.crew/config.json` is committed, and its `platform` block describes the machine
-that ran `/crew:init`. The moment it lands in git it is wrong for everybody else
-— and `windowsHostIp` is wrong for the same person after a reboot, because WSL2's
-gateway changes.
+`.crew/config.json`'s `platform` block describes the machine that ran
+`/crew:init`, and that machine stops being the machine reading it. The config is
+**not** committed — the gitignore policy is `.crew/*` ignored with a named
+un-ignore list (`codemap/`, `endpoints.json`, `verify.json`), and `config.json`
+is deliberately not on it — so the block goes wrong without ever leaving the
+checkout it was written in: `windowsHostIp` changes when WSL2's gateway does
+after a reboot, and one worktree opened from Windows and from WSL is two
+machines sharing one file. (Until 2026-09-14 this paragraph said the config *was*
+committed and was therefore wrong for everybody else. That was the rationale for
+the hook and it was backwards about the mechanism, not about the need.)
 
-So a `SessionStart` hook repairs it. Open the repo on Windows after someone
-committed it from WSL and the first thing the session says is:
+So a `SessionStart` hook repairs it. Open the repo from Windows after the block
+was written from WSL and the first thing the session says is:
 
 ```
 ## platform - config said linux, this is windows-bash; updated 5 field(s) in .crew/config.json
@@ -335,7 +341,17 @@ The skill will:
 3. Create `.crew/`, `.work/`, `_verify/`, `docs/adr/`, and a `CLAUDE.md` if none exists
 4. Tell you plainly that the setup is not yet usable
 
-Commit all of it. `.work/` belongs in version control — it is the shared memory between sessions, and a session that cannot read it starts blind.
+<!-- crew-ignore-policy:list -->
+**Commit the part that is about the code, not the part that is about your box.**
+The policy `/crew:init` writes is `.crew/*` ignored plus a named un-ignore list —
+`!.crew/codemap/`, `!.crew/endpoints.json`, `!.crew/verify.json`. Those three
+describe the repository: the code map, the endpoint ledger a security scan is
+owed against, and the verification map. Commit them, and `_verify/`, `docs/adr/`
+and `CLAUDE.md` with them. `.crew/config.json`, `.crew/STATUS.md`, the transcripts
+and the gate's own marker files stay out, and so does the whole of `.work/` —
+they describe one checkout on one machine. (This line used to say `.work/`
+belongs in version control. It does not; the marker files under it dirty the tree
+and block the next promotion.)
 
 **Triage your rules before writing them.** Most rules people want in CLAUDE.md
 belong in `.crew/verify.json` instead — where a hook enforces them and they are
@@ -528,9 +544,12 @@ they exist — the change touches `.tf` under `iam/`, so the IAM auditor reviews
 every time, without being asked.
 
 The safeguard matters as much as the feature. `.crew/verify.json` is committed
-and travels between machines, so a rule naming an agent the author has and a
-teammate does not would quietly review less on the second machine while producing
-output that looks identical. `/crew:review` therefore reports a named-but-missing
+and travels between machines — it is one of the three paths on the un-ignore list
+(`!.crew/codemap/`, `!.crew/endpoints.json`, `!.crew/verify.json`) that `.crew/*`
+would otherwise ignore — so a rule naming an agent the author has and a teammate
+does not would quietly review less on the second machine while producing output
+that looks identical. Travelling is exactly what makes the gap possible; it is
+also the only reason the map is worth writing once. `/crew:review` therefore reports a named-but-missing
 agent as a gap and logs it to `.crew/metrics.md`, so "this rule asked for
 `security-auditor` eleven times and never got it" becomes evidence for either
 installing it or deleting the rule.
@@ -1860,10 +1879,21 @@ against the right environment, after the soak. A hook fires before a command and
 after a turn; it cannot watch the middle. The row you append is a claim - which
 is exactly why it must record failures too.
 
-Two setup consequences: `.gitignore` must cover `.crew/` and `.work/`, or the
-gate's own marker dirties the tree and blocks the next deploy; and the rollback
-runbook needs a literal `last verified: YYYY-MM-DD` line, because that is what
-the hook greps for.
+Two setup consequences. First, `.gitignore` must ignore `.crew/*` and `.work/`,
+which is what keeps the approval marker out of the tree — an approval marker git
+tracks dirties the tree, and the gate then blocks on the file the operator was
+told to create. `.crew/.approved-*` is listed explicitly as documentation of
+which file that is; measured with `git check-ignore`, deleting that line changes
+nothing, because `.crew/*` already covers it and none of the negations re-admits
+it. Its position relative to the un-ignore list is likewise not load-bearing.
+(This paragraph previously said both were, and that the *gate* writes the marker.
+The operator creates it; the file the gate writes is `.crew/.deploy-in-flight`.)
+Write `.crew/*`, never `.crew/` — a trailing slash makes git refuse
+to descend into the directory, and nothing can be re-included from a directory
+git never entered, so `!.crew/codemap/`, `!.crew/endpoints.json` and
+`!.crew/verify.json` all silently do nothing. Second, the rollback runbook needs
+a literal `last verified: YYYY-MM-DD` line, because that is what the hook greps
+for.
 
 ### Rules with no override
 

@@ -48,11 +48,12 @@ interchangeable.**
 | it exists, no rule matched a changed file | `verification map read; no rule matched, so no specialist is required` | step 1 |
 | it exists, a rule matched | name each agent and why | dispatch them |
 
-**The first row is the one that used to disappear.** `.crew/*` is ignored
-(`.gitignore:282`), so the file is machine-local and **absent on every fresh
-clone until `/crew:init` writes it** — `.gitignore:340-341` says so in as many
-words. An absent map selects nobody, which on a fresh checkout is indis-
-tinguishable from "this diff needs no specialist" unless you distinguish it.
+**The first row is the one that used to disappear.** `.crew/*` is ignored, and
+`!.crew/verify.json` is one of three named un-ignores, so in a repo that has
+adopted that list the map travels — but a repo that has not, or one where
+`/crew:init` has never run, still has **no map at all**. An absent map selects
+nobody, which is indistinguishable from "this diff needs no specialist" unless
+you distinguish it.
 Never let "I could not look" be reported as "I looked and found nothing": that
 is this repo's recurring bug, an unknown collapsing into the safe-looking value,
 sitting in the review path itself.
@@ -66,18 +67,23 @@ from evidence rather than from someone remembering.
 
 **An agent a matched rule named but that is not installed here is a GAP, and you
 report it in step 3 alongside the ones you skipped.** Never drop it silently.
-The map is machine-local, so it was written against whatever was installed on
-the box that ran `/crew:init` — a rule can name an agent that exists there and
-not here, and the review then covers strictly less while producing output
-indistinguishable from a full pass. That is the same class of failure as a QA
+The map was written against whatever was installed on the box that ran
+`/crew:verify` — a rule can name an agent that exists there and not here, and the
+review then covers strictly less while producing output indistinguishable from a
+full pass. Tracking the map makes this MORE likely, not less: a committed map
+reaches machines whose agent roster nobody checked. That is the same class of failure as a QA
 provider that authenticates and then returns nothing, and it gets the same
 treatment: say it out loud.
 
-(This paragraph used to justify itself with "`.crew/verify.json` is committed
-and travels between machines". It is not committed — `.gitignore:282` ignores
-`.crew/*` and the file is in no tree here. The conclusion was right and the
-reason was backwards, which is worse than a wrong conclusion: it sends the next
-reader looking for a tracked file that has never existed.)
+(The reason here has now been wrong in both directions, which is worth leaving
+visible. It first said the map "is committed and travels between machines" when
+`.crew/*` ignored it and the file was in no tree. That was corrected. Then, on
+2026-09-14, the policy itself changed — `!.crew/verify.json` joined the named
+un-ignore list and this repo started tracking its own map — so the correction
+became the stale claim. The conclusion survived both: name what you could not
+look at. Cite the gitignore **stanza**, never a line number; the two citations
+that used to live here were `.gitignore:282` and `.gitignore:340-341`, and both
+moved the moment a negation was added above them.)
 
 **Step 1 — who wrote this diff, and how do we know?** Ask the thing that
 recorded the dispatch, rather than re-deriving the answer from config:

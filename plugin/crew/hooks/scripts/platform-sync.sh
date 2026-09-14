@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # SessionStart hook. Detects this machine and repairs .crew/config.json's
-# platform block, which is committed and is therefore wrong for everybody who
-# is not the person who ran /crew:init.
+# platform block. config.json is machine-local -- `.crew/*` is ignored and the
+# un-ignore list is codemap/, endpoints.json, verify.json, none of them this
+# file -- so the block is not wrong because it travelled to another clone. It
+# goes wrong in place: one checkout opened from Windows and from WSL is two
+# machines sharing one config, and WSL2's windowsHostIp changes on reboot.
 #
 # Thin wrapper on purpose. The logic lives in crew_platform.py so the bash and
 # PowerShell paths cannot drift, and the once-per-session claim lives there too

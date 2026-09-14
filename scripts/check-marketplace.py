@@ -24,6 +24,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MARKETPLACE = os.path.join(ROOT, ".claude-plugin", "marketplace.json")
@@ -519,6 +520,375 @@ def check_self_claims(entries, fail):
                     )
 
 
+POLICY_MARKER = "crew-ignore-policy:list"
+POLICY_GITIGNORE = ".gitignore"
+# Forward slashes throughout: these are compared against `git ls-files`, which
+# emits POSIX separators on every platform. os.path.join would produce
+# backslashes here on Windows and the required-source check would report the
+# shipped template as missing its marker on Windows only.
+POLICY_TEMPLATE = "plugin/crew/skills/crew-setup/SKILL.md"
+# The two files that IMPLEMENT the check necessarily contain the marker string
+# and example paths, and scanning them makes the checker fail on its own
+# docstring. Excluded by path rather than by a cleverer marker rule, because a
+# rule that tried to tell a definition from a declaration is one more thing that
+# can be wrong.
+POLICY_SELF = ("scripts/check-marketplace.py", "scripts/_test/crew-ignore-policy.py")
+# CHANGELOG.md is append-only history and must NOT be bound to the current
+# policy. It became a marked source by accident - the 0.19.46 entry describes
+# this check and names its marker - and it passed only because the policy it
+# describes happens to be today's. The next entry to record a CHANGE to the list
+# would state the OLD list, correctly, and fail a gate for being accurate about
+# the past. History is not a declaration of present policy.
+POLICY_HISTORY = ("CHANGELOG.md",)
+_UNIGNORE_RE = re.compile(r"!\.crew/([A-Za-z0-9_.*-]+/?)")
+
+
+def _unignored(text: str) -> set[str]:
+    """The `!.crew/<path>` set a file declares, with trailing slashes normalised.
+
+    `!.crew/codemap/` in a .gitignore and `!.crew/codemap` in prose are the same
+    claim about the same directory, and a set comparison that failed on the
+    slash would fail correct lines.
+    """
+    return {name.rstrip("/") for name in _UNIGNORE_RE.findall(text)}
+
+
+def _active_rules(block: str) -> list[str]:
+    """The lines of a gitignore block that git actually obeys.
+
+    Comments and blank lines are not rules. Extracting over the raw block made
+    three separate mutations invisible, each of which breaks the policy while
+    leaving prose that still describes it: commenting out a negation, deleting a
+    rule whose explanatory comment above it still names the path, and deleting
+    the active `.crew/*` while its comment kept the substring alive. A checker
+    that reads a comment as an effective rule is checking the documentation of
+    the policy rather than the policy.
+
+    Returned **verbatim**, not stripped. Leading whitespace is significant to
+    git and this was got wrong once: `.strip()` made `!.crew/endpoints.json` and
+    ` !.crew/endpoints.json` identical, so a genuinely broken exception was
+    repaired by the checker and then verified in its repaired form. Measured -
+    with the leading space, git leaves `.crew/endpoints.json` IGNORED while
+    `.crew/verify.json` on the next line is correctly un-ignored.
+
+    Only a line whose FIRST character is `#` is a comment, which is also
+    measured rather than assumed: git treats `  # foo` as a pattern matching a
+    file of that name, so stripping before the comment test would drop a line
+    git obeys.
+    """
+    rules = []
+    for line in block.replace("\r\n", "\n").split("\n"):
+        if not line.strip() or line.startswith("#"):
+            continue
+        rules.append(line)
+    return rules
+
+
+def _git_canonical(rule: str) -> str:
+    """A rule reduced to the form git compares, for PRESENCE checks only.
+
+    The probe always sees the original line. This is for asking "is there a
+    `.crew/*` rule here", where an exact string match is wrong in one direction
+    and `.strip()` is wrong in the other - which is exactly how this check failed
+    twice. Round 2: `.strip()` made a leading space vanish, a false PASS on a
+    broken rule. Round 3: verbatim comparison rejected `.crew/* `, a false FAIL
+    on a correct one. Git treats the two ends differently, so the fix is neither.
+
+    Measured against git, not taken from the documentation:
+
+    - a trailing SPACE is stripped (`.crew/* ` ignores `.crew/config.json`)
+    - a trailing TAB is **not** - `.crew/*\\t` matched nothing. The docs say
+      "trailing spaces", and they mean spaces. Stripping all trailing whitespace
+      here would accept a rule git does not honour.
+    - a backslash-escaped trailing space is literal, so `.crew/*\\ ` is a rule
+      about a path ending in a space and matched nothing
+    - a leading space is significant
+    - a trailing `\\r` (a CRLF file) is removed
+    """
+    if rule.endswith("\r"):
+        rule = rule[:-1]
+    while rule.endswith(" "):
+        backslashes = len(rule[:-1]) - len(rule[:-1].rstrip("\\"))
+        if backslashes % 2:
+            break        # escaped: the space is part of the pattern
+        rule = rule[:-1]
+    return rule
+
+
+def _ignore_behaviour(rules: list[str], exceptions: set[str]) -> list[str]:
+    """Ask git what these rules actually do, instead of reading them.
+
+    Every textual assertion here has a mutation that satisfies the text and
+    breaks the behaviour - ordering above all, since a `.crew/*` written BELOW
+    the negations suppresses all of them while every "is the path present"
+    check still passes. So the rules are written into a throwaway repo and
+    `git check-ignore` is asked directly. That is the same program that will
+    decide this in the real repo, which is the only opinion that counts.
+
+    Returns a list of behaviour descriptions that are wrong, empty when right.
+
+    **Every way this probe can fail to answer is its own finding.** An earlier
+    version read any non-zero status as "not ignored", which merged git's 1
+    ("checked, not ignored") with its 128 ("fatal, no answer"), and discarded
+    the `git init` status entirely. Mocking either produced an empty finding
+    list and a clean report - the recurring bug this repo names, an unknown
+    wearing the label of a check that happened. `git check-ignore` documents
+    0 = ignored, 1 = not ignored, 128 = error; anything that is not 0 or 1 is
+    reported as UNVERIFIABLE rather than resolved either way.
+
+    The probe repo is also isolated from this machine, and the two halves of
+    that isolation were measured rather than assumed - they are not equally
+    load-bearing, and saying so is the point.
+
+    **The environment scrub is load-bearing, demonstrated.** With `GIT_WORK_TREE`
+    inherited from the caller, `git init` in the temp directory exits 128
+    (`GIT_WORK_TREE ... not allowed without specifying GIT_DIR`) and the probe
+    can answer nothing. Stripping `GIT_*` fixes it; that exact pair was run both
+    ways.
+
+    **The `-c core.excludesFile=` flags are insurance, and no case was found
+    where they change a verdict.** They were added for a global excludes file
+    that ignores `.crew/verify.json`, and then the test showed the verdict is the
+    same with and without them - because a repository `.gitignore` outranks both
+    `core.excludesFile` and `info/exclude` in git's precedence order, so nothing
+    at those layers can overturn a rule under test here. Kept because they cost
+    nothing, documented as unproven because the alternative is a comment claiming
+    a guarantee nobody checked.
+    """
+    probes = {".crew/config.json": True, ".crew/.approved-production-abc1234": True}
+    for name in sorted(exceptions):
+        probe = (f".crew/{name}INDEX.md" if name.endswith("/")
+                 else f".crew/{name}")
+        probes[probe] = False
+
+    env = {k: v for k, v in os.environ.items()
+           if not k.startswith(("GIT_", "XDG_"))}
+    # An empty value is what git documents for "no file", and NOSYSTEM covers
+    # /etc/gitconfig, which GIT_CONFIG_SYSTEM alone does not reliably suppress
+    # on older git.
+    env.update({"GIT_CONFIG_GLOBAL": "", "GIT_CONFIG_SYSTEM": "",
+                "GIT_CONFIG_NOSYSTEM": "1", "HOME": "", "USERPROFILE": ""})
+    base = ["git", "-c", "core.excludesFile=", "-c", "core.attributesFile="]
+
+    with tempfile.TemporaryDirectory() as tmp:
+        started = subprocess.run([*base, "-C", tmp, "init", "-q"],
+                                 capture_output=True, text=True,
+                                 check=False, env=env)
+        if started.returncode != 0:
+            detail = (started.stderr or started.stdout or "").strip().splitlines()
+            return ["UNVERIFIABLE: could not create the probe repository "
+                    f"(git init exited {started.returncode}"
+                    + (f": {detail[-1]}" if detail else "")
+                    + "). Nothing about these rules was checked."]
+        with open(os.path.join(tmp, ".gitignore"), "w",
+                  encoding="utf-8", newline="\n") as handle:
+            handle.write("\n".join(rules) + "\n")
+        wrong = []
+        for probe, want_ignored in sorted(probes.items()):
+            done = subprocess.run([*base, "-C", tmp, "check-ignore", "-q", "--", probe],
+                                  capture_output=True, text=True,
+                                  check=False, env=env)
+            if done.returncode not in (0, 1):
+                detail = (done.stderr or "").strip().splitlines()
+                wrong.append(
+                    f"UNVERIFIABLE: `git check-ignore` exited {done.returncode} for "
+                    f"{probe}, which is neither 0 (ignored) nor 1 (not ignored)"
+                    + (f" - {detail[-1]}" if detail else "")
+                    + ". Whether this path is ignored is UNKNOWN, not clean"
+                )
+                continue
+            is_ignored = done.returncode == 0
+            if is_ignored != want_ignored:
+                wrong.append(
+                    f"{probe} is {'ignored' if is_ignored else 'NOT ignored'} "
+                    f"but must be {'ignored' if want_ignored else 'tracked'}"
+                )
+        return wrong
+
+
+def _policy_block(relative: str, text: str) -> str | None:
+    """The region of a required source whose ORDER is load-bearing.
+
+    `.gitignore` is that region entire: one stanza, read top to bottom by git.
+    A markdown source is not - `crew-setup/SKILL.md` is five hundred lines of
+    prose around a fenced block, and only the block is what a consuming repo
+    copies. Searching the whole document for the last `!.crew/` would let one
+    sentence written BELOW §3c - exactly the edit this policy invites - push the
+    last negation past `.crew/.approved-*` and fail a correct template. Returns
+    None when a markdown source ships no block at all, which is its own failure
+    rather than a silent pass.
+    """
+    if not relative.endswith(".md"):
+        return text
+    fence = re.search(r"```gitignore\n(.*?)```", text, re.S)
+    return fence.group(1) if fence else None
+
+
+def check_crew_ignore_policy(fail):
+    """The `.crew/` un-ignore list is one set, stated in several places at once.
+
+    The policy: `.crew/*` is ignored and a NAMED list is un-ignored. The list
+    lives in `.gitignore` (which is what git actually obeys, so it is the
+    authority here), is shipped to consuming repos by `crew-setup/SKILL.md` §3c,
+    and is restated in prose by several docs. Those had drifted into stating
+    three different policies at once - `.gitignore` re-admitted two paths while a
+    comment fifty lines below it asserted that "the whole of crew's state ... is
+    local to each machine and never committed".
+
+    **A file opts in with the `crew-ignore-policy:list` marker**, the same
+    discipline `check_self_claims` uses for numbers: a file that carries it must
+    state the WHOLE list, and an unmarked file is deliberately not checked.
+    `TODO.md` and `commands/review.md` each mention one or two paths in passing,
+    and a checker that read "two mentions" as "a declaration" would fail them for
+    being correctly narrow. That silence is asserted by
+    `scripts/_test/crew-ignore-policy.py`.
+
+    **Six files carry the marker today**, and naming them is the point - the
+    scope of this check is exactly that set, not "every file that mentions
+    `.crew/`": `.gitignore` and `crew-setup/SKILL.md` (required, below),
+    `CLAUDE.md`, `plugin/crew/README.md`, `crew-setup/phases.md` and
+    `crew-verification/SKILL.md`. The codemap under `.crew/codemap/` restates the
+    list and is deliberately OUT of scope: it is a derived map with its own
+    `anchor:` staleness mechanism, and a generated artefact that fails this gate
+    would be fixed by regenerating it, not by editing it. So the list can still
+    drift in an unmarked file. What cannot happen is the failure this was written
+    for - the authority and the shipped template disagreeing with each other and
+    with the docs, silently.
+
+    The marker carries a colon because a bare hyphenated word is also a legal
+    FILENAME, and `.github/workflows/marketplace.yml` names this check's own test
+    file in a `run:` line. The first version flagged the workflow for declaring a
+    policy it was only citing.
+
+    Three ways this could pass while checking nothing, each made its own failure:
+
+    1. **An empty extraction.** A doc that stops using the backticked `!.crew/x`
+       form yields an empty set, and empty == empty is a pass. A marked file that
+       declares nothing therefore fails.
+    2. **Every marker deleted.** `.gitignore` and the shipped template are
+       required to carry one, so the check cannot be silenced by removing them.
+    3. **A trailing slash on `.crew/`.** `.crew/` stops git descending into the
+       directory at all, and nothing can be re-included from a directory git
+       never entered - every negation below it silently does nothing while the
+       file still reads as though the policy were in force.
+    """
+    sources: dict[str, set[str]] = {}
+    # Carrying the marker and successfully DECLARING a list are two different
+    # facts, and collapsing them made the no-fenced-block case report "does not
+    # carry the marker" about a file that plainly does - a wrong answer wearing
+    # the label of a different check. Tracked separately so each failure says
+    # the thing that is actually true.
+    marked: set[str] = set()
+    for relative in sorted(set(git("ls-files").splitlines()) | {POLICY_GITIGNORE}):
+        relative = relative.replace("\\", "/")
+        if relative in POLICY_SELF or relative in POLICY_HISTORY:
+            continue
+        path = os.path.join(ROOT, *relative.split("/"))
+        if not os.path.isfile(path):
+            continue
+        try:
+            with open(path, encoding="utf-8", errors="replace") as handle:
+                text = handle.read()
+        except OSError:
+            continue
+        if POLICY_MARKER not in text:
+            continue
+        marked.add(relative)
+        if relative not in (POLICY_GITIGNORE, POLICY_TEMPLATE):
+            # A prose doc states the list in a sentence, so the whole file is
+            # the declaration. Order is meaningless in prose and is not checked.
+            sources[relative] = _unignored(text)
+            continue
+
+        body = _policy_block(relative, text)
+        if body is None:
+            fail(
+                f"{relative}: carries the {POLICY_MARKER} marker but has no ```gitignore "
+                "fenced block. The shipped template is the block, not the prose around "
+                "it - without one there is nothing for a consuming repo to copy."
+            )
+            continue
+        # ACTIVE rules only, everywhere below. A commented-out negation is not a
+        # negation, and reading one as effective is how three mutations that each
+        # break the policy produced zero failures.
+        rules = _active_rules(body)
+        # Presence is asked of the CANONICAL form (git strips a trailing
+        # space, keeps a leading one); the probe below still sees the
+        # originals, so a rule that is broken rather than merely untidy is
+        # caught there instead of being normalised away.
+        canonical = [_git_canonical(rule) for rule in rules]
+        # Kept with the trailing slash for the behavioural probe (a directory
+        # needs a path INSIDE it to probe), and without it for set comparison.
+        declared_raw = {name for rule in rules for name in _UNIGNORE_RE.findall(rule)}
+        declared = {name.rstrip("/") for name in declared_raw}
+        sources[relative] = declared
+        if ".crew/" in canonical:
+            fail(
+                f"{relative}: ignores `.crew/` with a trailing slash. Git refuses to "
+                "descend into it, so every `!.crew/...` negation below is silently "
+                "dead. Write `.crew/*`."
+            )
+        if ".crew/*" not in canonical:
+            fail(
+                f"{relative}: has no active `.crew/*` rule, so there is no base ignore "
+                "for the un-ignore list to carve out of. A comment mentioning it is "
+                "not a rule."
+            )
+        if ".crew/.approved-*" not in canonical:
+            fail(
+                f"{relative}: has no active `.crew/.approved-*` rule. `.crew/*` already "
+                "covers the marker, so this is belt-and-braces - but it is the entry a "
+                "consuming repo would have to keep if it ever narrowed the base ignore, "
+                "and it documents WHY the marker must never be trackable."
+            )
+        # The behavioural check. It subsumes every ordering question - including
+        # a `.crew/*` written BELOW the negations, which suppresses all three
+        # while satisfying every "is this line present" assertion above.
+        for wrong in _ignore_behaviour(rules, declared_raw):
+            fail(f"{relative}: git disagrees with the stated policy - {wrong}.")
+
+    for required in (POLICY_GITIGNORE, POLICY_TEMPLATE):
+        if required not in marked:
+            fail(
+                f"{required} does not carry the `{POLICY_MARKER}` marker. It is a "
+                "required source: without it this check has nothing to compare against "
+                "and would pass by finding nothing."
+            )
+
+    canonical = sources.get(POLICY_GITIGNORE)
+    if not canonical:
+        fail(
+            f"{POLICY_GITIGNORE} declares no `!.crew/...` paths. The un-ignore list "
+            "cannot be read, so nothing below was compared - this is a failure, not a "
+            "repo with an empty list."
+        )
+        return
+
+    for relative, declared in sorted(sources.items()):
+        if relative == POLICY_GITIGNORE:
+            continue
+        if not declared:
+            fail(
+                f"{relative}: carries the `{POLICY_MARKER}` marker but declares no "
+                "`!.crew/...` path. An empty declaration compares equal to nothing and "
+                "would pass silently."
+            )
+            continue
+        if declared != canonical:
+            missing = sorted(canonical - declared)
+            extra = sorted(declared - canonical)
+            detail = []
+            if missing:
+                detail.append("omits " + ", ".join(f"!.crew/{n}" for n in missing))
+            if extra:
+                detail.append("adds " + ", ".join(f"!.crew/{n}" for n in extra))
+            fail(
+                f"{relative}: states a different `.crew/` un-ignore list than "
+                f"{POLICY_GITIGNORE} - {'; '.join(detail)}. The list is one set; change "
+                "it in one place and every place that states it has to follow."
+            )
+
+
 def check_hook_commands(entries, fail):
     r"""Every shell-form hook command survives the shell that will actually run it.
 
@@ -584,6 +954,7 @@ def main() -> int:
     check_hook_commands(entries, fail)
     check_versions(entries, fail)
     check_self_claims(entries, fail)
+    check_crew_ignore_policy(fail)
 
     skills = sum(1 for e in entries if e["source"].startswith("./skills/"))
     plugins = len(entries) - skills
