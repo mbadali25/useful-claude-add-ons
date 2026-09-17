@@ -49,12 +49,49 @@ def _path_of(token):
     return token.rsplit(":", 1)[0] if _LINE_SUFFIX_RE.search(token) else token
 
 
+# A backticked token is only a PATH claim when it looks like one. Everything
+# else in backticks on a codemap line is prose furniture -- a symbol
+# (`abspath`, `blake2b`), a literal (`None`), a method (`Front::dispatch()`),
+# a CLI flag (`--worktree-path`). Comparing those against a set of file paths
+# reports every one as an uncorroborated claim.
+#
+# Measured before this fix: 186 conflicts on this repo, nearly all symbols; a
+# peer session measured 239 of 456 on a prose-heavy map. The cost is not the
+# noise itself but what it hides -- a list that is mostly false is a list
+# nobody reads, so a REAL contradiction in it is invisible.
+#
+# The limit, stated because it is a real one: a BARE single-segment name with
+# no slash and no extension -- `_verify`, `scripts` -- reads as prose here and
+# is therefore never compared. That is a false negative, and a false negative
+# silently drops a real contradiction, which is the worse direction of the two.
+# It is accepted anyway because nothing in a backticked token distinguishes a
+# bare directory from a bare symbol, and guessing would reintroduce the noise
+# this exists to remove. Cite a directory with a trailing slash or one child
+# path if you want it compared.
+_PATHISH_RE = re.compile(r"^[A-Za-z0-9_.@+-]+(?:/[A-Za-z0-9_.@+-]+)+$")
+_EXT_RE = re.compile(r"\.[A-Za-z0-9]{1,5}$")
+
+
+def is_path_token(token):
+    """Whether `token` is a file-path claim rather than prose in backticks."""
+    if not token or token.endswith("()") or "::" in token or "->" in token:
+        return False
+    if token.startswith("-"):          # a CLI flag, not a path
+        return False
+    return bool(_PATHISH_RE.match(token) or _EXT_RE.search(token))
+
+
 def _paths(lines):
-    """Anchored file paths in a set of lines -- what two claims are compared on."""
+    """Anchored file paths in a set of lines -- what two claims are compared on.
+
+    Non-path tokens are dropped rather than compared; see `is_path_token`.
+    """
     return {
-        _path_of(token)
+        path
         for line in lines
         for token in _ANCHOR_TOKEN_RE.findall(line)
+        for path in (_path_of(token),)
+        if is_path_token(path)
     }
 
 
@@ -92,8 +129,9 @@ def reconcile(text, derived):
         # existing entry (typically a shifted line number), not a new fact.
         fresh = []
         for line in new_lines:
-            found = _ANCHOR_TOKEN_RE.findall(line)
-            if found and _path_of(found[0]) in have:
+            found = [_path_of(x) for x in _ANCHOR_TOKEN_RE.findall(line)]
+            found = [x for x in found if is_path_token(x)]
+            if found and found[0] in have:
                 continue
             fresh.append(line)
 
@@ -120,5 +158,10 @@ def reconcile(text, derived):
             out.append(f"## {heading}")
         out.extend(lines)
     body = "\n".join(out).rstrip() + "\n"
+    # `touched` can only ever hold DERIVE headings -- KEEP is skipped at the
+    # top of the loop above, so `Does`, `Landmines` and `Unverified` are never
+    # read by this procedure at all. The caller must not treat it as "this
+    # note was re-verified"; see crew_upgrade's anchor handling.
     return {"body": body, "conflicts": conflicts,
-            "added": added, "touched": touched}
+            "added": added, "touched": touched,
+            "derivedOnly": True}

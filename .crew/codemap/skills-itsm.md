@@ -1,5 +1,5 @@
 # skills-itsm
-anchor: useful-claude-add-ons@34a333f0
+anchor: useful-claude-add-ons@ea8a014
 verified: 2026-09-14
 
 ## Does
@@ -9,6 +9,7 @@ session and can block waiting for a reply. Together they are the "tell a human" 
 the paper trail, the other pages the person.
 
 ## Entry points
+
 - DERIVED `skills/infra-work-ticketing/SKILL.md:17` - the model reaches for the `sdp_*` MCP tools
   first when infra work is detected in conversation.
 - DERIVED `skills/infra-work-ticketing/scripts/ticketctl.py:1927` - argparse CLI, `main` at `:2093`.
@@ -18,6 +19,9 @@ the paper trail, the other pages the person.
 - DERIVED `skills/notify/scripts/notifyd.py` - the dispatcher daemon, started by hand
   (`skills/notify/SKILL.md:161`); it owns the single Telegram poller so concurrent jobs do not
   fight over replies.
+- `plugin/gizmoduck/scripts/_test/labtarget/labtarget_server.py:264` — module entry point (`main()`), from the graph
+- `plugin/gizmoduck/scripts/gizmoduck.py:852` — module entry point (`main()`), from the graph
+- `skills/notify/scripts/telegram_get_chat_id.py:19` — module entry point (`main()`), from the graph
 
 ## Owns data
 - DERIVED A local write queue for failed SDP/Jira writes, drained by the `retry` command

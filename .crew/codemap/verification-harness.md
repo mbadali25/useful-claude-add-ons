@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@f9bb78a6
+anchor: useful-claude-add-ons@ea8a014
 verified: 2026-09-14
 Narrow pass: `f9bb78a6` (#169, "Finish the crew skill-count sweep") touched
 `scripts/check-marketplace.py` (+53 lines, inside/after `check_versions` and
@@ -454,6 +454,7 @@ its own header estimates minutes, not seconds (`_verify/run-all.sh:3`).
 - `plugin/crew/tests/test_crew_state.py:1050` (moved from `:1002`) — `test_two_repos_with_the_same_basename_do_not_share_a_leaf`, the cross-repo worktree collision the security review raised.
 - `scripts/check-marketplace.py:780` (moved from `:727`) — `check_crew_ignore_policy`: the `.crew/` ignore-policy gate, sabotage-tested by `scripts/_test/crew-ignore-policy.py` (see below).
 - `scripts/check-marketplace.py:430` (moved from `:412`) — `check_self_claims`, unchanged in scope beyond the `plugin-skills:<name>` marker type `f9bb78a6` (#169) added (see above).
+- `plugin/crew/tests/sabotage.py:2484` — module entry point (`main()`), from the graph
 
 ## Owns data
 
@@ -462,7 +463,10 @@ its own header estimates minutes, not seconds (`_verify/run-all.sh:3`).
 ## Calls out to
 
 - `pwsh` from `plugin/crew/tests/test_verify_gate_bash_resolver.py`, which is where two tests fail on this machine: they replace `PATH` and `SystemRoot` with fake trees and pwsh cannot then initialise (`Win32Exception 126`). Environmental and pre-existing — confirmed identical at `1f97e51c`.
-
+- `plugin/crew/hooks/scripts/crew_platform.py` — via the `crew` subsystem
+- `plugin/crew/hooks/scripts/crew_state.py` — via the `crew` subsystem
+- `plugin/crew/skills/crew-graph/scripts/crew_upgrade.py` — via the `crew` subsystem
+- `plugin/crew/tests/context.py` — via the `crew` subsystem
 
 ## Re-verification pass, 2026-09-12
 

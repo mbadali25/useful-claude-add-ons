@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@8fa1b7c2 on 2026-09-14. Verify before trusting.
+% Generated from useful-claude-add-ons@ea8a0143 on 2026-09-17. Verify before trusting.
 %% Anchors: plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_state.py,
 %% plugin/crew/hooks/scripts/crew_freshness.py, plugin/crew/hooks/scripts/pm_brief.py,
 %% plugin/crew/hooks/scripts/crew_endpoints.py, plugin/crew/hooks/scripts/crew_incident.py
@@ -7,13 +7,13 @@
 %% Drawn because nothing diagrammed crew's own control flow. data-flow-crew-config.mmd
 %% draws how a config VALUE reaches a run; this draws how a repo FACT reaches the
 %% human. They meet at pm.mode / pm.quietLines / pm.maxLines, which that diagram
-%% resolves and this one consumes (pm_brief.py:505, :506, :525).
+%% resolves and this one consumes (pm_brief.py:513, :514, :533).
 %% --
 %% Derived by reading the source at this anchor, not from .crew/codemap/crew.md:
 %% every line number below came from a direct read/grep of the named file, and the
 %% TRIGGERS/FINDINGS parity was RE-RUN this time (not carried forward): executed
 %% `set(crew_state.TRIGGERS) ^ set(pm_brief.FINDINGS)` in this worktree at this
-%% commit -> empty set, len 12 == len 12 both ways, and (not previously checked)
+%% commit -> empty set, len 13 == len 13 both ways, and (not previously checked)
 %% the two are even in the SAME key order.
 %% --
 %% Re-derived at 8fa1b7c2 against a573ca24. This redraw is not a line-number
@@ -31,11 +31,11 @@
 %% not offset.
 %% Citations that moved: collect() 2888 -> plugin/crew/hooks/scripts/crew_state.py:2576-2682;
 %% evaluate_triggers() 2837 -> crew_state.py:2525-2573; TRIGGERS 839-869 ->
-%% crew_state.py:667-697; render() 454-521 -> pm_brief.py:480-548. FINDINGS
+%% crew_state.py:667-697; render() 454-521 -> pm_brief.py:488-556. FINDINGS
 %% 103-190 did NOT move (same file, same lines) even though pm_brief.py as a
 %% whole registers as changed in the diff above -- the edit was elsewhere in it.
 %% WHAT DID NOT CHANGE, and is still the more useful finding: the TRIGGERS order
-%% is the same twelve names in the same sequence, and FINDINGS still matches it
+%% is the same names in the same sequence, and FINDINGS still matches it
 %% exactly in both directions (see the parity re-run above). The structure this
 %% diagram is about held while every coordinate under it moved, again.
 %% ONE THING PREVIOUSLY ASSERTED THAT DID NOT SURVIVE RE-CHECKING: the prior
@@ -56,7 +56,7 @@
 %%   expensive finding is the one that survives a full brief.
 %% Membership and order are computed in two different places. evaluate_triggers
 %% builds an unordered dict of what fired, then returns
-%%   [name for name in TRIGGERS if fired[name]]   (crew_state.py:2573)
+%%   [name for name in TRIGGERS if fired[name]]   (crew_state.py:2688)
 %% Adding a trigger to the dict and forgetting the tuple raises KeyError on every
 %% session; adding it to the tuple and forgetting the dict does the same. The two
 %% cannot drift apart silently, which is why it is written this way.
@@ -89,9 +89,9 @@ flowchart TB
         RM["crew_state.read_metrics<br/>plugin/crew/hooks/scripts/crew_state.py:277-351<br/>yields health.rate (findings per ticket),<br/>grouped by the TICKET column - averaging<br/>per ROW made one ticket reviewed twice<br/>read as two, which understates the rate"]
     end
 
-    EVAL["crew_state.evaluate_triggers(state)<br/>plugin/crew/hooks/scripts/crew_state.py:2525-2573<br/>builds an <b>unordered dict</b> of 12 booleans"]
-    ORDER["TRIGGERS<br/>plugin/crew/hooks/scripts/crew_state.py:667-697<br/>the priority tuple - 12 names, in order"]
-    FIRED(["fired triggers, <b>in TRIGGERS order</b> :2573"])
+    EVAL["crew_state.evaluate_triggers(state)<br/>plugin/crew/hooks/scripts/crew_state.py:2638-2688<br/>builds an <b>unordered dict</b> of 13 booleans"]
+    ORDER["TRIGGERS<br/>plugin/crew/hooks/scripts/crew_state.py:775-810<br/>the priority tuple - 13 names, in order"]
+    FIRED(["fired triggers, <b>in TRIGGERS order</b> :2688"])
 
     HOOK --> SH
     SH -->|"repo root, resolved config"| Collect
@@ -116,10 +116,10 @@ flowchart TB
 
     ORDER -.-> WhyOrder
 
-    MODE{"pm.mode == adaptive<br/><b>and</b> any trigger fired?<br/>pm_brief.py:505"}
-    QUIET["quiet lines only<br/>render() pm_brief.py:480-548, quiet path capped<br/>at max(1, pm.quietLines) :506 - default <b>8</b>"]
+    MODE{"pm.mode == adaptive<br/><b>and</b> any trigger fired?<br/>pm_brief.py:513"}
+    QUIET["quiet lines only<br/>render() pm_brief.py:488-556, quiet path capped<br/>at max(1, pm.quietLines) :514 - default <b>8</b>"]
     PAIRS["FINDINGS<br/>pm_brief.py:103-190 (unmoved since a573ca24)<br/>one <b>(finding, action)</b> pair per trigger.<br/>12 keys, matching TRIGGERS exactly in<br/><i>both</i> directions AND in the same order -<br/>re-derived by importing both modules and<br/>diffing/comparing, not by reading either list"]
-    CAP{"quiet + pairs + tail<br/>fits in max(2, pm.maxLines) :525?<br/>default <b>40</b>"}
+    CAP{"quiet + pairs + tail<br/>fits in max(2, pm.maxLines) :533?<br/>default <b>40</b>"}
     KEEP["keep pairs[: room // 2] :543<br/><b>whole pairs only</b> - a finding whose action<br/>was cut names a problem and says nothing<br/>about it, which is worse than omitting it"]
     TRUNC>"'More findings than fit here -<br/>run /crew:pm for the full report.'<br/>_TRUNCATED :227, appended at :541 and :547 -<br/>the last line is always spent saying<br/>something was dropped"]
     BRIEF(["the brief the session opens with"])

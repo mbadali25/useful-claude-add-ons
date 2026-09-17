@@ -8,6 +8,7 @@ traceback.
 
 import argparse
 import calendar
+import copy
 import hashlib
 import json
 import os
@@ -545,6 +546,96 @@ _DEFAULT_HANDOFF_PATH = ".work/HANDOFF.md"
 # crew-context/SKILL.md's Housekeeping section, which this enforces rather
 # than replaces.
 STALE_HANDOFF_DEFAULTS = {"maxAgeHours": 72, "maxCommitsBehind": 3}
+
+# The `context.autoClear` block, defined ONCE because both templates carry it
+# and a second literal is a second thing to drift. Values are the fallbacks the
+# hook scripts already apply, read out of them rather than out of any doc:
+# `auto-clear.ps1:78-82` for method/delaySeconds/command/windowTitle/
+# minHandoffLines, and `:69` for enabled, which exits unless it is exactly true.
+#
+# `windowTitle` is None here and `""` in the script. The script treats both as
+# "not set" (`if ($a.windowTitle)` is false for either), and null is what
+# "not set" means everywhere else in this file, so null is the honest default.
+AUTOCLEAR_DEFAULTS = {
+    # 0.19.52: ON by default. It still refuses unless the handoff note
+    # exists, is newer than the request and clears `minHandoffLines`,
+    # and on Windows it refuses without `windowTitle` because SendKeys
+    # types into whatever has focus. So "enabled" means "allowed to act
+    # once everything is wrapped up", not "will type into your terminal".
+    "enabled": True,
+    "method": "auto",
+    "windowTitle": None,
+    "command": "/clear",
+    "delaySeconds": 3,
+    "minHandoffLines": 5,
+    # Wayland only, read at `auto-clear.sh:93` and gating the `wtype` method
+    # at `:187`. Missed on the first pass because the .ps1 consumers never
+    # read it, and the first pass read the Windows scripts -- a default set
+    # from one platform's consumer is a default half-derived.
+    "unsafeFocus": False,
+}
+
+# Keys inside `autoClear` that are CONSENT rather than capability, and so are
+# declared but never granted machine-wide. `unsafeFocus: true` accepts that
+# `wtype` types into whatever currently has focus, which Wayland offers no way
+# to check. The rest of the block is a description of the machine and belongs
+# in the global layer; this is a decision about accepting a risk, and one
+# `true` set once would accept it for every repo on the box.
+#
+# The repo already draws this line and enforces it the same way:
+# `graph.obsidian.confirmed` is refused by `plan_global_write` and pruned by
+# `filter_global` because consent to act outside the repo is not a capability
+# a guided flow may hand over. Same reasoning, same treatment.
+AUTOCLEAR_CONSENT_KEYS = ("unsafeFocus",)
+
+# The whole `context` block, defined HERE rather than in
+# `crew_config.default_config()` where it used to live, for one
+# reason: `crew_upgrade.CONFIG_BLOCKS` has to reference it so an
+# upgrade ADDS these keys to a config that predates them, and
+# `crew_upgrade` cannot import `crew_config` -- the dependency runs
+# the other way. Every other block in that tuple is already reached
+# as `crew_state.X_DEFAULTS`; this one was unreachable, which is
+# exactly why a schema 3 -> 7 upgrade left `autoClear`,
+# `autoWrapUp`, `autoResume` and `staleHandoff` absent and the
+# auto-clear loop dead on every upgraded repo.
+CONTEXT_DEFAULTS = {
+        "enabled": True,
+        # 0.19.52: 0.5 rather than 0.8, and no reserve floor. The
+        # threshold is the LATER of `warnAt * budget` and
+        # `budget - reserveTokens`, so a non-zero reserve silently
+        # overrides an aggressive percentage on a large window --
+        # at 0.8/100k a 1M window fired at 900k, and lowering only
+        # warnAt would still have fired at 900k. Both had to move.
+        "warnAt": 0.5,
+        "budgetTokens": None,
+        "reserveTokens": 0,
+        "handoffPath": ".work/HANDOFF.md",
+        "keepTranscripts": 5,
+        # These three were read by hook scripts and declared here by
+        # nothing until 0.19.10 -- `auto-clear.ps1:67`,
+        # `context-watch.ps1:33` and `handoff-read.ps1:36` respectively.
+        # See the `jira.cloudId` note above for why undeclared is not the
+        # same as unused, and why it still cost something.
+        "autoClear": copy.deepcopy(AUTOCLEAR_DEFAULTS),
+        # 0.19.52: true. Pairs with autoClear -- the wrap-up wording
+        # is what asks for the change in flight to be finished or
+        # abandoned and the ticket updated, and auto-clear fires on
+        # the turn after the handoff lands.
+        "autoWrapUp": True,
+        # 0.19.52: true, completing the loop with autoWrapUp and
+        # autoClear -- ask for the note, clear once it exists, read
+        # it back on the next session with the next action attached.
+        "autoResume": True,
+        # See STALE_HANDOFF_DEFAULTS for why these two figures
+        # specifically -- generous on purpose, since archiving a note
+        # someone is still using is worse than leaving a stale one in
+        # place for one more day.
+        "staleHandoff": {
+            "maxAgeHours": STALE_HANDOFF_DEFAULTS["maxAgeHours"],
+            "maxCommitsBehind":
+                STALE_HANDOFF_DEFAULTS["maxCommitsBehind"],
+        },
+}
 
 # Directory archived handoffs move to. Sibling to crew_incident.ARCHIVE_DIR
 # (".crew/incidents") -- same convention, one archive directory per kind of
