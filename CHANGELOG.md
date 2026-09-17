@@ -4,6 +4,60 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Added
+
+- **`crew` 0.19.53: a `crew-best-practices` skill, and ADR 0003 for the three
+  rules crew deliberately breaks.** Integrates
+  <https://rosmur.github.io/claudecode-best-practices/>, a synthesis of roughly
+  twelve practitioner sources.
+
+  The audit found most of it already true of crew and said so rather than
+  re-implementing it: planning (`/crew:plan`), context management (the
+  `context-watch` / `handoff-write` / `handoff-read` hooks are its "Document &
+  Clear" pattern), quality gates (`verify-gate`), multi-instance review with a
+  different model family (`/crew:review`), dev docs, and scripts attached to
+  skills.
+
+  **Three of its rules call crew's architecture an anti-pattern** - 54
+  specialised agents against its clone pattern, 26 slash commands against its
+  "long list ... is an anti-pattern", and being a multi-agent system at all.
+  `docs/adr/0003-crew-departs-from-three-community-best-practices.md` records
+  each departure WITH ITS COST, so the next reader who finds that document does
+  not re-derive the argument or act on it.
+
+  Also recorded: **§4.3.2 says "Don't block at write time - let the agent
+  finish its plan, then check the final result."** That is exactly what 0.19.52
+  did in removing the PreToolUse command guard and keeping the Stop gate,
+  reached independently and before either of us read the source.
+
+  The skill carries the rule set in three reference files (`practices.md`,
+  `claude-md.md`, `contradictions.md`). The last one quotes the FIVE
+  contradictions the document records about itself, because a synthesis of
+  twelve practitioners is routinely cited as consensus when its own §5 says
+  five of its central questions are unsettled.
+
+  Two of its numbers are marked as not transferring: "clear at 60k tokens" was
+  written for a 200k window and is 6% of a 1M one, and its 2000-token CLAUDE.md
+  limit is wrong for this repository, whose length is a landmine list earned by
+  shipped defects.
+
+### Changed
+
+- **`crew` 0.19.53: three `SKILL.md` files split under the 500-line
+  progressive-disclosure limit.** The source document's §4.3.1 measures 40-60%
+  fewer tokens loaded per session from this shape. Nothing was deleted - each
+  span moved whole with a pointer left in its place:
+
+  | Skill | Was | Now | Extracted to |
+  |---|---|---|---|
+  | `crew-setup` | 618 | 442 | `trackers.md`, `claude-md-authoring.md` |
+  | `crew-verification` | 588 | 464 | `credentials-and-playwright.md` |
+  | `crew-providers` | 566 | 468 | `alternative-providers.md` |
+
+  Every bundled `SKILL.md` is now under 500 lines; the largest is 468. The main
+  files keep the path every reader walks, and the references hold what only
+  some readers need.
+
 ### Removed
 
 - **`crew` 0.19.52: the PreToolUse command guard is gone.** `guard.sh` and

@@ -205,7 +205,7 @@ unchanged position despite the file's other changes.)
   plugin's own bundled-skill count (`skills-count` only ever checked the
   marketplace-wide total, which is why crew's bundle count had drifted
   uncaught in the first place). The line now reads "54 agents, 26 commands,
-  18 skills<!-- claim: plugin-skills:crew -->, 20 hook entries" verbatim.
+  19 skills<!-- claim: plugin-skills:crew -->, 20 hook entries" verbatim.
   **Not re-verified this pass:**
   whether `7 of 4
   marketplaces` (community count) and `Seven MCP servers`
