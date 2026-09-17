@@ -123,11 +123,17 @@ def test_falls_through_when_git_is_a_powershell_function(tmp_path):
     # shape in the other tests -- the real bash.exe comes later on PATH,
     # reachable only through the tier-b fallback since `git` here is a
     # function with nothing for the tier-a walk-up to use. Tier b's
-    # System32 filter compares against $env:SystemRoot, not path text, so
-    # SystemRoot has to point at this fake tree for the filter to apply.
-    env["SystemRoot"] = str(tmp_path / "Windows")
     env["PATH"] = os.pathsep.join([str(wsl_dir), str(real_dir)])
-    command = "function git { }\n& '%s' -PrintBash" % _PS1
+    # SystemRoot is faked INSIDE -Command, not in the process env. pwsh
+    # reads it during startup (InitialSessionState -> GetSaferPolicy),
+    # and a tree with no real System32 kills the interpreter with
+    # Win32Exception (126) before the script runs at all. Setting it
+    # here lets pwsh boot against the real System32 while the script
+    # under test still sees the fake tree, which is all tier b's
+    # filter compares against.
+    command = ("$env:SystemRoot = '%s'\n"
+               "function git { }\n& '%s' -PrintBash"
+               % (tmp_path / "Windows", _PS1))
     result = subprocess.run(
         [_PWSH, "-NoProfile", "-NonInteractive", "-Command", command],
         env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True,
@@ -182,12 +188,13 @@ def test_tier_b_skips_a_bash_defined_as_a_powershell_function(tmp_path):
     _touch(str(real_bash))
 
     env = os.environ.copy()
-    # Tier b's System32 filter compares against $env:SystemRoot rather than
-    # path text, so SystemRoot has to point at this fake tree.
-    env["SystemRoot"] = str(tmp_path / "Windows")
     # No git on PATH at all, so tier a cannot resolve and tier b runs.
     env["PATH"] = os.pathsep.join([str(wsl_dir), str(real_dir)])
-    command = "function bash { }\n& '%s' -PrintBash" % _PS1
+    # Same reason as the git-function case above: faked in -Command so
+    # pwsh can still start.
+    command = ("$env:SystemRoot = '%s'\n"
+               "function bash { }\n& '%s' -PrintBash"
+               % (tmp_path / "Windows", _PS1))
     result = subprocess.run(
         [_PWSH, "-NoProfile", "-NonInteractive", "-Command", command],
         env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True,

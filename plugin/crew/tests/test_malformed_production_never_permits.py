@@ -310,57 +310,9 @@ def _ps1(root, home, command):
                  USERPROFILE=home))
 
 
-@needs_bash
-def test_sh_refuses_a_write_when_it_cannot_read_the_declaration(tmp_path):
-    """End to end through the UNMODIFIED guard.sh. This is the case an
-    in-process test cannot reach: `prod_guarded` does `[ -z "$target" ] &&
-    return 0` BEFORE the `case` that acts on the decision, so a `block`
-    carrying an empty target exits 0 here with nothing printed."""
-    home = _home(tmp_path, "none")
-    root = _repo(tmp_path, {"hosts": "prod-web-*"}, "none", name="sh-bad")
-
-    proc = _sh(root, home, _WRITE)
-
-    assert proc.returncode == 2, f"exit {proc.returncode}: {proc.stderr}"
-    assert "BLOCKED" in proc.stderr
-    assert "could not read what production is" in proc.stderr
 
 
-@needs_bash
-def test_sh_still_says_nothing_when_nothing_is_declared(tmp_path):
-    """The must-allow control, in the flavour that matters most for noise: a
-    banner above every remote shell is how a guard becomes one people switch
-    off."""
-    home = _home(tmp_path, "none")
-    root = _repo(tmp_path, {"hosts": []}, "none", name="sh-empty")
-
-    proc = _sh(root, home, _WRITE)
-
-    assert proc.returncode == 0, proc.stderr
-    assert "production" not in proc.stderr
 
 
-@needs_pwsh
-def test_ps1_refuses_a_write_when_it_cannot_read_the_declaration(tmp_path):
-    """The identical claim in the other flavour, written out rather than shared
-    through a helper: the two scripts are what is under test, and
-    `Invoke-ProdGuard` has its own `if (-not $target) { return }`."""
-    home = _home(tmp_path, "none")
-    root = _repo(tmp_path, {"hosts": "prod-web-*"}, "none", name="ps-bad")
-
-    proc = _ps1(root, home, _WRITE)
-
-    assert proc.returncode == 2, f"exit {proc.returncode}: {proc.stderr}"
-    assert "BLOCKED" in proc.stderr
-    assert "could not read what production is" in proc.stderr
 
 
-@needs_pwsh
-def test_ps1_still_says_nothing_when_nothing_is_declared(tmp_path):
-    home = _home(tmp_path, "none")
-    root = _repo(tmp_path, {"hosts": []}, "none", name="ps-empty")
-
-    proc = _ps1(root, home, _WRITE)
-
-    assert proc.returncode == 0, proc.stderr
-    assert "production" not in proc.stderr

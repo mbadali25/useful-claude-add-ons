@@ -28,8 +28,6 @@ SABOTAGE-TEST THIS FILE before trusting it: see `sabotage.py`.
 import json
 import os
 import shutil
-import subprocess
-import sys
 import time
 
 import context  # noqa: F401  pylint: disable=unused-import
@@ -41,8 +39,6 @@ import pytest
 
 _HOOKS = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                       os.pardir, "hooks", "scripts")
-_GUARD_SH = os.path.join(_HOOKS, "guard.sh")
-_GUARD_PS1 = os.path.join(_HOOKS, "guard.ps1")
 _CREW_CONFIG = os.path.join(_HOOKS, "crew_config.py")
 
 # Fragment-assembled: see the module docstring.
@@ -52,25 +48,6 @@ _PUSH = "git " + "push"
 _GH_MERGE = "gh " + "pr merge"
 
 
-def _resolve_bash():
-    """Git for Windows' `bin/bash.exe` shim, never the raw MSYS binary, which
-    cannot resolve its own mount table from a non-MSYS parent. Same resolver as
-    `test_promote_merge_gate.py`."""
-    found = shutil.which("bash")
-    if not found:
-        return None
-    shim = os.path.join(os.path.dirname(os.path.dirname(found)), "bin",
-                        "bash.exe")
-    return shim if os.path.isfile(shim) else found
-
-
-_BASH = _resolve_bash()
-_PWSH = shutil.which("pwsh")
-
-needs_bash = pytest.mark.skipif(_BASH is None, reason="no MSYS/POSIX bash")
-needs_pwsh = pytest.mark.skipif(
-    not sys.platform.startswith("win") or _PWSH is None,
-    reason="guard.ps1 is the native-Windows flavour; needs Windows + pwsh")
 
 # The command that trips each guard, and what the guard is called. One table,
 # so a case added for one flavour cannot be missing from the other.
@@ -79,17 +56,6 @@ _TRIPS = {
     "forcePush": f"{_PUSH} --force origin main",
     "adminMerge": f"{_GH_MERGE} 12 --admin",
 }
-
-# Commands that trip NO guard and must stay allowed at every policy. A guard
-# that fires on these is worse than one that misses: it is the guard people
-# switch off.
-_INNOCENT = (
-    f"{_TF} plan",
-    f"{_TOFU} plan",
-    f"{_PUSH} origin main",
-    f"{_GH_MERGE} 12 --squash",
-)
-
 
 def _touch(path):
     """Create the approval marker. `promote-gate.sh` tells the user to
@@ -130,24 +96,6 @@ def _global_file(tmp_path, guards=None, install=None):
     return str(path)
 
 
-def _run_sh(root, home, command):
-    payload = json.dumps({"tool_input": {"command": command}})
-    return subprocess.run(
-        [_BASH, _GUARD_SH.replace("\\", "/")], input=payload,
-        capture_output=True, text=True, check=False, timeout=120,
-        env=dict(os.environ, CLAUDE_PROJECT_DIR=root, HOME=home,
-                 USERPROFILE=home))
-
-
-def _run_ps1(root, home, command):
-    payload = json.dumps({"tool_name": "PowerShell",
-                          "tool_input": {"command": command}})
-    return subprocess.run(
-        [_PWSH, "-NoProfile", "-NonInteractive", "-File", _GUARD_PS1],
-        input=payload, capture_output=True, text=True, check=False,
-        timeout=120,
-        env=dict(os.environ, CLAUDE_PROJECT_DIR=root, HOME=home,
-                 USERPROFILE=home, PSModulePath=""))
 
 
 # ---- the keys themselves ---------------------------------------------------
@@ -698,146 +646,20 @@ def test_the_cli_line_never_emits_an_empty_field(tmp_path, capsys):
 # a case that runs in one flavour covers half of what it claims to.
 
 
-@pytest.mark.parametrize("command", [
-    f"{_GH_MERGE} 12 --admin --squash",
-    f"{_GH_MERGE} --admin 12",
-    f"{_TOFU} apply -auto-approve",
-    f"{_TOFU} -chdir=infra destroy",
-])
-@needs_bash
-def test_sh_blocks_the_refusals_schema_6_adds(tmp_path, command):
-    """NEW refusals, run RED against `origin/main` before the fix: both
-    flavours exited 0 for all four. The schema-6 migration note says so out
-    loud rather than letting "the default is block, so nothing changed" cover
-    it -- a command that ran yesterday is refused today, and a user told
-    otherwise goes looking for a bug in their tooling."""
-    root, home = _repo(tmp_path), _home(tmp_path)
-    assert _run_sh(root, home, command).returncode == 2
 
 
-@pytest.mark.parametrize("command", [
-    f"{_GH_MERGE} 12 --admin --squash",
-    f"{_GH_MERGE} --admin 12",
-    f"{_TOFU} apply -auto-approve",
-    f"{_TOFU} -chdir=infra destroy",
-])
-@needs_pwsh
-def test_ps1_blocks_the_refusals_schema_6_adds(tmp_path, command):
-    root, home = _repo(tmp_path), _home(tmp_path)
-    assert _run_ps1(root, home, command).returncode == 2
 
 
-@pytest.mark.parametrize("command", _INNOCENT)
-@needs_bash
-def test_sh_leaves_innocent_commands_alone(tmp_path, command):
-    """A guard that fires on `plan`, an ordinary push or a normal merge is the
-    guard people switch off, and then none of the others fire either."""
-    root, home = _repo(tmp_path), _home(tmp_path)
-    proc = _run_sh(root, home, command)
-    assert proc.returncode == 0, (command, proc.stderr[-600:])
 
 
-@pytest.mark.parametrize("command", _INNOCENT)
-@needs_pwsh
-def test_ps1_leaves_innocent_commands_alone(tmp_path, command):
-    root, home = _repo(tmp_path), _home(tmp_path)
-    proc = _run_ps1(root, home, command)
-    assert proc.returncode == 0, (command, proc.stderr[-600:])
 
 
-@pytest.mark.parametrize("guard", sorted(_TRIPS))
-@needs_bash
-def test_sh_honours_each_policy(tmp_path, guard):
-    """block refuses, ask refuses while naming the command and the marker,
-    allow lets it through and says so. The global layer is pinned to `allow`
-    (the ceiling) so the REPO value is what varies -- with it left at the
-    default the ratchet correctly holds every repo value down to `block`, which
-    is its own test above."""
-    command = _TRIPS[guard]
-    home = _home(tmp_path, guards={name: "allow"
-                                   for name in crew_state.GUARD_NAMES})
-
-    root = _repo(tmp_path, guards={guard: "block"})
-    proc = _run_sh(root, home, command)
-    assert proc.returncode == 2
-    assert "BLOCKED" in proc.stderr
-    assert "= ask" not in proc.stderr
-
-    root = _repo(tmp_path, guards={guard: "ask"})
-    proc = _run_sh(root, home, command)
-    assert proc.returncode == 2
-    assert f"guards.{guard} = ask" in proc.stderr
-    assert command in proc.stderr          # the EXACT command, printed
-    marker = [ln for ln in proc.stderr.splitlines()
-              if ".approved-guard-" in ln][-1].split(None, 1)[1].strip()
-    _touch(marker)
-    assert _run_sh(root, home, command).returncode == 0
-    os.remove(marker)
-
-    root = _repo(tmp_path, guards={guard: "allow"})
-    proc = _run_sh(root, home, command)
-    assert proc.returncode == 0
-    # Under `allow` nothing is silent: said now, and written down.
-    assert "ALLOWED" in proc.stderr
-    assert command in proc.stderr
-    assert os.path.isfile(os.path.join(root, crew_state.GUARD_LOG_PATH))
 
 
-@pytest.mark.parametrize("guard", sorted(_TRIPS))
-@needs_pwsh
-def test_ps1_honours_each_policy(tmp_path, guard):
-    """The identical assertions, in the other flavour. Written out rather than
-    shared with the bash version through a helper: the two scripts are what is
-    under test, and a helper that abstracted over them would be free to hide a
-    difference in how each is invoked."""
-    command = _TRIPS[guard]
-    home = _home(tmp_path, guards={name: "allow"
-                                   for name in crew_state.GUARD_NAMES})
-
-    root = _repo(tmp_path, guards={guard: "block"})
-    proc = _run_ps1(root, home, command)
-    assert proc.returncode == 2
-    assert "BLOCKED" in proc.stderr
-    assert "= ask" not in proc.stderr
-
-    root = _repo(tmp_path, guards={guard: "ask"})
-    proc = _run_ps1(root, home, command)
-    assert proc.returncode == 2
-    assert f"guards.{guard} = ask" in proc.stderr
-    assert command in proc.stderr
-    marker = [ln for ln in proc.stderr.splitlines()
-              if ".approved-guard-" in ln][-1].split("File ", 1)[1].strip()
-    _touch(marker)
-    assert _run_ps1(root, home, command).returncode == 0
-    os.remove(marker)
-
-    root = _repo(tmp_path, guards={guard: "allow"})
-    proc = _run_ps1(root, home, command)
-    assert proc.returncode == 0
-    assert "ALLOWED" in proc.stderr
-    assert command in proc.stderr
-    assert os.path.isfile(os.path.join(root, crew_state.GUARD_LOG_PATH))
 
 
-@pytest.mark.parametrize("guard", sorted(_TRIPS))
-@needs_bash
-def test_sh_a_repo_cannot_widen_past_the_machine(tmp_path, guard):
-    """The ratchet, end to end, through the hook that actually runs. The
-    in-process test above proves `effective_ratcheted`; this proves the guard
-    reads the RESOLVED value rather than the repo's raw one -- which is the
-    shape of bug that would make every unit test here pass while a cloned repo
-    granted itself force-push rights on a stranger's machine."""
-    root = _repo(tmp_path, guards={guard: "allow"})
-    home = _home(tmp_path)          # no guards block: the floor, `block`
-    assert _run_sh(root, home, _TRIPS[guard]).returncode == 2
 
 
-@pytest.mark.parametrize("guard", sorted(_TRIPS))
-@needs_pwsh
-def test_ps1_a_repo_cannot_widen_past_the_machine(tmp_path, guard):
-    root = _repo(tmp_path, guards={guard: "allow"})
-    home = _home(tmp_path)
-    assert _run_ps1(root, home, _TRIPS[guard]).returncode == 2
 
 
 def _crippled_hooks(tmp_path):
@@ -859,46 +681,8 @@ def _crippled_hooks(tmp_path):
     return str(dst)
 
 
-@needs_bash
-def test_sh_fails_closed_and_says_so_when_the_resolver_cannot_answer(tmp_path):
-    """"Could not check" is its own outcome and never collapses into "checked,
-    and fine". The `prod` rule further down has a cruder regex to fall back on;
-    config layering has no cruder form, so the only honest answer is `block` --
-    with the REASON said out loud, or the refusal reads as a policy the user
-    chose and they will go looking for it in their config."""
-    root = _repo(tmp_path, guards={"forcePush": "allow"})
-    home = _home(tmp_path, guards={"forcePush": "allow"})
-    crippled = _crippled_hooks(tmp_path)
-
-    proc = subprocess.run(
-        [_BASH, os.path.join(crippled, "guard.sh").replace("\\", "/")],
-        input=json.dumps({"tool_input": {"command": _TRIPS["forcePush"]}}),
-        capture_output=True, text=True, check=False, timeout=120,
-        env=dict(os.environ, CLAUDE_PROJECT_DIR=root, HOME=home,
-                 USERPROFILE=home))
-
-    assert proc.returncode == 2, proc.stderr[-600:]
-    assert "could not read it" in proc.stderr, proc.stderr[-600:]
 
 
-@needs_pwsh
-def test_ps1_fails_closed_and_says_so_when_the_resolver_cannot_answer(
-        tmp_path):
-    root = _repo(tmp_path, guards={"forcePush": "allow"})
-    home = _home(tmp_path, guards={"forcePush": "allow"})
-    crippled = _crippled_hooks(tmp_path)
-
-    proc = subprocess.run(
-        [_PWSH, "-NoProfile", "-NonInteractive", "-File",
-         os.path.join(crippled, "guard.ps1")],
-        input=json.dumps({"tool_name": "PowerShell",
-                          "tool_input": {"command": _TRIPS["forcePush"]}}),
-        capture_output=True, text=True, check=False, timeout=120,
-        env=dict(os.environ, CLAUDE_PROJECT_DIR=root, HOME=home,
-                 USERPROFILE=home, PSModulePath=""))
-
-    assert proc.returncode == 2, proc.stderr[-600:]
-    assert "could not read it" in proc.stderr, proc.stderr[-600:]
 
 
 # ---- production access: guards.prodDatabase / guards.prodServer ------------
@@ -1155,88 +939,36 @@ def test_the_cli_answers_for_the_production_guards_too(tmp_path, capsys):
     assert all(field for field in fields), "an empty field shifts bash's read"
 
 
-@pytest.mark.parametrize("level,command,expected", [
-    ("none", _PROD_READS[0], 2),
-    ("none", "ssh deploy@prod-web-1 'ls /srv'", 2),
-    ("read", _PROD_READS[0], 0),
-    ("read", "ssh deploy@prod-web-1 'systemctl restart app'", 2),
-    ("read", "ssh deploy@prod-web-1", 2),
-    ("full", "psql -h prod-db-1 -c 'delete from orders'", 0),
-    ("read", "ssh deploy@staging-web-1 'systemctl restart app'", 0),
-    ("read", "psql -h dev-db-9 -c 'delete from orders'", 0),
-])
-@needs_bash
-def test_sh_honours_the_production_level(tmp_path, level, command, expected):
-    root = _prod_repo(tmp_path, level)
-    home = _home(tmp_path, guards={name: "full"
-                                   for name in crew_guards.PROD_GUARD_NAMES})
-    proc = _run_sh(root, home, command)
-    assert proc.returncode == expected, (command, proc.stderr[-600:])
+# --- classification: cases whose script-level prover was removed -----------
+#
+# These two re-prove sabotage mutations that `test_guard_command_spelling.py`
+# owned until the command guard was removed. That file drove `guard.sh` and
+# `guard.ps1` as subprocesses; these call the classifier directly, which is
+# what the mutations actually break. `crew_guards` is still live -- both
+# `crew_config` and `crew_state` call into it -- so this is real coverage, not
+# a test kept for its own sake.
 
 
-@pytest.mark.parametrize("level,command,expected", [
-    ("none", _PROD_READS[0], 2),
-    ("none", "ssh deploy@prod-web-1 'ls /srv'", 2),
-    ("read", _PROD_READS[0], 0),
-    ("read", "ssh deploy@prod-web-1 'systemctl restart app'", 2),
-    ("read", "ssh deploy@prod-web-1", 2),
-    ("full", "psql -h prod-db-1 -c 'delete from orders'", 0),
-    ("read", "ssh deploy@staging-web-1 'systemctl restart app'", 0),
-    ("read", "psql -h dev-db-9 -c 'delete from orders'", 0),
-])
-@needs_pwsh
-def test_ps1_honours_the_production_level(tmp_path, level, command, expected):
-    """The identical table in the other flavour. Written out rather than
-    shared: the two scripts are what is under test."""
-    root = _prod_repo(tmp_path, level)
-    home = _home(tmp_path, guards={name: "full"
-                                   for name in crew_guards.PROD_GUARD_NAMES})
-    proc = _run_ps1(root, home, command)
-    assert proc.returncode == expected, (command, proc.stderr[-600:])
+def test_a_subcommands_verb_decides_it_not_just_the_object():
+    """`ip link set ...` is a WRITE, and only the verb says so.
+
+    `PROD_SUBCOMMAND_ACTIONS` maps a head command to the set of its read-only
+    verbs. Checking only the object (`link`) and not the verb (`set`) lets
+    every mutating subcommand of a listed tool through as a read -- which at
+    `prodServer: read` means crew runs it against a declared production host.
+    """
+    assert crew_guards._classify_segment("ip link show") == "read"
+    assert crew_guards._classify_segment("ip link set eth0 down") == "write"
 
 
-@needs_bash
-def test_sh_says_nothing_when_no_production_pattern_matches(tmp_path):
-    """These two guards fire on ORDINARY commands -- every `ssh`, every
-    `psql`. A crew banner above each one is how a guard becomes noise people
-    switch off, so silence when nothing matched is a property, not an
-    omission."""
-    root = _prod_repo(tmp_path, "read")
-    home = _home(tmp_path)
-    proc = _run_sh(root, home, "ssh deploy@staging-web-1 'ls /srv'")
-    assert proc.returncode == 0
-    assert "prodServer" not in proc.stderr
+def test_every_sql_payload_is_classified_not_only_the_first():
+    """A read followed by a write is a WRITE.
 
-
-@needs_pwsh
-def test_ps1_says_nothing_when_no_production_pattern_matches(tmp_path):
-    root = _prod_repo(tmp_path, "read")
-    home = _home(tmp_path)
-    proc = _run_ps1(root, home, "ssh deploy@staging-web-1 'ls /srv'")
-    assert proc.returncode == 0
-    assert "prodServer" not in proc.stderr
-
-
-@needs_bash
-def test_sh_still_blocks_the_old_prod_rule_when_nothing_is_declared(tmp_path):
-    """The unconfigurable `prod`-in-an-argument rule predates these keys and
-    stays. With nothing declared it behaves exactly as it did before schema 6,
-    which is what makes the new default behaviour-PRESERVING rather than only
-    behaviour-neutral-sounding."""
-    root = _prod_repo(tmp_path, "none", production={"databases": [],
-                                                    "hosts": []})
-    proc = _run_sh(root, _home(tmp_path), "psql -h prod-db-1 -c 'select 1'")
-    assert proc.returncode == 2
-    assert "targets production" in proc.stderr
-
-
-@needs_bash
-def test_sh_lets_full_reach_a_host_the_old_rule_would_refuse(tmp_path):
-    """And the other half of that: once a pattern IS declared, the configured
-    level answers, and the old rule stands down for that command. Leaving both
-    in would mean `full` still refused `prod-db-1` -- a key that reads as
-    configurable and is not."""
-    root = _prod_repo(tmp_path, "full")
-    home = _home(tmp_path, guards={"prodDatabase": "full"})
-    proc = _run_sh(root, home, "psql -h prod-db-1 -c 'delete from orders'")
-    assert proc.returncode == 0, proc.stderr[-600:]
+    `psql -c 'select 1' -c 'drop table orders'` carries two payloads. Judging
+    the command by `payloads[0]` alone reads the whole thing as a select and
+    permits the drop, so the check has to hold for ALL of them.
+    """
+    read_only = "psql -h db -c 'select 1' -c 'select 2'"
+    mixed = "psql -h db -c 'select 1' -c 'drop table orders'"
+    assert crew_guards.classify_access(read_only) == "read"
+    assert crew_guards.classify_access(mixed) == "write"

@@ -33,7 +33,11 @@ $cfg = Get-Content .crew/config.json -Raw | ConvertFrom-Json
 # the handoff in this mode: it folds the same text plus the extracted next
 # action into its additionalContext payload. Standing down here keeps the
 # handoff to a single emitter -- printing it here too would inject it twice.
-if ($cfg.context.autoResume -is [bool] -and $cfg.context.autoResume -eq $true) { exit 0 }
+# Absent means TRUE since 0.19.52, so an unset key must take this branch
+# too -- the bare -is [bool] test below reads "not present" as false and
+# would put this flavour one behind the .sh.
+if ($null -eq $cfg.context.autoResume -or
+    ($cfg.context.autoResume -is [bool] -and $cfg.context.autoResume -eq $true)) { exit 0 }
 
 $path = if ($cfg.context.handoffPath) { $cfg.context.handoffPath } else { ".work/HANDOFF.md" }
 if (-not (Test-Path $path)) { exit 0 }

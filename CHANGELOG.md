@@ -4,6 +4,112 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ## [Unreleased]
 
+### Removed
+
+- **`crew` 0.19.52: the PreToolUse command guard is gone.** `guard.sh` and
+  `guard.ps1` are deleted and unregistered from `hooks/hooks.json`. Crew no
+  longer inspects any Bash or PowerShell command before it runs.
+
+  Requested because the guard blocked ordinary development work. The
+  `prod`/`production` whole-word rule was the one that fired most and had **no
+  config key at all** - no value of `guards.prodDatabase` could switch it off,
+  and it matched the word anywhere in a command string, including inside a
+  commit message or a `gh pr comment` body. The two keys that *do* read as the
+  production guards are inert in any repo that has declared no
+  `production.databases` or `production.hosts` patterns, so the setting that
+  looked like the fix was not one.
+
+  **What still blocks, unchanged:** `promote-gate` (dirty tree, missing sha,
+  absent verify evidence), `verify-gate` (the Stop gate over
+  `.crew/verify.json`), `guards.mergeGate` for `/crew:gate`, and the PM's four
+  `AUTONOMOUS_STOPS`. `crew_guards.py` is kept - `mergeGate` and
+  `change.requireForProduction` still resolve through it. Five of the six
+  `guards.*` keys still parse and ratchet but now govern nothing, and
+  `README.md` and `CONFIG.md` say so in the tables rather than leaving them
+  reading as live.
+
+  `hooks.json` drops from 20 entries across 10 scripts to 18 across 9.
+
+  Test surface: `run-tests.sh` loses its five guard sections (the PATH-scrub
+  machinery stays, because promote-gate's own coverage depends on it);
+  `test_guard_bypasses.py`, `test_guard_powershell.py` and
+  `test_guard_command_spelling.py` are deleted, all three existing solely for
+  the removed scripts; `test_guards.py` loses its 16 script-executing tests and
+  keeps its 114 config/ratchet ones; `test_malformed_production_never_permits.py`
+  loses 4 script cases and keeps its module cases;
+  `test_unmanaged_repo_is_left_untouched.py` loses one; `sabotage.py` loses 9
+  of 155 mutations.
+
+### Changed
+
+- **`crew` 0.19.52: context clearing is aggressive by default, and the
+  wrap-up/clear/resume loop is closed.** Five `context.*` defaults moved. All
+  remain configurable and none ratchets, so any can be set back.
+
+  | Key | Was | Now |
+  |---|---|---|
+  | `context.warnAt` | `0.8` | `0.5` |
+  | `context.reserveTokens` | `100000` | `0` |
+  | `context.autoWrapUp` | `false` | `true` |
+  | `context.autoResume` | `false` | `true` |
+  | `context.autoClear.enabled` | `false` | `true` |
+
+  **`warnAt` alone would have changed nothing.** The threshold is the LATER of
+  `warnAt * budget` and `budget - reserveTokens`. At `0.5`/`100000` a 1M window
+  still fired at 900k because the floor won, so the floor had to go to 0 for
+  the percentage to become operative. A 1M window now warns at 500k.
+
+  The five form one loop: `autoWrapUp` makes the threshold message a directive
+  asking for the change in flight to be finished or abandoned and the ticket
+  updated; `autoClear` types `/clear` on the turn AFTER the handoff appears;
+  `autoResume` folds that note plus its next action into the following
+  session's brief.
+
+  **Enabled is not the same as acting.** `autoClear` still refuses unless
+  `.crew/.handoff-requested` exists, the handoff is newer than the request and
+  clears `minHandoffLines`; on Windows it refuses without
+  `context.autoClear.windowTitle`, because SendKeys types into whatever has
+  focus. Both flavours read the RAW config and require `enabled is True`, so
+  the new default reaches a repo only once its config carries the key - a
+  pre-0.19.52 config stays off until `/crew:upgrade`.
+
+  `budgetTokens` auto-detection is unchanged. Not changed because it already
+  worked: `pm_brief` keys its once-per-session claim on session AND source, so
+  `/clear` re-fires the brief and a fresh PM is spawned.
+
+### Added
+
+- **`crew` 0.19.52: an `autoClearInert` trigger, so auto-clear cannot be on and
+  silent.** On Windows with no `windowTitle` the setting reads as ON and can
+  never act, and the refusal only ever reaches `.crew/.autoclear.log`. That is
+  the failure mode this repository's CLAUDE.md names first: an unknown
+  collapsing into the safe-looking value. `crew_state.read_auto_clear` makes it
+  its own value (`inert`), a trigger carries it into the PM brief at every
+  session start, and `agents/pm.md` says to hand the user the one config key
+  rather than dispatch a role or guess a window title.
+
+  **Deliberately not claimed for posix**: that flavour has three methods and
+  real fallbacks, so calling it inert would be a guess wearing the label the
+  key exists to remove. The Windows refusal is measured. Five cases cover it,
+  four asserting silence.
+
+### Fixed
+
+- **`crew` 0.19.52: two tests killed `pwsh` before it could run the script
+  under test.** `test_verify_gate_bash_resolver.py` faked `SystemRoot` in the
+  subprocess environment so tier b's System32 filter would apply. pwsh 7.6.6
+  reads `SystemRoot` during startup - `InitialSessionState`'s static
+  constructor reaches `SecuritySupport.GetSaferPolicy` - and a tree with no
+  real System32 aborts the interpreter with `Win32Exception (126): The
+  specified module could not be found`, rc `2148734499`, before a line of the
+  script runs.
+
+  Isolated to one variable rather than inferred from the stack trace: faking
+  `PATH` alone reproduces nothing, faking `SystemRoot` alone reproduces it
+  exactly. The fix sets `$env:SystemRoot` INSIDE `-Command`, so pwsh boots
+  against the real System32 while the script still sees the fake tree - which
+  is all the filter compares against.
+
 ### Added
 
 - **Menu item 25, `perplexity-mcp`: register the Perplexity MCP server.** Off by
@@ -443,7 +549,8 @@ All notable changes to this repository are documented here. Format follows [Keep
   all four refuse any `run` / `always` / `default` entry (plus
   `environments[].{deploy,smoke,regression,verify}` in `resolve-tools.sh`)
   containing `
-`, ``, `` or ``, with an identical named
+`, `
+`, `` or ``, with an identical named
   `PARSE_ERROR` naming the entry, the character and the entry's opening text;
   `verify-gate.sh` then frames its records with `` between and ``
   inside. `verify-gate.ps1` never had the framing bug - it reads objects, not

@@ -822,12 +822,12 @@ are `none` | `read` | `full`, shipping as `none`.
 
 | Key | Governs | Read by |
 |---|---|---|
-| `guards.terraformApply` | `terraform`/`tofu` `apply` and `destroy`, `-chdir` forms included | `guard.sh`, `guard.ps1` |
-| `guards.forcePush` | `git push --force` / `-f` / `--force-with-lease`, and a leading-plus refspec | `guard.sh`, `guard.ps1` |
-| `guards.adminMerge` | `gh pr merge --admin` | `guard.sh`, `guard.ps1` |
+| `guards.terraformApply` | nothing, since 0.19.52 | **nothing** - the command guard was removed |
+| `guards.forcePush` | nothing, since 0.19.52 | **nothing** - the command guard was removed |
+| `guards.adminMerge` | nothing, since 0.19.52 | **nothing** - the command guard was removed |
 | `guards.mergeGate` | whether `/crew:gate` may take a live repo's merge gate down | `commands/gate.md`, `commands/promote.md` |
-| `guards.prodDatabase` | commands aimed at a `production.databases` glob | `guard.sh`, `guard.ps1` |
-| `guards.prodServer` | commands aimed at a `production.hosts` glob | `guard.sh`, `guard.ps1` |
+| `guards.prodDatabase` | nothing, since 0.19.52 | **nothing** - the command guard was removed |
+| `guards.prodServer` | nothing, since 0.19.52 | **nothing** - the command guard was removed |
 
 - **`block`** refuses, exactly as the guard did before these keys existed.
 - **`ask`** refuses, prints the **exact** command, and names the one file that
@@ -2176,7 +2176,6 @@ ten; the prose was the half that went stale.
 
 | Script | Event | Behavior |
 |---|---|---|
-| `guard.sh` / `guard.ps1` | `PreToolUse` on Bash / PowerShell | Blocks `terraform`/`tofu` `apply`/`destroy`, destructive DDL, force push, `gh pr merge --admin`, hard reset, prod-targeted commands, and any command that would print a secret value into the transcript. Three of those — `guards.terraformApply`, `guards.forcePush`, `guards.adminMerge` — are configurable per machine as `block` \| `ask` \| `allow`, defaulting to `block`, and access to a declared production database or host is `guards.prodDatabase` / `guards.prodServer` as `none` \| `read` \| `full`, defaulting to `none`; see §11b |
 | `promote-gate.sh` / `.ps1` | `PreToolUse` on Bash / PowerShell | Refuses a declared `deploy` command unless the upstream environment has an all-pass row for **this sha**, the rollback runbook is verified inside 90 days, `requireHuman` is approved, and the tree is clean. During an emergency lane it records each unmet precondition and allows the deploy (§24) |
 | `handoff-read.sh` / `.ps1` | `SessionStart` | Injects the handoff after clear, compact, or resume — first archiving it instead, under `.crew/handoffs/`, if age or reality drift (its `head`/`branch` no longer describing the checkout) says it is stale |
 | `pm-brief.sh` / `.ps1` | `SessionStart` | Runs `crew_state.py`, prints the prioritized PM brief (triggers, health, knowledge, graph freshness) — report-only, changes nothing |

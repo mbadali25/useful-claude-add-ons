@@ -244,7 +244,12 @@ def validate_providers(cfg):
 # "not set" (`if ($a.windowTitle)` is false for either), and null is what
 # "not set" means everywhere else in this file, so null is the honest default.
 AUTOCLEAR_DEFAULTS = {
-    "enabled": False,
+    # 0.19.52: ON by default. It still refuses unless the handoff note
+    # exists, is newer than the request and clears `minHandoffLines`,
+    # and on Windows it refuses without `windowTitle` because SendKeys
+    # types into whatever has focus. So "enabled" means "allowed to act
+    # once everything is wrapped up", not "will type into your terminal".
+    "enabled": True,
     "method": "auto",
     "windowTitle": None,
     "command": "/clear",
@@ -328,9 +333,15 @@ def default_config():
         "verifyGate": True,
         "context": {
             "enabled": True,
-            "warnAt": 0.8,
+            # 0.19.52: 0.5 rather than 0.8, and no reserve floor. The
+            # threshold is the LATER of `warnAt * budget` and
+            # `budget - reserveTokens`, so a non-zero reserve silently
+            # overrides an aggressive percentage on a large window --
+            # at 0.8/100k a 1M window fired at 900k, and lowering only
+            # warnAt would still have fired at 900k. Both had to move.
+            "warnAt": 0.5,
             "budgetTokens": None,
-            "reserveTokens": 100000,
+            "reserveTokens": 0,
             "handoffPath": ".work/HANDOFF.md",
             "keepTranscripts": 5,
             # These three were read by hook scripts and declared here by
@@ -339,8 +350,15 @@ def default_config():
             # See the `jira.cloudId` note above for why undeclared is not the
             # same as unused, and why it still cost something.
             "autoClear": copy.deepcopy(AUTOCLEAR_DEFAULTS),
-            "autoWrapUp": False,
-            "autoResume": False,
+            # 0.19.52: true. Pairs with autoClear -- the wrap-up wording
+            # is what asks for the change in flight to be finished or
+            # abandoned and the ticket updated, and auto-clear fires on
+            # the turn after the handoff lands.
+            "autoWrapUp": True,
+            # 0.19.52: true, completing the loop with autoWrapUp and
+            # autoClear -- ask for the note, clear once it exists, read
+            # it back on the next session with the next action attached.
+            "autoResume": True,
             # See crew_state.STALE_HANDOFF_DEFAULTS for why these two figures
             # specifically -- generous on purpose, since archiving a note
             # someone is still using is worse than leaving a stale one in

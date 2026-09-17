@@ -382,6 +382,37 @@ def read_work(root):
     }
 
 
+def read_auto_clear(cfg):
+    """Whether `context.autoClear` is switched on but cannot act here.
+
+    `enabled` is consent, not capability. The bash flavour can target a tmux
+    pane exactly; the native-Windows flavour has exactly one method, SendKeys
+    against a title-matched foreground window, and it refuses outright without
+    `windowTitle` rather than typing into whatever happens to have focus.
+
+    So on Windows with no `windowTitle`, `enabled: true` is a setting that
+    reads as on and does nothing. `inert` is that state as its OWN value
+    rather than an absence, so the brief can say it instead of the user
+    discovering it in `.crew/.autoclear.log`.
+    """
+    ctx = dict_or_empty(cfg.get("context"))
+    auto = dict_or_empty(ctx.get("autoClear"))
+    enabled = auto.get("enabled") is True
+    title = auto.get("windowTitle") or None
+    system = dict_or_empty(cfg.get("platform")).get("os")
+    return {
+        "enabled": enabled,
+        "windowTitle": title,
+        "os": system,
+        # Only claimed for the platform whose refusal is MEASURED
+        # (auto-clear.ps1:128). A posix box with no tmux also cannot act, but
+        # it has three methods and its own fallbacks, so calling that inert
+        # here would be a guess wearing the same label this key exists to
+        # remove.
+        "inert": bool(enabled and system == "windows" and not title),
+    }
+
+
 # --- Handoff staleness ------------------------------------------------------
 #
 # read_work() above only asks whether a handoff exists -- enough to warn once
@@ -680,6 +711,11 @@ TRIGGERS = (
     # is, rather than describing a standing process condition the way
     # reviewNotWorking/ticketsTooLarge do.
     "endpointUnscanned",
+    # Above the freshness findings and below the actionable ones, for the same
+    # reason endpointUnscanned sits where it does: this is not drift in a map,
+    # it is a capability the user believes they have and does not. It costs
+    # one line to fix and silently costs every clear until they do.
+    "autoClearInert",
     "graphStale",
     # Above `knowledgeBehind` on purpose, and it is the whole point of keeping
     # them separate. A map that cannot be re-verified is a worse finding than
@@ -2551,6 +2587,8 @@ def evaluate_triggers(state):
         # that has to be inert on every machine that never installed it --
         # `unscanned` is [] in that case, and bool([]) is False regardless.
         "endpointUnscanned": bool(dict_or_empty(state.get("endpoints")).get("unscanned")),
+        "autoClearInert": bool(
+            dict_or_empty(state.get("autoClear")).get("inert")),
         # An absent graph is stale by definition -- there is nothing to trust.
         "graphStale": not graph.get("present") or not graph.get("current"),
         "knowledgeBehind": bool(knowledge.get("behind")),
@@ -2671,6 +2709,7 @@ def collect(root, cfg_override=None):
         "endpoints": read_endpoints(root, cfg) if is_crew
                     else {"installed": False, "unscanned": []},
         "incident": crew_incident.read_state(root, cfg),
+        "autoClear": read_auto_clear(cfg),
     }
     # A directory with no crew has no findings. evaluate_triggers would
     # otherwise report graphStale for every plain git repo on the machine,

@@ -143,6 +143,14 @@ FINDINGS = {
         "{endpointSummary}",
         "{endpointAction}",
     ),
+    "autoClearInert": (
+        "context.autoClear is on but cannot act - this is Windows and "
+        "context.autoClear.windowTitle is not set",
+        "set context.autoClear.windowTitle to a substring of the terminal's "
+        "title (pin a tab title first, so it does not move) - until then "
+        "every attempt is refused to .crew/.autoclear.log and no /clear is "
+        "ever sent",
+    ),
     "graphStale": (
         "the code graph is missing or older than HEAD",
         "run /crew:onboard, or {graphCommand} to refresh it",

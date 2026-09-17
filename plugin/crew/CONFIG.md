@@ -662,7 +662,7 @@ they are repo-only, and §16 says why. Defaults are identical in `default_config
 | `pm.authority` | see §5 | `"report-only"` |
 | `pm.ticketGranularity` | see §6 | `"system"` |
 | `pm.maxDispatches` | integer | `3` |
-| `context.autoClear.enabled` | boolean, see §14 | `false` |
+| `context.autoClear.enabled` | boolean, see §14 | `true` |
 | `context.autoClear.method` | string, see §14 | `"auto"` |
 | `context.autoClear.windowTitle` | string or `null`, see §14 | `null` |
 | `context.autoClear.command` | string | `"/clear"` |
@@ -736,14 +736,14 @@ repository or one checkout.
 | `obsidian.columns.done` | string | `"Done"` | prose, §9 |
 | `verifyGate` | boolean | `true` | `hooks/scripts/verify-gate.sh` |
 | `context.enabled` | boolean | `true` | `hooks/scripts/context-watch.ps1` |
-| `context.warnAt` | float | `0.8` | `context-watch.ps1` |
+| `context.warnAt` | float | `0.5` | `context-watch.ps1` |
 | `context.budgetTokens` | integer or `null` | `null` | `context-watch.ps1` |
-| `context.reserveTokens` | integer or `null` | `100000` | `context-watch.ps1` |
+| `context.reserveTokens` | integer or `null` | `0` | `context-watch.ps1` |
 | `context.handoffPath` | path | `".work/HANDOFF.md"` | `auto-clear.ps1` |
 | `context.keepTranscripts` | integer | `5` | `handoff-write.ps1` |
 | `context.autoClear.unsafeFocus` | boolean | `false` | `auto-clear.sh`, gating `wtype` — **consent, not capability**, see §14 |
-| `context.autoWrapUp` | boolean | `false` | `context-watch.ps1`, `context-watch.sh` |
-| `context.autoResume` | boolean | `false` | `handoff-read.ps1`, `handoff-read.sh` |
+| `context.autoWrapUp` | boolean | `true` | `context-watch.ps1`, `context-watch.sh` |
+| `context.autoResume` | boolean | `true` | `handoff-read.ps1`, `handoff-read.sh` |
 | `context.staleHandoff.maxAgeHours` | integer | `72` | `crew_state.STALE_HANDOFF_DEFAULTS` |
 | `context.staleHandoff.maxCommitsBehind` | integer | `3` | `crew_state.STALE_HANDOFF_DEFAULTS` |
 | `emergency.standDown` | boolean | `true` | `hooks/scripts/_common.sh` |

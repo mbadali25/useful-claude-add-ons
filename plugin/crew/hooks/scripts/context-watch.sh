@@ -36,9 +36,9 @@ try: c=json.load(open(".crew/config.json")).get("context",{})
 except Exception: c={}
 # reserveTokens: absolute headroom floor, in tokens. Absent -> 100k. null or
 # <=0 -> off, i.e. the old pure-percentage behaviour. See the threshold below.
-try: reserve = max(0, int(c.get("reserveTokens", 100_000) or 0))
+try: reserve = max(0, int(c.get("reserveTokens", 0) or 0))
 except (TypeError, ValueError): reserve = 100_000
-print(c.get("warnAt",0.8), c.get("budgetTokens") or 0, c.get("handoffPath",".work/HANDOFF.md"), str(c.get("enabled",True)).lower(), str(c.get("autoWrapUp",False)).lower(), reserve)
+print(c.get("warnAt",0.5), c.get("budgetTokens") or 0, c.get("handoffPath",".work/HANDOFF.md"), str(c.get("enabled",True)).lower(), str(c.get("autoWrapUp",True)).lower(), reserve)
 PY
 )
 [ -z "$CFG" ] && exit 0

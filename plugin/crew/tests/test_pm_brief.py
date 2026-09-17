@@ -773,14 +773,37 @@ def test_quiet_mode_config_never_expands():
 _BASE_CONFIG = {"schema": 2, "tier": 0, "roles": [], "tracker": "files"}
 
 
-def test_auto_resume_false_by_default_changes_nothing(tmp_path, monkeypatch,
-                                                       capsys):
-    root = crew_fixtures.make_repo(tmp_path, config=_BASE_CONFIG, graph=True,
+def test_auto_resume_off_changes_nothing(tmp_path, monkeypatch, capsys):
+    """Turning autoResume OFF must leave the brief exactly as it was.
+
+    RENAMED in 0.19.52. This was `..._false_by_default_...` and passed a
+    config that simply omitted the key, which worked only while the shipped
+    default was false. It is true now, so the off-path has to be selected
+    explicitly or this case silently becomes a second copy of the on-path
+    test -- passing, and measuring nothing it claims to measure.
+    """
+    config = dict(_BASE_CONFIG, context={"autoResume": False})
+    root = crew_fixtures.make_repo(tmp_path, config=config, graph=True,
                                    handoff=True)
     out = _run(root, "sess-1", monkeypatch, capsys)
     assert "## crew" in out
     assert "additionalContext" not in out
     assert "hookSpecificOutput" not in out
+
+
+def test_auto_resume_is_on_by_default(tmp_path, monkeypatch, capsys):
+    """The shipped default, owned by its own case rather than inferred.
+
+    A config that never mentions autoResume must take the resume path, which
+    is what makes the 0.19.52 loop close: autoWrapUp asks for the note,
+    autoClear clears once it exists, and this reads it back on the next
+    session with the next action folded into additionalContext.
+    """
+    root = crew_fixtures.make_repo(tmp_path, config=_BASE_CONFIG, graph=True,
+                                   handoff=True)
+    out = _run(root, "sess-1", monkeypatch, capsys)
+    assert "additionalContext" in out
+    assert "hookSpecificOutput" in out
 
 
 def test_auto_resume_true_with_no_handoff_changes_nothing(tmp_path,

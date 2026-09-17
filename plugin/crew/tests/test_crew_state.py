@@ -663,6 +663,62 @@ def test_healthy_state_fires_no_triggers():
     assert crew_state.evaluate_triggers(_state()) == []
 
 
+def _auto_clear_cfg(system, **auto):
+    return {"platform": {"os": system}, "context": {"autoClear": dict(auto)}}
+
+
+def test_auto_clear_on_windows_without_a_window_title_is_inert():
+    """The case the trigger exists for.
+
+    `context.autoClear.enabled` ships true in 0.19.52, and the native-Windows
+    flavour has exactly one method -- SendKeys against a title-matched
+    foreground window -- which `auto-clear.ps1` refuses to use without
+    `windowTitle`. So this combination reads as ON and can never act, and the
+    refusal only ever reaches `.crew/.autoclear.log`.
+    """
+    state = crew_state.read_auto_clear(_auto_clear_cfg("windows", enabled=True))
+    assert state["inert"] is True
+    assert "autoClearInert" in crew_state.evaluate_triggers(
+        _state(autoClear=state))
+
+
+def test_a_window_title_clears_the_inert_finding():
+    state = crew_state.read_auto_clear(
+        _auto_clear_cfg("windows", enabled=True, windowTitle="claude"))
+    assert state["inert"] is False
+    assert "autoClearInert" not in crew_state.evaluate_triggers(
+        _state(autoClear=state))
+
+
+def test_auto_clear_switched_off_is_not_inert():
+    """Off is a decision, not a defect. Reporting it would make the brief
+    nag every repo that deliberately does not want its terminal typed into."""
+    state = crew_state.read_auto_clear(_auto_clear_cfg("windows", enabled=False))
+    assert state["inert"] is False
+    assert "autoClearInert" not in crew_state.evaluate_triggers(
+        _state(autoClear=state))
+
+
+def test_posix_without_a_window_title_is_not_claimed_inert():
+    """Deliberately NOT claimed. The bash flavour has three methods and can
+    target a tmux pane exactly, with no title involved. Calling it inert here
+    would be a guess wearing the label this key exists to remove -- the
+    Windows refusal is measured (`auto-clear.ps1` refuses outright), this one
+    is not."""
+    state = crew_state.read_auto_clear(_auto_clear_cfg("linux", enabled=True))
+    assert state["inert"] is False
+
+
+def test_a_config_with_no_auto_clear_block_is_not_inert():
+    """A pre-0.19.52 repo. `auto-clear.sh` reads the RAW config and requires
+    `enabled is True`, so an absent block means off -- and this reader has to
+    agree with it, or the brief would report a capability the hook does not
+    have."""
+    state = crew_state.read_auto_clear({"platform": {"os": "windows"}})
+    assert state["enabled"] is False
+    assert state["inert"] is False
+
+
 def test_v1_schema_fires_upgrade_needed():
     assert "upgradeNeeded" in crew_state.evaluate_triggers(_state(schema=1))
 

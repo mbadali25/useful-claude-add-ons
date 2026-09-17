@@ -27,15 +27,18 @@ if ($d.stop_hook_active -eq $true) { exit 0 }
 $cfg = (Get-Content .crew/config.json -Raw | ConvertFrom-Json).context
 if ($null -eq $cfg -or $cfg.enabled -eq $false) { exit 0 }
 # $null test, not truthiness: warnAt 0 is a legal "always fire" and 0 is falsy.
-$warnAt     = if ($null -ne $cfg.warnAt) { [double]$cfg.warnAt } else { 0.8 }
+$warnAt     = if ($null -ne $cfg.warnAt) { [double]$cfg.warnAt } else { 0.5 }
 $configured = if ($cfg.budgetTokens) { [long]$cfg.budgetTokens } else { 0 }
 $handoff    = if ($cfg.handoffPath) { $cfg.handoffPath } else { ".work/HANDOFF.md" }
-$autoWrapUp = $cfg.autoWrapUp -eq $true
+# Absent means TRUE since 0.19.52, so this cannot be a bare `-eq $true`:
+# that reads an unset key as false and would put this flavour one
+# behind the .sh on every config written before the change.
+$autoWrapUp = if ($null -ne $cfg.autoWrapUp) { $cfg.autoWrapUp -eq $true } else { $true }
 # reserveTokens: absolute headroom floor, in tokens. Absent -> 100k. null or
 # <=0 -> off, i.e. the old pure-percentage behaviour. See the threshold below.
 # PSObject.Properties, not truthiness: an explicit 0 means "off", and a missing
 # key means 100k, and $cfg.reserveTokens is 0-ish for both.
-[long]$reserve = 100000
+[long]$reserve = 0
 if ($cfg.PSObject.Properties['reserveTokens']) {
   $rt = $cfg.reserveTokens
   [long]$reserve = if ($null -eq $rt) { 0 } else { [long]$rt }

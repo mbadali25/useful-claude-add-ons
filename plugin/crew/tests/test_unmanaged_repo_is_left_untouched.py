@@ -28,7 +28,6 @@ SABOTAGE-TEST THIS FILE before trusting it: see `sabotage.py`.
 import builtins
 import json
 import os
-import subprocess
 
 import pytest
 
@@ -131,30 +130,6 @@ def test_an_allowed_command_then_a_session_start_leaves_nothing_behind(
         "an unmanaged repo must not be reported on either"
 
 
-@needs_bash
-def test_the_same_thing_through_guard_sh(tmp_path, monkeypatch, capsys):
-    """Through the hook that actually runs, because the hook is what passes
-    `--record` and the hook is where a future change would put the write back.
-    """
-    root = _plain_repo(tmp_path)
-    home = tmp_path / "home"
-    (home / ".claude" / "crew").mkdir(parents=True)
-    (home / ".claude" / "crew" / "config.json").write_text("{}", "utf-8")
-
-    proc = subprocess.run(
-        [_BASH, _GUARD_SH],
-        input=json.dumps({"tool_name": "Bash",
-                          "tool_input": {"command": _INNOCENT}}),
-        capture_output=True, text=True, check=False, cwd=str(root),
-        env=dict(os.environ, CLAUDE_PROJECT_DIR=str(root),
-                 HOME=str(home), USERPROFILE=str(home)))
-
-    assert proc.returncode == 0, proc.stderr
-    assert not (root / ".crew").exists(), proc.stderr
-
-    assert _session_start(root, tmp_path, monkeypatch) == 0
-    assert not (root / ".crew").exists()
-    capsys.readouterr()
 
 
 # --- the controls: crew repos still get their log --------------------------

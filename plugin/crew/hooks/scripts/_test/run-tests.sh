@@ -1,17 +1,18 @@
 #!/usr/bin/env bash
 # Regression suite for crew's hook scripts.
 #
-# guard.sh has had two real regressions in two review passes - a substring
-# "prod" match that blocked `s3://my-product-images`, and a secret rule that
-# exempted `> file` so writing a secret to disk passed while printing one
-# blocked. Both were found by running the thing, not by reading it. This file
-# exists so the next edit has a safety net.
+# The command guard (guard.sh / guard.ps1) was REMOVED in 0.19.52 - it blocked
+# development work, and the two gates below are what crew still enforces. Its
+# cases went with it; do not re-add them without re-adding the hook.
+# promote-gate.sh and verify-gate.sh keep their coverage here, and both have
+# had real regressions found by running them rather than reading them. This
+# file exists so the next edit has a safety net.
 #
 #   bash hooks/scripts/_test/run-tests.sh
 #
 # Exit 0 = all pass. Exit 1 = something regressed.
 #
-# SABOTAGE-TEST THIS SUITE before trusting it: break a rule in guard.sh on
+# SABOTAGE-TEST THIS SUITE before trusting it: break a rule in promote-gate.sh on
 # purpose, run this, and confirm it goes red. A check that has never failed has
 # never been shown to be able to fail.
 set -uo pipefail
@@ -46,19 +47,9 @@ json_cmd() {  # $1 = tool_name, $2 = command
   printf '%s' "$2" | CREW_TEST_TOOL="$1" "$PY" -c 'import os, sys, json; print(json.dumps({"tool_name": os.environ["CREW_TEST_TOOL"], "tool_input": {"command": sys.stdin.read()}}))'
 }
 
-guard() {  # $1 = command -> echoes exit code
-  json_cmd Bash "$1" | bash "$SCRIPTS/guard.sh" >/dev/null 2>&1
-  echo $?
-}
-
-expect() {  # $1 = wanted exit, $2 = command
-  local got; got=$(guard "$2")
-  if [ "$got" = "$1" ]; then pass; else fail "want=$1 got=$got  $2"; fi
-}
-
 # --- jq: covered, but bounded ----------------------------------------------
-# guard.sh and promote-gate.sh both pipe INTO `jq` for CMD extraction when it
-# is on PATH (see guard.sh:8-9) - real, deliberate production behaviour, not
+# promote-gate.sh pipes INTO `jq` for CMD extraction when it
+# is on PATH - real, deliberate production behaviour, not
 # a test artifact. On a machine with chocolatey's jq (a native, non-MSYS
 # Win32 binary) this is also this suite's actual hang: `echo ... | jq ...`
 # leaks a Windows handle on every invocation from Git Bash. MSYS-native tools
@@ -70,9 +61,9 @@ expect() {  # $1 = wanted exit, $2 = command
 # completed here (confirmed by bisecting: swapping in plain `grep`/`cat`
 # survives hundreds of calls; jq alone reproduces the exact hang and the
 # "OSError ... Invalid argument" symptom in isolation, with nothing from
-# guard.sh's own logic involved).
+# promote-gate.sh's own logic involved).
 #
-# guard.sh already has a real fallback for machines with no jq at all (the
+# promote-gate.sh already has a real fallback for machines with no jq at all (the
 # `elif PY=$(crew_py)` branch, a few lines below the jq branch) - CMD
 # extraction is byte-identical either way, only the ~7-line CHOICE of
 # extractor differs. So: prove the jq extractor itself still works with a
@@ -160,18 +151,13 @@ else
 fi
 
 if [ -n "$JQ_BIN" ]; then
-  echo "== guard.sh: jq fast path (bounded - see PATH note above) =="
-  expect 2 'terraform destroy'
-  expect 2 'git push --force origin main'
-  expect 2 'psql -h prod-db.internal -c "select 1"'
-  expect 0 'git status'
-  expect 0 'npm test'
+  echo "== PATH scrub: hide jq to exercise the no-jq fallback =="
   # From here on, every guard()/pgate() call in this file runs with jq
   # hidden from PATH - see the note above for why.
   # The scrub removes jq's whole DIRECTORY, not just the jq binary, because
   # PATH has no finer granularity. On a layout that installs several tools into
   # one bin (chocolatey does exactly this) that directory can also hold python -
-  # and guard.sh's no-jq fallback NEEDS python. Without it the guard prints
+  # and promote-gate.sh's no-jq fallback NEEDS python. Without it the gate prints
   # "no jq and no python" and stands down, so every case below would assert
   # against a guard that never ran and the suite would go green while testing
   # nothing. Prove both halves of the scrub before trusting a single result.
@@ -184,7 +170,7 @@ if [ -n "$JQ_BIN" ]; then
   # Walk crew_py's OWN resolution order (python3, python, py) and then RUN the
   # winner. Resolving is not enough: on Windows, `command -v python` succeeds on
   # the App Execution Alias in WindowsApps, a stub that opens the Microsoft
-  # Store and is not an interpreter. crew_py hands that stub back, guard.sh's
+  # Store and is not an interpreter. crew_py hands that stub back, promote-gate.sh's
   # `$PY -c ...` produces nothing, CMD comes back empty, and `[ -z "$CMD" ]`
   # exits 0 - the guard stands down and every must-BLOCK case below silently
   # passes for the wrong reason. An existence check cannot see that; executing
@@ -201,248 +187,14 @@ if [ -n "$JQ_BIN" ]; then
     done
     exit 1'; then
     echo "FATAL: with jq's directory ($JQ_DIR) hidden, no WORKING python remains." >&2
-    echo "       guard.sh would report 'no jq and no python' and exit 0 - standing" >&2
+    echo "       promote-gate.sh would report 'no jq and no python' and exit 0 - standing" >&2
     echo "       down - so every must-BLOCK case below would pass against a guard" >&2
     echo "       that never ran." >&2
     exit 1
   fi
   export PATH="$NOJQ_PATH"
 else
-  echo "== guard.sh: jq fast path SKIPPED - no jq on PATH, already testing the fallback =="
-fi
-
-# Three of guard.sh's rules now resolve `guards.<name>` through crew_config.py,
-# so their answer depends on two CONFIG FILES as well as on the code: this
-# repo's `.crew/config.json` (machine-local and gitignored) and the developer's
-# own `~/.claude/crew/config.json`. Without pinning both, a developer who set
-# `guards.forcePush: allow` on their machine would watch a dozen cases below go
-# red and conclude the guard had regressed.
-#
-# "Run the states; do not reason about them", and check what you changed about
-# the MEASUREMENT before reporting a regression -- a guard suite here once
-# reported 24/33 for exactly this class of reason. So: an empty scratch repo and
-# an empty HOME for the whole guard section, restored afterwards, which pins
-# every guard to its shipped default of `block`. The configured values get their
-# own coverage in `tests/test_guards.py`, where the layers are fixtures.
-GUARD_PIN=$(mktemp -d) || exit 1
-mkdir -p "$GUARD_PIN/repo/.crew" "$GUARD_PIN/home/.claude/crew"
-printf '{"schema":6}' > "$GUARD_PIN/repo/.crew/config.json"
-printf '{}' > "$GUARD_PIN/home/.claude/crew/config.json"
-GUARD_PIN_OLD_PROJECT="${CLAUDE_PROJECT_DIR:-}"
-GUARD_PIN_OLD_HOME="${HOME:-}"
-GUARD_PIN_OLD_USERPROFILE="${USERPROFILE:-}"
-export CLAUDE_PROJECT_DIR="$GUARD_PIN/repo"
-export HOME="$GUARD_PIN/home"
-export USERPROFILE="$GUARD_PIN/home"
-
-echo "== guard.sh: must BLOCK (exit 2) =="
-expect 2 'terraform apply -auto-approve'
-expect 2 'terraform destroy'
-expect 2 'git push --force origin main'
-expect 2 'git push -f origin main'
-expect 2 'git push --force-with-lease origin main'
-expect 2 'git reset --hard HEAD~3'
-expect 2 'git clean -fd'
-# E4 from the 2026-08-31 retrospective: every git rule required the subcommand
-# to sit immediately after `git`, so the option forms a worktree-per-agent
-# setup uses bypassed the guard entirely. These are the forms that got through.
-expect 2 'git -C /work/app push --force'
-expect 2 'git -C /work/app push -f origin main'
-expect 2 'git -c user.name=agent push --force'
-expect 2 'git --git-dir=/repos/x/.git --work-tree=/repos/x push --force'
-expect 2 'git -C /work/app reset --hard origin/main'
-expect 2 'git -C /work/app clean -fdx'
-# A force push with no --force token at all.
-expect 2 'git push origin +main'
-expect 2 'git push origin +refs/heads/main:refs/heads/main'
-expect 2 'DROP TABLE users'
-expect 2 'TRUNCATE TABLE audit_log'
-expect 2 'psql -h prod-db.internal -c "select 1"'
-expect 2 'aws s3 rm s3://bucket/key --profile prod'
-expect 2 'az sql db show --resource-group prod-rg'
-# D5 true positive: the environment name as the leading segment of an actual
-# resource argument to a real infra CLI - must still block.
-expect 2 'aws s3 rm s3://prod-backups/2026-08-24.tar.gz --recursive'
-# secrets: printing, persisting, and the tee variant all block
-expect 2 'vault kv get secret/db'
-expect 2 'vault kv get secret/db > /tmp/s.txt'
-expect 2 'vault kv get secret/db >> /tmp/s.txt'
-expect 2 'vault kv get secret/db | tee /tmp/s.txt'
-expect 2 'aws secretsmanager get-secret-value --secret-id db --query SecretString --output text'
-expect 2 'aws ssm get-parameter --name /db/pass --with-decryption'
-expect 2 'kubectl get secret db -o yaml'
-# EVERY read must be captured, not one of them. This exited 0: the exemption
-# asked whether ANY secret read sat inside a capture, so capturing the first
-# value licensed printing the second.
-expect 2 'X=$(aws secretsmanager get-secret-value --secret-id first); aws secretsmanager get-secret-value --secret-id second'
-expect 2 'vault kv get secret/first; vault kv get secret/second'
-expect 2 'cat .env'
-expect 2 'cat .env.production'
-# Schema 6's NEW refusals. Both of these exited 0 in BOTH flavours against
-# origin/main, so these two blocks are the must-block cases that ran red before
-# the fix. `guards.adminMerge` and the `tofu` spelling of
-# `guards.terraformApply` are new refusals, not preserved ones -- the upgrade
-# report says so rather than letting "the default is block" cover it.
-expect 2 'gh pr merge 12 --admin --squash'
-expect 2 'gh pr merge --admin 12'
-expect 2 'tofu apply -auto-approve'
-expect 2 'tofu destroy'
-expect 2 'tofu -chdir=infra apply'
-
-echo "== guard.sh: must ALLOW (exit 0) =="
-expect 0 'terraform plan'
-expect 0 'terraform fmt -recursive -check'
-expect 0 'terraform validate'
-expect 0 'git push origin feature/x'
-expect 0 'git status'
-# The widened git prefix must not start matching ordinary git work. Note
-# --follow-tags contains the literal "-f" and must still be allowed.
-expect 0 'git push --follow-tags origin main'
-expect 0 'git -C /work/app push origin feature/x'
-expect 0 'git -C /work/app status'
-expect 0 'git commit -m "do not force push to main, use -f nowhere"'
-expect 0 'git push origin refs/heads/main:refs/heads/main'
-expect 0 'git clean -n'
-expect 0 'git stash push -m wip'
-expect 0 'git -C /work/app stash push -m wip'
-# The leading-plus rule looks for a token starting with "+" after `push`. A "+"
-# inside a token is not a force refspec and must stay allowed - without this
-# case, widening that rule later has no guardrail.
-expect 0 'git push origin main -o ci.variable=A+B'
-# "prod" as a substring of an ordinary word is not production
-expect 0 'aws s3 ls s3://anew-product-images'
-expect 0 'aws s3 ls s3://reproducible-builds'
-expect 0 'psql -c "select * from products"'
-expect 0 'grep -r productivity src/'
-# D5 false positives: the environment name in a quoted value, a commit
-# message, a -m argument, a URL, and prose must NOT trigger the guard - only
-# an actual argument position on a real infra CLI does.
-expect 0 'aws s3 cp notes.txt "s3://bucket/prod team meeting notes.txt"'
-expect 0 'git commit -m "redeploy prod after aws outage"'
-expect 0 'aws sns publish --topic-arn arn:aws:sns:us-east-1:123:t -m prod-status-update'
-expect 0 'aws ssm put-parameter --name /docs/link --value https://runbooks.example.com/prod --type String'
-expect 0 'gh pr comment 42 --body "This fixes the prod outage from yesterday, see aws docs for details"'
-# the sanctioned way to handle a secret: capture, never render
-expect 0 'DB_PASS=$(aws secretsmanager get-secret-value --secret-id db --query SecretString --output text)'
-expect 0 'export DB_PASS=$(vault kv get -field=pass secret/db)'
-# Two reads, two captures. Counting occurrences must not become "one capture
-# per command line" -- and a capture whose substitution carries a pipe is the
-# shape a false block would take.
-expect 0 'A=$(aws secretsmanager get-secret-value --secret-id first); B=$(aws secretsmanager get-secret-value --secret-id second)'
-expect 0 'DB_PASS=$(aws secretsmanager get-secret-value --secret-id db | jq -r .SecretString)'
-expect 0 'npm test'
-expect 0 'grep -r TODO src/'
-expect 0 'cat README.md'
-# The new rules must not widen into ordinary work. `gh pr merge` without
-# --admin is the normal way to merge a PR, and `tofu plan` is the safe half of
-# the pair -- a guard that fires on these is the guard people switch off.
-expect 0 'gh pr merge 12 --squash --delete-branch'
-expect 0 'gh pr view 12'
-expect 0 'tofu plan'
-expect 0 'tofu fmt -recursive -check'
-# The two production guards, at the shipped default with NOTHING declared.
-# This is the behaviour-preservation case: with `production.databases` and
-# `production.hosts` empty, `none` -- the strictest level there is -- matches
-# nothing, so ordinary remote work is exactly as quiet as it was before schema
-# 6. If this section ever goes red, the new default stopped being free.
-expect 0 'ssh deploy@app-1 "systemctl restart app"'
-expect 0 'ssh deploy@app-1'
-expect 0 'psql -h db-1 -c "delete from orders"'
-
-# Now the same guards with production DECLARED, which is the only state in
-# which they do anything. A second scratch pair rather than editing the first:
-# every case above asserts the undeclared state, and a suite that mutated the
-# fixture underneath them would leave those cases asserting something else.
-GUARD_PROD=$(mktemp -d) || exit 1
-mkdir -p "$GUARD_PROD/repo/.crew" "$GUARD_PROD/home/.claude/crew"
-# The machine-global layer sits at the CEILING so the repo value is what
-# varies. With it left unset the ratchet correctly holds every repo value down
-# to `none`, and every case below would pass for the wrong reason.
-printf '{"guards":{"prodDatabase":"full","prodServer":"full"}}' \
-  > "$GUARD_PROD/home/.claude/crew/config.json"
-export CLAUDE_PROJECT_DIR="$GUARD_PROD/repo"
-export HOME="$GUARD_PROD/home"
-export USERPROFILE="$GUARD_PROD/home"
-
-prod_level() {  # $1 = none|read|full
-  printf '{"schema":6,"guards":{"prodDatabase":"%s","prodServer":"%s"},"production":{"databases":["prod-db-*"],"hosts":["prod-web-*"]}}' \
-    "$1" "$1" > "$GUARD_PROD/repo/.crew/config.json"
-}
-
-echo "== guard.sh: production access, guards.prod* = none (exit 2) =="
-prod_level none
-expect 2 'psql -h prod-db-1 -c "select 1"'
-expect 2 'ssh deploy@prod-web-1 "tail -n 5 /var/log/app.log"'
-# Spelling the tool as a path bypassed the SELECTOR, so `prod_guarded` was
-# never called and `none` -- the strictest level there is -- refused nothing.
-# Both of these exited 0.
-expect 2 '/usr/bin/ssh prod-web-1 "touch /tmp/crew-proof"'
-expect 2 '/usr/bin/psql -h prod-db-1 -c "select 1"'
-
-echo "== guard.sh: production access, guards.prod* = read =="
-prod_level read
-# Positively classified as read-only: permitted.
-expect 0 'psql -h prod-db-1 -c "select count(*) from orders"'
-expect 0 'ssh deploy@prod-web-1 "tail -n 50 /var/log/app.log"'
-expect 0 'ssh deploy@prod-web-1 "systemctl status app"'
-# A write: refused.
-expect 2 'psql -h prod-db-1 -c "delete from orders"'
-expect 2 'ssh deploy@prod-web-1 "systemctl restart app"'
-# UNCLASSIFIABLE is a write, and these are the cases `read` rests on. An
-# interactive session says nothing about what will be typed into it, and a
-# tool crew does not recognise says nothing at all.
-expect 2 'psql -h prod-db-1'
-expect 2 'ssh deploy@prod-web-1'
-expect 2 'ssh deploy@prod-web-1 "somebinary --go"'
-expect 2 'aws ssm start-session --target prod-web-1'
-# A host or database that matches NO declared pattern is not production, at
-# any level. A guard that fired on these is the guard people switch off.
-expect 0 'ssh deploy@staging-web-1 "systemctl restart app"'
-expect 0 'psql -h dev-db-9 -c "delete from orders"'
-expect 0 '/usr/bin/ssh staging-web-1 "systemctl restart app"'
-# A read-only classification that was never a read. `env` is a WRAPPER, so
-# accepting it by name cleared every write behind four characters; `ip link` is
-# an OBJECT, so checking only the subcommand cleared `set`; and only the FIRST
-# `-c` was inspected, so a SELECT licensed the statement after it. All three
-# exited 0.
-expect 2 'ssh prod-web-1 "env touch /tmp/crew-proof"'
-expect 2 'ssh prod-web-1 "ip link set eth0 down"'
-expect 2 'psql -h prod-db-1 -c "select 1" -c "delete from orders"'
-# ...and the reads those three must not have cost. A fix that refused these
-# would be "block everything" wearing a classifier's clothes.
-expect 0 'ssh prod-web-1 "env"'
-expect 0 'ssh prod-web-1 "env FOO=bar ls /srv"'
-expect 0 'ssh prod-web-1 "ip addr show"'
-expect 0 'psql -h prod-db-1 -c "select 1" -c "select 2"'
-expect 0 '/usr/bin/ssh prod-web-1 "tail -n 50 /var/log/app.log"'
-
-echo "== guard.sh: production access, guards.prod* = full =="
-prod_level full
-expect 0 'psql -h prod-db-1 -c "delete from orders"'
-expect 0 'ssh deploy@prod-web-1 "systemctl restart app"'
-# The same selector miss cost the OTHER direction, and this case is the
-# evidence: with the path unmatched, PROD_HIT stayed 0 and the unconfigurable
-# `prod`-in-an-argument rule refused a command `full` permits. It exited 2.
-expect 0 '/usr/bin/psql -h prod-db-1 -c "delete from orders"'
-
-# Back to the empty scratch repo for anything that follows.
-export CLAUDE_PROJECT_DIR="$GUARD_PIN/repo"
-export HOME="$GUARD_PIN/home"
-export USERPROFILE="$GUARD_PIN/home"
-
-# Restore the environment the section pinned. Unset rather than export an empty
-# string where there was nothing: `HOME=""` is not the same state as no HOME,
-# and every later section in this file reads the real one.
-if [ -n "$GUARD_PIN_OLD_PROJECT" ]; then
-  export CLAUDE_PROJECT_DIR="$GUARD_PIN_OLD_PROJECT"
-else
-  unset CLAUDE_PROJECT_DIR
-fi
-if [ -n "$GUARD_PIN_OLD_HOME" ]; then export HOME="$GUARD_PIN_OLD_HOME"; else unset HOME; fi
-if [ -n "$GUARD_PIN_OLD_USERPROFILE" ]; then
-  export USERPROFILE="$GUARD_PIN_OLD_USERPROFILE"
-else
-  unset USERPROFILE
+  echo "== PATH scrub SKIPPED - no jq on PATH, already testing the fallback =="
 fi
 
 echo "== verify-gate.sh =="
@@ -616,7 +368,7 @@ qa_row() {  # write an all-pass qa row for $1
 # Same jq note as above: promote-gate.sh has the identical jq/python-fallback
 # split at its own CMD-extraction line. Prove the jq branch here too, with a
 # couple of cases, then go straight back to the scrubbed PATH for the rest of
-# this section - PATH is already scrubbed from the guard.sh section above; this
+# this section - PATH is already scrubbed from the jq section above; this
 # just restores it for these two calls and puts it back down immediately after.
 if [ -n "$JQ_BIN" ]; then
   PATH="$FULL_PATH"
@@ -708,7 +460,7 @@ printf '| when | env | sha | smoke | regression | verify | by |\n|---|---|---|--
 echo '{}' | bash "$SCRIPTS/verify-gate.sh" >/dev/null 2>&1
 [ ! -f "$PD/.crew/.deploy-in-flight" ] && pass || fail "verify-gate: a recorded deploy must clear .deploy-in-flight"
 
-echo "== emergency lane: the gates stand down, the guard does not =="
+echo "== emergency lane: the gates stand down =="
 # Writes .crew/incident.json expiring $1 seconds from now. Negative = expired.
 # The gates read expiresAtEpoch and nothing else; see crew_incident.py.
 inc() {
@@ -721,16 +473,7 @@ PYEOF
 }
 SKIPS="$PD/.crew/incident-skips.log"
 
-# An incident must NOT make the guard permissive. It is the hook that refuses
-# force pushes, history rewrites and secret reads - and an incident is exactly
-# when someone is tired enough to need it. Standing down the checks that say a
-# change is wrong is a trade; standing down the ones that stop it being
-# unrecoverable is not.
 inc 3600
-expect 2 'git push --force origin main'
-expect 2 'git reset --hard HEAD~3'
-expect 2 'terraform destroy'
-expect 2 'cat .env'
 
 # promote-gate: a deploy that must block with no incident is allowed with one,
 # and every unmet precondition is written down instead.
