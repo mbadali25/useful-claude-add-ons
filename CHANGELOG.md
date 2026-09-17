@@ -6,6 +6,35 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
+- **`crew` 0.19.54: crew detects the terminal window title instead of refusing
+  to guess it.** `crew_state.py --detect-window-title` reads the real window
+  titles from the OS and prints each as JSON with a `stable` flag.
+
+  0.19.53 told the PM not to set `context.autoClear.windowTitle` because
+  "guessing a window title is guessing which window gets typed into". That is
+  right about guessing and wrong about measuring - the title can be read, and a
+  value read is not a value invented.
+
+  **What it does not do is pretend the answer is durable.** A Windows Terminal
+  title follows its ACTIVE TAB, so a detected value can be correct when written
+  and wrong on the next switch - which is worse than refusing, because it looks
+  like it worked. Every candidate therefore carries `stable` and, when false,
+  the reason. `agents/pm.md` now says to show the candidate and that reason,
+  propose a substring that survives a tab change, and leave the setting to the
+  user: a detected title is evidence for the decision, not a substitute for it.
+
+  Measured while building it: the detector read `? SRL` early in the session
+  and `? Remove production guards` an hour later, from the same window. The
+  instability warning is not theoretical.
+
+  Windows only - the posix flavour targets a tmux pane by id and needs no
+  title, so it returns an empty list rather than a fabricated candidate. Four
+  cases cover it, including that a missing PowerShell returns no candidates
+  rather than raising, since this runs from a SessionStart path where an
+  exception would take the whole brief with it.
+
+### Added
+
 - **`crew` 0.19.53: a `crew-best-practices` skill, and ADR 0003 for the three
   rules crew deliberately breaks.** Integrates
   <https://rosmur.github.io/claudecode-best-practices/>, a synthesis of roughly

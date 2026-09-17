@@ -1,11 +1,12 @@
 """Tests for the crew state reader."""
+import json
+import os
 import re
 import subprocess
 
-import os
-
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_fixtures
+
 import crew_state
 
 
@@ -707,6 +708,70 @@ def test_posix_without_a_window_title_is_not_claimed_inert():
     is not."""
     state = crew_state.read_auto_clear(_auto_clear_cfg("linux", enabled=True))
     assert state["inert"] is False
+
+
+def test_window_title_detection_stands_down_off_windows(monkeypatch):
+    """Nothing to detect on posix, and an empty list is the honest answer.
+
+    The bash flavour targets a tmux pane by id -- no title is involved -- so
+    fabricating a candidate here would invent a setting that changes nothing.
+    """
+    monkeypatch.setattr(crew_state.sys, "platform", "linux")
+    assert crew_state.detect_window_titles() == []
+
+
+def test_a_terminal_that_retitles_is_reported_unstable():
+    """The judgement that makes the feature honest rather than convenient.
+
+    A Windows Terminal window title follows its ACTIVE TAB. Detecting one and
+    offering it without saying so hands the user a value that is correct when
+    written and wrong on the next tab switch -- which is worse than refusing,
+    because it looks like it worked.
+    """
+    assert crew_state.TERMINAL_PROCESSES["WindowsTerminal"] is not None
+    assert crew_state.TERMINAL_PROCESSES["Code"] is not None
+    # A fixed-title terminal has nothing to warn about.
+    assert crew_state.TERMINAL_PROCESSES["conhost"] is None
+
+
+def test_detection_returns_the_documented_shape(monkeypatch):
+    """Every candidate carries process, title, stable and why.
+
+    `pm.md` tells the PM to show the reason whenever `stable` is false, so a
+    row without `why` would leave it with nothing to print.
+    """
+    rows = [{"ProcessName": "WindowsTerminal", "MainWindowTitle": "pinned"},
+            {"ProcessName": "explorer", "MainWindowTitle": "not a terminal"},
+            {"ProcessName": "conhost", "MainWindowTitle": "cmd"},
+            {"ProcessName": "WezTerm", "MainWindowTitle": "   "}]
+
+    class _Done:  # pylint: disable=too-few-public-methods
+        stdout = json.dumps(rows)
+
+    monkeypatch.setattr(crew_state.sys, "platform", "win32")
+    monkeypatch.setattr(crew_state.shutil, "which", lambda _exe: "pwsh")
+    monkeypatch.setattr(crew_state.subprocess, "run",
+                        lambda *a, **k: _Done())
+    got = crew_state.detect_window_titles()
+
+    # explorer is not a terminal; WezTerm's title is blank. Both are dropped.
+    assert [row["process"] for row in got] == ["WindowsTerminal", "conhost"]
+    for row in got:
+        assert set(row) == {"process", "title", "stable", "why"}
+        assert row["why"], "every row must carry a reason, stable or not"
+    assert got[0]["stable"] is False
+    assert got[1]["stable"] is True
+
+
+def test_detection_never_raises_when_powershell_is_missing(monkeypatch):
+    """A missing interpreter is not an error the PM should see as a crash.
+
+    This runs from a SessionStart path; raising here would take the brief with
+    it, which is a worse outcome than saying "no candidates".
+    """
+    monkeypatch.setattr(crew_state.sys, "platform", "win32")
+    monkeypatch.setattr(crew_state.shutil, "which", lambda _exe: None)
+    assert crew_state.detect_window_titles() == []
 
 
 def test_a_config_with_no_auto_clear_block_is_not_inert():

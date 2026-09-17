@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -380,6 +381,82 @@ def read_work(root):
             os.path.join(root, ".work", "HANDOFF.md")
         ),
     }
+
+
+# Terminal processes whose MainWindowTitle is worth offering for
+# `context.autoClear.windowTitle`, mapped to WHY the title may not hold.
+# `None` means the title is fixed and can be used as-is.
+#
+# Windows Terminal and the VS Code terminal both retitle on tab or editor
+# change, so a value read now is not a value that keeps matching. That is not
+# a reason to refuse to look -- it is a reason to say so when offering it.
+TERMINAL_PROCESSES = {
+    "WindowsTerminal": "Windows Terminal retitles on every tab switch - pin "
+                       "the tab title first, or match a substring that does "
+                       "not move",
+    "Code": "the VS Code window title follows the active editor",
+    "conhost": None,
+    "cmd": None,
+    "powershell": None,
+    "pwsh": None,
+    "alacritty": None,
+    "WezTerm": None,
+}
+
+
+def detect_window_titles():
+    """Candidate terminal window titles, read from the OS, newest first.
+
+    For `context.autoClear.windowTitle`. The Windows flavour of auto-clear
+    matches this against the foreground window before sending keystrokes, so a
+    wrong value types into the wrong window -- which is why this MEASURES
+    rather than guesses, and why every candidate carries what is uncertain
+    about it.
+
+    Windows only. The posix flavour targets a tmux pane by id and needs no
+    title at all, so there is nothing to detect there and an empty list is the
+    honest answer rather than a fabricated one.
+
+    `stable` is the field that matters. A Windows Terminal window title follows
+    its ACTIVE TAB, so a title detected now can stop matching the moment the
+    user switches tabs -- a value that is correct when written and wrong when
+    used. Those are reported with `stable: False` and a reason, so the caller
+    can say so instead of presenting a moving target as a setting.
+    """
+    if not sys.platform.startswith("win"):
+        return []
+    script = (
+        "Get-Process | Where-Object { $_.MainWindowTitle } | "
+        "Select-Object ProcessName,MainWindowTitle | ConvertTo-Json -Compress")
+    for exe in ("pwsh", "powershell"):
+        found = shutil.which(exe)
+        if not found:
+            continue
+        try:
+            out = subprocess.run(
+                [found, "-NoProfile", "-NonInteractive", "-Command", script],
+                capture_output=True, text=True, check=False, timeout=20,
+                stdin=subprocess.DEVNULL).stdout
+            rows = json.loads(out) if out.strip() else []
+        except (OSError, ValueError, subprocess.SubprocessError):
+            continue
+        if isinstance(rows, dict):
+            rows = [rows]
+        out_rows = []
+        for row in rows:
+            name = str(row.get("ProcessName") or "")
+            title = str(row.get("MainWindowTitle") or "").strip()
+            if name not in TERMINAL_PROCESSES or not title:
+                continue
+            reason = TERMINAL_PROCESSES[name]
+            out_rows.append({
+                "process": name,
+                "title": title,
+                "stable": reason is None,
+                "why": reason or "a fixed window title",
+            })
+        return out_rows
+    return []
 
 
 def read_auto_clear(cfg):
@@ -2764,6 +2841,15 @@ def main(argv=None):
                         help="print where a worktree for BRANCH belongs, per "
                              "the resolved worktree.root, and exit. Creates "
                              "nothing. Pass '-' for the root directory alone")
+    parser.add_argument("--detect-window-title", action="store_true",
+                        help="read candidate terminal window titles from the "
+                             "OS, for context.autoClear.windowTitle, and "
+                             "print them as JSON. Each carries `stable`: "
+                             "false means the title follows something that "
+                             "moves (a Windows Terminal tab, a VS Code "
+                             "editor) and will stop matching. Windows only - "
+                             "the posix flavour targets a tmux pane by id and "
+                             "needs no title. Reads only; writes nothing")
     parser.add_argument("--archive-stale-handoff", action="store_true",
                         help="judge the configured handoff note against the "
                              "staleness signals (age, and whether its noted "
@@ -2888,6 +2974,12 @@ def main(argv=None):
                   "or its id is not safe to use in a path", file=sys.stderr)
             return 2
         print(path)
+        return 0
+    if args.detect_window_title:
+        # Reads only. The caller decides what to do with an unstable title --
+        # this prints what is there and why it may not hold, and never writes
+        # the config itself. Which window gets typed into is the user's call.
+        print(json.dumps(detect_window_titles(), indent=2, sort_keys=True))
         return 0
     print(json.dumps(collect(root), indent=2, sort_keys=True))
     return 0
