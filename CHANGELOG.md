@@ -6,6 +6,16 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Changed
 
+- **`crew` 0.19.59: the ancestor walk used a cmdlet that does not exist on
+  Linux.** CI runs the PowerShell static check on Linux pwsh, where the CIM
+  cmdlet the walk called is absent, so `every Verb-Noun call resolves` failed
+  for `auto-clear.ps1`. It passed locally on Windows, where that cmdlet does
+  exist -- CI is the stricter environment and therefore the correct one.
+  Replaced with `Get-Process` and its `.Parent` property, a PS6+ member of
+  `System.Diagnostics.Process`. The walk is unchanged in behaviour: verified
+  to reach the same `WindowsTerminal pid=17600` at the same depth, and the
+  static check now reports 40 files all clean.
+
 - **`crew` 0.19.58: `CREW_AUTOCLEAR_INHIBIT`, because the suite could type
   into a real terminal.** Caught by the Stop gate, and the more serious half of
   this change. `test_auto_clear.py` runs the REAL script with no `--dry-run`;

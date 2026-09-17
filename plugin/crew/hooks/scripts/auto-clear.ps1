@@ -132,23 +132,23 @@ if (-not $windowTitle) {
   # where a title is a guess that expires.
   $ownerPid = 0
   try {
-    $walk = Get-CimInstance Win32_Process -Filter "ProcessId = $PID" -ErrorAction Stop
+    # Get-Process/.Parent, and deliberately NOT the CIM cmdlet this used to
+    # call. CI runs the PowerShell static check on LINUX pwsh, where that
+    # cmdlet does not exist -- this passed locally on Windows and failed
+    # there, and CI is the stricter and therefore the correct environment.
+    # `.Parent` is a PS6+ property of System.Diagnostics.Process.
+    #
+    # MainWindowHandle is the test, NOT a process name. A name list got this
+    # wrong first: `pwsh` was in it, the hook IS pwsh, so the walk matched
+    # itself at depth 0 and would have targeted a process owning no window.
+    # Every intermediate shell reports 0; the terminal reports a handle.
+    $walk = Get-Process -Id $PID -ErrorAction Stop
     for ($i = 0; $i -lt 12 -and $walk; $i++) {
-      # OWNS A WINDOW is the test, not a name. A name list got this wrong on
-      # the first attempt: `pwsh` was in it, the hook IS pwsh, so the walk
-      # matched itself at depth 0 and would have compared the foreground
-      # window against a process that has no window at all. MainWindowHandle
-      # is the precise question -- every intermediate shell reports 0 and the
-      # terminal reports a handle, so the walk lands on the window the user
-      # is actually looking at, whichever terminal they use.
-      $h = try { (Get-Process -Id $walk.ProcessId -ErrorAction Stop).MainWindowHandle }
-           catch { 0 }
-      if ($h -ne 0) {
-        $ownerPid = [int]$walk.ProcessId
+      if ($walk.MainWindowHandle -ne 0) {
+        $ownerPid = [int]$walk.Id
         break
       }
-      $walk = Get-CimInstance Win32_Process `
-        -Filter ("ProcessId = " + $walk.ParentProcessId) -ErrorAction SilentlyContinue
+      $walk = try { $walk.Parent } catch { $null }
     }
   } catch { $ownerPid = 0 }
   if (-not $ownerPid) {
