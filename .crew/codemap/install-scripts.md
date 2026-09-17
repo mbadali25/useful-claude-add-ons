@@ -1,5 +1,5 @@
 # install-scripts
-anchor: useful-claude-add-ons@f9bb78a6
+anchor: useful-claude-add-ons@ea8a014
 verified: 2026-09-14
 Re-anchor only, no content change: `f9bb78a6` (#169, the crew skill-count
 sweep prompting this pass) did not touch either install script — confirmed
@@ -35,6 +35,7 @@ differs per row and is *not* uniformly `claude plugin install`: plugins and skil
 own package managers (see **Calls out to**). DERIVED.
 
 ## Entry points
+
 - `scripts/install-prerequisites.sh:720-727` - `MENU_KEYS`, the top-level picker's ordered key
   list, **24** keys; `MENU_DEFAULT` is the parallel tick list at `:728`, also 24. DERIVED. Run
   directly by a user on Linux, macOS or Git Bash.
@@ -44,6 +45,7 @@ own package managers (see **Calls out to**). DERIVED.
   `install_plugin` out of it with an `eval "$(awk ...)"` over the function body, so the
   update-detection path can be exercised without running the installer. DERIVED, and closed by the
   per-path check: that file has not changed since the previous anchor.
+- `scripts/_test/self-claims.py:307` — module entry point (`main()`), from the graph
 
 ## Owns data
 

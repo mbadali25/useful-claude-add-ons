@@ -821,6 +821,19 @@ def _map_with_anchor(anchor):
     return V1_MAP.replace("anchor: repo@0000000", "anchor: repo@" + anchor)
 
 
+def _derived_anchor(text):
+    """The sha on the `derived-anchor:` line, or None.
+
+    Added in 0.19.55. A DERIVE-only reconcile records its sha HERE; `anchor:`
+    keeps meaning "this whole note was re-verified", which is a claim this
+    procedure cannot make because it never reads the KEEP sections.
+    """
+    for line in text.splitlines():
+        if line.startswith("derived-anchor:"):
+            return line.split(":", 1)[1].strip()
+    return None
+
+
 def test_the_rewritten_anchor_reads_back_as_head_at_every_length(tmp_path):
     """One repo per starting length; all four must land on exactly head."""
     for length in _SHA_LENGTHS:
@@ -836,8 +849,15 @@ def test_the_rewritten_anchor_reads_back_as_head_at_every_length(tmp_path):
             encoding="utf-8")
         found = crew_state._ANCHOR_RE.search(text)
         assert found, f"anchor line no longer parses at length {length:d}"
-        assert found.group(1) == head, (
-            f"length {length:d}: anchor reads {found.group(1)!r}, head is {head!r}")
+        # CHANGED in 0.19.55: the ORIGINAL anchor must survive untouched. A
+        # DERIVE-only pass never reads Does/Landmines/Unverified, so it may
+        # not claim the note was re-verified.
+        assert found.group(1) == start, (
+            f"length {length:d}: anchor was rewritten to {found.group(1)!r}; "
+            f"a DERIVE-only pass must leave it at {start!r}")
+        assert _derived_anchor(text) == head, (
+            f"length {length:d}: derived-anchor reads "
+            f"{_derived_anchor(text)!r}, head is {head!r}")
 
 
 def test_the_rewritten_anchor_is_a_commit_that_exists(tmp_path):
@@ -851,13 +871,14 @@ def test_the_rewritten_anchor_is_a_commit_that_exists(tmp_path):
     crew_upgrade.run(str(root), {
         "auth": {"Entry points": ["- `src/cron.py:1` — scheduler"]}})
     text = (root / ".crew" / "codemap" / "auth.md").read_text(encoding="utf-8")
-    found = crew_state._ANCHOR_RE.search(text)
+    sha = _derived_anchor(text)
+    assert sha, "no derived-anchor line was written"
     resolved = subprocess.run(
         ["git", "-C", str(root), "rev-parse", "-q", "--verify",
-         found.group(1) + "^{commit}"],
+         sha + "^{commit}"],
         capture_output=True, text=True, check=False)
     assert resolved.returncode == 0, (
-        f"anchor {found.group(1)!r} does not resolve to a commit")
+        f"derived-anchor {sha!r} does not resolve to a commit")
 
 
 def test_a_repo_name_made_of_hex_does_not_confuse_the_rewrite(tmp_path):
@@ -873,7 +894,10 @@ def test_a_repo_name_made_of_hex_does_not_confuse_the_rewrite(tmp_path):
         "auth": {"Entry points": ["- `src/cron.py:1` — scheduler"]}})
     text = (root / ".crew" / "codemap" / "auth.md").read_text(encoding="utf-8")
     head = crew_fixtures.head_sha(root)
-    assert "anchor: deadbeef@" + head in text, text.splitlines()[1]
+    # The repo name must survive on BOTH lines, and the original anchor must
+    # not have moved at all.
+    assert "anchor: deadbeef@1f97e51c" in text, text.splitlines()[1]
+    assert _derived_anchor(text) == head, text
 
 
 def test_upgrade_rewrites_the_old_neutral_theme_default_to_null():

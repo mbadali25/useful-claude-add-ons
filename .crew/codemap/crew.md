@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@f9bb78a6
+anchor: useful-claude-add-ons@ea8a014
 verified: 2026-09-14
 Narrow pass, not a re-derivation: only the "Where every live count of crew's
 shape agrees" table (below) was re-read against its cited files at this
@@ -669,6 +669,17 @@ authority where the two disagree. The other subsystem notes in
 - `plugin/crew/hooks/scripts/crew_config.py:771` - `resolve_config`, and `:1441` `explain_config`. They share `null_shadows` (`:581`) and `without_null_shadows` (`:627`) so the run and the report cannot disagree about a repo `null` shadowing a global value.
 - `plugin/crew/hooks/scripts/crew_config.py:676` - `filter_global`, the read-side gate; `:2211` `plan_global_write`, the write-side gate.
 - `plugin/crew/hooks/scripts/crew_freshness.py:375` - `read_knowledge`; `:473` `read_diagrams` - both new entry points into this module, called from `crew_state.collect`.
+- `plugin/crew/hooks/scripts/_test/validate-prompts.py:283` — module entry point (`main()`), from the graph
+- `plugin/crew/hooks/scripts/crew_change.py:278` — module entry point (`main()`), from the graph
+- `plugin/crew/hooks/scripts/crew_incident.py:416` — module entry point (`main()`), from the graph
+- `plugin/crew/hooks/scripts/crew_platform.py:481` — module entry point (`main()`), from the graph
+- `plugin/crew/hooks/scripts/hook_once.py:94` — module entry point (`main()`), from the graph
+- `plugin/crew/hooks/scripts/pm_brief.py:657` — module entry point (`main()`), from the graph
+- `plugin/crew/hooks/scripts/pm_pulse.py:247` — module entry point (`main()`), from the graph
+- `plugin/crew/skills/crew-graph/scripts/crew_upgrade.py:1018` — module entry point (`main()`), from the graph
+- `scripts/_test/crew-ignore-policy.py:560` — module entry point (`main()`), from the graph
+- `scripts/_test/version-drift.py:296` — module entry point (`main()`), from the graph
+- `scripts/check-marketplace.py:1006` — module entry point (`main()`), from the graph
 
 ## Owns data
 
@@ -715,6 +726,7 @@ authority where the two disagree. The other subsystem notes in
 - `_SEPARATORS` (`plugin/crew/hooks/scripts/crew_state.py:852-854`, moved from
   `:1071`) is derived from `os.sep`/`os.altsep` rather than written as a regex
   character class.
+- `plugin/crew/tests/sabotage.py` — via the `verification-harness` subsystem
 
 ## Unverified at this anchor
 

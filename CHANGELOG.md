@@ -6,6 +6,137 @@ All notable changes to this repository are documented here. Format follows [Keep
 
 ### Added
 
+- **`crew` 0.19.56: `/crew:split <ISSUE-KEY>`, which splits an oversized Jira
+  ticket into sub-tickets.** Jira only, deliberately: a files-mode ticket is a
+  markdown file the user can split in an editor and an Obsidian card is theirs
+  to drag, while Jira is the one tracker where splitting creates issues other
+  people see. That is also why it asks before writing anything -- boards move
+  and an unwanted child has to be deleted by hand in a UI.
+
+  It judges size from evidence and names which it used: `health.rate` from
+  `.crew/metrics.md` (`HEALTHY_HIGH` is 2.0), whether `ticketsTooLarge` is
+  firing, how many subsystems the issue names, and whether its acceptance
+  criteria can be verified together. **`health.rate` is a repo-wide average and
+  is not a measurement of the issue in front of you** -- the command says so
+  rather than presenting it as a verdict, and it will conclude an issue is NOT
+  too large and stop, because a command that always finds work is one nobody
+  can trust to say no.
+
+  Every acceptance criterion must land on a child or stay on the parent; a
+  criterion that lands nowhere is reported as a gap rather than dropped. The
+  parent is never transitioned or closed -- whether a split parent becomes an
+  epic, a tracking issue or is closed is a project convention this command
+  cannot know.
+
+  Wired into `agents/pm.md`'s `ticketsTooLarge` row with the two things a user
+  would otherwise learn the hard way: the rate is repo-wide, and splitting one
+  old ticket does NOT clear the trigger, because the rate falls when future
+  tickets are smaller rather than when one is divided.
+
+### Fixed
+
+- **`crew` 0.19.56: `docs/diagrams/data-flow-crew-config.mmd` had never
+  rendered, and two diagrams were broken by a format-string escape.**
+
+  The escape first: refreshing the two diagrams rewrote their header through a
+  `%`-formatted Python string, where `%%` means a LITERAL `%`. The generated
+  line therefore opened with `%` instead of `%%`, Mermaid stopped recognising
+  it as a comment, and `mmdc` reported `UnknownDiagramError: No diagram type
+  detected` -- an error that names neither the line nor the character.
+
+  The older one is worse and is not mine: `data-flow-crew-config.mmd` contains
+  `\"report\"` inside a node label, which Mermaid cannot parse. Checked
+  against `origin/main` rather than assumed -- the committed version fails with
+  the identical error at the identical line, and `docs/diagrams/out/` held NO
+  output for it at all. It has been in the repository, anchored and described
+  as generated, without ever having been rendered. Now `#quot;`, and
+  `render.sh` exits 0 with all six diagrams producing both an `.svg` and a
+  `.png`.
+
+- **`crew` 0.19.56: seven stale self-descriptions.** `26 commands` -> 27 for
+  `/crew:split`; `20 hook entries (10 scripts)` -> `18 (9)` in the four places
+  0.19.52 missed; and the README prose promising that hooks block
+  `terraform apply`, force-push and destructive DDL, which has been false since
+  the command guard was removed. A README that promises a guard the code no
+  longer has is worse than one that never claimed it.
+
+- **`crew` 0.19.55: `/crew:upgrade` never added the `context` block's keys, so
+  auto-clear could not run on any upgraded repo.** Reported by a user who ran
+  the 3 -> 7 migration and found `context.autoClear`, `context.autoWrapUp`,
+  `context.autoResume` and `context.staleHandoff` still absent afterwards, no
+  matter how often they re-forced it.
+
+  The migration was not at fault. `CONFIG_BLOCKS` in `crew_upgrade.py` is a
+  HAND-MAINTAINED tuple of top-level blocks; the upgrade adds exactly what is
+  named there, and `context` was never in it. The module's own docstring
+  predicted this shape of failure for the `qa`/`dev` table; `context` is the
+  block that actually got missed.
+
+  `context` could not simply be added, either: its defaults lived in
+  `crew_config.py`, and `crew_config` imports `crew_upgrade`, not the reverse,
+  so `CONFIG_BLOCKS` could not reach them. They now live in `crew_state`
+  alongside `PM_DEFAULTS`, `QA_DEFAULTS`, `DEV_DEFAULTS`, `WORKTREE_DEFAULTS`,
+  `INSTALL_DEFAULTS`, `GUARD_DEFAULTS` and `PRODUCTION_DEFAULTS` -- every other
+  block that tuple already reaches.
+
+  An existing `warnAt` / `reserveTokens` is PRESERVED, so an upgraded repo
+  keeps `0.8` / `100000` and does not start clearing at 50% until those are set
+  deliberately. The new defaults reach configs that never had the keys.
+
+- **`crew` 0.19.55: four defects in `crew_upgrade.py`, three of them reported
+  by a peer Claude session that ran `/crew:upgrade --force` against a different
+  repository.** All four printed identically to a correct run, which is why
+  they survived. Each was re-checked here before being acted on.
+
+  **1. A key removed ON PURPOSE came back.** That repo had deleted
+  `qa.copilot` and left `qa.copilotNote` beside it reading "Do not re-add it as
+  null; pin a real model or omit the key." The upgrade re-inserted
+  `{"model": null}`, because a defaults-seeding pass cannot distinguish "never
+  set" from "deliberately removed" -- both are an absent key. A sibling
+  `<key>Note` is now honoured as a tombstone and the skip is reported.
+  **This narrows a known failure rather than fixing the class**: a key removed
+  WITHOUT a Note is still re-seeded, and adding `context` above widens the same
+  door for everything under it. Said in the code, not left to be discovered.
+
+  **2. `UPGRADE.md`'s contradictions section was regenerated from scratch,
+  destroying hand annotations.** Four `RESOLVED 2026-09-15` blocks became zero,
+  reproduced on a second run. Worse than ordinary data loss, because that
+  repo's `CLAUDE.md` tells readers to consult that list BEFORE trusting any
+  codemap section -- so the regeneration silently re-opened resolved
+  contradictions inside the file used to decide what to trust, and read
+  identically whether a finding was re-derived or a resolution forgotten.
+  Annotated lines are now carried forward, keyed on the conflict text, and the
+  report states how many were carried.
+
+  **3. The `anchor:` was bumped on a DERIVE-only re-verification.**
+  `graph_reconcile.reconcile` skips KEEP at the top of its loop, so `touched`
+  can only ever contain DERIVE headings -- `Does`, `Landmines` and `Unverified`
+  are never read. Adding two derived lines stamped the whole note at HEAD.
+  Reproduced HERE, not only reported: `.crew/codemap/crew.md` was stamped
+  `f9bb78a6 -> ea8a014` on 12 added lines while **18 of its 40 cited files had
+  moved**. `crew_state.knowledge.behind` and the PM pulse both trust that
+  anchor, so the run turned a correct "behind" into a false "current" on the
+  stalest notes in the map. `anchor:` now keeps its meaning and the weaker fact
+  gets its own `derived-anchor:` line.
+
+  **4. The conflict detector compared every backticked token as a path.**
+  `abspath`, `blake2b`, `None`, `Front::dispatch()`, `--worktree-path` were all
+  reported as "in the map but not in the graph". Measured here before the fix:
+  186 contradictions, nearly all symbols; the peer measured 239 of 456. A list
+  that is mostly false is a list nobody reads, which is how a real
+  contradiction hides -- and is how defect 2 stayed invisible. `is_path_token`
+  now decides, with its own false-negative limit stated: a BARE single-segment
+  name is never compared, because nothing distinguishes a bare directory from a
+  bare symbol.
+
+  Test surface: `test_upgrade.py`'s three anchor tests asserted the behaviour
+  defect 3 removed, so they are repointed at `derived-anchor:` rather than
+  deleted -- the logic each guards (lands on head at every sha length, names a
+  real commit, does not eat a hex repo name) still matters -- and each gained
+  an assertion that `anchor:` was left alone.
+
+### Added
+
 - **`crew` 0.19.54: crew detects the terminal window title instead of refusing
   to guess it.** `crew_state.py --detect-window-title` reads the real window
   titles from the OS and prints each as JSON with a `stable` flag.

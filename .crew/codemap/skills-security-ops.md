@@ -1,5 +1,5 @@
 # skills-security-ops
-anchor: useful-claude-add-ons@1f97e51c
+anchor: useful-claude-add-ons@ea8a014
 verified: 2026-09-06
 
 ## Does
@@ -11,6 +11,7 @@ credential-driven, destructive writes reachable) and no code. DERIVED: no module
 `skills/wazuh-onprem/scripts/` imports anything from `skills/cisco-meraki/`.
 
 ## Entry points
+
 - `skills/cisco-meraki/scripts/meraki_client.py:443` (`build_parser`) - verbs registered at
   `:446-481`: orgs, networks, status, inventory, get, get-all, events, changes, security-events,
   air-marshal, live. Dispatch at `:485-513`. **Not read-only** - see the `live` landmine below.
@@ -29,6 +30,8 @@ credential-driven, destructive writes reachable) and no code. DERIVED: no module
   fetch, diff, apply, rollback, list-backups, registered at `:244-259`, dispatched at `:263-269`.
   (Previously cited `:251` - the `apply` subparser alone - and omitted `fetch` from the verb list.
   Corrected 2026-09-06.)
+- `skills/intune-graph/scripts/export_report.py:96` — module entry point (`main()`), from the graph
+- `skills/intune-graph/scripts/graph.py:190` — module entry point (`main()`), from the graph
 
 ## Owns data
 - Meraki config snapshots - pre-write payloads, **secrets intact by design**

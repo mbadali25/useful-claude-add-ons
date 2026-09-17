@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@f9bb78a6
+anchor: useful-claude-add-ons@ea8a014
 verified: 2026-09-14
 Narrow pass, not a full re-verification: only the "self-stated counts on the
 front page" claim below (the one quoting `plugin/README.md:414`) was re-read
@@ -133,14 +133,12 @@ unchanged position despite the file's other changes.)
   any commit listed means both URLs are serving a script that no longer
   matches the repo, and the pin must move. That command now returns nothing
   at `0a2d49b0`.
-
   **Two pin moves in one day is the rate to expect, not an anomaly.** Any
   change registering a marketplace entry edits both install scripts, because
   registration means touching both in the same commit. So the pin goes stale
   on essentially every entry that ships. Treat the re-pin as part of merging
   such a change rather than as periodic maintenance, and do not read a recent
   move as evidence the pin is fresh.
-
   **A third site carries the same SHA and the runbook does not mention it.**
   `docs/guides/Running-a-Mailbox-Job.json:18` embeds the PowerShell one-liner
   inside a JSON step string, so `docs/runbooks/rollback.md:55` — which says to
@@ -150,7 +148,6 @@ unchanged position despite the file's other changes.)
   with `grep -rn <old-sha> --include='*.md' --include='*.json' .` rather than
   trusting this list; `.claude/worktrees/` copies are agent worktrees and are
   not tracked sites.
-
   Both re-pinned URLs were fetched at this pass: each returns HTTP 200 and the
   served bodies contain the `web-research` entry (2 occurrences in the `.sh`,
   1 in the `.ps1`), so the pin is known good rather than merely plausible.
@@ -158,6 +155,7 @@ unchanged position despite the file's other changes.)
   this note's own standing rule that `TODO.md` is edited often. The render.sh
   entry moved from `:870-899` to `:1061-1091`; see "TODO.md's render.sh entry"
   below.
+- `scripts/sync-updates.py:147` — module entry point (`main()`), from the graph
 
 ## Owns data
 

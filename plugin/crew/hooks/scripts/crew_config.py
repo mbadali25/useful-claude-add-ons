@@ -234,46 +234,6 @@ def validate_providers(cfg):
     return cfg
 
 
-# The `context.autoClear` block, defined ONCE because both templates carry it
-# and a second literal is a second thing to drift. Values are the fallbacks the
-# hook scripts already apply, read out of them rather than out of any doc:
-# `auto-clear.ps1:78-82` for method/delaySeconds/command/windowTitle/
-# minHandoffLines, and `:69` for enabled, which exits unless it is exactly true.
-#
-# `windowTitle` is None here and `""` in the script. The script treats both as
-# "not set" (`if ($a.windowTitle)` is false for either), and null is what
-# "not set" means everywhere else in this file, so null is the honest default.
-AUTOCLEAR_DEFAULTS = {
-    # 0.19.52: ON by default. It still refuses unless the handoff note
-    # exists, is newer than the request and clears `minHandoffLines`,
-    # and on Windows it refuses without `windowTitle` because SendKeys
-    # types into whatever has focus. So "enabled" means "allowed to act
-    # once everything is wrapped up", not "will type into your terminal".
-    "enabled": True,
-    "method": "auto",
-    "windowTitle": None,
-    "command": "/clear",
-    "delaySeconds": 3,
-    "minHandoffLines": 5,
-    # Wayland only, read at `auto-clear.sh:93` and gating the `wtype` method
-    # at `:187`. Missed on the first pass because the .ps1 consumers never
-    # read it, and the first pass read the Windows scripts -- a default set
-    # from one platform's consumer is a default half-derived.
-    "unsafeFocus": False,
-}
-
-# Keys inside `autoClear` that are CONSENT rather than capability, and so are
-# declared but never granted machine-wide. `unsafeFocus: true` accepts that
-# `wtype` types into whatever currently has focus, which Wayland offers no way
-# to check. The rest of the block is a description of the machine and belongs
-# in the global layer; this is a decision about accepting a risk, and one
-# `true` set once would accept it for every repo on the box.
-#
-# The repo already draws this line and enforces it the same way:
-# `graph.obsidian.confirmed` is refused by `plan_global_write` and pruned by
-# `filter_global` because consent to act outside the repo is not a capability
-# a guided flow may hand over. Same reasoning, same treatment.
-AUTOCLEAR_CONSENT_KEYS = ("unsafeFocus",)
 
 
 def default_config():
@@ -331,44 +291,7 @@ def default_config():
         },
         "memory": {"mode": "repo", "vaultPath": None},
         "verifyGate": True,
-        "context": {
-            "enabled": True,
-            # 0.19.52: 0.5 rather than 0.8, and no reserve floor. The
-            # threshold is the LATER of `warnAt * budget` and
-            # `budget - reserveTokens`, so a non-zero reserve silently
-            # overrides an aggressive percentage on a large window --
-            # at 0.8/100k a 1M window fired at 900k, and lowering only
-            # warnAt would still have fired at 900k. Both had to move.
-            "warnAt": 0.5,
-            "budgetTokens": None,
-            "reserveTokens": 0,
-            "handoffPath": ".work/HANDOFF.md",
-            "keepTranscripts": 5,
-            # These three were read by hook scripts and declared here by
-            # nothing until 0.19.10 -- `auto-clear.ps1:67`,
-            # `context-watch.ps1:33` and `handoff-read.ps1:36` respectively.
-            # See the `jira.cloudId` note above for why undeclared is not the
-            # same as unused, and why it still cost something.
-            "autoClear": copy.deepcopy(AUTOCLEAR_DEFAULTS),
-            # 0.19.52: true. Pairs with autoClear -- the wrap-up wording
-            # is what asks for the change in flight to be finished or
-            # abandoned and the ticket updated, and auto-clear fires on
-            # the turn after the handoff lands.
-            "autoWrapUp": True,
-            # 0.19.52: true, completing the loop with autoWrapUp and
-            # autoClear -- ask for the note, clear once it exists, read
-            # it back on the next session with the next action attached.
-            "autoResume": True,
-            # See crew_state.STALE_HANDOFF_DEFAULTS for why these two figures
-            # specifically -- generous on purpose, since archiving a note
-            # someone is still using is worse than leaving a stale one in
-            # place for one more day.
-            "staleHandoff": {
-                "maxAgeHours": crew_state.STALE_HANDOFF_DEFAULTS["maxAgeHours"],
-                "maxCommitsBehind":
-                    crew_state.STALE_HANDOFF_DEFAULTS["maxCommitsBehind"],
-            },
-        },
+        "context": copy.deepcopy(crew_state.CONTEXT_DEFAULTS),
         "emergency": {
             "standDown": True,
             "ttlMinutes": 120,
@@ -545,8 +468,8 @@ def default_global_config():
         # `autoClear` leaves and nothing beside them.
         "context": {"autoClear": {
             key: copy.deepcopy(value)
-            for key, value in AUTOCLEAR_DEFAULTS.items()
-            if key not in AUTOCLEAR_CONSENT_KEYS
+            for key, value in crew_state.AUTOCLEAR_DEFAULTS.items()
+            if key not in crew_state.AUTOCLEAR_CONSENT_KEYS
         }},
         "docs": copy.deepcopy(crew_upgrade.DOCS_BLOCK),
         "bitbucket": copy.deepcopy(crew_upgrade.BITBUCKET_BLOCK),

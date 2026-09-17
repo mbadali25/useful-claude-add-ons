@@ -1,5 +1,5 @@
 # obsidian-vault
-anchor: useful-claude-add-ons@34a333f0
+anchor: useful-claude-add-ons@ea8a014
 verified: 2026-09-14
 
 ## Does
@@ -25,6 +25,7 @@ The regression suite is still load-bearing: exit 2 is the only thing that makes 
 violation visible at all. (JUDGEMENT.)
 
 ## Entry points
+
 - `plugin/obsidian-vault/hooks/hooks.json:3-20` - registers SessionStart, PostToolUse, SessionEnd
   and PreCompact, each as a bash + PowerShell pair (bash at `:4,9,14,18`, PowerShell with
   `"shell": "powershell"` at `:5,11,15,19`). Verified as a pair on all four; this is the defect that
@@ -51,6 +52,10 @@ violation visible at all. (JUDGEMENT.)
   (DERIVED, range by `ast.parse`.)
 - `plugin/obsidian-vault/hooks/scripts/obsidian_common.py:286-294` - `resolve_vault_path`, the
   single entry point every hook uses to answer "which vault am I acting on". (DERIVED.)
+- `plugin/obsidian-vault/hooks/scripts/bridge_status.py:385` — module entry point (`main()`), from the graph
+- `plugin/obsidian-vault/hooks/scripts/vault_capture.py:35` — module entry point (`main()`), from the graph
+- `plugin/obsidian-vault/hooks/scripts/vault_guard.py:229` — module entry point (`main()`), from the graph
+- `plugin/obsidian-vault/hooks/scripts/vault_ops.py:1821` — module entry point (`main()`), from the graph
 
 ## Owns data
 - The vault contents themselves, written by the gardener - outside this repo, at the path

@@ -11,10 +11,10 @@ Read the **Hooks** section of any plugin before installing it. Commands and agen
 | | |
 |---|---|
 | **Source** | [`crew/`](crew) |
-| **Version** | 0.19.54<!-- claim: plugin-version:crew --> |
+| **Version** | 0.19.56<!-- claim: plugin-version:crew --> |
 | **Install** | `claude plugin install crew@useful-claude-add-ons` |
 | **Menu item** | 21, `repo-plugins` — **off by default**. Menu item 22, `graphify`, is a separate, also-off-by-default install of the `graphify` CLI this plugin's graph feature depends on — see **The code graph** below. |
-| **Registers** | 54 agents, 26 commands, 19 skills<!-- claim: plugin-skills:crew -->, 18 hook entries (9 scripts × `.sh`/`.ps1`) across 5 events |
+| **Registers** | 54 agents, 27 commands, 19 skills<!-- claim: plugin-skills:crew -->, 18 hook entries (9 scripts × `.sh`/`.ps1`) across 5 events |
 | **Upstream guide** | [`crew/README.md`](crew/README.md) — 25 sections, the authoritative version |
 
 Built for the awkward case: several repositories, mixed stacks, legacy code, and almost no test coverage. The workflow is file-backed tickets, one implementation session, an independent reviewer, and deterministic gates that block on failure rather than offering an opinion.
@@ -131,6 +131,7 @@ to CI or to branch protection.
 | `/crew:promote <env> [--dry-run\|--status]` | Promote development -> qa -> production, running deploy, smoke, regression, and post-soak verification as separate gates |
 | `/crew:emergency <what is broken>\|status\|extend [min]\|end` | Declare a time-boxed incident: the `verify` and `promote` gates stand down and record what they skipped, parallel read-only lanes investigate the cause at once, and `end` writes the debt list. The command guard does **not** stand down |
 | `/crew:ticket <description>` | Scope a request into a ticket |
+| `/crew:split <ISSUE-KEY> [--dry-run]` | Split an oversized **Jira** ticket into sub-tickets. Jira only — a files-mode ticket is a file the user can edit and an Obsidian card is theirs to drag; Jira is where splitting creates issues other people see. Judges size from `.crew/metrics.md` and the codemap rather than by feel, says so when the only evidence is the repo-wide rate, proposes 2–5 children with every acceptance criterion accounted for, and asks once before writing anything |
 | `/crew:work <id>` | Work one ticket end to end |
 | `/crew:review` | Independent QA — walks `qa.order` (Codex, Copilot, `qa-reviewer`), striking the author's own model family first |
 | `/crew:model [key value]` | Show which model backs each role and probe it; set `qa.*` / `dev.*` keys with validation |

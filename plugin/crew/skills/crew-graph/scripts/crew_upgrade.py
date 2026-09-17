@@ -235,6 +235,7 @@ CHANGE_BLOCK = {
 # `(?=\s*$)` is a lookahead so `sub` does not consume the trailing whitespace
 # it matched; `\S*?` is lazy so the prefix stops at the earliest point where a
 # run of hex reaches the end of the line.
+_DERIVED_ANCHOR_RE = re.compile(r"^derived-anchor:.*$", re.M)
 _ANCHOR_LINE_RE = re.compile(r"^(anchor:\s*\S*?@?)([0-9a-f]{7,40})(?=\s*$)",
                              re.MULTILINE | re.IGNORECASE)
 
@@ -253,12 +254,53 @@ _ABSENT = object()
 # `qa` and `dev` were missing from this list until 0.16.0, which is the whole
 # of the bug: a config predating the 0.14.4 provider table was stamped current
 # while still carrying neither.
+def _without_tombstoned(block, supplied):
+    """Drop defaults the operator removed ON PURPOSE, marked by a sibling Note.
+
+    DEFECT 1, reported by a peer session: a repo had deleted `qa.copilot` and
+    left `qa.copilotNote` beside it reading "Do not re-add it as null; pin a
+    real model or omit the key." The upgrade put `{"model": null}` straight
+    back, because a defaults-seeding pass cannot tell "never set" from
+    "deliberately removed" -- both look like an absent key.
+
+    So the repo gets to say which it meant. A sibling `<key>Note` is the
+    convention that repo already used, and it is now honoured: the key is not
+    re-seeded, and the report names it so the silence is not silent.
+
+    This does NOT make removal generally expressible -- there is no tombstone
+    for a key with no Note beside it, and adding `context` to CONFIG_BLOCKS
+    (which is what this release does) widens the same door for anything under
+    it. Treated as a narrowing of a known failure, not a fix for the class.
+    """
+    if not isinstance(supplied, dict):
+        return block
+    tomb = [k for k in block
+            if f"{k}Note" in supplied and k not in supplied]
+    if not tomb:
+        return block
+    out = {k: v for k, v in block.items() if k not in tomb}
+    _TOMBSTONED.extend(tomb)
+    return out
+
+
+# Names skipped this run because a sibling `<key>Note` said so. Module level
+# because `_merged` is called per block and the report is built once.
+_TOMBSTONED = []
+
 CONFIG_BLOCKS = (
     ("pm", PM_BLOCK),
     ("graph", GRAPH_BLOCK),
     ("qa", crew_state.QA_DEFAULTS),
     ("dev", crew_state.DEV_DEFAULTS),
     ("worktree", crew_state.WORKTREE_DEFAULTS),
+    # ADDED 2026-09-17, after a user reported that a schema 3 -> 7
+    # upgrade left context.autoClear / autoWrapUp / autoResume /
+    # staleHandoff absent. They were absent because `context` was never
+    # in this tuple: the migration adds exactly what is named here, and
+    # nothing named it. This module's own docstring predicted the shape
+    # of that failure for the qa/dev table; `context` is the one that
+    # actually got missed.
+    ("context", crew_state.CONTEXT_DEFAULTS),
     ("docs", DOCS_BLOCK),
     ("bitbucket", BITBUCKET_BLOCK),
     ("install", crew_state.INSTALL_DEFAULTS),
@@ -420,6 +462,7 @@ def upgrade_config(cfg):
 
     for key, block in CONFIG_BLOCKS:
         supplied = cfg.get(key, _ABSENT)
+        block = _without_tombstoned(block, supplied)
         if supplied is not _ABSENT and not isinstance(supplied, dict):
             # _merged would discard it and the user would never know. Leave
             # the value untouched and report it instead.
@@ -690,9 +733,37 @@ def _head(root):
 
 
 def _bump_anchor(text, head):
+    """Record a DERIVE-only re-verification WITHOUT touching `anchor:`.
+
+    CHANGED 2026-09-17. This used to rewrite `anchor:` whenever the reconcile
+    touched anything, and `touched` can only ever contain DERIVE headings --
+    `graph_reconcile.reconcile` skips KEEP at the top of its loop, so `Does`,
+    `Landmines` and `Unverified` are never read by this procedure at all.
+    Adding two derived lines therefore stamped the WHOLE note current.
+
+    Measured on this repo before the fix: `.crew/codemap/crew.md` was stamped
+    f9bb78a6 -> ea8a014 on 12 added lines while 18 of its 40 cited files had
+    moved. A peer session measured the same on two notes of its own, one with
+    52 moved files and one with 58. `crew_state.knowledge.behind` and the PM
+    pulse both trust `anchor:`, so the run converted a correct "behind" signal
+    into a false "current" one on exactly the notes most in need of a human.
+
+    `anchor:` keeps its old meaning -- this whole note was re-verified -- and
+    the weaker fact gets its own key. A false freshness claim is worse than an
+    honest stale one; that is reconcile.md's own argument, applied to the
+    anchor it is about.
+    """
     if not head:
         return text
-    return _ANCHOR_LINE_RE.sub(lambda m: m.group(1) + head, text, count=1)
+    line = f"derived-anchor: {head}\n"
+    if "derived-anchor:" in text:
+        return _DERIVED_ANCHOR_RE.sub(line.rstrip("\n"), text, count=1)
+    # Directly beneath `anchor:`, so the two are read together.
+    found = _ANCHOR_LINE_RE.search(text)
+    if not found:
+        return text
+    end = text.index("\n", found.start()) + 1
+    return text[:end] + line + text[end:]
 
 
 def global_theme_defeats_migration():
@@ -868,7 +939,62 @@ def _config_lines(notes):
     return lines
 
 
-def _report(status, head, results, notes):
+# Marks a human has put on a contradiction line. Anything carrying one is
+# carried forward verbatim rather than regenerated -- see `_carried_conflicts`.
+_ANNOTATED = ("RESOLVED", "WONTFIX", "VERIFIED", "~~", "FALSE POSITIVE")
+
+
+def _carried_conflicts(root, conflicts):
+    """(lines, carried_count) for the Contradictions section.
+
+    DEFECT 2. This section used to be rebuilt from `conflicts` alone, so a
+    human annotation on a previous run's line -- `RESOLVED 2026-09-15`, a
+    strike-through, a WONTFIX -- vanished on the next run and the
+    contradiction silently re-opened.
+
+    Keyed on the conflict TEXT, not on position: the order of `conflicts`
+    follows subsystem iteration and would reshuffle a positional match into
+    nonsense. A carried line wins over a regenerated one for the same
+    conflict, because the regenerated line is exactly the claim the human
+    already answered.
+
+    Nothing is invented: a carried line is text that was in the file, and an
+    annotation for a conflict the graph no longer reports is kept too -- it
+    records that somebody looked, which outlives the finding.
+    """
+    previous = []
+    path = os.path.join(root, ".crew", "codemap", "UPGRADE.md")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            body = fh.read()
+    except OSError:
+        body = ""
+    if body:
+        inside = False
+        for line in body.splitlines():
+            if line.startswith("## Contradictions"):
+                inside = True
+                continue
+            if inside and line.startswith("## "):
+                break
+            if inside and line.strip().startswith("-"):
+                previous.append(line)
+
+    annotated = [ln for ln in previous
+                 if any(mark in ln for mark in _ANNOTATED)]
+    # An annotated line answers the conflict whose text it contains.
+    answered = set()
+    for ln in annotated:
+        for c in conflicts:
+            if c in ln:
+                answered.add(c)
+
+    out = list(annotated)
+    out.extend(f"- {c}" for c in conflicts if c not in answered)
+    return (out or ["- none"]), len(annotated)
+
+
+def _report(status, head, results, notes, root):
     schema_line = (
         f"to schema: {crew_state.SCHEMA_CURRENT}" if notes["schemaStamped"]
         else "schema: NOT stamped — see Config below"
@@ -905,8 +1031,14 @@ def _report(status, head, results, notes):
     conflicts = [c for r in results.values() for c in r.get("conflicts", [])]
     lines.append("## Contradictions — kept in the map, verify by hand")
     # Not `f"- {c}" for c in conflicts or [...]`: that prefixes the fallback
-    # too, rendering "- - none". Build the fallback as the finished line.
-    lines.extend((f"- {c}" for c in conflicts) if conflicts else ["- none"])
+    # too, rendering "- - none". `_carried_conflicts` builds finished lines,
+    # including the fallback, and carries any human annotation forward.
+    conflict_lines, carried = _carried_conflicts(root, conflicts)
+    if carried:
+        lines.append(
+            f"{carried:d} annotated line(s) carried forward from the "
+            "previous report - they are NOT re-derived findings.")
+    lines.extend(conflict_lines)
     lines.append("")
     lines.append("## Added by the graph")
     added = [f"- {name}: {len(r['added'])} new line(s)"
@@ -1000,7 +1132,7 @@ def run(root, derived, force=False):
     # here would be the report claiming work the config itself denies.
     status = ("upgraded with unmigrated blocks" if notes["unmigrated"]
               else "upgraded")
-    report = _report(status, head, results, notes)
+    report = _report(status, head, results, notes, root)
     if os.path.isdir(mapdir):
         with open(os.path.join(mapdir, "UPGRADE.md"), "w",
                   encoding="utf-8") as handle:
